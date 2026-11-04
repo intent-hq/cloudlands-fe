@@ -171,7 +171,6 @@ test.describe('chat message navigator production path', () => {
       const optionDetails = await options.evaluateAll((nodes) =>
         nodes.map((node) => ({
           text: node.textContent?.trim(),
-          title: node.getAttribute('title'),
           ariaLabel: node.getAttribute('aria-label'),
         })),
       );
@@ -180,13 +179,11 @@ test.describe('chat message navigator production path', () => {
       expect(optionDetails.some((item) => item.text?.includes('queued before you completed'))).toBe(
         false,
       );
-      expect(optionDetails.every((item) => item.title === null)).toBe(true);
       expect(
         optionDetails.some((item) => item.ariaLabel?.includes('queued before you completed')),
       ).toBe(false);
       expect(optionDetails).toContainEqual({
         text: 'Virtualized target six',
-        title: null,
         ariaLabel: null,
       });
       expect(optionDetails.some((item) => item.text === 'OK')).toBe(true);
@@ -262,7 +259,6 @@ test.describe('chat message navigator production path', () => {
       await search.fill('Virtualized target six');
       const option = dialog.getByRole('option', { name: 'Virtualized target six', exact: true });
       await expect(option).toHaveCount(1);
-      await expect(option).not.toHaveAttribute('title', 'Virtualized target six');
       await expect(option).toHaveAttribute('data-navigation-message-id', 'user-6');
       expect(await classifyMessageIdentityNodes(page, 'user-6')).toEqual([
         {
@@ -303,7 +299,6 @@ test.describe('chat message navigator production path', () => {
       await expect(target.getByTestId('queued-message-notice-text')).toHaveText(
         'Waited in queue for 37s',
       );
-      await expect(target.getByTestId('queued-message-notice')).toHaveAttribute('title', /2026/);
       expect(await target.ariaSnapshot()).not.toContain('[SYSTEM NOTE]');
       // Navigation scrolls the virtualized target into place, so activate the hover-only
       // action without a pointer that the row could move out from under.

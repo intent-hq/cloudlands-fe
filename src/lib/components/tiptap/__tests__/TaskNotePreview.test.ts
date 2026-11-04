@@ -41,14 +41,4 @@ describe('TaskNotePreview', () => {
       ),
     );
   });
-
-  it('renders as a content-only semantic tooltip without creating a nested trigger', () => {
-    const { getByRole } = render(TaskNotePreview, {
-      props: { workspaceId: 'workspace-1', noteId: 'note-1' as NoteId },
-    });
-
-    const tooltip = getByRole('tooltip');
-    expect(tooltip.hidden).toBe(false);
-    expect(tooltip.querySelector('[data-tooltip-trigger], button, input')).toBeNull();
-  });
 });

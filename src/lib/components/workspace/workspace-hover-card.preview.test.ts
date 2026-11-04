@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { PullRequestStatus } from '$shared/types';
 import {
   workspaceHoverCardPreview,
   workspaceHoverCardStateMatrix,
@@ -36,84 +35,6 @@ describe('workspace hover-card preview audit', () => {
       'landscape-loading',
       'landscape-question',
     ]);
-  });
-
-  it('provides the approved representative stacked scenes', () => {
-    const states = workspaceHoverCardPreview.states;
-
-    expect(states.working.props.cards[0]?.workspace?.displayStatus).toBe('in_progress');
-    expect(
-      states['stopped-blocked'].props.cards.map(({ workspace }) => workspace?.displayStatus),
-    ).toEqual(['failed', 'blocked']);
-    expect(
-      states['idle-complete'].props.cards.map(({ workspace }) => workspace?.displayStatus),
-    ).toEqual(['idle', 'complete']);
-    expect(states.dense.props.cards[0]?.agents).toHaveLength(5);
-    expect(states.attention.props.cards).toHaveLength(5);
-    const mixedAttention = states.attention.props.cards.find(
-      ({ key }) => key === 'attention-priority',
-    );
-    expect(mixedAttention?.agents?.map(({ name }) => name)).toEqual(['Maya', 'Jules', 'Rowan']);
-    expect(states.attention.props.cards.map(({ key }) => key)).toContain(
-      'attention-four-questions',
-    );
-    expect(states.attention.props.cards.map(({ key }) => key)).toContain('attention-missing-body');
-    const multiQuestion = states.attention.props.cards.find(
-      ({ key }) => key === 'attention-four-questions',
-    );
-    expect(multiQuestion?.agents?.[0]?.lastAgentResponse).toBe(
-      'The deployment plan is ready after these decisions, with rollout safeguards queued for the selected region and compatibility window.',
-    );
-    const fallback = states.attention.props.cards.find(
-      ({ key }) => key === 'attention-missing-body',
-    );
-    expect(fallback?.agents?.[0]?.messages).toEqual([]);
-    expect(fallback?.agents?.[0]?.metadata?.pendingQuestionsMessageId).toBeTruthy();
-    expect(states['attention-narrow'].props.layout).toBe('narrow');
-    expect(states.narrow.props.layout).toBe('narrow');
-    expect(states['semantic-status'].props.expected).toContain('right column');
-    expect(states['idle-complete'].props.expected).toContain('without a numeric header count');
-  });
-
-  it('keeps long description regression fixtures in wide and narrow layouts', () => {
-    const states = workspaceHoverCardPreview.states;
-    const wideDescription = states['long-content'].props.cards[0]?.workspace?.statusMessage;
-    const narrowDescription = states.narrow.props.cards[0]?.workspace?.statusMessage;
-
-    expect(wideDescription?.length).toBeGreaterThan(80);
-    expect(narrowDescription?.length).toBeGreaterThan(80);
-    expect(states.narrow.props.layout).toBe('narrow');
-  });
-
-  it('provides explicit landscape theme, narrow, loading, and question fixtures', () => {
-    const states = workspaceHoverCardPreview.states;
-
-    expect(states['landscape-light'].props.theme).toBe('light');
-    expect(states['landscape-dark'].props.theme).toBe('dark');
-    expect(states['landscape-light'].props.cards.map(({ key }) => key)).toEqual([
-      'surface-third-last',
-      'surface-second-last',
-      'surface-last',
-    ]);
-    expect(states['landscape-dark'].props.cards.map(({ key }) => key)).toEqual([
-      'surface-third-last',
-      'surface-second-last',
-      'surface-last',
-    ]);
-    expect(states['landscape-wide'].props.layout).not.toBe('narrow');
-    expect(states['landscape-narrow'].props.layout).toBe('narrow');
-    expect(states['landscape-loading'].props.cards[0]?.isLoading).toBe(true);
-    expect(states['landscape-question'].props.cards[0]?.agents?.[0]?.messages).toHaveLength(1);
-    expect(states['landscape-question'].props.cards[0]?.agents?.[0]?.lastAgentResponse).toContain(
-      'rollout safeguards',
-    );
-    expect(states['landscape-question'].props.cards[0]?.workspace?.activePullRequest).toMatchObject(
-      {
-        number: 74,
-        status: PullRequestStatus.Open,
-      },
-    );
-    expect(states.attention.props.cards[1]?.workspace?.activePullRequest).toBeUndefined();
   });
 
   it('has an explicit expected result, coverage route, and conflict rule for every family', () => {

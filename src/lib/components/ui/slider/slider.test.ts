@@ -131,25 +131,6 @@ describe('Slider', () => {
     expect(committedValues).toEqual([45, 100]);
   });
 
-  it('shows a hover preview tooltip and hides it while pressed', async () => {
-    vi.useFakeTimers();
-    const { container } = render(Slider, {
-      props: { 'aria-label': 'Preview', value: 25, formatValue: (value) => `${value}%` },
-    });
-    const track = mockTrack(container);
-
-    await fireEvent.pointerEnter(track);
-    await fireEvent.pointerMove(track, { clientX: 100 });
-    expect(container.querySelector('[data-slot="slider-tooltip"]')).toBeNull();
-    await vi.advanceTimersByTimeAsync(100);
-    expect(container.querySelector('[data-slot="slider-tooltip"]')?.textContent).toBe('50%');
-
-    await fireEvent.pointerDown(track, { clientX: 100, pointerId: 1, button: 0 });
-    expect(
-      (container.querySelector('[data-slot="slider-tooltip"]') as HTMLOutputElement).hidden,
-    ).toBe(true);
-  });
-
   it('derives bounds from discrete steps, snaps, and renders pips', async () => {
     const onValueChange = vi.fn();
     const steps = [0.1, 0.5, 0.7, 1.3];
@@ -276,18 +257,14 @@ describe('Slider', () => {
     );
   });
 
-  it('publishes the full interaction fixture contract', () => {
+  it('publishes the value interaction fixture contract', () => {
     expect(() => parseUiComponentMetadata(sliderMetadata)).not.toThrow();
     expect(sliderFixtures.flatMap(({ states }) => states)).toEqual(
       expect.arrayContaining([
-        'hover-preview',
-        'hover-tooltip',
-        'drag-tooltip-hidden',
         'inline-value-edit',
         'discrete-steps',
         'step-pips',
         'transparent-overlay-track',
-        'capture-hover-drag-200ms',
         'reduced-motion',
       ]),
     );

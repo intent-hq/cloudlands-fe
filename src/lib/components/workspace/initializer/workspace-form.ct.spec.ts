@@ -38,12 +38,6 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
   const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
   const prompt = dialog.locator('[contenteditable=true]');
   await prompt.fill('Refine the workspace navigation.');
-  for (const name of [/^Add context$/, /^Start dictation$/, /^Add files/]) {
-    await dialog.getByRole('button', { name }).hover();
-    await expect(page.getByRole('tooltip')).toBeVisible();
-    await prompt.hover();
-    await expect(page.getByRole('tooltip')).toBeHidden();
-  }
   const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
   await branch.focus();
   await branch.press('Enter');

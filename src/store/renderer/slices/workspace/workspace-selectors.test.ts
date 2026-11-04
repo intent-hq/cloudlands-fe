@@ -533,7 +533,6 @@ describe('selectWorkspaceProgressActions', () => {
     expect(action).toMatchObject({
       id: 'view-pr',
       label: summary?.actionLabel,
-      tooltip: summary?.actionTooltip,
       url: summary?.url,
     });
   });
@@ -544,12 +543,11 @@ describe('selectWorkspaceProgressActions', () => {
       taskStats: makeTaskStats({ total: 2, completed: 2 }),
       completionRatio: 1,
     });
-    expect(selectWorkspaceProgressActions.select(mockState(), WS_ID, input)).toEqual([
+    expect(selectWorkspaceProgressActions.select(mockState(), WS_ID, input)).toMatchObject([
       {
         id: 'review-changes',
         label: 'Review changes',
         iconKey: 'file-lines',
-        tooltip: 'Opens the changes panel to review, stage, and commit file changes.',
       },
     ]);
   });
@@ -616,12 +614,11 @@ describe('selectWorkspaceProgressActions', () => {
       taskStats: makeTaskStats({ total: 2, completed: 2 }),
       completionRatio: 1,
     });
-    expect(selectWorkspaceProgressActions.select(state, WS_ID, input)).toEqual([
+    expect(selectWorkspaceProgressActions.select(state, WS_ID, input)).toMatchObject([
       {
         id: 'view-pr',
         label: '#42: Example PR',
         iconKey: 'code-branch',
-        tooltip: 'Opens pull request #42 on GitHub in your browser.',
         url: 'https://gh/pr/100',
       },
     ]);
@@ -738,12 +735,10 @@ describe('selectWorkspaceProgressActions', () => {
     const [action] = selectWorkspaceProgressActions.select(state, WS_ID, input);
     const summary = selectWorkspaceActivePrSummary.select(state, WS_ID);
     expect(action.label).toBe('other/lib #1373');
-    expect(action.tooltip).toContain('other/lib#1,373');
     expect(action.url).toBe('https://github.com/other/lib/pull/1373');
     expect(summary).toMatchObject({
       number: 1373,
       actionLabel: action.label,
-      actionTooltip: action.tooltip,
       url: action.url,
     });
   });
@@ -827,7 +822,7 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
       repositoryOwner: 'acme',
       repositoryName: 'widgets',
     } as Partial<Workspace>);
-    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toMatchObject({
       number: 1365,
       url: 'https://gh/pr/1365',
       repo: 'acme/widgets',
@@ -835,7 +830,6 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
       title: 'Fix widgets',
       status: 'open',
       actionLabel: 'widgets #1365: Fix widgets',
-      actionTooltip: 'Opens pull request acme/widgets#1,365 on GitHub in your browser.',
     });
   });
 
@@ -848,7 +842,7 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
 
   it('degrades the legacy prNumber/prUrl path gracefully (no title, unknown status)', () => {
     const state = mockRichState({ prNumber: 7, prUrl: 'https://gh/pr/7' } as Partial<Workspace>);
-    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toMatchObject({
       number: 7,
       url: 'https://gh/pr/7',
       repo: undefined,
@@ -856,7 +850,6 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
       title: undefined,
       status: 'unknown',
       actionLabel: '#7',
-      actionTooltip: 'Opens pull request #7 on GitHub in your browser.',
     });
   });
 
@@ -873,7 +866,7 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
         }),
       ],
     );
-    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toMatchObject({
       number: 1373,
       url: 'https://github.com/other/lib/pull/1373',
       repo: 'other/lib',
@@ -881,7 +874,6 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
       title: 'Fix lib',
       status: 'merged',
       actionLabel: 'other/lib #1373: Fix lib',
-      actionTooltip: 'Opens pull request other/lib#1,373 on GitHub in your browser.',
     });
   });
 
@@ -898,7 +890,7 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
       { repositoryOwner: 'acme', repositoryName: 'widgets' } as Partial<Workspace>,
       [makeMonitor({ url: undefined })],
     );
-    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toEqual({
+    expect(selectWorkspaceActivePrSummary.select(state, WS_ID)).toMatchObject({
       number: 77,
       url: 'https://github.com/acme/widgets/pull/77',
       repo: 'acme/widgets',
@@ -906,7 +898,6 @@ describe('selectWorkspaceActivePrSummary (rich chip fields)', () => {
       title: undefined,
       status: 'unknown',
       actionLabel: 'widgets #77',
-      actionTooltip: 'Opens pull request acme/widgets#77 on GitHub in your browser.',
     });
   });
 });

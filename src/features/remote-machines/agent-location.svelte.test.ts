@@ -90,8 +90,6 @@ describe('agent row machine badge', () => {
   it('adds no nested control inside the row button', () => {
     seed(session());
     const { container } = render(AgentLocationBadge, { agentId: AGENT });
-    const badge = container.querySelector<HTMLElement>('[data-agent-machine-badge]');
-    expect(badge?.getAttribute('title')).toBe('Runs on Mac mini · macOS arm64');
     expect(container.querySelector('[role="button"], [tabindex], button')).toBeNull();
   });
 

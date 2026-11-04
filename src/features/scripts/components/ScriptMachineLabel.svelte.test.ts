@@ -54,7 +54,6 @@ describe('ScriptMachineLabel', () => {
     const { container } = render(ScriptMachineLabel, { run: RUN, variant: 'label' });
     const el = container.querySelector<HTMLElement>('[data-script-machine="label"]')!;
     expect(el.textContent?.trim()).toBe('On Mac Studio');
-    expect(el.getAttribute('title')).toBe('Runs on Mac Studio · macOS arm64');
   });
 
   it('prefers the listed machine row and names its state in the icon variant', () => {

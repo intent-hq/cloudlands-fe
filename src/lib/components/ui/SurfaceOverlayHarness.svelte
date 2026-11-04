@@ -3,27 +3,16 @@
   import * as Menu from './menu';
   import * as Sheet from './sheet';
   import { Combobox } from './combobox';
-  import HoverCard from './HoverCard.svelte';
   import { Select } from './select';
   import SurfaceContextConsumer from './SurfaceContextConsumer.svelte';
   import SurfaceProvider from './SurfaceProvider.svelte';
-  import * as Tooltip from './tooltip';
   import Toast from './toast/Toast.svelte';
 
   let {
     kind,
     substrate = 2,
   }: {
-    kind:
-      | 'dialog'
-      | 'sheet'
-      | 'menu'
-      | 'select'
-      | 'combobox'
-      | 'tooltip'
-      | 'toast'
-      | 'hover-card'
-      | 'nested-menu';
+    kind: 'dialog' | 'sheet' | 'menu' | 'select' | 'combobox' | 'toast' | 'nested-menu';
     substrate?: number;
   } = $props();
   const items = [{ value: 'one', label: 'One' }];
@@ -62,17 +51,8 @@
       headerAction={probe}
       portal={false}
     />
-  {:else if kind === 'tooltip'}
-    <Tooltip.Provider delayDuration={0}>
-      <Tooltip.Root open={true}>
-        <Tooltip.Trigger>Tooltip trigger</Tooltip.Trigger>
-        <Tooltip.Content>{@render probe()}</Tooltip.Content>
-      </Tooltip.Root>
-    </Tooltip.Provider>
   {:else if kind === 'toast'}
     <Toast />
-  {:else if kind === 'hover-card'}
-    <HoverCard anchor="--surface-probe" absolute>{@render probe()}</HoverCard>
   {:else}
     <Dialog.Root open={true}>
       <Dialog.Content showCloseButton={false}>

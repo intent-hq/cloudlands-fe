@@ -156,8 +156,6 @@ test('the on-screen tool bar starts at the bottom of the screen, drags by its gr
     'data-alert',
     '',
   );
-  await bar.getByRole('button', { name: 'Pen' }).hover();
-  await expect(bar.getByRole('tooltip').filter({ hasText: 'Pen' })).toHaveCSS('opacity', '1');
   await testInfo.attach('side toolbar', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -166,7 +164,6 @@ test('the on-screen tool bar starts at the bottom of the screen, drags by its gr
   // Notch feedback stays in the lower work area, away from hover expansion.
   const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
   await component.update({ props: { fixture: 'live-marked', pick: 'permission', dock: notch } });
-  await expect(bar).toHaveAttribute('data-tips', 'above');
   await expectAnimationsToSettle(bar, { subtree: false });
   const workArea = JSON.parse(
     (await page.getByTestId('dock-annotation-harness').getAttribute('data-work-area')) ?? 'null',
@@ -188,16 +185,6 @@ test('the on-screen tool bar starts at the bottom of the screen, drags by its gr
     })
     .toEqual({ clearOfDock: true, contained: true });
   const below = await bounds();
-  // Tooltips open above the bottom toolbar and stay
-  // inside the work area (the long permission line included).
-  await bar.getByRole('button', { name: 'Pick an element' }).hover();
-  const tip = bar.getByRole('tooltip').filter({ hasText: 'Allow Accessibility' });
-  await expect(tip).toHaveCSS('opacity', '1');
-  const tipBox = (await tip.boundingBox())!;
-  expect(tipBox.y + tipBox.height).toBeLessThan(below.y);
-  expect(tipBox.y).toBeGreaterThanOrEqual(workArea.y);
-  expect(tipBox.x).toBeGreaterThanOrEqual(workArea.x);
-  expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(workArea.x + workArea.width);
   await testInfo.attach('notch toolbar', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -388,12 +375,6 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   // Idle with marks: the first half of the artifact.
   const idleShot = await page.screenshot({ clip: await toolbarClip() });
   const shot = bar.getByRole('button', { name: 'Capture the screen · ⌘⇧S' });
-  await shot.hover();
-  await expect(bar.getByRole('tooltip').filter({ hasText: 'Capture the screen' })).toHaveCSS(
-    'opacity',
-    '1',
-  );
-
   // Screenshot: one request; the session, tool and mode are unchanged; never a mark.
   await shot.click();
   await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'true');
@@ -431,45 +412,33 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   );
   expect(await recorded(page, 'pointers')).toEqual([]);
 
-  // At the limit Record is disabled with the composer's tooltip; a click does nothing.
+  // At the limit Record is disabled; a click does nothing.
   const full = {
     ...dockAnnotationMediaIdle,
-    record: { ...dockAnnotationMediaIdle.record, disabled: true, tooltip: 'Up to 5 recordings' },
+    record: { ...dockAnnotationMediaIdle.record, disabled: true },
   };
   await component.update({ props: { ...props, media: full } });
   const limited = bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' });
   await expect(limited).toHaveAttribute('aria-disabled', 'true');
-  await limited.hover();
-  const limitTip = bar.getByRole('tooltip').filter({ hasText: 'Up to 5 recordings' });
-  await expect(limitTip).toHaveCSS('opacity', '1');
-  const limitBox = (await limitTip.boundingBox())!;
-  expect(limitBox.x).toBeGreaterThanOrEqual(0);
-  expect(limitBox.x + limitBox.width).toBeLessThanOrEqual(1280);
   // Forced: a real click on the disabled control reaches it and is ignored.
   await limited.click({ force: true });
 
-  // Missing Screen Recording: alert dot and the permission line; a click goes to the
+  // Missing Screen Recording: an alert dot appears; a click goes to the
   // dock, which opens System Settings (the composer's rule).
   const blocked = {
     capture: {
       ...dockAnnotationMediaIdle.capture,
       alert: true,
-      tooltip: 'Allow screen recording in System Settings',
     },
     record: {
       ...dockAnnotationMediaIdle.record,
       alert: true,
-      tooltip: 'Allow screen recording in System Settings',
     },
   };
   await component.update({ props: { ...props, media: blocked } });
   const alerted = bar.getByRole('button', { name: 'Capture the screen · ⌘⇧S' });
   await expect(alerted).toHaveAttribute('data-alert', '');
   await expect(alerted.locator('.alert-dot')).toBeVisible();
-  await alerted.hover();
-  await expect(
-    bar.getByRole('tooltip').filter({ hasText: 'Allow screen recording' }).first(),
-  ).toHaveCSS('opacity', '1');
   const alertShot = await page.screenshot({ clip: await toolbarClip() });
   await alerted.click();
 
@@ -547,8 +516,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await expect(capture).toHaveAttribute('aria-busy', 'true');
     await expect(capture).toHaveAttribute('data-capture-state', 'pending');
     await expect(capture.getByRole('status', { name: 'Loading' })).toBeVisible();
-    await expect(capture.getByRole('tooltip')).toHaveText('Taking screenshot…');
-    await expect(capture.getByRole('tooltip')).toHaveCSS('opacity', '1');
     await testInfo.attach('screenshot pending', {
       body: await page.screenshot(),
       contentType: 'image/png',
@@ -562,8 +529,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await update(false, 42);
     await expect(capture).toHaveAttribute('data-capture-state', 'complete');
     await expect(capture.locator('[data-dock-glyph="check"]')).toBeVisible();
-    await expect(capture.getByRole('tooltip')).toHaveText('Screenshot captured');
-    await expect(capture.getByRole('tooltip')).toHaveCSS('opacity', '1');
     if (reducedMotion === 'reduce') {
       await expect
         .poll(() =>

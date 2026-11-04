@@ -50,12 +50,6 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-function buttonTooltips(container: HTMLElement): string[] {
-  return Array.from(container.querySelectorAll('button[tooltip]')).map(
-    (b) => b.getAttribute('tooltip') ?? '',
-  );
-}
-
 describe('QueuedMessageList', () => {
   beforeEach(() => {
     vi.stubGlobal(
@@ -293,14 +287,12 @@ describe('QueuedMessageList', () => {
     expect(message.content).toBe(`Ask @member[${payload}] please`);
   });
 
-  it('renders a regular queued message as raw text with the reference remove affordance', () => {
-    const { container } = renderQueue({
+  it('renders a regular queued message as raw text', () => {
+    renderQueue({
       props: { messages: [queued({ content: 'run the tests' })] },
     });
 
     expect(screen.getByText('run the tests')).toBeTruthy();
-    const tooltips = buttonTooltips(container);
-    expect(tooltips).toContain('Remove');
   });
 
   it('supports reference edit, remove, and send-now keyboard interactions', async () => {
@@ -1573,9 +1565,6 @@ describe('QueuedMessageList', () => {
         props: { messages: [queued({ content: 'with image', imageBlocks: IMAGE_BLOCKS })] },
       });
 
-      // Only the row-level remove button exists; images stay view-only.
-      const tooltips = buttonTooltips(container);
-      expect(tooltips.filter((t) => t === 'Remove')).toHaveLength(1);
       // Every thumbnail button is a view-only affordance
       for (const button of thumbnails(container)) {
         expect(button.getAttribute('aria-label')).toMatch(

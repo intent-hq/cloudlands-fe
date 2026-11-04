@@ -41,7 +41,6 @@ test('expanded selection preserves content until the selected tab is activated a
   await expect(scene).toHaveAttribute('data-sidebar-activation-count', '4');
   await changes.click();
   await expect(scene).toHaveAttribute('data-sidebar-activation-count', '5');
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
 });
 
 test('collapsed previews preserve content and a click opens defaults', async ({ mount, page }) => {

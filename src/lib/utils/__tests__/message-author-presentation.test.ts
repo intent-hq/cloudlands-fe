@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import type { MessageAuthor } from '$shared/types/agent-message';
 import {
   getMessageAuthorLabel,
-  getMessageAuthorTooltip,
   getHumanMessageAuthor,
   getQueuedMessageAuthor,
 } from '../message-authorship';
@@ -28,9 +27,6 @@ describe('readable chat author presentation', () => {
         expect(getMessageAuthorLabel({ ...author, displayName: null })).toBe('@octocat');
         expect(getMessageAuthorLabel({ ...author, login: null })).toBe('The Octocat');
         expect(getMessageAuthorLabel({ ...author, login: ' ', displayName: '\t' })).toBeNull();
-        expect(getMessageAuthorTooltip({ ...author, login: null, displayName: null })).not.toMatch(
-          /526899|principal-secret|@/,
-        );
         const row = {
           role: 'user' as const,
           author,

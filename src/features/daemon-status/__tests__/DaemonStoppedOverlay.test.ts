@@ -576,9 +576,6 @@ describe('DaemonStoppedOverlay', () => {
       const hosts = screen.getAllByTestId('daemon-stopped-cert-warning-host');
       expect(hosts).toHaveLength(1);
       expect(hosts[0].textContent).toContain('10.0.0.6');
-      // Fingerprint detail is exposed on the row (title attribute).
-      expect(hosts[0].getAttribute('title')).toContain('AB:CD');
-      expect(hosts[0].getAttribute('title')).toContain('EF:01');
       // Passive: the retrying indicator stays — nothing is blocked.
       expect(screen.getByTestId('daemon-stopped-retrying')).toBeTruthy();
     });

@@ -29,10 +29,7 @@ test('five-emoji picker closes on selection, toggles chips and preserves the dra
   await expect(component.locator('[data-reaction-reply]')).toBeEmpty();
 });
 
-test('arrow navigation and Escape return focus; focused chips describe human and agent reactors', async ({
-  mount,
-  page,
-}) => {
+test('arrow navigation and Escape return focus', async ({ mount, page }) => {
   const component = await mount(Preview);
   const trigger = component.locator(lastRow).locator('[data-discussion-reaction-trigger="plus"]');
   await trigger.focus();
@@ -46,26 +43,9 @@ test('arrow navigation and Escape return focus; focused chips describe human and
   await page.keyboard.press('Escape');
   await expect(picker).toBeHidden();
   await expect(trigger).toBeFocused();
-  const chip = component.locator(
-    '[data-discussion-message="reaction-first"] [data-discussion-reaction="👀"]',
-  );
-  await chip.focus();
-  await expect(page.getByRole('tooltip')).toContainText('Alex and Developer reacted with');
-  await trigger.focus();
-  await expect(page.getByRole('tooltip')).toBeHidden();
-  await chip.hover();
-  await expect(page.getByRole('tooltip')).toContainText('Alex and Developer reacted with');
 });
 
-test('bounded roster reports overflow and legacy reactions remain removable', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(Preview, { props: { initial: 'large' } });
-  const eyes = component.locator(lastRow).locator('[data-discussion-reaction="👀"]');
-  await eyes.focus();
-  await expect(page.getByRole('tooltip')).toContainText('1,214 others');
-  await component.unmount();
+test('legacy reactions remain removable', async ({ mount, page }) => {
   const legacy = await mount(Preview, { props: { initial: 'legacy' } });
   const chip = legacy.locator(lastRow).locator('[data-discussion-reaction="🙂"]');
   await chip.click();
@@ -115,10 +95,7 @@ test.describe('touch reactions', () => {
   });
 });
 
-test('picker choices retain accessible labels without tooltips on hover or focus', async ({
-  mount,
-  page,
-}) => {
+test('picker choices support pointer focus and keyboard selection', async ({ mount, page }) => {
   const component = await mount(Preview);
   const trigger = component.locator(lastRow).locator('[data-discussion-reaction-trigger="plus"]');
   await trigger.focus();
@@ -127,10 +104,8 @@ test('picker choices retain accessible labels without tooltips on hover or focus
   const thumbsDown = picker.getByRole('button', { name: 'Thumbs down', exact: true });
   await thumbsDown.hover();
   await expect(thumbsDown).toBeFocused();
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
   await page.mouse.move(0, 0);
   await picker.getByRole('button', { name: 'Eyes', exact: true }).focus();
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
   await page.keyboard.press('Enter');
   await expect(picker).toBeHidden();
   await expect(trigger).toBeFocused();

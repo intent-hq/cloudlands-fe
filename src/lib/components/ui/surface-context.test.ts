@@ -42,7 +42,7 @@ describe('surface context', () => {
     expect(surfaceHoverClasses(9)).toBe('hover:bg-surface-8 hover:shadow-surface-8');
   });
 
-  it.each(['dialog', 'sheet', 'menu', 'select', 'combobox', 'tooltip', 'hover-card'] as const)(
+  it.each(['dialog', 'sheet', 'menu', 'select', 'combobox'] as const)(
     'raises the %s overlay two levels and provides its surface to children',
     async (kind) => {
       render(SurfaceOverlayHarness, { props: { kind, substrate: 2 } });

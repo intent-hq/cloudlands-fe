@@ -85,14 +85,11 @@ for (const status of ['active', 'done'] as const) {
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe('/demo/sample-project');
-    await component.getByRole('button', { name: 'Developer', exact: true }).focus();
-    await expect(page.getByRole('tooltip')).toHaveCount(1);
-    await expect(page.getByRole('tooltip')).toBeVisible();
   });
 }
 
 for (const width of [280, 360]) {
-  test(`keeps punctuation attached to wrapped references at ${width}px without hover shifts`, async ({
+  test(`keeps punctuation attached to wrapped references at ${width}px`, async ({
     mount,
     page,
   }) => {
@@ -144,9 +141,6 @@ for (const width of [280, 360]) {
       'origin/main',
       '.',
     );
-    const height = (await component.boundingBox())!.height;
-    await branch.hover();
-    expect((await component.boundingBox())!.height).toBeCloseTo(height, 1);
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await branch.press('Enter');
     await expect

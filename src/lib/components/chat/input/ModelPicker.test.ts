@@ -533,7 +533,7 @@ describe('ModelPicker locked state', () => {
     document.body.innerHTML = '';
   });
 
-  it('shows the locked hover copy and can hide the redundant lock icon', () => {
+  it('shows the locked model and can hide the redundant lock icon', () => {
     render(ModelPicker, {
       props: {
         selectedModel: 'gpt5.4',
@@ -545,7 +545,6 @@ describe('ModelPicker locked state', () => {
     });
 
     const button = screen.getByRole('button');
-    expect(button.getAttribute('title')).toBe('Start a new agent to change provider or model.');
     expect(button.textContent).toContain('GPT 5.4');
     expect(button.querySelector('[data-icon="lock"]')).toBeNull();
   });
@@ -686,7 +685,6 @@ describe('ModelPicker guest / collaborator lock', () => {
 
     const button = screen.getByRole('button');
     expect(button.hasAttribute('disabled')).toBe(true);
-    expect(button.getAttribute('title')).toContain('workspace owner');
 
     await waitFor(() => {
       expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledWith('auggie', {
@@ -738,11 +736,9 @@ describe('ModelPicker guest / collaborator lock', () => {
     await waitFor(() => expect(button.textContent).toContain('GPT-5'));
     const labels = [
       button.textContent ?? '',
-      button.getAttribute('title') ?? '',
-      ...[...button.querySelectorAll('[aria-label], [title]')].flatMap((el) => [
-        el.getAttribute('aria-label') ?? '',
-        el.getAttribute('title') ?? '',
-      ]),
+      ...[...button.querySelectorAll('[aria-label]')].map(
+        (el) => el.getAttribute('aria-label') ?? '',
+      ),
     ].join(' | ');
     expect(labels).not.toMatch(/Removed profile|Host work|Default/);
   });
@@ -789,9 +785,6 @@ describe('ModelPicker guest / collaborator lock', () => {
     // Focusable at full contrast so the explanation can be read (not `disabled`).
     expect(button.hasAttribute('disabled')).toBe(false);
     expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(button.getAttribute('title')).toBe(
-      "This agent's model can't be changed while it runs on Mac mini. Create a new agent to use another model.",
-    );
     await waitFor(() => {
       expect(button.textContent).toContain('Sonnet 4.6');
     });
@@ -1045,7 +1038,6 @@ describe('ModelPicker guest / collaborator lock', () => {
       renderAgentPicker('gpt-5');
       const button = screen.getByRole('button');
       expect(button.getAttribute('aria-disabled')).toBe('true');
-      expect(button.getAttribute('title')).toContain("can't be changed while it runs on Mac mini");
     });
 
     it('stays locked and reads the profile list when the catalog cannot tell', async () => {
@@ -1684,8 +1676,6 @@ describe('ModelPicker combined reasoning mode', () => {
 
         const accessibleLabel = `GPT-5.6-Sol · ${label}`;
         const trigger = await waitFor(() => screen.getByRole('button', { name: accessibleLabel }));
-        const titleElement = props.isLocked ? trigger : trigger.querySelector('[title]');
-        expect(titleElement?.getAttribute('title')).toContain(accessibleLabel);
 
         const gauge = screen.queryByTestId('model-reasoning-effort-gauge');
         if (gaugeValue === null) {
@@ -2368,7 +2358,6 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(await screen.findByRole('option', { name: /GPT-5\.6-Sol/ })).toBeTruthy();
 
     const refreshButton = screen.getByTestId('model-provider-refresh-button');
-    expect(refreshButton.getAttribute('title')).toBe('Refresh OpenAI Codex models');
     vi.mocked(getModelsForProviderForLoadingState).mockClear();
     await fireEvent.click(refreshButton);
 
@@ -2596,7 +2585,7 @@ describe('ModelPicker combined reasoning mode', () => {
     expect(screen.queryByTestId('effort-gauge')).toBeNull();
   });
 
-  it('shows explicit none as Off in the composer, tooltip, accessibility label, and select', async () => {
+  it('shows explicit none as Off in the composer, accessibility label, and select', async () => {
     reasoningEffort$.set('none');
     agentModelEffortLevels$.set(['none', 'low', 'ultra']);
 
@@ -2611,8 +2600,7 @@ describe('ModelPicker combined reasoning mode', () => {
     });
 
     const trigger = screen.getByRole('button');
-    const labeledTrigger = await waitFor(() => screen.getByLabelText('GPT-5.6-Sol · Off'));
-    expect(labeledTrigger.getAttribute('title')).toBe('GPT-5.6-Sol · Off');
+    await waitFor(() => screen.getByLabelText('GPT-5.6-Sol · Off'));
     expect(trigger.textContent).not.toContain('Off');
     expect(screen.queryByTestId('model-reasoning-strength')).toBeNull();
     expect(screen.queryByTestId('model-reasoning-effort-gauge')).toBeNull();
@@ -4660,10 +4648,6 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
       expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
     });
     expect(screen.queryByRole('status')).toBeNull();
-    // The trigger tooltip carries the reason (model + disabled provider).
-    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
-    expect(tooltip).toMatch(/Codex/);
-    expect(tooltip).toMatch(/disabled/i);
 
     await fireEvent.click(trigger);
     const alert = await screen.findByRole('alert');
@@ -4732,9 +4716,6 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     await waitFor(() => {
       expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
     });
-    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
-    expect(tooltip).toMatch(/Codex/);
-    expect(tooltip).toMatch(/disabled/i);
   });
 
   it('attributes a bare model id shared by several catalogs to the agent provider, not the default one', async () => {
@@ -4767,9 +4748,6 @@ describe('ModelPicker disabled agent provider (intent#5737)', () => {
     await waitFor(() => {
       expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
     });
-    const tooltip = trigger.querySelector('[title]')?.getAttribute('title') ?? '';
-    expect(tooltip).toMatch(/Codex/);
-    expect(tooltip).toMatch(/disabled/i);
   });
 
   it('announces the daemon re-home once when the session lands on another provider', async () => {
@@ -6478,7 +6456,7 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     );
   });
 
-  it('moves the profile name into the hover tooltip when the trigger hides it', async () => {
+  it('keeps the profile name in the accessible label when the trigger hides it', async () => {
     mockCatalogProfiles.current = [WORK];
     render(ModelPicker, {
       props: {
@@ -6492,7 +6470,6 @@ describe('ModelPicker named provider profiles (§5.54)', () => {
     await waitFor(() => {
       const value = trigger.querySelector('[aria-label]');
       expect(value?.getAttribute('aria-label') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
-      expect(value?.getAttribute('title') ?? '').toMatch(/GPT-5 Work row.*Codex.*Work/);
     });
     expect(screen.queryByTestId('model-picker-profile')).toBeNull();
   });

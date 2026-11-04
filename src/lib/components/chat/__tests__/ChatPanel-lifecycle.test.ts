@@ -1232,7 +1232,6 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
     await tick();
     const overlay = screen.getByTestId('pinned-user-prompt');
-    expect(overlay.getAttribute('title')).toBe(initialWake.metadata.hookName);
     expect(
       within(overlay).getByTestId('automated-wake-header').getAttribute('data-wake-state'),
     ).toBe('delivered');
@@ -1249,7 +1248,6 @@ describe('ChatPanel mounted lifecycle', () => {
     flushFrame();
     await tick();
     const updatedOverlay = screen.getByTestId('pinned-user-prompt');
-    expect(updatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     expect(within(updatedOverlay).getByTestId('automated-wake-primary-label').textContent).toBe(
       replacement.metadata.hookName,
     );
@@ -1298,7 +1296,6 @@ describe('ChatPanel mounted lifecycle', () => {
     sourceTurnRect.mockClear();
     mocks.animateScrollTo.mockClear();
     const reactivatedOverlay = screen.getByTestId('pinned-user-prompt');
-    expect(reactivatedOverlay.getAttribute('title')).toBe(replacement.metadata.hookName);
     await fireEvent.click(within(reactivatedOverlay).getByRole('button'));
     expect(mocks.animateScrollTo).toHaveBeenCalledOnce();
     const [getContainer, measureTarget] = mocks.animateScrollTo.mock.calls[0];

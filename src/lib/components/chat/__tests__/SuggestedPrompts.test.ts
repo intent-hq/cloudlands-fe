@@ -216,7 +216,6 @@ describe('SuggestedPrompts', () => {
       const row = rowOf(control);
       const link = screen.getByRole('link', { name: '#5034' });
       expect(link.getAttribute('href')).toBe(PR_URL);
-      expect(link.getAttribute('title')).toBe(PR_URL);
       expect(link.tabIndex).toBe(0);
       expect(link.classList.contains('underline')).toBe(true);
       expect(row.contains(link)).toBe(true);
@@ -315,7 +314,6 @@ describe('SuggestedPrompts', () => {
 
       const link = screen.getByRole('link', { name: 'PR' });
       expect(link.getAttribute('href')).toBe(PR_URL);
-      expect(link.getAttribute('title')).toBe(PR_URL);
 
       await fireEvent.click(link);
       expect(handleLinkMock).toHaveBeenCalledWith(PR_URL, expect.anything());

@@ -553,6 +553,20 @@ drop wire rows carrying the additive `pendingDeleteAt` field.
 - For copy-only changes, do not update unit tests. Run `pnpm run generate:i18n`,
   `pnpm run lint:i18n-completeness`, and `pnpm run lint:i18n-strings` instead.
 
+#### Tooltip tests are forbidden
+
+**Never add, restore, stabilize, quarantine, or replace tooltip or cosmetic hover-help
+tests.** This applies to unit, component, integration, Playwright/Electron, and snapshot
+tests: no assertions for tooltip copy, presence, visibility, hover/focus reveal,
+dismissal, positioning, animation, or timing, including native `title` help and hover cards.
+Delete tooltip-only cases, suites, snapshots, and orphan test fixtures/helpers. In mixed
+tests, remove tooltip assertions and setup while retaining independent actions,
+navigation, data/state contracts, and accessible names of actual controls. Keep tooltip
+selectors only when needed to locate a functional control. Do not replace deleted tests
+with checks proving they were deleted, and do not change product tooltip behavior.
+The Untitled hover test blocked unrelated delegation work and passed only on retry
+([cloudlands-fe#3895 queue failure](https://github.com/intent-hq/cloudlands-fe/actions/runs/41907311279/job/126845579456)).
+
 #### Pixel comparison tests are forbidden
 
 **Never add, restore, run, or regenerate pixel comparison tests. There are no

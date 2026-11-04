@@ -42,19 +42,12 @@ describe('FlameGraph task progress', () => {
     const row = screen.getByRole('button', { name: 'Open Build UI, In Progress' });
     const summary = screen.getByRole('button', { name: 'Open spec, 0 of 1 tasks complete' });
     const status = screen.getByText('In Progress');
-    const tooltipContent = screen.getByTestId('mock-tooltip-content');
     const tooltipTrigger = screen.getByTestId('mock-tooltip-trigger');
     expect(status.className).toContain('font-normal');
     expect(status.className).toContain('text-subtle');
     expect(summary.className).toContain('cursor-pointer');
     expect(summary.className).toContain('font-normal');
     expect(row.className).not.toContain('hover:bg-');
-    expect(tooltipContent.dataset.variant).toBe('secondary');
-    expect(tooltipContent.dataset.contentClass).toContain('border-foreground/20!');
-    expect(tooltipContent.dataset.contentClass).toContain('shadow-(--elevation-overlay)!');
-    expect(tooltipContent.dataset.contentClass).toContain('ring-foreground/10');
-    expect(tooltipContent.dataset.contentClass).toContain('whitespace-normal');
-    expect(tooltipTrigger.className).toContain('cursor-pointer');
     expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('50');
 
     await fireEvent.click(tooltipTrigger);

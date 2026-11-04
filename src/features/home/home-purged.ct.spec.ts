@@ -58,9 +58,6 @@ test('Home marks purged workspaces with a Workspace purged pill', async ({ mount
   expect(pillBox!.x + pillBox!.width).toBeLessThanOrEqual(statusBox!.x);
   expect(statusBox!.x).toBeLessThan(timeBox!.x);
 
-  await pill.hover();
-  await expect(page.getByRole('tooltip')).toContainText('deleted to free disk space');
-
   await component.getByRole('button', { name: 'Board view', exact: true }).click();
   const board = component.locator('[data-home-board]');
   await expect(

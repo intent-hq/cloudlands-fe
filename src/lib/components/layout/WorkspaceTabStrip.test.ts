@@ -212,16 +212,6 @@ function tabScroller() {
   return document.querySelector<HTMLElement>('[data-workspace-tab-scroller]')!;
 }
 
-async function enterTabTooltip(tooltipRoot: HTMLElement) {
-  await fireEvent.mouseEnter(tooltipRoot.closest<HTMLElement>('[data-workspace-tab]')!);
-  await fireEvent.mouseEnter(tooltipRoot);
-}
-
-async function leaveTabTooltip(tooltipRoot: HTMLElement) {
-  await fireEvent.mouseLeave(tooltipRoot);
-  await fireEvent.mouseLeave(tooltipRoot.closest<HTMLElement>('[data-workspace-tab]')!);
-}
-
 function renderedTabOrder() {
   return Array.from(document.querySelectorAll('[data-workspace-tab-motion]')).map((tab) =>
     tab.getAttribute('data-workspace-tab-motion'),
@@ -338,9 +328,6 @@ describe('WorkspaceTabStrip', () => {
     expect(loadingSurface.querySelectorAll('[role="tab"]')).toHaveLength(1);
     expect(hydrated.className).toContain('h-full w-full');
     expect(loading.className).toContain('absolute -inset-x-px inset-y-0');
-    expect(hydrated.closest('[data-testid="workspace-tab-tooltip-root"]')?.className).toContain(
-      'absolute -inset-px',
-    );
     expect(hydrated.querySelector('[data-workspace-status="in_progress"]')).toBeTruthy();
     expect(hydrated.querySelector('[data-workspace-tab-title]')?.textContent).toBe('Alpha');
   });
@@ -396,16 +383,11 @@ describe('WorkspaceTabStrip', () => {
     expect(cluster.parentElement).toBe(controls);
   });
 
-  it('renders no presence stack and allows hovering every card, owner or not', () => {
+  it('renders no presence stack for any tab', () => {
     render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
     for (const name of [/Alpha/, /Beta/, /Gamma/]) {
       const tab = screen.getByRole('tab', { name });
       expect(tab.querySelector('[data-presence-avatar-stack]')).toBeNull();
-      expect(
-        tab
-          .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!
-          .getAttribute('data-tooltip-disable-hoverable-content'),
-      ).toBe('false');
     }
   });
 
@@ -569,146 +551,6 @@ describe('WorkspaceTabStrip', () => {
     expect(placeholder.classList).toContain('bg-sidebar-foreground/10');
   });
 
-  it('does not preview the current workspace on pointer hover or keyboard focus', async () => {
-    vi.useFakeTimers();
-    const view = render(WorkspaceTabStrip);
-    try {
-      const alpha = screen.getByRole('tab', { name: /Alpha/ });
-      const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-
-      expect(alpha.getAttribute('aria-selected')).toBe('true');
-      await enterTabTooltip(tooltipRoot);
-      vi.advanceTimersByTime(1600);
-      await tick();
-      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
-
-      await fireEvent.focusIn(alpha);
-      await tick();
-      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
-      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(800);
-
-      await fireEvent.click(alpha);
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'tabState/openWorkspaceTab', payload: ['ws-1'] }),
-      );
-    } finally {
-      view.unmount();
-      vi.useRealTimers();
-    }
-  });
-
-  it.each([200, 800])(
-    'suppresses a preview when its workspace becomes current after %i ms',
-    async (elapsed) => {
-      vi.useFakeTimers();
-      const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
-      try {
-        const alpha = screen.getByRole('tab', { name: /Alpha/ });
-        const tooltipRoot = alpha.closest<HTMLElement>(
-          '[data-testid="workspace-tab-tooltip-root"]',
-        )!;
-
-        await enterTabTooltip(tooltipRoot);
-        vi.advanceTimersByTime(elapsed);
-        await tick();
-        expect(Boolean(screen.queryByTestId('workspace-tab-preview'))).toBe(elapsed === 800);
-
-        await view.rerender({ activeWorkspaceId: 'ws-1' });
-        vi.advanceTimersByTime(1600);
-        await tick();
-        expect(screen.getByRole('tab', { name: /Alpha/ }).getAttribute('aria-selected')).toBe(
-          'true',
-        );
-        expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
-
-        await view.rerender({ activeWorkspaceId: 'ws-2' });
-        await enterTabTooltip(
-          screen
-            .getByRole('tab', { name: /Alpha/ })
-            .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!,
-        );
-        vi.advanceTimersByTime(800);
-        await tick();
-        expect(screen.queryByTestId('workspace-tab-preview')).toBeTruthy();
-      } finally {
-        view.unmount();
-        vi.useRealTimers();
-      }
-    },
-  );
-
-  it('discards a real tooltip timer when its tab becomes current before opening', async () => {
-    vi.useFakeTimers();
-    mocks.useRealTooltip = true;
-    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
-    try {
-      const alpha = screen.getByRole('tab', { name: /Alpha/ });
-      await fireEvent.mouseEnter(alpha.closest<HTMLElement>('[data-workspace-tab]')!);
-      await fireEvent.pointerMove(alpha, { pointerType: 'mouse' });
-      await vi.advanceTimersByTimeAsync(200);
-
-      await view.rerender({ activeWorkspaceId: 'ws-1' });
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(document.querySelector('[data-workspace-tab-hover-content]')).toBeNull();
-      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(800);
-
-      await view.rerender({ activeWorkspaceId: 'ws-2' });
-      await vi.advanceTimersByTimeAsync(1000);
-      expect(document.querySelector('[data-workspace-tab-hover-content]')).toBeNull();
-
-      const nextAlpha = screen.getByRole('tab', { name: /Alpha/ });
-      await fireEvent.pointerLeave(nextAlpha, { pointerType: 'mouse' });
-      await fireEvent.pointerMove(nextAlpha, { pointerType: 'mouse' });
-      await vi.advanceTimersByTimeAsync(799);
-      expect(document.querySelector('[data-workspace-tab-hover-content]')).toBeNull();
-      await vi.advanceTimersByTimeAsync(1);
-      expect(document.querySelector('[data-workspace-tab-hover-content]')).not.toBeNull();
-    } finally {
-      view.unmount();
-      workspaceHoverCardIntentSession.reset();
-      vi.useRealTimers();
-    }
-  });
-
-  it('keeps the real card open when the pointer enters it and resets hover intent after Escape', async () => {
-    vi.useFakeTimers();
-    mocks.useRealTooltip = true;
-    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
-    try {
-      const alpha = screen.getByRole('tab', { name: /Alpha/ });
-      const tab = alpha.closest<HTMLElement>('[data-workspace-tab]')!;
-      await fireEvent.mouseEnter(tab);
-      await fireEvent.pointerMove(alpha, { pointerType: 'mouse' });
-      await vi.advanceTimersByTimeAsync(800);
-
-      const content = document.querySelector<HTMLElement>(
-        '[data-workspace-tab-hover-content="ws-1"]',
-      )!;
-      expect(content).not.toBeNull();
-      await fireEvent.pointerLeave(alpha, { pointerType: 'mouse', relatedTarget: content });
-      await fireEvent.mouseLeave(tab);
-      await fireEvent.pointerEnter(content, { pointerType: 'mouse' });
-      await fireEvent.pointerMove(content, { pointerType: 'mouse' });
-      await vi.advanceTimersByTimeAsync(300);
-
-      expect(content.isConnected).toBe(true);
-      for (let node: HTMLElement | null = content; node; node = node.parentElement) {
-        expect(getComputedStyle(node).pointerEvents).not.toBe('none');
-      }
-      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(0);
-
-      await fireEvent.keyDown(content, { key: 'Escape' });
-      await vi.advanceTimersByTimeAsync(300);
-      expect(document.querySelector('[data-workspace-tab-hover-content]')).toBeNull();
-      expect(workspaceHoverCardIntentSession.currentOpenDelay).toBe(800);
-      expect(mocks.dispatch).not.toHaveBeenCalled();
-    } finally {
-      view.unmount();
-      workspaceHoverCardIntentSession.reset();
-      vi.useRealTimers();
-    }
-  });
-
   it('preserves keyboard focus when the focused tab becomes current', async () => {
     mocks.useRealTooltip = true;
     const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-2' } });
@@ -718,210 +560,6 @@ describe('WorkspaceTabStrip', () => {
     await view.rerender({ activeWorkspaceId: 'ws-1' });
 
     expect(document.activeElement).toBe(screen.getByRole('tab', { name: /Alpha/ }));
-    expect(document.querySelector('[data-workspace-tab-hover-content]')).toBeNull();
-  });
-
-  it('renders accessible tabs with delayed shared workspace hover cards', async () => {
-    vi.useFakeTimers();
-    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
-
-    try {
-      expect(screen.getAllByRole('tab')).toHaveLength(3);
-      const alpha = screen.getByRole('tab', { name: /Alpha/ });
-      expect(alpha.getAttribute('aria-selected')).toBe('false');
-      const tooltipRoot = alpha.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      expect(tooltipRoot.getAttribute('data-tooltip-disable-hoverable-content')).toBe('false');
-      await enterTabTooltip(tooltipRoot);
-      vi.advanceTimersByTime(799);
-      await tick();
-      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
-      vi.advanceTimersByTime(1);
-      await tick();
-      const alphaHover = document.querySelector('[data-workspace-tab-hover-content="ws-1"]')!;
-      expect(alphaHover.querySelector('[data-workspace-hover-card]')).toBeTruthy();
-      expect(alphaHover.querySelector('[data-workspace-hover-card-title]')?.textContent).toBe(
-        'Alpha',
-      );
-      expect(alphaHover.querySelector('[data-workspace-hover-card-status]')?.textContent).toBe(
-        'Polishing the workspace navigation experience.',
-      );
-      expect(alphaHover.querySelector('[data-workspace-hover-card-progress]')).toBeTruthy();
-      expect(alphaHover.querySelector('[data-workspace-hover-card-agents]')?.textContent).toBe(
-        'agent-1,agent-2',
-      );
-      expect(document.querySelector('[data-workspace-tab-progress]')).toBeNull();
-      expect(document.querySelector('[data-workspace-tab-description]')).toBeNull();
-      expect(
-        document
-          .querySelector('[data-tooltip-content-class]')
-          ?.getAttribute('data-tooltip-content-class'),
-      ).toContain('bg-transparent');
-      expect(screen.queryByText('feature/alpha')).toBeNull();
-      expect(screen.queryByText('Ctrl Tab')).toBeNull();
-
-      await leaveTabTooltip(tooltipRoot);
-      vi.advanceTimersByTime(300);
-      await tick();
-      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
-    } finally {
-      view.unmount();
-      vi.useRealTimers();
-    }
-  });
-
-  it('cancels and restarts the full hover delay when the pointer switches tabs', async () => {
-    vi.useFakeTimers();
-    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
-    try {
-      const alphaRoot = screen
-        .getByRole('tab', { name: /Alpha/ })
-        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      const betaRoot = screen
-        .getByRole('tab', { name: /Beta/ })
-        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-
-      await enterTabTooltip(alphaRoot);
-      vi.advanceTimersByTime(200);
-      await leaveTabTooltip(alphaRoot);
-      await enterTabTooltip(betaRoot);
-      vi.advanceTimersByTime(799);
-      await tick();
-      expect(screen.queryByTestId('workspace-tab-preview')).toBeNull();
-
-      vi.advanceTimersByTime(1);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeNull();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
-    } finally {
-      view.unmount();
-      vi.useRealTimers();
-    }
-  });
-
-  it('opens the next tab immediately during a hover session', async () => {
-    vi.useFakeTimers();
-    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
-    try {
-      const alphaRoot = screen
-        .getByRole('tab', { name: /Alpha/ })
-        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      const betaRoot = screen
-        .getByRole('tab', { name: /Beta/ })
-        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-
-      await enterTabTooltip(alphaRoot);
-      vi.advanceTimersByTime(800);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
-
-      await leaveTabTooltip(alphaRoot);
-      await enterTabTooltip(betaRoot);
-      vi.advanceTimersByTime(0);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
-
-      await leaveTabTooltip(betaRoot);
-      vi.advanceTimersByTime(300);
-    } finally {
-      view.unmount();
-      vi.useRealTimers();
-    }
-  });
-
-  it('opens tab hover content immediately on keyboard focus', async () => {
-    render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
-    const alpha = screen.getByRole('tab', { name: /Alpha/ });
-
-    await fireEvent.focusIn(alpha);
-    await tick();
-
-    expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
-  });
-
-  it('keeps the initial pointer delay after a keyboard-focus open', async () => {
-    vi.useFakeTimers();
-    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
-    try {
-      const alpha = screen.getByRole('tab', { name: /Alpha/ });
-      const betaRoot = screen
-        .getByRole('tab', { name: /Beta/ })
-        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-
-      await fireEvent.focusIn(alpha);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
-
-      await fireEvent.focusOut(alpha, { relatedTarget: document.body });
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeNull();
-
-      await enterTabTooltip(betaRoot);
-      vi.advanceTimersByTime(799);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeNull();
-
-      vi.advanceTimersByTime(1);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
-
-      await leaveTabTooltip(betaRoot);
-      vi.advanceTimersByTime(300);
-    } finally {
-      view.unmount();
-      vi.useRealTimers();
-    }
-  });
-
-  it('does not start a hover session when focus opens the tab under the pointer', async () => {
-    vi.useFakeTimers();
-    const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
-    try {
-      const alphaRoot = screen
-        .getByRole('tab', { name: /Alpha/ })
-        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      const beta = screen.getByRole('tab', { name: /Beta/ });
-      const betaRoot = beta.closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-
-      await enterTabTooltip(betaRoot);
-      await fireEvent.focusIn(beta);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-2"]')).toBeTruthy();
-
-      await fireEvent.focusOut(beta, { relatedTarget: document.body });
-      await leaveTabTooltip(betaRoot);
-      await enterTabTooltip(alphaRoot);
-      vi.advanceTimersByTime(799);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeNull();
-
-      vi.advanceTimersByTime(1);
-      await tick();
-      expect(document.querySelector('[data-workspace-tab-hover-content="ws-1"]')).toBeTruthy();
-
-      await leaveTabTooltip(alphaRoot);
-      vi.advanceTimersByTime(300);
-    } finally {
-      view.unmount();
-      vi.useRealTimers();
-    }
-  });
-
-  it('clears a pending tab hover open when the strip is destroyed', async () => {
-    vi.useFakeTimers();
-    try {
-      const view = render(WorkspaceTabStrip, { props: { activeWorkspaceId: 'ws-3' } });
-      const alphaRoot = screen
-        .getByRole('tab', { name: /Alpha/ })
-        .closest<HTMLElement>('[data-testid="workspace-tab-tooltip-root"]')!;
-      const timerCountBeforeHover = vi.getTimerCount();
-      await enterTabTooltip(alphaRoot);
-      expect(vi.getTimerCount()).toBe(timerCountBeforeHover + 1);
-
-      view.unmount();
-      expect(vi.getTimerCount()).toBeLessThanOrEqual(timerCountBeforeHover);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it('keeps every flare mounted and synchronizes its visibility across switching', async () => {
@@ -1240,7 +878,6 @@ describe('WorkspaceTabStrip', () => {
   it('keeps the close control outside the hover trigger and isolated from navigation', async () => {
     render(WorkspaceTabStrip);
     const close = screen.getByRole('button', { name: 'Close Beta' });
-    expect(close.closest('[data-tooltip-delay]')).toBeNull();
 
     await fireEvent.click(close);
 

@@ -9,7 +9,6 @@ let editor: Editor | null = null;
 afterEach(() => {
   editor?.destroy();
   editor = null;
-  vi.useRealTimers();
   document.body.innerHTML = '';
 });
 
@@ -38,13 +37,6 @@ describe('TrailingHintExtension', () => {
     expect(hint?.parentElement).toBe(element.querySelector('p'));
     expect(hint?.textContent).toBe('→');
     expect(hint?.getAttribute('aria-label')).toBe('Enhance prompt');
-
-    vi.useFakeTimers();
-    hint?.dispatchEvent(new MouseEvent('mouseenter'));
-    vi.advanceTimersByTime(300);
-    expect(document.querySelector('[role="tooltip"]')?.textContent).toBe('Enhance prompt');
-    hint?.dispatchEvent(new MouseEvent('mouseleave'));
-    expect(document.querySelector('[role="tooltip"]')).toBeNull();
 
     hint?.click();
     expect(onActivate).toHaveBeenCalledOnce();
