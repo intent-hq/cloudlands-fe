@@ -189,7 +189,7 @@ function loginPageHtml(
 <title>${escapeHtml(text.title)}</title>
 <style>
   :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: Canvas; color: CanvasText; }
   form { width: min(22rem, calc(100vw - 2rem)); display: grid; gap: 0.75rem; }
   h1 { font-size: 1.25rem; margin: 0; }
   p { margin: 0; opacity: 0.8; }
