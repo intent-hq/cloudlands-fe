@@ -201,7 +201,7 @@
     value?: string;
     onchange?: (event: CustomEvent<RepoChangeDetail>) => void;
     triggerClass?: string;
-    /** Form picker label; becomes "Project" when plain folders (Labs) apply and no git repository is listed. */
+    /** Form picker label; becomes "Folder" when plain folders (Labs) apply and no git repository is listed. */
     rowLabel?: string;
     displayValue?: string;
     /** Dimmed suffix rendered after the repo name, e.g. "owner/repo" */
@@ -707,7 +707,7 @@
     return current ? [current, ...recentRepos] : recentRepos;
   });
   // The form row label follows what the list holds (plain folders, Labs):
-  // "Codebase" with any git repository listed, otherwise "Project" without a
+  // "Codebase" with any git repository listed, otherwise "Folder" without a
   // forge or with a plain folder listed.
   const plainFolderCreationAvailable$ = selectPlainFolderCreationAvailable();
   const forgeConnectionState$ = selectForgeConnectionState();
@@ -722,7 +722,7 @@
       hasGitRepositoryEntry: formRepositoryChoices.some((repo) => !isPlainFolderEntry(repo)),
       hasPlainFolderEntry: formRepositoryChoices.some(isPlainFolderEntry),
     });
-    return kind === 'project' ? m.workspace_compactInitializer_project_label() : rowLabel;
+    return kind === 'folder' ? m.workspace_compactInitializer_folder_label() : rowLabel;
   });
   const formRepos = $derived(
     formQuery.trim() === ''

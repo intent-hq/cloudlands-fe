@@ -6771,7 +6771,7 @@
   "workspace_compactInitializer_progressWorktree_label": "Worktree wird erstellt…",
   "workspace_compactInitializer_promptEnhanced_toast": "Prompt verbessert",
   "workspace_compactInitializer_repository_label": "Codebasis",
-  "workspace_compactInitializer_project_label": "Projekt",
+  "workspace_compactInitializer_folder_label": "Ordner",
   "workspace_compactInitializer_branch_label": "Branch",
   "workspace_compactInitializer_setup_label": "Setup-Skript",
   "workspace_compactInitializer_setup_description": "Wähle, was nach dem Erstellen des Arbeitsbereichs ausgeführt wird, zum Beispiel die Installation von Abhängigkeiten.",

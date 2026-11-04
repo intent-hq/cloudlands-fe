@@ -2,10 +2,10 @@
  * @vitest-environment jsdom
  *
  * The New Workspace form picker's row label follows what the list can hold:
- * "Codebase" whenever a git repository is listed; otherwise "Project" with no
+ * "Codebase" whenever a git repository is listed; otherwise "Folder" with no
  * forge connected or a plain folder listed; otherwise (forge connected, empty
  * list) "Codebase". Plain folders not offered (Labs off) keep "Codebase". The
- * label never reads "Codebase/Project" and updates live.
+ * label never reads "Codebase/Project" or "Codebase/Folder" and updates live.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -256,17 +256,17 @@ describe('RepoSelector form row label', () => {
     expect(rowLabel(container)).toBe('Codebase');
   });
 
-  it('reads Project with an empty list and no forge connected', () => {
+  it('reads Folder with an empty list and no forge connected', () => {
     mocks.forgeState = 'none';
     const { container } = renderForm();
-    expect(rowLabel(container)).toBe('Project');
+    expect(rowLabel(container)).toBe('Folder');
   });
 
-  it('reads Project with only plain folders listed and a forge connected', () => {
+  it('reads Folder with only plain folders listed and a forge connected', () => {
     mocks.forgeState = 'connected';
     mocks.state.recentRepos = [plainFolder];
     const { container } = renderForm();
-    expect(rowLabel(container)).toBe('Project');
+    expect(rowLabel(container)).toBe('Folder');
   });
 
   it('reads Codebase with an empty list and a forge connected', () => {
@@ -295,7 +295,7 @@ describe('RepoSelector form row label', () => {
     expect(rowLabel(container)).toBe('Codebase');
   });
 
-  it('reads Project when the selected plain folder is the only entry', () => {
+  it('reads Folder when the selected plain folder is the only entry', () => {
     mocks.forgeState = 'connected';
     const { container } = render(RepoSelector, {
       props: {
@@ -305,7 +305,7 @@ describe('RepoSelector form row label', () => {
         plainFolderSelected: true,
       },
     });
-    expect(rowLabel(container)).toBe('Project');
+    expect(rowLabel(container)).toBe('Folder');
   });
 
   it('keeps Codebase for a selected git folder not in recents yet', () => {
@@ -329,13 +329,13 @@ describe('RepoSelector form row label', () => {
     mocks.forgeState = 'none';
     const { container } = renderForm();
     await fireEvent.click(container.querySelector('button')!);
-    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Project' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('dialog', { name: 'Folder' })).toBeTruthy());
   });
 
   it('updates live as forge connection and the list change', async () => {
     mocks.forgeState = 'none';
     const { container } = renderForm();
-    expect(rowLabel(container)).toBe('Project');
+    expect(rowLabel(container)).toBe('Folder');
 
     mocks.forgeState = 'connected';
     notify();
@@ -343,7 +343,7 @@ describe('RepoSelector form row label', () => {
 
     mocks.state.recentRepos = [plainFolder];
     notify();
-    await waitFor(() => expect(rowLabel(container)).toBe('Project'));
+    await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
 
     mocks.state.recentRepos = [gitRepo, plainFolder];
     notify();
@@ -352,7 +352,8 @@ describe('RepoSelector form row label', () => {
     mocks.forgeState = 'none';
     mocks.state.recentRepos = [];
     notify();
-    await waitFor(() => expect(rowLabel(container)).toBe('Project'));
+    await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
     expect(container.textContent).not.toContain('Codebase/Project');
+    expect(container.textContent).not.toContain('Codebase/Folder');
   });
 });
