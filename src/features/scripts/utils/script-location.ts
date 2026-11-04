@@ -143,12 +143,6 @@ export function machineRunStatus(runtime: ScriptRuntimeState): {
 
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 
-/**
- * The machine refusal behind a failed machine-run restart (`-32602`
- * `machine-update-required`, `-32603` `machine-unreachable`, PROTOCOL
- * `methods/nodes.md` "Remote machine errors"), so the panel can show it with
- * the app's own wording. Null for any other error.
- */
 /** Code of the refusal of a machine-run (re)start while its agent is being stopped for good. */
 const AGENT_ENDING_REFUSAL = /\bremote-script-agent-ending:/;
 
@@ -161,6 +155,12 @@ export function isAgentEndingRefusal(message: string | undefined): boolean {
   return !!message && AGENT_ENDING_REFUSAL.test(message);
 }
 
+/**
+ * The machine refusal behind a failed machine-run restart (`-32602`
+ * `machine-update-required`, `-32603` `machine-unreachable`, PROTOCOL
+ * `methods/nodes.md` "Remote machine errors"), so the panel can show it with
+ * the app's own wording. Null for any other error.
+ */
 export function machineRunFailure(error: unknown): RemoteMachineFailure | null {
   if (!error || typeof error !== 'object') return null;
   const data = (error as { data?: unknown }).data;
