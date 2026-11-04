@@ -2911,6 +2911,56 @@ describe('connections:* IPC handlers', () => {
     );
   });
 
+  it('drops an enabled-providers read that an execution-context change overtook', async () => {
+    const send = installWindow();
+    let releaseStale: (value: unknown) => void = () => {};
+    let contextReads = 0;
+    rpc.handler = async (method) => {
+      if (method === 'host.providerDiscovery')
+        return {
+          providers: [
+            { id: 'claude-code', displayName: 'Claude Code', installed: true },
+            { id: 'codex', displayName: 'Codex', installed: true },
+          ],
+        };
+      if (method === 'host.executionContext') {
+        contextReads += 1;
+        if (contextReads === 1) return new Promise((resolve) => (releaseStale = resolve));
+        return { enabledProviderIds: ['claude-code', 'codex'] };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+    const remoteRecord = () => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      return payload?.connections.find((connection) => connection.id === REMOTE.id);
+    };
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => expect(contextReads).toBe(1));
+    remote.emit('notification', {
+      jsonrpc: '2.0',
+      method: 'events.event',
+      params: { subscriptionId: 's', event: { type: 'host:execution-context-changed' } },
+    });
+    await vi.waitFor(() => expect(remoteRecord()?.providers).toHaveLength(2));
+
+    releaseStale({ enabledProviderIds: ['claude-code'] });
+    for (let tick = 0; tick < 10; tick++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(remoteRecord()?.providers).toEqual([
+      { id: 'claude-code', displayName: 'Claude Code' },
+      { id: 'codex', displayName: 'Codex' },
+    ]);
+  });
+
   it('keeps showing installed providers when an older host has no enablement projection', async () => {
     const send = installWindow();
     rpc.handler = async (method) => {
