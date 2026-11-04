@@ -235,6 +235,10 @@ const connectedDaemonVersions = new Map<string, string>();
 const connectedHostPlatforms = new Map<string, { os: string; arch: string | null }>();
 const connectedInstalledProviders = new Map<string, ConnectionProviderSummary[]>();
 const connectedEnabledProviderIds = new Map<string, string[]>();
+// Per-connection read generation: a newer `host.executionContext` read (a
+// reconnect or a `host:execution-context-changed` event) supersedes any
+// earlier one still in flight, so a late stale reply never overwrites it.
+const enabledProviderReadGenerations = new Map<string, number>();
 const connectedProviders = new Map<string, ConnectionProviderSummary[]>();
 
 function clearConnectedHostFacts(connectionId: string): void {
@@ -420,6 +424,7 @@ export function __resetDaemonBuildLogForTesting(): void {
   connectedHostPlatforms.clear();
   connectedInstalledProviders.clear();
   connectedEnabledProviderIds.clear();
+  enabledProviderReadGenerations.clear();
   connectedProviders.clear();
   localHelloObserved = false;
 }
@@ -2099,9 +2104,12 @@ function createAdditionalBackendClient(
     backendNotificationForwarder.emit('notification', id, notification);
     if (poolLifecycle && poolLifecycle.phase !== 'active') return;
     if (backendClients.get(id) !== instance) return;
-    // Whichever subscription carries it (the renderer's on its connection),
-    // a provider enablement change re-reads that host's enabled providers so
-    // its Settings → Machines row hides or shows them without a reconnect.
+    // Whichever subscription carries it, a provider enablement change re-reads
+    // that host's enabled providers so its Settings → Machines row hides or
+    // shows them without a reconnect. Only connections with an events
+    // subscription (the renderer's, on the backend a window uses — where
+    // provider settings are edited) receive it; other rows refresh on their
+    // next reconnect.
     if (isExecutionContextChangedEvent(notification)) {
       void captureConnectedEnabledProvidersOwned(id);
     }
@@ -2952,8 +2960,8 @@ function isExecutionContextChangedEvent(notification: JsonRpcNotification): bool
  * Capture which providers a connected daemon (local or a saved remote) has
  * enabled, via `host.executionContext` `enabledProviderIds`, so its Settings →
  * Machines row hides installed-but-disabled providers. Runs on every
- * (re)connect hello and on `host:execution-context-changed`. Guest sessions
- * are skipped. Fail-soft: an error or a host without the projection leaves
+ * (re)connect hello and on `host:execution-context-changed`; only the latest
+ * read for a connection applies. Guest sessions are skipped. Fail-soft: an error or a host without the projection leaves
  * enablement unknown, which keeps showing every installed provider. A result
  * from a client replaced mid-flight is dropped.
  */
@@ -2969,18 +2977,22 @@ async function captureConnectedEnabledProvidersOriginal(
 ): Promise<void> {
   const client = backendClients.get(id);
   if (!client) return;
+  const generation = (enabledProviderReadGenerations.get(id) ?? 0) + 1;
+  enabledProviderReadGenerations.set(id, generation);
+  const current = () =>
+    backendClients.get(id) === client && enabledProviderReadGenerations.get(id) === generation;
   try {
     // Bind this owner to the member before any await, like the hostname capture.
     poolClient(owner, client);
     if (id !== LOCAL_CONNECTION_ID && (await guestSessionsStore.findById(id))) return;
     const result = await poolRequest(owner, client, 'host.executionContext', {});
-    if (backendClients.get(id) !== client) return;
+    if (!current()) return;
     const enabled = extractEnabledProviderIds(result);
     if (enabled) connectedEnabledProviderIds.set(id, enabled);
     else connectedEnabledProviderIds.delete(id);
   } catch (error) {
     recordPoolError(owner, error);
-    if (backendClients.get(id) !== client) return;
+    if (!current()) return;
     connectedEnabledProviderIds.delete(id);
     logger.warn('Failed to capture enabled providers for the Machines list', {
       connectionId: id,
