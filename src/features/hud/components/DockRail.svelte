@@ -148,6 +148,8 @@
   let magnificationCenter = $state<number | null>(null);
   let windowFocused = $state(false);
   let focusedWorkspaceId = $state<string | null>(null);
+  /** The last key pressed in the dock: only keyboard focus opens a preview. */
+  let lastKeyAt = 0;
   let hoveredWorkspaceId = $state<string | null>(null);
   let edgeHoveredWorkspaceId = $state<string | null>(null);
   let hoverDismissed = false;
@@ -597,7 +599,10 @@
   });
 </script>
 
-<svelte:window bind:innerHeight={windowHeight} />
+<svelte:window
+  bind:innerHeight={windowHeight}
+  onkeydowncapture={() => (lastKeyAt = performance.now())}
+/>
 
 {#if placement && onPlacementCommand}
   <AdaptiveDockShell
@@ -737,7 +742,10 @@
                     revealDockItem(event.currentTarget);
                     focusedWorkspaceId = workspaceId;
                     magnificationCenter = index;
-                    showPreview(workspaceId, event.currentTarget as HTMLButtonElement);
+                    // Only keyboard navigation previews: macOS restoring the dock's focus
+                    // (switching desktops, reactivating the app) must not open anything.
+                    if (performance.now() - lastKeyAt < 1000)
+                      showPreview(workspaceId, event.currentTarget as HTMLButtonElement);
                   }}
                   onblur={() => {
                     focusedWorkspaceId = null;
