@@ -189,3 +189,44 @@ it('starts question persistence alongside an injected draft owner and cancels he
   expect(transport.set).not.toHaveBeenCalled();
   expect(transport.clear).not.toHaveBeenCalled();
 });
+
+function heldTransport() {
+  const transport: DraftsClient = {
+    get: vi.fn(async () => ({ text: 'nested draft', updatedAt: '2026-08-23T12:00:00.000Z' })),
+    set: vi.fn(async () => ({ ok: true, updatedAt: '2026-08-23T12:00:00.000Z' })),
+    clear: vi.fn(async () => ({ ok: true })),
+  };
+  return transport;
+}
+
+it('shares the running fixture with a nested start and routes requests to its transport', async () => {
+  const nested = heldTransport();
+  const start = vi.spyOn(store, 'runSaga');
+  const nestedStops = startChatFixtureSagas(store, nested);
+  expect(start).not.toHaveBeenCalled();
+  store.dispatch(chatDraftOwnerOpened('composer'));
+  store.dispatch(chatDraftRestoreRequested('composer', 'nested', 'workspace', 'agent'));
+  await settle();
+  expect(nested.get).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+  expect(draft()?.restore).toMatchObject({ status: 'restored', draft: { text: 'nested draft' } });
+
+  nestedStops.forEach((stop) => stop());
+  store.dispatch(chatDraftRestoreRequested('composer', 'outer', 'workspace', 'agent'));
+  await settle();
+  expect(nested.get).toHaveBeenCalledOnce();
+  expect(draft()?.restore).toMatchObject({ status: 'restored', requestId: 'outer', draft: null });
+});
+
+it('starts a fresh fixture after the store is disposed without its stops', async () => {
+  stopRoot();
+  stopRoot = startRootStoreLifecycle(store, { startSagas: () => [] });
+  const transport = heldTransport();
+  const start = vi.spyOn(store, 'runSaga');
+  stops = startChatFixtureSagas(store, transport);
+  expect(start).toHaveBeenCalledTimes(2);
+  store.dispatch(chatDraftOwnerOpened('composer'));
+  store.dispatch(chatDraftRestoreRequested('composer', 'fresh', 'workspace', 'agent'));
+  await settle();
+  expect(transport.get).toHaveBeenCalledExactlyOnceWith('workspace', 'agent');
+  expect(draft()?.restore).toMatchObject({ status: 'restored', draft: { text: 'nested draft' } });
+});
