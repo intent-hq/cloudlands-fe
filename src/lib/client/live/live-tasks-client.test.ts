@@ -1085,9 +1085,9 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
     await vi.waitFor(() => expect(latestTasks(handler)).toHaveLength(5));
     expect(requestsFor('task.list')).toEqual(
       expect.arrayContaining([
-        { workspaceId: 'ws-1', limit: 200, nextToken: 'next' },
-        { workspaceId: 'ws-1', limit: 200, nextToken: 'last' },
-        { workspaceId: 'ws-2', limit: 200, nextToken: 'next' },
+        { workspaceId: 'ws-1', nextToken: 'next' },
+        { workspaceId: 'ws-1', nextToken: 'last' },
+        { workspaceId: 'ws-2', nextToken: 'next' },
       ]),
     );
     expect(requestsFor('task.list')).toHaveLength(3);

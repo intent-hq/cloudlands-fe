@@ -470,11 +470,6 @@ export class LiveTasksClient implements TasksClient {
       channel: {
         subscribeMethod: 'task.subscribe',
         unsubscribeMethod: 'task.unsubscribe',
-        continuation: {
-          method: 'task.list',
-          key: 'tasks',
-          params: (scope) => ({ workspaceId: scope.workspaceId, limit: 200 }),
-        },
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
