@@ -700,6 +700,16 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   same after another trigger. Lint (`intent/no-wait-for-timeout-in-ct`) caps each spec's
   sleeps at its baseline (`eslint-rules/baselines/`, shrink-only); keep a sleep, disabled
   on the line with the reason, only to observe a quiet period.
+- Activate a hover-only action (a row toolbar that takes pointer events only while its row
+  is hovered) with `activateHoverAction(action, region)` (`src/test/ct-test.ts`), never
+  `row.hover()` then a click: Playwright checks the hit target before it moves the
+  pointer, so a row that moves after the hover leaves every retry hitting the row text
+  until the timeout (cloudlands-fe#4112; ejected cloudlands-fe#4078 from the queue). The
+  helper waits for `region` to settle, presses Enter on the action, then waits for
+  `region` to change and settle (`requireChange: false` when it may not). Lint
+  (`intent/no-hover-then-click-in-ct`) caps each spec's sites at its shrink-only baseline;
+  keep a pointer click, disabled on the line with the reason, only to cover the pointer
+  path on a row that cannot move.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser
