@@ -37,7 +37,7 @@
     "build:main": "cross-env NODE_ENV=production tsc -p tsconfig.main.json && tsx scripts/fix-esm-imports.ts",
     "build:main:dev": "node scripts/pnpm-run.mjs build:main && node scripts/dev-ready.js main",
     "build:cdp-mcp": "node scripts/build-cdp-mcp.js",
-    "build:preload": "cross-env NODE_ENV=production node scripts/pnpm-run.mjs generate:ipc-channels && tsc -p tsconfig.preload.json && tsc-alias -p tsconfig.preload.json && tsx scripts/fix-esm-imports.ts",
+    "build:preload": "cross-env NODE_ENV=production node scripts/pnpm-run.mjs generate:ipc-channels && node scripts/build-preload.mjs",
     "build:preload:dev": "node scripts/pnpm-run.mjs build:preload && node scripts/dev-ready.js preload",
     "preview": "vite preview",
     "start": "electron .",
