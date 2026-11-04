@@ -107,6 +107,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
       `
       const {app,BrowserWindow,globalShortcut}=require('electron');
       app.setPath('userData',${JSON.stringify(profile)});app.setPath('sessionData',${JSON.stringify(profile)});
+      const rendererErrors=[];app.on('web-contents-created',(_event,contents)=>{contents.on('console-message',(_event,level,message)=>{if(level>=2)rendererErrors.push(message);});contents.on('preload-error',(_event,_path,error)=>rendererErrors.push(String(error)));});globalThis.shortcutRendererErrors=rendererErrors;
       const api=require('./settings.cjs');const callbacks=new Map();const calls=[];const refused=[];
       let failSave=false;
       const registrar=api.createDockShortcutRegistration({register(key,callback){const ok=globalShortcut.register(key,callback);if(ok)callbacks.set(key,callback);return ok;},unregister(key){callbacks.delete(key);globalShortcut.unregister(key);}},action=>calls.push(action),key=>refused.push(key));
@@ -128,14 +129,40 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
         env: { ...env, DD_TRACE_ENABLED: 'false' },
       });
       const page = await application.firstWindow();
-      await expect
-        .poll(() =>
-          page.evaluate(
-            () =>
-              (window as any).shortcutFixture?.store.state.userPreferences.dockShortcuts?.enabled,
-          ),
-        )
-        .toBe(true);
+      page.on('pageerror', (error) => console.error('Shortcut fixture renderer:', error.message));
+      page.on('requestfailed', (request) =>
+        console.error('Shortcut fixture request:', request.url(), request.failure()?.errorText),
+      );
+      page.on('console', (message) => {
+        if (message.type() === 'error') console.error(message.text());
+      });
+      await page.waitForFunction(() => !!(window as any).shortcutFixture, null, { timeout: 60000 });
+      try {
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () =>
+                (window as any).shortcutFixture?.store.state.userPreferences.dockShortcuts?.enabled,
+            ),
+          )
+          .toBe(true);
+      } catch (error) {
+        const startup = await page.evaluate(async () => {
+          const fixture = (window as any).shortcutFixture;
+          let native;
+          try {
+            native = await (window as any).electronAPI.invoke('dock-shortcuts:get', {
+              appOverrides: {},
+            });
+          } catch (error) {
+            native = String(error);
+          }
+          return { prefs: fixture?.store.state.userPreferences, native, url: location.href };
+        });
+        await writeFile(info.outputPath('startup-state.json'), JSON.stringify(startup, null, 2));
+        console.error('Shortcut startup:', JSON.stringify(startup));
+        throw error;
+      }
       return page;
     };
     let page = await launch();
@@ -355,7 +382,13 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
       ),
     );
   } finally {
-    if (application) await application.close();
+    if (application) {
+      const errors = await application
+        .evaluate(() => (globalThis as any).shortcutRendererErrors)
+        .catch(() => []);
+      await writeFile(info.outputPath('renderer-errors.json'), JSON.stringify(errors, null, 2));
+      await application.close();
+    }
     await server?.close();
     await rm(root, { recursive: true, force: true });
   }

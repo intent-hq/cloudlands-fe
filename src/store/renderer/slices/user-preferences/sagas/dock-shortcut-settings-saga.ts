@@ -20,6 +20,12 @@ import {
   resetAllShortcutOverrides,
 } from '../user-preferences-slice';
 /** Native-owned settings must bypass the renderer's mock IPC router. */
+async function awaitNativeDocumentReady(): Promise<void> {
+  if (typeof window === 'undefined' || document.readyState === 'complete') return;
+  await new Promise<void>((resolve) =>
+    window.addEventListener('load', () => resolve(), { once: true }),
+  );
+}
 async function invokeDockShortcuts(channel: string, payload: unknown): Promise<unknown> {
   const bridge = typeof window !== 'undefined' ? window.electronAPI : undefined;
   if (!bridge || typeof bridge.invoke !== 'function')
@@ -62,6 +68,8 @@ export function* dockShortcutSettingsSaga(): SagaGenerator<void> {
     receive,
   );
   try {
+    // Root components can mount before main has rebound the new document at dom-ready.
+    yield* call(awaitNativeDocumentReady);
     yield* refresh();
     while (true) {
       const action = (yield* take(requests)) as ShortcutRequest;
