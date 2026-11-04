@@ -28,7 +28,7 @@ describe('resolveRepositoryRowLabelKind', () => {
     },
   );
 
-  it('is Project with no git repository listed and no forge connected', () => {
+  it('is Folder with no git repository listed and no forge connected', () => {
     for (const hasPlainFolderEntry of [false, true]) {
       expect(
         resolveRepositoryRowLabelKind({
@@ -37,12 +37,12 @@ describe('resolveRepositoryRowLabelKind', () => {
           hasGitRepositoryEntry: false,
           hasPlainFolderEntry,
         }),
-      ).toBe('project');
+      ).toBe('folder');
     }
   });
 
   it.each(['connected', 'unknown'] as const)(
-    'is Project with only plain folders listed (forge %s)',
+    'is Folder with only plain folders listed (forge %s)',
     (forgeState) => {
       expect(
         resolveRepositoryRowLabelKind({
@@ -51,7 +51,7 @@ describe('resolveRepositoryRowLabelKind', () => {
           hasGitRepositoryEntry: false,
           hasPlainFolderEntry: true,
         }),
-      ).toBe('project');
+      ).toBe('folder');
     },
   );
 
