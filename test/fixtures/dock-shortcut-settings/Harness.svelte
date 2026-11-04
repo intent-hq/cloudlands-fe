@@ -16,9 +16,22 @@
   });
   onDestroy(stop);
   const workspaceActions: string[] = [];
+  const keys: unknown[] = [];
+  const recordKey = (event: KeyboardEvent) =>
+    keys.push({
+      key: event.key,
+      code: event.code,
+      ctrl: event.ctrlKey,
+      alt: event.altKey,
+      shift: event.shiftKey,
+      target: (event.target as HTMLElement)?.id,
+    });
+  window.addEventListener('keydown', recordKey, true);
+  onDestroy(() => window.removeEventListener('keydown', recordKey, true));
   Object.assign(window, {
     shortcutFixture: {
       store,
+      keys,
       workspaceActions,
       effective: getEffectiveShortcut,
       refresh: () => store.dispatch(hydrateShortcutOverrides({})),

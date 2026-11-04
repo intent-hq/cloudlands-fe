@@ -178,6 +178,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
           ),
         )
         .toBeTruthy();
+      await expect(field()).toBeFocused();
       await page.keyboard.press(chord);
       await expect
         .poll(() =>
@@ -207,6 +208,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
         globalShortcut.isRegistered('Control+Shift+D'),
       ),
     ).toBe(false);
+    await expect(field()).toBeFocused();
     await page.keyboard.press('Control+Alt+Shift+Y');
     await expect.poll(raw).toBe('ctrl+alt+shift+y');
     expect(
@@ -383,6 +385,24 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
     );
   } finally {
     if (application) {
+      const state = await application
+        .firstWindow()
+        .then((page) =>
+          page.evaluate(() => ({
+            prefs: (window as any).shortcutFixture?.store.state.userPreferences,
+            keys: (window as any).shortcutFixture?.keys,
+            focused: document.activeElement?.id,
+            hasFocus: document.hasFocus(),
+          })),
+        )
+        .catch((error) => String(error));
+      const native = await application
+        .evaluate(() => (globalThis as any).editableDock.prefs.snapshot())
+        .catch((error) => String(error));
+      await writeFile(
+        info.outputPath('final-state.json'),
+        JSON.stringify({ state, native }, null, 2),
+      );
       const errors = await application
         .evaluate(() => (globalThis as any).shortcutRendererErrors)
         .catch(() => []);

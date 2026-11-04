@@ -55,6 +55,7 @@
   const isMac =
     typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
   let capturing = $state<ShortcutId | null>(null);
+  let captureWasReady = $state(false);
   let capturedValues = $state<Partial<Record<ShortcutId, string>>>({});
 
   function effectiveValue(id: ShortcutId, defaultKey: string) {
@@ -63,6 +64,7 @@
 
   function startCapture(id: ShortcutId) {
     if (capturing === id) return;
+    captureWasReady = false;
     capturing = id;
     if ($dockSettings) appStore.dispatch(dockShortcutCaptureRequested(true));
   }
@@ -93,7 +95,15 @@
   }
 
   $effect(() => {
-    if (capturing && $dockSettings && !$dockPending && !$captureToken) {
+    if (capturing && $captureToken) captureWasReady = true;
+    // A new lease has no token until its IPC reply. Only retire a ready or failed capture.
+    if (
+      capturing &&
+      $dockSettings &&
+      !$dockPending &&
+      !$captureToken &&
+      (captureWasReady || $dockError)
+    ) {
       const id = capturing;
       capturing = null;
       document.getElementById(`shortcut-${id}`)?.blur();
