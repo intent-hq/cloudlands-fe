@@ -1167,6 +1167,16 @@ function describeCoverage(coverage) {
   return `checks ${part(coverage.counts.checks)}; unit files ${part(coverage.counts.unitFiles)}`;
 }
 
+/** Whether a check ended because it was interrupted (Ctrl+C or SIGTERM), not because it failed. */
+function isInterruption(error) {
+  return (
+    error?.signal === 'SIGINT' ||
+    error?.signal === 'SIGTERM' ||
+    error?.exitCode === 130 ||
+    error?.exitCode === 143
+  );
+}
+
 export async function runVerificationPlan(plan, root, options = {}) {
   const env = options.env ?? process.env;
   const run = options.runCheck ?? runCheck;
@@ -1272,6 +1282,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
   // With keepGoing a failed check is recorded and the remaining checks still run,
   // so one attempt reports (and records) every failure instead of the first.
   const failures = [];
+  let executed = 0;
   try {
     for (const check of plan.checks) {
       if (terminating) throw new Error('verification interrupted');
@@ -1282,6 +1293,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
         continue;
       }
       const command = commandIdentity(check);
+      executed += 1;
       attempt?.append({
         type: 'check-start',
         id: check.id,
@@ -1307,17 +1319,20 @@ export async function runVerificationPlan(plan, root, options = {}) {
           }
         }
       } catch (error) {
+        // Ctrl+C reaches the check and this process together, and the check's
+        // exit can be handled before our own signal handler sets `terminating`.
+        const interrupted = terminating || isInterruption(error);
         attempt?.append({
           type: 'check-end',
           id: check.id,
           invocation,
           command,
           // A check stopped by a termination signal is unfinished, not failed.
-          status: terminating ? 'interrupted' : 'failed',
+          status: interrupted ? 'interrupted' : 'failed',
           exitCode: error?.exitCode ?? null,
           signal: error?.signal ?? null,
         });
-        if (!options.keepGoing || terminating) throw error;
+        if (!options.keepGoing || interrupted) throw error;
         failures.push({ check, error });
         log(
           `[verify:changed] ${error instanceof Error ? error.message : error}\n[verify:changed] --keep-going: continuing with the remaining checks`,
@@ -1337,14 +1352,16 @@ export async function runVerificationPlan(plan, root, options = {}) {
     finish();
   }
   if (failures.length) {
-    const firstLine = (error) =>
-      String(error instanceof Error ? error.message : error).split('\n')[0];
-    const lines = failures.map(({ error }) => `  - ${firstLine(error)}`);
+    const lines = failures.map(({ check, error }) => {
+      const reason = String(error instanceof Error ? error.message : error).split('\n')[0];
+      // A lock timeout, for one, does not name the check it was waiting for.
+      return `  - ${reason.startsWith(check.label) ? reason : `${check.label}: ${reason}`}`;
+    });
     const next = attempt
       ? `See ${attempt.path}/coverage.json; rerun with --resume to run only what did not pass.`
       : 'Rerun to verify again.';
     throw new Error(
-      `${failures.length} of ${plan.checks.length} check(s) failed:\n${lines.join('\n')}\n${next}`,
+      `${failures.length} of ${executed} check(s) failed:\n${lines.join('\n')}\n${next}`,
     );
   }
   if (coverage && !coverage.complete) {

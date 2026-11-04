@@ -333,9 +333,11 @@ describe('verify:changed continuation with real fixture graphs', { timeout: 180_
       'vitest-declared src/contract.test.ts': 'executed-passed',
       'vitest-ui-invariants src/ui.test.ts': 'executed-passed',
     });
-    expect(failed.coverage?.checks.find((check) => check.id === 'fixture-check')?.status).toBe(
-      'executed-passed',
-    );
+    const checkStatus = (id: string) =>
+      failed.coverage?.checks.find((check) => check.id === id)?.status;
+    expect(checkStatus('vitest-related')).toBe('failed');
+    expect(checkStatus('vitest-ui-invariants')).toBe('executed-passed');
+    expect(checkStatus('fixture-check')).toBe('executed-passed');
     rmSync(failFlag);
 
     const resumed = await verify(root, changed, { resume: true });
