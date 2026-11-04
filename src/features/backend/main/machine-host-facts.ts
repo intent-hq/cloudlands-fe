@@ -33,3 +33,29 @@ export function extractInstalledProviders(result: unknown): ConnectionProviderSu
     return [{ id: row.id, displayName }];
   });
 }
+
+/**
+ * The providers a `host.executionContext` result (or the complete context a
+ * `host:execution-context-changed` event carries) reports enabled on that
+ * daemon host (`enabledProviderIds`). Null when the projection is missing or
+ * malformed, as on an older host, so enablement stays unknown.
+ */
+export function extractEnabledProviderIds(result: unknown): string[] | null {
+  if (!record(result) || !Array.isArray(result.enabledProviderIds)) return null;
+  const ids = result.enabledProviderIds;
+  return ids.every((id): id is string => typeof id === 'string' && id.length > 0) ? ids : null;
+}
+
+/**
+ * The installed providers the Machines row shows: only those enabled on that
+ * host. Unknown enablement (null) keeps every installed provider, matching
+ * the rows of hosts that predate the projection.
+ */
+export function onlyEnabledProviders(
+  installed: ConnectionProviderSummary[] | null,
+  enabledProviderIds: string[] | null,
+): ConnectionProviderSummary[] | null {
+  if (!installed || !enabledProviderIds) return installed;
+  const enabled = new Set(enabledProviderIds);
+  return installed.filter((provider) => enabled.has(provider.id));
+}
