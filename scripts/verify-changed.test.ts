@@ -1856,13 +1856,27 @@ describe('verification planning', () => {
   // run stops at the first failure, and a Mobile-tab type error surfaced only after
   // three ~17-minute runs when the type checks ran last (cloudlands-fe#4115).
   it.each([
-    ['a selective plan', ['src/lib/Widget.svelte', 'src/shared/protocol.ts']],
-    ['the safe fallback', ['native/tool.bin']],
-  ])('runs every static type check before any test lane in %s', (_name, files) => {
+    ['a selective plan', ['src/lib/Widget.svelte', 'src/shared/protocol.ts'], ['ct-related']],
+    [
+      'a plan with integration, full CT and full Playwright lanes',
+      [
+        'src/lib/Widget.svelte',
+        'src/shared/protocol.ts',
+        'src/app.css',
+        'playwright.config.ts',
+        'tests/integration/example.test.ts',
+      ],
+      ['vitest-integration', 'ct-full', 'playwright-full'],
+    ],
+    ['the safe fallback', ['native/tool.bin'], ['vitest-full']],
+  ])('runs every static type check before any test lane in %s', (_name, files, lanes) => {
     const root = fixtureRoot({
       'src/lib/Widget.svelte': '<button />',
       'src/lib/Widget.ct.spec.ts': "import Widget from './Widget.svelte';",
       'src/shared/protocol.ts': '',
+      'src/app.css': '',
+      'playwright.config.ts': '',
+      'tests/integration/example.test.ts': '',
       'native/tool.bin': 'data',
     });
     const ids = createVerificationPlan(files, {
@@ -1871,8 +1885,7 @@ describe('verification planning', () => {
     }).checks.map((check) => check.id);
     const staticChecks = ['svelte-check', 'tsc-renderer', 'tsc-main', 'tsc-preload'];
     const isTestLane = (id: string) => /^(?:vitest|ct|playwright)-/.test(id);
-    expect(ids).toEqual(expect.arrayContaining(staticChecks));
-    expect(ids.some(isTestLane)).toBe(true);
+    expect(ids).toEqual(expect.arrayContaining([...staticChecks, ...lanes]));
     const lastStatic = Math.max(...staticChecks.map((id) => ids.indexOf(id)));
     expect(lastStatic).toBeLessThan(ids.findIndex(isTestLane));
   });
