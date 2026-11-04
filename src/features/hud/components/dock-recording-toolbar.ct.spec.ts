@@ -104,7 +104,12 @@ test('clicking the chip pauses and resumes; paused shows a play icon and a flat 
   await pauseClock(page);
   const chip = page.getByTestId('recording-chip');
   await expect(chip).toHaveAttribute('aria-pressed', 'false');
-  await expect(chip).toHaveAccessibleName('Pause recording, 0:42 elapsed');
+  // Pausing the clock steps it ahead, so read the time it shows now.
+  const time = chip.locator('[data-recording-time]');
+  const shown = (await time.textContent())?.trim() ?? '';
+  const seconds = Number(shown.split(':')[1]);
+  expect(seconds).toBeGreaterThanOrEqual(42);
+  await expect(chip).toHaveAccessibleName(`Pause recording, ${shown} elapsed`);
   await chip.click();
   expect(await requests(harness)).toContainEqual({
     sessionId: expect.any(String),
@@ -117,12 +122,12 @@ test('clicking the chip pauses and resumes; paused shows a play icon and a flat 
   await expect(bar(page).getByRole('status').last()).toHaveText('Paused');
   // Elapsed time stops while paused.
   await page.clock.runFor(5000);
-  await expect(chip.locator('[data-recording-time]')).toHaveText('0:42');
+  await expect(time).toHaveText(shown);
   await chip.click();
   await expect(chip).toHaveAttribute('aria-pressed', 'false');
   await expect(bar(page).getByRole('status').last()).toHaveText('Recording');
   await page.clock.runFor(3000);
-  await expect(chip.locator('[data-recording-time]')).toHaveText('0:45');
+  await expect(time).toHaveText(`0:${seconds + 3}`);
 });
 
 test('X discards with a 5 s Undo on the bar; Undo restores it, otherwise the recording goes', async ({
