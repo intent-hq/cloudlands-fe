@@ -768,17 +768,21 @@ userPreferencesReducer.with(resetAllShortcutOverrides, (state) => {
   };
 });
 
-userPreferencesReducer.with(dockShortcutSettingsReceived, (state, { payload: [snapshot] }) => ({
-  ...state,
-  dockShortcuts: snapshot,
-  dockShortcutCaptureToken: snapshot.capturing ? state.dockShortcutCaptureToken : null,
-  shortcutOverrides: {
-    ...Object.fromEntries(
-      Object.entries(state.shortcutOverrides).filter(([id]) => !isDockShortcutId(id)),
-    ),
-    ...snapshot.overrides,
-  },
-}));
+userPreferencesReducer.with(dockShortcutSettingsReceived, (state, { payload: [snapshot] }) => {
+  // Invokes can resolve after a newer authoritative change event from another window.
+  if (state.dockShortcuts && snapshot.revision < state.dockShortcuts.revision) return state;
+  return {
+    ...state,
+    dockShortcuts: snapshot,
+    dockShortcutCaptureToken: snapshot.capturing ? state.dockShortcutCaptureToken : null,
+    shortcutOverrides: {
+      ...Object.fromEntries(
+        Object.entries(state.shortcutOverrides).filter(([id]) => !isDockShortcutId(id)),
+      ),
+      ...snapshot.overrides,
+    },
+  };
+});
 userPreferencesReducer.with(
   dockShortcutPendingSet,
   (state, { payload: [dockShortcutPending] }) => ({ ...state, dockShortcutPending }),

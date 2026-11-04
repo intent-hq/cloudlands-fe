@@ -8,6 +8,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { userPreferencesPersistenceSaga } from '$store/renderer/slices/user-preferences/sagas/user-preferences-persistence-saga';
   import { openCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
+  import { hydrateShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { handleHomeSetAsideShortcut } from '$features/home/home-set-aside-shortcut';
   const stop = startRootStoreLifecycle(store, {
@@ -16,7 +17,12 @@
   onDestroy(stop);
   const workspaceActions: string[] = [];
   Object.assign(window, {
-    shortcutFixture: { store, workspaceActions, effective: getEffectiveShortcut },
+    shortcutFixture: {
+      store,
+      workspaceActions,
+      effective: getEffectiveShortcut,
+      refresh: () => store.dispatch(hydrateShortcutOverrides({})),
+    },
   });
 </script>
 

@@ -1,5 +1,5 @@
 import { buffers } from 'redux-saga';
-import { actionChannel, call, put, take, type SagaGenerator } from 'typed-redux-saga';
+import { actionChannel, call, cancel, put, take, type SagaGenerator } from 'typed-redux-saga';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   isDockShortcutId,
@@ -40,6 +40,12 @@ function* refresh(): SagaGenerator<void> {
     yield* put(dockShortcutErrorSet({ code: 'load-failed' }));
   }
 }
+type ShortcutRequest =
+  | ReturnType<typeof setShortcutOverride>
+  | ReturnType<typeof resetShortcutOverride>
+  | ReturnType<typeof resetAllShortcutOverrides>
+  | ReturnType<typeof hydrateShortcutOverrides>
+  | ReturnType<typeof dockShortcutCaptureRequested>;
 export function* dockShortcutSettingsSaga(): SagaGenerator<void> {
   const requests = yield* actionChannel(
     [
@@ -58,12 +64,7 @@ export function* dockShortcutSettingsSaga(): SagaGenerator<void> {
   try {
     yield* refresh();
     while (true) {
-      const action:
-        | ReturnType<typeof setShortcutOverride>
-        | ReturnType<typeof resetShortcutOverride>
-        | ReturnType<typeof resetAllShortcutOverrides>
-        | ReturnType<typeof hydrateShortcutOverrides>
-        | ReturnType<typeof dockShortcutCaptureRequested> = yield* take(requests);
+      const action = (yield* take(requests)) as ShortcutRequest;
       const capture = action.type === dockShortcutCaptureRequested.type;
       const id = 'payload' in action ? action.payload?.[0] : undefined;
       const resetAll = action.type === resetAllShortcutOverrides.type;
@@ -122,7 +123,7 @@ export function* dockShortcutSettingsSaga(): SagaGenerator<void> {
       }
     }
   } finally {
-    updates();
+    yield* cancel(updates);
     requests.close();
     const token = appStore.state.userPreferences.dockShortcutCaptureToken;
     if (token)

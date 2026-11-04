@@ -199,6 +199,61 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
         ),
       },
     ];
+    // Hold a genuine old GET reply while another native update is broadcast first.
+    await page.evaluate(() => {
+      (window as any).shortcutTest.holdGet();
+      (window as any).shortcutFixture.refresh();
+    });
+    await expect
+      .poll(() => page.evaluate(() => (window as any).shortcutTest.hasHeldGet()))
+      .toBe(true);
+    const newer = await application!.evaluate(async () => {
+      const prefs = (globalThis as any).editableDock.prefs;
+      return prefs.update({
+        expectedRevision: prefs.snapshot().revision,
+        id: 'dock.focus',
+        key: 'ctrl+alt+shift+u',
+        appOverrides: {},
+      });
+    });
+    await expect.poll(raw).toBe('ctrl+alt+shift+u');
+    await page.evaluate(() => (window as any).shortcutTest.releaseGet());
+    await field().click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as any).shortcutFixture.store.state.userPreferences.dockShortcutCaptureToken,
+        ),
+      )
+      .toBeTruthy();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as any).shortcutFixture.store.state.userPreferences.dockShortcuts.revision,
+        ),
+      )
+      .toBe(newer.revision);
+    await application!.evaluate(() => (globalThis as any).editableDock.prefs.enable(false));
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as any).shortcutFixture.store.state.userPreferences.dockShortcuts.enabled,
+        ),
+      )
+      .toBe(false);
+    await application!.evaluate(() => (globalThis as any).editableDock.prefs.enable(true));
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as any).shortcutFixture.store.state.userPreferences.dockShortcuts.enabled,
+        ),
+      )
+      .toBe(true);
+    await expect.poll(raw).toBe('ctrl+alt+shift+u');
+    snapshots.push({ phase: 'held-old-get-after-new-change', snapshot: newer });
+    await edit('Control+Alt+Shift+Y');
+    await expect.poll(raw).toBe('ctrl+alt+shift+y');
     await edit('Control+Shift+R');
     await expect.poll(raw).toBe('ctrl+alt+shift+y');
     await expect(page.getByRole('alert').filter({ hasText: 'already used' }).first()).toBeVisible();

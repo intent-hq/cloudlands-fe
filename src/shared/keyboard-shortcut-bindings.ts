@@ -276,7 +276,7 @@ export function getShortcutSequenceTrigger(shortcut: string): string | null {
 }
 
 /** Expand a displayed alternative/range binding into the concrete keys it represents. */
-function expandShortcutPattern(shortcut: string): string[] {
+export function expandShortcutPattern(shortcut: string): string[] {
   const rangeMatch = shortcut.match(/^(.*\+)?([1-8])-9$/);
   if (rangeMatch) {
     const prefix = rangeMatch[1] ?? '';
