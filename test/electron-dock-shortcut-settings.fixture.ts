@@ -41,9 +41,13 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
           name: 'fixture-logger',
           enforce: 'pre',
           resolveId(id) {
+            if (id.endsWith('/ipc-debug-tracker')) return '\0quiet-ipc-debug';
             if (id.endsWith('shared/logger') || id === '$shared/logger') return '\0quiet-logger';
           },
           load(id) {
+            // Diagnostics are outside this contract; validation and the native IPC handlers stay real.
+            if (id === '\0quiet-ipc-debug')
+              return 'export const ipcDebugTracker = new Proxy({}, {get:()=>()=>{}});';
             if (id === '\0quiet-logger')
               return 'export class Logger { info(){} debug(){} warn(){} error(){} }';
           },
