@@ -347,7 +347,8 @@
           size="icon-sm"
           onclick={onOpenWorkspace}
           aria-label={m.dock_conversation_openFull_ariaLabel()}
-          title={m.dock_conversation_openFull_ariaLabel()}><Fa icon={faArrowUpRightFromSquare} /></Button
+          title={m.dock_conversation_openFull_ariaLabel()}
+          ><Fa icon={faArrowUpRightFromSquare} /></Button
         >{/if}
     {/snippet}
   </ScreenHeader>
