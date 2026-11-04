@@ -26,7 +26,7 @@ const SESSION_COOKIE_PREFIX = 'intent_session_';
 /** Idle lifetime: the browser maximum (400 days). Active sessions slide. */
 export const SESSION_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 /** A session cookie is renewed at most this often. */
-export const SESSION_RENEW_AFTER_SECONDS = 24 * 60 * 60;
+const SESSION_RENEW_AFTER_SECONDS = 24 * 60 * 60;
 /** Tolerated clock skew for a cookie's issue time. */
 const SESSION_FUTURE_SKEW_SECONDS = 5 * 60;
 /** Backend ids accepted in URLs (connection ids are UUIDs; `local` is reserved). */

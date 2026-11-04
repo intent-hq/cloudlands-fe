@@ -13,7 +13,7 @@ import {
   signInLink,
 } from '../../browser-access/main/browser-access-sign-in-codes';
 
-export const INTENT_WEB_USAGE = `Usage:
+const INTENT_WEB_USAGE = `Usage:
   intent-web [serve] [--port <n> | --socket <path>] [--data-dir <dir>] [--tailcat <path>]
                      [--local-socket <path> | --no-local]
   intent-web key [--reset] [--data-dir <dir>]

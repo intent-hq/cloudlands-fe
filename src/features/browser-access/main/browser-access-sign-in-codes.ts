@@ -19,14 +19,14 @@
 import crypto from 'node:crypto';
 
 export const SIGN_IN_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-export const SIGN_IN_CODE_LENGTH = 6;
+const SIGN_IN_CODE_LENGTH = 6;
 export const SIGN_IN_CODE_TTL_MS = 10 * 60 * 1000;
 export const SIGN_IN_CODE_MAX_ACTIVE = 5;
 /** Used or expired codes are remembered this long so the page can say so. */
 const SIGN_IN_CODE_RETAIN_MS = 60 * 60 * 1000;
 const CODE_HASH_CONTEXT = 'intent-browser-access-sign-in-code-v1';
 
-export interface SignInCodeEntry {
+interface SignInCodeEntry {
   /** HMAC-SHA256 (base64url) of the normalized code, keyed by the access key. */
   readonly hash: string;
   /** Expiry, Unix milliseconds. */
@@ -55,7 +55,7 @@ export interface SignInStore {
 
 export type SignInCodeResult = 'ok' | 'used-or-expired' | 'invalid';
 
-export interface CreatedSignInCode {
+interface CreatedSignInCode {
   /** Display form, `ABC-DEF`. */
   readonly code: string;
   /** Unix milliseconds. */
