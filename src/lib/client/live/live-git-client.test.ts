@@ -354,7 +354,10 @@ describe('LiveGitClient reads (fake transport)', () => {
 
     const diffs = await client.diffs('ws-1');
 
-    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      maxBytes: 480_000,
+    });
     expect(diffs).toEqual([
       {
         file: 'src/a.ts',
@@ -375,6 +378,30 @@ describe('LiveGitClient reads (fake transport)', () => {
     ]);
   });
 
+  it('diffs fills pageBudget files of a bounded read and flags fileTooLarge ones (§5.6)', async () => {
+    const hunk = { oldStart: 1, oldLines: 0, newStart: 1, newLines: 1, lines: [] };
+    mockedRequest
+      .mockResolvedValueOnce([
+        { path: 'a.ts', hunks: [hunk] },
+        { path: 'b.ts', hunks: [], truncated: true, truncatedReason: 'pageBudget' },
+        { path: 'big.ts', hunks: [], truncated: true, truncatedReason: 'fileTooLarge' },
+      ])
+      .mockResolvedValueOnce([{ path: 'b.ts', hunks: [hunk] }]);
+    const client = new LiveGitClient();
+    const diffs = await client.diffs('ws-1', { staged: true });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      staged: true,
+      paths: ['b.ts'],
+      maxBytes: 480_000,
+    });
+    expect(diffs).toEqual([
+      { file: 'a.ts', chunks: [hunk] },
+      { file: 'b.ts', chunks: [hunk] },
+      { file: 'big.ts', chunks: [], truncatedReason: 'fileTooLarge' },
+    ]);
+  });
+
   it('diffs resolves [] when the daemon errors', async () => {
     mockedRequest.mockRejectedValueOnce(new Error('diff boom'));
     const client = new LiveGitClient();
@@ -392,6 +419,7 @@ describe('LiveGitClient reads (fake transport)', () => {
       workspaceId: 'ws-1',
       path: 'seed.txt',
       commitHash: 'abc123',
+      maxBytes: 480_000,
     });
   });
 
@@ -404,6 +432,7 @@ describe('LiveGitClient reads (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
       workspaceId: 'ws-1',
       staged: true,
+      maxBytes: 480_000,
     });
   });
 
@@ -415,10 +444,14 @@ describe('LiveGitClient reads (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith('git.diffs', {
       workspaceId: 'ws-1',
       paths: ['a.ts', 'b.ts'],
+      maxBytes: 480_000,
     });
 
     await client.diffs('ws-1', { paths: [] });
-    expect(mockedRequest).toHaveBeenLastCalledWith('git.diffs', { workspaceId: 'ws-1' });
+    expect(mockedRequest).toHaveBeenLastCalledWith('git.diffs', {
+      workspaceId: 'ws-1',
+      maxBytes: 480_000,
+    });
   });
 
   it('diffs forwards gitRootId exactly when set and omits it otherwise (secondary git root scoping)', async () => {
@@ -431,6 +464,7 @@ describe('LiveGitClient reads (fake transport)', () => {
       commitHash: 'abc123',
       path: 'a.ts',
       gitRootId: 'root-1',
+      maxBytes: 480_000,
     });
 
     await client.diffs('ws-1', { commitHash: 'abc123', path: 'a.ts' });
@@ -438,6 +472,7 @@ describe('LiveGitClient reads (fake transport)', () => {
       workspaceId: 'ws-1',
       commitHash: 'abc123',
       path: 'a.ts',
+      maxBytes: 480_000,
     });
   });
 
