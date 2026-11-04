@@ -50,6 +50,10 @@
   } = $props();
 
   const record = $derived(overlay.media?.record ?? null);
+  // One bar for both: annotating shows the tools with Close and Attach; a live
+  // recording adds its chip, Discard and Done. Starting or stopping a recording only
+  // changes the right side; the tools, the current tool and the bar's place stay.
+  const recording = $derived(!!record?.recording);
   const paused = $derived(!!record?.pausedAt);
   const sessionId = $derived(overlay.sessionId);
   const act = (request: DockAnnotationToolbarRequest) => send(request);
@@ -161,7 +165,11 @@
   onDestroy(() => clearTimeout(discardTimer));
 
   const togglePause = () => act({ sessionId, action: 'pause', paused: !paused });
-  const done = () => act({ sessionId, action: 'done' });
+  // Annotating: Attach puts the marks on screen in the composer (then mouse mode); with
+  // no marks it is Done and ends the session, as the annotate bar's primary did.
+  const done = () =>
+    act({ sessionId, action: recording ? 'done' : overlay.marks.length > 0 ? 'commit' : 'end' });
+  const close = () => act({ sessionId, action: 'end' });
   const pointer = $derived(overlay.mouse);
   function choose(tool: DockMarkTool | 'pointer') {
     if (tool === 'pointer') act({ sessionId, action: 'mouse' });
@@ -203,8 +211,9 @@
     event.preventDefault();
     if (shortcut.kind === 'tool') choose(shortcut.tool);
     else if (shortcut.kind === 'escape') choose('pointer');
-    else if (shortcut.kind === 'pause') togglePause();
-    else done();
+    else if (shortcut.kind === 'pause') {
+      if (recording) togglePause();
+    } else done();
   }
   // Arrow keys move focus between the bar's buttons.
   function onBarKeyDown(event: KeyboardEvent) {
@@ -226,7 +235,8 @@
   class="recording-toolbar"
   role="toolbar"
   tabindex="-1"
-  aria-label={m.dock_recordingToolbar_ariaLabel()}
+  aria-label={recording ? m.dock_recordingToolbar_ariaLabel() : m.annotation_toolbar_ariaLabel()}
+  data-mode={recording ? 'recording' : 'annotate'}
   data-testid="dock-recording-toolbar"
   data-paused={paused || undefined}
   data-discarding={discarding || undefined}
@@ -282,60 +292,92 @@
       {/if}
     </section>
     <span class="divider" aria-hidden="true"></span>
-    <section class="recording" aria-label={m.dock_recordingToolbar_recording_label()}>
-      <Button
-        variant="ghost-light"
-        size="sm"
-        class="rt-chip"
-        data-testid="recording-chip"
-        data-no-mic={noMic || undefined}
-        aria-pressed={paused}
-        tooltip={chipTip}
-        tooltipShortcut={noMic ? undefined : 'space'}
-        aria-label={paused
-          ? m.dock_recordingToolbar_resume_ariaLabel({ time: elapsed })
-          : m.dock_recordingToolbar_pause_ariaLabel({ time: elapsed })}
-        onclick={togglePause}
-      >
-        <span class="lead" aria-hidden="true">
-          {#if paused}
-            <DockComposerIcon glyph="play" size={14} />
-          {:else}
-            <span class="rec-dot"></span>
-            <span class="hover-pause"><DockComposerIcon glyph="pause" size={14} /></span>
-          {/if}
-        </span>
-        <span class="time" data-recording-time>{elapsed}</span>
-        <span class="wave" data-flat={flat || undefined} aria-hidden="true">
-          {#each levels as level, index (index)}
-            <span class="bar" style:--level={flat ? 0 : level}></span>
-          {/each}
-        </span>
-      </Button>
-      <Button
-        variant="ghost-light"
-        size="icon-sm"
-        class="rt-icon rt-discard"
-        data-discard
-        aria-label={m.dock_recordingToolbar_discard_label()}
-        tooltip={m.dock_recordingToolbar_discard_label()}
-        onclick={discard}
-      >
-        <DockComposerIcon glyph="x" size={18} />
-      </Button>
-      <Button
-        variant="ghost-light"
-        size="icon-sm"
-        class="rt-done"
-        data-done
-        aria-label={m.dock_composer_done_label()}
-        tooltip={m.dock_composer_done_label()}
-        tooltipShortcut="enter"
-        onclick={done}
-      >
-        <DockComposerIcon glyph="check" size={18} />
-      </Button>
-    </section>
+    {#if !recording}
+      <!-- Annotating: Close ends the session; Attach puts the marks in the composer. -->
+      <section class="recording" data-annotate-actions>
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          class="rt-icon rt-discard"
+          data-close
+          aria-label={m.dock_composer_endAnnotation_label()}
+          tooltip={m.dock_composer_endAnnotation_label()}
+          onclick={close}
+        >
+          <DockComposerIcon glyph="x" size={18} />
+        </Button>
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          class="rt-done"
+          data-done
+          aria-label={marked ? m.dock_annotationToolbar_save_label() : m.dock_composer_done_label()}
+          tooltip={marked ? m.dock_annotationToolbar_save_label() : m.dock_composer_done_label()}
+          tooltipShortcut="enter"
+          onclick={done}
+        >
+          <DockComposerIcon glyph={marked ? 'paperclip' : 'check'} size={18} />
+          {#if marked}<span class="attach-count" data-attach-count aria-hidden="true"
+              >{overlay.marks.length}</span
+            >{/if}
+        </Button>
+      </section>
+    {:else}
+      <section class="recording" aria-label={m.dock_recordingToolbar_recording_label()}>
+        <Button
+          variant="ghost-light"
+          size="sm"
+          class="rt-chip"
+          data-testid="recording-chip"
+          data-no-mic={noMic || undefined}
+          aria-pressed={paused}
+          tooltip={chipTip}
+          tooltipShortcut={noMic ? undefined : 'space'}
+          aria-label={paused
+            ? m.dock_recordingToolbar_resume_ariaLabel({ time: elapsed })
+            : m.dock_recordingToolbar_pause_ariaLabel({ time: elapsed })}
+          onclick={togglePause}
+        >
+          <span class="lead" aria-hidden="true">
+            {#if paused}
+              <DockComposerIcon glyph="play" size={14} />
+            {:else}
+              <span class="rec-dot"></span>
+              <span class="hover-pause"><DockComposerIcon glyph="pause" size={14} /></span>
+            {/if}
+          </span>
+          <span class="time" data-recording-time>{elapsed}</span>
+          <span class="wave" data-flat={flat || undefined} aria-hidden="true">
+            {#each levels as level, index (index)}
+              <span class="bar" style:--level={flat ? 0 : level}></span>
+            {/each}
+          </span>
+        </Button>
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          class="rt-icon rt-discard"
+          data-discard
+          aria-label={m.dock_recordingToolbar_discard_label()}
+          tooltip={m.dock_recordingToolbar_discard_label()}
+          onclick={discard}
+        >
+          <DockComposerIcon glyph="x" size={18} />
+        </Button>
+        <Button
+          variant="ghost-light"
+          size="icon-sm"
+          class="rt-done"
+          data-done
+          aria-label={m.dock_composer_done_label()}
+          tooltip={m.dock_composer_done_label()}
+          tooltipShortcut="enter"
+          onclick={done}
+        >
+          <DockComposerIcon glyph="check" size={18} />
+        </Button>
+      </section>
+    {/if}
   {/if}
   <span class="sr-only" role="status" aria-live="polite">{announcement}</span>
 </div>
@@ -601,6 +643,20 @@
     height: 6px;
     border-radius: 50%;
     background: var(--rt-rec);
+  }
+  .attach-count {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 999px;
+    font-size: 10px;
+    line-height: 14px;
+    text-align: center;
+    background: var(--rt-accent-ink);
+    color: var(--rt-done-ink);
   }
   .sr-only {
     position: absolute;

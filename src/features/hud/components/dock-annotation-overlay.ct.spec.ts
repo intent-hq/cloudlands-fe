@@ -115,537 +115,135 @@ test('still markup letterboxes the frozen image and maps its marks into the same
   expect(height).toBeCloseTo((mark.h / image.height) * frame.height, 1);
 });
 
-test('the on-screen tool bar starts at the bottom of the screen, drags by its grip, switches tools, ends the session and never starts a mark', async ({
-  mount,
-  page,
-}, testInfo) => {
-  const component = await mount(Harness, { props: { fixture: 'live-marked', pick: 'permission' } });
-  const bar = page.getByRole('toolbar', { name: 'Annotation tools' });
-  await expect(bar).toBeVisible();
-  const bounds = async () => {
-    const box = await bar.boundingBox();
-    if (!box) throw new Error('Missing tool bar bounds');
-    return box;
-  };
-  // Wherever the dock is (here an edge rail), the bar starts at the bottom centre.
-  const startArea = JSON.parse(
-    (await page.getByTestId('dock-annotation-harness').getAttribute('data-work-area')) ?? 'null',
-  ) as { x: number; y: number; width: number; height: number };
-  await expect
-    .poll(async () => {
-      const box = await bounds();
-      return {
-        centred: Math.abs(box.x + box.width / 2 - (startArea.x + startArea.width / 2)) <= 1,
-        bottom: Math.round(startArea.y + startArea.height - box.y - box.height) === 16,
-      };
-    })
-    .toEqual({ centred: true, bottom: true });
-  const side = await bounds();
-  // Main learns where the bar is, so it stays clickable and never starts a gesture.
-  await expect
-    .poll(async () =>
-      JSON.parse(
-        (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
-          'null',
-      ),
-    )
-    .toMatchObject({ action: 'rect', rect: { width: Math.round(side.width) } });
-  await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'true');
-  // A missing Accessibility grant marks pick; the other tools are unaffected.
-  await expect(bar.getByRole('button', { name: 'Pick an element' })).toHaveAttribute(
-    'data-alert',
-    '',
-  );
-  await bar.getByRole('button', { name: 'Pen' }).hover();
-  await expect(bar.getByRole('tooltip').filter({ hasText: 'Pen' })).toHaveCSS('opacity', '1');
-  await testInfo.attach('side toolbar', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-
-  // Notch feedback stays in the lower work area, away from hover expansion.
-  const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
-  await component.update({ props: { fixture: 'live-marked', pick: 'permission', dock: notch } });
-  await expect(bar).toHaveAttribute('data-tips', 'above');
-  await expectAnimationsToSettle(bar, { subtree: false });
-  const workArea = JSON.parse(
-    (await page.getByTestId('dock-annotation-harness').getAttribute('data-work-area')) ?? 'null',
-  ) as { x: number; y: number; width: number; height: number } | null;
-  const dockBounds = await page.getByTestId('dock-stand-in').boundingBox();
-  if (!workArea || !dockBounds) throw new Error('Missing dock or work-area bounds');
-  await expect
-    .poll(async () => {
-      const box = await bounds();
-      return {
-        // Leave a toolbar-height of overshoot room before reaching the dock.
-        clearOfDock: box.y - (dockBounds.y + dockBounds.height) >= box.height,
-        contained:
-          box.x >= workArea.x &&
-          box.y >= workArea.y &&
-          box.x + box.width <= workArea.x + workArea.width &&
-          box.y + box.height <= workArea.y + workArea.height,
-      };
-    })
-    .toEqual({ clearOfDock: true, contained: true });
-  const below = await bounds();
-  // Tooltips open above the bottom toolbar and stay
-  // inside the work area (the long permission line included).
-  await bar.getByRole('button', { name: 'Pick an element' }).hover();
-  const tip = bar.getByRole('tooltip').filter({ hasText: 'Allow Accessibility' });
-  await expect(tip).toHaveCSS('opacity', '1');
-  const tipBox = (await tip.boundingBox())!;
-  expect(tipBox.y + tipBox.height).toBeLessThan(below.y);
-  expect(tipBox.y).toBeGreaterThanOrEqual(workArea.y);
-  expect(tipBox.x).toBeGreaterThanOrEqual(workArea.x);
-  expect(tipBox.x + tipBox.width).toBeLessThanOrEqual(workArea.x + workArea.width);
-  await testInfo.attach('notch toolbar', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-
-  // Mouse mode: the session stays, nothing is a gesture; a tool resumes annotating.
-  await bar.getByRole('button', { name: 'Mouse' }).click();
-  await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'false');
-  await page.mouse.move(200, 600);
-  await page.mouse.down();
-  await page.mouse.move(260, 650, { steps: 3 });
-  await page.mouse.up();
-  expect(await recorded(page, 'pointers')).toEqual([]);
-  await expect(page.getByTestId('dock-annotation-overlay')).toHaveCSS('cursor', 'default');
-
-  await bar.getByRole('button', { name: 'Pen' }).click();
-  await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
-  await expect(bar.getByRole('button', { name: 'Pen' })).toHaveAttribute('aria-pressed', 'true');
-  // Clicks on the bar are never marks.
-  expect(await recorded(page, 'pointers')).toEqual([]);
-
-  // Dragging from a tool button does nothing (no move, no tool change).
-  const arrow = bar.getByRole('button', { name: 'Arrow' });
-  const from = await arrow.boundingBox();
-  if (!from) throw new Error('Missing arrow bounds');
-  await page.mouse.move(from.x + 15, from.y + 15);
-  await page.mouse.down();
-  await page.mouse.move(from.x + 15 - 300, from.y + 15 + 200, { steps: 6 });
-  await page.mouse.up();
-  const after = await bounds();
-  expect(Math.round(after.x)).toBe(Math.round(below.x));
-  expect(Math.round(after.y)).toBe(Math.round(below.y));
-  await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
-  expect(await recorded(page, 'pointers')).toEqual([]);
-
-  // The grip moves the bar: it follows the pointer, stays inside the work area,
-  // reports its new rect (so it stays clickable) and never draws a mark.
-  const reportedRect = async () =>
-    JSON.parse(
-      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
-        'null',
-    )?.rect as { x: number; y: number } | undefined;
-  const gesturesBeforeDrag = (await recorded(page, 'gestures')).length;
-  const grip = (await bar.locator('.toolbar-grip').boundingBox())!;
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-  await page.mouse.down();
-  // Mid-drag, main already knows where the bar is.
-  await page.mouse.move(grip.x + grip.width / 2 - 100, grip.y + grip.height / 2 - 75, {
-    steps: 4,
-  });
-  const midway = await bounds();
-  expect(Math.round(midway.x)).toBe(Math.round(below.x) - 100);
-  await expect
-    .poll(reportedRect)
-    .toMatchObject({ x: Math.round(midway.x), y: Math.round(midway.y) });
-  await page.mouse.move(grip.x + grip.width / 2 - 200, grip.y + grip.height / 2 - 150, {
-    steps: 4,
-  });
-  await page.mouse.up();
-  const moved = await bounds();
-  expect(Math.round(moved.x)).toBe(Math.round(below.x) - 200);
-  expect(Math.round(moved.y)).toBe(Math.round(below.y) - 150);
-  await expect
-    .poll(async () =>
-      JSON.parse(
-        (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
-          'null',
-      ),
-    )
-    .toMatchObject({ action: 'rect', rect: { x: Math.round(moved.x), y: Math.round(moved.y) } });
-  // Dragged far past the edge, it stops at the work area.
-  const regrip = (await bar.locator('.toolbar-grip').boundingBox())!;
-  await page.mouse.move(regrip.x + regrip.width / 2, regrip.y + regrip.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(-500, -500, { steps: 8 });
-  await page.mouse.up();
-  const clamped = await bounds();
-  expect(Math.round(clamped.x)).toBe(Math.round(workArea.x));
-  expect(Math.round(clamped.y)).toBe(Math.round(workArea.y));
-  // A cancelled or lost pointer ends the drag: later moves with the button still
-  // held do not move the bar.
-  for (const type of ['pointercancel', 'lostpointercapture']) {
-    const handle = (await bar.locator('.toolbar-grip').boundingBox())!;
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + handle.height / 2 + 30, {
-      steps: 3,
-    });
-    const before = await bounds();
-    await bar.evaluate((node, eventType) => {
-      node.dispatchEvent(new PointerEvent(eventType, { pointerId: 1, bubbles: true }));
-    }, type);
-    await page.mouse.move(handle.x + handle.width / 2 + 160, handle.y + handle.height / 2 + 120, {
-      steps: 4,
-    });
-    const after = await bounds();
-    expect(Math.round(after.x), type).toBe(Math.round(before.x));
-    expect(Math.round(after.y), type).toBe(Math.round(before.y));
-    await page.mouse.up();
-  }
-  expect(await recorded(page, 'pointers')).toEqual([]);
-  expect(await recorded(page, 'gestures')).toHaveLength(gesturesBeforeDrag);
-
-  // Attach counts all four authoritative fixture marks, then continues in mouse mode.
-  await expect(bar.locator('[data-attach-count]')).toHaveText('4');
-  await bar.getByRole('button', { name: 'Attach' }).click();
-  await expect(bar).toBeVisible();
-  await expect(bar.getByRole('button', { name: 'Attach' })).toHaveCount(0);
-  await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'true');
-  await bar.getByRole('button', { name: 'Done', exact: true }).click();
-  await expect(bar).toHaveCount(0);
-  const actions = JSON.parse(
-    (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
-  );
-  expect(actions).toEqual([
-    { sessionId: 'fixture-live', action: 'mouse' },
-    { sessionId: 'fixture-live', action: 'tool', tool: 'pen' },
-    { sessionId: 'fixture-live', action: 'commit' },
-    { sessionId: 'fixture-live', action: 'end' },
-  ]);
-});
-
-test('empty feedback offers Done and exits without an attachment', async ({
-  mount,
-  page,
-}, testInfo) => {
-  await mount(Harness, {
-    props: {
-      fixture: 'live-empty',
-      dock: { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } },
-      media: dockAnnotationMediaIdle,
-    },
-  });
-  const bar = page.getByTestId('dock-annotation-toolbar');
-  await expect(bar.getByRole('button', { name: 'Attach' })).toHaveCount(0);
-  const done = bar.getByRole('button', { name: 'Done', exact: true });
-  await expect(done).toBeEnabled();
-  await expectAnimationsToSettle(bar, { subtree: false });
-  await testInfo.attach('empty feedback', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-  await done.focus();
-  await done.press('Enter');
-  await expect(bar).toHaveCount(0);
-  const actions = JSON.parse(
-    (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
-  );
-  expect(actions).toEqual([{ sessionId: 'fixture-live', action: 'end' }]);
-  expect(await recorded(page, 'pointers')).toEqual([]);
-});
-
-test('Screenshot and Record on the tool bar run the composer actions with its look, limit and alerts', async ({
-  mount,
-  page,
-}, testInfo) => {
-  const notch = { shape: 'notch', rect: { x: 440, y: 0, width: 400, height: 56 } } as const;
-  const props = {
-    fixture: 'live-marked',
-    dock: notch,
-    media: dockAnnotationMediaIdle,
-    markCount: 3,
-  } as const;
-  const component = await mount(Harness, { props });
-  const bar = page.getByRole('toolbar', { name: 'Annotation tools' });
-  await expect(bar).toBeVisible();
-  const toolbar = async () =>
-    JSON.parse(
-      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
-    ) as { action: string }[];
-  const reportedWidth = async () =>
-    (
-      JSON.parse(
-        (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
-          'null',
-      ) as { rect: { width: number } } | null
-    )?.rect.width ?? 0;
-
-  // Attach is the primary action and counts the 3 marks it will attach.
-  await expect(bar.locator('[data-attach-count]')).toHaveText('3');
-  const toolbarClip = async () => ({
-    x: 290,
-    y: Math.max(0, ((await bar.boundingBox())?.y ?? 0) - 48),
-    width: 700,
-    height: 150,
-  });
-  // Idle with marks: the first half of the artifact.
-  const idleShot = await page.screenshot({ clip: await toolbarClip() });
-  const shot = bar.getByRole('button', { name: 'Capture the screen · ⌘⇧S' });
-  await shot.hover();
-  await expect(bar.getByRole('tooltip').filter({ hasText: 'Capture the screen' })).toHaveCSS(
-    'opacity',
-    '1',
-  );
-
-  // Screenshot: one request; the session, tool and mode are unchanged; never a mark.
-  await shot.click();
-  await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'false');
-
-  // Record: while the recording is live, the recording tool bar replaces this one
-  // (its own spec: dock-recording-toolbar.ct.spec.ts), with the composer's timer.
-  const idleWidth = await reportedWidth();
-  await bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' }).click();
-  const recordingBar = page.getByRole('toolbar', { name: 'Recording tools' });
-  await expect(recordingBar).toBeVisible();
-  await expect(bar).toHaveCount(0);
-  await expect(
-    recordingBar.getByTestId('recording-chip').locator('[data-recording-time]'),
-  ).toHaveText(/^1:0[5-9]$/);
-  // The recording bar reports its own rect, so main keeps it clickable.
-  await expect.poll(reportedWidth).not.toBe(idleWidth);
-  const recordingBox = (await recordingBar.boundingBox())!;
-  const recordingShot = await page.screenshot({
-    clip: { x: 290, y: Math.max(0, recordingBox.y - 48), width: 700, height: 150 },
-  });
-  // Done stops the recording; the annotate bar comes back.
-  await recordingBar.locator('[data-done]').click();
-  await expect(bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' })).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
-  expect(await recorded(page, 'pointers')).toEqual([]);
-
-  // At the limit Record is disabled with the composer's tooltip; a click does nothing.
-  const full = {
-    ...dockAnnotationMediaIdle,
-    record: { ...dockAnnotationMediaIdle.record, disabled: true, tooltip: 'Up to 5 recordings' },
-  };
-  await component.update({ props: { ...props, media: full } });
-  const limited = bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' });
-  await expect(limited).toHaveAttribute('aria-disabled', 'true');
-  await limited.hover();
-  const limitTip = bar.getByRole('tooltip').filter({ hasText: 'Up to 5 recordings' });
-  await expect(limitTip).toHaveCSS('opacity', '1');
-  const limitBox = (await limitTip.boundingBox())!;
-  expect(limitBox.x).toBeGreaterThanOrEqual(0);
-  expect(limitBox.x + limitBox.width).toBeLessThanOrEqual(1280);
-  // Forced: a real click on the disabled control reaches it and is ignored.
-  await limited.click({ force: true });
-
-  // Missing Screen Recording: alert dot and the permission line; a click goes to the
-  // dock, which opens System Settings (the composer's rule).
-  const blocked = {
-    capture: {
-      ...dockAnnotationMediaIdle.capture,
-      alert: true,
-      tooltip: 'Allow screen recording in System Settings',
-    },
-    record: {
-      ...dockAnnotationMediaIdle.record,
-      alert: true,
-      tooltip: 'Allow screen recording in System Settings',
-    },
-  };
-  await component.update({ props: { ...props, media: blocked } });
-  const alerted = bar.getByRole('button', { name: 'Capture the screen · ⌘⇧S' });
-  await expect(alerted).toHaveAttribute('data-alert', '');
-  await expect(alerted.locator('.alert-dot')).toBeVisible();
-  await alerted.hover();
-  await expect(
-    bar.getByRole('tooltip').filter({ hasText: 'Allow screen recording' }).first(),
-  ).toHaveCSS('opacity', '1');
-  const alertShot = await page.screenshot({ clip: await toolbarClip() });
-  await alerted.click();
-
-  // Clear: the marks go, nothing is attached, the tool stays; Clear hides at 0 marks.
-  await component.update({ props: { ...props, media: dockAnnotationMediaIdle } });
-  await bar.getByRole('button', { name: 'Clear annotations' }).click();
-  await expect(bar.getByRole('button', { name: 'Clear annotations' })).toHaveCount(0);
-  await expect(bar.locator('[data-attach-count]')).toHaveCount(0);
-  await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'true');
-  await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'false');
-
-  const done = bar.getByRole('button', { name: 'Done', exact: true });
-  await expect(done).toBeEnabled();
-  await expect(bar.getByRole('button', { name: 'Attach' })).toHaveCount(0);
-  await done.focus();
-  await done.press('Enter');
-  await expect(bar).toHaveCount(0);
-  expect((await toolbar()).map((row) => row.action)).toEqual([
-    'capture',
-    'record',
-    'done',
-    'capture',
-    'clear',
-    'end',
-  ]);
-  expect(await recorded(page, 'pointers')).toEqual([]);
-
-  // Artifact: idle with 3 marks, recording, and the permission alert (top to bottom).
-  await page.setViewportSize({ width: 700, height: 450 });
-  await page.setContent(
-    `<body style="margin:0;background:#000">${[idleShot, recordingShot, alertShot]
-      .map(
-        (image) =>
-          `<img style="display:block;width:700px;height:150px" src="data:image/png;base64,${image.toString('base64')}">`,
-      )
-      .join('')}</body>`,
-  );
-  const combined = await page.screenshot();
-  await page.screenshot({ path: testInfo.outputPath('dock-annotate-toolbar-v2.png') });
-  await testInfo.attach('dock-annotate-toolbar-v2', {
-    body: combined,
-    contentType: 'image/png',
-  });
-});
-
-for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-  test(`screenshot feedback follows accepted capture state with ${reducedMotion} motion`, async ({
-    mount,
-    page,
-  }, testInfo) => {
-    await page.emulateMedia({ reducedMotion });
-    const props = {
-      fixture: 'live-empty' as const,
-      dock: { shape: 'notch' as const, rect: { x: 440, y: 0, width: 400, height: 56 } },
-      media: {
-        ...dockAnnotationMediaIdle,
-        capture: { ...dockAnnotationMediaIdle.capture, revision: 41 },
-      },
-    };
-    const component = await mount(Harness, { props });
-    const bar = page.getByTestId('dock-annotation-toolbar');
-    const capture = bar.locator('[data-media="capture"]');
-    const update = async (pending: boolean, revision: number) =>
-      component.update({
-        props: {
-          ...props,
-          media: { ...props.media, capture: { ...props.media.capture, pending, revision } },
-        },
-      });
-    // Remounting with already accepted evidence is not a new capture.
-    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
-    await capture.click();
-    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
-    await update(true, 41);
-    await expect(capture).toHaveAttribute('aria-busy', 'true');
-    await expect(capture).toHaveAttribute('data-capture-state', 'pending');
-    await expect(capture.getByRole('status', { name: 'Loading' })).toBeVisible();
-    await expect(capture.getByRole('tooltip')).toHaveText('Taking screenshot…');
-    await expect(capture.getByRole('tooltip')).toHaveCSS('opacity', '1');
-    await testInfo.attach('screenshot pending', {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    });
-    await capture.click({ force: true });
-    // A failed/refused capture settles without an accepted revision: no success.
-    await update(false, 41);
-    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
-    await capture.click();
-    await update(true, 41);
-    await update(false, 42);
-    await expect(capture).toHaveAttribute('data-capture-state', 'complete');
-    await expect(capture.locator('[data-dock-glyph="check"]')).toBeVisible();
-    await expect(capture.getByRole('tooltip')).toHaveText('Screenshot captured');
-    await expect(capture.getByRole('tooltip')).toHaveCSS('opacity', '1');
-    if (reducedMotion === 'reduce') {
-      await expect
-        .poll(() =>
-          capture.evaluate((node) =>
-            node.getAnimations().some((animation) => animation.playState === 'running'),
-          ),
-        )
-        .toBe(false);
-    }
-    await testInfo.attach('screenshot accepted', {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    });
-    await expect(capture).toHaveAttribute('data-capture-state', 'idle');
-    const actions = JSON.parse(
-      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
-    );
-    expect(actions.map((row: { action: string }) => row.action)).toEqual(['capture', 'capture']);
-    expect(await recorded(page, 'pointers')).toEqual([]);
-  });
+/** The bar's bottom centre: what it keeps while a recording starts or ends. */
+async function place(bar: Locator) {
+  const box = (await bar.boundingBox())!;
+  return { cx: Math.round(box.x + box.width / 2), bottom: Math.round(box.y + box.height) };
 }
+const actions = async (page: Page) =>
+  JSON.parse(
+    (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
+  ) as { action: string; tool?: string }[];
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`the bar stays dark, drags by its grip and keeps its place from annotate to record and back (${scheme} system)`, async ({
+  test(`annotating uses the same dark bar: tools, Clear, Close and Attach, no capture or record (${scheme} system)`, async ({
     mount,
     page,
   }, testInfo) => {
     await page.emulateMedia({ colorScheme: scheme });
-    await mount(Harness, { props: { fixture: 'live-empty', media: dockAnnotationMediaIdle } });
-    const annotateBar = page.getByTestId('dock-annotation-toolbar');
-    const recordingBar = page.getByTestId('dock-recording-toolbar');
-    await expect(annotateBar).toBeVisible();
-    await expectAnimationsToSettle(annotateBar);
-    /** The bar's bottom centre: what both bars keep through a swap. */
-    const anchor = async (bar: Locator) => {
-      const box = (await bar.boundingBox())!;
-      return { cx: Math.round(box.x + box.width / 2), bottom: Math.round(box.y + box.height) };
-    };
-    /** Same place, within the 1 px of rounding a bar of another width centres with. */
-    const expectSamePlace = (actual: { cx: number; bottom: number }, place: typeof actual) => {
-      expect(Math.abs(actual.cx - place.cx)).toBeLessThanOrEqual(1);
-      expect(Math.abs(actual.bottom - place.bottom)).toBeLessThanOrEqual(1);
-    };
-    const background = (bar: Locator) =>
-      bar.evaluate((node) => getComputedStyle(node).backgroundColor);
-    const dragGrip = async (grip: Locator, dx: number, dy: number) => {
-      const box = (await grip.boundingBox())!;
-      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.down();
-      await page.mouse.move(box.x + box.width / 2 + dx / 2, box.y + box.height / 2 + dy / 2);
-      await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy);
-      await page.mouse.up();
-    };
+    await mount(Harness, { props: { fixture: 'live-marked', media: dockAnnotationMediaIdle } });
+    const bar = page.getByRole('toolbar', { name: 'Annotation tools' });
+    await expect(bar).toBeVisible();
+    await expect(bar).toHaveAttribute('data-mode', 'annotate');
+    // The recording bar's family: pointer, the four tools, Clear; no Screenshot/Record.
+    for (const tool of ['pointer', 'pick', 'box', 'pen', 'arrow'])
+      await expect(bar.locator(`[data-tool="${tool}"]`)).toBeVisible();
+    await expect(
+      bar.getByRole('button', { name: /Capture the screen|Record the screen/ }),
+    ).toHaveCount(0);
+    await expect(bar.locator('[data-testid="recording-chip"]')).toHaveCount(0);
+    await expect(bar.locator('[data-clear]')).toBeVisible();
+    // Dark whatever the system appearance.
+    expect(await bar.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
+      'rgb(38, 38, 38)',
+    );
+    await page.screenshot({ path: testInfo.outputPath(`annotation-bar-${scheme}.png`) });
 
-    // The annotate bar moves by its grip.
-    const start = await anchor(annotateBar);
-    await dragGrip(annotateBar.locator('.toolbar-grip'), -220, -160);
-    const moved = await anchor(annotateBar);
-    expect(moved.cx).toBeCloseTo(start.cx - 220, -1);
-    expect(moved.bottom).toBeCloseTo(start.bottom - 160, -1);
-    // A button click is a click, never a drag.
-    await annotateBar.getByRole('button', { name: 'Box' }).click();
-    expect(await anchor(annotateBar)).toEqual(moved);
-    const dark = await background(annotateBar);
+    // Tools switch on the bar; clicks on it are never marks.
+    await bar.locator('[data-tool="pen"]').click();
+    await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
+    expect(await recorded(page, 'pointers')).toEqual([]);
+    // The grip moves it; a button never does.
+    const start = await place(bar);
+    const grip = (await bar.locator('.grip').boundingBox())!;
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2 - 150, grip.y + grip.height / 2 - 100, {
+      steps: 4,
+    });
+    await page.mouse.up();
+    const moved = await place(bar);
+    expect(Math.abs(moved.cx - (start.cx - 150))).toBeLessThanOrEqual(1);
+    expect(Math.abs(moved.bottom - (start.bottom - 100))).toBeLessThanOrEqual(1);
+    await bar.locator('[data-tool="arrow"]').click();
+    expect(await place(bar)).toEqual(moved);
 
-    // Record: the recording bar appears exactly where the annotate bar was, just as dark.
-    await annotateBar.getByRole('button', { name: 'Record the screen · ⌘⇧R' }).click();
-    await expect(recordingBar).toBeVisible();
-    await expect(annotateBar).toHaveCount(0);
-    expectSamePlace(await anchor(recordingBar), moved);
-    expect(await background(recordingBar)).toBe(dark);
-    await expect(recordingBar.locator('.grip')).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath(`recording-bar-${scheme}.png`) });
-
-    // Dragged far past the screen edge, it stays fully on screen.
-    await dragGrip(recordingBar.locator('.grip'), -2000, -2000);
-    const area = JSON.parse(
-      (await page.getByTestId('dock-annotation-harness').getAttribute('data-work-area'))!,
-    ) as { x: number; y: number };
-    const clamped = (await recordingBar.boundingBox())!;
-    expect(Math.round(clamped.x)).toBeGreaterThanOrEqual(area.x);
-    expect(Math.round(clamped.y)).toBeGreaterThanOrEqual(area.y);
-    const corner = await anchor(recordingBar);
-    // Its buttons stay buttons: pausing does not move it.
-    await recordingBar.getByTestId('recording-chip').click();
-    expect(await anchor(recordingBar)).toEqual(corner);
-
-    // Done: the annotate bar comes back where the recording bar was.
-    await recordingBar.locator('[data-done]').click();
-    await expect(annotateBar).toBeVisible();
-    expectSamePlace(await anchor(annotateBar), corner);
+    // Attach counts the marks on screen and commits them; Close ends the session.
+    await expect(bar.locator('[data-attach-count]')).toHaveText('4');
+    await bar.locator('[data-done]').click();
+    await bar.locator('[data-close]').click();
+    expect((await actions(page)).filter((row) => row.action !== 'rect')).toEqual([
+      { sessionId: 'fixture-live', action: 'tool', tool: 'pen' },
+      { sessionId: 'fixture-live', action: 'tool', tool: 'arrow' },
+      { sessionId: 'fixture-live', action: 'commit' },
+      { sessionId: 'fixture-live', action: 'end' },
+    ]);
   });
 }
+
+test('with nothing marked, Done ends the session without an attachment', async ({
+  mount,
+  page,
+}) => {
+  await mount(Harness, { props: { fixture: 'live-empty', media: dockAnnotationMediaIdle } });
+  const bar = page.getByRole('toolbar', { name: 'Annotation tools' });
+  await expect(bar.locator('[data-attach-count]')).toHaveCount(0);
+  await bar.locator('[data-done]').click();
+  await expect(bar).toHaveCount(0);
+  expect((await actions(page)).filter((row) => row.action !== 'rect')).toEqual([
+    { sessionId: 'fixture-live', action: 'end' },
+  ]);
+});
+
+test('a recording starting or ending keeps the bar, its tools, the current tool and its place', async ({
+  mount,
+  page,
+}, testInfo) => {
+  const props = { fixture: 'live-empty', media: dockAnnotationMediaIdle } as const;
+  const component = await mount(Harness, { props });
+  const bar = page.getByTestId('dock-recording-toolbar');
+  await expect(bar).toHaveAttribute('data-mode', 'annotate');
+  await bar.locator('[data-tool="box"]').click();
+  const grip = (await bar.locator('.grip').boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 - 200, grip.y + grip.height / 2 - 120, {
+    steps: 4,
+  });
+  await page.mouse.up();
+  const annotating = await place(bar);
+
+  // The composer starts a recording (its own control): only the right side changes.
+  await component.update({
+    props: {
+      ...props,
+      media: {
+        ...dockAnnotationMediaIdle,
+        record: {
+          ...dockAnnotationMediaIdle.record,
+          recording: true,
+          startedAt: Date.now() - 5000,
+          label: 'Stop recording',
+          tooltip: 'Stop recording',
+        },
+      },
+    },
+  });
+  await expect(bar).toHaveAttribute('data-mode', 'recording');
+  await expect(bar.getByTestId('recording-chip')).toBeVisible();
+  await expect(bar.locator('[data-tool="box"]')).toHaveAttribute('aria-checked', 'true');
+  const recordingPlace = await place(bar);
+  expect(Math.abs(recordingPlace.cx - annotating.cx)).toBeLessThanOrEqual(1);
+  expect(Math.abs(recordingPlace.bottom - annotating.bottom)).toBeLessThanOrEqual(1);
+  await page.screenshot({ path: testInfo.outputPath('bar-recording.png') });
+  // Picking a tool mid-recording keeps the recording UI.
+  await bar.locator('[data-tool="pen"]').click();
+  await expect(bar.getByTestId('recording-chip')).toBeVisible();
+
+  // The recording ends: back to annotating, in the same place.
+  await component.update({ props });
+  await expect(bar).toHaveAttribute('data-mode', 'annotate');
+  const after = await place(bar);
+  expect(Math.abs(after.cx - annotating.cx)).toBeLessThanOrEqual(1);
+  expect(Math.abs(after.bottom - annotating.bottom)).toBeLessThanOrEqual(1);
+});
