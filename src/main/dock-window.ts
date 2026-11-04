@@ -813,11 +813,21 @@ export function setDockHiddenForSelection(
     if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
     captureHiddenWindows.add(window);
     placementController?.cancelInteraction();
+    // The pointer poll stops while hidden, so its last "inside" would outlive the
+    // selection: back over the dock, no enter would ever be sent, and the dock would
+    // stay collapsed and click-through. Forget it, as a capture's suppression does.
+    presenceFor(window).reset();
+    lastForwardedMove.delete(window);
     window.hide();
     return;
   }
   captureHiddenWindows.delete(window);
-  if (owner.restore !== false && canRevealDock(window)) window.showInactive();
+  if (owner.restore !== false && canRevealDock(window)) {
+    window.showInactive();
+    // Re-route at once from the live cursor rather than the pre-selection state.
+    appliedPointerRouting.delete(window);
+    setDockPointerRegions(window, pointerState);
+  }
 }
 
 /** When Intent itself last focused the dock (a shortcut, the dock's own request). */
