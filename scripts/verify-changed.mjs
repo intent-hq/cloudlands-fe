@@ -162,13 +162,21 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
 }
 
 export function parseArgs(argv) {
-  const result = { base: null, dryRun: false, help: false, paths: [], resume: false };
+  const result = {
+    base: null,
+    dryRun: false,
+    help: false,
+    keepGoing: false,
+    paths: [],
+    resume: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--resolved-plan') result.resolvedPlan = true;
     else if (arg === '--resume') result.resume = true;
+    else if (arg === '--keep-going') result.keepGoing = true;
     else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
       const value =
         arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
@@ -1261,6 +1269,9 @@ export async function runVerificationPlan(plan, root, options = {}) {
   options.onAttempt?.({ attempt, finish });
   if (attempt) log(`verify:changed: record: ${attempt.path}`);
 
+  // With keepGoing a failed check is recorded and the remaining checks still run,
+  // so one attempt reports (and records) every failure instead of the first.
+  const failures = [];
   try {
     for (const check of plan.checks) {
       if (terminating) throw new Error('verification interrupted');
@@ -1306,7 +1317,12 @@ export async function runVerificationPlan(plan, root, options = {}) {
           exitCode: error?.exitCode ?? null,
           signal: error?.signal ?? null,
         });
-        throw error;
+        if (!options.keepGoing || terminating) throw error;
+        failures.push({ check, error });
+        log(
+          `[verify:changed] ${error instanceof Error ? error.message : error}\n[verify:changed] --keep-going: continuing with the remaining checks`,
+        );
+        continue;
       }
       attempt?.append({
         type: 'check-end',
@@ -1319,6 +1335,17 @@ export async function runVerificationPlan(plan, root, options = {}) {
     }
   } finally {
     finish();
+  }
+  if (failures.length) {
+    const firstLine = (error) =>
+      String(error instanceof Error ? error.message : error).split('\n')[0];
+    const lines = failures.map(({ error }) => `  - ${firstLine(error)}`);
+    const next = attempt
+      ? `See ${attempt.path}/coverage.json; rerun with --resume to run only what did not pass.`
+      : 'Rerun to verify again.';
+    throw new Error(
+      `${failures.length} of ${plan.checks.length} check(s) failed:\n${lines.join('\n')}\n${next}`,
+    );
   }
   if (coverage && !coverage.complete) {
     const missing = [...coverage.checks, ...coverage.unitFiles].filter(
@@ -1340,10 +1367,13 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const args = parseArgs(argv);
   if (args.help) {
     log(
-      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--resume] [--max-unit-files N] [--base <ref>] [paths...]',
+      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--resume] [--keep-going] [--max-unit-files N] [--base <ref>] [paths...]',
     );
     log(
       '  --resume: reuse compatible passing receipts from earlier attempts and run only what remains; completes only when every current check and unit file is covered.',
+    );
+    log(
+      '  --keep-going: after a failed check, still run (and record) every remaining check, then fail listing all failed checks; prerequisites still stop the run.',
     );
     log(
       `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
@@ -1380,6 +1410,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     resolvedPlan: args.resolvedPlan,
     maxUnitFiles: args.maxUnitFiles,
     resume: args.resume,
+    keepGoing: args.keepGoing,
     record: true,
     argv,
     onAttempt: options.onAttempt,

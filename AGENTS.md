@@ -384,7 +384,8 @@ combine it with `--resolved-plan` for a budgeted preview, then raise or omit the
 Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`
 and passes only when every check and resolved unit file is satisfied. To continue after a
 failure or interruption, rerun with `--resume` (`--resolved-plan --resume` previews it);
-never hand-pick stages. Receipt files and resume-credit rules:
+never hand-pick stages. A run stops at its first failed check; `--keep-going` still runs and
+records every remaining check, then fails listing them all (prerequisites still stop it). Receipt files and resume-credit rules:
 [Changed-file verification receipts](../../docs/fe/DEVELOPER_GUIDE.md#changed-file-verification-receipts).
 
 It runs scoped Prettier and ESLint, related Vitest tests, colocated component tests one
