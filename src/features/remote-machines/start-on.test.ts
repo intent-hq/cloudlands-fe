@@ -51,7 +51,7 @@ describe('startOnOptions backend platform', () => {
       backendPlatform: { os: 'linux', arch: 'x86_64' },
       machines: [machine('mac', { name: 'Mac', platform: { os: 'macos', arch: 'aarch64' } })],
     });
-    expect(backend).toMatchObject({ id: START_ON_BACKEND, platform: 'Linux x86_64' });
+    expect(backend).toMatchObject({ id: START_ON_BACKEND, platform: 'Linux x64' });
     expect(mac).toMatchObject({ platform: 'macOS arm64' });
   });
 

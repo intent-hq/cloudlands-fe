@@ -45,13 +45,21 @@ function isStartOnMachineUsable(machine: RemoteMachine): boolean {
 /** The backend first, then each machine available to it. */
 export function startOnOptions({
   backendLabel,
+  backendPlatform,
   machines,
 }: {
   backendLabel: string;
+  /** The backend's own host platform (`host.status` os/arch), when known. */
+  backendPlatform?: { os?: string; arch?: string };
   machines: readonly RemoteMachine[];
 }): StartOnOption[] {
   return [
-    { id: START_ON_BACKEND, label: backendLabel, platform: null, disabled: false },
+    {
+      id: START_ON_BACKEND,
+      label: backendLabel,
+      platform: machinePlatformLabel(backendPlatform?.os, backendPlatform?.arch),
+      disabled: false,
+    },
     ...machines.map((machine): StartOnOption => {
       const platform = machinePlatformLabel(machine.platform?.os, machine.platform?.arch);
       if (isStartOnMachineUsable(machine))

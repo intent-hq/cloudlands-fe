@@ -57,7 +57,7 @@ afterEach(() => store.dispose());
 
 it('subtitles the connected backend with its own host platform from the Machines capture', () => {
   seed({ ...backend, hostOs: 'linux', hostArch: 'x86_64' });
-  expect(backendRow()).toMatchObject({ label: 'intent1', platform: 'Linux x86_64' });
+  expect(backendRow()).toMatchObject({ label: 'intent1', platform: 'Linux x64' });
 });
 
 it('shows no backend subtitle while its platform is unknown', () => {

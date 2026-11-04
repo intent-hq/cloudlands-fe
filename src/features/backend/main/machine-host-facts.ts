@@ -9,6 +9,12 @@ export function extractHostOs(result: unknown): string | null {
   return typeof result.os === 'string' && result.os.length > 0 ? result.os : null;
 }
 
+/** The daemon host's CPU architecture from a `host.status` result (`arch`), or null when absent. */
+export function extractHostArch(result: unknown): string | null {
+  if (!record(result)) return null;
+  return typeof result.arch === 'string' && result.arch.length > 0 ? result.arch : null;
+}
+
 /**
  * The providers a `host.providerDiscovery` result reports as usable on the
  * daemon host: `installed`, not `gatedOff` and not gated by `unavailableReason`

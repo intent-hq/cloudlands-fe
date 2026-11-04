@@ -232,6 +232,8 @@ export interface ConnectionRecord {
    * reported it; never persisted.
    */
   hostOs?: string;
+  /** The connected daemon host's CPU architecture (`host.status.arch`); transient like `hostOs`. */
+  hostArch?: string;
   /**
    * Providers the connected daemon reports as installed
    * (`host.providerDiscovery`). Transient: present only while connected and

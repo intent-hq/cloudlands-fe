@@ -150,7 +150,7 @@ import {
   type ConnectionRecord,
   type DetectedDeviceKind,
 } from '../../../shared/types/connections';
-import { extractHostOs, extractInstalledProviders } from './machine-host-facts';
+import { extractHostArch, extractHostOs, extractInstalledProviders } from './machine-host-facts';
 import type {
   AddConnectionResult,
   CaptureFingerprintResult,
@@ -220,24 +220,26 @@ const PRESENCE = IPC_CHANNELS.PRESENCE;
 // instead of once per reconnect (a daemon upgrade logs again).
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
 const connectedDaemonVersions = new Map<string, string>();
-// Settings → Machines facts about each connected daemon's host: its OS
-// (`host.status.os`) and installed providers (`host.providerDiscovery`).
+// Settings → Machines facts about each connected daemon's host: its platform
+// (`host.status` os/arch) and installed providers (`host.providerDiscovery`).
 // Keyed by connection id, cleared with `connectedDaemonVersions` whenever the
 // connection leaves `connected`, and only surfaced on a connected row.
-const connectedHostOs = new Map<string, string>();
+const connectedHostPlatforms = new Map<string, { os: string; arch: string | null }>();
 const connectedProviders = new Map<string, ConnectionProviderSummary[]>();
 
 function clearConnectedHostFacts(connectionId: string): void {
-  connectedHostOs.delete(connectionId);
+  connectedHostPlatforms.delete(connectionId);
   connectedProviders.delete(connectionId);
 }
 
-/** Record a host OS capture; true when the surfaced value changed. */
-function setConnectedHostOs(connectionId: string, result: unknown): boolean {
+/** Record a host platform capture; true when the surfaced value changed. */
+function setConnectedHostPlatform(connectionId: string, result: unknown): boolean {
   const os = extractHostOs(result);
-  if (os === (connectedHostOs.get(connectionId) ?? null)) return false;
-  if (os) connectedHostOs.set(connectionId, os);
-  else connectedHostOs.delete(connectionId);
+  const arch = os ? extractHostArch(result) : null;
+  const previous = connectedHostPlatforms.get(connectionId);
+  if ((previous?.os ?? null) === os && (previous?.arch ?? null) === arch) return false;
+  if (os) connectedHostPlatforms.set(connectionId, { os, arch });
+  else connectedHostPlatforms.delete(connectionId);
   return true;
 }
 // Each connected daemon's `client.hello` `protocolVersion`, keyed by
@@ -390,7 +392,7 @@ export function __resetDaemonBuildLogForTesting(): void {
   lastLoggedDaemonBuildKeys.clear();
   connectedDaemonVersions.clear();
   connectedProtocolVersions.clear();
-  connectedHostOs.clear();
+  connectedHostPlatforms.clear();
   connectedProviders.clear();
   localHelloObserved = false;
 }
@@ -2614,7 +2616,7 @@ async function captureRemoteHostnameOriginal(id: string, owner?: PoolOwner): Pro
         await refreshGuestHostname(id, result, guard, owner);
         return;
       }
-      const osChanged = setConnectedHostOs(id, result);
+      const osChanged = setConnectedHostPlatform(id, result);
       const kindChanged = await connectionsStore.setDetectedDeviceKind(id, deviceKind);
       if (hostname) await connectionsStore.setHostname(id, hostname);
       if (hostname || kindChanged || osChanged) await broadcastConnectionsChangedOwned(owner);
@@ -2921,7 +2923,7 @@ async function captureLocalDeviceKindOriginal(owner?: PoolOwner): Promise<void> 
       poolRequest(owner, client, 'host.status'),
     );
     if (backendClients.get(LOCAL_CONNECTION_ID) !== client) return;
-    const osChanged = setConnectedHostOs(LOCAL_CONNECTION_ID, result);
+    const osChanged = setConnectedHostPlatform(LOCAL_CONNECTION_ID, result);
     const identityChanged = setLocalHostIdentity(result);
     const kindChanged = await connectionsStore.setDetectedDeviceKind(
       LOCAL_CONNECTION_ID,
@@ -3380,7 +3382,8 @@ async function listConnectionsOriginal(
               ? (localVersionInfo?.daemonVersion ?? undefined)
               : connectedDaemonVersions.get(connection.id)
             : undefined;
-        const hostOs = status === 'connected' ? connectedHostOs.get(connection.id) : undefined;
+        const platform =
+          status === 'connected' ? connectedHostPlatforms.get(connection.id) : undefined;
         const providers =
           status === 'connected' ? connectedProviders.get(connection.id) : undefined;
         return {
@@ -3396,7 +3399,8 @@ async function listConnectionsOriginal(
             : {}),
           status,
           ...(intentdVersion ? { intentdVersion } : {}),
-          ...(hostOs ? { hostOs } : {}),
+          ...(platform ? { hostOs: platform.os } : {}),
+          ...(platform?.arch ? { hostArch: platform.arch } : {}),
           ...(providers ? { providers } : {}),
         };
       }),
