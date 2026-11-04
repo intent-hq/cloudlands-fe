@@ -52,6 +52,12 @@ export const SHORTCUT_DEFAULTS = {
   'leader.equalize-sizes': '=',
   'leader.jump-to-panel': 'q + 1-9',
   'leader.cycle-layout': 'space',
+  // Registered system-wide by main (dock-shortcut-registration.ts); fixed keys.
+  'dock.focus': 'mod+shift+d',
+  'dock.capture': 'mod+shift+s',
+  'dock.record': 'mod+shift+r',
+  'dock.annotate': 'mod+shift+a',
+  'dock.dictate': 'mod+shift+m',
 } as const;
 
 export type ShortcutId = keyof typeof SHORTCUT_DEFAULTS;

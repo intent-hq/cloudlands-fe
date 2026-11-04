@@ -20,7 +20,8 @@ const isMac =
 /**
  * Shortcut category for organizing the cheat sheet
  */
-export type ShortcutCategory = 'global' | 'navigation' | 'chat' | 'editor' | 'panel' | 'leader';
+export type ShortcutCategory =
+  'global' | 'navigation' | 'chat' | 'editor' | 'panel' | 'leader' | 'dock';
 
 /**
  * Context for determining which shortcuts to show
@@ -620,6 +621,7 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'leader.jump-to-panel',
     'leader.cycle-layout',
   ],
+  dock: ['dock.focus', 'dock.capture', 'dock.record', 'dock.annotate', 'dock.dictate'],
 };
 
 export interface ShortcutDefinition extends ShortcutEntry {
@@ -1008,6 +1010,49 @@ export const SHORTCUT_CATEGORIES: Record<
           return m.ui_shortcuts_cycleLayout_label();
         },
         contexts: ['panel'],
+      },
+    ],
+  },
+  // System-wide: they work with any app in front, not only inside Intent.
+  dock: {
+    get title() {
+      return m.ui_shortcuts_dockCategory_title();
+    },
+    shortcuts: [
+      {
+        key: 'mod+shift+d',
+        get label() {
+          return m.ui_shortcuts_dockFocus_label();
+        },
+        contexts: ['global'],
+      },
+      {
+        key: 'mod+shift+s',
+        get label() {
+          return m.ui_shortcuts_dockCapture_label();
+        },
+        contexts: ['global'],
+      },
+      {
+        key: 'mod+shift+r',
+        get label() {
+          return m.ui_shortcuts_dockRecord_label();
+        },
+        contexts: ['global'],
+      },
+      {
+        key: 'mod+shift+a',
+        get label() {
+          return m.ui_shortcuts_dockAnnotate_label();
+        },
+        contexts: ['global'],
+      },
+      {
+        key: 'mod+shift+m',
+        get label() {
+          return m.ui_shortcuts_dockDictate_label();
+        },
+        contexts: ['global'],
       },
     ],
   },

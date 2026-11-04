@@ -25,7 +25,16 @@
     'editor.redo',
     'leader.resize-panels',
   ]);
-  const fixedShortcutIds = new Set<ShortcutId>(['navigation.go-to-tab', 'leader.navigate-panels']);
+  // The dock's system-wide keys are registered by main with fixed accelerators.
+  const fixedShortcutIds = new Set<ShortcutId>([
+    'navigation.go-to-tab',
+    'leader.navigate-panels',
+    'dock.focus',
+    'dock.capture',
+    'dock.record',
+    'dock.annotate',
+    'dock.dictate',
+  ]);
   const categories = Object.entries(SHORTCUT_CATEGORIES).filter(
     ([, category]) => category.shortcuts.length > 0,
   );
