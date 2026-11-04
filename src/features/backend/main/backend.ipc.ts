@@ -150,7 +150,13 @@ import {
   type ConnectionRecord,
   type DetectedDeviceKind,
 } from '../../../shared/types/connections';
-import { extractHostArch, extractHostOs, extractInstalledProviders } from './machine-host-facts';
+import {
+  extractEnabledProviderIds,
+  extractHostArch,
+  extractHostOs,
+  extractInstalledProviders,
+  onlyEnabledProviders,
+} from './machine-host-facts';
 import type {
   AddConnectionResult,
   CaptureFingerprintResult,
@@ -221,15 +227,34 @@ const PRESENCE = IPC_CHANNELS.PRESENCE;
 const lastLoggedDaemonBuildKeys = new Map<string, string>();
 const connectedDaemonVersions = new Map<string, string>();
 // Settings → Machines facts about each connected daemon's host: its platform
-// (`host.status` os/arch) and installed providers (`host.providerDiscovery`).
-// Keyed by connection id, cleared with `connectedDaemonVersions` whenever the
-// connection leaves `connected`, and only surfaced on a connected row.
+// (`host.status` os/arch) and its providers: installed (`host.providerDiscovery`)
+// and enabled (`host.executionContext` enabledProviderIds). Keyed by connection
+// id, cleared with `connectedDaemonVersions` whenever the connection leaves
+// `connected`, and only surfaced on a connected row. `connectedProviders` is
+// the surfaced list: installed providers that host has not disabled.
 const connectedHostPlatforms = new Map<string, { os: string; arch: string | null }>();
+const connectedInstalledProviders = new Map<string, ConnectionProviderSummary[]>();
+const connectedEnabledProviderIds = new Map<string, string[]>();
 const connectedProviders = new Map<string, ConnectionProviderSummary[]>();
 
 function clearConnectedHostFacts(connectionId: string): void {
   connectedHostPlatforms.delete(connectionId);
+  connectedInstalledProviders.delete(connectionId);
+  connectedEnabledProviderIds.delete(connectionId);
   connectedProviders.delete(connectionId);
+}
+
+/** Recompute a connection's surfaced providers; true when they changed. */
+function refreshConnectedProviders(connectionId: string): boolean {
+  const providers = onlyEnabledProviders(
+    connectedInstalledProviders.get(connectionId) ?? null,
+    connectedEnabledProviderIds.get(connectionId) ?? null,
+  );
+  const previous = connectedProviders.get(connectionId);
+  if (JSON.stringify(previous ?? null) === JSON.stringify(providers)) return false;
+  if (providers) connectedProviders.set(connectionId, providers);
+  else connectedProviders.delete(connectionId);
+  return true;
 }
 
 /** Record a host platform capture; true when the surfaced value changed. */
@@ -393,6 +418,8 @@ export function __resetDaemonBuildLogForTesting(): void {
   connectedDaemonVersions.clear();
   connectedProtocolVersions.clear();
   connectedHostPlatforms.clear();
+  connectedInstalledProviders.clear();
+  connectedEnabledProviderIds.clear();
   connectedProviders.clear();
   localHelloObserved = false;
 }
@@ -2012,6 +2039,7 @@ function createAdditionalBackendClient(
               void captureRemoteHostnameOwned(id, owner);
               void captureRemoteUpdateSupportedOwned(id, owner);
               void captureConnectedProvidersOwned(id, owner);
+              void captureConnectedEnabledProvidersOwned(id, owner);
             }
           } else {
             // #3448: refresh the adopted external daemon's version info from the
@@ -2040,6 +2068,7 @@ function createAdditionalBackendClient(
             void captureLocalUpdateSupportedOwned(owner);
             void captureLocalDeviceKindOwned(owner);
             void captureConnectedProvidersOwned(LOCAL_CONNECTION_ID, owner);
+            void captureConnectedEnabledProvidersOwned(LOCAL_CONNECTION_ID, owner);
           }
         },
         instance,
@@ -2070,6 +2099,12 @@ function createAdditionalBackendClient(
     backendNotificationForwarder.emit('notification', id, notification);
     if (poolLifecycle && poolLifecycle.phase !== 'active') return;
     if (backendClients.get(id) !== instance) return;
+    // Whichever subscription carries it (the renderer's on its connection),
+    // a provider enablement change re-reads that host's enabled providers so
+    // its Settings → Machines row hides or shows them without a reconnect.
+    if (isExecutionContextChangedEvent(notification)) {
+      void captureConnectedEnabledProvidersOwned(id);
+    }
     if (
       isGuestWorkspaceRefreshEvent(
         notification,
@@ -2895,11 +2930,9 @@ async function captureConnectedProvidersOriginal(id: string, owner?: PoolOwner):
     const result = await poolRequest(owner, client, 'host.providerDiscovery', {});
     if (backendClients.get(id) !== client) return;
     const providers = extractInstalledProviders(result);
-    const previous = connectedProviders.get(id);
-    if (JSON.stringify(previous ?? null) === JSON.stringify(providers)) return;
-    if (providers) connectedProviders.set(id, providers);
-    else connectedProviders.delete(id);
-    await broadcastConnectionsChangedOwned(owner);
+    if (providers) connectedInstalledProviders.set(id, providers);
+    else connectedInstalledProviders.delete(id);
+    if (refreshConnectedProviders(id)) await broadcastConnectionsChangedOwned(owner);
   } catch (error) {
     recordPoolError(owner, error);
     logger.warn('Failed to capture installed providers for the Machines list', {
@@ -2907,6 +2940,54 @@ async function captureConnectedProvidersOriginal(id: string, owner?: PoolOwner):
       error: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+function isExecutionContextChangedEvent(notification: JsonRpcNotification): boolean {
+  if (notification.method !== 'events.event') return false;
+  const params = notification.params as { event?: { type?: unknown } } | undefined;
+  return params?.event?.type === 'host:execution-context-changed';
+}
+
+/**
+ * Capture which providers a connected daemon (local or a saved remote) has
+ * enabled, via `host.executionContext` `enabledProviderIds`, so its Settings →
+ * Machines row hides installed-but-disabled providers. Runs on every
+ * (re)connect hello and on `host:execution-context-changed`. Guest sessions
+ * are skipped. Fail-soft: an error or a host without the projection leaves
+ * enablement unknown, which keeps showing every installed provider. A result
+ * from a client replaced mid-flight is dropped.
+ */
+function captureConnectedEnabledProvidersOwned(id: string, parent?: PoolOwner): Promise<void> {
+  return poolWork('captureConnectedEnabledProviders', parent, (owner) =>
+    captureConnectedEnabledProvidersOriginal(id, owner),
+  );
+}
+
+async function captureConnectedEnabledProvidersOriginal(
+  id: string,
+  owner?: PoolOwner,
+): Promise<void> {
+  const client = backendClients.get(id);
+  if (!client) return;
+  try {
+    // Bind this owner to the member before any await, like the hostname capture.
+    poolClient(owner, client);
+    if (id !== LOCAL_CONNECTION_ID && (await guestSessionsStore.findById(id))) return;
+    const result = await poolRequest(owner, client, 'host.executionContext', {});
+    if (backendClients.get(id) !== client) return;
+    const enabled = extractEnabledProviderIds(result);
+    if (enabled) connectedEnabledProviderIds.set(id, enabled);
+    else connectedEnabledProviderIds.delete(id);
+  } catch (error) {
+    recordPoolError(owner, error);
+    if (backendClients.get(id) !== client) return;
+    connectedEnabledProviderIds.delete(id);
+    logger.warn('Failed to capture enabled providers for the Machines list', {
+      connectionId: id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  if (refreshConnectedProviders(id)) await broadcastConnectionsChangedOwned(owner);
 }
 
 function captureLocalDeviceKindOwned(parent?: PoolOwner): Promise<void> {
