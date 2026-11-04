@@ -25,7 +25,9 @@ import ts from 'typescript';
 //       silently started replacing `./connections-store` inside
 //       desktop-connections-store.ts.
 // Matchers combined with another condition (`importer.endsWith(...) && id === ...`) only
-// need to match something; virtual ids (`id === 'fixture-renderer'`) are not checked.
+// need to match something. Virtual ids (`id === 'fixture-renderer'`,
+// `id.startsWith('\0fixture:')`), protocols, extensions and pass-through matchers
+// (`return id`) are not checked.
 export const SCRIPT_PATH = 'scripts/check-electron-test-paths.mjs';
 export const TSCONFIG_PATH = 'tsconfig.electron-tests.json';
 export const SCAN_PATTERNS = Object.freeze(['test/electron*.ts', 'test/fixtures/**/*.ts']);
@@ -127,9 +129,16 @@ const lineOf = (node) =>
 const isStringLike = (node) =>
   node !== undefined && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node));
 
+/** `class A extends Base` — a type node to TypeScript, but `Base` is a runtime value. */
+const isClassBase = (node) =>
+  ts.isExpressionWithTypeArguments(node) &&
+  ts.isHeritageClause(node.parent) &&
+  node.parent.token === ts.SyntaxKind.ExtendsKeyword &&
+  ts.isClassLike(node.parent.parent);
+
 function isTypeOnlyContext(node) {
   return (
-    ts.isTypeNode(node) ||
+    (ts.isTypeNode(node) && !isClassBase(node)) ||
     ts.isInterfaceDeclaration(node) ||
     ts.isTypeAliasDeclaration(node) ||
     ts.isImportDeclaration(node) ||
@@ -269,9 +278,9 @@ function returnedLiteral(statement) {
     if (found !== undefined || ts.isFunctionLike(node)) return;
     if (ts.isReturnStatement(node) && node.expression) {
       const expression = node.expression;
-      if (isStringLike(expression)) found = { text: expression.text, exact: true };
-      else if (ts.isTemplateExpression(expression)) found = { text: null, exact: false };
-      else found = { text: null, exact: false };
+      found = isStringLike(expression)
+        ? { text: expression.text, exact: true, expression }
+        : { text: null, exact: false, expression };
       return;
     }
     ts.forEachChild(node, visit);
@@ -288,7 +297,9 @@ function guardedReturn(matcherNode, boundary) {
     }
     if (ts.isConditionalExpression(node.parent) && node.parent.condition === node) {
       const branch = node.parent.whenTrue;
-      return isStringLike(branch) ? { text: branch.text, exact: true } : undefined;
+      return isStringLike(branch)
+        ? { text: branch.text, exact: true, expression: branch }
+        : { text: null, exact: false, expression: branch };
     }
   }
   return undefined;
@@ -316,6 +327,13 @@ function regexFromLiteral(text) {
   }
 }
 
+// A source-module id is relative (`./x`), absolute (`/abs/x`) or aliased (`$lib/x`); a
+// suffix, substring or regex names one only through a path segment (`/backend.ipc`).
+// Virtual ids (`\0fixture:`, `virtual:x`, `fixture-renderer`), protocols (`node:`) and
+// extensions (`.css`) are not source modules.
+const isSourcePrefix = (value) => /^[./$]/.test(value);
+const isSourcePart = (value) => value.includes('/') && !/^\^?(?:\\0|\0|virtual:)/.test(value);
+
 /** Source-module matchers in one `resolveId` hook. */
 function collectMatchers(fn) {
   const id = firstParameterName(fn);
@@ -325,6 +343,8 @@ function collectMatchers(fn) {
   const add = (node, label, test, checked) => {
     if (!checked) return;
     const target = guardedReturn(node, fn);
+    // `return id` resolves a virtual module the plugin owns; it stubs no source module.
+    if (target?.expression && isId(target.expression)) return;
     matchers.push({
       label,
       test,
@@ -339,7 +359,7 @@ function collectMatchers(fn) {
       const literal = isId(node.left) ? node.right : isId(node.right) ? node.left : null;
       if (isStringLike(literal)) {
         const value = literal.text;
-        add(node, `=== '${value}'`, (s) => s === value, /^[./$]/.test(value));
+        add(node, `=== '${value}'`, (s) => s === value, isSourcePrefix(value));
       }
     } else if (
       ts.isCallExpression(node) &&
@@ -350,7 +370,8 @@ function collectMatchers(fn) {
       const method = node.expression.name.text;
       const value = node.arguments[0].text;
       if (method === 'endsWith' || method === 'startsWith' || method === 'includes') {
-        add(node, `.${method}('${value}')`, (s) => s[method](value), true);
+        const checked = method === 'startsWith' ? isSourcePrefix(value) : isSourcePart(value);
+        add(node, `.${method}('${value}')`, (s) => s[method](value), checked);
       }
     } else if (
       ts.isCallExpression(node) &&
@@ -361,7 +382,7 @@ function collectMatchers(fn) {
     ) {
       const text = node.expression.expression.getText();
       const regex = regexFromLiteral(text);
-      if (regex) add(node, `${text}.test()`, (s) => regex.test(s), true);
+      if (regex) add(node, `${text}.test()`, (s) => regex.test(s), isSourcePart(regex.source));
     }
     ts.forEachChild(node, visit);
   };

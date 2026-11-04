@@ -274,6 +274,42 @@ describe('Electron helper path check', () => {
       expect(messages(root)).toEqual([]);
     });
 
+    it('follows an import used only as a class base, which the build keeps', () => {
+      const root = tree({
+        'src/main/base.ts': [
+          "import { log } from './logger';",
+          'export class Base { run() { log(); } }',
+        ],
+        'src/main/logger.ts': 'export function log() {}',
+        'src/main/entry.ts': [
+          "import { Base } from './base';",
+          "import type { Shape } from './shape';",
+          'export class Tool extends Base implements Shape {}',
+        ],
+        'test/fixtures/native/harness.ts': harness(
+          'src/main/entry.ts',
+          ["if (id === './logger') return '\\0logger';"],
+          ["if (id === '\\0logger') return 'export function write() {}';"],
+        ),
+      });
+      expect(messages(root)).toEqual([
+        "resolveId stub === './logger' intercepts './logger' in src/main/base.ts:1, which needs log — not exported by the stub module",
+      ]);
+    });
+
+    it('skips virtual-module prefixes and pass-through matchers of any kind', () => {
+      const root = tree({
+        'src/main/entry.ts': 'export const entry = 1;',
+        'test/fixtures/native/harness.ts': harness('src/main/entry.ts', [
+          "if (id.startsWith('\\0fixture:')) return id;",
+          "if (id.startsWith('virtual:fixture')) return '\\0fixture:virtual';",
+          'if (/^node:/.test(id)) return { id, external: true };',
+          "if (id.endsWith('.css')) return id;",
+        ]),
+      });
+      expect(messages(root)).toEqual([]);
+    });
+
     it('reports a stub plugin whose build entry it cannot find', () => {
       const root = tree({
         'test/fixtures/native/harness.ts': harness('dist/entry.ts', [
