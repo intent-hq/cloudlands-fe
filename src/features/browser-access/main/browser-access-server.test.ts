@@ -783,7 +783,7 @@ describe('Browser access server: QR sign-in and one-time links', () => {
 
 describe('qrDestinations', () => {
   it('sends sign-in routes to the app root and a fresh sign-in page', () => {
-    expect(qrDestinations(`${LINK_PATH}?t=v1.1.x.y`)).toEqual({ home: '/', fresh: LOGIN_PATH });
+    expect(qrDestinations(`${LINK_PATH}?t=used-token`)).toEqual({ home: '/', fresh: LOGIN_PATH });
     expect(qrDestinations(LOGIN_PATH)).toEqual({ home: '/', fresh: LOGIN_PATH });
     expect(qrDestinations(`${APPROVE_PATH}?code=x`)).toEqual({ home: '/', fresh: LOGIN_PATH });
   });
