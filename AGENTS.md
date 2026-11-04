@@ -382,6 +382,14 @@ error and retry). `--max-unit-files N` rejects (never truncates) a plan over N f
 combine it with `--resolved-plan` for a budgeted preview, then raise or omit the limit.
 `pnpm run test:unit --maxWorkers=1` runs the full unit suite.
 
+`verify:changed` runs changed component test specs once with retries on. To catch the
+flakiness PR CI's "Changed Component Tests (repeated)" job catches, run
+`pnpm run test:ct:changed-repeat` before pushing: it builds the CT bundle under CI's 12 GiB
+heap, then repeats the changed specs (including uncommitted ones) with CI's repeat count,
+`--retries=0 --fail-on-flaky-tests` and two workers. `--dry-run` prints the filters and
+repeat count; `--workers N`, `--repeat-each N` and Playwright args after a second `--`
+(e.g. `-- --grep "<title>"`) tune stress runs (`--help` lists the rest).
+
 Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`
 and passes only when every check and resolved unit file is satisfied. To continue after a
 failure or interruption, rerun with `--resume` (`--resolved-plan --resume` previews it);
