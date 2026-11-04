@@ -299,8 +299,8 @@ describe('verification planning', () => {
         'eslint',
         'architecture',
         'knip',
-        'vitest-direct',
         'tsc-renderer',
+        'vitest-direct',
       ]);
     });
 
@@ -328,13 +328,13 @@ describe('verification planning', () => {
         'eslint',
         'architecture',
         'knip',
+        'svelte-check',
+        'tsc-renderer',
         'vitest-direct',
         'vitest-related',
         'vitest-declared',
         'vitest-ui-invariants',
         'ct-related',
-        'svelte-check',
-        'tsc-renderer',
       ]);
       expect(plan.checks.find((check) => check.id === 'vitest-direct')?.args).toEqual([
         'exec',
@@ -358,13 +358,13 @@ describe('verification planning', () => {
       expect(plan.fallbackReasons).toEqual(['native/tool.bin']);
       expect(plan.checks.map((check) => check.id)).toEqual([
         'architecture',
-        'vitest-full',
         'svelte-check',
         'tsc-renderer',
         'generate-build-config',
         'tsc-main',
         'generate-ipc-channels',
         'tsc-preload',
+        'vitest-full',
       ]);
     });
 
@@ -588,9 +588,9 @@ describe('verification planning', () => {
       'eslint',
       'architecture',
       'knip',
+      'tsc-renderer',
       'vitest-related',
       'vitest-ui-invariants',
-      'tsc-renderer',
     ]);
   });
 
@@ -1852,6 +1852,31 @@ describe('verification planning', () => {
     expect(rendererPlan.checks.map((check) => check.id)).not.toContain('generate-build-config');
   });
 
+  // A load-sensitive Vitest timeout must not hide a real type error behind it: the
+  // run stops at the first failure, and a Mobile-tab type error surfaced only after
+  // three ~17-minute runs when the type checks ran last (cloudlands-fe#4115).
+  it.each([
+    ['a selective plan', ['src/lib/Widget.svelte', 'src/shared/protocol.ts']],
+    ['the safe fallback', ['native/tool.bin']],
+  ])('runs every static type check before any test lane in %s', (_name, files) => {
+    const root = fixtureRoot({
+      'src/lib/Widget.svelte': '<button />',
+      'src/lib/Widget.ct.spec.ts': "import Widget from './Widget.svelte';",
+      'src/shared/protocol.ts': '',
+      'native/tool.bin': 'data',
+    });
+    const ids = createVerificationPlan(files, {
+      root,
+      ctTests: ['src/lib/Widget.ct.spec.ts'],
+    }).checks.map((check) => check.id);
+    const staticChecks = ['svelte-check', 'tsc-renderer', 'tsc-main', 'tsc-preload'];
+    const isTestLane = (id: string) => /^(?:vitest|ct|playwright)-/.test(id);
+    expect(ids).toEqual(expect.arrayContaining(staticChecks));
+    expect(ids.some(isTestLane)).toBe(true);
+    const lastStatic = Math.max(...staticChecks.map((id) => ids.indexOf(id)));
+    expect(lastStatic).toBeLessThan(ids.findIndex(isTestLane));
+  });
+
   it('checks all process boundaries for shared source', () => {
     const root = fixtureRoot({ 'src/shared/protocol.ts': '' });
     const plan = createVerificationPlan(['src/shared/protocol.ts'], { root, ctTests: [] });
@@ -1865,13 +1890,13 @@ describe('verification planning', () => {
     expect(plan.fallbackReasons).toEqual(['native/tool.bin']);
     expect(plan.checks.map((check) => check.id)).toEqual([
       'architecture',
-      'vitest-full',
       'svelte-check',
       'tsc-renderer',
       'generate-build-config',
       'tsc-main',
       'generate-ipc-channels',
       'tsc-preload',
+      'vitest-full',
     ]);
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.lockKind).toBe('vitest-full');
     expect(plan.checks.find((check) => check.id === 'vitest-full')?.args).toEqual([

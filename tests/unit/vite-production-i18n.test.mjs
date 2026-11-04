@@ -16,11 +16,19 @@ import { pathToFileURL } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { build } from 'vite';
+import { defaultTestTimeoutMs } from '../../scripts/vitest-timeouts.mjs';
 
 let root;
 let bundledMessages;
 let consumer;
 let config;
+
+// The setup scans every file under src/ for message keys and runs the i18n bundler
+// and a Vite production build, far more work than the default hook budget assumes.
+// At host load average 50-70 it took ~75 s and hit the 30 s local default three
+// times in a row, which stopped verify:changed before its later checks. Ten
+// default budgets (300 s locally, 600 s on CI) leave ~4x headroom over that.
+const SETUP_BUDGET_MS = defaultTestTimeoutMs() * 10;
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'production-i18n-'));
@@ -60,7 +68,7 @@ beforeAll(async () => {
   runInNewContext(bundledMessages, context);
   runInNewContext(result[0].output.find((output) => output.type === 'chunk').code, context);
   consumer = context.Consumer;
-});
+}, SETUP_BUDGET_MS);
 
 /** Production-builds `source` with the real Paraglide plugin against the prebuilt bundle. */
 function buildConsumer(name, source) {
