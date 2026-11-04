@@ -8339,5 +8339,15 @@
   "dock_shortcut_unavailable": "ショートカットを利用できません",
   "dock_shortcut_record_menu": "ワークスペースで録画…",
   "dock_shortcut_open_error": "ワークスペースを開けませんでした。もう一度選んでください。",
-  "dock_shortcut_dictate_label": "音声入力"
+  "dock_shortcut_dictate_label": "音声入力",
+  "settings_keyboardShortcuts_dockGlobal_description": "ほかのアプリが手前にあるときも使えるショートカットです。",
+  "settings_keyboardShortcuts_dockSaving_status": "ショートカットを保存中…",
+  "settings_keyboardShortcuts_dockInvalid_error": "Control、Command、Option のいずれかとキー、またはファンクションキーを使ってください。",
+  "settings_keyboardShortcuts_dockConflict_error": "このショートカットは別のコマンドで使われています。",
+  "settings_keyboardShortcuts_dockUnavailable_error": "このショートカットは使用できません。以前の設定は変更されていません。",
+  "settings_keyboardShortcuts_dockSave_error": "ショートカットを保存できませんでした。以前の設定は変更されていません。",
+  "settings_keyboardShortcuts_dockStale_error": "別のウインドウでショートカットが変更されました。再試行してください。",
+  "settings_keyboardShortcuts_dockLoad_error": "グローバルショートカットを読み込めませんでした。",
+  "settings_keyboardShortcuts_dockPreparing_status": "準備中…",
+  "settings_keyboardShortcuts_dockOff_description": "これらのグローバルショートカットを使うにはドックを有効にしてください。"
 }

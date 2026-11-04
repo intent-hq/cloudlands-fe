@@ -230,3 +230,16 @@ export const selectShortcutOverrides = store.createSelector((state) => {
 export const selectResolvedLocale = store.createSelector((state) => {
   return resolvePreferenceToLocale(state.userPreferences.languagePreference);
 });
+
+export const selectDockShortcutSettings = store.createSelector(
+  (state) => state.userPreferences.dockShortcuts ?? null,
+);
+export const selectDockShortcutPending = store.createSelector(
+  (state) => state.userPreferences.dockShortcutPending ?? false,
+);
+export const selectDockShortcutCaptureToken = store.createSelector(
+  (state) => state.userPreferences.dockShortcutCaptureToken ?? null,
+);
+export const selectDockShortcutError = store.createSelector(
+  (state) => state.userPreferences.dockShortcutError ?? null,
+);

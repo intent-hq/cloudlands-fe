@@ -1,3 +1,19 @@
+import { BrowserWindow, Menu } from 'electron';
+import { IPC_CHANNELS } from '../shared/ipc-registry';
+import {
+  dockShortcutBindings,
+  dockShortcutAccelerator,
+  DOCK_SHORTCUT_IDS,
+  dockShortcutAction,
+  type DockShortcutSettingsSnapshot,
+  type DockShortcutIssue,
+} from '../shared/dock-shortcut-settings';
+import { createDockShortcutPreferences } from './dock-shortcut-preferences';
+import {
+  getDockShortcutOverridesLocalPref,
+  setDockShortcutOverridesLocalPref,
+} from './local-prefs';
+import { registerDockShortcutSettingsHandlers } from './dock-shortcut-settings-ipc';
 import { sampleDockForeground } from './dock-shortcut-foreground';
 import { createDockShortcutRegistration } from './dock-shortcut-registration';
 import { app, globalShortcut, webContents } from 'electron';
@@ -18,6 +34,50 @@ const registration = createDockShortcutRegistration(
   (action) => void requestDockShortcut(action),
   (key) => logger.warn('Global shortcut unavailable', { key }),
 );
+
+const preferences = createDockShortcutPreferences({
+  registrar: registration,
+  read: getDockShortcutOverridesLocalPref,
+  write: setDockShortcutOverridesLocalPref,
+  platform: process.platform,
+  additionalIssues(bindings) {
+    const accelerators: string[] = [];
+    const visit = (items: Electron.MenuItem[]) => {
+      for (const item of items) {
+        if (item.accelerator) accelerators.push(item.accelerator);
+        if (item.submenu) visit(item.submenu.items);
+      }
+    };
+    visit(Menu.getApplicationMenu()?.items ?? []);
+    const canonical = (value: string) =>
+      dockShortcutAccelerator(
+        value.replace(/CommandOrControl|CmdOrCtrl/gi, 'mod').replace(/Command|Cmd/gi, 'mod'),
+        process.platform,
+      );
+    const issues: DockShortcutIssue[] = [];
+    for (const id of DOCK_SHORTCUT_IDS) {
+      const key = bindings[dockShortcutAction(id)];
+      const accelerator = dockShortcutAccelerator(key, process.platform);
+      if (accelerator && accelerators.some((value) => canonical(value) === accelerator))
+        issues.push({ code: 'app-conflict', id, key });
+    }
+    return issues;
+  },
+  changed(snapshot: DockShortcutSettingsSnapshot) {
+    for (const window of BrowserWindow.getAllWindows())
+      if (!window.isDestroyed() && !window.webContents.isDestroyed())
+        window.webContents.send(IPC_CHANNELS.DOCK_SHORTCUTS.CHANGED, snapshot);
+    app.emit('dock-window-state-changed');
+  },
+});
+export async function initializeDockShortcutSettings(): Promise<void> {
+  await preferences.load();
+  registerDockShortcutSettingsHandlers(preferences);
+}
+export function dockShortcutMenuKey(action: DockShortcutContext['action']): string {
+  const key = dockShortcutBindings(preferences.snapshot().overrides)[action];
+  return dockShortcutAccelerator(key, process.platform) ?? key;
+}
 
 export async function requestDockShortcut(action: DockShortcutContext['action']): Promise<void> {
   const window = getDockWindow();
@@ -73,7 +133,7 @@ export function syncDockGlobalShortcuts(next: boolean): void {
   if (enabled === next) return;
   enabled = next;
   generation++;
-  registration.sync(enabled);
+  preferences.enable(enabled);
 }
 export function dockShortcutAvailable(action: DockShortcutContext['action']): boolean {
   return registration.available(action);

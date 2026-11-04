@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
+  import { isDockShortcutId, type DockShortcutIssue } from '$shared/dock-shortcut-settings';
   import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   import {
     applyShortcutCapture,
@@ -7,8 +9,15 @@
   } from '$lib/utils/shortcut-bindings';
   import { formatShortcut, SHORTCUT_CATEGORIES, SHORTCUT_REGISTRY } from '$lib/utils/shortcuts';
   import { m } from '$shared/paraglide/messages.js';
-  import { selectShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
+    selectShortcutOverrides,
+    selectDockShortcutSettings,
+    selectDockShortcutPending,
+    selectDockShortcutCaptureToken,
+    selectDockShortcutError,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    dockShortcutCaptureRequested,
     resetAllShortcutOverrides,
     resetShortcutOverride,
     setShortcutOverride,
@@ -16,6 +25,19 @@
   import { store as appStore } from '$store/renderer/store';
 
   const shortcutOverrides = selectShortcutOverrides();
+  const dockSettings = selectDockShortcutSettings();
+  const dockPending = selectDockShortcutPending();
+  const captureToken = selectDockShortcutCaptureToken();
+  const dockError = selectDockShortcutError();
+  function issueText(issue: DockShortcutIssue) {
+    if (issue.code === 'invalid') return m.settings_keyboardShortcuts_dockInvalid_error();
+    if (issue.code === 'duplicate' || issue.code === 'app-conflict')
+      return m.settings_keyboardShortcuts_dockConflict_error();
+    if (issue.code === 'save-failed') return m.settings_keyboardShortcuts_dockSave_error();
+    if (issue.code === 'stale') return m.settings_keyboardShortcuts_dockStale_error();
+    if (issue.code === 'load-failed') return m.settings_keyboardShortcuts_dockLoad_error();
+    return m.settings_keyboardShortcuts_dockUnavailable_error();
+  }
   const hiddenShortcutIds = new Set<ShortcutId>([
     'chat.focus-input',
     'chat.mention-context',
@@ -25,16 +47,7 @@
     'editor.redo',
     'leader.resize-panels',
   ]);
-  // The dock's system-wide keys are registered by main with fixed accelerators.
-  const fixedShortcutIds = new Set<ShortcutId>([
-    'navigation.go-to-tab',
-    'leader.navigate-panels',
-    'dock.focus',
-    'dock.capture',
-    'dock.record',
-    'dock.annotate',
-    'dock.dictate',
-  ]);
+  const fixedShortcutIds = new Set<ShortcutId>(['navigation.go-to-tab', 'leader.navigate-panels']);
   const categories = Object.entries(SHORTCUT_CATEGORIES).filter(
     ([, category]) => category.shortcuts.length > 0,
   );
@@ -49,12 +62,15 @@
   }
 
   function startCapture(id: ShortcutId) {
+    if (capturing === id) return;
     capturing = id;
+    if ($dockSettings) appStore.dispatch(dockShortcutCaptureRequested(true));
   }
 
   function handleKeydown(event: KeyboardEvent, id: ShortcutId) {
     event.preventDefault();
     event.stopPropagation();
+    if (capturing !== id || ($dockSettings && !$captureToken)) return;
     if (event.key === 'Escape') {
       capturing = null;
       (event.currentTarget as HTMLInputElement).blur();
@@ -63,17 +79,30 @@
     const normalized = shortcutFromKeyboardEvent(event, isMac);
     if (!normalized) return;
     const binding = applyShortcutCapture(id, normalized);
-    capturedValues[id] = binding;
+    if (!isDockShortcutId(id)) capturedValues[id] = binding;
     appStore.dispatch(setShortcutOverride(id, binding));
     capturing = null;
     (event.currentTarget as HTMLInputElement).blur();
   }
 
   function cancelCapture(id: ShortcutId) {
+    if ($dockSettings) appStore.dispatch(dockShortcutCaptureRequested(false));
     if (capturing === id) {
       capturing = null;
     }
   }
+
+  $effect(() => {
+    if (capturing && $dockSettings && !$dockPending && !$captureToken) {
+      const id = capturing;
+      capturing = null;
+      document.getElementById(`shortcut-${id}`)?.blur();
+    }
+  });
+
+  onDestroy(() => {
+    if ($captureToken) appStore.dispatch(dockShortcutCaptureRequested(false));
+  });
 
   function resetRow(id: ShortcutId) {
     delete capturedValues[id];
@@ -101,6 +130,31 @@
         >
           {category.title}
         </h3>
+        {#if categoryId === 'dock'}
+          <p class="mt-2 type-caption text-muted-foreground">
+            {m.settings_keyboardShortcuts_dockGlobal_description()}
+          </p>
+          {#if $dockSettings && !$dockSettings.enabled}<p
+              role="status"
+              class="mt-2 type-caption text-muted-foreground"
+            >
+              {m.settings_keyboardShortcuts_dockOff_description()}
+            </p>{/if}
+          {#if $dockPending}<p role="status" class="mt-2 type-caption">
+              {capturing
+                ? m.settings_keyboardShortcuts_dockPreparing_status()
+                : m.settings_keyboardShortcuts_dockSaving_status()}
+            </p>{/if}
+          {#if $dockError}<p role="alert" class="mt-2 type-caption text-destructive">
+              {issueText($dockError)}
+            </p>{/if}
+          {#each ($dockSettings?.issues ?? []).filter((issue) => !issue.id) as issue}<p
+              role="alert"
+              class="mt-2 type-caption text-destructive"
+            >
+              {issueText(issue)}
+            </p>{/each}
+        {/if}
         <dl class="mt-3 space-y-2">
           {#each category.shortcuts as shortcut, index (`${shortcut.key}-${index}`)}
             {@const definition = SHORTCUT_REGISTRY.filter((entry) => entry.category === categoryId)[
@@ -120,12 +174,17 @@
                       : 'read-only:bg-transparent'}"
                     type="text"
                     readonly
+                    disabled={isDockShortcutId(definition.id) &&
+                      (!$dockSettings || ($dockPending && capturing !== definition.id))}
+                    aria-busy={isDockShortcutId(definition.id) && $dockPending}
                     data-shortcut-input
                     value={capturing === definition.id
                       ? ''
                       : formatShortcut(effectiveValue(definition.id, definition.defaultKey))}
                     placeholder={capturing === definition.id
-                      ? m.settings_keyboardShortcuts_capture_placeholder()
+                      ? $dockSettings && !$captureToken
+                        ? m.settings_keyboardShortcuts_dockPreparing_status()
+                        : m.settings_keyboardShortcuts_capture_placeholder()
                       : undefined}
                     onfocus={isFixed ? undefined : () => startCapture(definition.id)}
                     onclick={isFixed ? undefined : () => startCapture(definition.id)}
@@ -144,6 +203,13 @@
                     >
                       <span aria-hidden="true">×</span>
                     </Button>
+                  {/if}
+                  {#if isDockShortcutId(definition.id)}
+                    {#each $dockSettings?.issues.filter((issue) => issue.id === definition.id) ?? [] as issue}
+                      <p role="alert" class="mt-1 max-w-48 type-caption text-destructive">
+                        {issueText(issue)}
+                      </p>
+                    {/each}
                   {/if}
                 </dd>
               </div>

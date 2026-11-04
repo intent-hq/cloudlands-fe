@@ -8339,5 +8339,15 @@
   "dock_shortcut_unavailable": "快捷键不可用",
   "dock_shortcut_record_menu": "录制到工作区…",
   "dock_shortcut_open_error": "无法打开工作区。请重新选择。",
-  "dock_shortcut_dictate_label": "听写"
+  "dock_shortcut_dictate_label": "听写",
+  "settings_keyboardShortcuts_dockGlobal_description": "即使其他应用在前台，这些快捷键也能使用。",
+  "settings_keyboardShortcuts_dockSaving_status": "正在保存快捷键…",
+  "settings_keyboardShortcuts_dockInvalid_error": "请使用 Control、Command 或 Option 加一个按键，或使用功能键。",
+  "settings_keyboardShortcuts_dockConflict_error": "此快捷键已被其他命令使用。",
+  "settings_keyboardShortcuts_dockUnavailable_error": "此快捷键不可用。原快捷键保持不变。",
+  "settings_keyboardShortcuts_dockSave_error": "无法保存快捷键。原快捷键保持不变。",
+  "settings_keyboardShortcuts_dockStale_error": "快捷键已在其他窗口中更改。请重试。",
+  "settings_keyboardShortcuts_dockLoad_error": "无法加载全局快捷键。",
+  "settings_keyboardShortcuts_dockPreparing_status": "正在准备…",
+  "settings_keyboardShortcuts_dockOff_description": "启用程序坞以使用这些全局快捷键。"
 }

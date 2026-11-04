@@ -497,6 +497,10 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   // Experimental dock Labs setting: main owns and persists it and pushes
   // changes to every window (src/lib/dock-lab.ts). Without a bridge the lab
   // stays off; a mock bridge would create a second source of truth.
+  // Native-owned global shortcut settings/capture lease; no browser-side authority.
+  'dock-shortcuts:get',
+  'dock-shortcuts:set',
+  'dock-shortcuts:capture',
   'window:get-dock-lab',
   'window:set-dock-lab',
   // Dock right-click asks main for a native menu over the dock window

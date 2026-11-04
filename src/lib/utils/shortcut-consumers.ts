@@ -204,7 +204,7 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'features/layout/panel-keyboard-shortcuts.svelte.ts',
     handler: 'leader pattern',
   },
-  // Registered system-wide by main with fixed accelerators (read-only in Settings).
+  // Registered system-wide by main from the confirmed shared preferences.
   'dock.focus': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },
   'dock.capture': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },
   'dock.record': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },

@@ -8339,5 +8339,15 @@
   "dock_shortcut_unavailable": "Raccourci indisponible",
   "dock_shortcut_record_menu": "Enregistrer dans un espace…",
   "dock_shortcut_open_error": "Impossible d’ouvrir l’espace. Choisissez à nouveau.",
-  "dock_shortcut_dictate_label": "Dicter"
+  "dock_shortcut_dictate_label": "Dicter",
+  "settings_keyboardShortcuts_dockGlobal_description": "Ces raccourcis fonctionnent même si une autre app est au premier plan.",
+  "settings_keyboardShortcuts_dockSaving_status": "Enregistrement du raccourci…",
+  "settings_keyboardShortcuts_dockInvalid_error": "Utilisez Contrôle, Commande ou Option avec une touche, ou une touche de fonction.",
+  "settings_keyboardShortcuts_dockConflict_error": "Ce raccourci est déjà utilisé par une autre commande.",
+  "settings_keyboardShortcuts_dockUnavailable_error": "Ce raccourci est indisponible. Votre ancien raccourci reste inchangé.",
+  "settings_keyboardShortcuts_dockSave_error": "Impossible d’enregistrer le raccourci. Votre ancien raccourci reste inchangé.",
+  "settings_keyboardShortcuts_dockStale_error": "Les raccourcis ont changé dans une autre fenêtre. Réessayez.",
+  "settings_keyboardShortcuts_dockLoad_error": "Impossible de charger les raccourcis globaux.",
+  "settings_keyboardShortcuts_dockPreparing_status": "Préparation…",
+  "settings_keyboardShortcuts_dockOff_description": "Activez le dock pour utiliser ces raccourcis globaux."
 }

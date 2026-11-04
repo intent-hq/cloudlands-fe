@@ -29,6 +29,7 @@
   const categories = $derived(getAllShortcutCategories($shortcutOverrides));
   const categoryOrder: ShortcutCategory[] = [
     'global',
+    'dock',
     'navigation',
     'chat',
     'editor',
