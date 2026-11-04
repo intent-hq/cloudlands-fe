@@ -74,6 +74,31 @@ export function classifyOffscreenTab(
   return { eligible: true };
 }
 
+/**
+ * Size of a tab's offscreen <webview> element when no viewport is emulated
+ * for it. Mirrors main's DEFAULT_AGENT_VIEWPORT (embedded-browser-cdp-service).
+ */
+export const OFFSCREEN_GUEST_DEFAULT_SIZE = { width: 1280, height: 800 } as const;
+
+/**
+ * CSS size of a tab's offscreen <webview> element: the viewport main emulates
+ * for a tab with no visible bounds (preset/custom size, or an owned fit tab's
+ * emulated size). The element is the guest's capture surface and a CDP
+ * screenshot cannot resize it, so a smaller element returns the page tiled
+ * (intent-hq/intent#8359).
+ */
+function offscreenGuestSize(tab: PanelTab): { width: number; height: number } {
+  const viewport = tab.viewport;
+  if (viewport && viewport.mode !== 'fit') {
+    return { width: viewport.width, height: viewport.height };
+  }
+  const owned = typeof tab.ownerAgentId === 'string' && tab.ownerAgentId.length > 0;
+  if (owned && tab.emulatedSize) {
+    return { width: tab.emulatedSize.width, height: tab.emulatedSize.height };
+  }
+  return { ...OFFSCREEN_GUEST_DEFAULT_SIZE };
+}
+
 export interface OffscreenTabDecision {
   tabId: string;
   workspaceId: string;
@@ -81,6 +106,8 @@ export interface OffscreenTabDecision {
   eligibility: OffscreenEligibility;
   /** The URL to mount, set only when eligible. */
   url?: string;
+  /** The guest element's CSS size, set only when eligible. */
+  size?: { width: number; height: number };
   /** Agent-owned or hidden tabs stay mounted beyond the cap (monorepo#2857). */
   pinned: boolean;
 }
@@ -114,7 +141,7 @@ export function collectOffscreenTabDecisions(
       workspaceId,
       placement,
       eligibility,
-      ...(eligibility.eligible ? { url: tab.browserUrl } : {}),
+      ...(eligibility.eligible ? { url: tab.browserUrl, size: offscreenGuestSize(tab) } : {}),
       pinned: placement === 'hidden' || owned,
     });
   };

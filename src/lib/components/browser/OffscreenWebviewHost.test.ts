@@ -82,7 +82,16 @@ import {
   tabStateReducer,
 } from '$store/renderer/slices/tab-state/tab-state-slice';
 
-function browserLayout(tabs: Array<{ id: string; url?: string; hostClientId?: string }>) {
+function browserLayout(
+  tabs: Array<{
+    id: string;
+    url?: string;
+    hostClientId?: string;
+    ownerAgentId?: string;
+    viewport?: Record<string, unknown>;
+    emulatedSize?: { width: number; height: number };
+  }>,
+) {
   return {
     panels: {
       'panel-1': {
@@ -94,6 +103,9 @@ function browserLayout(tabs: Array<{ id: string; url?: string; hostClientId?: st
           closable: true,
           browserUrl: tab.url ?? `https://example.test/${tab.id}`,
           ...(tab.hostClientId === undefined ? {} : { hostClientId: tab.hostClientId }),
+          ...(tab.ownerAgentId === undefined ? {} : { ownerAgentId: tab.ownerAgentId }),
+          ...(tab.viewport === undefined ? {} : { viewport: tab.viewport }),
+          ...(tab.emulatedSize === undefined ? {} : { emulatedSize: tab.emulatedSize }),
         })),
         activeTabId: tabs[0]?.id ?? null,
       },
@@ -969,6 +981,52 @@ describe('OffscreenWebviewHost', () => {
     expect(box.style.height).toBe('1px');
     expect(box.style.opacity).toBe('0');
     expect(box.hasAttribute('data-agent-drawing')).toBe(false);
+  });
+
+  // A hidden guest's surface is its <webview> element's size: the CDP
+  // screenshot cannot resize it, so a clip larger than the element comes back
+  // tiled (intent-hq/intent#8359: a 1900x1000 tab captured as 1280x800 tiles).
+  // The element must match the size main emulates for a tab without visible
+  // bounds; tabs without an emulated size keep the 1280x800 default.
+  it('sizes each hidden guest to the viewport main emulates for it', async () => {
+    layoutsStore.set({
+      'ws-bg': browserLayout([
+        { id: 'tab-custom', viewport: { mode: 'custom', width: 1900, height: 1000 } },
+        {
+          id: 'tab-preset',
+          viewport: { mode: 'preset', presetId: 'p', width: 390, height: 844 },
+        },
+        {
+          id: 'tab-owned-fit',
+          ownerAgentId: 'agent-1',
+          viewport: { mode: 'fit' },
+          emulatedSize: { width: 1600, height: 900 },
+        },
+        { id: 'tab-unowned-fit', emulatedSize: { width: 1600, height: 900 } },
+      ]),
+    });
+    const { container } = render(OffscreenWebviewHost, {
+      props: { excludedWorkspaceIds: new Set() },
+    });
+    await waitFor(() => expect(mountedTabIds(container)).toHaveLength(4));
+    const size = (tabId: string) => {
+      const el = container.querySelector(`[data-offscreen-webview-tab="${tabId}"]`) as HTMLElement;
+      return [el.style.width, el.style.height];
+    };
+    expect(size('tab-custom')).toEqual(['1900px', '1000px']);
+    expect(size('tab-preset')).toEqual(['390px', '844px']);
+    expect(size('tab-owned-fit')).toEqual(['1600px', '900px']);
+    expect(size('tab-unowned-fit')).toEqual(['1280px', '800px']);
+
+    // A resize reaches the live guest without remounting it.
+    const guest = container.querySelector('[data-offscreen-webview-tab="tab-custom"]');
+    layoutsStore.set({
+      'ws-bg': browserLayout([
+        { id: 'tab-custom', viewport: { mode: 'custom', width: 1440, height: 1200 } },
+      ]),
+    });
+    await waitFor(() => expect(size('tab-custom')).toEqual(['1440px', '1200px']));
+    expect(container.querySelector('[data-offscreen-webview-tab="tab-custom"]')).toBe(guest);
   });
 
   // An agent acting on a hidden tab needs full frame rate, but Chromium
