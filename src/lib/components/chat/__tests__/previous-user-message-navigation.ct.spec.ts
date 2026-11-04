@@ -4,10 +4,14 @@ import {
   activateHoverAction,
   expect,
   expectMotionToSettle,
+  motionSnapshot,
   test,
   wheelUntilScrolled,
 } from '../../../../test/ct-test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
+
+// ct-svelte bundles its own Playwright, so derive Page from its fixtures.
+type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 
 // Chromium hides native scrollbars in headless mode unless this default is removed.
 test.use({ launchOptions: { ignoreDefaultArgs: ['--hide-scrollbars'] } });
@@ -162,40 +166,129 @@ async function previousActionState(source: Locator) {
   });
 }
 
-async function waitForPreviousMessageReady(source: Locator) {
-  // Follow-bottom can move the row after hover resolves. Reposition only the
-  // pointer until the real action receives hits; never retry a navigation click.
-  await expect
-    .poll(async () => {
-      await source.hover();
-      const state = await previousActionState(source);
-      if (!state.hovered || !state.actionHit) return false;
-      // A pending layout frame can invalidate a successful hit test. Observe
-      // geometry and hits across frames before handing the pointer to the click.
-      for (let frame = 0; frame < 2; frame++) {
-        await source.evaluate(
-          () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
-        );
-        const next = await previousActionState(source);
-        if (
-          !next.hovered ||
-          !next.actionHit ||
-          next.top !== state.top ||
-          next.centerX !== state.centerX ||
-          next.centerY !== state.centerY
-        )
-          return false;
-      }
-      return true;
-    })
-    .toBe(true);
+// How long one readiness attempt may sample in the page before the poll retries it.
+const POINTER_ATTEMPT_MS = 1_000;
+// Budget for one wait in the pointer-path test (the pointer reaching a still, hittable
+// action, or the transcript settling at a destination). Each attempt costs a few round
+// trips, and a round trip takes up to a second on a loaded runner, so the 5 s `expect`
+// default allows only one or two attempts there.
+const LOADED_WAIT_MS = 20_000;
+
+type PointerSample = Awaited<ReturnType<typeof previousActionState>> & { still: boolean };
+
+// Watch `source` inside the page, frame by frame, until its row box has stayed put for
+// `quietMs` and at least three frames (and, with `requireHit`, the row stayed hovered
+// and the action took the hit test the whole time). One round trip per attempt: under
+// load, each Playwright call can take most of a second, so a loop of single-frame
+// probes from the test (the previous approach) spent the test's budget on round trips.
+async function samplePreviousActionPointer(
+  source: Locator,
+  { requireHit, quietMs }: { requireHit: boolean; quietMs: number },
+): Promise<PointerSample> {
+  return source.evaluate(
+    (node, { requireHit, quietMs, attemptMs }) =>
+      new Promise<PointerSample>((resolve) => {
+        const action = node.querySelector<HTMLButtonElement>(
+          '[aria-label="Scroll to previous message"]',
+        )!;
+        const read = () => {
+          const row = node.getBoundingClientRect();
+          const rect = action.getBoundingClientRect();
+          const hit = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+          return {
+            top: row.top,
+            centerX: row.x + row.width / 2,
+            centerY: row.y + row.height / 2,
+            hovered: node.matches(':hover'),
+            pointerEvents: getComputedStyle(action).pointerEvents,
+            actionHit: hit !== null && action.contains(hit),
+            hitMessage: hit?.closest('[data-message-id]')?.getAttribute('data-message-id'),
+          };
+        };
+        const startedAt = performance.now();
+        let last = read();
+        let stillSince = startedAt;
+        let stillFrames = 0;
+        const tick = () => {
+          const now = performance.now();
+          const current = read();
+          const ok =
+            current.top === last.top &&
+            current.centerX === last.centerX &&
+            current.centerY === last.centerY &&
+            (!requireHit || (current.hovered && current.actionHit));
+          if (ok) {
+            stillFrames += 1;
+          } else {
+            stillFrames = 0;
+            stillSince = now;
+          }
+          last = current;
+          if (stillFrames >= 3 && now - stillSince >= quietMs) {
+            resolve({ ...current, still: true });
+          } else if (now - startedAt >= Math.max(attemptMs, quietMs * 2)) {
+            resolve({ ...current, still: false });
+          } else {
+            requestAnimationFrame(tick);
+          }
+        };
+        requestAnimationFrame(tick);
+      }),
+    { requireHit, quietMs, attemptMs: POINTER_ATTEMPT_MS },
+  );
 }
 
-async function hoverPreviousMessage(source: Locator, afterHover: () => Promise<void>) {
-  await waitForPreviousMessageReady(source);
+// Put the real pointer on `source` so its hover-only "Scroll to previous message"
+// action takes pointer events. Follow-bottom, scroll animation and lazy layout can still
+// move the row, and a pointer parked over a moving row ends up over other content. So
+// wait until the row is still, move the pointer there, and confirm in the page that the
+// row stays hovered and the action stays hittable. A row that moved meanwhile fails the
+// attempt and the poll starts over. Only the pointer is repositioned; the navigation
+// click is never retried.
+//
+// `page.mouse.move` rather than `source.hover()`: hover() hit-tests before it moves and
+// retries until the test times out while the row moves (cloudlands-fe#4149). A raw move
+// cannot hang; the in-page check after it decides whether the pointer landed.
+async function pointAtPreviousAction(page: Page, source: Locator): Promise<PointerSample> {
+  let last: PointerSample | undefined;
+  await expect
+    .poll(
+      async () => {
+        const still = await samplePreviousActionPointer(source, {
+          requireHit: false,
+          quietMs: DESTINATION_QUIET_MS,
+        });
+        last = still;
+        if (!still.still) return 'row is still moving';
+        await page.mouse.move(still.centerX, still.centerY);
+        const ready = await samplePreviousActionPointer(source, {
+          requireHit: true,
+          quietMs: 100,
+        });
+        last = ready;
+        if (!ready.still) return 'action did not stay hovered and hittable';
+        if (ready.top !== still.top) return 'row moved after the pointer was placed';
+        return 'ready';
+      },
+      {
+        message: `the pointer should rest on ${String(source)} with its previous-message action hittable (last sample: ${JSON.stringify(last)})`,
+        timeout: LOADED_WAIT_MS,
+        intervals: [0],
+      },
+    )
+    .toBe('ready');
+  return last!;
+}
+
+async function hoverPreviousMessage(
+  page: Page,
+  source: Locator,
+  afterHover: () => Promise<void>,
+): Promise<PointerSample> {
+  await pointAtPreviousAction(page, source);
   await afterHover();
   // The one-time update can move a previously ready row away from the pointer.
-  await waitForPreviousMessageReady(source);
+  return pointAtPreviousAction(page, source);
 }
 
 async function activatePreviousMessageAndSettle(source: Locator, scroll: Locator) {
@@ -220,16 +313,29 @@ for (const shiftAfterHover of [false, true]) {
     mount,
     page,
   }, testInfo) => {
+    // Three animated navigations, a stream update and a return to bottom, each waited out
+    // rather than slept through. On a loaded host (6 workers, load ~50) the page and CDP
+    // fixtures plus mount alone took 15-21 s of the default 30 s, so the body could not
+    // finish however it waited.
+    test.setTimeout(90_000);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     const component = await mount(ChatMessageNavigatorIntegrationHost);
     const scroll = component.locator('.conversation-column').locator('..');
     const down = bottomArrow(component);
     await down.expectAtBottom(true);
+    // The composer locks its editor until the draft restore settles, and shows a
+    // loading gate meanwhile. Releasing the gate shrinks the composer, which drops every
+    // bottom-pinned row from under the pointer; an unanswered restore holds it for a 5 s
+    // fallback that, under load, lands mid-click. Start once the editor is editable.
+    await expect(
+      component.getByTestId('message-input').locator('[contenteditable]'),
+      'the draft restore should settle before the pointer path starts',
+    ).toHaveAttribute('contenteditable', 'true');
 
     let shifted = false;
     for (const current of [24, 23, 22]) {
       const source = component.locator(`[data-message-id="user-${current}"]`);
-      await hoverPreviousMessage(source, async () => {
+      const ready = await hoverPreviousMessage(page, source, async () => {
         if (!shiftAfterHover || shifted) return;
         shifted = true;
         const before = await previousActionState(source);
@@ -260,11 +366,21 @@ for (const shiftAfterHover of [false, true]) {
       });
       // A click may recover by itself. Assert pointer readiness independently so
       // removal of the readiness correction fails deterministically before clicking.
-      expect((await previousActionState(source)).actionHit).toBe(true);
+      const beforeClickState = await previousActionState(source);
+      expect(
+        beforeClickState.actionHit,
+        `action should still be hittable: ${JSON.stringify({ ready, beforeClickState })}`,
+      ).toBe(true);
+      const beforeClick = await motionSnapshot(scroll);
       await source.getByRole('button', { name: 'Scroll to previous message' }).click();
       // Observe the settled destination, including animation, focus, lazy layout,
       // and follow-bottom observers; a transient crossing is not success.
-      await page.waitForTimeout(700);
+      await expectMotionToSettle(scroll, {
+        changedFrom: beforeClick,
+        quietMs: DESTINATION_QUIET_MS,
+        timeout: LOADED_WAIT_MS,
+        message: `navigating from user-${current} should scroll the transcript, which should then settle`,
+      });
       const target = component.locator(`[data-message-id="user-${current - 1}"]`);
       const offset = await target.evaluate(
         (node, container) =>
