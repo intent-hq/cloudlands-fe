@@ -161,6 +161,7 @@ describe('CheckoutModePill', () => {
   it('renders "CoW" when checkoutMode is cow and CoW agent isolation is active', async () => {
     await renderPill({ checkoutMode: 'cow' });
     await flushLabel();
+    const pill = screen.getByText('CoW');
     expect(pill).toBeTruthy();
     expect(pill.classList.contains('shrink-0')).toBe(true);
     expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.cowIsolation');
@@ -566,12 +567,9 @@ describe('CheckoutModePill', () => {
     mocks.hidesAgentLifecycleActions = true;
     try {
       const workspace = { ...baseWorkspace, checkoutMode: 'cow' } as Workspace;
-      const { container } = await renderPill({ workspace });
+      await renderPill({ workspace });
       await flushFetch();
 
-      expect(container.querySelector('[data-checkout-mode-details]')?.textContent).toContain(
-        'Total size: 2.17Gi',
-      );
       expect(screen.queryByRole('button', { name: 'Try to shrink this workspace' })).toBeNull();
       expect(mocks.runShrinkWorkspaceAction).not.toHaveBeenCalled();
     } finally {

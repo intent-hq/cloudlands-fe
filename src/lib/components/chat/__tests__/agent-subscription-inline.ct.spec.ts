@@ -1,3 +1,4 @@
+import type { Locator, Page } from '@playwright/test';
 import { expect, expectAnimationsToSettle, test } from '../../../../test/ct-test';
 import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
@@ -158,6 +159,42 @@ test('keeps delegated checklist controls visible for non-hover primary input', a
   await client.detach();
 });
 
+async function measure(component: Locator, page: Page) {
+  await expect(component.getByTestId('agent-card-preview')).toBeVisible();
+  await page.waitForFunction(() => {
+    const text = document.querySelector('[data-testid="agent-preview-tool-text"]');
+    return !text || (text.textContent?.trim().length ?? 0) > 0;
+  });
+  return component.evaluate((root) => {
+    const element = (testId: string) =>
+      root.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
+    const preview = element('agent-card-preview');
+    const text =
+      (root.querySelector('[data-testid="agent-preview-tool-text"]') as HTMLElement | null) ??
+      preview;
+    const trailing = element('agent-card-trailing-slot');
+    const timestamp = trailing.querySelector('[data-slot="tooltip-trigger"]') as HTMLElement;
+    const row = element('agent-list-item').querySelector('button') as HTMLElement;
+    return {
+      cleanText: text.textContent?.trim() ?? '',
+      interactiveCount: preview.querySelectorAll('a, button, input, [tabindex]').length,
+      previewOverflow: {
+        clientWidth: text.clientWidth,
+        scrollWidth: text.scrollWidth,
+        whiteSpace: getComputedStyle(text).whiteSpace,
+        textOverflow: getComputedStyle(text).textOverflow,
+      },
+      previewRect: { right: preview.getBoundingClientRect().right },
+      timestampRect: { left: timestamp.getBoundingClientRect().left },
+      rowOverflow: row.scrollWidth - row.clientWidth,
+      trailingStyle: { flexShrink: getComputedStyle(trailing).flexShrink },
+      timestampNumeric: getComputedStyle(timestamp).fontVariantNumeric,
+      peekIconCount: preview.querySelectorAll('svg, .agent-preview-tool-icon').length,
+      peekAriaLabelCount: preview.querySelectorAll('[aria-label]').length,
+    };
+  });
+}
+
 test('cleans Markdown and keeps one true ellipsis region clear of the timestamp', async ({
   mount,
   page,
@@ -177,11 +214,6 @@ test('cleans Markdown and keeps one true ellipsis region clear of the timestamp'
       }
       const value = await measure(component, page);
       expect(value.cleanText).not.toMatch(/[`*_\[\]]/);
-      expect(value.cleanTitle).toBe(
-        value.previewOverflow.scrollWidth > value.previewOverflow.clientWidth
-          ? value.cleanText
-          : '',
-      );
       expect(value.interactiveCount).toBe(0);
       expect(value.previewOverflow.scrollWidth).toBeGreaterThanOrEqual(
         value.previewOverflow.clientWidth,

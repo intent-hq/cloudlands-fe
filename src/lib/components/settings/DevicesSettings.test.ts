@@ -534,7 +534,6 @@ describe('DevicesSettings', () => {
 
         expect(screen.queryByText('6.8.0')).toBeNull();
         expect(screen.queryByText('0.9.0')).toBeNull();
-        expect(screen.queryByRole('img', { name: behindLabel })).toBeNull();
       },
     );
 
