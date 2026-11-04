@@ -273,4 +273,19 @@ export class LoginRateLimiter {
   recordFailure(): void {
     this.failures.push(this.now());
   }
+
+  /**
+   * Count an attempt as a failure before checking it, so parallel attempts
+   * cannot all pass `allow()` while their checks are still running. Returns a
+   * refund to call if the attempt succeeds, or null when the budget is spent.
+   */
+  reserve(): (() => void) | null {
+    if (!this.allow()) return null;
+    const time = this.now();
+    this.failures.push(time);
+    return () => {
+      const index = this.failures.indexOf(time);
+      if (index !== -1) this.failures.splice(index, 1);
+    };
+  }
 }

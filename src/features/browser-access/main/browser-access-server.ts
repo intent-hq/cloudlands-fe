@@ -429,8 +429,9 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
 
   /**
    * Validate a submitted access key or, when `allowCode`, a single-use sign-in
-   * code. Both share one failure budget. Returns the Set-Cookie on success,
-   * else the page error.
+   * code. Both share one failure budget, reserved before the (possibly slow)
+   * check so parallel attempts cannot exceed it. Returns the Set-Cookie on
+   * success, else the page error.
    */
   const tryLogin = async (
     request: http.IncomingMessage,
@@ -438,28 +439,35 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     allowCode: boolean,
   ): Promise<{ cookie: string } | { error: string; status: number }> => {
     const text = deps.loginText();
-    if (!limiter.allow()) return { error: text.tooManyAttempts, status: 429 };
+    const refund = limiter.reserve();
+    if (!refund) return { error: text.tooManyAttempts, status: 429 };
     const accessKey = deps.getAccessKey();
     const consume = allowCode ? deps.consumeSignInCode : undefined;
     const code = consume ? normalizeSignInCode(candidate) : null;
     if (consume && code) {
-      const result = await consume(code);
+      let result: SignInCodeResult;
+      try {
+        result = await consume(code);
+      } catch (error) {
+        refund();
+        throw error;
+      }
       if (result !== 'ok') {
-        limiter.recordFailure();
         log.warn('[BrowserAccess] rejected a sign-in code');
         return {
           error: result === 'used-or-expired' ? text.codeUsed : text.invalidKey,
           status: 401,
         };
       }
+      refund();
       log.info('[BrowserAccess] signed in with a single-use code');
       return { cookie: sessionCookieHeader(accessKey, isSecure(request), now()) };
     }
     if (!accessKeyMatches(candidate, accessKey)) {
-      limiter.recordFailure();
       log.warn('[BrowserAccess] rejected an access key');
       return { error: text.invalidKey, status: 401 };
     }
+    refund();
     return { cookie: sessionCookieHeader(accessKey, isSecure(request), now()) };
   };
 

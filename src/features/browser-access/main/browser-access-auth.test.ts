@@ -222,4 +222,15 @@ describe('LoginRateLimiter', () => {
     now = 1001;
     expect(limiter.allow()).toBe(true);
   });
+
+  it('reserves budget before a check and refunds it on success', () => {
+    const limiter = new LoginRateLimiter(2, 1000, () => 0);
+    const first = limiter.reserve();
+    const second = limiter.reserve();
+    expect(first).not.toBeNull();
+    expect(second).not.toBeNull();
+    expect(limiter.reserve()).toBeNull();
+    first?.();
+    expect(limiter.allow()).toBe(true);
+  });
 });

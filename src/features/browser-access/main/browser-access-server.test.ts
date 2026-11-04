@@ -706,6 +706,39 @@ describe('Browser access server: sign-in codes', () => {
     expect(await codes.consume(code)).toBe('ok');
   });
 
+  it('counts parallel wrong codes against the budget before any lookup finishes', async () => {
+    const codes = createSignInCodes({
+      store: createMemorySignInStore(),
+      getAccessKey: () => ACCESS_KEY,
+    });
+    const { port } = await start({
+      rateLimiter: new LoginRateLimiter(3, 60_000),
+      // A slow store (the file store waits for its lock) widens the race.
+      consumeSignInCode: async (code) => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return codes.consume(code);
+      },
+    });
+    const replies = await Promise.all(
+      ['AAA-AAA', 'BBB-BBB', 'CCC-CCC', 'DDD-DDD', 'EEE-EEE', 'FFF-FFF'].map((code) =>
+        form(port, code),
+      ),
+    );
+    expect(replies.map((reply) => reply.status).sort()).toEqual([401, 401, 401, 429, 429, 429]);
+  });
+
+  it('does not count a successful sign-in against the budget', async () => {
+    const { port, codes } = await startWithCodes({ rateLimiter: new LoginRateLimiter(2, 60_000) });
+    for (let round = 0; round < 3; round++) {
+      const { code } = await codes.create();
+      expect((await form(port, code)).status).toBe(303);
+    }
+    expect((await form(port, ACCESS_KEY)).status).toBe(303);
+    await form(port, 'AAA-AAA');
+    await form(port, 'BBB-BBB');
+    expect((await form(port, ACCESS_KEY)).status).toBe(429);
+  });
+
   it('shares one failure budget between wrong codes and wrong keys', async () => {
     const { port } = await startWithCodes({ rateLimiter: new LoginRateLimiter(2, 60_000) });
     await form(port, 'AAA-AAA');

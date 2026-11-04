@@ -64,3 +64,31 @@ it('treats a damaged file as empty', async () => {
   const { code } = await codesIn(dir).create();
   expect(await codesIn(dir).consume(code)).toBe('ok');
 });
+
+it('never removes a lock that another holder took over', async () => {
+  const dir = dataDir();
+  const lock = path.join(dir, `${SIGN_IN_FILE}.lock`);
+  const codes = codesIn(dir);
+  const { code } = await codes.create();
+  // Simulate a fresh lock from another process appearing while nobody holds ours.
+  fs.writeFileSync(lock, 'someone-else');
+  await expect(codesIn(dir, { lockTimeoutMs: 100 }).consume(code)).rejects.toThrow(/Timed out/);
+  expect(fs.readFileSync(lock, 'utf8')).toBe('someone-else');
+  fs.rmSync(lock);
+  expect(await codes.consume(code)).toBe('ok');
+});
+
+it('lets exactly one of many waiters take over a stale lock', async () => {
+  const dir = dataDir();
+  const { code } = await codesIn(dir).create();
+  const lock = path.join(dir, `${SIGN_IN_FILE}.lock`);
+  fs.writeFileSync(lock, 'crashed');
+  const old = new Date(Date.now() - 120_000);
+  fs.utimesSync(lock, old, old);
+  const results = await Promise.all(
+    Array.from({ length: 8 }, () => codesIn(dir, { staleLockMs: 60_000 }).consume(code)),
+  );
+  expect(results.filter((result) => result === 'ok')).toHaveLength(1);
+  expect(fs.existsSync(lock)).toBe(false);
+  expect(fs.readdirSync(dir).filter((name) => name.endsWith('.stale'))).toEqual([]);
+});
