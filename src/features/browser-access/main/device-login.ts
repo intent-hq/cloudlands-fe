@@ -9,9 +9,11 @@
  *   cookie; the QR carries only the approve code. A match code shown on both
  *   screens lets the user check that they approve their own browser.
  * - One-time links: `intent-web link` signs a token with the access key, so the
- *   CLI and the server share no state. The server remembers used nonces until
- *   they expire, so each link signs in one browser once, and it rejects links
- *   issued before it started, so a restart cannot make a used link work again.
+ *   server holds no per-link state. The server remembers used nonces until
+ *   they expire, so each link signs in one browser once. Each server start
+ *   picks a new random link epoch (shared with the CLI through the data
+ *   directory) and accepts only links that carry it, so a restart cancels every
+ *   link and a used link never works again, whatever the clock does.
  *
  * Every request and token is bound to the access key it was made with, so a
  * key reset invalidates all of them. Everything here is pure (injected clock)
@@ -30,8 +32,11 @@ export const LINK_DEFAULT_TTL_MINUTES = 5;
 export const LINK_MAX_TTL_MINUTES = 15;
 
 const LINK_CONTEXT = 'intent-web-link-v1';
-/** `v1.<issued ms>.<expires ms>.<nonce>.<mac>` */
-const LINK_PATTERN = /^v1\.([0-9]{1,15})\.([0-9]{1,15})\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/;
+/** `v1.<epoch>.<expires ms>.<nonce>.<mac>` */
+const LINK_PATTERN =
+  /^v1\.([A-Za-z0-9_-]{22})\.([0-9]{1,15})\.([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{43})$/;
+/** A link epoch: 128 random bits, URL-safe. */
+export const LINK_EPOCH_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 /** Unambiguous characters for the match code (no 0/O, 1/I/L). */
 const MATCH_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const MATCH_LENGTH = 6;
@@ -175,26 +180,32 @@ export class DeviceLoginStore {
   }
 }
 
-function linkMac(accessKey: string, issuedAt: number, expiresAt: number, nonce: string): string {
+function linkMac(accessKey: string, epoch: string, expiresAt: number, nonce: string): string {
   return crypto
     .createHmac('sha256', accessKey)
-    .update(`${LINK_CONTEXT}|${issuedAt}|${expiresAt}|${nonce}`)
+    .update(`${LINK_CONTEXT}|${epoch}|${expiresAt}|${nonce}`)
     .digest('base64url');
 }
 
-/** A one-time link token, valid for `ttlMinutes` (1 to 15) from `now`. */
+/** A new random link epoch; the server picks one at each start. */
+export function newLinkEpoch(): string {
+  return randomToken(16);
+}
+
+/** A one-time link token for the server's current `epoch`, valid for `ttlMinutes` (1 to 15). */
 export function mintLinkToken(
   accessKey: string,
+  epoch: string,
   ttlMinutes = LINK_DEFAULT_TTL_MINUTES,
   now: number = Date.now(),
 ): { token: string; expiresAt: number } {
+  if (!LINK_EPOCH_PATTERN.test(epoch)) throw new Error('Invalid link epoch');
   if (!Number.isInteger(ttlMinutes) || ttlMinutes < 1 || ttlMinutes > LINK_MAX_TTL_MINUTES)
     throw new Error(`Link lifetime must be 1 to ${LINK_MAX_TTL_MINUTES} minutes`);
-  const issuedAt = Math.floor(now);
-  const expiresAt = issuedAt + ttlMinutes * 60_000;
+  const expiresAt = Math.floor(now) + ttlMinutes * 60_000;
   const nonce = randomToken(16);
   return {
-    token: `v1.${issuedAt}.${expiresAt}.${nonce}.${linkMac(accessKey, issuedAt, expiresAt, nonce)}`,
+    token: `v1.${epoch}.${expiresAt}.${nonce}.${linkMac(accessKey, epoch, expiresAt, nonce)}`,
     expiresAt,
   };
 }
@@ -202,31 +213,34 @@ export function mintLinkToken(
 /**
  * Checks one-time link tokens and remembers used ones until they expire.
  *
- * Used tokens are remembered only in memory, so the verifier also rejects every
- * token issued before it was created: after a server restart, a link that was
- * already used (or any unused link from before the restart) cannot sign in.
+ * Used tokens are remembered only in memory, so the verifier accepts only
+ * tokens minted for its own epoch. A restarted server has a new epoch, so no
+ * token from before the restart (used or not) can sign in, even if the clock
+ * moved backwards.
  */
 export class LinkTokenVerifier {
   private readonly used = new Map<string, number>();
-  private readonly notBefore: number;
 
-  constructor(private readonly now: () => number = Date.now) {
-    this.notBefore = now();
+  constructor(
+    readonly epoch: string = newLinkEpoch(),
+    private readonly now: () => number = Date.now,
+  ) {
+    if (!LINK_EPOCH_PATTERN.test(epoch)) throw new Error('Invalid link epoch');
   }
 
-  /** True once for a valid, unexpired token made with the current key since this verifier started. */
+  /** True once for a valid, unexpired token made with the current key for this epoch. */
   redeem(token: unknown, accessKey: string): boolean {
     if (typeof token !== 'string') return false;
     const match = LINK_PATTERN.exec(token);
     if (!match) return false;
-    const [, issuedText, expiryText, nonce, mac] = match;
-    const issuedAt = Number(issuedText);
+    const [, epoch, expiryText, nonce, mac] = match;
     const expiresAt = Number(expiryText);
     const now = this.now();
     for (const [used, expiry] of this.used) if (expiry <= now) this.used.delete(used);
-    if (!sameText(mac, linkMac(accessKey, issuedAt, expiresAt, nonce))) return false;
-    if (issuedAt < this.notBefore || issuedAt > now + 60_000) return false;
-    if (expiresAt <= now || expiresAt - issuedAt > LINK_MAX_TTL_MINUTES * 60_000) return false;
+    if (!sameText(mac, linkMac(accessKey, epoch, expiresAt, nonce))) return false;
+    if (!sameText(epoch, this.epoch)) return false;
+    // Expired, or longer-lived than any link the CLI makes (clock skew aside).
+    if (expiresAt <= now || expiresAt > now + LINK_MAX_TTL_MINUTES * 60_000 + 60_000) return false;
     if (this.used.has(nonce)) return false;
     this.used.set(nonce, expiresAt);
     return true;

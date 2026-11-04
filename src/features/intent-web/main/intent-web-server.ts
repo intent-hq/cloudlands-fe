@@ -8,6 +8,7 @@ import { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { getConnectionTunnel, setConnectionTunnel } from '../../backend/main/connection-tunnel';
 import type http from 'node:http';
 import QRCode from 'qrcode';
+import { LinkTokenVerifier } from '../../browser-access/main/device-login';
 import type { Duplex } from 'node:stream';
 import { createConnectionsStore, plaintextTokenCodec } from '../../backend/main/connections-store';
 import { buildConfigForRecord } from '../../backend/main/connection-config';
@@ -32,6 +33,8 @@ interface WebServerOptions {
   webRoot: string;
   getAccessKey: () => string;
   localSocket: string | null;
+  /** Link epoch for this start (see startLinkEpoch); one-time links must carry it. */
+  linkEpoch?: string;
   tailcatAvailable: boolean;
   tailcatBinary?: string | null;
   capture?: typeof captureFingerprint;
@@ -290,6 +293,7 @@ export async function createIntentWebServer(options: WebServerOptions) {
         expired: 'This sign-in code has expired or was already used. Scan a new code.',
         linkInvalid: 'This sign-in link has expired or was already used.',
       }),
+      links: new LinkTokenVerifier(options.linkEpoch),
       renderQr: (url) =>
         QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }),
     },

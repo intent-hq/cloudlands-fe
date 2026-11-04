@@ -153,3 +153,10 @@ it.skipIf(process.platform === 'win32')(
     }
   },
 );
+it('refuses to print a link before any server has started', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-link-none-'));
+  dirs.push(dir);
+  await expect(
+    runIntentWeb(['link', '--data-dir', path.join(dir, 'state')], { log: () => {} }),
+  ).rejects.toThrow('start it first');
+});

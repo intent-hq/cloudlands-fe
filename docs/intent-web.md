@@ -142,8 +142,9 @@ once and expires after 5 minutes (`--ttl <minutes>`, 1 to 15). Pass the
 address of your HTTPS front-end with `--url` (or set `INTENT_WEB_PUBLIC_URL`);
 without it, the link uses `http://127.0.0.1:<port>`, which only works on this
 machine. Pass the same `--data-dir` that the server uses. Start the server
-first: it rejects links made before it started, so restarting it cancels every
-link, used or not. Treat the link like the key until it is used or expires.
+first: each start saves a new random link ID in the data directory, and the
+server accepts only links that carry its current ID, so restarting it cancels
+every link, used or not. Without a running server, `link` stops with an error. Treat the link like the key until it is used or expires.
 
 ## The data directory
 
@@ -159,6 +160,7 @@ created with mode `0700` and holds:
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `config.json` (`0600`)      | The access key and the port. `--port` / `INTENT_WEB_PORT` is saved here, so later runs reuse it.                                                  |
 | `connections.json` (`0600`) | Saved machines: host, port, pinned certificate fingerprint, tunnel address and the machine **token in plain text** (marked `"encrypted": false`). |
+| `link-epoch` (`0600`)       | The current server start's link ID. `intent-web link` reads it; each start replaces it.                                                           |
 
 Treat the directory like an SSH key: anyone who can read it can use every
 saved machine. Back it up only to places you would put a private key. Deleting

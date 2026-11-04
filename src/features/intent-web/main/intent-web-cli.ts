@@ -3,7 +3,7 @@ import path from 'node:path';
 import QRCode from 'qrcode';
 import { defaultSocketPath } from '../../backend/main/backend-connection';
 import { parseIntentWebOptions } from './intent-web-options';
-import { loadWebConfig, resetWebKey } from './intent-web-config';
+import { loadWebConfig, readLinkEpoch, resetWebKey, startLinkEpoch } from './intent-web-config';
 import { findWebTailcat, checkTailcatVersion } from './intent-web-tailcat';
 import { createIntentWebServer } from './intent-web-server';
 import { mintLinkToken } from '../../browser-access/main/device-login';
@@ -31,7 +31,12 @@ export async function runIntentWeb(
     return;
   }
   if (options.command === 'link') {
-    const { token, expiresAt } = mintLinkToken(config.accessKey, options.ttlMinutes);
+    const epoch = readLinkEpoch(options.dataDir);
+    if (!epoch)
+      throw new Error(
+        'No running intent-web server found; start it first with the same --data-dir (each start cancels earlier links).',
+      );
+    const { token, expiresAt } = mintLinkToken(config.accessKey, epoch, options.ttlMinutes);
     const origin = options.publicUrl ?? `http://127.0.0.1:${config.port}`;
     const url = `${origin}${LINK_PATH}?t=${token}`;
     log(
@@ -59,6 +64,7 @@ export async function runIntentWeb(
   let accessKey = config.accessKey;
   const server = await createIntentWebServer({
     dataDir: options.dataDir,
+    linkEpoch: startLinkEpoch(options.dataDir),
     webRoot,
     getAccessKey: () => accessKey,
     localSocket,

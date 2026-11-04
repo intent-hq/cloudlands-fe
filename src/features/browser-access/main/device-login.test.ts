@@ -6,6 +6,7 @@ import {
   DeviceLoginStore,
   LinkTokenVerifier,
   mintLinkToken,
+  newLinkEpoch,
 } from './device-login';
 
 const KEY = 'key-one';
@@ -100,81 +101,90 @@ describe('DeviceLoginStore', () => {
 });
 
 describe('one-time link tokens', () => {
+  const EPOCH = 'AAAAAAAAAAAAAAAAAAAAAA';
+
   it('redeems a fresh token once', () => {
     const now = 1_800_000_000_000;
-    const verifier = new LinkTokenVerifier(() => now);
-    const { token, expiresAt } = mintLinkToken(KEY, 5, now);
-    expect(token).toMatch(/^v1\.[0-9]+\.[0-9]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
+    const verifier = new LinkTokenVerifier(EPOCH, () => now);
+    const { token, expiresAt } = mintLinkToken(KEY, EPOCH, 5, now);
+    expect(token).toMatch(/^v1\.[A-Za-z0-9_-]{22}\.[0-9]+\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}$/);
     expect(expiresAt).toBe(now + 5 * 60_000);
     expect(verifier.redeem(token, KEY)).toBe(true);
     expect(verifier.redeem(token, KEY)).toBe(false);
   });
 
+  it('makes distinct random epochs', () => {
+    expect(newLinkEpoch()).not.toBe(newLinkEpoch());
+    expect(newLinkEpoch()).toMatch(/^[A-Za-z0-9_-]{22}$/);
+  });
+
   it('rejects tokens made with another key', () => {
-    const verifier = new LinkTokenVerifier();
-    expect(verifier.redeem(mintLinkToken(OTHER).token, KEY)).toBe(false);
+    const verifier = new LinkTokenVerifier(EPOCH);
+    expect(verifier.redeem(mintLinkToken(OTHER, EPOCH).token, KEY)).toBe(false);
   });
 
   it('rejects tampered tokens', () => {
-    const verifier = new LinkTokenVerifier();
-    const { token } = mintLinkToken(KEY, 1);
-    const [version, issued, expiry, nonce, mac] = token.split('.');
-    const later = [version, issued, Number(expiry) + 600_000, nonce, mac].join('.');
-    const earlier = [version, Number(issued) - 1, expiry, nonce, mac].join('.');
+    const verifier = new LinkTokenVerifier(EPOCH);
+    const { token } = mintLinkToken(KEY, EPOCH, 1);
+    const [version, epoch, expiry, nonce, mac] = token.split('.');
+    const later = [version, epoch, Number(expiry) + 600_000, nonce, mac].join('.');
+    const otherEpoch = [version, 'BBBBBBBBBBBBBBBBBBBBBB', expiry, nonce, mac].join('.');
     const flipped = [
       version,
-      issued,
+      epoch,
       expiry,
       nonce,
       `${mac.slice(0, -1)}${mac.endsWith('A') ? 'B' : 'A'}`,
     ].join('.');
     expect(verifier.redeem(later, KEY)).toBe(false);
-    expect(verifier.redeem(earlier, KEY)).toBe(false);
+    expect(verifier.redeem(otherEpoch, KEY)).toBe(false);
     expect(verifier.redeem(flipped, KEY)).toBe(false);
     expect(verifier.redeem('garbage', KEY)).toBe(false);
     expect(verifier.redeem(undefined, KEY)).toBe(false);
     expect(verifier.redeem(token, KEY)).toBe(true);
   });
 
-  it('rejects a used token after a restart (a new verifier with the same key)', () => {
+  it('rejects a used token after a restart, even if the clock moved back', () => {
     const time = clock(1_800_000_000_000);
-    const before = new LinkTokenVerifier(time.now);
-    const { token } = mintLinkToken(KEY, 5, time.now());
+    const before = new LinkTokenVerifier(newLinkEpoch(), time.now);
+    time.advance(30_000);
+    const { token } = mintLinkToken(KEY, before.epoch, 5, time.now());
     time.advance(1000);
     expect(before.redeem(token, KEY)).toBe(true);
-    time.advance(1000);
-    const after = new LinkTokenVerifier(time.now);
+    time.advance(-11_000);
+    const after = new LinkTokenVerifier(newLinkEpoch(), time.now);
     expect(after.redeem(token, KEY)).toBe(false);
   });
 
-  it('rejects unused tokens issued before the verifier started', () => {
-    const time = clock(1_800_000_000_000);
-    const { token } = mintLinkToken(KEY, 5, time.now());
-    time.advance(1);
-    expect(new LinkTokenVerifier(time.now).redeem(token, KEY)).toBe(false);
-    const fresh = mintLinkToken(KEY, 5, time.now()).token;
-    expect(new LinkTokenVerifier(time.now).redeem(fresh, KEY)).toBe(true);
+  it('rejects unused tokens minted for an earlier start', () => {
+    const first = new LinkTokenVerifier(newLinkEpoch());
+    const { token } = mintLinkToken(KEY, first.epoch, 5);
+    const second = new LinkTokenVerifier(newLinkEpoch());
+    expect(second.redeem(token, KEY)).toBe(false);
+    expect(second.redeem(mintLinkToken(KEY, second.epoch, 5).token, KEY)).toBe(true);
   });
 
   it('rejects expired tokens', () => {
     const time = clock(Date.now());
-    const verifier = new LinkTokenVerifier(time.now);
-    const { token } = mintLinkToken(KEY, 1, time.now());
+    const verifier = new LinkTokenVerifier(EPOCH, time.now);
+    const { token } = mintLinkToken(KEY, EPOCH, 1, time.now());
     time.advance(60_000);
     expect(verifier.redeem(token, KEY)).toBe(false);
   });
 
-  it('rejects tokens issued in the future', () => {
+  it('rejects tokens that expire later than the maximum lifetime allows', () => {
     const time = clock(Date.now());
-    const verifier = new LinkTokenVerifier(time.now);
-    const { token } = mintLinkToken(KEY, 15, time.now() + 10 * 60_000);
+    const verifier = new LinkTokenVerifier(EPOCH, time.now);
+    const { token } = mintLinkToken(KEY, EPOCH, 15, time.now() + 10 * 60_000);
     expect(verifier.redeem(token, KEY)).toBe(false);
   });
 
-  it('accepts only lifetimes from 1 to 15 minutes', () => {
-    expect(() => mintLinkToken(KEY, 0)).toThrow();
-    expect(() => mintLinkToken(KEY, 16)).toThrow();
-    expect(() => mintLinkToken(KEY, 2.5)).toThrow();
-    expect(() => mintLinkToken(KEY, 15)).not.toThrow();
+  it('accepts only lifetimes from 1 to 15 minutes and valid epochs', () => {
+    expect(() => mintLinkToken(KEY, EPOCH, 0)).toThrow();
+    expect(() => mintLinkToken(KEY, EPOCH, 16)).toThrow();
+    expect(() => mintLinkToken(KEY, EPOCH, 2.5)).toThrow();
+    expect(() => mintLinkToken(KEY, 'short', 5)).toThrow();
+    expect(() => new LinkTokenVerifier('short')).toThrow();
+    expect(() => mintLinkToken(KEY, EPOCH, 15)).not.toThrow();
   });
 });

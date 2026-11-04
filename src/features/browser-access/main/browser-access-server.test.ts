@@ -558,6 +558,7 @@ const DEVICE_TEXT: DeviceLoginText = {
 };
 
 describe('Browser access server: QR sign-in and one-time links', () => {
+  const EPOCH = 'AAAAAAAAAAAAAAAAAAAAAA';
   const qrUrls: string[] = [];
   const startDevice = (overrides: Partial<BrowserAccessServerDeps> = {}) => {
     qrUrls.length = 0;
@@ -568,6 +569,7 @@ describe('Browser access server: QR sign-in and one-time links', () => {
           qrUrls.push(url);
           return '<svg data-qr="1"></svg>';
         },
+        links: new LinkTokenVerifier(EPOCH),
       },
       ...overrides,
     });
@@ -732,7 +734,7 @@ describe('Browser access server: QR sign-in and one-time links', () => {
 
   it('signs in once with a one-time link and redirects home', async () => {
     const { port } = await startDevice();
-    const { token } = mintLinkToken(ACCESS_KEY, 5);
+    const { token } = mintLinkToken(ACCESS_KEY, EPOCH, 5);
     const first = await request(port, { path: `${LINK_PATH}?t=${token}` });
     expect(first.status).toBe(303);
     expect(first.headers.location).toBe('/');
@@ -746,20 +748,20 @@ describe('Browser access server: QR sign-in and one-time links', () => {
   });
 
   it('rejects tampered links and links made with another key', async () => {
-    const links = new LinkTokenVerifier();
+    const links = new LinkTokenVerifier(EPOCH);
     const { port } = await startDevice({
       deviceLogin: { text: () => DEVICE_TEXT, renderQr: async () => '<svg></svg>', links },
     });
-    const { token } = mintLinkToken('another-key', 5);
+    const { token } = mintLinkToken('another-key', EPOCH, 5);
     expect((await request(port, { path: `${LINK_PATH}?t=${token}` })).status).toBe(401);
-    const good = mintLinkToken(ACCESS_KEY, 5).token;
+    const good = mintLinkToken(ACCESS_KEY, EPOCH, 5).token;
     expect((await request(port, { path: `${LINK_PATH}?t=${good}x` })).status).toBe(401);
     expect((await request(port, { path: `${LINK_PATH}?t=${good}` })).status).toBe(303);
   });
 
   it('sends QR recovery from a rejected link page to the app, not back to the link', async () => {
     const { port } = await startDevice();
-    const { token } = mintLinkToken(ACCESS_KEY, 5);
+    const { token } = mintLinkToken(ACCESS_KEY, EPOCH, 5);
     await request(port, { path: `${LINK_PATH}?t=${token}` });
     const rejected = await request(port, { path: `${LINK_PATH}?t=${token}` });
     expect(rejected.status).toBe(401);

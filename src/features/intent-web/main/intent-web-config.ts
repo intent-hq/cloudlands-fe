@@ -3,6 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { generateAccessKey } from '../../browser-access/main/browser-access-auth';
+import { LINK_EPOCH_PATTERN, newLinkEpoch } from '../../browser-access/main/device-login';
+
+/** Holds the running server's link epoch; `intent-web link` reads it. */
+const LINK_EPOCH_FILE = 'link-epoch';
 
 interface WebConfig {
   accessKey: string;
@@ -66,4 +70,32 @@ export function resetWebKey(dir: string): string {
   const accessKey = generateAccessKey();
   writeConfig(dir, { port, accessKey });
   return accessKey;
+}
+
+/**
+ * Pick and save a new link epoch for a server start. Links minted for an earlier
+ * start stop working, so a restart cancels every one-time link.
+ */
+export function startLinkEpoch(dir: string): string {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const epoch = newLinkEpoch();
+  const target = path.join(dir, LINK_EPOCH_FILE);
+  const temporary = `${target}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${epoch}\n`, { mode: 0o600, flag: 'wx' });
+    fs.renameSync(temporary, target);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+  return epoch;
+}
+
+/** The link epoch of the last server start, or null when no server has started. */
+export function readLinkEpoch(dir: string): string | null {
+  try {
+    const epoch = fs.readFileSync(path.join(dir, LINK_EPOCH_FILE), 'utf8').trim();
+    return LINK_EPOCH_PATTERN.test(epoch) ? epoch : null;
+  } catch {
+    return null;
+  }
 }
