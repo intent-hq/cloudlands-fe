@@ -22,6 +22,7 @@ import type {
   ScriptCreateInput,
   ScriptCreateResult,
   ScriptRunResult,
+  ScriptRunTarget,
   ScriptsClient,
   SubscriptionHandler,
   Unsubscribe,
@@ -31,6 +32,11 @@ import { runMutation } from './live-support';
 
 /** Rows per full-view `script.list` page (the host also caps page bytes). */
 const FULL_PAGE_LIMIT = 200;
+
+/** A machine run is addressed by its remote agent; omitted = the backend's own run. */
+function runParams(run?: ScriptRunTarget): { remoteAgentId?: string } {
+  return run ? { remoteAgentId: run.remoteAgentId } : {};
+}
 
 export class LiveScriptsClient implements ScriptsClient {
   async supportsLifecycle(): Promise<boolean> {
@@ -170,21 +176,35 @@ export class LiveScriptsClient implements ScriptsClient {
     return runMutation('script.start', { workspaceId, scriptId });
   }
 
-  async stop(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation('script.stop', { workspaceId, scriptId });
+  async stop(
+    workspaceId: string,
+    scriptId: string,
+    run?: ScriptRunTarget,
+  ): Promise<MutationResult> {
+    return runMutation('script.stop', { workspaceId, scriptId, ...runParams(run) });
   }
 
-  async restart(workspaceId: string, scriptId: string): Promise<MutationResult> {
-    return runMutation('script.restart', { workspaceId, scriptId });
+  async restart(
+    workspaceId: string,
+    scriptId: string,
+    run?: ScriptRunTarget,
+  ): Promise<MutationResult> {
+    return runMutation('script.restart', { workspaceId, scriptId, ...runParams(run) });
   }
 
-  async output(workspaceId: string, scriptId: string, maxLines?: number): Promise<string> {
+  async output(
+    workspaceId: string,
+    scriptId: string,
+    maxLines?: number,
+    run?: ScriptRunTarget,
+  ): Promise<string> {
     try {
       // `script.output` returns the output-buffer text as a bare JSON string (§5.8).
       const result = await backendRequest<unknown>('script.output', {
         workspaceId,
         scriptId,
         ...(maxLines !== undefined ? { maxLines } : {}),
+        ...runParams(run),
       });
       return typeof result === 'string' ? result : '';
     } catch {

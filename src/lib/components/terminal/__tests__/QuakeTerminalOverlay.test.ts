@@ -12,6 +12,7 @@ const {
   asyncUpdate,
   workflowOutcomes,
   notify,
+  remoteScripts,
 } = vi.hoisted(() => ({
   mockDispatch: vi.fn(),
   mockGet: vi.fn(),
@@ -33,6 +34,7 @@ const {
   },
   workflowOutcomes: new Map<string, any>(),
   notify: { error: vi.fn(), info: vi.fn(), success: vi.fn() },
+  remoteScripts: { supported: false },
 }));
 
 vi.mock('$lib/client', () => ({ appClient: { scripts: { get: mockGet } } }));
@@ -45,6 +47,12 @@ vi.mock('$store/renderer/store', async () => {
   const store: any = {
     get state() {
       return {
+        principal: {
+          snapshot: remoteScripts.supported ? { capabilities: { remoteScripts: 1 } } : null,
+        },
+        remoteMachines: {
+          machines: { 'node-mac': { id: 'node-mac', name: 'Mac Studio', state: 'connected' } },
+        },
         scripts: {
           byWorkspaceId: Object.fromEntries(
             ['ws-1', 'ws-a', 'ws-b'].map((id) => [
@@ -725,4 +733,143 @@ describe('QuakeTerminalOverlay lifecycle', () => {
       ).toEqual([[{ type: 'terminals/setHeight', payload: [wsId, 90] }]]);
     },
   );
+});
+
+describe('QuakeTerminalOverlay machine runs', () => {
+  const machineRunning = {
+    remoteAgentId: 'agent-remote',
+    nodeId: 'node-mac',
+    runtime: { status: 'running', restartCount: 0, detectedUrl: 'http://localhost:5173' },
+  };
+  const script = (run: any) => ({
+    ...runningScript,
+    id: 'remote-dev',
+    runtime: { status: 'running', restartCount: 0, detectedUrl: 'http://localhost:3000' },
+    machineRuns: [run],
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    selectorSubscribers.clear();
+    workflowOutcomes.clear();
+    terminalState.isOpen = true;
+    terminalState.byWorkspace = {};
+    remoteScripts.supported = true;
+    selectedScript.id = 'remote-dev';
+  });
+
+  afterEach(() => {
+    cleanup();
+    remoteScripts.supported = false;
+  });
+
+  it('keeps the backend run, with its Open link, until a machine run is selected', () => {
+    scriptEntries.value = [script(machineRunning)];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    expect(screen.getByText('http://localhost:3000')).toBeTruthy();
+    expect(container.querySelector('[data-script-machine="label"]')).toBeNull();
+  });
+
+  it('shows the machine instead of an Open link and stops the selected machine run', async () => {
+    scriptEntries.value = [script(machineRunning)];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText('Select machine run'));
+    expect(container.querySelector('[data-script-machine="label"]')?.textContent?.trim()).toBe(
+      'On Mac Studio',
+    );
+    expect(screen.queryByText('http://localhost:3000')).toBeNull();
+    expect(screen.queryByText('http://localhost:5173')).toBeNull();
+    expect(container.querySelector('[data-machine-run-output="agent-remote"]')).not.toBeNull();
+
+    await fireEvent.click(screen.getByLabelText('Stop script'));
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/machineRunOperationRequested',
+        payload: expect.arrayContaining(['ws-1', 'remote-dev', 'agent-remote', 'stop']),
+      }),
+    );
+    expect(mockDispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/stopScriptRequested' }),
+    );
+  });
+
+  it('colours the machine run header status like the backend run in the same state', async () => {
+    scriptEntries.value = [script(machineRunning)];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    const home = container.querySelector('[data-script-header-status]');
+    expect(home?.textContent?.trim()).toBe('Running');
+    const homeStyle = home?.getAttribute('class');
+    await fireEvent.click(screen.getByText('Select machine run'));
+    const status = container.querySelector('[data-machine-run-header-status]');
+    expect(status?.textContent?.trim()).toBe('Running');
+    // Parity contract: a machine run's status is styled exactly like the backend run's.
+    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- parity with the home run, not a spelling
+    expect(status?.getAttribute('class')).toBe(homeStyle);
+  });
+
+  it("reads the machine run's output with its remote agent", async () => {
+    scriptEntries.value = [script(machineRunning)];
+    render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText('Select machine run'));
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/outputRequested',
+        payload: expect.arrayContaining(['ws-1', 'remote-dev', 'agent-remote']),
+      }),
+    );
+  });
+
+  it("swaps the output viewer when switching to another agent's run of the same script", async () => {
+    scriptEntries.value = [
+      {
+        ...script(machineRunning),
+        machineRuns: [machineRunning, { ...machineRunning, remoteAgentId: 'agent-other' }],
+      },
+    ];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText('Select machine run'));
+    mockDispatch.mockClear();
+    await fireEvent.click(screen.getByText('Select other machine run'));
+
+    expect(container.querySelector('[data-machine-run-output="agent-other"]')).not.toBeNull();
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'scripts/outputReleased' }),
+    );
+    expect(mockDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'scripts/outputRequested',
+        payload: expect.arrayContaining(['remote-dev', 'agent-other']),
+      }),
+    );
+  });
+
+  it('shows the lost reason for a lost machine run', async () => {
+    scriptEntries.value = [
+      script({
+        ...machineRunning,
+        runtime: {
+          status: 'exited',
+          exitCode: -1,
+          restartCount: 0,
+          error: 'remote-script-lost: the machine disconnected',
+        },
+      }),
+    ];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText('Select machine run'));
+    expect(container.querySelector('[data-machine-run-header-status]')?.textContent?.trim()).toBe(
+      'Lost: The machine disconnected',
+    );
+    expect(screen.queryByLabelText('Stop script')).toBeNull();
+    expect(screen.getByLabelText('Restart script')).toBeTruthy();
+  });
+
+  it('ignores machine runs on older backends', async () => {
+    remoteScripts.supported = false;
+    scriptEntries.value = [script(machineRunning)];
+    const { container } = render(QuakeTerminalOverlay, { props: { workspaceId: 'ws-1' as any } });
+    await fireEvent.click(screen.getByText('Select machine run'));
+    expect(container.querySelector('[data-script-machine]')).toBeNull();
+    expect(screen.getByText('http://localhost:3000')).toBeTruthy();
+  });
 });

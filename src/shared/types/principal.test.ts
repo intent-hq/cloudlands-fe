@@ -36,6 +36,16 @@ describe('principal discovery wire contract', () => {
       expect(snapshot?.capabilities.gitlabCheckout).toBe(flag === 1);
     },
   );
+  it.each([undefined, false, true, 0, 1, 2, '1', null])(
+    'admits remote scripts only for exact server capability 1 (%j)',
+    (flag) => {
+      const snapshot = parsePrincipalSnapshot(
+        { server: { capabilities: { remoteScripts: flag } } },
+        principal,
+      );
+      expect(snapshot?.capabilities.remoteScripts).toBe(flag === 1 ? 1 : undefined);
+    },
+  );
   it('preserves simultaneous submission and invitation capabilities', () => {
     const snapshot = parsePrincipalSnapshot(
       { server: { capabilities: { submissionCorrelation: 1, invitationAccountSearch: 1 } } },
