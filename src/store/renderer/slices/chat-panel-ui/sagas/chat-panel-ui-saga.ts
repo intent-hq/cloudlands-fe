@@ -80,7 +80,6 @@ function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerat
         return;
       }
       pages.push(result.items);
-      const priorSize = itemsById.size;
       for (const item of result.items) itemsById.set(item.id, item);
       const nextToken = result.nextToken;
       if (!nextToken) {
@@ -105,7 +104,7 @@ function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerat
         );
         return;
       }
-      if (seenTokens.has(nextToken) || itemsById.size === priorSize) {
+      if (seenTokens.has(nextToken)) {
         throw new Error('User-message index paging made no progress');
       }
       seenTokens.add(nextToken);

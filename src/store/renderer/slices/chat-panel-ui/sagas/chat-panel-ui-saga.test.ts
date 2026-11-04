@@ -289,7 +289,6 @@ describe('chatPanelUiSaga', () => {
     'unsupported later page',
     'repeated cursor',
     'cursor cycle',
-    'empty progress',
   ] as const) {
     it(`fails without partial success and retains a prior index for ${failure}`, async () => {
       const h = harness();
@@ -319,9 +318,9 @@ describe('chatPanelUiSaga', () => {
       else
         h.client.listUserMessages.mockResolvedValueOnce({
           ok: true,
-          items: failure === 'empty progress' ? [] : [indexItem(2)],
-          total: failure === 'empty progress' ? 0 : 1,
-          nextToken: failure === 'empty progress' ? 'oldest' : 'older',
+          items: [indexItem(2)],
+          total: 1,
+          nextToken: 'older',
         });
       h.dispatch(userMessageIndexRequested(WS, PANEL, 'refresh', AGENT, 0));
       await vi.waitFor(() => expect(h.index()?.status).toBe('failed'));
@@ -336,6 +335,42 @@ describe('chatPanelUiSaga', () => {
       );
     });
   }
+
+  it('follows advancing cursors through empty first and middle pages and duplicate-only pages', async () => {
+    const h = harness();
+    tasks.push(h.task);
+    const finalPage = deferred<Awaited<ReturnType<AgentsClient['listUserMessages']>>>();
+    const refreshed = indexItem(3, 'Latest boundary');
+    h.client.listUserMessages
+      .mockResolvedValueOnce({ ok: true, items: [], total: 0, nextToken: 'first' })
+      .mockResolvedValueOnce({ ok: true, items: [indexItem(3)], total: 1, nextToken: 'middle' })
+      .mockResolvedValueOnce({ ok: true, items: [], total: 0, nextToken: 'duplicate' })
+      .mockResolvedValueOnce({ ok: true, items: [refreshed], total: 1, nextToken: 'last' })
+      .mockReturnValueOnce(finalPage.promise);
+    h.dispatch(userMessageIndexRequested(WS, PANEL, 'filtered', AGENT, 0));
+    await vi.waitFor(() => expect(h.client.listUserMessages).toHaveBeenCalledTimes(5));
+    expect(h.index()?.status).toBe('pending');
+    expect(h.client.listUserMessages.mock.calls).toEqual([
+      [AGENT, undefined, WS],
+      [AGENT, undefined, WS, { nextToken: 'first' }],
+      [AGENT, undefined, WS, { nextToken: 'middle' }],
+      [AGENT, undefined, WS, { nextToken: 'duplicate' }],
+      [AGENT, undefined, WS, { nextToken: 'last' }],
+    ]);
+    finalPage.resolve({ ok: true, items: [indexItem(1), indexItem(2)], total: 2, nextToken: null });
+    await settle();
+    expect(h.index()).toMatchObject({
+      status: 'succeeded',
+      result: {
+        ok: true,
+        total: 3,
+        items: [indexItem(1), indexItem(2), refreshed],
+      },
+    });
+    expect(
+      h.actions.filter((action) => action.type === userMessageIndexFinished.type),
+    ).toHaveLength(1);
+  });
 
   it('retains the unsupported-daemon fallback on an initial no-token request', async () => {
     const h = harness();
