@@ -160,6 +160,16 @@ export interface ContentBlock {
   mimeType?: string;
   /** Image dimension sidecar for Markdown images referenced by a text block. */
   media?: TextBlockMedia;
+  /** Single-message bound (PROTOCOL §5.5): `text` is a preview of a `text` / `thinking` body cut
+   *  because its message alone was over the page budget — fetch the full block via
+   *  `agent.getMessageBlock`. */
+  textTruncated?: boolean;
+  /** UTF-8 byte length of the full `text` when `textTruncated` is set. */
+  textBytes?: number;
+  /** Single-message bound (PROTOCOL §5.5): a `{ id, type, bodyOmitted }` stub standing in for a
+   *  block cut from a message that alone was over the page budget — fetch it by id via
+   *  `agent.getMessageBlock`. */
+  bodyOmitted?: boolean;
   /** Transcript for audio content */
   transcript?: string;
   /** Normalized source for assistant-produced video content */

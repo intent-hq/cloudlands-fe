@@ -65,6 +65,21 @@ export interface WorkspaceScript {
   purpose?: ScriptPurpose;
   archivedAt?: string;
   lastRun?: ScriptLastRun;
+  /**
+   * Remote agents' runs of this script on their own machines
+   * (`remoteScripts: 1` backends), at most one per agent. `runtime` and
+   * `lastRun` above stay the backend's own run. Omitted when there are none.
+   */
+  machineRuns?: ScriptMachineRun[];
+}
+
+/** One remote agent's run of a saved script on its machine. */
+export interface ScriptMachineRun {
+  remoteAgentId: string;
+  /** The machine's `remoteMachines.list` id; the run carries no machine name. */
+  nodeId: string;
+  runtime: ScriptRuntimeState;
+  lastRun?: ScriptLastRun;
 }
 
 /**

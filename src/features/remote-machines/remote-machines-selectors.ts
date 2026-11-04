@@ -119,11 +119,18 @@ export const selectStartOnVisible = store.createSelector((state) =>
   }),
 );
 
+/** The current backend's own host platform, from the connections list (only while connected). */
+function backendHostPlatform(state: Parameters<typeof selectCurrentBackendLabel.select>[0]) {
+  const connection = getItem(state.connections.connections, state.connections.windowBackendId);
+  return connection?.hostOs ? { os: connection.hostOs, arch: connection.hostArch } : undefined;
+}
+
 /** The backend first (by its label), then each machine available to it; empty while hidden. */
 export const selectStartOnOptions = store.createSelector((state): StartOnOption[] =>
   selectStartOnVisible.select(state)
     ? startOnOptions({
         backendLabel: selectCurrentBackendLabel.select(state),
+        backendPlatform: backendHostPlatform(state),
         machines: selectRemoteMachines.select(state),
       })
     : [],

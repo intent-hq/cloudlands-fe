@@ -1,0 +1,16 @@
+{
+  // Electron suite helpers run only in the merge queue (test-electron), so nothing on a
+  // pull request resolved their imports: cloudlands-fe#4050 renamed a src module and its
+  // fixtures kept importing the old path until the queue rejected the PR. Type-checking
+  // them here (via `lint:electron-test-paths` in `lint:architecture`) fails a stale
+  // `import()` before merge; scripts/check-electron-test-paths.mjs covers the string
+  // paths and Vite `resolveId` stubs that tsc cannot see.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.electron-tests.tsbuildinfo"
+  },
+  "include": ["src/**/*.d.ts", "test/electron*.ts", "test/fixtures/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist-electron"]
+}

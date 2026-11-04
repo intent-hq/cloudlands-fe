@@ -416,6 +416,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string,
     blockId: string,
     workspaceId?: string,
+    offset?: number,
   ): Promise<MessageBlockPage> {
     const result = await backendRequest<{
       block?: unknown;
@@ -429,6 +430,7 @@ export class LiveAgentsClient implements AgentsClient {
       messageId,
       blockId,
       ...(workspaceId !== undefined ? { workspaceId } : {}),
+      ...(offset !== undefined ? { offset } : {}),
     });
     const block = result?.block;
     if (!isContentBlock(block)) {
@@ -450,9 +452,11 @@ export class LiveAgentsClient implements AgentsClient {
 
   // User-message index (`agent.listUserMessages`, §5.5): user-role rows as
   // lightweight `{ id, preview, createdAt, metadata? }` items,
-  // oldest→newest — the whole index unless `page` asks for the newest rows
-  // only. `previewChars` and the page params only ride along when supplied
-  // so the daemon defaults apply otherwise.
+  // oldest→newest — one newest-first page (daemon default 100 rows, max
+  // 500, byte-bounded); follow `nextToken` for older rows. Daemons that
+  // predate paging return the whole index without `nextToken`.
+  // `previewChars` and the page params only ride along when supplied so the
+  // daemon defaults apply otherwise.
   // Failures fold into a typed result instead of throwing so the navigator
   // can silently degrade to its tail-derived items: -32601 (older daemon
   // lacking the method) is marked `unsupported: true`; any other failure

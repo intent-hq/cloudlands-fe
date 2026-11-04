@@ -1,5 +1,5 @@
 import type { Locator, Page } from '@playwright/test';
-import { expect, test } from '../../../test/ct-test';
+import { expect, installPausedClock, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview, adaptiveDockFixture } from './dock-rail.preview-fixtures';
 import {
@@ -175,8 +175,7 @@ test.describe('side shell motion', () => {
     page,
   }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
-    await page.clock.install();
-    const side = await mountSide(mount, page);
+    const side = await installPausedClock(page, () => mountSide(mount, page));
     await page.clock.runFor(100);
     await shot(page, 'dock-edge-closed');
     await side.locator('[data-dock-entry="dock:assistant"]').click();
@@ -251,7 +250,7 @@ test.describe('side shell motion', () => {
       contained(region, regions.scrollport);
     contained(regions.regions[shellIndex], local(regions.shell));
     for (const region of regions.regions.slice(shellIndex + 1)) contained(region, regions.shell);
-    // Let the rest play in real time for the recording.
+    // Step the rest frame by frame; the real waits only pace the recording.
     for (let i = 0; i < 40 && (await reveal()) < 1; i += 1) {
       await page.clock.runFor(16);
       await page.waitForTimeout(16);
@@ -276,9 +275,8 @@ test.describe('side shell motion', () => {
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
-    // The clock owns every frame from mount on, so each read sees one frame.
-    await page.clock.install();
-    const side = await mountSide(mount, page);
+    // Paused after mount: the test steps every frame, so each read sees one frame.
+    const side = await installPausedClock(page, () => mountSide(mount, page));
     await page.clock.runFor(100);
     const entries = side.locator('[data-dock-entry]');
     const entry = entries.nth(2);
@@ -364,13 +362,19 @@ test.describe('side shell motion', () => {
     // Main owns the rect: resize handles and pointer regions follow it.
     const host = (await side.locator('.dock-preview-host').boundingBox())!;
     await expect
-      .poll(async () => {
-        const regions: { x: number; y: number; width: number; height: number }[] =
-          JSON.parse((await side.getAttribute('data-preview-pointer')) ?? '{}').regions ?? [];
-        return regions.some(
-          (r) => Math.abs(r.y - (open.y - host.y)) <= 1 && Math.abs(r.height - open.height) <= 1,
-        );
-      })
+      .poll(
+        async () => {
+          // The clock is paused: give the region publisher a frame per attempt.
+          await page.clock.runFor(16);
+          const regions: { x: number; y: number; width: number; height: number }[] =
+            JSON.parse((await side.getAttribute('data-preview-pointer')) ?? '{}').regions ?? [];
+          return regions.some(
+            (r) => Math.abs(r.y - (open.y - host.y)) <= 1 && Math.abs(r.height - open.height) <= 1,
+          );
+        },
+        // A steady interval, so the timeout spans many frames rather than a few backoffs.
+        { intervals: [16] },
+      )
       .toBe(true);
     await shot(page, 'dock-edge-card-morph-open');
     // Close: back into the card's rect, fading only at the very end.

@@ -511,6 +511,7 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'browser-access:set-enabled',
   'browser-access:set-port',
   'browser-access:reset-key',
+  'browser-access:create-sign-in-code',
   // Dock composer native sessions (capture, annotate, record, pick): main owns
   // the screen capture, overlay window and helper processes. Both callers
   // (dock-evidence-native.ts, dock-annotation-overlay-bridge.ts) invoke only

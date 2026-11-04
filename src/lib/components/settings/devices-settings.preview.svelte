@@ -7,7 +7,7 @@
     connectionsListReceived,
   } from '$store/renderer/slices/connections/connections-slice';
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
-  import type { ConnectionsListResult } from '$shared/types/connections';
+  import type { ConnectionRecord, ConnectionsListResult } from '$shared/types/connections';
   import { setupUnavailablePublicationPreview } from '../../../test/connection-publication-preview';
   import {
     setupApiSettingsPreview,
@@ -20,7 +20,11 @@
     principalReceived,
   } from '$store/renderer/slices/principal/principal-slice';
 
-  import { setLabsMultiplayerEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    setLabsMultiplayerEnabled,
+    setLabsRemoteAgentsEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
 
   function setup(remote = false, multiplayer = false, tunnelEnabled = false) {
     const previousApi = window.electronAPI;
@@ -158,6 +162,153 @@
     };
   }
 
+  const remoteRow = (
+    id: string,
+    label: string,
+    overrides: Partial<ConnectionRecord>,
+  ): ConnectionRecord => ({
+    id,
+    label,
+    host: `${id}.invalid`,
+    port: 5181,
+    fingerprint: `FP:${id}`,
+    accent: null,
+    isLocal: false,
+    status: 'connected',
+    intentdVersion: '0.11.120',
+    ...overrides,
+  });
+
+  /**
+   * Settings → Machines with every row kind: the local machine, the backend
+   * this window uses, other saved machines (macOS, Windows, an offline one with
+   * nothing known) and a machine made available to the backend whose platform
+   * and providers come from the backend's machine report.
+   *
+   * With `disabled`, the local and saved rows show what the main process
+   * surfaces once a host's `enabledProviderIds` excludes some installed
+   * providers: those providers are hidden from that row.
+   */
+  function setupPlatforms(disabled: Record<string, string[]> = {}) {
+    const stop = setup();
+    const previousLabs = appStore.state.userPreferences.labsRemoteAgentsEnabled === true;
+    appStore.dispatch(setLabsRemoteAgentsEnabled(true));
+    const enabledOnly = (connection: ConnectionRecord): ConnectionRecord =>
+      connection.providers && disabled[connection.id]
+        ? {
+            ...connection,
+            providers: connection.providers.filter(
+              (provider) => !disabled[connection.id].includes(provider.id),
+            ),
+          }
+        : connection;
+    appStore.dispatch(
+      connectionsListReceived({
+        activeId: 'intent1',
+        windowBackendId: 'intent1',
+        pinnedVersion: '0.11.120',
+        connectedIds: ['local', 'mini', 'intent1', 'lab-pc', 'studio'],
+        connections: (
+          [
+            {
+              id: 'local',
+              label: 'Local',
+              host: null,
+              port: null,
+              fingerprint: null,
+              accent: null,
+              isLocal: true,
+              machineName: 'Clément’s MacBook Pro',
+              status: 'connected',
+              detectedDeviceKind: 'laptop',
+              hostOs: 'macos',
+              providers: [
+                { id: 'claude-code', displayName: 'Claude Code' },
+                { id: 'codex', displayName: 'Codex' },
+                { id: 'auggie', displayName: 'Auggie' },
+                { id: 'antigravity', displayName: 'Antigravity' },
+              ],
+            },
+            remoteRow('mini', 'Clément’s Mac mini', {
+              detectedDeviceKind: 'macMini',
+              hostOs: 'macos',
+              providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+            }),
+            remoteRow('intent1', 'intent1', {
+              detectedDeviceKind: 'server',
+              hostOs: 'linux',
+              providers: [
+                { id: 'claude-code', displayName: 'Claude Code' },
+                { id: 'codex', displayName: 'Codex' },
+                { id: 'opencode', displayName: 'OpenCode' },
+                { id: 'acme-agent', displayName: 'Acme Agent' },
+              ],
+            }),
+            remoteRow('lab-pc', 'Lab PC', {
+              detectedDeviceKind: 'desktop',
+              hostOs: 'windows',
+              providers: [
+                { id: 'codex', displayName: 'Codex' },
+                { id: 'grok', displayName: 'Grok' },
+                { id: 'pi', displayName: 'Pi' },
+                { id: 'droid', displayName: 'Droid' },
+                { id: 'cortex', displayName: 'Cortex' },
+              ],
+            }),
+            remoteRow('offline', 'Old laptop', {
+              status: 'disconnected',
+              intentdVersion: undefined,
+            }),
+            remoteRow('studio', 'Clément’s Mac Studio', {
+              detectedDeviceKind: 'macStudio',
+            }),
+          ] satisfies ConnectionRecord[]
+        ).map(enabledOnly),
+      }),
+    );
+    appStore.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        localFingerprint: null,
+        executorBackends: [],
+        machines: [
+          {
+            id: 'm-studio',
+            name: 'Clément’s Mac Studio',
+            platform: { os: 'macos', arch: 'aarch64' },
+            hosts: ['studio.invalid'],
+            port: 5181,
+            fingerprint: 'FP:studio',
+            state: 'connected',
+            runningAgents: 0,
+            capabilities: {
+              intentdVersion: '0.11.120',
+              providers: [
+                { id: 'claude-code', status: 'signed-in', models: [] },
+                { id: 'codex', status: 'signed-in', models: [] },
+                { id: 'unsloth', status: 'unknown', models: [] },
+                { id: 'grok', status: 'cli-missing', models: [] },
+              ],
+            },
+            addedAt: '2026-11-01T00:00:00Z',
+          },
+        ],
+      }),
+    );
+    return () => {
+      appStore.dispatch(
+        remoteMachinesLoaded({
+          supported: false,
+          localFingerprint: null,
+          executorBackends: null,
+          machines: [],
+        }),
+      );
+      appStore.dispatch(setLabsRemoteAgentsEnabled(previousLabs));
+      stop();
+    };
+  }
+
   /** Settings → Machines on an intent-web host without tailcat or a local daemon. */
   function setupIntentWeb(empty: boolean) {
     const stop = setup();
@@ -188,6 +339,16 @@
     defaultState: 'versions',
     states: {
       versions: { props: {}, setup: () => setup() },
+      platforms: { props: {}, setup: () => setupPlatforms() },
+      'platforms-enabled-only': {
+        props: {},
+        setup: () =>
+          setupPlatforms({
+            local: ['codex', 'antigravity'],
+            intent1: ['opencode', 'acme-agent'],
+            'lab-pc': ['grok', 'pi', 'droid', 'cortex'],
+          }),
+      },
       'multiplayer-enabled': { props: {}, setup: () => setup(false, true) },
       'local-expanded': { props: { expanded: true }, setup: () => setup() },
       'remote-window': { props: {}, setup: () => setup(true) },

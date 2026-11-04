@@ -5,11 +5,33 @@ import { parseIntentWebOptions } from './intent-web-options';
 import { loadWebConfig, resetWebKey } from './intent-web-config';
 import { findWebTailcat, checkTailcatVersion } from './intent-web-tailcat';
 import { createIntentWebServer } from './intent-web-server';
+import { createFileSignInStore } from './intent-web-sign-in-store';
+import { LOGIN_PATH } from '../../browser-access/main/browser-access-server';
+import {
+  SIGN_IN_CODE_TTL_MS,
+  createSignInCodes,
+  signInLink,
+} from '../../browser-access/main/browser-access-sign-in-codes';
+
+const INTENT_WEB_USAGE = `Usage:
+  intent-web [serve] [--port <n> | --socket <path>] [--data-dir <dir>] [--tailcat <path>]
+                     [--local-socket <path> | --no-local]
+  intent-web key [--reset] [--data-dir <dir>]
+  intent-web link [--url <origin>] [--data-dir <dir>]
+
+Commands:
+  serve   Start the server (default).
+  key     Show the access key; --reset replaces it and signs out every browser.
+  link    Create a single-use sign-in code and link. The code works once and
+          expires after 10 minutes. The link uses --url, else the address of
+          the last signed-in browser; without either, enter the code on the
+          sign-in page. Works while the server runs in another process.`;
 
 export async function runIntentWeb(
   args: string[],
   dependencies: {
     log?: (message: string) => void;
+    now?: () => number;
     webRoot?: string;
     pinnedTailcatVersion?: string;
   } = {},
@@ -17,15 +39,39 @@ export async function runIntentWeb(
   const log = dependencies.log ?? console.log;
   const options = parseIntentWebOptions(args);
   if (options.help) {
-    log(
-      'intent-web [serve | key [--reset]] [--port <n> | --socket <path>] [--data-dir <dir>] [--tailcat <path>] [--local-socket <path> | --no-local]',
-    );
+    log(INTENT_WEB_USAGE);
     return;
   }
   const config = loadWebConfig(options.dataDir, options.portExplicit ? options.port : undefined);
+  let accessKey = config.accessKey;
+  const signIn = createSignInCodes({
+    store: createFileSignInStore(options.dataDir),
+    getAccessKey: () => accessKey,
+    ...(dependencies.now ? { now: dependencies.now } : {}),
+  });
   if (options.command === 'key') {
-    log(options.reset ? resetWebKey(options.dataDir) : config.accessKey);
+    if (options.reset) {
+      accessKey = resetWebKey(options.dataDir);
+      // The new key already invalidates every code; drop them too.
+      await signIn.clear();
+    }
+    log(accessKey);
     return;
+  }
+  if (options.command === 'link') {
+    const created = await signIn.create();
+    const link = signInLink(options.url ?? (await signIn.pageOrigin()), LOGIN_PATH, created.code);
+    const minutes = Math.round(SIGN_IN_CODE_TTL_MS / 60_000);
+    log(`Sign-in code: ${created.code}`);
+    if (link) log(`Sign-in link: ${link}`);
+    else
+      log(
+        'Open Intent in your browser and enter the code on the sign-in page (pass --url <origin> to print a link).',
+      );
+    log(
+      `Works once. Expires in ${minutes} minutes, at ${new Date(created.expiresAt).toISOString()}.`,
+    );
+    return { code: created.code, link, expiresAt: created.expiresAt };
   }
   const webRoot = dependencies.webRoot ?? path.resolve('dist/web');
   if (!fs.existsSync(path.join(webRoot, 'index.html')))
@@ -38,8 +84,8 @@ export async function runIntentWeb(
   const candidate = options.localSocket ?? defaultSocketPath();
   const localSocket =
     options.local && (options.localSocket || fs.existsSync(candidate)) ? candidate : null;
-  let accessKey = config.accessKey;
   const server = await createIntentWebServer({
+    signIn,
     dataDir: options.dataDir,
     webRoot,
     getAccessKey: () => accessKey,

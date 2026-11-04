@@ -30,9 +30,19 @@
     providerId: string;
     class?: string;
     size?: number;
+    /**
+     * Single-color rendering in `currentColor` for marks that otherwise use
+     * fixed brand colors, so a row of icons reads the same in light and dark.
+     */
+    monochrome?: boolean;
   }
 
-  let { providerId: providerRef, class: className = 'size-3.5', size = 14 }: Props = $props();
+  let {
+    providerId: providerRef,
+    class: className = 'size-3.5',
+    size = 14,
+    monochrome = false,
+  }: Props = $props();
   // A named profile (§5.54 `<base>@<id>`) shares its base provider's icon.
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure string helper, not a data fetch; rule misfires on the '/provider-profiles' import source
   const providerId = $derived(providerRefBaseId(providerRef));
@@ -104,9 +114,13 @@
             width="240"
             height="300"><path d="M240 0H0V300H240V0Z" fill="white" /></mask
           ><g mask="url(#mask0_1401_86274)"
-            ><path d="M180 240H60V120H180V240Z" fill="#CFCECD" /><path
+            ><path
+              d="M180 240H60V120H180V240Z"
+              fill={monochrome ? 'currentColor' : '#CFCECD'}
+              fill-opacity={monochrome ? 0.4 : undefined}
+            /><path
               d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"
-              fill="#211E1E"
+              fill={monochrome ? 'currentColor' : '#211E1E'}
             /></g
           ></g
         ></g
@@ -135,8 +149,9 @@
   {:else if providerId === 'unsloth'}
     <!-- Unsloth's brand mark is the sloth emoji (per their brand guidelines) -->
     <span
-      class="inline-flex items-center justify-center leading-none"
-      style={`font-size: ${size - 2}px; width: ${size}px; height: ${size}px;`}>🦥</span
+      class={cn('inline-flex items-center justify-center leading-none', monochrome && 'grayscale')}
+      style={`font-size: ${monochrome ? size - 4 : size - 2}px; width: ${size}px; height: ${size}px;`}
+      >🦥</span
     >
   {:else if providerId === 'cortex'}
     <svg
@@ -168,13 +183,13 @@
       viewBox="0 0 800 800"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <rect width="800" height="800" rx="120" fill="#09090b" />
+      {#if !monochrome}<rect width="800" height="800" rx="120" fill="#09090b" />{/if}
       <path
-        fill="#fff"
+        fill={monochrome ? 'currentColor' : '#fff'}
         fill-rule="evenodd"
         d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"
       />
-      <path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z" />
+      <path fill={monochrome ? 'currentColor' : '#fff'} d="M517.36 400 H634.72 V634.72 H517.36 Z" />
     </svg>
   {/if}
 </span>

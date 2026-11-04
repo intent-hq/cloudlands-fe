@@ -69,6 +69,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | state/store                                                             | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | component design                                                        | ../../docs/fe/COMPONENTS_DESIGN.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | UI invariant gates                                                      | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Electron test helpers (`test/electron*.ts`, `test/fixtures/**/*.ts`)    | `pnpm run lint:electron-test-paths` (in `lint:architecture`) — `tsconfig.electron-tests.json` type-checks them and `scripts/check-electron-test-paths.mjs` checks their `src/` path strings and Vite `resolveId` stubs; they otherwise run only in the merge queue (cloudlands-fe#4050)                                                                                                                                                                                                                      |
 | adding a ratcheted lint rule                                            | `eslint-rules/lib/baseline-ratchet.js` — `lintRuleFromRepoConfig` derives scope from `eslint.config.js` (same rule entries and global ignores as `pnpm lint`); the baseline is one entry file per tolerated source file, `eslint-rules/baselines/<rule>/<source path>.json` (`loadBaseline`), so parallel debt-reduction PRs delete disjoint files instead of conflicting on one document; per-file counts only shrink vs `LINT_BASELINE_BASE_REF` (CI sets it to the PR / queue base; falls back to `HEAD`) |
 | deps freshness                                                          | `pnpm run deps:check` — gates refuse to run on a stale node_modules install                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Node version                                                            | `pnpm install` and gates refuse to run on a Node outside `engines.node` (the one range)                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -381,10 +382,19 @@ error and retry). `--max-unit-files N` rejects (never truncates) a plan over N f
 combine it with `--resolved-plan` for a budgeted preview, then raise or omit the limit.
 `pnpm run test:unit --maxWorkers=1` runs the full unit suite.
 
+`verify:changed` runs changed component test specs once with retries on. To catch the
+flakiness PR CI's "Changed Component Tests (repeated)" job catches, run
+`pnpm run test:ct:changed-repeat` before pushing: it builds the CT bundle under CI's 12 GiB
+heap, then repeats the changed specs (including uncommitted ones) with CI's repeat count,
+`--retries=0 --fail-on-flaky-tests` and two workers. `--dry-run` prints the filters and
+repeat count; `--workers N`, `--repeat-each N` and Playwright args after a second `--`
+(e.g. `-- --grep "<title>"`) tune stress runs (`--help` lists the rest).
+
 Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`
 and passes only when every check and resolved unit file is satisfied. To continue after a
 failure or interruption, rerun with `--resume` (`--resolved-plan --resume` previews it);
-never hand-pick stages. Receipt files and resume-credit rules:
+never hand-pick stages. A run stops at its first failed check; `--keep-going` still runs and
+records every remaining check, then fails listing them all (prerequisites still stop it). Receipt files and resume-credit rules:
 [Changed-file verification receipts](../../docs/fe/DEVELOPER_GUIDE.md#changed-file-verification-receipts).
 
 It runs scoped Prettier and ESLint, related Vitest tests, colocated component tests one
@@ -710,6 +720,12 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   (`intent/no-hover-then-click-in-ct`) caps each spec's sites at its shrink-only baseline;
   keep a pointer click, disabled on the line with the reason, only to cover the pointer
   path on a row that cannot move.
+- Pause the fake clock: `page.clock.install()` alone keeps time moving with real time, so
+  a slow step lets frame loops run past the frame a test samples (cloudlands-fe#4148:
+  56 of 80 loaded runs failed). Use `installPausedClock(page, beforePause?)` or
+  `pauseClock(page)` (`src/test/ct-test.ts`), then step with `page.clock.runFor`. Lint
+  (`intent/no-unpaused-clock-in-ct`) rejects an install whose test never pauses; keep
+  one, disabled on the line with the reason, only to skip a delay and check settled state.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser

@@ -18,6 +18,7 @@ for (const state of [
 ]) {
   test(`daemon ${state} recovery remains readable in a narrow window`, async ({ mount, page }) => {
     await page.setViewportSize({ width: 360, height: 600 });
+    // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- skips the overlay show delay; checks only the settled recovery screen
     await page.clock.install();
     await mount(Harness, { props: { state } });
     await page.clock.runFor(2600);

@@ -327,10 +327,10 @@ export type UserMessageIndexResult =
       items: UserMessageIndexItem[];
       total: number;
       /**
-       * Paged reads only (`limit` / `nextToken` supplied): the opaque cursor
-       * for the next older page, `null` once none remain. Absent on unpaged
-       * reads and from daemons that predate paging (which ignore `limit`
-       * and return the whole index), so absent means "complete".
+       * The opaque cursor for the next older page, `null` once none remain.
+       * Current daemons page every read; absent only from daemons that
+       * predate default paging (which return the whole index unless `limit`
+       * or `nextToken` is sent), so absent means "complete".
        */
       nextToken?: string | null;
     }
@@ -808,15 +808,17 @@ export interface AgentsClient {
   /**
    * The capped `agent.getMessageBlock` read with its page fields (PROTOCOL
    * §5.5 "Capped and paged block reads"). Call only when the daemon
-   * advertises `server.capabilities.messageBlockPages === 1`; the first page
-   * (offset 0, default 480,000-byte cap) is all the app reads. Errors
-   * propagate as rejections.
+   * advertises `server.capabilities.messageBlockPages === 1`. Without
+   * `offset` it reads the first page (default 480,000-byte cap); `offset`
+   * (a previous page's `nextOffset`) reads the next slice of a paged text
+   * body. Errors propagate as rejections.
    */
   getMessageBlockPage(
     agentId: string,
     messageId: string,
     blockId: string,
     workspaceId?: string,
+    offset?: number,
   ): Promise<MessageBlockPage>;
   /**
    * The user-message index of one agent (`agent.listUserMessages`, §5.5):
@@ -2067,6 +2069,11 @@ export interface ScriptRunResult {
   warning?: string;
 }
 
+/** A remote agent's run of a saved script on its machine (`remoteAgentId`, PROTOCOL `methods/scripts.md`). */
+export interface ScriptRunTarget {
+  remoteAgentId: string;
+}
+
 export interface ScriptsClient {
   supportsLifecycle?(): Promise<boolean>;
   /** capabilityVerified is only for a caller that just negotiated and revalidated its connection/authority. */
@@ -2094,12 +2101,17 @@ export interface ScriptsClient {
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.start`. */
   start(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.stop`. */
-  stop(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.restart`. */
-  restart(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.output` — historical output-buffer text. */
-  output(workspaceId: string, scriptId: string, maxLines?: number): Promise<string>;
+  /** `script.stop`; `run` addresses a remote agent's machine run (`remoteScripts: 1`). */
+  stop(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult>;
+  /** `script.restart`; `run` restarts a machine run on its machine. */
+  restart(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult>;
+  /** `script.output` — historical output-buffer text; `run` reads a machine run's buffer. */
+  output(
+    workspaceId: string,
+    scriptId: string,
+    maxLines?: number,
+    run?: ScriptRunTarget,
+  ): Promise<string>;
   /** `script.status` — the script's runtime state, or null when unavailable. */
   status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null>;
   /** `script.run` — run a command-mode script to completion. */

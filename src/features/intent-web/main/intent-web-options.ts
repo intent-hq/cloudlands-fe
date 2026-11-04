@@ -3,7 +3,7 @@ import path from 'node:path';
 import { parseArgs } from 'node:util';
 
 export interface IntentWebOptions {
-  command: 'serve' | 'key';
+  command: 'serve' | 'key' | 'link';
   port: number;
   portExplicit: boolean;
   dataDir: string;
@@ -12,6 +12,8 @@ export interface IntentWebOptions {
   localSocket?: string;
   local: boolean;
   reset: boolean;
+  /** `link --url`: the page origin to build the sign-in link from. */
+  url?: string;
   help: boolean;
 }
 
@@ -35,13 +37,25 @@ export function parseIntentWebOptions(
       'local-socket': { type: 'string' },
       'no-local': { type: 'boolean' },
       reset: { type: 'boolean' },
+      url: { type: 'string' },
       help: { type: 'boolean', short: 'h' },
     },
   });
   const command = positionals[0] ?? 'serve';
-  if (positionals.length > 1 || (command !== 'serve' && command !== 'key'))
-    throw new Error('Expected serve or key');
+  if (positionals.length > 1 || (command !== 'serve' && command !== 'key' && command !== 'link'))
+    throw new Error('Expected serve, key or link');
   if (values.reset && command !== 'key') throw new Error('--reset requires key');
+  if (values.url !== undefined && command !== 'link') throw new Error('--url requires link');
+  let url: string | undefined;
+  if (values.url !== undefined) {
+    try {
+      const parsed = new URL(values.url);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') throw new Error();
+      url = parsed.origin;
+    } catch {
+      throw new Error('--url must be an http(s) address, for example https://box.tailnet.ts.net');
+    }
+  }
   if (values.socket && context.platform === 'win32')
     throw new Error('Windows supports loopback TCP only');
   if (values.socket && values.port !== undefined) throw new Error('Choose --socket or --port');
@@ -70,6 +84,7 @@ export function parseIntentWebOptions(
     localSocket: values['local-socket'],
     local: !values['no-local'],
     reset: !!values.reset,
+    url,
     help: !!values.help,
   };
 }

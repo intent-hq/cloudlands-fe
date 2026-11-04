@@ -33,6 +33,7 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import NoBackendScreen from '$features/intent-web/components/NoBackendScreen.svelte';
+  import WebExperimentalNoticeHost from '$features/intent-web/components/WebExperimentalNoticeHost.svelte';
   import { showsNoBackendScreen } from '$features/intent-web/utils/no-backend-gate';
   import { selectNoBackendBound } from '$store/renderer/slices/connections/connections-selectors';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
@@ -1063,6 +1064,8 @@
 
   <Toast />
   <ConfirmHost />
+  <!-- Web build only: experimental notice at each start (Browser access hosts). -->
+  <WebExperimentalNoticeHost />
 
   <!-- Session-scoped daemon-host tool warnings (render nothing themselves) -->
   <NodeVersionToast />

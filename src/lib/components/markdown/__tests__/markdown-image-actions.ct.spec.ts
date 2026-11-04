@@ -135,6 +135,7 @@ for (const isStreaming of [false, true]) {
     });
     expect(insets.right).toBeCloseTo(insets.top, 0);
 
+    // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- fast-forwards past the hide delay, then resumes real time for the hover menu
     await page.clock.install();
     await page.clock.fastForward(10_000);
     await expect(trigger).toBeVisible();

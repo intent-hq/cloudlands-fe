@@ -12,6 +12,9 @@ import { webContents, ipcMain, type WebContents } from 'electron';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
+  BROWSER_VIEWPORT_MAX_PX,
+  BROWSER_VIEWPORT_MIN_PX,
+  clampBrowserViewportDimension,
   isBrowserEmulatedSize,
   isBrowserTabViewport,
   type BrowserTabViewport,
@@ -41,12 +44,10 @@ export const DEFAULT_AGENT_VIEWPORT = { width: 1280, height: 800 } as const;
  * into the same range so a hand-edited/corrupt layout file cannot replay
  * extreme sizes into CDP emulation (monorepo#2857).
  */
-export const AGENT_VIEWPORT_MIN_PX = 320;
-export const AGENT_VIEWPORT_MAX_PX = 3840;
+export const AGENT_VIEWPORT_MIN_PX = BROWSER_VIEWPORT_MIN_PX;
+export const AGENT_VIEWPORT_MAX_PX = BROWSER_VIEWPORT_MAX_PX;
 
-function clampViewportDimension(px: number): number {
-  return Math.min(AGENT_VIEWPORT_MAX_PX, Math.max(AGENT_VIEWPORT_MIN_PX, Math.round(px)));
-}
+const clampViewportDimension = clampBrowserViewportDimension;
 
 /**
  * How long (ms) to wait for a tab's webview to mount and register after an

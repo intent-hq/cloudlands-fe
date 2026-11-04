@@ -31,6 +31,15 @@ export const selectUsesGuestScriptScope = store.createSelector((state, workspace
   );
 });
 
+/**
+ * The backend lists remote agents' runs of a saved script on their machines
+ * in `machineRuns` (`client.hello` capability `remoteScripts: 1`). Without it
+ * the panel shows every script as before.
+ */
+export const selectRemoteScriptsSupported = store.createSelector(
+  (state): boolean => state.principal?.snapshot?.capabilities.remoteScripts === 1,
+);
+
 export const selectCanReadScriptDefinition = store.createSelector(
   (state, workspaceId: string, script: { purpose?: string } | null | undefined): boolean =>
     !selectUsesGuestScriptScope.select(state, workspaceId) ||

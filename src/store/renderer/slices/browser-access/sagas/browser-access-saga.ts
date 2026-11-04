@@ -16,13 +16,15 @@ import {
 import { canManageBrowserAccess } from '$lib/browser-access';
 
 import {
+  createBrowserAccessSignInCode,
   getBrowserAccessState,
   resetBrowserAccessKey,
   setBrowserAccessEnabled,
   setBrowserAccessPort,
 } from '$lib/browser-access-ipc';
-import type { BrowserAccessState } from '$shared/types/browser-access';
+import type { BrowserAccessSignInCode, BrowserAccessState } from '$shared/types/browser-access';
 import {
+  createBrowserAccessSignInCodeRequested,
   loadBrowserAccessRequested,
   resetBrowserAccessKeyRequested,
   setBrowserAccessEnabledRequested,
@@ -83,6 +85,17 @@ export function* enforceBrowserAccessLabsGate(): SagaGenerator<void> {
   }
 }
 
+function* createSignInCode(
+  action: ReturnType<typeof createBrowserAccessSignInCodeRequested>,
+): SagaGenerator<void> {
+  try {
+    const result: BrowserAccessSignInCode = yield* call(createBrowserAccessSignInCode);
+    yield* put(action.success(result));
+  } catch (error) {
+    yield* put(action.failure(error instanceof Error ? error : new Error(String(error))));
+  }
+}
+
 export function* browserAccessSaga(): SagaGenerator<void> {
   yield* all([
     call(enforceBrowserAccessLabsGate),
@@ -94,5 +107,6 @@ export function* browserAccessSaga(): SagaGenerator<void> {
       settle(action, () => setBrowserAccessPort(action.payload[0])),
     ),
     takeEvery(resetBrowserAccessKeyRequested, (action) => settle(action, resetBrowserAccessKey)),
+    takeEvery(createBrowserAccessSignInCodeRequested, createSignInCode),
   ]);
 }
