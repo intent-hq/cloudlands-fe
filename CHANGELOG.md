@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.280.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.280.0...v2.280.1) (2026-11-04)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.120 ([#4133](https://github.com/intent-hq/cloudlands-fe/issues/4133)) ([cf1556d](https://github.com/intent-hq/cloudlands-fe/commit/cf1556d1f163dcd92f8b4a0a9db1e48de2ac688b))
+* **intent-web:** seed the page host at store creation so Settings never flashes Mobile ([#4115](https://github.com/intent-hq/cloudlands-fe/issues/4115)) ([8bd14ed](https://github.com/intent-hq/cloudlands-fe/commit/8bd14ed8c90c3d3590f1042cfc0627adb03a5226))
+
 ## [2.280.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.279.0...v2.280.0) (2026-11-03)
 
 
