@@ -400,65 +400,82 @@ describe('parity with the test-ct-changed workflow job', () => {
   // The workflow's own step under bash, with `node scripts/run-ct-tests.mjs`
   // replaced by a stub that records each call's argv (and serves `report` to
   // the --list call), then the script's main() against the same report.
-  it('lists and repeats with the same arguments and repeat count as the script', () => {
-    const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
-    const report = listReport({ 'a/one.ct.spec.ts': 30, 'routes/[id]/two.ct.spec.ts': 20 });
-    const dir = tempDir();
-    const bin = join(dir, 'bin');
-    mkdirSync(bin);
-    const fixture = join(dir, 'report.json');
-    writeFileSync(fixture, JSON.stringify(report));
-    writeFileSync(
-      join(bin, 'node'),
-      [
-        '#!/usr/bin/env bash',
-        'if [ "$1" = scripts/run-ct-tests.mjs ]; then',
-        '  shift',
-        '  for arg in "$@"; do',
-        `    if [ "$arg" = --list ]; then printf '%s\\n' "$@" > "${dir}/list-argv"; cp "${fixture}" "$PLAYWRIGHT_JSON_OUTPUT_FILE"; exit 0; fi`,
-        '  done',
-        `  printf '%s\\n' "$@" > "${dir}/run-argv"`,
-        '  exit 0',
-        'fi',
-        `NODE_OPTIONS= exec "${process.execPath}" "$@"`,
-        '',
-      ].join('\n'),
-    );
-    chmodSync(join(bin, 'node'), 0o755);
-    const result = spawnSync(
-      'bash',
-      ['-e', '-o', 'pipefail', '-c', stepRun('Repeat changed component tests')],
-      {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${bin}:${process.env.PATH}`,
-          CT_CHANGED_SPECS: JSON.stringify(specs),
-          RUNNER_TEMP: dir,
+  it.each([1, 2, 3, 4])(
+    'lists globally and repeats shard %i/4 with the script’s arguments and repeat count',
+    (shard) => {
+      expect(jobLines('test-ct-changed')).toContain('        shard: [1, 2, 3, 4]');
+      expect(jobLines('test-ct-changed')).toContain('      CT_SHARD: ${{ matrix.shard }}');
+      const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
+      const report = listReport({ 'a/one.ct.spec.ts': 30, 'routes/[id]/two.ct.spec.ts': 20 });
+      const dir = tempDir();
+      const bin = join(dir, 'bin');
+      mkdirSync(bin);
+      const fixture = join(dir, 'report.json');
+      writeFileSync(fixture, JSON.stringify(report));
+      writeFileSync(
+        join(bin, 'node'),
+        [
+          '#!/usr/bin/env bash',
+          'if [ "$1" = scripts/run-ct-tests.mjs ]; then',
+          '  shift',
+          '  for arg in "$@"; do',
+          `    if [ "$arg" = --list ]; then printf '%s\\n' "$@" > "${dir}/list-argv"; cp "${fixture}" "$PLAYWRIGHT_JSON_OUTPUT_FILE"; exit 0; fi`,
+          '  done',
+          `  printf '%s\\n' "$@" > "${dir}/run-argv"`,
+          '  exit 0',
+          'fi',
+          `NODE_OPTIONS= exec "${process.execPath}" "$@"`,
+          '',
+        ].join('\n'),
+      );
+      chmodSync(join(bin, 'node'), 0o755);
+      const result = spawnSync(
+        'bash',
+        ['-e', '-o', 'pipefail', '-c', stepRun('Repeat changed component tests')],
+        {
+          cwd: process.cwd(),
+          encoding: 'utf8',
+          env: {
+            ...process.env,
+            PATH: `${bin}:${process.env.PATH}`,
+            CT_CHANGED_SPECS: JSON.stringify(specs),
+            CT_SHARD: String(shard),
+            RUNNER_TEMP: dir,
+          },
         },
-      },
-    );
-    expect(result.status, result.stderr).toBe(0);
-    const lines = (file: string) => readFileSync(join(dir, file), 'utf8').trimEnd().split('\n');
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const lines = (file: string) => readFileSync(join(dir, file), 'utf8').trimEnd().split('\n');
 
-    const calls: string[][] = [];
-    const code = main(specs, {
-      launch: (args: string[]) => {
-        calls.push(args);
-        return 0;
-      },
-      readReport: () => JSON.stringify(report),
-      makeTempDir: () => tempDir(),
-      env: {},
-      log: () => {},
-      warn: () => {},
-    });
-    expect(code).toBe(0);
-    const [list, build, run] = calls;
-    expect(list).toEqual(lines('list-argv'));
-    expect(build.slice(0, CT_BUILD_ARGS.length)).toEqual(CT_BUILD_ARGS);
-    expect(run).toEqual(lines('run-argv'));
-    expect(run).toContain('--repeat-each=16');
-  });
+      const calls: string[][] = [];
+      const code = main(specs, {
+        launch: (args: string[]) => {
+          calls.push(args);
+          return 0;
+        },
+        readReport: () => JSON.stringify(report),
+        makeTempDir: () => tempDir(),
+        env: {},
+        log: () => {},
+        warn: () => {},
+      });
+      expect(code).toBe(0);
+      const [list, build, run] = calls;
+      const workflowList = lines('list-argv');
+      const workflowRun = lines('run-argv');
+      expect(list).toEqual(workflowList);
+      expect(workflowList.filter((arg) => arg.startsWith('--shard'))).toEqual([]);
+      expect(build.slice(0, CT_BUILD_ARGS.length)).toEqual(CT_BUILD_ARGS);
+      expect(workflowRun.filter((arg) => arg.startsWith('--shard'))).toEqual([
+        `--shard=${shard}/4`,
+      ]);
+      const shardIndex = workflowRun.indexOf(`--shard=${shard}/4`);
+      expect([...workflowRun.slice(0, shardIndex), ...workflowRun.slice(shardIndex + 1)]).toEqual(
+        run,
+      );
+      expect(run.filter((arg) => arg.startsWith('--shard'))).toEqual([]);
+      expect(run).toContain('--repeat-each=16');
+      expect(workflowRun).toContain('--repeat-each=16');
+    },
+  );
 });
