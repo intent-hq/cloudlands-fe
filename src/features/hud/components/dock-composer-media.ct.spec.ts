@@ -173,6 +173,26 @@ test('screenshot modes open on hover, capture once with the chosen mode and keep
   expect(await actions(component)).toEqual(['capture:region', 'capture']);
 });
 
+test('a capture click whose press spans the menu opening still captures once', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ComposerMediaPreview);
+  const capture = component.getByRole('button', { name: 'Capture the screen', exact: true });
+  const menu = page.getByRole('menu', { name: 'Screenshot options' });
+  const box = (await capture.boundingBox())!;
+  // The hover delay ends between press and release: the button must stay the same
+  // element, or the browser sends the click to an ancestor and it is lost.
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await expect(menu).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(() => actions(component)).toEqual(['capture']);
+  await expect(menu).toBeHidden();
+  // Once: the closed menu left no second capture behind.
+  expect(await actions(component)).toEqual(['capture']);
+});
+
 test('the open screenshot menu never locks the rest of the dock', async ({ mount, page }) => {
   const component = await mount(ComposerMediaPreview);
   await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();

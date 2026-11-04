@@ -47,7 +47,6 @@
   let trigger = $state<HTMLButtonElement | null>(null);
   let keyboardOpen = false;
   // Hovering moves focus into the menu; closing returns it to where the person was typing.
-  // The button itself is named, not kept: its element is re-created while the menu is open.
   let returnFocus: HTMLElement | 'trigger' | null = null;
   let hoverTimer: ReturnType<typeof setTimeout> | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -107,6 +106,9 @@
   }
 </script>
 
+<!-- Disable, never drop, the tooltip while open: dropping it re-creates the button,
+     so a press that spans the hover opening would release on a new element and
+     lose its click. -->
 <Button
   bind:ref={trigger}
   variant="ghost-light"
@@ -119,7 +121,8 @@
   aria-expanded={pickable ? open : undefined}
   data-alert={media.alerts?.capture ? '' : undefined}
   data-capture-mode={mode}
-  tooltip={open ? undefined : tooltip}
+  {tooltip}
+  tooltipDisabled={open}
   onpointerenter={enter}
   onpointerleave={leave}
   onpointerdown={(event) => {
