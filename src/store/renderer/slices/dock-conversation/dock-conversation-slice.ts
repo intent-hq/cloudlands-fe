@@ -55,6 +55,9 @@ import type {
   DockNativeSpeechState,
 } from './dock-conversation-types';
 
+export const dockShortcutSelectionChanged = createAction<
+  [selection: import('$shared/dock-shortcuts').DockShortcutSelection | null]
+>('dockConversation/shortcutSelectionChanged');
 export const dockShortcutChanged = createAction<
   [state: import('$shared/dock-shortcuts').DockShortcutState | null]
 >('dockConversation/shortcutChanged');
@@ -360,6 +363,10 @@ export const dockConversationReducer = createReducer<DockConversationState>({
   sendError: null,
   sending: false,
 });
+dockConversationReducer.with(
+  dockShortcutSelectionChanged,
+  (state, { payload: [shortcutSelection] }) => ({ ...state, shortcutSelection }),
+);
 dockConversationReducer.with(dockShortcutChanged, (state, { payload: [shortcut] }) => ({
   ...state,
   shortcut,
@@ -435,6 +442,7 @@ dockConversationReducer.with(
 );
 dockConversationReducer.with(closeDockConversationRequested, (state) => ({
   ...state,
+  shortcut: null,
   workspaceId: null,
   agentId: null,
   generation: state.generation + 1,

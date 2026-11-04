@@ -10,7 +10,7 @@ import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
  */
 
 import { webContents, ipcMain, type WebContents } from 'electron';
-import { getBackendIdForWebContents } from '../../../main/window-backend';
+import { getStrictBackendBindingForWebContents } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
@@ -21,7 +21,6 @@ import {
 // Browser commands reach windows with ANY_HOST: this service has no host for
 // a tab's workspace yet (tabs are keyed by workspace id alone). Threading the
 // owning backend id through would let these sends target one host.
-import { BrowserWindow } from 'electron';
 import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
@@ -223,6 +222,14 @@ type ClaimTabResult =
 class EmbeddedBrowserCdpService {
   /** Map of tabId -> webContentsId */
   private tabRegistry = new Map<string, number>();
+  private registeredWorkspaceOwners = new Map<
+    number,
+    {
+      workspaceId: string;
+      host: WebContents;
+      binding: NonNullable<ReturnType<typeof getStrictBackendBindingForWebContents>>;
+    }
+  >();
 
   /** Set of webContentsIds that have debugger attached */
   private attachedDebuggers = new Set<number>();
@@ -540,7 +547,7 @@ class EmbeddedBrowserCdpService {
   /**
    * Register a browser tab for CDP access
    */
-  registerTab(tabId: string, webContentsId: number): void {
+  registerTab(tabId: string, webContentsId: number, workspaceId?: string): void {
     // A dom-ready registration can arrive after its guest has already died.
     // Never replace a live mapping or settle mount waiters with that stale id.
     const wc = webContents.fromId(webContentsId);
@@ -551,6 +558,13 @@ class EmbeddedBrowserCdpService {
       hostingLogger.info('tab registered', { tabId, webContentsId });
     }
     this.tabRegistry.set(tabId, webContentsId);
+    const host = wc.hostWebContents;
+    const binding = host && getStrictBackendBindingForWebContents(host);
+    if (workspaceId && host && binding) {
+      this.registeredWorkspaceOwners.set(webContentsId, { workspaceId, host, binding });
+    } else {
+      this.registeredWorkspaceOwners.delete(webContentsId);
+    }
     // An agent acting on this tab (possibly the action that mounted it on
     // demand) keeps the new guest drawing too.
     if (this.agentDrawing.has(tabId)) this.attachAgentDrawing(tabId);
@@ -585,6 +599,7 @@ class EmbeddedBrowserCdpService {
           // re-reports them.
           this.tabViewBounds.delete(tabId);
         }
+        this.registeredWorkspaceOwners.delete(webContentsId);
         this.attachedDebuggers.delete(webContentsId);
         this.debuggerDetachListeners.delete(webContentsId);
       });
@@ -685,6 +700,7 @@ class EmbeddedBrowserCdpService {
       logger.info('Unregistering browser tab', { tabId, webContentsId });
       this.detachDebugger(webContentsId);
       this.tabRegistry.delete(tabId);
+      this.registeredWorkspaceOwners.delete(webContentsId);
     }
   }
 
@@ -762,17 +778,26 @@ class EmbeddedBrowserCdpService {
     const tab = this.listTabs().find((row) => row.webContentsId === webContentsId);
     const contents = webContents.fromId(webContentsId);
     if (!tab || !contents || contents.isDestroyed()) return null;
-    const owners = [...this.panelBrowserTabsCache].filter(([, tabs]) =>
-      tabs.some((row) => row.tabId === tab.tabId),
-    );
-    if (owners.length !== 1 || !owners[0][0]) return null;
+    const owner = this.registeredWorkspaceOwners.get(webContentsId);
     const host = contents.hostWebContents;
-    if (!host) return null;
-    const hostWindow = BrowserWindow.fromWebContents(host);
-    const backendId = getBackendIdForWebContents(host);
-    if (!hostWindow || !getWindowIdsForWorkspace(owners[0][0], backendId).includes(hostWindow.id))
+    if (
+      !owner ||
+      !host ||
+      owner.host !== host ||
+      getStrictBackendBindingForWebContents(host) !== owner.binding
+    )
       return null;
-    return { workspaceId: owners[0][0], backendId, url: contents.getURL() };
+    if (
+      !getWindowIdsForWorkspace(owner.workspaceId, owner.binding.backendId).includes(
+        owner.binding.window.id,
+      )
+    )
+      return null;
+    return {
+      workspaceId: owner.workspaceId,
+      backendId: owner.binding.backendId,
+      url: contents.getURL(),
+    };
   }
 
   listTabs(): TabInfo[] {

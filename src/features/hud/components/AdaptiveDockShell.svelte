@@ -32,6 +32,7 @@
   import { useDockConversationPresence } from './dock-conversation-presence.svelte';
   import { dockIntro } from '$features/hud/intro/dock-intro.svelte';
   import { useDockConversationResize } from './dock-conversation-resize.svelte';
+  import { useDockHoverComposerFocus } from './dock-hover-composer-focus.svelte';
   import { useDockShellResize } from './dock-shell-resize.svelte';
   import { useDockConversationFocus } from './dock-conversation-focus.svelte';
   import DockCompanionContent from './DockCompanionContent.svelte';
@@ -45,7 +46,6 @@
   import DockShellSilhouette from './DockShellSilhouette.svelte';
   import DockMachineMenu from './DockMachineMenu.svelte';
   import type { DockMachineOption } from './dock-machine-types';
-
   let {
     workspaces,
     machines,
@@ -67,6 +67,7 @@
     conversationWorkspaceId = null,
     onOpenConversation,
     onCloseConversation,
+    onHomeDismiss,
   }: {
     workspaces: DockWorkspaceView[];
     machines?: DockMachineOption[];
@@ -78,6 +79,7 @@
     conversationWorkspaceId?: string | null;
     onOpenConversation?: (workspaceId: string) => void;
     onCloseConversation?: () => void;
+    onHomeDismiss?: () => void;
     staticData?: boolean;
     placement: DockPlacementSnapshot;
     onPlacementCommand: (command: DockPlacementCommand) => void;
@@ -89,7 +91,6 @@
     onOpenAssistant?: () => void | Promise<void>;
     pointerController?: DockPointerRegionController;
   } = $props();
-
   // svelte-ignore state_referenced_locally
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pointer-region state controller, not a domain-data request
   const pointerRegion = pointerController ?? createDockPointerRegionController();
@@ -104,7 +105,6 @@
     () => !edge,
   );
   const conversationVisible = $derived(pinned && conversationPresence.open);
-
   let conversationRegions: DockPointerRect[] = [];
   let edgeState = $state({ held: false, reveal: 0, shell: null as DockPointerRect | null });
   // Screen-space card and rail-relative anchor survive native window expansion.
@@ -239,14 +239,12 @@
   });
   const headerWingLeft = $derived(shown.x + 6);
   const headerWingRight = $derived(placement.surface.width - shown.x - shown.width + 12);
-
   function stopHeight(): void {
     growGate.cancel();
     heightLoop.cancel();
     heldHeight = null;
     openHeight = null;
   }
-
   function morphHeight(from: number, to: number): void {
     heldHeight = to < from ? Math.max(heldHeight ?? 0, placement.surface.height) : null;
     openHeight = from;
@@ -259,7 +257,6 @@
       return true;
     });
   }
-
   function sendDragEnd(token: string, finish: DockDragFinish): void {
     command(dockDragEndCommand(token, finish, ++sequence));
   }
@@ -293,11 +290,9 @@
       }
     });
   });
-
   function command(value: DockPlacementCommand): void {
     if (!placement.captureHidden) onPlacementCommand(value);
   }
-
   function publishRegions(): void {
     if (disposed || !surfaceElement || placement.captureHidden) return;
     const rail = { ...shown, x: placement.surface.x + shown.x, y: placement.surface.y + shown.y };
@@ -329,12 +324,10 @@
       publishRegions();
     });
   }
-
   function conversationRegionsChanged(regions: DockPointerRect[]): void {
     conversationRegions = regions;
     measure();
   }
-
   $effect(() => {
     const target = desiredHeight;
     const settled = expanded && surfaceExpanded && reveal === 1;
@@ -368,7 +361,6 @@
       morphHeight(from, target);
     });
   });
-
   $effect(() => {
     placement.surface.height;
     untrack(() => {
@@ -379,7 +371,6 @@
       else if (!heightLoop.active && heldHeight === null && openHeight !== null) openHeight = null;
     });
   });
-
   useDockShellResize(
     () => ({
       placement,
@@ -396,7 +387,6 @@
     }),
     command,
   );
-
   $effect(() => {
     placement.revision;
     const surface = surfaceElement;
@@ -406,13 +396,11 @@
     observer.observe(surface);
     return () => observer.disconnect();
   });
-
   $effect(() => {
     shown;
     placement.revision;
     untrack(publishRegions);
   });
-
   $effect(() => {
     const result = dragStartResult;
     const awaiting = awaitingDragStart;
@@ -438,7 +426,6 @@
       }
     });
   });
-
   $effect(() => {
     if (placement.phase === 'idle' && activeDragToken && awaitingDragStart === null) {
       untrack(() => {
@@ -447,7 +434,6 @@
       });
     }
   });
-
   $effect(() => {
     if (placement.captureHidden) {
       untrack(() => {
@@ -461,11 +447,9 @@
       pointerRegion.deactivate([], placement.revision);
     }
   });
-
   $effect(() => {
     if ((reveal === 0 && !edge) || dragging || placement.captureHidden) composerAsk.open = null;
   });
-
   const conversationFocus = useDockConversationFocus({
     get workspaceId() {
       return conversationWorkspaceId;
@@ -501,8 +485,26 @@
     },
     pointerOutside: leave,
   });
-
+  const hoverComposerFocus = useDockHoverComposerFocus(
+    () => ({
+      notch,
+      workspaceId: conversationWorkspaceId,
+      expanded,
+      settled: reveal === 1 && openHeight === null && !heightLoop.active && !growGate.pending,
+      blocked:
+        dragging ||
+        !!gesture ||
+        awaitingDragStart !== null ||
+        placement.captureHidden ||
+        placement.phase !== 'idle' ||
+        conversationResize.held,
+      popup: machineMenuOpen || conversationPopupOpen,
+      root: rootElement,
+    }),
+    () => command({ action: 'focus' }),
+  );
   function enter(): void {
+    hoverComposerFocus.enter();
     pointerInside = true;
     clearTimeout(closeTimer);
     if (gesture || awaitingDragStart !== null || dragging) return;
@@ -516,9 +518,9 @@
         expandedByUser = true;
       }, spring.fast.settleMs);
   }
-
   function leave(event?: PointerEvent | FocusEvent): void {
     if (event instanceof PointerEvent) {
+      hoverComposerFocus.leave();
       pointerInside = false;
       if (!gesture && awaitingDragStart === null) conversationFocus.pointerLeave(event);
     }
@@ -534,12 +536,12 @@
       if (gesture || awaitingDragStart !== null || dragging) return;
       if (!conversationFocus.keepsOverviewOpen(pointerInside, keyboardOpen)) {
         expandedByUser = false;
+        if (!pinned) onHomeDismiss?.();
       }
     };
     if (event instanceof FocusEvent && keyboardOpen) closeTimer = setTimeout(close, 0);
     else closeTimer = setTimeout(close, spring.moderate.settleMs);
   }
-
   function resetPlacement(): void {
     stopHeight();
     expandedByUser = false;
@@ -549,9 +551,10 @@
     command({ action: 'move', target: 'reset' });
     void tick().then(() => gripElement?.focus({ preventScroll: true }));
   }
-
   function dismiss(): void {
     if (placement.captureHidden) return;
+    hoverComposerFocus.leave();
+    if (!pinned) onHomeDismiss?.();
     pointerInside = false;
     clearTimeout(openTimer);
     clearTimeout(closeTimer);
@@ -570,7 +573,6 @@
     pointerRegion.deactivate([], placement.revision);
     command({ action: 'dismiss' });
   }
-
   async function runAction(
     action: () => void | Promise<void>,
     starting: string,
@@ -605,7 +607,6 @@
       m.dock_openFailed_error(),
     );
   }
-
   function pointerDown(event: PointerEvent): void {
     if (
       machineSwitching !== null ||
@@ -732,7 +733,6 @@
     }
     dismiss();
   }
-
   onMount(() => {
     reducedMotion = prefersReducedMotion();
     const stopMotion = onReducedMotionChange((value) => {
@@ -776,7 +776,6 @@
     }}
   />
 {/if}
-
 <svelte:window
   onpointerdowncapture={() => {
     lastUserInput = performance.now();
@@ -799,12 +798,12 @@
   }}
   onkeydown={keydown}
   onblur={() => {
+    hoverComposerFocus.leave();
     pointerInside = false;
     pointerEnd(true);
     expandedByUser = false;
   }}
 />
-
 <div
   bind:this={rootElement}
   class="adaptive-dock"
@@ -973,7 +972,10 @@
             focusComposerOnMount={notch && composerAsk.open === conversationWorkspaceId}
             onOpen={openWorkspace}
             onRegionsChange={conversationRegionsChanged}
-            onPopupStateChange={(open) => (conversationPopupOpen = open)}
+            onPopupStateChange={(open) => {
+              conversationPopupOpen = open;
+              if (open) hoverComposerFocus.cancel();
+            }}
           />
         {/if}
       </div>
@@ -1032,7 +1034,10 @@
       focusComposerOnMount={conversationPresence.keyboardOpen ||
         composerAsk.open === conversationWorkspaceId}
       onRegionsChange={conversationRegionsChanged}
-      onPopupStateChange={(open) => (conversationPopupOpen = open)}
+      onPopupStateChange={(open) => {
+        conversationPopupOpen = open;
+        if (open) hoverComposerFocus.cancel();
+      }}
       onStateChange={(next) => {
         // Closed for good: the next open (a click or the keyboard) sets its own anchor.
         if (edgeState.shell && !next.shell && !conversationVisible) edgeOrigin = null;

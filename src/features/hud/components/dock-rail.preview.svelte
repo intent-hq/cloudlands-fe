@@ -39,6 +39,7 @@
     manualResizeAcknowledgements = false,
     conversationFixture = false,
     conversationContent: conversationOverride,
+    conversationController,
     machineFixture = false,
     failMachineOnce = false,
     resizeAcknowledgement = 'accept',
@@ -505,9 +506,20 @@
       onMachine={machineFixture ? switchMachine : undefined}
       {workspaces}
       conversation={conversationFixture ? (conversationOverride ?? conversationContent) : undefined}
-      {conversationWorkspaceId}
-      onOpenConversation={conversationFixture ? openConversation : undefined}
-      onCloseConversation={conversationFixture ? closeConversation : undefined}
+      conversationWorkspaceId={conversationController
+        ? conversationController.workspaceId
+        : conversationWorkspaceId}
+      onOpenConversation={conversationController
+        ? conversationController.open
+        : conversationFixture
+          ? openConversation
+          : undefined}
+      onCloseConversation={conversationController
+        ? conversationController.close
+        : conversationFixture
+          ? closeConversation
+          : undefined}
+      onHomeDismiss={conversationController?.dismiss}
       {placement}
       {focusRequest}
       {dragStartResult}

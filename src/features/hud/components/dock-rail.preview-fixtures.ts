@@ -31,6 +31,12 @@ export interface DockRailPreviewProps {
   conversationFixture?: boolean;
   /** Test harnesses only: conversation content in place of the static panel. */
   conversationContent?: Snippet;
+  conversationController?: {
+    workspaceId: string | null;
+    open(id: string): void;
+    close(): void;
+    dismiss(): void;
+  };
   machineFixture?: boolean;
   failMachineOnce?: boolean;
   resizeAcknowledgement?: 'accept' | 'reject' | 'defer';

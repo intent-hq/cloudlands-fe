@@ -278,29 +278,65 @@ actor Desktop {
         }
         // Lock-free and pid-only (no titles): read at session end, after release,
         // to tell whether the user switched apps during the session.
-        if op == "foregroundContext" {
+        if op == "foregroundApp" || op == "foregroundContext" {
             return await MainActor.run {
                 guard let application = NSWorkspace.shared.frontmostApplication else { return [String: Any]() }
                 var result: [String: Any] = ["pid": Int(application.processIdentifier)]
                 result["appId"] = application.bundleIdentifier
                 result["appName"] = application.localizedName
-                // A missing grant is unknown, never a permission request.
-                if AXIsProcessTrusted() {
-                    let element = AXUIElementCreateApplication(application.processIdentifier)
-                    var window: CFTypeRef?
-                    if AXUIElementCopyAttributeValue(element, kAXFocusedWindowAttribute as CFString, &window) == .success,
-                       let window = window {
-                        let focused = unsafeBitCast(window, to: AXUIElement.self)
-                        var title: CFTypeRef?
-                        if AXUIElementCopyAttributeValue(focused, kAXTitleAttribute as CFString, &title) == .success {
-                            result["title"] = title as? String
-                        }
-                        var document: CFTypeRef?
-                        if AXUIElementCopyAttributeValue(focused, kAXDocumentAttribute as CFString, &document) == .success {
-                            result["url"] = document as? String
-                        }
+                if op == "foregroundApp" { return result }
+                // Optional enrichment never asks macOS for a grant or acquires desktop control.
+                guard AXIsProcessTrusted() else { result["urlStatus"] = "permission-required"; return result }
+                let deadline = Date().addingTimeInterval(0.45)
+                let element = AXUIElementCreateApplication(application.processIdentifier)
+                AXUIElementSetMessagingTimeout(element, 0.06)
+                func attribute(_ item: AXUIElement, _ name: String) -> CFTypeRef? {
+                    guard Date() < deadline else { return nil }
+                    var value: CFTypeRef?
+                    return AXUIElementCopyAttributeValue(item, name as CFString, &value) == .success ? value : nil
+                }
+                func urlValue(_ value: CFTypeRef?) -> String? {
+                    if let value = value as? String, !value.isEmpty { return value }
+                    if let value = value as? URL { return value.absoluteString }
+                    return nil
+                }
+                func webUrl(_ item: AXUIElement) -> String? {
+                    guard attribute(item, kAXRoleAttribute) as? String == "AXWebArea",
+                          let value = urlValue(attribute(item, "AXURL")),
+                          let parsed = URL(string: value), ["http", "https"].contains(parsed.scheme ?? "") else { return nil }
+                    return value
+                }
+                guard let windowValue = attribute(element, kAXFocusedWindowAttribute) else { result["urlStatus"] = "unavailable"; return result }
+                let focusedWindow = unsafeBitCast(windowValue, to: AXUIElement.self)
+                result["title"] = attribute(focusedWindow, kAXTitleAttribute) as? String
+                if let document = urlValue(attribute(focusedWindow, kAXDocumentAttribute)) { result["url"] = document }
+                // The nearest focused web area is a document identity, not a focused link's URL.
+                if result["url"] == nil, let focusedValue = attribute(element, kAXFocusedUIElementAttribute) {
+                    var item = unsafeBitCast(focusedValue, to: AXUIElement.self)
+                    for _ in 0..<12 {
+                        if let url = webUrl(item) { result["url"] = url; break }
+                        guard let parent = attribute(item, kAXParentAttribute) else { break }
+                        item = unsafeBitCast(parent, to: AXUIElement.self)
                     }
                 }
+                if result["url"] == nil {
+                    var queue: [AXUIElement] = [focusedWindow]
+                    var urls = Set<String>()
+                    var visited = 0
+                    var truncated = false
+                    while !queue.isEmpty && visited < 64 && Date() < deadline {
+                        let item = queue.removeFirst(); visited += 1
+                        if attribute(item, "AXHidden") as? Bool == true { continue }
+                        if let url = webUrl(item) { urls.insert(url) }
+                        if let children = attribute(item, kAXChildrenAttribute) as? [AXUIElement] {
+                            let remaining = max(0, 64 - visited - queue.count)
+                            if children.count > remaining { truncated = true }
+                            queue.append(contentsOf: children.prefix(remaining))
+                        }
+                    }
+                    if !truncated && queue.isEmpty && Date() < deadline && urls.count == 1 { result["url"] = urls.first }
+                }
+                result["urlStatus"] = result["url"] == nil ? "unavailable" : "available"
                 return result
             }
         }
