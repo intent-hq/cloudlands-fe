@@ -1562,7 +1562,6 @@ describe('ChatMessage PR-monitor wake attribution', () => {
     // Workspace repo unknown → owner/repo #N chip
     const chip = screen.getByTestId('pr-monitor-wake-chip');
     expect(chip.textContent?.trim()).toBe('intent-hq/monorepo #42');
-    expect(chip.getAttribute('title')).toBe('Open intent-hq/monorepo #42');
     expect(screen.getByTestId('wake-status').textContent?.trim()).toBe('woke the agent');
     expect(screen.getByText('woke the agent')).toBeTruthy();
     await expandAutomatedWake();

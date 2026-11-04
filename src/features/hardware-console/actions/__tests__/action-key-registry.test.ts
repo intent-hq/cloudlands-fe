@@ -2279,7 +2279,7 @@ describe('actionSlotIcons', () => {
     );
   });
 
-  it('maps none to a null icon and label (blank key face, no tooltip)', () => {
+  it('maps none to a null icon and label', () => {
     expect(actionSlotIcons(['none', 'new-agent', 'none'])).toEqual([
       { icon: null, label: null },
       {

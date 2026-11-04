@@ -5,7 +5,6 @@ import { agentNodeUpdates } from '$shared/utils/agent-node';
 import { getAgentNodeStatusLabel } from '$lib/components/chat/agent-node-status-label';
 import {
   agentMachineLocation,
-  agentMachineTooltip,
   agentPlacementNoticeKind,
   machineLocation,
   machinePlatformLabel,
@@ -109,19 +108,6 @@ describe('machinePlatformLabel', () => {
     expect(machinePlatformLabel('linux', 'x86_64')).toBe('Linux x64');
     expect(machinePlatformLabel('linux', undefined)).toBe('Linux');
     expect(machinePlatformLabel(undefined, undefined)).toBe(null);
-  });
-});
-
-describe('agentMachineTooltip', () => {
-  it('says where the agent runs, with the machine state when there is one', () => {
-    const base = { nodeId: 'n', name: 'Mac mini', platform: 'macOS arm64' };
-    expect(agentMachineTooltip({ ...base, state: 'ready' })).toBe('Runs on Mac mini · macOS arm64');
-    expect(agentMachineTooltip({ ...base, state: 'unreachable' })).toBe(
-      'Runs on Mac mini · macOS arm64 · Unreachable',
-    );
-    expect(agentMachineTooltip({ ...base, platform: null, state: 'revoked' })).toBe(
-      'Runs on Mac mini · Access revoked',
-    );
   });
 });
 

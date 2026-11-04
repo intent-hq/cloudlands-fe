@@ -44,7 +44,6 @@ describe('workspace status presentation', () => {
     ).toEqual(expected);
     for (const [state] of expected) {
       const result = getWorkspaceStatusPresentation(state);
-      expect(result.tooltip).toBe(result.label);
       expect(result.accessibleName).toBe(result.label);
       expect(result.label).not.toBe(result.label.toUpperCase());
     }

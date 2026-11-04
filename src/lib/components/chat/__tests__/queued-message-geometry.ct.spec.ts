@@ -254,7 +254,6 @@ test('opens the compact pencil action by keyboard without changing row geometry'
   await page.keyboard.press('Tab');
   const edit = row.getByRole('button', { name: 'Edit', exact: true });
   await expect(edit).toBeFocused();
-  await expect(page.getByRole('tooltip')).toBeVisible();
   expect(await row.boundingBox()).toEqual(initial);
   expect(initial.height).toBeGreaterThanOrEqual(24);
   expect(

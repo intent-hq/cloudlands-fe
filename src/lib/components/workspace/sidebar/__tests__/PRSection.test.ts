@@ -436,7 +436,6 @@ describe('PRSection', () => {
         target,
         assertCapability: () => {
           expect(view.container.textContent).toContain('other:');
-          expect(target.getAttribute('title')).toContain('Checks: 1 passed, 1 failed, 0 pending');
         },
       };
     });
@@ -764,7 +763,7 @@ describe('PRSection', () => {
     expect(second.container.textContent).not.toContain('Create PR');
   });
 
-  it('renders the short crossRepoDisplay prefix and a hover status tooltip on the PR row', async () => {
+  it('renders the short crossRepoDisplay prefix on the PR row', async () => {
     const { container } = await renderPR({
       hasPRs: true,
       pullRequests: [
@@ -802,10 +801,5 @@ describe('PRSection', () => {
       return el as HTMLElement;
     });
     expect(prefix.textContent).toBe('other:');
-
-    const rowHeader = container.querySelector('div[title]');
-    expect(rowHeader?.getAttribute('title')).toContain('Open');
-    expect(rowHeader?.getAttribute('title')).toContain('Checks: 1 passed, 1 failed, 0 pending');
-    expect(rowHeader?.getAttribute('title')).toContain('Approvals: 0 of 1');
   });
 });

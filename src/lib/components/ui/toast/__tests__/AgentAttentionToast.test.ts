@@ -31,10 +31,7 @@ describe('AgentAttentionToast', () => {
       onSwitchTo: vi.fn(),
       onClose: vi.fn(),
     });
-    const time = screen.getByText('18s');
-    expect(time.hasAttribute('title')).toBe(false);
-    await fireEvent.focus(time);
-    expect(screen.getByRole('tooltip', { hidden: true }).textContent).toMatch(/2026/);
+    expect(screen.getByText('18s')).toBeTruthy();
     await vi.advanceTimersByTimeAsync(120_000);
     expect(screen.getByText('2m')).toBeTruthy();
   });

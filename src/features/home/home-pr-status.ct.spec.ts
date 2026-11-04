@@ -2,7 +2,7 @@ import { expect, test } from '../../test/ct-test';
 import Preview from './home.preview.svelte';
 
 for (const scenario of ['pr-status-list', 'board-pr-status'] as const) {
-  test(`Home ${scenario} exposes PR state on hover and preserves attention filtering`, async ({
+  test(`Home ${scenario} exposes PR state and preserves attention filtering`, async ({
     mount,
     page,
   }) => {
@@ -14,23 +14,13 @@ for (const scenario of ['pr-status-list', 'board-pr-status'] as const) {
       ['pr_ready', /PR Mergeable/i],
       ['pr_queued', /PR queued/i],
     ] as const) {
-      const status = row(`home-${state}`).getByRole('img', { name });
-      await status.hover();
-      await expect(page.getByRole('tooltip')).toContainText(name);
-      await expect(page.getByRole('tooltip')).toContainText(/Waiting/i);
-      await page.mouse.move(0, 0);
-      await expect(page.getByRole('tooltip')).toHaveCount(0);
+      await expect(row(`home-${state}`).getByRole('img', { name })).toBeVisible();
       await expect(
         row(`home-${state}-running`).getByRole('img', {
           name: state === 'pr_ready' ? /PR Mergeable/i : /Running/i,
         }),
       ).toBeVisible();
     }
-    const idle = row('home-pr-idle').getByRole('img', { name: /^Waiting/i });
-    await idle.hover();
-    await expect(page.getByRole('tooltip')).toContainText(/Waiting/i);
-    await page.mouse.move(0, 0);
-    await expect(page.getByRole('tooltip')).toHaveCount(0);
     for (const waiting of [false, undefined, true]) {
       await page.evaluate((value) => window.__homePrStatusPreview!.setWaiting(value), waiting);
       await expect(row('home-pr-idle').getByRole('img')).toHaveAccessibleName(

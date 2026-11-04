@@ -210,7 +210,6 @@ describe('MessageActions timestamp', () => {
     const time = container.querySelector('time')!;
     expect(time.textContent).toBe(formatTime(timestamp));
     expect(time.getAttribute('datetime')).toBe(timestamp.toISOString());
-    expect(time.getAttribute('title')).toBe(formatFullDateTime(timestamp));
     expect(time.getAttribute('aria-label')).toBe(formatFullDateTime(timestamp));
   });
 

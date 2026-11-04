@@ -618,28 +618,16 @@ test('one Assistant card unmount does not close another mounted card', async ({
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   for (const theme of ['light', 'dark'] as const) {
     for (const zoom of [1, 2]) {
-      test(`control accessibility and shortcut tooltips: ${theme}, zoom ${zoom}, motion ${reducedMotion}`, async ({
+      test(`control accessibility: ${theme}, zoom ${zoom}, motion ${reducedMotion}`, async ({
         page,
       }, testInfo) => {
         await page.emulateMedia({ reducedMotion });
         await mountControls(page, theme, zoom);
-        const controls = [
-          page.locator('[data-titlebar-spaces-control]'),
-          page.locator('[data-workspace-repo-launcher] button'),
-        ];
-        for (const control of controls) {
-          await expect(control).not.toHaveAttribute('title', /.+/);
-        }
-        const sidebarControl = controls[0];
+        const sidebarControl = page.locator('[data-titlebar-spaces-control]');
         await expect(sidebarControl).toHaveAttribute('aria-label', 'Home');
         await expect(sidebarControl).not.toHaveAttribute('aria-haspopup');
         await expect(sidebarControl).not.toHaveAttribute('aria-expanded');
         await expect(sidebarControl).not.toHaveAttribute('aria-controls');
-        await sidebarControl.hover();
-        await expect(page.locator('[data-tooltip-label]')).toBeVisible();
-        await expect(page.locator('[data-tooltip-label]')).toHaveText('Open Home');
-        await expect(page.locator('[data-tooltip-shortcut]')).toContainText(/(?:⌘|Ctrl\+)1/);
-        await expect(page.locator('.sidebar-hover-card')).toHaveCount(0);
         if (reducedMotion === 'no-preference' && zoom === 1) {
           await testInfo.attach(theme + '-titlebar-controls', {
             body: await page.screenshot(),

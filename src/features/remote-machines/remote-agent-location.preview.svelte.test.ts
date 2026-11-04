@@ -25,7 +25,7 @@ describe('remote agent location scene', () => {
     await waitFor(() =>
       expect(
         Array.from(sidebar.querySelectorAll('[data-agent-machine-badge]')).map((b) =>
-          b.getAttribute('title'),
+          b.getAttribute('aria-label'),
         ),
       ).toContain('Runs on Mac mini · macOS arm64'),
     );

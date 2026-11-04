@@ -264,7 +264,6 @@ test('two-message forced history remains anchored after 200-message prepend', as
     expect(destroyed.windowObserved).toBe(0);
     expect(controls.reduce((sum, frame) => sum + frame.actionBars, 0)).toBe(198);
     expect(Math.max(...controls.map((frame) => frame.actionBars))).toBeLessThanOrEqual(4);
-    expect(Math.max(...controls.map((frame) => frame.tooltips))).toBeLessThanOrEqual(24);
   } finally {
     await finish(info, ['before-prepend', 'after-prepend', 'history-search', 'history-destroyed']);
   }

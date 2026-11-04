@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { readable } from 'svelte/store';
 import { m } from '$shared/paraglide/messages.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,19 +68,11 @@ describe('WorkspaceRepoLauncher', () => {
     ).toBe(false);
   });
 
-  it('keeps the localized label and tooltip on the native button', async () => {
+  it('keeps the localized label on the native button', () => {
     render(WorkspaceRepoLauncher);
     const launcher = screen.getByRole('button', { name: m.menu_new_workspace() });
 
     expect(launcher.getAttribute('aria-label')).toBe(m.menu_new_workspace());
-    await waitFor(() => expect(launcher.hasAttribute('data-tooltip-trigger')).toBe(true));
-    launcher.focus();
-    await fireEvent.focus(launcher);
-    const tooltip = await screen.findByRole('tooltip', {
-      name: m.menu_new_workspace(),
-      hidden: true,
-    });
-    await waitFor(() => expect(launcher.getAttribute('aria-describedby')).toBe(tooltip.id));
   });
 
   // The resolved focus-visible treatment (outline, border, background, forced

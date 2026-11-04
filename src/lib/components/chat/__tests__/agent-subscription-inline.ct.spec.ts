@@ -1,6 +1,4 @@
-import type { Locator, Page } from '@playwright/experimental-ct-svelte';
 import { expect, expectAnimationsToSettle, test } from '../../../../test/ct-test';
-import { expectDismissibleLayerArmed } from '../../../../test/dismissible-layer';
 import AgentSubscriptionInlineHost from './AgentSubscriptionInlineHost.svelte';
 
 const toolKinds = ['file', 'terminal', 'tool'] as const;
@@ -115,8 +113,6 @@ test('keeps one checklist control per delegated row across themes, narrow width,
   await expect(triggers.first()).toBeFocused();
   await expect(triggers.first()).toHaveCSS('opacity', '1');
   await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
-  await component.getByTestId('agent-list-item').first().hover();
-  await expect(page.getByRole('tooltip', { name: delegatedTaskLabels[0] })).toBeVisible();
   await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
 
   await triggers.first().click();
@@ -126,7 +122,6 @@ test('keeps one checklist control per delegated row across themes, narrow width,
   await expect(triggers.first()).toHaveCSS('opacity', '1');
   expect(await triggers.first().boundingBox()).toEqual(firstGeometry);
   await expect(triggers.nth(1)).toHaveAttribute('aria-expanded', 'false');
-  await expect(page.getByRole('tooltip', { name: delegatedTaskLabels[0] })).toHaveCount(0);
 
   await triggers.first().click();
   await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toHaveCount(0);
@@ -162,125 +157,6 @@ test('keeps delegated checklist controls visible for non-hover primary input', a
   await expect(component.getByTestId('task-progress-trigger').first()).toHaveCSS('opacity', '1');
   await client.detach();
 });
-
-test('isolates outside-dismissed task help between delegated row controls', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(AgentSubscriptionInlineHost, {
-    props: {
-      agentCount: 2,
-      taskSets: [delegatedTaskSets[0], delegatedTaskSets[2]].map((tasks) => [...tasks]),
-      showOutsideTarget: true,
-    },
-  });
-  const rows = component.getByTestId('agent-list-item');
-  const triggers = component.getByTestId('task-progress-trigger');
-  const firstTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[0] });
-  const secondTooltip = page.getByRole('tooltip', { name: delegatedTaskLabels[2] });
-
-  await rows.first().hover();
-  await triggers.first().hover();
-  await expect(firstTooltip).toBeVisible();
-  await triggers.first().click();
-  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).toBeVisible();
-  await expectDismissibleLayerArmed(page.getByRole('dialog', { name: 'Agent tasks' }));
-  await component.getByTestId('outside-target').click();
-  await expect(page.getByRole('dialog', { name: 'Agent tasks' })).not.toBeVisible();
-
-  await triggers.first().hover();
-  await page.waitForTimeout(350);
-  await expect(firstTooltip).not.toBeVisible();
-  await triggers.nth(1).focus();
-  await expect(secondTooltip).toBeVisible();
-
-  await page.mouse.move(0, 0);
-  await triggers.first().hover();
-  await expect(firstTooltip).toBeVisible();
-});
-
-async function measure(component: Locator, page: Page) {
-  await expect(component.getByTestId('agent-card-preview')).toBeVisible();
-  await expect(
-    component.getByTestId('agent-card-trailing-slot').locator('[data-slot="tooltip-trigger"]'),
-  ).toHaveCount(1);
-  await page.waitForFunction(() => {
-    const text = document.querySelector('[data-testid="agent-preview-tool-text"]');
-    return !text || (text.textContent?.trim().length ?? 0) > 0;
-  });
-  return component.evaluate((root) => {
-    const element = (testId: string) =>
-      root.querySelector(`[data-testid="${testId}"]`) as HTMLElement;
-    const preview = element('agent-card-preview');
-    const toolText = root.querySelector(
-      '[data-testid="agent-preview-tool-text"]',
-    ) as HTMLElement | null;
-    const name = element('agent-card-name');
-    const timestamp = element('agent-card-trailing-slot').querySelector(
-      '[data-slot="tooltip-trigger"]',
-    ) as HTMLElement;
-    const row = element('agent-list-item').querySelector('button') as HTMLElement;
-    const header = element('one-shot-summary-toggle');
-    const rows = Array.from(root.querySelectorAll('[data-testid="agent-list-item"] button'));
-    const rect = (node: Element) => {
-      const value = node.getBoundingClientRect();
-      return {
-        top: value.top,
-        right: value.right,
-        bottom: value.bottom,
-        left: value.left,
-        width: value.width,
-        height: value.height,
-      };
-    };
-    const textStyle = (node: Element) => {
-      const style = getComputedStyle(node);
-      return { color: style.color, opacity: style.opacity, fontWeight: style.fontWeight };
-    };
-    const geometryStyle = (node: Element) => {
-      const style = getComputedStyle(node);
-      return {
-        paddingInlineStart: style.paddingInlineStart,
-        paddingInlineEnd: style.paddingInlineEnd,
-        paddingBlockStart: style.paddingBlockStart,
-        paddingBlockEnd: style.paddingBlockEnd,
-        minHeight: style.minHeight,
-      };
-    };
-    return {
-      nameStyle: textStyle(name),
-      previewStyle: textStyle(toolText ?? preview),
-      timestampStyle: textStyle(timestamp),
-      rowGeometry: geometryStyle(row),
-      headerGeometry: geometryStyle(header),
-      rowHeights: rows.map((current) => rect(current).height),
-      headerHeight: rect(header).height,
-      nameRect: rect(name),
-      previewRect: rect(preview),
-      toolTextRect: toolText ? rect(toolText) : null,
-      timestampRect: rect(timestamp),
-      trailingStyle: {
-        width: getComputedStyle(element('agent-card-trailing-slot')).width,
-        flexShrink: getComputedStyle(element('agent-card-trailing-slot')).flexShrink,
-      },
-      timestampTextAlign: getComputedStyle(timestamp).textAlign,
-      timestampNumeric: getComputedStyle(timestamp).fontVariantNumeric,
-      previewOverflow: {
-        clientWidth: (toolText ?? preview).clientWidth,
-        scrollWidth: (toolText ?? preview).scrollWidth,
-        overflowX: getComputedStyle(toolText ?? preview).overflowX,
-        whiteSpace: getComputedStyle(toolText ?? preview).whiteSpace,
-        textOverflow: getComputedStyle(toolText ?? preview).textOverflow,
-      },
-      cleanText: (toolText ?? preview).textContent?.trim() ?? '',
-      cleanTitle: (toolText ?? preview).getAttribute('title') ?? '',
-      interactiveCount: preview.querySelectorAll('a, button, input, [tabindex]').length,
-      peekIconCount: preview.querySelectorAll('svg, .agent-preview-tool-icon').length,
-      peekAriaLabelCount: preview.querySelectorAll('[aria-label]').length,
-      rowOverflow: row.scrollWidth - row.clientWidth,
-    };
-  });
-}
 
 test('cleans Markdown and keeps one true ellipsis region clear of the timestamp', async ({
   mount,

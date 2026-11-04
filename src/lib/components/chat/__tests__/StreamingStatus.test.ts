@@ -131,53 +131,6 @@ describe('StreamingStatus rendered UI', () => {
     expect(screen.getByRole('status').getAttribute('aria-label')).toBe('Cargando');
   });
 
-  it('shows elapsed detail only on row hover, refreshing and ticking it only while hovered', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(10_000);
-    const view = render(StreamingStatus, {
-      props: {
-        isProcessing: true,
-        statusEvents: [
-          {
-            phase: 'streaming',
-            message: 'Streaming the response',
-            level: 'info',
-            timestamp: 7_800,
-          },
-        ],
-      },
-    });
-
-    const row = screen
-      .getByTestId('streaming-status-thinking')
-      .closest('[data-streaming-typing-row]')!;
-    const elapsed = screen.getByTestId('streaming-status-elapsed');
-    expect(row.className).toContain('group');
-    expect(elapsed.textContent).toBe('2s ago');
-    expect(elapsed.className).toContain('opacity-0');
-    expect(elapsed.className).toContain('group-hover:opacity-100');
-    expect(elapsed.getAttribute('aria-live')).toBe('off');
-    expect(elapsed.getAttribute('tabindex')).toBeNull();
-
-    await vi.advanceTimersByTimeAsync(3_000);
-    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('2s ago');
-
-    await fireEvent.pointerEnter(row);
-    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('5s ago');
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('6s ago');
-
-    await fireEvent.pointerLeave(row);
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('6s ago');
-
-    await fireEvent.pointerEnter(row);
-    expect(screen.getByTestId('streaming-status-elapsed').textContent).toBe('8s ago');
-    await view.rerender({ isProcessing: false, statusEvents: [] });
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(screen.queryByTestId('streaming-status-elapsed')).toBeNull();
-  });
-
   it('renders explicit failed response copy, alert semantics, and retry action for inactive errors', async () => {
     const onRetry = vi.fn();
     render(StreamingStatus, {

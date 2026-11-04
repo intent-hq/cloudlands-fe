@@ -334,7 +334,7 @@ describe('ConnectBackendModal', () => {
     // Leave the focus-triggered tooltip before asserting dialog dismissal.
     const name = screen.getByLabelText('Device name');
     name.focus();
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    await fireEvent.focus(name);
     await fireEvent.keyDown(name, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(mocks.captureFingerprintRequested).not.toHaveBeenCalled();

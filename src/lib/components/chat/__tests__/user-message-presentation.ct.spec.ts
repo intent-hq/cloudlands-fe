@@ -70,7 +70,6 @@ for (const state of cases) {
     await expect(target.getByTestId('queued-message-notice-text')).toHaveText(
       'Waited in queue for 37s',
     );
-    await expect(target.getByTestId('queued-message-notice')).toHaveAttribute('title', /2026/);
     expect(await target.ariaSnapshot()).not.toContain('[SYSTEM NOTE]');
 
     // Navigation scrolls the virtualized target into place, so activate the hover-only

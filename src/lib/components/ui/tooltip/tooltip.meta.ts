@@ -103,8 +103,8 @@ export const tooltipMetadata = parseUiComponentMetadata({
     'src/routes/(app)/+layout.svelte',
   ],
   replacement: null,
-  characterizationTest: 'src/lib/components/ui/tooltip/tooltip.test.ts',
-  removalGate: 'Retain while delay, keyboard focus, Escape, portal, and reduced-motion tests pass.',
+  characterizationTest: 'src/lib/components/ui/tooltip/github-link-preview.test.ts',
+  removalGate: 'Retain while callers need the pattern and repository preview data contracts pass.',
   dynamicImports: ['src/features/navigation/link-handler.ts'],
   fixtures: tooltipFixtures,
 });

@@ -36,12 +36,6 @@ for (const state of [
     const metadata = toolbar.getByRole('button', { name: 'Waited in queue for 1m 39s' });
     await expect(metadata).toBeFocused();
     await expect(toolbar).toHaveCSS('opacity', '1');
-    const tooltip = page.getByRole('tooltip');
-    await expect(tooltip).toContainText('1m 39s');
-    await expect(tooltip).toContainText('2026');
-    expect((await surface.boundingBox())!.height).toBeCloseTo(bodyBox.height, 1);
-    await page.keyboard.press('Escape');
-    await expect(tooltip).toHaveCount(0);
     await page.keyboard.press('Tab');
     await expect(toolbar.getByRole('button', { name: /^Copy message/ })).toBeFocused();
     await page.keyboard.press('Tab');

@@ -86,7 +86,6 @@ describe('AgentAvatarWithState', () => {
     });
     const avatar = screen.getByRole('img', { name: getAgentAvatarStateLabel(state) });
 
-    expect(avatar.getAttribute('title')).toBe(getAgentAvatarStateLabel(state));
     expect(avatar.getAttribute('data-avatar-state')).toBe(state);
     expect(container.querySelectorAll('svg')).toHaveLength(1);
     expect(container.querySelector('[data-avatar-overlay], [data-icon], img')).toBeNull();

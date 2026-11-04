@@ -93,6 +93,5 @@ describe('ChatPolishCatalogPreview', async () => {
       '[data-tool-use-id="fixture-long-payload"] [data-testid="tool-call-disclosure"]',
     );
     expect(longLabel?.getAttribute('aria-label')).toContain('ThisIsAnIntentionallyLong');
-    expect(longLabel?.getAttribute('title')).toBeTruthy();
   });
 });

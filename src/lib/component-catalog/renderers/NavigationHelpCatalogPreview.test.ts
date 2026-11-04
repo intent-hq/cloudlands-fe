@@ -44,7 +44,7 @@ afterEach(() => {
 });
 
 describe('NavigationHelpCatalogPreview', () => {
-  it('renders real Breadcrumb and Tooltip states from canonical components', async () => {
+  it('renders real Breadcrumb states from canonical components', () => {
     const breadcrumb = render(NavigationHelpCatalogPreview, {
       props: { componentId: 'breadcrumb', fixture },
     });
@@ -54,21 +54,6 @@ describe('NavigationHelpCatalogPreview', () => {
     );
     expect(breadcrumb.container.querySelector('[data-catalog-rendered-state]')).not.toBeNull();
     breadcrumb.unmount();
-
-    let openTooltip: FrameRequestCallback | undefined;
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
-      openTooltip = callback;
-      return 1;
-    });
-    const tooltipPreview = render(NavigationHelpCatalogPreview, {
-      props: { componentId: 'tooltip', fixture },
-    });
-    expect(screen.getByRole('button', { name: 'Keyboard help' })).not.toBeNull();
-    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
-    openTooltip?.(0);
-    const tooltip = await screen.findByRole('tooltip', { hidden: true });
-    expect(tooltip.textContent).toContain('Press Command K');
-    expect(tooltipPreview.container.contains(tooltip)).toBe(true);
   });
 
   it('renders semantic Kbd shortcut states through the public primitive', () => {

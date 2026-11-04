@@ -53,8 +53,6 @@ test('a missing permission marks the blocked control, whose click opens Settings
   const pick = tools.getByRole('button', { name: 'Pick an element' });
   await expect(pick).toHaveAttribute('data-alert', '');
   await expect(tools.getByRole('button', { name: 'Box' })).not.toHaveAttribute('data-alert');
-  await pick.hover();
-  await expect(page.getByRole('tooltip')).toHaveText(accessibility);
   await page.screenshot({ path: testInfo.outputPath('dock-permission-error-state.png') });
   await testInfo.attach('dock-permission-error-state', {
     body: await page.screenshot(),
@@ -76,15 +74,13 @@ test('a missing permission marks the blocked control, whose click opens Settings
   ]);
 });
 
-test('unavailable annotation exposes the supplied explanation without opening tools or settings', async ({
+test('unavailable annotation stays disabled without opening tools or settings', async ({
   mount,
   page,
 }) => {
-  const notice = 'The screen could not be checked for annotation.';
   const component = await mount(ComposerMediaPreview, {
     props: {
       state: { annotationDisabled: true },
-      annotationNotice: notice,
     },
   });
   const annotation = component.getByRole('button', {
@@ -93,10 +89,8 @@ test('unavailable annotation exposes the supplied explanation without opening to
   await expect(annotation).toBeDisabled();
   const box = await annotation.boundingBox();
   if (!box) throw new Error('Missing annotation button bounds');
-  // A disabled button's tooltip wrapper receives the user's pointer even when
-  // the button itself cannot receive clicks.
+  // Hovering a disabled control must not open the tool picker.
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await expect(page.getByRole('tooltip')).toHaveText(notice);
   await expect(page.getByRole('toolbar', { name: 'Annotation tools' })).toHaveCount(0);
   expect(await actions(component)).toEqual([]);
 });

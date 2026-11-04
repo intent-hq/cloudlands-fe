@@ -517,27 +517,6 @@ describe('DevicesSettings', () => {
   }
 
   describe('behind-pin indicator and Update action', () => {
-    const behindLabel = m.settings_devices_daemonBehind_tooltip({
-      daemonVersion: '0.9.0',
-      pinnedVersion: '0.9.1',
-    });
-
-    it('describes the displayed version when the captured daemon version is behind the pin', async () => {
-      mocks.pinnedVersion = '0.9.1';
-      mocks.connections = [
-        local,
-        { ...remote, daemonVersion: 'v0.9.0', intentdVersion: '6.8.0', status: 'connected' },
-      ];
-      render(DevicesSettings);
-
-      const version = screen.getByRole('button', { name: '6.8.0' });
-      version.focus();
-      const tooltip = await screen.findByRole('tooltip');
-      expect(tooltip.textContent?.trim()).toBe(behindLabel);
-      expect(version.getAttribute('aria-describedby')).toBe(tooltip.id);
-      expect(screen.queryByRole('img', { name: behindLabel })).toBeNull();
-    });
-
     it.each(['disconnected', 'missing'] as const)(
       'does not invent a displayed version for a %s behind device',
       (state) => {
@@ -661,10 +640,6 @@ describe('DevicesSettings', () => {
 
   describe('local device row', () => {
     const localLabel = m.layout_daemonStatus_localConnection_label();
-    const behindLabel = m.settings_devices_daemonBehind_tooltip({
-      daemonVersion: '0.9.0',
-      pinnedVersion: '0.9.1',
-    });
 
     it('allows editing the local machine without remote-only connection actions', async () => {
       render(DevicesSettings);
@@ -710,10 +685,6 @@ describe('DevicesSettings', () => {
         remote,
       ];
       render(DevicesSettings);
-
-      const version = screen.getByRole('button', { name: '0.9.0' });
-      version.focus();
-      expect((await screen.findByRole('tooltip')).textContent?.trim()).toBe(behindLabel);
 
       await fireEvent.click(screen.getByRole('button', { name: `Actions for ${localLabel}` }));
       expect(await screen.findByRole('menuitem', { name: 'Update' })).toBeTruthy();

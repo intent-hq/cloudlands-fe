@@ -284,7 +284,6 @@ describe('editorial conversation presentation contract', () => {
     expect(wakeup).toContain('data-testid="event-wakeup-details"');
     expect(wakeup).toContain('m.events_activity_partFinished_label().trim()');
     expect(wakeup).not.toContain('<AgentCard');
-    expect(avatar).toContain('<Tooltip.Trigger');
     expect(avatar).toContain('aria-label={activationLabel ??');
     expect(avatar).toContain('(onclick ? m.chat_msgAttribution_openAgent_title');
   });
@@ -332,7 +331,6 @@ describe('editorial conversation presentation contract', () => {
     expect(responseGroup).toContain('OPERATIONAL_GROUP_CONTENT_CLASS');
     expect(responseGroup).not.toContain('OPERATIONAL_ROW_LINE_CLASS');
     expect(agentTab).not.toContain('toggleShowReasoningBlocks');
-    expect(agentTab).not.toContain('layout_agentTab_reasoningShow_tooltip');
   });
 
   it('lets ChatPanel own the bottom spacing without changing the tab behavior boundary', () => {
