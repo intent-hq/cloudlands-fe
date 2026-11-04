@@ -197,6 +197,7 @@ describe('repository config', () => {
       'intent/no-one-shot-animation-count',
       'intent/no-raw-mouse-wheel-in-ct',
       'intent/no-unarmed-outside-click-in-ct',
+      'intent/no-unpaused-clock-in-ct',
       'intent/no-wait-for-timeout-in-ct',
     ]);
     expect(mismatches.slice(0, 10)).toEqual([]);

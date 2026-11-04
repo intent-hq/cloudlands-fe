@@ -382,6 +382,14 @@ error and retry). `--max-unit-files N` rejects (never truncates) a plan over N f
 combine it with `--resolved-plan` for a budgeted preview, then raise or omit the limit.
 `pnpm run test:unit --maxWorkers=1` runs the full unit suite.
 
+`verify:changed` runs changed component test specs once with retries on. To catch the
+flakiness PR CI's "Changed Component Tests (repeated)" job catches, run
+`pnpm run test:ct:changed-repeat` before pushing: it builds the CT bundle under CI's 12 GiB
+heap, then repeats the changed specs (including uncommitted ones) with CI's repeat count,
+`--retries=0 --fail-on-flaky-tests` and two workers. `--dry-run` prints the filters and
+repeat count; `--workers N`, `--repeat-each N` and Playwright args after a second `--`
+(e.g. `-- --grep "<title>"`) tune stress runs (`--help` lists the rest).
+
 Each run prints `record: <path>` for its attempt under `.dev/verify-changed/attempts/`
 and passes only when every check and resolved unit file is satisfied. To continue after a
 failure or interruption, rerun with `--resume` (`--resolved-plan --resume` previews it);
@@ -712,6 +720,12 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   (`intent/no-hover-then-click-in-ct`) caps each spec's sites at its shrink-only baseline;
   keep a pointer click, disabled on the line with the reason, only to cover the pointer
   path on a row that cannot move.
+- Pause the fake clock: `page.clock.install()` alone keeps time moving with real time, so
+  a slow step lets frame loops run past the frame a test samples (cloudlands-fe#4148:
+  56 of 80 loaded runs failed). Use `installPausedClock(page, beforePause?)` or
+  `pauseClock(page)` (`src/test/ct-test.ts`), then step with `page.clock.runFor`. Lint
+  (`intent/no-unpaused-clock-in-ct`) rejects an install whose test never pauses; keep
+  one, disabled on the line with the reason, only to skip a delay and check settled state.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser

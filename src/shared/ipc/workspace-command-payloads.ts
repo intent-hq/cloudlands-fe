@@ -165,6 +165,18 @@ export function isWorkspaceCommandPayload(value: unknown): value is WorkspaceCom
   );
 }
 
+/**
+ * Emulated viewport dimension bounds (docs/protocol §5.9), shared so main's
+ * CDP emulation and the renderer's offscreen guest element agree on the size
+ * of a tab replayed from a hand-edited/corrupt layout (intent-hq/intent#8359).
+ */
+export const BROWSER_VIEWPORT_MIN_PX = 320;
+export const BROWSER_VIEWPORT_MAX_PX = 3840;
+
+export function clampBrowserViewportDimension(px: number): number {
+  return Math.min(BROWSER_VIEWPORT_MAX_PX, Math.max(BROWSER_VIEWPORT_MIN_PX, Math.round(px)));
+}
+
 export function isBrowserEmulatedSize(value: unknown): value is BrowserEmulatedSize {
   return (
     typeof value === 'object' &&

@@ -49,6 +49,7 @@ export async function fixImports(options: FixImportsOptions = {}) {
   const files = await glob('**/*.{js,d.ts}', {
     cwd: distDir,
     absolute: true,
+    ignore: ['preload-build/**'],
   });
 
   let fixedCount = 0;

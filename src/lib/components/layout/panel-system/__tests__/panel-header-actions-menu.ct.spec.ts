@@ -539,6 +539,7 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
   await expect(component).toHaveAttribute('data-content-count', '1');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
+  // eslint-disable-next-line intent/no-unpaused-clock-in-ct -- checks the tooltip stays absent; extra elapsed time only makes that check stricter
   await page.clock.install();
   await trigger.click();
   const leftArrow = await menu
