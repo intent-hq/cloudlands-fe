@@ -1,7 +1,11 @@
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { AgentsClient } from '$lib/client/app-client';
+import type {
+  AgentsClient,
+  UserMessageIndexItem,
+  UserMessageIndexPageOptions,
+} from '$lib/client/app-client';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { AgentStatus } from '$shared/types';
@@ -29,32 +33,86 @@ function errorMessage(error: unknown): string {
 }
 
 function* indexIsCurrent(action: IndexAction): SagaGenerator<boolean> {
-  const [workspaceId, consumerId, requestId] = action.payload;
+  const [workspaceId, consumerId, requestId, agentId, epoch] = action.payload;
   const current = yield* selectUserMessageIndexUi.effect(workspaceId, consumerId);
-  return current?.requestId === requestId && current.status === 'pending';
+  return (
+    current?.requestId === requestId &&
+    current.status === 'pending' &&
+    current.agentId === agentId &&
+    current.epoch === epoch
+  );
+}
+
+function* indexCanContinue(action: IndexAction): SagaGenerator<boolean> {
+  if (!(yield* indexIsCurrent(action))) return false;
+  const [workspaceId, consumerId, requestId, agentId, epoch] = action.payload;
+  if ((yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch !== epoch) {
+    yield* put(userMessageIndexFinished(workspaceId, consumerId, requestId, 'cancelled'));
+    return false;
+  }
+  return true;
 }
 
 function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerator<void> {
-  const [workspaceId, consumerId, requestId, agentId, epoch] = action.payload;
+  const [workspaceId, consumerId, requestId, agentId] = action.payload;
+  const itemsById = new Map<string, UserMessageIndexItem>();
+  const pages: UserMessageIndexItem[][] = [];
+  const seenTokens = new Set<string>();
+  let page: UserMessageIndexPageOptions | undefined;
   try {
-    const result = yield* call([client, client.listUserMessages], agentId, undefined, workspaceId);
-    if (!(yield* indexIsCurrent(action))) return;
-    if ((yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch !== epoch) {
-      yield* put(userMessageIndexFinished(workspaceId, consumerId, requestId, 'cancelled'));
-      return;
+    while (true) {
+      if (!(yield* indexCanContinue(action))) return;
+      const result = page
+        ? yield* call([client, client.listUserMessages], agentId, undefined, workspaceId, page)
+        : yield* call([client, client.listUserMessages], agentId, undefined, workspaceId);
+      if (!(yield* indexCanContinue(action))) return;
+      if (!result.ok) {
+        yield* put(
+          userMessageIndexFinished(
+            workspaceId,
+            consumerId,
+            requestId,
+            !page && result.unsupported ? 'succeeded' : 'failed',
+            result,
+            result.error,
+          ),
+        );
+        return;
+      }
+      pages.push(result.items);
+      const priorSize = itemsById.size;
+      for (const item of result.items) itemsById.set(item.id, item);
+      const nextToken = result.nextToken;
+      if (!nextToken) {
+        // Each page is chronological, but continuation pages precede the first.
+        const items: UserMessageIndexItem[] = [];
+        const emitted = new Set<string>();
+        for (const olderPage of pages.reverse()) {
+          for (const { id } of olderPage) {
+            const item = itemsById.get(id);
+            if (item && !emitted.has(id)) {
+              emitted.add(id);
+              items.push(item);
+            }
+          }
+        }
+        yield* put(
+          userMessageIndexFinished(workspaceId, consumerId, requestId, 'succeeded', {
+            ok: true,
+            items,
+            total: items.length,
+          }),
+        );
+        return;
+      }
+      if (seenTokens.has(nextToken) || itemsById.size === priorSize) {
+        throw new Error('User-message index paging made no progress');
+      }
+      seenTokens.add(nextToken);
+      page = { nextToken };
     }
-    yield* put(
-      userMessageIndexFinished(
-        workspaceId,
-        consumerId,
-        requestId,
-        result.ok || result.unsupported ? 'succeeded' : 'failed',
-        result,
-        result.ok ? undefined : result.error,
-      ),
-    );
   } catch (error) {
-    if (yield* indexIsCurrent(action))
+    if (yield* indexCanContinue(action))
       yield* put(
         userMessageIndexFinished(
           workspaceId,
