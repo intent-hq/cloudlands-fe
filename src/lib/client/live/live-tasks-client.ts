@@ -105,6 +105,8 @@ function noteToTask(raw: Record<string, unknown>): WorkspaceTask | null {
     ...(typeof raw.rev === 'number' ? { rev: raw.rev } : {}),
     ...relationFields(task as Record<string, unknown>),
     ...specLinkedField(task as Record<string, unknown>),
+    // Both paged and legacy task snapshots stamp linkage on the Note itself.
+    ...specLinkedField(raw),
   };
 }
 
@@ -467,6 +469,11 @@ export class LiveTasksClient implements TasksClient {
       channel: {
         subscribeMethod: 'task.subscribe',
         unsubscribeMethod: 'task.unsubscribe',
+        continuation: {
+          method: 'task.list',
+          key: 'tasks',
+          params: (scope) => ({ workspaceId: scope.workspaceId, limit: 200 }),
+        },
         dynamic: {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),

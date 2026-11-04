@@ -29,11 +29,15 @@ vi.mock('./backend-transport', () => ({
 
 vi.mock('./live-support', async (importActual) => {
   const actual = await importActual<typeof import('./live-support')>();
-  return { ...actual, resolveNoteWorkspaceId: vi.fn(() => Promise.resolve('ws-1')) };
+  return {
+    ...actual,
+    resolveNoteWorkspaceId: vi.fn(() => Promise.resolve('ws-1')),
+    rememberNoteWorkspace: vi.fn(actual.rememberNoteWorkspace),
+  };
 });
 
 import { backendRequest } from './backend-transport';
-import { resolveNoteWorkspaceId } from './live-support';
+import { resolveNoteWorkspaceId, rememberNoteWorkspace } from './live-support';
 import { LiveTasksClient } from './live-tasks-client';
 
 const mockedRequest = vi.mocked(backendRequest);
@@ -676,10 +680,21 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
   const notify = (n: { method: string; params?: unknown }) => {
     for (const handler of [...notifyHandlers]) handler(n);
   };
-  const pushSnapshot = (subscriptionId: string, seq: number, snapshot: unknown[]) =>
+  const pushSnapshot = (
+    subscriptionId: string,
+    seq: number,
+    snapshot: unknown[],
+    nextToken?: string,
+  ) =>
     notify({
       method: 'subscription.push',
-      params: { subscriptionId, kind: 'snapshot', seq, snapshot },
+      params: {
+        subscriptionId,
+        kind: 'snapshot',
+        seq,
+        snapshot,
+        ...(nextToken ? { nextToken } : {}),
+      },
     });
   const pushDelta = (subscriptionId: string, seq: number, delta: Record<string, unknown>) =>
     notify({ method: 'subscription.push', params: { subscriptionId, kind: 'delta', seq, delta } });
@@ -690,11 +705,37 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
   // dynamic channel-per-id scope.
   let workspaceIds: string[] = [];
   let chanSeq = 0;
+  const taskPages = new Map<string, unknown>();
+  const pageKey = (workspaceId: string, token: string) => JSON.stringify([workspaceId, token]);
+  const servePage = (workspaceId: string, token: string, reply: unknown) =>
+    taskPages.set(pageKey(workspaceId, token), reply);
+  const holdPage = (workspaceId: string, token: string) => {
+    let release: ((reply: unknown) => void) | undefined;
+    servePage(
+      workspaceId,
+      token,
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    return (reply: unknown) => {
+      if (!release) throw new Error('Page was not held');
+      release(reply);
+    };
+  };
+  const latestTasks = (handler: ReturnType<typeof vi.fn>) =>
+    handler.mock.calls.at(-1)?.[0] as Array<{
+      id: string;
+      title: string;
+      status: string;
+      rev?: number;
+    }>;
 
   beforeEach(() => {
     chanSeq = 0;
     workspaceIds = ['ws-1', 'ws-2'];
-    mockedRequest.mockImplementation((method: string) => {
+    taskPages.clear();
+    mockedRequest.mockImplementation((method: string, params?: unknown) => {
       if (method === 'workspace.list') {
         return Promise.resolve({ workspaces: workspaceIds.map((id) => ({ id })) });
       }
@@ -703,6 +744,12 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
         return Promise.resolve({ subscriptionId: `chan-${chanSeq}` });
       }
       if (method === 'task.unsubscribe') return Promise.resolve({ success: true });
+      if (method === 'task.list') {
+        const { workspaceId, nextToken } = params as { workspaceId: string; nextToken: string };
+        const key = pageKey(workspaceId, nextToken);
+        if (!taskPages.has(key)) return Promise.reject(new Error(`Unexpected task page: ${key}`));
+        return Promise.resolve(taskPages.get(key));
+      }
       return Promise.resolve({ success: true });
     });
   });
@@ -890,6 +937,202 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
     expect(recovered.map((t) => t.id)).toEqual(['a']);
     unsubscribe();
   });
+
+  it('loads all offered task pages in their own workspace and preserves Note and direct-task fields', async () => {
+    const handler = vi.fn();
+    const unsubscribe = new LiveTasksClient().subscribe(handler);
+    await vi.waitFor(() => expect(requestsFor('task.subscribe')).toHaveLength(2));
+    servePage('ws-1', 'next', {
+      tasks: [
+        {
+          id: 'list-a',
+          title: 'List A',
+          status: 'in_progress',
+          updatedAt: '2026-01-02T00:00:00Z',
+          specLinked: true,
+          dependsOn: ['seed'],
+          conflictsWith: ['other'],
+          unmetDependsOn: ['seed'],
+        },
+      ],
+      nextToken: 'last',
+    });
+    servePage('ws-1', 'last', {
+      tasks: [{ id: 'list-b', title: 'List B', status: 'complete', specLinked: false }],
+      nextToken: null,
+    });
+    servePage('ws-2', 'next', {
+      tasks: [{ id: 'list-c', title: 'List C', status: 'not_started', specLinked: false }],
+      nextToken: null,
+    });
+    const note = {
+      ...wireTaskNote('seed', 'ws-1', 'Seed'),
+      specLinked: false,
+      rev: 7,
+      metadata: {
+        task: {
+          status: 'review_required',
+          specLinked: true,
+          dependsOn: ['dependency'],
+          conflictsWith: ['conflict'],
+          unmetDependsOn: ['dependency'],
+        },
+      },
+    };
+    pushSnapshot('chan-1', 0, [note], 'next');
+    pushSnapshot(
+      'chan-2',
+      0,
+      [{ ...wireTaskNote('linked', 'ws-2', 'Linked'), specLinked: true }],
+      'next',
+    );
+    await vi.waitFor(() => expect(latestTasks(handler)).toHaveLength(5));
+    expect(requestsFor('task.list')).toEqual(
+      expect.arrayContaining([
+        { workspaceId: 'ws-1', limit: 200, nextToken: 'next' },
+        { workspaceId: 'ws-1', limit: 200, nextToken: 'last' },
+        { workspaceId: 'ws-2', limit: 200, nextToken: 'next' },
+      ]),
+    );
+    expect(requestsFor('task.list')).toHaveLength(3);
+    expect(latestTasks(handler)).toEqual(
+      expect.arrayContaining([
+        {
+          id: 'seed',
+          title: 'Seed',
+          status: 'review_required',
+          updatedAt: note.updatedAt,
+          rev: 7,
+          specLinked: false,
+          dependsOn: ['dependency'],
+          conflictsWith: ['conflict'],
+          unmetDependsOn: ['dependency'],
+        },
+        {
+          id: 'list-a',
+          title: 'List A',
+          status: 'in_progress',
+          updatedAt: '2026-01-02T00:00:00Z',
+          specLinked: true,
+          dependsOn: ['seed'],
+          conflictsWith: ['other'],
+          unmetDependsOn: ['seed'],
+        },
+        expect.objectContaining({ id: 'linked', specLinked: true, rev: 1 }),
+        expect.objectContaining({ id: 'list-b', specLinked: false }),
+        expect.objectContaining({ id: 'list-c', specLinked: false }),
+      ]),
+    );
+    expect(rememberNoteWorkspace).toHaveBeenCalledWith('seed', 'ws-1');
+    expect(rememberNoteWorkspace).toHaveBeenCalledWith('linked', 'ws-2');
+    // WorkspaceTask list rows do not carry workspaceId/rev on the wire.
+    expect(latestTasks(handler).find((task) => task.id === 'list-a')).not.toHaveProperty('rev');
+    unsubscribe();
+  });
+
+  it('keeps legacy complete snapshots unpaged and supports nested specLinked only when the top-level field is absent', async () => {
+    workspaceIds = ['ws-1'];
+    const handler = vi.fn();
+    const unsubscribe = new LiveTasksClient().subscribe(handler);
+    await vi.waitFor(() => expect(requestsFor('task.subscribe')).toHaveLength(1));
+    pushSnapshot('chan-1', 0, [
+      wireTaskNote('absent', 'ws-1', 'Absent'),
+      {
+        ...wireTaskNote('nested', 'ws-1', 'Nested'),
+        metadata: { task: { status: 'not_started', specLinked: true } },
+      },
+    ]);
+    await flush();
+    expect(requestsFor('task.list')).toEqual([]);
+    expect(latestTasks(handler)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'nested', specLinked: true })]),
+    );
+    expect(latestTasks(handler).find((task) => task.id === 'absent')).not.toHaveProperty(
+      'specLinked',
+    );
+    unsubscribe();
+  });
+
+  it('does not overwrite newer task updates or resurrect removals with a delayed page', async () => {
+    workspaceIds = ['ws-1'];
+    const release = holdPage('ws-1', 'next');
+    const handler = vi.fn();
+    const unsubscribe = new LiveTasksClient().subscribe(handler);
+    await vi.waitFor(() => expect(requestsFor('task.subscribe')).toHaveLength(1));
+    pushSnapshot('chan-1', 0, [wireTaskNote('seed', 'ws-1', 'Seed')], 'next');
+    await vi.waitFor(() => expect(requestsFor('task.list')).toHaveLength(1));
+    pushDelta('chan-1', 1, {
+      updated: [
+        { ...wireTaskNote('changed', 'ws-1', 'New title', 'complete'), rev: 9, specLinked: true },
+      ],
+      removedIds: ['removed'],
+    });
+    release({
+      tasks: [
+        { id: 'changed', title: 'Stale title', status: 'not_started' },
+        { id: 'removed', title: 'Removed', status: 'not_started' },
+        { id: 'rest', title: 'Rest', status: 'not_started' },
+      ],
+      nextToken: null,
+    });
+    await vi.waitFor(() =>
+      expect(
+        latestTasks(handler)
+          .map((task) => task.id)
+          .sort(),
+      ).toEqual(['changed', 'rest', 'seed']),
+    );
+    expect(latestTasks(handler).find((task) => task.id === 'changed')).toMatchObject({
+      title: 'New title',
+      status: 'complete',
+      rev: 9,
+      specLinked: true,
+    });
+    unsubscribe();
+  });
+
+  for (const boundary of ['workspace removal', 'unsubscribe', 'reconnect'] as const) {
+    it(`ignores a late task page after ${boundary} without disturbing another workspace`, async () => {
+      const release = holdPage('ws-1', 'next');
+      const handler = vi.fn();
+      const unsubscribe = new LiveTasksClient().subscribe(handler);
+      await vi.waitFor(() => expect(requestsFor('task.subscribe')).toHaveLength(2));
+      pushSnapshot('chan-1', 0, [wireTaskNote('seed', 'ws-1', 'Seed')], 'next');
+      pushSnapshot('chan-2', 0, [wireTaskNote('sibling', 'ws-2', 'Sibling')]);
+      await vi.waitFor(() => expect(requestsFor('task.list')).toHaveLength(1));
+      if (boundary === 'workspace removal') {
+        workspaceIds = ['ws-2'];
+        fireWorkspaceSetEvent('workspace:deleted');
+        await vi.waitFor(() =>
+          expect(requestsFor('task.unsubscribe')).toContainEqual({
+            subscriptionId: 'chan-1',
+            workspaceId: 'ws-1',
+          }),
+        );
+      } else if (boundary === 'unsubscribe') {
+        unsubscribe();
+      } else {
+        for (const reconnect of [...reconnectHandlers]) reconnect();
+        await vi.waitFor(() => expect(requestsFor('task.subscribe')).toHaveLength(4));
+        pushSnapshot('chan-3', 0, [wireTaskNote('fresh', 'ws-1', 'Fresh')]);
+        pushSnapshot('chan-4', 0, [wireTaskNote('sibling', 'ws-2', 'Sibling')]);
+      }
+      const callsBeforeLatePage = handler.mock.calls.length;
+      release({
+        tasks: [{ id: 'stale', title: 'Stale', status: 'not_started' }],
+        nextToken: 'must-not-fetch',
+      });
+      await flush();
+      await flush();
+      expect(requestsFor('task.list')).toHaveLength(1);
+      expect(handler).toHaveBeenCalledTimes(callsBeforeLatePage);
+      expect(latestTasks(handler).some((task) => task.id === 'stale')).toBe(false);
+      expect(latestTasks(handler).some((task) => task.id === 'sibling')).toBe(true);
+      if (boundary === 'workspace removal')
+        expect(latestTasks(handler).map((task) => task.id)).toEqual(['sibling']);
+      unsubscribe();
+    });
+  }
 
   it('unsubscribes every workspace channel on dispose', async () => {
     const client = new LiveTasksClient();
