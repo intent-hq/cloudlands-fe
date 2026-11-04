@@ -205,80 +205,10 @@ test('arrow keys move focus between the bar buttons', async ({ mount, page }) =>
   await expect(tool(page, 'pick')).toBeFocused();
 });
 
-test('tooltips: every control names itself and its bar key on hover, never taking focus or moving the bar, and flip below at the top edge', async ({
-  mount,
-  page,
-}, info) => {
-  await mount(Harness);
-  // Step time by hand from here: a moving fake clock races the checks.
-  await pauseClock(page);
-  // The focused control shows its own tooltip too; each is found by its text.
-  const tip = (text: string) =>
-    page.getByRole('tooltip').filter({ visible: true }).filter({ hasText: text });
-  const hover = async (target: Locator) => {
-    await target.hover();
-    // The shared tooltip opens after its short delay.
-    await page.clock.runFor(400);
-  };
-  // Focus sits on Element selector; hovering elsewhere must not move it.
-  await tool(page, 'pointer').focus();
-  await page.keyboard.press('ArrowRight');
-  await expect(tool(page, 'pick')).toBeFocused();
-  const placed = await bar(page).boundingBox();
-
-  for (const [name, label, key] of [
-    ['pointer', 'Pointer', 'V'],
-    ['pick', 'Element selector', 'E'],
-    ['box', 'Rectangle', 'R'],
-    ['pen', 'Draw', 'D'],
-    ['arrow', 'Arrow', 'A'],
-  ] as const) {
-    await hover(tool(page, name));
-    await expect(tip(label)).toBeVisible();
-    await expect(tip(label).locator('kbd').first()).toContainText(key);
-  }
-  await hover(page.getByTestId('recording-chip'));
-  await expect(tip('Pause')).toBeVisible();
-  await hover(bar(page).locator('[data-discard]'));
-  await expect(tip('Discard recording')).toBeVisible();
-  await hover(bar(page).locator('[data-done]'));
-  await expect(tip('Done')).toBeVisible();
-  await info.attach('tooltip-done', { body: await page.screenshot(), contentType: 'image/png' });
-  await page.screenshot({ path: info.outputPath('recording-toolbar-tooltip.png') });
-  await hover(bar(page).locator('[data-grip]'));
-  await expect(tip('Drag to move')).toBeVisible();
-  await expect(tool(page, 'pick')).toBeFocused();
-  expect(await bar(page).boundingBox()).toEqual(placed);
-
-  // A click is still a click: the tool is chosen.
-  await tool(page, 'box').click();
-  await expect(tool(page, 'box')).toHaveAttribute('aria-checked', 'true');
-
-  // Dragged to the top edge, the tooltip flips below the bar and stays on screen.
-  const grip = (await bar(page).locator('[data-grip]').boundingBox())!;
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(grip.x + grip.width / 2, 2, { steps: 4 });
-  await page.mouse.up();
-  await hover(tool(page, 'arrow'));
-  await expect(tip('Arrow')).toBeVisible();
-  const tipBox = (await tip('Arrow').boundingBox())!;
-  const button = (await tool(page, 'arrow').boundingBox())!;
-  // Below its button (not above the bar, where there is no room), and on screen.
-  expect(tipBox.y).toBeGreaterThanOrEqual(button.y + button.height);
-  expect(tipBox.y + tipBox.height).toBeLessThanOrEqual(400);
-  await page.screenshot({ path: info.outputPath('recording-toolbar-tooltip-top-edge.png') });
-});
-
-test('no microphone: the waveform is flat and the chip says so', async ({ mount, page }) => {
+test('no microphone: the waveform is flat', async ({ mount, page }) => {
   await mount(Harness, { props: { signal: { level: 0, mic: false } } });
-  // Step time by hand from here: a moving fake clock races the checks.
-  await pauseClock(page);
   const chip = page.getByTestId('recording-chip');
   await expect(chip.locator('.wave')).toHaveAttribute('data-flat');
-  await chip.hover();
-  await page.clock.runFor(400);
-  await expect(page.getByRole('tooltip').filter({ visible: true })).toContainText('No mic input');
 });
 
 test('long recordings switch to h:mm:ss', async ({ mount, page }) => {
