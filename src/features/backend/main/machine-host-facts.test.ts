@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { extractHostArch, extractHostOs, extractInstalledProviders } from './machine-host-facts';
+import {
+  extractEnabledProviderIds,
+  extractHostArch,
+  extractHostOs,
+  extractInstalledProviders,
+  onlyEnabledProviders,
+} from './machine-host-facts';
 
 describe('extractHostOs', () => {
   it('reads the host.status os field', () => {
@@ -74,5 +80,47 @@ describe('extractInstalledProviders', () => {
     expect(extractInstalledProviders({})).toBeNull();
     expect(extractInstalledProviders(null)).toBeNull();
     expect(extractInstalledProviders({ providers: 'all' })).toBeNull();
+  });
+});
+
+describe('extractEnabledProviderIds', () => {
+  it('reads host.executionContext enabledProviderIds', () => {
+    expect(
+      extractEnabledProviderIds({
+        defaultProviderId: null,
+        enabledProviderIds: ['claude-code', 'codex'],
+      }),
+    ).toEqual(['claude-code', 'codex']);
+    expect(extractEnabledProviderIds({ enabledProviderIds: [] })).toEqual([]);
+  });
+
+  it('is null (unknown) when the projection is missing or malformed, as on an older host', () => {
+    expect(extractEnabledProviderIds({ defaultProviderId: null })).toBeNull();
+    expect(extractEnabledProviderIds({ enabledProviderIds: 'codex' })).toBeNull();
+    expect(extractEnabledProviderIds({ enabledProviderIds: ['codex', 7] })).toBeNull();
+    expect(extractEnabledProviderIds({ enabledProviderIds: ['codex', ''] })).toBeNull();
+    expect(extractEnabledProviderIds(null)).toBeNull();
+  });
+});
+
+describe('onlyEnabledProviders', () => {
+  const installed = [
+    { id: 'claude-code', displayName: 'Claude Code' },
+    { id: 'codex', displayName: 'Codex' },
+  ];
+
+  it('hides an installed provider that is disabled on that host', () => {
+    expect(onlyEnabledProviders(installed, ['claude-code'])).toEqual([
+      { id: 'claude-code', displayName: 'Claude Code' },
+    ]);
+    expect(onlyEnabledProviders(installed, [])).toEqual([]);
+  });
+
+  it('keeps every installed provider when enablement is unknown', () => {
+    expect(onlyEnabledProviders(installed, null)).toEqual(installed);
+  });
+
+  it('stays unknown while the installed providers are unknown', () => {
+    expect(onlyEnabledProviders(null, ['codex'])).toBeNull();
   });
 });

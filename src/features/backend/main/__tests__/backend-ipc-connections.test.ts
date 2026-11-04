@@ -2785,8 +2785,8 @@ describe('connections:* IPC handlers', () => {
         ]),
       });
     });
-    // Only the self-fingerprint probe and the reconnect-hello hostname +
-    // updateSupported re-captures may hit the wire here — never a
+    // Only the self-fingerprint probe and the reconnect-hello hostname,
+    // updateSupported and provider re-captures may hit the wire here — never a
     // fingerprint capture.
     expect(
       rpc.calls.every(
@@ -2794,7 +2794,8 @@ describe('connections:* IPC handlers', () => {
           method === 'server.pairingInfo' ||
           method === 'host.status' ||
           method === 'system.status' ||
-          method === 'host.providerDiscovery',
+          method === 'host.providerDiscovery' ||
+          method === 'host.executionContext',
       ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
@@ -2854,6 +2855,88 @@ describe('connections:* IPC handlers', () => {
     expect(remoteRecord()).not.toHaveProperty('providers');
   });
 
+  it("hides a connected daemon's installed-but-disabled providers and shows them again when re-enabled", async () => {
+    const send = installWindow();
+    let enabledProviderIds = ['claude-code'];
+    rpc.handler = async (method) => {
+      if (method === 'host.status') return { os: 'linux', arch: 'x86_64', hostname: 'intent1' };
+      if (method === 'host.providerDiscovery')
+        return {
+          providers: [
+            { id: 'claude-code', displayName: 'Claude Code', installed: true },
+            { id: 'codex', displayName: 'Codex', installed: true },
+          ],
+        };
+      if (method === 'host.executionContext')
+        return { defaultProviderId: null, defaultModelId: null, enabledProviderIds };
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+    const remoteRecord = () => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      return payload?.connections.find((connection) => connection.id === REMOTE.id);
+    };
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() =>
+      expect(remoteRecord()).toMatchObject({
+        status: 'connected',
+        providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+      }),
+    );
+    expect(rpc.payloads).toContainEqual(['host.executionContext', {}]);
+
+    enabledProviderIds = ['claude-code', 'codex'];
+    remote.emit('notification', {
+      jsonrpc: '2.0',
+      method: 'events.event',
+      params: {
+        subscriptionId: 'renderer-sub',
+        event: { type: 'host:execution-context-changed', data: { enabledProviderIds } },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(remoteRecord()?.providers).toEqual([
+        { id: 'claude-code', displayName: 'Claude Code' },
+        { id: 'codex', displayName: 'Codex' },
+      ]),
+    );
+  });
+
+  it('keeps showing installed providers when an older host has no enablement projection', async () => {
+    const send = installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'host.providerDiscovery')
+        return { providers: [{ id: 'codex', displayName: 'Codex', installed: true }] };
+      if (method === 'host.executionContext') throw new Error('Method not found');
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      const record = payload?.connections.find((connection) => connection.id === REMOTE.id);
+      expect(record?.providers).toEqual([{ id: 'codex', displayName: 'Codex' }]);
+    });
+  });
+
   it('does not ask a guest session for its installed providers', async () => {
     guestStore.findById.mockImplementation(async (id: string) =>
       id === REMOTE.id ? { id } : null,
@@ -2872,6 +2955,7 @@ describe('connections:* IPC handlers', () => {
     await vi.waitFor(() => expect(guestStore.findById).toHaveBeenCalledWith(REMOTE.id));
     for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0));
     expect(rpc.calls).not.toContain('host.providerDiscovery');
+    expect(rpc.calls).not.toContain('host.executionContext');
   });
 
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
