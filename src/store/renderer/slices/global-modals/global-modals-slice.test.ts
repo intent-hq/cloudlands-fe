@@ -6,11 +6,13 @@ import {
   initialState,
   openGitCredentialsModal,
   openGitHubAuthModal,
+  webExperimentalNoticeDismissed,
 } from './global-modals-slice';
 import {
   selectGitCredentialsError,
   selectGlobalModals,
   selectHasShownGitCredentialsModalForWorkspace,
+  selectShowsWebExperimentalNotice,
 } from './global-modals-selectors';
 
 const pendingAuth = { reason: 'create-pr' } as any;
@@ -91,5 +93,25 @@ describe('global-modals selectors', () => {
     expect(selectHasShownGitCredentialsModalForWorkspace.select(state, 'ws-1')).toBe(true);
     expect(selectHasShownGitCredentialsModalForWorkspace.select(state, 'ws-2')).toBe(false);
     expect(selectHasShownGitCredentialsModalForWorkspace.select(state, undefined)).toBe(false);
+  });
+});
+
+describe('web experimental notice', () => {
+  const host = { manageConnections: true, backendBound: true, tailcatAvailable: false };
+  const stateWith = (browserHost: typeof host | null, dismissed: boolean) =>
+    ({
+      connections: { browserHost },
+      globalModals: { ...initialState, webExperimentalNoticeDismissed: dismissed },
+    }) as any;
+
+  it('shows for a page host until dismissed', () => {
+    expect(selectShowsWebExperimentalNotice.select(stateWith(host, false))).toBe(true);
+    const dismissed = globalModalsReducer(initialState, webExperimentalNoticeDismissed());
+    expect(dismissed.webExperimentalNoticeDismissed).toBe(true);
+    expect(selectShowsWebExperimentalNotice.select(stateWith(host, true))).toBe(false);
+  });
+
+  it('never shows without a page host', () => {
+    expect(selectShowsWebExperimentalNotice.select(stateWith(null, false))).toBe(false);
   });
 });
