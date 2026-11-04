@@ -21,7 +21,8 @@ import { suppressedLines } from './lib/disable-directives.js';
  *
  * Flagged: a `.click()` call, or the first argument of
  * `clickAndSettle(...)`, whose locator is built from a locator hovered earlier in the
- * same function (or an enclosing one) by at least one descendant step (`getByRole`,
+ * same function, an enclosing one, or a `test.step(...)` callback it ran, by at least
+ * one descendant step (`getByRole`,
  * `getByText`, `getByLabel`, `getByTestId`, `getByTitle`, `getByPlaceholder`,
  * `getByAltText`, `locator`). Locators are compared by source text, through `const`
  * aliases declared in the same or an enclosing function (`const action =
@@ -30,7 +31,9 @@ import { suppressedLines } from './lib/disable-directives.js';
  * a click, check or tap on something outside the row, or a `mouse.move` / `mouse.click`,
  * clears it.
  * Clicking the hovered element itself is not flagged, nor is a double-click: tests
- * double-click message text to edit it, and text is never hover-only.
+ * double-click message text to edit it, and text is never hover-only. A selector hover
+ * (`page.hover('.row')`) only forgets earlier hovers, and a hover inside a local helper
+ * function is not followed to the helper's call sites.
  *
  * Ratchet: the `baseline` option maps each spec that already had such clicks to its
  * count; the first `count` in source order are tolerated and every further one is
@@ -101,6 +104,13 @@ function unwrap(node) {
 }
 
 const FUNCTIONS = ['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression'];
+
+function isStepCallback(node) {
+  const call = node.parent;
+  if (call?.type !== 'CallExpression' || !call.arguments.includes(node)) return false;
+  const callee = unwrap(call.callee);
+  return propertyName(callee) === 'step' && unwrap(callee.object)?.name === 'test';
+}
 
 export default {
   meta: {
@@ -203,7 +213,11 @@ export default {
     };
 
     const enter = () => frames.push({ aliases: new Map(), hovered: new Set() });
-    const exit = () => frames.pop();
+    // A `test.step` callback runs in place, so the pointer is still where it left it.
+    const exit = (node) => {
+      const frame = frames.pop();
+      if (isStepCallback(node) && frame.hovered.size > 0) current().hovered = frame.hovered;
+    };
     const handlers = {
       VariableDeclarator(node) {
         if (node.id.type === 'Identifier' && node.init && node.parent.kind === 'const') {
@@ -218,9 +232,12 @@ export default {
         }
         const name = propertyName(callee);
         if (name === 'hover') {
+          forgetHover();
+          // `page.hover(selector)` hovers the selector's match, not its receiver.
+          const selector = node.arguments[0];
+          if (selector && selector.type !== 'ObjectExpression') return;
           // The target and its aliases / narrowings; not the locators it was built from,
           // or hovering `page.getByRole(...)` would mark the whole page as hovered.
-          forgetHover();
           current().hovered = new Set(
             lineage(callee.object)
               .filter((link) => !link.inside)

@@ -197,6 +197,23 @@ test('b', async () => {
 });`,
     },
     {
+      name: 'a selector hover does not mark its receiver hovered',
+      filename,
+      code: inTest(`
+  await page.hover('.row');
+  await page.getByRole('button', { name: 'Copy' }).click();`),
+    },
+    {
+      name: 'known limitation: a hover inside a local helper is not followed to its calls',
+      filename,
+      code: inTest(`
+  const hoverRow = async () => {
+    await row.hover();
+  };
+  await hoverRow();
+  await row.getByRole('button', { name: 'Copy' }).click();`),
+    },
+    {
       name: 'files other than component specs',
       filename: path.resolve('src/test/ct-hover-action.ts'),
       code: inTest(`
@@ -231,6 +248,16 @@ test('b', async () => {
   await row.hover();
   await row.getByRole('button', { name: 'Copy' }).click();`),
       errors: [error(5)],
+    },
+    {
+      name: 'a hover inside a test.step carries out to the enclosing test',
+      filename,
+      code: inTest(`
+  await test.step('hover the row', async () => {
+    await row.hover();
+  });
+  await row.getByRole('button', { name: 'Copy' }).click();`),
+      errors: [error(7)],
     },
     {
       name: 'through const aliases of the row and of the action',
