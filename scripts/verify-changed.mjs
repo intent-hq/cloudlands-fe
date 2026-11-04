@@ -646,6 +646,53 @@ export function createVerificationPlan(files, options = {}) {
     );
   if (deadCode)
     checks.push(command('knip', 'Dead code (knip, repo-wide)', ['run', 'lint:dead-code']));
+  // Static type checks run before every test lane. A run stops at its first
+  // failure, so a load-sensitive test timeout would otherwise hide a real type
+  // error until it passed (cloudlands-fe#4115 needed three runs to see one).
+  if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check']));
+  if (boundaries.has('renderer')) {
+    checks.push(
+      command('tsc-renderer', 'TypeScript (renderer)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.json',
+        '--noEmit',
+      ]),
+    );
+  }
+  if (boundaries.has('main')) {
+    checks.push(
+      command('generate-build-config', 'Generate main build config (if missing)', [
+        'run',
+        'generate:build-config',
+        '--',
+        '--if-missing',
+      ]),
+      command('tsc-main', 'TypeScript (main)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.main.json',
+        '--noEmit',
+      ]),
+    );
+  }
+  if (boundaries.has('preload')) {
+    checks.push(
+      command('generate-ipc-channels', 'Generate preload IPC channels', [
+        'run',
+        'generate:ipc-channels',
+      ]),
+      command('tsc-preload', 'TypeScript (preload)', [
+        'exec',
+        'tsc',
+        '-p',
+        'tsconfig.preload.json',
+        '--noEmit',
+      ]),
+    );
+  }
   if (fullUnit)
     checks.push(
       command(
@@ -760,50 +807,6 @@ export function createVerificationPlan(files, options = {}) {
         'test',
         PLAYWRIGHT_RETRIES_ARG,
         ...directPlaywright,
-      ]),
-    );
-  }
-  if (svelteCheck) checks.push(command('svelte-check', 'Svelte check', ['run', 'check']));
-  if (boundaries.has('renderer')) {
-    checks.push(
-      command('tsc-renderer', 'TypeScript (renderer)', [
-        'exec',
-        'tsc',
-        '-p',
-        'tsconfig.json',
-        '--noEmit',
-      ]),
-    );
-  }
-  if (boundaries.has('main')) {
-    checks.push(
-      command('generate-build-config', 'Generate main build config (if missing)', [
-        'run',
-        'generate:build-config',
-        '--',
-        '--if-missing',
-      ]),
-      command('tsc-main', 'TypeScript (main)', [
-        'exec',
-        'tsc',
-        '-p',
-        'tsconfig.main.json',
-        '--noEmit',
-      ]),
-    );
-  }
-  if (boundaries.has('preload')) {
-    checks.push(
-      command('generate-ipc-channels', 'Generate preload IPC channels', [
-        'run',
-        'generate:ipc-channels',
-      ]),
-      command('tsc-preload', 'TypeScript (preload)', [
-        'exec',
-        'tsc',
-        '-p',
-        'tsconfig.preload.json',
-        '--noEmit',
       ]),
     );
   }
