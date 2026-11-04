@@ -43,7 +43,7 @@
 >
   <div class="flex flex-col gap-3">
     <p id={headingId} class="type-body font-medium text-foreground">
-      {m.intentWeb_experimentalNotice_unavailable_heading()}
+      {m.intentWeb_experimentalNotice_unavailable_label()}
     </p>
     <ListView
       items={features}

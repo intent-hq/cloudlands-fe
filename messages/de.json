@@ -8295,7 +8295,7 @@
   "intentWeb_noBackend_addMachine_label": "Maschine hinzufügen",
   "intentWeb_experimentalNotice_title": "Intent im Browser ist experimentell",
   "intentWeb_experimentalNotice_description": "Intent im Browser zu nutzen ist eine frühe, experimentelle Arbeitsweise, und manche Funktionen gibt es nur in der Desktop-App.",
-  "intentWeb_experimentalNotice_unavailable_heading": "Im Browser nicht verfügbar:",
+  "intentWeb_experimentalNotice_unavailable_label": "Im Browser nicht verfügbar:",
   "intentWeb_experimentalNotice_browserPanel_label": "Das integrierte Browser-Panel",
   "intentWeb_experimentalNotice_openInEditor_label": "Dateien im Editor öffnen oder im Finder anzeigen",
   "intentWeb_experimentalNotice_filePickers_label": "Native Dateiauswahl, einschließlich der Auswahl von SSH-Schlüsseln",
