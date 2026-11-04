@@ -15,7 +15,7 @@
  * order (between the attempt they interrupt and the output that follows).
  */
 import {
-  selectProviderCatalogLoaded,
+  selectProviderCatalogProfilesLoaded,
   selectProviderCatalogDefaultNames,
   selectProviderCatalogProfiles,
   selectProviderDisplayName,
@@ -95,9 +95,7 @@ function parseSwitchRow(
 function describeRef(providerRef: string, workspaceId?: string): string {
   const state = appStore.state;
   const baseId = providerRefBaseId(providerRef);
-  const loaded = workspaceId
-    ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
-    : selectProviderCatalogLoaded.select(state);
+  const loaded = selectProviderCatalogProfilesLoaded.select(state, workspaceId);
   const baseName =
     selectProviderDisplayName.select(state, baseId, loaded ? workspaceId : undefined) || baseId;
   if (selectHidesProviderProfileNames.select(state, workspaceId ?? '')) return baseName;

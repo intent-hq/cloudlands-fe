@@ -11,7 +11,7 @@
  */
 import { selectModelDisplayName } from '$store/renderer/slices/model/model-selectors';
 import {
-  selectProviderCatalogLoaded,
+  selectProviderCatalogProfilesLoaded,
   selectProviderCatalogDefaultNames,
   selectProviderCatalogProfiles,
   selectProviderDisplayName,
@@ -98,9 +98,7 @@ function describeProfileSide(
   const baseId = providerRefBaseId(providerRef);
   // Until the (workspace) catalog has loaded, a missing profile is unknown,
   // not removed: read the bare provider name instead of "Removed profile".
-  const loaded = workspaceId
-    ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
-    : selectProviderCatalogLoaded.select(state);
+  const loaded = selectProviderCatalogProfilesLoaded.select(state, workspaceId);
   const baseName = selectProviderDisplayName.select(
     state,
     baseId,
