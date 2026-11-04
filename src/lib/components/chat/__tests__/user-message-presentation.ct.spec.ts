@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { activateHoverAction, expect, test } from '../../../../test/ct-test';
 import type { CDPSession } from '@playwright/test';
 import ChatMessageNavigatorIntegrationHost from './ChatMessageNavigatorIntegrationHost.svelte';
 
@@ -73,8 +73,11 @@ for (const state of cases) {
     await expect(target.getByTestId('queued-message-notice')).toHaveAttribute('title', /2026/);
     expect(await target.ariaSnapshot()).not.toContain('[SYSTEM NOTE]');
 
-    await target.hover();
-    await target.getByRole('button', { name: 'Copy message' }).click();
+    // Navigation scrolls the virtualized target into place, so activate the hover-only
+    // action without a pointer that the row could move out from under.
+    await activateHoverAction(target.getByRole('button', { name: 'Copy message' }), target, {
+      requireChange: false,
+    });
     await expect
       .poll(() => page.evaluate(() => navigator.clipboard.readText()))
       .toBe('Virtualized target six');

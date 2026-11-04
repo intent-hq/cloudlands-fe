@@ -70,7 +70,23 @@ export function* readTrackedDiff(
       path: filePath,
       ...(gitRootId ? { gitRootId } : {}),
     });
-    return { ...result, chunk: chunks.find((chunk) => chunk.file === filePath) ?? chunks[0] };
+    const chunk = chunks.find((entry) => entry.file === filePath) ?? chunks[0];
+    if (chunk?.truncatedReason) {
+      // Too large for the bounded `git.diffs` read (§5.6): render from the
+      // commit's two sides instead of hunks. A root commit has no parent, so
+      // its old side reads as empty.
+      const options = gitRootId ? { gitRootId } : undefined;
+      const [before, after] = [
+        yield* call(dedupedShowFile, workspaceId, `${request.commitHash}^`, filePath, options),
+        yield* call(dedupedShowFile, workspaceId, request.commitHash, filePath, options),
+      ];
+      return {
+        ...result,
+        oldContent: before.success ? (before.data ?? '') : '',
+        newContent: after.success ? (after.data ?? '') : '',
+      };
+    }
+    return { ...result, chunk };
   }
   for (const staged of [request.stage === 'staged', request.stage !== 'staged']) {
     if (!allowed()) return result;

@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { activateHoverAction, expect, test } from '../../../../test/ct-test';
 import QueuedMessagesPreview from '../queued-messages.preview.svelte';
 
 test('edits a collapsed single message from the header and saves or cancels inline', async ({
@@ -49,8 +49,9 @@ test('keeps the active draft when a multiple-message queue becomes a single mess
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(QueuedMessagesPreview, { props: { messageCount: 3 } });
   const first = component.getByTestId('queued-message-row').first();
-  await first.hover();
-  await first.getByRole('button', { name: 'Edit', exact: true }).click();
+  await activateHoverAction(first.getByRole('button', { name: 'Edit', exact: true }), first, {
+    requireChange: false,
+  });
   const editor = first.getByRole('textbox');
   await expect(editor).toBeFocused();
   await editor.fill('Keep my active draft');

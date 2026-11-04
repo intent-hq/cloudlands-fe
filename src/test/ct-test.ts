@@ -327,3 +327,5 @@ export { activeAnimations, expectAnimationsToSettle, expectNoAnimations } from '
 export { wheelUntilScrolled } from './ct-wheel';
 
 export { clickAndSettle, expectMotionToSettle, motionSnapshot } from './ct-settle';
+
+export { activateHoverAction } from './ct-hover-action';

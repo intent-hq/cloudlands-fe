@@ -1,4 +1,4 @@
-import { expect, test } from '../../../../test/ct-test';
+import { activateHoverAction, expect, test } from '../../../../test/ct-test';
 import QueuedMessagesPreview from '../queued-messages.preview.svelte';
 
 for (const contentKind of ['plain', 'member'] as const) {
@@ -15,8 +15,10 @@ for (const contentKind of ['plain', 'member'] as const) {
     const next = component.getByTestId('queued-message-row').nth(1);
     const before = (await row.boundingBox())!;
     const nextTop = (await next.boundingBox())!.y;
-    await row.hover();
-    await row.getByRole('button', { name: 'Edit', exact: true }).click();
+    // Editing keeps the row's size, so only wait for it to be still around the press.
+    await activateHoverAction(row.getByRole('button', { name: 'Edit', exact: true }), row, {
+      requireChange: false,
+    });
     const editor = row.getByRole('textbox');
     await expect(editor).toBeFocused();
     await expect.poll(async () => (await row.boundingBox())!.height).toBeCloseTo(before.height, 1);
@@ -44,8 +46,9 @@ test('keeps a visible edit compact and reveals a clipped row for keyboard editin
   await expect(expand).toBeVisible();
   const compact = (await viewport.boundingBox())!.height;
   const first = component.getByTestId('queued-message-row').first();
-  await first.hover();
-  await first.getByRole('button', { name: 'Edit', exact: true }).click();
+  await activateHoverAction(first.getByRole('button', { name: 'Edit', exact: true }), first, {
+    requireChange: false,
+  });
   await expect(first.getByRole('textbox')).toBeFocused();
   await expect(expand).toBeVisible();
   expect((await viewport.boundingBox())!.height).toBeCloseTo(compact, 1);

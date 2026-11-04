@@ -20,6 +20,7 @@ test('message actions remain reachable with pointer and keyboard', async ({ moun
     .toBeGreaterThan(0);
   await toolbar.hover();
   await expect(toolbar).toHaveCSS('opacity', '1');
+  // eslint-disable-next-line intent/no-hover-then-click-in-ct -- covers the pointer path on a static preview row
   await toolbar.getByRole('button', { name: 'Message actions', exact: true }).click();
   const copy = page.getByRole('menuitem', { name: 'Copy message', exact: true });
   await copy.hover();

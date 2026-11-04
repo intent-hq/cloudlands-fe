@@ -149,6 +149,11 @@ async function getStagedDiffs(
       path: file.path,
       staged: true,
     });
+    if (chunks.some((chunk) => chunk.truncatedReason === 'fileTooLarge')) {
+      // The bounded `git.diffs` read (§5.6) serves no hunks for this file.
+      skippedFiles.push({ path: file.path, reason: 'diff too large to load' });
+      continue;
+    }
     const fileDiff = chunks.length > 0 ? formatDiffChunks(chunks) : '';
 
     if (fileDiff.length > MAX_DIFF_SIZE_PER_FILE) {

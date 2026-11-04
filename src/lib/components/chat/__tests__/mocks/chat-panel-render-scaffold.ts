@@ -1,13 +1,14 @@
 /**
  * Selector-module stand-ins for rendering ChatPanel against a mocked store.
  *
- * Each exported factory returns one module shape; the test file registers it
- * with `vi.mock(path, async () => (await import('./mocks/chat-panel-render-scaffold')).x())`.
- * For reactive selectors, spread the factory first and override only that selector:
- * `return { ...agentSessionSelectors(), selectAgentMessages: () => messages };`.
- * Every other selector module starts from the real module and overrides only
- * what the test cares about, so a selector ChatPanel starts reading later still
- * resolves (cloudlands-fe#3525):
+ * Each `*Selectors` factory resolves the real selector module with only the
+ * scaffold-driven selectors replaced; the test file passes its `importOriginal`:
+ * `vi.mock(path, async (importOriginal) => (await import('./mocks/chat-panel-render-scaffold')).xSelectors(importOriginal))`.
+ * The factory returns a promise, so await it before spreading to override one selector:
+ * `return { ...(await agentSessionSelectors(importOriginal)), selectAgentMessages: () => messages };`.
+ * Every other selector module also starts from the real module and overrides
+ * only what the test cares about, so a selector ChatPanel starts reading later
+ * still resolves (cloudlands-fe#3525, cloudlands-fe#4114):
  * `vi.mock(path, async (importOriginal) => (await import(scaffold)).withReal(importOriginal, { selectX: value }))`
  * for constant values, or `withRealSelectors(importOriginal, { selectX: liveSelector })`.
  * Real selectors read the mocked store, so a test with its own `$store/renderer/store`
@@ -19,7 +20,6 @@
  * divider anchor, or the queued messages the panel should see.
  */
 import { vi } from 'vitest';
-import { readable, type Readable } from 'svelte/store';
 import type { AgentMessage } from '$shared/types';
 import { reducers } from '$store/renderer/reducer';
 
@@ -54,6 +54,8 @@ function selectorFrom<T>(get: () => T) {
   );
 }
 
+type ImportOriginal = () => Promise<unknown>;
+
 /** Module whose every export is a constant-valued selector readable. */
 export function stub(values: Record<string, unknown>) {
   return Object.fromEntries(
@@ -66,7 +68,7 @@ export function stub(values: Record<string, unknown>) {
  * selectors. Pass the `importOriginal` argument of the `vi.mock` factory.
  */
 export async function withReal(
-  importOriginal: () => Promise<unknown>,
+  importOriginal: ImportOriginal,
   values: Record<string, unknown> = {},
 ) {
   return withRealSelectors(importOriginal, stub(values));
@@ -74,7 +76,7 @@ export async function withReal(
 
 /** The real selector module with only `selectors` replaced, as given. */
 export async function withRealSelectors(
-  importOriginal: () => Promise<unknown>,
+  importOriginal: ImportOriginal,
   selectors: Record<string, unknown>,
 ) {
   return { ...((await importOriginal()) as Record<string, unknown>), ...selectors };
@@ -128,67 +130,36 @@ export async function appStore() {
   });
 }
 
-export function agentSessionSelectors() {
-  return {
-    ...stub({
-      selectAgentIsResponding: false,
-      selectAgentIsRunning: false,
-      selectAgentSessionIsStreaming: false,
-      selectAgentSessionStreamingContent: '',
-      selectAgentHistoryMessages: [],
-      selectHistorySegmentMeta: {
-        gapToTail: false,
-        oldestReached: false,
-        historyCount: 0,
-        tailCount: 0,
-      },
-      selectAgentTailCapPruned: false,
-    }),
+// Every selector-module factory below starts from the real module (through
+// `importOriginal`) and replaces only the selectors the shared scaffold drives,
+// so a selector ChatPanel starts reading later resolves to its real
+// implementation instead of crashing every suite (cloudlands-fe#4114).
+// `intent/no-copied-chat-panel-selector-mocks` rejects a hand-listed factory.
+
+export function agentSessionSelectors(importOriginal: ImportOriginal) {
+  return withRealSelectors(importOriginal, {
     selectAgentSession: selectorFrom(() => scaffold.agentSession),
     selectAgentMessages: selectorFrom(() => scaffold.agentMessages),
-  };
-}
-
-export function chatStateSelectors() {
-  return stub({
-    selectAwaitingSwitchBackSnapshot: false,
-    selectChatError: null,
-    selectChatFailureCorrelation: undefined,
-    selectChatIsInterrupting: false,
-    selectChatLastTurnInterrupted: false,
-    selectChatLastChunkTime: null,
-    selectChatLastAttemptedMessage: null,
-    selectChatLiveStreamPhase: null,
-    selectChatModelUnavailable: null,
-    selectChatQuotaExceeded: null,
-    selectChatReceivedFirstChunk: false,
-    selectChatStatusEvents: [],
-    selectChatStreamingStartTime: null,
-    selectFetchingGapFill: false,
-    selectFetchingHistorySeek: false,
-    selectFetchingOlderHistory: false,
-    selectHistoryExhausted: false,
-    selectHistorySeekUnsupported: false,
-    selectPendingProposalRecovery: undefined,
-    selectPendingQuestionRecovery: undefined,
-    selectInitialChatHistory: undefined,
-    selectInitialChatHistoryPending: false,
-    selectTranscriptHydration: 'settled',
-    selectTranscriptHydratedOnce: true,
-    selectTranscriptSnapshotMeta: undefined,
   });
 }
 
-export function unreadTrackingSelectors() {
-  return {
+export function chatStateSelectors(importOriginal: ImportOriginal) {
+  return withReal(importOriginal, {
+    selectTranscriptHydration: 'settled',
+    selectTranscriptHydratedOnce: true,
+  });
+}
+
+export function unreadTrackingSelectors(importOriginal: ImportOriginal) {
+  return withRealSelectors(importOriginal, {
     selectDividerSession: selectorFrom(() =>
       scaffold.dividerAnchorId === null ? null : { anchorId: scaffold.dividerAnchorId },
     ),
-  };
+  });
 }
 
-export function agentQueueSelectors() {
-  return {
+export function agentQueueSelectors(importOriginal: ImportOriginal) {
+  return withRealSelectors(importOriginal, {
     selectAgentQueueMessages: selectorFrom(() => scaffold.queuedMessages),
     selectQueuedMessageMutations: Object.assign(
       vi.fn(() => ({
@@ -200,31 +171,15 @@ export function agentQueueSelectors() {
       })),
       { select: vi.fn(() => scaffold.queueMutations) },
     ),
-  };
+  });
 }
 
-export function transientUiSelectors() {
-  return {
-    ...stub({ selectComposerContextItems: [] }),
-    selectChatDraft: { select: vi.fn(() => '') },
-  };
+export function transientUiSelectors(importOriginal: ImportOriginal) {
+  return withReal(importOriginal);
 }
 
-export function providerCatalogSelectors() {
-  return {
-    ...stub({
-      selectEffectiveDefaultProviderId: '',
-      selectProviderCatalogLoaded: false,
-      selectProviderCatalogEntries: [],
-      selectProviderCatalogProfiles: [],
-    }),
-    selectProviderAuthFailureGuidance: { select: () => null },
-    selectProviderDisplayName: Object.assign(
-      (id: string | Readable<string>) => (typeof id === 'string' ? readable(id) : id),
-      { select: (_state: unknown, id: string) => id },
-    ),
-    selectNormalizedProviderId: { select: (_state: unknown, id: string) => id },
-  };
+export function providerCatalogSelectors(importOriginal: ImportOriginal) {
+  return withReal(importOriginal);
 }
 
 export function panelLayoutAdapter() {

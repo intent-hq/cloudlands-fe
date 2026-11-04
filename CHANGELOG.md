@@ -4,6 +4,37 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.280.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.280.1...v2.280.2) (2026-11-04)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.121 ([#4139](https://github.com/intent-hq/cloudlands-fe/issues/4139)) ([5b173b8](https://github.com/intent-hq/cloudlands-fe/commit/5b173b8670ffd3f425f32ef229f8f412debb9305))
+* read bounded git diffs completely ([#4134](https://github.com/intent-hq/cloudlands-fe/issues/4134)) ([6eed3bf](https://github.com/intent-hq/cloudlands-fe/commit/6eed3bfaccdf3910e227e1d326dda8614fc19493))
+* **workspace:** drop the Codebase/Project picker label ([#4127](https://github.com/intent-hq/cloudlands-fe/issues/4127)) ([b990f84](https://github.com/intent-hq/cloudlands-fe/commit/b990f84b789dd98b5eaf114c0e6c71450ab68684))
+
+## [2.280.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.280.0...v2.280.1) (2026-11-04)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.120 ([#4133](https://github.com/intent-hq/cloudlands-fe/issues/4133)) ([cf1556d](https://github.com/intent-hq/cloudlands-fe/commit/cf1556d1f163dcd92f8b4a0a9db1e48de2ac688b))
+* **intent-web:** seed the page host at store creation so Settings never flashes Mobile ([#4115](https://github.com/intent-hq/cloudlands-fe/issues/4115)) ([8bd14ed](https://github.com/intent-hq/cloudlands-fe/commit/8bd14ed8c90c3d3590f1042cfc0627adb03a5226))
+
+## [2.280.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.279.0...v2.280.0) (2026-11-03)
+
+
+### 🚀 Features
+
+* **dock:** Add window and region screenshot modes to the composer ([#4058](https://github.com/intent-hq/cloudlands-fe/issues/4058)) ([525cefe](https://github.com/intent-hq/cloudlands-fe/commit/525cefe202f2007344622235a8a2550c7f0f4b9f))
+* **settings:** open release notes from the footer version label ([#4125](https://github.com/intent-hq/cloudlands-fe/issues/4125)) ([396b9c5](https://github.com/intent-hq/cloudlands-fe/commit/396b9c547873c950b00b20169653f03d6d925bd7))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.119 ([#4128](https://github.com/intent-hq/cloudlands-fe/issues/4128)) ([507e04f](https://github.com/intent-hq/cloudlands-fe/commit/507e04fa99acdff63531f92835327d25446b3736))
+* **chat:** stop false 'Workspace created' and open the created workspace from cards ([#4121](https://github.com/intent-hq/cloudlands-fe/issues/4121)) ([4b8a1f1](https://github.com/intent-hq/cloudlands-fe/commit/4b8a1f15df919b567d3b144184416e0e58bac9a4))
+
 ## [2.279.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.278.1...v2.279.0) (2026-11-03)
 
 

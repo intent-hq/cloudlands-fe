@@ -217,6 +217,30 @@ describe('git-bridge-seeder', () => {
       expect(result).toEqual({ success: true, data: [] });
     });
 
+    it('fails the branch-base read when an oversize side cannot be read', async () => {
+      mockedRequest
+        .mockResolvedValueOnce([
+          {
+            file: 'big.ts',
+            chunks: [],
+            oldContent: '',
+            newContent: '',
+            truncated: true,
+            truncatedReason: 'fileTooLarge',
+            oldRef: 'base-sha',
+            newRef: 'tip-sha',
+          },
+        ])
+        .mockRejectedValueOnce(new Error('repository IO'))
+        .mockResolvedValueOnce({ content: 'new' });
+      const result = (await mockInvoke(IPC_CHANNELS.GIT.DIFF, {
+        workspaceId: 'ws-1',
+        baseRef: 'main',
+      })) as { success: boolean; error?: string };
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('repository IO');
+    });
+
     it('folds a daemon rejection into the error envelope', async () => {
       mockedRequest.mockRejectedValueOnce(new Error('workspace not found'));
       expect(await mockInvoke(IPC_CHANNELS.GIT.NUMSTAT, { workspaceId: 'ws-1' })).toEqual({
@@ -264,6 +288,7 @@ describe('git-bridge-seeder', () => {
           baseRef: 'main',
           targetRef: 'HEAD',
           paths: ['a.ts'],
+          maxBytes: 480_000,
         },
         { timeoutMs: 60_000 },
       );
@@ -284,10 +309,102 @@ describe('git-bridge-seeder', () => {
 
       expect(mockedRequest).toHaveBeenCalledWith(
         'git.branchDiff',
-        { workspaceId: 'ws-1', baseCommitSha: 'dead' },
+        { workspaceId: 'ws-1', baseCommitSha: 'dead', maxBytes: 480_000 },
         { timeoutMs: 60_000 },
       );
       expect(result).toEqual({ success: true, data: [] });
+    });
+
+    it('fills a bounded result: re-requests pageBudget files, reads fileTooLarge sides at their refs', async () => {
+      const truncated = (file: string, truncatedReason: string) => ({
+        file,
+        chunks: [],
+        oldContent: '',
+        newContent: '',
+        truncated: true,
+        truncatedReason,
+        oldRef: 'base-sha',
+        newRef: 'tip-sha',
+      });
+      const daemon = async (method: string, params?: unknown) => {
+        const p = (params ?? {}) as Record<string, unknown>;
+        if (method === 'git.showFile') return { content: `${p.ref}:${p.filePath}` };
+        if (method === 'git.branchDiff' && Array.isArray(p.paths)) {
+          return [{ file: 'b.ts', chunks: [], oldContent: 'old-b', newContent: 'new-b' }];
+        }
+        return [
+          { file: 'a.ts', chunks: [], oldContent: 'old-a', newContent: 'new-a' },
+          truncated('b.ts', 'pageBudget'),
+          truncated('big.ts', 'fileTooLarge'),
+        ];
+      };
+      // One implementation per expected call (first page, follow-up, two
+      // sides), so nothing leaks into later tests.
+      for (let i = 0; i < 4; i++) mockedRequest.mockImplementationOnce(daemon);
+
+      const result = (await mockInvoke(IPC_CHANNELS.GIT.DIFF, {
+        workspaceId: 'ws-1',
+        baseRef: 'main',
+      })) as { success: boolean; data: Array<Record<string, unknown>> };
+
+      expect(mockedRequest).toHaveBeenCalledWith(
+        'git.branchDiff',
+        { workspaceId: 'ws-1', baseRef: 'main', paths: ['b.ts'], maxBytes: 480_000 },
+        { timeoutMs: 60_000 },
+      );
+      // Oversize sides go through the shared diff reader (dedupedShowFile),
+      // whose git.showFile reads are bounded with maxBytes.
+      expect(mockedRequest).toHaveBeenCalledWith('git.showFile', {
+        workspaceId: 'ws-1',
+        filePath: 'big.ts',
+        ref: 'base-sha',
+        maxBytes: 480_000,
+      });
+      expect(result.success).toBe(true);
+      expect(result.data.map((e) => [e.file, e.oldContent, e.newContent])).toEqual([
+        ['a.ts', 'old-a', 'new-a'],
+        ['b.ts', 'old-b', 'new-b'],
+        ['big.ts', 'base-sha:big.ts', 'tip-sha:big.ts'],
+      ]);
+    });
+
+    it('reads a truncated oversize side whole with git.showFileChunk', async () => {
+      const big = {
+        file: 'big.ts',
+        chunks: [],
+        oldContent: '',
+        newContent: '',
+        truncated: true,
+        truncatedReason: 'fileTooLarge',
+        oldRef: 'base-sha',
+        newRef: 'tip-sha',
+      };
+      mockedRequest.mockImplementation(async (method: string, params?: unknown) => {
+        const p = (params ?? {}) as Record<string, unknown>;
+        if (method === 'git.branchDiff') return [big];
+        if (method === 'git.showFile' && p.ref === 'base-sha') {
+          return { content: 'cut', truncated: true, totalBytes: 5 };
+        }
+        if (method === 'git.showFile') return { content: 'new' };
+        if (method === 'git.showFileChunk') {
+          return { content: btoa('whole'), bytesRead: 5, size: 5 };
+        }
+        throw new Error(`unexpected ${method}`);
+      });
+      try {
+        const result = (await mockInvoke(IPC_CHANNELS.GIT.DIFF, {
+          workspaceId: 'ws-1',
+          baseRef: 'main',
+        })) as { success: boolean; data: Array<Record<string, unknown>> };
+        expect(result.success).toBe(true);
+        expect(result.data[0]).toMatchObject({ oldContent: 'whole', newContent: 'new' });
+        expect(mockedRequest).toHaveBeenCalledWith(
+          'git.showFileChunk',
+          expect.objectContaining({ filePath: 'big.ts', ref: 'base-sha', offset: 0 }),
+        );
+      } finally {
+        mockedRequest.mockReset();
+      }
     });
 
     it('folds a daemon rejection into the error envelope', async () => {
