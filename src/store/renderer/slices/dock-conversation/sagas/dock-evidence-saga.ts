@@ -580,6 +580,21 @@ function* redoAnnotation({
   yield* syncMarks(workspaceId, agentId);
 }
 
+/** "Draw now" in the recording's own session: the clip, timer, mic and pause carry on. */
+function* drawInRecording(workspaceId: string, agentId: string): SagaGenerator<void> {
+  const session = evidenceOf(workspaceId, agentId)?.annotation;
+  if (!session) return;
+  const tool = toolFor(workspaceId);
+  yield* put(dockEvidenceToolSet(workspaceId, tool));
+  const service = nativeService;
+  if (service)
+    try {
+      yield* call([service, service.setAnnotationTool], session.id, tool);
+    } catch {
+      // The session already ended natively; the recording itself is unaffected.
+    }
+}
+
 function* toggleAnnotation({
   payload: [workspaceId, agentId, stillImageId],
 }: ReturnType<typeof dockEvidenceAnnotationToggleRequested>): SagaGenerator<void> {
@@ -589,21 +604,24 @@ function* toggleAnnotation({
     // While recording, annotating means "draw now" in the recording's own session:
     // the same clip, timer, mic and pause carry on, and its tool bar stays.
     if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
-      const tool = toolFor(workspaceId);
-      yield* put(dockEvidenceToolSet(workspaceId, tool));
-      const service = nativeService;
-      if (service)
-        try {
-          yield* call([service, service.setAnnotationTool], session.id, tool);
-        } catch {
-          // The session already ended natively; the recording itself is unaffected.
-        }
+      yield* drawInRecording(workspaceId, agentId);
       return;
     }
     yield* endSession(workspaceId, agentId);
     return;
   }
-  if (session) yield* endSession(workspaceId, agentId);
+  // Annotating the screen is feedback: it records the whole time (unless paused),
+  // in the recording's own tool bar. Only when no recording can start (limit,
+  // permission, unavailable) does it annotate without one.
+  if (!stillImageId) {
+    yield* toggleRecording(dockEvidenceRecordToggleRequested(workspaceId, agentId));
+    if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
+      yield* drawInRecording(workspaceId, agentId);
+      return;
+    }
+  }
+  const current = evidenceOf(workspaceId, agentId)?.annotation;
+  if (current) yield* endSession(workspaceId, agentId);
   const tool = toolFor(workspaceId);
   yield* put(dockEvidenceToolSet(workspaceId, tool));
   yield* startSession(workspaceId, agentId, tool, stillImageId ? 'still' : 'live', stillImageId);
