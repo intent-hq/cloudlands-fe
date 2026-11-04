@@ -2743,6 +2743,24 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
     });
   });
 
+  it('getMessageBlockPage sends offset for a later page', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: { type: 'text', id: 'msg-1:0', text: 'tail' },
+      truncated: true,
+      field: 'text',
+      encoding: 'text',
+      totalBytes: 600_000,
+      nextOffset: null,
+    }));
+    const client = new LiveAgentsClient();
+
+    await client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:0', undefined, 479_990);
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getMessageBlock',
+      params: { agentId: 'agent-1', messageId: 'msg-1', blockId: 'msg-1:0', offset: 479_990 },
+    });
+  });
+
   it('getMessageBlockPage reads absent or malformed page fields as a whole block', async () => {
     backend.onRequest('agent.getMessageBlock', () => ({
       block: { type: 'text', id: 'msg-1:0', text: 'hi' },

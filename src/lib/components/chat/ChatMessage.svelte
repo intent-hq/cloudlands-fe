@@ -57,7 +57,13 @@
   import { selectAgentMessageById } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectHydratedBlocks } from '$store/renderer/slices/chat-state/chat-state-selectors';
   import { messageBlockHydrationRequested } from '$store/renderer/slices/chat-state/chat-state-slice';
-  import { isHydrationPending, mergeHydratedContent } from './block-hydration';
+  import { hydratedBlockKey } from '$store/renderer/slices/chat-state/chat-state-types';
+  import {
+    cutMessageBlockIds,
+    isHydrationPending,
+    mergeHydratedContent,
+    withoutOmittedStubs,
+  } from './block-hydration';
   import { createLogger } from '$lib/utils/client-logger';
   import { shouldShowStoppedIndicator as resolveShouldShowStoppedIndicator } from './message-display-utils';
   import { splitTextByUrls } from './message-link-utils';
@@ -1219,7 +1225,7 @@
     const rawText =
       automatedWakePresentation?.bodyText ??
       (role === 'user' && message
-        ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
+        ? getPresentedUserMessageText(fullTextMessage ?? message, workspace?.ownerPrincipalId)
         : extractTextFromMessage());
     if (role === 'user') {
       const parsed = parseContextFromMessage(rawText);
@@ -1313,8 +1319,42 @@
     return n ? m.dock_composer_recordingStart_chip({ n: formatInteger(n) }) : `${block.fileName}`;
   }
 
+  // Single-message bound (§5.5): a message that alone was over the page
+  // budget arrives with text previews (`textTruncated`) and omitted-block
+  // stubs (`bodyOmitted`). Loaded blocks are merged back in; unloaded stubs
+  // are hidden until "Show full message" loads them.
+  const hydrationMessageKey = $derived(message?.id ?? messageId);
+  const mergedContent = $derived(
+    mergeHydratedContent(message?.contentBlocks || [], hydrationMessageKey, $hydratedBlocks$),
+  );
+  const cutBlockIds = $derived(
+    cutMessageBlockIds(message?.contentBlocks || [], hydrationMessageKey, $hydratedBlocks$),
+  );
+  const fullMessageLoading = $derived(
+    isHydrationPending($hydratedBlocks$, hydrationMessageKey, cutBlockIds),
+  );
+  const fullMessageFailed = $derived(
+    !!hydrationMessageKey &&
+      cutBlockIds.some(
+        (blockId) =>
+          $hydratedBlocks$?.[hydratedBlockKey(hydrationMessageKey, blockId)]?.status === 'error',
+      ),
+  );
+  // The user-message text view reads the merged blocks once any are loaded.
+  const fullTextMessage = $derived(
+    message && mergedContent !== message.contentBlocks
+      ? { ...message, contentBlocks: mergedContent }
+      : undefined,
+  );
+  function showFullMessage() {
+    if (!agentId || !hydrationMessageKey) return;
+    for (const blockId of cutBlockIds) {
+      appStore.dispatch(messageBlockHydrationRequested(agentId, hydrationMessageKey, blockId));
+    }
+  }
+
   // Get combined content for StreamingMessageContent - use $derived for reactivity
-  const combinedContent = $derived(message?.contentBlocks || []);
+  const combinedContent = $derived(withoutOmittedStubs(mergedContent));
 
   // Agent Q&A wizard-only rendering: question-only turns render no bubble.
   const questionOnlyTurn = $derived(role === 'assistant' && isQuestionOnlyContent(combinedContent));
@@ -1634,6 +1674,29 @@
     return parts.length > 0 ? parts : null;
   });
 </script>
+
+{#snippet fullMessageAction()}
+  <!-- Single-message bound (§5.5): load the cut text and omitted blocks. -->
+  <div class="mt-2 flex flex-wrap items-center gap-2" data-testid="chat-message-full-message">
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      data-testid="chat-message-show-full-message"
+      disabled={fullMessageLoading || !agentId}
+      onclick={showFullMessage}
+    >
+      {fullMessageLoading
+        ? m.chat_chatMessage_loadingFullMessage_label()
+        : m.chat_chatMessage_showFullMessage_button()}
+    </Button>
+    {#if fullMessageFailed && !fullMessageLoading}
+      <span class="type-caption text-danger" role="status">
+        {m.chat_chatMessage_fullMessageFailed_label()}
+      </span>
+    {/if}
+  </div>
+{/snippet}
 
 {#if !message}
   <!-- Guard against null message prop -->
@@ -2080,6 +2143,10 @@
                 </div>
               {/if}
 
+              {#if cutBlockIds.length > 0}
+                {@render fullMessageAction()}
+              {/if}
+
               <!-- Send failure indicator for optimistic user messages -->
               {#if message?.error}
                 <div
@@ -2109,6 +2176,9 @@
           messageId={message?.id ?? messageId}
           {isLastConversationMessage}
         />
+        {#if cutBlockIds.length > 0}
+          {@render fullMessageAction()}
+        {/if}
 
         {#snippet stoppedIndicatorLeading()}
           <Fa icon={faSquare} class="{CHAT_OPERATIONAL_ICON_CLASS} text-subtle opacity-50" />
