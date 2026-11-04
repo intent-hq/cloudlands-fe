@@ -44,6 +44,7 @@
     collectOffscreenTabDecisions,
     diffOffscreenDecisions,
     isDiagnosticDecisionChange,
+    OFFSCREEN_GUEST_DEFAULT_SIZE,
     type OffscreenDecisionLabel,
   } from '$store/renderer/slices/panel-layout/offscreen-webview-eligibility';
   import { createLogger } from '$lib/utils/client-logger';
@@ -162,6 +163,15 @@
     }
   });
 
+  // Live guest size per tab: resizing the element never reloads the guest.
+  const sizeByTabId = $derived(
+    new Map(
+      decisions.flatMap((decision) =>
+        decision.eligibility.eligible && decision.size ? [[decision.tabId, decision.size]] : [],
+      ),
+    ),
+  );
+
   const entries = $derived.by(() => {
     // Live persisted URL per tab: the frozen mount URL never changes, but an
     // external browserUrl update (agent openTab replacing a hidden tab,
@@ -179,6 +189,7 @@
               recoverGuest,
               desiredUrl: liveUrlByTabId.get(tabId),
               navigation: $navigations$[tabId],
+              size: sizeByTabId.get(tabId) ?? OFFSCREEN_GUEST_DEFAULT_SIZE,
             },
           ]
         : [];
@@ -250,8 +261,15 @@
       data-agent-drawing={agentDrawing ? '' : undefined}
     >
       {#key entry.recoveryKey}
+        <!--
+          The element is the guest's capture surface: it is sized to the
+          emulated viewport so a CDP screenshot gets one full-size image
+          instead of a tiled one (intent-hq/intent#8359).
+        -->
         <webview
-          class="absolute left-0 top-0 h-[800px] w-[1280px] border-none"
+          class="absolute left-0 top-0 border-none"
+          style:width="{entry.size.width}px"
+          style:height="{entry.size.height}px"
           src={entry.recoveryKey ? 'about:blank' : entry.url}
           partition={BROWSER_PANEL_PARTITION}
           allowpopups
