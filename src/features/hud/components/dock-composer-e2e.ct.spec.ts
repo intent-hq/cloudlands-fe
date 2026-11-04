@@ -108,7 +108,7 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   const footer = component.locator('[data-dock-media-footer]');
   await expect(footer).toBeVisible();
   // Capture, record and dictate only; record enables once native capabilities are installed.
-  await expect(footer.locator('.controls button')).toHaveCount(3);
+  await expect(footer.locator('.controls button')).toHaveCount(4);
   await expect(component.getByRole('button', { name: /^Record the screen/ })).toBeEnabled();
   const editor = component.locator('.tiptap-editor');
   const tiles = component.locator('[data-dock-media-attachments] .tile');
@@ -403,7 +403,7 @@ test('Record from the composer opens the recording tool bar in mouse mode, and S
 }) => {
   const component = await mount(ComposerE2EHarness);
   const footer = component.locator('[data-dock-media-footer]');
-  await expect(footer.locator('.controls button')).toHaveCount(3);
+  await expect(footer.locator('.controls button')).toHaveCount(4);
   const native = () =>
     page.evaluate(() => {
       const { native } = (

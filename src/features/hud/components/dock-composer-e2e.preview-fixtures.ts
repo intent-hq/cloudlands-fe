@@ -24,6 +24,7 @@ const SYNTHETIC_SCREEN = { width: 1440, height: 900 } as const;
 
 interface SyntheticNativeLog {
   captures: number;
+  captureModes: string[];
   annotations: { id: string; tool: DockMarkTool; mode: string; still: boolean }[];
   tools: { id: string; tool: DockMarkTool }[];
   /** Sessions switched to mouse mode (the screen stays usable). */
@@ -93,6 +94,7 @@ function createSyntheticNative() {
   const screen = drawScreen();
   const log: SyntheticNativeLog = {
     captures: 0,
+    captureModes: [],
     annotations: [],
     tools: [],
     mouse: [],
@@ -146,8 +148,9 @@ function createSyntheticNative() {
   };
 
   const service: DockEvidenceNativeService = {
-    capabilities: { capture: true, annotate: true, record: true },
-    captureDisplay: async () => {
+    capabilities: { capture: true, captureModes: true, annotate: true, record: true },
+    captureDisplay: async (mode = 'fullscreen') => {
+      log.captureModes.push(mode);
       log.captures += 1;
       if (holdCaptures) await new Promise<void>((resolve) => heldCaptures.push(resolve));
       return { ok: true, value: { ...screen } };
@@ -227,7 +230,13 @@ function createSyntheticNative() {
   const adapter = {
     initialize: async () => ({
       ok: true as const,
-      value: { capture: true, annotate: true, record: true, speech: capability },
+      value: {
+        capture: true,
+        captureModes: true,
+        annotate: true,
+        record: true,
+        speech: capability,
+      },
     }),
     cancel: async () => {
       if (speech) clearInterval(speech.levels);

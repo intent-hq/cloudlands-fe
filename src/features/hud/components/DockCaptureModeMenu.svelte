@@ -15,8 +15,8 @@
   import DockComposerIcon from './DockComposerIcon.svelte';
 
   /**
-   * Screenshot modes for the composer's capture button. The owner opens it (hover or
-   * keyboard) and anchors it to its button.
+   * Screenshot modes for the composer's capture button. The owner opens it on explicit
+   * activation and anchors it to the picker button.
    */
   let {
     open = $bindable(false),
@@ -26,6 +26,7 @@
     label,
     focusChecked = false,
     onSelect,
+    onInteractOutside,
     onpointerenter,
     onpointerleave,
   }: {
@@ -37,13 +38,14 @@
     /** Keyboard opening: focus the current mode. Pointer opening never takes focus. */
     focusChecked?: boolean;
     onSelect: (mode: DockCaptureMode) => void;
+    onInteractOutside?: (event: PointerEvent) => void;
     onpointerenter?: () => void;
     onpointerleave?: () => void;
   } = $props();
   let content = $state<HTMLElement | null>(null);
 </script>
 
-<!-- A hover menu never locks the page: the body lock would outlive a close that lands
+<!-- The picker never locks the page: the body lock would outlive a close that lands
      while the dock is hidden for a window or region selection, swallowing every click. -->
 <Menu.Root bind:open>
   <Menu.Content
@@ -56,6 +58,15 @@
     class="dock-media-tool-popover min-w-0 rounded-[10px] p-[3px] shadow-none"
     data-dock-palette="notch"
     aria-label={label}
+    onInteractOutside={(event) => {
+      // The dedicated picker owns its toggle; outside dismissal must not close it
+      // before the same click reaches that button and reopens it.
+      if (event.target instanceof Node && anchor?.contains(event.target)) {
+        event.preventDefault();
+        return;
+      }
+      onInteractOutside?.(event);
+    }}
     {onpointerenter}
     {onpointerleave}
     onOpenAutoFocus={(event) => {

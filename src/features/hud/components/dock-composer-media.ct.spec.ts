@@ -25,14 +25,14 @@ test('media controls request capture and recording without inventing confirmed s
   await expect(component.locator('[data-dock-media-attachments]')).toHaveCount(0);
 });
 
-test('screenshot modes open on hover, capture once with the chosen mode and keep the draft focused', async ({
+test('screenshot modes open on explicit picker activation, capture once with the chosen mode and keep the draft focused', async ({
   mount,
   page,
 }) => {
   const component = await mount(ComposerMediaPreview);
   const editor = component.getByRole('textbox');
   await editor.fill('A draft with a caret');
-  await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();
+  await component.getByRole('button', { name: 'Screenshot options', exact: true }).click();
   const menu = page.getByRole('menu', { name: 'Screenshot options' });
   await expect(menu.getByRole('menuitemradio', { name: 'Full screen' })).toHaveAttribute(
     'aria-checked',
@@ -52,21 +52,21 @@ test('screenshot modes open on hover, capture once with the chosen mode and keep
 
 test('the open screenshot menu never locks the rest of the dock', async ({ mount, page }) => {
   const component = await mount(ComposerMediaPreview);
-  await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();
+  await component.getByRole('button', { name: 'Screenshot options', exact: true }).click();
   const menu = page.getByRole('menu', { name: 'Screenshot options' });
   await expect(menu).toBeVisible();
   await expectDismissibleLayerArmed(menu);
-  // Another dock control takes the click directly while the hover menu is open.
+  // Another dock control takes the click directly while the picker menu is open.
   await component.getByRole('button', { name: 'Record the screen', exact: true }).click();
   expect(await actions(component)).toEqual(['record']);
 });
 
-test('screenshot modes support keyboard choice and return focus to the capture button', async ({
+test('screenshot modes support keyboard choice and return focus to the picker button', async ({
   mount,
   page,
 }) => {
   const component = await mount(ComposerMediaPreview);
-  const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
+  const trigger = component.getByRole('button', { name: 'Screenshot options', exact: true });
   await trigger.focus();
   await trigger.press('Space');
   const menu = page.getByRole('menu', { name: 'Screenshot options' });
@@ -76,7 +76,7 @@ test('screenshot modes support keyboard choice and return focus to the capture b
   await page.keyboard.press('Enter');
   await expect(menu).toBeHidden();
   expect(await actions(component)).toEqual(['capture:window']);
-  const updated = component.getByRole('button', { name: 'Capture a window', exact: true });
+  const updated = component.getByRole('button', { name: 'Screenshot options', exact: true });
   await expect(updated).toBeFocused();
   await updated.press('ArrowUp');
   await expect(menu.getByRole('menuitemradio', { name: 'Window' })).toBeFocused();
