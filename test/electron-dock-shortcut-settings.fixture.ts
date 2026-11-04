@@ -179,6 +179,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
         )
         .toBeTruthy();
       await expect(field()).toBeFocused();
+      await expect(field()).toHaveAttribute('placeholder', 'Press shortcut');
       await page.keyboard.press(chord);
       await expect
         .poll(() =>
@@ -209,6 +210,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
       ),
     ).toBe(false);
     await expect(field()).toBeFocused();
+    await expect(field()).toHaveAttribute('placeholder', 'Press shortcut');
     await page.keyboard.press('Control+Alt+Shift+Y');
     await expect.poll(raw).toBe('ctrl+alt+shift+y');
     expect(

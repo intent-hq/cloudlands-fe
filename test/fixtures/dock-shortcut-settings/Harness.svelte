@@ -25,6 +25,8 @@
       alt: event.altKey,
       shift: event.shiftKey,
       target: (event.target as HTMLElement)?.id,
+      placeholder: (event.target as HTMLInputElement)?.placeholder,
+      value: (event.target as HTMLInputElement)?.value,
     });
   window.addEventListener('keydown', recordKey, true);
   onDestroy(() => window.removeEventListener('keydown', recordKey, true));
