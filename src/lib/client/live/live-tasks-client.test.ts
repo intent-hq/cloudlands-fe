@@ -677,6 +677,20 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
     rev: 1,
   });
 
+  const wireListedTask = (
+    id: string,
+    workspaceId: string,
+    title: string,
+    status = 'not_started',
+  ) => ({
+    id,
+    workspaceId,
+    title,
+    status,
+    updatedAt: '2026-01-01T00:00:00Z',
+    specLinked: false,
+  });
+
   const notify = (n: { method: string; params?: unknown }) => {
     for (const handler of [...notifyHandlers]) handler(n);
   };
@@ -946,6 +960,7 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
       tasks: [
         {
           id: 'list-a',
+          workspaceId: 'ws-1',
           title: 'List A',
           status: 'in_progress',
           updatedAt: '2026-01-02T00:00:00Z',
@@ -958,11 +973,11 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
       nextToken: 'last',
     });
     servePage('ws-1', 'last', {
-      tasks: [{ id: 'list-b', title: 'List B', status: 'complete', specLinked: false }],
+      tasks: [wireListedTask('list-b', 'ws-1', 'List B', 'complete')],
       nextToken: null,
     });
     servePage('ws-2', 'next', {
-      tasks: [{ id: 'list-c', title: 'List C', status: 'not_started', specLinked: false }],
+      tasks: [wireListedTask('list-c', 'ws-2', 'List C')],
       nextToken: null,
     });
     const note = {
@@ -1025,7 +1040,10 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
     );
     expect(rememberNoteWorkspace).toHaveBeenCalledWith('seed', 'ws-1');
     expect(rememberNoteWorkspace).toHaveBeenCalledWith('linked', 'ws-2');
-    // WorkspaceTask list rows do not carry workspaceId/rev on the wire.
+    expect(rememberNoteWorkspace).toHaveBeenCalledWith('list-a', 'ws-1');
+    expect(rememberNoteWorkspace).toHaveBeenCalledWith('list-b', 'ws-1');
+    expect(rememberNoteWorkspace).toHaveBeenCalledWith('list-c', 'ws-2');
+    // Paged task_list_page JSON stamps workspaceId, but does not carry Note rev.
     expect(latestTasks(handler).find((task) => task.id === 'list-a')).not.toHaveProperty('rev');
     unsubscribe();
   });
@@ -1069,9 +1087,9 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
     });
     release({
       tasks: [
-        { id: 'changed', title: 'Stale title', status: 'not_started' },
-        { id: 'removed', title: 'Removed', status: 'not_started' },
-        { id: 'rest', title: 'Rest', status: 'not_started' },
+        wireListedTask('changed', 'ws-1', 'Stale title'),
+        wireListedTask('removed', 'ws-1', 'Removed'),
+        wireListedTask('rest', 'ws-1', 'Rest'),
       ],
       nextToken: null,
     });
@@ -1119,7 +1137,7 @@ describe('LiveTasksClient.subscribe typed per-workspace task channel (PROTOCOL Â
       }
       const callsBeforeLatePage = handler.mock.calls.length;
       release({
-        tasks: [{ id: 'stale', title: 'Stale', status: 'not_started' }],
+        tasks: [wireListedTask('stale', 'ws-1', 'Stale')],
         nextToken: 'must-not-fetch',
       });
       await flush();

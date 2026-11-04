@@ -548,6 +548,7 @@ export function createDeltaSubscription<T>(config: DeltaSubscriptionConfig<T>): 
     for (const [id, state] of [...dynamicChannels]) {
       if (desired.has(id)) continue;
       dynamicChannels.delete(id);
+      state.reconciler.reset();
       unregisterDynamicChannel(state);
       changed = true;
     }
