@@ -3,16 +3,20 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { BROWSER_ACCESS_DEFAULT_PORT } from '../../../shared/types/browser-access';
 import {
   PREF_ACCESS_KEY,
   PREF_ENABLED,
+  PREF_PAGE_ORIGIN,
   PREF_PORT,
   createBrowserAccessController,
+  type BrowserAccessControllerDeps,
 } from './browser-access-controller';
 import type { BrowserAccessServer } from './browser-access-server';
+
+type SignInHooks = Parameters<BrowserAccessControllerDeps['createServer']>[1];
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -33,6 +37,7 @@ class FakeServer implements BrowserAccessServer {
   constructor(
     private readonly busyPorts: Set<number>,
     readonly getAccessKey: () => string,
+    readonly signIn: SignInHooks,
   ) {}
   async listen(port: number): Promise<number> {
     if (this.busyPorts.has(port)) {
@@ -64,8 +69,8 @@ function setup(
     },
     webRoot: webRoot(options.withBuild ?? true),
     log: { info() {}, warn() {} },
-    createServer: (getAccessKey) => {
-      const server = new FakeServer(busy, getAccessKey);
+    createServer: (getAccessKey, signIn) => {
+      const server = new FakeServer(busy, getAccessKey, signIn);
       servers.push(server);
       return server;
     },
@@ -173,5 +178,41 @@ describe('createBrowserAccessController', () => {
     await controller.shutdown();
     expect(live()).toHaveLength(0);
     expect(prefs.get(PREF_ENABLED)).toBe(true);
+  });
+
+  it('creates sign-in codes only while serving, with a link once a page origin is known', async () => {
+    const { controller, servers, prefs } = setup();
+    await controller.load();
+    await expect(controller.createSignInCode()).rejects.toThrow();
+    await controller.setEnabled(true);
+    const withoutOrigin = await controller.createSignInCode();
+    expect(withoutOrigin.code).toMatch(/^[A-Z2-9]{3}-[A-Z2-9]{3}$/);
+    expect(withoutOrigin.link).toBeNull();
+
+    servers.at(-1)!.signIn.onPageOrigin('https://box.ts.net');
+    await vi.waitFor(() => expect(prefs.get(PREF_PAGE_ORIGIN)).toBe('https://box.ts.net'));
+    const created = await controller.createSignInCode();
+    expect(created.link).toBe(
+      `https://box.ts.net/__browser-access/login?code=${created.code.replace('-', '')}`,
+    );
+    expect(await servers.at(-1)!.signIn.consumeSignInCode(created.code)).toBe('ok');
+    expect(await servers.at(-1)!.signIn.consumeSignInCode(created.code)).toBe('used-or-expired');
+  });
+
+  it('keeps the page origin across restarts, preferring a front-end over loopback', async () => {
+    const first = setup({ [PREF_ENABLED]: true, [PREF_PAGE_ORIGIN]: 'https://box.ts.net' });
+    await first.controller.load();
+    first.servers[0].signIn.onPageOrigin('http://127.0.0.1:47120');
+    const created = await first.controller.createSignInCode();
+    expect(created.link?.startsWith('https://box.ts.net/')).toBe(true);
+    expect(first.prefs.get(PREF_PAGE_ORIGIN)).toBe('https://box.ts.net');
+  });
+
+  it('invalidates sign-in codes when the key is reset', async () => {
+    const { controller, servers } = setup({ [PREF_ENABLED]: true });
+    await controller.load();
+    const { code } = await controller.createSignInCode();
+    await controller.resetKey();
+    expect(await servers[0].signIn.consumeSignInCode(code)).toBe('invalid');
   });
 });

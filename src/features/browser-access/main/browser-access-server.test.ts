@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebSocket as WsWebSocket } from 'ws';
 
 import { LoginRateLimiter, SESSION_COOKIE, deriveSessionToken } from './browser-access-auth';
+import { createMemorySignInStore, createSignInCodes } from './browser-access-sign-in-codes';
 import {
   CONNECTIONS_PATH,
   LOGIN_PATH,
@@ -33,6 +34,8 @@ const TEXT: LoginPageText = {
   keyLabel: 'Access key',
   submit: 'Sign in',
   invalidKey: 'That access key is not correct.',
+  codeUsed: 'That code expired or was used.',
+  codeReady: 'Check the code.',
   tooManyAttempts: 'Too many attempts.',
 };
 const silentLog = { info() {}, warn() {} };
@@ -183,6 +186,17 @@ function nextMessage(ws: WsWebSocket): Promise<string> {
 
 const sameOrigin = (port: number) => ({ origin: `http://127.0.0.1:${port}`, cookie: COOKIE });
 
+/** The `name=value` pair a reply's Set-Cookie establishes. */
+function cookieFrom(reply: Reply): string {
+  return String(reply.headers['set-cookie']).split(';')[0];
+}
+
+/** Whether a cookie signs a page load in (200) rather than showing the login page (401). */
+async function signsIn(port: number, cookie: string): Promise<boolean> {
+  const reply = await request(port, { headers: { cookie, accept: 'text/html' } });
+  return reply.status === 200;
+}
+
 describe('Browser access server: access control', () => {
   it('rejects non-loopback Host headers (DNS rebinding)', async () => {
     const { port } = await start();
@@ -219,7 +233,7 @@ describe('Browser access server: access control', () => {
     const reply = await request(port, { path: `/workspace/a?backend=remote-1&key=${ACCESS_KEY}` });
     expect(reply.status).toBe(303);
     expect(reply.headers.location).toBe('/workspace/a?backend=remote-1');
-    expect(String(reply.headers['set-cookie'])).toContain(COOKIE);
+    expect(await signsIn(port, cookieFrom(reply))).toBe(true);
     expect(String(reply.headers['set-cookie'])).not.toContain('Secure');
   });
 
@@ -265,7 +279,7 @@ describe('Browser access server: access control', () => {
       body: `key=${encodeURIComponent(ACCESS_KEY)}`,
     });
     expect(right.status).toBe(303);
-    expect(String(right.headers['set-cookie'])).toContain(COOKIE);
+    expect(await signsIn(port, cookieFrom(right))).toBe(true);
   });
 
   it('rate-limits repeated wrong keys, even before checking a correct one', async () => {
@@ -534,5 +548,175 @@ describe('standalone host extension', () => {
         .on('error', reject);
     });
     expect(response).toBe(401);
+  });
+});
+
+describe('Browser access server: sessions survive and slide', () => {
+  it('keeps each server signed in when two share a host name (cookies ignore ports)', async () => {
+    // One browser cookie jar for 127.0.0.1: cookies are scoped by host, not port.
+    const jar = new Map<string, string>();
+    const remember = (reply: Reply) => {
+      const [pair] = String(reply.headers['set-cookie']).split(';');
+      const separator = pair.indexOf('=');
+      jar.set(pair.slice(0, separator), pair.slice(separator + 1));
+    };
+    const header = () => [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
+    const first = await start();
+    const otherKey = 'other-access-key-0123456789abcdefghijklmnopqrstu';
+    const second = await start({ getAccessKey: () => otherKey });
+    remember(await request(first.port, { path: `/?key=${ACCESS_KEY}` }));
+    remember(await request(second.port, { path: `/?key=${otherKey}` }));
+    expect(await signsIn(second.port, header())).toBe(true);
+    expect(await signsIn(first.port, header())).toBe(true);
+  });
+
+  it('issues a cookie that lasts 400 days and renews it at most once a day', async () => {
+    let now = Date.UTC(2026, 0, 1);
+    const { port } = await start({ now: () => now });
+    const login = await request(port, { path: `/?key=${ACCESS_KEY}` });
+    expect(String(login.headers['set-cookie'])).toContain(`Max-Age=${400 * 24 * 60 * 60}`);
+    const cookie = cookieFrom(login);
+
+    now += 60 * 60 * 1000;
+    const sameDay = await request(port, { headers: { cookie, accept: 'text/html' } });
+    expect(sameDay.status).toBe(200);
+    expect(sameDay.headers['set-cookie']).toBeUndefined();
+
+    now += 2 * 24 * 60 * 60 * 1000;
+    const asset = await request(port, { path: '/app/immutable/entry.js', headers: { cookie } });
+    expect(asset.status).toBe(200);
+    expect(asset.headers['set-cookie']).toBeUndefined();
+    const pageLoad = await request(port, { headers: { cookie, accept: 'text/html' } });
+    expect(pageLoad.status).toBe(200);
+    const renewed = cookieFrom(pageLoad);
+    expect(renewed).not.toBe(cookie);
+    expect(String(pageLoad.headers['set-cookie'])).toContain(`Max-Age=${400 * 24 * 60 * 60}`);
+
+    // An active browser stays signed in well past 400 days from its first sign-in.
+    now += 399 * 24 * 60 * 60 * 1000;
+    expect(await signsIn(port, renewed)).toBe(true);
+    expect(await signsIn(port, cookie)).toBe(false);
+  });
+
+  it('upgrades a cookie from an older version on the next page load', async () => {
+    const { port } = await start();
+    const reply = await request(port, { headers: { cookie: COOKIE, accept: 'text/html' } });
+    expect(reply.status).toBe(200);
+    expect(await signsIn(port, cookieFrom(reply))).toBe(true);
+  });
+
+  it('signs every session out when the access key changes', async () => {
+    let key = ACCESS_KEY;
+    const { port } = await start({ getAccessKey: () => key });
+    const cookie = cookieFrom(await request(port, { path: `/?key=${ACCESS_KEY}` }));
+    key = 'replaced-access-key-0123456789abcdefghijklmnopqr';
+    expect(await signsIn(port, cookie)).toBe(false);
+    expect(await signsIn(port, COOKIE)).toBe(false);
+  });
+
+  it('reports the page origin of signed-in page loads', async () => {
+    const origins: string[] = [];
+    const { port } = await start({ onPageOrigin: (origin) => origins.push(origin) });
+    await request(port, { headers: { accept: 'text/html' } });
+    expect(origins).toEqual([]);
+    await request(port, {
+      headers: {
+        cookie: COOKIE,
+        accept: 'text/html',
+        host: 'box.ts.net',
+        'x-forwarded-host': 'box.ts.net',
+        'x-forwarded-proto': 'https',
+      },
+    });
+    expect(origins).toEqual(['https://box.ts.net']);
+  });
+});
+
+describe('Browser access server: sign-in codes', () => {
+  const form = (port: number, key: string) =>
+    request(port, {
+      method: 'POST',
+      path: LOGIN_PATH,
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: `key=${encodeURIComponent(key)}`,
+    });
+
+  async function startWithCodes(overrides: Partial<BrowserAccessServerDeps> = {}) {
+    const codes = createSignInCodes({
+      store: createMemorySignInStore(),
+      getAccessKey: () => ACCESS_KEY,
+    });
+    const started = await start({ consumeSignInCode: (code) => codes.consume(code), ...overrides });
+    return { ...started, codes };
+  }
+
+  it('signs in once with a code typed in any case, with or without the hyphen', async () => {
+    const { port, codes } = await startWithCodes();
+    const { code } = await codes.create();
+    const typed = ` ${code.toLowerCase().replace('-', ' ')} `;
+    const first = await form(port, typed);
+    expect(first.status).toBe(303);
+    expect(await signsIn(port, cookieFrom(first))).toBe(true);
+    const second = await form(port, code);
+    expect(second.status).toBe(401);
+    expect(second.headers['set-cookie']).toBeUndefined();
+    expect(second.body.toString()).toContain(TEXT.codeUsed);
+  });
+
+  it('pre-fills the code from a link without consuming it', async () => {
+    const { port, codes } = await startWithCodes();
+    const { code } = await codes.create();
+    const compact = code.replace('-', '');
+    for (let fetch = 0; fetch < 3; fetch++) {
+      const preview = await request(port, { path: `${LOGIN_PATH}?code=${compact}` });
+      expect(preview.status).toBe(200);
+      expect(preview.headers['set-cookie']).toBeUndefined();
+      expect(preview.body.toString()).toContain(`value="${code}"`);
+    }
+    const head = await request(port, { method: 'HEAD', path: `${LOGIN_PATH}?code=${compact}` });
+    expect(head.headers['set-cookie']).toBeUndefined();
+    // A code in ?key= on any page is not consumed either.
+    const keyParam = await request(port, { path: `/?key=${compact}` });
+    expect(keyParam.headers['set-cookie']).toBeUndefined();
+    const submitted = await form(port, compact);
+    expect(submitted.status).toBe(303);
+    expect(await signsIn(port, cookieFrom(submitted))).toBe(true);
+  });
+
+  it('ignores a link parameter that is not a code', async () => {
+    const { port } = await startWithCodes();
+    const page = await request(port, { path: `${LOGIN_PATH}?code=%22%3E%3Cscript%3E` });
+    expect(page.status).toBe(200);
+    expect(page.body.toString()).not.toContain('<script>');
+    expect(page.body.toString()).toContain('type="password"');
+  });
+
+  it('locks out a burst of wrong codes, then refuses even a valid one', async () => {
+    const { port, codes } = await startWithCodes({
+      rateLimiter: new LoginRateLimiter(3, 60_000),
+    });
+    const { code } = await codes.create();
+    for (const wrong of ['AAA-AAA', 'BBB-BBB', 'CCC-CCC']) {
+      expect((await form(port, wrong)).status).toBe(401);
+    }
+    const blocked = await form(port, code);
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers['set-cookie']).toBeUndefined();
+    // The lockout did not spend the code.
+    expect(await codes.consume(code)).toBe('ok');
+  });
+
+  it('shares one failure budget between wrong codes and wrong keys', async () => {
+    const { port } = await startWithCodes({ rateLimiter: new LoginRateLimiter(2, 60_000) });
+    await form(port, 'AAA-AAA');
+    await request(port, { path: '/?key=wrong' });
+    expect((await form(port, ACCESS_KEY)).status).toBe(429);
+  });
+
+  it('lets exactly one of two simultaneous sign-ins with one code succeed', async () => {
+    const { port, codes } = await startWithCodes();
+    const { code } = await codes.create();
+    const replies = await Promise.all([form(port, code), form(port, code), form(port, code)]);
+    expect(replies.map((reply) => reply.status).sort()).toEqual([303, 401, 401]);
   });
 });
