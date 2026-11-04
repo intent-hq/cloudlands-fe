@@ -416,6 +416,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string,
     blockId: string,
     workspaceId?: string,
+    offset?: number,
   ): Promise<MessageBlockPage> {
     const result = await backendRequest<{
       block?: unknown;
@@ -429,6 +430,7 @@ export class LiveAgentsClient implements AgentsClient {
       messageId,
       blockId,
       ...(workspaceId !== undefined ? { workspaceId } : {}),
+      ...(offset !== undefined ? { offset } : {}),
     });
     const block = result?.block;
     if (!isContentBlock(block)) {
