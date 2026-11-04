@@ -12,10 +12,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebSocket as WsWebSocket } from 'ws';
 
 import { LoginRateLimiter, SESSION_COOKIE, deriveSessionToken } from './browser-access-auth';
+import { DeviceLoginStore, LinkTokenVerifier, mintLinkToken } from './device-login';
 import {
+  APPROVE_PATH,
   CONNECTIONS_PATH,
+  DEVICE_POLL_PATH,
+  LINK_PATH,
   LOGIN_PATH,
+  PENDING_COOKIE,
   createBrowserAccessServer,
+  type DeviceLoginText,
   runtimeConfigSource,
   type BrowserAccessServerDeps,
   type LoginPageText,
@@ -534,5 +540,219 @@ describe('standalone host extension', () => {
         .on('error', reject);
     });
     expect(response).toBe(401);
+  });
+});
+
+const DEVICE_TEXT: DeviceLoginText = {
+  qrTitle: 'Sign in with your phone',
+  qrPrompt: 'Scan this code',
+  matchLabel: 'Match code',
+  keyFallback: 'Or enter the key',
+  approveTitle: 'Sign in another browser',
+  approvePrompt: 'Check the code',
+  approveSubmit: 'Approve sign-in',
+  approved: 'Approved.',
+  expired: 'Expired code.',
+  linkInvalid: 'Bad link.',
+};
+
+describe('Browser access server: QR sign-in and one-time links', () => {
+  const qrUrls: string[] = [];
+  const startDevice = (overrides: Partial<BrowserAccessServerDeps> = {}) => {
+    qrUrls.length = 0;
+    return start({
+      deviceLogin: {
+        text: () => DEVICE_TEXT,
+        renderQr: async (url) => {
+          qrUrls.push(url);
+          return '<svg data-qr="1"></svg>';
+        },
+      },
+      ...overrides,
+    });
+  };
+  const pendingCookieOf = (reply: Reply): string => {
+    const cookies = ([] as string[]).concat(reply.headers['set-cookie'] ?? []);
+    const pending = cookies.find((c) => c.startsWith(`${PENDING_COOKIE}=`));
+    if (!pending) throw new Error('no pending cookie');
+    return pending.split(';')[0];
+  };
+  const approveCodeOf = () => new URL(qrUrls.at(-1) ?? '').searchParams.get('code') ?? '';
+  const form = (fields: Record<string, string>) => ({
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(fields).toString(),
+  });
+
+  it('leaves the login page unchanged when the option is off', async () => {
+    const { port } = await start();
+    const reply = await request(port, { path: LOGIN_PATH });
+    expect(reply.headers['set-cookie']).toBeUndefined();
+    expect(String(reply.body)).not.toContain('<script');
+    expect((await request(port, { path: DEVICE_POLL_PATH })).status).toBe(401);
+    expect(
+      (await request(port, { path: `${APPROVE_PATH}?code=x`, headers: { accept: 'text/html' } }))
+        .status,
+    ).toBe(401);
+  });
+
+  it('shows a QR and match code with an HttpOnly pending cookie', async () => {
+    const { port } = await startDevice();
+    const reply = await request(port, { path: LOGIN_PATH });
+    const html = String(reply.body);
+    expect(reply.status).toBe(200);
+    expect(html).toContain('<svg data-qr="1"></svg>');
+    expect(html).toMatch(/data-testid="match-code">[2-9A-Z]{3}-[2-9A-Z]{3}</);
+    expect(html).toContain(DEVICE_POLL_PATH);
+    expect(qrUrls[0]).toMatch(new RegExp(`^http://127\\.0\\.0\\.1:${port}${APPROVE_PATH}\\?code=`));
+    const cookie = ([] as string[]).concat(reply.headers['set-cookie'] ?? [])[0];
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('SameSite=Strict');
+    expect(cookie).not.toContain(approveCodeOf());
+  });
+
+  it('uses the forwarded https origin for the QR and marks the cookie Secure', async () => {
+    const { port } = await startDevice();
+    const reply = await request(port, {
+      path: LOGIN_PATH,
+      headers: {
+        host: 'box.tailnet.ts.net',
+        'x-forwarded-host': 'box.tailnet.ts.net',
+        'x-forwarded-proto': 'https',
+      },
+    });
+    expect(qrUrls[0].startsWith(`https://box.tailnet.ts.net${APPROVE_PATH}?code=`)).toBe(true);
+    expect(pendingCookieOf(reply)).toBeTruthy();
+    expect(String(reply.headers['set-cookie'])).toContain('Secure');
+  });
+
+  it('reuses the live request when the page reloads', async () => {
+    const { port } = await startDevice();
+    const first = await request(port, { path: LOGIN_PATH });
+    const cookie = pendingCookieOf(first);
+    const code = approveCodeOf();
+    await request(port, { path: LOGIN_PATH, headers: { cookie } });
+    expect(approveCodeOf()).toBe(code);
+  });
+
+  it('signs in the waiting browser once after approval with the right key', async () => {
+    const { port } = await startDevice();
+    const page = await request(port, { path: LOGIN_PATH });
+    const pending = pendingCookieOf(page);
+    const code = approveCodeOf();
+    const match = /data-testid="match-code">([^<]+)</.exec(String(page.body))?.[1];
+
+    const poll = () => request(port, { path: DEVICE_POLL_PATH, headers: { cookie: pending } });
+    expect(JSON.parse(String((await poll()).body))).toEqual({ status: 'pending' });
+
+    const approvePage = await request(port, { path: `${APPROVE_PATH}?code=${code}` });
+    expect(approvePage.status).toBe(200);
+    expect(String(approvePage.body)).toContain(`data-testid="match-code">${match}<`);
+
+    const wrong = await request(port, { path: APPROVE_PATH, ...form({ code, key: 'nope' }) });
+    expect(wrong.status).toBe(401);
+    expect(String(wrong.body)).toContain(TEXT.invalidKey);
+    expect(JSON.parse(String((await poll()).body))).toEqual({ status: 'pending' });
+
+    const ok = await request(port, { path: APPROVE_PATH, ...form({ code, key: ACCESS_KEY }) });
+    expect(ok.status).toBe(200);
+    expect(String(ok.body)).toContain(DEVICE_TEXT.approved);
+    expect(ok.headers['set-cookie']).toBeUndefined();
+
+    const claimed = await poll();
+    expect(JSON.parse(String(claimed.body))).toEqual({ status: 'approved' });
+    const cookies = ([] as string[]).concat(claimed.headers['set-cookie'] ?? []);
+    expect(cookies.some((c) => c.startsWith(`${COOKIE};`))).toBe(true);
+    expect(
+      cookies.some((c) => c.startsWith(`${PENDING_COOKIE}=;`) && c.includes('Max-Age=0')),
+    ).toBe(true);
+
+    const again = await poll();
+    expect(JSON.parse(String(again.body))).toEqual({ status: 'expired' });
+    expect(again.headers['set-cookie']).toBeUndefined();
+    const reuse = await request(port, { path: APPROVE_PATH, ...form({ code, key: ACCESS_KEY }) });
+    expect(reuse.status).toBe(410);
+  });
+
+  it('rejects unknown and expired approve codes', async () => {
+    let now = Date.now();
+    const store = new DeviceLoginStore(() => now);
+    const { port } = await startDevice({
+      deviceLogin: {
+        text: () => DEVICE_TEXT,
+        renderQr: async (url) => (qrUrls.push(url), '<svg></svg>'),
+        store,
+      },
+    });
+    const page = await request(port, { path: LOGIN_PATH });
+    const pending = pendingCookieOf(page);
+    const unknown = await request(port, { path: `${APPROVE_PATH}?code=unknown` });
+    expect(unknown.status).toBe(410);
+    expect(String(unknown.body)).toContain(DEVICE_TEXT.expired);
+    now += 2 * 60_000;
+    expect((await request(port, { path: `${APPROVE_PATH}?code=${approveCodeOf()}` })).status).toBe(
+      410,
+    );
+    const poll = await request(port, { path: DEVICE_POLL_PATH, headers: { cookie: pending } });
+    expect(JSON.parse(String(poll.body))).toEqual({ status: 'expired' });
+  });
+
+  it('counts wrong approve keys against the sign-in rate limit', async () => {
+    const { port } = await startDevice({ rateLimiter: new LoginRateLimiter(2, 60_000) });
+    await request(port, { path: LOGIN_PATH });
+    const code = approveCodeOf();
+    for (let i = 0; i < 2; i++)
+      await request(port, { path: APPROVE_PATH, ...form({ code, key: 'nope' }) });
+    const locked = await request(port, { path: APPROVE_PATH, ...form({ code, key: ACCESS_KEY }) });
+    expect(locked.status).toBe(429);
+    const login = await request(port, { path: LOGIN_PATH, ...form({ key: ACCESS_KEY }) });
+    expect(login.status).toBe(429);
+  });
+
+  it('drops pending requests when the access key changes', async () => {
+    let key = ACCESS_KEY;
+    const { port } = await startDevice({ getAccessKey: () => key });
+    const page = await request(port, { path: LOGIN_PATH });
+    const pending = pendingCookieOf(page);
+    const code = approveCodeOf();
+    await request(port, { path: APPROVE_PATH, ...form({ code, key: ACCESS_KEY }) });
+    key = 'a-new-access-key-0123456789abcdefghijklmnopq';
+    const poll = await request(port, { path: DEVICE_POLL_PATH, headers: { cookie: pending } });
+    expect(JSON.parse(String(poll.body))).toEqual({ status: 'expired' });
+  });
+
+  it('applies the Host check to the new routes', async () => {
+    const { port } = await startDevice();
+    for (const path of [DEVICE_POLL_PATH, `${APPROVE_PATH}?code=x`, `${LINK_PATH}?t=x`])
+      expect((await request(port, { path, headers: { host: 'rebound.example' } })).status).toBe(
+        403,
+      );
+  });
+
+  it('signs in once with a one-time link and redirects home', async () => {
+    const { port } = await startDevice();
+    const { token } = mintLinkToken(ACCESS_KEY, 5);
+    const first = await request(port, { path: `${LINK_PATH}?t=${token}` });
+    expect(first.status).toBe(303);
+    expect(first.headers.location).toBe('/');
+    expect(String(first.headers['set-cookie'])).toContain(COOKIE);
+    const second = await request(port, { path: `${LINK_PATH}?t=${token}` });
+    expect(second.status).toBe(401);
+    expect(String(second.body)).toContain(DEVICE_TEXT.linkInvalid);
+    expect(
+      ([] as string[]).concat(second.headers['set-cookie'] ?? []).some((c) => c.startsWith(COOKIE)),
+    ).toBe(false);
+  });
+
+  it('rejects tampered links and links made with another key', async () => {
+    const links = new LinkTokenVerifier();
+    const { port } = await startDevice({
+      deviceLogin: { text: () => DEVICE_TEXT, renderQr: async () => '<svg></svg>', links },
+    });
+    const { token } = mintLinkToken('another-key', 5);
+    expect((await request(port, { path: `${LINK_PATH}?t=${token}` })).status).toBe(401);
+    const good = mintLinkToken(ACCESS_KEY, 5).token;
+    expect((await request(port, { path: `${LINK_PATH}?t=${good}x` })).status).toBe(401);
+    expect((await request(port, { path: `${LINK_PATH}?t=${good}` })).status).toBe(303);
   });
 });

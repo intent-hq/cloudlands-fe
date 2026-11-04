@@ -7,6 +7,7 @@ import {
 import { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { getConnectionTunnel, setConnectionTunnel } from '../../backend/main/connection-tunnel';
 import type http from 'node:http';
+import QRCode from 'qrcode';
 import type { Duplex } from 'node:stream';
 import { createConnectionsStore, plaintextTokenCodec } from '../../backend/main/connections-store';
 import { buildConfigForRecord } from '../../backend/main/connection-config';
@@ -275,6 +276,23 @@ export async function createIntentWebServer(options: WebServerOptions) {
       invalidKey: 'That access key is not correct.',
       tooManyAttempts: 'Too many attempts.',
     }),
+    deviceLogin: {
+      text: () => ({
+        qrTitle: 'Sign in with your phone',
+        qrPrompt: 'Scan this code with a phone, then enter the access key there.',
+        matchLabel: 'Match code',
+        keyFallback: 'Or enter the access key on this device.',
+        approveTitle: 'Sign in another browser',
+        approvePrompt:
+          'Check that this code matches the one on the browser you want to sign in. Enter the access key only if it matches.',
+        approveSubmit: 'Approve sign-in',
+        approved: 'Approved. The other browser signs in now; you can close this page.',
+        expired: 'This sign-in code has expired or was already used. Scan a new code.',
+        linkInvalid: 'This sign-in link has expired or was already used.',
+      }),
+      renderQr: (url) =>
+        QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' }),
+    },
     runtimeConfig: async () => `(() => {
 const ids=${JSON.stringify((await records()).map((r) => r.id))};
 let backend=new URLSearchParams(location.search).get('backend');

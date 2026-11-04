@@ -30,8 +30,10 @@ import {
   isAllowedHost,
   isSameOriginUpgrade,
   pageOrigin,
+  parseCookies,
   sessionCookieHeader,
 } from './browser-access-auth';
+import { DEVICE_LOGIN_TTL_MS, DeviceLoginStore, LinkTokenVerifier } from './device-login';
 
 // `ws` is CJS and the vitest suite aliases the ESM import to a browser stub
 // (see vitest.config.ts); createRequire loads the real package, as
@@ -42,6 +44,14 @@ const { WebSocketServer } = nodeRequire('ws') as { WebSocketServer: typeof WsSer
 const BRIDGE_PREFIX = '/intentd/ws/';
 export const CONNECTIONS_PATH = '/__browser-access/connections';
 export const LOGIN_PATH = '/__browser-access/login';
+/** QR sign-in: the page the QR opens on the approving device. */
+export const APPROVE_PATH = '/__browser-access/approve';
+/** QR sign-in: polled by the waiting browser. */
+export const DEVICE_POLL_PATH = '/__browser-access/device/poll';
+/** One-time sign-in links (`intent-web link`). */
+export const LINK_PATH = '/__browser-access/link';
+/** HttpOnly cookie holding a waiting browser's QR request secret. */
+export const PENDING_COOKIE = 'intent_browser_access_pending';
 const RUNTIME_CONFIG_PATH = '/runtime-config.js';
 const IMMUTABLE_PREFIX = '/app/immutable/';
 const BACKEND_STORAGE_KEY = 'intent.browserAccess.backend';
@@ -97,6 +107,29 @@ export interface LoginPageText {
   readonly tooManyAttempts: string;
 }
 
+/** Strings for QR sign-in and one-time links. */
+export interface DeviceLoginText {
+  readonly qrTitle: string;
+  readonly qrPrompt: string;
+  readonly matchLabel: string;
+  readonly keyFallback: string;
+  readonly approveTitle: string;
+  readonly approvePrompt: string;
+  readonly approveSubmit: string;
+  readonly approved: string;
+  readonly expired: string;
+  readonly linkInvalid: string;
+}
+
+/** Turns on QR sign-in and one-time links (Intent Web only). */
+interface DeviceLoginOptions {
+  readonly text: () => DeviceLoginText;
+  /** Render a QR code for a URL as an inline `<svg>` element. */
+  readonly renderQr: (url: string) => Promise<string>;
+  readonly store?: DeviceLoginStore;
+  readonly links?: LinkTokenVerifier;
+}
+
 export interface BrowserAccessServerDeps {
   /** Directory holding the web build (`index.html`, `app/immutable/…`). */
   readonly webRoot: string;
@@ -117,6 +150,8 @@ export interface BrowserAccessServerDeps {
   readonly runtimeConfig?: () => string | Promise<string>;
   /** Called after a browser bridge opens or closes (see `bridgedBackendIds`). */
   readonly onBridgesChanged?: () => void;
+  /** QR sign-in and one-time links; off when absent (desktop Browser access). */
+  readonly deviceLogin?: DeviceLoginOptions;
 }
 
 export interface BrowserAccessServer {
@@ -156,7 +191,145 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
-function loginPageHtml(text: LoginPageText, error: string | null): string {
+interface QrPanel {
+  readonly text: DeviceLoginText;
+  readonly svg: string;
+  readonly matchCode: string;
+}
+
+const PAGE_STYLE = `  :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+  form, main { width: min(22rem, calc(100vw - 2rem)); display: grid; gap: 0.75rem; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  h2 { font-size: 1rem; margin: 0; }
+  p { margin: 0; opacity: 0.8; }
+  input, button { font: inherit; padding: 0.6rem 0.75rem; border-radius: 0.5rem; }
+  input { border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: transparent; color: inherit; }
+  button { border: 0; cursor: pointer; background: #1f6feb; color: white; }
+  .error { color: #d73a49; opacity: 1; }
+  .qr { display: grid; gap: 0.5rem; justify-items: center; text-align: center; }
+  .qr svg { width: 12rem; height: 12rem; background: white; padding: 0.5rem; border-radius: 0.5rem; }
+  .match { font: 600 1.5rem ui-monospace, monospace; letter-spacing: 0.15em; opacity: 1; }
+  hr { width: 100%; border: 0; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); }`;
+
+/** Polls for approval; reloads for a fresh QR when the request expires. */
+const POLL_SCRIPT = `<script>
+(() => {
+  const home = location.pathname === ${JSON.stringify(LOGIN_PATH)} ? '/' : location.href;
+  const fresh = location.pathname === ${JSON.stringify(LOGIN_PATH)} ? ${JSON.stringify(LOGIN_PATH)} : location.href;
+  const poll = async () => {
+    try {
+      const response = await fetch(${JSON.stringify(DEVICE_POLL_PATH)}, { cache: 'no-store', credentials: 'same-origin' });
+      const { status } = await response.json();
+      if (status === 'approved') return location.replace(home);
+      if (status === 'expired') return location.replace(fresh);
+    } catch {}
+    setTimeout(poll, 2000);
+  };
+  setTimeout(poll, 2000);
+})();
+</script>`;
+
+function qrPanelHtml(panel: QrPanel): string {
+  return `<section class="qr" aria-labelledby="qr-title">
+  <h2 id="qr-title">${escapeHtml(panel.text.qrTitle)}</h2>
+  ${panel.svg}
+  <p>${escapeHtml(panel.text.qrPrompt)}</p>
+  <p>${escapeHtml(panel.text.matchLabel)}</p>
+  <p class="match" data-testid="match-code">${escapeHtml(panel.matchCode)}</p>
+</section>
+<hr>
+<p>${escapeHtml(panel.text.keyFallback)}</p>`;
+}
+
+function messagePageHtml(lang: string, title: string, message: string, isError: boolean): string {
+  return `<!doctype html>
+<html lang="${escapeHtml(lang)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>${escapeHtml(title)}</title>
+<style>
+${PAGE_STYLE}
+</style>
+</head>
+<body>
+<main>
+  <h1>${escapeHtml(title)}</h1>
+  <p${isError ? ' class="error" role="alert"' : ' role="status"'}>${escapeHtml(message)}</p>
+</main>
+</body>
+</html>
+`;
+}
+
+function approvePageHtml(
+  login: LoginPageText,
+  text: DeviceLoginText,
+  code: string,
+  matchCode: string,
+  error: string | null,
+): string {
+  return `<!doctype html>
+<html lang="${escapeHtml(login.lang)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>${escapeHtml(text.approveTitle)}</title>
+<style>
+${PAGE_STYLE}
+</style>
+</head>
+<body>
+<form method="post" action="${APPROVE_PATH}">
+  <h1>${escapeHtml(text.approveTitle)}</h1>
+  <p>${escapeHtml(text.approvePrompt)}</p>
+  <p>${escapeHtml(text.matchLabel)}</p>
+  <p class="match" data-testid="match-code">${escapeHtml(matchCode)}</p>
+  ${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}
+  <input type="hidden" name="code" value="${escapeHtml(code)}">
+  <label for="key">${escapeHtml(login.keyLabel)}</label>
+  <input id="key" name="key" type="password" autocomplete="current-password" required autofocus>
+  <button type="submit">${escapeHtml(text.approveSubmit)}</button>
+</form>
+</body>
+</html>
+`;
+}
+
+function loginPageHtml(
+  text: LoginPageText,
+  error: string | null,
+  qr: QrPanel | null = null,
+): string {
+  if (qr) {
+    return `<!doctype html>
+<html lang="${escapeHtml(text.lang)}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>${escapeHtml(text.title)}</title>
+<style>
+${PAGE_STYLE}
+</style>
+</head>
+<body>
+<form method="post" action="${LOGIN_PATH}">
+  <h1>${escapeHtml(text.title)}</h1>
+  ${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}
+  ${qrPanelHtml(qr)}
+  <label for="key">${escapeHtml(text.keyLabel)}</label>
+  <input id="key" name="key" type="password" autocomplete="current-password" required>
+  <button type="submit">${escapeHtml(text.submit)}</button>
+</form>
+${POLL_SCRIPT}
+</body>
+</html>
+`;
+  }
   return `<!doctype html>
 <html lang="${escapeHtml(text.lang)}">
 <head>
@@ -379,11 +552,144 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       .pipe(response);
   };
 
-  const sendLogin = (response: http.ServerResponse, status: number, error: string | null): void => {
+  const device = deps.deviceLogin ?? null;
+  const deviceStore = device ? (device.store ?? new DeviceLoginStore()) : null;
+  const links = device ? (device.links ?? new LinkTokenVerifier()) : null;
+
+  const isSecure = (request: http.IncomingMessage): boolean =>
+    pageOrigin(request.headers)?.startsWith('https:') ?? false;
+
+  const pendingCookie = (secret: string, secure: boolean, maxAgeSeconds: number): string =>
+    [
+      `${PENDING_COOKIE}=${secret}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Strict',
+      `Max-Age=${maxAgeSeconds}`,
+      ...(secure ? ['Secure'] : []),
+    ].join('; ');
+
+  /** The QR panel for a sign-in page, reusing the browser's live request. */
+  const qrPanel = async (
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+  ): Promise<QrPanel | null> => {
+    if (!device || !deviceStore) return null;
+    const origin = pageOrigin(request.headers);
+    if (!origin) return null;
+    const accessKey = deps.getAccessKey();
+    const cookie = parseCookies(request.headers.cookie).get(PENDING_COOKIE);
+    const pending = deviceStore.pending(cookie, accessKey) ?? deviceStore.create(accessKey);
+    const approveUrl = `${origin}${APPROVE_PATH}?code=${encodeURIComponent(pending.approveCode)}`;
+    const svg = await device.renderQr(approveUrl);
+    const maxAge = Math.ceil(
+      Math.min(DEVICE_LOGIN_TTL_MS, Math.max(1000, pending.expiresAt - Date.now())) / 1000,
+    );
+    response.setHeader('Set-Cookie', pendingCookie(pending.secret, isSecure(request), maxAge));
+    return { text: device.text(), svg, matchCode: pending.matchCode };
+  };
+
+  const sendLogin = async (
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+    status: number,
+    error: string | null,
+  ): Promise<void> => {
+    const qr = await qrPanel(request, response);
     response.statusCode = status;
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
-    response.end(loginPageHtml(deps.loginText(), error));
+    response.end(loginPageHtml(deps.loginText(), error, qr));
+  };
+
+  const sendHtml = (response: http.ServerResponse, status: number, html: string): void => {
+    response.statusCode = status;
+    response.setHeader('Content-Type', 'text/html; charset=utf-8');
+    response.setHeader('Cache-Control', 'no-store');
+    response.end(html);
+  };
+
+  /** QR approval, approval polling and one-time links. Returns false for other paths. */
+  const handleDeviceLogin = async (
+    request: http.IncomingMessage,
+    response: http.ServerResponse,
+    url: URL,
+    pathname: string,
+  ): Promise<boolean> => {
+    if (!device || !deviceStore || !links) return false;
+    const login = deps.loginText();
+    const accessKey = deps.getAccessKey();
+
+    if (pathname === DEVICE_POLL_PATH && request.method === 'GET') {
+      const status = deviceStore.claim(
+        parseCookies(request.headers.cookie).get(PENDING_COOKIE),
+        accessKey,
+      );
+      response.setHeader('Content-Type', 'application/json; charset=utf-8');
+      response.setHeader('Cache-Control', 'no-store');
+      if (status === 'approved') {
+        const secure = isSecure(request);
+        response.setHeader('Set-Cookie', [
+          sessionCookieHeader(accessKey, secure),
+          pendingCookie('', secure, 0),
+        ]);
+        log.info('[BrowserAccess] signed in a browser by QR approval');
+      }
+      response.end(JSON.stringify({ status }));
+      return true;
+    }
+
+    if (pathname === APPROVE_PATH && (request.method === 'GET' || request.method === 'POST')) {
+      const text = device.text();
+      const page = (status: number, title: string, message: string, isError: boolean) =>
+        sendHtml(response, status, messagePageHtml(login.lang, title, message, isError));
+      const form = request.method === 'POST' ? await readForm(request) : null;
+      const code = request.method === 'POST' ? form?.get('code') : url.searchParams.get('code');
+      if (!limiter.allow()) {
+        page(429, text.approveTitle, login.tooManyAttempts, true);
+        return true;
+      }
+      const target = deviceStore.lookup(code, accessKey);
+      if (!target || typeof code !== 'string') {
+        limiter.recordFailure();
+        page(410, text.approveTitle, text.expired, true);
+        return true;
+      }
+      if (request.method === 'GET') {
+        sendHtml(response, 200, approvePageHtml(login, text, code, target.matchCode, null));
+        return true;
+      }
+      if (!accessKeyMatches(form?.get('key'), accessKey)) {
+        limiter.recordFailure();
+        log.warn('[BrowserAccess] rejected an access key for a QR sign-in');
+        sendHtml(
+          response,
+          401,
+          approvePageHtml(login, text, code, target.matchCode, login.invalidKey),
+        );
+        return true;
+      }
+      if (deviceStore.approve(code, accessKey)) page(200, text.approveTitle, text.approved, false);
+      else page(410, text.approveTitle, text.expired, true);
+      return true;
+    }
+
+    if (pathname === LINK_PATH && request.method === 'GET') {
+      if (!limiter.allow()) {
+        await sendLogin(request, response, 429, login.tooManyAttempts);
+        return true;
+      }
+      if (!links.redeem(url.searchParams.get('t'), accessKey)) {
+        limiter.recordFailure();
+        log.warn('[BrowserAccess] rejected a sign-in link');
+        await sendLogin(request, response, 401, device.text().linkInvalid);
+        return true;
+      }
+      log.info('[BrowserAccess] signed in a browser with a one-time link');
+      redirect(response, '/', sessionCookieHeader(accessKey, isSecure(request)));
+      return true;
+    }
+    return false;
   };
 
   const redirect = (response: http.ServerResponse, location: string, cookie?: string): void => {
@@ -407,8 +713,7 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       log.warn('[BrowserAccess] rejected an access key');
       return { error: text.invalidKey, status: 401 };
     }
-    const secure = pageOrigin(request.headers)?.startsWith('https:') ?? false;
-    return { cookie: sessionCookieHeader(accessKey, secure) };
+    return { cookie: sessionCookieHeader(accessKey, isSecure(request)) };
   };
 
   const handle = async (
@@ -437,15 +742,17 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
         const form = await readForm(request);
         const result = tryLogin(request, form?.get('key'));
         if ('cookie' in result) return redirect(response, '/', result.cookie);
-        return sendLogin(response, result.status, result.error);
+        return sendLogin(request, response, result.status, result.error);
       }
-      return sendLogin(response, 200, null);
+      return sendLogin(request, response, 200, null);
     }
+
+    if (await handleDeviceLogin(request, response, url, pathname)) return;
 
     const keyParam = request.method === 'GET' ? url.searchParams.get('key') : null;
     if (keyParam !== null) {
       const result = tryLogin(request, keyParam);
-      if ('error' in result) return sendLogin(response, result.status, result.error);
+      if ('error' in result) return sendLogin(request, response, result.status, result.error);
       url.searchParams.delete('key');
       // Never redirect off-site: `//host` and `/\host` are protocol-relative to browsers.
       const target = /^\/[/\\]/.test(url.pathname) ? '/' : `${url.pathname}${url.search}`;
@@ -453,7 +760,7 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     }
 
     if (!hasValidSession(request.headers, deps.getAccessKey())) {
-      if (wantsHtml(request)) return sendLogin(response, 401, null);
+      if (wantsHtml(request)) return sendLogin(request, response, 401, null);
       response.statusCode = 401;
       response.setHeader('Cache-Control', 'no-store');
       response.end();
