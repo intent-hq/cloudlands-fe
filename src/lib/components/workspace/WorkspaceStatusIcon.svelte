@@ -16,7 +16,7 @@
     status: WorkspaceStatusPresentationState;
     size?: number;
     decorative?: boolean;
-    /** Shows the unread dot as a strong green "just finished" dot. */
+    /** Pulses the unread dot while the workspace has just finished. */
     justFinished?: boolean;
     class?: string;
   } = $props();
@@ -27,7 +27,7 @@
 
 <span
   class={cn(
-    'workspace-status-icon inline-flex shrink-0 items-center justify-center forced-colors:text-[CanvasText]',
+    'workspace-status-icon relative inline-flex shrink-0 items-center justify-center forced-colors:text-[CanvasText]',
     presentation.className,
     className,
   )}
@@ -42,6 +42,12 @@
   data-workspace-status-just-finished={finished || undefined}
 >
   {#if presentation.visual === 'dot'}
+    {#if finished}
+      <span
+        class="workspace-status-dot workspace-status-dot-ping animate-ping motion-reduce:animate-none"
+        aria-hidden="true"
+      ></span>
+    {/if}
     <span
       class={cn('workspace-status-dot', finished && 'workspace-status-dot-finished')}
       data-workspace-status-dot
@@ -71,15 +77,18 @@
     outline: none;
     background-color: currentColor;
     box-shadow: none;
-    transition:
-      background-color var(--spring-slow) var(--spring-slow-ease),
-      box-shadow var(--spring-slow) var(--spring-slow-ease);
+    transition: background-color var(--spring-slow) var(--spring-slow-ease);
   }
 
   .workspace-status-dot-finished {
-    background-color: hsl(var(--workspace-status-finished));
-    box-shadow: 0 0 0 3px hsl(var(--workspace-status-finished) / 0.25);
     animation: workspace-status-dot-finish var(--spring-slow) var(--spring-slow-ease);
+  }
+
+  .workspace-status-dot-ping {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    opacity: 0.6;
   }
 
   @keyframes workspace-status-dot-finish {
@@ -96,12 +105,20 @@
       transition: none;
       animation: none;
     }
+
+    .workspace-status-dot-ping {
+      display: none;
+    }
   }
 
   @media (forced-colors: active) {
     .workspace-status-dot {
       background-color: CanvasText;
       box-shadow: none;
+    }
+
+    .workspace-status-dot-ping {
+      display: none;
     }
   }
 </style>
