@@ -376,8 +376,40 @@ for (const { position, contract } of [
     const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
 
     for (const checked of [false, true, false, true]) {
+      // Hit-test the pointer on every DOM change and frame: a one-frame layout jump would
+      // let the next click miss the switch even though the popup's own box never moves.
+      const stopWatching = await isolation.evaluateHandle((control, at) => {
+        const misses: string[] = [];
+        const check = () => {
+          const hit = control.ownerDocument.elementFromPoint(at.x, at.y);
+          if (!hit || !control.contains(hit)) {
+            const box = control.getBoundingClientRect();
+            misses.push(`switch at ${box.top}..${box.bottom} hit ${hit?.tagName}`);
+          }
+        };
+        const observer = new MutationObserver(check);
+        observer.observe(control.ownerDocument.body, {
+          attributes: true,
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+        let frame = requestAnimationFrame(function sample() {
+          check();
+          frame = requestAnimationFrame(sample);
+        });
+        return () => {
+          observer.disconnect();
+          cancelAnimationFrame(frame);
+          return misses;
+        };
+      }, point);
       await page.mouse.click(point.x, point.y);
       await expect(isolation).toBeChecked({ checked });
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
+      expect(await stopWatching.evaluate((stop) => stop())).toEqual([]);
       await expect
         .poll(async () => {
           const current = (await menu.boundingBox())!;
