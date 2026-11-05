@@ -16,12 +16,7 @@
   import DockRecordingFrameMarks from './DockRecordingFrameMarks.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { findFillerCuts, type FillerCuts } from './recording-transcript-model';
-  import {
-    frameToolKind,
-    marksOnFrame,
-    moveGeometry,
-    type FrameTool,
-  } from './recording-frame-model';
+  import { frameToolKind, type FrameTool } from './recording-frame-model';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import {
     defaultDockMediaEdit,
@@ -203,19 +198,23 @@
   // Marks drawn while recording are part of the frames: including or excluding one is
   // honest only on a clean source.
   const marksEditable = !!source && markRemovable(source);
-  // Drawing on frames: a tool draws a new mark at the current time (pausing playback);
-  // the pointer selects, moves and deletes marks. On a clean source only.
+  // Drawing on frames: a tool draws a new mark on the paused frame; the pointer selects,
+  // moves, resizes and deletes marks. On a clean source only, and only on a frame that
+  // is kept (a mark on a cut frame would never be seen).
   let frameTool = $state<FrameTool | null>(null);
   let selectedMarkId = $state<string | null>(null);
-  const frameMarks = $derived(
-    edits && source
-      ? marksOnFrame(edits.draft.marks, source.batches, currentMs, source.durationMs)
-      : [],
+  const frameKept = $derived(
+    !!kept?.some((range) => currentMs >= range.startMs && currentMs < range.endMs),
   );
-  function drawMark(tool: FrameTool, geometry: DockMediaGeometry): void {
+  /** Choosing a tool or starting a gesture pauses; the gesture keeps the paused time. */
+  function pauseForFrame(): number {
+    if (video && !video.paused) video.pause();
+    if (video) currentMs = video.currentTime * 1000;
+    // Down, never up: a mark is on screen from its time, so it must not start after this frame.
+    return Math.floor(currentMs);
+  }
+  function drawMark(tool: FrameTool, geometry: DockMediaGeometry, atMs: number): void {
     if (!edits || !source) return;
-    video?.pause();
-    const atMs = Math.round(currentMs);
     const batchId =
       dockMediaBatchAt(source, atMs)?.id ?? source.batches.at(-1)?.id ?? 'editor-batch';
     const id = crypto.randomUUID();
@@ -239,12 +238,10 @@
     }));
     selectedMarkId = id;
   }
-  function moveMark(markId: string, dx: number, dy: number): void {
+  function changeMark(markId: string, geometry: DockMediaGeometry): void {
     edits?.apply((draft) => ({
       ...draft,
-      marks: draft.marks.map((mark) =>
-        mark.id === markId ? { ...mark, geometry: moveGeometry(mark.geometry, dx, dy) } : mark,
-      ),
+      marks: draft.marks.map((mark) => (mark.id === markId ? { ...mark, geometry } : mark)),
     }));
   }
   function deleteMark(markId: string): void {
@@ -402,16 +399,17 @@
             onerror={() => (failed = true)}
           ></video>
         {/if}
-        {#if source && edits && !failed}
+        {#if source && edits && marksEditable && !failed}
           <DockRecordingFrameMarks
-            sourceWidth={source.width}
-            sourceHeight={source.height}
-            marks={frameMarks}
+            {source}
+            edit={edits.draft}
+            atMs={currentMs}
             tool={frameTool}
-            editable={marksEditable}
+            editable={frameKept}
             selectedId={selectedMarkId}
+            onBegin={pauseForFrame}
             onDraw={drawMark}
-            onMove={moveMark}
+            onChange={changeMark}
             onSelect={(id) => (selectedMarkId = id)}
             onDelete={deleteMark}
           />
@@ -430,6 +428,7 @@
                   tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
                   onclick={() => {
                     frameTool = entry.tool;
+                    pauseForFrame();
                     if (entry.tool) selectedMarkId = null;
                   }}
                 >

@@ -81,7 +81,8 @@
 
   /** Delete or Backspace with words selected in the transcript cuts their stretch. */
   function onWindowKeydown(event: KeyboardEvent): void {
-    if (!onCut || !list || editing || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+    if (event.defaultPrevented || !onCut || !list || editing) return;
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
     const range = selection.getRangeAt(0);
