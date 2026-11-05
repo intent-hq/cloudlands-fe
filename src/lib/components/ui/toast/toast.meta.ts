@@ -11,7 +11,6 @@ export const toastMetadata = parseUiComponentMetadata({
     'AgentAttentionToastComponent',
     'AgentFailureToast',
     'AgentFailureToastComponent',
-    'AgentIdleToast',
     'ErrorToast',
     'ErrorToastComponent',
     'ExternalToast',

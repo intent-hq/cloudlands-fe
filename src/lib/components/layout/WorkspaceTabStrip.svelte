@@ -60,7 +60,6 @@
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
-  import { TabFinishFlash } from './workspace-tab-finish-flash-tracker.svelte';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
@@ -139,7 +138,6 @@
     activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId,
   );
   const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
-  const finishFlash = new TabFinishFlash(() => [visibleTabIds, workspaceById, selectedWorkspaceId]);
   const workspaceTabMotionDuration = $derived(
     reducedMotion.current ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
   );
@@ -1054,11 +1052,7 @@
                       class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
                       data-workspace-tab-status-cluster
                     >
-                      <WorkspaceStatusIcon
-                        status={workspaceStatusState}
-                        justFinished={finishFlash.has(workspaceId)}
-                        decorative
-                      />
+                      <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
                     </span>
                     <span
                       class="size-(--control-height-compact) shrink-0"

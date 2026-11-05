@@ -22,9 +22,7 @@
  * focuses) the agent's conversation tab in that workspace's panel layout.
  *
  * Also hosts the other agent "Switch To" toasts that share these loaders:
- * the transient Assistant-finished toast ({@link showAgentIdleToast}, the
- * in-app replacement for the OS banner main skips while the app is
- * frontmost), workspace auto-unarchive, and guest access removal.
+ * workspace auto-unarchive and guest access removal.
  *
  * Dependency-light per AGENTS.md middleware conventions (this module is
  * reachable from the daemon-events bridge middleware): no static selector
@@ -34,9 +32,7 @@
  */
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
-import type { NotificationNavigatePayload } from '$features/notifications/notification-navigation';
 import { createLogger } from '$lib/utils/client-logger';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { m } from '$shared/paraglide/messages.js';
 
 const logger = createLogger('AgentAttentionToastService');
@@ -231,100 +227,6 @@ export async function dismissAgentAttentionToast(agentId: string): Promise<void>
     }
   } finally {
     if (pendingToastOperations.get(agentId) === operation) pendingToastOperations.delete(agentId);
-  }
-}
-
-/**
- * Payload of `notification:show` (see `notification.service.ts` in main).
- * `navigateTarget` is present only when main skipped the OS banner because
- * the app is frontmost (electron#51885: foreground banner clicks never fire)
- * and picked this window as the focused one to show the in-app toast.
- * `structured` is absent for Assistant (chief) notifications.
- */
-export interface AgentIdleToastPayload {
-  title?: string;
-  body?: string;
-  timestamp?: string;
-  navigateTarget?: NotificationNavigatePayload;
-  structured?: {
-    workspaceTitle?: string;
-    specialistDisplayName: string;
-    taskTitle?: string;
-    agentId?: string;
-    agentName?: string;
-  };
-}
-
-function isChiefTarget(target: NotificationNavigatePayload): boolean {
-  return target.chief === true || target.workspaceId === CHIEF_WORKSPACE_ID;
-}
-
-/** Stable toast id: one per Assistant chat. */
-export function agentIdleToastId(target: NotificationNavigatePayload): string {
-  return `agent-idle:${target.workspaceId}:${target.agentId ?? ''}`;
-}
-
-/**
- * True when this focused window's home page shows the Assistant panel open on
- * `agentId` — the chat the toast would switch to. Read straight off
- * `appStore.state` (dependency-light, like {@link isCurrentWorkspace}).
- */
-function isViewingAssistantChat(agentId: string | undefined): boolean {
-  if (!agentId || typeof window === 'undefined' || window.location.pathname !== '/') return false;
-  if (typeof document === 'undefined' || !document.hasFocus()) return false;
-  const nav = appStore.state.sidebarNav;
-  return nav?.panelItem === 'chief' && nav.chiefActiveAgentId === agentId;
-}
-
-/** Only the latest pending show for a toast id may render after lazy loading. */
-const pendingIdleToasts = new Map<string, symbol>();
-
-/**
- * Transient "finished" toast for a frontmost `notification:show` payload from
- * an Assistant chat, with "Switch To". Workspace completions show on their
- * tab's status dot instead, so they never toast. No-op without a
- * `navigateTarget` (sound-only delivery) or when that chat is already open.
- * Never rejects.
- */
-export async function showAgentIdleToast(payload: AgentIdleToastPayload): Promise<void> {
-  const target = payload.navigateTarget;
-  if (!target?.workspaceId || !isChiefTarget(target)) return;
-  if (isViewingAssistantChat(target.agentId)) return;
-  const id = agentIdleToastId(target);
-  const operation = Symbol();
-  pendingIdleToasts.set(id, operation);
-  try {
-    const [notify, { AgentIdleToast }] = await Promise.all([getToast(), getToastComponents()]);
-    if (pendingIdleToasts.get(id) !== operation || isViewingAssistantChat(target.agentId)) return;
-    notify.custom(AgentIdleToast, {
-      id,
-      componentProps: {
-        title: payload.title ?? payload.body ?? '',
-        description: payload.title ? payload.body : undefined,
-        timestamp: payload.timestamp,
-        keySlot: null,
-        onSwitchTo: () => {
-          notify.dismiss(id);
-          void switchToIdleTarget(target);
-        },
-        onClose: () => notify.dismiss(id),
-      },
-    });
-  } catch (error) {
-    logger.warn('Failed to show agent idle toast', { target, error });
-  } finally {
-    if (pendingIdleToasts.get(id) === operation) pendingIdleToasts.delete(id);
-  }
-}
-
-/** Idle-toast "Switch To": route like a native notification click. */
-async function switchToIdleTarget(target: NotificationNavigatePayload): Promise<void> {
-  try {
-    const { handleNotificationNavigate } =
-      await import('$features/notifications/notification-navigation');
-    await handleNotificationNavigate(target);
-  } catch (error) {
-    logger.warn('Switch To from idle toast failed', { target, error });
   }
 }
 
