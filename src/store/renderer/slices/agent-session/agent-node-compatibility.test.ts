@@ -170,6 +170,45 @@ describe('node agent compatibility', () => {
       placementError: detail.placementError,
     });
   });
+  it('keeps setup output from a detail read until the setup starts over', () => {
+    // Rows and channel deltas omit setup output; only detail reads carry it.
+    const startedAt = '2026-09-28T09:00:01Z';
+    const output = 'Fetching packages/intentd\u2026\nnpm ci\n';
+    const pending = { ...remote, effectiveIsolation: 'pending' };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(
+        session({ ...pending, setup: { state: 'running', startedAt, output, outputTruncated: true } }),
+      ),
+    );
+    state = agentSessionReducer(
+      state,
+      bulkUpsertSessions([session({ ...pending, setup: { state: 'running', startedAt } })]),
+    );
+    expect(row(state)?.setup).toEqual({ state: 'running', startedAt, output, outputTruncated: true });
+    state = agentSessionReducer(
+      state,
+      event('agent:updated', {
+        effectiveIsolation: 'isolated',
+        setup: { state: 'failed', exitCode: 2, startedAt, finishedAt: '2026-09-28T09:00:09Z' },
+      }),
+    );
+    expect(row(state)?.setup).toMatchObject({ state: 'failed', exitCode: 2, output });
+    state = agentSessionReducer(
+      state,
+      event('agent:updated', { setup: { state: 'pending' } }),
+    );
+    expect(row(state)?.setup).toEqual({ state: 'pending' });
+  });
+  it('drops an unknown setup shape without losing the other placement fields', () => {
+    let state = agentSessionReducer(initialState, upsertSession(session()));
+    state = agentSessionReducer(
+      state,
+      event('agent:updated', { ...remote, setup: { state: 'warming-up' } }),
+    );
+    expect(row(state)).toMatchObject(remote);
+    expect(row(state)?.setup).toBeUndefined();
+  });
   it('starts a reused agent ID with only its new workspace node provenance', () => {
     let state = agentSessionReducer(initialState, upsertSession(session(remote)));
     state = agentSessionReducer(

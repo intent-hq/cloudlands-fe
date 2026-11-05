@@ -8,6 +8,7 @@ import {
   agentPlacementNoticeKind,
   machineLocation,
   machinePlatformLabel,
+  placementFailure,
 } from './agent-location';
 
 const remoteAgent = (extra: Partial<AgentSession> = {}): AgentSession =>
@@ -137,6 +138,79 @@ describe('agentPlacementNoticeKind', () => {
     const starting = remoteAgent({ effectiveIsolation: 'pending' });
     expect(agentPlacementNoticeKind(starting, agentMachineLocation(starting))).toBe('starting');
   });
+
+  it('reports a failed setup once the agent has started, after the machine states', () => {
+    const setupFailed = remoteAgent({ setup: { state: 'failed', exitCode: 1 } });
+    expect(agentPlacementNoticeKind(setupFailed, agentMachineLocation(setupFailed))).toBe(
+      'setup-failed',
+    );
+    const stillStarting = remoteAgent({
+      effectiveIsolation: 'pending',
+      setup: { state: 'failed', exitCode: 1 },
+    });
+    expect(agentPlacementNoticeKind(stillStarting, agentMachineLocation(stillStarting))).toBe(
+      'starting',
+    );
+    const offline = remoteAgent({ nodeState: 'offline', setup: { state: 'failed' } });
+    expect(agentPlacementNoticeKind(offline, agentMachineLocation(offline))).toBe('unreachable');
+    for (const state of ['completed', 'skipped'] as const) {
+      const done = remoteAgent({ setup: { state } });
+      expect(agentPlacementNoticeKind(done, agentMachineLocation(done))).toBe(null);
+    }
+  });
+});
+
+describe('placementFailure', () => {
+  const data = (extra: object) =>
+    JSON.stringify({
+      code: 'machine-update-required',
+      machineVersion: '0.11.120',
+      backendVersion: '0.11.134',
+      update: 'machine',
+      ...extra,
+    });
+
+  it('reads a prepared-checkout refusal in plain words, without its data', () => {
+    const detail = `Update Intent on mac-mini to run agents for this workspace: it has submodules or a setup script. ${data({ reason: 'prepared-checkout' })}`;
+    expect(placementFailure({ code: 'remote-launch-failed', detail }, 'Mac mini')).toEqual({
+      updateRequired: true,
+      message:
+        'Mac mini needs a newer version of Intent to run agents for this workspace, because the workspace has submodules or a setup script.',
+    });
+  });
+
+  it('keeps the message of a plain update refusal and drops its data', () => {
+    const detail = `Update Intent on mac-mini (it runs 0.11.120; this backend needs 0.11.134 or newer). ${data({})}`;
+    expect(placementFailure({ code: 'machine-update-required', detail }, 'Mac mini')).toEqual({
+      updateRequired: true,
+      message: 'Update Intent on mac-mini (it runs 0.11.120; this backend needs 0.11.134 or newer).',
+    });
+    expect(
+      placementFailure({ code: 'machine-update-required', detail: 'Update Intent.' }, 'Mac mini'),
+    ).toEqual({ updateRequired: true, message: 'Update Intent.' });
+  });
+
+  it('keeps any other detail, without a trailing error data object', () => {
+    for (const detail of [
+      "node-provider-unavailable: Claude Code isn't signed in on Mac mini.",
+      'node-checkout-failed: packages/intentd {not json}',
+      'node-checkout-failed: {"path":"packages/intentd"}',
+    ]) {
+      expect(placementFailure({ code: 'remote-launch-failed', detail }, 'Mac mini')).toEqual({
+        updateRequired: false,
+        message: detail,
+      });
+    }
+    expect(
+      placementFailure(
+        {
+          code: 'remote-launch-failed',
+          detail: 'Model gpt-6 isn\'t available on Mac mini. {"code":"model-unavailable"}',
+        },
+        'Mac mini',
+      ),
+    ).toEqual({ updateRequired: false, message: "Model gpt-6 isn't available on Mac mini." });
+  });
 });
 
 describe('agent row status label', () => {
@@ -149,6 +223,18 @@ describe('agent row status label', () => {
         remoteAgent({ placementError: { code: 'remote-launch-failed', detail: 'x' } }),
       ),
     ).toBe("Couldn't start");
+  });
+
+  it('says what a starting remote agent is doing when the machine reports its setup', () => {
+    const starting = (setup: AgentSession['setup']) =>
+      getAgentNodeStatusLabel(remoteAgent({ effectiveIsolation: 'pending', setup }));
+    expect(starting({ state: 'pending' })).toBe('Preparing checkout');
+    expect(starting({ state: 'running', startedAt: '2026-11-05T10:00:00Z' })).toBe(
+      'Running setup',
+    );
+    expect(starting({ state: 'completed', exitCode: 0 })).toBe('Starting…');
+    expect(starting({ state: 'skipped' })).toBe('Starting…');
+    expect(getAgentNodeStatusLabel(remoteAgent({ setup: { state: 'failed' } }))).toBe(undefined);
   });
 
   it('keeps Provisioning for a local placement that is pending', () => {
