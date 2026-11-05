@@ -13,11 +13,13 @@ import { z } from 'zod';
 import { IPC_CHANNELS } from './ipc-registry';
 import { DOCK_MARK_TOOLS, type DockMarkTool } from './dock-evidence';
 import {
+  DockMediaSaveRequestSchema,
   DockMediaEditSchema,
   DockMediaSourceSchema,
   DockMediaTranscriptSchema,
   type DockMediaEdit,
   type DockMediaOutputError,
+  type DockMediaSaveRequest,
   type DockMediaSource,
   type DockMediaTranscript,
 } from './dock-media-edit';
@@ -181,3 +183,30 @@ export function canonicalDockAttachmentPath(value: string): string | null {
     if (!segment || segment === '.' || segment === '..' || !SAFE_SEGMENT.test(segment)) return null;
   return segments.join('/');
 }
+
+/** main → the opening dock: one save to persist, correlated by `requestId`. */
+export interface DockCaptureEditorSaveRequested {
+  requestId: string;
+  request: DockMediaSaveRequest;
+}
+
+export type DockCaptureEditorSaveOutcome =
+  'saved' | 'stale-source' | 'revision-conflict' | 'failed';
+
+/** dock → main (and main → editor): how that save ended; `saved` is the stored edit. */
+export interface DockCaptureEditorSaveResult {
+  requestId: string;
+  result: DockCaptureEditorSaveOutcome;
+  saved?: DockMediaEdit;
+}
+
+export const DockCaptureEditorSaveResultSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    result: z.enum(['saved', 'stale-source', 'revision-conflict', 'failed']),
+    saved: DockMediaEditSchema.optional(),
+  })
+  .strict()
+  .refine((value) => (value.result === 'saved') === !!value.saved, 'Saved edit missing');
+
+export const DockCaptureEditorSaveSchema = DockMediaSaveRequestSchema;

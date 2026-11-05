@@ -479,6 +479,12 @@ export const IPC_CHANNELS = {
     CHANGED: 'dock-capture-editor:changed',
     /** main → editor send: closing or switching would lose edits; ask first. */
     CONFIRM_DISCARD: 'dock-capture-editor:confirm-discard',
+    /** editor → main: save this edit (DockMediaSaveRequest); resolves with the outcome. */
+    SAVE: 'dock-capture-editor:save',
+    /** main → the opening dock send: persist this save (DockCaptureEditorSaveRequested). */
+    SAVE_REQUESTED: 'dock-capture-editor:save-requested',
+    /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
+    SAVE_RESULT: 'dock-capture-editor:save-result',
   },
 
   DOCK_MEDIA: {
@@ -1220,6 +1226,7 @@ export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_ANNOTATION.SIGNAL,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CHANGED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CONFIRM_DISCARD,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.SAVE_REQUESTED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,
