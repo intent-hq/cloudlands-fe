@@ -82,9 +82,12 @@
       value.provenance.visuals !== 'clean'
     )
       return null;
-    // The legacy mark list has no geometry. Never turn it into an invented edit.
-    if (!value.saved && value.marks.length) return null;
-    const edit = value.saved ?? defaultDockMediaEdit(source, [], value.transcript ?? null);
+    // The source's captured marks are the authoritative baseline. Only without them is the
+    // legacy mark list (no geometry) refused rather than turned into an invented edit.
+    if (!value.saved && !source.capturedMarks && value.marks.length) return null;
+    const edit =
+      value.saved ??
+      defaultDockMediaEdit(source, source.capturedMarks ?? [], value.transcript ?? null);
     if (
       !DockMediaEditSchema.safeParse(edit).success ||
       planDockMediaOutput(edit, source, null).errors.length
