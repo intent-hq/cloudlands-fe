@@ -47,6 +47,12 @@
 
   let track = $state<HTMLDivElement | null>(null);
   let dragging: { pointerId: number; part: 'playhead' | 'start' | 'end' } | null = null;
+  /**
+   * A trim handle being dragged: shown at once, committed as one edit on release (so
+   * one Undo undoes one whole gesture); a cancelled drag puts it back.
+   */
+  let previewTrim = $state<DockMediaRange | null>(null);
+  const shownTrim = $derived(previewTrim ?? trim);
 
   const glyphs: Record<DockCaptureEditorMark['tool'], DockComposerGlyph> = {
     pick: 'click',
@@ -69,20 +75,20 @@
     const box = track.getBoundingClientRect();
     return timeAtPointer(event.clientX, box.left, box.width, durationMs);
   }
-  function moveTrim(part: 'start' | 'end', ms: number): void {
-    if (!trim || !onTrim) return;
-    onTrim(
-      clampTrim(
-        part === 'start' ? { ...trim, startMs: ms } : { ...trim, endMs: ms },
-        part,
-        durationMs,
-      ),
+  function trimmed(base: DockMediaRange, part: 'start' | 'end', ms: number): DockMediaRange {
+    return clampTrim(
+      part === 'start' ? { ...base, startMs: ms } : { ...base, endMs: ms },
+      part,
+      durationMs,
     );
+  }
+  function moveTrim(part: 'start' | 'end', ms: number): void {
+    if (trim && onTrim) onTrim(trimmed(trim, part, ms));
   }
   function apply(event: PointerEvent): void {
     if (!dragging) return;
     if (dragging.part === 'playhead') onSeek(timeAt(event));
-    else moveTrim(dragging.part, timeAt(event));
+    else if (trim && onTrim) previewTrim = trimmed(trim, dragging.part, timeAt(event));
   }
   function onPointerDown(event: PointerEvent): void {
     const target = event.target as Element;
@@ -108,7 +114,13 @@
     event.preventDefault();
     event.stopPropagation();
   }
-  const endDrag = () => (dragging = null);
+  /** Release commits a trim drag as one edit; a cancelled one is put back. */
+  function endDrag(commit: boolean): void {
+    const preview = previewTrim;
+    dragging = null;
+    previewTrim = null;
+    if (commit && preview && onTrim) onTrim(preview);
+  }
   function onKeydown(event: KeyboardEvent): void {
     const step = event.shiftKey ? 5000 : 1000;
     if (event.key === 'ArrowLeft') onSeek(currentMs - step);
@@ -133,8 +145,9 @@
     aria-valuetext={formatRecordingTime(currentMs)}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
-    onpointerup={endDrag}
-    onpointercancel={endDrag}
+    onpointerup={() => endDrag(true)}
+    onpointercancel={() => endDrag(false)}
+    onlostpointercapture={() => endDrag(false)}
     onkeydown={onKeydown}
   >
     <div class="rail"></div>
@@ -145,19 +158,19 @@
         style:width={`${timelinePercent(range.endMs, durationMs) - timelinePercent(range.startMs, durationMs)}%`}
       ></div>
     {/each}
-    {#if trim}
+    {#if shownTrim}
       <div
         class="outside"
         style:left="0"
-        style:width={`${timelinePercent(trim.startMs, durationMs)}%`}
+        style:width={`${timelinePercent(shownTrim.startMs, durationMs)}%`}
       ></div>
       <div
         class="outside"
-        style:left={`${timelinePercent(trim.endMs, durationMs)}%`}
+        style:left={`${timelinePercent(shownTrim.endMs, durationMs)}%`}
         style:right="0"
       ></div>
       {#each ['start', 'end'] as const as part (part)}
-        {@const at = part === 'start' ? trim.startMs : trim.endMs}
+        {@const at = part === 'start' ? shownTrim.startMs : shownTrim.endMs}
         <div
           class="handle"
           data-handle={part}

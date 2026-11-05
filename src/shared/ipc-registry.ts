@@ -470,8 +470,15 @@ export const IPC_CHANNELS = {
     OPEN: 'dock-capture-editor:open',
     GET: 'dock-capture-editor:get',
     CLOSE: 'dock-capture-editor:close',
+    /** editor → main: whether the open session has unsaved edits. */
+    DIRTY: 'dock-capture-editor:dirty',
+    /** editor → main: the person chose Discard (or Keep editing) for main's request. */
+    DISCARD: 'dock-capture-editor:discard',
+    KEEP: 'dock-capture-editor:keep',
     /** main → editor send: the session changed (re-read it with GET). */
     CHANGED: 'dock-capture-editor:changed',
+    /** main → editor send: closing or switching would lose edits; ask first. */
+    CONFIRM_DISCARD: 'dock-capture-editor:confirm-discard',
   },
 
   DOCK_MEDIA: {
@@ -1212,6 +1219,7 @@ export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_ANNOTATION.STATE,
   IPC_CHANNELS.DOCK_ANNOTATION.SIGNAL,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CHANGED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CONFIRM_DISCARD,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

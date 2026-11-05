@@ -11,17 +11,35 @@ import {
 export interface DockCaptureEditorBridge {
   /** Close the session `openId` names (never a newer one main retargeted to). */
   close(openId: string): void;
+  /** Tell main whether the session has unsaved edits (it then asks before losing them). */
+  setDirty(openId: string, dirty: boolean): void;
+  /** The person's answer to main's question (`onConfirmDiscard`). */
+  discard(openId: string): void;
+  keep(openId: string): void;
   dispose(): void;
 }
 
 export function connectDockCaptureEditor(
   onSnapshot: (snapshot: DockCaptureEditorSnapshot | null) => void,
+  /** Main asks before closing or switching would lose the session's edits. */
+  onConfirmDiscard: (openId: string) => void = () => {},
 ): DockCaptureEditorBridge {
   if (!isElectron()) {
     onSnapshot(null);
-    return { close: () => {}, dispose: () => {} };
+    const none = () => {};
+    return { close: none, setDirty: none, discard: none, keep: none, dispose: none };
   }
+  const send = (channel: string, payload: unknown) =>
+    void electronAPI()
+      .invoke(channel, payload)
+      .catch(() => false);
+
   let disposed = false;
+  const confirm = (payload: unknown) => {
+    const openId = (payload as { openId?: unknown } | null)?.openId;
+    if (!disposed && typeof openId === 'string') onConfirmDiscard(openId);
+  };
+  electronAPI().on(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, confirm);
   let request = 0;
   const load = async () => {
     const mine = ++request;
@@ -45,14 +63,15 @@ export function connectDockCaptureEditor(
     document.addEventListener('DOMContentLoaded', changed, { once: true });
   else void load();
   return {
-    close: (openId) =>
-      void electronAPI()
-        .invoke(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, { openId })
-        .catch(() => false),
+    close: (openId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, { openId }),
+    setDirty: (openId, dirty) => send(DOCK_CAPTURE_EDITOR_CHANNELS.DIRTY, { openId, dirty }),
+    discard: (openId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId }),
+    keep: (openId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId }),
     dispose: () => {
       disposed = true;
       document.removeEventListener('DOMContentLoaded', changed);
       electronAPI().off(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED, changed);
+      electronAPI().off(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, confirm);
     },
   };
 }

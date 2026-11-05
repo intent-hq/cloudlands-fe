@@ -156,8 +156,11 @@ export const DockCaptureEditorOpenSchema = z
     'Edit does not match the source',
   );
 
-/** Close names the session it means; any other one stays open. */
+/** Close (and Discard, Keep editing) name the session they mean; others are untouched. */
 export const DockCaptureEditorCloseSchema = z.object({ openId: z.string().uuid() }).strict();
+export const DockCaptureEditorDirtySchema = z
+  .object({ openId: z.string().uuid(), dirty: z.boolean() })
+  .strict();
 
 const ATTACHMENT_ROOT = ['.intent', 'attachments'] as const;
 const SAFE_SEGMENT = /^[^\u0000-\u001f\u007f/\\:*?"<>|]+$/;

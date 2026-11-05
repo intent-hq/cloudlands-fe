@@ -18,6 +18,7 @@ import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   DOCK_CAPTURE_EDITOR_ROUTE,
   DockCaptureEditorCloseSchema,
+  DockCaptureEditorDirtySchema,
   DockCaptureEditorOpenSchema,
   canonicalDockAttachmentPath,
   type DockCaptureEditorOpenResult,
@@ -52,13 +53,21 @@ const MIN_SIZE = { width: 640, height: 480 };
 interface Session {
   snapshot: DockCaptureEditorSnapshot;
   backendId: string;
+  /** The editor reported unsaved edits in this session. */
+  dirty: boolean;
   /** Ends this session when the opening dock document's binding is retired. */
   stopWatching: () => void;
 }
 
+/** What waits for the person's Discard: closing the window, or opening another source. */
+type Pending = { kind: 'close' } | { kind: 'retarget'; next: Session };
+
 let editor: BrowserWindow | null = null;
 let editorBackendId: string | null = null;
 let session: Session | null = null;
+let pending: Pending | null = null;
+/** Set while main itself closes the window (after Discard, or with nothing to lose). */
+let closingAllowed = false;
 
 function routeUrl(route: string): string {
   if (process.env.NODE_ENV === 'development')
@@ -86,17 +95,57 @@ function usable(window: BrowserWindow | null): window is BrowserWindow {
   return !!window && !window.isDestroyed() && !window.webContents.isDestroyed();
 }
 
+function dropPending(): void {
+  if (pending?.kind === 'retarget') pending.next.stopWatching();
+  pending = null;
+}
+
 function endSession(): void {
   session?.stopWatching();
   session = null;
 }
 
 function closeEditor(): void {
+  dropPending();
   endSession();
   const window = editor;
   editor = null;
   editorBackendId = null;
-  if (usable(window)) window.close();
+  if (!usable(window)) return;
+  closingAllowed = true;
+  try {
+    window.close();
+  } finally {
+    closingAllowed = false;
+  }
+}
+
+/** Unsaved edits: ask the person in the editor before `next` happens. */
+function askDiscard(next: Pending): void {
+  dropPending();
+  pending = next;
+  if (usable(editor) && session)
+    editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, {
+      openId: session.snapshot.openId,
+    });
+}
+
+/** Show `next` in the editor: in the open window when it is the same backend's. */
+function showSession(next: Session): void {
+  if (usable(editor) && editorBackendId !== next.backendId) closeEditor();
+  dropPending();
+  endSession();
+  session = next;
+  if (usable(editor)) {
+    editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
+    if (editor.isMinimized()) editor.restore();
+    noteDockCaptureEditorFocused();
+    editor.show();
+    editor.focus();
+  } else {
+    editor = createEditorWindow(next.backendId);
+    editorBackendId = next.backendId;
+  }
 }
 
 function createEditorWindow(backendId: string): BrowserWindow {
@@ -134,8 +183,15 @@ function createEditorWindow(backendId: string): BrowserWindow {
     if (editor === window && usable(window))
       window.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
   });
+  // The window's own close (its button, Cmd+W) asks first when edits would be lost.
+  window.on('close', (event) => {
+    if (closingAllowed || editor !== window || !session?.dirty) return;
+    event.preventDefault();
+    askDiscard({ kind: 'close' });
+  });
   window.on('closed', () => {
     if (editor !== window) return;
+    dropPending();
     editor = null;
     editorBackendId = null;
     endSession();
@@ -172,34 +228,25 @@ function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpe
   const mediaUrl = mediaUrlFor(rest.workspaceId, canonical, binding.backendId);
   if (!mediaUrl) return unavailable('invalid-path');
 
-  // A window of another backend is never reused for this one.
-  if (usable(editor) && editorBackendId !== binding.backendId) closeEditor();
-  endSession();
   const openId = randomUUID();
-  const sender = event.sender;
-  const stopWatching = onStrictBackendBindingRetired(sender, () => {
+  // Its owner gone (the dock's document or binding retired), a session ends: as the
+  // current one, the editor closes; as a pending one, it is dropped.
+  const stopWatching = onStrictBackendBindingRetired(event.sender, () => {
     if (session?.snapshot.openId === openId) closeEditor();
+    else if (pending?.kind === 'retarget' && pending.next.snapshot.openId === openId) dropPending();
   });
   // Sending does not yet apply saved edits, so nothing can be saved: an edit of a
   // known source is a preview, and a source without one opens read-only.
   const output = rest.source ? { ready: false } : undefined;
-  session = {
+  const next: Session = {
     snapshot: { ...rest, openId, mediaUrl, ...(output ? { output } : {}) },
     backendId: binding.backendId,
+    dirty: false,
     stopWatching,
   };
-
-  if (usable(editor)) {
-    // Retarget the open (stage 1: never edited) window to this attachment.
-    editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
-    if (editor.isMinimized()) editor.restore();
-    noteDockCaptureEditorFocused();
-    editor.show();
-    editor.focus();
-  } else {
-    editor = createEditorWindow(binding.backendId);
-    editorBackendId = binding.backendId;
-  }
+  // Unsaved edits are never replaced silently: the editor asks, and this opens on Discard.
+  if (usable(editor) && session?.dirty) askDiscard({ kind: 'retarget', next });
+  else showSession(next);
   return { ok: true, openId };
 }
 
@@ -231,6 +278,31 @@ export function setupDockCaptureEditorIPC(): void {
     if (!parsed.success || !fromEditor(event)) return false;
     if (session?.snapshot.openId !== parsed.data.openId) return false;
     closeEditor();
+    return true;
+  });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DIRTY, (event, request: unknown) => {
+    const parsed = DockCaptureEditorDirtySchema.safeParse(request);
+    if (!parsed.success || !fromEditor(event) || !session) return false;
+    if (session.snapshot.openId !== parsed.data.openId) return false;
+    session.dirty = parsed.data.dirty;
+    return true;
+  });
+  // The person's answer to main's question: Discard does what was waiting.
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, (event, request: unknown) => {
+    const parsed = DockCaptureEditorCloseSchema.safeParse(request);
+    if (!parsed.success || !fromEditor(event) || !session || !pending) return false;
+    if (session.snapshot.openId !== parsed.data.openId) return false;
+    const waiting = pending;
+    pending = null;
+    if (waiting.kind === 'close') closeEditor();
+    else showSession(waiting.next);
+    return true;
+  });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, (event, request: unknown) => {
+    const parsed = DockCaptureEditorCloseSchema.safeParse(request);
+    if (!parsed.success || !fromEditor(event) || !session) return false;
+    if (session.snapshot.openId !== parsed.data.openId) return false;
+    dropPending();
     return true;
   });
 }

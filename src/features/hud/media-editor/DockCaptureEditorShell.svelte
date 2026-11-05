@@ -25,6 +25,9 @@
     onSave,
     onUndo,
     onRedo,
+    discardRequest = 0,
+    onDiscardRequested,
+    onKeepEditing,
     headerActions,
     main,
     sidebar,
@@ -37,16 +40,38 @@
     onSave?: () => void;
     onUndo?: () => void;
     onRedo?: () => void;
+    /**
+     * Increments when main asks before closing or switching would lose edits; the
+     * shell asks the person, then calls `onDiscardRequested` or `onKeepEditing`.
+     */
+    discardRequest?: number;
+    onDiscardRequested?: () => void;
+    onKeepEditing?: () => void;
     headerActions?: Snippet;
     main: Snippet;
     sidebar?: Snippet;
   } = $props();
 
   let confirming = $state(false);
+  /** The open question came from main (window close or a switch), not from Esc/Cancel. */
+  let fromMain = false;
+  let answered = 0;
+  $effect(() => {
+    const request = discardRequest;
+    if (request <= answered) return;
+    answered = request;
+    fromMain = true;
+    confirming = true;
+  });
 
   function requestClose(): void {
+    fromMain = false;
     if (dirty) confirming = true;
     else onCancel();
+  }
+  function keepEditing(): void {
+    if (fromMain) onKeepEditing?.();
+    fromMain = false;
   }
 
   function onKeydown(event: KeyboardEvent): void {
@@ -104,8 +129,11 @@
   cancelLabel={m.dock_captureEditor_keepEditing_label()}
   onConfirm={() => {
     confirming = false;
-    onCancel();
+    if (fromMain) onDiscardRequested?.();
+    else onCancel();
+    fromMain = false;
   }}
+  onCancel={keepEditing}
 />
 
 <style>

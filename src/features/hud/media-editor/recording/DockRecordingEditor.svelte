@@ -36,8 +36,22 @@
    * playback skips the rest. Save appears only once sending honors a saved edit; a
    * source without a canonical description opens read-only.
    */
-  let { snapshot, onClose }: { snapshot: DockCaptureEditorSnapshot; onClose: () => void } =
-    $props();
+  let {
+    snapshot,
+    onClose,
+    discardRequest = 0,
+    onDirtyChange,
+    onDiscardRequested,
+    onKeepEditing,
+  }: {
+    snapshot: DockCaptureEditorSnapshot;
+    onClose: () => void;
+    /** Main's "edits would be lost" questions (window close, a switch); see the shell. */
+    discardRequest?: number;
+    onDirtyChange?: (dirty: boolean) => void;
+    onDiscardRequested?: () => void;
+    onKeepEditing?: () => void;
+  } = $props();
 
   // One session per mount (the page remounts the view for each open).
   const source = snapshot.source ?? null;
@@ -60,8 +74,17 @@
   let activeMarkId = $state<string | null>(null);
   let failed = $state(false);
 
-  const durationMs = $derived(mediaDurationMs || snapshot.durationMs || 0);
+  // Edits are bounded by the canonical source's duration; the media's own duration
+  // is only a display fallback for a source without one (read-only).
+  const durationMs = $derived(
+    snapshot.source?.durationMs ?? (mediaDurationMs || snapshot.durationMs || 0),
+  );
   const activeMark = $derived(snapshot.marks.find((mark) => mark.id === activeMarkId) ?? null);
+
+  // Main asks before closing or switching would lose these edits.
+  $effect(() => {
+    onDirtyChange?.(edits?.dirty ?? false);
+  });
 
   // The playhead follows the video smoothly while it plays.
   let frame: number | undefined;
@@ -140,6 +163,9 @@
   onCancel={onClose}
   onUndo={edits ? () => edits.undo() : undefined}
   onRedo={edits ? () => edits.redo() : undefined}
+  {discardRequest}
+  {onDiscardRequested}
+  {onKeepEditing}
 >
   {#snippet main()}
     <div class="stage">
