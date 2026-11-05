@@ -1100,6 +1100,7 @@
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
       machineId={effectiveStartOn || undefined}
+      showMachine={false}
       silentFallback
       portal={true}
       modalAware={true}
