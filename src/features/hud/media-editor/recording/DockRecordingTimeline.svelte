@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import type { DockCaptureEditorMark } from '$shared/dock-capture-editor';
@@ -64,6 +65,41 @@
   } = $props();
 
   let track = $state<HTMLDivElement | null>(null);
+
+  // Zoom (Cmd/Ctrl + wheel, or pinch, which arrives as a Ctrl wheel): the track grows
+  // up to 8x inside a scroller, keeping the time under the pointer in place.
+  const MAX_ZOOM = 8;
+  let zoom = $state(1);
+  let scroller = $state<HTMLDivElement | null>(null);
+  function onWheel(event: WheelEvent): void {
+    if (!(event.ctrlKey || event.metaKey) || !scroller || !track) return;
+    event.preventDefault();
+    const next = Math.min(MAX_ZOOM, Math.max(1, zoom * Math.exp(-event.deltaY / 200)));
+    if (next === zoom) return;
+    const view = scroller.getBoundingClientRect();
+    const offset = event.clientX - view.left;
+    const fraction = (scroller.scrollLeft + offset) / track.offsetWidth;
+    zoom = next;
+    void tick().then(() => {
+      if (scroller && track) scroller.scrollLeft = fraction * track.offsetWidth - offset;
+    });
+  }
+  // Not `onwheel`: Svelte makes that passive, and a zoom must stop the page zooming.
+  $effect(() => {
+    const node = scroller;
+    if (!node) return;
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  });
+  // While zoomed, keep the playhead in view as it moves (playback, seeking).
+  $effect(() => {
+    const at = timelinePercent(currentMs, durationMs) / 100;
+    if (zoom === 1 || !scroller || !track) return;
+    const x = at * track.offsetWidth;
+    const { scrollLeft, clientWidth } = scroller;
+    if (x < scrollLeft || x > scrollLeft + clientWidth)
+      scroller.scrollLeft = Math.max(0, x - clientWidth * 0.1);
+  });
   let dragging: {
     pointerId: number;
     part: 'playhead' | 'start' | 'end';
@@ -208,9 +244,15 @@
   }
 </script>
 
-<div class="timeline" data-testid="recording-timeline">
+<div
+  class="timeline"
+  data-testid="recording-timeline"
+  data-zoomed={zoom > 1 || undefined}
+  bind:this={scroller}
+>
   <div
     bind:this={track}
+    style:width={`${zoom * 100}%`}
     class="track"
     role="slider"
     tabindex="0"
@@ -329,6 +371,10 @@
 <style>
   .timeline {
     padding: 4px 0 2px;
+  }
+  .timeline[data-zoomed] {
+    overflow-x: auto;
+    padding-bottom: 6px;
   }
   .track {
     position: relative;

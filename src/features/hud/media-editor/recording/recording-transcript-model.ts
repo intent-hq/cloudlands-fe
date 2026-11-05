@@ -87,3 +87,60 @@ export function currentWordId(words: readonly Word[], ms: number): string | null
       return word.id;
   return null;
 }
+
+const FILLER = new Set(['um', 'umm', 'uh', 'uhh', 'er', 'erm', 'ah', 'hmm', 'mm']);
+/** A pause this long between words is offered as cut, keeping a little either side. */
+const LONG_PAUSE_MS = 2000;
+const PAUSE_MARGIN_MS = 300;
+
+export interface FillerCuts {
+  ranges: { startMs: number; endMs: number }[];
+  fillerCount: number;
+  pauseCount: number;
+  totalMs: number;
+}
+
+/**
+ * "Cut filler" (Capture and recording editor spec): timed filler words ("um", "uh")
+ * and long silences between timed words, inside `kept` (what is not already trimmed
+ * or cut). Only genuinely timed recognition units count; nothing is guessed.
+ */
+export function findFillerCuts(
+  words: readonly Word[],
+  kept: readonly { startMs: number; endMs: number }[],
+): FillerCuts {
+  const inside = (start: number, end: number) =>
+    kept.some((range) => start >= range.startMs && end <= range.endMs);
+  const timed = words.filter(
+    (word): word is Word & { startMs: number; endMs: number } =>
+      word.alignment !== 'untimed' && word.startMs !== null && word.endMs !== null,
+  );
+  const ranges: FillerCuts['ranges'] = [];
+  let fillerCount = 0;
+  let pauseCount = 0;
+  for (const word of timed) {
+    const bare = word.text.toLowerCase().replace(/[^\p{L}]/gu, '');
+    if (FILLER.has(bare) && inside(word.startMs, word.endMs)) {
+      ranges.push({ startMs: word.startMs, endMs: word.endMs });
+      fillerCount += 1;
+    }
+  }
+  for (let i = 1; i < timed.length; i += 1) {
+    const start = timed[i - 1].endMs + PAUSE_MARGIN_MS;
+    const end = timed[i].startMs - PAUSE_MARGIN_MS;
+    if (
+      timed[i].startMs - timed[i - 1].endMs >= LONG_PAUSE_MS &&
+      end > start &&
+      inside(start, end)
+    ) {
+      ranges.push({ startMs: start, endMs: end });
+      pauseCount += 1;
+    }
+  }
+  return {
+    ranges,
+    fillerCount,
+    pauseCount,
+    totalMs: ranges.reduce((sum, range) => sum + range.endMs - range.startMs, 0),
+  };
+}

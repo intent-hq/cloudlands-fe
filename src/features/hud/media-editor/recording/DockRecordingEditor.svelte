@@ -14,6 +14,8 @@
   import DockRecordingSendOptions from './DockRecordingSendOptions.svelte';
   import DockRecordingTranscript from './DockRecordingTranscript.svelte';
   import DockRecordingFrameMarks from './DockRecordingFrameMarks.svelte';
+  import * as Menu from '$lib/components/ui/menu';
+  import { findFillerCuts, type FillerCuts } from './recording-transcript-model';
   import {
     frameToolKind,
     marksOnFrame,
@@ -24,6 +26,7 @@
   import {
     defaultDockMediaEdit,
     dockMediaBatchAt,
+    originalDockMediaEdit,
     canUseHighlights,
     markRemovable,
     mergeDockMediaRanges,
@@ -269,6 +272,31 @@
     text: () => m.dock_captureEditor_frameText_label(),
   };
 
+  // Reset edits: back to the recording as captured (its captured marks and defaults),
+  // as one undoable change. Only with an authoritative capture baseline.
+  const original = $derived.by(() => {
+    if (!source) return null;
+    const found = originalDockMediaEdit({ source, saved: snapshot.saved ?? null, transcript });
+    return found?.edit.sourceId === source.id ? found : null;
+  });
+  // Cut filler: offered with a ready transcript; shows what it found before applying.
+  let fillerPreview = $state<FillerCuts | null>(null);
+  let fillerOpen = $state(false);
+  function previewFiller(): void {
+    if (!edits || transcript?.status !== 'ready' || !kept) return;
+    fillerPreview = findFillerCuts(transcript.words, kept);
+    fillerOpen = true;
+  }
+  function applyFiller(): void {
+    const found = fillerPreview;
+    fillerOpen = false;
+    if (!found?.ranges.length) return;
+    edits?.apply((draft) => ({
+      ...draft,
+      cuts: mergeDockMediaRanges([...draft.cuts, ...found.ranges]),
+    }));
+  }
+
   /** Include or exclude a mark (Shift-click): one edit. */
   function toggleMark(markId: string): void {
     edits?.apply((draft) => ({
@@ -338,6 +366,7 @@
   {saving}
   onSave={canSave ? save : undefined}
   onCancel={onClose}
+  headerActions={edits ? overflow : undefined}
   sidebar={sendOptions}
   onUndo={edits ? () => edits.undo() : undefined}
   onRedo={edits ? () => edits.redo() : undefined}
@@ -477,6 +506,42 @@
     confirmEmptyHighlights = false;
     void save();
   }}
+/>
+
+{#snippet overflow()}
+  <Menu.Root>
+    <Menu.Trigger
+      class="flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent"
+      aria-label={m.dock_captureEditor_more_label()}
+    >
+      <span aria-hidden="true">⋯</span>
+    </Menu.Trigger>
+    <Menu.Content align="end">
+      <Menu.Item disabled={!timeEditable || transcript?.status !== 'ready'} onSelect={previewFiller}
+        >{m.dock_captureEditor_cutFiller_label()}</Menu.Item
+      >
+      <Menu.Item disabled={!original} onSelect={() => original && edits?.reset(original.edit)}
+        >{m.dock_captureEditor_resetEdits_label()}</Menu.Item
+      >
+    </Menu.Content>
+  </Menu.Root>
+{/snippet}
+
+<DestructiveConfirm
+  bind:open={fillerOpen}
+  destructive={false}
+  title={fillerPreview?.ranges.length
+    ? m.dock_captureEditor_cutFiller_title({
+        words: fillerPreview.fillerCount,
+        pauses: fillerPreview.pauseCount,
+        seconds: Math.round((fillerPreview.totalMs / 1000) * 10) / 10,
+      })
+    : m.dock_captureEditor_cutFiller_none()}
+  confirmLabel={m.dock_captureEditor_cutFiller_apply()}
+  cancelLabel={m.dock_captureEditor_cancel_label()}
+  canSubmit={!!fillerPreview?.ranges.length}
+  onConfirm={applyFiller}
+  onCancel={() => (fillerOpen = false)}
 />
 
 {#snippet sendOptions()}
