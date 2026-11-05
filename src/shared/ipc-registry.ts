@@ -481,6 +481,12 @@ export const IPC_CHANNELS = {
     SAVE: 'dock-capture-editor:save',
     /** main → the opening dock send: persist this save (DockCaptureEditorSaveRequested). */
     SAVE_REQUESTED: 'dock-capture-editor:save-requested',
+    /** editor → main: capture the screenshot again (same mode); resolves with a candidate. */
+    RETAKE: 'dock-capture-editor:retake',
+    /** main → the opening dock send: capture and place a candidate (DockCaptureEditorRetakeRequested). */
+    RETAKE_REQUESTED: 'dock-capture-editor:retake-requested',
+    /** dock → main: the placed candidate's canonical source, or failure (DockCaptureEditorRetakeResult). */
+    RETAKE_RESULT: 'dock-capture-editor:retake-result',
     /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdate). */
     TRANSCRIPT_UPDATE: 'dock-capture-editor:transcript-update',
     /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
@@ -1227,6 +1233,7 @@ export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CHANGED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CONFIRM_DISCARD,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.SAVE_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.RETAKE_REQUESTED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

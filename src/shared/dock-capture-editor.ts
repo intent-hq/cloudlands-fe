@@ -233,3 +233,34 @@ export const DockCaptureEditorTranscriptUpdateSchema = z
 export type DockCaptureEditorTranscriptUpdate = z.infer<
   typeof DockCaptureEditorTranscriptUpdateSchema
 >;
+
+/**
+ * main → the opening dock: capture the screenshot again in the same mode and place
+ * it as a new file, without changing the attachment (Save swaps it in, atomically).
+ */
+export interface DockCaptureEditorRetakeRequested {
+  requestId: string;
+  pair: { workspaceId: string; agentId: string };
+  /** The source being replaced, as the session knows it. */
+  expected: { sourceId: string; sourceRevision: number };
+}
+
+/** dock → main: the placed candidate's canonical source, or why there is none. */
+export const DockCaptureEditorRetakeResultSchema = z.union([
+  z
+    .object({ requestId: z.string().uuid(), ok: z.literal(true), source: DockMediaSourceSchema })
+    .strict(),
+  z
+    .object({
+      requestId: z.string().uuid(),
+      ok: z.literal(false),
+      error: z.enum(['cancelled', 'permission', 'failed']),
+    })
+    .strict(),
+]);
+export type DockCaptureEditorRetakeResult = z.infer<typeof DockCaptureEditorRetakeResultSchema>;
+
+/** main → editor: the candidate to show, by main's token; Save names only the token. */
+export type DockCaptureEditorRetakeOutcome =
+  | { ok: true; candidateToken: string; source: DockMediaSource; mediaUrl: string }
+  | { ok: false; error: 'cancelled' | 'permission' | 'failed' };

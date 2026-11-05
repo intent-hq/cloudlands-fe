@@ -23,6 +23,8 @@ import {
   canonicalDockAttachmentPath,
   DockCaptureEditorSaveResultSchema,
   DockCaptureEditorTranscriptUpdateSchema,
+  DockCaptureEditorRetakeResultSchema,
+  type DockCaptureEditorRetakeOutcome,
   type DockCaptureEditorOpenResult,
   type DockCaptureEditorSaveResult,
   type DockCaptureEditorSnapshot,
@@ -31,6 +33,7 @@ import {
   DockMediaEditSchema,
   DockMediaSaveRequestSchema,
   type DockMediaSaveRequest,
+  type DockMediaSource,
 } from '../../../shared/dock-media-edit';
 import { z } from 'zod';
 import {
@@ -64,6 +67,8 @@ interface Session {
   backendId: string;
   /** The opening dock document: the only one that persists this session's saves. */
   owner: { sender: Electron.WebContents; binding: object };
+  /** Retake candidates main placed for this session, by main's token (a few at most). */
+  candidates: Map<string, DockMediaSource>;
   /** Ends this session when the opening dock document's binding is retired. */
   stopWatching: () => void;
 }
@@ -77,6 +82,25 @@ interface PendingSave {
 }
 const SAVE_TIMEOUT_MS = 15_000;
 const pendingSaves = new Map<string, PendingSave>();
+
+/** A retake sent to the owning dock, waiting for its placed candidate. */
+interface PendingRetake {
+  openId: string;
+  owner: Session['owner'];
+  resolve: (result: DockCaptureEditorRetakeOutcome) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+/** A selection can take a while; past this the retake fails (the editor comes back). */
+const RETAKE_TIMEOUT_MS = 120_000;
+const MAX_CANDIDATES = 4;
+const pendingRetakes = new Map<string, PendingRetake>();
+function settleRetake(requestId: string, result: DockCaptureEditorRetakeOutcome): void {
+  const pending = pendingRetakes.get(requestId);
+  if (!pending) return;
+  pendingRetakes.delete(requestId);
+  clearTimeout(pending.timer);
+  pending.resolve(result);
+}
 
 /** The editor's save: its draft edit (and, after a retake, the candidate's token). */
 const EditorSaveSchema = z
@@ -149,10 +173,14 @@ function endSession(): void {
   session = null;
   // Its saves can no longer reach the editor: they end as failed (the dock may still
   // finish writing; nothing here claims they were cancelled).
-  if (ended)
+  if (ended) {
     for (const [requestId, pending] of pendingSaves)
       if (pending.openId === ended.snapshot.openId)
         settleSave(requestId, { requestId, result: 'failed' });
+    for (const [requestId, pending] of pendingRetakes)
+      if (pending.openId === ended.snapshot.openId)
+        settleRetake(requestId, { ok: false, error: 'failed' });
+  }
 }
 
 function closeEditor(): void {
@@ -312,6 +340,7 @@ function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpe
     snapshot: { ...rest, openId, mediaUrl, ...(output ? { output } : {}) },
     backendId: binding.backendId,
     owner: { sender: event.sender, binding },
+    candidates: new Map(),
     stopWatching,
   };
   // An open session is never replaced silently: the editor is asked (it answers at
@@ -372,6 +401,41 @@ export function setupDockCaptureEditorIPC(): void {
     if (session.snapshot.openId !== parsed.data.openId) return false;
     if (pending.requestId !== parsed.data.requestId) return false;
     dropPending();
+    return true;
+  });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE, (event, request: unknown) =>
+    retake(event, request),
+  );
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE_RESULT, (event, value: unknown) => {
+    const parsed = DockCaptureEditorRetakeResultSchema.safeParse(value);
+    if (!parsed.success) return false;
+    const pending = pendingRetakes.get(parsed.data.requestId);
+    if (!pending || event.sender !== pending.owner.sender) return false;
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    if (getStrictBackendBindingForWebContents(event.sender) !== pending.owner.binding) return false;
+    const current = session;
+    if (!parsed.data.ok || !current || current.snapshot.openId !== pending.openId) {
+      settleRetake(parsed.data.requestId, {
+        ok: false,
+        error: parsed.data.ok ? 'failed' : parsed.data.error,
+      });
+      return true;
+    }
+    const candidate = parsed.data.source;
+    const path = canonicalDockAttachmentPath(candidate.path);
+    const mediaUrl = path
+      ? mediaUrlFor(current.snapshot.workspaceId, path, current.backendId)
+      : null;
+    if (candidate.kind !== 'screenshot' || !mediaUrl) {
+      settleRetake(parsed.data.requestId, { ok: false, error: 'failed' });
+      return true;
+    }
+    // Main's token for this candidate; the oldest goes once there are a few.
+    const candidateToken = randomUUID();
+    current.candidates.set(candidateToken, candidate);
+    while (current.candidates.size > MAX_CANDIDATES)
+      current.candidates.delete(current.candidates.keys().next().value as string);
+    settleRetake(parsed.data.requestId, { ok: true, candidateToken, source: candidate, mediaUrl });
     return true;
   });
   // A newer transcript of the open session's source, from the dock that opened it.
@@ -437,8 +501,16 @@ async function save(
   const { snapshot, owner } = current;
   if (snapshot.openId !== parsed.data.openId || !snapshot.source) return failed();
   if (snapshot.output?.ready !== true) return failed();
-  // Replacing the source (after a retake) needs main's candidate store, not here yet.
-  if (parsed.data.replacement) return failed();
+  // After a retake, the candidate is main's own (by token), never the editor's word.
+  const token = parsed.data.replacement?.candidateToken;
+  const candidate = token ? current.candidates.get(token) : undefined;
+  if (token && !candidate) return failed();
+  const target = candidate ?? snapshot.source;
+  if (
+    parsed.data.edit.sourceId !== target.id ||
+    parsed.data.edit.sourceRevision !== target.revision
+  )
+    return failed();
   if (owner.sender.isDestroyed()) return failed();
   if (getStrictBackendBindingForWebContents(owner.sender) !== owner.binding) return failed();
   const expectedEditRevision = snapshot.saved?.revision ?? 0;
@@ -449,6 +521,7 @@ async function save(
     pair: { workspaceId: snapshot.workspaceId, agentId: snapshot.agentId },
     expectedEditRevision,
     edit: { ...parsed.data.edit, revision: expectedEditRevision },
+    ...(candidate && token ? { replacement: { candidateToken: token, source: candidate } } : {}),
   };
   if (!DockMediaSaveRequestSchema.safeParse(canonical).success) return failed();
   const requestId = randomUUID();
@@ -465,7 +538,61 @@ async function save(
     });
   });
   // The stored edit becomes this session's baseline (only if it is still this session).
-  if (result.result === 'saved' && result.saved && session === current)
-    current.snapshot = { ...current.snapshot, saved: result.saved };
+  if (result.result === 'saved' && result.saved && session === current) {
+    current.snapshot = {
+      ...current.snapshot,
+      saved: result.saved,
+      ...(candidate ? { source: candidate } : {}),
+    };
+    if (candidate) current.candidates.clear();
+  }
   return result;
+}
+
+/**
+ * Retake (screenshot): main hides the editor and asks the dock that opened it to
+ * capture again in the same mode and place the result as a new file. The attachment
+ * does not change; the editor gets main's token for the candidate, and Save swaps it
+ * in. The editor comes back however it ends.
+ */
+async function retake(
+  event: IpcMainInvokeEvent,
+  request: unknown,
+): Promise<DockCaptureEditorRetakeOutcome> {
+  const parsed = DockCaptureEditorCloseSchema.safeParse(request);
+  if (!parsed.success || !fromEditor(event) || !session) return { ok: false, error: 'failed' };
+  const current = session;
+  const { snapshot, owner } = current;
+  const window = editor;
+  if (snapshot.openId !== parsed.data.openId || snapshot.kind !== 'screenshot' || !snapshot.source)
+    return { ok: false, error: 'failed' };
+  if (owner.sender.isDestroyed()) return { ok: false, error: 'failed' };
+  if (getStrictBackendBindingForWebContents(owner.sender) !== owner.binding)
+    return { ok: false, error: 'failed' };
+  const requestId = randomUUID();
+  window?.hide();
+  try {
+    return await new Promise<DockCaptureEditorRetakeOutcome>((resolve) => {
+      pendingRetakes.set(requestId, {
+        openId: snapshot.openId,
+        owner,
+        resolve,
+        timer: setTimeout(
+          () => settleRetake(requestId, { ok: false, error: 'failed' }),
+          RETAKE_TIMEOUT_MS,
+        ),
+      });
+      owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE_REQUESTED, {
+        requestId,
+        pair: { workspaceId: snapshot.workspaceId, agentId: snapshot.agentId },
+        expected: { sourceId: snapshot.source!.id, sourceRevision: snapshot.source!.revision },
+      });
+    });
+  } finally {
+    if (window && editor === window && usable(window)) {
+      noteDockCaptureEditorFocused();
+      window.show();
+      window.focus();
+    }
+  }
 }

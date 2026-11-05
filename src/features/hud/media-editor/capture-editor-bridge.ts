@@ -5,6 +5,7 @@
 import { electronAPI, isElectron } from '$lib/electron-bridge';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
+  type DockCaptureEditorRetakeOutcome,
   type DockCaptureEditorSaveResult,
   type DockCaptureEditorSnapshot,
 } from '$shared/dock-capture-editor';
@@ -17,7 +18,13 @@ export interface DockCaptureEditorBridge {
   discard(openId: string, requestId: string): void;
   keep(openId: string, requestId: string): void;
   /** Save the session's edit; resolves with the durable outcome (failed when unsure). */
-  save(openId: string, edit: DockMediaEdit): Promise<DockCaptureEditorSaveResult | null>;
+  save(
+    openId: string,
+    edit: DockMediaEdit,
+    replacement?: { candidateToken: string },
+  ): Promise<DockCaptureEditorSaveResult | null>;
+  /** Capture the screenshot again; main hides the editor meanwhile and keeps the result. */
+  retake(openId: string): Promise<DockCaptureEditorRetakeOutcome | null>;
   dispose(): void;
 }
 
@@ -37,6 +44,7 @@ export function connectDockCaptureEditor(
       discard: none,
       keep: none,
       save: async () => null,
+      retake: async () => null,
       dispose: none,
     };
   }
@@ -79,12 +87,21 @@ export function connectDockCaptureEditor(
     discard: (openId, requestId) =>
       send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId, requestId }),
     keep: (openId, requestId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId, requestId }),
-    save: async (openId, edit) => {
+    save: async (openId, edit, replacement) => {
       try {
         return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE, {
           openId,
           edit,
+          ...(replacement ? { replacement } : {}),
         })) ?? null) as DockCaptureEditorSaveResult | null;
+      } catch {
+        return null;
+      }
+    },
+    retake: async (openId) => {
+      try {
+        return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE, { openId })) ??
+          null) as DockCaptureEditorRetakeOutcome | null;
       } catch {
         return null;
       }
