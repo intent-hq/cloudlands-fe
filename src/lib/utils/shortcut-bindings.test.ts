@@ -4,6 +4,7 @@ import {
   applyShortcutCapture,
   matchesShortcutPattern,
   getShortcutSequenceTrigger,
+  isEventClaimedByCustomBinding,
   SHORTCUT_DEFAULTS,
   matchesShortcut,
   normalizeShortcut,
@@ -152,5 +153,73 @@ describe('shortcut bindings', () => {
     }
     expect(normalizeShortcut('alt+x + 1-9')).toBe('alt+x + 1-9');
     expect(getShortcutSequenceTrigger('alt+x + 1-9')).toBe('alt+x');
+  });
+});
+
+describe('workspace tab and column focus defaults', () => {
+  const key = (
+    k: string,
+    mods: Partial<Record<'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey', boolean>>,
+  ) => ({ key: k, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods });
+
+  it('keeps Ctrl+Tab and adds separate Mod+Shift bracket rows', () => {
+    expect(SHORTCUT_DEFAULTS['global.next-space']).toBe('ctrl+tab');
+    expect(SHORTCUT_DEFAULTS['global.previous-space']).toBe('ctrl+shift+tab');
+    expect(SHORTCUT_DEFAULTS['global.next-space-alt']).toBe('mod+shift+]');
+    expect(SHORTCUT_DEFAULTS['global.previous-space-alt']).toBe('mod+shift+[');
+    expect(SHORTCUT_DEFAULTS['panel.focus-next-column']).toBe('mod+alt+right');
+    expect(SHORTCUT_DEFAULTS['panel.focus-previous-column']).toBe('mod+alt+left');
+  });
+
+  it.each([
+    [true, { metaKey: true }],
+    [false, { ctrlKey: true }],
+  ] as const)('matches the new chords on mac=%s', (mac, mod) => {
+    expect(matchesShortcut(key('}', { ...mod, shiftKey: true }), 'mod+shift+]', mac)).toBe(true);
+    expect(matchesShortcut(key('{', { ...mod, shiftKey: true }), 'mod+shift+[', mac)).toBe(true);
+    expect(matchesShortcut(key('ArrowRight', { ...mod, altKey: true }), 'mod+alt+right', mac)).toBe(
+      true,
+    );
+    expect(matchesShortcut(key('ArrowLeft', { ...mod, altKey: true }), 'mod+alt+left', mac)).toBe(
+      true,
+    );
+  });
+
+  it('keeps a pre-upgrade custom binding that equals a new default', () => {
+    expect(
+      sanitizeShortcutOverrides({
+        'panel.focus-next-column': 'mod+shift+]',
+        'global.next-space': 'mod+shift+]',
+      }),
+    ).toEqual({ 'panel.focus-next-column': 'mod+shift+]', 'global.next-space': 'mod+shift+]' });
+  });
+
+  it('reports a default chord claimed by a custom binding on another action', () => {
+    const overrides = { 'panel.focus-next-column': 'mod+shift+]' } as const;
+    const resolve = (id: keyof typeof SHORTCUT_DEFAULTS) => resolveShortcut(id, overrides);
+    const press = key('}', { metaKey: true, shiftKey: true });
+
+    expect(isEventClaimedByCustomBinding('global.next-space-alt', press, resolve, true)).toBe(true);
+    // The customized action itself is never blocked.
+    expect(isEventClaimedByCustomBinding('panel.focus-next-column', press, resolve, true)).toBe(
+      false,
+    );
+    expect(
+      isEventClaimedByCustomBinding(
+        'global.previous-space-alt',
+        key('{', { metaKey: true, shiftKey: true }),
+        resolve,
+        true,
+      ),
+    ).toBe(false);
+    // Leader keys only match after the leader prefix, so they never claim a direct chord.
+    expect(
+      isEventClaimedByCustomBinding(
+        'global.next-space-alt',
+        press,
+        (id) => (id === 'leader.toggle-zoom' ? 'mod+shift+]' : SHORTCUT_DEFAULTS[id]),
+        true,
+      ),
+    ).toBe(false);
   });
 });

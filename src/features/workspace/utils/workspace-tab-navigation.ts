@@ -31,7 +31,7 @@ import { resolveEmptyWindowDestination } from './empty-window-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
-import type { ShortcutId } from '$lib/utils/shortcut-bindings';
+import { isEventClaimedByCustomBinding, type ShortcutId } from '$lib/utils/shortcut-bindings';
 import { getPanelKeyboardShortcuts } from '$features/layout/panel-keyboard-shortcuts.svelte';
 import type { WorkspaceTabMovedEventDetail } from './workspace-tab-move-event';
 
@@ -511,6 +511,27 @@ export function registerWorkspaceTabShortcuts({
       ctrl: true,
       shift,
       global: true,
+      description:
+        direction === 'next'
+          ? m.workspace_shortcuts_nextSpaceTab_description()
+          : m.workspace_shortcuts_previousSpaceTab_description(),
+      action: withRoute((path) => cycleWorkspaceTab(store, direction, path, navigate)),
+    });
+    // Mac-style Mod+Shift+] / [ (Safari, Chrome, Terminal). A separate row so Ctrl+Tab
+    // customizations stay untouched. preferLocal lets the terminal drawer (2+ terminals) and
+    // the Windows/Linux code editor (Fold/Unfold) claim the chord first; workspace switching
+    // is the fallback, including from terminals in columns.
+    const altId = direction === 'next' ? 'global.next-space-alt' : 'global.previous-space-alt';
+    register({
+      ...effective(altId),
+      ...mod,
+      key: direction === 'next' ? '}' : '{',
+      shift: true,
+      global: true,
+      allowInTerminal: true,
+      preferLocal: true,
+      enabled: (event) =>
+        !resolveBinding || !isEventClaimedByCustomBinding(altId, event, resolveBinding, isMac),
       description:
         direction === 'next'
           ? m.workspace_shortcuts_nextSpaceTab_description()

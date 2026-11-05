@@ -56,7 +56,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { drawerTerminalCycleDirection } from './drawer-terminal-cycling';
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -324,32 +324,16 @@
   // ============================================================================
 
   function handleKeydown(event: KeyboardEvent) {
-    const isMod = event.metaKey || event.ctrlKey;
-
     // Only handle when the root terminal overlay is open
     if (!$isOpen) return;
 
-    // Tab cycling shortcuts should only work when focus is in the terminal
-    const isTerminalFocused = isFocusInTerminal(event.target as HTMLElement | null);
-    if (!isTerminalFocused) return;
-
-    if ($terminals.length <= 1) return;
-
-    // Cmd+Shift+] - Next terminal
-    if ((event.key === ']' || event.key === '}') && isMod && event.shiftKey) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      cycleTerminal(1);
-      return;
-    }
-
-    // Cmd+Shift+[ - Previous terminal
-    if ((event.key === '[' || event.key === '{') && isMod && event.shiftKey) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      cycleTerminal(-1);
-      return;
-    }
+    // Cmd+Shift+[/] cycles drawer terminals only while a drawer terminal is focused and the
+    // drawer has 2+ terminals; otherwise workspace tab switching handles the chord.
+    const direction = drawerTerminalCycleDirection(event, overlayContainer, $terminals.length);
+    if (!direction) return;
+    event.preventDefault();
+    event.stopImmediatePropagation(); // Keep the workspace-tab fallback from also firing
+    cycleTerminal(direction);
   }
 </script>
 

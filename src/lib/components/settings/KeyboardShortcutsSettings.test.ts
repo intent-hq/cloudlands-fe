@@ -171,4 +171,55 @@ describe('KeyboardShortcutsSettings', () => {
     await fireEvent.click(resetAll);
     expect(mocks.dispatch).toHaveBeenCalledWith(resetAllShortcutOverrides());
   });
+
+  it('lists two Next/Previous Workspace rows with distinct defaults', () => {
+    render(KeyboardShortcutsSettings);
+
+    const next = screen.getAllByRole('textbox', { name: 'Next Workspace' }) as HTMLInputElement[];
+    const previous = screen.getAllByRole('textbox', {
+      name: 'Previous Workspace',
+    }) as HTMLInputElement[];
+    expect(next.map((input) => input.value)).toEqual([
+      formatShortcut('ctrl+tab'),
+      formatShortcut('mod+shift+]'),
+    ]);
+    expect(previous.map((input) => input.value)).toEqual([
+      formatShortcut('ctrl+shift+tab'),
+      formatShortcut('mod+shift+['),
+    ]);
+    expect(
+      (screen.getByRole('textbox', { name: 'Focus Next Column' }) as HTMLInputElement).value,
+    ).toBe(formatShortcut('mod+alt+right'));
+    expect(
+      (screen.getByRole('textbox', { name: 'Focus Previous Column' }) as HTMLInputElement).value,
+    ).toBe(formatShortcut('mod+alt+left'));
+  });
+
+  it('records a chord on one Next Workspace row without touching the other', async () => {
+    render(KeyboardShortcutsSettings);
+    const [ctrlTabRow, bracketRow] = screen.getAllByRole('textbox', {
+      name: 'Next Workspace',
+    }) as HTMLInputElement[];
+
+    await fireEvent.focus(bracketRow);
+    await fireEvent.keyDown(bracketRow, { key: 'j', code: 'KeyJ', ctrlKey: true, altKey: true });
+
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      setShortcutOverride('global.next-space-alt', 'mod+alt+j'),
+    );
+    expect(bracketRow.value).toBe(formatShortcut('mod+alt+j'));
+    expect(ctrlTabRow.value).toBe(formatShortcut('ctrl+tab'));
+  });
+
+  it('resets only the customized Next Workspace row', async () => {
+    mocks.state.userPreferences.shortcutOverrides = { 'global.next-space-alt': 'mod+alt+j' };
+    render(KeyboardShortcutsSettings);
+
+    const resets = screen.getAllByRole('button', { name: 'Reset Next Workspace to default' });
+    expect(resets).toHaveLength(1);
+    await fireEvent.click(resets[0]);
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    expect(mocks.dispatch).toHaveBeenCalledWith(resetShortcutOverride('global.next-space-alt'));
+  });
 });

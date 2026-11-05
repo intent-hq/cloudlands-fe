@@ -115,7 +115,7 @@
   import { Button } from '$lib/components/ui/button';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
+  import { drawerTerminalCycleDirection } from './drawer-terminal-cycling';
   import type { WorkspaceId } from '$shared/types/branded-ids';
   import Header from '../ui/Header.svelte';
   import { store as appStore } from '$store/renderer/store';
@@ -1155,38 +1155,16 @@
   // ============================================================================
 
   function handleKeydown(event: KeyboardEvent) {
-    const isMod = event.metaKey || event.ctrlKey;
-
     // Note: Cmd+` is reserved for native macOS window cycling; use Ctrl+` or Cmd+J for terminal toggle
-
-    // Only handle tab cycling when terminal is open
     if (!$isOpen) return;
 
-    // Tab cycling shortcuts (Cmd+Shift+[/]) should only work when focus is in the terminal
-    // This prevents conflicts with panel cycling shortcuts in PanelLayout
-    const isTerminalFocused = isFocusInTerminal(event.target as HTMLElement | null);
-    if (!isTerminalFocused) return;
-
-    // Tab cycling (only with multiple terminals)
-    if ($terminals.length <= 1) return;
-
-    // Cmd+Shift+] - Next terminal
-    // Note: Shift+] produces } on US keyboards, so we check for both
-    if ((event.key === ']' || event.key === '}') && isMod && event.shiftKey) {
-      event.preventDefault();
-      event.stopImmediatePropagation(); // Prevent panel handler from also firing
-      cycleTerminal(1);
-      return;
-    }
-
-    // Cmd+Shift+[ - Previous terminal
-    // Note: Shift+[ produces { on US keyboards, so we check for both
-    if ((event.key === '[' || event.key === '{') && isMod && event.shiftKey) {
-      event.preventDefault();
-      event.stopImmediatePropagation(); // Prevent panel handler from also firing
-      cycleTerminal(-1);
-      return;
-    }
+    // Cmd+Shift+[/] cycles drawer terminals only while a drawer terminal is focused and the
+    // drawer has 2+ terminals; otherwise workspace tab switching handles the chord.
+    const direction = drawerTerminalCycleDirection(event, overlayContainer, $terminals.length);
+    if (!direction) return;
+    event.preventDefault();
+    event.stopImmediatePropagation(); // Keep the workspace-tab fallback from also firing
+    cycleTerminal(direction);
   }
 
   onDestroy(() => {

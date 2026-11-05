@@ -37,6 +37,14 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
     source: 'features/workspace/utils/workspace-tab-navigation.ts',
     handler: 'keyboard manager',
   },
+  'global.next-space-alt': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
+  'global.previous-space-alt': {
+    source: 'features/workspace/utils/workspace-tab-navigation.ts',
+    handler: 'keyboard manager',
+  },
   'navigation.go-to-tab': {
     source: 'features/workspace/utils/workspace-tab-navigation.ts',
     handler: 'expanded range registrations',

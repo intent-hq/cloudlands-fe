@@ -138,7 +138,7 @@ export interface KeyboardShortcut {
   /** If true, held-key repeat events are ignored. */
   ignoreRepeat?: boolean;
   /** Checked before preventing the event, so route-scoped shortcuts remain native elsewhere. */
-  enabled?: () => boolean;
+  enabled?: (event: KeyboardEvent) => boolean;
   /** Let local handlers claim the event before running this fallback shortcut. */
   preferLocal?: boolean;
   /**
@@ -290,13 +290,15 @@ export class KeyboardShortcutManager {
     const shortcut =
       [...this.dynamicShortcuts]
         .reverse()
-        .find(({ binding }) => binding && matchesKeyboardEvent(e, binding(), isMac)) ??
-      this.shortcuts.get(key);
+        .find(
+          ({ binding, enabled }) =>
+            binding && matchesKeyboardEvent(e, binding(), isMac) && (!enabled || enabled(e)),
+        ) ?? this.shortcuts.get(key);
 
     if (shortcut) {
       if (inTerminal && !shortcut.allowInTerminal) return;
       if (shortcut.ignoreRepeat && e.repeat) return;
-      if (shortcut.enabled && !shortcut.enabled()) return;
+      if (shortcut.enabled && !shortcut.enabled(e)) return;
 
       // Check if this shortcut should be skipped when in editable elements
       // This allows standard text editing shortcuts (like Cmd+Up/Down) to work
