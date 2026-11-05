@@ -27,6 +27,8 @@ import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider
 import ProviderSelector from './ProviderSelector.svelte';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
+import { setLabsCursorProviderEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { MOCK_CURSOR_PROVIDER } from '../../../test/fixtures/provider-catalog.fixture';
 
 export const previewProviders = [
   {
@@ -161,6 +163,41 @@ export function setupProviderDisablePreview(
   };
 }
 
+/** Cursor lab on with a mocked catalog row; `enabled` puts the row under Enabled. */
+export function setupCursorProviderPreview(
+  status: 'signed-in' | 'signed-out' | 'not-installed',
+  { lab = true, enabled = false }: { lab?: boolean; enabled?: boolean } = {},
+) {
+  const restoreProviders = setupProviderSelector();
+  const previousLab = appStore.state.userPreferences.labsCursorProviderEnabled;
+  const previousStatus = selectProviderStatusMap.select(appStore.state).cursor;
+  appStore.dispatch(setLabsCursorProviderEnabled(lab));
+  appStore.dispatch(
+    providerCatalogLoaded({ providers: [...previewProviders, MOCK_CURSOR_PROVIDER] }),
+  );
+  appStore.dispatch(
+    loadEnabledProvidersFromStorage({
+      codex: true,
+      'claude-code': true,
+      opencode: false,
+      cursor: enabled,
+    }),
+  );
+  appStore.dispatch(
+    checkSingleProviderSuccess(
+      'cursor',
+      status === 'not-installed'
+        ? { available: false }
+        : { available: true, authenticated: status === 'signed-in' },
+    ),
+  );
+  return () => {
+    appStore.dispatch(checkSingleProviderSuccess('cursor', previousStatus ?? { available: false }));
+    appStore.dispatch(setLabsCursorProviderEnabled(previousLab));
+    restoreProviders();
+  };
+}
+
 export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
   id: 'provider-selector',
   title: 'Provider selector',
@@ -172,6 +209,18 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
       setup: () => setupProviderDisablePreview('unavailable', false),
     },
     mixed: { props: {}, setup: setupProviderSelector },
+    // Cursor rows exist only while Cmd+K > Enable experimental Cursor provider is on.
+    'cursor-signed-in': { props: {}, setup: () => setupCursorProviderPreview('signed-in') },
+    'cursor-signed-out': { props: {}, setup: () => setupCursorProviderPreview('signed-out') },
+    'cursor-not-installed': {
+      props: {},
+      setup: () => setupCursorProviderPreview('not-installed'),
+    },
+    // Lab off never hides an enabled Cursor: the row keeps its Disable action.
+    'cursor-enabled-lab-off': {
+      props: {},
+      setup: () => setupCursorProviderPreview('signed-in', { lab: false, enabled: true }),
+    },
     profiles: {
       props: {},
       setup: () => {

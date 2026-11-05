@@ -23,6 +23,8 @@
     onOpenExternal?: (payload: unknown) => void;
     /** Plain-folder workspaces Labs on, with the remembered toggle choice. */
     plainFolder?: 'off' | 'on';
+    /** Cursor lab on, with a mocked signed-in Cursor catalog row. */
+    cursor?: boolean;
   }
   export const preview = definePreview<Props>({
     id: 'onboarding-layout',
@@ -31,6 +33,7 @@
     states: {
       welcome: { props: { step: 'welcome' } },
       'welcome-all-providers': { props: { step: 'welcome', allProviders: true } },
+      'welcome-cursor': { props: { step: 'welcome', cursor: true } },
       forge: { props: { step: 'forge' } },
       'forge-gitlab-update-required': {
         props: { step: 'forge', gitlabSetupSupported: false },
@@ -76,7 +79,10 @@
   import { previewProviders } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
   import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-  import { setLabsPlainFolderWorkspacesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import {
+    setLabsCursorProviderEnabled,
+    setLabsPlainFolderWorkspacesEnabled,
+  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '$lib/components/workspace/initializer/plain-folder-create';
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
@@ -107,7 +113,10 @@
   } from '$store/renderer/slices/gitlab-auth/gitlab-auth-slice';
   import type { GitLabAuthState } from '$store/renderer/slices/gitlab-auth/gitlab-auth-types';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
-  import { MOCK_PROVIDER_CATALOG } from '../../test/fixtures/provider-catalog.fixture';
+  import {
+    MOCK_CURSOR_PROVIDER,
+    MOCK_PROVIDER_CATALOG,
+  } from '../../test/fixtures/provider-catalog.fixture';
   import {
     principalContextChanged,
     principalReceived,
@@ -124,6 +133,7 @@
     verificationUri,
     onOpenExternal,
     plainFolder,
+    cursor = false,
   }: Props = $props();
   const restoreOpen = untrack(() =>
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only navigation interception; restores the original mock handler on teardown and never fetches domain data.
@@ -288,7 +298,13 @@
     appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(true));
   }
   const fullCatalog = untrack(() => allProviders);
-  const seededProviders = fullCatalog ? MOCK_PROVIDER_CATALOG.providers : previewProviders;
+  const seededCursor = untrack(() => cursor);
+  const previousCursorLabs = appStore.state.userPreferences.labsCursorProviderEnabled;
+  if (seededCursor) appStore.dispatch(setLabsCursorProviderEnabled(true));
+  const seededProviders = [
+    ...(fullCatalog ? MOCK_PROVIDER_CATALOG.providers : previewProviders),
+    ...(seededCursor ? [MOCK_CURSOR_PROVIDER] : []),
+  ];
   appStore.dispatch(providerCatalogLoaded({ providers: seededProviders }));
   for (const provider of seededProviders) {
     const connected = fullCatalog
@@ -316,6 +332,7 @@
       );
     }
     appStore.dispatch(setAllProvidersLoading(previousLoading));
+    if (seededCursor) appStore.dispatch(setLabsCursorProviderEnabled(previousCursorLabs));
     if (seededPlainFolder) {
       appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(previousPlainFolderLabs));
       if (previousInitializeGit === null)
