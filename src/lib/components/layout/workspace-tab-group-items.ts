@@ -8,6 +8,7 @@ import {
   getReleasedWorkspaceTabMove,
   proposeWorkspaceTabOrder,
 } from '$lib/components/workspace/utils/workspace-tab-drag';
+import { workspaceTabGroupColorValue } from './workspace-tab-group-labels';
 
 /** Where a tab sits inside the outline of the open group. */
 type WorkspaceTabGroupEdge = 'middle' | 'end';
@@ -158,7 +159,9 @@ export function workspaceTabGroupSlotAttributes(item: WorkspaceTabStripItem) {
     'data-tab-group-member': item.kind === 'tab' && item.group ? '' : undefined,
     'data-tab-group-hidden': hidden ? '' : undefined,
     'data-tab-group-edge': edge,
-    style: item.group ? `--tab-group-color: var(--tab-group-${item.group.color})` : undefined,
+    style: item.group
+      ? `--tab-group-color: ${workspaceTabGroupColorValue(item.group.color)}`
+      : undefined,
     inert: hidden,
   };
 }
