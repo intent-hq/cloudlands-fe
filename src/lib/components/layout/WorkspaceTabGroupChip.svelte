@@ -125,9 +125,9 @@
     background: hsl(var(--tab-group-color) / 0.24);
   }
 
-  /* An open group reads like a heading over its tabs: plain bold name, colored dot. */
   .tab-group-chip.is-open {
-    color: hsl(var(--foreground));
+    background: hsl(var(--tab-group-color));
+    color: hsl(var(--background));
   }
 
   .tab-group-chip.is-editing {
@@ -165,6 +165,10 @@
     flex: none;
     border-radius: 999px;
     background: hsl(var(--tab-group-color));
+  }
+
+  .is-open .tab-group-dot {
+    background: hsl(var(--background));
   }
 
   .tab-group-name {
