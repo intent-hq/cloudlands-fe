@@ -125,11 +125,8 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
-  import {
-    isFocusInEditableElement,
-    KeyboardShortcutManager,
-    type KeyboardShortcut,
-  } from '$lib/utils/keyboardShortcuts';
+  import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import { createAppShortcutRegistrar } from '$lib/utils/app-shortcut-registrar';
   import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -150,7 +147,6 @@
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
-  import type { ShortcutId } from '$lib/utils/shortcut-bindings';
   // Installs production bridge handlers before the app sagas and route startup use them.
   import '$store/renderer/seeders';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
@@ -510,18 +506,7 @@
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =
       typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
-    const register = ({ shortcutId, ...opts }: KeyboardShortcut & { shortcutId?: ShortcutId }) => {
-      // Forward every option (preferLocal, allowInTerminal, ...) so registrations behave the
-      // same here as in their unit tests.
-      paletteShortcuts!.register({
-        ...opts,
-        meta: !!opts.meta,
-        ctrl: !!opts.ctrl,
-        shift: !!opts.shift,
-        alt: !!opts.alt,
-        binding: opts.binding ?? (shortcutId ? () => getEffectiveShortcut(shortcutId) : undefined),
-      });
-    };
+    const register = createAppShortcutRegistrar(paletteShortcuts, getEffectiveShortcut);
     const openCmd = () => appStore.dispatch(openPalette());
     const openFile = () => appStore.dispatch(openPalette());
     const openSearch = () => appStore.dispatch(openPalette());
