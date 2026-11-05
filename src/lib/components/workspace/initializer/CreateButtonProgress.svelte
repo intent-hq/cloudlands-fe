@@ -1,23 +1,10 @@
-<!--
-  Live provisioning progress for the Create-workspace button: a localized
-  stage label + percent driven by the daemon's git:clone:progress frames
-  (workspaceCreateProgress slice, keyed by the FE-minted progressId), plus a
-  2px determinate bar pinned to the button's bottom edge. The caller renders
-  its Button through `children` and places the `label` snippet it receives
-  inside the button; the bar is drawn here as a sibling overlay of that
-  Button, anchored by this component's `relative overflow-hidden` wrapper
-  (rounded to the button's radius) — never inside the Button's content slot,
-  whose inner spans are treated as opaque. Until the first frame arrives
-  (sawFrame false) the caller-provided fallback label — the legacy timed
-  stage text — renders unchanged and no bar is drawn. Percent (text and bar)
-  is monotonic: a late or re-ordered frame never moves it backwards.
--->
+<!-- Live provisioning labels and a determinate bar. Keep the bar outside
+     the Button content slot so it stays at the button’s bottom edge. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { cn } from '$lib/utils';
-  import { m } from '$shared/paraglide/messages.js';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
-  import { createProgressLabel, formatCreateProgressPercent } from './create-progress-label';
+  import { createProgressLabel } from './create-progress-label';
 
   let {
     progressId,
@@ -27,7 +14,7 @@
   }: {
     progressId: string;
     fallbackLabel: string;
-    children: Snippet<[label: Snippet]>;
+    children: Snippet<[label: string]>;
     class?: string;
   } = $props();
 
@@ -37,10 +24,7 @@
   // svelte-ignore state_referenced_locally
   const entry$ = selectWorkspaceCreateProgress(progressId);
 
-  // Monotonic floor: track the highest percent seen so the label and bar
-  // never move backwards even if frames arrive out of order. Clamped to 100
-  // at the source so text, bar width, and ARIA can never disagree (negatives
-  // are excluded by the > maxPercent guard against the initial 0).
+  // Keep the bar monotonic and clamp its width and accessible value together.
   let maxPercent = $state(0);
   $effect(() => {
     const percent = Math.min($entry$?.percent ?? 0, 100);
@@ -50,25 +34,12 @@
   const live = $derived($entry$?.sawFrame === true);
 </script>
 
-{#snippet label()}
-  {#if live && $entry$}
-    <span data-testid="create-progress-label">
-      {m.workspace_compactInitializer_progressWithPercent_label({
-        label: createProgressLabel($entry$),
-        percent: formatCreateProgressPercent(maxPercent),
-      })}
-    </span>
-  {:else}
-    {fallbackLabel}
-  {/if}
-{/snippet}
-
 <!-- inline-flex keeps the wrapped Button's line-box geometry identical to an
      unwrapped one, so the button's footprint does not change while creating.
      The outer box never clips, so the Button's elevation shadow stays visible;
      the inner overlay layer clips the bar to the button radius. -->
 <div class={cn('relative inline-flex', className)}>
-  {@render children(label)}
+  {@render children(live && $entry$ ? createProgressLabel($entry$) : fallbackLabel)}
   {#if live && $entry$}
     <div class="pointer-events-none absolute inset-0 overflow-hidden rounded-(--radius-medium)">
       <div

@@ -3,9 +3,9 @@
  *
  * CreateButtonProgress: live daemon-driven stage label + 2px bottom bar on
  * the Create button. Before any frame arrives (sawFrame false) the fallback
- * label renders and no bar exists; frames flip it to phase label + percent +
- * determinate bar; percent/bar are monotonic (a lower late frame never moves
- * them backwards). Rendered through a harness that mounts the real Button via
+ * label renders and no bar exists; frames flip it to a phase label and a
+ * determinate bar without a visible percentage. The bar is monotonic.
+ * Rendered through a harness that mounts the real Button via
  * `children`, so the bar's placement relative to the Button's internal slots
  * (a sibling overlay, never inside the label slot) is observable.
  */
@@ -83,7 +83,7 @@ describe('CreateButtonProgress', () => {
     expect(overlay.parentElement!.contains(button)).toBe(true);
   });
 
-  it('shows phase label + percent and a width-matched bar once frames arrive', async () => {
+  it('shows the phase without a percentage and keeps numeric progress on the bar', async () => {
     render(CreateButtonProgress, {
       props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
@@ -101,7 +101,7 @@ describe('CreateButtonProgress', () => {
         'Cloning repository…',
       );
     });
-    expect(screen.getByTestId('create-progress-label').textContent).toContain('45%');
+    expect(screen.getByTestId('create-progress-label').textContent).not.toMatch(/\d+%/);
     const bar = screen.getByRole('progressbar');
     expect(bar.getAttribute('data-testid')).toBe('create-progress-bar');
     expect(bar.getAttribute('style')).toContain('width: 45%');
@@ -111,7 +111,7 @@ describe('CreateButtonProgress', () => {
     expect(bar.getAttribute('aria-label')).toBe('Cloning repository…');
   });
 
-  it('never moves percent or bar backwards on a lower late frame', async () => {
+  it('never moves the bar backwards on a lower late frame', async () => {
     render(CreateButtonProgress, {
       props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
@@ -129,21 +129,22 @@ describe('CreateButtonProgress', () => {
         'Resolving deltas…',
       );
     });
-    expect(screen.getByTestId('create-progress-label').textContent).toContain('60%');
+    expect(screen.getByTestId('create-progress-label').textContent).not.toMatch(/\d+%/);
     const bar = screen.getByTestId('create-progress-bar');
     expect(bar.getAttribute('style')).toContain('width: 60%');
     expect(bar.getAttribute('aria-valuenow')).toBe('60');
   });
 
-  it('clamps an out-of-range daemon percent so text, bar, and ARIA agree at 100', async () => {
+  it('clamps an out-of-range daemon percent for the bar and ARIA', async () => {
     render(CreateButtonProgress, {
       props: { progressId: PID, fallbackLabel: 'Preparing workspace…' },
     });
 
     dispatchToSlice(workspaceCreateProgressReceived(PID, { phase: 'receiving', percent: 150 }));
     await waitFor(() => {
-      expect(screen.getByTestId('create-progress-label').textContent).toContain('100%');
+      expect(screen.getByTestId('create-progress-bar').getAttribute('aria-valuenow')).toBe('100');
     });
+    expect(screen.getByTestId('create-progress-label').textContent).not.toMatch(/\d+%/);
     const bar = screen.getByTestId('create-progress-bar');
     expect(bar.getAttribute('style')).toContain('width: 100%');
     expect(bar.getAttribute('aria-valuenow')).toBe('100');
