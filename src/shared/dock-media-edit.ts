@@ -505,3 +505,66 @@ export function planDockMediaOutput(
   }
   return { kept, clips, muted: edit.voice !== 'audio', marks, transcript: text, errors };
 }
+
+/** Persisted with its owning attachment; never a second editor-owned preference store. */
+export const DockSavedMediaSchema = z
+  .object({
+    source: DockMediaSourceSchema,
+    saved: DockMediaEditSchema.nullable(),
+    transcript: DockMediaTranscriptSchema.nullable(),
+  })
+  .strict()
+  .superRefine((media, ctx) => {
+    if (
+      media.saved &&
+      (media.saved.sourceId !== media.source.id ||
+        media.saved.sourceRevision !== media.source.revision ||
+        media.saved.kind !== media.source.kind)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Saved edit belongs to a different source',
+      });
+  });
+export type DockSavedMedia = z.infer<typeof DockSavedMediaSchema>;
+export type DockMediaSaveResult =
+  | { status: 'saved'; media: DockSavedMedia }
+  | { status: 'stale-source' | 'revision-conflict' | 'invalid-edit' };
+export function applyDockMediaSave(
+  media: DockSavedMedia,
+  request: DockMediaSaveRequest,
+): DockMediaSaveResult {
+  if (
+    !DockMediaSaveRequestSchema.safeParse(request).success ||
+    !DockSavedMediaSchema.safeParse(media).success
+  )
+    return { status: 'invalid-edit' };
+  if (
+    request.sourceId !== media.source.id ||
+    request.sourceRevision !== media.source.revision ||
+    request.edit.sourceId !== media.source.id ||
+    request.edit.sourceRevision !== media.source.revision ||
+    request.edit.kind !== media.source.kind
+  )
+    return { status: 'stale-source' };
+  if (
+    request.expectedEditRevision !== (media.saved?.revision ?? 0) ||
+    request.edit.revision !== request.expectedEditRevision
+  )
+    return { status: 'revision-conflict' };
+  const planned = planDockMediaOutput(request.edit, media.source, media.transcript);
+  if (
+    planned.errors.some(
+      (error) =>
+        error === 'invalid-edit' || error === 'legacy-baked-marks' || error === 'stale-source',
+    )
+  )
+    return { status: 'invalid-edit' };
+  return {
+    status: 'saved',
+    media: {
+      ...media,
+      saved: { ...structuredClone(request.edit), revision: request.expectedEditRevision + 1 },
+    },
+  };
+}

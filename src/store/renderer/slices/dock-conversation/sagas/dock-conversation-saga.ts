@@ -414,6 +414,8 @@ function* sendReply(
     (!clickedDraft ||
       hasBlockingAttachments(clickedItems) ||
       !!liveEvidence?.capture.pending ||
+      !!liveEvidence?.images.some(image => image.mediaError) ||
+      !!liveEvidence?.clips.some(clip => clip.mediaError) ||
       // Narration or chips not yet committed by the editor would be lost or resent.
       (liveEvidence?.insertions.length ?? 0) > 0 ||
       liveEvidence?.dictation?.status === 'transcribing' ||

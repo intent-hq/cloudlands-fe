@@ -1,3 +1,4 @@
+import { DockSavedMediaSchema, type DockSavedMedia, type DockMediaSource } from './dock-media-edit';
 /**
  * Dock composer screen evidence: captured images, numbered marks, clips and
  * pending editor insertions for one workspace/agent draft.
@@ -75,6 +76,8 @@ export interface DockMark {
 }
 
 export interface DockEvidenceImage {
+  media?: DockSavedMedia;
+  mediaError?: 'invalid-saved-edit';
   id: string;
   /** Composer context item that holds the raw screenshot bytes. */
   contextItemId: string;
@@ -101,6 +104,8 @@ export type DockAnnotationMediaAction =
   | 'discard-confirm';
 
 export interface DockEvidenceClip {
+  media?: DockSavedMedia;
+  mediaError?: 'invalid-saved-edit';
   id: string;
   status: 'recording' | 'placing' | 'ready' | 'failed';
   startedAt: number;
@@ -202,6 +207,7 @@ export interface DockImagePlacementRecord {
 export function dockCompositeSignature(evidence: DockComposerEvidence, imageId: string): string {
   return JSON.stringify([
     imageId,
+    evidence.images.find(image => image.id === imageId)?.media,
     numberDockMarks(evidence)
       .filter(({ mark }) => mark.imageId === imageId)
       .map(({ n, mark }) => [n, mark.id, mark.geometry]),
@@ -305,9 +311,9 @@ export function hasDockEvidence(evidence: DockComposerEvidence | undefined): boo
  */
 export function dockEvidenceFingerprint(evidence: DockComposerEvidence | undefined): string {
   return JSON.stringify([
-    evidence?.images.map((image) => image.id) ?? [],
+    evidence?.images.map((image) => [image.id, image.media?.source.revision, image.media?.saved?.revision, image.media?.transcript?.revision, image.mediaError]) ?? [],
     evidence?.marks.map((mark) => mark.id) ?? [],
-    evidence?.clips.map((clip) => [clip.id, clip.status]) ?? [],
+    evidence?.clips.map((clip) => [clip.id, clip.status, clip.media?.source.revision, clip.media?.saved?.revision, clip.media?.transcript?.revision, clip.mediaError]) ?? [],
   ]);
 }
 
@@ -1163,12 +1169,35 @@ export function toDockDraftEvidence(
         durationMs: clip.durationMs,
         hasMicAudio: clip.hasMicAudio,
         ...(clip.path ? { path: clip.path } : {}),
+        ...(clip.media ? { media: clip.media } : {}),
+        ...(clip.mediaError ? { mediaError: clip.mediaError } : {}),
       },
     };
   }
   return out;
 }
 
+function restoreMedia(item: { media?: DockSavedMedia; mediaError?: 'invalid-saved-edit' }): {
+  media?: DockSavedMedia;
+  mediaError?: 'invalid-saved-edit';
+} {
+  if (item.mediaError) return { media: undefined, mediaError: 'invalid-saved-edit' };
+  if (item.media === undefined) return {};
+  const parsed = DockSavedMediaSchema.safeParse(item.media);
+  return parsed.success && parsed.data.source.id===item.id && parsed.data.source.kind===kind
+    ? { media: parsed.data }
+    : { media: undefined, mediaError: 'invalid-saved-edit' };
+}
+/** Missing metadata is honestly unavailable; never guess recording dimensions or clean pixels. */
+export function dockMediaSourceFor(
+  evidence: DockComposerEvidence | undefined,
+  sourceId: string,
+): DockMediaSource | null {
+  const item =
+    evidence?.images.find((row) => row.id === sourceId) ??
+    evidence?.clips.find((row) => row.id === sourceId);
+  return item?.mediaError ? null : (item?.media?.source ?? null);
+}
 /** Rebuild evidence for restored items that still exist, validating every field. */
 export function fromDockDraftEvidence(
   id: string,
@@ -1180,7 +1209,7 @@ export function fromDockDraftEvidence(
     const value = entry as DockDraftEvidence | null;
     if (!value || typeof value !== 'object') continue;
     if (value.kind === 'image' && value.image) {
-      const captured = applyDockCapture(evidence, { ...value.image, contextItemId });
+      const captured = applyDockCapture(evidence, { ...value.image, ...restoreMedia(value.image, 'screenshot'), contextItemId });
       if (captured.outcome !== 'added') continue;
       evidence = captured.evidence;
       if (Array.isArray(value.marks))
@@ -1191,6 +1220,7 @@ export function fromDockDraftEvidence(
       evidence = setDockClip(evidence, clip.id, {
         id: clip.id,
         status: 'ready',
+        ...restoreMedia(clip, 'recording'),
         startedAt: finite(clip.startedAt) ? clip.startedAt : 0,
         durationMs: Math.min(DOCK_EVIDENCE_LIMITS.clipMs, Math.max(0, clip.durationMs)),
         hasMicAudio: clip.hasMicAudio === true,
