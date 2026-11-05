@@ -64,9 +64,11 @@ export const DockMediaBatchSchema = z
 export type DockMediaBatch = z.infer<typeof DockMediaBatchSchema>;
 export const DockMediaSourceSchema = z
   .object({
+    /** Immutable pixel-generation identity; a retake may replace it under the same logical attachment. */
     id,
     revision,
     kind: z.enum(['recording', 'screenshot']),
+    /** Daemon file attachment identity, distinct from the logical image/clip ID. */
     attachmentId: id,
     path: z
       .string()

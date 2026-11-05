@@ -286,6 +286,7 @@ function* conversationLifetime(): SagaGenerator<void> {
               fromDockDraftEvidence(
                 dockEvidenceId(workspaceId, chosen.id),
                 readDraftAttachmentScreens(attachments).filter(([id]) => present.has(id)),
+                restoredItems.map(item => ({ contextItemId: item.id, attachmentId: item.attachmentId, path: item.path })),
               ),
             ),
           );
