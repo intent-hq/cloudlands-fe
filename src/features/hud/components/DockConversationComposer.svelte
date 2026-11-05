@@ -480,6 +480,7 @@
         labels={media.labels}
         disabled={disabled || pending || inputLocked || preparingSubmission}
         onMarkUp={media.onMarkUp}
+        onEdit={media.onEdit}
         onRemove={removeMediaAttachment}
         onRetry={retryMediaAttachment}
         onCopy={media.onCopy ? (id, cut) => void copyMediaAttachment(id, cut) : undefined}

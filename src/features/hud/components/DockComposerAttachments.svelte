@@ -18,6 +18,7 @@
     labels,
     disabled = false,
     onMarkUp,
+    onEdit,
     onRemove,
     onRetry,
     onCopy,
@@ -58,6 +59,10 @@
       (item.kind === 'clip' && (!item.url || item.recording))
     )
       return;
+    if (item.kind === 'clip' && onEdit) {
+      onEdit(item.id);
+      return;
+    }
     opener = source;
     selectedId = item.id;
     open = true;

@@ -132,6 +132,8 @@ export interface DockComposerAttachmentsProps {
   labels: DockComposerMediaLabels;
   disabled?: boolean;
   onMarkUp: (id: string) => void;
+  /** Open a finished recording in the capture editor (internal preview only). */
+  onEdit?: (id: string) => void;
   /** Removal and renumbering are one operation owned by the draft controller. */
   onRemove: (id: string) => void;
   onRetry?: (id: string) => void;
@@ -151,6 +153,8 @@ export interface DockComposerMediaBinding extends DockComposerMediaActions {
   /** Stop/await narration and drain editor insertions. False keeps the draft intact. */
   beforeSubmit?: () => Promise<boolean>;
   onMarkUp: (id: string) => void;
+  /** Open a finished recording in the capture editor (internal preview only). */
+  onEdit?: (id: string) => void;
   onRemove: (id: string) => void;
   onRetry?: (id: string) => void;
   /** Put one tile on the system clipboard; true once it is there. */

@@ -12,6 +12,11 @@ import { isTextEntryTarget } from '$lib/utils/text-entry';
 import { get, writable, type Readable } from 'svelte/store';
 import { store as appStore } from '$store/renderer/store';
 import {
+  dockCaptureEditorPreviewEnabled,
+  dockRecordingEditorRequest,
+  openDockCaptureEditor,
+} from '$features/hud/media-editor/open-capture-editor';
+import {
   screenReferences,
   type DockMarkTool,
   type DockCaptureMode,
@@ -353,6 +358,24 @@ export function createDockComposerController(
       const image = imageFor(id);
       if (image) dispatch(dockEvidenceAnnotationToggleRequested(workspaceId, agentId, image.id));
     },
+    // Internal preview: a finished recording opens in the capture editor.
+    ...(dockCaptureEditorPreviewEnabled()
+      ? {
+          onEdit: (id: string) => {
+            const view = evidence();
+            const clip = view.clips.find((row) => row.id === id || row.contextItemId === id);
+            const request =
+              clip &&
+              dockRecordingEditorRequest({
+                workspaceId,
+                agentId,
+                clip,
+                marks: view.evidence?.marks ?? [],
+              });
+            if (request) void openDockCaptureEditor(request);
+          },
+        }
+      : {}),
     onRemove: (id: string) => {
       const image = imageFor(id);
       const clip = evidence().clips.find((row) => row.id === id || row.contextItemId === id);

@@ -1,5 +1,6 @@
 import { BrowserWindow, type MenuItemConstructorOptions } from 'electron';
 import { isDockAnnotationWindow } from './dock-annotation-identity';
+import { isDockCaptureEditorWindow } from './dock-capture-editor-identity';
 import { isDockWindow } from './dock-window';
 
 function acceptsSettings(window: BrowserWindow | null): window is BrowserWindow {
@@ -8,7 +9,8 @@ function acceptsSettings(window: BrowserWindow | null): window is BrowserWindow 
     !window.isDestroyed() &&
     !window.webContents.isDestroyed() &&
     !isDockWindow(window) &&
-    !isDockAnnotationWindow(window)
+    !isDockAnnotationWindow(window) &&
+    !isDockCaptureEditorWindow(window)
   );
 }
 

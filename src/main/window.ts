@@ -25,11 +25,12 @@ import { resolveAppDockIconPath, resolveAppIconPath } from './utils/resolve-app-
 import { whenRendererWindowsAllowed } from './renderer-window-gate';
 import { isDockRoute, isDockWindow } from './dock-window';
 import { isDockAnnotationWindow } from './dock-annotation-identity';
+import { isDockCaptureEditorWindow } from './dock-capture-editor-identity';
 
 const isTransientCaptureWindow = (window: BrowserWindowType): boolean =>
-  isDockWindow(window) || isDockAnnotationWindow(window);
+  isDockWindow(window) || isDockAnnotationWindow(window) || isDockCaptureEditorWindow(window);
 const isTransientCaptureRoute = (route: string): boolean =>
-  isDockRoute(route) || route === '/dock-annotation';
+  isDockRoute(route) || route === '/dock-annotation' || route === '/dock-capture-editor';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

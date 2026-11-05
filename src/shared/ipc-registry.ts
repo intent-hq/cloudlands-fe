@@ -465,6 +465,15 @@ export const IPC_CHANNELS = {
     SIGNAL: 'dock-annotation:signal',
   },
 
+  /** Capture editor window (recordings and screenshots), see shared/dock-capture-editor. */
+  DOCK_CAPTURE_EDITOR: {
+    OPEN: 'dock-capture-editor:open',
+    GET: 'dock-capture-editor:get',
+    CLOSE: 'dock-capture-editor:close',
+    /** main → editor send: the session changed (re-read it with GET). */
+    CHANGED: 'dock-capture-editor:changed',
+  },
+
   DOCK_MEDIA: {
     CLIPBOARD_WRITE: 'dock-media:clipboard-write',
     CLIPBOARD_READ: 'dock-media:clipboard-read',
@@ -1202,6 +1211,7 @@ export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_EVIDENCE.EVENT,
   IPC_CHANNELS.DOCK_ANNOTATION.STATE,
   IPC_CHANNELS.DOCK_ANNOTATION.SIGNAL,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CHANGED,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

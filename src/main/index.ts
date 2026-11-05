@@ -328,6 +328,11 @@ import { setupConfigIPC, getConfigManager } from '../features/config/main/config
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { setupDockEvidenceIPC } from '../features/hud/main/dock-evidence.ipc';
+import { setupDockCaptureEditorIPC } from '../features/hud/main/dock-capture-editor-window';
+import {
+  isDockCaptureEditorFocusOwnDoing,
+  isDockCaptureEditorWindow,
+} from './dock-capture-editor-identity';
 import { isDockAnnotationWindow } from './dock-annotation-identity';
 import {
   closeDockWindow,
@@ -1137,7 +1142,8 @@ const bootFlow = app.whenReady().then(async () => {
         !w.isDestroyed() &&
         !isWebviewPopupWindow(w) &&
         !isDockWindow(w) &&
-        !isDockAnnotationWindow(w),
+        !isDockAnnotationWindow(w) &&
+        !isDockCaptureEditorWindow(w),
     );
     if (liveWindows.length > 0) {
       let connections: Awaited<ReturnType<typeof listConnections>> = [];
@@ -1627,6 +1633,7 @@ const bootFlow = app.whenReady().then(async () => {
   setupFileIPC();
   setupSystemIPC();
   setupDockEvidenceIPC();
+  setupDockCaptureEditorIPC();
   // Copy/cut/paste of dock composer screenshots and recordings (dock window only).
   registerDockMediaClipboardIPC(getDockWindow);
   setupDevConsoleIPC(
@@ -2276,13 +2283,19 @@ function activateIntent(fromDock: boolean) {
       if (!focused) return false;
       // A capture in progress: never reveal a workspace behind it.
       if (isDockAnnotationWindow(focused)) return true;
+      // The capture editor Intent just opened is not a request to bring a workspace
+      // window over it; a reopen while it has focus still is.
+      if (isDockCaptureEditorWindow(focused) && isDockCaptureEditorFocusOwnDoing()) return true;
       // The dock: only its own focusing (pointer on it, or Intent just focused it) is
       // not a request for the main app; a launcher or Dock-icon reopen is.
       return isDockWindow(focused) && isDockFocusOwnDoing();
     },
     getAllWindows: () =>
       getAppWindows().filter(
-        (window: BrowserWindowType) => !isDockWindow(window) && !isDockAnnotationWindow(window),
+        (window: BrowserWindowType) =>
+          !isDockWindow(window) &&
+          !isDockAnnotationWindow(window) &&
+          !isDockCaptureEditorWindow(window),
       ),
     getMainWindow,
     getClaimedWindow: () => getActivationFocusClaim<BrowserWindowType>(),
