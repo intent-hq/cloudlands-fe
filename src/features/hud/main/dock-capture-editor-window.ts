@@ -42,6 +42,7 @@ import {
 } from '../../../shared/main/window-appearance';
 import { fixWebContentsZoom } from '../../../main/fixed-zoom';
 import { getDockWindow } from '../../../main/dock-window';
+import { setDockMediaChoiceLocalPref } from '../../../main/local-prefs';
 import {
   noteDockCaptureEditorFocused,
   registerDockCaptureEditorWindow,
@@ -541,6 +542,14 @@ async function save(
     });
   });
   // The stored edit becomes this session's baseline (only if it is still this session).
+  // The person's last saved choice becomes the default for the next recording.
+  if (result.result === 'saved' && result.saved?.kind === 'recording')
+    void setDockMediaChoiceLocalPref({
+      video: result.saved.video,
+      voice: result.saved.voice,
+    }).catch((error: unknown) =>
+      logger.warn('Could not remember the capture send choice', { error }),
+    );
   if (result.result === 'saved' && result.saved && session === current) {
     current.snapshot = {
       ...current.snapshot,
