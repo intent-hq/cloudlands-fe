@@ -18,7 +18,7 @@
  */
 import { execFile as nodeExecFile, spawn as nodeSpawn } from 'node:child_process';
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
-import { access, mkdir, rm, stat } from 'node:fs/promises';
+import { access, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { app } from 'electron';
@@ -60,6 +60,8 @@ const MAX_LINE = 64 * 1024;
 /** One PNG of a ≤4096-px display, base64 in a single JSON line. */
 const MAX_STILL_OUTPUT = 96 * 1024 * 1024;
 const STILL_TIMEOUT_MS = 10_000;
+/** A still from the recording's own stream: the helper waits up to 1.5 s for a frame. */
+const STREAM_STILL_TIMEOUT_MS = 4_000;
 
 type Child = Pick<ChildProcessWithoutNullStreams, 'stdin' | 'stdout' | 'stderr' | 'kill' | 'on'>;
 
@@ -73,6 +75,7 @@ export interface DockScreenRecorderDeps {
     options?: { timeoutMs?: number; maxBuffer?: number },
   ) => Promise<{ stdout: string }>;
   fileSize: (file: string) => Promise<number>;
+  readFile: (file: string) => Promise<Buffer>;
   removeFile: (file: string) => Promise<void>;
   ensureDir: (dir: string) => Promise<void>;
   now: () => number;
@@ -88,6 +91,11 @@ export interface DockScreenRecorder {
    * result a caller may answer with its hide-and-capture fallback; `permission` and
    * `failed` (including `detail:'exclusion-missing'` when any requested window is not
    * shareable — no image is produced) are real outcomes and must surface.
+   *
+   * While a clip owns the screen stream (starting, recording or finishing), the still
+   * comes from that stream (its newest raw frame, before marks) and never from a second
+   * ScreenCaptureKit capture, which would stop the recording. Not recording yet or any
+   * more, it fails (`recording-busy`) rather than fall back.
    */
   captureStill(request: DockStillRequest): Promise<DockNativeResult<DockCapturedPixels>>;
   start(request: DockRecordingStartRequest): Promise<DockNativeResult<{ startedAt: number }>>;
@@ -121,6 +129,7 @@ type HelperEvent = Record<string, unknown> & { event?: unknown };
 
 interface ActiveClip {
   clipId: string;
+  displayId: number;
   outputPath: string;
   maxMs: number;
   child: Child;
@@ -135,6 +144,8 @@ interface ActiveClip {
   micReplies: ((active: boolean) => void)[];
   excludeReplies: ((reply: { ok: boolean; detail?: string }) => void)[];
   pauseReplies: ((paused: boolean) => void)[];
+  /** Stills asked of this clip's stream, by request id; null when the clip ended. */
+  stillReplies: Map<string, (event: HelperEvent | null) => void>;
   timers: Set<unknown>;
   /** Wall time spent paused before the current pause, and when that pause began. */
   pausedMs: number;
@@ -189,6 +200,7 @@ const defaultDockScreenRecorderDeps: DockScreenRecorderDeps = {
       maxBuffer: options?.maxBuffer ?? MAX_LINE,
     }),
   fileSize: async (file) => (await stat(file)).size,
+  readFile: (file) => readFile(file),
   removeFile: (file) => rm(file, { force: true }),
   ensureDir: async (dir) => {
     await mkdir(dir, { recursive: true });
@@ -204,6 +216,18 @@ function errorCode(value: unknown): DockEvidenceErrorCode {
 
 function endReason(value: unknown): DockRecordingEndReason {
   return value === 'limit' || value === 'size-limit' || value === 'interrupted' ? value : 'stopped';
+}
+
+/** The system's reason for stopping an interrupted stream, as the helper reported it. */
+function interruption(
+  clip: { clipId: string },
+  event: Record<string, unknown>,
+): { endedError?: { domain: string; code: number; detail: string } } {
+  const domain = typeof event.errorDomain === 'string' ? event.errorDomain : '';
+  const code = typeof event.errorCode === 'number' ? event.errorCode : NaN;
+  const detail = typeof event.errorDetail === 'string' ? event.errorDetail.slice(0, 200) : '';
+  logger.warn('Recording interrupted by the system', { clipId: clip.clipId, domain, code, detail });
+  return domain && Number.isFinite(code) ? { endedError: { domain, code, detail } } : {};
 }
 
 function parseCapability(stdout: string): DockRecordingCapability {
@@ -302,6 +326,8 @@ export function createDockScreenRecorder(
     for (const reply of clip.micReplies.splice(0)) reply(false);
     for (const reply of clip.excludeReplies.splice(0)) reply({ ok: false, detail: 'ended' });
     for (const reply of clip.pauseReplies.splice(0)) reply(false);
+    for (const reply of clip.stillReplies.values()) reply(null);
+    clip.stillReplies.clear();
     clip.resolveStarted(
       clip.startedAt !== null && !clip.cancelled
         ? { ok: true, value: { startedAt: clip.startedAt } }
@@ -363,6 +389,7 @@ export function createDockScreenRecorder(
         hasMicAudio: event.hasMicAudio === true,
         startedAt: clip.startedAt,
         endedReason: endReason(event.reason),
+        ...(endReason(event.reason) === 'interrupted' ? interruption(clip, event) : {}),
         captureApi:
           typeof event.captureApi === 'string' ? event.captureApi : DOCK_RECORDING_CAPTURE_API,
       },
@@ -410,6 +437,15 @@ export function createDockScreenRecorder(
           signal(clip, Math.min(1, Math.max(0, level)));
         return;
       }
+      case 'still': {
+        const id = typeof event.id === 'string' ? event.id : '';
+        const reply = clip.stillReplies.get(id);
+        if (reply) {
+          clip.stillReplies.delete(id);
+          reply(event);
+        }
+        return;
+      }
       case 'exclude':
         clip.excludeReplies.shift()?.({
           ok: event.ok === true,
@@ -450,12 +486,58 @@ export function createDockScreenRecorder(
     })();
   };
 
+  let stillSequence = 0;
+  /** The still from the clip's own stream (the helper writes it next to the clip). */
+  const streamStill = async (
+    clip: ActiveClip,
+    request: DockStillRequest,
+  ): Promise<DockNativeResult<DockCapturedPixels>> => {
+    if (clip.phase !== 'recording') return fail('failed', 'recording-busy');
+    if (clip.displayId !== request.displayId) return fail('unavailable', 'display');
+    stillSequence += 1;
+    const id = `still-${stillSequence}`;
+    const file = `${clip.outputPath.replace(/\.mp4$/, '')}.${id}.png`;
+    const reply = new Promise<HelperEvent | null>((resolve) => {
+      clip.stillReplies.set(id, resolve);
+      later(clip, STREAM_STILL_TIMEOUT_MS, () => {
+        if (clip.stillReplies.delete(id)) resolve(null);
+      });
+    });
+    const asked = send(clip, {
+      cmd: 'still',
+      id,
+      path: file,
+      windowIds: validWindowIds(request.excludeWindowIds),
+    });
+    if (!asked) {
+      clip.stillReplies.delete(id);
+      return fail('failed', 'helper-gone');
+    }
+    const raw = await reply;
+    try {
+      if (!raw) return fail('failed', 'still-timeout');
+      if (raw.ok !== true)
+        return fail(errorCode(raw.code), typeof raw.detail === 'string' ? raw.detail : 'still');
+      if (raw.path !== file) return fail('failed', 'malformed');
+      const png = await deps.readFile(file);
+      return stillPixels({ ...raw, base64: png.toString('base64') });
+    } catch (error) {
+      logger.warn('Recording still could not be read', { error });
+      return fail('failed', 'still-read');
+    } finally {
+      void deps.removeFile(file).catch(() => undefined);
+    }
+  };
+
   const captureStill = async (
     request: DockStillRequest,
   ): Promise<DockNativeResult<DockCapturedPixels>> => {
     if (deps.platform !== 'darwin') return fail('unavailable', 'platform');
     if (!Number.isSafeInteger(request.displayId) || request.displayId <= 0)
       return fail('unavailable', 'display');
+    // One screen capture at a time: a recording's stream answers for itself.
+    if (active) return streamStill(active, request);
+    if (reservation) return fail('failed', 'recording-busy');
     const helper = await deps.resolveHelper();
     if (!helper) return fail('unavailable', 'helper-missing');
     let raw: Record<string, unknown>;
@@ -481,6 +563,10 @@ export function createDockScreenRecorder(
       if (raw.code === 'unsupported') return fail('unavailable', 'os-version');
       return fail(errorCode(raw.code), typeof raw.detail === 'string' ? raw.detail : undefined);
     }
+    return stillPixels(raw);
+  };
+
+  const stillPixels = (raw: Record<string, unknown>): DockNativeResult<DockCapturedPixels> => {
     const { base64, width, height, displayScale, capturedAt, hash } = raw;
     if (
       typeof base64 !== 'string' ||
@@ -598,6 +684,7 @@ export function createDockScreenRecorder(
     let resolveEnded!: ActiveClip['resolveEnded'];
     const clip: ActiveClip = {
       clipId: request.clipId,
+      displayId: request.displayId,
       outputPath,
       maxMs,
       child,
@@ -611,6 +698,7 @@ export function createDockScreenRecorder(
       micReplies: [],
       excludeReplies: [],
       pauseReplies: [],
+      stillReplies: new Map(),
       timers: new Set(),
       pausedMs: 0,
       pausedAt: null,

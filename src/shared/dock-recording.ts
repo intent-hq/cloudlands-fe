@@ -81,5 +81,7 @@ export interface DockRecordedClip extends DockClipFile {
   /** Epoch ms when the first frame was written. */
   startedAt: number;
   endedReason: DockRecordingEndReason;
+  /** For `interrupted`: the system's own reason for stopping the stream, as reported. */
+  endedError?: { domain: string; code: number; detail: string };
   captureApi: string;
 }
