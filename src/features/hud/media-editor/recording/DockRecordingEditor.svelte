@@ -63,10 +63,12 @@
 
   // One session per mount (the page remounts the view for each open).
   const source = snapshot.source ?? null;
-  const transcript = snapshot.transcript ?? null;
+  // The transcript can arrive or improve while the editor is open (main re-sends it).
+  const transcript = $derived(snapshot.transcript ?? null);
   const edits = source
     ? createEditTransaction<DockMediaEdit>(
-        snapshot.saved ?? defaultDockMediaEdit(source, source.bakedMarks ?? [], transcript, null),
+        snapshot.saved ??
+          defaultDockMediaEdit(source, source.bakedMarks ?? [], snapshot.transcript ?? null, null),
       )
     : null;
   // Recorded marks are part of the frames: cutting time away would not remove them.

@@ -481,6 +481,8 @@ export const IPC_CHANNELS = {
     SAVE: 'dock-capture-editor:save',
     /** main → the opening dock send: persist this save (DockCaptureEditorSaveRequested). */
     SAVE_REQUESTED: 'dock-capture-editor:save-requested',
+    /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdate). */
+    TRANSCRIPT_UPDATE: 'dock-capture-editor:transcript-update',
     /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
     SAVE_RESULT: 'dock-capture-editor:save-result',
   },

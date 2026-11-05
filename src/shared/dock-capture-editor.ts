@@ -178,15 +178,13 @@ const SAFE_SEGMENT = /^[^\u0000-\u001f\u007f/\\:*?"<>|]+$/;
  * is not enough; anything else is null.
  */
 export function canonicalDockAttachmentPath(value: string): string | null {
-  if (!value || value.length > 1024 || value.startsWith('/') || value.includes('\\'))
-    return null;
+  if (!value || value.length > 1024 || value.startsWith('/') || value.includes('\\')) return null;
   if (/^[A-Za-z]:/.test(value)) return null;
   const segments = value.split('/');
   if (segments.length <= ATTACHMENT_ROOT.length) return null;
   if (ATTACHMENT_ROOT.some((part, index) => segments[index] !== part)) return null;
   for (const segment of segments.slice(ATTACHMENT_ROOT.length))
-    if (!segment || segment === '.' || segment === '..' || !SAFE_SEGMENT.test(segment))
-      return null;
+    if (!segment || segment === '.' || segment === '..' || !SAFE_SEGMENT.test(segment)) return null;
   return segments.join('/');
 }
 
@@ -216,3 +214,22 @@ export const DockCaptureEditorSaveResultSchema = z
   .refine((value) => (value.result === 'saved') === !!value.saved, 'Saved edit missing');
 
 export const DockCaptureEditorSaveSchema = DockMediaSaveRequestSchema;
+
+/**
+ * dock → main: a newer transcript for the open session's source (recognition finished
+ * or progressed). Only the dock that opened the session, for its own pair and source,
+ * and only a strictly newer revision.
+ */
+export const DockCaptureEditorTranscriptUpdateSchema = z
+  .object({
+    pair: z
+      .object({ workspaceId: z.string().min(1).max(200), agentId: z.string().min(1).max(200) })
+      .strict(),
+    sourceId: z.string().min(1).max(512),
+    sourceRevision: z.number().int().nonnegative(),
+    transcript: DockMediaTranscriptSchema,
+  })
+  .strict();
+export type DockCaptureEditorTranscriptUpdate = z.infer<
+  typeof DockCaptureEditorTranscriptUpdateSchema
+>;

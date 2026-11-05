@@ -22,6 +22,7 @@ import {
   DockCaptureEditorOpenSchema,
   canonicalDockAttachmentPath,
   DockCaptureEditorSaveResultSchema,
+  DockCaptureEditorTranscriptUpdateSchema,
   type DockCaptureEditorOpenResult,
   type DockCaptureEditorSaveResult,
   type DockCaptureEditorSnapshot,
@@ -82,7 +83,10 @@ const EditorSaveSchema = z
   .object({
     openId: z.string().uuid(),
     edit: DockMediaEditSchema,
-    replacement: z.object({ candidateToken: z.string().min(1).max(512) }).strict().optional(),
+    replacement: z
+      .object({ candidateToken: z.string().min(1).max(512) })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -370,6 +374,31 @@ export function setupDockCaptureEditorIPC(): void {
     dropPending();
     return true;
   });
+  // A newer transcript of the open session's source, from the dock that opened it.
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.TRANSCRIPT_UPDATE, (event, value: unknown) => {
+    const parsed = DockCaptureEditorTranscriptUpdateSchema.safeParse(value);
+    const current = session;
+    if (!parsed.success || !current?.snapshot.source) return false;
+    const { owner, snapshot } = current;
+    const source = snapshot.source;
+    if (!source) return false;
+    if (event.sender !== owner.sender) return false;
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    if (getStrictBackendBindingForWebContents(event.sender) !== owner.binding) return false;
+    const update = parsed.data;
+    if (
+      update.pair.workspaceId !== snapshot.workspaceId ||
+      update.pair.agentId !== snapshot.agentId ||
+      update.sourceId !== source.id ||
+      update.sourceRevision !== source.revision
+    )
+      return false;
+    if (snapshot.transcript && update.transcript.revision <= snapshot.transcript.revision)
+      return false;
+    current.snapshot = { ...snapshot, transcript: update.transcript };
+    if (usable(editor)) editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
+    return true;
+  });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE, (event, request: unknown) =>
     save(event, request),
   );
@@ -394,7 +423,10 @@ export function setupDockCaptureEditorIPC(): void {
  * revision never moves the compare-and-set baseline); the outcome is the dock's
  * durable result, or failed when it does not answer in time.
  */
-async function save(event: IpcMainInvokeEvent, request: unknown): Promise<DockCaptureEditorSaveResult> {
+async function save(
+  event: IpcMainInvokeEvent,
+  request: unknown,
+): Promise<DockCaptureEditorSaveResult> {
   const failed = (requestId = randomUUID()): DockCaptureEditorSaveResult => ({
     requestId,
     result: 'failed',
@@ -427,7 +459,10 @@ async function save(event: IpcMainInvokeEvent, request: unknown): Promise<DockCa
       resolve,
       timer: setTimeout(() => settleSave(requestId, failed(requestId)), SAVE_TIMEOUT_MS),
     });
-    owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE_REQUESTED, { requestId, request: canonical });
+    owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE_REQUESTED, {
+      requestId,
+      request: canonical,
+    });
   });
   // The stored edit becomes this session's baseline (only if it is still this session).
   if (result.result === 'saved' && result.saved && session === current)
