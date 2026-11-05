@@ -14,7 +14,7 @@
 <Screen class="h-full w-full">
   {#if snapshot?.kind === 'recording'}
     {#key snapshot.openId}
-      <DockRecordingEditor {snapshot} onClose={() => bridge.close()} />
+      <DockRecordingEditor {snapshot} onClose={() => snapshot && bridge.close(snapshot.openId)} />
     {/key}
   {/if}
 </Screen>

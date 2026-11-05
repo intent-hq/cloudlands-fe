@@ -114,6 +114,9 @@ export const DockCaptureEditorOpenSchema = z
   })
   .strict();
 
+/** Close names the session it means; any other one stays open. */
+export const DockCaptureEditorCloseSchema = z.object({ openId: z.string().uuid() }).strict();
+
 const ATTACHMENT_ROOT = ['.intent', 'attachments'] as const;
 const SAFE_SEGMENT = /^[^\u0000-\u001f\u007f/\\:*?"<>|]+$/;
 

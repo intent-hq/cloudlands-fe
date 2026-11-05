@@ -9,7 +9,8 @@ import {
 } from '$shared/dock-capture-editor';
 
 export interface DockCaptureEditorBridge {
-  close(): void;
+  /** Close the session `openId` names (never a newer one main retargeted to). */
+  close(openId: string): void;
   dispose(): void;
 }
 
@@ -38,14 +39,19 @@ export function connectDockCaptureEditor(
   };
   const changed = () => void load();
   electronAPI().on(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED, changed);
-  void load();
+  // First read once the document is loaded (main binds it then). Main also says
+  // CHANGED once it has bound the document, so a read made too early is redone.
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', changed, { once: true });
+  else void load();
   return {
-    close: () =>
+    close: (openId) =>
       void electronAPI()
-        .invoke(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE)
+        .invoke(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, { openId })
         .catch(() => false),
     dispose: () => {
       disposed = true;
+      document.removeEventListener('DOMContentLoaded', changed);
       electronAPI().off(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED, changed);
     },
   };

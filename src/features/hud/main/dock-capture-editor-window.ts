@@ -17,6 +17,7 @@ import { Logger } from '../../../shared/logger';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   DOCK_CAPTURE_EDITOR_ROUTE,
+  DockCaptureEditorCloseSchema,
   DockCaptureEditorOpenSchema,
   canonicalDockAttachmentPath,
   type DockCaptureEditorOpenResult,
@@ -126,6 +127,13 @@ function createEditorWindow(backendId: string): BrowserWindow {
   registerDockCaptureEditorWindow(window);
   fixWebContentsZoom(window.webContents);
   stampWindowWithBackend(window, backendId);
+  // The document is bound to its backend on dom-ready (stampWindowWithBackend's own
+  // listener, registered first, runs first). A read made before that finds no
+  // binding, so tell the page once it is bound; it then reads the session.
+  window.webContents.on('dom-ready', () => {
+    if (editor === window && usable(window))
+      window.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
+  });
   window.on('closed', () => {
     if (editor !== window) return;
     editor = null;
@@ -209,8 +217,12 @@ export function setupDockCaptureEditorIPC(): void {
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.GET, (event) =>
     fromEditor(event) && session ? session.snapshot : null,
   );
-  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, (event) => {
-    if (!fromEditor(event)) return false;
+  // Closes only the session the page asked about: a Cancel queued from an earlier
+  // attachment never closes the one the window was retargeted to.
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, (event, request: unknown) => {
+    const parsed = DockCaptureEditorCloseSchema.safeParse(request);
+    if (!parsed.success || !fromEditor(event)) return false;
+    if (session?.snapshot.openId !== parsed.data.openId) return false;
     closeEditor();
     return true;
   });
