@@ -15,8 +15,8 @@
   import DockComposerIcon from './DockComposerIcon.svelte';
 
   /**
-   * Screenshot modes for the composer's capture button. The owner opens it on explicit
-   * activation and anchors it to the picker button.
+   * Screenshot modes for the composer's capture button. The owner opens it on hover or explicit
+   * keyboard/touch activation and anchors it to the stable capture button.
    */
   let {
     open = $bindable(false),
@@ -43,6 +43,13 @@
     onpointerleave?: () => void;
   } = $props();
   let content = $state<HTMLElement | null>(null);
+  // Arrow keys can enter a menu already shown by hovering without remounting its anchor.
+  $effect(() => {
+    if (open && focusChecked)
+      void tick().then(() =>
+        content?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')?.focus(),
+      );
+  });
 </script>
 
 <!-- The picker never locks the page: the body lock would outlive a close that lands
@@ -59,8 +66,8 @@
     data-dock-palette="notch"
     aria-label={label}
     onInteractOutside={(event) => {
-      // The dedicated picker owns its toggle; outside dismissal must not close it
-      // before the same click reaches that button and reopens it.
+      // The capture button owns its primary action. Let its click run once;
+      // outside dismissal must not interfere with its current focus context.
       if (event.target instanceof Node && anchor?.contains(event.target)) {
         event.preventDefault();
         return;
@@ -69,15 +76,7 @@
     }}
     {onpointerenter}
     {onpointerleave}
-    onOpenAutoFocus={(event) => {
-      event.preventDefault();
-      if (focusChecked)
-        void tick().then(() =>
-          content
-            ?.querySelector<HTMLElement>('[role="menuitemradio"][aria-checked="true"]')
-            ?.focus(),
-        );
-    }}
+    onOpenAutoFocus={(event) => event.preventDefault()}
     onCloseAutoFocus={(event) => event.preventDefault()}
   >
     <Menu.RadioGroup value={mode}>
