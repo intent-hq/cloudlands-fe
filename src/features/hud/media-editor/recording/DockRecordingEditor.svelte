@@ -10,6 +10,7 @@
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
   import DockRecordingTimeline from './DockRecordingTimeline.svelte';
   import DockRecordingSendOptions from './DockRecordingSendOptions.svelte';
+  import DockRecordingTranscript from './DockRecordingTranscript.svelte';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import {
     defaultDockMediaEdit,
@@ -261,17 +262,43 @@
 
 {#snippet sendOptions()}
   {#if source && edits}
-    <DockRecordingSendOptions
-      edit={edits.draft}
-      {source}
-      {transcript}
-      enabled={snapshot.output?.ready === true}
-      onChange={(choice) => edits.apply((draft) => ({ ...draft, ...choice }))}
-    />
+    <div class="sidebar-content">
+      <DockRecordingSendOptions
+        edit={edits.draft}
+        {source}
+        {transcript}
+        enabled={snapshot.output?.ready === true}
+        onChange={(choice) => edits.apply((draft) => ({ ...draft, ...choice }))}
+      />
+      <DockRecordingTranscript
+        {transcript}
+        batches={source.batches}
+        marks={edits.draft.marks}
+        {currentMs}
+        {activeMarkId}
+        dimmed={edits.draft.voice !== 'transcript'}
+        onSeek={(ms) => {
+          activeMarkId = null;
+          seek(ms);
+        }}
+        onMark={(mark) => {
+          activeMarkId = mark.id;
+          video?.pause();
+          seek(mark.atMs);
+        }}
+      />
+    </div>
   {/if}
 {/snippet}
 
 <style>
+  /* Send options stay put; the transcript below scrolls on its own. */
+  .sidebar-content {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
   .stage {
     display: flex;
     flex-direction: column;
