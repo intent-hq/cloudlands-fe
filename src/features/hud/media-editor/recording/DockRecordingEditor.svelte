@@ -177,7 +177,7 @@
   subtitle={snapshot.title}
   dirty={edits?.dirty ?? false}
   onCancel={onClose}
-  sidebar={source && edits ? sendOptions : undefined}
+  sidebar={sendOptions}
   onUndo={edits ? () => edits.undo() : undefined}
   onRedo={edits ? () => edits.redo() : undefined}
   {discardRequest}
@@ -288,10 +288,36 @@
         }}
       />
     </div>
+  {:else}
+    <!-- Playback only: the same sidebar, nothing to change; says why. -->
+    <div class="sidebar-content">
+      <DockRecordingSendOptions
+        edit={null}
+        source={null}
+        transcript={null}
+        enabled={false}
+        onChange={() => {}}
+      />
+      <p class="readonly-note" data-readonly-note>{m.dock_captureEditor_readonly_note()}</p>
+      <DockRecordingTranscript
+        transcript={null}
+        batches={[]}
+        marks={[]}
+        {currentMs}
+        onSeek={seek}
+        onMark={() => {}}
+      />
+    </div>
   {/if}
 {/snippet}
 
 <style>
+  .readonly-note {
+    margin: 0;
+    padding: 10px 12px 0;
+    font-size: 11px;
+    color: hsl(var(--muted-foreground));
+  }
   /* Send options stay put; the transcript below scrolls on its own. */
   .sidebar-content {
     display: flex;

@@ -8338,6 +8338,7 @@
   "dock_captureEditor_voiceTranscript_pending": "The transcript is still being made.",
   "dock_captureEditor_voiceTranscript_unavailable": "No transcript for this recording.",
   "dock_captureEditor_transcript_unavailable": "No transcript for this recording.",
+  "dock_captureEditor_readonly_note": "This recording can only be played. Recordings made from now on can be trimmed, cut and sent in parts here.",
   "dock_captureEditor_transcript_pending": "Transcribing…",
   "dock_captureEditor_transcript_noSpeech": "No speech detected",
   "dock_captureEditor_batch_label": "Batch {n} · {time}",

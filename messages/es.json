@@ -8338,6 +8338,7 @@
   "dock_captureEditor_voiceTranscript_pending": "La transcripción aún se está generando.",
   "dock_captureEditor_voiceTranscript_unavailable": "No hay transcripción de esta grabación.",
   "dock_captureEditor_transcript_unavailable": "No hay transcripción de esta grabación.",
+  "dock_captureEditor_readonly_note": "Esta grabación solo se puede reproducir. Las nuevas grabaciones se podrán recortar, cortar y enviar por partes aquí.",
   "dock_captureEditor_transcript_pending": "Transcribiendo…",
   "dock_captureEditor_transcript_noSpeech": "No se detectó voz",
   "dock_captureEditor_batch_label": "Bloque {n} · {time}",

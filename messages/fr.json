@@ -8338,6 +8338,7 @@
   "dock_captureEditor_voiceTranscript_pending": "La transcription est en cours.",
   "dock_captureEditor_voiceTranscript_unavailable": "Aucune transcription pour cet enregistrement.",
   "dock_captureEditor_transcript_unavailable": "Aucune transcription pour cet enregistrement.",
+  "dock_captureEditor_readonly_note": "Cet enregistrement peut seulement être lu. Les nouveaux enregistrements pourront être découpés et envoyés en parties ici.",
   "dock_captureEditor_transcript_pending": "Transcription…",
   "dock_captureEditor_transcript_noSpeech": "Aucune parole détectée",
   "dock_captureEditor_batch_label": "Lot {n} · {time}",

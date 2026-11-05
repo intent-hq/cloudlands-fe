@@ -23,15 +23,27 @@
     enabled,
     onChange,
   }: {
-    edit: DockMediaEdit;
-    source: DockMediaSource;
+    /** Null for a recording that can only be played: shown, nothing chosen differently. */
+    edit: DockMediaEdit | null;
+    source: DockMediaSource | null;
     transcript: DockMediaTranscript | null;
     enabled: boolean;
     onChange: (choice: DockMediaChoice) => void;
   } = $props();
 
-  const highlights = $derived(canUseHighlights(edit));
-  const voice = $derived(voiceOptions(source, transcript));
+  const highlights = $derived(edit ? canUseHighlights(edit) : false);
+  const voice = $derived(
+    source
+      ? voiceOptions(source, transcript)
+      : {
+          audio: { enabled: false, reason: null },
+          transcript: { enabled: false, reason: null },
+          off: { enabled: true, reason: null },
+        },
+  );
+  // A recording that can only be played goes as it is: the whole video, no transcript.
+  const video = $derived(edit?.video ?? 'full');
+  const voiceChoice = $derived(edit?.voice ?? 'off');
   const reasons = {
     'audio-unavailable': () => m.dock_captureEditor_voiceAudio_unavailable(),
     'transcript-pending': () => m.dock_captureEditor_voiceTranscript_pending(),
@@ -48,10 +60,10 @@
       class="w-full"
       aria-labelledby="send-video-label"
       disabled={!enabled}
-      value={edit.video}
+      value={video}
       onValueChange={(value: string) => {
         if (value === 'full' || value === 'highlights')
-          onChange({ video: value, voice: edit.voice });
+          onChange({ video: value, voice: voiceChoice });
       }}
     >
       <ToggleGroup.Item value="full" class="flex-1"
@@ -74,10 +86,10 @@
       class="w-full"
       aria-labelledby="send-voice-label"
       disabled={!enabled}
-      value={edit.voice}
+      value={voiceChoice}
       onValueChange={(value: string) => {
         if (value === 'audio' || value === 'transcript' || value === 'off')
-          onChange({ video: edit.video, voice: value });
+          onChange({ video, voice: value });
       }}
     >
       <ToggleGroup.Item

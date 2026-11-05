@@ -8338,6 +8338,7 @@
   "dock_captureEditor_voiceTranscript_pending": "文字稿仍在生成。",
   "dock_captureEditor_voiceTranscript_unavailable": "此录制没有文字稿。",
   "dock_captureEditor_transcript_unavailable": "此录制没有文字稿。",
+  "dock_captureEditor_readonly_note": "此录制只能播放。之后的录制可在此修剪、剪切并分段发送。",
   "dock_captureEditor_transcript_pending": "正在转写…",
   "dock_captureEditor_transcript_noSpeech": "未检测到语音",
   "dock_captureEditor_batch_label": "批次 {n} · {time}",
