@@ -39,11 +39,11 @@ for (const width of [1200, 390]) {
       'aria-selected',
       'true',
     );
-    await popup.getByRole('option', { name: 'intent1', exact: true }).click();
+    await popup.getByRole('option', { name: /^intent1(?: |$)/ }).click();
     await expect(popup).toBeHidden();
     await expect(trigger).toContainText('intent1');
     await trigger.click();
-    await expect(popup.getByRole('option', { name: 'intent1', exact: true })).toHaveAttribute(
+    await expect(popup.getByRole('option', { name: /^intent1(?: |$)/ })).toHaveAttribute(
       'aria-selected',
       'true',
     );
