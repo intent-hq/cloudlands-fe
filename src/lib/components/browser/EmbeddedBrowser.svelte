@@ -58,6 +58,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { describeUrlForLog } from '$shared/utils/sanitize-credentials';
   import { matchesShortcut } from '$lib/utils/shortcut-bindings';
+  import {
+    getBrowserHistoryDirection,
+    keyboardInterceptorScript,
+    parseForwardedPanelShortcut,
+  } from './browser-keyboard-interceptor';
   import { effectiveShortcutReadable } from '$lib/utils/effective-shortcuts';
   import { invoke } from '$lib/electron-bridge';
   import {
@@ -355,61 +360,6 @@
   // guest re-registers (registerTab re-applies viewport emulation).
   let lastRegisteredWebContentsId: number | undefined;
 
-  // Keyboard interceptor script to inject into webview
-  // Since webview runs in a separate process, keyboard events don't bubble up.
-  // We inject a script that captures keyboard shortcuts and logs special messages
-  // that we can intercept via the console-message event.
-  // i18n-ignore: This script is an internal webview protocol, not user-facing text.
-  const keyboardInterceptorScript = `
-    (function() {
-      if (window.__augmentKeyboardInterceptorInstalled) return;
-      window.__augmentKeyboardInterceptorInstalled = true;
-      document.addEventListener('keydown', function(e) {
-        const isMod = e.metaKey || e.ctrlKey;
-        // Cmd+W / Ctrl+W - close tab
-        if (isMod && (e.key === 'w' || e.key === 'W')) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('__INTENT_CLOSE_TAB__');
-        }
-        // Cmd+R / Ctrl+R / F5 - refresh browser
-        if (e.key === 'F5' || (isMod && (e.key === 'r' || e.key === 'R'))) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('__INTENT_REFRESH__');
-        }
-        // Cmd+L / Ctrl+L - edit the current address
-        if (isMod && !e.shiftKey && !e.altKey && (e.key === 'l' || e.key === 'L')) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('__INTENT_FOCUS_URL__');
-        }
-        // Forward pane and column bracket shortcuts to the panel system.
-        if (isMod && !e.altKey && ['[', ']', '{', '}'].includes(e.key)) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log(
-            '__INTENT_PANEL_BRACKET__:' +
-              [e.key, e.shiftKey ? '1' : '0', e.metaKey ? '1' : '0', e.ctrlKey ? '1' : '0'].join(':')
-          );
-        }
-        // Cmd+Shift+C / Ctrl+Shift+C - copy current browser URL
-        if (isMod && e.shiftKey && !e.altKey && (e.key === 'c' || e.key === 'C')) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('__INTENT_COPY_URL__');
-        }
-        // Cmd+Option+I / Ctrl+Shift+I - open devtools
-        if ((e.metaKey && e.altKey && (e.key === 'i' || e.key === 'I')) ||
-            (e.ctrlKey && e.shiftKey && (e.key === 'i' || e.key === 'I'))) {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log('__INTENT_DEVTOOLS__');
-        }
-      }, true);
-    })();
-  `;
-
   function injectKeyboardInterceptor() {
     if (!webviewRef) return;
     webviewRef
@@ -555,13 +505,15 @@
         return;
       }
 
-      // Alt+Arrow shortcuts work regardless of focus
-      if (e.altKey && e.key === 'ArrowLeft' && !isInInput) {
+      // Plain Alt+Arrow back/forward works regardless of focus. Mod+Alt+Arrow is column focus
+      // and must never navigate a browser panel.
+      const browserHistoryDirection = getBrowserHistoryDirection(e);
+      if (browserHistoryDirection === 'back' && !isInInput) {
         if (webviewReady && webviewRef) {
           e.preventDefault();
           goBack();
         }
-      } else if (e.altKey && e.key === 'ArrowRight' && !isInInput) {
+      } else if (browserHistoryDirection === 'forward' && !isInInput) {
         if (webviewReady && webviewRef) {
           e.preventDefault();
           goForward();
@@ -820,16 +772,10 @@
       } else if (message === '__INTENT_FOCUS_URL__') {
         void focusUrlInput();
       } else if (message.startsWith('__INTENT_PANEL_BRACKET__:')) {
-        const [, key, shiftKey, metaKey, ctrlKey] = message.split(':');
+        const forwarded = parseForwardedPanelShortcut(message);
+        if (!forwarded) return;
         window.dispatchEvent(
-          new KeyboardEvent('keydown', {
-            key,
-            shiftKey: shiftKey === '1',
-            metaKey: metaKey === '1',
-            ctrlKey: ctrlKey === '1',
-            bubbles: true,
-            cancelable: true,
-          }),
+          new KeyboardEvent('keydown', { ...forwarded, bubbles: true, cancelable: true }),
         );
       } else if (message === '__INTENT_COPY_URL__') {
         // Cmd+Shift+C / Ctrl+Shift+C was pressed - copy current browser URL

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { StoreState } from '$store/renderer/types';
 import type { Workspace } from '$shared/types';
@@ -23,7 +23,8 @@ import type {
   RecentlyClosedTab,
 } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { KeyboardShortcutManager, type KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
-import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
+import { SHORTCUT_DEFAULTS, type ShortcutId } from '$lib/utils/shortcut-bindings';
+import { handleDrawerTerminalCycleKeydown } from '$lib/components/terminal/drawer-terminal-cycling';
 import { SHORTCUTS } from '$lib/utils/shortcuts';
 import {
   closeActivePanelTab,
@@ -216,6 +217,264 @@ describe('global workspace tab navigation', () => {
       manager.destroy();
       platformSpy.mockRestore();
     }
+  });
+
+  describe('Mod+Shift+] / [ workspace tab switching', () => {
+    type Platform = 'MacIntel' | 'Linux x86_64';
+    const cleanups: Array<() => void> = [];
+    afterEach(() => {
+      for (const cleanup of cleanups.splice(0)) cleanup();
+      document.body.innerHTML = '';
+    });
+
+    function setup(
+      platform: Platform,
+      {
+        overrides = {},
+        store = makeStore('ws-2'),
+        path = '/workspace/ws-2',
+        before,
+      }: {
+        overrides?: Partial<Record<ShortcutId, string>>;
+        store?: ReturnType<typeof makeStore>;
+        path?: string;
+        before?: (manager: KeyboardShortcutManager, resolve: (id: ShortcutId) => string) => void;
+      } = {},
+    ) {
+      const platformSpy = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+      const manager = new KeyboardShortcutManager();
+      const state = { path };
+      const navigate = vi.fn((next: string) => {
+        state.path = next;
+      });
+      const resolve = (id: ShortcutId) => overrides[id] ?? SHORTCUT_DEFAULTS[id];
+      before?.(manager, resolve);
+      registerWorkspaceTabShortcuts({
+        isMac: platform === 'MacIntel',
+        register: (shortcut) => manager.register(shortcut),
+        store,
+        getCurrentPath: () => state.path,
+        navigate,
+        openNewWorkspace: vi.fn(),
+        resolveBinding: resolve,
+      });
+      manager.attach();
+      cleanups.push(() => {
+        manager.destroy();
+        platformSpy.mockRestore();
+      });
+      return { state, navigate, store };
+    }
+
+    function press(platform: Platform, direction: 'next' | 'previous', target: Element) {
+      const event = new KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key: direction === 'next' ? '}' : '{',
+        code: direction === 'next' ? 'BracketRight' : 'BracketLeft',
+        shiftKey: true,
+        metaKey: platform === 'MacIntel',
+        ctrlKey: platform !== 'MacIntel',
+      });
+      target.dispatchEvent(event);
+      return event;
+    }
+
+    function mount<T extends HTMLElement>(element: T, parent: HTMLElement = document.body): T {
+      parent.appendChild(element);
+      return element;
+    }
+
+    const targets: Array<[string, () => HTMLElement]> = [
+      ['page body', () => document.body],
+      [
+        'chat input',
+        () => {
+          const editor = document.createElement('div');
+          editor.setAttribute('contenteditable', 'true');
+          return mount(editor);
+        },
+      ],
+      ['address bar', () => mount(document.createElement('input'))],
+      ['textarea', () => mount(document.createElement('textarea'))],
+      [
+        'column terminal',
+        () => {
+          const xterm = mount(document.createElement('div'));
+          xterm.className = 'xterm';
+          const textarea = document.createElement('textarea');
+          textarea.className = 'xterm-helper-textarea';
+          return mount(textarea, xterm);
+        },
+      ],
+    ];
+
+    it.each(
+      (['MacIntel', 'Linux x86_64'] as const).flatMap((platform) =>
+        targets.map(([label, create]) => [platform, label, create] as const),
+      ),
+    )('cycles with wraparound on %s from a %s', (platform, _label, createTarget) => {
+      const { state } = setup(platform);
+      const target = createTarget();
+
+      const event = press(platform, 'next', target);
+      expect(event.defaultPrevented).toBe(true);
+      expect(state.path).toBe('/workspace/ws-3');
+      press(platform, 'next', target);
+      expect(state.path).toBe('/workspace/ws-1');
+      press(platform, 'previous', target);
+      expect(state.path).toBe('/workspace/ws-3');
+    });
+
+    it.each(['MacIntel', 'Linux x86_64'] as const)(
+      'opens the first or last workspace tab from Home on %s',
+      (platform) => {
+        const { state } = setup(platform, { path: '/' });
+        press(platform, 'next', document.body);
+        expect(state.path).toBe('/workspace/ws-1');
+        state.path = '/';
+        press(platform, 'previous', document.body);
+        expect(state.path).toBe('/workspace/ws-3');
+      },
+    );
+
+    it('does nothing from Home when no workspace tabs are open', () => {
+      const store = makeStore('ws-1');
+      for (const id of ['ws-1', 'ws-2', 'ws-3']) {
+        closeActiveWorkspaceTab(store, `/workspace/${id}`, vi.fn());
+      }
+      expect(selectWorkspaceTabOrder.select(store.state)).toEqual([]);
+      const { navigate } = setup('MacIntel', { store, path: '/' });
+
+      expect(() => press('MacIntel', 'next', document.body)).not.toThrow();
+      expect(() => press('MacIntel', 'previous', document.body)).not.toThrow();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('keeps Ctrl+Tab alongside the new chord', () => {
+      const { state } = setup('MacIntel');
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Tab',
+          ctrlKey: true,
+        }),
+      );
+      expect(state.path).toBe('/workspace/ws-3');
+      press('MacIntel', 'next', document.body);
+      expect(state.path).toBe('/workspace/ws-1');
+    });
+
+    it('lets a focused editor that claims the chord keep it (Windows/Linux fold)', () => {
+      const { navigate } = setup('Linux x86_64');
+      const editor = mount(document.createElement('textarea'));
+      editor.addEventListener('keydown', (event) => event.preventDefault());
+
+      press('Linux x86_64', 'next', editor);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    describe('terminal drawer exception', () => {
+      function mountDrawer(terminalCount: () => number) {
+        const drawer = mount(document.createElement('div'));
+        drawer.className = 'terminal-overlay';
+        const xterm = mount(document.createElement('div'), drawer);
+        xterm.className = 'xterm';
+        const textarea = document.createElement('textarea');
+        textarea.className = 'xterm-helper-textarea';
+        mount(textarea, xterm);
+        const cycle = vi.fn();
+        // The same handler both drawer overlays install on window.
+        const handler = (event: KeyboardEvent) =>
+          handleDrawerTerminalCycleKeydown(event, drawer, terminalCount(), cycle);
+        window.addEventListener('keydown', handler);
+        cleanups.push(() => window.removeEventListener('keydown', handler));
+        return { textarea, cycle };
+      }
+
+      it.each(['MacIntel', 'Linux x86_64'] as const)(
+        'cycles drawer terminals with 2+ terminals and keeps the workspace tab on %s',
+        (platform) => {
+          const { navigate } = setup(platform);
+          const drawer = mountDrawer(() => 2);
+
+          press(platform, 'next', drawer.textarea);
+          press(platform, 'previous', drawer.textarea);
+          expect(drawer.cycle.mock.calls).toEqual([[1], [-1]]);
+          expect(navigate).not.toHaveBeenCalled();
+        },
+      );
+
+      it('switches workspace tabs with a single drawer terminal', () => {
+        const { state } = setup('MacIntel');
+        const drawer = mountDrawer(() => 1);
+
+        press('MacIntel', 'next', drawer.textarea);
+        expect(drawer.cycle).not.toHaveBeenCalled();
+        expect(state.path).toBe('/workspace/ws-3');
+      });
+
+      it('switches workspace tabs from a column terminal while the drawer is open', () => {
+        const { state } = setup('MacIntel');
+        const drawer = mountDrawer(() => 2);
+        const columnTerminal = targets.find(([label]) => label === 'column terminal')![1]();
+
+        press('MacIntel', 'next', columnTerminal);
+        expect(drawer.cycle).not.toHaveBeenCalled();
+        expect(state.path).toBe('/workspace/ws-3');
+      });
+    });
+
+    it('lets a custom binding on the same chord win', () => {
+      const userAction = vi.fn();
+      const { navigate } = setup('MacIntel', {
+        overrides: { 'global.toggle-spaces': 'mod+shift+]' },
+        before: (manager, resolve) =>
+          manager.register({
+            key: 'o',
+            meta: true,
+            binding: () => resolve('global.toggle-spaces'),
+            description: 'Spaces',
+            action: userAction,
+          }),
+      });
+
+      const next = press('MacIntel', 'next', document.body);
+      expect(next.defaultPrevented).toBe(true);
+      expect(userAction).toHaveBeenCalledTimes(1);
+      expect(navigate).not.toHaveBeenCalled();
+
+      press('MacIntel', 'previous', document.body);
+      expect(navigate).toHaveBeenCalledWith('/workspace/ws-1');
+    });
+
+    it('follows a rebinding of one row and leaves the other row on its default', () => {
+      const { state } = setup('MacIntel', { overrides: { 'global.next-space-alt': 'mod+alt+j' } });
+
+      press('MacIntel', 'next', document.body);
+      expect(state.path).toBe('/workspace/ws-2');
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: '∆',
+          code: 'KeyJ',
+          metaKey: true,
+          altKey: true,
+        }),
+      );
+      expect(state.path).toBe('/workspace/ws-3');
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          bubbles: true,
+          cancelable: true,
+          key: 'Tab',
+          ctrlKey: true,
+        }),
+      );
+      expect(state.path).toBe('/workspace/ws-1');
+    });
   });
 
   it('closes only the routed workspace tab and navigates to its successor', () => {
@@ -1136,7 +1395,9 @@ describe('global workspace tab navigation', () => {
       'meta+shift+alt+arrowleft',
       'meta+shift+alt+arrowright',
       'ctrl+tab',
+      'meta+shift+}',
       'ctrl+shift+tab',
+      'meta+shift+{',
       'meta+1',
       'meta+2',
       'meta+3',

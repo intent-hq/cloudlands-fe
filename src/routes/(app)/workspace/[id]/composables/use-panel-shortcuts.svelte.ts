@@ -17,7 +17,7 @@
  *
  * Note: Panel-specific shortcuts are in panel-keyboard-shortcuts.svelte.ts:
  * - Mod+[/]: Select the previous/next pane
- * - Mod+Shift+[/]: Focus the previous/next column
+ * - Mod+Alt+Left/Right: Focus the previous/next column
  * - Mod+Alt+PageUp/PageDown: Move the active pane between columns
  * - Mod+\: Create a column to the right
  */

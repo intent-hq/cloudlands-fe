@@ -3,7 +3,7 @@
  *
  * Direct shortcuts (no leader key required):
  * - Mod+[/]: Select the previous/next pane in the active stack
- * - Mod+Shift+PageUp/PageDown: Focus the previous/next column
+ * - Mod+Alt+Left/Right (and Mod+Shift+PageUp/PageDown): Focus the previous/next column
  * - Mod+Alt+PageUp/PageDown: Move the active pane to the previous/next column
  * - Mod+\: Create a column to the right
  *
@@ -37,6 +37,7 @@ import {
   matchesShortcut,
   matchesShortcutPattern,
   getShortcutSequenceTrigger,
+  isEventClaimedByCustomBinding,
   resolveShortcut,
   type ShortcutId,
 } from '$lib/utils/shortcut-bindings';
@@ -365,15 +366,15 @@ export function createPanelKeyboardShortcuts(
     // On Mac, "Mod" is Cmd (metaKey) only — Ctrl is reserved for Emacs bindings and other uses.
     // On Win/Linux, "Mod" is Ctrl.
     const isMod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
-    const matches = (id: ShortcutId) =>
-      matchesShortcut(
-        e,
-        resolveShortcut(id, appStore.state.userPreferences?.shortcutOverrides ?? {}),
-        isMac,
-      );
-    const focusColumnDirection = matches('panel.focus-previous-column')
+    const overrides = appStore.state.userPreferences?.shortcutOverrides ?? {};
+    const resolve = (id: ShortcutId) => resolveShortcut(id, overrides);
+    const matches = (id: ShortcutId) => matchesShortcut(e, resolve(id), isMac);
+    // A default column chord yields to an action the user explicitly bound to the same keys.
+    const matchesColumn = (id: ShortcutId) =>
+      matches(id) && !isEventClaimedByCustomBinding(id, e, resolve, isMac);
+    const focusColumnDirection = matchesColumn('panel.focus-previous-column')
       ? 'prev'
-      : matches('panel.focus-next-column')
+      : matchesColumn('panel.focus-next-column')
         ? 'next'
         : null;
     const paneDirection = matches('panel.previous-pane')

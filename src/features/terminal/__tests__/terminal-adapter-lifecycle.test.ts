@@ -948,3 +948,50 @@ describe('TerminalAdapter code-font preference wiring', () => {
     expect(xterm.options.fontFamily).toBe(before);
   });
 });
+
+describe('TerminalAdapter app chord passthrough', () => {
+  beforeEach(() => {
+    xtermMock.instances.length = 0;
+    vi.clearAllMocks();
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => ({ addEventListener: vi.fn(), removeEventListener: vi.fn() })),
+    });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  function keyHandler(platform: string) {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    const adapter = new TerminalAdapter({
+      workspaceId: 'ws-1',
+      terminalId: 'term-1',
+      container: document.createElement('div'),
+      appClient: { terminals: fakeTerminalsClient() },
+    });
+    (adapter as any).setupXTermEventHandlers();
+    const xterm = (adapter as any).xterm;
+    const calls = xterm.attachCustomKeyEventHandler.mock.calls;
+    return calls[calls.length - 1][0] as (event: KeyboardEvent) => boolean;
+  }
+
+  it('keeps Windows/Linux Ctrl+Alt+Left/Right out of xterm so the terminal types nothing', () => {
+    const handle = keyHandler('Linux x86_64');
+    for (const key of ['ArrowLeft', 'ArrowRight']) {
+      expect(handle(new KeyboardEvent('keydown', { key, ctrlKey: true, altKey: true }))).toBe(
+        false,
+      );
+    }
+    expect(handle(new KeyboardEvent('keydown', { key: 'ArrowLeft', altKey: true }))).toBe(true);
+    expect(handle(new KeyboardEvent('keydown', { key: 'a' }))).toBe(true);
+  });
+
+  it('passes the macOS column-focus and workspace-tab chords through', () => {
+    const handle = keyHandler('MacIntel');
+    expect(
+      handle(new KeyboardEvent('keydown', { key: 'ArrowRight', metaKey: true, altKey: true })),
+    ).toBe(false);
+    expect(handle(new KeyboardEvent('keydown', { key: '}', metaKey: true, shiftKey: true }))).toBe(
+      false,
+    );
+  });
+});

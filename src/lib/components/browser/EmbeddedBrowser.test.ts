@@ -225,9 +225,27 @@ describe('EmbeddedBrowser', () => {
       ['macOS column', '__INTENT_PANEL_BRACKET__:{:1:1:0', '{', true, true, false],
       ['Windows/Linux pane', '__INTENT_PANEL_BRACKET__:[:0:0:1', '[', false, false, true],
       ['Windows/Linux column', '__INTENT_PANEL_BRACKET__:}:1:0:1', '}', true, false, true],
+      [
+        'macOS column focus',
+        '__INTENT_PANEL_BRACKET__:ArrowRight:0:1:0:1',
+        'ArrowRight',
+        false,
+        true,
+        false,
+        true,
+      ],
+      [
+        'Windows/Linux column focus',
+        '__INTENT_PANEL_BRACKET__:ArrowLeft:0:0:1:1',
+        'ArrowLeft',
+        false,
+        false,
+        true,
+        true,
+      ],
     ] as const)(
       'forwards one %s chord to the panel handler',
-      async (_label, message, key, shiftKey, metaKey, ctrlKey) => {
+      async (_label, message, key, shiftKey, metaKey, ctrlKey, altKey = false) => {
         const { container } = render(EmbeddedBrowser, {
           props: { url: 'about:blank', workspaceId: 'workspace-1' },
         });
@@ -247,6 +265,7 @@ describe('EmbeddedBrowser', () => {
         expect(seen[0].shiftKey).toBe(shiftKey);
         expect(seen[0].metaKey).toBe(metaKey);
         expect(seen[0].ctrlKey).toBe(ctrlKey);
+        expect(seen[0].altKey).toBe(altKey);
       },
     );
   });

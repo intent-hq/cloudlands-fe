@@ -439,18 +439,6 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_equalizePanels_label();
     },
   },
-  RESIZE_PANEL_LEFT: {
-    key: 'mod+alt+left',
-    get label() {
-      return m.ui_shortcuts_shrinkPanel_label();
-    },
-  },
-  RESIZE_PANEL_RIGHT: {
-    key: 'mod+alt+right',
-    get label() {
-      return m.ui_shortcuts_growPanel_label();
-    },
-  },
   PREVIOUS_PANE: {
     key: 'mod+[',
     get label() {
@@ -464,13 +452,13 @@ export const SHORTCUTS = {
     },
   },
   FOCUS_PREVIOUS_COLUMN: {
-    key: 'mod+shift+[',
+    key: 'mod+alt+left',
     get label() {
       return m.ui_shortcuts_prevPanel_label();
     },
   },
   FOCUS_NEXT_COLUMN: {
-    key: 'mod+shift+]',
+    key: 'mod+alt+right',
     get label() {
       return m.ui_shortcuts_nextPanel_label();
     },
@@ -565,6 +553,8 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'global.search',
     'global.next-space',
     'global.previous-space',
+    'global.next-space-alt',
+    'global.previous-space-alt',
   ],
   navigation: [
     'navigation.go-to-tab',
@@ -698,6 +688,20 @@ export const SHORTCUT_CATEGORIES: Record<
       },
       {
         key: 'ctrl+shift+tab',
+        get label() {
+          return m.ui_shortcuts_prevSpace_label();
+        },
+        contexts: ['global'],
+      },
+      {
+        key: 'mod+shift+]',
+        get label() {
+          return m.ui_shortcuts_nextSpace_label();
+        },
+        contexts: ['global'],
+      },
+      {
+        key: 'mod+shift+[',
         get label() {
           return m.ui_shortcuts_prevSpace_label();
         },

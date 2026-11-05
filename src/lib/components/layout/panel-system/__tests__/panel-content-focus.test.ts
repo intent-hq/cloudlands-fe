@@ -268,8 +268,8 @@ describe('PanelLayout focus routing after a column focus', () => {
         const isMac = navigator.platform.toUpperCase().includes('MAC');
         window.dispatchEvent(
           new KeyboardEvent('keydown', {
-            key: ']',
-            shiftKey: true,
+            key: 'ArrowRight',
+            altKey: true,
             metaKey: isMac,
             ctrlKey: !isMac,
             bubbles: true,

@@ -126,6 +126,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import { createAppShortcutRegistrar } from '$lib/utils/app-shortcut-registrar';
   import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -146,7 +147,6 @@
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
-  import type { ShortcutId } from '$lib/utils/shortcut-bindings';
   // Installs production bridge handlers before the app sagas and route startup use them.
   import '$store/renderer/seeders';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
@@ -506,38 +506,7 @@
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =
       typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
-    const register = (opts: {
-      key: string;
-      meta?: boolean;
-      ctrl?: boolean;
-      shift?: boolean;
-      alt?: boolean;
-      description: string;
-      skipInEditableElements?: boolean;
-      global?: boolean;
-      ignoreRepeat?: boolean;
-      enabled?: () => boolean;
-      action: () => void;
-      shortcutId?: ShortcutId;
-      binding?: () => string;
-    }) => {
-      paletteShortcuts!.register({
-        key: opts.key,
-        meta: !!opts.meta,
-        ctrl: !!opts.ctrl,
-        shift: !!opts.shift,
-        alt: !!opts.alt,
-        description: opts.description,
-        skipInEditableElements: opts.skipInEditableElements,
-        global: opts.global,
-        ignoreRepeat: opts.ignoreRepeat,
-        enabled: opts.enabled,
-        action: opts.action,
-        binding:
-          opts.binding ??
-          (opts.shortcutId ? () => getEffectiveShortcut(opts.shortcutId!) : undefined),
-      });
-    };
+    const register = createAppShortcutRegistrar(paletteShortcuts, getEffectiveShortcut);
     const openCmd = () => appStore.dispatch(openPalette());
     const openFile = () => appStore.dispatch(openPalette());
     const openSearch = () => appStore.dispatch(openPalette());
