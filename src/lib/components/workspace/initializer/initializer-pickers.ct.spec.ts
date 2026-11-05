@@ -1,4 +1,4 @@
-import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
+import { expect, expectMotionToSettle, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import Pickers from './initializer-pickers.preview.svelte';
 import InitialAgentPicker from './initial-agent-picker.preview.svelte';
@@ -375,6 +375,7 @@ for (const { position, contract } of [
     await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
     const isolation = menu.getByRole('switch', { name: /use an isolated/i });
     await isolation.hover();
+    await expectMotionToSettle(menu);
     const origin = (await menu.boundingBox())!;
     const control = (await isolation.boundingBox())!;
     const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
@@ -382,6 +383,7 @@ for (const { position, contract } of [
     for (const checked of [false, true, false, true]) {
       await page.mouse.click(point.x, point.y);
       await expect(isolation).toBeChecked({ checked });
+      await expectMotionToSettle(menu);
       await expect
         .poll(async () => {
           const current = (await menu.boundingBox())!;
@@ -447,6 +449,7 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
     }
     await expect(isolation).not.toBeChecked();
     await isolation.hover();
+    await expectMotionToSettle(menu);
     const origin = (await menu.boundingBox())!;
     const control = (await isolation.boundingBox())!;
     const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
@@ -454,6 +457,7 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
     for (const checked of [true, false, true, false]) {
       await page.mouse.click(point.x, point.y);
       await expect(isolation).toBeChecked({ checked });
+      await expectMotionToSettle(menu);
       await expect
         .poll(async () => {
           const current = (await menu.boundingBox())!;

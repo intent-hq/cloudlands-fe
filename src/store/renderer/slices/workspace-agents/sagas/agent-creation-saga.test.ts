@@ -513,7 +513,7 @@ describe('agentCreationSaga', () => {
   });
 
   it('restores the workspace specialist without reusing prior agent overrides', async () => {
-    mocks.backendRequest.mockResolvedValue({ specialistId: 'implementor' });
+    mocks.backendRequest.mockResolvedValue({ specialistId: 'developer' });
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const current = state('', [], 'codex', { codex: 'settings-model' });
     const previous = {
@@ -533,10 +533,10 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        name: 'Implementor',
+        name: 'Developer',
         nameExplicitlySet: false,
         provider: 'codex',
-        metadata: { specialist: 'implementor' },
+        metadata: { specialist: 'developer' },
       }),
     );
     const config = mocks.createAgent.mock.calls[0][1];
@@ -547,7 +547,7 @@ describe('agentCreationSaga', () => {
   });
 
   it('reads Settings again for each creation while keeping specialist memory', async () => {
-    mocks.backendRequest.mockResolvedValue({ specialistId: 'implementor' });
+    mocks.backendRequest.mockResolvedValue({ specialistId: 'developer' });
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     let current = state('', [], 'codex', { codex: 'first-model' });
     const { channel, task } = start(() => current);
@@ -555,14 +555,14 @@ describe('agentCreationSaga', () => {
     await settle();
     expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
       provider: 'codex',
-      metadata: { specialist: 'implementor' },
+      metadata: { specialist: 'developer' },
     });
     current = state('', [], 'claude-code', { 'claude-code': 'new-model' });
     channel.put(createAgentRequested(WS));
     await settle();
     expect(mocks.createAgent.mock.calls[1][1]).toMatchObject({
       provider: 'claude-code',
-      metadata: { specialist: 'implementor' },
+      metadata: { specialist: 'developer' },
     });
     expect(mocks.backendRequest).toHaveBeenCalledTimes(2);
     task.cancel();
@@ -603,16 +603,24 @@ describe('agentCreationSaga', () => {
     task.cancel();
   });
 
-  it.each([undefined, 'removed', 'chief-of-staff', 'pr-reviewer'])(
+  it.each([
+    undefined,
+    'removed',
+    'spec-writer',
+    'implementor',
+    'verifier',
+    'chief-of-staff',
+    'pr-reviewer',
+  ])(
     'falls back to the configured specialist for unavailable preference %s',
     async (specialistId) => {
       mocks.backendRequest.mockResolvedValue({ specialistId });
       mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-      const { channel, task } = start(() => state('verifier'));
+      const { channel, task } = start(() => state('developer'));
       channel.put(createAgentRequested(WS));
       await settle();
       expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
-        metadata: { specialist: 'verifier' },
+        metadata: { specialist: 'developer' },
       });
       task.cancel();
     },
@@ -621,7 +629,7 @@ describe('agentCreationSaga', () => {
   it('keeps explicit General distinct from an unset preference', async () => {
     mocks.backendRequest.mockResolvedValue({ specialistId: null });
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-    const { channel, task } = start(() => state('verifier'));
+    const { channel, task } = start(() => state('developer'));
     channel.put(createAgentRequested(WS));
     await settle();
     expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
@@ -636,12 +644,12 @@ describe('agentCreationSaga', () => {
   it('uses an explicit picker choice without reading or overwriting it from memory', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start();
-    channel.put(createAgentWithSpecialistRequested(WS, 'verifier'));
+    channel.put(createAgentWithSpecialistRequested(WS, 'developer'));
     await settle();
     expect(mocks.backendRequest).not.toHaveBeenCalled();
     expect(mocks.createAgent.mock.calls[0][1]).toMatchObject({
       rememberSpecialist: true,
-      metadata: { specialist: 'verifier' },
+      metadata: { specialist: 'developer' },
     });
     task.cancel();
   });
@@ -661,7 +669,7 @@ describe('agentCreationSaga', () => {
 
   it('re-reads each workspace preference when switching back and forth', async () => {
     mocks.backendRequest.mockImplementation(async (_method, { workspaceId }) => ({
-      specialistId: workspaceId === WS ? 'verifier' : null,
+      specialistId: workspaceId === WS ? 'developer' : null,
     }));
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const current = state();
@@ -688,9 +696,9 @@ describe('agentCreationSaga', () => {
       await settle();
     }
     expect(mocks.createAgent.mock.calls.map(([, config]) => config.metadata?.specialist)).toEqual([
-      'verifier',
+      'developer',
       undefined,
-      'verifier',
+      'developer',
     ]);
     expect(mocks.backendRequest.mock.calls.map(([, params]) => params.workspaceId)).toEqual([
       WS,
@@ -1008,7 +1016,7 @@ describe('agentCreationSaga', () => {
 
   it('runs a task note with the daemon specialists.default setting when set', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-    const { channel, task } = start(() => state('verifier'));
+    const { channel, task } = start(() => state('developer'));
     channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
     await settle();
 
@@ -1019,7 +1027,7 @@ describe('agentCreationSaga', () => {
         source: 'task-metadata-bar-run',
         provider: 'augment',
         model: undefined,
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'verifier' },
+        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'developer' },
       }),
     );
     task.cancel();
@@ -1055,21 +1063,26 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('falls back to implementor when specialists.default is unset', async () => {
-    mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
-    const { channel, task } = start();
-    channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
-    await settle();
+  it.each(['', 'spec-writer', 'implementor'])(
+    'runs a general agent when specialists.default is unavailable: %s',
+    async (defaultId) => {
+      mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
+      const { channel, task } = start(() => state(defaultId));
+      channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
+      await settle();
 
-    expect(mocks.createAgent).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
-      }),
-    );
-    task.cancel();
-    await task.toPromise();
-  });
+      expect(mocks.createAgent).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          metadata: { taskNoteId: NOTE, source: 'task-run' },
+          behaviorPrompt: undefined,
+          model: undefined,
+        }),
+      );
+      task.cancel();
+      await task.toPromise();
+    },
+  );
 
   it('builds the initial message from cached content without fetching for a full row', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
@@ -1201,7 +1214,7 @@ describe('agentCreationSaga', () => {
     await task.toPromise();
   });
 
-  it('falls back to implementor when specialists.default is a hidden specialist', async () => {
+  it('falls back to a general agent when specialists.default is a hidden specialist', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const hidden: FileSpecialist = {
       id: 'chief-of-staff',
@@ -1220,14 +1233,16 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
+        metadata: { taskNoteId: NOTE, source: 'task-run' },
+        behaviorPrompt: undefined,
+        model: undefined,
       }),
     );
     task.cancel();
     await task.toPromise();
   });
 
-  it('falls back to implementor when specialists.default is gated invisible (pr-reviewer without GitHub auth)', async () => {
+  it('falls back to a general agent when specialists.default is gated invisible (pr-reviewer without GitHub auth)', async () => {
     mocks.createAgent.mockResolvedValue({ success: true, agent: session(), agentId: AGENT });
     const { channel, task } = start(() => state('pr-reviewer'));
     channel.put(runAgentForNoteRequested(WS, NOTE, 'Task note'));
@@ -1236,7 +1251,9 @@ describe('agentCreationSaga', () => {
     expect(mocks.createAgent).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        metadata: { taskNoteId: NOTE, source: 'task-run', specialist: 'implementor' },
+        metadata: { taskNoteId: NOTE, source: 'task-run' },
+        behaviorPrompt: undefined,
+        model: undefined,
       }),
     );
     task.cancel();

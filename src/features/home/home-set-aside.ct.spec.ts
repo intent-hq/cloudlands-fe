@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { expect, test } from '../../test/ct-test';
+import { clickAndSettle, expect, test } from '../../test/ct-test';
 import Harness from './home-set-aside-harness.svelte';
 
 type HookArgs = Parameters<Parameters<typeof test.beforeEach>[1]>;
@@ -598,7 +598,8 @@ test('Cancelled, outside and Escape drags leave Set aside unchanged', async ({ m
   expect(result.asideIds).toEqual([]);
   expect(result.selectedId).toBeNull();
   expect(await setAsideCount(page)).toBe(before);
-  await card.click();
+  // Opening the detail pane resizes the board; wait before measuring drag coordinates.
+  await clickAndSettle(card, board(page));
   await expect.poll(async () => (await snapshot(page)).selectedId).toBe('aside-idle');
   await startDrag(page, card);
   await dropOn(page, asideColumn(page));

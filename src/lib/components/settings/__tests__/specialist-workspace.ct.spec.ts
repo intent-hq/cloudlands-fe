@@ -3,12 +3,12 @@ import Preview from '../specialist-workspace.preview.svelte';
 import type { SpecialistDef } from '$lib/client/app-client';
 
 const userOverride: SpecialistDef = {
-  id: 'implementor',
-  name: 'Customized implementor',
+  id: 'ui-designer',
+  name: 'Customized UI Designer',
   description: 'A native user override of a built-in agent.',
   source: 'user',
   prompt: 'Use the custom implementation instructions.',
-  path: '/tmp/user/.intent/specialists/implementor.md',
+  path: '/tmp/user/.intent/specialists/ui-designer.md',
 };
 
 test('workspace built-in user overrides reset without deleting the catalog entry', async ({
@@ -26,7 +26,7 @@ test('workspace built-in user overrides reset without deleting the catalog entry
   });
   await reset.click();
   await expect(view.getByTestId('delete-request')).toHaveText(
-    JSON.stringify({ id: 'implementor', scope: 'user' }),
+    JSON.stringify({ id: 'ui-designer', scope: 'user' }),
   );
   await view.getByTestId('switch-b').click();
   await expect(view.getByRole('textbox')).toHaveValue('Restored default prompt.');
@@ -45,6 +45,8 @@ for (const definition of [
   { ...userOverride, source: 'project' as const },
   { ...userOverride, importedFrom: 'claude-code' as const },
   { ...userOverride, id: 'custom-reviewer' },
+  { ...userOverride, id: 'implementor' },
+  { ...userOverride, id: 'spec-writer' },
 ]) {
   test(`workspace built-in identity excludes ${definition.importedFrom ?? definition.source} ${definition.id}`, async ({
     mount,

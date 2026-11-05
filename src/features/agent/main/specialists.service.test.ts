@@ -85,7 +85,7 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
   describe('hardcoded fallback specialists (no file override)', () => {
     it('uses the threaded fallback provider when the specialist has no explicit codingAgent', async () => {
       const { getEffectiveSpecialist } = await import('./specialists.service');
-      const result = getEffectiveSpecialist('implementor', 'claude-code');
+      const result = getEffectiveSpecialist('developer', 'claude-code');
       expect(result?.codingAgent).toBe('claude-code');
     });
 
@@ -98,7 +98,7 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
 
     it('never falls back to the hardcoded default provider (Auggie) when nothing is threaded', async () => {
       const { getEffectiveSpecialist } = await import('./specialists.service');
-      const result = getEffectiveSpecialist('implementor');
+      const result = getEffectiveSpecialist('developer');
       expect(result?.codingAgent).toBe('');
       expect(result?.codingAgent).not.toBe('auggie');
     });
@@ -147,16 +147,18 @@ describe('specialists.service — coding agent resolution (D1-B)', () => {
 
       const prompt = await formatSpecialistsForPrompt();
       expect(prompt).toContain('specialist: "replacement-one"');
-      expect(prompt).toContain('specialist: "replacement-two"');
+      expect(prompt).toContain('ws.agent.delegate({ taskNoteId: "abc-123" })');
       expect(prompt).not.toContain('"implementor"');
       expect(prompt).not.toContain('"verifier"');
     });
 
-    it('formatSpecialistsForPrompt prefers implementor/verifier when actually present', async () => {
+    it('formatSpecialistsForPrompt uses available built-in specialists', async () => {
       const { formatSpecialistsForPrompt } = await import('./specialists.service');
       const prompt = await formatSpecialistsForPrompt();
-      expect(prompt).toContain('specialist: "implementor"');
-      expect(prompt).toContain('specialist: "verifier"');
+      expect(prompt).toContain('ws.agent.delegate({ taskNoteId: "abc-123" })');
+      expect(prompt).toContain('specialist: "ui-designer"');
+      expect(prompt).not.toContain('specialist: "pr-reviewer"');
+      expect(prompt).not.toContain('specialist: "verifier"');
     });
   });
 

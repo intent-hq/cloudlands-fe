@@ -405,23 +405,16 @@ export async function formatSpecialistsForPrompt(workspacePath?: string): Promis
     .map((s) => `| **${s.name}** | \`${s.id}\` | ${s.description} |`)
     .join('\n');
 
-  // Example ids come from the resolved list so a replacement set never sees
-  // shipped ids it does not contain; implementor/verifier are preferred only
-  // when actually present.
-  const ids = specialists.map((s) => s.id);
-  const delegateExampleId = ids.includes('implementor') ? 'implementor' : ids[0];
-  const createExampleId = ids.includes('verifier')
-    ? 'verifier'
-    : (ids.find((id) => id !== delegateExampleId) ?? delegateExampleId);
+  const createExampleId = specialists[0]?.id;
 
-  const examples = delegateExampleId
+  const examples = createExampleId
     ? `
 
 **Examples** (call via the \`workspace_api\` tool):
 
 \`\`\`
-// Delegate an existing task note to a specialist
-ws.agent.delegate({ taskNoteId: "abc-123", specialist: "${delegateExampleId}" })
+// Delegate an existing task note to a general agent
+ws.agent.delegate({ taskNoteId: "abc-123" })
 
 // Create a new agent with a specialist
 ws.agent.create("Review changes", "Check the implementation...", { specialist: "${createExampleId}" })

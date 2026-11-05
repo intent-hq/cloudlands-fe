@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Shrink-workspace action: launches an idle implementor chat agent (no
+ * Shrink-workspace action: launches an idle general chat agent (no
  * initialMessage — the agent must not start on its own), persists the canned
  * shrink prompt as the composer draft via `drafts.set` (PROTOCOL §5.16), and
  * opens the agent tab. ChatPanel's restore-on-mount then prefills the
@@ -23,12 +23,6 @@ vi.mock('$store/renderer/store', async () => {
     dispatch: mocks.dispatch,
   });
 });
-
-vi.mock('$store/renderer/slices/specialists/specialists-selectors', () => ({
-  selectEffectiveModel: { select: vi.fn(() => 'model-smart') },
-  selectEffectiveBehaviorPrompt: { select: vi.fn(() => 'implementor behavior') },
-  selectEffectiveCodingAgent: { select: vi.fn(() => 'auggie') },
-}));
 
 vi.mock('$lib/client', () => ({
   appClient: { drafts: { set: mocks.draftsSet } },
@@ -59,7 +53,7 @@ describe('runShrinkWorkspaceAction', () => {
     });
   });
 
-  it('launches an idle implementor agent, sets the draft, and opens the tab', async () => {
+  it('launches an idle general agent, sets the draft, and opens the tab', async () => {
     const { runShrinkWorkspaceAction, SHRINK_WORKSPACE_PROMPT } =
       await import('../shrink-workspace-action');
 
@@ -72,10 +66,10 @@ describe('runShrinkWorkspaceAction', () => {
     const [wsId, config] = launchAction.payload;
     expect(wsId).toBe('ws-1');
     expect(config.initialMessage).toBeUndefined();
-    expect(config.behaviorPrompt).toBe('implementor behavior');
-    expect(config.model).toBe('model-smart');
-    expect(config.provider).toBe('auggie');
-    expect(config.metadata).toEqual({ specialist: 'implementor', source: 'shrink-workspace' });
+    expect(config.behaviorPrompt).toBeUndefined();
+    expect(config.model).toBeUndefined();
+    expect(config.provider).toBeUndefined();
+    expect(config.metadata).toEqual({ source: 'shrink-workspace' });
 
     expect(mocks.draftsSet).toHaveBeenCalledOnce();
     expect(mocks.draftsSet).toHaveBeenCalledWith('ws-1', 'agent-1', SHRINK_WORKSPACE_PROMPT);

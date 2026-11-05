@@ -3846,8 +3846,8 @@
 
     // If resolveConflicts flag is set, configure agent for conflict resolution
     if (options?.resolveConflicts) {
-      // Override to use implementor specialist in single agent mode with appropriate prompt
-      selectedSpecialist = 'implementor';
+      // Use a general agent with the conflict-resolution prompt
+      selectedSpecialist = null;
       isTeamMode = false;
 
       // Generate appropriate prompt based on error type
