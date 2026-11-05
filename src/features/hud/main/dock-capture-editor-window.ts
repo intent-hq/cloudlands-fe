@@ -213,13 +213,21 @@ function createEditorWindow(backendId: string): BrowserWindow {
   void window.loadURL(routeUrl(DOCK_CAPTURE_EDITOR_ROUTE)).catch((error) => {
     logger.warn('Failed to load the capture editor', { error });
   });
-  window.once('ready-to-show', () => {
-    if (editor !== window || !session) return;
-    noteDockCaptureEditorFocused();
-    window.show();
-    window.focus();
-  });
+  // Shown once the page has read its session (so never as a blank window while it
+  // loads), or after a bound wait if it never does.
+  const fallback = setTimeout(() => revealEditor(window), REVEAL_FALLBACK_MS);
+  window.once('closed', () => clearTimeout(fallback));
   return window;
+}
+
+const REVEAL_FALLBACK_MS = 8000;
+
+/** Show and focus a not-yet-shown editor (its first reveal, at the dock's request). */
+function revealEditor(window: BrowserWindow): void {
+  if (editor !== window || !usable(window) || !session || window.isVisible()) return;
+  noteDockCaptureEditorFocused();
+  window.show();
+  window.focus();
 }
 
 /** The dock (exact window, main frame, strict binding) asking for an editor. */
@@ -282,9 +290,12 @@ export function setupDockCaptureEditorIPC(): void {
       return unavailable('failed');
     }
   });
-  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.GET, (event) =>
-    fromEditor(event) && session ? session.snapshot : null,
-  );
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.GET, (event) => {
+    if (!fromEditor(event) || !session) return null;
+    // The page has loaded and is about to draw this session: show the window now.
+    if (editor) setTimeout(() => editor && revealEditor(editor), 0);
+    return session.snapshot;
+  });
   // Closes only the session the page asked about: a Cancel queued from an earlier
   // attachment never closes the one the window was retargeted to.
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, (event, request: unknown) => {
