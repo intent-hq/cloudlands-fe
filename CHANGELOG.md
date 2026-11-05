@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.286.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.1...v2.286.2) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.130 ([#4194](https://github.com/intent-hq/cloudlands-fe/issues/4194)) ([1d77549](https://github.com/intent-hq/cloudlands-fe/commit/1d7754903a7001912227625f4f7d1c90484499a7))
+* **deps:** unblock Dependabot's grouped npm update on the bits-ui patch ([#4188](https://github.com/intent-hq/cloudlands-fe/issues/4188)) ([43b6525](https://github.com/intent-hq/cloudlands-fe/commit/43b6525bf096e6c408695a3acbaef756bb39931a))
+* drop the machine chip from the New Workspace Model row ([#4182](https://github.com/intent-hq/cloudlands-fe/issues/4182)) ([4f62f62](https://github.com/intent-hq/cloudlands-fe/commit/4f62f629422c9342e31874bbdd3c4dfcaac71a95))
+* keep composer attachments when selecting a suggested prompt ([#4184](https://github.com/intent-hq/cloudlands-fe/issues/4184)) ([22ec62a](https://github.com/intent-hq/cloudlands-fe/commit/22ec62a19448e8c245f5c80f301841a46b898f94))
+* **remote-machines:** say "run agents" instead of "make available" ([#4190](https://github.com/intent-hq/cloudlands-fe/issues/4190)) ([390157c](https://github.com/intent-hq/cloudlands-fe/commit/390157c58a7a947a5d7cfefb4b3298af5db43320))
+* send hello-callback requests on the ready hello after a daemon startup wait ([#4191](https://github.com/intent-hq/cloudlands-fe/issues/4191)) ([4d08a98](https://github.com/intent-hq/cloudlands-fe/commit/4d08a98dd33425efd019ae2f7840bd58ed941fab))
+* **settings:** vertically centre Machines row platform and provider icons ([#4183](https://github.com/intent-hq/cloudlands-fe/issues/4183)) ([54116ff](https://github.com/intent-hq/cloudlands-fe/commit/54116ff8669e6f3a886732daf3b9e11f84dd36db))
+
 ## [2.286.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.0...v2.286.1) (2026-11-05)
 
 
