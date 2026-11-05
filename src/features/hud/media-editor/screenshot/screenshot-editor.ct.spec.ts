@@ -13,6 +13,7 @@ test('screenshot draft tools, notes, crop and retake share the shell transaction
     JSON.parse((await fixture.getAttribute('data-draft')) ?? '{}') as DockMediaEdit;
   async function draw(tool: string, from: { x: number; y: number }, to: { x: number; y: number }) {
     await fixture.getByRole('button', { name: tool, exact: true }).click();
+    await expect(canvas).toBeVisible();
     const rect = await canvas.boundingBox();
     if (!rect) throw new Error('Screenshot canvas missing');
     const source = JSON.parse((await fixture.getAttribute('data-source')) ?? '{}');
@@ -38,7 +39,7 @@ test('screenshot draft tools, notes, crop and retake share the shell transaction
     fixture.getByRole('textbox', { name: 'Note for mark 2', exact: true }),
   ).toBeVisible();
   await fixture.getByRole('button', { name: 'Pointer', exact: true }).click();
-  await fixture.getByRole('button', { name: 'Mark 1 · box', exact: true }).click();
+  await fixture.getByRole('button', { name: 'Mark 1 · Box', exact: true }).click();
   await canvas.focus();
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('Shift+ArrowRight');
@@ -61,7 +62,7 @@ test('screenshot draft tools, notes, crop and retake share the shell transaction
   await expect(fixture.getByRole('textbox', { name: /Note for mark/ })).toHaveCount(2);
   await draw('Text', { x: 300, y: 80 }, { x: 410, y: 120 });
   await fixture.getByRole('textbox', { name: 'Text for mark 3', exact: true }).fill('Fix this');
-  await draw('Element', { x: 420, y: 250 }, { x: 630, y: 380 });
+  await draw('Element selector', { x: 420, y: 250 }, { x: 630, y: 380 });
   await fixture
     .getByRole('textbox', { name: 'Element selector for mark 4', exact: true })
     .fill('button.save');

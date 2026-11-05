@@ -4,9 +4,6 @@
   export interface ScreenshotShape {
     id: string;
     geometry: DockMarkGeometry;
-    label?: string;
-    text?: string;
-    fontSize?: number;
     blur?: boolean;
   }
   export type ScreenshotTool =
@@ -14,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import { m } from '$shared/paraglide/messages.js';
   import { dockGeometryRect } from '$shared/dock-annotation';
   import type { DockImagePoint } from '$shared/dock-evidence';
   import {
@@ -33,6 +31,8 @@
     tool,
     selectedId,
     disabled = false,
+    raster = false,
+    hidden = false,
     onSelect,
     onDraw,
     onTransform,
@@ -46,12 +46,13 @@
     tool: ScreenshotTool;
     selectedId: string | null;
     disabled?: boolean;
+    raster?: boolean;
+    hidden?: boolean;
     onSelect: (id: string | null) => void;
     onDraw: (tool: ScreenshotTool, geometry: DockMarkGeometry) => void;
     onTransform: (id: string, geometry: DockMarkGeometry) => void;
     onDelete: (id: string) => void;
   } = $props();
-  const uid = $props.id();
   let surface = $state<SVGSVGElement | null>(null);
   let gesture = $state<{
     pointer: number;
@@ -69,7 +70,8 @@
   );
 
   function point(event: PointerEvent): DockImagePoint {
-    const bounds = surface!.getBoundingClientRect();
+    if (!surface) return { x: frame.x, y: frame.y };
+    const bounds = surface.getBoundingClientRect();
     return screenshotPoint({ x: event.clientX, y: event.clientY }, bounds, frame);
   }
   function down(event: PointerEvent) {
@@ -125,13 +127,22 @@
     const g = gesture;
     gesture = null;
     if (surface?.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId);
-    if (g && !g.preview && (tool === 'text' || tool === 'element')) {
+    const dragged = g?.preview ? dockGeometryRect(g.preview) : null;
+    if (
+      g &&
+      !g.original &&
+      (tool === 'text' || tool === 'element') &&
+      (!dragged || Math.min(dragged.w, dragged.h) < 2)
+    ) {
+      const w = Math.min(160, frame.w),
+        h = Math.min(40, frame.h);
+      if (w < 2 || h < 2) return;
       g.preview = {
         kind: 'rect',
-        x: g.start.x,
-        y: g.start.y,
-        w: Math.min(160, frame.x + frame.w - g.start.x),
-        h: Math.min(40, frame.y + frame.h - g.start.y),
+        x: Math.max(frame.x, Math.min(g.start.x, frame.x + frame.w - w)),
+        y: Math.max(frame.y, Math.min(g.start.y, frame.y + frame.h - h)),
+        w,
+        h,
       };
     }
     if (!g?.preview) return;
@@ -174,14 +185,15 @@
 </script>
 
 <div class="canvas-stage">
-  <!-- i18n-ignore (editor strings; caller-localized labels follow with shared shell) -->
   <svg
     bind:this={surface}
     class="canvas"
+    class:raster
+    class:hidden
     viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`}
     style:aspect-ratio={`${frame.w} / ${frame.h}`}
     role="application"
-    aria-label="Screenshot canvas. Arrow keys move the selected mark; Shift and arrows resize it. Delete removes it."
+    aria-label={m.dock_screenshotEditor_canvas()}
     tabindex="0"
     onpointerdown={down}
     onpointermove={move}
@@ -190,56 +202,19 @@
     onlostpointercapture={() => (gesture = null)}
     onkeydown={key}
   >
-    <defs>
-      <filter id={`${uid}-blur`}><feGaussianBlur stdDeviation="12" /></filter>
-      <marker id={`${uid}-arrow`} markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"
-        ><path d="M0,0 L6,3 L0,6" fill="none" stroke="currentColor" /></marker
-      >
-      {#each visible.filter((s) => s.blur) as shape (shape.id)}
-        {@const b = dockGeometryRect(shape.geometry)}
-        <clipPath id={`${uid}-${shape.id}`}
-          ><rect x={b.x} y={b.y} width={b.w} height={b.h} /></clipPath
-        >
-      {/each}
-    </defs>
-    <image href={sourceUrl} x="0" y="0" {width} {height} />
+    <image
+      href={sourceUrl}
+      x={raster ? frame.x : 0}
+      y={raster ? frame.y : 0}
+      width={raster ? frame.w : width}
+      height={raster ? frame.h : height}
+    />
     {#each visible as shape (shape.id)}
       {@const b = dockGeometryRect(shape.geometry)}
       <g data-shape-id={shape.id} class:selected={selectedId === shape.id} class="shape">
-        {#if shape.blur}
-          <g clip-path={`url(#${uid}-${shape.id})`}
-            ><image href={sourceUrl} x="0" y="0" {width} {height} filter={`url(#${uid}-blur)`} /></g
-          >
-          <rect class="blur-hit" x={b.x} y={b.y} width={b.w} height={b.h} />
-        {:else if shape.geometry.kind === 'rect'}
-          <rect class="mark" x={b.x} y={b.y} width={b.w} height={b.h} />
-        {:else}
-          <path
-            class="mark"
-            d={screenshotPath(shape.geometry)}
-            marker-end={shape.geometry.kind === 'arrow' ? `url(#${uid}-arrow)` : undefined}
-          />
-          <path class="path-hit" d={screenshotPath(shape.geometry)} />
-        {/if}
-        {#if shape.text}<text
-            class="mark-text"
-            x={b.x}
-            y={b.y + (shape.fontSize ?? 20)}
-            style:font-size={`${shape.fontSize ?? 20}px`}>{shape.text}</text
-          >{/if}
-        {#if shape.label}
-          <circle
-            class="badge"
-            cx={Math.min(frame.x + frame.w - 10, b.x + 8)}
-            cy={Math.max(frame.y + 10, b.y + 8)}
-            r="10"
-          />
-          <text
-            class="number"
-            x={Math.min(frame.x + frame.w - 10, b.x + 8)}
-            y={Math.max(frame.y + 10, b.y + 8)}>{shape.label}</text
-          >
-        {/if}
+        {#if shape.geometry.kind === 'rect'}
+          <rect class="shape-hit" x={b.x} y={b.y} width={b.w} height={b.h} />
+        {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
         {#if selectedId === shape.id}
           <rect class="selection" x={b.x} y={b.y} width={b.w} height={b.h} />
           <rect
@@ -286,6 +261,9 @@
     outline: none;
     overflow: hidden;
   }
+  .canvas.hidden {
+    visibility: hidden;
+  }
   .canvas:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 4px;
@@ -307,23 +285,8 @@
     stroke-width: 16;
     vector-effect: non-scaling-stroke;
   }
-  .blur-hit {
+  .shape-hit {
     fill: transparent;
-  }
-  .badge {
-    fill: hsl(var(--primary));
-  }
-  .number {
-    fill: hsl(var(--primary-foreground));
-    font: 600 12px system-ui;
-    text-anchor: middle;
-    dominant-baseline: central;
-    pointer-events: none;
-  }
-  .mark-text {
-    fill: hsl(var(--primary));
-    font: 500 20px system-ui;
-    pointer-events: none;
   }
   .selection {
     fill: none;

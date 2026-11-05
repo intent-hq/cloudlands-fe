@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { screenshotKindLabel } from './screenshot-labels';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import CursorIcon from 'phosphor-svelte/lib/CursorIcon';
   import CursorClickIcon from 'phosphor-svelte/lib/CursorClickIcon';
@@ -23,18 +25,17 @@
     onDelete: () => void;
   } = $props();
   const tools = [
-    { id: 'pointer', label: 'Pointer', icon: CursorIcon },
-    { id: 'element', label: 'Element', icon: CursorClickIcon },
-    { id: 'box', label: 'Box', icon: RectangleIcon },
-    { id: 'draw', label: 'Draw', icon: ScribbleIcon },
-    { id: 'arrow', label: 'Arrow', icon: ArrowUpRightIcon },
-    { id: 'text', label: 'Text', icon: TextTIcon },
-    { id: 'blur', label: 'Blur sensitive content', icon: DropIcon },
+    { id: 'pointer', label: screenshotKindLabel('pointer'), icon: CursorIcon },
+    { id: 'element', label: screenshotKindLabel('element'), icon: CursorClickIcon },
+    { id: 'box', label: screenshotKindLabel('box'), icon: RectangleIcon },
+    { id: 'draw', label: screenshotKindLabel('draw'), icon: ScribbleIcon },
+    { id: 'arrow', label: screenshotKindLabel('arrow'), icon: ArrowUpRightIcon },
+    { id: 'text', label: screenshotKindLabel('text'), icon: TextTIcon },
+    { id: 'blur', label: screenshotKindLabel('blur'), icon: DropIcon },
   ] as const;
 </script>
 
-<!-- i18n-ignore (editor labels; localization follows shared shell wiring) -->
-<div class="tools" role="group" aria-label="Screenshot drawing tools">
+<div class="tools" role="group" aria-label={m.dock_screenshotEditor_tools()}>
   {#each tools as item}
     <Button
       variant="ghost"
@@ -51,8 +52,8 @@
   <Button
     variant="ghost"
     size="icon-sm"
-    aria-label="Delete selected mark"
-    tooltip="Delete selected mark"
+    aria-label={m.dock_screenshotEditor_deleteSelected()}
+    tooltip={m.dock_screenshotEditor_deleteSelected()}
     disabled={disabled || !canDelete}
     onclick={onDelete}><TrashIcon size={18} /></Button
   >

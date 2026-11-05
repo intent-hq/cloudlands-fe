@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { renderDockMediaImage } from '$features/hud/composer/dock-media-render';
   import { Button } from '$lib/components/ui/button';
   import DockScreenshotEditor from '../DockScreenshotEditor.svelte';
   import DockCaptureEditorShell from '../../DockCaptureEditorShell.svelte';
@@ -17,11 +18,31 @@
     audio: 'none',
     visuals: 'clean',
   };
-  const picture = (w: number, h: number) =>
-    `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="${w}" height="${h}" fill="#f4f2eb"/><rect x="50" y="60" width="220" height="130" rx="12" fill="#d9e2d4"/><rect x="420" y="260" width="200" height="110" rx="12" fill="#dce1ee"/><text x="70" y="110" font-family="system-ui" font-size="22">Workspace settings</text><text x="70" y="150" font-family="system-ui" font-size="18">Sensitive account text</text><text x="445" y="320" font-family="system-ui" font-size="22">Save changes</text></svg>`)}`;
+  const picture = (width: number, height: number) => {
+    const image = document.createElement('canvas');
+    image.width = width;
+    image.height = height;
+    const context = image.getContext('2d');
+    if (!context) throw new Error('Synthetic canvas unavailable');
+    context.fillStyle = '#f4f2eb';
+    context.fillRect(0, 0, width, height);
+    context.fillStyle = '#d9e2d4';
+    context.fillRect(50, 60, 220, 130);
+    context.fillStyle = '#dce1ee';
+    context.fillRect(420, 260, 200, 110);
+    context.fillStyle = '#202020';
+    context.font = '22px system-ui';
+    context.fillText('Workspace settings', 70, 110);
+    context.font = '18px system-ui';
+    context.fillText('Sensitive account text', 70, 150);
+    context.fillText('Save changes', 445, 320);
+    return image.toDataURL('image/png');
+  };
   const original = { source, url: picture(800, 500), edit: defaultDockMediaEdit(source, [], null) };
   const transaction = createEditTransaction(original);
   let saved = $state('');
+  let output = $state('');
+  let saving = $state(false);
   let cancelled = $state(false);
   let dictatingId = $state<string | null>(null);
   function retake() {
@@ -39,12 +60,14 @@
   }
 </script>
 
+<!-- i18n-ignore (synthetic screenshot editor walkthrough only) -->
 <div
   class="fixture"
   data-testid="screenshot-editor-harness"
   data-draft={JSON.stringify(transaction.draft.edit)}
   data-source={JSON.stringify(transaction.draft.source)}
   data-saved={saved}
+  data-output={output}
   data-cancelled={cancelled}
 >
   <DockScreenshotEditor
@@ -73,13 +96,25 @@
         title="Screenshot · Region"
         subtitle="Synthetic source"
         dirty={transaction.dirty}
+        {saving}
         onCancel={() => {
           transaction.reset(original);
           cancelled = true;
         }}
-        onSave={() => {
-          saved = JSON.stringify(transaction.draft.edit);
-          transaction.commit(transaction.draft);
+        onSave={async () => {
+          saving = true;
+          try {
+            const bundle = transaction.draft;
+            const rendered = await renderDockMediaImage(bundle.source, bundle.edit, {
+              base64: bundle.url.split(',')[1],
+              mimeType: 'image/png',
+            });
+            output = rendered.data;
+            saved = JSON.stringify(bundle.edit);
+            transaction.commit(bundle);
+          } finally {
+            saving = false;
+          }
         }}
         onUndo={() => transaction.undo()}
         onRedo={() => transaction.redo()}

@@ -1,5 +1,10 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte';
+  import { Button } from '$lib/components/ui/button';
+  import { screenshotKindLabel } from './screenshot-labels';
+  import { m } from '$shared/paraglide/messages.js';
+  import { onDestroy, untrack, type Snippet } from 'svelte';
+  import { createScreenshotPreviewRenderer } from './screenshot-preview';
+  import { dockMediaGeometryRect } from '$shared/dock-media-edit';
   import {
     numberDockMediaMarks,
     type DockMediaEdit,
@@ -44,18 +49,68 @@
     onNoteDictation?: (id: string, phase: 'start' | 'stop') => void;
     children?: Snippet<[main: Snippet, sidebar: Snippet, headerActions: Snippet]>;
   } = $props();
+  const renderPreview = createScreenshotPreviewRenderer();
+  let previewUrl = $state<string | null>(null);
+  let previewPending = $state(false);
+  let previewFailed = $state(false);
+  let previewRetry = $state(0);
+  const visualKey = $derived(
+    JSON.stringify({
+      crop: draft.crop,
+      blur: draft.blurRegions,
+      marks: draft.marks.map((mark) => ({
+        id: mark.id,
+        geometry: mark.geometry,
+        included: mark.included,
+      })),
+    }),
+  );
+  $effect(() => {
+    const paintRevision = visualKey;
+    const currentSource = source,
+      currentEdit = untrack(() => draft),
+      url = sourceUrl,
+      attempt = previewRetry;
+    if (currentSource.visuals !== 'clean') {
+      previewUrl = null;
+      previewPending = false;
+      return;
+    }
+    let active = true;
+    previewPending = true;
+    previewFailed = false;
+    void renderPreview(currentSource, currentEdit, url).then(
+      (next) => {
+        if (!active || attempt !== previewRetry || paintRevision !== visualKey) {
+          URL.revokeObjectURL(next);
+          return;
+        }
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        previewUrl = next;
+        previewPending = false;
+      },
+      () => {
+        if (active) {
+          previewPending = false;
+          previewFailed = true;
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  });
+  onDestroy(() => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  });
   let tool = $state<ScreenshotTool>('pointer');
   const blocked = $derived(disabled || retaking || source.visuals !== 'clean');
   const frame = $derived(draft.crop ?? { x: 0, y: 0, w: source.width, h: source.height });
   const numbered = $derived(numberDockMediaMarks(draft, source));
   const shapes = $derived<ScreenshotShape[]>([
-    ...numbered.map(({ n, mark }) => ({
+    ...numbered.map(({ mark }) => ({
       id: mark.id,
       geometry: canvasGeometry(mark.geometry),
-      label: String(n),
-      ...(mark.geometry.kind === 'text'
-        ? { text: mark.geometry.text, fontSize: mark.geometry.fontSize }
-        : {}),
     })),
     ...draft.blurRegions.map((region) => ({
       id: region.id,
@@ -67,7 +122,7 @@
     numbered.map(({ n, mark }) => ({
       id: mark.id,
       n,
-      kind: mark.kind,
+      kind: screenshotKindLabel(mark.kind),
       note: mark.note,
       ...(mark.geometry.kind === 'text' ? { text: mark.geometry.text } : {}),
       element:
@@ -83,14 +138,7 @@
   function canvasGeometry(geometry: DockMediaGeometry): DockMarkGeometry {
     if (geometry.kind === 'point')
       return { kind: 'rect', x: geometry.x - 6, y: geometry.y - 6, w: 12, h: 12 };
-    if (geometry.kind === 'text')
-      return {
-        kind: 'rect',
-        x: geometry.x,
-        y: geometry.y,
-        w: Math.max(geometry.fontSize, geometry.text.length * geometry.fontSize * 0.6),
-        h: geometry.fontSize * 1.4,
-      };
+    if (geometry.kind === 'text') return { kind: 'rect', ...dockMediaGeometryRect(geometry) };
     return geometry;
   }
   function apply(next: DockMediaEdit) {
@@ -120,7 +168,18 @@
         old.kind === 'point'
           ? { ...old, x: b.x + b.w / 2, y: b.y + b.h / 2 }
           : old.kind === 'text'
-            ? { ...old, x: b.x, y: b.y, fontSize: Math.max(1, b.h / 1.4) }
+            ? {
+                ...old,
+                x: b.x,
+                y: b.y,
+                fontSize: Math.max(
+                  1,
+                  old.fontSize *
+                    (b.h !== dockMediaGeometryRect(old).h
+                      ? b.h / Math.max(1, dockMediaGeometryRect(old).h)
+                      : b.w / Math.max(1, dockMediaGeometryRect(old).w)),
+                ),
+              }
             : geometry;
       update(id, { geometry: next });
     } else
@@ -157,14 +216,22 @@
             : nextTool === 'arrow'
               ? 'arrow'
               : 'box';
+    if ((kind === 'box' || kind === 'element') && (bounds.w < 2 || bounds.h < 2)) return;
     const value: DockMediaGeometry =
       kind === 'text'
         ? {
             kind: 'text',
             x: bounds.x,
             y: bounds.y,
-            text: 'Text',
-            fontSize: Math.min(24, bounds.h / 1.4),
+            text: m.dock_screenshotEditor_text(),
+            fontSize: Math.max(
+              0.1,
+              Math.min(
+                24,
+                bounds.h / 1.4,
+                bounds.w / Math.max(1, m.dock_screenshotEditor_text().length * 0.65),
+              ),
+            ),
           }
         : geometry;
     apply({
@@ -179,16 +246,7 @@
           kind,
           included: true,
           geometry: value,
-          label:
-            kind === 'text'
-              ? 'Text'
-              : kind === 'element'
-                ? 'Element'
-                : kind === 'draw'
-                  ? 'Draw'
-                  : kind === 'arrow'
-                    ? 'Arrow'
-                    : 'Box',
+          label: screenshotKindLabel(kind),
           note: '',
           context: { selector: null, text: null, url: null },
         },
@@ -215,20 +273,31 @@
     />
     <div class="image-view">
       {#if source.visuals !== 'clean'}<p class="type-caption notice">
-          This image already contains marks. Editing requires its original image.
+          {m.dock_screenshotEditor_readonly()}
         </p>{/if}
+      {#if previewPending}<p class="type-caption notice" role="status">
+          {m.dock_screenshotEditor_preparing()}
+        </p>{/if}
+      {#if previewFailed}<p class="type-caption notice" role="alert">
+          {m.dock_screenshotEditor_previewError()}
+        </p>
+        <Button variant="ghost" size="compact" onclick={() => previewRetry++}
+          >{m.dock_screenshotEditor_retry()}</Button
+        >{/if}
       {#if tool === 'crop'}<p class="type-caption notice">
-          Drag the region to keep. Marks outside it are removed; Undo restores them.
+          {m.dock_screenshotEditor_cropHint()}
         </p>{/if}
       <ScreenshotCanvas
-        {sourceUrl}
+        sourceUrl={source.visuals === 'clean' ? (previewUrl ?? '') : sourceUrl}
+        raster={source.visuals === 'clean'}
+        hidden={previewPending || previewFailed}
         width={source.width}
         height={source.height}
         {frame}
         {shapes}
         {tool}
         selectedId={selectedMarkId}
-        disabled={blocked}
+        disabled={blocked || previewPending || previewFailed}
         onSelect={(id) => (selectedMarkId = id)}
         onDraw={draw}
         onTransform={transform}

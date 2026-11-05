@@ -4,6 +4,7 @@ import type {
   DockMediaGeometry,
   DockMediaRect,
 } from '$shared/dock-media-edit';
+import { dockMediaGeometryRect } from '$shared/dock-media-edit';
 import { screenshotContains } from './screenshot-geometry';
 
 /** Explicit old-source to candidate-source mapping supplied by the capture owner. */
@@ -13,32 +14,12 @@ export interface ScreenshotFrameMapping {
   offsetX: number;
   offsetY: number;
 }
-export function screenshotMediaBounds(g: DockMediaGeometry): DockMediaRect {
-  if (g.kind === 'rect') return { x: g.x, y: g.y, w: g.w, h: g.h };
-  if (g.kind === 'text')
-    return {
-      x: g.x,
-      y: g.y,
-      w: Math.max(g.fontSize, g.text.length * g.fontSize * 0.6),
-      h: g.fontSize * 1.4,
-    };
-  if (g.kind === 'point') return { x: g.x, y: g.y, w: 0, h: 0 };
-  const points = g.kind === 'path' ? g.points : [g.from, g.to];
-  const x = Math.min(...points.map((p) => p.x)),
-    y = Math.min(...points.map((p) => p.y));
-  return {
-    x,
-    y,
-    w: Math.max(...points.map((p) => p.x)) - x,
-    h: Math.max(...points.map((p) => p.y)) - y,
-  };
-}
 export function cropScreenshotEdit(edit: DockMediaEdit, crop: DockMediaRect): DockMediaEdit {
   return {
     ...edit,
     crop,
     marks: edit.marks.filter((mark) =>
-      screenshotContains(crop, screenshotMediaBounds(mark.geometry)),
+      screenshotContains(crop, dockMediaGeometryRect(mark.geometry)),
     ),
     blurRegions: edit.blurRegions.filter((region) => screenshotContains(crop, region)),
   };
@@ -81,7 +62,7 @@ export function retakeScreenshotEdit(
     sourceRevision: source.revision,
     marks: edit.marks
       .map((mark) => ({ ...mark, geometry: geometry(mark.geometry) }))
-      .filter((mark) => screenshotContains(bounds, screenshotMediaBounds(mark.geometry))),
+      .filter((mark) => screenshotContains(bounds, dockMediaGeometryRect(mark.geometry))),
     blurRegions: edit.blurRegions
       .map((region) => ({ id: region.id, ...rect(region) }))
       .filter((region) => screenshotContains(bounds, region)),

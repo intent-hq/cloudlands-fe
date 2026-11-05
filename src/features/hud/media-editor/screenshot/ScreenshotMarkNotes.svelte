@@ -10,6 +10,7 @@
 </script>
 
 <script lang="ts">
+  import { m } from '$shared/paraglide/messages.js';
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import { Textarea } from '$lib/components/ui/textarea';
@@ -56,11 +57,10 @@
   }
 </script>
 
-<!-- i18n-ignore (editor content labels; localization follows shared shell wiring) -->
-<aside bind:this={list} class="notes" aria-label="Numbered screenshot marks">
-  <p class="type-caption heading">Marks</p>
+<aside bind:this={list} class="notes" aria-label={m.dock_screenshotEditor_marks()}>
+  <p class="type-caption heading">{m.dock_screenshotEditor_marks()}</p>
   {#if !items.length}<p class="type-caption empty">
-      Add a mark to leave a note. Blur regions stay private and are not numbered.
+      {m.dock_screenshotEditor_empty()}
     </p>{/if}
   {#each items as item (item.id)}
     <section class="card" class:selected={selectedId === item.id} data-note-id={item.id}>
@@ -73,20 +73,23 @@
           aria-pressed={selectedId === item.id}
         >
           <span class="badge" aria-hidden="true">{item.n}</span><span
-            >Mark {item.n} · {item.kind}</span
+            >{m.dock_screenshotEditor_mark({ n: item.n, kind: item.kind })}</span
           >
         </Button>
         <Button
           variant="ghost"
           size="icon-compact"
-          aria-label={`Delete mark ${item.n}`}
+          aria-label={m.dock_screenshotEditor_deleteMark({ n: item.n })}
           {disabled}
           onclick={() => onDelete(item.id)}><TrashIcon size={14} /></Button
         >
       </div>
       {#if item.text !== undefined}
-        <Input
-          aria-label={`Text for mark ${item.n}`}
+        <Textarea
+          aria-label={m.dock_screenshotEditor_textFor({ n: item.n })}
+          minHeight={48}
+          autoResize
+          maxlength={10000}
           value={item.text}
           {disabled}
           onfocus={() => onSelect(item.id)}
@@ -95,8 +98,9 @@
       {/if}
       {#if item.element}
         <Input
-          aria-label={`Element selector for mark ${item.n}`}
-          placeholder="Element selector"
+          aria-label={m.dock_screenshotEditor_selectorFor({ n: item.n })}
+          placeholder={m.dock_screenshotEditor_selectorPlaceholder()}
+          maxlength={8192}
           value={item.element.path ?? ''}
           {disabled}
           onfocus={() => onSelect(item.id)}
@@ -104,8 +108,9 @@
             onElement?.(item.id, event.currentTarget.value, item.element?.name ?? '')}
         />
         <Input
-          aria-label={`Element text for mark ${item.n}`}
-          placeholder="Element text"
+          aria-label={m.dock_screenshotEditor_elementTextFor({ n: item.n })}
+          placeholder={m.dock_screenshotEditor_elementTextPlaceholder()}
+          maxlength={20000}
           value={item.element.name}
           {disabled}
           onfocus={() => onSelect(item.id)}
@@ -114,8 +119,9 @@
         />
       {/if}
       <Textarea
-        aria-label={`Note for mark ${item.n}`}
-        placeholder="Add a note"
+        aria-label={m.dock_screenshotEditor_noteFor({ n: item.n })}
+        placeholder={m.dock_screenshotEditor_notePlaceholder()}
+        maxlength={20000}
         value={item.note}
         {disabled}
         minHeight={48}
@@ -128,7 +134,7 @@
           variant="ghost"
           size="compact"
           {disabled}
-          aria-label={`Hold to dictate note for mark ${item.n}`}
+          aria-label={m.dock_screenshotEditor_holdFor({ n: item.n })}
           aria-pressed={dictatingId === item.id}
           onpointerdown={(event) => {
             if (disabled || event.button !== 0) return;
@@ -156,7 +162,9 @@
           }}
           onblur={stop}
         >
-          <MicrophoneIcon size={14} />{dictatingId === item.id ? 'Listening…' : 'Hold to dictate'}
+          <MicrophoneIcon size={14} />{dictatingId === item.id
+            ? m.dock_composer_listening_status()
+            : m.dock_screenshotEditor_hold()}
         </Button>
       {/if}
     </section>
