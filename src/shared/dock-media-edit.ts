@@ -368,8 +368,16 @@ function transcriptText(
   const editingTime =
     edit.cuts.length > 0 || edit.trim.startMs > 0 || edit.trim.endMs < source.durationMs;
   let timingMissing = false;
+  let previousTimed: { at: number; order: number; text: string } | null = null;
   for (const word of transcript.words) {
     if (word.startMs === null || word.endMs === null) {
+      const text = edit.wordEdits[word.id] ?? word.text;
+      // Recognition punctuation has lexical adjacency, not an independent
+      // timestamp. Keep it with its preceding retained recognition unit.
+      if (/^[\s\p{P}]*$/u.test(text)) {
+        if (previousTimed && text.trim()) previousTimed.text += text.trim();
+        continue;
+      }
       if ((editingTime || marks.length > 0) && word.text.trim()) timingMissing = true;
       else
         events.push({
@@ -387,8 +395,8 @@ function transcriptText(
       (range) => word.startMs! >= range.startMs && word.endMs! <= range.endMs,
     );
     if (overlaps && !contained) timingMissing = true;
-    if (contained)
-      events.push({ at: word.startMs, order: 1, text: edit.wordEdits[word.id] ?? word.text });
+    previousTimed = contained ? { at: word.startMs, order: 1, text: edit.wordEdits[word.id] ?? word.text } : null;
+    if (previousTimed) events.push(previousTimed);
   }
   for (const { n, mark } of marks)
     events.push({ at: mark.atMs, order: 2, text: `[mark ${n}: ${mark.label || mark.kind}]` });

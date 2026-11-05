@@ -33,7 +33,7 @@ async function helper(name: string): Promise<string> {
   }
   throw new Error('media-helper-unavailable');
 }
-export async function dockMediaOutputReady(source: DockSavedMedia['source']): Promise<{ ready: boolean; reason?: 'legacy-baked-marks' }> {
+export async function dockMediaOutputReady(source: DockSavedMedia['source'], _saved?: DockSavedMedia['saved']): Promise<{ ready: boolean; reason?: 'legacy-baked-marks' }> {
   if (source.visuals !== 'clean') return { ready: false, reason: 'legacy-baked-marks' };
   if (source.kind === 'screenshot') return { ready: true };
   try { await helper('intent-dock-media-export'); return { ready: true }; }
