@@ -42,7 +42,11 @@ import {
 } from '../../../shared/main/window-appearance';
 import { fixWebContentsZoom } from '../../../main/fixed-zoom';
 import { getDockWindow } from '../../../main/dock-window';
-import { setDockMediaChoiceLocalPref } from '../../../main/local-prefs';
+import {
+  getDockMediaChoiceLocalPref,
+  setDockMediaChoiceLocalPref,
+} from '../../../main/local-prefs';
+import { dockMediaOutputReady } from './dock-media-output';
 import {
   noteDockCaptureEditorFocused,
   registerDockCaptureEditorWindow,
@@ -312,7 +316,10 @@ function revealEditor(window: BrowserWindow): void {
 }
 
 /** The dock (exact window, main frame, strict binding) asking for an editor. */
-function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpenResult {
+async function open(
+  event: IpcMainInvokeEvent,
+  request: unknown,
+): Promise<DockCaptureEditorOpenResult> {
   const dock = getDockWindow();
   if (
     !dock ||
@@ -331,6 +338,25 @@ function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpe
   const mediaUrl = mediaUrlFor(rest.workspaceId, canonical, binding.backendId);
   if (!mediaUrl) return unavailable('invalid-path');
 
+  // Whether sending honors saved edits of this source (asked of the output owner),
+  // and the person's last saved choice, the default for a new edit.
+  const [output, rememberedChoice] = await Promise.all([
+    rest.source
+      ? dockMediaOutputReady(rest.source, rest.saved ?? null).catch(() => ({ ready: false }))
+      : Promise.resolve(undefined),
+    rest.kind === 'recording'
+      ? getDockMediaChoiceLocalPref().catch(() => null)
+      : Promise.resolve(null),
+  ]);
+  // Nothing may have changed meanwhile: the same dock window, document and binding.
+  if (
+    getDockWindow() !== dock ||
+    event.sender.isDestroyed() ||
+    event.sender.mainFrame !== event.senderFrame ||
+    getStrictBackendBindingForWebContents(event.sender) !== binding
+  )
+    return unavailable();
+
   const openId = randomUUID();
   // Its owner gone (the dock's document or binding retired), a session ends: as the
   // current one, the editor closes; as a pending one, it is dropped.
@@ -338,11 +364,15 @@ function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpe
     if (session?.snapshot.openId === openId) closeEditor();
     else if (pending?.kind === 'retarget' && pending.next.snapshot.openId === openId) dropPending();
   });
-  // Sending does not yet apply saved edits, so nothing can be saved: an edit of a
-  // known source is a preview, and a source without one opens read-only.
-  const output = rest.source ? { ready: false } : undefined;
+  // A source without a canonical description opens read-only (no output at all).
   const next: Session = {
-    snapshot: { ...rest, openId, mediaUrl, ...(output ? { output } : {}) },
+    snapshot: {
+      ...rest,
+      openId,
+      mediaUrl,
+      ...(output ? { output } : {}),
+      ...(rememberedChoice ? { rememberedChoice } : {}),
+    },
     backendId: binding.backendId,
     owner: { sender: event.sender, binding },
     candidates: new Map(),

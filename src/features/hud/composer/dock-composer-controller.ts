@@ -16,6 +16,7 @@ import {
   dockRecordingEditorRequest,
   openDockCaptureEditor,
 } from '$features/hud/media-editor/open-capture-editor';
+import { dockMediaSourceFor } from '$shared/dock-evidence';
 import {
   screenReferences,
   type DockMarkTool,
@@ -51,6 +52,7 @@ import {
   dockSpeechKeepLiveRequested,
   dockSpeechStopRequested,
   dockSpeechToggleRequested,
+  dockMediaEditorOpenRequested,
 } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
 import type { DockComposerMediaLabels } from '$features/hud/components/dock-composer-media-presentation';
 import type { DockSettingsPane } from './dock-composer-presentation';
@@ -363,7 +365,17 @@ export function createDockComposerController(
       ? {
           onEdit: (id: string) => {
             const view = evidence();
+            const image = imageFor(id);
             const clip = view.clips.find((row) => row.id === id || row.contextItemId === id);
+            // Screenshots, and recordings with a canonical source, open through the
+            // output owner (which prepares and persists the source first). A recording
+            // without one opens read-only, here.
+            const logicalId = image?.id ?? clip?.id;
+            if (!logicalId) return;
+            if (image || (clip && dockMediaSourceFor(view.evidence ?? undefined, clip.id))) {
+              dispatch(dockMediaEditorOpenRequested(workspaceId, agentId, logicalId));
+              return;
+            }
             const request =
               clip &&
               dockRecordingEditorRequest({

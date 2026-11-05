@@ -59,7 +59,8 @@
       (item.kind === 'clip' && (!item.url || item.recording))
     )
       return;
-    if (item.kind === 'clip' && onEdit) {
+    // In the capture editor preview, a screenshot or recording pill opens the editor.
+    if ((item.kind === 'clip' || item.kind === 'image') && onEdit) {
       onEdit(item.id);
       return;
     }

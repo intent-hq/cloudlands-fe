@@ -5,6 +5,29 @@
   import DockScreenshotEditorWindow from '$features/hud/media-editor/screenshot/DockScreenshotEditorWindow.svelte';
   import { connectDockCaptureEditor } from '$features/hud/media-editor/capture-editor-bridge';
   import type { DockCaptureEditorSnapshot } from '$shared/dock-capture-editor';
+  import type { DockMediaSource } from '$shared/dock-media-edit';
+
+  /**
+   * How a mark on the old screenshot maps onto the retaken one: both frames in screen
+   * points on the same display give image pixels per point and their offset. Null
+   * without both frames, or across displays.
+   */
+  function retakeMapping(before: DockMediaSource, after: DockMediaSource) {
+    const a = before.capture?.frame;
+    const b = after.capture?.frame;
+    if (!a || !b || a.displayId !== b.displayId || !a.rect.w || !a.rect.h || !b.rect.w || !b.rect.h)
+      return null;
+    const ax = before.width / a.rect.w;
+    const ay = before.height / a.rect.h;
+    const bx = after.width / b.rect.w;
+    const by = after.height / b.rect.h;
+    return {
+      scaleX: bx / ax,
+      scaleY: by / ay,
+      offsetX: (a.rect.x - b.rect.x) * bx,
+      offsetY: (a.rect.y - b.rect.y) * by,
+    };
+  }
 
   let snapshot = $state.raw<DockCaptureEditorSnapshot | null>(null);
   /** The open session has unsaved edits (the view reports it; main asks us). */
@@ -62,8 +85,8 @@
     {@const openId = snapshot.openId}
     {#key openId}
       <!-- Save shows only when sending honors saved edits (the view checks
-           output.ready). Retake waits for sources to carry their capture frames: without
-           them a retaken image cannot place the marks, so it is not offered. -->
+           output.ready). Retake is offered only with a capture frame, so marks can be
+           placed on the new image exactly. -->
       <DockScreenshotEditorWindow
         {snapshot}
         {discardRequest}
@@ -76,6 +99,22 @@
             requestId: crypto.randomUUID(),
             result: 'failed',
           }}
+        onRetake={snapshot.source?.capture?.frame
+          ? async (bundle) => {
+              const outcome = await bridge.retake(openId);
+              if (!outcome?.ok) return null;
+              const mapping = retakeMapping(bundle.source, outcome.source);
+              // Without a frame on the same display, marks cannot be placed: no candidate.
+              return mapping
+                ? {
+                    candidateToken: outcome.candidateToken,
+                    source: outcome.source,
+                    mediaUrl: outcome.mediaUrl,
+                    mapping,
+                  }
+                : null;
+            }
+          : undefined}
       />
     {/key}
   {/if}

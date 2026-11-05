@@ -68,7 +68,12 @@
   const edits = source
     ? createEditTransaction<DockMediaEdit>(
         snapshot.saved ??
-          defaultDockMediaEdit(source, source.bakedMarks ?? [], snapshot.transcript ?? null, null),
+          defaultDockMediaEdit(
+            source,
+            source.capturedMarks ?? source.bakedMarks ?? [],
+            snapshot.transcript ?? null,
+            snapshot.rememberedChoice ?? null,
+          ),
       )
     : null;
   // Recorded marks are part of the frames: cutting time away would not remove them.
@@ -95,6 +100,26 @@
         : 'failed';
   }
 
+  // Pins: the edit's marks when there is a canonical source, else the recording's own.
+  const toolOf = {
+    click: 'pick',
+    element: 'pick',
+    box: 'box',
+    draw: 'pen',
+    arrow: 'arrow',
+    text: 'pen',
+  } as const;
+  const pins = $derived<DockCaptureEditorMark[]>(
+    edits
+      ? edits.draft.marks.map((mark) => ({
+          id: mark.id,
+          tool: toolOf[mark.kind],
+          atMs: mark.atMs,
+          ...(mark.label ? { label: mark.label } : {}),
+        }))
+      : snapshot.marks,
+  );
+
   const kept = $derived(
     edits ? subtractDockMediaRanges([edits.draft.trim], edits.draft.cuts) : null,
   );
@@ -111,7 +136,7 @@
   const durationMs = $derived(
     snapshot.source?.durationMs ?? (mediaDurationMs || snapshot.durationMs || 0),
   );
-  const activeMark = $derived(snapshot.marks.find((mark) => mark.id === activeMarkId) ?? null);
+  const activeMark = $derived(pins.find((mark) => mark.id === activeMarkId) ?? null);
 
   // Main asks before closing or switching would lose these edits.
   $effect(() => {
@@ -277,7 +302,7 @@
       <DockRecordingTimeline
         {durationMs}
         {currentMs}
-        marks={snapshot.marks}
+        marks={pins}
         {activeMarkId}
         trim={timeEditable && edits ? edits.draft.trim : null}
         {kept}

@@ -18,6 +18,7 @@ import {
   DockMediaSourceSchema,
   DockMediaTranscriptSchema,
   type DockMediaEdit,
+  type DockMediaChoice,
   type DockMediaOutputError,
   type DockMediaSaveRequest,
   type DockMediaSource,
@@ -80,6 +81,8 @@ export interface DockCaptureEditorOpenRequest {
    * it does; until then edits are a preview and are never stored.
    */
   output?: { ready: boolean; reason?: DockMediaOutputError };
+  /** The person's last saved Video/Voice choice: the default for a new edit (main-set). */
+  rememberedChoice?: DockMediaChoice;
 }
 
 /** What the editor window receives: the request, with main's own media URL. */

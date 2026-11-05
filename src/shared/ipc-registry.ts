@@ -491,7 +491,6 @@ export const IPC_CHANNELS = {
     TRANSCRIPT_UPDATE: 'dock-capture-editor:transcript-update',
     /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
     SAVE_RESULT: 'dock-capture-editor:save-result',
-    TRANSCRIPT_UPDATE: 'dock-capture-editor:transcript-update',
   },
 
   DOCK_MEDIA: {
