@@ -8419,5 +8419,6 @@
   "dock_screenshotEditor_legacyReadonly": "在原始圖片和標記位置資料可用之前，無法編輯。",
   "dock_screenshotEditor_previewOnly": "目前尚無法儲存此附件的變更。",
   "dock_screenshotEditor_retakeUnavailable": "目前無法重新擷取。",
-  "dock_screenshotEditor_dictationUnavailable": "目前無法口述備註。"
+  "dock_screenshotEditor_dictationUnavailable": "目前無法口述備註。",
+  "dock_screenshotEditor_resetUnavailable": "原始擷取狀態可用後才能重設。"
 }

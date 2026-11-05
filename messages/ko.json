@@ -8419,5 +8419,6 @@
   "dock_screenshotEditor_legacyReadonly": "원본 이미지와 표시의 위치 정보가 준비될 때까지 편집할 수 없습니다.",
   "dock_screenshotEditor_previewOnly": "이 첨부 파일의 변경 사항은 아직 저장할 수 없습니다.",
   "dock_screenshotEditor_retakeUnavailable": "다시 캡처를 사용할 수 없습니다.",
-  "dock_screenshotEditor_dictationUnavailable": "메모 받아쓰기를 사용할 수 없습니다."
+  "dock_screenshotEditor_dictationUnavailable": "메모 받아쓰기를 사용할 수 없습니다.",
+  "dock_screenshotEditor_resetUnavailable": "원본 캡처 상태가 준비될 때까지 초기화할 수 없습니다."
 }

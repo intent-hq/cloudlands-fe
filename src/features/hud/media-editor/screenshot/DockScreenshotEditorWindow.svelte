@@ -5,9 +5,11 @@
     source: DockMediaSource;
     edit: DockMediaEdit;
     mediaUrl: string;
+    candidateToken?: string;
   }
   /** Candidate is authorized and resolved by the owner, never by this view. */
   export interface ScreenshotRetakeCandidate {
+    candidateToken: string;
     source: DockMediaSource;
     mediaUrl: string;
     mapping: ScreenshotFrameMapping;
@@ -37,6 +39,7 @@
 
   let {
     snapshot,
+    captureBaseline,
     onClose,
     discardRequest = 0,
     onDirtyChange,
@@ -48,12 +51,17 @@
     dictatingId = null,
   }: {
     snapshot: DockCaptureEditorSnapshot;
+    /** Main-provided capture baseline; never inferred from the current saved edit. */
+    captureBaseline?: ScreenshotEditorBundle;
     onClose: () => void;
     discardRequest?: number;
     onDirtyChange?: (dirty: boolean) => void;
     onDiscardRequested?: () => void;
     onKeepEditing?: () => void;
-    onSave?: (edit: DockMediaEdit) => Promise<DockCaptureEditorSaveResult>;
+    onSave?: (request: {
+      edit: DockMediaEdit;
+      replacement?: { candidateToken: string };
+    }) => Promise<DockCaptureEditorSaveResult>;
     onRetake?: (bundle: ScreenshotEditorBundle) => Promise<ScreenshotRetakeCandidate | null>;
     onNoteDictation?: (markId: string, phase: 'start' | 'stop') => void;
     dictatingId?: string | null;
@@ -83,9 +91,31 @@
   // svelte-ignore state_referenced_locally -- late callbacks may not close a new session.
   const openId = snapshot.openId;
   const edits = initial ? createEditTransaction(initial) : null;
-  const original = initial
-    ? { ...initial, edit: defaultDockMediaEdit(initial.source, [], null) }
-    : null;
+  function authoritativeBaseline(
+    value: ScreenshotEditorBundle | undefined,
+  ): ScreenshotEditorBundle | null {
+    if (
+      !value ||
+      !initial ||
+      value.source.kind !== 'screenshot' ||
+      value.source.visuals !== 'clean'
+    )
+      return null;
+    if (
+      value.candidateToken !== undefined &&
+      (!value.candidateToken.trim() || value.candidateToken.length > 512)
+    )
+      return null;
+    const sameSource =
+      value.source.id === initial.source.id && value.source.revision === initial.source.revision;
+    if (!sameSource && !value.candidateToken) return null;
+    return DockMediaSourceSchema.safeParse(value.source).success &&
+      DockMediaEditSchema.safeParse(value.edit).success &&
+      !planDockMediaOutput(value.edit, value.source, null).errors.length
+      ? value
+      : null;
+  }
+  const original = $derived(authoritativeBaseline(captureBaseline));
   let active = true;
   let saving = $state(false);
   let retaking = $state(false);
@@ -106,7 +136,12 @@
     saving = true;
     error = null;
     try {
-      const result = await onSave(bundle.edit);
+      const result = await onSave({
+        edit: bundle.edit,
+        ...(bundle.candidateToken
+          ? { replacement: { candidateToken: bundle.candidateToken } }
+          : {}),
+      });
       if (!active || snapshot.openId !== openId || edits.draft !== bundle) return;
       if (
         result.result !== 'saved' ||
@@ -136,11 +171,14 @@
       if (!active || snapshot.openId !== openId || edits.draft !== bundle || !candidate) return;
       if (
         !DockMediaSourceSchema.safeParse(candidate.source).success ||
-        candidate.source.attachmentId !== bundle.source.attachmentId
+        typeof candidate.candidateToken !== 'string' ||
+        !candidate.candidateToken.trim() ||
+        candidate.candidateToken.length > 512
       )
         throw new Error('Invalid screenshot candidate source');
       edits.apply({
         source: candidate.source,
+        candidateToken: candidate.candidateToken,
         mediaUrl: candidate.mediaUrl,
         edit: retakeScreenshotEdit(bundle.edit, candidate.source, candidate.mapping),
       });
@@ -197,7 +235,12 @@
           <ActionMenu
             ariaLabel={m.dock_screenshotEditor_more()}
             actions={[
-              { id: 'reset', label: m.dock_screenshotEditor_reset(), disabled: saving || retaking },
+              {
+                id: 'reset',
+                label: m.dock_screenshotEditor_reset(),
+                disabled: saving || retaking || !original,
+                disabledReason: original ? undefined : m.dock_screenshotEditor_resetUnavailable(),
+              },
             ]}
             onAction={() => {
               if (original && !saving && !retaking) edits.reset(original);

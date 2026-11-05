@@ -8419,5 +8419,6 @@
   "dock_screenshotEditor_legacyReadonly": "Die Bearbeitung ist erst möglich, wenn das Originalbild und die Markierungsgeometrie verfügbar sind.",
   "dock_screenshotEditor_previewOnly": "Änderungen an diesem Anhang können noch nicht gespeichert werden.",
   "dock_screenshotEditor_retakeUnavailable": "Eine neue Aufnahme ist nicht verfügbar.",
-  "dock_screenshotEditor_dictationUnavailable": "Notizdiktat ist nicht verfügbar."
+  "dock_screenshotEditor_dictationUnavailable": "Notizdiktat ist nicht verfügbar.",
+  "dock_screenshotEditor_resetUnavailable": "Zurücksetzen ist erst möglich, wenn der ursprüngliche Aufnahmezustand verfügbar ist."
 }

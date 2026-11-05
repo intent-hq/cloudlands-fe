@@ -8419,5 +8419,6 @@
   "dock_screenshotEditor_legacyReadonly": "La edición no está disponible hasta que se disponga de la imagen original y la geometría de las marcas.",
   "dock_screenshotEditor_previewOnly": "Todavía no se pueden guardar cambios en este archivo adjunto.",
   "dock_screenshotEditor_retakeUnavailable": "No se puede volver a capturar.",
-  "dock_screenshotEditor_dictationUnavailable": "El dictado de notas no está disponible."
+  "dock_screenshotEditor_dictationUnavailable": "El dictado de notas no está disponible.",
+  "dock_screenshotEditor_resetUnavailable": "No se puede restablecer hasta que esté disponible el estado original de la captura."
 }

@@ -8419,5 +8419,6 @@
   "dock_screenshotEditor_legacyReadonly": "元の画像とマークの位置情報が利用可能になるまで編集できません。",
   "dock_screenshotEditor_previewOnly": "この添付ファイルの変更はまだ保存できません。",
   "dock_screenshotEditor_retakeUnavailable": "再撮影は利用できません。",
-  "dock_screenshotEditor_dictationUnavailable": "メモの音声入力は利用できません。"
+  "dock_screenshotEditor_dictationUnavailable": "メモの音声入力は利用できません。",
+  "dock_screenshotEditor_resetUnavailable": "元のキャプチャ状態が利用可能になるまでリセットできません。"
 }
