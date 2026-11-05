@@ -222,3 +222,28 @@ export async function setDockShortcutOverridesLocalPref(
   );
   return write;
 }
+
+/** This preference changes only after a successful capture-editor Save transaction. */
+export async function getDockMediaChoiceLocalPref(): Promise<
+  import('../shared/dock-media-edit').DockMediaChoice | null
+> {
+  const { DockMediaChoiceSchema } = await import('../shared/dock-media-edit');
+  const document = await readShortcutPrefsDocument();
+  const result = DockMediaChoiceSchema.safeParse(document.dockMediaLastSavedChoice);
+  return result.success ? result.data : null;
+}
+export async function setDockMediaChoiceLocalPref(
+  choice: import('../shared/dock-media-edit').DockMediaChoice,
+): Promise<void> {
+  const { DockMediaChoiceSchema } = await import('../shared/dock-media-edit');
+  const accepted = DockMediaChoiceSchema.parse(choice);
+  const write = writeChain.then(async () => {
+    const document = await readShortcutPrefsDocument();
+    document.dockMediaLastSavedChoice = accepted;
+    await writeAll(document);
+  });
+  writeChain = write.catch((error) =>
+    logger.error('Failed to persist capture send options', error as Error),
+  );
+  return write;
+}

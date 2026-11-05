@@ -54,6 +54,14 @@ export const DockMediaEditMarkSchema = z
   })
   .strict();
 export type DockMediaEditMark = z.infer<typeof DockMediaEditMarkSchema>;
+export const DockMediaBatchSchema = z
+  .object({ id, atMs: ms, clearAtMs: ms.nullable() })
+  .strict()
+  .refine(
+    (batch) => batch.clearAtMs === null || batch.clearAtMs >= batch.atMs,
+    'Reversed batch',
+  );
+export type DockMediaBatch = z.infer<typeof DockMediaBatchSchema>;
 export const DockMediaSourceSchema = z
   .object({
     id,
@@ -73,6 +81,8 @@ export const DockMediaSourceSchema = z
     width: finite.positive(),
     height: finite.positive(),
     audio: z.enum(['available', 'none', 'unknown']),
+    /** Actual Clear boundaries, independent of microphone or transcription status. */
+    batches: z.array(DockMediaBatchSchema).max(10000),
     visuals: z.enum(['clean', 'baked-marks']),
     /** Known original representation. Missing legacy baselines can play but cannot export edits. */
     bakedMarks: z.array(DockMediaEditMarkSchema).max(10000).optional(),
@@ -111,6 +121,11 @@ export const DockMediaTranscriptSchema = z
                 code: z.ZodIssueCode.custom,
                 message: 'Incomplete or reversed recognition timing',
               });
+            if (word.alignment !== 'untimed' && (word.startMs === null || word.endMs === null))
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: 'Timed recognition units require genuine timestamps',
+              });
             if (word.alignment === 'untimed' && word.startMs !== null)
               ctx.addIssue({
                 code: z.ZodIssueCode.custom,
@@ -119,7 +134,6 @@ export const DockMediaTranscriptSchema = z
           }),
       )
       .max(200000),
-    batches: z.array(z.object({ id, atMs: ms }).strict()).max(10000),
     error: z.string().max(2048).optional(),
   })
   .strict();
@@ -189,7 +203,12 @@ export interface DockMediaOutputPlan {
   /** Actual video exports, in source-time order; highlights merge before cuts. */
   clips: DockMediaRange[];
   muted: boolean;
-  marks: Array<{ n: number; mark: DockMediaEditMark; frameAtMs: number }>;
+  marks: Array<{
+    n: number;
+    mark: DockMediaEditMark;
+    frameAtMs: number;
+    visibleUntilMs: number;
+  }>;
   transcript: string | null;
   errors: DockMediaOutputError[];
 }
@@ -299,11 +318,8 @@ export function defaultDockMediaEdit(
   }
   if (!canUseHighlights(edit)) edit.video = 'full';
   if (source.audio === 'none' || transcript?.status === 'no-speech') edit.voice = 'off';
-  else if (
-    !(edit.voice === 'transcript' && transcript?.status === 'pending') &&
-    !voiceOptions(source, transcript)[edit.voice].enabled
-  )
-    edit.voice = source.audio === 'available' ? 'audio' : 'off';
+  else if (edit.voice === 'audio' && source.audio !== 'available') edit.voice = 'off';
+  // Missing/pending/failed transcript never silently opts the user into sending audio.
   return edit;
 }
 function transcriptText(
@@ -341,7 +357,7 @@ function transcriptText(
   }
   for (const { n, mark } of marks)
     events.push({ at: mark.atMs, order: 2, text: `[mark ${n}: ${mark.label || mark.kind}]` });
-  for (const batch of transcript.batches)
+  for (const batch of source.batches)
     if (atTime(batch.atMs, kept, source.durationMs))
       events.push({ at: batch.atMs, order: 0, text: '\n\n' });
   const text = events
@@ -352,6 +368,16 @@ function transcriptText(
     .replace(/ *\n */g, '\n')
     .trim();
   return { text, timingMissing };
+}
+/** An editor-added mark joins the actual capture batch containing its source-time position. */
+export function dockMediaBatchAt(source: DockMediaSource, atMs: number): DockMediaBatch | null {
+  return (
+    [...source.batches]
+      .sort((a, b) => b.atMs - a.atMs)
+      .find(
+        (batch) => atMs >= batch.atMs && (batch.clearAtMs === null || atMs < batch.clearAtMs),
+      ) ?? null
+  );
 }
 /** Creation order is canonical; excluded/cropped/cut marks receive no output number. */
 export function numberDockMediaMarks(
@@ -370,6 +396,9 @@ export function numberDockMediaMarks(
       n: index + 1,
       mark,
       frameAtMs: Math.min(mark.atMs, Math.max(0, source.durationMs - 1)),
+      visibleUntilMs:
+        source.batches.find((batch) => batch.id === mark.batchId)?.clearAtMs ??
+        source.durationMs,
     }));
 }
 /** Pure plan only. A plan is not a claim that native export or placement has succeeded. */
