@@ -61,8 +61,9 @@
   {:else if snapshot?.kind === 'screenshot'}
     {@const openId = snapshot.openId}
     {#key openId}
-      <!-- Note dictation joins once its seam exists; Save shows only when sending
-           honors saved edits (the view checks output.ready). -->
+      <!-- Save shows only when sending honors saved edits (the view checks
+           output.ready). Retake waits for sources to carry their capture frames: without
+           them a retaken image cannot place the marks, so it is not offered. -->
       <DockScreenshotEditorWindow
         {snapshot}
         {discardRequest}
@@ -75,22 +76,6 @@
             requestId: crypto.randomUUID(),
             result: 'failed',
           }}
-        onRetake={async (bundle) => {
-          const outcome = await bridge.retake(openId);
-          if (!outcome?.ok) return null;
-          // Without the capture frames, marks map by size only (same origin).
-          return {
-            candidateToken: outcome.candidateToken,
-            source: outcome.source,
-            mediaUrl: outcome.mediaUrl,
-            mapping: {
-              scaleX: outcome.source.width / bundle.source.width,
-              scaleY: outcome.source.height / bundle.source.height,
-              offsetX: 0,
-              offsetY: 0,
-            },
-          };
-        }}
       />
     {/key}
   {/if}

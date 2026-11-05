@@ -67,8 +67,12 @@ interface Session {
   backendId: string;
   /** The opening dock document: the only one that persists this session's saves. */
   owner: { sender: Electron.WebContents; binding: object };
-  /** Retake candidates main placed for this session, by main's token (a few at most). */
-  candidates: Map<string, DockMediaSource>;
+  /**
+   * Retake candidates main placed for this session, by main's token. Never evicted
+   * while the session lives (the editor's undo history can return to any of them); a
+   * retake past the bound is refused before capturing.
+   */
+  candidates: Map<string, { source: DockMediaSource; mediaUrl: string }>;
   /** Ends this session when the opening dock document's binding is retired. */
   stopWatching: () => void;
 }
@@ -432,9 +436,7 @@ export function setupDockCaptureEditorIPC(): void {
     }
     // Main's token for this candidate; the oldest goes once there are a few.
     const candidateToken = randomUUID();
-    current.candidates.set(candidateToken, candidate);
-    while (current.candidates.size > MAX_CANDIDATES)
-      current.candidates.delete(current.candidates.keys().next().value as string);
+    current.candidates.set(candidateToken, { source: candidate, mediaUrl });
     settleRetake(parsed.data.requestId, { ok: true, candidateToken, source: candidate, mediaUrl });
     return true;
   });
@@ -503,8 +505,9 @@ async function save(
   if (snapshot.output?.ready !== true) return failed();
   // After a retake, the candidate is main's own (by token), never the editor's word.
   const token = parsed.data.replacement?.candidateToken;
-  const candidate = token ? current.candidates.get(token) : undefined;
-  if (token && !candidate) return failed();
+  const stored = token ? current.candidates.get(token) : undefined;
+  const candidate = stored?.source;
+  if (token && !stored) return failed();
   const target = candidate ?? snapshot.source;
   if (
     parsed.data.edit.sourceId !== target.id ||
@@ -542,7 +545,16 @@ async function save(
     current.snapshot = {
       ...current.snapshot,
       saved: result.saved,
-      ...(candidate ? { source: candidate } : {}),
+      // The replacement is the session's source now: its file, size and URL too.
+      ...(candidate && stored
+        ? {
+            source: candidate,
+            mediaUrl: stored.mediaUrl,
+            attachmentId: candidate.attachmentId,
+            width: candidate.width,
+            height: candidate.height,
+          }
+        : {}),
     };
     if (candidate) current.candidates.clear();
   }
@@ -566,6 +578,7 @@ async function retake(
   const window = editor;
   if (snapshot.openId !== parsed.data.openId || snapshot.kind !== 'screenshot' || !snapshot.source)
     return { ok: false, error: 'failed' };
+  if (current.candidates.size >= MAX_CANDIDATES) return { ok: false, error: 'failed' };
   if (owner.sender.isDestroyed()) return { ok: false, error: 'failed' };
   if (getStrictBackendBindingForWebContents(owner.sender) !== owner.binding)
     return { ok: false, error: 'failed' };
