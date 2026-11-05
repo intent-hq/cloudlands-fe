@@ -428,6 +428,7 @@ function* sendReply(
       ) ||
       !validDockWireTokens(clickedDraft.text, evidence ?? undefined) ||
       (!clickedDraft.text.trim() &&
+        !sendItems.length &&
         !blocks.imageBlocks.length &&
         !blocks.fileBlocks.length &&
         !evidence))
@@ -514,7 +515,8 @@ function* sendReply(
     } : null;
     if (!current(generation, authority)) return;
     const hasTranscript = materialized.metadata.some((entry) => typeof entry.transcript === 'string' && entry.transcript.trim());
-    if (!clickedDraft.text.trim() && !burned.length && !materialized.files.length && !materialized.frames.length &&
+    if (!clickedDraft.text.trim() && !sendItems.length && !clickedPayload.workspaceContextStr.trim() &&
+        !burned.length && !materialized.files.length && !materialized.frames.length &&
         !clickedPayload.imageBlocks?.length && !clickedPayload.fileBlocks?.length && !hasTranscript) {
       yield* put(dockConversationSendState(generation, false, m.dock_conversation_nothingToSend_error()));
       return;
