@@ -13,15 +13,24 @@
   import DockRecordingTimeline from './DockRecordingTimeline.svelte';
   import DockRecordingSendOptions from './DockRecordingSendOptions.svelte';
   import DockRecordingTranscript from './DockRecordingTranscript.svelte';
+  import DockRecordingFrameMarks from './DockRecordingFrameMarks.svelte';
+  import {
+    frameToolKind,
+    marksOnFrame,
+    moveGeometry,
+    type FrameTool,
+  } from './recording-frame-model';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import {
     defaultDockMediaEdit,
+    dockMediaBatchAt,
     canUseHighlights,
     markRemovable,
     mergeDockMediaRanges,
     subtractDockMediaRanges,
     type DockMediaRange,
     type DockMediaEdit,
+    type DockMediaGeometry,
   } from '$shared/dock-media-edit';
   import {
     FRAME_MS,
@@ -191,6 +200,75 @@
   // Marks drawn while recording are part of the frames: including or excluding one is
   // honest only on a clean source.
   const marksEditable = !!source && markRemovable(source);
+  // Drawing on frames: a tool draws a new mark at the current time (pausing playback);
+  // the pointer selects, moves and deletes marks. On a clean source only.
+  let frameTool = $state<FrameTool | null>(null);
+  let selectedMarkId = $state<string | null>(null);
+  const frameMarks = $derived(
+    edits && source
+      ? marksOnFrame(edits.draft.marks, source.batches, currentMs, source.durationMs)
+      : [],
+  );
+  function drawMark(tool: FrameTool, geometry: DockMediaGeometry): void {
+    if (!edits || !source) return;
+    video?.pause();
+    const atMs = Math.round(currentMs);
+    const batchId =
+      dockMediaBatchAt(source, atMs)?.id ?? source.batches.at(-1)?.id ?? 'editor-batch';
+    const id = crypto.randomUUID();
+    edits.apply((draft) => ({
+      ...draft,
+      marks: [
+        ...draft.marks,
+        {
+          id,
+          atMs,
+          batchId,
+          source: 'editor',
+          kind: frameToolKind(tool),
+          included: true,
+          geometry,
+          label: m.dock_captureEditor_addedMark_label(),
+          note: '',
+          context: { selector: null, text: null, url: null },
+        },
+      ],
+    }));
+    selectedMarkId = id;
+  }
+  function moveMark(markId: string, dx: number, dy: number): void {
+    edits?.apply((draft) => ({
+      ...draft,
+      marks: draft.marks.map((mark) =>
+        mark.id === markId ? { ...mark, geometry: moveGeometry(mark.geometry, dx, dy) } : mark,
+      ),
+    }));
+  }
+  function deleteMark(markId: string): void {
+    edits?.apply((draft) => ({
+      ...draft,
+      marks: draft.marks.filter((mark) => mark.id !== markId),
+    }));
+    if (selectedMarkId === markId) selectedMarkId = null;
+  }
+  const frameTools: {
+    tool: FrameTool | null;
+    glyph: 'cursor' | 'box' | 'pen' | 'arrow' | 'pencil';
+  }[] = [
+    { tool: null, glyph: 'cursor' },
+    { tool: 'box', glyph: 'box' },
+    { tool: 'pen', glyph: 'pen' },
+    { tool: 'arrow', glyph: 'arrow' },
+    { tool: 'text', glyph: 'pencil' },
+  ];
+  const frameToolLabels = {
+    pointer: () => m.dock_recordingToolbar_pointer_label(),
+    box: () => m.dock_recordingToolbar_rectangle_label(),
+    pen: () => m.dock_recordingToolbar_draw_label(),
+    arrow: () => m.dock_recordingToolbar_arrow_label(),
+    text: () => m.dock_captureEditor_frameText_label(),
+  };
+
   /** Include or exclude a mark (Shift-click): one edit. */
   function toggleMark(markId: string): void {
     edits?.apply((draft) => ({
@@ -294,6 +372,43 @@
             }}
             onerror={() => (failed = true)}
           ></video>
+        {/if}
+        {#if source && edits && !failed}
+          <DockRecordingFrameMarks
+            sourceWidth={source.width}
+            sourceHeight={source.height}
+            marks={frameMarks}
+            tool={frameTool}
+            editable={marksEditable}
+            selectedId={selectedMarkId}
+            onDraw={drawMark}
+            onMove={moveMark}
+            onSelect={(id) => (selectedMarkId = id)}
+            onDelete={deleteMark}
+          />
+          {#if marksEditable}
+            <div
+              class="frame-tools"
+              role="toolbar"
+              aria-label={m.dock_captureEditor_frameTools_label()}
+            >
+              {#each frameTools as entry (entry.glyph)}
+                <Button
+                  variant="plain"
+                  size="icon-sm"
+                  aria-pressed={frameTool === entry.tool}
+                  aria-label={frameToolLabels[entry.tool ?? 'pointer']()}
+                  tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
+                  onclick={() => {
+                    frameTool = entry.tool;
+                    if (entry.tool) selectedMarkId = null;
+                  }}
+                >
+                  <DockComposerIcon glyph={entry.glyph} size={16} />
+                </Button>
+              {/each}
+            </div>
+          {/if}
         {/if}
         {#if activeMark && activeMark.atMs !== null}
           <span class="mark-label" data-mark-label
@@ -428,6 +543,22 @@
 {/snippet}
 
 <style>
+  /* The drawing tools float over the bottom of the video. */
+  .frame-tools {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 9px;
+    background: hsl(var(--background) / 0.92);
+    transform: translateX(-50%);
+  }
+  .frame-tools :global([aria-pressed='true']) {
+    background: hsl(var(--primary) / 0.18);
+  }
   .save-problem {
     margin: 0;
     font-size: 12px;

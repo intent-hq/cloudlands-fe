@@ -90,6 +90,7 @@
   "deviceIcons_kind_robot_label": ["fr", "es"],
   "deviceIcons_kind_server_label": ["de"],
   "dialog_about_version": ["de"],
+  "dock_captureEditor_frameText_label": ["de"],
   "dock_captureEditor_pause_label": ["fr"],
   "dock_captureEditor_videoHighlights_label": ["de"],
   "dock_captureEditor_video_label": ["de"],
