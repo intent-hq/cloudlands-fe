@@ -904,14 +904,22 @@ dockConversationReducer.with(
         row.id === logicalId && JSON.stringify(row.media) === JSON.stringify(expected);
       if (expected.source.kind === 'screenshot') {
         if (!e.images.some(matches)) return e;
-        return patchDockEvidence(e, {
-          images: e.images.map((row) => matches(row) ? { ...row, width: next.source.width, height: next.source.height, media: next } : row),
-        });
+        return {
+          ...e,
+          images: e.images.map((row) =>
+            matches(row)
+              ? { ...row, width: next.source.width, height: next.source.height, media: next }
+              : row,
+          ),
+        };
       }
       if (!e.clips.some(matches)) return e;
-      return patchDockEvidence(e, {
-        clips: e.clips.map((row) => matches(row) ? { ...row, path: next.source.path, media: next } : row),
-      });
+      return {
+        ...e,
+        clips: e.clips.map((row) =>
+          matches(row) ? { ...row, path: next.source.path, media: next } : row,
+        ),
+      };
     }),
 );
 dockConversationReducer.with(
