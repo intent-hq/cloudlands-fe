@@ -2,6 +2,7 @@
   import { onDestroy } from 'svelte';
   import { Screen } from '$lib/components/patterns/screen';
   import DockRecordingEditor from '$features/hud/media-editor/recording/DockRecordingEditor.svelte';
+  import DockScreenshotEditorWindow from '$features/hud/media-editor/screenshot/DockScreenshotEditorWindow.svelte';
   import { connectDockCaptureEditor } from '$features/hud/media-editor/capture-editor-bridge';
   import type { DockCaptureEditorSnapshot } from '$shared/dock-capture-editor';
 
@@ -48,6 +49,20 @@
     {@const openId = snapshot.openId}
     {#key openId}
       <DockRecordingEditor
+        {snapshot}
+        {discardRequest}
+        onClose={() => bridge.close(openId)}
+        onDirtyChange={(value) => (dirty = value)}
+        onDiscardRequested={() => answer(true)}
+        onKeepEditing={() => answer(false)}
+      />
+    {/key}
+  {:else if snapshot?.kind === 'screenshot'}
+    {@const openId = snapshot.openId}
+    {#key openId}
+      <!-- Save, Retake and note dictation join once their main seams exist; until then
+           the view hides or disables them. -->
+      <DockScreenshotEditorWindow
         {snapshot}
         {discardRequest}
         onClose={() => bridge.close(openId)}
