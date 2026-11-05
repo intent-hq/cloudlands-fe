@@ -1,0 +1,78 @@
+<script lang="ts">
+  import { Button } from '$lib/components/ui/button';
+  import CursorIcon from 'phosphor-svelte/lib/CursorIcon';
+  import CursorClickIcon from 'phosphor-svelte/lib/CursorClickIcon';
+  import RectangleIcon from 'phosphor-svelte/lib/RectangleIcon';
+  import ScribbleIcon from 'phosphor-svelte/lib/ScribbleIcon';
+  import ArrowUpRightIcon from 'phosphor-svelte/lib/ArrowUpRightIcon';
+  import TextTIcon from 'phosphor-svelte/lib/TextTIcon';
+  import DropIcon from 'phosphor-svelte/lib/DropIcon';
+  import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
+  import type { ScreenshotTool } from './ScreenshotCanvas.svelte';
+  let {
+    tool,
+    disabled = false,
+    canDelete = false,
+    onSelect,
+    onDelete,
+  }: {
+    tool: ScreenshotTool;
+    disabled?: boolean;
+    canDelete?: boolean;
+    onSelect: (tool: ScreenshotTool) => void;
+    onDelete: () => void;
+  } = $props();
+  const tools = [
+    { id: 'pointer', label: 'Pointer', icon: CursorIcon },
+    { id: 'element', label: 'Element', icon: CursorClickIcon },
+    { id: 'box', label: 'Box', icon: RectangleIcon },
+    { id: 'draw', label: 'Draw', icon: ScribbleIcon },
+    { id: 'arrow', label: 'Arrow', icon: ArrowUpRightIcon },
+    { id: 'text', label: 'Text', icon: TextTIcon },
+    { id: 'blur', label: 'Blur sensitive content', icon: DropIcon },
+  ] as const;
+</script>
+
+<!-- i18n-ignore (editor labels; localization follows shared shell wiring) -->
+<div class="tools" role="group" aria-label="Screenshot drawing tools">
+  {#each tools as item}
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={item.label}
+      tooltip={item.label}
+      aria-pressed={tool === item.id}
+      active={tool === item.id}
+      {disabled}
+      onclick={() => onSelect(item.id)}><item.icon size={18} /></Button
+    >
+  {/each}
+  <span class="separator" aria-hidden="true"></span>
+  <Button
+    variant="ghost"
+    size="icon-sm"
+    aria-label="Delete selected mark"
+    tooltip="Delete selected mark"
+    disabled={disabled || !canDelete}
+    onclick={onDelete}><TrashIcon size={18} /></Button
+  >
+</div>
+
+<style>
+  .tools {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-medium);
+    background: hsl(var(--background));
+  }
+  .separator {
+    height: 1px;
+    align-self: stretch;
+    background: hsl(var(--border));
+    margin-block: 4px;
+  }
+</style>
