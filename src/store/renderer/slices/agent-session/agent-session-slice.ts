@@ -1,7 +1,11 @@
 import { applyAgentMetadataPatch } from './agent-metadata-patch';
 import { principalContextChanged, principalIdentityChanged } from '../principal/principal-slice';
 import { connectionStatusChanged } from '../daemon-health/daemon-health-slice';
-import { agentNodeUpdates, currentAgentCheckpoint } from '$shared/utils/agent-node';
+import {
+  agentNodeUpdates,
+  currentAgentCheckpoint,
+  currentRemoteSetup,
+} from '$shared/utils/agent-node';
 import { deepEqual, shallowEqual } from 'fast-equals';
 import type { AgentMetadata, AgentSession, AgentMessage, SessionStats } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
@@ -1359,6 +1363,7 @@ function applySessionUpsert(
       'nodeState',
       'nodePath',
       'placementError',
+      'setup',
     ] as const) {
       if (
         !Object.prototype.hasOwnProperty.call(session, key) &&
@@ -1367,6 +1372,8 @@ function applySessionUpsert(
         Object.assign(finalSession, { [key]: previousNodeFields[key] });
       }
     }
+    finalSession.setup = currentRemoteSetup(previousNodeFields.setup, finalSession.setup);
+    if (finalSession.setup === undefined) delete finalSession.setup;
   }
   finalSession.checkpoint = currentAgentCheckpoint(existing?.checkpoint, finalSession.checkpoint);
   if (finalSession.status === AgentStatus.Halted) {
