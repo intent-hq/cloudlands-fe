@@ -20,7 +20,7 @@ export interface WorkspaceTabGroup {
   lastActiveWorkspaceId?: string;
 }
 
-export function isWorkspaceTabGroupColor(value: unknown): value is WorkspaceTabGroupColor {
+function isWorkspaceTabGroupColor(value: unknown): value is WorkspaceTabGroupColor {
   return (WORKSPACE_TAB_GROUP_COLORS as readonly unknown[]).includes(value);
 }
 
@@ -118,20 +118,6 @@ export function resolveMovedWorkspaceTabGroups(
     };
   });
   return normalizeWorkspaceTabGroups(order, nextGroups);
-}
-
-/** Moves `workspaceId` so it sits directly after `targetId` in `order`. */
-export function placeWorkspaceTabAfter(
-  order: readonly string[],
-  workspaceId: string,
-  targetId: string,
-): string[] {
-  if (workspaceId === targetId) return [...order];
-  const remaining = order.filter((id) => id !== workspaceId);
-  const targetIndex = remaining.indexOf(targetId);
-  if (targetIndex < 0) return [...order];
-  remaining.splice(targetIndex + 1, 0, workspaceId);
-  return remaining;
 }
 
 /** Applies a released drag move to a full tab order. */

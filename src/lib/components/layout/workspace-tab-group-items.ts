@@ -10,7 +10,7 @@ import {
 } from '$lib/components/workspace/utils/workspace-tab-drag';
 
 /** Where a tab sits inside the outline of the open group. */
-export type WorkspaceTabGroupEdge = 'middle' | 'end';
+type WorkspaceTabGroupEdge = 'middle' | 'end';
 
 export type WorkspaceTabStripItem =
   | {
@@ -23,7 +23,7 @@ export type WorkspaceTabStripItem =
     }
   | { kind: 'group'; key: string; group: WorkspaceTabGroup; open: boolean };
 
-export const workspaceTabGroupItemKey = (groupId: string) => `tab-group:${groupId}`;
+const workspaceTabGroupItemKey = (groupId: string) => `tab-group:${groupId}`;
 
 /**
  * Lays out the strip: each group gets a header chip before its first tab.
