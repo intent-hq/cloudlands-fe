@@ -207,7 +207,12 @@
   import type { Workspace, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
-  import { extractAttachmentBlocks, buildWorkspaceContextString } from './composer-submission';
+  import {
+    extractAttachmentBlocks,
+    buildWorkspaceContextString,
+    planChatSend,
+    type ChatSendSource,
+  } from './composer-submission';
   import {
     browserCaptureTargetsAgent,
     browserCaptureToContextItems,
@@ -5889,14 +5894,9 @@
   // references by the send saga before the wire call.
 
   // Handle sending messages
-  function handleSend(text: string, { fromComposer = false }: { fromComposer?: boolean } = {}) {
+  function handleSend(text: string, source: ChatSendSource) {
     // Gather DOM state only. Validation, queue decisions, serialization,
     // shared/domain cleanup, and send side effects live in sagas.
-    const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
-    const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    // Only the composer's own text has picked chips; a suggested prompt's
-    // text carries no record, so its paths keep the guessed chips.
-    const pickedMentions = fromComposer ? inputComponent?.getPickedMentionsMetadata?.() : undefined;
     if (!workspace || !isActive) {
       logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
         agentId,
@@ -5907,17 +5907,21 @@
     }
     flushPendingDraftWrite();
 
-    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString(
-      allContextItems,
-      selectCheckedPanels.select(appStore.state),
-      selectCheckedSelections.select(appStore.state),
-    );
-    const noteIds = selectCheckedNoteIds.select(appStore.state);
-
-    const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    // A suggested prompt sends bare and leaves the composer intact; only a
+    // composer submit reads (and afterwards clears) the composer's context.
+    const plan = planChatSend(source, text, () => ({
+      contextItems: [
+        ...getContextItems(),
+        ...(inputComponent?.getInlineImageContextItems?.() ?? []),
+        ...(inputComponent?.getMentionContextItems?.() ?? []),
+      ],
+      checkedPanels: selectCheckedPanels.select(appStore.state),
+      checkedSelections: selectCheckedSelections.select(appStore.state),
+      noteIds: selectCheckedNoteIds.select(appStore.state),
+      pickedMentions: inputComponent?.getPickedMentionsMetadata?.(),
+    }));
     const userAppMessageId = createAppMessageId();
-    const animateSend = !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0;
+    const animateSend = !$agentIsResponding$ && !plan.hasAttachments;
 
     // Dispatch all orchestration to the send-message saga
     if (
@@ -5925,12 +5929,7 @@
         wsId: workspace.id,
         text,
         userAppMessageId,
-        contextItems: allContextItems,
-        workspaceContextStr,
-        noteIds,
-        ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
-        ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
-        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
+        ...plan.fields,
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
@@ -5944,11 +5943,7 @@
       userAppMessageId,
     });
 
-    void performLocalSendCleanup({
-      clearInput: true,
-      followBottom: true,
-      historyText: text,
-    });
+    void performLocalSendCleanup(plan.cleanup);
   }
 
   // Handle stopping the current generation
@@ -6261,9 +6256,10 @@
     // delegates) or by the edit-regenerate saga it delegates to.
   }
 
-  // Handle selecting a suggested prompt - sends immediately
+  // Handle selecting a suggested prompt (click, Ctrl/Alt+1-3, starter
+  // prompts) - sends the prompt bare and keeps the composer draft intact.
   function handleSelectSuggestedPrompt(prompt: string) {
-    handleSend(prompt);
+    handleSend(prompt, 'suggested-prompt');
   }
 
   function isSuggestedPromptShortcutVisible(index: number): boolean {
@@ -8028,7 +8024,7 @@
                       scheduleDraftWrite(value);
                       reportTypingActivity(value);
                     }}
-                    onsubmit={(text: string) => handleSend(text, { fromComposer: true })}
+                    onsubmit={(text: string) => handleSend(text, 'composer')}
                     onforcesubmit={(text: string) => handleForceSubmit(text)}
                     onstop={handleStop}
                     onHistoryPrev={handleHistoryPrev}
