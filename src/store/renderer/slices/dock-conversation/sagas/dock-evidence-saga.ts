@@ -614,7 +614,11 @@ function* toggleAnnotation({
   // in the recording's own tool bar. Only when no recording can start (limit,
   // permission, unavailable) does it annotate without one.
   if (!stillImageId) {
-    yield* toggleRecording(dockEvidenceRecordToggleRequested(workspaceId, agentId));
+    // A live recording is never toggled here (that would stop it): its tool bar
+    // session comes back instead. A recording starts only when none is running.
+    if (recordingDockClip(evidenceOf(workspaceId, agentId)))
+      yield* openRecordingBar(workspaceId, agentId);
+    else yield* toggleRecording(dockEvidenceRecordToggleRequested(workspaceId, agentId));
     if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
       yield* drawInRecording(workspaceId, agentId);
       return;
