@@ -20,7 +20,6 @@
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
-  import { stableShuffleOrder, type StableShuffleCache } from '../utils/stable-shuffle-order';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
@@ -150,26 +149,10 @@
   const enabledProviders$ = selectEnabledProviders();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
-  /** Cache carrying the per-mount shuffled id order across catalog
-   *  re-emissions. Deliberately non-reactive: it is bookkeeping for
-   *  `stableShuffleOrder`, not render state. */
-  let shuffleCache: StableShuffleCache | null = null;
-
-  /** Randomized provider order — shuffled once per catalog id set. The
-   *  catalog selector emits fresh array references (and fully re-hydrates on
-   *  every daemon reconnect), so the shuffle is keyed on the id set: same-id
-   *  re-emissions map the current entry objects into the cached shuffled
-   *  order; only an added/removed provider id draws a new shuffle. */
-  const randomizedProviderOrder = $derived.by(() => {
-    const result = stableShuffleOrder($catalogEntries$, shuffleCache);
-    shuffleCache = result.cache;
-    return result.entries;
-  });
-
   /** Visible providers (not hidden by env var / feature code gates),
    *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
-   *  not-installed) from the last-known statuses, preserving the mount-time
-   *  shuffle within each tier. Tier 1 requires `authenticated === true` — a
+   *  not-installed) from the last-known statuses, then Claude Code, Codex
+   *  and the rest in catalog order within each tier. Tier 1 requires `authenticated === true` — a
    *  stricter bar than `isProviderReady`, which counts unknown auth as ready. */
   const visibleProviders = $derived.by(() => {
     const state = appStore.state;
@@ -177,7 +160,7 @@
     const statusMap = $providerStatusMap$;
     const loadingMap = $providerLoadingMap$;
     const hasCheckedOnce = $hasCheckedOnce$;
-    return orderOnboardingProviders(randomizedProviderOrder, statusMap)
+    return orderOnboardingProviders($catalogEntries$, statusMap)
       .filter((p) =>
         // Feature-code gate + env-var gate (via availability status, default-deny)
         isOnboardingProviderVisible({
