@@ -172,6 +172,9 @@ export async function renderDockMediaImage(
     original.context.drawImage(bitmap, 0, 0);
     if (edit.blurRegions.length) {
       const blurred = canvas(source.width, source.height);
+      // An opaque backing prevents filtered edge alpha from exposing sharp source pixels.
+      blurred.context.fillStyle = '#000000';
+      blurred.context.fillRect(0, 0, source.width, source.height);
       const filter = `blur(${DOCK_MEDIA_PAINT.blurRadius}px)`;
       blurred.context.filter = filter;
       if (blurred.context.filter !== filter) throw new Error('capture-blur-unavailable');
