@@ -15,6 +15,7 @@
   import { setChatAuroraEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { selectDockConversationView } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { openDockConversationRequested } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
+  import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
   import { installSyntheticNative } from './dock-composer-e2e.preview-fixtures';
   let ready = $state(false);
   let {
@@ -27,6 +28,8 @@
     syntheticNative = false,
     operationalHistory = 0,
     routeFrame = false,
+    workspaceId = conversationWireWorkspace,
+    withoutAgents = false,
   }: {
     width?: number;
     height?: number;
@@ -43,6 +46,10 @@
      * shell that reveals from a scaled, clipped notch (button: Reveal synthetic dock).
      */
     routeFrame?: boolean;
+    /** Workspace to open, e.g. the virtual Assistant workspace. */
+    workspaceId?: string;
+    /** List no agents until the Publish synthetic agents button. */
+    withoutAgents?: boolean;
   } = $props();
   let surfaceActive = $state(true);
   let revealed = $state(!routeFrame);
@@ -58,7 +65,14 @@
       (call) => {
         calls = [...calls, call];
       },
-      { failPlacementOnce, initialMessage, dockAppearance, operationalHistory },
+      {
+        failPlacementOnce,
+        initialMessage,
+        dockAppearance,
+        operationalHistory,
+        workspaceId,
+        withoutAgents,
+      },
     );
     const stopState = store.getReadableState().subscribe((state) => {
       diagnostic = JSON.stringify({
@@ -67,7 +81,7 @@
         chat: state.chatState.byAgentId,
       });
     });
-    store.dispatch(openDockConversationRequested(conversationWireWorkspace));
+    store.dispatch(openDockConversationRequested(workspaceId));
     ready = true;
     return () => {
       stopState();
@@ -87,7 +101,7 @@
 >
   {#snippet surface()}
     {#if ready}<DockConversationSurface
-        workspaceId={conversationWireWorkspace}
+        {workspaceId}
         active={surfaceActive}
         onRegionsChange={(value) => (regions = value)}
         ><DockConversation
@@ -146,9 +160,14 @@
   >
   <button onclick={() => (surfaceActive = !surfaceActive)}>Toggle synthetic surface activity</button
   >
-  <button onclick={() => store.dispatch(openDockConversationRequested(conversationWireWorkspace))}
+  <button onclick={() => store.dispatch(openDockConversationRequested(workspaceId))}
     >Reopen synthetic workspace</button
   >
+  <!-- A background workspace.list refresh: the daemon list never carries the virtual Assistant. -->
+  <button onclick={() => store.dispatch(replaceWorkspaceList([]))}
+    >Refresh synthetic workspace list</button
+  >
+  <button onclick={() => fixture.publishAgents()}>Publish synthetic agents</button>
   <button onclick={() => fixture.askQuestions()}>Publish synthetic questions</button>
   <button onclick={() => fixture.askQuestions(true)}>Publish older synthetic questions</button>
   <button onclick={() => fixture.failNextDismissal()}>Reject next synthetic dismissal</button>
