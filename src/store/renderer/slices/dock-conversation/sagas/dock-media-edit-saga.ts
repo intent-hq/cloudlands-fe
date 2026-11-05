@@ -7,6 +7,7 @@ import {
   actionChannel,
   call,
   delay,
+  fork,
   put,
   race,
   take,
@@ -216,6 +217,25 @@ function publishedMediaItem(workspaceId: string, agentId: string, logicalId: str
   return item?.attachmentId === expected.source.attachmentId && item.path === expected.source.path ? item : null;
 }
 
+function* analyzeAndPublish(workspaceId: string, agentId: string, logicalId: string, authority: string): SagaGenerator<void> {
+  const service = dockMediaNativeService();
+  const row = evidenceOf(workspaceId, agentId)?.clips.find((entry) => entry.id === logicalId);
+  const initial = row?.media;
+  if (!initial || !service?.analyzeMedia || initial.source.audio !== 'available') return;
+  const jobId = crypto.randomUUID();
+  try {
+    const result = yield* call(() => service.analyzeMedia!({ jobId, media: initial }));
+    if (!result.ok || authority !== getPrincipalActionContext(store.state) || service !== dockMediaNativeService()) return;
+    const live = evidenceOf(workspaceId, agentId)?.clips.find((entry) => entry.id === logicalId)?.media;
+    if (!live || JSON.stringify(live.source) !== JSON.stringify(initial.source) ||
+        !publishedMediaItem(workspaceId, agentId, logicalId, live, row?.contextItemId) ||
+        result.value.sourceId !== live.source.id || result.value.sourceRevision !== live.source.revision) return;
+    yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.WAVEFORM_UPDATE,
+      { pair: { workspaceId, agentId }, sourceId: live.source.id, sourceRevision: live.source.revision, waveform: result.value }));
+  } catch { /* Missing/failed audio is left unavailable; never draw invented peaks. */ }
+  finally { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
+}
+
 function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: string, authority: string): SagaGenerator<void> {
   const service = dockMediaNativeService();
   const initial = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId)?.media;
@@ -304,6 +324,7 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
       marks: [], source, saved: media.saved, transcript: media.transcript,
     };
     yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request));
+    yield* fork(analyzeAndPublish, workspaceId, agentId, logicalId, authority);
     yield* recognizeAndPersist(workspaceId, agentId, logicalId, authority);
   } finally { settled.close(); yield* put(chatDraftOwnerReleased(ownerId)); }
 }

@@ -1,4 +1,5 @@
 {
+  "dock_conversation_nothingToSend_error": "沒有可傳送的內容。請加入影片片段、逐字稿、附件或訊息。",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "acceptChanges_backgroundGit_commitFailed_error": "提交失敗",
   "acceptChanges_backgroundGit_commitMessageRequired_error": "提交資訊為必填項",

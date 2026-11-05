@@ -1,4 +1,5 @@
 {
+  "dock_conversation_nothingToSend_error": "Rien à envoyer. Ajoutez un clip, une transcription, une pièce jointe ou un message.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "acceptChanges_backgroundGit_commitFailed_error": "Échec de la validation",
   "acceptChanges_backgroundGit_commitMessageRequired_error": "Le message de commit est requis",

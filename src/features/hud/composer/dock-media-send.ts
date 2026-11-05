@@ -51,6 +51,11 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
         output.images[row.id] = await renderDockMediaImage(source, edit, pixels);
         check();
       } else {
+        if (!plan.clips.length) {
+          meta.video_attachment_id = null; meta.frames = []; meta.kept_ms = [];
+          output.metadata.push(meta);
+          continue;
+        }
         if (!service?.exportMedia) throw new Error('media-export-unavailable');
         const boundaries = [...new Set([0, source.durationMs, ...plan.marks.flatMap((entry) => [entry.frameAtMs, entry.visibleUntilMs])])].sort((a, b) => a - b);
         const spans = boundaries.slice(0, -1).map((atMs, index) => ({ atMs, endMs: boundaries[index + 1] }))
