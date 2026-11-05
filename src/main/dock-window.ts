@@ -48,8 +48,12 @@ let pointerState: { active: boolean; regions: DockPointerRect[]; revision?: numb
 };
 let sessionPaused = false;
 const captureHiddenWindows = new WeakSet<BrowserWindow>();
-/** Out of sight while a recording runs: transparent and click-through, still on screen. */
-const recordingHiddenWindows = new WeakSet<BrowserWindow>();
+/**
+ * The recording that keeps the dock out of sight (transparent, click-through and not
+ * focusable, still shown): only that clip, on that window, brings it back.
+ */
+let recordingHide: { window: BrowserWindow; clipId: string } | null = null;
+const recordingHidden = (window: BrowserWindow) => recordingHide?.window === window;
 const closingDockWindows = new WeakSet<BrowserWindow>();
 let removeLifecycleListeners: (() => void) | null = null;
 let backendRefreshSequence: Promise<void> = Promise.resolve();
@@ -160,7 +164,7 @@ export function setDockPointerRegions(
   if (snapshot && state.revision !== snapshot.revision) return false;
   pointerState = state;
   try {
-    if (recordingHiddenWindows.has(window)) {
+    if (recordingHidden(window)) {
       applyPointerRouting(window, true);
       updateNativeCursor(window, false);
       return true;
@@ -812,27 +816,55 @@ export function setDockHiddenForCapture(
 
 /**
  * Keeps the dock out of sight while a recording runs (its tool bar is the control
- * then) and brings it back when the recording ends. The window stays shown, only
- * transparent and click-through: the recording's capture and its mark images keep
- * their usual rules (the dock is excluded from both either way), and nothing in the
- * dock's document is torn down.
+ * then). The window stays shown, only transparent, click-through and not focusable:
+ * the recording's capture and its mark images keep their usual rules (the dock is
+ * excluded from both either way), and its document, draft and owner stay mounted.
+ * Held by one clip on one window; only that clip's end brings it back.
  */
-export function setDockHiddenForRecording(hidden: boolean): void {
-  const window = getDockWindow();
-  if (!window || recordingHiddenWindows.has(window) === hidden) return;
-  if (hidden) {
-    recordingHiddenWindows.add(window);
-    placementController?.cancelInteraction();
-    window.setOpacity(0);
-    applyPointerRouting(window, true);
-    return;
-  }
-  recordingHiddenWindows.delete(window);
+export function hideDockForRecording(window: BrowserWindow, clipId: string): void {
+  if (window !== getDockWindow() || window.isDestroyed()) return;
+  if (recordingHide && recordingHide.window !== window) restoreRecordingHide();
+  recordingHide = { window, clipId };
+  placementController?.cancelInteraction();
+  // Leave now: the renderer collapses (and drops its focus) rather than stay "hovered"
+  // behind a transparent window that no longer reports presence.
+  presenceFor(window).update({
+    inside: false,
+    x: -1,
+    y: -1,
+    revision: pointerState.revision,
+    suppressed: false,
+  });
+  lastForwardedMove.delete(window);
+  // Never type into an invisible prompt: the dock cannot be key while hidden.
+  const hadFocus = window.isFocused();
+  window.setFocusable(false);
+  if (hadFocus) window.blur();
+  window.setOpacity(0);
+  applyPointerRouting(window, true);
+}
+
+/** The clip that hid the dock ended (however it ended): bring the dock back. */
+export function releaseDockRecordingHide(clipId: string): void {
+  if (recordingHide?.clipId === clipId) restoreRecordingHide();
+}
+
+function restoreRecordingHide(): void {
+  const held = recordingHide;
+  recordingHide = null;
+  if (!held || held.window.isDestroyed()) return;
+  const { window } = held;
+  // Focusable again, never focused: the person's current window keeps the keyboard.
+  window.setFocusable(true);
   window.setOpacity(1);
+  // `blur` may have ordered it back within its level; up front again, still not key.
+  window.moveTop();
   window.webContents.invalidate();
-  // Re-route at once from the live cursor.
+  presenceFor(window).reset();
+  lastForwardedMove.delete(window);
+  // Re-route at once from the live cursor (an enter is sent if it is over the dock).
   appliedPointerRouting.delete(window);
-  setDockPointerRegions(window, pointerState);
+  if (window === dockWindowRef) setDockPointerRegions(window, pointerState);
 }
 
 /**

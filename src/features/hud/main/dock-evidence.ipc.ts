@@ -28,7 +28,8 @@ import {
   getDockVisibleSurfaceBounds,
   getDockVisibleSurfaceRegions,
   getDockWindow,
-  setDockHiddenForRecording,
+  hideDockForRecording,
+  releaseDockRecordingHide,
 } from '../../../main/dock-window';
 import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import {
@@ -327,8 +328,8 @@ function createMediaBinder() {
   });
   dockEvidenceRecorder.onEnded((clipId, result) => {
     dockAnnotationController.setRecordingSignal(null);
-    // The notch comes back when the recording ends, however it ended.
-    setDockHiddenForRecording(false);
+    // The notch comes back when the clip that hid it ends, however it ended.
+    releaseDockRecordingHide(clipId);
     for (const state of sessions.values())
       if (state.clipId === clipId) {
         state.clipEnded = true;
@@ -677,8 +678,15 @@ function createMediaBinder() {
           clipStartPending = false;
         }
         if (!result.ok) state.clipEnded = true;
-        // Out of sight while it records; its tool bar is the control.
-        else setDockHiddenForRecording(true);
+        // Out of sight while it records (its tool bar is the control), only for a clip
+        // still current on the session's own dock window.
+        else if (
+          current() &&
+          state.clipId === control.clipId &&
+          !state.clipEnded &&
+          state.context.window === getDockWindow()
+        )
+          hideDockForRecording(state.context.window, control.clipId);
         break;
       }
       case 'clip-pause':
