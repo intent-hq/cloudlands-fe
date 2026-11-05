@@ -1,4 +1,5 @@
 {
+  "dock_conversation_nothingToSend_error": "Nichts zu senden. Füge einen Clip, ein Transkript, einen Anhang oder eine Nachricht hinzu.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "acceptChanges_backgroundGit_commitFailed_error": "Committen fehlgeschlagen",
   "acceptChanges_backgroundGit_commitMessageRequired_error": "Commit-Nachricht ist erforderlich",

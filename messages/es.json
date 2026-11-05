@@ -1,4 +1,5 @@
 {
+  "dock_conversation_nothingToSend_error": "No hay nada que enviar. Incluye un clip, una transcripción, un archivo adjunto o un mensaje.",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "acceptChanges_backgroundGit_commitFailed_error": "Error al confirmar",
   "acceptChanges_backgroundGit_commitMessageRequired_error": "Se requiere el mensaje de commit",

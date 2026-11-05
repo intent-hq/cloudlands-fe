@@ -1,4 +1,5 @@
 {
+  "dock_conversation_nothingToSend_error": "送信する内容がありません。クリップ、文字起こし、添付ファイル、またはメッセージを追加してください。",
   "$schema": "https://inlang.com/schema/inlang-message-format",
   "acceptChanges_backgroundGit_commitFailed_error": "コミットできませんでした",
   "acceptChanges_backgroundGit_commitMessageRequired_error": "コミットメッセージは必須です",
