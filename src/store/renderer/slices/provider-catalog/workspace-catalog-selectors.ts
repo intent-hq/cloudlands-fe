@@ -97,9 +97,7 @@ export const selectContextListedProviderIds = store.createSelector(
     const gates = { cursorLabEnabled: selectLabsCursorProviderEnabled.select(state) };
     return selectContextProviderEntries
       .select(state, workspaceId)
-      .filter((p) =>
-        isProviderListed(p.id, status[p.id]?.available, enabled[p.id] === true, gates),
-      )
+      .filter((p) => isProviderListed(p.id, status[p.id]?.available, enabled[p.id] === true, gates))
       .map((p) => p.id);
   },
 );

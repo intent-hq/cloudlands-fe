@@ -143,8 +143,10 @@ describe('groupProviderEntries', () => {
     };
     expect(groupProviderEntries([entry('cursor', 'Cursor')], options).supported).toEqual([]);
     expect(
-      groupProviderEntries([entry('cursor', 'Cursor')], { ...options, cursorLabEnabled: true })
-        .supported.map((p) => p.id),
+      groupProviderEntries([entry('cursor', 'Cursor')], {
+        ...options,
+        cursorLabEnabled: true,
+      }).supported.map((p) => p.id),
     ).toEqual(['cursor']);
   });
 

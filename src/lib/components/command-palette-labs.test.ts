@@ -64,9 +64,15 @@ describe('command palette Labs commands', () => {
 
   it('hides the Cursor command matching its current value', () => {
     expect(isLabCommandHidden('enable-experimental-cursor', false, false, false, true)).toBe(true);
-    expect(isLabCommandHidden('disable-experimental-cursor', false, false, false, true)).toBe(false);
-    expect(isLabCommandHidden('disable-experimental-cursor', false, false, false, false)).toBe(true);
-    expect(isLabCommandHidden('enable-experimental-cursor', false, false, false, false)).toBe(false);
+    expect(isLabCommandHidden('disable-experimental-cursor', false, false, false, true)).toBe(
+      false,
+    );
+    expect(isLabCommandHidden('disable-experimental-cursor', false, false, false, false)).toBe(
+      true,
+    );
+    expect(isLabCommandHidden('enable-experimental-cursor', false, false, false, false)).toBe(
+      false,
+    );
   });
 
   it('turns the Cursor lab on and off without touching providers.enabled', () => {

@@ -159,7 +159,9 @@ describe('provider-status-bridge-seeder', () => {
     async (authenticated) => {
       routeDaemon({
         'host.providerDiscovery': {
-          providers: [{ id: 'cursor', installed: true, resolvedPath: '/usr/local/bin/cursor-agent' }],
+          providers: [
+            { id: 'cursor', installed: true, resolvedPath: '/usr/local/bin/cursor-agent' },
+          ],
         },
         'host.providerAuthStatus': authOne('cursor', authenticated),
       });

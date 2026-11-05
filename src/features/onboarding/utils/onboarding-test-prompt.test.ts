@@ -40,7 +40,9 @@ describe('shouldRunOnboardingTestPrompt', () => {
 
   it('keeps Claude Code independent of the Cursor lab', () => {
     expect(
-      shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: true }), { cursorLabEnabled: false }),
+      shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: true }), {
+        cursorLabEnabled: false,
+      }),
     ).toBe(true);
   });
 
