@@ -124,6 +124,12 @@
   --theme-light-agent-avatar-surface-failed: 0 72% 62%;
   --theme-light-agent-avatar-surface-active: 66.892 71.845% 59.608%;
   --theme-light-workspace-status-unread: 217.2 91.2% 59.8%;
+  --theme-light-tab-group-blue: 221 83% 53%;
+  --theme-light-tab-group-green: 145 48% 38%;
+  --theme-light-tab-group-purple: 262 70% 60%;
+  --theme-light-tab-group-orange: 27 85% 50%;
+  --theme-light-tab-group-pink: 330 70% 52%;
+  --theme-light-tab-group-grey: 0 0% 46%;
   --theme-light-agent-avatar-surface-waiting: 263.2 74.257% 80.196%;
 
   --theme-dark-background: 0 0% 10.1960784314%;
@@ -168,6 +174,12 @@
   --theme-dark-agent-avatar-surface-failed: 0 79% 70%;
   --theme-dark-agent-avatar-surface-active: 67 78% 68%;
   --theme-dark-workspace-status-unread: 213.1 93.9% 67.8%;
+  --theme-dark-tab-group-blue: 217 91% 66%;
+  --theme-dark-tab-group-green: 145 50% 55%;
+  --theme-dark-tab-group-purple: 262 85% 75%;
+  --theme-dark-tab-group-orange: 30 92% 62%;
+  --theme-dark-tab-group-pink: 330 80% 68%;
+  --theme-dark-tab-group-grey: 0 0% 64%;
   --theme-dark-agent-avatar-surface-waiting: 259.024 64.063% 74.902%;
   --theme-light-overlay: 0 0 0;
   --theme-light-hover: rgb(var(--theme-light-overlay) / 0.04);
@@ -322,6 +334,12 @@
   --theme-agent-avatar-surface-failed: var(--theme-light-agent-avatar-surface-failed);
   --theme-agent-avatar-surface-active: var(--theme-light-agent-avatar-surface-active);
   --theme-workspace-status-unread: var(--theme-light-workspace-status-unread);
+  --theme-tab-group-blue: var(--theme-light-tab-group-blue);
+  --theme-tab-group-green: var(--theme-light-tab-group-green);
+  --theme-tab-group-purple: var(--theme-light-tab-group-purple);
+  --theme-tab-group-orange: var(--theme-light-tab-group-orange);
+  --theme-tab-group-pink: var(--theme-light-tab-group-pink);
+  --theme-tab-group-grey: var(--theme-light-tab-group-grey);
   --theme-agent-avatar-surface-waiting: var(--theme-light-agent-avatar-surface-waiting);
   --theme-surface-1: var(--theme-light-surface-1);
   --theme-surface-2: var(--theme-light-surface-2);
@@ -415,6 +433,12 @@
   --agent-avatar-surface-failed: var(--theme-agent-avatar-surface-failed);
   --agent-avatar-surface-active: var(--theme-agent-avatar-surface-active);
   --workspace-status-unread: var(--theme-workspace-status-unread);
+  --tab-group-blue: var(--theme-tab-group-blue);
+  --tab-group-green: var(--theme-tab-group-green);
+  --tab-group-purple: var(--theme-tab-group-purple);
+  --tab-group-orange: var(--theme-tab-group-orange);
+  --tab-group-pink: var(--theme-tab-group-pink);
+  --tab-group-grey: var(--theme-tab-group-grey);
   --agent-avatar-surface-waiting: var(--theme-agent-avatar-surface-waiting);
   --agent-avatar-compact-surface-size: 16px;
   --agent-avatar-compact-art-size: 14px;
@@ -683,6 +707,12 @@
   --theme-agent-avatar-surface-failed: var(--theme-dark-agent-avatar-surface-failed);
   --theme-agent-avatar-surface-active: var(--theme-dark-agent-avatar-surface-active);
   --theme-workspace-status-unread: var(--theme-dark-workspace-status-unread);
+  --theme-tab-group-blue: var(--theme-dark-tab-group-blue);
+  --theme-tab-group-green: var(--theme-dark-tab-group-green);
+  --theme-tab-group-purple: var(--theme-dark-tab-group-purple);
+  --theme-tab-group-orange: var(--theme-dark-tab-group-orange);
+  --theme-tab-group-pink: var(--theme-dark-tab-group-pink);
+  --theme-tab-group-grey: var(--theme-dark-tab-group-grey);
   --theme-agent-avatar-surface-waiting: var(--theme-dark-agent-avatar-surface-waiting);
   --theme-surface-1: var(--theme-dark-surface-1);
   --theme-surface-2: var(--theme-dark-surface-2);

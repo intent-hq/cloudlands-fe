@@ -25,12 +25,23 @@
     type WorkspaceStatusPresentationState,
   } from '$lib/components/workspace/utils/workspace-status-presentation';
   import {
+    addWorkspaceTabToGroup,
     closeWorkspaceTab,
+    createWorkspaceTabGroup,
     endDrag,
     moveWorkspace,
     openWorkspaceTab,
+    removeWorkspaceTabFromGroup,
     startDrag,
+    ungroupWorkspaceTabGroup,
+    updateWorkspaceTabGroup,
   } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
+    applyWorkspaceTabMove,
+    findWorkspaceTabGroup,
+    nextWorkspaceTabGroupColor,
+    resolveMovedWorkspaceTabGroups,
+  } from '$store/renderer/slices/tab-state/tab-groups';
   import {
     getReleasedWorkspaceTabMove,
     getWorkspaceTabAutoScrollDelta,
@@ -40,6 +51,7 @@
   } from '$lib/components/workspace/utils/workspace-tab-drag';
   import {
     selectCurrentWorkspaceTabId,
+    selectWorkspaceTabGroups,
     selectWorkspaceTabOrder,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
   import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
@@ -61,6 +73,15 @@
   } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
+  import WorkspaceTabGroupChip from './WorkspaceTabGroupChip.svelte';
+  import {
+    buildWorkspaceTabGroupEntries,
+    buildWorkspaceTabGroupMenu,
+  } from './workspace-tab-group-actions';
+  import {
+    buildWorkspaceTabStripItems,
+    getWorkspaceTabGroupToggleTarget,
+  } from './workspace-tab-group-items';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
     WORKSPACE_TAB_CORNER_RADIUS_PX,
@@ -96,6 +117,8 @@
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
+  const workspaceTabGroups$ = selectWorkspaceTabGroups();
+  let editingGroupId = $state<string | null>(null);
   let workspaceHoverCardOpenDelay = $state(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
   const openWorkspaceHoverCardIds = new Set<string>();
   const pointerOpenEligibleWorkspaceHoverCardIds = new Set<string>();
@@ -110,7 +133,10 @@
   );
   const visibleTabIds = $derived($workspaceTabOrder$);
   interface WorkspaceTabDragSession {
+    /** Visible tabs at drag start; hidden tabs of collapsed groups are left out. */
     originalOrder: string[];
+    /** Every tab at drag start, in store order. */
+    fullOrder: string[];
     pointerOffsetX: number;
     origin: { left: number; top: number; width: number; height: number };
     slots: WorkspaceTabSlot[];
@@ -138,6 +164,20 @@
     activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId,
   );
   const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
+  const openGroupId = $derived(
+    findWorkspaceTabGroup($workspaceTabGroups$, selectedWorkspaceId)?.id ?? null,
+  );
+  const renderedGroups = $derived(
+    draggedWorkspaceId && proposedTabOrder
+      ? resolveMovedWorkspaceTabGroups(proposedTabOrder, $workspaceTabGroups$, draggedWorkspaceId)
+      : $workspaceTabGroups$,
+  );
+  const stripItems = $derived(
+    buildWorkspaceTabStripItems(renderedTabOrder, renderedGroups, openGroupId),
+  );
+  const renderedTabIds = $derived(
+    stripItems.flatMap((item) => (item.kind === 'tab' ? [item.workspaceId] : [])),
+  );
   const workspaceTabMotionDuration = $derived(
     reducedMotion.current ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
   );
@@ -159,7 +199,7 @@
       : 'black 100%';
     return `linear-gradient(to right, ${leftStops}, ${rightStops})`;
   });
-  const ownedTabIds = $derived(renderedTabOrder.map((id) => `workspace-tab-${id}`).join(' '));
+  const ownedTabIds = $derived(renderedTabIds.map((id) => `workspace-tab-${id}`).join(' '));
   let tabButtons = $state<Record<string, HTMLButtonElement | null>>({});
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
@@ -171,23 +211,86 @@
   let layoutTracking = false;
   let dragTracking = false;
   let scrollTracking = false;
-  let tabContextMenu = $state<(SidebarContextPosition & { workspaceId: string }) | null>(null);
+  type TabContextMenuTarget = { kind: 'tab'; workspaceId: string } | { kind: 'group'; groupId: string };
+  let tabContextMenu = $state<(SidebarContextPosition & TabContextMenuTarget) | null>(null);
   $effect(() => {
-    if (tabContextMenu && !visibleTabIds.includes(tabContextMenu.workspaceId))
-      tabContextMenu = null;
+    const menu = tabContextMenu;
+    if (!menu) return;
+    const stillPresent =
+      menu.kind === 'tab'
+        ? visibleTabIds.includes(menu.workspaceId)
+        : $workspaceTabGroups$.some((group) => group.id === menu.groupId);
+    if (!stillPresent) tabContextMenu = null;
   });
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
-    if (!tabContextMenu) return [];
-    const { workspaceId } = tabContextMenu;
-    return buildWorkspaceTabContextMenu({
-      order: $workspaceTabOrder$,
+    const menu = tabContextMenu;
+    if (!menu) return [];
+    if (menu.kind === 'group') {
+      const group = $workspaceTabGroups$.find((candidate) => candidate.id === menu.groupId);
+      if (!group) return [];
+      return buildWorkspaceTabGroupMenu({
+        group,
+        onRename: () => (editingGroupId = group.id),
+        onSetColor: (color) => appStore.dispatch(updateWorkspaceTabGroup(group.id, { color })),
+        onUngroup: () => appStore.dispatch(ungroupWorkspaceTabGroup(group.id)),
+        onCloseGroup: () => closeWorkspaceTabs([...group.workspaceIds]),
+      });
+    }
+    const { workspaceId } = menu;
+    const groupEntries = buildWorkspaceTabGroupEntries({
+      groups: $workspaceTabGroups$,
       workspaceId,
-      onClose: () => closeWorkspace(workspaceId),
-      onCloseTabs: closeWorkspaceTabs,
-      microConnected: $microConnected$,
-      onDismiss: () => (tabContextMenu = null),
+      onCreateGroup: () => createGroupForTab(workspaceId),
+      onAddToGroup: (groupId) => appStore.dispatch(addWorkspaceTabToGroup(workspaceId, groupId)),
+      onRemoveFromGroup: () => appStore.dispatch(removeWorkspaceTabFromGroup(workspaceId)),
     });
+    return [
+      ...groupEntries,
+      { type: 'separator' },
+      ...buildWorkspaceTabContextMenu({
+        order: $workspaceTabOrder$,
+        workspaceId,
+        onClose: () => closeWorkspace(workspaceId),
+        onCloseTabs: closeWorkspaceTabs,
+        microConnected: $microConnected$,
+        onDismiss: () => (tabContextMenu = null),
+      }),
+    ];
   });
+
+  function createGroupForTab(workspaceId: string) {
+    const groupId = crypto.randomUUID();
+    appStore.dispatch(
+      createWorkspaceTabGroup(
+        workspaceId,
+        groupId,
+        nextWorkspaceTabGroupColor(selectWorkspaceTabGroups.select(appStore.state)),
+      ),
+    );
+    editingGroupId = groupId;
+  }
+
+  function toggleWorkspaceTabGroup(groupId: string) {
+    const target = getWorkspaceTabGroupToggleTarget(
+      selectWorkspaceTabOrder.select(appStore.state),
+      selectWorkspaceTabGroups.select(appStore.state),
+      groupId,
+      selectedWorkspaceId,
+    );
+    if (target) void openWorkspace(target);
+  }
+
+  function commitGroupName(groupId: string, name: string) {
+    appStore.dispatch(updateWorkspaceTabGroup(groupId, { name }));
+    editingGroupId = null;
+  }
+
+  function handleGroupContextMenu(event: MouseEvent | KeyboardEvent, groupId: string) {
+    const position = getSidebarContextPosition(event);
+    if (!position) return;
+    cancelPointerDrag();
+    tabContextMenu = { ...position, kind: 'group', groupId };
+  }
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
   const reportActiveTabTracking = ({ sync = true } = {}) =>
     run(sync, () => onActiveTabTrackingChange?.(layoutTracking || dragTracking || scrollTracking));
@@ -587,7 +690,12 @@
     const position = getSidebarContextPosition(event);
     if (!position) return;
     cancelPointerDrag();
-    tabContextMenu = { ...position, workspaceId, returnFocus: tabButtons[workspaceId] ?? null };
+    tabContextMenu = {
+      ...position,
+      kind: 'tab',
+      workspaceId,
+      returnFocus: tabButtons[workspaceId] ?? null,
+    };
   }
 
   function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {
@@ -676,11 +784,24 @@
       dragSession.origin.width,
       slots,
     );
-    const nextOrder = proposeWorkspaceTabOrder(
+    const nextVisibleOrder = proposeWorkspaceTabOrder(
       dragSession.originalOrder,
       draggedWorkspaceId,
       insertionIndex,
     );
+    const visibleMove = getReleasedWorkspaceTabMove(
+      dragSession.originalOrder,
+      nextVisibleOrder,
+      draggedWorkspaceId,
+    );
+    const nextOrder = visibleMove
+      ? applyWorkspaceTabMove(
+          dragSession.fullOrder,
+          draggedWorkspaceId,
+          visibleMove.targetId,
+          visibleMove.placement,
+        )
+      : dragSession.fullOrder;
     if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder)) {
       proposedTabOrder = nextOrder;
     }
@@ -739,12 +860,14 @@
 
   function startPointerDrag(pointerGrab: WorkspaceTabPointerGrab, clientX: number) {
     const rect = pointerGrab.surface.getBoundingClientRect();
-    const originalOrder = [...visibleTabIds];
+    const originalOrder = [...renderedTabIds];
+    const fullOrder = [...visibleTabIds];
     flushSync(() => (draggedWorkspaceId = pointerGrab.workspaceId));
     dragClientX = clientX;
-    proposedTabOrder = originalOrder;
+    proposedTabOrder = fullOrder;
     dragSession = {
       originalOrder,
+      fullOrder,
       pointerOffsetX: pointerGrab.pointerOffsetX,
       origin: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
       slots: originalOrder.flatMap((id) => {
@@ -794,10 +917,10 @@
 
   function releaseDraggedWorkspace() {
     if (!draggedWorkspaceId || !dragSession) return;
-    const releasedOrder = proposedTabOrder ?? dragSession.originalOrder;
+    const releasedOrder = proposedTabOrder ?? dragSession.fullOrder;
     const releasedIndex = releasedOrder.indexOf(draggedWorkspaceId);
     const move = getReleasedWorkspaceTabMove(
-      dragSession.originalOrder,
+      dragSession.fullOrder,
       releasedOrder,
       draggedWorkspaceId,
     );
@@ -906,6 +1029,8 @@
     tabindex="-1"
     style:margin-left={`${scrollerMarginLeftPx}px`}
     style:padding-left={`${getWorkspaceTabScrollerPaddingLeftPx(leadingInsetPx)}px`}
+    style:padding-top="3px"
+    style:margin-top="-3px"
     style:padding-bottom="2px"
     style:margin-bottom="-2px"
     style:mask-image={workspaceTabMaskImage}
@@ -920,13 +1045,20 @@
     onpointercancel={handleDragPointerCancel}
     onlostpointercapture={handleLostPointerCapture}
   >
-    {#each renderedTabOrder as workspaceId (workspaceId)}
-      {@const workspace = workspaceById.get(workspaceId)}
-      {@const isDragged = draggedWorkspaceId === workspaceId}
-      {@const isCurrent = workspaceId === visualActiveWorkspaceId}
+    {#each stripItems as item (item.key)}
+      {@const workspaceId = item.kind === 'tab' ? item.workspaceId : item.key}
+      {@const workspace = item.kind === 'tab' ? workspaceById.get(workspaceId) : undefined}
+      {@const isDragged = item.kind === 'tab' && draggedWorkspaceId === workspaceId}
+      {@const isCurrent = item.kind === 'tab' && workspaceId === visualActiveWorkspaceId}
       <div
-        class="w-40 max-w-[40vw] min-w-0 shrink-0"
-        data-workspace-tab-motion={workspaceId}
+        class={cn(
+          'relative min-w-0 shrink-0',
+          item.kind === 'tab'
+            ? 'w-40 max-w-[40vw]'
+            : 'flex h-(--control-height-medium) items-center px-1',
+        )}
+        data-workspace-tab-motion={item.kind === 'tab' ? workspaceId : undefined}
+        data-workspace-tab-group-slot={item.kind === 'group' ? item.group.id : undefined}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 36}px` : undefined}
         animate:flip={{
@@ -948,7 +1080,25 @@
         onintroend={() => handleTabIntroEnd(workspaceId)}
         onoutroend={() => handleTabOutroEnd(workspaceId)}
       >
-        {#if workspace}
+        {#if item.kind === 'group'}
+          {#if item.open}
+            <span
+              class="tab-group-outline"
+              data-edge="start"
+              style:--tab-group-color={`var(--tab-group-${item.group.color})`}
+              aria-hidden="true"
+            ></span>
+          {/if}
+          <WorkspaceTabGroupChip
+            group={item.group}
+            open={item.open}
+            editing={editingGroupId === item.group.id}
+            onToggle={() => toggleWorkspaceTabGroup(item.group.id)}
+            onContextMenu={(event) => handleGroupContextMenu(event, item.group.id)}
+            onRenameCommit={(name) => commitGroupName(item.group.id, name)}
+            onRenameCancel={() => (editingGroupId = null)}
+          />
+        {:else if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
           {@const tabStatus = $workspaceTabStatuses$[workspaceId]}
           {@const workspaceStatusState = resolveWorkspaceStatusState(workspace)}
@@ -1148,6 +1298,14 @@
             </Button>
           </div>
         {/if}
+        {#if item.kind === 'tab' && item.group}
+          <span
+            class="tab-group-outline"
+            data-edge={item.group.edge}
+            style:--tab-group-color={`var(--tab-group-${item.group.color})`}
+            aria-hidden="true"
+          ></span>
+        {/if}
       </div>
     {/each}
   </div>
@@ -1166,6 +1324,34 @@
 {/if}
 
 <style>
+  /* One outline around the open group, drawn as joined segments: the chip
+     starts it, member tabs continue it and the last tab ends it. The bottom
+     stays open so the selected tab still joins the panel below. */
+  .tab-group-outline {
+    position: absolute;
+    z-index: 15;
+    inset: 0 -2px 0 0;
+    border-color: hsl(var(--tab-group-color) / 0.5);
+    border-style: solid;
+    border-width: 1px 0 0;
+    box-shadow: 0 0 0 2px hsl(var(--tab-group-color) / 0.16);
+    clip-path: inset(-3px 0 0 0);
+    pointer-events: none;
+  }
+
+  .tab-group-outline[data-edge='start'] {
+    border-left-width: 1px;
+    border-top-left-radius: 9px;
+    clip-path: inset(-3px 0 0 -3px);
+  }
+
+  .tab-group-outline[data-edge='end'] {
+    right: 0;
+    border-right-width: 1px;
+    border-top-right-radius: 9px;
+    clip-path: inset(-3px -3px 0 0);
+  }
+
   [data-workspace-tab][data-active='true'] {
     border-bottom-width: 0;
     box-shadow: none;

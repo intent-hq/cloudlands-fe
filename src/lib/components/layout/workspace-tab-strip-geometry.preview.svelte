@@ -1,5 +1,6 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
+  import type { WorkspaceTabGroup } from '$store/renderer/slices/tab-state/tab-groups';
 
   export interface WorkspaceTabStripGeometryPreviewProps {
     activeWorkspaceId?: string;
@@ -7,6 +8,10 @@
     interactive?: boolean;
     zoomFactor?: number;
     fullTitlebar?: boolean;
+    /** Extra tabs (id and title) appended after the default geometry tabs. */
+    extraWorkspaces?: Array<{ id: string; title: string }>;
+    tabGroups?: WorkspaceTabGroup[];
+    widthPx?: number;
   }
 
   const ids = ['geometry-alpha', 'geometry-beta', 'geometry-gamma'];
@@ -61,6 +66,9 @@
     interactive = false,
     zoomFactor = 1,
     fullTitlebar = false,
+    extraWorkspaces = [],
+    tabGroups,
+    widthPx = 360,
   }: WorkspaceTabStripGeometryPreviewProps = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
@@ -68,10 +76,14 @@
   const leadingInsetPx = getWorkspaceTabLeadingInsetPx();
   const scrollerMarginLeftPx = getWorkspaceTabScrollerMarginLeftPx();
 
-  for (const [index, id] of ids.entries()) {
+  const previewWorkspaces = [
+    ...ids.map((id, index) => ({ id, title: `Geometry workspace ${index + 1}` })),
+    ...extraWorkspaces,
+  ];
+  for (const [index, { id, title }] of previewWorkspaces.entries()) {
     const workspace: Workspace = {
       id: WorkspaceId(id),
-      title: `Geometry workspace ${index + 1}`,
+      title,
       branch: `geometry-${index + 1}`,
       changesets: [],
       timeline: [],
@@ -91,6 +103,7 @@
         unsavedTabs: [],
         optimisticTabs: [],
         tabOrder: initialOpenWorkspaceIds,
+        tabGroups,
       }),
     );
   }
@@ -106,6 +119,7 @@
   <div
     class="window-title-bar-wrapper"
     style:height="{getCounterScaledTitlebarHeight(zoomFactor)}px"
+    style:width="{widthPx}px"
     data-titlebar-geometry-root
   >
     <div

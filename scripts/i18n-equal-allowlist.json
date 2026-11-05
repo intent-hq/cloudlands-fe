@@ -145,6 +145,8 @@
   "layout_agentTab_fontSample_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "fr", "es"],
   "layout_aiLayout_agentNumbered_fallback": ["de", "fr"],
   "layout_aiLayout_agent_fallback": ["de", "fr"],
+  "layout_workspaceTabGroup_color_label": ["es"],
+  "layout_workspaceTabGroup_color_orange_label": ["de"],
   "layout_aiLayout_note_fallback": ["fr"],
   "layout_allCard_repo_label": ["de"],
   "layout_allCard_status_label": ["de"],
