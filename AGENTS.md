@@ -567,6 +567,23 @@ with checks proving they were deleted, and do not change product tooltip behavio
 The Untitled hover test blocked unrelated delegation work and passed only on retry
 ([cloudlands-fe#3895 queue failure](https://github.com/intent-hq/cloudlands-fe/actions/runs/41907311279/job/126845579456)).
 
+#### Browser gesture choreography tests are forbidden
+
+**Never add, restore, stabilize, quarantine, or replace browser drag-and-drop or
+pointer/animation choreography tests.** This applies to component, E2E, and Electron
+suites: mouse move/down/up sequences, `dragTo`, coordinate-driven gestures, cancelled,
+Escape or outside drops, hover-triggered drag affordances, resizing, reordering, and
+mid-flight animation frame sampling or reversal sequences.
+Delete these cases and their orphan fixtures, helpers, assertions, and gesture-only
+settling waits. Split mixed tests to retain independent actions, keyboard access,
+navigation, and data contracts. Keep deterministic unit tests for ordering, persistence,
+state transitions, and payloads. Do not substitute timing waits, retries, pixel
+comparisons, or equivalent gestures. Ordinary clicks, functional hover controls,
+scrolling, and live containment/accessibility checks remain valid when independent of
+this choreography; leave production behavior unchanged.
+The Set aside drag test delayed unrelated work when opening a detail pane resized its
+coordinate target ([cloudlands-fe#3895 queue failure](https://github.com/intent-hq/cloudlands-fe/actions/runs/41957371797/job/127015576955)).
+
 #### Pixel comparison tests are forbidden
 
 **Never add, restore, run, or regenerate pixel comparison tests. There are no
@@ -641,7 +658,7 @@ layout later is also a generated appearance baseline. Review must reject equival
 custom comparisons.
 
 Keep independent behavioral assertions: content stays within its live container,
-controls remain reachable, a resize responds to user input, and scrolling preserves
+controls remain reachable, and scrolling preserves
 the user's position. Accessibility minimum target sizes are standards-based bounds,
 not decorative baselines. Small rounding tolerances may support these relationships;
 they must not pin an ornamental dimension or spacing value. Pure layout algorithm
@@ -732,8 +749,7 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   helper waits for `region` to settle, presses Enter on the action, then waits for
   `region` to change and settle (`requireChange: false` when it may not). Lint
   (`intent/no-hover-then-click-in-ct`) caps each spec's sites at its shrink-only baseline;
-  keep a pointer click, disabled on the line with the reason, only to cover the pointer
-  path on a row that cannot move.
+  retain an ordinary click only for independent control behavior on a row that cannot move.
 - Pause the fake clock: `page.clock.install()` alone keeps time moving with real time, so
   a slow step lets frame loops run past the frame a test samples (cloudlands-fe#4148:
   56 of 80 loaded runs failed). Use `installPausedClock(page, beforePause?)` or

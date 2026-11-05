@@ -53,7 +53,7 @@ test('compact header shows the same status dots and counts as the rows', async (
     })),
   );
   // Oracle: the expanded rows' own workspace statuses (carried by their avatars).
-  await component.getByTestId('dock-drag-handle').hover();
+  await component.getByTestId('dock-drag-handle').focus();
   await expect(shell).toHaveAttribute('data-reveal', '1');
   const rowStatuses = await component
     .locator('[data-dock-row] [data-dock-workspace-avatar][data-workspace-status]')

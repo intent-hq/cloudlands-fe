@@ -1,63 +1,7 @@
 import { expect, test } from '../../../../test/ct-test';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
-import type { Locator } from '@playwright/test';
 
 test.setTimeout(120_000);
-
-async function toggleWithMotion(button: Locator, reduced: boolean, settle = true) {
-  const motion = await button.evaluate(
-    async (node: HTMLButtonElement, { reduced, settle }) => {
-      const root = node.closest('[data-question-wizard]')!;
-      const current = node.closest<HTMLElement>('[data-question-state]')!.dataset.questionState;
-      const next = current === 'expanded' ? 'collapsed' : 'expanded';
-      node.click();
-      const deadline = performance.now() + 2_000;
-      let frames: { state: string | undefined; exiting: boolean; animations: number }[] = [];
-      let ready = false;
-      do {
-        await new Promise(requestAnimationFrame);
-        frames = Array.from(root.querySelectorAll<HTMLElement>('[data-question-state]')).map(
-          (state) => {
-            const animations = state
-              .getAnimations()
-              .filter(
-                (animation) =>
-                  ['running', 'paused'].includes(animation.playState) &&
-                  Number(animation.effect?.getTiming().duration) > 1,
-              );
-            // Hold real transitions as they appear after Svelte's bookkeeping animation.
-            if (!reduced) animations.forEach((animation) => animation.pause());
-            return {
-              state: state.dataset.questionState,
-              exiting: state.inert,
-              animations: animations.length,
-            };
-          },
-        );
-        ready =
-          frames.some((state) => state.state === next && !state.exiting) &&
-          (reduced
-            ? frames.length === 1
-            : frames.length === 2 && frames.every((state) => state.animations > 0));
-        if (ready) break;
-      } while (performance.now() < deadline);
-      if (!ready)
-        throw new Error(
-          'Question toggle did not render its next state and transitions: ' +
-            JSON.stringify(frames),
-        );
-      if (settle) root.getAnimations({ subtree: true }).forEach((animation) => animation.finish());
-      return frames;
-    },
-    { reduced, settle },
-  );
-  if (reduced) expect(motion.every((state) => state.animations === 0)).toBe(true);
-  else {
-    expect(motion.filter((state) => state.animations > 0)).toHaveLength(2);
-    expect(motion.filter((state) => state.exiting)).toHaveLength(1);
-  }
-  return motion;
-}
 
 for (const { width, height, reducedMotion, theme = 'light' } of [
   { width: 720, height: 640, reducedMotion: 'reduce' as const },
@@ -69,7 +13,6 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     mount,
     page,
   }, info) => {
-    const motionSamples: Array<Awaited<ReturnType<typeof toggleWithMotion>>> = [];
     await page.emulateMedia({ reducedMotion });
     const component = await mount(ChatPanelComposerGeometryHost, {
       props: { width, height, theme, questions: true },
@@ -159,12 +102,7 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
       animations: 'disabled',
       path: info.outputPath('question-expanded.png'),
     });
-    motionSamples.push(
-      await toggleWithMotion(
-        component.getByRole('button', { name: 'Hide', exact: true }),
-        reducedMotion === 'reduce',
-      ),
-    );
+    await component.getByRole('button', { name: 'Hide', exact: true }).click();
     await expect(card).toHaveCount(0);
     await expect(composer).not.toHaveAttribute('inert', '');
     await expect(editor).toBeFocused();
@@ -193,12 +131,6 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
       animations: 'disabled',
       path: info.outputPath('question-collapsed.png'),
     });
-    await expand.hover();
-    expect(
-      await expand
-        .locator('[data-slot="button-surface"]')
-        .evaluate((node) => getComputedStyle(node).backgroundColor),
-    ).toBe('rgba(0, 0, 0, 0)');
     await expand.focus();
     await page.keyboard.press('Tab');
     await expect(dismiss).toBeFocused();
@@ -207,7 +139,7 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     await expect(card).toHaveCount(0);
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    motionSamples.push(await toggleWithMotion(expand, reducedMotion === 'reduce'));
+    await expand.click();
     await expect(component.getByRole('checkbox').first()).toHaveAttribute('aria-checked', 'true');
     await expect(component.getByRole('checkbox').first()).toBeFocused();
     await expect(composer).toHaveAttribute('inert', '');
@@ -224,17 +156,12 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     await expect(editor).toBeFocused();
     if (reducedMotion === 'no-preference') {
       const hide = component.getByRole('button', { name: 'Hide', exact: true });
-      motionSamples.push(await toggleWithMotion(expand, false, false));
-      motionSamples.push(await toggleWithMotion(hide, false, false));
-      motionSamples.push(await toggleWithMotion(expand, false, false));
+      await expand.click();
       const expandedState = component.locator('[data-question-state="expanded"]');
       await expect(expandedState).not.toHaveAttribute('inert', '');
       await expect(expandedState).not.toHaveAttribute('aria-hidden', 'true');
       expect(await expandedState.evaluate((node) => getComputedStyle(node).position)).toBe(
         'static',
-      );
-      await collapsed.evaluate((node) =>
-        node.getAnimations({ subtree: true }).forEach((animation) => animation.finish()),
       );
       await expect(component.locator('[data-question-state]')).toHaveCount(1);
       await expect(component.getByRole('checkbox').first()).toBeFocused();
@@ -248,9 +175,5 @@ for (const { width, height, reducedMotion, theme = 'light' } of [
     await component.update({ props: { width, height, questions: false } });
     await expect(collapsed).toHaveCount(0);
     await expect(editor).toContainText('Draft survives expansion.');
-    await info.attach('question-motion.json', {
-      body: JSON.stringify({ width, height, theme, reducedMotion, motionSamples }, null, 2),
-      contentType: 'application/json',
-    });
   });
 }

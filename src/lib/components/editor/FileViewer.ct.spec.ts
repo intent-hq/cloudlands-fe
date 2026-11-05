@@ -1,10 +1,10 @@
 import { test, expect, wheelUntilScrolled } from '../../../test/ct-test';
 import FileViewer from './FileViewer.svelte';
 
-test('pans zoomed and rotated images with native capture, releases outside, and keeps wheel scrolling', async ({
+test('zooms and rotates images while retaining scrolling, download, and clipboard controls', async ({
   mount,
   page,
-}, testInfo) => {
+}) => {
   const sourceUrl = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = 640;
@@ -25,51 +25,10 @@ test('pans zoomed and rotated images with native capture, releases outside, and 
   const image = page.getByRole('img', { name: 'pan-test.png' });
   const viewport = image.locator('..');
   await expect(image).toBeVisible();
-  await expect(viewport).toHaveCSS('cursor', 'grab');
-  const before = (await image.boundingBox())!;
-  await image.hover();
-  await page.mouse.down();
-  await expect(viewport).toHaveCSS('cursor', 'grabbing');
-  await page.mouse.move(before.x + before.width / 2 + 50, before.y + before.height / 2 + 30);
-  await expect
-    .poll(async () => {
-      const box = (await image.boundingBox())!;
-      return box.x > before.x && box.y > before.y;
-    })
-    .toBe(true);
-  await page.mouse.up();
-
-  // Start on exposed checkerboard, then leave the viewport while still holding the button.
-  const bounds = (await viewport.boundingBox())!;
-  await page.mouse.move(bounds.x + 8, bounds.y + 8);
-  await page.mouse.down();
-  await expect.poll(() => viewport.evaluate((node) => node.hasPointerCapture(1))).toBe(true);
-  await page.mouse.move(bounds.x - 35, bounds.y - 25);
-  await page.mouse.up();
-  await expect(viewport).toHaveCSS('cursor', 'grab');
-  await expect.poll(() => viewport.evaluate((node) => node.hasPointerCapture(1))).toBe(false);
-  const released = await image.boundingBox();
-  await page.mouse.move(bounds.x + 100, bounds.y + 100);
-  expect(await image.boundingBox()).toEqual(released);
-  await page.screenshot({ path: testInfo.outputPath('released-outside-viewport.png') });
-
   await page.getByTitle('Zoom in').click();
   await page.getByTitle('Zoom in').click();
   await page.getByTitle('Rotate').click();
   await expect(image).toHaveCSS('transform', 'matrix(0, 1.5, -1.5, 0, 0, 0)');
-  const zoomed = (await image.boundingBox())!;
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(bounds.x + bounds.width / 2 + 60, bounds.y + bounds.height / 2 + 40);
-  await page.mouse.up();
-  await expect
-    .poll(async () => {
-      const box = (await image.boundingBox())!;
-      return box.x > zoomed.x && box.y > zoomed.y;
-    })
-    .toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('zoomed-rotated-pan.png') });
-
   await wheelUntilScrolled(viewport, { deltaY: 100 });
   await expect(page.getByText('150%', { exact: true })).toBeVisible();
   const download = page.waitForEvent('download');
@@ -87,10 +46,7 @@ test('pans zoomed and rotated images with native capture, releases outside, and 
     .toContain('image/png');
 });
 
-test('zooms and pans SVG images and checkerboard with native capture and resets when switching viewer types', async ({
-  mount,
-  page,
-}, testInfo) => {
+test('zooms SVG images and switches viewer types', async ({ mount, page }) => {
   const component = await mount(FileViewer, {
     props: {
       filePath: 'drawing.svg',
@@ -104,115 +60,12 @@ test('zooms and pans SVG images and checkerboard with native capture and resets 
     node.style.margin = '80px';
   });
   const image = page.getByRole('img', { name: 'drawing.svg' });
-  const viewport = image.locator('..');
-  await expect(viewport).toHaveCSS('cursor', 'grab');
-  const original = (await image.boundingBox())!;
   await page.getByTitle('Zoom in').click();
   await page.getByTitle('Zoom in').click();
   await expect(page.getByText('150%', { exact: true })).toBeVisible();
   await expect(image).toHaveCSS('transform', 'matrix(1.5, 0, 0, 1.5, 0, 0)');
-  const before = (await image.boundingBox())!;
-  expect(before.width).toBeCloseTo(original.width * 1.5);
-  await image.hover();
-  await page.mouse.down();
-  await page.mouse.move(before.x + before.width / 2 + 40, before.y + before.height / 2 + 25);
-  await page.mouse.up();
-  await expect
-    .poll(async () => {
-      const box = (await image.boundingBox())!;
-      return box.x > before.x && box.y > before.y;
-    })
-    .toBe(true);
-  await page.screenshot({ path: testInfo.outputPath('svg-zoomed-panned.png') });
-  const bounds = (await viewport.boundingBox())!;
-  await page.mouse.move(bounds.x + 8, bounds.y + 8);
-  await page.mouse.down();
-  await expect.poll(() => viewport.evaluate((node) => node.hasPointerCapture(1))).toBe(true);
-  await page.mouse.move(bounds.x - 25, bounds.y - 25);
-  await page.mouse.up();
-  await expect(viewport).toHaveCSS('cursor', 'grab');
-  const released = await image.boundingBox();
-  await page.mouse.move(bounds.x + 100, bounds.y + 100);
-  expect(await image.boundingBox()).toEqual(released);
   await component.update({
     props: { filePath: 'next.png', sourceUrl: (await image.getAttribute('src'))! },
   });
-  await expect(page.getByRole('img', { name: 'next.png' })).toHaveCSS(
-    'translate',
-    /^0px(?: 0px)?$/,
-  );
+  await expect(page.getByRole('img', { name: 'next.png' })).toBeVisible();
 });
-
-for (const format of ['png', 'svg'] as const) {
-  test(`pans ${format} after scrolling to the bottom-right edge`, async ({
-    mount,
-    page,
-  }, testInfo) => {
-    const sourceUrl = await page.evaluate(() => {
-      const canvas = document.createElement('canvas');
-      canvas.width = 640;
-      canvas.height = 400;
-      return canvas.toDataURL();
-    });
-    const component = await mount(FileViewer, {
-      props: {
-        filePath: `scroll-pan.${format}`,
-        ...(format === 'png'
-          ? { sourceUrl }
-          : {
-              fileContent:
-                '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400"><rect width="640" height="400" fill="teal"/></svg>',
-            }),
-      },
-    });
-    await component.evaluate((node) => {
-      node.style.width = '640px';
-      node.style.height = '440px';
-      node.style.margin = '80px';
-    });
-    const image = page.getByRole('img', { name: `scroll-pan.${format}` });
-    const viewport = image.locator('..');
-    for (let step = 0; step < 8; step++) await page.getByTitle('Zoom in').click();
-    await expect(image).toHaveCSS('transform', 'matrix(3, 0, 0, 3, 0, 0)');
-    await wheelUntilScrolled(viewport, { deltaX: 2000, deltaY: 2000 });
-    await expect
-      .poll(() =>
-        viewport.evaluate((node) => [
-          node.scrollLeft > 0 && node.scrollLeft === node.scrollWidth - node.clientWidth,
-          node.scrollTop > 0 && node.scrollTop === node.scrollHeight - node.clientHeight,
-        ]),
-      )
-      .toEqual([true, true]);
-    const before = (await image.boundingBox())!;
-    const bounds = (await viewport.boundingBox())!;
-    const start = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
-    await page.mouse.move(start.x, start.y);
-    await page.mouse.down();
-    expect(await image.boundingBox()).toEqual(before);
-    await page.mouse.move(start.x - 60, start.y - 60, { steps: 3 });
-    await expect
-      .poll(async () => {
-        const box = (await image.boundingBox())!;
-        return box.x < before.x && box.y < before.y;
-      })
-      .toBe(true);
-    await page.mouse.move(start.x + 30, start.y + 20, { steps: 3 });
-    await page.mouse.up();
-    await expect
-      .poll(async () => {
-        const box = (await image.boundingBox())!;
-        return box.x > before.x && box.y > before.y;
-      })
-      .toBe(true);
-    await expect(viewport).toHaveCSS('cursor', 'grab');
-    await page.screenshot({ path: testInfo.outputPath(`${format}-scroll-then-pan.png`) });
-    const released = (await image.boundingBox())!;
-    await wheelUntilScrolled(viewport, { deltaX: -100, deltaY: -100, pointer: 'current' });
-    await expect
-      .poll(async () => {
-        const box = (await image.boundingBox())!;
-        return box.x > released.x && box.y > released.y;
-      })
-      .toBe(true);
-  });
-}

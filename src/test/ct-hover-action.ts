@@ -38,10 +38,8 @@ import { expect, type test } from './ct-test';
  *
  * Returns where `region` settled.
  *
- * Keep a real pointer click only in a test whose point is the pointer path itself, and
- * make that test's row unable to move (no streaming content, follow-bottom settled); the
- * `intent/no-hover-then-click-in-ct` lint rule flags `row.hover()` followed by a click on
- * something inside `row`, and such a test disables it on that line with a reason.
+ * Use this for independent control behavior; do not add pointer choreography coverage
+ * to reproduce the hover race.
  * Sampling uses `requestAnimationFrame`, so do not call this while `page.clock` is paused.
  */
 

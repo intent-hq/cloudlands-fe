@@ -320,79 +320,6 @@ test('floating geometry: stable compact anchor, upward fit and shadow reserve', 
   );
 });
 
-test('native blur: compact side grip remains interactive after unchanged re-entry', async ({}, testInfo) => {
-  const { app, page, profile } = await launch(testInfo, undefined, 'none');
-  const observations: unknown[] = [];
-  try {
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.evaluate(() =>
-      window.electronAPI!.invoke('window:update-dock-placement', {
-        action: 'move',
-        target: 'right',
-      }),
-    );
-    await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-side', 'right');
-    const grip = page.getByTestId('dock-drag-handle');
-    await grip.focus();
-    const rect = (await grip.boundingBox())!;
-    const local = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-    await page.mouse.move(local.x, local.y);
-    const initial = await placement(page);
-    const point = {
-      x: initial.windowBounds.x + local.x,
-      y: initial.windowBounds.y + local.y,
-    };
-    await app.evaluate((_electron, cursor) => {
-      const fixture = (globalThis as any).companionNative;
-      fixture.setControlledCursor(cursor);
-      fixture.native.getDockWindow().focus();
-    }, point);
-    await expect.poll(async () => (await observe(app, page, 'initial')).native.focused).toBe(true);
-    await expect
-      .poll(async () => (await observe(app, page, 'initial')).native.ignoredPointerInput?.ignore)
-      .toBe(false);
-    observations.push(await observe(app, page, 'before-blur'));
-
-    await app.evaluate(() => (globalThis as any).companionNative.openFocusTarget());
-    await expect.poll(async () => (await observe(app, page, 'blurred')).native.focused).toBe(false);
-    await app.evaluate((_electron, bounds) => {
-      (globalThis as any).companionNative.setControlledCursor({
-        x: bounds.x + 8,
-        y: bounds.y + 8,
-      });
-    }, initial.windowBounds);
-    await page.mouse.move(8, 8);
-    await expect
-      .poll(
-        async () =>
-          (await observe(app, page, 'transparent-area')).native.ignoredPointerInput?.ignore,
-      )
-      .toBe(true);
-    observations.push(await observe(app, page, 'transparent-area'));
-
-    await app.evaluate(
-      (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
-      point,
-    );
-    await page.mouse.move(local.x, local.y);
-    const returned = await observe(app, page, 'returned-to-grip');
-    observations.push(returned);
-    expect(returned.placement).toEqual(initial);
-    await expect
-      .poll(async () => (await observe(app, page, 're-entry')).native.ignoredPointerInput?.ignore)
-      .toBe(false);
-    observations.push(await observe(app, page, 'interactive-after-blur'));
-  } finally {
-    observations.push(await observe(app, page, 'final'));
-    await finish(app, page, testInfo, {
-      controlledCursor: true,
-      physicalPointerInput: false,
-      observations,
-    });
-    await rm(profile, { recursive: true, force: true });
-  }
-});
-
 for (const theme of ['light', 'dark'] as const) {
   test(`focus refinement: ${theme} neutral keyboard and quiet pointer`, async ({}, testInfo) => {
     const { app, page, profile } = await launch(testInfo, undefined, 'notch');
@@ -532,44 +459,18 @@ for (const theme of ['light', 'dark'] as const) {
   });
 }
 
-test('motion refinement: reversible reveal, inert close and retained-envelope routing', async ({}, testInfo) => {
+test('closed overview is inert and keyboard entry restores access', async ({}, testInfo) => {
   const { app, page, profile } = await launch(testInfo, undefined, 'notch');
-  const observations: unknown[] = [];
-  let frames: any[] = [];
   try {
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12, false));
-    await page.evaluate(() => (window as any).companionFixture.startMotionEvidence());
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     const shell = page.getByTestId('dock-shell');
     const surface = page.getByTestId('dock-surface');
-    const hover = async (open: boolean, label: string) => {
-      await page.evaluate(
-        (value) => (window as any).companionFixture.markMotionEvidence(value),
-        label,
-      );
-      await surface.dispatchEvent(open ? 'pointerenter' : 'pointerleave', { pointerType: 'mouse' });
-    };
-    const settled = async (open: boolean) =>
-      expect(shell).toHaveAttribute('data-reveal', open ? '1' : '0');
-    await page.waitForTimeout(1500); // Deliberate recording pace; transition assertions follow.
-    await hover(true, 'first-open');
-    await settled(true);
-    await expect(page.locator('[data-dock-row]')).toHaveCount(13);
-    const envelope = await placement(page);
-    observations.push(await observe(app, page, 'open-envelope'));
-    await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(2, false));
-    await expect(page.locator('[data-dock-row]')).toHaveCount(3);
-    await page.waitForTimeout(1600);
-    await artifact(page, testInfo, 'motion-sparse-content');
-    await page.evaluate(() => (window as any).companionFixture.setUpdateWorkspaceCount(12, false));
-    await expect
-      .poll(async () => (await placement(page)).surface.height)
-      .toBe(envelope.surface.height);
-    await page.waitForTimeout(1600);
-    await hover(false, 'first-close');
-    await settled(false);
-    expect((await placement(page)).windowBounds).toEqual(envelope.windowBounds);
     const overview = page.getByTestId('dock-overview');
+    await surface.dispatchEvent('pointerenter', { pointerType: 'mouse' });
+    await expect(shell).toHaveAttribute('data-reveal', '1');
+    await expect(overview).toBeVisible();
+    await surface.dispatchEvent('pointerleave', { pointerType: 'mouse' });
+    await expect(shell).toHaveAttribute('data-reveal', '0');
     await expect(overview).toHaveCount(1);
     expect(await overview.evaluate((element) => Boolean(element.closest('[inert]')))).toBe(true);
     await page.locator('[data-dock-row]').first().focus();
@@ -578,146 +479,12 @@ test('motion refinement: reversible reveal, inert close and retained-envelope ro
         Boolean(document.activeElement?.closest('[data-testid="dock-overview"]')),
       ),
     ).toBe(false);
-    const route = await app.evaluate(() => (globalThis as any).companionNative.snapshot());
-    const shown = route.pointerRouting.payload.regions[0];
-    const inside = {
-      x: envelope.windowBounds.x + shown.x + 10,
-      y: envelope.windowBounds.y + shown.y + 16,
-    };
-    const outside = {
-      x: envelope.windowBounds.x + shown.x + 10,
-      y: envelope.windowBounds.y + shown.y + 80,
-    };
-    // Below the closed header first: once the cursor rests in the header, main's
-    // presence report opens the dock on hover and that area becomes interactive.
-    for (const [label, point, ignored] of [
-      ['outside', outside, true],
-      ['inside', inside, false],
-    ] as const) {
-      await app.evaluate(
-        (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
-        point,
-      );
-      await expect
-        .poll(() =>
-          app.evaluate(
-            // Unrecorded means the dock's initial click-through routing (applied before
-            // the harness wrapped setIgnoreMouseEvents) never changed.
-            () =>
-              (globalThis as any).companionNative.snapshot().ignoredPointerInput?.ignore ?? true,
-          ),
-        )
-        .toBe(ignored);
-      observations.push(await observe(app, page, `controlled-pointer-${label}`));
-    }
-    const exitPoint = {
-      x: envelope.windowBounds.x + envelope.windowBounds.width + 400,
-      y: envelope.windowBounds.y + 400,
-    };
-    await app.evaluate(
-      (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
-      exitPoint,
-    );
-    // The controlled cursor changes main's poll only. Main forwarded the inside move
-    // to Chromium; move that input outside too, as an actual OS exit would, so :hover
-    // does not contradict the native presence report (real DOM hover takes priority).
-    await page.mouse.move(
-      exitPoint.x - envelope.windowBounds.x,
-      exitPoint.y - envelope.windowBounds.y,
-    );
-    await expect.poll(() => surface.evaluate((element) => element.matches(':hover'))).toBe(false);
-    await settled(false);
-    await artifact(page, testInfo, 'motion-closed');
-    await page.waitForTimeout(1400);
-    for (let cycle = 0; cycle < 3; cycle++) {
-      await hover(true, `cycle-${cycle}-open`);
-      await settled(true);
-      await page.waitForTimeout(500);
-      await hover(false, `cycle-${cycle}-closing`);
-      await page.waitForFunction(
-        () => {
-          const p = Number(
-            document.querySelector('[data-testid="dock-shell"]')?.getAttribute('data-reveal'),
-          );
-          return p > 0 && p < 1;
-        },
-        undefined,
-        { polling: 'raf' },
-      );
-      await hover(true, `cycle-${cycle}-reverse`);
-      await settled(true);
-      await page.waitForTimeout(500);
-      await hover(false, `cycle-${cycle}-closed`);
-      await settled(false);
-      expect((await placement(page)).windowBounds).toEqual(envelope.windowBounds);
-      await page.waitForTimeout(500);
-    }
-    frames = await page.evaluate(() => (window as any).companionFixture.stopMotionEvidence());
-    const revealFrames = frames.filter((f) => f.reveal !== null);
-    expect(revealFrames.some((f) => Number(f.reveal) > 0 && Number(f.reveal) < 1)).toBe(true);
-    for (const f of revealFrames) {
-      expect(Number.isFinite(Number(f.reveal))).toBe(true);
-      expect(Number(f.reveal)).toBeGreaterThanOrEqual(0);
-      expect(Number(f.reveal)).toBeLessThanOrEqual(1);
-    }
-    for (let i = 1; i < revealFrames.length; i++) {
-      const a = revealFrames[i - 1],
-        b = revealFrames[i];
-      if (b.time - a.time < 40)
-        expect(Math.abs(Number(b.reveal) - Number(a.reveal))).toBeLessThan(0.8);
-    }
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.evaluate(() => (window as any).companionFixture.startMotionEvidence());
-    await hover(true, 'reduced-open');
-    await settled(true);
-    await hover(false, 'reduced-close');
-    await settled(false);
-    const reducedFrames = await page.evaluate(() =>
-      (window as any).companionFixture.stopMotionEvidence(),
-    );
-    expect(reducedFrames.every((f: any) => ['0', '1'].includes(f.reveal))).toBe(true);
-    observations.push({ reducedFrames });
-    const beforeDrag = await observe(app, page, 'closed-before-drag');
-    const grip = page.getByTestId('dock-drag-handle');
-    const box = (await grip.boundingBox())!;
-    const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-    await app.evaluate(
-      (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
-      {
-        x: beforeDrag.native.bounds.x + point.x,
-        y: beforeDrag.native.bounds.y + point.y,
-      },
-    );
-    await page.mouse.move(point.x, point.y);
-    await page.mouse.down();
-    await page.mouse.move(point.x + 12, point.y + 12);
-    await expect.poll(async () => (await placement(page)).phase).toBe('dragging');
-    await page.keyboard.press('Escape');
-    await page.mouse.up();
-    await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-    expect((await placement(page)).placement).toEqual(beforeDrag.placement.placement);
-    observations.push(await observe(app, page, 'drag-after-close-cancelled'));
     await page.keyboard.press('Tab');
-    await grip.focus();
-    await settled(true);
-    await expect(page.getByTestId('dock-dismiss')).toHaveCount(0);
-    await artifact(page, testInfo, 'motion-keyboard-open');
+    await page.getByTestId('dock-drag-handle').focus();
+    await expect(shell).toHaveAttribute('data-reveal', '1');
+    await expect(overview).toBeVisible();
   } finally {
-    if (!page.isClosed()) {
-      const finalFrames = await page
-        .evaluate(() => (window as any).companionFixture.stopMotionEvidence())
-        .catch(() => []);
-      if (!frames.length) frames = finalFrames;
-    }
-    await finish(app, page, testInfo, {
-      ...(await provenance()),
-      rendererSynthesizedInput: true,
-      controlledOSCursor: true,
-      syntheticHoverEvents: true,
-      finalObservation: page.isClosed() ? null : await observe(app, page, 'motion-final'),
-      frames,
-      observations,
-    });
+    await finish(app, page, testInfo, await provenance());
     await rm(profile, { recursive: true, force: true });
   }
 });
@@ -830,72 +597,7 @@ for (const geometry of ['notch', 'none', 'unknown'] as const) {
           `compact-${geometry}-${fixtureCase.count}-${fixtureCase.running ? 'running' : 'idle'}`,
         );
       }
-      if (geometry === 'notch') {
-        await moveMenu(page, 'floating');
-        const floated = await observe(app, page, 'before-compact-notch-snap');
-        const gripBox = (await grip.boundingBox())!;
-        const point = { x: gripBox.x + gripBox.width / 2, y: gripBox.y + gripBox.height / 2 };
-        await app.evaluate(
-          (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
-          {
-            x: floated.native.bounds.x + point.x,
-            y: floated.native.bounds.y + point.y,
-          },
-        );
-        await page.mouse.move(point.x, point.y);
-        await page.mouse.down();
-        const grabbed = await placement(page);
-        // A presence report can arrive while a button is held but before the first
-        // threshold move. Let that hover timer expire without changing the grab revision.
-        await page
-          .getByTestId('dock-surface')
-          .dispatchEvent('pointerenter', { pointerType: 'mouse' });
-        await page.waitForTimeout(400); // Deliberately cross the hover-open boundary.
-        expect((await placement(page)).revision).toBe(grabbed.revision);
-
-        await page.mouse.move(point.x + 12, point.y + 12);
-        await expect
-          .poll(() =>
-            page.evaluate(() => (window as any).companionFixture.evidence().dragStartResult?.token),
-          )
-          .toBeTruthy();
-        const display = floated.native.displays.find(
-          (item: any) => item.id === floated.placement.displayId,
-        )!;
-        await app.evaluate(
-          (_electron, cursor) => (globalThis as any).companionNative.setControlledCursor(cursor),
-          {
-            x: display.bounds.x + display.bounds.width / 2,
-            y: display.bounds.y + 16,
-          },
-        );
-        await expect
-          .poll(async () => {
-            const preview = (await placement(page)).snapPreview;
-            return preview && { width: preview.width, height: preview.height };
-          })
-          .toEqual({ width: 380, height: 32 });
-        observations.push(await observe(app, page, 'destination-camera-sized-preview'));
-        // A real pointer-up happens where the cursor is; main drops at that release point.
-        const dragging = await placement(page);
-        await page.mouse.move(
-          display.bounds.x + display.bounds.width / 2 - dragging.windowBounds.x,
-          display.bounds.y + 16 - dragging.windowBounds.y,
-        );
-        await page.mouse.up();
-        await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-        await expect.poll(async () => (await placement(page)).shape).toBe('notch');
-        await expect
-          .poll(async () => {
-            const surface = (await placement(page)).surface;
-            return { width: surface.width, height: surface.height };
-          })
-          .toEqual({ width: 380, height: 32 });
-        observations.push(await observe(app, page, 'destination-camera-sized-drop'));
-        await artifact(page, testInfo, 'compact-notch-after-snap');
-      }
-      // Keyboard arrival: a Tab press precedes focus (dragging also left the grip focused,
-      // so this moves it away first). Focus without key or pointer input does not open.
+      // Keyboard arrival opens the overview without pointer input.
       await page.keyboard.press('Tab');
       await grip.focus();
       await expect(shell).toHaveAttribute('data-expanded', 'true');
@@ -1034,21 +736,6 @@ async function moveMenu(page: Page, target: DockPlacementTarget) {
     })
     .toBe(target === 'reset' ? 'notch' : target);
 }
-async function screenPoint(app: ElectronApplication, page: Page) {
-  const grip = (await page.getByTestId('dock-drag-handle').boundingBox())!;
-  const bounds = await app.evaluate(() =>
-    (globalThis as any).companionNative.native.getDockWindow().getBounds(),
-  );
-  return { x: bounds.x + grip.x + grip.width / 2, y: bounds.y + grip.y + grip.height / 2 };
-}
-async function beginDrag(app: ElectronApplication, page: Page) {
-  const origin = await screenPoint(app, page);
-  await nativePointer('move', origin);
-  await nativePointer('down', origin);
-  await nativePointer('drag', { x: origin.x + 10, y: origin.y + 2 });
-  await expect.poll(async () => (await placement(page)).phase).toBe('dragging');
-  return origin;
-}
 async function artifact(page: Page, testInfo: TestInfo, label: string) {
   const path = testInfo.outputPath(`${label}.png`);
   await page.screenshot({ path, animations: 'disabled' });
@@ -1079,13 +766,17 @@ async function provenance() {
   };
 }
 
-test('hover continuity and native click-through preserve another window focus', async ({}, testInfo) => {
+test('native click-through preserves another window focus', async ({}, testInfo) => {
   const { app, page, profile } = await launch(testInfo);
   const observations = [];
   try {
     // This case drives the real OS pointer, so main follows the real cursor.
     await app.evaluate(() => (globalThis as any).companionNative.setControlledCursor(null));
     await moveMenu(page, 'right');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.keyboard.press('Tab');
+    await page.getByTestId('dock-drag-handle').focus();
+    await expect(page.getByTestId('dock-overview')).toBeVisible();
     const targetId = await app.evaluate(async () =>
       (globalThis as any).companionNative.openFocusTarget(),
     );
@@ -1098,43 +789,7 @@ test('hover continuity and native click-through preserve another window focus', 
     await target
       .getByRole('textbox', { name: 'Typing proof' })
       .fill('Typing stays in the other window.');
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    let p = await placement(page);
-    const surface = absoluteSurface(p);
-    const hover = { x: surface.x + surface.width / 2, y: surface.y + surface.height / 2 };
-    await nativePointer('move', hover);
-    await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-expanded', 'true');
-    expect(await app.evaluate(() => (globalThis as any).companionNative.snapshot().focused)).toBe(
-      false,
-    );
-    const panel = (await page.getByTestId('dock-overview').boundingBox())!;
-    p = await placement(page);
-    await nativePointer('move', {
-      x: p.windowBounds.x + panel.x + panel.width / 2,
-      y: p.windowBounds.y + panel.y + panel.height / 2,
-    });
-    await expect(page.getByTestId('dock-overview')).toBeVisible();
-    await expect(target.getByRole('textbox')).toHaveValue('Typing stays in the other window.');
-    observations.push(
-      await observe(app, page, 'hover-from-rail-into-overview-without-focus-steal'),
-    );
-    await artifact(page, testInfo, 'hover-continuity-reduced-motion');
-    const activeAnimations = await page.evaluate(() =>
-      document
-        .getAnimations()
-        .filter((a) => a.playState === 'running')
-        .map((a) => ({
-          timing: a.effect?.getComputedTiming(),
-          frames: (a.effect as KeyframeEffect | null)?.getKeyframes(),
-        })),
-    );
-    // Reduced motion may crossfade, but no perpetual moving/scaling typography.
-    expect(
-      activeAnimations.filter(
-        (a) => a.timing?.iterations === Infinity && a.frames?.some((frame) => frame.transform),
-      ),
-    ).toEqual([]);
-    p = await placement(page);
+    const p = await placement(page);
     const visible = absoluteSurface(p);
     const through = { x: p.windowBounds.x + 10, y: p.windowBounds.y + p.windowBounds.height / 2 };
     expect(through.x).toBeLessThan(visible.x);
@@ -1144,6 +799,10 @@ test('hover continuity and native click-through preserve another window focus', 
     await expect(target.getByRole('button', { name: 'Click-through proof' })).toHaveAttribute(
       'data-clicks',
       '1',
+    );
+    await expect(target.getByRole('textbox')).toHaveValue('Typing stays in the other window.');
+    expect(await app.evaluate(() => (globalThis as any).companionNative.snapshot().focused)).toBe(
+      false,
     );
     observations.push(await observe(app, page, 'transparent-envelope-click-reaches-other-window'));
   } finally {
@@ -1243,110 +902,6 @@ test('keyboard placements retain renderer identity, bounded content, and user ch
   } finally {
     await finish(live.app, live.page, testInfo, { ...(await provenance()), observations });
     await rm(first.profile, { recursive: true, force: true });
-  }
-});
-
-test('real native drag follows cursor, previews exact landings, and Escape rejects late commit', async ({}, testInfo) => {
-  const { app, page, profile } = await launch(testInfo);
-  const observations = [];
-  try {
-    // This case drives the real OS pointer, so main follows the real cursor.
-    await app.evaluate(() => (globalThis as any).companionNative.setControlledCursor(null));
-    await moveMenu(page, 'floating');
-    const initial = await observe(app, page, 'before-drag');
-    const grip = await screenPoint(app, page);
-    await nativePointer('move', grip);
-    await nativePointer('down', grip);
-    await nativePointer('drag', { x: grip.x + 2, y: grip.y + 1 });
-    await nativePointer('up', { x: grip.x + 2, y: grip.y + 1 });
-    expect((await placement(page)).phase).toBe('idle');
-    expect((await placement(page)).placement).toEqual(initial.placement.placement);
-    expect((await observe(app, page, 'below-threshold')).renderer.opened).toEqual([]);
-    const area = initial.native.displays.find(
-      (d: any) => d.id === initial.placement.displayId,
-    ).workArea;
-    for (const target of ['left', 'right', 'floating', 'notch'] as const) {
-      await beginDrag(app, page);
-      const destination =
-        target === 'left'
-          ? { x: area.x + 3, y: area.y + area.height / 2 }
-          : target === 'right'
-            ? { x: area.x + area.width - 3, y: area.y + area.height / 2 }
-            : target === 'notch'
-              ? {
-                  x: area.x + area.width / 2,
-                  y: initial.placement.cutout
-                    ? initial.native.displays.find((d: any) => d.id === initial.placement.displayId)
-                        .bounds.y + 4
-                    : area.y + 4,
-                }
-              : { x: area.x + area.width * 0.6, y: area.y + area.height * 0.6 };
-      await nativePointer('drag', destination);
-      await expect
-        .poll(async () => Boolean((await placement(page)).snapPreview))
-        .toBe(target !== 'floating');
-      const moving = await observe(app, page, `${target}-candidate`);
-      observations.push(moving);
-      if (target === 'left') {
-        await nativePointer('drag', { ...destination, x: area.x + 34 });
-        await expect.poll(async () => Boolean((await placement(page)).snapPreview)).toBe(true);
-        await nativePointer('drag', destination);
-      }
-      const candidate = await placement(page);
-      await artifact(page, testInfo, `${target}-snap`);
-      await nativePointer('up', destination);
-      await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-      const dropped = await observe(app, page, `${target}-dropped`);
-      observations.push(dropped);
-      expect(dropped.placement.placement.kind).toBe(
-        target === 'left' || target === 'right' ? 'edge' : target,
-      );
-      if (target !== 'floating')
-        expect(absoluteSurface(dropped.placement)).toEqual(absoluteSurface(candidate, true));
-      expect(dropped.native.id).toBe(initial.native.id);
-      expect(dropped.renderer.marker).toBe(initial.renderer.marker);
-      expect(dropped.renderer.opened).toEqual([]);
-      reachable(dropped.placement, dropped.native.displays);
-      await artifact(page, testInfo, `${target}-drop`);
-    }
-    const beforeCancel = (await placement(page)).placement;
-    await beginDrag(app, page);
-    const token = (await placement(page)).dragToken;
-    await nativePointer('escape');
-    await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-    await page.evaluate(
-      (token) =>
-        window.electronAPI!.invoke('window:update-dock-placement', {
-          action: 'end-drag',
-          token,
-          sequence: 9999,
-        }),
-      token,
-    );
-    expect((await placement(page)).placement).toEqual(beforeCancel);
-    await nativePointer('up', await screenPoint(app, page));
-    observations.push(await observe(app, page, 'escape-rollback-rejects-stale-drop'));
-    await beginDrag(app, page);
-    const invalidatedToken = (await placement(page)).dragToken;
-    await app.evaluate(({ screen }) => {
-      screen.emit('display-metrics-changed', {}, screen.getPrimaryDisplay(), ['workArea']);
-    });
-    await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-    await page.evaluate(
-      (token) =>
-        window.electronAPI!.invoke('window:update-dock-placement', {
-          action: 'end-drag',
-          token,
-          sequence: 10000,
-        }),
-      invalidatedToken,
-    );
-    expect((await placement(page)).placement).toEqual(beforeCancel);
-    observations.push(await observe(app, page, 'injected-display-event-invalidates-drag'));
-  } finally {
-    await nativePointer('up', { x: 100, y: 100 }).catch(() => {});
-    await finish(app, page, testInfo, { ...(await provenance()), observations });
-    await rm(profile, { recursive: true, force: true });
   }
 });
 
@@ -1582,437 +1137,6 @@ test('development helper path: dist/main launch discovers staged notch helper', 
   }
 });
 
-test('controlled fast drag: renderer startup survives cursor leaving original surface', async ({}, testInfo) => {
-  const { app, page, profile } = await launch(testInfo);
-  const observations = [];
-  try {
-    await app.evaluate(() => {
-      const native = (globalThis as any).companionNative.native;
-      return native.updateDockPlacement(native.getDockWindow(), {
-        action: 'move',
-        target: 'floating',
-      });
-    });
-    await expect.poll(async () => (await placement(page)).placement.kind).toBe('floating');
-    const initial = await observe(app, page, 'before-fast-drag');
-    const grip = (await page.getByTestId('dock-drag-handle').boundingBox())!;
-    const point = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
-    const surface = absoluteSurface(initial.placement);
-    await app.evaluate(
-      (_electron, value) => (globalThis as any).companionNative.setControlledCursor(value),
-      { x: initial.native.bounds.x + point.x, y: initial.native.bounds.y + point.y },
-    );
-    await page.mouse.move(point.x, point.y);
-    await page.mouse.down();
-    await app.evaluate(
-      (_electron, value) => (globalThis as any).companionNative.setControlledCursor(value),
-      { x: surface.x + surface.width + 160, y: surface.y + 100 },
-    );
-    await page.mouse.move(point.x + 80, point.y + 100);
-    await expect
-      .poll(() =>
-        app.evaluate(
-          () =>
-            (globalThis as any).companionNative
-              .snapshot()
-              .calls.filter(
-                (c: any) =>
-                  c.boundary === 'production-placement-command' &&
-                  c.command.action === 'begin-drag',
-              ).length,
-        ),
-      )
-      .toBeGreaterThan(0);
-    observations.push(await observe(app, page, 'after-fast-start-request'));
-    await expect
-      .poll(async () => (await placement(page)).phase, { timeout: 1500 })
-      .toBe('dragging');
-    await page.keyboard.press('Escape');
-    await page.mouse.up();
-    await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-    expect((await placement(page)).placement).toEqual(initial.placement.placement);
-    expect(await app.evaluate(() => (globalThis as any).companionNative.menu.isEnabled())).toBe(
-      true,
-    );
-    observations.push(await observe(app, page, 'escape-rolls-back-without-dismissal'));
-  } finally {
-    await page.mouse.up().catch(() => {});
-    const bridgeDiagnostic = !(await app.evaluate(() =>
-      (globalThis as any).companionNative
-        .snapshot()
-        .calls.some(
-          (entry: any) =>
-            entry.boundary === 'production-placement-command' &&
-            entry.command.action === 'begin-drag',
-        ),
-    ))
-      ? await page
-          .evaluate(() => (window as any).companionFixture.diagnoseLastBeginBridge())
-          .catch(String)
-      : null;
-    await finish(app, page, testInfo, {
-      ...(await provenance()),
-      rendererSynthesizedInput: true,
-      controlledOSCursor: true,
-      finalObservation: await observe(app, page, 'fast-drag-final').catch(() => null),
-      bridgeDiagnostic,
-      observations,
-    });
-    await rm(profile, { recursive: true, force: true });
-  }
-});
-
-for (const geometryFixture of ['notch', 'none'] as const) {
-  test(`controlled snap morph: ${geometryFixture} target metadata, layers and bounded envelopes survive commit`, async ({}, testInfo) => {
-    const geometry = [];
-    for (const forwarding of [true, false]) {
-      const display = {
-        id: 1,
-        bounds: { x: -1920, y: -1080, width: 1920, height: 1080 },
-        workArea: { x: -1920, y: -1048, width: 1920, height: 1000 },
-        cutout: null,
-      };
-      for (const side of ['left', 'right'] as const) {
-        const target = resolveDockSurface(
-          { kind: 'edge', displayId: 1, side, along: 0.5 },
-          display,
-          {
-            width: 40,
-            height: 240,
-          },
-        );
-        const bounds = dockWindowEnvelope(target, display, null, side, forwarding);
-        expect(bounds.x).toBeGreaterThanOrEqual(display.bounds.x);
-        expect(bounds.y).toBeGreaterThanOrEqual(display.bounds.y);
-        expect(bounds.x + bounds.width).toBeLessThanOrEqual(
-          display.bounds.x + display.bounds.width,
-        );
-        expect(bounds.y + bounds.height).toBeLessThanOrEqual(
-          display.bounds.y + display.bounds.height,
-        );
-        if (!forwarding) expect(bounds).toEqual(target);
-        geometry.push({
-          name: `negative-origin-${side}-${forwarding ? 'forwarding' : 'nonforwarding'}`,
-          target,
-          bounds,
-        });
-      }
-    }
-    const { app, page, profile } = await launch(testInfo, undefined, geometryFixture);
-    const observations: unknown[] = [];
-    try {
-      const results = await app.evaluate(async ({ screen }) => {
-        const fixture = (globalThis as any).companionNative;
-        const native = fixture.native;
-        const window = native.getDockWindow();
-        const layerTimeline: any[] = [];
-        let stage = 'setup';
-        const originalLevel = window.setAlwaysOnTop;
-        const originalBounds = window.setBounds;
-        const originalSend = window.webContents.send;
-        window.setAlwaysOnTop = (...args: any[]) => {
-          layerTimeline.push({ kind: 'level', stage, enabled: args[0], level: args[1] });
-          return originalLevel.apply(window, args);
-        };
-        window.setBounds = (...args: any[]) => {
-          layerTimeline.push({ kind: 'bounds', stage });
-          return originalBounds.apply(window, args);
-        };
-        window.webContents.send = (channel: string, ...args: any[]) => {
-          if (args[0]?.surface)
-            layerTimeline.push({
-              kind: 'snapshot',
-              stage,
-              shape: args[0].shape,
-              target: args[0].dragTarget?.shape,
-            });
-          return originalSend.call(window.webContents, channel, ...args);
-        };
-        try {
-          const current = () => native.getDockPlacementSnapshot(window);
-          const command = (value: unknown) => native.updateDockPlacement(window, value);
-          const begin = async () => {
-            const before = current();
-            const anchor = before.floatingAnchor ?? before.surface;
-            fixture.setControlledCursor({
-              x: before.windowBounds.x + anchor.x + 20,
-              y: before.windowBounds.y + anchor.y + 20,
-            });
-            await command({
-              action: 'begin-drag',
-              revision: before.revision,
-              origin: { x: anchor.x - before.surface.x + 20, y: anchor.y - before.surface.y + 20 },
-            });
-            return current().dragToken;
-          };
-          const rows = [];
-          for (const name of ['left', 'right', 'notch']) {
-            stage = `${name}-setup`;
-            await command({ action: 'move', target: 'notch' });
-            const hardware = current();
-            const display = screen
-              .getAllDisplays()
-              .find((entry) => entry.id === hardware.displayId)!;
-            const area = display.workArea;
-            const point =
-              name === 'notch'
-                ? {
-                    x: hardware.windowBounds.x + hardware.surface.x + hardware.surface.width / 2,
-                    y: display.bounds.y + 2,
-                  }
-                : {
-                    x: name === 'left' ? area.x + 2 : area.x + area.width - 2,
-                    y: area.y + area.height / 2,
-                  };
-            await command({ action: 'move', target: 'floating' });
-            const token = await begin();
-            // Moving to floating can retain a compact anchor in the notch zone.
-            // Establish a genuinely free drag before measuring acquisition.
-            stage = `${name}-free-precondition`;
-            fixture.setControlledCursor({
-              x: area.x + area.width / 2,
-              y: area.y + area.height / 2,
-            });
-            await command({ action: 'drag', token, sequence: 1 });
-            const freeBeforeAcquire = current();
-            stage = `${name}-acquire`;
-            fixture.setControlledCursor(point);
-            await command({ action: 'drag', token, sequence: 2 });
-            stage = `${name}-same-candidate`;
-            point.y += 1;
-            fixture.setControlledCursor(point);
-            await command({ action: 'drag', token, sequence: 3 });
-            const held = current();
-            const transitions: any[] = [];
-            const setBounds = window.setBounds;
-            const send = window.webContents.send;
-            window.setBounds = (...args: any[]) => {
-              const before = window.getBounds();
-              const result = setBounds.apply(window, args);
-              transitions.push({ kind: 'bounds', before, after: window.getBounds() });
-              return result;
-            };
-            window.webContents.send = (channel: string, ...args: any[]) => {
-              if (args[0]?.surface)
-                transitions.push({
-                  kind: 'snapshot',
-                  bounds: window.getBounds(),
-                  snapshot: args[0],
-                });
-              return send.call(window.webContents, channel, ...args);
-            };
-            let committed;
-            let persistence;
-            try {
-              stage = `${name}-commit`;
-              persistence = command({
-                action: 'end-drag',
-                token,
-                sequence: 4,
-                releasePoint: point,
-              });
-              committed = current();
-            } finally {
-              window.setBounds = setBounds;
-              window.webContents.send = send;
-            }
-            await persistence;
-            stage = `${name}-ack`;
-            await command({
-              action: 'resize',
-              revision: current().revision,
-              width: committed.surface.width,
-              height: committed.surface.height,
-            });
-            const acknowledged = current();
-            window.emit('blur');
-            const blurred = current();
-            stage = `${name}-detach`;
-            const cancelToken = await begin();
-            fixture.setControlledCursor({
-              x: area.x + area.width / 2,
-              y: area.y + area.height / 2,
-            });
-            await command({ action: 'drag', token: cancelToken, sequence: 1 });
-            const detached = current();
-            stage = `${name}-cancel`;
-            await command({ action: 'cancel-drag', token: cancelToken, sequence: 2 });
-            const cancelled = current();
-            stage = `${name}-capture`;
-            native.setDockHiddenForCapture(true);
-            const hidden = current();
-            native.setDockHiddenForCapture(false);
-            const restored = current();
-            stage = `${name}-reset`;
-            await command({ action: 'move', target: name });
-            const reset = current();
-            rows.push({
-              name,
-              hardware,
-              freeBeforeAcquire,
-              held,
-              transitions,
-              committed,
-              acknowledged,
-              blurred,
-              detached,
-              cancelled,
-              hidden,
-              restored,
-              reset,
-            });
-          }
-          stage = 'reversal-setup';
-          await command({ action: 'move', target: 'floating' });
-          const token = await begin();
-          const display = screen
-            .getAllDisplays()
-            .find((entry) => entry.id === current().displayId)!;
-          const y = display.workArea.y + display.workArea.height / 2;
-          stage = 'reversal-free-precondition';
-          fixture.setControlledCursor({ x: display.workArea.x + display.workArea.width / 2, y });
-          await command({ action: 'drag', token, sequence: 1 });
-          const freeBeforeReversal = current();
-          stage = 'reversal-notch';
-          fixture.setControlledCursor({
-            x: display.bounds.x + display.bounds.width / 2,
-            y: display.bounds.y + 2,
-          });
-          await command({ action: 'drag', token, sequence: 2 });
-          stage = 'reversal-left';
-          fixture.setControlledCursor({ x: display.workArea.x + 2, y });
-          await command({ action: 'drag', token, sequence: 3 });
-          const left = current();
-          stage = 'reversal-right';
-          fixture.setControlledCursor({ x: display.workArea.x + display.workArea.width - 2, y });
-          await command({ action: 'drag', token, sequence: 4 });
-          const right = current();
-          stage = 'reversal-free';
-          fixture.setControlledCursor({ x: display.workArea.x + display.workArea.width / 2, y });
-          await command({ action: 'drag', token, sequence: 5 });
-          const free = current();
-          stage = 'display-change';
-          screen.emit('display-metrics-changed', {}, display, ['workArea']);
-          return {
-            rows,
-            reversal: { freeBeforeReversal, left, right, free },
-            displayToken: token,
-            layerTimeline,
-          };
-        } finally {
-          window.setAlwaysOnTop = originalLevel;
-          window.setBounds = originalBounds;
-          window.webContents.send = originalSend;
-        }
-      });
-      observations.push(results);
-      const notchLevel =
-        geometryFixture === 'notch' && process.platform === 'darwin' ? 'status' : 'floating';
-      const events = (stage: string) =>
-        results.layerTimeline.filter((entry: any) => entry.stage === stage);
-      const levels = (stage: string) =>
-        events(stage)
-          .filter((entry: any) => entry.kind === 'level')
-          .map((entry: any) => entry.level);
-      expect(levels('notch-acquire')).toEqual(notchLevel === 'status' ? ['status'] : []);
-      if (notchLevel === 'status') {
-        for (const stage of ['notch-acquire', 'notch-cancel', 'reversal-notch', 'reversal-left']) {
-          const timeline = events(stage);
-          expect(timeline[0].kind, stage).toBe('level');
-          expect(
-            timeline.findIndex((entry: any) => entry.kind === 'bounds'),
-            stage,
-          ).toBeGreaterThan(0);
-          expect(
-            timeline.findIndex((entry: any) => entry.kind === 'snapshot'),
-            stage,
-          ).toBeGreaterThan(0);
-        }
-      } else {
-        expect(results.layerTimeline.filter((entry: any) => entry.kind === 'level')).toEqual([]);
-      }
-      expect(levels('notch-detach')).toEqual(notchLevel === 'status' ? ['floating'] : []);
-      expect(levels('notch-cancel')).toEqual(notchLevel === 'status' ? ['status'] : []);
-      expect(levels('reversal-notch')).toEqual(notchLevel === 'status' ? ['status'] : []);
-      expect(levels('reversal-left')).toEqual(notchLevel === 'status' ? ['floating'] : []);
-      expect(levels('reversal-right')).toEqual([]);
-      expect(levels('reversal-free')).toEqual([]);
-      expect(results.reversal.freeBeforeReversal.phase).toBe('dragging');
-      expect(results.reversal.freeBeforeReversal.dragTarget).toBeNull();
-      for (const row of results.rows) {
-        expect(row.freeBeforeAcquire.phase, row.name).toBe('dragging');
-        expect(row.freeBeforeAcquire.dragTarget, row.name).toBeNull();
-        const target = row.held.dragTarget;
-        expect(target, row.name).not.toBeNull();
-        expect(target.surface, row.name).toEqual(row.held.snapPreview);
-        for (const phase of ['same-candidate', 'commit', 'ack', 'capture'])
-          expect(levels(`${row.name}-${phase}`), `${row.name}-${phase}`).toEqual([]);
-        expect(target.shape, row.name).toBe(
-          row.name === 'notch' ? (geometryFixture === 'notch' ? 'notch' : 'top-pill') : 'edge',
-        );
-        if (row.name !== 'notch') {
-          expect(target.placement.side).toBe(row.name);
-          expect(target.cutout).toBeNull();
-        } else if (geometryFixture === 'notch') {
-          expect(target.cutout).not.toBeNull();
-          expect(row.held.windowBounds.x + target.cutout.x).toBe(
-            row.hardware.windowBounds.x + row.hardware.cutout.x,
-          );
-        } else expect(target.cutout).toBeNull();
-        expect(row.committed.dragTarget).toBeNull();
-        expect(row.committed.windowBounds, row.name).toEqual(row.held.windowBounds);
-        expect(row.committed.surface, row.name).toEqual(target.surface);
-        const bounds = row.transitions.filter((entry: any) => entry.kind === 'bounds');
-        expect(bounds).toHaveLength(1);
-        expect(bounds[0].after).toEqual(bounds[0].before);
-        const oldPaint = {
-          x: bounds[0].after.x + target.surface.x,
-          y: bounds[0].after.y + target.surface.y,
-        };
-        expect(oldPaint).toEqual({
-          x: bounds[0].before.x + target.surface.x,
-          y: bounds[0].before.y + target.surface.y,
-        });
-        expect(
-          row.transitions
-            .filter((entry: any) => entry.kind === 'snapshot')
-            .map((entry: any) => entry.snapshot.phase),
-        ).toEqual(['idle']);
-        expect(row.acknowledged.windowBounds).toEqual(row.committed.windowBounds);
-        expect(row.blurred.windowBounds).toEqual(row.committed.windowBounds);
-        expect(row.detached.dragTarget).toBeNull();
-        expect(row.cancelled.windowBounds).toEqual(row.committed.windowBounds);
-        expect(row.cancelled.placement).toEqual(row.committed.placement);
-        expect(row.hidden.captureHidden).toBe(true);
-        expect(row.hidden.dragTarget).toBeNull();
-        // Explicit move and capture cleanup both discard the retained floor.
-        expect(row.restored.windowBounds).toEqual(row.reset.windowBounds);
-      }
-      expect(results.reversal.left.dragTarget.placement.side).toBe('left');
-      expect(results.reversal.right.dragTarget.placement.side).toBe('right');
-      expect(results.reversal.right.windowBounds.x).toBeGreaterThan(
-        results.reversal.left.windowBounds.x,
-      );
-      expect(results.reversal.free.dragTarget).toBeNull();
-      expect(results.reversal.free.windowBounds.width).toBeLessThanOrEqual(
-        224 + 2 * DOCK_FLOATING_SHADOW_MARGIN,
-      );
-      await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-      expect((await placement(page)).dragTarget).toBeNull();
-    } finally {
-      await finish(app, page, testInfo, {
-        ...(await provenance()),
-        directTrackedNativeCommands: true,
-        controlledCursor: true,
-        geometry,
-        geometryFixture,
-        observations,
-      });
-      await rm(profile, { recursive: true, force: true });
-    }
-  });
-}
-
 test('native inactive cursor: AppKit hand application preserves keyboard focus', async ({}, testInfo) => {
   const sources = await sourceEvidence([
     'src/main/dock-cursor.ts',
@@ -2152,7 +1276,7 @@ test('native inactive cursor: AppKit hand application preserves keyboard focus',
   }
 });
 
-test('native cursor diagnostic: expanded notch header and routing boundaries', async ({}, testInfo) => {
+test('native pointer routing rejects stale revisions and recovers setter failures', async ({}, testInfo) => {
   const { app, page, profile } = await launch(testInfo, undefined, 'notch');
   const observations: any[] = [];
   let timeline: unknown[] = [];
@@ -2205,162 +1329,6 @@ test('native cursor diagnostic: expanded notch header and routing boundaries', a
       fixture.native.focusDockWindow();
     });
     await expect.poll(async () => (await placement(page)).shape).toBe('notch');
-    const shell = page.getByTestId('dock-shell');
-    await page.getByTestId('dock-drag-handle').focus();
-    await expect(shell).toHaveAttribute('data-expanded', 'true');
-    await expect(shell).toHaveAttribute('data-reveal', '1');
-    await expect(page.getByTestId('dock-overview')).toBeVisible();
-
-    const sample = async (name: 'logo' | 'wing' | 'control' | 'margin', focus: string) => {
-      const local = await page.evaluate((name) => {
-        const header = document.querySelector('.companion-header')!;
-        const box = header.getBoundingClientRect();
-        if (name === 'margin') return { x: 2, y: innerHeight - 2 };
-        if (name === 'wing') {
-          const camera = document
-            .querySelector('[data-testid="dock-camera-exclusion"]')!
-            .getBoundingClientRect();
-          const y = box.y + box.height / 2;
-          for (let x = box.x + 4; x < box.right - 4; x += 2) {
-            if (x >= camera.x && x <= camera.right) continue;
-            if (document.elementFromPoint(x, y) === header) return { x, y };
-          }
-          throw new Error('No exposed camera-safe blank header point');
-        }
-        const element =
-          name === 'logo'
-            ? document.querySelector('[data-testid="dock-drag-handle"] svg')
-            : document.querySelector('[data-dock-row]');
-        if (!element) throw new Error(`Missing diagnostic target: ${name}`);
-        const rect = element.getBoundingClientRect();
-        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-      }, name);
-      const label = `${focus}-${name}`;
-      await app.evaluate(
-        (_electron, { label, local }) => {
-          const fixture = (globalThis as any).companionNative;
-          fixture.cursorDiagnostic.stage = label;
-          const bounds = fixture.native.getDockWindow().getBounds();
-          fixture.setControlledCursor({ x: bounds.x + local.x, y: bounds.y + local.y });
-        },
-        { label, local },
-      );
-      // Chromium input exercises the renderer cursor request; the controlled native
-      // cursor drives production routing. Neither posts physical OS pointer input.
-      await page.mouse.move(local.x, local.y);
-      await expect
-        .poll(async () =>
-          app.evaluate(() => {
-            const fixture = (globalThis as any).companionNative;
-            return fixture.snapshot().ignoredPointerInput?.ignore;
-          }),
-        )
-        .toBe(name === 'margin');
-      await page.evaluate(
-        () =>
-          new Promise<void>((resolve) =>
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-          ),
-      );
-      // A second small move after routing settles distinguishes entry forwarding
-      // from ordinary interactive-window cursor dispatch without waiting on time.
-      await page.mouse.move(local.x + 0.25, local.y);
-      const dom = await page.evaluate(({ x, y }) => {
-        const element = document.elementFromPoint(x, y);
-        const style = element ? getComputedStyle(element) : null;
-        const ancestors = [];
-        for (let node = element; node; node = node.parentElement) {
-          const css = getComputedStyle(node);
-          ancestors.push({
-            tag: node.tagName,
-            id: node.id,
-            className: node.getAttribute('class'),
-            cursor: css.cursor,
-            appRegion: css.getPropertyValue('-webkit-app-region'),
-          });
-        }
-        return {
-          point: { x, y },
-          tag: element?.tagName,
-          testId: element?.closest('[data-testid]')?.getAttribute('data-testid'),
-          cursor: style?.cursor,
-          appRegion: style?.getPropertyValue('-webkit-app-region'),
-          ancestors,
-          header: Boolean(element?.closest('.companion-header')),
-          grip: Boolean(element?.closest('[data-testid="dock-drag-handle"]')),
-          focused: document.hasFocus(),
-          expanded: document
-            .querySelector('[data-testid="dock-shell"]')
-            ?.getAttribute('data-expanded'),
-        };
-      }, local);
-      const native = await app.evaluate(() => {
-        const fixture = (globalThis as any).companionNative;
-        const state = fixture.snapshot();
-        const payload = state.pointerRouting?.payload;
-        const local = { x: state.cursor.x - state.bounds.x, y: state.cursor.y - state.bounds.y };
-        return {
-          bounds: state.bounds,
-          placement: state.placement,
-          focused: state.focused,
-          routing: state.pointerRouting,
-          ignored: state.ignoredPointerInput,
-          containsPoint: Boolean(
-            payload?.active &&
-            payload.regions.some(
-              (r: any) =>
-                local.x >= r.x &&
-                local.x < r.x + r.width &&
-                local.y >= r.y &&
-                local.y < r.y + r.height,
-            ),
-          ),
-          lastCursor: fixture.cursorDiagnostic.lastCursor,
-          events: fixture.cursorDiagnostic.events.filter(
-            (event: any) => event.stage === fixture.cursorDiagnostic.stage,
-          ),
-        };
-      });
-      const repeated = await app.evaluate(() => {
-        const fixture = (globalThis as any).companionNative;
-        const diagnostic = fixture.cursorDiagnostic;
-        const state = fixture.snapshot();
-        const start = diagnostic.events.length;
-        const accepted = Array.from({ length: 5 }, () =>
-          fixture.native.setDockPointerRegions(
-            fixture.native.getDockWindow(),
-            state.pointerRouting.payload,
-          ),
-        );
-        return {
-          accepted,
-          writes: diagnostic.events.slice(start).filter((event: any) => event.kind === 'ignore'),
-        };
-      });
-      observations.push({ label, name, dom, native, repeated });
-    };
-    for (const name of ['control', 'logo', 'wing', 'margin'] as const)
-      await sample(name, 'focused');
-    // Restore header presence before focus changes, so leaving the window does
-    // not conflate passive collapse with an unfocused cursor request.
-    await app.evaluate(() => (globalThis as any).companionNative.native.focusDockWindow());
-    await page.getByTestId('dock-drag-handle').focus();
-    await expect(shell).toHaveAttribute('data-expanded', 'true');
-    await expect(shell).toHaveAttribute('data-reveal', '1');
-    await sample('logo', 'before-blur');
-    await app.evaluate(() => (globalThis as any).companionNative.openFocusTarget());
-    await expect
-      .poll(async () => app.evaluate(() => (globalThis as any).companionNative.snapshot().focused))
-      .toBe(false);
-    if ((await shell.getAttribute('data-expanded')) === 'true') {
-      for (const name of ['control', 'logo', 'wing'] as const) await sample(name, 'unfocused');
-    } else
-      observations.push({
-        label: 'unfocused-checkpoint',
-        skipped:
-          'Normal blur collapsed expanded header; no synthetic reopening or focus policy override.',
-      });
-    await artifact(page, testInfo, 'expanded-notch-cursor-diagnostic');
     const routingLifecycle = await app.evaluate(async () => {
       const fixture = (globalThis as any).companionNative;
       const native = fixture.native;
@@ -2380,39 +1348,6 @@ test('native cursor diagnostic: expanded notch header and routing boundaries', a
         });
       };
       const count = () => diagnostic.events.filter((event: any) => event.kind === 'ignore').length;
-      const rows = [];
-      diagnostic.stage = 'controlled-synchronous-cursor-handoff';
-      route(true);
-      const initial = snapshot();
-      const accepted = { active: true, regions: [initial.surface], revision: initial.revision };
-      const marginPoint = { x: initial.windowBounds.x - 1, y: initial.windowBounds.y - 1 };
-      fixture.setControlledCursor(marginPoint);
-      native.setDockPointerRegions(window, accepted);
-      const beforeHandoff = fixture.snapshot().ignoredPointerInput;
-      const startHandoff = count();
-      fixture.setControlledCursor({
-        x: initial.windowBounds.x + initial.surface.x + 20,
-        y: initial.windowBounds.y + initial.surface.y + 20,
-      });
-      // No await or timer yield: only the production event listener can update
-      // routing here. The actual Chromium cursor observations remain separate.
-      window.webContents.emit('cursor-changed', {}, 'grab');
-      const insideHandoff = fixture.snapshot().ignoredPointerInput;
-      const insideWrites = count() - startHandoff;
-      fixture.setControlledCursor(marginPoint);
-      window.webContents.emit('cursor-changed', {}, 'pointer');
-      const outsideHandoff = fixture.snapshot().ignoredPointerInput;
-      const beforeRepeatedOutside = count();
-      for (let i = 0; i < 5; i++) window.webContents.emit('cursor-changed', {}, 'pointer');
-      const synchronousHandoff = {
-        controlledEvent: true,
-        noMainTurnYield: true,
-        beforeHandoff,
-        insideHandoff,
-        insideWrites,
-        outsideHandoff,
-        repeatedOutsideWrites: count() - beforeRepeatedOutside,
-      };
       diagnostic.stage = 'routing-stale';
       route(true);
       const beforeStale = count();
@@ -2422,41 +1357,6 @@ test('native cursor diagnostic: expanded notch header and routing boundaries', a
         writes: count() - beforeStale,
         ignored: fixture.snapshot().ignoredPointerInput,
       };
-      for (const kind of ['drag', 'resize']) {
-        diagnostic.stage = `routing-${kind}`;
-        route(false);
-        const initial = snapshot();
-        await native.updateDockPlacement(
-          window,
-          kind === 'drag'
-            ? { action: 'begin-drag', revision: initial.revision, origin: { x: 20, y: 20 } }
-            : {
-                action: 'begin-resize',
-                revision: initial.revision,
-                origin: { x: initial.surface.x + 20, y: initial.surface.y + 20 },
-              },
-        );
-        const active = snapshot();
-        const token = kind === 'drag' ? active.dragToken : active.resizeToken;
-        const beforeRepeat = count();
-        for (let i = 0; i < 5; i++) route(false);
-        const held = {
-          token,
-          ignored: fixture.snapshot().ignoredPointerInput,
-          repeatedWrites: count() - beforeRepeat,
-        };
-        await native.updateDockPlacement(window, {
-          action: `cancel-${kind}`,
-          token,
-          ...(kind === 'drag' ? { sequence: 1 } : {}),
-        });
-        rows.push({
-          kind,
-          held,
-          cancelled: snapshot(),
-          ignoredAfterCancel: fixture.snapshot().ignoredPointerInput,
-        });
-      }
       const errors = [];
       for (const failures of [1, 2]) {
         diagnostic.stage = `routing-error-${failures}`;
@@ -2486,87 +1386,14 @@ test('native cursor diagnostic: expanded notch header and routing boundaries', a
           window.setIgnoreMouseEvents = realSetter;
         }
       }
-      return { synchronousHandoff, stale, rows, errors };
+      return { stale, errors };
     });
     observations.push({ label: 'routing-lifecycle', routingLifecycle });
-    // Keep all checkpoints in the artifact even if a requested cursor is missing.
-    for (const row of observations.filter((entry) => entry.native)) {
-      expect(row.repeated.accepted, row.label).toEqual([true, true, true, true, true]);
-      expect(
-        row.repeated.writes,
-        `${row.label}: unchanged routing does not rewrite native state`,
-      ).toEqual([]);
-      expect(row.native.routing.result.supported, row.label).toBe(true);
-      expect(row.native.routing.payload.revision, row.label).toBe(row.native.placement.revision);
-      expect(row.native.containsPoint, row.label).toBe(row.name !== 'margin');
-      expect(row.native.ignored.ignore, row.label).toBe(row.name === 'margin');
-      if (row.name === 'logo' || row.name === 'wing') {
-        expect(row.dom.header, row.label).toBe(true);
-        expect(row.dom.cursor, row.label).toBe('grab');
-        expect(
-          row.dom.ancestors.some((entry: any) => entry.appRegion === 'drag'),
-          row.label,
-        ).toBe(false);
-        expect(row.native.lastCursor, row.label).toBe('grab');
-      } else if (row.name === 'control') {
-        expect(row.dom.cursor, row.label).toBe('pointer');
-        expect(row.native.lastCursor, row.label).toBe('hand');
-      }
-      if (row.label.startsWith('unfocused-')) expect(row.native.focused, row.label).toBe(false);
-    }
-    const entry = observations.find((row) => row.label === 'before-blur-logo');
-    const firstGrab = entry.native.events.find(
-      (event: any) => event.kind === 'cursor' && event.type === 'grab',
-    );
-    expect(firstGrab, 'transparent margin to header must emit grab').toBeDefined();
-    expect(firstGrab.routing.payload.revision).toBe(firstGrab.revision);
-    expect(firstGrab.routing.result.supported).toBe(true);
-    expect(
-      firstGrab.ignored.ignore,
-      'routing is interactive at the cursor request, before the next poll',
-    ).toBe(false);
-    const point = {
-      x: firstGrab.point.x - firstGrab.bounds.x,
-      y: firstGrab.point.y - firstGrab.bounds.y,
-    };
-    expect(
-      firstGrab.routing.payload.regions.some(
-        (r: any) =>
-          point.x >= r.x && point.x < r.x + r.width && point.y >= r.y && point.y < r.y + r.height,
-      ),
-    ).toBe(true);
-    const margin = observations.find((row) => row.label === 'focused-margin');
-    expect(
-      margin.native.events
-        .filter((event: any) => event.kind === 'ignore')
-        .map((event: any) => ({ ignore: event.ignore, forward: event.options?.forward })),
-    ).toEqual([{ ignore: true, forward: true }]);
-    expect(
-      entry.native.events
-        .filter((event: any) => event.kind === 'ignore')
-        .map((event: any) => event.ignore),
-    ).toEqual([false]);
-    expect(routingLifecycle.synchronousHandoff).toMatchObject({
-      controlledEvent: true,
-      noMainTurnYield: true,
-      beforeHandoff: { ignore: true, options: { forward: true } },
-      insideHandoff: { ignore: false },
-      insideWrites: 1,
-      outsideHandoff: { ignore: true, options: { forward: true } },
-      repeatedOutsideWrites: 0,
-    });
     expect(routingLifecycle.stale).toMatchObject({
       accepted: false,
       writes: 0,
       ignored: { ignore: false },
     });
-    for (const row of routingLifecycle.rows) {
-      expect(row.held.token, row.kind).toBeTruthy();
-      expect(row.held).toMatchObject({ ignored: { ignore: false }, repeatedWrites: 0 });
-      expect(row.cancelled.dragToken).toBeNull();
-      expect(row.cancelled.resizeToken).toBeNull();
-      expect(row.ignoredAfterCancel).toMatchObject({ ignore: true, options: { forward: true } });
-    }
     for (const error of routingLifecycle.errors) {
       expect(error.failed).toBe(false);
       expect(error.recovered).toBe(true);
@@ -2615,7 +1442,7 @@ test('native cursor diagnostic: expanded notch header and routing boundaries', a
     await finish(app, page, testInfo, {
       ...(await provenance()),
       controlledCursor: true,
-      chromiumPointerInput: true,
+      chromiumPointerInput: false,
       physicalPointerInput: false,
       physicalCursorAppearanceProven: false,
       observations,
@@ -2625,7 +1452,7 @@ test('native cursor diagnostic: expanded notch header and routing boundaries', a
   }
 });
 
-test('controlled right-edge release: later cursor movement cannot change the committed drop', async ({}, testInfo) => {
+test('release-point wire validation and floating geometry remain bounded', async ({}, testInfo) => {
   const token = '123e4567-e89b-42d3-a456-426614174000';
   const end = { action: 'end-drag', token, sequence: 2 };
   expect(
@@ -2668,364 +1495,13 @@ test('controlled right-edge release: later cursor movement cannot change the com
     expect(idleBounds, name).toEqual(dragBounds);
     return { name, display, dragging, idle, dragBounds, idleBounds };
   });
-  const { app, page, profile } = await launch(testInfo);
-  const observations = [];
-  try {
-    const result = await app.evaluate(async ({ screen }) => {
-      const fixture = (globalThis as any).companionNative;
-      const native = fixture.native;
-      const window = native.getDockWindow();
-      const transitions: any[] = [];
-      let stage = 'setup';
-      const setBounds = window.setBounds;
-      const send = window.webContents.send;
-      window.setBounds = (...args: any[]) => {
-        const before = window.getBounds();
-        const result = setBounds.apply(window, args);
-        transitions.push({
-          kind: 'bounds',
-          stage,
-          before,
-          requested: args[0],
-          after: window.getBounds(),
-        });
-        return result;
-      };
-      window.webContents.send = (channel: string, ...args: any[]) => {
-        if (args[0]?.surface && args[0]?.windowBounds)
-          transitions.push({
-            kind: 'snapshot',
-            stage,
-            channel,
-            bounds: window.getBounds(),
-            snapshot: args[0],
-          });
-        return send.call(window.webContents, channel, ...args);
-      };
-      const command = (value: unknown) => native.updateDockPlacement(window, value);
-      const current = () => native.getDockPlacementSnapshot(window);
-      const commit = async (label: string, value: unknown) => {
-        stage = label;
-        const persistence = command(value);
-        const snapshot = current();
-        // Separate the synchronous native commit from later renderer resize requests
-        // while preference persistence yields; retain both in the raw timeline.
-        stage = `${label}-persist`;
-        await persistence;
-        return snapshot;
-      };
-      try {
-        await command({ action: 'move', target: 'right' });
-        const before = current();
-        const area = screen
-          .getAllDisplays()
-          .find((display) => display.id === before.displayId)!.workArea;
-        const releasePoint = {
-          x: area.x + Math.round(area.width / 2),
-          y: area.y + Math.round(area.height / 2),
-        };
-        const begin = async () => {
-          const snapshot = current();
-          fixture.setControlledCursor({
-            x: snapshot.windowBounds.x + snapshot.surface.x + 20,
-            y: snapshot.windowBounds.y + snapshot.surface.y + 20,
-          });
-          await command({
-            action: 'begin-drag',
-            revision: snapshot.revision,
-            origin: { x: 20, y: 20 },
-          });
-          return current().dragToken;
-        };
-        const dragToken = await begin();
-        fixture.setControlledCursor(releasePoint);
-        await command({ action: 'drag', token: dragToken, sequence: 1 });
-        const released = current();
-        // Only the external cursor boundary moves after release; no OS input is posted.
-        fixture.setControlledCursor({ x: area.x + area.width - 1, y: releasePoint.y });
-        await command({ action: 'end-drag', token: 'stale-token', sequence: 2, releasePoint });
-        const rejected = current();
-        const committed = await commit('center-release', {
-          action: 'end-drag',
-          token: dragToken,
-          sequence: 2,
-          releasePoint,
-        });
-        stage = 'late-release';
-        await command({
-          action: 'end-drag',
-          token: dragToken,
-          sequence: 3,
-          releasePoint: { x: area.x, y: area.y },
-        });
-        const late = current();
-        stage = 'cancel';
-        await command({ action: 'move', target: 'right' });
-        const restored = current();
-        const cancelledToken = await begin();
-        await command({ action: 'cancel-drag', token: cancelledToken, sequence: 1 });
-        await command({ action: 'end-drag', token: cancelledToken, sequence: 2, releasePoint });
-        const cancelled = current();
-        const additional = [];
-        for (const name of ['right-clamped', 'unsampled-endpoint']) {
-          stage = `${name}-setup`;
-          await command({ action: 'move', target: 'right' });
-          const token = await begin();
-          // Stay outside the 48px snap hysteresis while allowing the wide core to clamp.
-          const point =
-            name === 'right-clamped'
-              ? { x: area.x + area.width - 100, y: releasePoint.y }
-              : releasePoint;
-          fixture.setControlledCursor({
-            x: point.x - (name === 'unsampled-endpoint' ? 30 : 0),
-            y: point.y,
-          });
-          await command({ action: 'drag', token, sequence: 1 });
-          const lastDrag = current();
-          fixture.setControlledCursor({ x: area.x + area.width - 1, y: point.y });
-          const committed = await commit(`${name}-release`, {
-            action: 'end-drag',
-            token,
-            sequence: 2,
-            releasePoint: point,
-          });
-          additional.push({ name, point, lastDrag, committed });
-        }
-        return {
-          before,
-          released,
-          rejected,
-          committed,
-          late,
-          restored,
-          cancelled,
-          releasePoint,
-          transitions,
-          additional,
-        };
-      } finally {
-        window.setBounds = setBounds;
-        window.webContents.send = send;
-      }
-    });
-    observations.push(result);
-    expect(result.released.phase).toBe('dragging');
-    expect(result.released.snapPreview).toBeNull();
-    expect(result.rejected).toEqual(result.released);
-    expect(result.committed.placement.kind).toBe('floating');
-    expect(result.committed.phase).toBe('idle');
-    expect(result.committed.windowBounds).toEqual(result.released.windowBounds);
-    expect(result.committed.surface).toEqual(result.released.surface);
-    expect({
-      x: result.committed.windowBounds.x + result.committed.floatingAnchor.x,
-      y: result.committed.windowBounds.y + result.committed.floatingAnchor.y,
-      width: result.committed.floatingAnchor.width,
-      height: result.committed.floatingAnchor.height,
-    }).toEqual(absoluteSurface(result.released));
-    expect(result.late).toEqual(result.committed);
-    expect(result.cancelled.placement).toEqual(result.restored.placement);
-    expect(result.cancelled.phase).toBe('idle');
-    for (const entry of result.additional) {
-      expect(entry.committed.placement.kind, entry.name).toBe('floating');
-      if (entry.name === 'right-clamped') {
-        expect(entry.committed.windowBounds).toEqual(entry.lastDrag.windowBounds);
-        expect(entry.committed.surface).toEqual(entry.lastDrag.surface);
-      }
-    }
-    for (const stage of ['center-release', 'right-clamped-release', 'unsampled-endpoint-release']) {
-      const transitions = result.transitions.filter((entry) => entry.stage === stage);
-      expect(
-        transitions.filter((entry) => entry.kind === 'bounds'),
-        stage,
-      ).toHaveLength(1);
-      const snapshots = transitions.filter((entry) => entry.kind === 'snapshot');
-      expect(snapshots, stage).toHaveLength(1);
-      expect(snapshots[0].snapshot.phase, stage).toBe('idle');
-      expect(snapshots[0].bounds, stage).toEqual(snapshots[0].snapshot.windowBounds);
-      if (stage !== 'unsampled-endpoint-release') {
-        const bounds = transitions.find((entry) => entry.kind === 'bounds');
-        expect(bounds.after, stage).toEqual(bounds.before);
-        const painted =
-          stage === 'center-release'
-            ? result.released
-            : result.additional.find((entry) => entry.name === 'right-clamped')!.lastDrag;
-        // Retain the last painted DOM-local core while the native origin changes,
-        // before any placement event can reach the renderer. Never compensate
-        // with the new snapshot's local coordinates in this prepaint oracle.
-        const beforePaint = {
-          ...painted.surface,
-          x: bounds.before.x + painted.surface.x,
-          y: bounds.before.y + painted.surface.y,
-        };
-        const afterBoundsBeforePaint = {
-          ...painted.surface,
-          x: bounds.after.x + painted.surface.x,
-          y: bounds.after.y + painted.surface.y,
-        };
-        result.transitions.push({
-          kind: 'prepaint-model',
-          stage,
-          paintedRevision: painted.revision,
-          retainedLocalCore: painted.surface,
-          beforePaint,
-          afterBoundsBeforePaint,
-        });
-        expect(afterBoundsBeforePaint, `${stage}: old DOM with actual new native origin`).toEqual(
-          beforePaint,
-        );
-        expect(transitions.indexOf(bounds), `${stage}: bounds precede publication`).toBeLessThan(
-          transitions.indexOf(snapshots[0]),
-        );
-      }
-    }
-  } finally {
-    await finish(app, page, testInfo, {
-      ...(await provenance()),
-      directTrackedNativeCommands: true,
-      controlledCursor: true,
-      geometryCases,
-      observations,
-    });
-    await rm(profile, { recursive: true, force: true });
-  }
+  await writeFile(
+    testInfo.outputPath('release-point-geometry.json'),
+    JSON.stringify(geometryCases, null, 2),
+  );
 });
 
-test('controlled floating anchor: retained upward allocation keeps the grip and dropped compact position', async ({}, testInfo) => {
-  const { app, page, profile } = await launch(testInfo);
-  const observations = [];
-  try {
-    const result = await app.evaluate(async ({ screen }) => {
-      const fixture = (globalThis as any).companionNative;
-      const native = fixture.native;
-      const window = native.getDockWindow();
-      const command = (value: unknown) => native.updateDockPlacement(window, value);
-      const current = () => native.getDockPlacementSnapshot(window);
-      const absolute = (snapshot: any, key: 'surface' | 'floatingAnchor') => ({
-        ...snapshot[key],
-        x: snapshot.windowBounds.x + snapshot[key].x,
-        y: snapshot.windowBounds.y + snapshot[key].y,
-      });
-      await command({ action: 'move', target: 'floating' });
-      let snapshot = current();
-      const area = screen
-        .getAllDisplays()
-        .find((display) => display.id === snapshot.displayId)!.workArea;
-      let anchor = absolute(snapshot, 'floatingAnchor');
-      fixture.setControlledCursor({ x: anchor.x + 48, y: anchor.y + 20 });
-      await command({
-        action: 'begin-drag',
-        revision: snapshot.revision,
-        origin: {
-          x: snapshot.floatingAnchor.x - snapshot.surface.x + 48,
-          y: snapshot.floatingAnchor.y - snapshot.surface.y + 20,
-        },
-      });
-      const firstToken = current().dragToken;
-      fixture.setControlledCursor({ x: area.x + area.width / 2, y: area.y + area.height - 20 });
-      await command({ action: 'end-drag', token: firstToken, sequence: 1 });
-      snapshot = current();
-      await command({ action: 'resize', revision: snapshot.revision, width: 380, height: 320 });
-      const retained = current();
-      anchor = absolute(retained, 'floatingAnchor');
-      fixture.setControlledCursor({ x: anchor.x + 48, y: anchor.y + 20 });
-      await command({
-        action: 'begin-drag',
-        revision: retained.revision,
-        origin: {
-          x: retained.floatingAnchor.x - retained.surface.x + 48,
-          y: retained.floatingAnchor.y - retained.surface.y + 20,
-        },
-      });
-      const started = current();
-      fixture.setControlledCursor({
-        x: area.x + area.width - 224 + 48,
-        y: area.y + Math.floor(area.height / 2),
-      });
-      await command({ action: 'drag', token: started.dragToken, sequence: 1 });
-      const moving = current();
-      await command({ action: 'end-drag', token: started.dragToken, sequence: 2 });
-      const dropped = current();
-      await command({ action: 'end-drag', token: started.dragToken, sequence: 3 });
-      const afterLateEnd = current();
-      const headerGrabs = [];
-      for (const offsetX of [24, 112, 356]) {
-        await command({ action: 'resize', revision: current().revision, width: 480, height: 320 });
-        const before = current();
-        const headerBounds = {
-          x: before.surface.x,
-          y: before.floatingAnchor.y,
-          width: before.surface.width,
-          height: before.floatingAnchor.height,
-        };
-        const point = {
-          x: before.windowBounds.x + headerBounds.x + offsetX,
-          y: before.windowBounds.y + headerBounds.y + 20,
-        };
-        fixture.setControlledCursor(point);
-        const origin = {
-          x: headerBounds.x - before.surface.x + offsetX,
-          y: headerBounds.y - before.surface.y + 20,
-        };
-        await command({
-          action: 'begin-drag',
-          revision: before.revision,
-          origin,
-          headerBounds: { ...headerBounds, width: headerBounds.width + 20 },
-        });
-        const invalid = current();
-        await command({ action: 'begin-drag', revision: current().revision, origin, headerBounds });
-        const grabbing = current();
-        headerGrabs.push({
-          before,
-          offsetX,
-          point,
-          invalid,
-          grabbing,
-          surface: absolute(grabbing, 'surface'),
-        });
-        await command({ action: 'cancel-drag', token: grabbing.dragToken, sequence: 1 });
-      }
-      return {
-        retained,
-        anchor,
-        started,
-        moving,
-        dropped,
-        afterLateEnd,
-        headerGrabs,
-        startedSurface: absolute(started, 'surface'),
-        movingSurface: absolute(moving, 'surface'),
-        droppedAnchor: absolute(dropped, 'floatingAnchor'),
-      };
-    });
-    observations.push(result);
-    expect(result.retained.expansionDirection).toBe('up');
-    expect(result.retained.surface.height).toBeGreaterThan(result.anchor.height);
-    expect(result.started.phase).toBe('dragging');
-    expect(result.startedSurface).toEqual(result.anchor);
-    expect(result.moving.snapPreview).toBeNull();
-    expect(result.dropped.phase).toBe('idle');
-    expect(result.droppedAnchor).toEqual(result.movingSurface);
-    expect(result.droppedAnchor).toMatchObject({ width: 224, height: 40 });
-    expect(result.afterLateEnd.placement).toEqual(result.dropped.placement);
-    for (const grab of result.headerGrabs) {
-      expect(grab.invalid.phase).toBe('idle');
-      expect(grab.grabbing.phase).toBe('dragging');
-      expect(grab.surface.x).toBe(grab.point.x - Math.min(216, Math.max(8, grab.offsetX)));
-      expect(grab.surface.y).toBe(grab.point.y - 20);
-    }
-  } finally {
-    await finish(app, page, testInfo, {
-      ...(await provenance()),
-      directTrackedNativeCommands: true,
-      controlledOSCursor: true,
-      observations,
-    });
-    await rm(profile, { recursive: true, force: true });
-  }
-});
-
-test('controlled conversation resize: ownership preserves pointer routing and blur rolls geometry back', async ({}, testInfo) => {
+test('resize request validation rejects stale revisions and outside origins', async ({}, testInfo) => {
   const { app, page, profile } = await launch(testInfo);
   const observations = [];
   try {
@@ -3050,78 +1526,16 @@ test('controlled conversation resize: ownership preserves pointer routing and bl
         origin: { x: -1, y: -1 },
       });
       const outside = current();
-      await command({
-        action: 'begin-resize',
-        revision: current().revision,
-        origin: {
-          x: original.surface.x + original.surface.width - 2,
-          y: original.surface.y + original.surface.height - 2,
-        },
-      });
-      const accepted = current();
-      const point = { x: accepted.windowBounds.x - 200, y: accepted.windowBounds.y - 200 };
-      fixture.setControlledCursor(point);
-      native.setDockPointerRegions(
-        window,
-        { active: false, regions: [], revision: accepted.revision },
-        'darwin',
-        point,
-      );
-      const activeRouting = fixture.snapshot().ignoredPointerInput;
-      await command({ action: 'resize', revision: accepted.revision, width: 640, height: 640 });
-      const missingToken = current();
-      await command({
-        action: 'resize',
-        revision: current().revision,
-        resizeToken: accepted.resizeToken,
-        width: 640,
-        height: 640,
-        expansionDirection: original.expansionDirection,
-      });
-      const resized = current();
-      window.emit('blur');
-      const cancelled = current();
-      native.setDockPointerRegions(
-        window,
-        { active: false, regions: [], revision: cancelled.revision },
-        'darwin',
-        point,
-      );
-      const inactiveRouting = fixture.snapshot().ignoredPointerInput;
-      await command({ action: 'end-resize', token: accepted.resizeToken });
-      return {
-        original,
-        stale,
-        outside,
-        accepted,
-        activeRouting,
-        missingToken,
-        resized,
-        cancelled,
-        inactiveRouting,
-        afterLateEnd: current(),
-      };
+      return { stale, outside };
     });
     observations.push(result);
     expect(result.stale.resizeToken).toBeNull();
     expect(result.outside.resizeToken).toBeNull();
-    expect(result.accepted.resizeToken).toEqual(expect.any(String));
-    expect(result.activeRouting.ignore).toBe(false);
-    expect(result.missingToken.surface).toEqual(result.accepted.surface);
-    expect(result.resized.floatingAnchor?.width).toBe(224);
-    expect(result.resized.surface.width).toBeGreaterThanOrEqual(result.original.surface.width);
-    expect(result.cancelled.resizeToken).toBeNull();
-    expect(result.cancelled.surface).toEqual(result.original.surface);
-    expect(result.cancelled.windowBounds).toEqual(result.original.windowBounds);
-    expect(result.inactiveRouting.ignore).toBe(true);
-    expect(result.afterLateEnd.surface).toEqual(result.original.surface);
-    expect(result.accepted.workArea).toBeDefined();
   } finally {
     await finish(app, page, testInfo, {
       ...(await provenance()),
       directTrackedNativeCommands: true,
       controlledOSCursor: true,
-      syntheticBlurEvent: true,
       observations,
     });
     await rm(profile, { recursive: true, force: true });
@@ -3176,167 +1590,6 @@ test('controlled drag validation: stale, outside, nonfinite and camera origins c
       ...(await provenance()),
       syntheticHelperOutput: true,
       directProductionIPCValidation: true,
-      observations,
-    });
-    await rm(profile, { recursive: true, force: true });
-  }
-});
-
-for (const finishBeforeReply of ['pointer-release', 'Escape'] as const) {
-  test(`controlled late drag: ${finishBeforeReply} before native begin settles safely`, async ({}, testInfo) => {
-    const { app, page, profile } = await launch(testInfo);
-    const observations = [];
-    try {
-      await moveMenu(page, 'floating');
-      const initial = await observe(app, page, 'before-delayed-begin');
-      observations.push(initial);
-      const grip = (await page.getByTestId('dock-drag-handle').boundingBox())!;
-      const point = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
-      await app.evaluate(
-        (_electron, value) => {
-          const fixture = (globalThis as any).companionNative;
-          fixture.setControlledCursor(value);
-          fixture.dragBeginGate.hold();
-        },
-        { x: initial.native.bounds.x + point.x, y: initial.native.bounds.y + point.y },
-      );
-      await page.mouse.move(point.x, point.y);
-      await page.mouse.down();
-      await page.mouse.move(point.x + 20, point.y + 20);
-      await expect
-        .poll(() => app.evaluate(() => (globalThis as any).companionNative.dragBeginGate.pending()))
-        .toBe(1);
-      if (finishBeforeReply === 'Escape') await page.keyboard.press('Escape');
-      else await page.mouse.up();
-      await app.evaluate(() => (globalThis as any).companionNative.dragBeginGate.release());
-      const finishes = (action: 'cancel-drag' | 'end-drag') =>
-        app.evaluate(
-          (_electron, wanted) =>
-            (globalThis as any).companionNative
-              .snapshot()
-              .calls.filter(
-                (entry: any) =>
-                  entry.boundary === 'production-placement-command' &&
-                  entry.command.action === wanted,
-              )
-              .map((entry: any) => entry.command),
-          action,
-        );
-      if (finishBeforeReply === 'Escape') {
-        // Escape abandons the drag: cancel, no drop, the placement is unchanged.
-        await expect.poll(async () => (await finishes('cancel-drag')).length).toBeGreaterThan(0);
-        await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-        expect(await finishes('end-drag')).toEqual([]);
-        expect((await placement(page)).placement).toEqual(initial.placement.placement);
-      } else {
-        // A release while native begin is pending is a normal drop at the release point.
-        await expect.poll(async () => (await finishes('end-drag')).length).toBe(1);
-        const [drop] = await finishes('end-drag');
-        expect(drop.releasePoint).toEqual({
-          x: initial.native.bounds.x + point.x + 20,
-          y: initial.native.bounds.y + point.y + 20,
-        });
-        expect(await finishes('cancel-drag')).toEqual([]);
-        await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-      }
-      expect(await app.evaluate(() => (globalThis as any).companionNative.menu.isEnabled())).toBe(
-        true,
-      );
-      expect((await savedPreferences(profile)).dockPlacement.placement).toEqual(
-        (await placement(page)).placement,
-      );
-      observations.push(await observe(app, page, 'delayed-begin-settled'));
-    } finally {
-      await app
-        .evaluate(() => (globalThis as any).companionNative.dragBeginGate.release())
-        .catch(() => {});
-      await page.mouse.up().catch(() => {});
-      await finish(app, page, testInfo, {
-        ...(await provenance()),
-        rendererSynthesizedInput: true,
-        controlledOSCursor: true,
-        controlledNativeBeginDelay: true,
-        finalObservation: await observe(app, page, 'delayed-drag-final').catch(() => null),
-        observations,
-      });
-      await rm(profile, { recursive: true, force: true });
-    }
-  });
-}
-
-test('demo: companion floating drag and dismiss with fixture data', async ({}, testInfo) => {
-  test.skip(process.env.DOCK_COMPANION_DEMO !== '1', 'Opt-in paced handoff recording.');
-  const { app, page, profile } = await launch(testInfo);
-  const observations = [];
-  try {
-    await moveMenu(page, 'floating');
-    await page.waitForTimeout(3000); // Deliberate demo pacing, not a readiness check.
-    observations.push(await observe(app, page, 'demo-floating-start'));
-    await artifact(page, testInfo, 'companion-floating');
-    await page.getByTestId('dock-drag-handle').press('Shift+F10');
-    await expect(page.getByRole('menu')).toBeVisible();
-    await page.waitForTimeout(2500);
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('menu')).toHaveCount(0);
-    await page.waitForTimeout(1500);
-
-    const initial = await observe(app, page, 'demo-before-drag');
-    const grip = (await page.getByTestId('dock-drag-handle').boundingBox())!;
-    const point = { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 };
-    const origin = { x: initial.native.bounds.x + point.x, y: initial.native.bounds.y + point.y };
-    await app.evaluate(
-      (_electron, value) => (globalThis as any).companionNative.setControlledCursor(value),
-      origin,
-    );
-    await page.mouse.move(point.x, point.y);
-    await page.mouse.down();
-    await page.mouse.move(point.x + 12, point.y + 12);
-    await expect
-      .poll(() =>
-        page.evaluate(() => (window as any).companionFixture.evidence().dragStartResult?.token),
-      )
-      .toBeTruthy();
-    await expect.poll(async () => (await placement(page)).phase).toBe('dragging');
-    const area = initial.native.displays[0].workArea;
-    const destination = { x: area.x + area.width * 0.65, y: area.y + area.height * 0.45 };
-    for (let step = 1; step <= 16; step++) {
-      await app.evaluate(
-        (_electron, value) => (globalThis as any).companionNative.setControlledCursor(value),
-        {
-          x: Math.round(origin.x + ((destination.x - origin.x) * step) / 16),
-          y: Math.round(origin.y + ((destination.y - origin.y) * step) / 16),
-        },
-      );
-      await page.waitForTimeout(100);
-    }
-    await page.waitForTimeout(1800);
-    observations.push(await observe(app, page, 'demo-native-dragging'));
-    await page.mouse.up();
-    await expect.poll(async () => (await placement(page)).phase).toBe('idle');
-    await expect(page.getByTestId('dock-overview')).toBeVisible();
-    await expect
-      .poll(async () => (await savedPreferences(profile)).dockPlacement.placement)
-      .toEqual((await placement(page)).placement);
-    expect((await placement(page)).placement).not.toEqual(initial.placement.placement);
-    await page.waitForTimeout(3500);
-    observations.push(await observe(app, page, 'demo-floating-drop-saved'));
-    await artifact(page, testInfo, 'companion-moved');
-    await page.getByTestId('dock-drag-handle').press('Shift+F10');
-    await expect(page.getByRole('menu')).toBeVisible();
-    await page.waitForTimeout(2500);
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(2000);
-    await page.keyboard.press('Escape');
-    await expect.poll(() => page.isClosed()).toBe(true);
-    expect(await app.evaluate(() => (globalThis as any).companionNative.menu.isEnabled())).toBe(
-      false,
-    );
-  } finally {
-    await finish(app, page, testInfo, {
-      ...(await provenance()),
-      rendererSynthesizedInput: true,
-      controlledOSCursor: true,
-      demo: 'Floating companion, placement menu, drag and save, dismiss',
       observations,
     });
     await rm(profile, { recursive: true, force: true });

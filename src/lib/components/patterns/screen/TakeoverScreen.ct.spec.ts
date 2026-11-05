@@ -1,11 +1,11 @@
 import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import TakeoverScrollHarness from './TakeoverScrollHarness.svelte';
 
-test('a bounded takeover scrolls to its last row while its body height is animating', async ({
+test('a bounded takeover keeps the last row reachable after its content changes', async ({
   mount,
   page,
 }) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(TakeoverScrollHarness, {
     props: { count: 40 },
   });
@@ -17,33 +17,10 @@ test('a bounded takeover scrolls to its last row while its body height is animat
   await wheelUntilScrolled(viewport, { deltaY: 10_000 });
   await expect(page.locator('[data-scroll-row]').last()).toBeInViewport();
 
-  // Removing rows retargets the real spring. Sample on animation frames, not a timed midpoint.
   await component.update({ props: { count: 30 } });
-  const sample = await viewport.evaluate(async (node) => {
-    for (let frame = 0; frame < 120; frame++) {
-      const body = node.querySelector<HTMLElement>('[data-slot="screen-body"]')!;
-      const wrapper = body.parentElement!;
-      if (
-        Math.abs(wrapper.getBoundingClientRect().height - body.getBoundingClientRect().height) > 1
-      ) {
-        node.scrollTop = 0;
-        node.scrollTop = node.scrollHeight;
-        return {
-          animating: true,
-          scrollTop: node.scrollTop,
-          bounded: node.scrollHeight > node.clientHeight,
-        };
-      }
-      await new Promise(requestAnimationFrame);
-    }
-    return { animating: false, scrollTop: node.scrollTop, bounded: false };
+  await viewport.evaluate((node) => {
+    node.scrollTop = 0;
   });
-  expect(sample.animating).toBe(true);
-  expect(sample.bounded).toBe(true);
-  expect(sample.scrollTop).toBeGreaterThan(0);
-  // The sample already pinned the body to the bottom while the spring shrinks it, so this
-  // wheel usually has nothing left to scroll; the last-row check below is the assertion.
-  // eslint-disable-next-line intent/no-raw-mouse-wheel-in-ct -- already at the bottom; the wheel need not scroll
-  await page.mouse.wheel(0, 10_000);
+  await wheelUntilScrolled(viewport, { deltaY: 10_000 });
   await expect(page.locator('[data-scroll-row]').last()).toBeInViewport();
 });

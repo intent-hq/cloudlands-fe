@@ -147,21 +147,10 @@ test('a conversation opened from the intro never holds the notch open after it c
   // Not secretly dismissed: the intro still waits for "Got it" on the next open,
   // and the conversation reopens from the same row.
   expect(await page.evaluate((key) => localStorage.getItem(key), SEEN_KEY)).toBeNull();
-  await component.getByTestId('dock-drag-handle').hover();
+  await component.getByTestId('dock-drag-handle').focus();
   await expect(component.getByTestId('dock-intro')).toBeVisible();
   await component.locator('[data-dock-row]').first().click();
   await expect(component.getByTestId('dock-conversation-surface')).toBeVisible();
-});
-
-test('moving the pointer through the intro overview releases its hold', async ({ mount, page }) => {
-  const component = await mount(DockIntroHarness, { props: shortNotch() });
-  const shell = component.getByTestId('dock-shell');
-  await expect(shell).toHaveAttribute('data-reveal', '1');
-  const card = (await component.getByTestId('dock-intro').boundingBox())!;
-  await page.mouse.move(card.x + card.width / 2, card.y + card.height / 2, { steps: 4 });
-  await page.mouse.move(630, SHORT - 10, { steps: 4 });
-  await expect(shell).toHaveAttribute('data-reveal', '0');
-  expect(await page.evaluate((key) => localStorage.getItem(key), SEEN_KEY)).toBeNull();
 });
 
 test('the intro at normal height (screenshot for review)', async ({ mount, page }, testInfo) => {

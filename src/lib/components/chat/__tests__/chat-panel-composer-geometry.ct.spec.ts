@@ -117,16 +117,11 @@ test('keeps suggestions accessible and inserts them after resizing into compact 
   await expect.poll(gap).toBeGreaterThan(0);
 });
 
-test('supports attachment keyboard navigation, removal, and composer resizing', async ({
-  mount,
-  page,
-}, testInfo) => {
+test('supports attachment keyboard navigation and removal', async ({ mount, page }, testInfo) => {
   const component = await mount(ChatPanelComposerGeometryHost, {
     props: { draft: 'Resizable attachment draft', width: 420 },
   });
-  const input = component.getByTestId('message-input');
   const editor = component.locator('.tiptap-editor');
-  const resize = input.locator('.resize-handle');
   const png = await page.evaluate(() => {
     const canvas = document.createElement('canvas');
     canvas.width = 64;
@@ -161,20 +156,6 @@ test('supports attachment keyboard navigation, removal, and composer resizing', 
   await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Enter');
   await expect(attachment).toHaveCount(0);
-
-  const before = (await input.boundingBox())!.height;
-  const handle = (await resize.boundingBox())!;
-  const handleY = handle.y + handle.height / 2;
-  await resize.dispatchEvent('mousedown', { clientY: handleY });
-  await page.evaluate((clientY) => {
-    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientY }));
-    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientY }));
-  }, handleY - 60);
-  await expect.poll(async () => (await input.boundingBox())!.height).toBeGreaterThan(before);
-  await testInfo.attach('composer-after-removal-and-resize.png', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
 });
 
 for (const reducedMotion of ['reduce', 'no-preference'] as const) {
