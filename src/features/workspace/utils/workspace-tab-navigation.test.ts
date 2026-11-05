@@ -24,7 +24,7 @@ import type {
 } from '$store/renderer/slices/panel-layout/panel-layout-types';
 import { KeyboardShortcutManager, type KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { SHORTCUT_DEFAULTS, type ShortcutId } from '$lib/utils/shortcut-bindings';
-import { drawerTerminalCycleDirection } from '$lib/components/terminal/drawer-terminal-cycling';
+import { handleDrawerTerminalCycleKeydown } from '$lib/components/terminal/drawer-terminal-cycling';
 import { SHORTCUTS } from '$lib/utils/shortcuts';
 import {
   closeActivePanelTab,
@@ -385,13 +385,9 @@ describe('global workspace tab navigation', () => {
         textarea.className = 'xterm-helper-textarea';
         mount(textarea, xterm);
         const cycle = vi.fn();
-        const handler = (event: KeyboardEvent) => {
-          const direction = drawerTerminalCycleDirection(event, drawer, terminalCount());
-          if (!direction) return;
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          cycle(direction);
-        };
+        // The same handler both drawer overlays install on window.
+        const handler = (event: KeyboardEvent) =>
+          handleDrawerTerminalCycleKeydown(event, drawer, terminalCount(), cycle);
         window.addEventListener('keydown', handler);
         cleanups.push(() => window.removeEventListener('keydown', handler));
         return { textarea, cycle };

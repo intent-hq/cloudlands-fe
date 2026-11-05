@@ -23,3 +23,22 @@ export function drawerTerminalCycleDirection(
   if (!target || !drawer.contains(target) || !isFocusInTerminal(target)) return null;
   return direction;
 }
+
+/**
+ * The drawer's window keydown handler: claims Mod+Shift+] / [ (preventDefault +
+ * stopImmediatePropagation, so the workspace-tab fallback never runs) and cycles. Returns
+ * whether the drawer claimed the event.
+ */
+export function handleDrawerTerminalCycleKeydown(
+  event: KeyboardEvent,
+  drawer: Element | null | undefined,
+  terminalCount: number,
+  cycle: (direction: 1 | -1) => void,
+): boolean {
+  const direction = drawerTerminalCycleDirection(event, drawer, terminalCount);
+  if (!direction) return false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  cycle(direction);
+  return true;
+}

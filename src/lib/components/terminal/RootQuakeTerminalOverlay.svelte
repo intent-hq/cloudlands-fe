@@ -56,7 +56,7 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import { terminalManager } from '$features/terminal/terminal-manager.svelte';
   import { terminalHistoryTracker } from '$features/terminal/terminal-history-tracker';
-  import { drawerTerminalCycleDirection } from './drawer-terminal-cycling';
+  import { handleDrawerTerminalCycleKeydown } from './drawer-terminal-cycling';
   import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
@@ -329,11 +329,7 @@
 
     // Cmd+Shift+[/] cycles drawer terminals only while a drawer terminal is focused and the
     // drawer has 2+ terminals; otherwise workspace tab switching handles the chord.
-    const direction = drawerTerminalCycleDirection(event, overlayContainer, $terminals.length);
-    if (!direction) return;
-    event.preventDefault();
-    event.stopImmediatePropagation(); // Keep the workspace-tab fallback from also firing
-    cycleTerminal(direction);
+    handleDrawerTerminalCycleKeydown(event, overlayContainer, $terminals.length, cycleTerminal);
   }
 </script>
 
