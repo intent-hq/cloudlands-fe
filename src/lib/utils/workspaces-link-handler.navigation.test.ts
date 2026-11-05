@@ -108,6 +108,24 @@ describe('handleIntentLink panel navigation', () => {
     expect(mocks.navigateToRoute).not.toHaveBeenCalled();
   });
 
+  // intent-hq/intent#8644: an Assistant chat short link targets __chief__,
+  // never the globally active workspace.
+  it('opens a short file link from Assistant chat in the __chief__ workspace', async () => {
+    await handleIntentLink('intent://local/file/notes/plan.md', {
+      workspaceId: '__chief__',
+      sourcePanelId: 'panel-chat',
+    });
+
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      openWorkspaceFile('__chief__', 'notes/plan.md', {
+        filePathIsLiteral: true,
+        openInAdjacentPanel: false,
+        sourcePanelId: 'panel-chat',
+      }),
+    );
+    expect(mocks.show).not.toHaveBeenCalled();
+  });
+
   it('opens a same-workspace long file link at the start of its line range', async () => {
     await handleIntentLink('intent://local/owning-workspace/file/README.md#L10-20', {
       workspaceId: 'owning-workspace',
