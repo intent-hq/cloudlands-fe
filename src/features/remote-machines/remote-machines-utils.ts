@@ -34,7 +34,7 @@ export function connectionForMachine(
   );
 }
 
-/** Offer "Make available" again only while the machine is not usefully exposed. */
+/** Offer "Let <backend> run agents here" again only while the machine is not usefully exposed. */
 export function canOfferExpose(machine: RemoteMachine | null): boolean {
   return !machine || machine.state === 'revoked';
 }

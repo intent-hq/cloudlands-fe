@@ -1,5 +1,5 @@
 /**
- * Remote-machine relay (main process) — "Make available to <current backend>".
+ * Remote-machine relay (main process) — "Let <current backend> run agents here".
  *
  * The frontend main process is the only party connected to both daemons, so it
  * relays the expose flow (PROTOCOL `methods/nodes.md` → "Expose flow"):
