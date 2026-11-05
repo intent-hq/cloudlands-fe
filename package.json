@@ -43,7 +43,7 @@
     "start": "electron .",
     "build:speech-helper": "node scripts/build-speech-helper.cjs",
     "build:dock-helper": "node scripts/build-dock-helper.cjs",
-    "build:dock-composer-helpers": "node scripts/build-desktop-helper.mjs && node scripts/build-dock-recorder.cjs && node scripts/build-dock-speech.cjs && node scripts/build-dock-element-pick.cjs",
+    "build:dock-composer-helpers": "node scripts/build-desktop-helper.mjs && node scripts/build-dock-recorder.cjs && node scripts/build-dock-media-export.cjs && node scripts/build-dock-media-transcribe.cjs && node scripts/build-dock-speech.cjs && node scripts/build-dock-element-pick.cjs",
     "build:keychain-helper": "node scripts/build-keychain-helper.cjs",
     "dist": "node scripts/pnpm-run.mjs build && node scripts/pnpm-run.mjs build:web && node scripts/ensure-native-deps.cjs && node scripts/copy-sidecar.cjs && node scripts/fetch-tailcat.cjs && node scripts/build-speech-helper.cjs && node scripts/build-dock-helper.cjs && node scripts/pnpm-run.mjs build:dock-composer-helpers && node scripts/build-keychain-helper.cjs && electron-builder",
     "dist:mac": "node scripts/package-mac.mjs",

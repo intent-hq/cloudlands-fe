@@ -47,7 +47,7 @@ import Foundation
 import ImageIO
 import ScreenCaptureKit
 
-let captureApi = "sck-stream+avcapture-mic/1"
+let captureApi = "sck-stream+avcapture-mic/2"
 func videoBitrate(width: Int, height: Int, fps: Int, cap: Int) -> Int {
   min(cap, max(min(3_000_000, cap), Int(Double(width * height * fps) * 0.05)))
 }
@@ -238,6 +238,7 @@ struct ExclusionMissing: Error {}
 
 struct Options {
   var output = ""
+  var cleanOutput = ""
   var displayId: CGDirectDisplayID = 0
   var maxMs = 120_000
   var fps = 30
@@ -268,6 +269,11 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   var videoInput: AVAssetWriterInput?
   var adaptor: AVAssetWriterInputPixelBufferAdaptor?
   var audioInput: AVAssetWriterInput?
+  var cleanWriter: AVAssetWriter?
+  var cleanVideo: AVAssetWriterInput?
+  var cleanAudio: AVAssetWriterInput?
+  var cleanAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+  var clearTimes: [Int] = []
   var frameSize = CGSize.zero
   var pointScale: CGFloat = 1
   var startTime: CMTime?
@@ -336,6 +342,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       self.state = .done
       self.teardown()
       self.writer?.cancelWriting()
+      self.cleanWriter?.cancelWriting()
+      if !self.options.cleanOutput.isEmpty { try? FileManager.default.removeItem(atPath: self.options.cleanOutput) }
       try? FileManager.default.removeItem(at: self.outputURL)
       emit(["event": "error", "code": code, "detail": detail])
       exit(1)
@@ -434,6 +442,25 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     self.videoInput = video
     self.adaptor = adaptor
 
+    if !options.cleanOutput.isEmpty {
+      let clean = try AVAssetWriter(outputURL: URL(fileURLWithPath: options.cleanOutput), fileType: .mp4)
+      let input = AVAssetWriterInput(mediaType: .video, outputSettings: video.outputSettings)
+      input.expectsMediaDataInRealTime = true
+      guard clean.canAdd(input) else { throw NSError(domain: "recorder-clean", code: 1) }
+      clean.add(input)
+      cleanVideo = input
+      cleanAdaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input,
+        sourcePixelBufferAttributes: adaptor.sourcePixelBufferAttributes)
+      if let audioInput {
+        let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: audioInput.outputSettings)
+        audio.expectsMediaDataInRealTime = true
+        guard clean.canAdd(audio) else { throw NSError(domain: "recorder-clean", code: 2) }
+        clean.add(audio)
+        cleanAudio = audio
+      }
+      cleanWriter = clean
+    }
+
     let excluded = windows(options.excludeWindows, in: content)
     guard Set(excluded.map(\.windowID)) == Set(options.excludeWindows) else {
       throw ExclusionMissing()
@@ -480,6 +507,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
         return fail("failed", "writer: \(writer.error?.localizedDescription ?? "unknown")")
       }
       writer.startSession(atSourceTime: time)
+      if let cleanWriter {
+        guard cleanWriter.startWriting() else { return fail("failed", "clean-writer-start") }
+        cleanWriter.startSession(atSourceTime: time)
+      }
       startTime = time
       state = .recording
       startWatchdog?.cancel()
@@ -500,6 +531,19 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     guard videoInput.isReadyForMoreMediaData else { return }
     let sourceSize = CGSize(
       width: CVPixelBufferGetWidth(pixels), height: CVPixelBufferGetHeight(pixels))
+    if let cleanVideo, let cleanAdaptor, cleanVideo.isReadyForMoreMediaData {
+      if sourceSize == frameSize {
+        guard cleanAdaptor.append(pixels, withPresentationTime: time) else { return fail("failed", "clean-frame") }
+      } else if let pool = cleanAdaptor.pixelBufferPool {
+        var cleanPixels: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &cleanPixels)
+        guard let cleanPixels else { return fail("failed", "clean-frame-pool") }
+        let cleanImage = CIImage(cvPixelBuffer: pixels).transformed(by: CGAffineTransform(
+          scaleX: frameSize.width / sourceSize.width, y: frameSize.height / sourceSize.height))
+        ciContext.render(cleanImage, to: cleanPixels)
+        guard cleanAdaptor.append(cleanPixels, withPresentationTime: time) else { return fail("failed", "clean-frame") }
+      }
+    }
     if overlay == nil && sourceSize == frameSize {
       if adaptor.append(pixels, withPresentationTime: time) { lastTime = time }
       return
@@ -554,6 +598,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   // MARK: Marks and exclusion
 
   func setMarks(_ raw: [Any]) {
+    if raw.isEmpty && !pendingMarks.isEmpty, let startTime, state == .recording {
+      let now = (paused ? pauseStarted ?? hostNow() : hostNow()) - pausedTotal
+      clearTimes.append(max(0, Int((CMTimeGetSeconds(now - startTime) * 1000).rounded())))
+    }
     pendingMarks = raw
     guard state == .recording else { return }
     overlay = renderOverlay(parseMarks(raw, frame: frameSize), size: frameSize, pointScale: pointScale)
@@ -686,6 +734,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
       time = time - pausedTotal
     }
     guard time >= startTime else { return }
+    if let cleanAudio {
+      guard cleanAudio.isReadyForMoreMediaData else { return }
+      guard cleanAudio.append(buffer) else { return fail("failed", "clean-audio") }
+    }
     if audioInput.append(buffer) { hasMicAudio = true }
   }
 
@@ -916,12 +968,23 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     videoInput?.markAsFinished()
     audioInput?.markAsFinished()
     writer.endSession(atSourceTime: end)
+    cleanVideo?.markAsFinished()
+    cleanAudio?.markAsFinished()
+    cleanWriter?.endSession(atSourceTime: end)
     let hadMic = hasMicAudio
-    writer.finishWriting {
+    let finishedWriters = DispatchGroup()
+    finishedWriters.enter()
+    writer.finishWriting { finishedWriters.leave() }
+    if let cleanWriter {
+      finishedWriters.enter()
+      cleanWriter.finishWriting { finishedWriters.leave() }
+    }
+    finishedWriters.notify(queue: self.queue) {
       self.queue.async {
         self.state = .done
-        guard writer.status == .completed else {
+        guard writer.status == .completed, self.cleanWriter == nil || self.cleanWriter?.status == .completed else {
           try? FileManager.default.removeItem(at: self.outputURL)
+          if !self.options.cleanOutput.isEmpty { try? FileManager.default.removeItem(atPath: self.options.cleanOutput) }
           emit([
             "event": "error", "code": "failed",
             "detail": "finish: \(writer.error?.localizedDescription ?? "unknown")",
@@ -935,6 +998,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
           "event": "finished", "reason": reason, "path": self.options.output, "bytes": bytes,
           "durationMs": Int((CMTimeGetSeconds(end - startTime) * 1000).rounded()),
           "hasMicAudio": hadMic, "mimeType": "video/mp4", "captureApi": captureApi,
+          "width": Int(self.frameSize.width), "height": Int(self.frameSize.height),
+          "clearAtMs": self.clearTimes,
+          "cleanPath": self.options.cleanOutput,
         ]
         // The system's own reason for stopping the stream, as reported.
         if let stopError = stopError as NSError? {
@@ -953,6 +1019,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     state = .done
     teardown()
     writer?.cancelWriting()
+    cleanWriter?.cancelWriting()
+    if !options.cleanOutput.isEmpty { try? FileManager.default.removeItem(atPath: options.cleanOutput) }
     try? FileManager.default.removeItem(at: outputURL)
     emit(["event": "cancelled"])
     exit(0)
@@ -1108,6 +1176,7 @@ func parseOptions(_ args: ArraySlice<String>, needsOutput: Bool = true) -> Optio
   while let flag = it.next() {
     switch flag {
     case "--output": o.output = it.next() ?? ""
+    case "--clean-output": o.cleanOutput = it.next() ?? ""
     case "--display": o.displayId = CGDirectDisplayID(it.next() ?? "") ?? 0
     case "--max-ms": o.maxMs = min(120_000, max(1000, Int(it.next() ?? "") ?? 120_000))
     case "--fps": o.fps = min(30, max(1, Int(it.next() ?? "") ?? 30))

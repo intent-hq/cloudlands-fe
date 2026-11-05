@@ -1,3 +1,6 @@
+import { DockMediaCaptureSchema } from '../../../shared/dock-media-edit';
+import { exportDockMedia, transcribeDockMedia, releaseDockMediaJob } from './dock-media-output';
+import { DockMediaExportRequestSchema, DockMediaTranscribeRequestSchema } from '../../../shared/dock-media-output';
 import {
   app,
   BrowserWindow,
@@ -66,6 +69,7 @@ const geometry = z.discriminatedUnion('kind', [
 ]);
 const pixels = z
   .object({
+    capture: DockMediaCaptureSchema.optional(),
     base64: z
       .string()
       .min(1)
@@ -82,6 +86,10 @@ const pixels = z
   })
   .strict();
 const controlSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('media-export'), request: DockMediaExportRequestSchema }).strict(),
+  z.object({ action: z.literal('media-transcribe'), request: DockMediaTranscribeRequestSchema }).strict(),
+  z.object({ action: z.literal('media-job-cancel'), jobId: z.string().uuid() }).strict(),
+  z.object({ action: z.literal('media-job-release'), jobId: z.string().uuid() }).strict(),
   z.object({ action: z.literal('capabilities') }).strict(),
   z.object({ action: z.literal('accessibility-status') }).strict(),
   z
@@ -434,6 +442,21 @@ function createMediaBinder() {
     const current = () => state.context.isCurrent();
     let result: DockNativeResult<unknown>;
     switch (control.action) {
+      case 'media-export':
+        result = await exportDockMedia(state.context, control.request, (fraction) => {
+          send(state, { kind: 'evidence', event: { type: 'media-progress', jobId: control.request.jobId, fraction } });
+        });
+        break;
+      case 'media-transcribe':
+        result = await transcribeDockMedia(state.context, control.request, (fraction) => {
+          send(state, { kind: 'evidence', event: { type: 'media-progress', jobId: control.request.jobId, fraction } });
+        });
+        break;
+      case 'media-job-cancel':
+      case 'media-job-release':
+        await releaseDockMediaJob(state.context.scope.sessionId, control.jobId);
+        result = { ok: true, value: undefined };
+        break;
       case 'open-settings':
         if (process.platform !== 'darwin') return unavailable();
         // The person clicked a blocked control: prompt so the app is listed in the pane.

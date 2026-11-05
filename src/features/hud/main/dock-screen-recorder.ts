@@ -131,6 +131,7 @@ interface ActiveClip {
   clipId: string;
   displayId: number;
   outputPath: string;
+  cleanPath: string;
   maxMs: number;
   child: Child;
   startedAt: number | null;
@@ -342,7 +343,10 @@ export function createDockScreenRecorder(
     );
     clip.resolveEnded(result);
     if (active === clip) active = null;
-    if (!result.ok) void deps.removeFile(clip.outputPath).catch(() => undefined);
+    if (!result.ok) {
+      void deps.removeFile(clip.outputPath).catch(() => undefined);
+      void deps.removeFile(clip.cleanPath).catch(() => undefined);
+    }
     for (const listener of listeners) {
       try {
         listener(clip.clipId, result);
@@ -368,8 +372,10 @@ export function createDockScreenRecorder(
     }
     const durationMs = Number(event.durationMs);
     let size: number;
+    let cleanSize: number;
     try {
       size = await deps.fileSize(clip.outputPath);
+      cleanSize = await deps.fileSize(clip.cleanPath);
     } catch {
       settle(clip, fail('failed', 'missing-file'));
       return;
@@ -379,13 +385,21 @@ export function createDockScreenRecorder(
       return;
     }
     // Backstop for the helper's size stop: a clip the app cannot play back is never offered.
-    if (size > DOCK_RECORDING_MAX_BYTES) {
+    if (size > DOCK_RECORDING_MAX_BYTES || cleanSize > DOCK_RECORDING_MAX_BYTES) {
       settle(clip, fail('limit', 'too-large'));
+      return;
+    }
+    const width = Number(event.width), height = Number(event.height);
+    const clearAtMs = Array.isArray(event.clearAtMs) ? event.clearAtMs.filter((time): time is number =>
+      typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= durationMs) : [];
+    if (!(cleanSize > 0 && Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0)) {
+      settle(clip, fail('failed', 'invalid-clean-source'));
       return;
     }
     settle(clip, {
       ok: true,
       value: {
+        original: { sourcePath: clip.cleanPath, size: cleanSize, width, height, clearAtMs },
         clipId: clip.clipId,
         sourcePath: clip.outputPath,
         mimeType: 'video/mp4',
@@ -671,6 +685,8 @@ export function createDockScreenRecorder(
       'record',
       '--output',
       outputPath,
+      '--clean-output',
+      outputPath.replace(/\.mp4$/, '.original.mp4'),
       '--display',
       String(request.displayId),
       '--max-ms',
@@ -704,6 +720,7 @@ export function createDockScreenRecorder(
       clipId: request.clipId,
       displayId: request.displayId,
       outputPath,
+      cleanPath: outputPath.replace(/\.mp4$/, '.original.mp4'),
       maxMs,
       child,
       startedAt: null,
@@ -901,6 +918,7 @@ export function createDockScreenRecorder(
     ended.delete(clipId);
     if (result.ok) await deps.removeFile(result.value.sourcePath).catch(() => undefined);
     await deps.removeFile(clip.outputPath).catch(() => undefined);
+    await deps.removeFile(clip.cleanPath).catch(() => undefined);
   };
 
   // Remember the last few outcomes so a late `stop` after an auto-limit still resolves.
