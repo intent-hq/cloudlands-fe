@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.286.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.5...v2.286.6) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.134 ([#4208](https://github.com/intent-hq/cloudlands-fe/issues/4208)) ([294f794](https://github.com/intent-hq/cloudlands-fe/commit/294f7944eb8f5c6aadc23365a74d8dd2ae04e166))
+* **i18n:** rename remaining Devices labels to Machines, singular Machine picker ([#4202](https://github.com/intent-hq/cloudlands-fe/issues/4202)) ([a4661a5](https://github.com/intent-hq/cloudlands-fe/commit/a4661a5f6ff18df0241b4b449a0bc6153034526e))
+* **remote:** show a remote agent's checkout preparation, setup and setup output ([#4201](https://github.com/intent-hq/cloudlands-fe/issues/4201)) ([d9ddcad](https://github.com/intent-hq/cloudlands-fe/commit/d9ddcad94da8904cfb466dcfd95b58f2645dd394))
+
 ## [2.286.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.4...v2.286.5) (2026-11-05)
 
 
