@@ -12,6 +12,7 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import {
   ackDockInsertion,
+  clearDockRecordingBatch,
   addDockMark,
   applyDockCapture,
   dockEvidenceFingerprint,
@@ -307,6 +308,8 @@ export const dockEvidenceDictationFinished = createAction<
   ]
 >('dockConversation/evidenceDictationFinished');
 /** Add or update one clip by id; null removes that clip only. */
+export const dockEvidenceRecordingBatchCleared = createAction<[workspaceId: string, agentId: string, imageId: string]>(
+  'dockConversation/recordingBatchCleared');
 export const dockMediaEditorOpenRequested = createAction<
   [workspaceId: string, agentId: string, logicalAttachmentId: string]
 >('dockConversation/mediaEditorOpenRequested');
@@ -917,6 +920,8 @@ dockConversationReducer.with(
       });
     }),
 );
+dockConversationReducer.with(dockEvidenceRecordingBatchCleared, (state, { payload: [ws, agent, imageId] }) =>
+  withEvidence(state, ws, agent, (e) => clearDockRecordingBatch(e, imageId)));
 dockConversationReducer.with(
   dockEvidenceClipChanged,
   (state, { payload: [ws, agent, clipId, clip] }) =>

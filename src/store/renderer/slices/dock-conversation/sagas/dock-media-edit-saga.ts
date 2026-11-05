@@ -207,6 +207,15 @@ function* persist({
   }
 }
 
+/** Re-read both ownership halves after every durable wait. */
+function publishedMediaItem(workspaceId: string, agentId: string, logicalId: string, expected: DockSavedMedia, contextItemId?: string) {
+  const evidence = evidenceOf(workspaceId, agentId);
+  const row = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])].find((entry) => entry.id === logicalId);
+  if (!row || row.mediaError || row.contextItemId !== contextItemId || JSON.stringify(row.media) !== JSON.stringify(expected)) return null;
+  const item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === contextItemId);
+  return item?.attachmentId === expected.source.attachmentId && item.path === expected.source.path ? item : null;
+}
+
 function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: string, authority: string): SagaGenerator<void> {
   const service = dockMediaNativeService();
   const initial = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId)?.media;
@@ -215,7 +224,8 @@ function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: s
   try {
     const result = yield* call(() => service.transcribeMedia!({ jobId, media: initial }));
     if (!result.ok || authority !== getPrincipalActionContext(store.state) || service !== dockMediaNativeService()) return;
-    const live = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId)?.media;
+    const liveRow = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId);
+    const live = liveRow?.media;
     if (!live || live.source.id !== initial.source.id || live.source.revision !== initial.source.revision) return;
     const transcript = { ...result.value, revision: (live.transcript?.revision ?? 0) + 1 };
     const next = { ...live, transcript };
@@ -231,7 +241,8 @@ function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: s
         attachments: serializeDraftAttachments(selectComposerContextItems.select(store.state, workspaceId, agentId), toDockDraftEvidence(evidenceOf(workspaceId, agentId))), rollback: null }));
       yield* put(chatDraftSavePairFlushRequested(workspaceId, agentId));
       const { written } = yield* race({ written: take(settled), expired: delay(14_000) });
-      if (written?.payload[2] === 'saved' && authority === getPrincipalActionContext(store.state))
+      if (written?.payload[2] === 'saved' && authority === getPrincipalActionContext(store.state) && service === dockMediaNativeService() &&
+          publishedMediaItem(workspaceId, agentId, logicalId, next, liveRow?.contextItemId))
         yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.TRANSCRIPT_UPDATE,
           { pair: { workspaceId, agentId }, sourceId: live.source.id, sourceRevision: live.source.revision, transcript }));
     } finally { settled.close(); yield* put(chatDraftOwnerReleased(ownerId)); }
@@ -283,9 +294,11 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
     yield* put(chatDraftSavePairFlushRequested(workspaceId, agentId));
     const { written } = yield* race({ written: take(settled), expired: delay(14_000) });
     if (!written || written.payload[2] !== 'saved' || !current()) return;
+    const published = publishedMediaItem(workspaceId, agentId, logicalId, media, row.contextItemId);
+    if (!published || published.id !== item.id) return;
     const request: DockCaptureEditorOpenRequest = {
       kind: source.kind, workspaceId, agentId, attachmentId: source.attachmentId,
-      sourceRevision: String(source.revision), attachmentPath: source.path, title: item.label,
+      sourceRevision: String(source.revision), attachmentPath: source.path, title: published.label,
       width: source.width, height: source.height, durationMs: source.durationMs,
       provenance: { hasMicAudio: source.audio === 'available', visuals: source.visuals },
       marks: [], source, saved: media.saved, transcript: media.transcript,

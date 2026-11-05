@@ -12,9 +12,11 @@ function geometry(mark: DockMark, sx: number, sy: number): DockMediaGeometry {
   return { kind: 'arrow', from: point(g.from), to: point(g.to) };
 }
 export function dockMediaCapturedMarks(evidence: DockComposerEvidence, source: DockMediaSource, logicalId: string): DockMediaEditMark[] {
-  const marks = evidence.marks.filter((mark) => source.kind === 'recording' ? mark.clipId === logicalId : mark.imageId === logicalId);
+  const archive = source.kind === 'recording' ? evidence.clips.find((clip) => clip.id === logicalId)?.captureHistory : undefined;
+  const marks = archive?.map((entry) => entry.mark) ?? evidence.marks.filter((mark) => source.kind === 'recording' ? mark.clipId === logicalId : mark.imageId === logicalId);
   return marks.map<DockMediaEditMark>((mark) => {
-    const image = evidence.images.find((row) => row.id === mark.imageId);
+    const entry = archive?.find((row) => row.mark.id === mark.id);
+    const image = entry?.image ?? evidence.images.find((row) => row.id === mark.imageId);
     if (!image || image.width <= 0 || image.height <= 0) throw new Error('capture-mark-source-unavailable');
     const atMs = source.kind === 'recording' ? mark.clipMs : 0;
     if (atMs === undefined || !Number.isFinite(atMs)) throw new Error('capture-mark-timing-unavailable');
@@ -24,7 +26,7 @@ export function dockMediaCapturedMarks(evidence: DockComposerEvidence, source: D
     return {
       id: mark.id, atMs, batchId: batch.id, source: 'recording',
       kind: mark.tool === 'pick' ? 'element' : mark.tool === 'pen' ? 'draw' : mark.tool,
-      included: true, geometry: geometry(mark, source.width / image.width, source.height / image.height),
+      included: entry?.included ?? true, geometry: geometry(mark, source.width / image.width, source.height / image.height),
       label: mark.element?.name ?? '', note: '',
       context: { selector: mark.element?.path ?? null, text: mark.element?.name ?? null,
         url: url && /^https?:\/\//.test(url) ? url : null },

@@ -105,6 +105,7 @@ import {
   dockEvidenceImageRemoveRequested,
   dockEvidenceMarkAdded,
   dockEvidenceMarkRemoved,
+  dockEvidenceRecordingBatchCleared,
   dockEvidenceMarkUndone,
   dockEvidenceAnnotationUndoRequested,
   dockEvidenceAnnotationRedoRequested,
@@ -510,6 +511,7 @@ function* clearAnnotation(workspaceId: string, agentId: string): SagaGenerator<v
     yield* syncMarks(workspaceId, agentId);
     return;
   }
+  yield* put(dockEvidenceRecordingBatchCleared(workspaceId, agentId, imageId));
   yield* removeImage(dockEvidenceImageRemoveRequested(workspaceId, agentId, imageId));
 }
 
@@ -1210,6 +1212,7 @@ function* placeFinishedClip(
       dockEvidenceClipChanged(workspaceId, agentId, clipId, {
         ...clip,
         status: 'ready',
+        captureHistory: clipOf(workspaceId, agentId, clipId)?.captureHistory,
         durationMs,
         hasMicAudio: file.hasMicAudio,
         contextItemId,
