@@ -8339,6 +8339,8 @@
   "dock_captureEditor_voiceTranscript_unavailable": "No hay transcripción de esta grabación.",
   "dock_captureEditor_transcript_unavailable": "No hay transcripción de esta grabación.",
   "dock_captureEditor_readonly_note": "Esta grabación se puede reproducir aquí, pero aún no editar.",
+  "dock_captureEditor_saveConflict_label": "Esta grabación cambió desde que la abriste. Ciérrala y ábrela de nuevo para editarla.",
+  "dock_captureEditor_saveFailed_label": "No se pudo guardar. Inténtalo de nuevo.",
   "dock_captureEditor_transcript_pending": "Transcribiendo…",
   "dock_captureEditor_transcript_noSpeech": "No se detectó voz",
   "dock_captureEditor_batch_label": "Bloque {n} · {time}",

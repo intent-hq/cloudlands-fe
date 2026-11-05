@@ -5,8 +5,10 @@
 import { electronAPI, isElectron } from '$lib/electron-bridge';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
+  type DockCaptureEditorSaveResult,
   type DockCaptureEditorSnapshot,
 } from '$shared/dock-capture-editor';
+import type { DockMediaEdit } from '$shared/dock-media-edit';
 
 export interface DockCaptureEditorBridge {
   /** Close the session `openId` names (never a newer one main retargeted to). */
@@ -14,6 +16,8 @@ export interface DockCaptureEditorBridge {
   /** The answer to main's request `requestId` (`onConfirmDiscard`). */
   discard(openId: string, requestId: string): void;
   keep(openId: string, requestId: string): void;
+  /** Save the session's edit; resolves with the durable outcome (failed when unsure). */
+  save(openId: string, edit: DockMediaEdit): Promise<DockCaptureEditorSaveResult | null>;
   dispose(): void;
 }
 
@@ -28,7 +32,13 @@ export function connectDockCaptureEditor(
   if (!isElectron()) {
     onSnapshot(null);
     const none = () => {};
-    return { close: none, discard: none, keep: none, dispose: none };
+    return {
+      close: none,
+      discard: none,
+      keep: none,
+      save: async () => null,
+      dispose: none,
+    };
   }
   const send = (channel: string, payload: unknown) =>
     void electronAPI()
@@ -69,6 +79,16 @@ export function connectDockCaptureEditor(
     discard: (openId, requestId) =>
       send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId, requestId }),
     keep: (openId, requestId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId, requestId }),
+    save: async (openId, edit) => {
+      try {
+        return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE, {
+          openId,
+          edit,
+        })) ?? null) as DockCaptureEditorSaveResult | null;
+      } catch {
+        return null;
+      }
+    },
     dispose: () => {
       disposed = true;
       document.removeEventListener('DOMContentLoaded', changed);

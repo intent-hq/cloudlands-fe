@@ -8339,6 +8339,8 @@
   "dock_captureEditor_voiceTranscript_unavailable": "No transcript for this recording.",
   "dock_captureEditor_transcript_unavailable": "No transcript for this recording.",
   "dock_captureEditor_readonly_note": "This recording can be played here, but not edited yet.",
+  "dock_captureEditor_saveConflict_label": "This recording changed since you opened it. Close and open it again to edit.",
+  "dock_captureEditor_saveFailed_label": "Couldn’t save. Try again.",
   "dock_captureEditor_transcript_pending": "Transcribing…",
   "dock_captureEditor_transcript_noSpeech": "No speech detected",
   "dock_captureEditor_batch_label": "Batch {n} · {time}",

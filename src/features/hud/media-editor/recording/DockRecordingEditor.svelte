@@ -4,6 +4,7 @@
   import { Button } from '$lib/components/ui/button';
   import type {
     DockCaptureEditorMark,
+    DockCaptureEditorSaveResult,
     DockCaptureEditorSnapshot,
   } from '$shared/dock-capture-editor';
   import DockComposerIcon from '../../components/DockComposerIcon.svelte';
@@ -47,6 +48,7 @@
     onDirtyChange,
     onDiscardRequested,
     onKeepEditing,
+    onSave,
   }: {
     snapshot: DockCaptureEditorSnapshot;
     onClose: () => void;
@@ -55,6 +57,8 @@
     onDirtyChange?: (dirty: boolean) => void;
     onDiscardRequested?: () => void;
     onKeepEditing?: () => void;
+    /** Persist the edit; offered only when sending honors saved edits of this source. */
+    onSave?: (edit: DockMediaEdit) => Promise<DockCaptureEditorSaveResult | null>;
   } = $props();
 
   // One session per mount (the page remounts the view for each open).
@@ -67,6 +71,28 @@
     : null;
   // Recorded marks are part of the frames: cutting time away would not remove them.
   const timeEditable = !!source && (markRemovable(source) || !source.bakedMarks?.length);
+  // Save: offered only when sending honors a saved edit of this source.
+  const canSave = !!edits && !!onSave && snapshot.output?.ready === true;
+  let saving = $state(false);
+  let saveProblem = $state<'conflict' | 'failed' | null>(null);
+  async function save(): Promise<void> {
+    if (!edits || !onSave || saving) return;
+    saving = true;
+    saveProblem = null;
+    const outcome = await onSave(edits.draft);
+    saving = false;
+    if (outcome?.result === 'saved' && outcome.saved) {
+      // Saved: this is the new baseline, and the editor closes back to its pill.
+      edits.commit(outcome.saved);
+      onClose();
+      return;
+    }
+    saveProblem =
+      outcome?.result === 'revision-conflict' || outcome?.result === 'stale-source'
+        ? 'conflict'
+        : 'failed';
+  }
+
   const kept = $derived(
     edits ? subtractDockMediaRanges([edits.draft.trim], edits.draft.cuts) : null,
   );
@@ -176,6 +202,8 @@
   title={m.dock_captureEditor_recording_title({ duration: formatRecordingTime(durationMs) })}
   subtitle={snapshot.title}
   dirty={edits?.dirty ?? false}
+  {saving}
+  onSave={canSave ? save : undefined}
   onCancel={onClose}
   sidebar={sendOptions}
   onUndo={edits ? () => edits.undo() : undefined}
@@ -237,6 +265,13 @@
           >{formatRecordingTime(currentMs)} / {formatRecordingTime(durationMs)}</span
         >
       </div>
+      {#if saveProblem}
+        <p class="save-problem" role="alert" data-save-problem>
+          {saveProblem === 'conflict'
+            ? m.dock_captureEditor_saveConflict_label()
+            : m.dock_captureEditor_saveFailed_label()}
+        </p>
+      {/if}
       <DockRecordingTimeline
         {durationMs}
         {currentMs}
@@ -312,6 +347,11 @@
 {/snippet}
 
 <style>
+  .save-problem {
+    margin: 0;
+    font-size: 12px;
+    color: hsl(var(--destructive));
+  }
   .readonly-note {
     margin: 0;
     padding: 10px 12px 0;

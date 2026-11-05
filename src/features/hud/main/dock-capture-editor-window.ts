@@ -21,9 +21,17 @@ import {
   DockCaptureEditorAnswerSchema,
   DockCaptureEditorOpenSchema,
   canonicalDockAttachmentPath,
+  DockCaptureEditorSaveResultSchema,
   type DockCaptureEditorOpenResult,
+  type DockCaptureEditorSaveResult,
   type DockCaptureEditorSnapshot,
 } from '../../../shared/dock-capture-editor';
+import {
+  DockMediaEditSchema,
+  DockMediaSaveRequestSchema,
+  type DockMediaSaveRequest,
+} from '../../../shared/dock-media-edit';
+import { z } from 'zod';
 import {
   getWindowAppearanceOptions,
   getWindowTitleBarOptions,
@@ -53,8 +61,37 @@ const MIN_SIZE = { width: 640, height: 480 };
 interface Session {
   snapshot: DockCaptureEditorSnapshot;
   backendId: string;
+  /** The opening dock document: the only one that persists this session's saves. */
+  owner: { sender: Electron.WebContents; binding: object };
   /** Ends this session when the opening dock document's binding is retired. */
   stopWatching: () => void;
+}
+
+/** A save sent to the owning dock, waiting for its durable result. */
+interface PendingSave {
+  openId: string;
+  owner: Session['owner'];
+  resolve: (result: DockCaptureEditorSaveResult) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+const SAVE_TIMEOUT_MS = 15_000;
+const pendingSaves = new Map<string, PendingSave>();
+
+/** The editor's save: its draft edit (and, after a retake, the candidate's token). */
+const EditorSaveSchema = z
+  .object({
+    openId: z.string().uuid(),
+    edit: DockMediaEditSchema,
+    replacement: z.object({ candidateToken: z.string().min(1).max(512) }).strict().optional(),
+  })
+  .strict();
+
+function settleSave(requestId: string, result: DockCaptureEditorSaveResult): void {
+  const pending = pendingSaves.get(requestId);
+  if (!pending) return;
+  pendingSaves.delete(requestId);
+  clearTimeout(pending.timer);
+  pending.resolve(result);
 }
 
 /**
@@ -103,8 +140,15 @@ function dropPending(): void {
 }
 
 function endSession(): void {
-  session?.stopWatching();
+  const ended = session;
+  ended?.stopWatching();
   session = null;
+  // Its saves can no longer reach the editor: they end as failed (the dock may still
+  // finish writing; nothing here claims they were cancelled).
+  if (ended)
+    for (const [requestId, pending] of pendingSaves)
+      if (pending.openId === ended.snapshot.openId)
+        settleSave(requestId, { requestId, result: 'failed' });
 }
 
 function closeEditor(): void {
@@ -263,6 +307,7 @@ function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpe
   const next: Session = {
     snapshot: { ...rest, openId, mediaUrl, ...(output ? { output } : {}) },
     backendId: binding.backendId,
+    owner: { sender: event.sender, binding },
     stopWatching,
   };
   // An open session is never replaced silently: the editor is asked (it answers at
@@ -325,4 +370,65 @@ export function setupDockCaptureEditorIPC(): void {
     dropPending();
     return true;
   });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE, (event, request: unknown) =>
+    save(event, request),
+  );
+  // The owning dock's durable result, for a save main sent it.
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE_RESULT, (event, value: unknown) => {
+    const parsed = DockCaptureEditorSaveResultSchema.safeParse(value);
+    if (!parsed.success) return false;
+    const pending = pendingSaves.get(parsed.data.requestId);
+    if (!pending || event.sender !== pending.owner.sender) return false;
+    if (getStrictBackendBindingForWebContents(event.sender) !== pending.owner.binding) return false;
+    settleSave(parsed.data.requestId, parsed.data);
+    return true;
+  });
+}
+
+/**
+ * A save from the editor: only when sending honors saved edits of this source, only
+ * for this session's own source and pair, and only through the dock document that
+ * opened it. The expected revision is the session's saved one (an edit's own
+ * revision never moves the compare-and-set baseline); the outcome is the dock's
+ * durable result, or failed when it does not answer in time.
+ */
+async function save(event: IpcMainInvokeEvent, request: unknown): Promise<DockCaptureEditorSaveResult> {
+  const failed = (requestId = randomUUID()): DockCaptureEditorSaveResult => ({
+    requestId,
+    result: 'failed',
+  });
+  const parsed = EditorSaveSchema.safeParse(request);
+  if (!parsed.success || !fromEditor(event) || !session) return failed();
+  const current = session;
+  const { snapshot, owner } = current;
+  if (snapshot.openId !== parsed.data.openId || !snapshot.source) return failed();
+  if (snapshot.output?.ready !== true) return failed();
+  // Replacing the source (after a retake) needs main's candidate store, not here yet.
+  if (parsed.data.replacement) return failed();
+  if (owner.sender.isDestroyed()) return failed();
+  if (getStrictBackendBindingForWebContents(owner.sender) !== owner.binding) return failed();
+  const expectedEditRevision = snapshot.saved?.revision ?? 0;
+  const canonical: DockMediaSaveRequest = {
+    openId: snapshot.openId,
+    sourceId: snapshot.source.id,
+    sourceRevision: snapshot.source.revision,
+    pair: { workspaceId: snapshot.workspaceId, agentId: snapshot.agentId },
+    expectedEditRevision,
+    edit: { ...parsed.data.edit, revision: expectedEditRevision },
+  };
+  if (!DockMediaSaveRequestSchema.safeParse(canonical).success) return failed();
+  const requestId = randomUUID();
+  const result = await new Promise<DockCaptureEditorSaveResult>((resolve) => {
+    pendingSaves.set(requestId, {
+      openId: snapshot.openId,
+      owner,
+      resolve,
+      timer: setTimeout(() => settleSave(requestId, failed(requestId)), SAVE_TIMEOUT_MS),
+    });
+    owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE_REQUESTED, { requestId, request: canonical });
+  });
+  // The stored edit becomes this session's baseline (only if it is still this session).
+  if (result.result === 'saved' && result.saved && session === current)
+    current.snapshot = { ...current.snapshot, saved: result.saved };
+  return result;
 }

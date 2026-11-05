@@ -55,6 +55,7 @@
         onDirtyChange={(value) => (dirty = value)}
         onDiscardRequested={() => answer(true)}
         onKeepEditing={() => answer(false)}
+        onSave={(edit) => bridge.save(openId, edit)}
       />
     {/key}
   {:else if snapshot?.kind === 'screenshot'}

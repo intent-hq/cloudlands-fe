@@ -8339,6 +8339,8 @@
   "dock_captureEditor_voiceTranscript_unavailable": "Aucune transcription pour cet enregistrement.",
   "dock_captureEditor_transcript_unavailable": "Aucune transcription pour cet enregistrement.",
   "dock_captureEditor_readonly_note": "Cet enregistrement peut être lu ici, mais pas encore modifié.",
+  "dock_captureEditor_saveConflict_label": "Cet enregistrement a changé depuis son ouverture. Fermez-le et rouvrez-le pour le modifier.",
+  "dock_captureEditor_saveFailed_label": "Échec de l’enregistrement. Réessayez.",
   "dock_captureEditor_transcript_pending": "Transcription…",
   "dock_captureEditor_transcript_noSpeech": "Aucune parole détectée",
   "dock_captureEditor_batch_label": "Lot {n} · {time}",
