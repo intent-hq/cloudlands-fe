@@ -251,7 +251,7 @@ describe('GitHub-hosted CI runners', () => {
     });
     const browser = read('.github/workflows/browser-tests.yml');
     expect(browser.jobs['test-ct']['runs-on']).toBe(
-      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
+      "${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
     );
     // The other browser suites are light enough for the free standard runner.
     expect(browser.jobs['test-playwright']['runs-on']).toBe('ubuntu-24.04');
