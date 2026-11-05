@@ -13,7 +13,9 @@
   import {
     defaultDockMediaEdit,
     markRemovable,
+    mergeDockMediaRanges,
     subtractDockMediaRanges,
+    type DockMediaRange,
     type DockMediaEdit,
   } from '$shared/dock-media-edit';
   import {
@@ -115,6 +117,18 @@
     activeMarkId = null;
     failed = false;
   });
+
+  /** Cut a stretch: one edit; overlapping or touching cuts merge into one. */
+  function cut(range: DockMediaRange): void {
+    edits?.apply((draft) => ({ ...draft, cuts: mergeDockMediaRanges([...draft.cuts, range]) }));
+  }
+  /** Restore a cut stretch (click on it): one edit. */
+  function restore(range: DockMediaRange): void {
+    edits?.apply((draft) => ({
+      ...draft,
+      cuts: draft.cuts.filter((row) => row.startMs !== range.startMs || row.endMs !== range.endMs),
+    }));
+  }
 
   function seek(ms: number): void {
     const next = clampTime(ms, durationMs);
@@ -230,6 +244,9 @@
         onTrim={timeEditable && edits
           ? (trim) => edits.apply((draft) => ({ ...draft, trim }))
           : undefined}
+        cuts={timeEditable && edits ? edits.draft.cuts : []}
+        onCut={timeEditable && edits ? cut : undefined}
+        onRestore={timeEditable && edits ? restore : undefined}
         onSeek={(ms) => {
           activeMarkId = null;
           seek(ms);

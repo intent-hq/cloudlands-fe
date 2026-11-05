@@ -8324,6 +8324,8 @@
   "dock_captureEditor_timeline_label": "타임라인",
   "dock_captureEditor_trimStart_label": "시작 자르기",
   "dock_captureEditor_trimEnd_label": "끝 자르기",
+  "dock_captureEditor_restoreCut_label": "{start}–{end} 복원",
+  "dock_captureEditor_restoreCut_tooltip": "클릭하여 복원",
   "dock_captureEditor_pin_ariaLabel": "{time}의 {mark}",
   "dock_captureEditor_unavailable_label": "이 녹화를 재생할 수 없습니다.",
   "dock_captureEditor_video_ariaLabel": "녹화",

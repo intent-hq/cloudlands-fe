@@ -8324,6 +8324,8 @@
   "dock_captureEditor_timeline_label": "Chronologie",
   "dock_captureEditor_trimStart_label": "Début du découpage",
   "dock_captureEditor_trimEnd_label": "Fin du découpage",
+  "dock_captureEditor_restoreCut_label": "Restaurer {start}–{end}",
+  "dock_captureEditor_restoreCut_tooltip": "Cliquer pour restaurer",
   "dock_captureEditor_pin_ariaLabel": "{mark} à {time}",
   "dock_captureEditor_unavailable_label": "Impossible de lire cet enregistrement.",
   "dock_captureEditor_video_ariaLabel": "Enregistrement",

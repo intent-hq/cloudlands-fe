@@ -8324,6 +8324,8 @@
   "dock_captureEditor_timeline_label": "タイムライン",
   "dock_captureEditor_trimStart_label": "トリミング開始",
   "dock_captureEditor_trimEnd_label": "トリミング終了",
+  "dock_captureEditor_restoreCut_label": "{start}–{end} を元に戻す",
+  "dock_captureEditor_restoreCut_tooltip": "クリックして元に戻す",
   "dock_captureEditor_pin_ariaLabel": "{time} の{mark}",
   "dock_captureEditor_unavailable_label": "この録画は再生できません。",
   "dock_captureEditor_video_ariaLabel": "録画",

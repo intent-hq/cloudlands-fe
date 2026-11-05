@@ -20,6 +20,10 @@
    *
    * With `trim`, handles at both ends trim the whole recording (drag, or arrow keys
    * on a focused handle); what falls outside is dimmed. `kept` shades what plays.
+   *
+   * With `onCut`, a click-drag across the track selects a range (a plain click still
+   * moves the playhead); Delete or Backspace cuts it, Esc clears it. Cut stretches are
+   * hatched; clicking one restores it.
    */
   let {
     durationMs,
@@ -31,6 +35,9 @@
     onSeek,
     onMark,
     onTrim,
+    cuts = [],
+    onCut,
+    onRestore,
   }: {
     durationMs: number;
     currentMs: number;
@@ -43,10 +50,23 @@
     /** What plays and is kept (trim minus cuts). */
     kept?: readonly DockMediaRange[] | null;
     onTrim?: (range: DockMediaRange) => void;
+    /** Stretches cut out (hatched); clicking one calls `onRestore` with it. */
+    cuts?: readonly DockMediaRange[];
+    onCut?: (range: DockMediaRange) => void;
+    onRestore?: (range: DockMediaRange) => void;
   } = $props();
 
   let track = $state<HTMLDivElement | null>(null);
-  let dragging: { pointerId: number; part: 'playhead' | 'start' | 'end' } | null = null;
+  let dragging: {
+    pointerId: number;
+    part: 'playhead' | 'start' | 'end';
+    originX: number;
+    originMs: number;
+    selecting: boolean;
+  } | null = null;
+  /** A selected range, ready for Delete; drawn from the drag that made it. */
+  let selection = $state<DockMediaRange | null>(null);
+  const SELECT_THRESHOLD_PX = 4;
   /**
    * A trim handle being dragged: shown at once, committed as one edit on release (so
    * one Undo undoes one whole gesture); a cancelled drag puts it back.
@@ -87,16 +107,36 @@
   }
   function apply(event: PointerEvent): void {
     if (!dragging) return;
-    if (dragging.part === 'playhead') onSeek(timeAt(event));
-    else if (trim && onTrim) previewTrim = trimmed(trim, dragging.part, timeAt(event));
+    if (dragging.part !== 'playhead') {
+      if (trim && onTrim) previewTrim = trimmed(trim, dragging.part, timeAt(event));
+      return;
+    }
+    // Past a few pixels, a drag on the track selects a range instead of scrubbing.
+    if (
+      onCut &&
+      !dragging.selecting &&
+      Math.abs(event.clientX - dragging.originX) > SELECT_THRESHOLD_PX
+    )
+      dragging.selecting = true;
+    if (dragging.selecting) {
+      const at = timeAt(event);
+      selection = {
+        startMs: Math.min(at, dragging.originMs),
+        endMs: Math.max(at, dragging.originMs),
+      };
+    } else onSeek(timeAt(event));
   }
   function onPointerDown(event: PointerEvent): void {
     const target = event.target as Element;
-    if (event.button !== 0 || target.closest('[data-pin]')) return;
+    if (event.button !== 0 || target.closest('[data-pin], [data-cut]')) return;
     const handle = target.closest<HTMLElement>('[data-handle]')?.dataset.handle;
+    selection = null;
     dragging = {
       pointerId: event.pointerId,
       part: handle === 'start' || handle === 'end' ? handle : 'playhead',
+      originX: event.clientX,
+      originMs: timeAt(event),
+      selecting: false,
     };
     track?.setPointerCapture(event.pointerId);
     apply(event);
@@ -117,11 +157,25 @@
   /** Release commits a trim drag as one edit; a cancelled one is put back. */
   function endDrag(commit: boolean): void {
     const preview = previewTrim;
+    if (!commit && dragging?.selecting) selection = null;
     dragging = null;
     previewTrim = null;
     if (commit && preview && onTrim) onTrim(preview);
   }
   function onKeydown(event: KeyboardEvent): void {
+    if (selection && onCut && (event.key === 'Delete' || event.key === 'Backspace')) {
+      event.preventDefault();
+      const range = selection;
+      selection = null;
+      if (range.endMs > range.startMs) onCut(range);
+      return;
+    }
+    if (selection && event.key === 'Escape') {
+      // Clears the selection only; the shell's Esc (close) does not run.
+      event.preventDefault();
+      selection = null;
+      return;
+    }
     const step = event.shiftKey ? 5000 : 1000;
     if (event.key === 'ArrowLeft') onSeek(currentMs - step);
     else if (event.key === 'ArrowRight') onSeek(currentMs + step);
@@ -188,6 +242,29 @@
           onkeydown={(event) => onHandleKeydown(event, part)}
         ></div>
       {/each}
+    {/if}
+    {#each cuts as cut (`${cut.startMs}-${cut.endMs}`)}
+      <Button
+        variant="plain"
+        class="cut"
+        data-cut
+        disabled={!onRestore}
+        style={`left: ${timelinePercent(cut.startMs, durationMs)}%; width: ${timelinePercent(cut.endMs, durationMs) - timelinePercent(cut.startMs, durationMs)}%`}
+        aria-label={m.dock_captureEditor_restoreCut_label({
+          start: formatRecordingTime(cut.startMs),
+          end: formatRecordingTime(cut.endMs),
+        })}
+        tooltip={onRestore ? m.dock_captureEditor_restoreCut_tooltip() : undefined}
+        onclick={() => onRestore?.(cut)}
+      ></Button>
+    {/each}
+    {#if selection}
+      <div
+        class="selection"
+        data-selection
+        style:left={`${timelinePercent(selection.startMs, durationMs)}%`}
+        style:width={`${timelinePercent(selection.endMs, durationMs) - timelinePercent(selection.startMs, durationMs)}%`}
+      ></div>
     {/if}
     {#each pinned as mark (mark.id)}
       <Button
@@ -269,6 +346,29 @@
     top: 0;
     bottom: 0;
     background: hsl(var(--background) / 0.55);
+    pointer-events: none;
+  }
+  .track :global(.cut) {
+    position: absolute;
+    top: 4px;
+    bottom: 4px;
+    height: auto;
+    min-width: 2px;
+    padding: 0;
+    border-radius: 4px;
+    background: repeating-linear-gradient(
+      135deg,
+      hsl(var(--muted-foreground) / 0.45) 0 3px,
+      transparent 3px 7px
+    );
+  }
+  .selection {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    border: 1px solid hsl(var(--primary));
+    border-radius: 4px;
+    background: hsl(var(--primary) / 0.12);
     pointer-events: none;
   }
   .handle {

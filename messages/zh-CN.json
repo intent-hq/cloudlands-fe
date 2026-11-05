@@ -8324,6 +8324,8 @@
   "dock_captureEditor_timeline_label": "时间线",
   "dock_captureEditor_trimStart_label": "修剪开头",
   "dock_captureEditor_trimEnd_label": "修剪结尾",
+  "dock_captureEditor_restoreCut_label": "恢复 {start}–{end}",
+  "dock_captureEditor_restoreCut_tooltip": "点击恢复",
   "dock_captureEditor_pin_ariaLabel": "{time} 的{mark}",
   "dock_captureEditor_unavailable_label": "无法播放此录制。",
   "dock_captureEditor_video_ariaLabel": "录制",
