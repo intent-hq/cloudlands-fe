@@ -91,8 +91,12 @@
       : isRetryable && !server.disabled
         ? [{ id: 'restart', label: m.settings_mcp_restartButton(), icon: faRotateRight }]
         : []),
-    { id: 'edit', label: m.settings_mcp_action_edit(), icon: faPen, group: 'manage' },
-    { id: 'copy', label: m.settings_mcp_action_copyJson(), icon: faCopy, group: 'manage' },
+    ...(server.plugin
+      ? []
+      : [
+          { id: 'edit', label: m.settings_mcp_action_edit(), icon: faPen, group: 'manage' },
+          { id: 'copy', label: m.settings_mcp_action_copyJson(), icon: faCopy, group: 'manage' },
+        ]),
     ...(server.authType && server.authType !== 'none'
       ? [
           {
@@ -103,13 +107,17 @@
           },
         ]
       : []),
-    {
-      id: 'delete',
-      label: m.settings_mcp_action_delete(),
-      icon: faTrash,
-      destructive: true,
-      group: 'danger',
-    },
+    ...(server.plugin
+      ? []
+      : [
+          {
+            id: 'delete',
+            label: m.settings_mcp_action_delete(),
+            icon: faTrash,
+            destructive: true,
+            group: 'danger',
+          },
+        ]),
   ]);
 
   function handleRowAction(action: string) {
@@ -183,6 +191,11 @@
     {/snippet}
     {#snippet meta()}
       <span class="flex items-center gap-2">
+        {#if server.plugin}
+          <span class="type-caption text-subtle"
+            >{m.settings_mcp_fromPlugin({ plugin: server.plugin })}</span
+          >
+        {/if}
         {#if server.toolCount > 0}
           <span class="type-caption text-subtle">
             {server.toolCount === 1

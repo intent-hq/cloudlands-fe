@@ -8389,5 +8389,6 @@
   "settings_plugins_action_update": "업데이트",
   "settings_plugins_action_uninstall": "제거",
   "settings_plugins_actionsFor_ariaLabel": "{name} 작업",
-  "settings_plugins_toggle_ariaLabel": "{name} 사용"
+  "settings_plugins_toggle_ariaLabel": "{name} 사용",
+  "settings_mcp_fromPlugin": "{plugin}에서"
 }

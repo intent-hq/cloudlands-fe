@@ -8389,5 +8389,6 @@
   "settings_plugins_action_update": "Actualizar",
   "settings_plugins_action_uninstall": "Desinstalar",
   "settings_plugins_actionsFor_ariaLabel": "Acciones para {name}",
-  "settings_plugins_toggle_ariaLabel": "Activar {name}"
+  "settings_plugins_toggle_ariaLabel": "Activar {name}",
+  "settings_mcp_fromPlugin": "De {plugin}"
 }

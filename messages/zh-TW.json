@@ -8389,5 +8389,6 @@
   "settings_plugins_action_update": "更新",
   "settings_plugins_action_uninstall": "解除安裝",
   "settings_plugins_actionsFor_ariaLabel": "{name} 的動作",
-  "settings_plugins_toggle_ariaLabel": "啟用 {name}"
+  "settings_plugins_toggle_ariaLabel": "啟用 {name}",
+  "settings_mcp_fromPlugin": "來自 {plugin}"
 }
