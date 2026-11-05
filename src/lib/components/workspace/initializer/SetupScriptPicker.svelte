@@ -9,7 +9,7 @@
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import {
-    getLastUsedSetupScript,
+    getRecentSetupScripts,
     getTemplateContent,
     REPO_CONFIG_SCRIPT_ID,
     REPO_CONFIG_SCRIPT_NAME,
@@ -66,8 +66,8 @@
     name: scriptName,
     source: scriptNameSource,
   });
-  const lastUsed = $derived(
-    open && repositoryKey ? getLastUsedSetupScript(repositoryKey, githubUrl) : undefined,
+  const recentScripts = $derived(
+    open && repositoryKey ? getRecentSetupScripts(repositoryKey, githubUrl) : [],
   );
 
   function matches(a: SetupScriptChoice, b: SetupScriptChoice): boolean {
@@ -81,20 +81,6 @@
         value: REPO_CONFIG_SCRIPT_ID,
         label: setupScriptDisplayName(REPO_CONFIG_SCRIPT_NAME, 'repo-config'),
         data: { content: repoConfigScript, name: REPO_CONFIG_SCRIPT_NAME, source: 'repo-config' },
-      });
-    }
-    if (lastUsed) {
-      const choice: SetupScriptChoice = {
-        content: lastUsed.content,
-        // i18n-ignore (stored setup-script identity)
-        name: lastUsed.nameSource === 'repo-config' ? 'Custom' : lastUsed.name,
-        source: lastUsed.nameSource === 'repo-config' ? 'custom' : lastUsed.nameSource,
-      };
-      choices.push({
-        value: 'last-used',
-        label: m.workspace_setupScriptEditor_lastUsed_label(),
-        description: setupScriptDisplayName(choice.name, choice.source),
-        data: choice,
       });
     }
     for (const template of SETUP_SCRIPT_TEMPLATES) {
@@ -111,7 +97,37 @@
         data: currentChoice,
       });
     }
-    return choices;
+    const ordered: typeof choices = [];
+    for (const [index, saved] of recentScripts.entries()) {
+      const isCurrentConfig =
+        saved.nameSource === 'repo-config' &&
+        !!repoConfigScript &&
+        saved.content.trim() === repoConfigScript.trim();
+      const choice: SetupScriptChoice = {
+        content: saved.content,
+        // i18n-ignore (stored setup-script identity)
+        name: isCurrentConfig
+          ? REPO_CONFIG_SCRIPT_NAME
+          : saved.nameSource === 'repo-config'
+            ? 'Custom'
+            : saved.name,
+        source: isCurrentConfig
+          ? 'repo-config'
+          : saved.nameSource === 'repo-config'
+            ? 'custom'
+            : saved.nameSource,
+      };
+      const option = choices.find((candidate) => matches(candidate.data, choice)) ?? {
+        value: `recent-${index}`,
+        label: setupScriptDisplayName(choice.name, choice.source),
+        data: choice,
+      };
+      if (!ordered.some((candidate) => matches(candidate.data, option.data))) ordered.push(option);
+    }
+    return [
+      ...ordered,
+      ...choices.filter((option) => !ordered.some((recent) => matches(recent.data, option.data))),
+    ];
   });
   const selectedValue = $derived(
     options.find((option) => matches(option.data, currentChoice))?.value,
@@ -185,10 +201,10 @@
       staticPosition
       inputVariant="search"
       size="compact"
-      class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1 pb-2"
+      class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1"
       inputClass="shrink-0"
       rowClass={workspacePickerStyles.row}
-      viewportClass="min-h-0 max-h-none flex-1 p-0"
+      viewportClass="min-h-0 max-h-none flex-1 p-0 pb-2"
       contentClass="flex min-h-0 max-h-none flex-1 flex-col border-0 shadow-none"
       oncommit={(_, option) => {
         onSelect(option.data as SetupScriptChoice);

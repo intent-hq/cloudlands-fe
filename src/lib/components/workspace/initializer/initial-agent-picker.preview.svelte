@@ -269,10 +269,9 @@
 </script>
 
 <section
-  class="w-full min-w-0 p-4 {scenario === 'sidebar' ? 'max-w-[300px]' : ''} {scenario ===
-  'start-on-open'
-    ? 'min-h-[420px]'
-    : ''}"
+  class="w-full min-w-0 p-4 {scenario === 'sidebar' || startOn ? 'max-w-[300px]' : ''} {startOn
+    ? 'ml-auto'
+    : ''} {scenario === 'start-on-open' ? 'min-h-[420px]' : ''}"
   data-testid="specialist-fixture"
 >
   {#if scenario === 'compact'}

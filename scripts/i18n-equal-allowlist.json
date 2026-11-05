@@ -335,6 +335,7 @@
   "workspace_hoverCard_pullRequest_label": ["fr", "es"],
   "workspace_hoverCard_question_label": ["fr"],
   "workspace_initialAgentPicker_general_label": ["es"],
+  "workspace_initialAgentPicker_startOn_label": ["fr"],
   "workspace_isolationMode_worktree_label": ["ja", "ko", "fr", "es"],
   "workspace_issueSuggestions_team_label": ["de"],
   "workspace_mergePanel_squashMerge_label": ["de"],

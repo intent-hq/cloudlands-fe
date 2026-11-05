@@ -12,8 +12,7 @@
   import GitRepoIcon from '$lib/components/icons/GitRepoIcon.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import Header from '$lib/components/ui/Header.svelte';
-  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
-  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
+  import RepositoryPickerIcon from './RepositoryPickerIcon.svelte';
   import Input from '$lib/components/ui/input/input.svelte';
   import * as Popover from '$lib/components/ui/popover';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
@@ -1852,6 +1851,27 @@
       ? null
       : getGitHubPickOwner({ selectedValue, selectedRepoType, confirmedGithubUrl }, parseGitHubUrl),
   );
+  const triggerRecentRepo = $derived(formRepositoryChoices.find(isCurrentRepo));
+  const triggerRepositoryIdentity = $derived(
+    triggerRecentRepo ? getRecentRepoIdentity(triggerRecentRepo, gitlab?.instanceBaseUrl) : null,
+  );
+
+  function repositoryAvatarUrl(identity: ReturnType<typeof getRecentRepoIdentity>) {
+    if (
+      identity?.provider !== 'gitlab' ||
+      !gitlab?.authenticated ||
+      !gitlab.scopeKey ||
+      identity.instanceBaseUrl !== gitlab.instanceBaseUrl ||
+      gitlab.page.status !== 'ready'
+    )
+      return undefined;
+    return (
+      gitlab.page.items.find((project) => project.projectPath === identity.projectPath) ??
+      (gitlab.selectedProject?.projectPath === identity.projectPath
+        ? gitlab.selectedProject
+        : undefined)
+    )?.ownerAvatarUrl;
+  }
 </script>
 
 <div class="relative min-w-0">
@@ -1866,19 +1886,7 @@
         ? identity.projectPath.split('/').slice(0, -1).join('/')
         : label.ownerPrefix}
       {@const tooltip = getRecentRepoTooltip(repo)}
-      {@const avatarUrl =
-        identity?.provider === 'gitlab' &&
-        gitlab?.authenticated &&
-        gitlab.scopeKey &&
-        identity.instanceBaseUrl === gitlab.instanceBaseUrl &&
-        gitlab.page.status === 'ready'
-          ? (
-              gitlab.page.items.find((project) => project.projectPath === identity.projectPath) ??
-              (gitlab.selectedProject?.projectPath === identity.projectPath
-                ? gitlab.selectedProject
-                : undefined)
-            )?.ownerAvatarUrl
-          : undefined}
+      {@const avatarUrl = repositoryAvatarUrl(identity)}
       <div
         class="group/recent-repo flex min-w-0 items-center {rowLabel
           ? 'rounded-(--radius-row)'
@@ -1894,6 +1902,7 @@
             suffix={label.suffix}
             provider={identity?.provider}
             {avatarUrl}
+            local={repo.type === 'local'}
             showOwner={repo.type !== 'local'}
             showForge
             recent
@@ -2033,22 +2042,20 @@
             {:else if showEmptyIcon && !hasTriggerValue}
               <GitRepoIcon size={12} class="text-ghost -mb-0.25 mr-1" />
             {/if}
-            {#if !triggerIcon && gitlabSelected && hasTriggerValue}
-              <PrincipalAvatar
-                avatarUrl={selectedGitLabProject?.ownerAvatarUrl}
-                label={selectedGitLabProject?.namespace || triggerDisplayValue}
-                size={16}
-                referrerpolicy="no-referrer"
+            {#if !triggerIcon && hasTriggerValue}
+              <RepositoryPickerIcon
+                owner={triggerRepositoryIdentity?.projectPath.split('/').slice(0, -1).join('/') ||
+                  triggerAvatarOwner ||
+                  selectedGitLabProject?.namespace}
+                provider={triggerRepositoryIdentity?.provider ??
+                  (gitlabSelected ? 'gitlab' : triggerAvatarOwner ? 'github' : undefined)}
+                avatarUrl={repositoryAvatarUrl(triggerRepositoryIdentity) ??
+                  selectedGitLabProject?.ownerAvatarUrl}
+                local={triggerRecentRepo?.type === 'local' ||
+                  (!gitlabSelected && selectedRepoType !== 'github')}
+                size={rowLabel ? 20 : 16}
               />
-            {:else if !triggerIcon && triggerAvatarOwner}
-              <!-- Decorative: the adjacent label already names the owner. -->
-              <GitHubAvatar identity={triggerAvatarOwner} class="w-4 h-4 rounded-full shrink-0">
-                {#snippet fallback()}<PrincipalAvatar
-                    label={triggerAvatarOwner}
-                    size={16}
-                  />{/snippet}
-              </GitHubAvatar>
-            {:else if rowLabel}
+            {:else if !triggerIcon && rowLabel && !showEmptyIcon}
               <GitRepoIcon size={16} class="shrink-0 text-muted-foreground" />
             {/if}
             {#if !triggerIcon && (hasTriggerValue || emptyLabel)}

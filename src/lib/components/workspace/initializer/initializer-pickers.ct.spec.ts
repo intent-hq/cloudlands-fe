@@ -64,10 +64,10 @@ for (const scenario of ['local', 'clone'] as const) {
         range.selectNodeContents(node);
         const { x, y, right } = range.getBoundingClientRect();
         const weight = getComputedStyle(node.parentElement!).fontWeight;
-        // A loaded owner avatar is visible picker content, not inter-word whitespace.
+        // Avatars and folder icons are visible picker content, not inter-word whitespace.
         const images = node
           .parentElement!.closest('button[aria-haspopup="dialog"]')
-          ?.querySelectorAll('img');
+          ?.querySelectorAll('img, svg');
         const imageLefts = Array.from(images ?? [], (image) => image.getBoundingClientRect().left);
         bounds.push({ contentLeft: Math.min(x, ...imageLefts), y, right, weight });
       }
@@ -125,7 +125,11 @@ for (const { locale, fragments } of [
         const range = document.createRange();
         range.selectNodeContents(node);
         const { x, right } = range.getBoundingClientRect();
-        bounds.push({ text: node.textContent.trim(), left: x, right });
+        const icons = node
+          .parentElement!.closest('button[aria-haspopup="dialog"]')
+          ?.querySelectorAll('img, svg');
+        const iconLefts = Array.from(icons ?? [], (icon) => icon.getBoundingClientRect().left);
+        bounds.push({ text: node.textContent.trim(), left: Math.min(x, ...iconLefts), right });
       }
       return bounds;
     });
