@@ -22,7 +22,7 @@ export const NODE_CAPABILITY_KEYS = [
   'chiefAttachments',
   // Truncated note reads (§5.2): gates maxContentBytes / baseContentBytes.
   'noteTruncatedRead',
-  // Daemon-to-daemon remote machines: gates "Make available to <backend>".
+  // Daemon-to-daemon remote machines: gates "Let <backend> run agents here".
   'remoteMachines',
   // `workspace.create.initialAgent.placement` on a remote machine: gates Start On.
   'remoteInitialAgent',

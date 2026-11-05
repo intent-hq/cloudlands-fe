@@ -98,7 +98,10 @@
           </p>
         {:else}
           <p class="type-body text-muted-foreground">
-            {m.remoteAgent_notice_revoked_description({ machine: location.name })}
+            {m.remoteAgent_notice_revoked_description({
+              machine: location.name,
+              backend: $backendLabel$,
+            })}
           </p>
         {/if}
       </div>
