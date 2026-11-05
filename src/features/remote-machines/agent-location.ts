@@ -24,7 +24,8 @@ export interface AgentMachineLocation {
   state: AgentMachineState;
 }
 
-export type AgentPlacementNoticeKind = 'starting' | 'failed' | 'unreachable' | 'revoked';
+export type AgentPlacementNoticeKind =
+  'starting' | 'failed' | 'unreachable' | 'revoked' | 'setup-failed';
 
 // Product and architecture names are not translated.
 const OS_LABELS: Record<string, string> = {
@@ -137,5 +138,49 @@ export function agentPlacementNoticeKind(
   if (location.state === 'revoked') return 'revoked';
   if (location.state === 'unreachable') return 'unreachable';
   if (agent.effectiveIsolation === 'pending') return 'starting';
+  if (agent.setup?.state === 'failed') return 'setup-failed';
   return null;
+}
+
+export interface PlacementFailure {
+  message: string;
+  /** The machine must update Intent before an agent can start there. */
+  updateRequired: boolean;
+}
+
+/**
+ * The typed error data the backend appends to an error's text (`"<message>
+ * {\"code\":…}"`), split off; null when the text has none.
+ */
+function splitErrorData(text: string): { message: string; data: Record<string, unknown> } | null {
+  if (!text.endsWith('}')) return null;
+  for (let at = text.indexOf(' {'); at >= 0; at = text.indexOf(' {', at + 1)) {
+    try {
+      const data: unknown = JSON.parse(text.slice(at + 1));
+      if (data && typeof data === 'object' && typeof (data as { code?: unknown }).code === 'string')
+        return { message: text.slice(0, at).trim(), data: data as Record<string, unknown> };
+    } catch {
+      // Not the data object; try the next brace.
+    }
+  }
+  return null;
+}
+
+/**
+ * How a remote agent's start failure reads: its detail without the appended
+ * error data, and `machine-update-required` (PROTOCOL `methods/nodes.md`
+ * "Remote machine errors") in the app's words when the machine can't prepare
+ * the workspace's checkout.
+ */
+export function placementFailure(
+  error: { code?: string; detail?: string },
+  machine: string,
+): PlacementFailure {
+  const detail = error.detail ?? '';
+  const split = splitErrorData(detail);
+  const updateRequired =
+    error.code === 'machine-update-required' || split?.data.code === 'machine-update-required';
+  if (updateRequired && split?.data.reason === 'prepared-checkout')
+    return { updateRequired, message: m.remoteAgent_updateRequired_preparedCheckout({ machine }) };
+  return { updateRequired, message: split?.message || detail };
 }

@@ -17,6 +17,9 @@ import type {
   DaemonStatusCheckFailureKind,
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
+import type { ConnectionRecord } from '$shared/types/connections';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
 import { catalogNow } from '$lib/component-catalog/catalog-clock';
 
@@ -186,6 +189,8 @@ interface Scenario {
   remoteAgents?: boolean;
   /** `system.status.remoteLinks`; omitted models an older daemon. */
   remoteLinks?: { backends: number; machines: number };
+  /** Seed saved machines so the menu shows its Machines list. */
+  machines?: boolean;
   failures?:
     | { kind: DaemonStatusCheckFailureKind; count: number }
     | DaemonStatusCheckFailureKind[]
@@ -200,6 +205,36 @@ function failureKinds(
     : Array.from({ length: failures.count }, () => failures.kind);
 }
 
+const savedMachines: ConnectionRecord[] = [
+  {
+    id: 'local',
+    label: 'This machine',
+    host: null,
+    port: null,
+    fingerprint: null,
+    isLocal: true,
+    status: 'connected',
+  },
+  {
+    id: 'studio-mac',
+    label: 'Studio Mac',
+    host: '192.0.2.4',
+    port: 5179,
+    fingerprint: 'AA:BB',
+    isLocal: false,
+    status: 'connected',
+  },
+  {
+    id: 'build-box',
+    label: 'Build box',
+    host: '192.0.2.10',
+    port: 5179,
+    fingerprint: 'BB:01',
+    isLocal: false,
+    status: 'disconnected',
+  },
+];
+
 // The store is shared, so two live scenes would render the same merged
 // state. Refuse the overlap (`state=all`) rather than show a misleading grid.
 let liveScenes = 0;
@@ -213,6 +248,7 @@ function setup({
   remoteAgents = false,
   remoteLinks,
   failures,
+  machines = false,
 }: Scenario) {
   return () => {
     if (liveScenes > 0) {
@@ -222,6 +258,17 @@ function setup({
     }
     liveScenes += 1;
     store.dispatch(connectionStatusChanged('connected', transport ?? nextTransport()));
+    const before = store.state.connections;
+    const previousConnections = selectConnections.select(store.state);
+    if (machines) {
+      store.dispatch(
+        connectionsListReceived({
+          connections: savedMachines,
+          activeId: 'local',
+          windowBackendId: 'local',
+        }),
+      );
+    }
     if (stats) {
       store.dispatch(
         systemStatusSuccess(
@@ -258,6 +305,15 @@ function setup({
       liveScenes -= 1;
       if (agentMemory) store.dispatch(agentMemoryBreakdownClosed());
       store.dispatch(connectionStatusChanged('disconnected'));
+      if (machines) {
+        store.dispatch(
+          connectionsListReceived({
+            connections: previousConnections,
+            activeId: before.activeId,
+            windowBackendId: before.windowBackendId,
+          }),
+        );
+      }
     };
   };
 }
@@ -268,6 +324,7 @@ export const preview = definePreview<Record<string, never>>({
   defaultState: 'degraded-timeout',
   states: {
     healthy: { props: {}, setup: setup({}) },
+    'saved-machines': { props: {}, setup: setup({ machines: true }) },
     'remote-route': {
       props: {},
       setup: setup({

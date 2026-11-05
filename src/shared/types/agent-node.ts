@@ -56,6 +56,21 @@ export const AgentCheckpointSchema = z.object({
   capturedAt: z.string().datetime({ offset: true }),
   committedAt: z.string().datetime({ offset: true }),
 });
+/**
+ * A remote agent's checkout setup on its machine (PROTOCOL `methods/nodes.md`
+ * "Prepared checkout"). `output` and `outputTruncated` come from detail reads only.
+ */
+const RemoteSetupStatusSchema = z.object({
+  state: z.enum(['pending', 'running', 'completed', 'failed', 'skipped']),
+  exitCode: z.number().int().optional(),
+  error: z.string().optional(),
+  startedAt: z.string().optional(),
+  finishedAt: z.string().optional(),
+  output: z.string().optional(),
+  outputTruncated: z.boolean().optional(),
+});
+export type RemoteSetupStatus = z.infer<typeof RemoteSetupStatusSchema>;
+
 export const AgentNodeFieldsSchema = z.object({
   nodeId: z.string().min(1).optional(),
   leaseId: z.string().min(1).optional(),
@@ -68,6 +83,8 @@ export const AgentNodeFieldsSchema = z.object({
   nodeState: z.enum(['ready', 'offline', 'incompatible', 'removed']).optional(),
   checkpoint: AgentCheckpointSchema.optional(),
   placementError: z.object({ code: z.string(), detail: z.string() }).optional(),
+  // An unknown shape drops only `setup`, never the other placement fields.
+  setup: RemoteSetupStatusSchema.optional().catch(undefined),
   // Opaque diagnostic text: never a frontend or head filesystem path.
   nodePath: z.string().optional(),
 });
