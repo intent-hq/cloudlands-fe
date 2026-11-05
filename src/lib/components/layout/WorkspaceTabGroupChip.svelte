@@ -4,7 +4,6 @@
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceTabGroup } from '$store/renderer/slices/tab-state/tab-groups';
-  import WorkspaceTabGroupOutline from './WorkspaceTabGroupOutline.svelte';
   import { workspaceTabGroupDisplayName } from './workspace-tab-group-labels';
 
   interface Props {
@@ -54,7 +53,6 @@
   }
 </script>
 
-{#if open}<WorkspaceTabGroupOutline color={group.color} edge="start" />{/if}
 <div
   class={cn('tab-group-chip', open ? 'is-open' : 'is-collapsed', editing && 'is-editing')}
   style:--tab-group-color={`var(--tab-group-${group.color})`}

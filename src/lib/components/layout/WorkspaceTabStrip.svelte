@@ -63,7 +63,7 @@
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import WorkspaceTabGroupChip from './WorkspaceTabGroupChip.svelte';
-  import WorkspaceTabGroupOutline from './WorkspaceTabGroupOutline.svelte';
+  import './workspace-tab-groups.css';
   import WorkspaceTabLoadingTab from './WorkspaceTabLoadingTab.svelte';
   import {
     createWorkspaceTabGroupController,
@@ -72,6 +72,7 @@
   import {
     layoutWorkspaceTabStrip,
     proposeGroupedWorkspaceTabOrder,
+    workspaceTabGroupSlotAttributes,
   } from './workspace-tab-group-items';
   import { prepareTabOutros, workspaceTabStripItemMotion } from './workspace-tab-strip-item-motion';
   import {
@@ -342,6 +343,7 @@
   $effect(() => {
     void renderedTabOrder;
     void horizontalPositionTrackingKey;
+    void $openGroup$;
     const trackingDuration = workspaceTabMotionDuration;
     if (activeTabBoundsPollers.size === 0) return;
     layoutTracking = true;
@@ -977,6 +979,7 @@
             : 'flex h-(--control-height-medium) items-center px-1',
         )}
         data-workspace-tab-motion={item.kind === 'tab' ? workspaceId : undefined}
+        {...workspaceTabGroupSlotAttributes(item)}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 36}px` : undefined}
         animate:flip={{
@@ -1153,9 +1156,6 @@
             onKeydown={(event) => handleTabKeydown(event, workspaceId)}
             onContextMenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
           />
-        {/if}
-        {#if item.kind === 'tab' && item.group}
-          <WorkspaceTabGroupOutline color={item.group.color} edge={item.group.edge} />
         {/if}
       </div>
     {/each}

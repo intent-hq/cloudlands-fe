@@ -18,6 +18,8 @@ export type WorkspaceTabStripItem =
       key: string;
       workspaceId: string;
       group?: { id: string; color: WorkspaceTabGroup['color']; edge: WorkspaceTabGroupEdge };
+      /** In a collapsed group: kept in the strip at zero width so the change can animate. */
+      hidden: boolean;
     }
   | { kind: 'group'; key: string; group: WorkspaceTabGroup; open: boolean };
 
@@ -25,8 +27,8 @@ export const workspaceTabGroupItemKey = (groupId: string) => `tab-group:${groupI
 
 /**
  * Lays out the strip: each group gets a header chip before its first tab.
- * Only `openGroupId` (the group of the current tab) shows its tabs; the tabs
- * of every other group are hidden behind their chip.
+ * Only `openGroupId` shows its tabs; the tabs of every other group are marked
+ * hidden behind their chip.
  */
 export function buildWorkspaceTabStripItems(
   order: readonly string[],
@@ -47,7 +49,6 @@ export function buildWorkspaceTabStripItems(
         open: group === openGroup,
       });
     }
-    if (group && group !== openGroup) continue;
     items.push({
       kind: 'tab',
       key: workspaceId,
@@ -59,6 +60,7 @@ export function buildWorkspaceTabStripItems(
             edge: group.workspaceIds.at(-1) === workspaceId ? 'end' : 'middle',
           }
         : undefined,
+      hidden: group !== undefined && group !== openGroup,
     });
   }
   return items;
@@ -122,7 +124,9 @@ export function layoutWorkspaceTabStrip(
     ? resolveMovedWorkspaceTabGroups(order, groups, draggedWorkspaceId)
     : groups;
   const items = buildWorkspaceTabStripItems(order, renderedGroups, openGroupId);
-  const tabIds = items.flatMap((item) => (item.kind === 'tab' ? [item.workspaceId] : []));
+  const tabIds = items.flatMap((item) =>
+    item.kind === 'tab' && !item.hidden ? [item.workspaceId] : [],
+  );
   return { items, tabIds };
 }
 
@@ -141,4 +145,20 @@ export function proposeGroupedWorkspaceTabOrder(
   return move
     ? applyWorkspaceTabMove(fullOrder, draggedId, move.targetId, move.placement)
     : [...fullOrder];
+}
+
+/**
+ * Strip-slot attributes that drive workspace-tab-groups.css: group membership,
+ * the collapsed state, the outline segment and the group color.
+ */
+export function workspaceTabGroupSlotAttributes(item: WorkspaceTabStripItem) {
+  const hidden = item.kind === 'tab' && item.hidden;
+  const edge = item.kind === 'group' ? (item.open ? 'start' : undefined) : item.group?.edge;
+  return {
+    'data-tab-group-member': item.kind === 'tab' && item.group ? '' : undefined,
+    'data-tab-group-hidden': hidden ? '' : undefined,
+    'data-tab-group-edge': edge,
+    style: item.group ? `--tab-group-color: var(--tab-group-${item.group.color})` : undefined,
+    inert: hidden,
+  };
 }

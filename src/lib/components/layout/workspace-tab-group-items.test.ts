@@ -15,16 +15,32 @@ const describeItems = (openGroupId: string | null) =>
   buildWorkspaceTabStripItems(order, groups, openGroupId).map((item) =>
     item.kind === 'group'
       ? `[${item.group.id}${item.open ? ' open' : ''}]`
-      : `${item.workspaceId}${item.group ? `:${item.group.edge}` : ''}`,
+      : `${item.workspaceId}${item.group ? `:${item.hidden ? 'hidden' : item.group.edge}` : ''}`,
   );
 
 describe('buildWorkspaceTabStripItems', () => {
   it('shows only the open group tabs and a chip for every group', () => {
-    expect(describeItems('g')).toEqual(['a', '[g open]', 'b:middle', 'c:end', 'd', '[h]']);
+    expect(describeItems('g')).toEqual([
+      'a',
+      '[g open]',
+      'b:middle',
+      'c:end',
+      'd',
+      '[h]',
+      'e:hidden',
+    ]);
   });
 
   it('hides the tabs of every group when none is open', () => {
-    expect(describeItems(null)).toEqual(['a', '[g]', 'd', '[h]']);
+    expect(describeItems(null)).toEqual([
+      'a',
+      '[g]',
+      'b:hidden',
+      'c:hidden',
+      'd',
+      '[h]',
+      'e:hidden',
+    ]);
   });
 });
 
