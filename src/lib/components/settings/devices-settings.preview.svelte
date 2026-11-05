@@ -188,8 +188,12 @@
    * With `disabled`, the local and saved rows show what the main process
    * surfaces once a host's `enabledProviderIds` excludes some installed
    * providers: those providers are hidden from that row.
+   *
+   * With `localAvailable`, the local machine is also made available to the
+   * backend, which currently sees it as disconnected: the row keeps its
+   * "Available to" badge and shows the providers its own daemon reports.
    */
-  function setupPlatforms(disabled: Record<string, string[]> = {}) {
+  function setupPlatforms(disabled: Record<string, string[]> = {}, localAvailable = false) {
     const stop = setup();
     const previousLabs = appStore.state.userPreferences.labsRemoteAgentsEnabled === true;
     appStore.dispatch(setLabsRemoteAgentsEnabled(true));
@@ -269,9 +273,24 @@
     appStore.dispatch(
       remoteMachinesLoaded({
         supported: true,
-        localFingerprint: null,
+        localFingerprint: localAvailable ? 'FP:local' : null,
         executorBackends: [],
         machines: [
+          ...(localAvailable
+            ? [
+                {
+                  id: 'm-local',
+                  name: 'Clément’s MacBook Pro',
+                  platform: { os: 'macos', arch: 'aarch64' },
+                  hosts: ['local.invalid'],
+                  port: 5181,
+                  fingerprint: 'FP:local',
+                  state: 'disconnected' as const,
+                  runningAgents: 0,
+                  addedAt: '2026-11-01T00:00:00Z',
+                },
+              ]
+            : []),
           {
             id: 'm-studio',
             name: 'Clément’s Mac Studio',
@@ -349,6 +368,7 @@
             'lab-pc': ['grok', 'pi', 'droid', 'cortex'],
           }),
       },
+      'platforms-local-available': { props: {}, setup: () => setupPlatforms({}, true) },
       'multiplayer-enabled': { props: {}, setup: () => setup(false, true) },
       'local-expanded': { props: { expanded: true }, setup: () => setup() },
       'remote-window': { props: {}, setup: () => setup(true) },

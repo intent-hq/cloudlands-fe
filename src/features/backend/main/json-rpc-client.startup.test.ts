@@ -183,6 +183,50 @@ describe('JsonRpcClient daemon startup readiness', () => {
     client.dispose();
   });
 
+  it('sends requests the hello callback issues on the ready hello once connected', async () => {
+    // The ready re-hello is the first answered hello after a startup wait.
+    // Its callback fires before the starting state clears; requests it makes
+    // (the Machines row's provider and device-kind captures) must wait for
+    // `connected` like on any connect, not be refused as "Daemon not ready".
+    const fromHello: Array<Promise<unknown>> = [];
+    const { client, sockets } = make({
+      onHelloResult: () => {
+        fromHello.push(client.request('host.providerDiscovery', {}));
+      },
+    });
+    client.start();
+    await helloAnsweredStarting(sockets, 0);
+    await vi.advanceTimersByTimeAsync(1000);
+    sockets[0].result(sockets[0].last('system.startupStatus').id, snapshot('ready'));
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[1].result(sockets[1].last('client.hello').id, HELLO_OK);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(client.getStatus()).toBe('connected');
+    expect(fromHello).toHaveLength(1);
+    const discovery = sockets[1].last('host.providerDiscovery');
+    sockets[1].result(discovery.id, { providers: [] });
+    await expect(fromHello[0]).resolves.toEqual({ providers: [] });
+    client.dispose();
+  });
+
+  it('still refuses ordinary requests while the daemon is starting', async () => {
+    const { client, sockets } = make();
+    client.start();
+    await helloAnsweredStarting(sockets, 0);
+    await expect(client.request('host.status')).rejects.toThrow('Daemon not ready');
+    // The fresh dial after ready, before its hello is answered, still refuses.
+    await vi.advanceTimersByTimeAsync(1000);
+    sockets[0].result(sockets[0].last('system.startupStatus').id, snapshot('ready'));
+    await vi.advanceTimersByTimeAsync(100);
+    sockets[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(client.request('host.status')).rejects.toThrow('Daemon not ready');
+    client.dispose();
+  });
+
   it('reconnects and re-hellos when the starting daemon closes its bootstrap socket', async () => {
     const { client, sockets, statuses, reconnected } = make();
     client.start();
