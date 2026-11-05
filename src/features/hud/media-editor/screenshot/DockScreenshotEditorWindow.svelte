@@ -1,6 +1,8 @@
 <script lang="ts" module>
   import type { DockMediaEdit, DockMediaSource } from '$shared/dock-media-edit';
   import type { ScreenshotFrameMapping } from './screenshot-edit-geometry';
+  // One counter per editor document, including component remounts on retarget.
+  let noteGeneration = 0;
   export interface ScreenshotEditorBundle {
     source: DockMediaSource;
     edit: DockMediaEdit;
@@ -145,7 +147,6 @@
   };
   let noteSession = $state.raw<NoteSession | null>(null);
   let selectedMarkId = $state<string | null>(null);
-  let noteGeneration = 0;
   let seenDiscardRequest = 0;
   const dictatingId = $derived(
     noteSession?.phase === 'listening' ? noteSession.control.request.markId : null,
