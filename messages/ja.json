@@ -8338,7 +8338,7 @@
   "dock_captureEditor_voiceTranscript_pending": "文字起こしを作成中です。",
   "dock_captureEditor_voiceTranscript_unavailable": "この録画の文字起こしはありません。",
   "dock_captureEditor_transcript_unavailable": "この録画の文字起こしはありません。",
-  "dock_captureEditor_readonly_note": "この録画は再生のみできます。今後の録画はここでトリミング・カットし、一部だけ送信できます。",
+  "dock_captureEditor_readonly_note": "この録画はここで再生できますが、まだ編集はできません。",
   "dock_captureEditor_transcript_pending": "文字起こし中…",
   "dock_captureEditor_transcript_noSpeech": "音声が検出されませんでした",
   "dock_captureEditor_batch_label": "バッチ {n} · {time}",

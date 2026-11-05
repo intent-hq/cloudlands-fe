@@ -8338,7 +8338,7 @@
   "dock_captureEditor_voiceTranscript_pending": "Das Transkript wird noch erstellt.",
   "dock_captureEditor_voiceTranscript_unavailable": "Kein Transkript für diese Aufnahme.",
   "dock_captureEditor_transcript_unavailable": "Kein Transkript für diese Aufnahme.",
-  "dock_captureEditor_readonly_note": "Diese Aufnahme kann nur abgespielt werden. Neue Aufnahmen lassen sich hier kürzen, schneiden und in Teilen senden.",
+  "dock_captureEditor_readonly_note": "Diese Aufnahme kann hier abgespielt, aber noch nicht bearbeitet werden.",
   "dock_captureEditor_transcript_pending": "Wird transkribiert …",
   "dock_captureEditor_transcript_noSpeech": "Keine Sprache erkannt",
   "dock_captureEditor_batch_label": "Abschnitt {n} · {time}",
