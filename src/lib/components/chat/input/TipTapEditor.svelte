@@ -192,6 +192,12 @@
     skillsLoading?: boolean;
     skillsError?: string | null;
     onSkillsRetry?: () => void;
+    /** A remote agent's `/` menu: shown when its machine offers nothing. */
+    slashEmptyLabel?: string;
+    /** A remote agent's `/` menu: a muted row under the list. */
+    slashNotice?: string;
+    /** The tooltip of a `/name` chip its machine lacks; `undefined` when it has it. */
+    unavailableSkillTitle?: (name: string) => string | undefined;
     screenReferences?: readonly EditorScreenReference[];
     screenInsertions?: readonly DockEvidenceInsertion[];
     screenInterim?: readonly DockInsertionPart[];
@@ -235,6 +241,9 @@
     skillsLoading = false,
     skillsError = null,
     onSkillsRetry,
+    slashEmptyLabel,
+    slashNotice,
+    unavailableSkillTitle,
     screenReferences,
     screenInsertions = [],
     screenInterim = [],
@@ -378,9 +387,32 @@
       slashContext !== null &&
       slashContextKey !== dismissedSlashContext &&
       slashContext.from !== dismissedSlashFrom &&
-      filteredSkills.length > 0 &&
+      (filteredSkills.length > 0 ||
+        (slashEmptyLabel !== undefined && slashContext.query === '' && !skillsLoading)) &&
       isEditable,
   );
+
+  // A remote agent's machine may lack a `/name` chip's skill: mark it (it
+  // still sends) with the reason as its tooltip.
+  $effect(() => {
+    const activeEditor = editor;
+    const root = element;
+    const title = unavailableSkillTitle;
+    if (!activeEditor || !root) return;
+    const mark = () => {
+      for (const chip of root.querySelectorAll<HTMLElement>('[data-type="skill-command"]')) {
+        const reason = title?.(chip.dataset.skillName ?? '');
+        chip.classList.toggle('skill-command-chip--unavailable', reason !== undefined);
+        if (reason) chip.title = reason;
+        else chip.removeAttribute('title');
+      }
+    };
+    mark();
+    activeEditor.on('update', mark);
+    return () => {
+      activeEditor.off('update', mark);
+    };
+  });
 
   $effect(() => {
     if (!slashMenuOpen) return;
@@ -1867,6 +1899,8 @@
           items={filteredSkills}
           loading={skillsLoading}
           error={skillsError}
+          emptyLabel={slashEmptyLabel}
+          notice={slashNotice}
           onRetry={onSkillsRetry}
           onSelect={selectSlashSkill}
           onDismiss={dismissSlashMenu}

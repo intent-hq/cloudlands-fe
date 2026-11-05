@@ -5,6 +5,10 @@ import {
   loadSkillsFailed,
   loadSkillsRequested,
   setSkills,
+  loadAgentSkillsRequested,
+  setAgentSkills,
+  loadAgentSkillsFailed,
+  emptyAgentSkillsState,
 } from './skills-slice';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
 
@@ -42,5 +46,34 @@ describe('skillsReducer', () => {
 
     expect(nextState.byWorkspaceId['ws-1']).toBeUndefined();
     expect(nextState.byWorkspaceId['ws-2']).toBeDefined();
+  });
+
+  it("keeps a remote agent's machine skills apart from the workspace", () => {
+    const skills = [{ name: 'machine-skill', description: 'd', location: '/m' }];
+    let state = skillsReducer(initialState, loadAgentSkillsRequested('ws-1', 'a1'));
+    expect(state.byAgentId['a1']).toEqual({
+      ...emptyAgentSkillsState,
+      loading: true,
+      workspaceId: 'ws-1',
+    });
+    expect(state.byWorkspaceId['ws-1']).toBeUndefined();
+
+    state = skillsReducer(state, setAgentSkills('a1', { skills, stale: true, unavailable: null }));
+    expect(state.byAgentId['a1']).toEqual({
+      skills,
+      loading: false,
+      error: null,
+      stale: true,
+      unavailable: null,
+      loaded: true,
+      workspaceId: 'ws-1',
+    });
+
+    state = skillsReducer(state, loadAgentSkillsRequested('ws-1', 'a1'));
+    state = skillsReducer(state, loadAgentSkillsFailed('a1', 'boom'));
+    expect(state.byAgentId['a1']).toMatchObject({ skills, loading: false, error: 'boom' });
+
+    state = skillsReducer(state, workspaceUnmounted('ws-1'));
+    expect(state.byAgentId['a1']).toBeUndefined();
   });
 });

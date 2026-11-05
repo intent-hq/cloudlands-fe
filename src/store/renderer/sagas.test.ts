@@ -101,6 +101,7 @@ describe('renderer app saga registry', () => {
       'autoUpdateSaga',
       'specialistsSaga',
       'workspaceCatalogSaga',
+      'agentSkillsSaga',
       'proposalLifecycleSaga',
       'questionUiPersistenceSaga',
       'secretRequestsSaga',

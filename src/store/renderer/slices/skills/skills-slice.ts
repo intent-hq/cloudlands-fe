@@ -2,7 +2,13 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createWorkspaceScopedHelpers } from '../../utils/workspace-scoped';
 import { workspaceUnmounted } from '../workspace-lifecycle/workspace-lifecycle-slice';
-import type { SkillInfo, SkillsState, SkillsWorkspaceState } from './skills-types';
+import type {
+  AgentSkills,
+  SkillInfo,
+  SkillsAgentState,
+  SkillsState,
+  SkillsWorkspaceState,
+} from './skills-types';
 
 // ============================================================================
 // Empty / initial state
@@ -14,8 +20,17 @@ export const emptyWorkspaceSkillsState: SkillsWorkspaceState = {
   error: null,
 };
 
+export const emptyAgentSkillsState: SkillsAgentState = {
+  ...emptyWorkspaceSkillsState,
+  stale: false,
+  unavailable: null,
+  loaded: false,
+  workspaceId: null,
+};
+
 export const initialState: SkillsState = {
   byWorkspaceId: {},
+  byAgentId: {},
 };
 
 const { setWorkspaceState, clearWorkspaceState } =
@@ -37,6 +52,25 @@ export const setSkills =
 /** Reducer: store a failed skills load while preserving the last known roster */
 export const loadSkillsFailed =
   createAction<[workspaceId: string, error: string]>('skills/loadSkillsFailed');
+
+/** Trigger: load a remote agent's machine skills (`skill.list` with `agentId`). */
+export const loadAgentSkillsRequested = createAction<[workspaceId: string, agentId: string]>(
+  'skills/loadAgentSkillsRequested',
+);
+
+/** Trigger: `skills:changed` named a remote agent (its machine's catalog changed). */
+export const agentSkillsChanged = createAction<[workspaceId: string, agentId: string]>(
+  'skills/agentSkillsChanged',
+);
+
+/** Reducer: store a remote agent's machine skills */
+export const setAgentSkills =
+  createAction<[agentId: string, result: AgentSkills]>('skills/setAgentSkills');
+
+/** Reducer: a failed remote agent skills load, keeping the last list */
+export const loadAgentSkillsFailed = createAction<[agentId: string, error: string]>(
+  'skills/loadAgentSkillsFailed',
+);
 
 // ============================================================================
 // Reducer
@@ -66,6 +100,33 @@ skillsReducer.with(loadSkillsFailed, (state, { payload: [workspaceId, error] }) 
     error,
   });
 });
-skillsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
-  clearWorkspaceState(state, wsId),
-);
+skillsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => {
+  const cleared = clearWorkspaceState(state, wsId);
+  const byAgentId = Object.fromEntries(
+    Object.entries(cleared.byAgentId ?? {}).filter(([, agent]) => agent.workspaceId !== wsId),
+  );
+  return { ...cleared, byAgentId };
+});
+
+function setAgentState(state: SkillsState, agentId: string, next: SkillsAgentState): SkillsState {
+  return { ...state, byAgentId: { ...(state.byAgentId ?? {}), [agentId]: next } };
+}
+
+skillsReducer.with(loadAgentSkillsRequested, (state, { payload: [workspaceId, agentId] }) => {
+  const current = state.byAgentId?.[agentId] ?? emptyAgentSkillsState;
+  return setAgentState(state, agentId, { ...current, workspaceId, loading: true, error: null });
+});
+skillsReducer.with(setAgentSkills, (state, { payload: [agentId, result] }) => {
+  const current = state.byAgentId?.[agentId] ?? emptyAgentSkillsState;
+  return setAgentState(state, agentId, {
+    ...current,
+    ...result,
+    loaded: true,
+    loading: false,
+    error: null,
+  });
+});
+skillsReducer.with(loadAgentSkillsFailed, (state, { payload: [agentId, error] }) => {
+  const current = state.byAgentId?.[agentId] ?? emptyAgentSkillsState;
+  return setAgentState(state, agentId, { ...current, loading: false, error });
+});

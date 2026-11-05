@@ -77,11 +77,18 @@
   import { parseImageDataUrl } from './image-data-url';
   import { isSupportedImageMimeType } from './image-attachment-format';
   import {
+    selectAgentSkillsMachine,
+    selectAgentSkillsNodeState,
+    selectAgentSkillsState,
     selectSkills,
     selectSkillsError,
     selectSkillsLoading,
   } from '$store/renderer/slices/skills/skills-selectors';
-  import { loadSkillsRequested } from '$store/renderer/slices/skills/skills-slice';
+  import {
+    loadAgentSkillsRequested,
+    loadSkillsRequested,
+  } from '$store/renderer/slices/skills/skills-slice';
+  import { remoteSlashCopy } from './remote-agent-skills';
 
   import {
     togglePanel as togglePanelAction,
@@ -370,6 +377,44 @@
   const skills$ = selectSkills(workspaceIdStore);
   const skillsLoading$ = selectSkillsLoading(workspaceIdStore);
   const skillsError$ = selectSkillsError(workspaceIdStore);
+
+  // A remote agent's `/` menu lists its machine's skills (PROTOCOL §5.34).
+  const skillsAgentIdStore = writable(agentId ?? '');
+  $effect(() => {
+    skillsAgentIdStore.set(agentId ?? '');
+  });
+  const agentSkills$ = selectAgentSkillsState(skillsAgentIdStore);
+  const skillsMachine$ = selectAgentSkillsMachine(skillsAgentIdStore);
+  const skillsNodeState$ = selectAgentSkillsNodeState(skillsAgentIdStore);
+  const skillsMachine = $derived(agentId ? $skillsMachine$ : undefined);
+  const skillsWorkspaceId = $derived(workspace?.id);
+  // Re-read when the agent, its machine or that machine's connection changes.
+  $effect(() => {
+    void $skillsNodeState$;
+    if (skillsMachine && agentId && skillsWorkspaceId) {
+      appStore.dispatch(loadAgentSkillsRequested(skillsWorkspaceId, agentId));
+    }
+  });
+  const composerSkillsLoading = $derived(
+    skillsMachine ? $agentSkills$.loading && $agentSkills$.skills.length === 0 : $skillsLoading$,
+  );
+  const composerSkillsError = $derived(skillsMachine ? $agentSkills$.error : $skillsError$);
+  const remoteSkillsCopy = $derived(
+    remoteSlashCopy(
+      skillsMachine
+        ? {
+            machine: skillsMachine,
+            skills: $agentSkills$.skills,
+            stale: $agentSkills$.stale,
+            unavailable: $agentSkills$.unavailable,
+            ready: $agentSkills$.loaded && !$agentSkills$.error,
+          }
+        : undefined,
+    ),
+  );
+  const composerSkills = $derived(
+    skillsMachine ? (remoteSkillsCopy.hideSkills ? [] : $agentSkills$.skills) : $skills$,
+  );
 
   const participation$ = selectWorkspaceParticipationContext(workspaceIdStore);
   const creation$ = selectWorkspaceCreationVisible();
@@ -1772,11 +1817,19 @@
           onScreenInsertionApplied?.(id, text);
         }}
         workspace={workspace ?? undefined}
-        skills={$skills$}
-        skillsLoading={$skillsLoading$}
-        skillsError={$skillsError$}
+        skills={composerSkills}
+        skillsLoading={composerSkillsLoading}
+        skillsError={composerSkillsError}
+        slashEmptyLabel={remoteSkillsCopy.emptyLabel}
+        slashNotice={remoteSkillsCopy.notice}
+        unavailableSkillTitle={remoteSkillsCopy.unavailableTitle}
         onSkillsRetry={() => {
-          if (workspace?.id) appStore.dispatch(loadSkillsRequested(workspace.id));
+          if (!workspace?.id) return;
+          if (skillsMachine && agentId) {
+            appStore.dispatch(loadAgentSkillsRequested(workspace.id, agentId));
+          } else {
+            appStore.dispatch(loadSkillsRequested(workspace.id));
+          }
         }}
         onUpdate={(text, change) => {
           handleCancelEnhance();

@@ -78,7 +78,7 @@ import type {
   WorkspaceScript,
 } from '$store/renderer/slices/scripts/scripts-types';
 import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
-import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+import type { AgentSkills, SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type {
@@ -2144,6 +2144,8 @@ export interface SetupScriptsClient {
 
 export interface SkillsClient {
   list(workspaceId: string): Promise<SkillInfo[]>;
+  /** A remote agent's machine skills (`skill.list` with `agentId`, §5.34). */
+  listForAgent(workspaceId: string, agentId: string): Promise<AgentSkills>;
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe;
 }
 
