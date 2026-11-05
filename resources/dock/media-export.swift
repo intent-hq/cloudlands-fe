@@ -91,7 +91,7 @@ func main() async throws {
     timeline.append((cursor.seconds * 1000, range.startMs, span.duration.seconds * 1000))
     try video.insertTimeRange(span, of: originalVideo, at: cursor)
     if let originalAudio, let audio, let audioRange {
-      let intersection = CMTimeRangeGetIntersection(span, audioRange)
+      let intersection = CMTimeRangeGetIntersection(span, otherRange: audioRange)
       if intersection.duration.seconds > 0 {
         try audio.insertTimeRange(intersection, of: originalAudio, at: cursor + intersection.start - span.start)
       }
