@@ -74,6 +74,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-tab-groups',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalTabGroups_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-tab-groups',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalTabGroups_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'enable-experimental-browser-access',
     get label() {
       return m.lib_commandPalette_enableExperimentalBrowserAccess_label();

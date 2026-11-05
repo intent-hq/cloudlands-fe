@@ -18,6 +18,7 @@ import {
   tabStateReducer,
   type TabState,
 } from './tab-state-slice';
+import { selectWorkspaceTabGroups } from './tab-state-selectors';
 
 const group = (id: string, workspaceIds: string[]): WorkspaceTabGroup => ({
   id,
@@ -89,6 +90,17 @@ describe('group data hygiene', () => {
 
   it('picks an unused color first', () => {
     expect(nextWorkspaceTabGroupColor([group('g', ['a'])])).toBe('green');
+  });
+});
+
+describe('selectWorkspaceTabGroups', () => {
+  const stored = [group('g', ['a'])];
+  const stateWith = (labsTabGroupsEnabled: boolean) =>
+    ({ tabState: { tabGroups: stored }, userPreferences: { labsTabGroupsEnabled } }) as never;
+
+  it('shows stored groups only while the tab groups Lab is on', () => {
+    expect(selectWorkspaceTabGroups.select(stateWith(true))).toBe(stored);
+    expect(selectWorkspaceTabGroups.select(stateWith(false))).toEqual([]);
   });
 });
 

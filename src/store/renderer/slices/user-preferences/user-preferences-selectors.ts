@@ -119,6 +119,10 @@ export const selectLabsBrowserAccessEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsBrowserAccessEnabled === true;
 });
 
+export const selectLabsTabGroupsEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsTabGroupsEnabled === true;
+});
+
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

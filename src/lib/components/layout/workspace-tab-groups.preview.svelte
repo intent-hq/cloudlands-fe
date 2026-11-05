@@ -111,7 +111,11 @@
 </script>
 
 <script lang="ts">
+  import { store } from '$store/renderer/configured-store';
+  import { setLabsTabGroupsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import WorkspaceTabStripGeometryPreview from './workspace-tab-strip-geometry.preview.svelte';
+
+  store.dispatch(setLabsTabGroupsEnabled(true));
 
   let { openWorkspaceIds, activeWorkspaceId, tabGroups }: WorkspaceTabGroupsPreviewProps = $props();
 </script>

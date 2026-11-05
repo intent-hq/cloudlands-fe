@@ -3,6 +3,7 @@ import { store as appStore } from '$store/renderer/store';
 import { nextWorkspaceTabGroupColor } from '$store/renderer/slices/tab-state/tab-groups';
 import {
   selectWorkspaceTabGroups,
+  selectWorkspaceTabGroupsEnabled,
   selectWorkspaceTabOrder,
 } from '$store/renderer/slices/tab-state/tab-state-selectors';
 import {
@@ -69,6 +70,7 @@ export function createWorkspaceTabGroupController({
     },
     /** The tab context menu: group entries first, then the tab's own `entries`. */
     tabMenu(workspaceId: string, entries: SidebarMenuEntry[]): SidebarMenuEntry[] {
+      if (!selectWorkspaceTabGroupsEnabled.select(appStore.state)) return entries;
       const groupEntries = buildWorkspaceTabGroupEntries({
         groups: groups(),
         workspaceId,

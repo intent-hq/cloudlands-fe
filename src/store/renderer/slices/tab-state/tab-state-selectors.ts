@@ -4,6 +4,7 @@ import { type Workspace } from '$shared/types';
 import { store } from '../../store';
 import { getActiveBackendId } from '../../utils/backend-storage-namespace';
 import { serializeWorkspaceTabsState } from './tab-state-slice';
+import type { WorkspaceTabGroup } from './tab-groups';
 
 export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
@@ -55,8 +56,17 @@ export const selectWorkspaceTabOrder = store.createSelector((state) => {
   return state.tabState.workspaceStacks.flatMap((stack) => stack);
 });
 
+const NO_TAB_GROUPS: WorkspaceTabGroup[] = [];
+
+export const selectWorkspaceTabGroupsEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsTabGroupsEnabled === true;
+});
+
+/** Tab groups to show; none while the tab groups Lab is off (stored groups are kept). */
 export const selectWorkspaceTabGroups = store.createSelector((state) => {
-  return state.tabState.tabGroups;
+  return state.userPreferences?.labsTabGroupsEnabled === true
+    ? state.tabState.tabGroups
+    : NO_TAB_GROUPS;
 });
 
 export const selectActiveWorkspaceIds = store.createSelector((state): string[] => {

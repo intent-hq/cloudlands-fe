@@ -28,6 +28,7 @@ import {
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsBrowserAccessEnabled,
+  selectLabsTabGroupsEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectPauseAnimationsWhenUnfocused,
@@ -60,6 +61,7 @@ import {
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsBrowserAccessEnabled,
+  setLabsTabGroupsEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setPauseAnimationsWhenUnfocused,
@@ -78,6 +80,7 @@ import {
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
   toggleLabsBrowserAccess,
+  toggleLabsTabGroups,
   togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -103,6 +106,7 @@ const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
 const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
+const LABS_TAB_GROUPS_STORAGE_KEY = 'labs:tabGroupsEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -257,6 +261,11 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setLabsBrowserAccessEnabled(labsBrowserAccessEnabled));
   }
 
+  const labsTabGroupsEnabled = yield* getLocalStorageJSON<boolean>(LABS_TAB_GROUPS_STORAGE_KEY);
+  if (typeof labsTabGroupsEnabled === 'boolean') {
+    yield* put(setLabsTabGroupsEnabled(labsTabGroupsEnabled));
+  }
+
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
   if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
 
@@ -402,6 +411,13 @@ function* persistLabsBrowserAccessWorker() {
   );
 }
 
+function* persistLabsTabGroupsWorker() {
+  yield* setLocalStorageJSON(
+    LABS_TAB_GROUPS_STORAGE_KEY,
+    yield* selectLabsTabGroupsEnabled.effect(),
+  );
+}
+
 function* persistLabsPlainFolderWorkspacesWorker() {
   yield* setLocalStorageJSON(
     LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY,
@@ -526,6 +542,7 @@ function* watchUserPreferenceWrites() {
     [setLabsBrowserAccessEnabled, toggleLabsBrowserAccess],
     persistLabsBrowserAccessWorker,
   );
+  yield* takeEvery([setLabsTabGroupsEnabled, toggleLabsTabGroups], persistLabsTabGroupsWorker);
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);
