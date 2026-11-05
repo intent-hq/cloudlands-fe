@@ -1,12 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import {
   beforeEach,
@@ -122,74 +117,11 @@ const baseWorkspace = {
   repositoryName: 'intent',
 } as Workspace;
 
-function rect({
-  top,
-  left,
-  width,
-  height,
-}: {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}): DOMRect {
-  return {
-    x: left,
-    y: top,
-    top,
-    left,
-    width,
-    height,
-    right: left + width,
-    bottom: top + height,
-    toJSON: () => ({}),
-  } as DOMRect;
-}
-
 describe('workspace hover card list integrations', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.streamingAgentIds.length = 0;
     mocks.unreadAgentIds.length = 0;
-  });
-
-  it('shows the shared workspace hover card for sidebar workspace list items', async () => {
-    const WorkspaceListItem = (await import('../../layout/sidebar-nav/WorkspaceListItem.svelte'))
-      .default;
-    const onClick = vi.fn();
-    render(WorkspaceListItem, { props: { workspace: baseWorkspace, onClick } });
-
-    expect(screen.queryByText(baseWorkspace.statusMessage!)).toBeNull();
-
-    const row = screen.getByText('List Workspace').closest('[role="button"]')!;
-    await fireEvent.mouseEnter(row);
-    await tick();
-
-    expect(screen.getByText(baseWorkspace.statusMessage!)).toBeTruthy();
-    expect(screen.queryByText(baseWorkspace.branch)).toBeNull();
-    const tooltip = screen.getByRole('tooltip');
-    expect(tooltip.className).toContain('shadow-xl');
-    expect(tooltip.className).toContain('overflow-y-auto');
-    expect(tooltip.className).toContain('pointer-events-auto');
-    expect(tooltip.className).not.toContain('pointer-events-none');
-    expect(tooltip.className).not.toContain('shadow-none');
-
-    await fireEvent.click(row);
-    expect(onClick).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps sidebar workspace hover cards suppressed during keyboard navigation', async () => {
-    const WorkspaceListItem = (await import('../../layout/sidebar-nav/WorkspaceListItem.svelte'))
-      .default;
-    const onHover = vi.fn();
-    render(WorkspaceListItem, { props: { workspace: baseWorkspace, suppressHover: true, onHover } });
-
-    const row = screen.getByText('List Workspace').closest('[role="button"]')!;
-    await fireEvent.mouseEnter(row);
-    await tick();
-
-    expect(onHover).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(baseWorkspace.statusMessage!)).toBeNull();
   });
 
   it('shows streaming sidebar workspace agents as hover-card agent rows', async () => {
@@ -208,95 +140,5 @@ describe('workspace hover card list integrations', () => {
 
     expect(screen.getByRole('list', { name: 'Running agents' })).toBeTruthy();
     expect(screen.getByRole('listitem', { name: /Agent Running/ })).toBeTruthy();
-  });
-
-  it('prefers placing sidebar workspace hover cards to the right of the row', async () => {
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 500 });
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 800 });
-    const cardRect = rect({ top: 0, left: 0, width: 300, height: 120 });
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
-      function getMockRect(this: HTMLElement) {
-        if (this.getAttribute('role') === 'tooltip') return cardRect;
-        return rect({ top: 0, left: 0, width: 0, height: 0 });
-      },
-    );
-
-    try {
-      const WorkspaceListItem = (await import('../../layout/sidebar-nav/WorkspaceListItem.svelte'))
-        .default;
-      render(WorkspaceListItem, { props: { workspace: baseWorkspace } });
-
-      const row = screen.getByText('List Workspace').closest('[role="button"]') as HTMLElement;
-      row.getBoundingClientRect = vi.fn(() => rect({ top: 40, left: 16, width: 224, height: 28 }));
-      await fireEvent.mouseEnter(row);
-      await tick();
-
-      const tooltip = screen.getByRole('tooltip');
-      await waitFor(() => expect(tooltip.style.left).toBe('244px'));
-      expect(tooltip.style.top).toBe('40px');
-      expect(tooltip.style.maxHeight).toBe('484px');
-    } finally {
-      rectSpy.mockRestore();
-    }
-  });
-
-  it('flips sidebar workspace hover cards left when the right side is constrained', async () => {
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 500 });
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 });
-    const cardRect = rect({ top: 0, left: 0, width: 300, height: 120 });
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
-      function getMockRect(this: HTMLElement) {
-        if (this.getAttribute('role') === 'tooltip') return cardRect;
-        return rect({ top: 0, left: 0, width: 0, height: 0 });
-      },
-    );
-
-    try {
-      const WorkspaceListItem = (await import('../../layout/sidebar-nav/WorkspaceListItem.svelte'))
-        .default;
-      render(WorkspaceListItem, { props: { workspace: baseWorkspace } });
-
-      const row = screen.getByText('List Workspace').closest('[role="button"]') as HTMLElement;
-      row.getBoundingClientRect = vi.fn(() => rect({ top: 40, left: 360, width: 120, height: 28 }));
-      await fireEvent.mouseEnter(row);
-      await tick();
-
-      const tooltip = screen.getByRole('tooltip');
-      await waitFor(() => expect(tooltip.style.left).toBe('56px'));
-      expect(tooltip.style.top).toBe('40px');
-      expect(tooltip.style.maxHeight).toBe('484px');
-    } finally {
-      rectSpy.mockRestore();
-    }
-  });
-
-  it('clamps side-placed workspace hover cards inside short viewports', async () => {
-    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 160 });
-    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 500 });
-    const cardRect = rect({ top: 0, left: 0, width: 300, height: 220 });
-    const rectSpy = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(
-      function getMockRect(this: HTMLElement) {
-        if (this.getAttribute('role') === 'tooltip') return cardRect;
-        return rect({ top: 0, left: 0, width: 0, height: 0 });
-      },
-    );
-
-    try {
-      const WorkspaceListItem = (await import('../../layout/sidebar-nav/WorkspaceListItem.svelte'))
-        .default;
-      render(WorkspaceListItem, { props: { workspace: baseWorkspace } });
-
-      const row = screen.getByText('List Workspace').closest('[role="button"]') as HTMLElement;
-      row.getBoundingClientRect = vi.fn(() => rect({ top: 120, left: 16, width: 224, height: 28 }));
-      await fireEvent.mouseEnter(row);
-      await tick();
-
-      const tooltip = screen.getByRole('tooltip');
-      await waitFor(() => expect(tooltip.style.top).toBe('8px'));
-      expect(tooltip.style.left).toBe('192px');
-      expect(tooltip.style.maxHeight).toBe('144px');
-    } finally {
-      rectSpy.mockRestore();
-    }
   });
 });

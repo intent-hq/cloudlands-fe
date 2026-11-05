@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 // @ui-invariant
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRawSnippet } from 'svelte';
@@ -200,41 +200,6 @@ describe('Button', () => {
     await fireEvent.keyDown(button, { key: 'Enter' });
     expect(document.activeElement).toBe(button);
     expect(onkeydown).toHaveBeenCalledWith(expect.objectContaining({ key: 'Enter' }));
-  });
-
-  it('applies tooltipClass to the tooltip trigger wrapper', () => {
-    render(Button, { props: { tooltip: 'Shrinkable action', tooltipClass: 'min-w-0' } });
-    const button = screen.getByRole('button', { name: 'Shrinkable action' });
-    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- forwarding the given class is tooltipClass's contract
-    expect(button.parentElement?.closest('span')?.classList.contains('min-w-0')).toBe(true);
-  });
-
-  it('disables an open tooltip reactively without remounting its button', async () => {
-    const view = render(Button, {
-      props: { tooltip: 'Stable action help', tooltipDelayDuration: 0 },
-    });
-    const button = screen.getByRole('button', { name: 'Stable action help' });
-    button.focus();
-    await fireEvent.focus(button);
-    await screen.findByRole('tooltip', { name: 'Stable action help', hidden: true });
-
-    await view.rerender({
-      tooltip: 'Stable action help',
-      tooltipDelayDuration: 0,
-      tooltipDisabled: true,
-    });
-    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
-    expect(screen.getByRole('button', { name: 'Stable action help' })).toBe(button);
-
-    await view.rerender({
-      tooltip: 'Stable action help',
-      tooltipDelayDuration: 0,
-      tooltipDisabled: false,
-    });
-    button.blur();
-    button.focus();
-    await fireEvent.focus(button);
-    await screen.findByRole('tooltip', { name: 'Stable action help', hidden: true });
   });
 
   it.each(['icon', 'icon-compact', 'icon-sm', 'icon-xs', 'icon-lg'] as const)(

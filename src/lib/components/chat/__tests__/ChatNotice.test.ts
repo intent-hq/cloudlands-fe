@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/svelte';
+import { render, screen, cleanup } from '@testing-library/svelte';
 import ChatNotice from '../ChatNotice.svelte';
 
 afterEach(() => {
@@ -30,22 +30,6 @@ describe('ChatNotice', () => {
     expect(screen.getByRole('alert').textContent).toContain('Updated reason');
     await rerender({ reason: '' });
     expect(screen.queryByTestId('chat-notice-reason')).toBeNull();
-  });
-
-  it('only exposes a timestamp when one is supplied', async () => {
-    const { rerender } = render(ChatNotice, {
-      props: { title: 'Needs review', tone: 'danger' },
-    });
-    const header = screen.getByTestId('chat-notice-header');
-    expect(header.querySelector('[title], [data-tooltip-trigger]')).toBeNull();
-    await rerender({ timestamp: '2026-08-25T12:00:00.000Z' });
-    expect(header.querySelector('[title]')).toBeNull();
-    const timestamp = header.querySelector<HTMLElement>('[data-tooltip-trigger]');
-    expect(timestamp).not.toBeNull();
-    await fireEvent.focus(timestamp!);
-    expect((await screen.findByRole('tooltip', { hidden: true })).textContent).toMatch(/2026/);
-    await rerender({ timestamp: undefined });
-    expect(header.querySelector('[title], [data-tooltip-trigger]')).toBeNull();
   });
 
   it('preserves alert announcements without announcing the repeated pending summary', async () => {

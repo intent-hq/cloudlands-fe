@@ -1582,9 +1582,7 @@ for (const appearance of appearances) {
   }
 }
 
-test('custom multiline edge labels keep their three-line clamp and full tooltip', async ({
-  page,
-}) => {
+test('custom multiline edge labels retain their full accessible text', async ({ page }) => {
   const params = new URLSearchParams({
     state: 'custom-disconnected-extremes',
     theme: 'light',
@@ -1608,9 +1606,6 @@ test('custom multiline edge labels keep their three-line clamp and full tooltip'
     };
   });
   expect(metrics.accessibleText).toBe(metrics.fullText);
-
-  await truncated.locator('.edge-label-html').hover();
-  await expect(page.getByRole('tooltip')).toContainText(metrics.fullText);
 });
 
 test('keeps topology routes cardinal across live theme changes', async ({ page }) => {

@@ -625,10 +625,10 @@ describe('New Workspace → Start On', () => {
     await fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' });
     await fireEvent.pointerUp(trigger, { button: 0, pointerType: 'mouse' });
     await fireEvent.click(trigger);
-    const options = await screen.findAllByTestId('start-on-option');
-    const gone = options.find((option) => option.dataset.machineId === 'node-gone')!;
+    const options = await screen.findAllByRole('option');
+    const gone = screen.getByRole('option', { name: /Gone box/ });
     expect(gone.getAttribute('aria-disabled')).toBe('true');
     expect(gone.textContent).toContain(m.remoteMachines_state_unreachable_label());
-    expect(options[0].dataset.machineId).toBe('');
+    expect(options[0].textContent).toContain(m.layout_daemonStatus_localConnection_label());
   });
 });

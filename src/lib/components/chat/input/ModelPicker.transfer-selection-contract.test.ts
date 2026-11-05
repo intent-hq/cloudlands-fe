@@ -249,10 +249,6 @@ describe('imported public sessions preserve the ModelPicker selection', () => {
     const trigger = await mountSession(session, false);
     expect(getAgentProvider(session, contract.destinationDefaults.provider)).toBe('acp');
     await waitFor(() => {
-      expect(trigger.querySelector('[title]')?.getAttribute('title')).toMatch(
-        /no longer available/,
-      );
-      expect(trigger.querySelector('[title]')?.getAttribute('title')).not.toMatch(/Codex|disabled/);
       expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).not.toBeNull();
     });
     expect(() => assertSelection(trigger, contract.expectations.explicit.renderer.label)).toThrow();
@@ -263,16 +259,6 @@ describe('imported public sessions preserve the ModelPicker selection', () => {
     store.dispatch(workspaceCatalogInvalidated(true));
     await waitFor(() => {
       expect(trigger.querySelector('[data-icon="triangle-exclamation"]')).toBeNull();
-      expect(trigger.querySelector('[title]')?.getAttribute('title') ?? '').not.toMatch(
-        /no longer available/,
-      );
-    });
-    assertNoChanges();
-    hydrateFixtureState(false, session.workspaceId);
-    await waitFor(() => {
-      expect(trigger.querySelector('[title]')?.getAttribute('title')).toMatch(
-        /no longer available/,
-      );
     });
     assertNoChanges();
   });

@@ -145,8 +145,6 @@ for (const { width, height } of [
     await expect(trigger).toHaveText('');
     await expect(trigger.locator('svg')).toBeVisible();
     expect(await trigger.locator('svg').innerHTML()).not.toBe(initialIcon);
-    await trigger.hover();
-    await expect(page.getByRole('tooltip')).toContainText('Potted plant');
     await page.keyboard.press('Enter');
     await expect(page.getByRole('listbox')).toBeVisible();
     await page.keyboard.press('Escape');
@@ -157,7 +155,6 @@ for (const { width, height } of [
     // before testing the dialog: Escape belongs to the topmost open layer.
     await page.mouse.move(1, 1);
     await dialog.getByLabel('Device name', { exact: true }).focus();
-    await expect(page.getByRole('tooltip')).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
   });

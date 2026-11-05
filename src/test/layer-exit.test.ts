@@ -116,17 +116,20 @@ describe('layerContaining', () => {
 describe('waitForClosingLayers', () => {
   it('waits for every closing layer and ignores open ones', async () => {
     const { rerender } = render(LayerExitHarness, {
-      props: { tooltipOpen: true, menuOpen: true },
+      props: { menuOpen: true },
     });
-    const tooltip = await screen.findByRole('tooltip', { name: 'Browse user messages' });
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('data-state', 'open');
+    document.body.append(dialog);
     const menu = await screen.findByRole('menu');
 
-    await rerender({ tooltipOpen: true, menuOpen: false });
+    await rerender({ menuOpen: false });
     expect(closingLayers()).toEqual([menu]);
 
     await waitForClosingLayers();
     expect(menu.isConnected).toBe(false);
-    expect(tooltip.isConnected).toBe(true);
+    expect(dialog.isConnected).toBe(true);
   });
 });
 
@@ -156,7 +159,7 @@ describe('waitForDismissibleLayerArmed', () => {
     render(LayerExitHarness, { props: { menuOpen: true } });
     await screen.findByRole('menu');
     await expect(
-      waitForDismissibleLayerArmed(screen.getByRole('button', { name: 'Tooltip trigger' }), {
+      waitForDismissibleLayerArmed(screen.getByRole('button', { name: 'Menu trigger' }), {
         timeout: 50,
       }),
     ).rejects.toThrow(/no bits-ui layer contains/);

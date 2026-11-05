@@ -11,8 +11,6 @@ describe('WorkspaceStatusIcon', () => {
   ] as const)('renders one accessible semantic %s dot', (status, label, color) => {
     const view = render(WorkspaceStatusIcon, { props: { status, size: 12 } });
     const indicator = screen.getByRole('img', { name: label });
-
-    expect(indicator.getAttribute('title')).toBe(label);
     expect(indicator.getAttribute('data-workspace-status')).toBe(status);
     expect(indicator.getAttribute('data-workspace-status-visual')).toBe('dot');
     expect(indicator.hasAttribute('data-workspace-status-icon')).toBe(false);

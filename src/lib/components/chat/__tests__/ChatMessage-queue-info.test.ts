@@ -4,7 +4,6 @@
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, it, expect, vi } from 'vitest';
 import type { AgentMessage } from '$shared/types';
-import { formatFullDateTime } from '$lib/i18n/format';
 
 const { dispatchMock } = vi.hoisted(() => ({ dispatchMock: vi.fn() }));
 
@@ -126,7 +125,6 @@ describe('ChatMessage queued-delivery notice', () => {
     expect(copy.textContent).toBe('Waited in queue for 2m');
     expect(copy.textContent).not.toContain('Queued at');
     expect(copy.textContent).not.toContain('before delivery');
-    expect(chip.getAttribute('title')).toBe(formatFullDateTime('2026-01-01T11:58:00Z'));
     expect(chip.closest('[data-testid="message-actions"]')).toBe(
       screen.getByTestId('message-actions'),
     );

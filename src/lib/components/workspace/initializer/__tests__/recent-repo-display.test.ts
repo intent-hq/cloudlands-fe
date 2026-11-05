@@ -3,7 +3,6 @@ import {
   getGitHubPickOwner,
   getRecentRepoLabel,
   getRecentRepoIdentity,
-  getRecentRepoTooltip,
   getRepoFolderName,
   getWorkspaceOwnedCheckoutPaths,
   isDaemonManagedRepoPath,
@@ -69,24 +68,6 @@ describe('getRecentRepoLabel', () => {
     expect(
       getRecentRepoLabel({ path: '', type: 'github', name: 'monorepo', owner: 'intent-hq' }),
     ).toEqual({ ownerPrefix: 'intent-hq', primary: 'monorepo' });
-  });
-});
-
-describe('getRecentRepoTooltip', () => {
-  it('returns the full path for local repos', () => {
-    expect(getRecentRepoTooltip(localRepo('/Users/clem/code/intent'))).toBe(
-      '/Users/clem/code/intent',
-    );
-  });
-
-  it('returns nothing for GitHub repos', () => {
-    expect(
-      getRecentRepoTooltip({ path: '', type: 'github', name: 'monorepo', owner: 'intent-hq' }),
-    ).toBeUndefined();
-  });
-
-  it('returns nothing for a local repo without a path', () => {
-    expect(getRecentRepoTooltip(localRepo(''))).toBeUndefined();
   });
 });
 

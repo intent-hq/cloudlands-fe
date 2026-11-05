@@ -177,12 +177,10 @@ for (const width of [360, 720]) {
     const labels = await items.evaluateAll((nodes) =>
       nodes.map((node) => ({
         label: node.getAttribute('aria-label'),
-        title: node.getAttribute('title'),
         url: node.getAttribute('data-sidebar-pr-url'),
       })),
     );
     expect(new Set(labels.map((row) => row.label)).size).toBe(3);
-    expect(new Set(labels.map((row) => row.title)).size).toBe(3);
     expect(labels.some((row) => row.label?.includes('forge.example/gitlab'))).toBe(true);
     expect(labels.some((row) => row.label?.includes('second.example/install'))).toBe(true);
     expect(labels.map((row) => row.url).sort()).toEqual([

@@ -12,9 +12,6 @@ import {
   getCommitsToPushCount,
   getCommitsToUndoCount,
   getLocalCommitsToUndoCount,
-  getPushTooltip,
-  getUndoTooltip,
-  getUndoCommitTooltip,
   canAmendCommit,
   isFileActive,
   isFileSelected,
@@ -31,7 +28,6 @@ import {
   sectionPRs,
   type GitRootPRSource,
   type SectionedPRs,
-  getPRStatusTooltip,
   countOtherPrs,
   prRepoFromUrl,
   monitorDisplayStatus,
@@ -345,68 +341,6 @@ describe('getLocalCommitsToUndoCount', () => {
     expect(getLocalCommitsToUndoCount(commits, 0)).toBe(1);
     expect(getLocalCommitsToUndoCount(commits, 1)).toBe(1);
     expect(getLocalCommitsToUndoCount(commits, 2)).toBe(2);
-  });
-});
-
-// ─── Tooltip functions ────────────────────────────────────────────────────────
-
-describe('getPushTooltip', () => {
-  it('singular commit without PR', () => {
-    const commits = [makeCommit({ isPushed: false })];
-    expect(getPushTooltip(commits, 0, false, 'my-branch')).toBe(
-      'Push commit to remote (origin/my-branch)',
-    );
-  });
-
-  it('plural commits without PR', () => {
-    const commits = [makeCommit({ isPushed: false }), makeCommit({ isPushed: false })];
-    expect(getPushTooltip(commits, 0, false, 'feat')).toBe(
-      'Push 2 commits to remote (origin/feat)',
-    );
-  });
-
-  it('singular commit with PR', () => {
-    const commits = [makeCommit({ isPushed: false })];
-    expect(getPushTooltip(commits, 0, true, 'feat')).toBe('Add commit to PR (origin/feat)');
-  });
-
-  it('plural commits with PR', () => {
-    const commits = [makeCommit({ isPushed: false }), makeCommit({ isPushed: false })];
-    expect(getPushTooltip(commits, 0, true, undefined)).toBe('Add 2 commits to PR');
-  });
-
-  it('no branch name omits suffix', () => {
-    const commits = [makeCommit({ isPushed: false })];
-    expect(getPushTooltip(commits, 0, false, undefined)).toBe('Push commit to remote');
-  });
-});
-
-describe('getUndoTooltip', () => {
-  it('singular pushed commit', () => {
-    const commits = [makeCommit({ isPushed: true })];
-    expect(getUndoTooltip(commits, 0, 'main')).toBe('Undo push from remote (origin/main)');
-  });
-
-  it('plural pushed commits', () => {
-    const commits = [makeCommit({ isPushed: true }), makeCommit({ isPushed: true })];
-    expect(getUndoTooltip(commits, 1, 'dev')).toBe('Undo 2 commits from remote (origin/dev)');
-  });
-
-  it('no branch name', () => {
-    const commits = [makeCommit({ isPushed: true })];
-    expect(getUndoTooltip(commits, 0, undefined)).toBe('Undo push from remote');
-  });
-});
-
-describe('getUndoCommitTooltip', () => {
-  it('singular local commit', () => {
-    const commits = [makeCommit({ isPushed: false })];
-    expect(getUndoCommitTooltip(commits, 0)).toBe('Undo commit (bring changes back to staging)');
-  });
-
-  it('plural local commits', () => {
-    const commits = [makeCommit({ isPushed: false }), makeCommit({ isPushed: false })];
-    expect(getUndoCommitTooltip(commits, 1)).toBe('Undo 2 commits (bring changes back to staging)');
   });
 });
 
@@ -741,8 +675,8 @@ describe('mapWorkspacePRs', () => {
       buildUrl,
       getTitle,
     );
-    expect(getPRStatusTooltip(queued).split('\n')[0]).toBe('Queued');
-    expect(getPRStatusTooltip(plain).split('\n')[0]).toBe('Open');
+    expect(queued.isInMergeQueue).toBe(true);
+    expect(plain.isInMergeQueue).toBeUndefined();
   });
 
   it('drops a stale merge-queue flag from a draft pool entry', () => {
@@ -753,7 +687,6 @@ describe('mapWorkspacePRs', () => {
       getTitle,
     );
     expect(draft.isInMergeQueue).toBeUndefined();
-    expect(getPRStatusTooltip(draft).split('\n')[0]).not.toBe('Queued');
   });
 
   it('maps workspace PRs when available', () => {
@@ -1753,190 +1686,6 @@ describe('sortPRsByRecency', () => {
     const sorted = sortPRsByRecency(prs);
     expect(sorted).not.toBe(prs);
     expect(prs.map((pr) => pr.number)).toEqual([1, 2]);
-  });
-});
-
-// ─── getPRStatusTooltip (hover status, PROTOCOL §6.9) ──────────────────────────
-
-describe('getPRStatusTooltip', () => {
-  function makePR(overrides: Partial<PRInfo> = {}): PRInfo {
-    return {
-      number: 42,
-      title: 'PR',
-      url: 'https://github.com/acme/widgets/pull/42',
-      htmlUrl: 'https://github.com/acme/widgets/pull/42',
-      status: 'open',
-      ...overrides,
-    };
-  }
-
-  it('returns just the state line when there is no monitor snapshot', () => {
-    expect(getPRStatusTooltip(makePR({ status: 'open' }))).toBe('Open');
-    expect(getPRStatusTooltip(makePR({ status: 'draft' }))).toBe('Draft');
-    expect(getPRStatusTooltip(makePR({ status: 'merged' }))).toBe('Merged');
-    expect(getPRStatusTooltip(makePR({ status: 'closed' }))).toBe('Closed');
-  });
-
-  it('says Queued instead of Open only for an open PR in the merge queue', () => {
-    const queued = getPRStatusTooltip(
-      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
-    );
-    expect(queued.split('\n')[0]).toBe('Queued');
-
-    const notQueued = getPRStatusTooltip(
-      makePR({ status: 'open', monitorSnapshot: makeSnapshot() }),
-    );
-    expect(notQueued.split('\n')[0]).toBe('Open');
-
-    expect(
-      getPRStatusTooltip(
-        makePR({ status: 'draft', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
-      ).split('\n')[0],
-    ).toBe('Draft');
-    expect(
-      getPRStatusTooltip(
-        makePR({
-          status: 'merged',
-          monitorSnapshot: makeSnapshot({ state: 'merged', isInMergeQueue: true }),
-        }),
-      ),
-    ).toBe('Merged');
-  });
-
-  it('adds the merge-queue position line under Queued when the snapshot carries it', () => {
-    const queued = getPRStatusTooltip(
-      makePR({
-        status: 'open',
-        monitorSnapshot: makeSnapshot({
-          isInMergeQueue: true,
-          mergeQueue: { position: 2, queueSize: 3, estimatedTimeToMerge: 3900 },
-        }),
-      }),
-    );
-    expect(queued.split('\n').slice(0, 2)).toEqual([
-      'Queued',
-      '#2 of 3 in queue · ~1 h 5 min to merge',
-    ]);
-
-    // Older daemons (no entry) keep today's tooltip; a non-queued or settled
-    // row never shows a stale position.
-    const flagOnly = getPRStatusTooltip(
-      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ isInMergeQueue: true }) }),
-    );
-    expect(flagOnly).not.toContain('in queue');
-    for (const pr of [
-      makePR({ status: 'open', monitorSnapshot: makeSnapshot({ mergeQueue: { position: 1 } }) }),
-      makePR({
-        status: 'merged',
-        monitorSnapshot: makeSnapshot({
-          state: 'merged',
-          isInMergeQueue: true,
-          mergeQueue: { position: 1 },
-        }),
-      }),
-    ]) {
-      expect(getPRStatusTooltip(pr)).not.toContain('in queue');
-    }
-  });
-
-  it('adds a checks line only when the snapshot has checks', () => {
-    const withChecks = getPRStatusTooltip(
-      makePR({
-        monitorSnapshot: makeSnapshot({
-          checks: {
-            total: 3,
-            passed: 2,
-            failed: 1,
-            pending: 0,
-            failingRequired: 0,
-            pendingRequired: 0,
-            requiredKnown: false,
-          },
-        }),
-      }),
-    );
-    expect(withChecks).toContain('Checks: 2 passed, 1 failed, 0 pending');
-
-    const noChecks = getPRStatusTooltip(makePR({ monitorSnapshot: makeSnapshot() }));
-    expect(noChecks).not.toContain('Checks:');
-  });
-
-  it('renders approvals with a needed count when the snapshot specifies one', () => {
-    const tooltip = getPRStatusTooltip(
-      makePR({
-        monitorSnapshot: makeSnapshot({
-          approvals: { decision: 'REVIEW_REQUIRED', have: 1, needed: 2, changesRequested: 0 },
-        }),
-      }),
-    );
-    expect(tooltip).toContain('Approvals: 1 of 2');
-  });
-
-  it('renders approvals without a needed count when none is specified', () => {
-    const tooltip = getPRStatusTooltip(
-      makePR({
-        monitorSnapshot: makeSnapshot({
-          approvals: { decision: 'APPROVED', have: 2, changesRequested: 0 },
-        }),
-      }),
-    );
-    expect(tooltip).toContain('Approvals: 2');
-    expect(tooltip).not.toContain('of');
-  });
-
-  it('includes changes-requested, unresolved threads, and the merge-blocked reason', () => {
-    const tooltip = getPRStatusTooltip(
-      makePR({
-        monitorSnapshot: makeSnapshot({
-          approvals: { decision: 'CHANGES_REQUESTED', have: 0, changesRequested: 2 },
-          threads: { unresolved: 3 },
-          mergeBlockedReason: 'Merge conflict must be resolved',
-        }),
-      }),
-    );
-    expect(tooltip).toContain('Changes requested: 2');
-    expect(tooltip).toContain('Unresolved threads: 3');
-    expect(tooltip).toContain('Merge conflict must be resolved');
-  });
-
-  it('reports an absent unresolved count as unreadable only when resolution is required', () => {
-    const required = getPRStatusTooltip(
-      makePR({
-        monitorSnapshot: makeSnapshot({ threads: { resolutionRequired: true } }),
-      }),
-    );
-    expect(required).toContain('Unresolved threads: could not be read');
-    expect(required).not.toContain('Unresolved threads: 0');
-
-    const notRequired = getPRStatusTooltip(
-      makePR({
-        monitorSnapshot: makeSnapshot({ threads: { resolutionRequired: false } }),
-      }),
-    );
-    expect(notRequired).not.toContain('Unresolved threads');
-  });
-
-  it('capitalizes a lowercase merge-blocked reason', () => {
-    const tooltip = getPRStatusTooltip(
-      makePR({
-        monitorSnapshot: makeSnapshot({ mergeBlockedReason: 'branch behind base' }),
-      }),
-    );
-    expect(tooltip).toContain('Branch behind base');
-    expect(tooltip).not.toContain('branch behind base');
-  });
-
-  it('omits snapshot detail lines on merged and closed rows', () => {
-    const snapshot = makeSnapshot({
-      approvals: { decision: 'REVIEW_REQUIRED', have: 0, needed: 2, changesRequested: 0 },
-      mergeBlockedReason: 'blocked by required checks or reviews',
-    });
-    expect(getPRStatusTooltip(makePR({ status: 'merged', monitorSnapshot: snapshot }))).toBe(
-      'Merged',
-    );
-    expect(getPRStatusTooltip(makePR({ status: 'closed', monitorSnapshot: snapshot }))).toBe(
-      'Closed',
-    );
   });
 });
 

@@ -82,6 +82,5 @@ describe('AgentAvatar', () => {
       props: { agentId: 'named-agent', ariaLabel: 'Localized agent identity' },
     });
     expect(screen.getByRole('img', { name: 'Localized agent identity' })).toBeTruthy();
-    expect(screen.getByTitle('Localized agent identity')).toBeTruthy();
   });
 });

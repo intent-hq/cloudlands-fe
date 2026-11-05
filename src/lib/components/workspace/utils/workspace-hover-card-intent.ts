@@ -1,10 +1,10 @@
 export const WORKSPACE_HOVER_CARD_OPEN_DELAY_MS = 800;
 export const WORKSPACE_HOVER_CARD_CLOSE_GRACE_DELAY_MS = 175;
-export const WORKSPACE_HOVER_CARD_SESSION_RESET_DELAY_MS = 300;
+const WORKSPACE_HOVER_CARD_SESSION_RESET_DELAY_MS = 300;
 
 type OpenDelayListener = (delay: number) => void;
 
-export function createWorkspaceHoverCardIntentSession() {
+function createWorkspaceHoverCardIntentSession() {
   let openCount = 0;
   let resetTimer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Set<OpenDelayListener>();

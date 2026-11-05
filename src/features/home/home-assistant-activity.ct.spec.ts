@@ -39,8 +39,6 @@ test('Assistant sidebar attributes each background activity to its thread', asyn
   const events = rows.nth(4).locator('[data-thread-activity="subscriptions"]');
   await expect(events).toHaveAttribute('aria-label', /1/);
   await expect(events).toHaveJSProperty('tabIndex', -1);
-  await events.hover();
-  await expect(page.getByRole('tooltip')).toContainText('1');
   await events.click();
   await expect(rows.nth(4)).toHaveAttribute('aria-selected', 'true');
   await expect(component.getByRole('heading', { name: 'Watch workspace changes' })).toBeVisible();

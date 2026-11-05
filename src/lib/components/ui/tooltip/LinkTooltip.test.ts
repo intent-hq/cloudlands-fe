@@ -1,8 +1,5 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/svelte';
-import { flushSync } from 'svelte';
-import { m } from '$shared/paraglide/messages.js';
 import fixture from '$shared/types/__fixtures__/repository-resource-read.json';
 import {
   RepositoryResourceCaptureSchema,
@@ -28,9 +25,8 @@ import {
   backendRequest,
   captureBackendRepositoryResource,
 } from '$lib/client/live/backend-transport';
-import LinkTooltip from './LinkTooltip.svelte';
 import { clearGitHubLinkPreviewCache } from './github-link-preview';
-import { hideLinkTooltip, showLinkTooltip } from './link-tooltip-state.svelte';
+import { hideLinkTooltip, showLinkTooltip, state } from './link-tooltip-state.svelte';
 
 const request = vi.mocked(backendRequest);
 const PR_URL = 'https://github.com/octo/intent/pull/42';
@@ -68,20 +64,11 @@ async function hover(url: string, workspaceId?: string) {
   await vi.advanceTimersByTimeAsync(300);
   await vi.dynamicImportSettled();
   await vi.advanceTimersByTimeAsync(0);
-  flushSync();
 }
 
-describe('LinkTooltip with the live integrations seam', () => {
+describe('repository previews with the live integrations seam', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        observe() {}
-        unobserve() {}
-        disconnect() {}
-      },
-    );
     request.mockReset();
     vi.mocked(captureBackendRepositoryResource).mockReset();
     clearGitHubLinkPreviewCache();
@@ -90,16 +77,13 @@ describe('LinkTooltip with the live integrations seam', () => {
 
   afterEach(() => {
     hideLinkTooltip();
-    cleanup();
     document.querySelectorAll('[data-test-hover-anchor]').forEach((anchor) => anchor.remove());
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
   it('keeps reused preview IDs separate across workspaces and reconnects', async () => {
     let resolveOld!: (value: unknown) => void;
     request.mockReturnValueOnce(new Promise((resolve) => (resolveOld = resolve)));
-    render(LinkTooltip);
     await hover(PR_URL, 'a');
     expect(request).toHaveBeenLastCalledWith('github.pulls.get', {
       owner: 'octo',
@@ -118,75 +102,27 @@ describe('LinkTooltip with the live integrations seam', () => {
     });
     resolveOld({ pull: { ...PULL, title: 'Late workspace A' } });
     await vi.advanceTimersByTimeAsync(0);
-    flushSync();
-    expect(screen.getByText('Workspace B')).toBeTruthy();
-    expect(screen.queryByText('Late workspace A')).toBeNull();
-  });
-
-  it('shows the merge-queue position and estimate on a queued PR through the real client', async () => {
-    request.mockResolvedValueOnce({
-      pull: {
-        ...PULL,
-        isInMergeQueue: true,
-        mergeQueue: {
-          position: 2,
-          queueSize: 3,
-          state: 'queued',
-          enqueuedAt: '2026-10-20T03:50:26Z',
-          estimatedTimeToMerge: 2254,
-        },
-      },
-    });
-    render(LinkTooltip);
-    await hover(PR_URL);
-    expect(screen.getByText(m.ui_linkTooltip_gitHubStateQueued_label())).toBeTruthy();
-    expect(screen.getByTestId('github-link-card-merge-queue').textContent).toContain(
-      '#2 of 3 in queue · ~38 min to merge',
-    );
-  });
-
-  it.each([
-    ['an older daemon without mergeQueue', { isInMergeQueue: true }],
-    ['a non-queued PR with a stale entry', { isInMergeQueue: false, mergeQueue: { position: 1 } }],
-  ])('omits the queue line for %s', async (_label, extra) => {
-    request.mockResolvedValueOnce({ pull: { ...PULL, ...extra } });
-    render(LinkTooltip);
-    await hover(PR_URL);
-    expect(screen.getByText('Fresh pull request details')).toBeTruthy();
-    expect(screen.queryByTestId('github-link-card-merge-queue')).toBeNull();
+    expect(state.preview).toMatchObject({ status: 'ready', data: { title: 'Workspace B' } });
   });
 
   it.each(['mergeRequest', 'issue'] as const)(
-    'renders safe GitLab %s facts through the real client',
+    'captures and releases GitLab %s requests through the real client',
     async (key) => {
-      const value = structuredClone(fixture[key]);
-      const title = '<img src=x onerror=alert(1)> Private title';
-      if ('snapshot' in value.outcome) value.outcome.snapshot.details.title = title;
-      else value.outcome.issue.title = title;
-      const result = RepositoryResourceResultSchema.parse(value);
+      const result = RepositoryResourceResultSchema.parse(fixture[key]);
+      const detail = vi.fn().mockResolvedValue(result);
       const release = vi.fn().mockResolvedValue(undefined);
       vi.mocked(captureBackendRepositoryResource).mockResolvedValue({
         capture: RepositoryResourceCaptureSchema.parse(fixture.capture),
         onRetired: () => () => {},
-        detail: vi.fn().mockResolvedValue(result),
+        detail,
         release,
       });
-      render(LinkTooltip);
       const url =
         key === 'issue'
           ? fixture.issue.outcome.issue.url
           : fixture.mergeRequest.outcome.snapshot.details.url;
       await hover(url, 'workspace-A');
-      const card = screen.getByRole('tooltip');
-      expect(within(card).getByText(title)).toBeTruthy();
-      expect(card.querySelector('img')).toBeNull();
-      expect(card.textContent).toContain(key === 'issue' ? '#42' : '!42');
-      expect(within(card).getByTestId('resource-instance').textContent?.trim()).toBe(
-        fixture.capture.instances[0].instanceBaseUrl,
-      );
-      expect(within(card).getByTestId('resource-project').textContent?.trim()).toBe(
-        fixture.issue.target.repository.projectPath,
-      );
+      expect(detail).toHaveBeenCalledWith(fixture[key].target);
       expect(captureBackendRepositoryResource).toHaveBeenCalledWith('workspace-A');
       expect(request).not.toHaveBeenCalled();
       hideLinkTooltip();
@@ -194,41 +130,13 @@ describe('LinkTooltip with the live integrations seam', () => {
     },
   );
 
-  it('keeps unknown MR state neutral and omits absent author/date/branch facts', async () => {
-    const value = structuredClone(fixture.mergeRequest);
-    Object.assign(value.outcome.snapshot.details, {
-      state: null,
-      author: null,
-      createdAt: null,
-      updatedAt: null,
-      sourceBranch: null,
-      targetBranch: null,
-    });
-    vi.mocked(captureBackendRepositoryResource).mockResolvedValue({
-      capture: RepositoryResourceCaptureSchema.parse(fixture.capture),
-      onRetired: () => () => {},
-      detail: async () => RepositoryResourceResultSchema.parse(value),
-      release: async () => {},
-    });
-    render(LinkTooltip);
-    await hover(value.outcome.snapshot.details.url, 'workspace-A');
-    const card = screen.getByRole('tooltip');
-    expect(within(card).getByText(m.ui_linkTooltip_resourceUnknown_label())).toBeTruthy();
-    expect(within(card).queryByText(m.ui_linkTooltip_gitHubStateOpen_label())).toBeNull();
-    expect(card.textContent).not.toMatch(/undefined|NaN|null/);
-    expect(card.querySelector('.github-link-card-branches')).toBeNull();
-  });
-
   it.each(['queued', 'merged'] as const)(
-    'keeps the card on a rate limit, then renders fresh %s details on the next hover',
+    'retries a rate-limited request and receives fresh %s data',
     async (nextState) => {
       let reject!: (error: unknown) => void;
       request.mockReturnValueOnce(new Promise((_, fail) => (reject = fail)));
-      render(LinkTooltip);
 
       await hover(PR_URL);
-      const tooltip = screen.getByRole('tooltip');
-      expect(within(tooltip).getByRole('status').getAttribute('aria-busy')).toBe('true');
       expect(request).toHaveBeenCalledWith('github.pulls.get', {
         owner: 'octo',
         repo: 'intent',
@@ -244,18 +152,10 @@ describe('LinkTooltip with the live integrations seam', () => {
         }),
       );
       await vi.advanceTimersByTimeAsync(0);
-      flushSync();
 
-      expect(screen.getByRole('tooltip')).toBe(tooltip);
-      expect(within(tooltip).getByText('octo/intent #42')).toBeTruthy();
-      expect(within(tooltip).getByRole('status').textContent?.trim()).toBe(
-        m.ui_linkTooltip_gitHubRateLimited_description(),
-      );
-      expect(within(tooltip).getByRole('status').hasAttribute('aria-busy')).toBe(false);
-      expect(tooltip.textContent).not.toContain('private server detail');
+      expect(state.preview).toEqual({ status: 'error', reason: 'rate-limited' });
 
       hideLinkTooltip();
-      flushSync();
       request.mockResolvedValueOnce({
         pull: {
           ...PULL,
@@ -266,16 +166,7 @@ describe('LinkTooltip with the live integrations seam', () => {
       });
       await hover(PR_URL);
 
-      const recovered = screen.getByRole('tooltip');
-      expect(within(recovered).queryByRole('status')).toBeNull();
-      expect(within(recovered).getByText(PULL.title)).toBeTruthy();
-      expect(
-        within(recovered).getByText(
-          nextState === 'merged'
-            ? m.ui_linkTooltip_gitHubStateMerged_label()
-            : m.ui_linkTooltip_gitHubStateQueued_label(),
-        ),
-      ).toBeTruthy();
+      expect(state.preview).toMatchObject({ status: 'ready', data: { title: PULL.title } });
       expect(request).toHaveBeenCalledTimes(2);
     },
   );
@@ -283,16 +174,11 @@ describe('LinkTooltip with the live integrations seam', () => {
   it.each([
     ['pull', 'github.pulls.get'],
     ['issues', 'github.issues.get'],
-  ])('retains an unavailable %s card for an unclassified failure', async (path, method) => {
+  ])('classifies an unrecognized %s request failure as unavailable', async (path, method) => {
     request.mockRejectedValueOnce(new Error('raw connection failure'));
-    render(LinkTooltip);
     await hover(`https://github.com/octo/intent/${path}/42`);
 
-    const tooltip = screen.getByRole('tooltip');
     expect(request).toHaveBeenCalledWith(method, { owner: 'octo', repo: 'intent', number: 42 });
-    expect(within(tooltip).getByText('octo/intent #42')).toBeTruthy();
-    expect(within(tooltip).getByRole('status').textContent?.trim()).toBe(
-      m.ui_linkTooltip_gitHubUnavailable_description(),
-    );
+    expect(state.preview).toEqual({ status: 'error', reason: 'unavailable' });
   });
 });

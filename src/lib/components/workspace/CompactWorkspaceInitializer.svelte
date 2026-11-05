@@ -3457,7 +3457,7 @@
               >
                 <Fa icon={faPaperclip} />
               </Button>
-              <div class="ml-auto flex items-center">
+              <div class="flex items-center">
                 <!-- Mic latch button: click starts dictation, click again (Esc
              cancels) stops and transcribes into this prompt at the caret. -->
                 {#if micTranscribing}

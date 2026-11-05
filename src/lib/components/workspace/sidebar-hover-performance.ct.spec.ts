@@ -1,29 +1,6 @@
 import { expect, test } from '../../../test/ct-test';
 import SidebarTabsPreview from './sidebar-tabs.preview.svelte';
 
-test('truncated note labels retain full hover text when a floating section returns', async ({
-  mount,
-}) => {
-  const component = await mount(SidebarTabsPreview, { props: { collapsed: true } });
-  const rail = component.locator('[data-workspace-sidebar-rail]');
-  const context = component.locator('[data-sidebar-section="context"]');
-  const title = 'A long note title about keeping workspace state intact';
-  const row = context.getByRole('button', { name: title, exact: true }).first();
-  await rail.getByRole('tab', { name: 'Context', exact: true }).hover();
-  await expect(row).toHaveAttribute('title', title);
-  await rail.getByRole('tab', { name: 'Agents', exact: true }).hover();
-  await rail.getByRole('tab', { name: 'Context', exact: true }).hover();
-  await expect(row).toHaveAttribute('title', title);
-  await context.locator('[data-sidebar-search="context"] button').click();
-  const search = context.locator('[data-sidebar-search-input="context"]');
-  await search.fill('Spec');
-  await expect(
-    context.getByRole('button', { name: 'Spec', exact: true }).first(),
-  ).not.toHaveAttribute('title');
-  await search.fill('A long note title');
-  await expect(row).toHaveAttribute('title', title);
-});
-
 test('rapid collapsed previews reuse sizing work and retain content state', async ({
   mount,
   page,

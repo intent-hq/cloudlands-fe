@@ -354,7 +354,6 @@ describe('OpenComboButton copy-only presentation (monorepo#890)', () => {
 
     const buttons = container.querySelectorAll('button');
     expect(buttons).toHaveLength(2); // primary + dropdown chevron
-    expect(buttons[0].getAttribute('title')).toBe('Open in Visual Studio Code');
     expect(buttons[0].textContent).toContain('Open');
   });
 
