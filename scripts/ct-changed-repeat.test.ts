@@ -1,13 +1,13 @@
-// @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-changed-repeat.mjs,
+// @verify-changed-triggers: .github/workflows/browser-tests.yml, scripts/ct-changed-repeat.mjs,
 //   scripts/ct-changed-specs.mjs, scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs
 // @vitest-environment node
 
 /**
  * The local stress runner for changed component test specs
- * (`pnpm run test:ct:changed-repeat`, `make fe-ct-changed-repeat`). PR CI runs
- * those specs once in `test-ct-affected`; the CI parity block checks that the
- * script builds the CT bundle and runs tests with that job's arguments and
- * heaps, so a change to either side fails here.
+ * (`pnpm run test:ct:changed-repeat`, `make fe-ct-changed-repeat`). CI runs
+ * component tests only nightly (`test-ct` in browser-tests.yml); the CI parity
+ * block checks that the script builds the CT bundle and runs tests with that
+ * job's arguments and heaps, so a change to either side fails here.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -20,6 +20,7 @@ import {
   CT_BUILD_HEAP_MB,
   CT_CHANGED_JSON_REPORT,
   CT_RUN_HEAP_MB,
+  LAUNCHER,
   LOCAL_BUILD_GUARD,
   ctChangedListArgs,
   ctChangedRunArgs,
@@ -336,8 +337,8 @@ describe('main', () => {
   });
 });
 
-describe('parity with the test-ct-affected workflow job', () => {
-  const workflowLines = readFileSync(resolve('.github/workflows/intent-pr.yml'), 'utf8').split(
+describe('parity with the nightly test-ct workflow job', () => {
+  const workflowLines = readFileSync(resolve('.github/workflows/browser-tests.yml'), 'utf8').split(
     '\n',
   );
 
@@ -350,7 +351,7 @@ describe('parity with the test-ct-affected workflow job', () => {
   }
 
   function stepLines(stepName: string): string[] {
-    const job = jobLines('test-ct-affected');
+    const job = jobLines('test-ct');
     const start = job.indexOf(`      - name: ${stepName}`);
     if (start === -1) throw new Error(`step ${stepName} not found`);
     const rest = job.slice(start + 1);
@@ -383,17 +384,19 @@ describe('parity with the test-ct-affected workflow job', () => {
     expect(envValue('Build CT bundle', 'NODE_OPTIONS')).toBe(
       `--max-old-space-size=${CT_BUILD_HEAP_MB}`,
     );
-    expect(stepRun('Build CT bundle')).toBe(
-      `node scripts/run-ct-tests.mjs ${CT_BUILD_ARGS.join(' ')}`,
+    // The step wraps the build in a memory sampler; its last line is the build,
+    // through the package script that runs the same launcher.
+    const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+    expect(pkg.scripts['test:ct']).toBe(`node ${LAUNCHER}`);
+    expect(stepRun('Build CT bundle').trim().split('\n').at(-1)).toBe(
+      `pnpm run test:ct ${CT_BUILD_ARGS.join(' ')}`,
     );
   });
 
   it('runs the tests under the same heap and JSON report path', () => {
-    expect(envValue('Run affected component tests once', 'NODE_OPTIONS')).toBe(
+    expect(envValue('Component tests', 'NODE_OPTIONS')).toBe(
       `--max-old-space-size=${CT_RUN_HEAP_MB}`,
     );
-    expect(envValue('Run affected component tests once', 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe(
-      CT_CHANGED_JSON_REPORT,
-    );
+    expect(envValue('Component tests', 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe(CT_CHANGED_JSON_REPORT);
   });
 });

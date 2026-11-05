@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // Stress-runs the component test specs a branch adds or edits, locally: many
 // repetitions with retries off, so a new or edited spec that passes only some
-// of the time is caught before it reaches the merge queue. PR CI runs these
-// specs once (the `test-ct-affected` job in .github/workflows/intent-pr.yml);
-// it no longer repeats them (the 20x `test-ct-changed` job was dropped for
-// cost), so this is the way to check a spec for flakiness.
+// of the time is caught before it lands. CI runs component tests only nightly
+// and on manual dispatch (nightly-browser-tests.yml), not on PRs or in the
+// merge queue, so this is the way to check a new or edited spec, flakiness
+// included, before pushing.
 //
 // `verify:changed` runs changed specs once with --retries=2, so it cannot show
 // that flakiness. Rebuilding the run by hand is easy to get wrong: running the
 // specs without the separate bundle build first died with SIGABRT
 // ("Ineffective mark-compacts near heap limit"), because the CT bundle must be
 // built in its own step under a 12 GiB heap and the tests run under 4 GiB, as
-// CI's test-ct-affected job does. scripts/ct-changed-repeat.test.ts checks the
-// build step against that job.
+// CI's nightly CT job (test-ct in browser-tests.yml) does.
+// scripts/ct-changed-repeat.test.ts checks the build step against that job.
 //
 // Usage: pnpm run test:ct:changed-repeat -- [options] [spec paths...] [-- <playwright args>]
 // (`make fe-ct-changed-repeat` from the monorepo root). See usage() below.
@@ -35,7 +35,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 export const LAUNCHER = 'scripts/run-ct-tests.mjs';
 export const DEFAULT_BASE = 'origin/main';
-// The heaps of CI's "Build CT bundle" and test steps (test-ct-affected).
+// The heaps of CI's "Build CT bundle" and "Component tests" steps (test-ct in
+// browser-tests.yml).
 export const CT_BUILD_HEAP_MB = 12288;
 export const CT_RUN_HEAP_MB = 4096;
 export const CT_CHANGED_WORKERS = 2;
@@ -164,10 +165,10 @@ function execGit(args, cwd) {
   return result.stdout;
 }
 
-// The specs to run: CI's selection for the pushed branch (the same three-dot
-// diff as the release-fast-path step) plus uncommitted and untracked ones,
+// The specs to run: the ones the branch adds or edits (a three-dot diff
+// against the merge-base with --base) plus uncommitted and untracked ones,
 // minus any deleted from the working tree. `local` marks the specs whose
-// working-tree copy differs from HEAD, i.e. the version CI does not see yet.
+// working-tree copy differs from HEAD, i.e. the version not yet committed.
 export function localChangedSpecs(base, { cwd = repoRoot } = {}) {
   try {
     execGit(['rev-parse', '--verify', '--quiet', `${base}^{commit}`], cwd);

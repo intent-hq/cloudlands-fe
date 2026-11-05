@@ -1,36 +1,30 @@
 // @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-changed-specs.mjs,
-//   scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs, src/lib/components/chat/**
+//   scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs
 // @vitest-environment node
 
 /**
- * The PR component-test job (`test-ct-affected` in intent-pr.yml), which runs
- * the PR's own specs and the specs affected by its changes once each, and the
- * script that feeds it (plus the repetition helpers the local stress runner
- * uses). The diff modes run against a real temporary git repository; the
- * workflow's test step runs under bash with the CT launcher stubbed, so the
- * assertions cover the arguments Playwright actually receives.
+ * The changed-spec list and repetition helpers the local stress runner
+ * (scripts/ct-changed-repeat.mjs) uses, and the release-fast-path step that
+ * resolves the diff base for every relevance step in intent-pr.yml. The diff
+ * mode runs against a real temporary git repository and the step under bash.
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
-  CT_AFFECTED_BUDGET,
   CT_CHANGED_MIN_REPEAT_EACH,
   CT_CHANGED_REPEAT_EACH,
   CT_CHANGED_TEST_RUN_BUDGET,
-  affectedCtSpecs,
   changedCtSpecs,
   changedFiles,
   ctChangedRepeatEach,
   listedCtTests,
   main,
-  overBudgetNote,
   playwrightFilter,
 } from './ct-changed-specs.mjs';
-import { ctImportGraph } from './ct-contract-paths.mjs';
 
 const SCRIPT = resolve('scripts/ct-changed-specs.mjs');
 const temps: string[] = [];
@@ -70,14 +64,6 @@ function initRepo() {
   git(repo, 'config', 'user.email', 'ci@example.com');
   git(repo, 'config', 'user.name', 'CI');
   return repo;
-}
-
-// `edges` in ctImportGraph's shape from a plain object.
-function graphOf(edges: Record<string, string[]>, headSpecs: string[]) {
-  return {
-    edges: new Map(Object.entries(edges).map(([from, to]) => [from, new Set(to)])),
-    headSpecs,
-  };
 }
 
 function run(argv: string[]) {
@@ -219,207 +205,18 @@ describe('--diff against a real repository', () => {
   });
 });
 
-describe('affectedCtSpecs', () => {
-  it('lists the specs that load a changed file, nearest first, with the path to it', () => {
-    const graph = graphOf(
-      {
-        'src/a.ct.spec.ts': ['src/AHost.svelte'],
-        'src/AHost.svelte': ['src/Panel.svelte'],
-        'src/b.ct.spec.ts': ['src/Panel.svelte', 'src/Other.svelte'],
-        'src/c.ct.spec.ts': ['src/Other.svelte'],
-        'src/Panel.svelte': ['src/store.ts'],
-      },
-      ['src/a.ct.spec.ts', 'src/b.ct.spec.ts', 'src/c.ct.spec.ts'],
-    );
-    expect(affectedCtSpecs(graph, ['src/Panel.svelte'])).toEqual([
-      { spec: 'src/b.ct.spec.ts', via: 'src/Panel.svelte', distance: 1 },
-      { spec: 'src/a.ct.spec.ts', via: 'src/Panel.svelte', distance: 2 },
-    ]);
-    expect(affectedCtSpecs(graph, ['src/unrelated.ts'])).toEqual([]);
-  });
-
-  it('puts the diff’s own specs first, once each, and leaves out specs missing from the head tree', () => {
-    const graph = graphOf(
-      {
-        'src/a.ct.spec.ts': ['src/Panel.svelte'],
-        'src/gone.ct.spec.ts': ['src/Panel.svelte'],
-        'src/edited.ct.spec.ts': ['src/Panel.svelte'],
-        'src/z/new.ct.spec.ts': ['src/Unrelated.svelte'],
-      },
-      ['src/a.ct.spec.ts', 'src/edited.ct.spec.ts', 'src/z/new.ct.spec.ts'],
-    );
-    expect(
-      affectedCtSpecs(graph, [
-        'src/Panel.svelte',
-        'src/z/new.ct.spec.ts',
-        'src/edited.ct.spec.ts',
-        'src/gone.ct.spec.ts',
-      ]),
-    ).toEqual([
-      { spec: 'src/edited.ct.spec.ts', via: 'src/edited.ct.spec.ts', distance: 0 },
-      { spec: 'src/z/new.ct.spec.ts', via: 'src/z/new.ct.spec.ts', distance: 0 },
-      { spec: 'src/a.ct.spec.ts', via: 'src/Panel.svelte', distance: 1 },
-    ]);
-  });
-
-  it('keeps the diff’s own specs inside the budget ahead of a hub edit', () => {
-    const hubSpecs = Array.from(
-      { length: CT_AFFECTED_BUDGET * 2 },
-      (_, i) => `src/hub/${String(i).padStart(3, '0')}.ct.spec.ts`,
-    );
-    const edges: Record<string, string[]> = { 'src/z/own.ct.spec.ts': ['src/store/hub.ts'] };
-    for (const spec of hubSpecs) edges[spec] = ['src/store/hub.ts'];
-    const graph = graphOf(edges, [...hubSpecs, 'src/z/own.ct.spec.ts']);
-    const ranked = affectedCtSpecs(graph, ['src/store/hub.ts', 'src/z/own.ct.spec.ts']);
-    expect(ranked[0]).toEqual({
-      spec: 'src/z/own.ct.spec.ts',
-      via: 'src/z/own.ct.spec.ts',
-      distance: 0,
-    });
-    expect(ranked.filter(({ spec }) => spec === 'src/z/own.ct.spec.ts')).toHaveLength(1);
-  });
-
-  it('follows import cycles without looping and keeps the shortest distance', () => {
-    const graph = graphOf(
-      {
-        'src/a.ct.spec.ts': ['src/X.svelte', 'src/Y.svelte'],
-        'src/X.svelte': ['src/Y.svelte'],
-        'src/Y.svelte': ['src/X.svelte'],
-      },
-      ['src/a.ct.spec.ts'],
-    );
-    expect(affectedCtSpecs(graph, ['src/Y.svelte'])).toEqual([
-      { spec: 'src/a.ct.spec.ts', via: 'src/Y.svelte', distance: 1 },
-    ]);
-  });
-
-  it('gives every changed file its nearest specs before a hub fills the budget', () => {
-    // A store hub loaded (directly) by many specs and a leaf component that
-    // one spec mounts two edges away: the leaf's spec must come second, not
-    // after every hub spec.
-    const hubSpecs = Array.from(
-      { length: CT_AFFECTED_BUDGET * 2 },
-      (_, i) => `src/hub/${String(i).padStart(3, '0')}.ct.spec.ts`,
-    );
-    const edges: Record<string, string[]> = {
-      'src/z/leaf.ct.spec.ts': ['src/z/LeafHost.svelte'],
-      'src/z/LeafHost.svelte': ['src/z/Leaf.svelte'],
-    };
-    for (const spec of hubSpecs) edges[spec] = ['src/store/hub.ts'];
-    const graph = graphOf(edges, [...hubSpecs, 'src/z/leaf.ct.spec.ts']);
-    const ranked = affectedCtSpecs(graph, ['src/store/hub.ts', 'src/z/Leaf.svelte']);
-    expect(ranked).toHaveLength(hubSpecs.length + 1);
-    expect(ranked.slice(0, 2)).toEqual([
-      { spec: hubSpecs[0], via: 'src/store/hub.ts', distance: 1 },
-      { spec: 'src/z/leaf.ct.spec.ts', via: 'src/z/Leaf.svelte', distance: 2 },
-    ]);
-  });
-});
-
-describe('--affected against a real repository', () => {
-  it('selects a spec two imports above a changed component, and not unrelated specs', () => {
-    const repo = initRepo();
-    write(repo, 'src/chat/Panel.svelte', '<script lang="ts">\n  let x = 1;\n</script>\n');
-    write(
-      repo,
-      'src/chat/__tests__/PanelHost.svelte',
-      '<script lang="ts">\n  import Panel from \'../Panel.svelte\';\n</script>\n<Panel />\n',
-    );
-    write(
-      repo,
-      'src/chat/__tests__/panel.ct.spec.ts',
-      "import Host from './PanelHost.svelte';\nexport { Host };\n",
-    );
-    write(repo, 'src/other/other.ct.spec.ts', "import { y } from './y';\nexport { y };\n");
-    write(repo, 'src/other/y.ts', 'export const y = 1;\n');
-    write(
-      repo,
-      'src/chat/edited.ct.spec.ts',
-      "import Panel from './Panel.svelte';\nexport { Panel };\n",
-    );
-    const base = commitAll(repo, 'base');
-    write(repo, 'src/chat/Panel.svelte', '<script lang="ts">\n  let x = 2;\n</script>\n');
-    write(
-      repo,
-      'src/chat/edited.ct.spec.ts',
-      "import Panel from './Panel.svelte';\nexport { Panel as P };\n",
-    );
-    commitAll(repo, 'head');
-
-    const cli = spawnSync(process.execPath, [SCRIPT, '--affected', base, 'HEAD'], {
-      cwd: repo,
-      encoding: 'utf8',
-      env: { ...process.env, NODE_OPTIONS: '' },
-    });
-    expect(cli.status, cli.stderr).toBe(0);
-    const lines = cli.stdout.trim().split('\n');
-    expect(lines.slice(-2)).toEqual([
-      'ct_affected_specs=["src/chat/edited.ct.spec.ts","src/chat/__tests__/panel.ct.spec.ts"]',
-      'ct_affected_over_budget=[]',
-    ]);
-    expect(lines[0]).toBe('run: src/chat/edited.ct.spec.ts (changed by this diff)');
-    expect(lines[1]).toContain('src/chat/Panel.svelte');
-  });
-
-  it('runs the first CT_AFFECTED_BUDGET specs and reports the rest as over budget', () => {
-    const specs = Array.from(
-      { length: CT_AFFECTED_BUDGET + 2 },
-      (_, i) => `src/s${String(i).padStart(3, '0')}.ct.spec.ts`,
-    );
-    const out: string[] = [];
-    main(['--affected', 'base', 'head'], {
-      diff: () => ['src/hub.ts'],
-      graph: () => graphOf(Object.fromEntries(specs.map((spec) => [spec, ['src/hub.ts']])), specs),
-      log: (line: string) => out.push(line),
-    });
-    expect(out.at(-2)).toBe(
-      `ct_affected_specs=${JSON.stringify(specs.slice(0, CT_AFFECTED_BUDGET))}`,
-    );
-    expect(out.at(-1)).toBe(
-      `ct_affected_over_budget=${JSON.stringify(specs.slice(CT_AFFECTED_BUDGET))}`,
-    );
-    expect(out.filter((line) => line.startsWith('over budget: '))).toHaveLength(2);
-  });
-
-  it('fails closed with `error` when the graph or diff fails or arguments are wrong', () => {
-    for (const argv of [
-      ['--affected', 'a', 'b'],
-      ['--affected', 'a'],
-      ['--affected', 'a', 'b', 'c'],
-    ]) {
-      const out: string[] = [];
-      main(argv, {
-        diff: () => ['src/x.ts'],
-        graph: () => {
-          throw new Error('unsupported CT dependency syntax');
-        },
-        log: (line: string) => out.push(line),
-        warn: () => {},
-      });
-      expect(out).toEqual(['ct_affected_specs=error', 'ct_affected_over_budget=[]']);
-    }
-  });
-});
-
-// A PR branch and a main that moved ahead after it branched. main edits a spec
-// and a component another spec loads; the branch edits its own spec only.
+// A PR branch and a main that moved ahead after it branched. main edits a
+// spec; the branch edits its own spec only.
 function divergedRepo() {
   const repo = initRepo();
   write(repo, 'src/pr/own.ct.spec.ts', 'v1');
   write(repo, 'src/main/edited-on-main.ct.spec.ts', 'v1');
-  write(repo, 'src/main/Widget.svelte', '<p>v1</p>\n');
-  write(
-    repo,
-    'src/main/widget.ct.spec.ts',
-    "import Widget from './Widget.svelte';\nexport { Widget };\n",
-  );
   const branched = commitAll(repo, 'branch point');
   git(repo, 'checkout', '-q', '-b', 'pr');
   write(repo, 'src/pr/own.ct.spec.ts', 'v2');
   const prHead = commitAll(repo, 'pr change');
   git(repo, 'checkout', '-q', 'main');
   write(repo, 'src/main/edited-on-main.ct.spec.ts', 'v2');
-  write(repo, 'src/main/Widget.svelte', '<p>v2</p>\n');
   const mainTip = commitAll(repo, 'main moves ahead');
   // Lets clones fetch a commit that is no longer a branch tip by its SHA under
   // any protocol version, as GitHub serves the event SHAs.
@@ -439,7 +236,7 @@ function cli(repo: string, ...argv: string[]) {
 
 // cloudlands-fe#4114 (job 126070303811) repeated seven specs, six of them
 // changed only on main, and was cancelled at its time limit: the diff ran
-// from a base that main had since moved past. Both modes diff from the
+// from a base that main had since moved past. --diff diffs from the
 // merge-base of base and head, so only the branch's own changes count.
 describe('a base that moved ahead of the branch', () => {
   it('--diff lists only the branch’s own specs', () => {
@@ -447,14 +244,6 @@ describe('a base that moved ahead of the branch', () => {
     expect(cli(repo, '--diff', mainTip, prHead).at(-1)).toBe(
       'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
     );
-  });
-
-  it('--affected lists the branch’s own spec, not specs main changed or loads', () => {
-    const { repo, prHead, mainTip } = divergedRepo();
-    expect(cli(repo, '--affected', mainTip, prHead).slice(-2)).toEqual([
-      'ct_affected_specs=["src/pr/own.ct.spec.ts"]',
-      'ct_affected_over_budget=[]',
-    ]);
   });
 
   it('falls back to the base itself when no merge-base is reachable', () => {
@@ -467,54 +256,6 @@ describe('a base that moved ahead of the branch', () => {
     expect(cli(shallow, '--diff', branched, 'HEAD').at(-1)).toBe(
       'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
     );
-  });
-});
-
-// cloudlands-fe#4029's first ChatPanel commit (180340be9) changed these files;
-// the queue then failed chat-panel-composer-geometry.ct.spec.ts. Replayed
-// against this checkout's committed tree, which a shallow CI clone has, so the
-// selector and budget keep covering the incident as the spec graph evolves.
-describe('cloudlands-fe#4029 replay', () => {
-  const geometrySpec = 'src/lib/components/chat/__tests__/chat-panel-composer-geometry.ct.spec.ts';
-  const graph = ctImportGraph('HEAD', 'HEAD');
-  const selected = (changed: string[]) =>
-    affectedCtSpecs(graph, changed)
-      .slice(0, CT_AFFECTED_BUDGET)
-      .map(({ spec }) => spec);
-
-  it('selects the geometry spec for the commit that first changed ChatPanel', () => {
-    expect(
-      selected([
-        'src/lib/components/chat/ChatPanel.svelte',
-        'src/lib/components/chat/__tests__/ChatPanelComposerGeometryHost.svelte',
-        'src/lib/components/chat/__tests__/optimistic-conversation-layout.ct.spec.ts',
-      ]),
-    ).toContain(geometrySpec);
-  });
-
-  it('selects it from the ChatPanel edit alone', () => {
-    expect(selected(['src/lib/components/chat/ChatPanel.svelte'])).toContain(geometrySpec);
-  });
-});
-
-describe('--over-budget', () => {
-  it('names every spec over the budget', () => {
-    const note = overBudgetNote(['src/a.ct.spec.ts'], ['src/b.ct.spec.ts', 'src/c.ct.spec.ts']);
-    expect(note).toContain(`budget: ${CT_AFFECTED_BUDGET}`);
-    expect(note).toContain('- src/b.ct.spec.ts\n- src/c.ct.spec.ts');
-    expect(overBudgetNote(['src/a.ct.spec.ts'], [])).not.toContain('not run');
-    const { code, written } = run([
-      '--over-budget',
-      '["src/a.ct.spec.ts"]',
-      '["src/b.ct.spec.ts"]',
-    ]);
-    expect(code).toBe(0);
-    expect(written).toContain('- src/b.ct.spec.ts');
-  });
-
-  it('rejects an error marker in either list', () => {
-    expect(run(['--over-budget', 'error', '[]']).code).toBe(1);
-    expect(run(['--over-budget', '["src/a.ct.spec.ts"]', 'error']).code).toBe(1);
   });
 });
 
@@ -699,10 +440,6 @@ describe('release-fast-path diff base', () => {
     expect(cli(checkout, '--diff', mainTip, 'HEAD').at(-1)).toBe(
       'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
     );
-    expect(cli(checkout, '--affected', mainTip, 'HEAD').slice(-2)).toEqual([
-      'ct_affected_specs=["src/pr/own.ct.spec.ts"]',
-      'ct_affected_over_budget=[]',
-    ]);
   });
 
   it('keeps the event base, fetched, when HEAD is not a merge of the PR head', () => {
@@ -722,140 +459,6 @@ describe('release-fast-path diff base', () => {
       expect(present()).not.toBe(0);
       expect(resolveBase(checkout, env)).toBe(`BASE_SHA=${branched}\n`);
       expect(present()).toBe(0);
-    }
-  });
-});
-
-describe('test-ct-affected workflow job', () => {
-  const job = jobLines('test-ct-affected');
-  const field = (key: string) =>
-    job
-      .find((text) => text.startsWith(`    ${key}:`))
-      ?.slice(`    ${key}:`.length)
-      .trim() ?? '';
-
-  it('is the only PR component-test job and never repeats specs', () => {
-    expect(workflowLines).not.toContain('  test-ct-changed:');
-    expect(jobLines('gate').join('\n')).not.toContain('test-ct-changed');
-    expect(jobLines('release-fast-path').join('\n')).not.toContain('ct_changed_specs');
-    expect(job.join('\n')).not.toContain('--repeat-each');
-  });
-
-  it('runs on pull requests only when the affected list is not empty', () => {
-    expect(field('if')).toContain("github.event_name == 'pull_request'");
-    expect(field('if')).toContain("needs.release-fast-path.outputs.ct_affected_specs != '[]'");
-    expect(job).toContain(
-      '      CT_AFFECTED_SPECS: ${{ needs.release-fast-path.outputs.ct_affected_specs }}',
-    );
-    expect(jobLines('release-fast-path')).toContain(
-      '      ct_affected_specs: ${{ steps.ct-affected.outputs.ct_affected_specs }}',
-    );
-    expect(jobLines('gate')).toContain('        test-ct-affected,');
-  });
-
-  function listStep(baseSha: string) {
-    const dir = tempDir();
-    const output = join(dir, 'out');
-    writeFileSync(output, '');
-    const result = spawnSync(
-      'bash',
-      [
-        '-e',
-        '-o',
-        'pipefail',
-        '-c',
-        stepRun(jobLines('release-fast-path'), 'List affected component test specs'),
-      ],
-      {
-        encoding: 'utf8',
-        env: { ...process.env, NODE_OPTIONS: '', BASE_SHA: baseSha, GITHUB_OUTPUT: output },
-      },
-    );
-    return { status: result.status, output: readFileSync(output, 'utf8') };
-  }
-
-  it('lists the specs with the helper in the diff classifier, failing closed', () => {
-    expect(listStep('not-a-revision')).toEqual({
-      status: 0,
-      output: 'ct_affected_specs=error\nct_affected_over_budget=[]\n',
-    });
-  });
-
-  it('writes empty lists when the diff changes nothing', () => {
-    expect(listStep('HEAD')).toEqual({
-      status: 0,
-      output: 'ct_affected_specs=[]\nct_affected_over_budget=[]\n',
-    });
-  });
-
-  // The workflow's own step under bash, with the CT launcher stubbed as above.
-  function runJobStep(stepName: string, specs: string, overBudget = '[]') {
-    const dir = tempDir();
-    const bin = join(dir, 'bin');
-    mkdirSync(bin);
-    const record = join(dir, 'argv');
-    const summary = join(dir, 'summary');
-    writeFileSync(summary, '');
-    writeFileSync(
-      join(bin, 'node'),
-      `#!/usr/bin/env bash\nif [ "$1" = scripts/run-ct-tests.mjs ]; then shift; printf '%s\\n' "$@" > "${record}"; exit 0; fi\nNODE_OPTIONS= exec "${process.execPath}" "$@"\n`,
-    );
-    chmodSync(join(bin, 'node'), 0o755);
-    const result = spawnSync('bash', ['-e', '-o', 'pipefail', '-c', stepRun(job, stepName)], {
-      cwd: process.cwd(),
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH}`,
-        CT_AFFECTED_SPECS: specs,
-        CT_AFFECTED_OVER_BUDGET: overBudget,
-        RUNNER_TEMP: dir,
-        GITHUB_STEP_SUMMARY: summary,
-      },
-    });
-    let argv: string[] = [];
-    try {
-      argv = readFileSync(record, 'utf8').trimEnd().split('\n');
-    } catch {}
-    return {
-      status: result.status,
-      argv,
-      stdout: result.stdout,
-      stderr: result.stderr,
-      summary: readFileSync(summary, 'utf8'),
-    };
-  }
-
-  it('runs each affected spec once, with the queue shard settings', () => {
-    const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
-    const { status, argv, stderr } = runJobStep(
-      'Run affected component tests once',
-      JSON.stringify(specs),
-    );
-    expect(status, stderr).toBe(0);
-    expect(argv.slice(0, 2)).toEqual(specs.map(playwrightFilter));
-    expect(argv).toContain('--fail-on-flaky-tests');
-    expect(argv).toContain('--workers=2');
-    expect(argv.some((arg) => arg.startsWith('--repeat-each'))).toBe(false);
-    expect(argv).not.toContain('--pass-with-no-tests');
-  });
-
-  it('names the over-budget specs in the log and step summary', () => {
-    const { status, stdout, summary } = runJobStep(
-      'Validate affected spec list',
-      '["src/a.ct.spec.ts"]',
-      '["src/b.ct.spec.ts"]',
-    );
-    expect(status).toBe(0);
-    expect(stdout).toContain('- src/b.ct.spec.ts');
-    expect(summary).toContain('- src/b.ct.spec.ts');
-  });
-
-  it('fails before launching tests when the affected list is an error marker', () => {
-    for (const stepName of ['Validate affected spec list', 'Run affected component tests once']) {
-      const { status, argv } = runJobStep(stepName, 'error');
-      expect(status, stepName).not.toBe(0);
-      expect(argv).toEqual([]);
     }
   });
 });

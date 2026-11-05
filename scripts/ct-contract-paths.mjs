@@ -11,17 +11,18 @@ import { isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
 // the mount-harness helpers `playwright/index.ts` imports directly (the rest of
 // `src/lib/component-catalog/` is ordinary component code), and the dependency
 // manifests (a Playwright/Svelte/Tailwind bump is a CT-contract change).
-// `scripts/verify-changed.mjs` selects the local `ct-full` check from it
-// and the `pull_request` workflow decides whether to run `test-ct` from the same
-// list, via `node scripts/ct-contract-paths.mjs --diff <base> <head>`.
+// `scripts/verify-changed.mjs` selects the local `ct-full` check from it.
 // cloudlands-fe#2441 rewrote `tokens.css`, `app.css` and `run-ct-tests.mjs` with
-// no CT run and was ejected from the merge queue with 40 CT failures.
+// no CT run and was ejected from the merge queue with 40 CT failures. CI no
+// longer runs component tests on PRs or in the merge queue (the full suite
+// runs nightly, nightly-browser-tests.yml), so no workflow calls the
+// `--diff <base> <head>` mode below; it remains a local relevance check.
 //
-// The workflow's `ct_required` additionally covers the specs
+// `--diff`'s `ct_required` additionally covers the specs
 // `playwright-ct.config.ts` discovers via the shared `isCtSpec` classifier.
 // Those are NOT contract paths: `verify:changed` keeps selecting the narrower
 // `ct-related` lane for them locally.
-// Hosted selection also covers every local module a CT run can mount: the
+// `--diff` also covers every local module a CT run can mount: the
 // transitive import closure of discovered CT specs and the mount harness (see
 // ctSpecDependencies below). Keep those out of the global contract list: a
 // fixture edit should still select only related tests in verify:changed.
@@ -51,9 +52,8 @@ const OUTPUT_KEY = 'ct_required';
 // added a comment to `playwright/root-harness-import-guard.test.ts` and paid a
 // 1.4-hour local component run plus about 1.5 hours of test-ct shards in the
 // merge queue. A suite the CT graph does reach (an import from
-// `playwright/index.ts`, a spec or a preview) still requires CT in CI through
-// `ctRequired`'s dependency set. That guarantee is CI-only: `verify:changed`
-// has no import graph, and a harness-imported suite would select no CT lane
+// `playwright/index.ts`, a spec or a preview) still requires CT under `--diff`
+// through `ctRequired`'s dependency set. `verify:changed` has no import graph, and a harness-imported suite would select no CT lane
 // locally (as for `src/**/*.test.ts`). The "this repository" test in
 // ct-contract-paths.test.ts fails if any tracked suite becomes reachable.
 // Matching is case-sensitive like Vitest's include glob, and `.spec.*` and
