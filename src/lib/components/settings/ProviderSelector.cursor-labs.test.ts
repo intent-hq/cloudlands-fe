@@ -164,6 +164,7 @@ describe('ProviderSelector Cursor Labs gate', () => {
       name: m.settings_providers_groupDiscovered_label(),
     });
     expect(within(discovered).getByRole('button', { name: CURSOR_ACTIONS })).toBeTruthy();
+    expect(within(discovered).getByRole('img', { name: 'Cursor' })).toBeTruthy();
   });
 
   it('keeps an enabled Cursor row and its Disable action when the lab is off', async () => {

@@ -718,7 +718,7 @@
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">
-    {#if providerId === 'antigravity'}
+    {#if providerId === 'antigravity' || providerId === 'cursor'}
       <AgentProviderIcon {providerId} size={20} class="size-5" />
     {:else if providerId === 'auggie'}
       <AuggieLogo width={22} />
