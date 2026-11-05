@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import type { WorkspaceTabGroup } from './tab-groups';
 import {
   acquireBrowserTabMount,
   browserTabAgentDrawingChanged,
@@ -48,7 +50,7 @@ describe('tabStateReducer', () => {
     unsavedTabs: {},
     optimisticTabs: {},
     workspaceStacks: [],
-    tabGroups: [],
+    tabGroups: createCollection<WorkspaceTabGroup, 'id'>('id', []),
     openTabGroupId: null,
     recentlyClosedTabIds: [],
     recentlyClosedTabAt: {},

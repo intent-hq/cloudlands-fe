@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import {
   nextWorkspaceTabGroupColor,
   normalizeWorkspaceTabGroups,
@@ -10,6 +11,7 @@ import {
   addWorkspaceTabToGroup,
   closeWorkspaceTab,
   createWorkspaceTabGroup,
+  getWorkspaceTabGroupList,
   loadWorkspaceTabsState,
   moveWorkspace,
   openWorkspaceTab,
@@ -45,7 +47,7 @@ function stateWithTabs(order: string[], tabGroups: WorkspaceTabGroup[] = []): Ta
 
 const order = (state: TabState) => state.workspaceStacks.flat();
 const members = (state: TabState, groupId: string) =>
-  state.tabGroups.find((candidate) => candidate.id === groupId)?.workspaceIds;
+  getWorkspaceTabGroupList(state).find((candidate) => candidate.id === groupId)?.workspaceIds;
 
 describe('resolveMovedWorkspaceTabGroups', () => {
   it('adds a tab dropped between two members of a group', () => {
@@ -97,10 +99,13 @@ describe('group data hygiene', () => {
 describe('selectWorkspaceTabGroups', () => {
   const stored = [group('g', ['a'])];
   const stateWith = (labsTabGroupsEnabled: boolean) =>
-    ({ tabState: { tabGroups: stored }, userPreferences: { labsTabGroupsEnabled } }) as never;
+    ({
+      tabState: { tabGroups: createCollection('id', stored) },
+      userPreferences: { labsTabGroupsEnabled },
+    }) as never;
 
   it('shows stored groups only while the tab groups Lab is on', () => {
-    expect(selectWorkspaceTabGroups.select(stateWith(true))).toBe(stored);
+    expect(selectWorkspaceTabGroups.select(stateWith(true))).toEqual(stored);
     expect(selectWorkspaceTabGroups.select(stateWith(false))).toEqual([]);
   });
 });
@@ -175,7 +180,7 @@ describe('tab group reducer', () => {
       stateWithTabs(['a', 'b'], [group('g', ['a'])]),
       closeWorkspaceTab('a', 1),
     );
-    expect(state.tabGroups).toEqual([]);
+    expect(getWorkspaceTabGroupList(state)).toEqual([]);
   });
 
   it('remembers the selected member and persists groups with the tabs', () => {
