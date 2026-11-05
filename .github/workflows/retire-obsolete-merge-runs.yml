@@ -51,7 +51,7 @@ jobs:
         with:
           path: .retirement/cursor.json
           key: retirement-v1-${{ github.event_name == 'schedule' && 'apply' || inputs.mode }}-${{ github.run_id }}-${{ github.run_attempt }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: retirement-audit-${{ github.run_id }}-${{ github.run_attempt }}
