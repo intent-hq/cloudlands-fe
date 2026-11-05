@@ -273,7 +273,7 @@ export function dockMediaGeometryRect(g: DockMediaGeometry): DockMediaRect {
     };
   }
   const points =
-    g.kind === 'path' ? g.points : g.kind === 'arrow' ? [g.from, g.to] : [{ x: g.x, y: g.y }];
+    g.kind === 'path' ? g.points : [g.from, g.to];
   const left = Math.min(...points.map((p) => p.x)),
     top = Math.min(...points.map((p) => p.y));
   return {
