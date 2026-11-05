@@ -503,10 +503,12 @@ function* sendReply(
     if (!clickedDraft) return;
     // Composites come only from the click's snapshot (items + evidence).
     const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
-      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], metadata: [] };
+      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], metadata: [] };
     const burned = evidence ? yield* call(burnEvidence, evidence, clickedItems, materialized.images) : [];
     const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
     const wireEvidence = evidence ? { ...evidence,
+      images: evidence.images.map((image) => materialized.images[image.id]
+        ? { ...image, width: materialized.images[image.id].width, height: materialized.images[image.id].height } : image),
       clips: evidence.clips.filter((clip) => !clip.media),
       marks: evidence.marks.filter((mark) => !editedImageIds.has(mark.imageId) && !evidence.clips.some((clip) => clip.media && clip.id === mark.clipId)),
     } : null;
@@ -572,7 +574,7 @@ function* sendReply(
       evidence && wireContext
         ? {
             ...clickedPayload,
-            imageBlocks: [...evidenceBlocks, ...(clickedPayload.imageBlocks ?? [])],
+            imageBlocks: [...evidenceBlocks, ...materialized.frames, ...(clickedPayload.imageBlocks ?? [])],
             fileBlocks: [...(clickedPayload.fileBlocks ?? []), ...materialized.files],
             // Models may never see messageMetadata: an agent-readable copy leads the context.
             workspaceContextStr: [

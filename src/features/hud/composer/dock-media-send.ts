@@ -10,12 +10,13 @@ import { isDockBindingCurrent, type DockPlacementBinding } from './dock-evidence
 export interface DockMediaSendResult {
   images: Record<string, { data: string; mimeType: string; width: number; height: number }>;
   files: Array<{ type: 'file'; attachmentId: string; fileName: string; mimeType: string; size: number }>;
+  frames: Array<{ type: 'image'; attachmentId: string; mimeType: string }>;
   metadata: Array<Record<string, unknown>>;
 }
 export async function prepareDockMediaSend(workspaceId: string, evidence: DockComposerEvidence,
   binding: DockPlacementBinding, service: DockEvidenceNativeService | null,
   current: () => boolean): Promise<DockMediaSendResult> {
-  const output: DockMediaSendResult = { images: {}, files: [], metadata: [] };
+  const output: DockMediaSendResult = { images: {}, files: [], frames: [], metadata: [] };
   const check = () => { if (!current() || !isDockBindingCurrent(binding)) throw new Error('media-send-retired'); };
   for (const row of [...evidence.images, ...evidence.clips]) {
     if (row.mediaError) throw new Error('invalid-saved-edit');
@@ -67,7 +68,8 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
             { sourcePath: file.sourcePath, mimeType: file.mimeType, idempotencyKey: mintPlacementIdempotencyKey() }, undefined, undefined,
             () => current() && isDockBindingCurrent(binding));
           check();
-          output.files.push({ type: 'file', attachmentId: placed.attachmentId, fileName, mimeType: placed.mimeType ?? file.mimeType, size: placed.size });
+          if (index === 0) output.files.push({ type: 'file', attachmentId: placed.attachmentId, fileName, mimeType: placed.mimeType ?? file.mimeType, size: placed.size });
+          else output.frames.push({ type: 'image', attachmentId: placed.attachmentId, mimeType: 'image/png' });
           references.push(placed.attachmentId);
         }
         meta.video_attachment_id = references[0];
