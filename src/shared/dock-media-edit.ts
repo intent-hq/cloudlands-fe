@@ -603,6 +603,6 @@ export function originalDockMediaEdit(
   if (!source.capturedMarks) return null;
   return {
     source,
-    edit: defaultDockMediaEdit(source, source.capturedMarks, media.transcript, null),
+    edit: { ...defaultDockMediaEdit(source, source.capturedMarks, media.transcript, null), revision: media.saved?.revision ?? 0 },
   };
 }

@@ -1,3 +1,5 @@
+import { DockMediaSourceSchema } from '$shared/dock-media-edit';
+import { dockMediaCaptureBatches, dockMediaCapturedMarks } from '$shared/dock-media-source';
 /**
  * Dock composer screen evidence orchestration: capture, annotate sessions,
  * clip recording and native mark events for the active conversation pair.
@@ -168,6 +170,9 @@ let dictationMarkSink: DictationMarkSink | null = null;
 export function setDockDictationMarkSink(sink: DictationMarkSink | null): void {
   dictationMarkSink = sink;
 }
+
+/** Same exact draft/principal-scoped adapter used by capture, never a new session. */
+export function dockMediaNativeService(): DockEvidenceNativeService | null { return nativeService; }
 
 export function evidenceOf(workspaceId: string, agentId: string): DockComposerEvidence | undefined {
   return getItem(appStore.state.dockConversation.evidence, dockEvidenceId(workspaceId, agentId));
@@ -1176,6 +1181,17 @@ function* placeFinishedClip(
       () => !!clipOf(workspaceId, agentId, clipId) && isDockBindingCurrent(binding),
     );
     if (!clipOf(workspaceId, agentId, clipId)) return;
+    const original = file.original;
+    const sourcePlacement = original ? yield* call(placeAttachmentViaTransport, workspaceId,
+      `clip-${clipId.slice(0, 8)}-original.mp4`,
+      { sourcePath: original.sourcePath, mimeType: 'video/mp4', idempotencyKey: mintPlacementIdempotencyKey() },
+      undefined, undefined, () => !!clipOf(workspaceId, agentId, clipId) && isDockBindingCurrent(binding)) : placed;
+    if (!clipOf(workspaceId, agentId, clipId) || !isDockBindingCurrent(binding)) return;
+    const source = original ? DockMediaSourceSchema.parse({ id: `${clipId}:original`, revision: 0,
+      kind: 'recording', attachmentId: sourcePlacement.attachmentId, path: sourcePlacement.path,
+      durationMs, width: original.width, height: original.height, audio: file.hasMicAudio ? 'available' : 'none',
+      visuals: 'clean', batches: dockMediaCaptureBatches(original.clearAtMs, durationMs) }) : null;
+    if (source) source.capturedMarks = dockMediaCapturedMarks(evidenceOf(workspaceId, agentId)!, source, clipId);
     yield* put(
       setComposerContextItems(
         workspaceId,
@@ -1183,9 +1199,10 @@ function* placeFinishedClip(
         withItem({
           ...staged,
           placementStatus: 'placed',
-          attachmentId: placed.attachmentId,
-          attachmentMimeType: placed.mimeType ?? file.mimeType,
-          attachmentSize: placed.size,
+          path: sourcePlacement.path,
+          attachmentId: sourcePlacement.attachmentId,
+          attachmentMimeType: sourcePlacement.mimeType ?? file.mimeType,
+          attachmentSize: sourcePlacement.size,
         }),
       ),
     );
@@ -1196,6 +1213,9 @@ function* placeFinishedClip(
         durationMs,
         hasMicAudio: file.hasMicAudio,
         contextItemId,
+        ...(source ? { media: { source, saved: null, transcript: file.hasMicAudio
+          ? { status: 'pending' as const, revision: 0, words: [] }
+          : { status: 'no-speech' as const, revision: 0, words: [] } } } : {}),
         // Playback derives only from the daemon-acknowledged placement path.
         ...(isDockAttachmentPath(placed.path) ? { path: placed.path } : {}),
       }),

@@ -1,3 +1,4 @@
+import { prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
 import { dockMediaEditSaga } from './dock-media-edit-saga';
 import { dockContextLinksSaga } from './dock-context-links-saga';
 import { dockShortcutSaga } from './dock-shortcut-saga';
@@ -35,7 +36,7 @@ import {
   placeDockEvidenceImages,
   probeDockAttachmentCapabilities,
 } from '$features/hud/composer/dock-evidence-placement';
-import { dockEvidenceSaga, evidenceOf } from './dock-evidence-saga';
+import { dockEvidenceSaga, evidenceOf, dockMediaNativeService } from './dock-evidence-saga';
 import { dockNativeSessionSaga } from './dock-native-session-saga';
 import { hasBlockingAttachments } from '$lib/components/chat/input/context-api';
 import { setComposerContextItems } from '../../transient-ui/transient-ui-slice';
@@ -409,7 +410,8 @@ function* sendReply(
     ? structuredClone(liveEvidence!)
     : null;
   const evidenceItems = dockEvidenceImageItemIds(evidence ?? undefined);
-  const sendItems = clickedItems.filter((item) => !evidenceItems.has(item.id));
+  const editedClipItems = new Set(evidence?.clips.filter((clip) => clip.media).map((clip) => clip.contextItemId));
+  const sendItems = clickedItems.filter((item) => !evidenceItems.has(item.id) && !editedClipItems.has(item.id));
   const blocks = extractAttachmentBlocks(sendItems);
   if (
     !retry &&
@@ -500,7 +502,14 @@ function* sendReply(
     // a different draft revision and must neither be sent nor cleared here.
     if (!clickedDraft) return;
     // Composites come only from the click's snapshot (items + evidence).
-    const burned = evidence ? yield* call(burnEvidence, evidence, clickedItems) : [];
+    const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
+      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], metadata: [] };
+    const burned = evidence ? yield* call(burnEvidence, evidence, clickedItems, materialized.images) : [];
+    const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
+    const wireEvidence = evidence ? { ...evidence,
+      clips: evidence.clips.filter((clip) => !clip.media),
+      marks: evidence.marks.filter((mark) => !editedImageIds.has(mark.imageId) && !evidence.clips.some((clip) => clip.media && clip.id === mark.clipId)),
+    } : null;
     if (!current(generation, authority)) return;
     let evidenceBlocks: {
       type: 'image';
@@ -533,7 +542,7 @@ function* sendReply(
             signature: dockCompositeSignature(evidence, image.id),
             composite: { base64: burned[index].data, mimeType: burned[index].mimeType },
             raw:
-              item?.imageData && item.imageMimeType
+              !image.media && item?.imageData && item.imageMimeType
                 ? { base64: item.imageData, mimeType: item.imageMimeType }
                 : null,
           };
@@ -564,14 +573,16 @@ function* sendReply(
         ? {
             ...clickedPayload,
             imageBlocks: [...evidenceBlocks, ...(clickedPayload.imageBlocks ?? [])],
+            fileBlocks: [...(clickedPayload.fileBlocks ?? []), ...materialized.files],
             // Models may never see messageMetadata: an agent-readable copy leads the context.
             workspaceContextStr: [
-              buildDockEvidenceContext(evidence, wireContext),
+              buildDockEvidenceContext(wireEvidence!, wireContext),
+              materialized.metadata.length ? `[Edited capture outputs]\n${JSON.stringify(materialized.metadata)}` : '',
               clickedPayload.workspaceContextStr,
             ]
               .filter(Boolean)
               .join('\n\n'),
-            messageMetadata: buildDockEvidenceMetadata(evidence, wireContext) as unknown as Record<
+            messageMetadata: { ...buildDockEvidenceMetadata(wireEvidence!, wireContext), edited_captures: materialized.metadata } as unknown as Record<
               string,
               unknown
             >,
@@ -726,10 +737,12 @@ function* reconcileDeliveries(): SagaGenerator<void> {
 async function burnEvidence(
   evidence: DockComposerEvidence,
   items: readonly { id: string; imageData?: string; imageMimeType?: string }[],
+  edited: Record<string, { data: string; mimeType: string }> = {},
 ) {
   const numbered = numberDockMarks(evidence);
   return Promise.all(
     evidence.images.map(async (image) => {
+      if (edited[image.id]) return { type: 'image' as const, ...edited[image.id] };
       const item = items.find((row) => row.id === image.contextItemId);
       if (!item?.imageData || !item.imageMimeType) throw new Error('dock-evidence-missing-pixels');
       const burned = await burnDockEvidenceImage(

@@ -1296,6 +1296,8 @@ export const DOCK_CAPTURE_MODES: readonly DockCaptureMode[] = ['fullscreen', 'wi
 
 /** A finished clip written by native to a host path, ready for attachment placement. */
 export interface DockClipFile {
+  /** Fresh dual-source recorder metadata; absent on legacy baked-only clips. */
+  original?: { sourcePath: string; size: number; width: number; height: number; clearAtMs: number[] };
   sourcePath: string;
   mimeType: string;
   size: number;
@@ -1307,6 +1309,7 @@ export type DockNativeResult<T> =
   { ok: true; value: T } | { ok: false; error: DockEvidenceErrorCode; detail?: string };
 
 export type DockEvidenceNativeEvent =
+  | { type: 'media-progress'; jobId: string; fraction: number }
   | {
       type: 'mark';
       sessionId: string;
@@ -1348,6 +1351,10 @@ export type DockEvidenceNativeEvent =
   | { type: 'clip-ended'; clipId: string; result: DockNativeResult<DockClipFile> };
 
 export interface DockEvidenceNativeService {
+  exportMedia?(request: import('./dock-media-output').DockMediaExportRequest): Promise<DockNativeResult<import('./dock-media-output').DockMediaNativeOutput>>;
+  transcribeMedia?(request: import('./dock-media-output').DockMediaTranscribeRequest): Promise<DockNativeResult<import('./dock-media-edit').DockMediaTranscript>>;
+  cancelMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
+  releaseMediaJob?(jobId: string): Promise<DockNativeResult<void>>;
   /** Absent means only `captureDisplay` is implemented (annotate and record stay disabled). */
   readonly capabilities?: DockEvidenceCapabilities;
   /** A dismissed window/region selection fails with `detail: 'cancelled'`. */

@@ -241,6 +241,10 @@ export function createDockEvidenceNative(
     stopClip: (clipId) => control<DockClipFile>({ action: 'clip-stop', clipId }),
     pauseClip: (clipId, paused) =>
       control<{ paused: boolean }>({ action: 'clip-pause', clipId, paused }),
+    exportMedia: (request) => control<import('$shared/dock-media-output').DockMediaNativeOutput>({ action: 'media-export', request }),
+    transcribeMedia: (request) => control<import('$shared/dock-media-edit').DockMediaTranscript>({ action: 'media-transcribe', request }),
+    cancelMediaJob: (jobId) => control<void>({ action: 'media-job-cancel', jobId }),
+    releaseMediaJob: (jobId) => control<void>({ action: 'media-job-release', jobId }),
     releaseClip: (clipId) => control<void>({ action: 'clip-release', clipId }),
     subscribe: (listener) => {
       listeners.add(listener);

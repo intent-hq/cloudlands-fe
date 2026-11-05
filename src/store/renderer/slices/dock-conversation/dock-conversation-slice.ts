@@ -307,6 +307,9 @@ export const dockEvidenceDictationFinished = createAction<
   ]
 >('dockConversation/evidenceDictationFinished');
 /** Add or update one clip by id; null removes that clip only. */
+export const dockMediaEditorOpenRequested = createAction<
+  [workspaceId: string, agentId: string, logicalAttachmentId: string]
+>('dockConversation/mediaEditorOpenRequested');
 export const dockMediaEditSaveRequested = createAction<
   [requestId: string, request: DockMediaSaveRequest, authority: string]
 >('dockConversation/mediaEditSaveRequested');
@@ -315,7 +318,7 @@ export const dockMediaEditSaveSettled = createAction<
 >('dockConversation/mediaEditSaveSettled');
 /** CAS also protects a failed write's rollback from replacing a newer edit/source. */
 export const dockEvidenceMediaChanged = createAction<
-  [workspaceId: string, agentId: string, logicalId: string, expected: DockSavedMedia, next: DockSavedMedia]
+  [workspaceId: string, agentId: string, logicalId: string, expected: DockSavedMedia | null, next: DockSavedMedia]
 >('dockConversation/evidenceMediaChanged');
 export const dockEvidenceClipChanged = createAction<
   [workspaceId: string, agentId: string, clipId: string, clip: DockEvidenceClip | null]
@@ -901,8 +904,8 @@ dockConversationReducer.with(
   (state, { payload: [ws, agent, logicalId, expected, next] }) =>
     withEvidence(state, ws, agent, (e) => {
       const matches = (row: { id: string; media?: DockSavedMedia }) =>
-        row.id === logicalId && JSON.stringify(row.media) === JSON.stringify(expected);
-      if (expected.source.kind === 'screenshot') {
+        row.id === logicalId && JSON.stringify(row.media ?? null) === JSON.stringify(expected);
+      if (next.source.kind === 'screenshot') {
         if (!e.images.some(matches)) return e;
         return patchDockEvidence(e, {
           images: e.images.map((row) => matches(row) ? { ...row, width: next.source.width, height: next.source.height, media: next } : row),

@@ -8,6 +8,7 @@ import UniformTypeIdentifiers
 struct Range: Decodable { let startMs: Double; let endMs: Double }
 struct Layer: Decodable { let path: String; let startMs: Double; let endMs: Double }
 struct Frame: Decodable { let path: String; let atMs: Double }
+struct Rect: Decodable { let x: Double; let y: Double; let w: Double; let h: Double }
 struct Job: Decodable {
   let source: String
   let output: String
@@ -15,6 +16,11 @@ struct Job: Decodable {
   let muted: Bool
   let layers: [Layer]
   let frames: [Frame]
+  let expectedWidth: Double
+  let expectedHeight: Double
+  let expectedDurationMs: Double
+  let crop: Rect?
+  let blurRegions: [Rect]
 }
 func emit(_ value: [String: Any]) {
   guard let data = try? JSONSerialization.data(withJSONObject: value) else { return }
@@ -32,6 +38,30 @@ func main() async throws {
   let asset = AVURLAsset(url: source)
   let duration = try await asset.load(.duration).seconds * 1000
   guard duration.isFinite, duration > 0, let originalVideo = try await asset.loadTracks(withMediaType: .video).first else { throw failure("missing-video") }
+  let size = try await originalVideo.load(.naturalSize)
+  guard size.width == job.expectedWidth, size.height == job.expectedHeight,
+    abs(duration - job.expectedDurationMs) <= 1000, job.blurRegions.count <= 1000 else { throw failure("source-changed") }
+  let extent = CGRect(origin: .zero, size: size)
+  for rect in job.blurRegions + (job.crop.map { [$0] } ?? []) {
+    guard rect.x.isFinite, rect.y.isFinite, rect.w.isFinite, rect.h.isFinite,
+      rect.x >= 0, rect.y >= 0, rect.w > 0, rect.h > 0,
+      rect.x + rect.w <= Double(size.width), rect.y + rect.h <= Double(size.height) else { throw failure("invalid-geometry") }
+  }
+  func edited(_ sourceImage: CIImage, atMs: Double, layers: [(CIImage, Double, Double)]) -> CIImage {
+    var image = sourceImage
+    for region in job.blurRegions {
+      // Shared model is top-left; CoreImage has a bottom-left pixel origin.
+      let rect = CGRect(x: region.x, y: Double(size.height) - region.y - region.h, width: region.w, height: region.h)
+      let blurred = image.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 12]).cropped(to: rect)
+      image = blurred.composited(over: image)
+    }
+    for (overlay, from, to) in layers where atMs >= from && atMs < to { image = overlay.composited(over: image) }
+    if let crop = job.crop {
+      let rect = CGRect(x: crop.x, y: Double(size.height) - crop.y - crop.h, width: crop.w, height: crop.h)
+      return image.cropped(to: rect).transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
+    }
+    return image.cropped(to: extent)
+  }
   var previous = -Double.infinity
   for range in job.ranges {
     guard range.startMs.isFinite, range.endMs.isFinite, range.startMs >= 0, range.endMs > range.startMs, range.endMs <= duration + 1, range.startMs >= previous else { throw failure("invalid-range") }
@@ -75,16 +105,17 @@ func main() async throws {
   }
   guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { throw failure("export-unavailable") }
   exporter.outputURL = output; exporter.outputFileType = .mp4
-  if !layers.isEmpty {
-    // Overlay coordinates are already rasterized in source-frame pixels by the canonical renderer.
-    exporter.videoComposition = AVVideoComposition(asset: composition) { request in
+  if !layers.isEmpty || job.crop != nil || !job.blurRegions.isEmpty {
+    let filtered = AVVideoComposition(asset: composition) { request in
       let outputMs = request.compositionTime.seconds * 1000
       let span = timeline.first { outputMs >= $0.start && outputMs < $0.start + $0.length }
       let sourceMs = span.map { $0.source + outputMs - $0.start } ?? -1
-      var frame = request.sourceImage
-      for (image, from, to) in layers where sourceMs >= from && sourceMs < to { frame = image.composited(over: frame) }
-      request.finish(with: frame.cropped(to: request.sourceImage.extent), context: nil)
+      request.finish(with: edited(request.sourceImage, atMs: sourceMs, layers: layers), context: nil)
     }
+    if let crop = job.crop, let mutable = filtered.mutableCopy() as? AVMutableVideoComposition {
+      mutable.renderSize = CGSize(width: crop.w, height: crop.h)
+      exporter.videoComposition = mutable
+    } else { exporter.videoComposition = filtered }
   }
   emit(["event":"progress","fraction":0])
   let progress = Task {
@@ -112,9 +143,8 @@ func main() async throws {
       target.standardizedFileURL != output.standardizedFileURL,
       !FileManager.default.fileExists(atPath: target.path) else { throw failure("invalid-frame") }
     let captured = try generator.copyCGImage(at: time(frame.atMs), actualTime: nil)
-    var image = CIImage(cgImage: captured)
-    for (overlay, from, to) in layers where frame.atMs >= from && frame.atMs < to { image = overlay.composited(over: image) }
-    guard let pixels = context.createCGImage(image, from: CIImage(cgImage: captured).extent),
+    let image = edited(CIImage(cgImage: captured), atMs: frame.atMs, layers: layers)
+    guard let pixels = context.createCGImage(image, from: image.extent),
       let destination = CGImageDestinationCreateWithURL(target as CFURL, UTType.png.identifier as CFString, 1, nil) else { throw failure("frame-failed") }
     createdFrames.append(target)
     CGImageDestinationAddImage(destination, pixels, nil)
