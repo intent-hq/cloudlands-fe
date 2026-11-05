@@ -11,7 +11,10 @@ export function drawerTerminalCycleDirection(
   drawer: Element | null | undefined,
   terminalCount: number,
 ): 1 | -1 | null {
-  if (!(event.metaKey || event.ctrlKey) || !event.shiftKey || event.altKey) return null;
+  // Mod is Cmd on macOS and Ctrl elsewhere, matching what TerminalAdapter keeps out of xterm.
+  const mac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
+  const isMod = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (!isMod || !event.shiftKey || event.altKey) return null;
   // Shift+] produces } on US keyboards, so accept both.
   const direction =
     event.key === ']' || event.key === '}' ? 1 : event.key === '[' || event.key === '{' ? -1 : null;
