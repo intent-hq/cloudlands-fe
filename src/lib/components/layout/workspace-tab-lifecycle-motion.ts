@@ -50,7 +50,7 @@ const interruptedTabOutros = new WeakMap<HTMLElement, InterruptedTabOutro>();
 const interruptedTabIntroCleanupNodes = new WeakSet<HTMLElement>();
 const WORKSPACE_TAB_MAX_RESERVE_STEP_PX = 5.5;
 const WORKSPACE_TAB_MAX_LAUNCHER_STEP_PX = 2.5;
-export const WORKSPACE_TAB_MAX_SCROLL_STEP_PX = 7.5;
+const WORKSPACE_TAB_MAX_SCROLL_STEP_PX = 7.5;
 
 function restoreInterruptedTabOutro(node: HTMLElement, interruptedOutro: InterruptedTabOutro) {
   node.style.marginRight = interruptedOutro.originalMarginRight;
