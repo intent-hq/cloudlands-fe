@@ -10,6 +10,8 @@ export interface RemoteSkillsInput {
   skills: readonly SkillInfo[];
   stale: boolean;
   unavailable: AgentSkillsUnavailable | null;
+  /** The machine's list was read and the last read did not fail. */
+  ready: boolean;
 }
 
 export interface RemoteSlashCopy {
@@ -29,7 +31,9 @@ export function remoteSlashCopy(input: RemoteSkillsInput | undefined): RemoteSla
     return { emptyLabel: text, notice: text };
   }
   if (input.unavailable === 'machine-offline') {
-    return { emptyLabel: m.chat_slashSkillSuggestionList_machineOffline_label({ machine }) };
+    // The list holds only the workspace's project skills, not the machine's.
+    const text = m.chat_slashSkillSuggestionList_machineOffline_label({ machine });
+    return { emptyLabel: text, notice: text };
   }
   const known = new Set(input.skills.map((skill) => skill.name));
   return {
@@ -37,7 +41,10 @@ export function remoteSlashCopy(input: RemoteSkillsInput | undefined): RemoteSla
     notice: input.stale
       ? m.chat_slashSkillSuggestionList_machineStale_label({ machine })
       : undefined,
-    unavailableTitle: (name) =>
-      known.has(name) ? undefined : m.chat_skillCommand_unavailable_tooltip({ name, machine }),
+    // No chip is marked before the machine's catalog is known.
+    unavailableTitle: input.ready
+      ? (name) =>
+          known.has(name) ? undefined : m.chat_skillCommand_unavailable_tooltip({ name, machine })
+      : undefined,
   };
 }

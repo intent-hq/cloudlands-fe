@@ -70,7 +70,7 @@
   let { value = '', skills = [], machine, stale = false, unavailable = null }: Props = $props();
   let editor: TipTapEditor;
   const copy = $derived(
-    remoteSlashCopy(machine ? { machine, skills, stale, unavailable } : undefined),
+    remoteSlashCopy(machine ? { machine, skills, stale, unavailable, ready: true } : undefined),
   );
   const editorSkills = $derived(
     value.includes('/lint') ? [...skills, { name: 'lint', description: '', location: '' }] : skills,

@@ -78,6 +78,7 @@
   import { isSupportedImageMimeType } from './image-attachment-format';
   import {
     selectAgentSkillsMachine,
+    selectAgentSkillsNodeState,
     selectAgentSkillsState,
     selectSkills,
     selectSkillsError,
@@ -384,10 +385,14 @@
   });
   const agentSkills$ = selectAgentSkillsState(skillsAgentIdStore);
   const skillsMachine$ = selectAgentSkillsMachine(skillsAgentIdStore);
+  const skillsNodeState$ = selectAgentSkillsNodeState(skillsAgentIdStore);
   const skillsMachine = $derived(agentId ? $skillsMachine$ : undefined);
+  const skillsWorkspaceId = $derived(workspace?.id);
+  // Re-read when the agent, its machine or that machine's connection changes.
   $effect(() => {
-    if (skillsMachine && agentId && workspace?.id) {
-      appStore.dispatch(loadAgentSkillsRequested(workspace.id, agentId));
+    void $skillsNodeState$;
+    if (skillsMachine && agentId && skillsWorkspaceId) {
+      appStore.dispatch(loadAgentSkillsRequested(skillsWorkspaceId, agentId));
     }
   });
   const composerSkills = $derived(skillsMachine ? $agentSkills$.skills : $skills$);
@@ -403,6 +408,7 @@
             skills: $agentSkills$.skills,
             stale: $agentSkills$.stale,
             unavailable: $agentSkills$.unavailable,
+            ready: $agentSkills$.loaded && !$agentSkills$.error,
           }
         : undefined,
     ),

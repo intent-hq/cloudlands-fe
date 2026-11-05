@@ -1129,6 +1129,7 @@
   "chat_slashSkillSuggestionList_machineUpdateRequired_label": "Update Intent on {machine} to see its skills",
   "chat_slashSkillSuggestionList_machineOffline_label": "Can't reach {machine} to list its skills",
   "chat_slashSkillSuggestionList_machineStale_label": "{machine} is offline. These are its last known skills.",
+  "chat_slashSkillSuggestionList_unnamedMachine_label": "this agent's machine",
   "chat_skillCommand_unavailable_tooltip": "/{name} isn't on {machine}. Add it to ~/.agents/skills or ~/.claude/skills there, or run this agent on the backend.",
   "chat_specialistSelector_prompt_label": "Specialist prompt",
   "chat_specialistSwitcher_blank_label": "Blank",

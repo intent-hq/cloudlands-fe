@@ -307,6 +307,8 @@ function* onEvent(
         break;
       case 'specialists:changed':
       case 'skills:changed':
+        // A remote agent's catalog (agentId) is not the workspace's.
+        if (typeof data?.agentId === 'string') break;
         // Both supported events name the affected workspace, including user-tier changes.
         if (scope) yield* put(workspaceCatalogRequested(workspaceId, ['specialists']));
         break;

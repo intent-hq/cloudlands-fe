@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { store } from '../../store';
 import { selectPrincipalSnapshot } from '../principal/principal-selectors';
 import { emptyAgentSkillsState, emptyWorkspaceSkillsState } from './skills-slice';
@@ -47,6 +48,12 @@ export const selectAgentSkillsMachine = store.createSelector<[agentId: string], 
     if (!agentId || !selectRemoteAgentSkillsSupported.select(state)) return undefined;
     const session = state.agentSessions?.byAgentId[agentId];
     if (!session?.nodeId) return undefined;
-    return session.nodeName ?? session.nodeId;
+    return session.nodeName ?? m.chat_slashSkillSuggestionList_unnamedMachine_label();
   },
 );
+
+/** `agentId`'s machine connection state: a change re-reads its skills. */
+export const selectAgentSkillsNodeState = store.createSelector<
+  [agentId: string],
+  string | undefined
+>((state, agentId) => state.agentSessions?.byAgentId[agentId]?.nodeState);

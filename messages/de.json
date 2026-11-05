@@ -1129,6 +1129,7 @@
   "chat_slashSkillSuggestionList_machineUpdateRequired_label": "Aktualisiere Intent auf {machine}, um seine Skills zu sehen",
   "chat_slashSkillSuggestionList_machineOffline_label": "{machine} ist nicht erreichbar, Skills können nicht geladen werden",
   "chat_slashSkillSuggestionList_machineStale_label": "{machine} ist offline. Das sind die zuletzt bekannten Skills.",
+  "chat_slashSkillSuggestionList_unnamedMachine_label": "der Maschine dieses Agenten",
   "chat_skillCommand_unavailable_tooltip": "/{name} ist nicht auf {machine}. Füge den Skill dort zu ~/.agents/skills oder ~/.claude/skills hinzu oder führe diesen Agenten im Backend aus.",
   "chat_specialistSelector_prompt_label": "Spezialistenanweisung",
   "chat_specialistSwitcher_blank_label": "Leer",

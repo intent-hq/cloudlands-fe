@@ -24,6 +24,8 @@ export const emptyAgentSkillsState: SkillsAgentState = {
   ...emptyWorkspaceSkillsState,
   stale: false,
   unavailable: null,
+  loaded: false,
+  workspaceId: null,
 };
 
 export const initialState: SkillsState = {
@@ -98,21 +100,32 @@ skillsReducer.with(loadSkillsFailed, (state, { payload: [workspaceId, error] }) 
     error,
   });
 });
-skillsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) =>
-  clearWorkspaceState(state, wsId),
-);
+skillsReducer.with(workspaceUnmounted, (state, { payload: [wsId] }) => {
+  const cleared = clearWorkspaceState(state, wsId);
+  const byAgentId = Object.fromEntries(
+    Object.entries(cleared.byAgentId ?? {}).filter(([, agent]) => agent.workspaceId !== wsId),
+  );
+  return { ...cleared, byAgentId };
+});
 
 function setAgentState(state: SkillsState, agentId: string, next: SkillsAgentState): SkillsState {
   return { ...state, byAgentId: { ...(state.byAgentId ?? {}), [agentId]: next } };
 }
 
-skillsReducer.with(loadAgentSkillsRequested, (state, { payload: [, agentId] }) => {
+skillsReducer.with(loadAgentSkillsRequested, (state, { payload: [workspaceId, agentId] }) => {
   const current = state.byAgentId?.[agentId] ?? emptyAgentSkillsState;
-  return setAgentState(state, agentId, { ...current, loading: true, error: null });
+  return setAgentState(state, agentId, { ...current, workspaceId, loading: true, error: null });
 });
-skillsReducer.with(setAgentSkills, (state, { payload: [agentId, result] }) =>
-  setAgentState(state, agentId, { ...result, loading: false, error: null }),
-);
+skillsReducer.with(setAgentSkills, (state, { payload: [agentId, result] }) => {
+  const current = state.byAgentId?.[agentId] ?? emptyAgentSkillsState;
+  return setAgentState(state, agentId, {
+    ...current,
+    ...result,
+    loaded: true,
+    loading: false,
+    error: null,
+  });
+});
 skillsReducer.with(loadAgentSkillsFailed, (state, { payload: [agentId, error] }) => {
   const current = state.byAgentId?.[agentId] ?? emptyAgentSkillsState;
   return setAgentState(state, agentId, { ...current, loading: false, error });

@@ -32,6 +32,10 @@ export type AgentSkills = {
 export type SkillsAgentState = SkillsWorkspaceState & {
   stale: boolean;
   unavailable: AgentSkillsUnavailable | null;
+  /** A read succeeded at least once. */
+  loaded: boolean;
+  /** The agent's workspace, so its entry goes with the workspace. */
+  workspaceId: string | null;
 };
 
 export type SkillsState = {

@@ -1129,6 +1129,7 @@
   "chat_slashSkillSuggestionList_machineUpdateRequired_label": "Mettez à jour Intent sur {machine} pour voir ses compétences",
   "chat_slashSkillSuggestionList_machineOffline_label": "Impossible de joindre {machine} pour lister ses compétences",
   "chat_slashSkillSuggestionList_machineStale_label": "{machine} est hors ligne. Voici ses dernières compétences connues.",
+  "chat_slashSkillSuggestionList_unnamedMachine_label": "la machine de cet agent",
   "chat_skillCommand_unavailable_tooltip": "/{name} n'est pas sur {machine}. Ajoutez-la à ~/.agents/skills ou ~/.claude/skills sur cette machine, ou exécutez cet agent sur le backend.",
   "chat_specialistSelector_prompt_label": "Instructions du spécialiste",
   "chat_specialistSwitcher_blank_label": "Vierge",

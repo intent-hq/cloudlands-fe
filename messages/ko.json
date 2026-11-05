@@ -1129,6 +1129,7 @@
   "chat_slashSkillSuggestionList_machineUpdateRequired_label": "스킬을 보려면 {machine}의 Intent를 업데이트하세요",
   "chat_slashSkillSuggestionList_machineOffline_label": "{machine}에 연결할 수 없어 스킬을 표시할 수 없습니다",
   "chat_slashSkillSuggestionList_machineStale_label": "{machine}이(가) 오프라인입니다. 마지막으로 확인된 스킬입니다.",
+  "chat_slashSkillSuggestionList_unnamedMachine_label": "이 에이전트의 머신",
   "chat_skillCommand_unavailable_tooltip": "/{name}은(는) {machine}에 없습니다. 해당 머신의 ~/.agents/skills 또는 ~/.claude/skills에 추가하거나 이 에이전트를 백엔드에서 실행하세요.",
   "chat_specialistSelector_prompt_label": "전문가 프롬프트",
   "chat_specialistSwitcher_blank_label": "빈 상태",

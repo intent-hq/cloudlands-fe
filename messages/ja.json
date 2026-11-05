@@ -1129,6 +1129,7 @@
   "chat_slashSkillSuggestionList_machineUpdateRequired_label": "スキルを表示するには {machine} の Intent を更新してください",
   "chat_slashSkillSuggestionList_machineOffline_label": "{machine} に接続できないため、スキルを一覧表示できません",
   "chat_slashSkillSuggestionList_machineStale_label": "{machine} はオフラインです。最後に確認されたスキルを表示しています。",
+  "chat_slashSkillSuggestionList_unnamedMachine_label": "このエージェントのマシン",
   "chat_skillCommand_unavailable_tooltip": "/{name} は {machine} にありません。そのマシンの ~/.agents/skills または ~/.claude/skills に追加するか、このエージェントをバックエンドで実行してください。",
   "chat_specialistSelector_prompt_label": "スペシャリストのプロンプト",
   "chat_specialistSwitcher_blank_label": "空白",

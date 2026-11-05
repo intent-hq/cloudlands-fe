@@ -58,7 +58,7 @@ describe('skills selectors', () => {
 
     capabilities.value = { remoteAgentSkills: 1 };
     expect(selectAgentSkillsMachine.select(state, 'remote')).toBe('Mac Studio');
-    expect(selectAgentSkillsMachine.select(state, 'unnamed')).toBe('node-2');
+    expect(selectAgentSkillsMachine.select(state, 'unnamed')).toBe("this agent's machine");
     expect(selectAgentSkillsMachine.select(state, 'local')).toBeUndefined();
     expect(selectAgentSkillsMachine.select(state, '')).toBeUndefined();
 

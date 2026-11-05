@@ -1129,6 +1129,7 @@
   "chat_slashSkillSuggestionList_machineUpdateRequired_label": "請更新 {machine} 上的 Intent 以查看其技能",
   "chat_slashSkillSuggestionList_machineOffline_label": "無法連線至 {machine}，無法列出其技能",
   "chat_slashSkillSuggestionList_machineStale_label": "{machine} 已離線。以下是其最近一次已知的技能。",
+  "chat_slashSkillSuggestionList_unnamedMachine_label": "此代理程式的機器",
   "chat_skillCommand_unavailable_tooltip": "/{name} 不在 {machine} 上。請將其加入該機器的 ~/.agents/skills 或 ~/.claude/skills，或在後端執行此代理程式。",
   "chat_specialistSelector_prompt_label": "專家提示詞",
   "chat_specialistSwitcher_blank_label": "空白",

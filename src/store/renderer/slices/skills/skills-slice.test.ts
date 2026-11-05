@@ -51,7 +51,11 @@ describe('skillsReducer', () => {
   it("keeps a remote agent's machine skills apart from the workspace", () => {
     const skills = [{ name: 'machine-skill', description: 'd', location: '/m' }];
     let state = skillsReducer(initialState, loadAgentSkillsRequested('ws-1', 'a1'));
-    expect(state.byAgentId['a1']).toEqual({ ...emptyAgentSkillsState, loading: true });
+    expect(state.byAgentId['a1']).toEqual({
+      ...emptyAgentSkillsState,
+      loading: true,
+      workspaceId: 'ws-1',
+    });
     expect(state.byWorkspaceId['ws-1']).toBeUndefined();
 
     state = skillsReducer(state, setAgentSkills('a1', { skills, stale: true, unavailable: null }));
@@ -61,10 +65,15 @@ describe('skillsReducer', () => {
       error: null,
       stale: true,
       unavailable: null,
+      loaded: true,
+      workspaceId: 'ws-1',
     });
 
     state = skillsReducer(state, loadAgentSkillsRequested('ws-1', 'a1'));
     state = skillsReducer(state, loadAgentSkillsFailed('a1', 'boom'));
     expect(state.byAgentId['a1']).toMatchObject({ skills, loading: false, error: 'boom' });
+
+    state = skillsReducer(state, workspaceUnmounted('ws-1'));
+    expect(state.byAgentId['a1']).toBeUndefined();
   });
 });

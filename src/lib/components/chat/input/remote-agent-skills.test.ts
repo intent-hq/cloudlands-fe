@@ -11,7 +11,13 @@ describe('remoteSlashCopy', () => {
 
   it('names the machine when it has no skills', () => {
     expect(
-      remoteSlashCopy({ machine: 'Mac Studio', skills: [], stale: false, unavailable: null }),
+      remoteSlashCopy({
+        machine: 'Mac Studio',
+        skills: [],
+        stale: false,
+        unavailable: null,
+        ready: true,
+      }),
     ).toMatchObject({ emptyLabel: 'No skills on Mac Studio', notice: undefined });
   });
 
@@ -22,6 +28,7 @@ describe('remoteSlashCopy', () => {
         skills: [skill],
         stale: false,
         unavailable: 'machine-update-required',
+        ready: true,
       }),
     ).toEqual({
       emptyLabel: 'Update Intent on Mac Studio to see its skills',
@@ -36,10 +43,20 @@ describe('remoteSlashCopy', () => {
         skills: [],
         stale: false,
         unavailable: 'machine-offline',
+        ready: true,
       }),
-    ).toEqual({ emptyLabel: "Can't reach Mac Studio to list its skills" });
+    ).toEqual({
+      emptyLabel: "Can't reach Mac Studio to list its skills",
+      notice: "Can't reach Mac Studio to list its skills",
+    });
     expect(
-      remoteSlashCopy({ machine: 'Mac Studio', skills: [skill], stale: true, unavailable: null }),
+      remoteSlashCopy({
+        machine: 'Mac Studio',
+        skills: [skill],
+        stale: true,
+        unavailable: null,
+        ready: true,
+      }),
     ).toMatchObject({
       emptyLabel: 'No skills on Mac Studio',
       notice: 'Mac Studio is offline. These are its last known skills.',
@@ -53,6 +70,7 @@ describe('remoteSlashCopy', () => {
         skills: [skill],
         stale: false,
         unavailable: 'machine-update-required',
+        ready: true,
       }).unavailableTitle,
     ).toBeUndefined();
   });
@@ -63,10 +81,23 @@ describe('remoteSlashCopy', () => {
       skills: [skill],
       stale: false,
       unavailable: null,
+      ready: true,
     });
     expect(copy.unavailableTitle?.('deploy')).toBe(
       "/deploy isn't on Mac Studio. Add it to ~/.agents/skills or ~/.claude/skills there, or run this agent on the backend.",
     );
     expect(copy.unavailableTitle?.('review')).toBeUndefined();
+  });
+
+  it('marks no chip while the list loads or after it failed', () => {
+    const loading = remoteSlashCopy({
+      machine: 'Mac Studio',
+      skills: [],
+      stale: false,
+      unavailable: null,
+      ready: false,
+    });
+    expect(loading.unavailableTitle).toBeUndefined();
+    expect(loading.emptyLabel).toBe('No skills on Mac Studio');
   });
 });
