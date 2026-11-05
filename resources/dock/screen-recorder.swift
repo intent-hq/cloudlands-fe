@@ -302,6 +302,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     let id: String
     let path: String
     let windowIds: Set<CGWindowID>
+    let requestedAt: Date
     let timer: DispatchSourceTimer
   }
   static let stillCopyIntervalMs = 250
@@ -787,8 +788,10 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
           next.generation == self.filterGeneration
         {
           self.lastFrame = StillFrame(image: image, generation: next.generation, at: next.at)
-          self.serveStills()
         }
+        // A newer frame arrived during this copy: copy that one first (at once, a still
+        // is waiting) rather than answer with an older screen.
+        self.serveStills()
         self.scheduleCopy()
       }
     }
@@ -811,7 +814,8 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     timer.schedule(deadline: .now() + .milliseconds(Self.stillWaitMs))
     timer.setEventHandler { [weak self] in self?.endStill(id, detail: "no-frame") }
     timer.resume()
-    stillWaiters.append(StillWaiter(id: id, path: path, windowIds: Set(windowIds), timer: timer))
+    stillWaiters.append(
+      StillWaiter(id: id, path: path, windowIds: Set(windowIds), requestedAt: Date(), timer: timer))
     // A newer frame is on its way: wait for it rather than serve an older one.
     if copyInFlight || pendingFrame != nil { scheduleCopy() } else { serveStills() }
   }
@@ -822,14 +826,20 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     emit(["event": "still", "id": id, "ok": false, "code": "failed", "detail": detail])
   }
 
+  /// Answers each waiter with the newest frame: the cached one when no newer frame is
+  /// queued or being copied, or once it arrived after the request. Otherwise the newer
+  /// frame is copied first (each copy starts later than the last, so this settles
+  /// within a copy or two, inside the waiter's deadline).
   func serveStills() {
     guard !stillWaiters.isEmpty, state == .recording, filterPending == 0, let display,
       let frame = lastFrame, frame.generation == filterGeneration
     else { return }
-    let waiters = stillWaiters
-    stillWaiters.removeAll()
+    let newerQueued = copyInFlight || pendingFrame != nil
+    let ready = stillWaiters.filter { !newerQueued || frame.at >= $0.requestedAt }
+    guard !ready.isEmpty else { return }
+    stillWaiters.removeAll { waiter in ready.contains { $0.id == waiter.id } }
     let pointWidth = max(1, display.width)
-    for waiter in waiters {
+    for waiter in ready {
       waiter.timer.cancel()
       // Every window the caller needs hidden must be hidden by the stream's own filter.
       guard waiter.windowIds.isSubset(of: confirmedExcluded) else {
@@ -839,8 +849,35 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
         ])
         continue
       }
-      stillQueue.async { writeStill(frame, to: waiter, pointWidth: pointWidth) }
+      stillQueue.async {
+        let written = writeStill(frame, to: waiter)
+        self.queue.async { self.commitStill(frame, waiter, written: written, pointWidth: pointWidth) }
+      }
     }
+  }
+
+  /// After encoding: only a request still current (recording, same filter) is answered
+  /// with its file; otherwise the file goes and the request fails. A process ending
+  /// before this leaves the file to main, which removes every path it issued on close.
+  func commitStill(_ frame: StillFrame, _ waiter: StillWaiter, written: Bool, pointWidth: Int) {
+    let current = state == .recording && filterPending == 0
+      && frame.generation == filterGeneration && waiter.windowIds.isSubset(of: confirmedExcluded)
+    guard written, current else {
+      try? FileManager.default.removeItem(atPath: waiter.path)
+      return emit([
+        "event": "still", "id": waiter.id, "ok": false, "code": "failed",
+        "detail": written ? "expired" : "png",
+      ])
+    }
+    var result: [String: Any] = [
+      "event": "still", "id": waiter.id, "ok": true, "path": waiter.path,
+      "width": frame.image.width, "height": frame.image.height,
+      "displayScale": Double(frame.image.width) / Double(pointWidth),
+      "capturedAt": ISO8601DateFormatter().string(from: frame.at),
+      "captureApi": "sck-stream-frame/1",
+    ]
+    if let hash = differenceHash(frame.image) { result["hash"] = hash }
+    emit(result)
   }
 
   // MARK: Lifecycle
@@ -903,7 +940,7 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
         if let stopError = stopError as NSError? {
           finished["errorDomain"] = stopError.domain
           finished["errorCode"] = stopError.code
-          finished["errorDetail"] = stopError.localizedDescription
+          finished["errorDetail"] = String(stopError.localizedDescription.prefix(200))
         }
         emit(finished)
         exit(0)
@@ -992,29 +1029,19 @@ func ownedImage(_ pixels: CVPixelBuffer) -> CGImage? {
     provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
 }
 
-/// Writes one still for `requestStill` as PNG and reports it (off the writer queue).
+/// Encodes one still as PNG at its request's path (off the writer queue); true if written.
 @available(macOS 12.3, *)
-func writeStill(_ frame: Recorder.StillFrame, to waiter: Recorder.StillWaiter, pointWidth: Int) {
-  let image = frame.image
+func writeStill(_ frame: Recorder.StillFrame, to waiter: Recorder.StillWaiter) -> Bool {
   guard
     let destination = CGImageDestinationCreateWithURL(
       URL(fileURLWithPath: waiter.path) as CFURL, "public.png" as CFString, 1, nil)
-  else {
-    return emit(["event": "still", "id": waiter.id, "ok": false, "code": "failed", "detail": "png"])
-  }
-  CGImageDestinationAddImage(destination, image, nil)
+  else { return false }
+  CGImageDestinationAddImage(destination, frame.image, nil)
   guard CGImageDestinationFinalize(destination) else {
-    return emit(["event": "still", "id": waiter.id, "ok": false, "code": "failed", "detail": "png"])
+    try? FileManager.default.removeItem(atPath: waiter.path)
+    return false
   }
-  var result: [String: Any] = [
-    "event": "still", "id": waiter.id, "ok": true, "path": waiter.path,
-    "width": image.width, "height": image.height,
-    "displayScale": Double(image.width) / Double(pointWidth),
-    "capturedAt": ISO8601DateFormatter().string(from: frame.at),
-    "captureApi": "sck-stream-frame/1",
-  ]
-  if let hash = differenceHash(image) { result["hash"] = hash }
-  emit(result)
+  return true
 }
 
 func stillFailure(_ code: String, _ detail: String) -> Never {

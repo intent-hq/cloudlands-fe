@@ -146,6 +146,11 @@ interface ActiveClip {
   pauseReplies: ((paused: boolean) => void)[];
   /** Stills asked of this clip's stream, by request id; null when the clip ended. */
   stillReplies: Map<string, (event: HelperEvent | null) => void>;
+  /**
+   * Every still path main issued and has not removed yet (by request id), including
+   * ones whose reply came too late. Only these paths are ever removed.
+   */
+  stillFiles: Map<string, string>;
   timers: Set<unknown>;
   /** Wall time spent paused before the current pause, and when that pause began. */
   pausedMs: number;
@@ -443,7 +448,10 @@ export function createDockScreenRecorder(
         if (reply) {
           clip.stillReplies.delete(id);
           reply(event);
+          return;
         }
+        // Too late (main stopped waiting): its file, if any, is removed by our own path.
+        dropStillFile(clip, id);
         return;
       }
       case 'exclude':
@@ -487,6 +495,12 @@ export function createDockScreenRecorder(
   };
 
   let stillSequence = 0;
+  const dropStillFile = (clip: ActiveClip, id: string) => {
+    const file = clip.stillFiles.get(id);
+    if (file === undefined) return;
+    clip.stillFiles.delete(id);
+    void deps.removeFile(file).catch(() => undefined);
+  };
   /** The still from the clip's own stream (the helper writes it next to the clip). */
   const streamStill = async (
     clip: ActiveClip,
@@ -497,6 +511,7 @@ export function createDockScreenRecorder(
     stillSequence += 1;
     const id = `still-${stillSequence}`;
     const file = `${clip.outputPath.replace(/\.mp4$/, '')}.${id}.png`;
+    clip.stillFiles.set(id, file);
     const reply = new Promise<HelperEvent | null>((resolve) => {
       clip.stillReplies.set(id, resolve);
       later(clip, STREAM_STILL_TIMEOUT_MS, () => {
@@ -511,11 +526,14 @@ export function createDockScreenRecorder(
     });
     if (!asked) {
       clip.stillReplies.delete(id);
+      dropStillFile(clip, id);
       return fail('failed', 'helper-gone');
     }
     const raw = await reply;
+    // Timed out or ended: the path stays known, so a late reply or the helper's exit
+    // removes whatever it wrote.
+    if (!raw) return fail('failed', 'still-timeout');
     try {
-      if (!raw) return fail('failed', 'still-timeout');
       if (raw.ok !== true)
         return fail(errorCode(raw.code), typeof raw.detail === 'string' ? raw.detail : 'still');
       if (raw.path !== file) return fail('failed', 'malformed');
@@ -525,7 +543,7 @@ export function createDockScreenRecorder(
       logger.warn('Recording still could not be read', { error });
       return fail('failed', 'still-read');
     } finally {
-      void deps.removeFile(file).catch(() => undefined);
+      dropStillFile(clip, id);
     }
   };
 
@@ -699,6 +717,7 @@ export function createDockScreenRecorder(
       excludeReplies: [],
       pauseReplies: [],
       stillReplies: new Map(),
+      stillFiles: new Map(),
       timers: new Set(),
       pausedMs: 0,
       pausedAt: null,
@@ -734,6 +753,8 @@ export function createDockScreenRecorder(
     });
     // `close` (not `exit`) so every stdout line, including `finished`, is seen first.
     child.on('close', (code, signal) => {
+      // The helper is gone: nothing more is written; remove every still it may have left.
+      for (const id of [...clip.stillFiles.keys()]) dropStillFile(clip, id);
       // `finished` may still be stat-ing the file; it settles on its own.
       if (clip.phase === 'finishing' && code === 0) return;
       if (clip.phase !== 'ended')
