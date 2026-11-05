@@ -379,6 +379,8 @@ export function setupDockCaptureEditorIPC(): void {
     if (!parsed.success) return false;
     const pending = pendingSaves.get(parsed.data.requestId);
     if (!pending || event.sender !== pending.owner.sender) return false;
+    // The dock document itself, never one of its child frames.
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
     if (getStrictBackendBindingForWebContents(event.sender) !== pending.owner.binding) return false;
     settleSave(parsed.data.requestId, parsed.data);
     return true;
