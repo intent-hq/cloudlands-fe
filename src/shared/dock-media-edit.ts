@@ -64,9 +64,11 @@ export const DockMediaBatchSchema = z
 export type DockMediaBatch = z.infer<typeof DockMediaBatchSchema>;
 export const DockMediaSourceSchema = z
   .object({
+    /** Immutable pixel-generation identity; a retake may replace it under the same logical attachment. */
     id,
     revision,
     kind: z.enum(['recording', 'screenshot']),
+    /** Daemon file attachment identity, distinct from the logical image/clip ID. */
     attachmentId: id,
     path: z
       .string()
@@ -249,20 +251,47 @@ function atTime(atMs: number, ranges: readonly DockMediaRange[], durationMs: num
   const at = atMs === durationMs ? Math.max(0, atMs - 0.001) : atMs;
   return ranges.some((range) => at >= range.startMs && at < range.endMs);
 }
+export const DOCK_MEDIA_POINT_RADIUS = 6;
+
+/** Canonical source-pixel hit/crop/resize rectangle. Text uses top-left and all lines. */
+export function dockMediaGeometryRect(g: DockMediaGeometry): DockMediaRect {
+  if (g.kind === 'point')
+    return {
+      x: g.x - DOCK_MEDIA_POINT_RADIUS,
+      y: g.y - DOCK_MEDIA_POINT_RADIUS,
+      w: DOCK_MEDIA_POINT_RADIUS * 2,
+      h: DOCK_MEDIA_POINT_RADIUS * 2,
+    };
+  if (g.kind === 'rect') return { x: g.x, y: g.y, w: g.w, h: g.h };
+  if (g.kind === 'text') {
+    const lines = g.text.split('\n');
+    return {
+      x: g.x,
+      y: g.y,
+      w: Math.max(1, ...lines.map((line) => line.length)) * g.fontSize * 0.65,
+      h: lines.length * g.fontSize * 1.4,
+    };
+  }
+  const points =
+    g.kind === 'path' ? g.points : [g.from, g.to];
+  const left = Math.min(...points.map((p) => p.x)),
+    top = Math.min(...points.map((p) => p.y));
+  return {
+    x: left,
+    y: top,
+    w: Math.max(1, Math.max(...points.map((p) => p.x)) - left),
+    h: Math.max(1, Math.max(...points.map((p) => p.y)) - top),
+  };
+}
 function croppedOut(mark: DockMediaEditMark, crop: DockMediaEdit['crop']): boolean {
   if (!crop) return false;
-  const g = mark.geometry;
-  const points =
-    g.kind === 'path'
-      ? g.points
-      : g.kind === 'arrow'
-        ? [g.from, g.to]
-        : [{ x: g.x, y: g.y }, ...(g.kind === 'rect' ? [{ x: g.x + g.w, y: g.y + g.h }] : [])];
-  const left = Math.min(...points.map((p) => p.x)),
-    right = Math.max(...points.map((p) => p.x));
-  const top = Math.min(...points.map((p) => p.y)),
-    bottom = Math.max(...points.map((p) => p.y));
-  return right < crop.x || left > crop.x + crop.w || bottom < crop.y || top > crop.y + crop.h;
+  const bounds = dockMediaGeometryRect(mark.geometry);
+  return (
+    bounds.x + bounds.w < crop.x ||
+    bounds.x > crop.x + crop.w ||
+    bounds.y + bounds.h < crop.y ||
+    bounds.y > crop.y + crop.h
+  );
 }
 export function canUseHighlights(edit: DockMediaEdit): boolean {
   const kept = subtractDockMediaRanges([edit.trim], edit.cuts);
@@ -486,4 +515,67 @@ export function planDockMediaOutput(
     }
   }
   return { kept, clips, muted: edit.voice !== 'audio', marks, transcript: text, errors };
+}
+
+/** Persisted with its owning attachment; never a second editor-owned preference store. */
+export const DockSavedMediaSchema = z
+  .object({
+    source: DockMediaSourceSchema,
+    saved: DockMediaEditSchema.nullable(),
+    transcript: DockMediaTranscriptSchema.nullable(),
+  })
+  .strict()
+  .superRefine((media, ctx) => {
+    if (
+      media.saved &&
+      (media.saved.sourceId !== media.source.id ||
+        media.saved.sourceRevision !== media.source.revision ||
+        media.saved.kind !== media.source.kind)
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Saved edit belongs to a different source',
+      });
+  });
+export type DockSavedMedia = z.infer<typeof DockSavedMediaSchema>;
+export type DockMediaSaveResult =
+  | { status: 'saved'; media: DockSavedMedia }
+  | { status: 'stale-source' | 'revision-conflict' | 'invalid-edit' };
+export function applyDockMediaSave(
+  media: DockSavedMedia,
+  request: DockMediaSaveRequest,
+): DockMediaSaveResult {
+  if (
+    !DockMediaSaveRequestSchema.safeParse(request).success ||
+    !DockSavedMediaSchema.safeParse(media).success
+  )
+    return { status: 'invalid-edit' };
+  if (
+    request.sourceId !== media.source.id ||
+    request.sourceRevision !== media.source.revision ||
+    request.edit.sourceId !== media.source.id ||
+    request.edit.sourceRevision !== media.source.revision ||
+    request.edit.kind !== media.source.kind
+  )
+    return { status: 'stale-source' };
+  if (
+    request.expectedEditRevision !== (media.saved?.revision ?? 0) ||
+    request.edit.revision !== request.expectedEditRevision
+  )
+    return { status: 'revision-conflict' };
+  const planned = planDockMediaOutput(request.edit, media.source, media.transcript);
+  if (
+    planned.errors.some(
+      (error) =>
+        error === 'invalid-edit' || error === 'legacy-baked-marks' || error === 'stale-source',
+    )
+  )
+    return { status: 'invalid-edit' };
+  return {
+    status: 'saved',
+    media: {
+      ...media,
+      saved: { ...structuredClone(request.edit), revision: request.expectedEditRevision + 1 },
+    },
+  };
 }
