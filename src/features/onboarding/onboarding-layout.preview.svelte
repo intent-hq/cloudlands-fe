@@ -23,7 +23,7 @@
     onOpenExternal?: (payload: unknown) => void;
     /** Plain-folder workspaces Labs on, with the remembered toggle choice. */
     plainFolder?: 'off' | 'on';
-    /** Cursor lab on, with a mocked Cursor catalog row (signed in unless `unsupported`). */
+    /** Adds a mocked Cursor catalog row (signed in unless `unsupported`). */
     cursor?: boolean | 'unsupported';
   }
   export const preview = definePreview<Props>({
@@ -83,10 +83,7 @@
   } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
   import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
-  import {
-    setLabsCursorProviderEnabled,
-    setLabsPlainFolderWorkspacesEnabled,
-  } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { setLabsPlainFolderWorkspacesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { safeLocalStorage } from '$lib/utils/safe-storage';
   import { INITIALIZE_GIT_CHOICE_STORAGE_KEY } from '$lib/components/workspace/initializer/plain-folder-create';
   import { goToStep } from '$store/renderer/slices/onboarding/onboarding-slice';
@@ -303,8 +300,6 @@
   }
   const fullCatalog = untrack(() => allProviders);
   const seededCursor = untrack(() => cursor);
-  const previousCursorLabs = appStore.state.userPreferences.labsCursorProviderEnabled;
-  if (seededCursor) appStore.dispatch(setLabsCursorProviderEnabled(true));
   const seededProviders = [
     ...(fullCatalog ? MOCK_PROVIDER_CATALOG.providers : previewProviders),
     ...(seededCursor ? [MOCK_CURSOR_PROVIDER] : []),
@@ -338,7 +333,6 @@
       );
     }
     appStore.dispatch(setAllProvidersLoading(previousLoading));
-    if (seededCursor) appStore.dispatch(setLabsCursorProviderEnabled(previousCursorLabs));
     if (seededPlainFolder) {
       appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(previousPlainFolderLabs));
       if (previousInitializeGit === null)

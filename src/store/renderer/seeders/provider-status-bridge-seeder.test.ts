@@ -256,35 +256,20 @@ describe('provider-status-bridge-seeder', () => {
   });
 
   it.each([
-    [false, false, false],
-    [false, true, true],
-    [true, false, true],
-  ])(
-    'counts an installed Cursor toward hasAnyProvider with lab=%s enabled=%s: %s',
-    async (lab, enabled, hasAny) => {
-      const previous = authority.state;
-      authority.state = {
-        ...previous,
-        userPreferences: { labsCursorProviderEnabled: lab },
-        providerSettings: { enabledProviders: { cursor: enabled } },
-      };
-      try {
-        routeDaemon({
-          'host.checkAuggie': { available: false },
-          'host.toolAvailability': NO_TOOLS,
-          'host.providerAuthStatus': authSweep(),
-          'host.providerDiscovery': { providers: [{ id: 'cursor', installed: true }] },
-        });
-        const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
-          PROVIDERS_CHANNELS.GET_AVAILABILITY,
-        );
-        expect(response.data?.providers.cursor?.available).toBe(true);
-        expect(response.data?.hasAnyProvider).toBe(hasAny);
-      } finally {
-        authority.state = previous;
-      }
-    },
-  );
+    ['an installed', { id: 'cursor', installed: true }, true],
+    ['a refused', { id: 'cursor', installed: false, unavailableReason: 'Grok agent host' }, false],
+  ])('counts %s Cursor CLI toward hasAnyProvider like any provider', async (_l, row, hasAny) => {
+    routeDaemon({
+      'host.checkAuggie': { available: false },
+      'host.toolAvailability': NO_TOOLS,
+      'host.providerAuthStatus': authSweep(),
+      'host.providerDiscovery': { providers: [row] },
+    });
+    const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+      PROVIDERS_CHANNELS.GET_AVAILABILITY,
+    );
+    expect(response.data?.hasAnyProvider).toBe(hasAny);
+  });
 
   beforeAll(async () => {
     const { withLegacyPrincipal } = await import('../../../test/fixtures/principal-state');

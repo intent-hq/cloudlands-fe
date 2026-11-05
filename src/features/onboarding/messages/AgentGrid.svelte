@@ -23,7 +23,6 @@
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
-  import { selectLabsCursorProviderEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectActiveProviderId,
     selectEnabledProviders,
@@ -154,7 +153,6 @@
   const catalogEntries$ = selectProviderCatalogEntries();
   const enabledProviders$ = selectEnabledProviders();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
-  const labsCursor$ = selectLabsCursorProviderEnabled();
 
   /** Visible providers (not hidden by env var / feature code gates),
    *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
@@ -175,7 +173,6 @@
           isFeatureEnabled: (code) => selectIsFeatureEnabled.select(state, code),
           status: statusMap[p.id],
           enabled: $enabledProviders$[p.id] === true,
-          cursorLabEnabled: $labsCursor$,
         }),
       )
       .map((p) => {

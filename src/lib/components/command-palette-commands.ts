@@ -88,20 +88,6 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
-    id: 'enable-experimental-cursor',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalCursor_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-cursor',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalCursor_label();
-    },
-    icon: faFlask,
-  },
-  {
     id: 'enable-experimental-dock',
     get label() {
       return m.lib_commandPalette_enableExperimentalDock_label();

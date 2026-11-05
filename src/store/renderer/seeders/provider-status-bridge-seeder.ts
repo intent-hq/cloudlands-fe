@@ -61,8 +61,6 @@ import {
   selectPrincipalConnectionContext,
 } from '../slices/principal/principal-selectors';
 import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
-import { selectLabsCursorProviderEnabled } from '../slices/user-preferences/user-preferences-selectors';
-import { selectEnabledProviders } from '../slices/provider-settings/provider-settings-selectors';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
 import { m } from '$shared/paraglide/messages.js';
@@ -194,9 +192,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     ) as ProviderAvailabilityResult['providers'];
     return {
       providers: statuses,
-      hasAnyProvider: Object.entries(statuses).some(([key, status]) =>
-        countsTowardAnyProvider(PROVIDER_AVAILABILITY_KEY_TO_ID[key] ?? key, status),
-      ),
+      hasAnyProvider: Object.values(statuses).some((status) => status.available),
       hiddenProviders: discovery.providers.filter((row) => row.gatedOff).map((row) => row.id),
     };
   }
@@ -280,7 +276,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       grok.available ||
       unsloth.available ||
       antigravity.available ||
-      countsTowardAnyProvider('cursor', cursor),
+      cursor.available,
     providers: {
       auggie,
       claudeCode,
@@ -324,19 +320,6 @@ function cursorStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): Provid
     });
   }
   return status;
-}
-
-/**
- * Whether an available provider means the host already has one to use. Cursor
- * counts only where it can be used: enabled, or offered by its Labs switch.
- */
-function countsTowardAnyProvider(providerId: string, status: ProviderStatus): boolean {
-  if (!status.available) return false;
-  if (providerId !== 'cursor') return true;
-  return (
-    selectLabsCursorProviderEnabled.select(appStore.state) ||
-    selectEnabledProviders.select(appStore.state).cursor === true
-  );
 }
 
 /** Preserve missing-runner guidance only when discovery confirms the cause. */

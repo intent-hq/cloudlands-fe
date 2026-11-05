@@ -120,36 +120,6 @@ describe('groupProviderEntries', () => {
     expect(result.supported).toEqual([]);
   });
 
-  it.each([
-    [false, false, 'hidden'],
-    [true, false, 'discovered'],
-    [false, true, 'enabled'],
-    [true, true, 'enabled'],
-  ] as const)('groups installed Cursor with lab=%s enabled=%s as %s', (lab, enabled, group) => {
-    const result = groupProviderEntries([entry('cursor', 'Cursor')], {
-      isProviderEnabled: () => enabled,
-      availabilityByProviderId: { cursor: { available: true } },
-      cursorLabEnabled: lab,
-    });
-    expect(result.enabled.map((p) => p.id)).toEqual(group === 'enabled' ? ['cursor'] : []);
-    expect(result.discovered.map((p) => p.id)).toEqual(group === 'discovered' ? ['cursor'] : []);
-    expect(result.supported).toEqual([]);
-  });
-
-  it('lists a not-installed Cursor under Supported only while the lab is on', () => {
-    const options = {
-      isProviderEnabled: () => false,
-      availabilityByProviderId: { cursor: { available: false } },
-    };
-    expect(groupProviderEntries([entry('cursor', 'Cursor')], options).supported).toEqual([]);
-    expect(
-      groupProviderEntries([entry('cursor', 'Cursor')], {
-        ...options,
-        cursorLabEnabled: true,
-      }).supported.map((p) => p.id),
-    ).toEqual(['cursor']);
-  });
-
   it('groups a disabled default provider as discovered', () => {
     const result = groupProviderEntries([entry('auggie', 'Augment Auggie')], {
       isProviderEnabled: () => false,

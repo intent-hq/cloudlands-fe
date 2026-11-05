@@ -119,14 +119,6 @@ export const selectLabsBrowserAccessEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsBrowserAccessEnabled === true;
 });
 
-/**
- * Offers Cursor on this device. Entry-point gate only: never use it to disable an
- * enabled Cursor (read `providers.enabled.cursor`).
- */
-export const selectLabsCursorProviderEnabled = store.createSelector((state) => {
-  return state.userPreferences?.labsCursorProviderEnabled === true;
-});
-
 export const selectCounterScale = store.createSelector((state) => {
   return 1 / state.userPreferences.zoomFactor;
 });

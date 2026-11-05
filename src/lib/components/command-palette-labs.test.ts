@@ -7,7 +7,6 @@ vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } })
 import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
 import {
   setLabsBrowserAccessEnabled,
-  setLabsCursorProviderEnabled,
   setLabsPlainFolderWorkspacesEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
@@ -60,29 +59,6 @@ describe('command palette Labs commands', () => {
     expect(actions[2]?.type).toBe(setBrowserAccessEnabledRequested(false).type);
     expect(actions[2]?.payload).toEqual([false]);
     expect(actions).toHaveLength(3);
-  });
-
-  it('hides the Cursor command matching its current value', () => {
-    expect(isLabCommandHidden('enable-experimental-cursor', false, false, false, true)).toBe(true);
-    expect(isLabCommandHidden('disable-experimental-cursor', false, false, false, true)).toBe(
-      false,
-    );
-    expect(isLabCommandHidden('disable-experimental-cursor', false, false, false, false)).toBe(
-      true,
-    );
-    expect(isLabCommandHidden('enable-experimental-cursor', false, false, false, false)).toBe(
-      false,
-    );
-  });
-
-  it('turns the Cursor lab on and off without touching providers.enabled', () => {
-    expect(runLabCommand('enable-experimental-cursor')).toBe(true);
-    expect(runLabCommand('disable-experimental-cursor')).toBe(true);
-    expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual([
-      setLabsCursorProviderEnabled(true),
-      setLabsCursorProviderEnabled(false),
-    ]);
-    expect(mocks.setDock).not.toHaveBeenCalled();
   });
 
   it('still toggles the dock and ignores other commands', () => {

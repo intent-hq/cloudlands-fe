@@ -19,11 +19,9 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 async function buildState({
-  lab,
   cursorEnabled,
   cursor = { available: true, authenticated: true },
 }: {
-  lab: boolean;
   cursorEnabled: boolean;
   cursor?: object;
 }) {
@@ -33,8 +31,6 @@ async function buildState({
     await import('$store/renderer/slices/provider-settings/provider-settings-slice');
   const { initialState: availabilityInitialState } =
     await import('$store/renderer/slices/agent-availability/agent-availability-slice');
-  const { initialState: userPreferencesInitialState } =
-    await import('$store/renderer/slices/user-preferences/user-preferences-slice');
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
   const { MOCK_CURSOR_PROVIDER, MOCK_PROVIDER_CATALOG } =
@@ -47,9 +43,8 @@ async function buildState({
     ),
     providerSettings: {
       ...providerSettingsInitialState,
-      enabledProviders: { codex: true, cursor: cursorEnabled },
+      enabledProviders: cursorEnabled ? { codex: true, cursor: true } : { codex: true },
     },
-    userPreferences: { ...userPreferencesInitialState, labsCursorProviderEnabled: lab },
     model: { ...modelInitialState, defaultProviderId: 'codex', providerModels: {} },
     featureCodes: { activeFeatures: [], initialized: true },
     agentAvailability: {
@@ -66,10 +61,10 @@ async function buildState({
 
 warmImport(() => import('./AgentGrid.svelte'));
 
-describe('AgentGrid Cursor Labs gate', () => {
+describe('AgentGrid Cursor card', () => {
   afterEach(() => cleanup());
 
-  async function renderGrid(options: { lab: boolean; cursorEnabled: boolean; cursor?: object }) {
+  async function renderGrid(options: { cursorEnabled: boolean; cursor?: object }) {
     mocks.state.current = await buildState(options);
     const AgentGrid = (await import('./AgentGrid.svelte')).default;
     const result = render(AgentGrid);
@@ -79,14 +74,24 @@ describe('AgentGrid Cursor Labs gate', () => {
     return result;
   }
 
-  it.each([
-    [false, false, false],
-    [false, true, false],
-    [true, false, true],
-    [true, true, true],
-  ])('lab=%s enabled=%s shows the Cursor card: %s', async (lab, cursorEnabled, shown) => {
-    const { container } = await renderGrid({ lab, cursorEnabled });
-    expect(container.querySelector('[data-provider-id="cursor"]') !== null).toBe(shown);
+  it.each([false, true])('shows the Cursor card with enabled=%s', async (cursorEnabled) => {
+    const { container } = await renderGrid({ cursorEnabled });
+    expect(container.querySelector('[data-provider-id="cursor"]')).not.toBeNull();
+  });
+
+  it('does not enable an installed Cursor just by showing its card', async () => {
+    const { providerEnablementSeedRequested, setProviderEnabled } =
+      await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+    mocks.dispatch.mockClear();
+    await renderGrid({ cursorEnabled: false });
+    const enables = mocks.dispatch.mock.calls
+      .map(([action]) => action as { type: string; payload?: unknown[] })
+      .filter(
+        (action) =>
+          action.type === setProviderEnabled.type ||
+          action.type === providerEnablementSeedRequested.type,
+      );
+    expect(enables).toEqual([]);
   });
 
   it('labels a refused Cursor CLI Unsupported with its guidance, not Not installed', async () => {
@@ -94,7 +99,6 @@ describe('AgentGrid Cursor Labs gate', () => {
     const reason = 'cursor-agent runs the Grok agent host, not the Cursor CLI.';
     const warning = m.settings_providers_cursorUnsupported_warning({ reason });
     const { container } = await renderGrid({
-      lab: true,
       cursorEnabled: false,
       cursor: { available: false, unavailableReason: reason, warning },
     });

@@ -26,8 +26,6 @@ export interface GroupProviderEntriesOptions {
   availabilityByProviderId: Readonly<Record<string, { readonly available: boolean } | undefined>>;
   hiddenProviderIds?: readonly string[];
   activeProviderId?: string | null;
-  /** Labs > Cursor on this device; offers an unenabled Cursor row. */
-  cursorLabEnabled?: boolean;
 }
 
 /** Strict alphabetical comparator by display name. */
@@ -66,7 +64,6 @@ export function groupProviderEntries<T extends OrderableProviderEntry>(
     availabilityByProviderId,
     hiddenProviderIds,
     activeProviderId,
-    cursorLabEnabled = false,
   }: GroupProviderEntriesOptions,
 ): ProviderEntryGroups<T> {
   const groups: ProviderEntryGroups<T> = {
@@ -77,11 +74,7 @@ export function groupProviderEntries<T extends OrderableProviderEntry>(
 
   for (const entry of orderProviderEntries(entries, hiddenProviderIds)) {
     const enabled = isProviderEnabled(entry.id);
-    if (
-      !isProviderListed(entry.id, availabilityByProviderId[entry.id]?.available, enabled, {
-        cursorLabEnabled,
-      })
-    )
+    if (!isProviderListed(entry.id, availabilityByProviderId[entry.id]?.available, enabled))
       continue;
     if (enabled) {
       groups.enabled.push(entry);

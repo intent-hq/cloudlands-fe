@@ -31,7 +31,6 @@ import { loadEnabledProvidersFromStorage } from '$store/renderer/slices/provider
 import ProviderSelector from './ProviderSelector.svelte';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { setFileSpecialists } from '$store/renderer/slices/specialists/specialists-slice';
-import { setLabsCursorProviderEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { MOCK_CURSOR_PROVIDER } from '../../../test/fixtures/provider-catalog.fixture';
 
 export const previewProviders = [
@@ -197,15 +196,13 @@ function cursorPreviewStatus(
   }
 }
 
-/** Cursor lab on with a mocked catalog row; `enabled` puts the row under Enabled. */
+/** Mocked Cursor catalog row; off unless `enabled`, like other opt-in providers. */
 export function setupCursorProviderPreview(
   status: 'signed-in' | 'signed-out' | 'not-installed' | 'unsupported',
-  { lab = true, enabled = false }: { lab?: boolean; enabled?: boolean } = {},
+  { enabled = false }: { enabled?: boolean } = {},
 ) {
   const restoreProviders = setupProviderSelector();
-  const previousLab = appStore.state.userPreferences.labsCursorProviderEnabled;
   const previousStatus = selectProviderStatusMap.select(appStore.state).cursor;
-  appStore.dispatch(setLabsCursorProviderEnabled(lab));
   appStore.dispatch(
     providerCatalogLoaded({ providers: [...previewProviders, MOCK_CURSOR_PROVIDER] }),
   );
@@ -220,7 +217,6 @@ export function setupCursorProviderPreview(
   appStore.dispatch(checkSingleProviderSuccess('cursor', cursorPreviewStatus(status)));
   return () => {
     appStore.dispatch(checkSingleProviderSuccess('cursor', previousStatus ?? { available: false }));
-    appStore.dispatch(setLabsCursorProviderEnabled(previousLab));
     restoreProviders();
   };
 }
@@ -236,7 +232,6 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
       setup: () => setupProviderDisablePreview('unavailable', false),
     },
     mixed: { props: {}, setup: setupProviderSelector },
-    // Cursor rows exist only while Cmd+K > Enable experimental Cursor provider is on.
     'cursor-signed-in': { props: {}, setup: () => setupCursorProviderPreview('signed-in') },
     'cursor-signed-out': { props: {}, setup: () => setupCursorProviderPreview('signed-out') },
     'cursor-not-installed': {
@@ -245,10 +240,10 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
     },
     // cursor-agent on the Grok agent host: the daemon's reason replaces Install.
     'cursor-unsupported': { props: {}, setup: () => setupCursorProviderPreview('unsupported') },
-    // Lab off never hides an enabled Cursor: the row keeps its Disable action.
-    'cursor-enabled-lab-off': {
+    // Enabled by the user: the row moves to Enabled and offers Disable.
+    'cursor-enabled': {
       props: {},
-      setup: () => setupCursorProviderPreview('signed-in', { lab: false, enabled: true }),
+      setup: () => setupCursorProviderPreview('signed-in', { enabled: true }),
     },
     profiles: {
       props: {},

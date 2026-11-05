@@ -43,11 +43,9 @@ vi.mock('$store/renderer/store', async () => {
 const cursorStatus = { available: true, authenticated: true };
 
 async function buildState({
-  lab,
   cursorEnabled,
   cursor = cursorStatus,
 }: {
-  lab: boolean;
   cursorEnabled: boolean;
   cursor?: object;
 }) {
@@ -61,8 +59,6 @@ async function buildState({
     await import('$store/renderer/slices/provider-settings/provider-settings-slice');
   const { initialState: availabilityInitialState } =
     await import('$store/renderer/slices/agent-availability/agent-availability-slice');
-  const { initialState: userPreferencesInitialState } =
-    await import('$store/renderer/slices/user-preferences/user-preferences-slice');
   const {
     initialState: providerCatalogInitialState,
     providerCatalogLoaded,
@@ -83,10 +79,10 @@ async function buildState({
     ),
     providerSettings: {
       ...providerSettingsInitialState,
-      enabledProviders: { codex: true, cursor: cursorEnabled },
+      // Absent, not false, when not enabled: an installed Cursor must not count as enabled.
+      enabledProviders: cursorEnabled ? { codex: true, cursor: true } : { codex: true },
       nonDisableableProviderIds: [],
     },
-    userPreferences: { ...userPreferencesInitialState, labsCursorProviderEnabled: lab },
     model: { ...modelInitialState, defaultProviderId: 'codex', providerModels: {} },
     specialists: { ...specialistsInitialState },
     featureCodes: { activeFeatures: [], initialized: true },
@@ -130,7 +126,7 @@ warmImport(() => import('./ProviderSelector.svelte'));
 
 const CURSOR_ACTIONS = 'Provider actions for Cursor';
 
-describe('ProviderSelector Cursor Labs gate', () => {
+describe('ProviderSelector Cursor row', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.invoke.mockImplementation(async (channel: string) => {
@@ -148,11 +144,7 @@ describe('ProviderSelector Cursor Labs gate', () => {
     cleanup();
   });
 
-  async function renderSelector(options: {
-    lab: boolean;
-    cursorEnabled: boolean;
-    cursor?: object;
-  }) {
+  async function renderSelector(options: { cursorEnabled: boolean; cursor?: object }) {
     mocks.state.current = await buildState(options);
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
@@ -164,23 +156,51 @@ describe('ProviderSelector Cursor Labs gate', () => {
     return result;
   }
 
-  it('shows no Cursor row while the lab is off and Cursor is not enabled', async () => {
-    const result = await renderSelector({ lab: false, cursorEnabled: false });
-    expect(result.queryByRole('button', { name: CURSOR_ACTIONS })).toBeNull();
-    expect(result.queryByText('Cursor')).toBeNull();
-  });
-
-  it('offers an installed Cursor row under Discovered while the lab is on', async () => {
-    const result = await renderSelector({ lab: true, cursorEnabled: false });
+  it('lists an installed Cursor under Available, not Enabled, until the user enables it', async () => {
+    const result = await renderSelector({ cursorEnabled: false });
     const discovered = result.getByRole('region', {
       name: m.settings_providers_groupDiscovered_label(),
     });
     expect(within(discovered).getByRole('button', { name: CURSOR_ACTIONS })).toBeTruthy();
     expect(within(discovered).getByRole('img', { name: 'Cursor' })).toBeTruthy();
+    expect(
+      within(discovered).getByRole('button', { name: m.settings_providers_enable() }),
+    ).toBeTruthy();
+    const enabledGroup = result.getByRole('region', {
+      name: m.settings_providers_groupEnabled_label(),
+    });
+    expect(within(enabledGroup).queryByRole('button', { name: CURSOR_ACTIONS })).toBeNull();
+    // Detecting the CLI never enables it.
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [expect.objectContaining({ providerId: 'cursor' }), expect.anything()],
+      }),
+    );
   });
 
-  it('keeps an enabled Cursor row and its Disable action when the lab is off', async () => {
-    const result = await renderSelector({ lab: false, cursorEnabled: true });
+  it('enables Cursor only from the Enable button', async () => {
+    const result = await renderSelector({ cursorEnabled: false });
+    const discovered = result.getByRole('region', {
+      name: m.settings_providers_groupDiscovered_label(),
+    });
+    mocks.dispatch.mockClear();
+    await fireEvent.click(
+      within(discovered).getByRole('button', { name: m.settings_providers_enable() }),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [
+          { providerId: 'cursor', enabled: true },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
+      }),
+    );
+  });
+
+  it('lists an enabled Cursor under Enabled with its Disable action', async () => {
+    const result = await renderSelector({ cursorEnabled: true });
     const enabledGroup = result.getByRole('region', {
       name: m.settings_providers_groupEnabled_label(),
     });
@@ -204,7 +224,6 @@ describe('ProviderSelector Cursor Labs gate', () => {
 
   it('shows the Cursor CLI version on an installed row', async () => {
     const result = await renderSelector({
-      lab: true,
       cursorEnabled: false,
       cursor: { ...cursorStatus, version: '2026.11.05-86047df' },
     });
@@ -215,7 +234,6 @@ describe('ProviderSelector Cursor Labs gate', () => {
     const reason = 'cursor-agent runs the Grok agent host, not the Cursor CLI.';
     const warning = m.settings_providers_cursorUnsupported_warning({ reason });
     const result = await renderSelector({
-      lab: true,
       cursorEnabled: false,
       cursor: { available: false, version: 'grok-agent 1.4.2', unavailableReason: reason, warning },
     });
@@ -232,7 +250,6 @@ describe('ProviderSelector Cursor Labs gate', () => {
 
   it('still offers Install for a Cursor CLI that is simply not installed', async () => {
     const result = await renderSelector({
-      lab: true,
       cursorEnabled: false,
       cursor: { available: false },
     });
