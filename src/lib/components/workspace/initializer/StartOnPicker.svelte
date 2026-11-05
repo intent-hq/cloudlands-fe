@@ -1,7 +1,11 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import * as Menu from '$lib/components/ui/menu';
+  import { Combobox, type ComboboxOption } from '$lib/components/ui/combobox';
+  import * as Popover from '$lib/components/ui/popover';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
+  import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { faDesktop } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -9,7 +13,7 @@
   import { workspacePickerStyles } from './workspace-picker-styles';
 
   /**
-   * New Workspace → "Start On": the machine the first agent starts on. Only
+   * New Workspace → "Machines": the machine the first agent starts on. Only
    * rendered while another machine can take it (see `startOnVisible`).
    */
   interface Props {
@@ -37,15 +41,41 @@
   const labelId = `${uid}-start-on-label`;
   const valueId = `${uid}-start-on-value`;
   const dialogPortalTarget = useDialogPortalTarget();
+  const isMobile = new IsMobile();
+  let menuBelow = $state(false);
+  let trigger = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+  let searchInput = $state<HTMLInputElement | null>(null);
   const selected = $derived(options.find((option) => option.id === value) ?? options[0]);
+  const machineOptions = $derived<ComboboxOption[]>(
+    options.map((option) => ({
+      // Prefix every id so the backend's empty id is a selectable combobox value.
+      value: `machine:${option.id}`,
+      label: option.label,
+      description: option.reason ?? option.platform ?? undefined,
+      disabled: option.disabled,
+      data: option,
+    })),
+  );
+  $effect(() => {
+    if (!open) return;
+    return pushEscapeLayer((event) => {
+      if (!event.isComposing) open = false;
+    });
+  });
 </script>
 
 <div class={presentation === 'footer' ? 'min-w-0' : 'w-full'} data-testid="start-on-picker">
-  <Menu.Root bind:open>
-    <Menu.Trigger>
+  <Popover.Root
+    bind:open
+    onOpenChange={(next) => {
+      if (next) menuBelow = !canPlaceBeside(trigger, 360);
+    }}
+  >
+    <Popover.Trigger>
       {#snippet child({ props })}
         <Button
           {...props}
+          bind:ref={trigger}
           variant="ghost"
           size="sm"
           type="button"
@@ -70,39 +100,57 @@
           </span>
         </Button>
       {/snippet}
-    </Menu.Trigger>
-    <Menu.Content
+    </Popover.Trigger>
+    <Popover.Content
+      role="dialog"
       portalProps={{ to: dialogPortalTarget() }}
       aria-label={m.workspace_initialAgentPicker_startOn_label()}
-      class="w-[320px] max-w-[calc(100vw-1rem)]"
+      side={presentation === 'footer' ? 'top' : isMobile.current || menuBelow ? 'bottom' : 'left'}
+      align={presentation === 'footer' || isMobile.current || menuBelow ? 'end' : 'start'}
+      sideOffset={presentation === 'footer' || isMobile.current || menuBelow ? 4 : 24}
+      strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
+      preventScroll={false}
+      class="flex min-h-0 w-[360px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
+      style="max-height: min(440px, var(--bits-popover-content-available-height, calc(100dvh - 1rem)))"
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        searchInput?.focus();
+      }}
+      onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        trigger?.focus();
+      }}
+      onkeydown={(event) => {
+        if (event.key === 'Enter') event.stopPropagation();
+      }}
     >
-      <Menu.RadioGroup
-        value={selected?.id}
-        onValueChange={(next) => {
-          if (next !== value) onChange(next);
+      <Combobox
+        value={selected ? `machine:${selected.id}` : undefined}
+        options={machineOptions}
+        {open}
+        bind:inputRef={searchInput}
+        ariaLabel={m.workspace_initialAgentPicker_startOn_label()}
+        placeholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
+        searchPlaceholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
+        staticPosition
+        inputVariant="search"
+        size="compact"
+        class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1 pb-2"
+        inputClass="shrink-0"
+        rowClass={workspacePickerStyles.row}
+        viewportClass="min-h-0 max-h-none flex-1 p-0"
+        contentClass="flex min-h-0 max-h-none flex-1 flex-col border-0 shadow-none"
+        oncommit={(_, option) => {
+          const machine = option.data as StartOnOption;
+          if (machine.id !== value) onChange(machine.id);
+          open = false;
+        }}
+        onopenchange={(next) => {
+          if (!next) open = false;
         }}
       >
-        {#each options as option (option.id)}
-          <Menu.RadioItem
-            value={option.id}
-            disabled={option.disabled}
-            closeOnSelect
-            class="h-auto py-2 whitespace-normal"
-            data-testid="start-on-option"
-            data-machine-id={option.id}
-          >
-            {#snippet leading()}<Fa icon={faDesktop} class={workspacePickerStyles.icon} />{/snippet}
-            <span class="min-w-0 flex-1">
-              <span class="block truncate">{option.label}</span>
-              {#if option.reason || option.platform}
-                <span class="block truncate text-xs text-subtle"
-                  >{option.reason ?? option.platform}</span
-                >
-              {/if}
-            </span>
-          </Menu.RadioItem>
-        {/each}
-      </Menu.RadioGroup>
-    </Menu.Content>
-  </Menu.Root>
+        {#snippet optionIcon()}<Fa icon={faDesktop} class={workspacePickerStyles.icon} />{/snippet}
+      </Combobox>
+    </Popover.Content>
+  </Popover.Root>
 </div>
