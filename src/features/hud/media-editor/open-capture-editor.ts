@@ -66,11 +66,17 @@ export function dockRecordingEditorRequest(input: {
     title: '',
     durationMs: clip.durationMs,
     marks,
-    provenance: {
-      hasMicAudio: clip.hasMicAudio,
-      // Marks drawn while recording are part of the recorded frames.
-      visuals: marks.length > 0 ? 'baked-marks' : 'clean',
-    },
+    // The canonical source is the authority on how it was captured; without one, the
+    // clip's own record decides, conservatively (any recorded mark counts as drawn in).
+    provenance: source
+      ? {
+          ...(source.audio === 'unknown' ? {} : { hasMicAudio: source.audio === 'available' }),
+          visuals: source.visuals,
+        }
+      : {
+          hasMicAudio: clip.hasMicAudio,
+          visuals: marks.length > 0 ? 'baked-marks' : 'clean',
+        },
     ...(source && media
       ? { source, saved: media.saved ?? null, transcript: media.transcript ?? null }
       : {}),
