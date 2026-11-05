@@ -50,8 +50,16 @@ export const keyboardInterceptorScript = `
         if (isMod && !e.altKey && ['[', ']', '{', '}'].includes(e.key)) {
           forwardPanelShortcut(e);
         }
-        // Forward column focus (Mod+Alt+Left/Right).
-        if (isMod && e.altKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        // Forward column focus (Mod+Alt+Left/Right). Mod is Cmd on macOS and Ctrl elsewhere,
+        // so Ctrl+Opt+Arrow on a Mac stays with the page.
+        const isMac = /mac/i.test(navigator.platform);
+        const isPlatformMod = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+        if (
+          isPlatformMod &&
+          e.altKey &&
+          !e.shiftKey &&
+          (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+        ) {
           forwardPanelShortcut(e);
         }
         // Cmd+Shift+C / Ctrl+Shift+C - copy current browser URL

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   getBrowserHistoryDirection,
   keyboardInterceptorScript,
@@ -7,6 +7,8 @@ import {
 } from './browser-keyboard-interceptor';
 
 describe('browser keyboard interceptor script', () => {
+  afterEach(() => vi.restoreAllMocks());
+
   beforeAll(() => {
     new Function(keyboardInterceptorScript)();
     // Re-injection on a later dom-ready is a no-op.
@@ -23,11 +25,12 @@ describe('browser keyboard interceptor script', () => {
   }
 
   it.each([
-    ['macOS next', { key: 'ArrowRight', metaKey: true, altKey: true }],
-    ['macOS previous', { key: 'ArrowLeft', metaKey: true, altKey: true }],
-    ['Windows/Linux next', { key: 'ArrowRight', ctrlKey: true, altKey: true }],
-    ['Windows/Linux previous', { key: 'ArrowLeft', ctrlKey: true, altKey: true }],
-  ] as const)('forwards %s column focus with its Alt flag', (_label, init) => {
+    ['macOS next', 'MacIntel', { key: 'ArrowRight', metaKey: true, altKey: true }],
+    ['macOS previous', 'MacIntel', { key: 'ArrowLeft', metaKey: true, altKey: true }],
+    ['Windows/Linux next', 'Win32', { key: 'ArrowRight', ctrlKey: true, altKey: true }],
+    ['Windows/Linux previous', 'Linux x86_64', { key: 'ArrowLeft', ctrlKey: true, altKey: true }],
+  ] as const)('forwards %s column focus with its Alt flag', (_label, platform, init) => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
     const { event, messages } = pressInPage(init);
     expect(event.defaultPrevented).toBe(true);
     expect(messages).toHaveLength(1);
@@ -52,6 +55,28 @@ describe('browser keyboard interceptor script', () => {
       altKey: false,
     });
   });
+
+  it.each([
+    ['macOS Ctrl+Opt+Arrow', 'MacIntel', { key: 'ArrowRight', ctrlKey: true, altKey: true }],
+    ['Windows/Linux Meta+Alt+Arrow', 'Win32', { key: 'ArrowLeft', metaKey: true, altKey: true }],
+  ] as const)('leaves %s (not the platform Mod) to the page', (_label, platform, init) => {
+    vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+    const { event, messages } = pressInPage(init);
+    expect(event.defaultPrevented).toBe(false);
+    expect(messages).toEqual([]);
+  });
+
+  it.each([
+    ['MacIntel', { key: ']', ctrlKey: true }, '__INTENT_PANEL_BRACKET__:]:0:0:1:0'],
+    ['Win32', { key: '}', metaKey: true, shiftKey: true }, '__INTENT_PANEL_BRACKET__:}:1:1:0:0'],
+    ['MacIntel', { key: 'w', ctrlKey: true }, '__INTENT_CLOSE_TAB__'],
+  ] as const)(
+    'keeps existing either-modifier forwarding on %s for %o',
+    (platform, init, message) => {
+      vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+      expect(pressInPage(init).messages).toEqual([message]);
+    },
+  );
 
   it('leaves plain Alt+Arrow to the page', () => {
     const { event, messages } = pressInPage({ key: 'ArrowLeft', altKey: true });
