@@ -6,7 +6,11 @@ export function getAgentNodeStatusLabel(agent?: AgentSession | null): string | u
   if (agent?.status === 'resuming') return m.agent_node_resuming_label();
   if (agent?.placement?.target === 'remote') {
     if (agent.placementError) return m.remoteAgent_status_failed();
-    if (agent.effectiveIsolation === 'pending') return m.remoteAgent_status_starting();
+    if (agent.effectiveIsolation === 'pending') {
+      if (agent.setup?.state === 'pending') return m.remoteAgent_status_preparingCheckout();
+      if (agent.setup?.state === 'running') return m.remoteAgent_status_runningSetup();
+      return m.remoteAgent_status_starting();
+    }
   }
   if (agent?.placement && agent.effectiveIsolation === 'pending') {
     return m.agent_node_provisioning_label();

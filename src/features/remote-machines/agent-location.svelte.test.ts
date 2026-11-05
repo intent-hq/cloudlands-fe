@@ -6,7 +6,7 @@
  * Badges describe existing work, so they show with the Labs flag off; the
  * machine list (flag on) adds "access revoked" and the "Check again" action.
  */
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store } from '$store/renderer/store';
 import { AgentStatus, type AgentSession } from '$shared/types';
@@ -122,6 +122,113 @@ describe('agent placement notice', () => {
     expect(notice(container)?.textContent).toContain('Starting on Mac mini…');
   });
 
+  it('says it is preparing the checkout, then running setup, with the output on request', async () => {
+    seed(session({ effectiveIsolation: 'pending', setup: { state: 'pending' } }));
+    const { container, getByRole, queryByRole } = render(AgentPlacementNotice, {
+      agentId: AGENT,
+    });
+    expect(notice(container)?.textContent).toContain('Starting on Mac mini…');
+    expect(notice(container)?.textContent).toContain('Preparing checkout');
+    expect(queryByRole('button', { name: 'Show output' })).toBeNull();
+
+    seed(
+      session({
+        effectiveIsolation: 'pending',
+        setup: {
+          state: 'running',
+          startedAt: '2026-11-02T08:00:05Z',
+          output: 'Fetching packages/intentd\u2026\n\u001b[32mnpm ci\u001b[0m\n',
+          outputTruncated: true,
+        },
+      }),
+    );
+    await waitFor(() => expect(notice(container)?.textContent).toContain('Running setup'));
+    expect(queryByRole('log')).toBeNull();
+    await fireEvent.click(getByRole('button', { name: 'Show output' }));
+    const log = getByRole('log', { name: 'Setup output on Mac mini' });
+    expect(log.textContent).toContain('Fetching packages/intentd…');
+    expect(log.textContent).toContain('npm ci');
+    expect(log.textContent).not.toContain('\u001b');
+    expect(notice(container)?.textContent).toContain('Earlier output was dropped.');
+    await fireEvent.click(getByRole('button', { name: 'Hide output' }));
+    expect(queryByRole('log')).toBeNull();
+  });
+
+  it('shows output that arrives while the log is open, outside the live region', async () => {
+    const running = (output?: string) =>
+      session({
+        effectiveIsolation: 'pending',
+        setup: {
+          state: 'running',
+          startedAt: '2026-11-02T08:00:05Z',
+          ...(output !== undefined ? { output } : {}),
+        },
+      });
+    seed(running());
+    const { container, getByRole } = render(AgentPlacementNotice, { agentId: AGENT });
+    await fireEvent.click(getByRole('button', { name: 'Show output' }));
+    const log = getByRole('log', { name: 'Setup output on Mac mini' });
+    expect(log.textContent).toContain('No output yet.');
+    // A detail read after `agent:updated` brings the output.
+    seed(running('pnpm install --frozen-lockfile\n'));
+    await waitFor(() => expect(log.textContent).toContain('pnpm install --frozen-lockfile'));
+    const live = container.querySelector('[role="status"]');
+    expect(live?.textContent).toContain('Running setup');
+    expect(live?.contains(log)).toBe(false);
+    expect(live?.querySelector('button')).toBeNull();
+  });
+
+  it('shows a failed setup after the agent started, with its exit code and output', async () => {
+    seed(
+      session({
+        setup: {
+          state: 'failed',
+          exitCode: 2,
+          startedAt: '2026-11-02T08:00:05Z',
+          finishedAt: '2026-11-02T08:00:09Z',
+          output: 'npm ERR! missing script: bootstrap\n',
+        },
+      }),
+    );
+    const { container, getByRole } = render(AgentPlacementNotice, { agentId: AGENT });
+    expect(notice(container)?.dataset.agentPlacementNotice).toBe('setup-failed');
+    const text = notice(container)?.textContent ?? '';
+    expect(text).toContain('Setup script failed on Mac mini');
+    expect(text).toContain('Exited with code 2. The agent started anyway.');
+    await fireEvent.click(getByRole('button', { name: 'Show output' }));
+    expect(getByRole('log').textContent).toContain('missing script: bootstrap');
+  });
+
+  it('names a setup timeout', () => {
+    seed(session({ setup: { state: 'failed', error: 'node-setup-timeout: 1800 s' } }));
+    const { container } = render(AgentPlacementNotice, { agentId: AGENT });
+    expect(notice(container)?.textContent).toContain(
+      'The setup script timed out. The agent started anyway.',
+    );
+  });
+
+  it('says to update Intent on the machine when it cannot prepare the checkout', () => {
+    seed(
+      session({
+        status: AgentStatus.Error,
+        placementError: {
+          code: 'remote-launch-failed',
+          detail:
+            'Update Intent on mac-mini to run agents for this workspace: it has submodules or a setup script. {"code":"machine-update-required","machineVersion":"0.11.120","backendVersion":"0.11.134","update":"machine","reason":"prepared-checkout"}',
+        },
+      }),
+    );
+    const { container } = render(AgentPlacementNotice, { agentId: AGENT });
+    const text = notice(container)?.textContent ?? '';
+    expect(text).toContain("Couldn't start on Mac mini");
+    expect(text).toContain(
+      'Mac mini needs a newer version of Intent to run agents for this workspace, because the workspace has submodules or a setup script.',
+    );
+    expect(text).toContain('Update Intent on Mac mini, then start a new agent.');
+    expect(text).not.toContain('{');
+    expect(text).not.toContain('Start a new agent to try again.');
+  });
+
   it('shows the placement error and says to start a new agent (no retry offered)', async () => {
     seed(
       session({
@@ -139,7 +246,7 @@ describe('agent placement notice', () => {
     expect(text).toContain('Claude Code is signed out');
     expect(text).toContain('Start a new agent to try again.');
     expect(queryByRole('button', { name: /try again/i })).toBeNull();
-    await fireEvent.click(getByRole('button', { name: 'Open Devices settings' }));
+    await fireEvent.click(getByRole('button', { name: 'Open Machines settings' }));
     expect(navigation.navigateToSettings).toHaveBeenCalledWith({
       tab: 'devices',
       hash: 'devices',

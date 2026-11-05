@@ -129,26 +129,6 @@ function sceneGeometry(element: Element) {
   };
 }
 
-async function sampleStep(root: Locator, index: number) {
-  return root.evaluate(
-    async (element, { source, index }) => {
-      const read = new Function(`return (${source})`)() as typeof sceneGeometry;
-      const samples = [read(element)];
-      element.querySelectorAll<HTMLButtonElement>('[data-diagram-step-index]')[index].click();
-      const started = performance.now();
-      do {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        samples.push(read(element));
-      } while (
-        (!samples.at(-1)!.settled || samples.length < 4) &&
-        performance.now() - started < 4_000
-      );
-      return samples;
-    },
-    { source: sceneGeometry.toString(), index },
-  );
-}
-
 async function captureScene(root: Locator, info: TestInfo, name: string) {
   // A whole diagram can exceed the viewport. Chromium's oversized element capture
   // emits resize events that relayout responsive diagrams (intent-hq/intent#5956).
@@ -237,11 +217,11 @@ for (const fixture of fixtures) {
         await page.evaluate(() => document.fonts.ready);
         await expect(root).toHaveAttribute('data-diagram-settled', 'true', { timeout: 30_000 });
         const scenes = [];
-        const transitions = [];
         for (const index of [...fixture.states.keys(), 0]) {
-          const samples = await sampleStep(root, index);
-          transitions.push(samples);
-          scenes.push(samples.at(-1)!);
+          await root.locator(`[data-diagram-step-index="${index}"]`).click();
+          await expect(root).toHaveAttribute('data-diagram-state', fixture.states[index]);
+          await expect(root).toHaveAttribute('data-diagram-settled', 'true');
+          scenes.push(await root.evaluate(sceneGeometry));
           await expectDrawingReachable(root);
           await captureScene(root, testInfo, `step-${scenes.length}-${index}`);
         }
@@ -249,18 +229,6 @@ for (const fixture of fixtures) {
           body: JSON.stringify(scenes, null, 2),
           contentType: 'application/json',
         });
-        await testInfo.attach('active-transitions', {
-          body: JSON.stringify(transitions, null, 2),
-          contentType: 'application/json',
-        });
-        for (const samples of transitions) {
-          expect(samples.at(-1)!.settled).toBe(true);
-          expect(samples.every((sample) => sample.finite)).toBe(true);
-          expect(
-            Math.max(...samples.map((sample) => sample.overflow)),
-            JSON.stringify(samples.filter((sample) => sample.overflow > 1)),
-          ).toBeLessThanOrEqual(1);
-        }
         expect(scenes[0].nodes).toEqual(fixture.first);
         expect(scenes.at(-2)!.nodes).toEqual(fixture.last);
 

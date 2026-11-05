@@ -241,7 +241,7 @@ export async function launch(
 let pointerBuilt = false;
 export const nativePointerInputs: Array<{ command: string; point?: { x: number; y: number } }> = [];
 export async function nativePointer(
-  command: 'move' | 'down' | 'drag' | 'up' | 'escape',
+  command: 'move' | 'down' | 'up',
   point?: { x: number; y: number },
 ) {
   if (process.platform !== 'darwin')

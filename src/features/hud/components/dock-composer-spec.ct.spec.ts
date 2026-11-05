@@ -105,7 +105,7 @@ for (const screen of [1, 2, 3, 4, 5, 6] as const) {
       await expect(component.locator('[data-screen-interim]')).toBeVisible();
     }
     if (screen === 2) {
-      await component.locator('[data-dock-media-attachments] .tile').first().hover();
+      await component.locator('[data-dock-media-attachments] .tile button').first().focus();
       await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
     }
     if (screen === 5) await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();

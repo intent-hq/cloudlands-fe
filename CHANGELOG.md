@@ -4,6 +4,63 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.286.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.5...v2.286.6) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.134 ([#4208](https://github.com/intent-hq/cloudlands-fe/issues/4208)) ([294f794](https://github.com/intent-hq/cloudlands-fe/commit/294f7944eb8f5c6aadc23365a74d8dd2ae04e166))
+* **i18n:** rename remaining Devices labels to Machines, singular Machine picker ([#4202](https://github.com/intent-hq/cloudlands-fe/issues/4202)) ([a4661a5](https://github.com/intent-hq/cloudlands-fe/commit/a4661a5f6ff18df0241b4b449a0bc6153034526e))
+* **remote:** show a remote agent's checkout preparation, setup and setup output ([#4201](https://github.com/intent-hq/cloudlands-fe/issues/4201)) ([d9ddcad](https://github.com/intent-hq/cloudlands-fe/commit/d9ddcad94da8904cfb466dcfd95b58f2645dd394))
+
+## [2.286.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.4...v2.286.5) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.133 ([#4199](https://github.com/intent-hq/cloudlands-fe/issues/4199)) ([6159c12](https://github.com/intent-hq/cloudlands-fe/commit/6159c12edf780cc67b542d21b320ebd3317d69cc))
+
+## [2.286.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.3...v2.286.4) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.132 ([#4197](https://github.com/intent-hq/cloudlands-fe/issues/4197)) ([6793020](https://github.com/intent-hq/cloudlands-fe/commit/67930204b73c24ded43bd5a71b59ddd1294a361e))
+
+## [2.286.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.2...v2.286.3) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.131 ([#4195](https://github.com/intent-hq/cloudlands-fe/issues/4195)) ([7aeeaf5](https://github.com/intent-hq/cloudlands-fe/commit/7aeeaf5c64cb9f48ddeab7bdb74a0ac8dea42ddb))
+
+## [2.286.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.1...v2.286.2) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.130 ([#4194](https://github.com/intent-hq/cloudlands-fe/issues/4194)) ([1d77549](https://github.com/intent-hq/cloudlands-fe/commit/1d7754903a7001912227625f4f7d1c90484499a7))
+* **deps:** unblock Dependabot's grouped npm update on the bits-ui patch ([#4188](https://github.com/intent-hq/cloudlands-fe/issues/4188)) ([43b6525](https://github.com/intent-hq/cloudlands-fe/commit/43b6525bf096e6c408695a3acbaef756bb39931a))
+* drop the machine chip from the New Workspace Model row ([#4182](https://github.com/intent-hq/cloudlands-fe/issues/4182)) ([4f62f62](https://github.com/intent-hq/cloudlands-fe/commit/4f62f629422c9342e31874bbdd3c4dfcaac71a95))
+* keep composer attachments when selecting a suggested prompt ([#4184](https://github.com/intent-hq/cloudlands-fe/issues/4184)) ([22ec62a](https://github.com/intent-hq/cloudlands-fe/commit/22ec62a19448e8c245f5c80f301841a46b898f94))
+* **remote-machines:** say "run agents" instead of "make available" ([#4190](https://github.com/intent-hq/cloudlands-fe/issues/4190)) ([390157c](https://github.com/intent-hq/cloudlands-fe/commit/390157c58a7a947a5d7cfefb4b3298af5db43320))
+* send hello-callback requests on the ready hello after a daemon startup wait ([#4191](https://github.com/intent-hq/cloudlands-fe/issues/4191)) ([4d08a98](https://github.com/intent-hq/cloudlands-fe/commit/4d08a98dd33425efd019ae2f7840bd58ed941fab))
+* **settings:** vertically centre Machines row platform and provider icons ([#4183](https://github.com/intent-hq/cloudlands-fe/issues/4183)) ([54116ff](https://github.com/intent-hq/cloudlands-fe/commit/54116ff8669e6f3a886732daf3b9e11f84dd36db))
+
+## [2.286.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.0...v2.286.1) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* **initializer:** keep the worktree switch under the pointer when isolation turns off ([#4170](https://github.com/intent-hq/cloudlands-fe/issues/4170)) ([9f75252](https://github.com/intent-hq/cloudlands-fe/commit/9f75252e6cefd15efebd71c8b8a51838761c3698))
+
+## [2.286.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.285.2...v2.286.0) (2026-11-05)
+
+
+### 🚀 Features
+
+* remove Lead and Implementor and use general-agent delegation ([#3895](https://github.com/intent-hq/cloudlands-fe/issues/3895)) ([df39679](https://github.com/intent-hq/cloudlands-fe/commit/df39679e4109b3a8351808c108bbe5847710c780))
+
 ## [2.285.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.285.1...v2.285.2) (2026-11-05)
 
 

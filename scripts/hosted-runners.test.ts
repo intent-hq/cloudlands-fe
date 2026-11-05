@@ -61,7 +61,6 @@ describe('GitHub-hosted CI runners', () => {
   }: Fixture) {
     const workflow = read('.github/workflows/intent-pr.yml');
     const step = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
-    const listStep = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs');
     const values: Record<string, string> = {};
     const messages: string[] = [];
     const queried: string[] = [];
@@ -88,7 +87,7 @@ describe('GitHub-hosted CI runners', () => {
       env: {
         // Actions resolves `vars.CI_LINUX_HEAVY_SLOTS || '2'`; with the variable unset that is the default.
         THRESHOLD: heavySlotsDefault(workflow.env.LINUX_BURST_THRESHOLD),
-        SLOT_JOBS: listStep.env.SLOT_JOBS,
+        SLOT_JOBS: step.env.SLOT_JOBS,
         ...env,
       },
     };
@@ -119,6 +118,12 @@ describe('GitHub-hosted CI runners', () => {
     Object.keys(slots)
       .filter((key) => JSON.stringify(slots[key]) === JSON.stringify(CACHE))
       .sort();
+
+  // The routed heavy jobs, read straight from the decide step's env.
+  const slotJobs = (workflow = read('.github/workflows/intent-pr.yml')) =>
+    JSON.parse(
+      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide').env.SLOT_JOBS,
+    ) as { key: string; label: string; shards?: number; events?: string[]; minutes?: number }[];
 
   it('routes heavy jobs to an idle intent-cache slot while one is free', async () => {
     const r = await route({ env: { SLOT_JOBS: '[]' } });
@@ -198,10 +203,6 @@ describe('GitHub-hosted CI runners', () => {
     const r = await route({ event: 'pull_request' });
     expect(Object.keys(r.slots).sort()).toEqual([
       'build-web',
-      'ct-1',
-      'ct-2',
-      'ct-3',
-      'ct-4',
       'test-1',
       'test-2',
       'test-3',
@@ -209,8 +210,7 @@ describe('GitHub-hosted CI runners', () => {
     ]);
     // The shards go in shard order; each shard has its own key.
     expect(onSlots(r.slots)).toEqual(['test-1', 'test-2']);
-    for (const key of ['test-3', 'test-4', 'build-web', 'ct-1', 'ct-4'])
-      expect(r.slots[key]).toEqual(WARP_8X);
+    for (const key of ['test-3', 'test-4', 'build-web']) expect(r.slots[key]).toEqual(WARP_8X);
     expect(r.burst).toBe('true');
     expect(r.messages.some((m) => m.includes('free=2 granted=2'))).toBe(true);
     // The four shards alone on two free slots: exactly two self-hosted, two hosted.
@@ -220,9 +220,9 @@ describe('GitHub-hosted CI runners', () => {
     expect(onSlots(shards.slots)).toEqual(['test-1', 'test-2']);
     expect(Object.values(shards.slots).filter((l) => l[0] === WARP_8X[0])).toHaveLength(2);
     // One busy slot elsewhere leaves one for this run.
-    // In the merge queue the longest jobs (Component Tests shards) take free slots first.
+    // In the merge queue the longest jobs (Unit Tests shards) take free slots first.
     const one = await route({ jobs: [running()] });
-    expect(onSlots(one.slots)).toEqual(['ct-1']);
+    expect(onSlots(one.slots)).toEqual(['test-1']);
     // Four free slots: every Unit Tests shard, including shard 4, takes one.
     const four = await route({
       event: 'pull_request',
@@ -232,77 +232,30 @@ describe('GitHub-hosted CI runners', () => {
     expect(onSlots(four.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
   });
 
-  it('routes each Component Tests shard through its own slot in the merge queue', () => {
+  it('routes no component-test job: CT runs nightly, not on PRs or in the queue', () => {
     const workflow = read('.github/workflows/intent-pr.yml');
-    const listed = JSON.parse(
-      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs').env.SLOT_JOBS,
-    ) as { key: string; label: string; shards?: number; events?: string[]; minutes?: number }[];
-    expect(listed.find((j) => j.key === 'ct')).toEqual({
-      key: 'ct',
-      label: 'gh-linux-8x',
-      minutes: 36,
-      shards: 4,
-      events: ['merge_group'],
+    const keys = slotJobs(workflow).map((j) => j.key);
+    expect(keys).not.toContain('ct');
+    expect(keys).not.toContain('test-ct-affected');
+    expect(workflow.jobs['test-ct']).toBeUndefined();
+    expect(workflow.jobs['test-ct-affected']).toBeUndefined();
+    // Nothing is filtered out of the slot list any more, so route neither
+    // waits for release-fast-path nor runs a slot-jobs step.
+    expect(workflow.jobs.route.needs).toBeUndefined();
+    expect(workflow.jobs.route.steps.map((s: { id?: string }) => s.id)).toEqual(['decide']);
+    // The nightly caller still runs the full CT suite on its own route.
+    const nightly = read('.github/workflows/nightly-browser-tests.yml');
+    expect(nightly.jobs['test-ct'].with).toEqual({
+      suite: 'ct',
+      cloud: '${{ needs.runner-route.outputs.cloud }}',
     });
-    expect(workflow.jobs['test-ct'].with.slots).toBe('${{ needs.route.outputs.slots }}');
-    expect(workflow.jobs['test-ct'].with.cloud).toBe('${{ needs.route.outputs.cloud }}');
     const browser = read('.github/workflows/browser-tests.yml');
-    expect(browser.on.workflow_call.inputs.slots).toMatchObject({
-      type: 'string',
-      required: false,
-      default: '{}',
-    });
     expect(browser.jobs['test-ct']['runs-on']).toBe(
-      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
+      "${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
     );
     // The other browser suites are light enough for the free standard runner.
     expect(browser.jobs['test-playwright']['runs-on']).toBe('ubuntu-24.04');
     expect(browser.jobs['test-electron']['runs-on']).toBe('ubuntu-24.04');
-  });
-
-  it('gives no slot to Component Tests shards on a queue run that skips them', async () => {
-    // Slots are granted before the jobs start, so a skipped CT run must not hold them.
-    // The slot-jobs step filters the list; the shared probe script stays unchanged.
-    const workflow = read('.github/workflows/intent-pr.yml');
-    const listStep = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs');
-    const filtered = (skip: string) => {
-      const dir = mkdtempSync(join(tmpdir(), 'slot-jobs-'));
-      const out = join(dir, 'out');
-      const r = spawnSync('bash', ['-c', listStep.run], {
-        env: {
-          PATH: process.env.PATH,
-          SKIP_SLOT_KEYS: skip,
-          SLOT_JOBS: listStep.env.SLOT_JOBS,
-          GITHUB_OUTPUT: out,
-        },
-        encoding: 'utf8',
-      });
-      expect(r.status, r.stderr).toBe(0);
-      const list = readFileSync(out, 'utf8')
-        .trim()
-        .replace(/^list=/, '');
-      rmSync(dir, { recursive: true, force: true });
-      return list;
-    };
-    const skipped = await route({
-      env: { SLOT_JOBS: filtered('ct'), THRESHOLD: '4' },
-      runners: [slot, slot, slot, slot],
-    });
-    expect(onSlots(skipped.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
-    expect(Object.keys(skipped.slots)).not.toContain('ct-1');
-    const required = await route({
-      env: { SLOT_JOBS: filtered(''), THRESHOLD: '4' },
-      runners: [slot, slot, slot, slot],
-    });
-    expect(onSlots(required.slots)).toEqual(['ct-1', 'ct-2', 'ct-3', 'ct-4']);
-    // The route job waits for release-fast-path and skips ct unless CT will run.
-    expect(workflow.jobs.route.needs).toEqual(['release-fast-path']);
-    expect(listStep['continue-on-error']).toBe(true);
-    expect(listStep.env.SKIP_SLOT_KEYS).toBe(
-      "${{ (needs.release-fast-path.outputs.ct_required != 'true' || needs.release-fast-path.outputs.fast_path == 'true') && 'ct' || '' }}",
-    );
-    const decide = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
-    expect(decide.env.SLOT_JOBS).toBe('${{ steps.slot-jobs.outputs.list }}');
   });
 
   // Type Check & Lint measured medium-sized (3.2 busy cores, 11.7 GiB peak); WarpBuild measured
@@ -316,10 +269,7 @@ describe('GitHub-hosted CI runners', () => {
     const job = workflow.jobs[id];
     expect(job.name).toBe(name);
     expect(job['runs-on']).toBe('ubuntu-24.04');
-    const listed = JSON.parse(
-      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs').env.SLOT_JOBS,
-    ) as { key: string }[];
-    expect(listed.map((j) => j.key)).not.toContain(id);
+    expect(slotJobs(workflow).map((j) => j.key)).not.toContain(id);
   });
 
   it.each([
@@ -332,25 +282,17 @@ describe('GitHub-hosted CI runners', () => {
     ['an unreadable intent queue', { unreadable: 'intent' }],
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
-    expect(Object.keys(r.slots)).toHaveLength(9);
+    expect(Object.keys(r.slots)).toHaveLength(5);
     for (const labels of Object.values(r.slots)) expect(labels).toEqual(WARP_8X);
   });
 
   it('lists every routed heavy job once, with its hosted fallback', () => {
     const workflow = read('.github/workflows/intent-pr.yml');
-    const listed = JSON.parse(
-      workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'slot-jobs').env.SLOT_JOBS,
-    ) as { key: string; label: string; shards?: number; events?: string[] }[];
+    const listed = slotJobs(workflow);
     const readers = Object.entries(workflow.jobs as Record<string, { 'runs-on'?: string }>)
       .filter(([, job]) => job['runs-on']?.includes('needs.route.outputs.slots'))
       .map(([id, job]) => [id, job['runs-on']] as const);
-    // Component Tests read their slots through browser-tests.yml (tested separately).
-    expect(readers.map(([id]) => id).sort()).toEqual(
-      listed
-        .map((j) => j.key)
-        .filter((key) => key !== 'ct')
-        .sort(),
-    );
+    expect(readers.map(([id]) => id).sort()).toEqual(listed.map((j) => j.key).sort());
     for (const [id, runner] of readers) {
       const entry = listed.find((j) => j.key === id)!;
       const key = entry.shards ? `format('${id}-{0}', matrix.shard)` : `'${id}'`;
@@ -360,15 +302,14 @@ describe('GitHub-hosted CI runners', () => {
       );
     }
     // Queue-only jobs must say so, or they would hold a slot on every PR.
-    for (const id of ['build-web', 'ct'])
-      expect(listed.find((j) => j.key === id)!.events).toEqual(['merge_group']);
+    expect(listed.find((j) => j.key === 'build-web')!.events).toEqual(['merge_group']);
   });
 
   it('reads the heavy slot count from the CI_LINUX_HEAVY_SLOTS variable', async () => {
     // Raising the org or repo variable alone grows the pool: 14 slots take every listed job.
     const slots14 = Array.from({ length: 14 }, () => slot);
     const grown = await route({ runners: slots14, env: { THRESHOLD: '14' } });
-    expect(onSlots(grown.slots)).toHaveLength(9);
+    expect(onSlots(grown.slots)).toHaveLength(5);
     expect(grown.burst).toBe('false');
     expect(grown.messages.some((m) => m.includes('threshold=14 online=14 free=14'))).toBe(true);
     // The online count still caps it, and so does the variable.
@@ -397,11 +338,7 @@ describe('GitHub-hosted CI runners', () => {
   it('ignores the xl pool: its runners and jobs neither add nor take heavy slots', async () => {
     // Every routed job here asks for gh-linux-8x, which stays on the heavy pool;
     // only gh-linux-16x jobs (intent and intentd) use the intent-cache-xl slots.
-    const listed = JSON.parse(
-      read('.github/workflows/intent-pr.yml').jobs.route.steps.find(
-        (s: { id?: string }) => s.id === 'slot-jobs',
-      ).env.SLOT_JOBS,
-    ) as { label: string }[];
+    const listed = slotJobs();
     expect(new Set(listed.map((j) => j.label))).toEqual(new Set(['gh-linux-8x']));
     const xl = { status: 'online', labels: ['self-hosted', 'Linux', 'X64', 'intent-cache-xl'] };
     const xlJob = running(['self-hosted', 'linux', 'x64', 'intent-cache-xl']);
@@ -419,7 +356,7 @@ describe('GitHub-hosted CI runners', () => {
       expect(r.labels).toEqual(baseline.labels);
       expect(r.burst).toBe(baseline.burst);
     }
-    expect(onSlots(baseline.slots)).toEqual(['ct-1']);
+    expect(onSlots(baseline.slots)).toEqual(['test-1']);
   });
 
   it('bursts heavy jobs to WarpBuild when no slot is free', async () => {
@@ -436,11 +373,11 @@ describe('GitHub-hosted CI runners', () => {
       for (const labels of Object.values(r.slots)) expect(labels).toEqual(WARP);
     }
     // A free slot still wins over WarpBuild; in the queue the longest job, a
-    // Component Tests shard, takes it.
+    // Unit Tests shard, takes it.
     const one = await route({ jobs: [running()] });
-    expect(onSlots(one.slots)).toEqual(['ct-1']);
-    expect(one.slots['ct-2']).toEqual(WARP);
-    expect(one.slots['test-1']).toEqual(WARP);
+    expect(onSlots(one.slots)).toEqual(['test-1']);
+    expect(one.slots['test-2']).toEqual(WARP);
+    expect(one.slots['build-web']).toEqual(WARP);
     const decide = read('.github/workflows/intent-pr.yml').jobs.route.steps.find(
       (s: { id?: string }) => s.id === 'decide',
     );

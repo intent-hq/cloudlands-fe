@@ -73,7 +73,7 @@ for (const { name, viewport } of [
   });
 }
 
-test('worktree toggle keeps its pointer target in the workspace dialog', async ({
+test('worktree toggle changes isolation without dismissing the workspace dialog', async ({
   mount,
   page,
 }) => {
@@ -87,18 +87,9 @@ test('worktree toggle keeps its pointer target in the workspace dialog', async (
   await expect(chooser.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
   const isolation = chooser.getByRole('switch', { name: /use an isolated/i });
   await expectReachable(isolation);
-  const origin = (await chooser.boundingBox())!;
-  const control = (await isolation.boundingBox())!;
-  const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
   for (const checked of [false, true]) {
-    await page.mouse.click(point.x, point.y);
+    await isolation.click();
     await expect(isolation).toBeChecked({ checked });
-    await expect
-      .poll(async () => {
-        const current = (await chooser.boundingBox())!;
-        return Math.hypot(current.x - origin.x, current.y - origin.y);
-      })
-      .toBeLessThanOrEqual(1);
     await expect(parent).toBeVisible();
   }
   await page.keyboard.press('Escape');

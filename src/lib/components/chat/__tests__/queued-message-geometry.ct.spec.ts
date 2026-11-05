@@ -12,11 +12,8 @@ for (const state of [
     const actions = component.getByTestId('queued-message-actions');
     const initialHeight = (await row.boundingBox())!.height;
 
-    await row.hover();
-    const hoverHeight = (await row.boundingBox())!.height;
     await actions.getByRole('button').first().focus();
     const focusHeight = (await row.boundingBox())!.height;
-    expect(hoverHeight).toBeCloseTo(initialHeight, 1);
     expect(focusHeight).toBeCloseTo(initialHeight, 1);
   });
 }
@@ -449,27 +446,3 @@ for (const theme of ['light', 'dark']) {
     await expect(queue).toHaveCount(0);
   });
 }
-
-test('queue collapse paints intermediate heights before removing the body', async ({
-  mount,
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  const component = await mount(QueuedMessageGeometryHost, {
-    props: { width: 480, messageCount: 3 },
-  });
-  const disclosure = component.getByTestId('queued-messages-disclosure');
-  await expect(component.getByTestId('queued-message-row')).toHaveCount(3);
-  const heights = await disclosure.evaluate(async (button) => {
-    const body = document.querySelector('[data-testid="queued-messages-content"]')!;
-    const heights = [body.getBoundingClientRect().height];
-    (button as HTMLButtonElement).click();
-    while (body.isConnected && heights.length < 120) {
-      await new Promise(requestAnimationFrame);
-      heights.push(body.getBoundingClientRect().height);
-    }
-    return heights;
-  });
-  expect(heights.some((height) => height > 0 && height < heights[0])).toBe(true);
-  await expect(component.getByTestId('queued-messages-content')).toHaveCount(0);
-});

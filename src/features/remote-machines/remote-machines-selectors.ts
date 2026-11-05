@@ -58,7 +58,7 @@ export const selectConnectionLabel = store.createSelector((state, connectionId: 
   return connection ? formatConnectionLabel(connection) : connectionId;
 });
 
-/** The current backend's display label, as used in "Make available to <backend>". */
+/** The current backend's display label, as used in "Let <backend> run agents here". */
 export const selectCurrentBackendLabel = store.createSelector((state) =>
   selectConnectionLabel.select(state, state.connections.windowBackendId),
 );

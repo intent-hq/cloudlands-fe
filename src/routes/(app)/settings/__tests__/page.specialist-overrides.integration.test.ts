@@ -15,7 +15,7 @@ import { warmImport } from '../../../../test/warm-import';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
 const mocks = vi.hoisted(() => ({
-  page: { url: new URL('http://localhost/settings?tab=agents&specialist=implementor') },
+  page: { url: new URL('http://localhost/settings?tab=agents&specialist=ui-designer') },
 }));
 
 vi.mock('$app/state', () => ({ page: mocks.page }));
@@ -67,7 +67,7 @@ beforeAll(() => {
 beforeEach(() => {
   admitLegacyPrincipal();
   appStore.dispatch(discardSpecialistDraft('user'));
-  window.history.pushState({}, '', '/settings?tab=agents&specialist=implementor');
+  window.history.pushState({}, '', '/settings?tab=agents&specialist=ui-designer');
   mocks.page.url = new URL(window.location.href);
   (globalThis as typeof globalThis & { __APP_VERSION__: string }).__APP_VERSION__ = '2.0.10';
   Object.defineProperty(Element.prototype, 'scrollTo', { value: vi.fn(), configurable: true });
@@ -84,9 +84,9 @@ afterAll(() => {
 
 describe('settings collapsed built-in override chrome', () => {
   it('shows Reset only for the winning built-in override', async () => {
-    const implementor = SPECIALISTS.find(({ id }) => id === 'implementor')!;
-    const specWriter = SPECIALISTS.find(({ id }) => id === 'spec-writer')!;
-    const verifier = SPECIALISTS.find(({ id }) => id === 'verifier')!;
+    const designer = SPECIALISTS.find(({ id }) => id === 'ui-designer')!;
+    const specWriter = SPECIALISTS.find(({ id }) => id === 'vulnerability-scanner')!;
+    const developer = SPECIALISTS.find(({ id }) => id === 'developer')!;
     const custom = {
       id: 'alpha-custom',
       name: 'Alpha Custom',
@@ -97,28 +97,28 @@ describe('settings collapsed built-in override chrome', () => {
       source: 'user' as const,
     };
     const override = {
-      id: implementor.id,
-      name: implementor.name,
-      description: implementor.description,
+      id: designer.id,
+      name: designer.name,
+      description: designer.description,
       model: '',
-      behaviorPrompt: `${implementor.defaultBehaviorPrompt}\nModified`,
-      roleReminder: implementor.roleReminder,
-      filePath: '/Users/test/.intent/specialists/implementor.md',
+      behaviorPrompt: `${designer.defaultBehaviorPrompt}\nModified`,
+      roleReminder: designer.roleReminder,
+      filePath: '/Users/test/.intent/specialists/ui-designer.md',
       source: 'user' as const,
     };
-    appStore.dispatch(setBundledSpecialists([specWriter, verifier]));
+    appStore.dispatch(setBundledSpecialists([specWriter, developer]));
     appStore.dispatch(setFileSpecialists([override, custom]));
 
     render(SettingsPage, { context: new Map([['redux-store-context', storeContext]]) });
 
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
-    const implementorButton = within(navigation).getByRole('button', { name: 'Implementor' });
+    const designerButton = within(navigation).getByRole('button', { name: 'UI Designer' });
 
-    await fireEvent.click(implementorButton);
+    await fireEvent.click(designerButton);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reset' })).toBeTruthy());
 
-    appStore.dispatch(setBundledSpecialists([specWriter, implementor, verifier]));
+    appStore.dispatch(setBundledSpecialists([specWriter, designer, developer]));
     appStore.dispatch(setFileSpecialists([custom]));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull());
   });

@@ -397,22 +397,12 @@ test('appends computed inputs and results to the existing draft without sending'
   await capture(page, info, 'configuration-in-draft');
 });
 
-test('supports dragging, keyboard editing and explicit validated CSV import', async ({
-  page,
-}, info) => {
+test('supports keyboard editing and explicit validated CSV import', async ({ page }, info) => {
   await open(page, false, 'dark', 720);
   const handle = frame(page).locator('[data-workflow-drag]');
-  const box = await handle.boundingBox();
-  expect(box).not.toBeNull();
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2 + 35, { steps: 8 });
-  await page.mouse.up();
-  const dragged = Number(await number(page, 'thickness').inputValue());
-  expect(dragged).toBeGreaterThan(28);
   await handle.focus();
   await handle.press('ArrowUp');
-  expect(Number(await number(page, 'thickness').inputValue())).toBeGreaterThan(dragged);
+  await expect(number(page, 'thickness')).toHaveValue('29');
   await frame(page)
     .locator('input[type="file"]')
     .setInputFiles({

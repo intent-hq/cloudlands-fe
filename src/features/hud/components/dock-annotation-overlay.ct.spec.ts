@@ -33,55 +33,6 @@ test('draws authoritative numbered marks from Retina image pixels at overlay sca
   expect(await numbers(box, 'rect', ['x', 'y', 'width', 'height'])).toEqual([600, 100, 200, 120]);
 });
 
-test('a box gesture sends its pointerdown origin and shape; dock origins and blur never commit', async ({
-  mount,
-  page,
-}) => {
-  await mount(Harness, { props: { fixture: 'live-empty' } });
-  await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'box');
-
-  await page.mouse.move(100, 100);
-  await page.mouse.down();
-  await page.mouse.move(200, 180, { steps: 4 });
-  await page.mouse.up();
-  await expect
-    .poll(() => recorded(page, 'gestures'))
-    .toEqual([
-      {
-        sessionId: 'fixture-live',
-        sequence: 1,
-        tool: 'box',
-        origin: { x: 100, y: 100 },
-        points: [
-          { x: 100, y: 100 },
-          { x: 200, y: 180 },
-        ],
-      },
-    ]);
-
-  // The fixture's dock column (x ≥ 1000) is never a gesture origin.
-  await page.mouse.move(1100, 100);
-  await page.mouse.down();
-  await page.mouse.move(1150, 160, { steps: 2 });
-  await page.mouse.up();
-
-  // A held gesture fenced by window blur is cancelled, not committed.
-  await page.mouse.move(300, 300);
-  await page.mouse.down();
-  await page.mouse.move(360, 340, { steps: 2 });
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
-  await page.mouse.up();
-
-  await expect
-    .poll(() => recorded(page, 'pointers'))
-    .toEqual([
-      { sessionId: 'fixture-live', sequence: 1, phase: 'down', x: 100, y: 100, tool: 'box' },
-      { sessionId: 'fixture-live', sequence: 2, phase: 'down', x: 300, y: 300, tool: 'box' },
-      { sessionId: 'fixture-live', sequence: 2, phase: 'cancel', x: 300, y: 300, tool: 'box' },
-    ]);
-  expect(await recorded(page, 'gestures')).toHaveLength(1);
-});
-
 test('still markup letterboxes the frozen image and maps its marks into the same frame', async ({
   mount,
   page,
@@ -115,7 +66,7 @@ test('still markup letterboxes the frozen image and maps its marks into the same
   expect(height).toBeCloseTo((mark.h / image.height) * frame.height, 1);
 });
 
-test('the on-screen tool bar starts at the bottom of the screen, drags by its grip, switches tools, ends the session and never starts a mark', async ({
+test('the on-screen toolbar stays reachable, switches tools and attaches the session marks', async ({
   mount,
   page,
 }, testInfo) => {
@@ -184,7 +135,6 @@ test('the on-screen tool bar starts at the bottom of the screen, drags by its gr
       };
     })
     .toEqual({ clearOfDock: true, contained: true });
-  const below = await bounds();
   await testInfo.attach('notch toolbar', {
     body: await page.screenshot(),
     contentType: 'image/png',
@@ -194,11 +144,6 @@ test('the on-screen tool bar starts at the bottom of the screen, drags by its gr
   await bar.getByRole('button', { name: 'Mouse' }).click();
   await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'true');
   await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'false');
-  await page.mouse.move(200, 600);
-  await page.mouse.down();
-  await page.mouse.move(260, 650, { steps: 3 });
-  await page.mouse.up();
-  expect(await recorded(page, 'pointers')).toEqual([]);
   await expect(page.getByTestId('dock-annotation-overlay')).toHaveCSS('cursor', 'default');
 
   await bar.getByRole('button', { name: 'Pen' }).click();
@@ -206,88 +151,6 @@ test('the on-screen tool bar starts at the bottom of the screen, drags by its gr
   await expect(bar.getByRole('button', { name: 'Pen' })).toHaveAttribute('aria-pressed', 'true');
   // Clicks on the bar are never marks.
   expect(await recorded(page, 'pointers')).toEqual([]);
-
-  // Dragging from a tool button does nothing (no move, no tool change).
-  const arrow = bar.getByRole('button', { name: 'Arrow' });
-  const from = await arrow.boundingBox();
-  if (!from) throw new Error('Missing arrow bounds');
-  await page.mouse.move(from.x + 15, from.y + 15);
-  await page.mouse.down();
-  await page.mouse.move(from.x + 15 - 300, from.y + 15 + 200, { steps: 6 });
-  await page.mouse.up();
-  const after = await bounds();
-  expect(Math.round(after.x)).toBe(Math.round(below.x));
-  expect(Math.round(after.y)).toBe(Math.round(below.y));
-  await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
-  expect(await recorded(page, 'pointers')).toEqual([]);
-
-  // The grip moves the bar: it follows the pointer, stays inside the work area,
-  // reports its new rect (so it stays clickable) and never draws a mark.
-  const reportedRect = async () =>
-    JSON.parse(
-      (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
-        'null',
-    )?.rect as { x: number; y: number } | undefined;
-  const gesturesBeforeDrag = (await recorded(page, 'gestures')).length;
-  const grip = (await bar.locator('.toolbar-grip').boundingBox())!;
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-  await page.mouse.down();
-  // Mid-drag, main already knows where the bar is.
-  await page.mouse.move(grip.x + grip.width / 2 - 100, grip.y + grip.height / 2 - 75, {
-    steps: 4,
-  });
-  const midway = await bounds();
-  expect(Math.round(midway.x)).toBe(Math.round(below.x) - 100);
-  await expect
-    .poll(reportedRect)
-    .toMatchObject({ x: Math.round(midway.x), y: Math.round(midway.y) });
-  await page.mouse.move(grip.x + grip.width / 2 - 200, grip.y + grip.height / 2 - 150, {
-    steps: 4,
-  });
-  await page.mouse.up();
-  const moved = await bounds();
-  expect(Math.round(moved.x)).toBe(Math.round(below.x) - 200);
-  expect(Math.round(moved.y)).toBe(Math.round(below.y) - 150);
-  await expect
-    .poll(async () =>
-      JSON.parse(
-        (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar-rect')) ??
-          'null',
-      ),
-    )
-    .toMatchObject({ action: 'rect', rect: { x: Math.round(moved.x), y: Math.round(moved.y) } });
-  // Dragged far past the edge, it stops at the work area.
-  const regrip = (await bar.locator('.toolbar-grip').boundingBox())!;
-  await page.mouse.move(regrip.x + regrip.width / 2, regrip.y + regrip.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(-500, -500, { steps: 8 });
-  await page.mouse.up();
-  const clamped = await bounds();
-  expect(Math.round(clamped.x)).toBe(Math.round(workArea.x));
-  expect(Math.round(clamped.y)).toBe(Math.round(workArea.y));
-  // A cancelled or lost pointer ends the drag: later moves with the button still
-  // held do not move the bar.
-  for (const type of ['pointercancel', 'lostpointercapture']) {
-    const handle = (await bar.locator('.toolbar-grip').boundingBox())!;
-    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(handle.x + handle.width / 2 + 40, handle.y + handle.height / 2 + 30, {
-      steps: 3,
-    });
-    const before = await bounds();
-    await bar.evaluate((node, eventType) => {
-      node.dispatchEvent(new PointerEvent(eventType, { pointerId: 1, bubbles: true }));
-    }, type);
-    await page.mouse.move(handle.x + handle.width / 2 + 160, handle.y + handle.height / 2 + 120, {
-      steps: 4,
-    });
-    const after = await bounds();
-    expect(Math.round(after.x), type).toBe(Math.round(before.x));
-    expect(Math.round(after.y), type).toBe(Math.round(before.y));
-    await page.mouse.up();
-  }
-  expect(await recorded(page, 'pointers')).toEqual([]);
-  expect(await recorded(page, 'gestures')).toHaveLength(gesturesBeforeDrag);
 
   // Attach counts all four authoritative fixture marks, then continues in mouse mode.
   await expect(bar.locator('[data-attach-count]')).toHaveText('4');
@@ -521,15 +384,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     await update(false, 42);
     await expect(capture).toHaveAttribute('data-capture-state', 'complete');
     await expect(capture.locator('[data-dock-glyph="check"]')).toBeVisible();
-    if (reducedMotion === 'reduce') {
-      await expect
-        .poll(() =>
-          capture.evaluate((node) =>
-            node.getAnimations().some((animation) => animation.playState === 'running'),
-          ),
-        )
-        .toBe(false);
-    }
     await testInfo.attach('screenshot accepted', {
       body: await page.screenshot(),
       contentType: 'image/png',

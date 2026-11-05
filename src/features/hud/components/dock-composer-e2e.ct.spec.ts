@@ -13,11 +13,11 @@ import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry';
  * (no screen capture, microphone, recording or real message).
  *
  * Artifacts are saved per test and attached to the Playwright report:
- * dock-composer-e2e-{1..6}.png, dock-composer-e2e.webm, dock-composer-e2e-payload.json.
+ * dock-composer-e2e-{1..6}.png and dock-composer-e2e-payload.json.
  */
 const VIEW = { width: 452, height: 680 };
 
-test.use({ viewport: VIEW, video: { mode: 'on', size: VIEW } });
+test.use({ viewport: VIEW });
 test.describe.configure({ timeout: 120_000 });
 
 type Harness = {
@@ -32,7 +32,6 @@ type Harness = {
   holdPlacements: (value: boolean) => void;
   calls: { method: string; params: Record<string, unknown> }[];
   fixture: { settle: (accepted?: boolean) => void };
-  setCaption: (text: string) => void;
   store: {
     state: { dockConversation: { workspaceId: string | null; agentId: string | null } };
     dispatch: (action: { type: string; payload: unknown[] }) => void;
@@ -52,14 +51,6 @@ async function chooseTool(page: Page, tool: 'box' | 'pick'): Promise<void> {
       payload: [workspaceId, agentId, value],
     });
   }, tool);
-}
-
-async function caption(page: Page, text: string): Promise<void> {
-  await page.evaluate(
-    (value) =>
-      (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.setCaption(value),
-    text,
-  );
 }
 
 async function gesture(
@@ -97,8 +88,6 @@ async function screen(page: Page, n: number): Promise<void> {
   await info.attach(`dock-composer-e2e-${n}`, { path, contentType: 'image/png' });
 }
 
-const beat = (page: Page, ms = 700) => page.waitForTimeout(ms);
-
 test('dock composer walkthrough: capture, annotate, dictate, renumber, record, send', async ({
   mount,
   page,
@@ -115,22 +104,17 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   const chips = editor.locator('.screen-reference-chip');
 
   // 1 Idle
-  await caption(page, '1 · Idle: model, capture, record, mic, Send');
   await editor.click();
-  await beat(page);
   await screen(page, 1);
 
   // 2 Captured
-  await caption(page, '2 · Capture: one tap attaches the (synthetic) screen');
   await component.getByRole('button', { name: /^Capture the screen/ }).click();
   await expect(tiles).toHaveCount(1);
-  await tiles.first().hover();
+  await tiles.first().getByRole('button').first().focus();
   await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
-  await beat(page);
   await screen(page, 2);
 
   // 4 Annotating: box, two shapes
-  await caption(page, '4 · Annotate with Box: two shapes on the screen');
   await chooseTool(page, 'box');
   await expect(component.getByText('Annotating', { exact: true })).toBeVisible();
   const { card, save, cancel } = SYNTHETIC_ELEMENTS;
@@ -139,17 +123,14 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(
     component.getByRole('button', { name: 'Screenshot with 1 marks. Open' }),
   ).toBeVisible();
-  await beat(page, 400);
   await gesture(page, 'box', { x: cancel.x - 10, y: cancel.y - 10, w: cancel.w + 20, h: 72 }, null);
   await expect(
     component.getByRole('button', { name: 'Screenshot with 2 marks. Open' }),
   ).toBeVisible();
   await page.mouse.move(5, VIEW.height - 5);
-  await beat(page);
   await screen(page, 4);
 
   // Pick: switch tool in the open session, then pick an element.
-  await caption(page, 'Annotate with Pick: element metadata recorded');
   await chooseTool(page, 'pick');
   const saveElement = {
     role: 'button',
@@ -162,14 +143,11 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
     component.getByRole('button', { name: 'Screenshot with 3 marks. Open' }),
   ).toBeVisible();
   await page.mouse.move(5, VIEW.height - 5);
-  await beat(page);
 
   // 5 Dictating with click chips
-  await caption(page, '5 · Dictate: each click while talking becomes a numbered chip');
   await component.getByRole('button', { name: /^Dictate/ }).click();
   await expect(component.getByText('Listening', { exact: true })).toBeVisible();
   await say(page, 'Closer, but this');
-  await beat(page, 400);
   await gesture(
     page,
     'pick',
@@ -177,24 +155,19 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
     { role: 'dialog', name: 'Workspace name', path: 'main > form.settings', source: null },
   );
   await say(page, ' still has the old shadow, and this one');
-  await beat(page, 400);
   await gesture(page, 'pick', { x: save.x, y: save.y, w: save.w, h: save.h }, saveElement);
   await say(page, ' drops its hover');
   await expect(component.locator('[data-screen-interim]')).toBeVisible();
   await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
-  await beat(page, 900);
   await screen(page, 5);
 
   // Stop: finals commit in place with their chips.
-  await caption(page, 'Stop dictating: transcript and chips stay');
   await component.getByRole('button', { name: 'Stop dictating' }).click();
   await expect(chips).toHaveCount(2);
   await expect(chips.nth(0)).toHaveAccessibleName(/^Reference 4:/);
   await expect(chips.nth(1)).toHaveAccessibleName(/^Reference 5:/);
-  await beat(page);
 
   // Delete chip 4 → its mark goes; chip 5 renumbers to 4 in text and image.
-  await caption(page, 'Delete chip 4: its mark is removed, later marks renumber');
   const first = (await chips.nth(0).boundingBox())!;
   await page.mouse.click(first.x + first.width + 1, first.y + first.height / 2);
   await page.keyboard.press('Backspace');
@@ -203,16 +176,13 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(
     component.getByRole('button', { name: 'Screenshot with 4 marks. Open' }),
   ).toBeVisible();
-  await beat(page);
 
   // 6 Recording (scripted recorder; nothing is recorded)
-  await caption(page, '6 · Record: pill with elapsed time, clip tile');
   await component.getByRole('button', { name: /^Record the screen/ }).click();
   const stopRecording = component.getByRole('button', { name: 'Stop recording' });
   await expect(stopRecording).toBeVisible();
   await expect(component.getByText('Recording', { exact: true })).toBeVisible();
   await page.mouse.move(5, VIEW.height - 5);
-  await beat(page, 1600);
   await screen(page, 6);
   await page.evaluate(() =>
     (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.holdPlacements(true),
@@ -241,10 +211,8 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
       ),
     )
     .toBe(true);
-  await beat(page);
 
   // Send
-  await caption(page, 'Send: chips become [[mark:n]] tokens; images burned; clip attached');
   const submit = component.getByTestId('composer-submit-button');
   await expect(submit).toBeEnabled();
   await submit.click();
@@ -269,8 +237,6 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   );
   await expect(tiles).toHaveCount(0);
   await expect(chips).toHaveCount(0);
-  await caption(page, 'Sent (synthetic daemon). Composer cleared.');
-  await beat(page, 1200);
 
   const send = captured.calls.find(
     (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
@@ -328,14 +294,6 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   expect(marks.map((mark) => mark.n)).toEqual([1, 2, 3, 4]);
   expect(marks.filter((mark) => mark.tool === 'pick').every((mark) => mark.element)).toBe(true);
   expect(placements.filter((row) => 'sourcePath' in row)).toHaveLength(1);
-
-  const video = page.video();
-  await page.close();
-  if (video) {
-    const path = test.info().outputPath('dock-composer-e2e.webm');
-    await video.saveAs(path);
-    await test.info().attach('dock-composer-e2e', { path, contentType: 'video/webm' });
-  }
 });
 
 test('closing retires transient media and preserves words and completed captures', async ({

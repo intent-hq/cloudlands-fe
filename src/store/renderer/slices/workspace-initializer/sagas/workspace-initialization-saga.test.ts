@@ -594,6 +594,34 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       );
     });
 
+    it('says plainly when the machine needs an update to prepare the checkout', async () => {
+      create.mockResolvedValue({
+        ok: false,
+        error: 'initial agent launch failed',
+        errorCode: 'launch-failed',
+        launchFailure: {
+          workspaceId: 'ws-1',
+          agentId: 'agent-9',
+          cause:
+            'Update Intent on mac-mini to run agents for this workspace: it has submodules or a setup script. {"code":"machine-update-required","update":"machine","reason":"prepared-checkout"}',
+        },
+      } as never);
+      vi.spyOn(appClient.workspaces, 'get').mockResolvedValue(workspace);
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ agent: remoteAgent() }),
+        consumer,
+      );
+      appStore.dispatch(action);
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(notify.warning).toHaveBeenCalledWith(
+        m.workspace_startOn_launchFailed_error({
+          machine: 'Mac mini',
+          cause:
+            'Mac mini needs a newer version of Intent to run agents for this workspace, because the workspace has submodules or a setup script.',
+        }),
+      );
+    });
+
     it.each([
       [
         'rejects',

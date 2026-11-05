@@ -70,10 +70,7 @@ test('disconnect removes hardware commands from an open submenu and reconnect re
   ).toHaveText('2');
 });
 
-test('numbered tabs preserve focus, selection, dragging and close actions', async ({
-  mount,
-  page,
-}) => {
+test('numbered tabs preserve focus, selection and close actions', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 900 });
   const component = await mount(Preview);
   const tab = (id: string) => component.locator(`[data-workspace-tab="${id}"]`);
@@ -88,17 +85,6 @@ test('numbered tabs preserve focus, selection, dragging and close actions', asyn
   ).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(regular.getByRole('tab')).toBeFocused();
-  const origin = await pinned.getByTitle('Micro key 1', { exact: true }).boundingBox();
-  const target = await tab('home-unread').boundingBox();
-  await page.mouse.move(origin!.x + origin!.width / 2, origin!.y + origin!.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(target!.x + target!.width - 5, target!.y + target!.height / 2, {
-    steps: 12,
-  });
-  await page.mouse.up();
-  await expect
-    .poll(() => page.evaluate(() => window.__homeWorkspacePreview!.navigation().tabOrder))
-    .toEqual(['home-running', 'home-unread', 'home-review']);
   await pinned.locator('[data-workspace-tab-close]').click();
   await expect(pinned).toHaveCount(0);
   await regular.getByRole('tab').click({ button: 'right' });

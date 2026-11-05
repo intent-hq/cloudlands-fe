@@ -1,186 +1,214 @@
-import { describe, it, expect, vi } from 'vitest';
-
-import type { DraftsClient } from '$lib/client/app-client';
-import type { ContextItem } from '../input/context-api';
+/** @vitest-environment jsdom */
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { tick } from 'svelte';
+import { store } from '$store/renderer/store';
+import { AgentStatus, type AgentSession, type Workspace } from '$shared/types';
+import { createAdmittedLegacyPrincipal } from '../../../../test/fixtures/admitted-legacy-principal';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { transcriptHydrationSettled } from '$store/renderer/slices/chat-state/chat-state-slice';
+import { setComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+import {
+  setWorkspace as setMultiPanelWorkspace,
+  updatePanels,
+} from '$store/renderer/slices/multi-panel-context/multi-panel-context-slice';
+import { selectCheckedPanels } from '$store/renderer/slices/multi-panel-context/multi-panel-context-selectors';
+import type { SendMessagePayload } from '$store/renderer/slices/chat-state/chat-state-types';
+import {
+  installMockBackend,
+  resetMockBackend,
+} from '../../../../test/mocks/backend-transport.mock';
+import ChatPanel from '../ChatPanel.svelte';
 
 /**
- * Regression tests for the suggested-prompt send path (ChatPanel.svelte).
- *
- * Selecting a suggested prompt (SuggestedPrompts click, Ctrl/Alt+number
- * shortcut or prompt selection) must send the prompt BARE and
- * leave the composer draft fully intact: no composer context items or
- * workspace context folded into the payload, no input clearing, and no
- * backend draft clear. The normal composer send keeps clearing everything.
- *
- * Mirrors the extracted-logic pattern used by ChatPanel-draft-attachments
- * .test.ts: the payload builders and `performLocalSendCleanup` body are
- * reproduced here so the exact behavior of both paths is asserted.
+ * Regression (cloudlands-fe#697): selecting a suggested prompt sends ONLY the
+ * prompt text and leaves the composer intact. Renders the real ChatPanel so
+ * the handler wiring itself is covered, not a mirror of it.
  */
 
-// Mirrors handleSelectSuggestedPrompt's sendMessage payload in ChatPanel.svelte.
-function buildSuggestedPromptPayload(env: {
-  wsId: string;
-  prompt: string;
-  agentName?: string;
-  agentModel?: string;
-  isInitialWorkspaceAgent?: boolean;
-}) {
-  return {
-    wsId: env.wsId,
-    text: env.prompt,
-    agentName: env.agentName,
-    agentModel: env.agentModel,
-    isInitialWorkspaceAgent: env.isInitialWorkspaceAgent,
-  };
-}
+vi.mock(
+  '$lib/client/live/backend-transport',
+  async () =>
+    (await import('../../../../test/mocks/backend-transport.mock')).mockBackendTransportModule,
+);
+vi.mock('$features/workspace/workspace-detail-hydration', () => ({
+  ensureWorkspaceDetail: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+}));
+vi.mock('svelte-fa', async () => ({ default: (await import('./mocks/FaIcon.svelte')).default }));
+vi.mock('$lib/components/ui/button', async () => ({
+  Button: (await import('./mocks/Button.svelte')).default,
+}));
+vi.mock('../input/SimpleRichInput.svelte', async () => ({
+  default: (await import('./mocks/MockSimpleRichInput.svelte')).default,
+}));
+vi.mock('../ChatMessage.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AgentCard.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AgentSubscriptions.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../BackgroundHooksRow.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../MonitoredScriptsRow.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
+vi.mock('../AuroraBackground.svelte', async () => ({
+  default: (await import('./mocks/SlotOnly.svelte')).default,
+}));
 
-// Mirrors handleSend's sendMessage payload assembly in ChatPanel.svelte.
-function buildComposerSendPayload(env: {
-  wsId: string;
-  text: string;
-  contextItems: ContextItem[];
-  inlineImageItems: ContextItem[];
-  mentionContextItems: ContextItem[];
-  workspaceContextStr: string;
-}) {
-  const allContextItems = [
-    ...env.contextItems,
-    ...env.inlineImageItems,
-    ...env.mentionContextItems,
-  ];
-  const imageBlocks = allContextItems
-    .filter((item) => item.imageData && item.imageMimeType)
-    .map((item) => ({
-      type: 'image' as const,
-      data: item.imageData!,
-      mimeType: item.imageMimeType!,
-    }));
-  return {
-    wsId: env.wsId,
-    text: env.text,
-    contextItems: allContextItems,
-    workspaceContextStr: env.workspaceContextStr,
-    ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
-  };
-}
+const workspace = { id: 'suggested-ws', title: 'Suggested', myRole: 'owner' } as Workspace;
+const agentId = 'suggested-agent';
+const PROMPT = 'Run the tests';
+let dispose: () => void;
 
-interface ComposerState {
-  inputValue: string;
-  contextItems: ContextItem[];
-}
-
-// Mirrors ChatPanel.svelte's performLocalSendCleanup body.
-async function performLocalSendCleanup(
-  options: { clearInput?: boolean; followBottom?: boolean; historyText?: string | null },
-  deps: {
-    state: ComposerState;
-    inputComponent: { clear: () => void };
-    drafts: DraftsClient;
-    workspaceId: string;
-    agentId: string;
-    addToInputHistory: (text: string) => void;
-  },
-) {
-  if (options.historyText) {
-    deps.addToInputHistory(options.historyText);
-  }
-  if (options.clearInput) {
-    deps.state.contextItems = [];
-    deps.state.inputValue = '';
-    deps.inputComponent.clear();
-    await deps.drafts.clear(deps.workspaceId, deps.agentId);
-  }
-}
-
-function createDeps(state: ComposerState) {
-  const drafts: DraftsClient = {
-    get: vi.fn().mockResolvedValue(null),
-    set: vi.fn().mockResolvedValue({ ok: true, updatedAt: '2026-08-04T00:00:00Z' }),
-    clear: vi.fn().mockResolvedValue({ ok: true }),
-  };
-  return {
-    state,
-    inputComponent: { clear: vi.fn() },
-    drafts,
-    workspaceId: 'ws-1',
-    agentId: 'agent-1',
-    addToInputHistory: vi.fn(),
-  };
-}
-
-const imageItem: ContextItem = {
+const attachment = {
   id: 'file-upload-1-cat.png',
-  type: 'file',
+  type: 'file' as const,
   label: 'cat.png',
   imageData: 'aGVsbG8=',
   imageMimeType: 'image/png',
 };
+const checkedNotePanel = {
+  id: 'panel-1:tab-1',
+  panelId: 'panel-1',
+  tabId: 'tab-1',
+  type: 'note' as const,
+  label: 'Spec',
+  noteId: 'spec',
+  checked: true,
+};
 
-describe('suggested-prompt send payload', () => {
-  it('sends the prompt bare — no context items, workspace context, or imageBlocks', () => {
-    const payload = buildSuggestedPromptPayload({
-      wsId: 'ws-1',
-      prompt: 'Review the failing tests',
-      agentName: 'Chief',
-      agentModel: 'model-x',
-      isInitialWorkspaceAgent: false,
-    });
+function session(): AgentSession {
+  return {
+    id: agentId,
+    workspaceId: workspace.id,
+    name: 'Agent',
+    status: AgentStatus.Idle,
+    messages: [
+      { id: 'u1', role: 'user', content: 'Hi', timestamp: '2026-11-05T00:00:00Z' },
+      {
+        id: 'a1',
+        role: 'assistant',
+        content: 'Done.',
+        contentBlocks: [
+          {
+            type: 'text',
+            text: `Done.\n\n<!-- suggested-prompts\n${PROMPT}\nCheck the build status\n-->\n`,
+          },
+        ],
+        timestamp: '2026-11-05T00:00:01Z',
+      },
+    ],
+  } as AgentSession;
+}
 
-    expect(payload.text).toBe('Review the failing tests');
-    expect(payload).not.toHaveProperty('contextItems');
-    expect(payload).not.toHaveProperty('workspaceContextStr');
-    expect(payload).not.toHaveProperty('imageBlocks');
-    expect(payload).not.toHaveProperty('noteIds');
-  });
-
-  it('normal composer send still folds context items and workspace context into the payload', () => {
-    const payload = buildComposerSendPayload({
-      wsId: 'ws-1',
-      text: 'hello',
-      contextItems: [imageItem],
-      inlineImageItems: [],
-      mentionContextItems: [],
-      workspaceContextStr: 'workspace ctx',
-    });
-
-    expect(payload.contextItems).toEqual([imageItem]);
-    expect(payload.workspaceContextStr).toBe('workspace ctx');
-    expect(payload.imageBlocks).toEqual([
-      { type: 'image', data: 'aGVsbG8=', mimeType: 'image/png' },
-    ]);
-  });
+beforeEach(() => {
+  installMockBackend();
+  dispose = store.init(createAdmittedLegacyPrincipal());
+  store.dispatch(setWorkspaceEntity(workspace));
+  store.dispatch(bulkUpsertSessions([session()]));
+  store.dispatch(transcriptHydrationSettled(agentId));
+  store.dispatch(setComposerContextItems(workspace.id, agentId, [attachment]));
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  Element.prototype.scrollTo ??= function scrollTo() {};
+});
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  dispose();
+  resetMockBackend();
+  vi.unstubAllGlobals();
 });
 
-describe('suggested-prompt send cleanup leaves the draft intact', () => {
-  it('retains draft text + attachments and never clears the backend draft', async () => {
-    const state: ComposerState = { inputValue: 'my draft', contextItems: [imageItem] };
-    const deps = createDeps(state);
+/** Mount first: ChatPanel re-syncs the panel registry on mount. */
+async function mount() {
+  render(ChatPanel, { props: { workspace, agentId, isActive: true } });
+  await tick();
+  store.dispatch(setMultiPanelWorkspace(workspace.id));
+  store.dispatch(updatePanels([checkedNotePanel]));
+  expect(selectCheckedPanels.select(store.state)).toHaveLength(1);
+}
 
-    // Mirrors handleSelectSuggestedPrompt: performLocalSendCleanup({ followBottom: true })
-    await performLocalSendCleanup({ followBottom: true }, deps);
+function sentPayloads(dispatch: ReturnType<typeof vi.spyOn>) {
+  return dispatch.mock.calls
+    .map(([action]) => action as { type: string; payload?: unknown })
+    .filter((action) => action.type === 'chatState/sendMessage')
+    .map((action) => (action.payload as { payload: SendMessagePayload }).payload);
+}
 
-    expect(state.inputValue).toBe('my draft');
-    expect(state.contextItems).toEqual([imageItem]);
-    expect(deps.inputComponent.clear).not.toHaveBeenCalled();
-    expect(deps.drafts.clear).not.toHaveBeenCalled();
-    expect(deps.addToInputHistory).not.toHaveBeenCalled();
+function dispatchedTypes(dispatch: ReturnType<typeof vi.spyOn>) {
+  return dispatch.mock.calls.map(([action]) => (action as { type: string }).type);
+}
+
+describe('suggested prompt selection (ChatPanel)', () => {
+  it('sends only the prompt text and leaves the composer intact', async () => {
+    await mount();
+    const button = await screen.findByRole('button', { name: PROMPT });
+    await fireEvent.input(screen.getByTestId('mock-rich-input-editor'), {
+      target: { value: 'my draft' },
+    });
+    const dispatch = vi.spyOn(store, 'dispatch');
+
+    await fireEvent.click(button);
+    await tick();
+
+    const payloads = sentPayloads(dispatch);
+    expect(payloads).toHaveLength(1);
+    const [payload] = payloads;
+    expect(payload.text).toBe(PROMPT);
+    expect(payload.contextItems ?? []).toEqual([]);
+    expect(payload.workspaceContextStr ?? '').toBe('');
+    expect(payload.noteIds ?? []).toEqual([]);
+    expect(payload.imageBlocks).toBeUndefined();
+    expect(payload.fileBlocks).toBeUndefined();
+    expect(payload.messageMetadata).toBeUndefined();
+
+    const types = dispatchedTypes(dispatch);
+    expect(types).not.toContain('chatDrafts/clearRequested');
+    expect(types).not.toContain('multiPanelContext/clearChecked');
+    expect(selectComposerContextItems.select(store.state, workspace.id, agentId)).toEqual([
+      attachment,
+    ]);
+    expect(selectCheckedPanels.select(store.state)).toHaveLength(1);
+    expect(screen.getByTestId('mock-rich-input').dataset.value).toBe('my draft');
   });
 
-  it('normal composer send still clears input, attachments, and the backend draft', async () => {
-    const state: ComposerState = { inputValue: 'hello', contextItems: [imageItem] };
-    const deps = createDeps(state);
+  it('normal composer send still carries and clears the composer context', async () => {
+    await mount();
+    await fireEvent.input(await screen.findByTestId('mock-rich-input-editor'), {
+      target: { value: 'hello' },
+    });
+    const dispatch = vi.spyOn(store, 'dispatch');
 
-    // Mirrors handleSend: performLocalSendCleanup({ clearInput: true, followBottom: true, historyText })
-    await performLocalSendCleanup(
-      { clearInput: true, followBottom: true, historyText: 'hello' },
-      deps,
-    );
+    await fireEvent.click(screen.getByTestId('mock-input-submit'));
+    await tick();
 
-    expect(state.inputValue).toBe('');
-    expect(state.contextItems).toEqual([]);
-    expect(deps.inputComponent.clear).toHaveBeenCalledOnce();
-    expect(deps.drafts.clear).toHaveBeenCalledOnce();
-    expect(deps.drafts.clear).toHaveBeenCalledWith('ws-1', 'agent-1');
-    expect(deps.addToInputHistory).toHaveBeenCalledWith('hello');
+    const [payload] = sentPayloads(dispatch);
+    expect(payload.text).toBe('hello');
+    expect(payload.contextItems).toEqual([expect.objectContaining({ id: attachment.id })]);
+    expect(payload.noteIds).toEqual(['spec']);
+    expect(payload.imageBlocks).toHaveLength(1);
+    expect(payload.messageMetadata).toEqual({ mentionTokens: ['@src/picked.ts'] });
+    const types = dispatchedTypes(dispatch);
+    expect(types).toContain('chatDrafts/clearRequested');
+    expect(types).toContain('multiPanelContext/clearChecked');
+    expect(selectComposerContextItems.select(store.state, workspace.id, agentId)).toEqual([]);
+    expect(screen.getByTestId('mock-rich-input').dataset.value).toBe('');
   });
 });

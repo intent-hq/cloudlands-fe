@@ -17,7 +17,7 @@
   const Icon = $derived(ICONS[platform]);
 </script>
 
-<Tooltip content={NAMES[platform]} class="inline-flex align-middle">
+<Tooltip content={NAMES[platform]} class="inline-flex">
   <span role="img" aria-label={NAMES[platform]} class="inline-flex text-muted-foreground">
     <Icon size={14} weight="fill" aria-hidden="true" />
   </span>

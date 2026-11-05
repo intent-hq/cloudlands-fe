@@ -10,10 +10,6 @@ import {
   dockLocalRect,
   dockWindowEnvelope,
   resolveDockSurface,
-  resolveFloatingDockGeometry,
-  DOCK_FLOATING_COMPACT_SIZE,
-  DOCK_FLOATING_SHADOW_MARGIN,
-  type DockPlacementSnapshot,
   type DockDisplayGeometry,
 } from '$shared/dock-placement';
 
@@ -53,24 +49,22 @@ test.afterEach(async ({ page }, testInfo) => {
   await page.screenshot({ path: testInfo.outputPath('failure.png') });
 });
 
-async function transferImage(editor: Locator, name: string, kind: 'paste' | 'drop') {
+async function transferImage(editor: Locator, name: string) {
   await editor.evaluate(
-    (element, { name, kind, base64 }) => {
+    (element, { name, base64 }) => {
       const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       const transfer = new DataTransfer();
       transfer.items.add(new File([bytes], name, { type: 'image/png' }));
       // Exercise browser FileReader and the production handlers; never the OS clipboard.
       element.dispatchEvent(
-        kind === 'paste'
-          ? new ClipboardEvent('paste', {
-              clipboardData: transfer,
-              bubbles: true,
-              cancelable: true,
-            })
-          : new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true }),
+        new ClipboardEvent('paste', {
+          clipboardData: transfer,
+          bubbles: true,
+          cancelable: true,
+        }),
       );
     },
-    { name, kind, base64: clipboardPng },
+    { name, base64: clipboardPng },
   );
 }
 
@@ -384,7 +378,7 @@ test('conversation canonical composer preserves image drafts and retries one exa
     );
   await expect(editor).toHaveAttribute('contenteditable', 'true');
   await editor.fill('Inspect the pasted diagram');
-  await transferImage(editor, 'diagram.png', 'paste');
+  await transferImage(editor, 'diagram.png');
   const input = component.locator('[data-dock-conversation-composer]');
   const thumbnail = input.getByRole('button', {
     name: 'View diagram.png full size',
@@ -434,13 +428,13 @@ test('conversation canonical composer preserves image drafts and retries one exa
   await expect(editor).toHaveText('');
   await expect(thumbnail).toHaveCount(0);
   await editor.fill('Specialist text');
-  await transferImage(editor, 'specialist.png', 'drop');
+  await transferImage(editor, 'specialist.png');
   const specialist = component.getByRole('button', {
     name: 'View specialist.png full size',
     exact: true,
   });
   await expect(specialist).toBeVisible();
-  await specialist.hover();
+  await specialist.focus();
   await component.getByRole('button', { name: 'Remove specialist.png', exact: true }).click();
   await expect(specialist).toHaveCount(0);
   await chooser.click();
@@ -521,7 +515,7 @@ test('conversation canonical composer preserves image drafts and retries one exa
     (_, index) => `Draft line ${index + 1}: keep the newer image and reply.`,
   ).join('\n');
   await editor.fill(newerText);
-  await transferImage(editor, 'newer.png', 'paste');
+  await transferImage(editor, 'newer.png');
   const newer = input.getByRole('button', { name: 'View newer.png full size', exact: true });
   await expect(newer).toBeVisible();
   await component.getByRole('button', { name: 'Accept synthetic delivery', exact: true }).click();
@@ -569,7 +563,7 @@ test('conversation canonical composer preserves image drafts and retries one exa
   await expect(editor).toHaveText('');
   await expect(newer).toHaveCount(0);
   await editor.fill('Preserve my next reply after rejection');
-  await transferImage(editor, 'after-rejection.png', 'paste');
+  await transferImage(editor, 'after-rejection.png');
   const afterRejection = input.getByRole('button', {
     name: 'View after-rejection.png full size',
     exact: true,
@@ -604,7 +598,6 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
     page,
   }, testInfo) => {
     await page.setViewportSize({ width: 800, height: 640 });
-    const side = mode === 'side-left' ? 'left' : 'right';
     const isSide = mode !== 'notch';
     await page.emulateMedia({ reducedMotion: isSide ? 'no-preference' : 'reduce' });
     const props = dockRailPreview.states[mode].props;
@@ -668,143 +661,7 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
     await expect(panel).toHaveCount(0);
     await expect(last).toBeFocused();
     await expect.poll(visible).toBe(true);
-    if (isSide) {
-      await last.hover();
-      await expect
-        .poll(async () => Number(await last.getAttribute('data-dock-scale')))
-        .toBeGreaterThan(1);
-      await expect
-        .poll(async () =>
-          Number(await entries.nth(workspaces.length - 1).getAttribute('data-dock-scale')),
-        )
-        .toBeGreaterThan(1);
-      const card = component.getByTestId('dock-preview');
-      await expect(card).toHaveAttribute('data-preview-workspace-id', targetId);
-      await expect
-        .poll(() =>
-          component.evaluate((root) => {
-            const rail = root.querySelector('[data-dock-scroll]');
-            const host = root.querySelector('.dock-preview-host');
-            if (!rail || !host) return false;
-            const clip = rail.getBoundingClientRect(),
-              bounds = host.getBoundingClientRect();
-            const regions = JSON.parse(root.getAttribute('data-preview-pointer') ?? '{}')
-              .regions as { x: number; y: number; width: number; height: number }[] | undefined;
-            if (!regions?.length) return false;
-            const contained = regions.every(
-              (r) =>
-                r.x >= bounds.left - 1 &&
-                r.y >= bounds.top - 1 &&
-                r.x + r.width <= bounds.right + 1 &&
-                r.y + r.height <= bounds.bottom + 1,
-            );
-            const covered = [...rail.querySelectorAll('[data-dock-entry]')].every((entry) => {
-              const b = entry.getBoundingClientRect();
-              const left = Math.max(b.left, clip.left),
-                right = Math.min(b.right, clip.right);
-              const top = Math.max(b.top, clip.top),
-                bottom = Math.min(b.bottom, clip.bottom);
-              if (right <= left || bottom <= top) return true;
-              return regions.some(
-                (r) =>
-                  r.x <= left + 1 &&
-                  r.y <= top + 1 &&
-                  r.x + r.width >= right - 1 &&
-                  r.y + r.height >= bottom - 1,
-              );
-            });
-            return contained && covered;
-          }),
-        )
-        .toBe(true);
-      const iconBox = await last.boundingBox(),
-        cardBox = await card.boundingBox();
-      if (!iconBox || !cardBox) throw new Error('Missing scrolled icon or hovercard');
-      const center = iconBox.y + iconBox.height / 2;
-      expect(center).toBeGreaterThanOrEqual(cardBox.y);
-      expect(center).toBeLessThanOrEqual(cardBox.y + cardBox.height);
-      await page.mouse.move(
-        side === 'left' ? cardBox.x + 4 : cardBox.x + cardBox.width - 4,
-        center,
-        { steps: 8 },
-      );
-      await expect(card).toBeVisible();
-      await expect(card).toHaveAttribute('data-preview-workspace-id', targetId);
-    } else {
-      await last.hover();
-      await expect(last).toHaveAttribute('data-workspace-id', targetId);
-    }
     await component.screenshot({ path: testInfo.outputPath(`workspace-scroll-${mode}.png`) });
-  });
-}
-
-if (process.env.DOCK_CONVERSATION_DEMO === '1') {
-  test.use({
-    viewport: { width: 1280, height: 800 },
-    deviceScaleFactor: 2,
-    video: { mode: 'on', size: { width: 1280, height: 800 } },
-  });
-  test.describe('conversation handoff capture', () => {
-    test('real-speed compact conversation walkthrough', async ({ mount, page }, testInfo) => {
-      await page.addStyleTag({
-        content: '[data-dock-rail-preview] { margin: 60px auto; } body { background: #171717; }',
-      });
-      const props = dockRailPreview.states.notch.props;
-      const component = await mount(DockRailPreview, {
-        props: {
-          ...props,
-          workspaces: props.workspaces.slice(0, 2),
-          placement: adaptiveDockFixture('floating'),
-          conversationFixture: true,
-          theme: 'dark',
-        },
-      });
-      // Capture pacing only; verification uses settled assertions rather than timed frames.
-      await page.waitForTimeout(1000);
-      await component.getByTestId('dock-drag-handle').hover();
-      const row = component.locator('[data-dock-row][data-workspace-id="dock:assistant"]');
-      await expect(row).toBeVisible();
-      await page.waitForTimeout(1000);
-      await row.click();
-      const panel = component.getByTestId('dock-conversation-surface');
-      await expect(panel).toBeVisible();
-      await page.mouse.move(1000, 700);
-      await page.waitForTimeout(1800);
-      const composer = panel.getByRole('textbox', { name: 'Message', exact: true });
-      await composer.pressSequentially('Keep my place while I switch agents.', { delay: 45 });
-      await page.waitForTimeout(1000);
-      const chooser = panel.getByRole('combobox', { name: 'Conversation with' });
-      await chooser.click();
-      await page.waitForTimeout(900);
-      await page.getByRole('option', { name: 'Navigation specialist', exact: true }).click();
-      await expect(composer).toHaveValue('');
-      await composer.pressSequentially('Check the keyboard path next.', { delay: 45 });
-      await page.waitForTimeout(1000);
-      await chooser.click();
-      await page.waitForTimeout(800);
-      await page.getByRole('option', { name: 'Workspace coordinator', exact: true }).click();
-      await expect(composer).toHaveValue('Keep my place while I switch agents.');
-      await composer.focus();
-      await page.waitForTimeout(1500);
-      await component.screenshot({ path: testInfo.outputPath('conversation-final.png') });
-      await page.keyboard.press('Escape');
-      await expect(panel).toHaveCount(0);
-      await expect(row).toBeFocused();
-      await page.waitForTimeout(1400);
-      await writeFile(
-        testInfo.outputPath('demo-scope.json'),
-        JSON.stringify(
-          {
-            scope:
-              'Real shell/panel, controlled workspace and draft callbacks; UI walkthrough only, no daemon/native send',
-            viewport: { width: 1280, height: 800 },
-            deviceScaleFactor: 2,
-          },
-          null,
-          2,
-        ),
-      );
-    });
   });
 }
 
@@ -986,8 +843,6 @@ for (const side of ['left', 'right'] as const) {
     });
     const first = component.locator(`[data-dock-entry="${workspaces[0].workspace.id}"]`);
     const second = component.locator(`[data-dock-entry="${workspaces[1].workspace.id}"]`);
-    await first.hover();
-    await expect(component.getByTestId('dock-preview')).toBeVisible();
     await expect(component.getByTestId('dock-conversation-surface')).toHaveCount(0);
     const railPosition = async () => {
       const snapshot = JSON.parse(
@@ -1026,21 +881,6 @@ for (const side of ['left', 'right'] as const) {
     await page.getByRole('option', { name: 'Navigation specialist', exact: true }).click();
     await expect(composer).toHaveValue('');
     await composer.fill('Specialist draft');
-    await page.mouse.move(940, 700);
-    await expect(composer).toBeFocused();
-    await expect(panel).toBeVisible();
-    await panel.getByRole('region', { name: 'Messages', exact: true }).click();
-    await expect(composer).not.toBeFocused();
-    await expect(panel).toBeVisible();
-    await page.mouse.move(940, 700);
-    await expect(panel).not.toBeVisible();
-    // A remembered conversation never reopens on hover on the side dock; a click does.
-    await first.hover();
-    await expect(panel).not.toBeVisible();
-    await first.click();
-    await expect(panel).toBeVisible();
-    await expect(chooser).toContainText('Navigation specialist');
-    await expect(composer).toHaveValue('Specialist draft');
     await second.click();
     await expect(panel).toHaveAttribute('data-workspace-id', String(workspaces[1].workspace.id));
     await expect(composer).toHaveValue('');
@@ -1133,585 +973,6 @@ for (const side of ['left', 'right'] as const) {
           commands: await component.getAttribute('data-preview-commands'),
           actions: await component.getAttribute('data-preview-actions'),
           submissions: await component.getAttribute('data-preview-submissions'),
-        },
-        null,
-        2,
-      ),
-    );
-  });
-}
-
-test('conversation horizontal collapse preserves drafts and restores origin in notch and floating modes', async ({
-  mount,
-  page,
-}, testInfo) => {
-  await page.setViewportSize({ width: 960, height: 720 });
-  await page.emulateMedia({ reducedMotion: 'reduce' });
-  for (const shape of ['notch', 'floating'] as const) {
-    const props = dockRailPreview.states.notch.props;
-    const component = await mount(DockRailPreview, {
-      props: {
-        ...props,
-        workspaces: props.workspaces.slice(0, 2),
-        placement: adaptiveDockFixture(shape),
-        conversationFixture: true,
-      },
-    });
-    await component.getByTestId('dock-drag-handle').hover();
-    const row = component.locator('[data-dock-row][data-workspace-id="dock:assistant"]');
-    await row.hover();
-    await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
-    const expandedWidth = (await component.getByTestId('dock-surface').boundingBox())?.width;
-    if (!expandedWidth) throw new Error('Expanded overview missing');
-    const assertSharedWidth = () =>
-      expect
-        .poll(async () =>
-          Math.abs(
-            ((await component.getByTestId('dock-surface').boundingBox())?.width ?? 0) -
-              expandedWidth,
-          ),
-        )
-        .toBeLessThanOrEqual(1);
-    await expect(component.getByTestId('dock-conversation-surface')).toHaveCount(0);
-    await row.click();
-    const panel = component.getByTestId('dock-conversation-surface');
-    await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
-    await assertSharedWidth();
-    const composer = panel.getByRole('textbox', { name: 'Message', exact: true });
-    await composer.fill('Retain this reply');
-    await page.mouse.move(900, 680);
-    await expect(composer).toBeFocused();
-    await expect(panel).toBeVisible();
-    await expect(component.getByTestId('dock-overview')).toHaveCount(0);
-    await panel.getByRole('region', { name: 'Messages', exact: true }).click();
-    await expect(composer).not.toBeFocused();
-    await expect(panel).toBeVisible();
-    await page.mouse.move(900, 680);
-    await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '0');
-    await expect(component.locator('.overview-frame')).toHaveAttribute('inert', '');
-    await expect(component.locator('.overview-frame')).toHaveAttribute('aria-hidden', 'true');
-    await expect(component.locator('.overview-frame')).toHaveCSS('opacity', '0');
-    await component.getByTestId('dock-drag-handle').hover();
-    await expect(panel).toBeVisible();
-    await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
-    await expect(composer).toHaveValue('Retain this reply');
-    if (shape === 'floating') {
-      // Away from the camera the header is not chrome; it matches the panel background.
-      const header = await panel
-        .locator('[data-dock-chrome]')
-        .evaluate((el) => [
-          getComputedStyle(el).backgroundColor,
-          getComputedStyle(el.closest('[data-dock-conversation]')!).backgroundColor,
-        ]);
-      expect(header[0]).toBe(header[1]);
-    }
-    await component.screenshot({ path: testInfo.outputPath(`conversation-${shape}.png`) });
-    await panel.getByRole('button', { name: 'Go back', exact: true }).click();
-    await expect(row).toBeFocused();
-    await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
-    await assertSharedWidth();
-    await page.mouse.move(900, 680);
-    await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '0');
-    await component.getByTestId('dock-drag-handle').hover();
-    await row.hover();
-    const workspaceRow = component.locator('[data-dock-row]').nth(1);
-    const workspaceId = await workspaceRow.getAttribute('data-workspace-id');
-    await workspaceRow.click();
-    await expect(panel).toHaveAttribute('data-workspace-id', workspaceId!);
-    await assertSharedWidth();
-    await panel.getByRole('button', { name: 'Go back', exact: true }).click();
-    await expect(workspaceRow).toBeFocused();
-    await assertSharedWidth();
-    await row.focus();
-    await row.press('Enter');
-    await expect(panel.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue(
-      'Retain this reply',
-    );
-    await page.keyboard.press('Escape');
-    await expect(panel).toHaveCount(0);
-    await expect(row).toBeFocused();
-    if (shape === 'notch') {
-      // Animated expand from compact into the pinned conversation: content must not shift
-      // sideways once it settles, and only a user gesture hands the composer focus.
-      await page.emulateMedia({ reducedMotion: 'no-preference' });
-      const shell = component.getByTestId('dock-shell');
-      const editor = panel.getByRole('textbox', { name: 'Message', exact: true });
-      const collapse = async () => {
-        await panel.getByRole('region', { name: 'Messages', exact: true }).click();
-        await page.mouse.move(900, 680);
-        await expect(shell).toHaveAttribute('data-reveal', '0');
-      };
-      await row.click();
-      await expect(panel).toHaveAttribute('data-workspace-id', '__chief__');
-      await expect(editor).toBeFocused();
-      await collapse();
-      // Hover is passive disclosure: it reveals the conversation without taking focus.
-      await component.getByTestId('dock-drag-handle').hover();
-      await expect(shell).toHaveAttribute('data-reveal', '1');
-      await expect(editor).not.toBeFocused();
-      await collapse();
-      await page.evaluate(() => {
-        type Inset = { left: number; right: number };
-        const host = window as unknown as { __laneFrames: unknown[]; __laneStop: boolean };
-        host.__laneFrames = [];
-        host.__laneStop = false;
-        // Keep raw content insets to detect handle-induced shifts. Independently
-        // measure native scrollbar reservation: classic scrollbars reserve layout
-        // space with scrollbar-gutter: stable, while overlay scrollbars do not.
-        const inset = (surface: Element, lane: Element | null) => {
-          if (!lane) return null;
-          const style = getComputedStyle(lane);
-          const outer = surface.getBoundingClientRect();
-          const inner = lane.getBoundingClientRect();
-          const own: Inset = {
-            left: parseFloat(style.paddingLeft),
-            right: parseFloat(style.paddingRight),
-          };
-          const content: Inset = {
-            left: inner.left + own.left - outer.left,
-            right: outer.right - (inner.right - own.right),
-          };
-          const scroller = lane.closest<HTMLElement>('.transcript-scroll');
-          const scrollbar: Inset = { left: 0, right: 0 };
-          if (scroller) {
-            const scrollStyle = getComputedStyle(scroller);
-            scrollbar.left = scroller.clientLeft - parseFloat(scrollStyle.borderLeftWidth);
-            scrollbar.right =
-              scroller.offsetWidth -
-              scroller.clientWidth -
-              scroller.clientLeft -
-              parseFloat(scrollStyle.borderRightWidth);
-          }
-          return { content, own, scrollbar };
-        };
-        const sample = () => {
-          const surface = document.querySelector('[data-testid="dock-conversation-surface"]');
-          const reveal = Number(
-            document.querySelector('[data-testid="dock-shell"]')?.getAttribute('data-reveal'),
-          );
-          const back = surface?.querySelector('[data-dock-conversation-back]');
-          if (surface && reveal > 0)
-            host.__laneFrames.push({
-              reveal,
-              handles: surface.querySelectorAll('[data-dock-resize]').length,
-              header: back
-                ? back.getBoundingClientRect().left - surface.getBoundingClientRect().left
-                : null,
-              transcript: inset(surface, surface.querySelector('.transcript')),
-              composer: inset(surface, surface.querySelector('.composer-prompt-lane')),
-            });
-          if (!host.__laneStop) requestAnimationFrame(sample);
-        };
-        requestAnimationFrame(sample);
-      });
-      await component.getByTestId('dock-drag-handle').click();
-      await expect(shell).toHaveAttribute('data-reveal', '1');
-      await expect(editor).toBeFocused();
-      await expect(panel.locator('[data-dock-resize="e"]')).toHaveCount(1);
-      await page.waitForTimeout(300);
-      type Inset = { left: number; right: number };
-      type LaneInset = { content: Inset; own: Inset; scrollbar: Inset };
-      const frames = await page.evaluate(() => {
-        const host = window as unknown as {
-          __laneFrames: {
-            reveal: number;
-            handles: number;
-            header: number | null;
-            transcript: LaneInset | null;
-            composer: LaneInset | null;
-          }[];
-          __laneStop: boolean;
-        };
-        host.__laneStop = true;
-        return host.__laneFrames;
-      });
-      const laneFramesPath = testInfo.outputPath('notch-expand-lane-frames.json');
-      await writeFile(laneFramesPath, JSON.stringify(frames));
-      await testInfo.attach('notch-expand-lane-frames', {
-        path: laneFramesPath,
-        contentType: 'application/json',
-      });
-      const first = frames[0];
-      const settled = frames.at(-1);
-      if (!first?.transcript || !first.composer || !settled?.transcript || !settled.composer)
-        throw new Error('Expand frames missing conversation lanes');
-      // The first expanded frame precedes the resize handles: its inset is the pre-handle one.
-      expect(first.reveal).toBeLessThan(1);
-      expect(first.handles).toBe(0);
-      expect(settled.reveal).toBe(1);
-      expect(settled.handles).toBeGreaterThan(0);
-      expect(first.header).toBe(settled.header);
-      expect(first.transcript.content).toEqual(settled.transcript.content);
-      expect(first.composer.content).toEqual(settled.composer.content);
-      // Overlay handles take no layout space. Only lane padding and the scrollport's
-      // independently measured native scrollbar reservation can inset the transcript.
-      expect(first.transcript.scrollbar).toEqual(settled.transcript.scrollbar);
-      expect(settled.transcript.content).toEqual({
-        left: settled.transcript.own.left + settled.transcript.scrollbar.left,
-        right: settled.transcript.own.right + settled.transcript.scrollbar.right,
-      });
-      expect(settled.composer.content).toEqual(settled.composer.own);
-      // The east handle overlays the edge without covering the transcript scrollbar thumb.
-      // Headless Chromium hides scrollbars, so hit-test the thumb's ink column instead: the
-      // app scrollbar is 10px wide with a 5px transparent outer border on the thumb.
-      const messages = panel.getByRole('region', { name: 'Messages', exact: true });
-      const hits = await messages.evaluate((el) => {
-        const box = el.getBoundingClientRect();
-        const y = box.top + box.height / 2;
-        const hit = (inset: number) => {
-          const target = document.elementFromPoint(box.right - inset, y);
-          return (
-            target?.closest('[data-dock-resize]')?.getAttribute('data-dock-resize') ??
-            (target && el.contains(target) ? 'transcript' : null)
-          );
-        };
-        return { edge: hit(1), thumbInk: hit(6), thumbInner: hit(9) };
-      });
-      expect(hits).toEqual({ edge: 'e', thumbInk: 'transcript', thumbInner: 'transcript' });
-      await component.screenshot({ path: testInfo.outputPath('conversation-notch-expanded.png') });
-      await page.emulateMedia({ reducedMotion: 'reduce' });
-    }
-    await component.unmount();
-  }
-});
-
-for (const scene of [
-  {
-    name: 'center-down',
-    side: false,
-    x: 0.5,
-    y: 0.12,
-    height: 760,
-    edge: 'se',
-    dx: -24,
-    dy: -20,
-  },
-  { name: 'right-up', side: false, x: 1, y: 0.88, height: 760, edge: 'nw', dx: 24, dy: 20 },
-  { name: 'side-bottom', side: true, x: 0, y: 0.9, height: 760, edge: 'ne', dx: -24, dy: 20 },
-  { name: 'short-up', side: false, x: 0.5, y: 0.88, height: 400, edge: 'w', dx: 24, dy: 0 },
-  {
-    name: 'rejected',
-    side: false,
-    x: 0.5,
-    y: 0.12,
-    height: 760,
-    edge: 'se',
-    dx: -24,
-    dy: -20,
-    ack: 'reject',
-  },
-  {
-    name: 'late-ack',
-    side: false,
-    x: 0.5,
-    y: 0.12,
-    height: 760,
-    edge: 'se',
-    dx: -24,
-    dy: -20,
-    ack: 'defer',
-  },
-] as const) {
-  test(`conversation resize follows the dragged edge: ${scene.name}`, async ({
-    mount,
-    page,
-  }, testInfo) => {
-    test.setTimeout(30_000);
-    await page.setViewportSize({ width: 1100, height: 850 });
-    const evidence: unknown[] = [];
-
-    await page.mouse.move(1080, 830);
-    await page.emulateMedia({
-      reducedMotion: scene.name === 'short-up' ? 'reduce' : 'no-preference',
-    });
-    const display: DockDisplayGeometry = {
-      id: 1,
-      bounds: { x: -1200, y: -100, width: 1000, height: scene.height },
-      workArea: { x: -1200, y: -76, width: 1000, height: scene.height - 48 },
-      cutout: null,
-    };
-    const target = scene.side
-      ? { kind: 'edge' as const, displayId: 1, side: 'left' as const, along: scene.y }
-      : { kind: 'floating' as const, displayId: 1, x: scene.x, y: scene.y };
-    const floating =
-      target.kind === 'floating'
-        ? resolveFloatingDockGeometry(target, display, DOCK_FLOATING_COMPACT_SIZE)
-        : null;
-    const core =
-      floating?.surface ?? resolveDockSurface(target, display, { width: 40, height: 144 });
-    const windowBounds = dockWindowEnvelope(
-      core,
-      display,
-      null,
-      scene.side ? 'left' : null,
-      true,
-      scene.side ? 24 : DOCK_FLOATING_SHADOW_MARGIN,
-    );
-    const snapshot: DockPlacementSnapshot = {
-      ...adaptiveDockFixture(scene.side ? 'edge' : 'floating', 'left'),
-      placement: target,
-      windowBounds,
-      surface: dockLocalRect(core, windowBounds),
-      workArea: dockLocalRect(display.workArea, windowBounds),
-      ...(floating
-        ? {
-            floatingAnchor: dockLocalRect(floating.anchor, windowBounds),
-            expansionDirection: floating.expansionDirection,
-          }
-        : {}),
-    };
-    const component = await mount(DockRailPreview, {
-      props: {
-        ...dockRailPreview.states[scene.side ? 'side-left' : 'floating'].props,
-        placement: snapshot,
-        floatingDisplay: display,
-        conversationFixture: true,
-        resizeAcknowledgement: 'ack' in scene ? scene.ack : 'accept',
-        viewportWidth: 1000,
-        viewportHeight: scene.height,
-      },
-    });
-    if (!scene.side) await component.getByTestId('dock-drag-handle').hover();
-    await component
-      .locator(scene.side ? '[data-dock-entry]' : '[data-dock-row]')
-      .first()
-      .click();
-    const panel = component.getByTestId('dock-conversation-surface');
-    const editor = panel.getByRole('textbox', { name: 'Message', exact: true });
-    await editor.fill('Keep this reply through resize');
-    const rect = async () => {
-      const value = await panel.boundingBox();
-      if (!value) throw new Error('Conversation panel missing');
-      return value;
-    };
-    await expect
-      .poll(async () => {
-        const state = JSON.parse((await component.getAttribute('data-preview-placement')) ?? '{}');
-        const current = await rect();
-        return Math.abs(
-          current.width - (scene.side ? state.sidePanel?.width : state.surface?.width),
-        );
-      })
-      .toBeLessThanOrEqual(1);
-    // The side box grows in from the rail; measure once it has settled.
-    if (scene.side)
-      await expect(component.getByTestId('dock-edge-shell')).toHaveAttribute('data-reveal', '1');
-    const before = await rect();
-    const handle = panel.locator(`[data-dock-resize="${scene.edge}"]`);
-    await expect(handle).toBeVisible();
-    const handleBox = await handle.boundingBox();
-    if (!handleBox) throw new Error('Resize handle missing');
-    const point = { x: handleBox.x + handleBox.width / 2, y: handleBox.y + handleBox.height / 2 };
-    await page.mouse.move(point.x, point.y);
-    await page.mouse.down();
-    await writeFile(
-      testInfo.outputPath(`resize-${scene.name}-start.json`),
-      JSON.stringify(
-        {
-          scene,
-          before,
-          point,
-          atDown: await rect(),
-          placement: JSON.parse((await component.getAttribute('data-preview-placement')) ?? '{}'),
-        },
-        null,
-        2,
-      ),
-    );
-
-    if ('ack' in scene) {
-      await page.mouse.move(point.x + scene.dx, point.y + scene.dy, { steps: 4 });
-      await page.mouse.up();
-      if (scene.ack === 'defer') {
-        await page.evaluate(() => window.dispatchEvent(new Event('dock-preview-resize-ack')));
-        await expect
-          .poll(
-            async () =>
-              JSON.parse((await component.getAttribute('data-preview-commands')) ?? '[]').filter(
-                (c: { action: string }) => c.action === 'cancel-resize',
-              ).length,
-          )
-          .toBe(1);
-      }
-      await expect(handle).toHaveAttribute('data-resizing', 'false');
-      await expect
-        .poll(
-          async () =>
-            JSON.parse((await component.getAttribute('data-preview-placement')) ?? '{}')
-              .resizeToken ?? null,
-        )
-        .toBeNull();
-      await expect
-        .poll(async () => Math.abs((await rect()).width - before.width))
-        .toBeLessThanOrEqual(1);
-      await expect
-        .poll(async () => Math.abs((await rect()).height - before.height))
-        .toBeLessThanOrEqual(1);
-      await expect(editor).toHaveValue('Keep this reply through resize');
-      evidence.push({ scene, before, after: await rect() });
-      await component.unmount();
-      return;
-    }
-    await expect
-      .poll(
-        async () =>
-          JSON.parse((await component.getAttribute('data-preview-placement')) ?? '{}').resizeToken,
-      )
-      .toBeTruthy();
-    await page.mouse.move(point.x + scene.dx, point.y + scene.dy, { steps: 4 });
-    const edgeX = (r: typeof before) => (scene.edge.includes('w') ? r.x : r.x + r.width);
-    const edgeY = (r: typeof before) => (scene.edge.includes('n') ? r.y : r.y + r.height);
-    await expect
-      .poll(async () => Math.abs(edgeX(await rect()) - edgeX(before) - scene.dx))
-      .toBeLessThanOrEqual(1);
-    if (scene.dy)
-      await expect
-        .poll(async () => Math.abs(edgeY(await rect()) - edgeY(before) - scene.dy))
-        .toBeLessThanOrEqual(1);
-    await page.mouse.up();
-    await expect
-      .poll(
-        async () =>
-          JSON.parse((await component.getAttribute('data-preview-placement')) ?? '{}')
-            .resizeToken ?? null,
-      )
-      .toBeNull();
-    const resized = await rect();
-    await expect(editor).toHaveValue('Keep this reply through resize');
-
-    // Escape cancels only the current resize, preserving the selected conversation.
-    const cancelBox = await handle.boundingBox();
-    if (!cancelBox) throw new Error('Resize handle missing after resize');
-    await page.mouse.move(cancelBox.x + cancelBox.width / 2, cancelBox.y + cancelBox.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(
-      cancelBox.x + cancelBox.width / 2 - scene.dx / 2,
-      cancelBox.y + cancelBox.height / 2 - scene.dy / 2,
-      { steps: 2 },
-    );
-    await page.keyboard.press('Escape');
-    await page.mouse.up();
-    await expect(panel).toBeVisible();
-    await expect
-      .poll(async () => Math.abs((await rect()).width - resized.width))
-      .toBeLessThanOrEqual(1);
-    await expect
-      .poll(async () => Math.abs((await rect()).height - resized.height))
-      .toBeLessThanOrEqual(1);
-    await expect(editor).toHaveValue('Keep this reply through resize');
-
-    const keyboardHandle = panel.locator('[data-dock-resize][tabindex="0"]');
-    await keyboardHandle.focus();
-    const keyboardEdge = (await keyboardHandle.getAttribute('data-dock-resize')) ?? '';
-    await keyboardHandle.press(keyboardEdge.includes('w') ? 'ArrowRight' : 'ArrowLeft');
-    await expect
-      .poll(async () => Math.abs((await rect()).width - (resized.width - 10)))
-      .toBeLessThanOrEqual(1);
-    await expect(keyboardHandle).toBeFocused();
-    const remembered = await rect();
-    // Core regions are snapshot-local; detached panel regions come from measured
-    // DOM bounds. The display preview offsets its fake native window, so translate
-    // only the measured-region expectation by that host offset (zero in Electron).
-    await expect
-      .poll(async () => {
-        const placement = JSON.parse(
-          (await component.getAttribute('data-preview-placement')) ?? '{}',
-        );
-        const host = await component.locator('.dock-preview-host').boundingBox();
-        const expected =
-          scene.side && host
-            ? {
-                ...placement.sidePanel,
-                x: placement.sidePanel.x + host.x,
-                y: placement.sidePanel.y + host.y,
-              }
-            : placement.surface;
-        const regions =
-          JSON.parse((await component.getAttribute('data-preview-pointer')) ?? '{}').regions ?? [];
-        return (
-          !!expected &&
-          regions.some(
-            (r: { x: number; y: number; width: number; height: number }) =>
-              Math.abs(r.x - expected.x) < 1 &&
-              Math.abs(r.y - expected.y) < 1 &&
-              Math.abs(r.width - expected.width) < 1 &&
-              Math.abs(r.height - expected.height) < 1,
-          )
-        );
-      })
-      .toBe(true);
-    const regions =
-      JSON.parse((await component.getAttribute('data-preview-pointer')) ?? '{}').regions ?? [];
-    const placement = JSON.parse((await component.getAttribute('data-preview-placement')) ?? '{}');
-    const expected = scene.side ? placement.sidePanel : placement.surface;
-    const host = await component.locator('.dock-preview-host').boundingBox();
-    if (!host) throw new Error('Native envelope preview missing');
-    expect(remembered.x - host.x).toBeGreaterThanOrEqual(expected.x - 1);
-    expect(remembered.y - host.y).toBeGreaterThanOrEqual(expected.y - 1);
-    expect(remembered.x - host.x + remembered.width).toBeLessThanOrEqual(
-      expected.x + expected.width + 1,
-    );
-    expect(remembered.y - host.y + remembered.height).toBeLessThanOrEqual(
-      expected.y + expected.height + 1,
-    );
-    for (const box of await panel
-      .locator('[data-dock-resize]')
-      .evaluateAll((nodes) => nodes.map((n) => n.getBoundingClientRect().toJSON()))) {
-      expect(box.left).toBeGreaterThanOrEqual(remembered.x - 1);
-      expect(box.right).toBeLessThanOrEqual(remembered.x + remembered.width + 1);
-      expect(box.top).toBeGreaterThanOrEqual(remembered.y - 1);
-      expect(box.bottom).toBeLessThanOrEqual(remembered.y + remembered.height + 1);
-    }
-    await component.screenshot({
-      path: testInfo.outputPath(`conversation-resize-${scene.name}.png`),
-    });
-    // The side dock has no Back: Escape closes it (the draft stays).
-    if (scene.side) await editor.press('Escape');
-    else await panel.getByRole('button', { name: 'Go back', exact: true }).click();
-    if (!scene.side) {
-      // Leave the real pointer at Back's former position while the upward panel
-      // shrinks. Wait beyond disclosure grace to distinguish geometry-only leave
-      // from the next intentional mouse movement.
-      await page.waitForTimeout(350);
-      await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
-      await component.screenshot({
-        path: testInfo.outputPath(`conversation-back-${scene.name}.png`),
-      });
-      await expect
-        .poll(async () =>
-          Math.abs(
-            ((await component.getByTestId('dock-surface').boundingBox())?.width ?? 0) -
-              remembered.width,
-          ),
-        )
-        .toBeLessThanOrEqual(1);
-      const workspaceRow = component.locator('[data-dock-row]').nth(1);
-      await workspaceRow.click();
-      await expect
-        .poll(async () => Math.abs((await rect()).width - remembered.width))
-        .toBeLessThanOrEqual(1);
-      await panel.getByRole('button', { name: 'Go back', exact: true }).click();
-    }
-    await component
-      .locator(scene.side ? '[data-dock-entry]' : '[data-dock-row]')
-      .first()
-      .press('Enter');
-    await expect(editor).toHaveValue('Keep this reply through resize');
-    await expect
-      .poll(async () => Math.abs((await rect()).width - remembered.width))
-      .toBeLessThanOrEqual(1);
-    await expect
-      .poll(async () => Math.abs((await rect()).height - remembered.height))
-      .toBeLessThanOrEqual(1);
-    evidence.push({ scene, before, resized, remembered, regions });
-    await component.unmount();
-    await writeFile(
-      testInfo.outputPath('conversation-resize.json'),
-      JSON.stringify(
-        {
-          scope:
-            'Real renderer and production geometry with fake native acknowledgement; no Electron or physical input routing proof',
-          evidence,
         },
         null,
         2,

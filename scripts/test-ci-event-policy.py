@@ -11,19 +11,14 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 LIGHT = {'route', 'release-fast-path', 'pr-static', 'pr-title', 'docs-pr-scope', 'conflict-markers', 'monorepo-consumer-checks'}
-HEAVY = {'checks', 'build-web', 'test', 'test-integration', 'test-portable-fixtures', 'test-ct', 'test-playwright', 'test-electron'}
+HEAVY = {'checks', 'build-web', 'test', 'test-integration', 'test-portable-fixtures', 'test-playwright', 'test-electron'}
 PR_SUITES = {'checks', 'test'}
 QUEUE_ONLY = HEAVY - PR_SUITES
 # Path-scoped jobs that run on PRs and queue entries alike when relevant.
 BOTH_EVENTS = {'intent-web-package'}
-# PR-only, and only when the diff adds or edits a component test spec.
-CT_CHANGED = 'test-ct-changed'
-# PR-only, and only when an existing spec loads a file the diff changes.
-CT_AFFECTED = 'test-ct-affected'
-NO_SPECS = '[]'
-SOME_SPECS = '["src/a/b.ct.spec.ts"]'
-# Each spec-list job with the schedule()/gate() keyword that feeds its list.
-SPEC_JOBS = [(CT_CHANGED, 'changed'), (CT_AFFECTED, 'affected')]
+# Component tests run only nightly and on manual dispatch, never on PRs or
+# in the merge queue (nightly-browser-tests.yml).
+CT_JOBS = {'test-ct', 'test-ct-affected', 'test-ct-changed'}
 
 
 def evaluate(expression, values, success=True):
@@ -41,16 +36,14 @@ def evaluate(expression, values, success=True):
     return bool((explicit or success) and eval(compile(tree, '<condition>', 'eval'), {'__builtins__': {}}))
 
 
-def schedule(workflow, event, fork=False, fast='false', relevant='true', route='success', changed=NO_SPECS, affected=NO_SPECS):
+def schedule(workflow, event, fork=False, fast='false', relevant='true', route='success'):
     values = {'github.event_name': event, 'github.repository': 'intent-hq/cloudlands-fe',
               'github.event.pull_request.head.repo.full_name': 'outside/fork' if fork else 'intent-hq/cloudlands-fe',
-              'needs.release-fast-path.outputs.fast_path': fast,
-              'needs.release-fast-path.outputs.ct_changed_specs': changed,
-              'needs.release-fast-path.outputs.ct_affected_specs': affected}
-    for key in ('ct_required', 'root_playwright_required', 'electron_required', 'portable_fixtures_required', 'intent_web_package_required'):
+              'needs.release-fast-path.outputs.fast_path': fast}
+    for key in ('root_playwright_required', 'electron_required', 'portable_fixtures_required', 'intent_web_package_required'):
         values['needs.release-fast-path.outputs.' + key] = relevant
     results = {}
-    # Dependency order, not file order: route waits for release-fast-path.
+    # Dependency order, not file order.
     pending = dict(workflow['jobs'])
     while pending:
         name, job = next((n, j) for n, j in pending.items()
@@ -65,12 +58,12 @@ def schedule(workflow, event, fork=False, fast='false', relevant='true', route='
     return results
 
 
-def gate(workflow, event, results, fast='false', relevant='true', changed=NO_SPECS, affected=NO_SPECS):
+def gate(workflow, event, results, fast='false', relevant='true'):
     step = next(s for s in workflow['jobs']['gate']['steps'] if s.get('name') == 'Check results')
     values = {'github.event_name': event, **{'needs.'+k+'.result': v for k, v in results.items()}}
     body = re.sub(r'\$\{\{\s*(.*?)\s*\}\}', lambda m: values.get(m[1], ''), step['run'])
-    env = {**os.environ, 'FAST_PATH': fast, 'CT_CHANGED_SPECS': changed, 'CT_AFFECTED_SPECS': affected}
-    for key in ('CT_REQUIRED', 'ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED', 'PORTABLE_FIXTURES_REQUIRED', 'INTENT_WEB_PACKAGE_REQUIRED'):
+    env = {**os.environ, 'FAST_PATH': fast}
+    for key in ('ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED', 'PORTABLE_FIXTURES_REQUIRED', 'INTENT_WEB_PACKAGE_REQUIRED'):
         env[key] = relevant
     return subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', body], env=env, capture_output=True).returncode == 0
 
@@ -104,50 +97,25 @@ class EventPolicy(unittest.TestCase):
             self.assertEqual(results[job], 'skipped', job)
         self.assertTrue(gate(self.workflow, 'pull_request', results, fast='true'))
 
-    def test_pr_runs_spec_list_jobs_only_when_their_list_is_not_empty(self):
-        for job, key in SPEC_JOBS:
-            with self.subTest(job=job):
-                results = schedule(self.workflow, 'pull_request', **{key: SOME_SPECS})
-                self.assertEqual({n for n, r in results.items() if r == 'success'}, LIGHT | PR_SUITES | BOTH_EVENTS | {job, 'gate'})
-                self.assertTrue(gate(self.workflow, 'pull_request', results, **{key: SOME_SPECS}))
-                for outcome in ('skipped', 'failure', 'cancelled', ''):
-                    with self.subTest(outcome=outcome):
-                        self.assertFalse(gate(self.workflow, 'pull_request', {**results, job: outcome}, **{key: SOME_SPECS}))
-                self.assertEqual(schedule(self.workflow, 'pull_request')[job], 'skipped')
-                self.assertEqual(schedule(self.workflow, 'merge_group', **{key: SOME_SPECS})[job], 'skipped')
-
-    def test_pr_runs_both_spec_list_jobs_when_both_lists_have_specs(self):
-        results = schedule(self.workflow, 'pull_request', changed=SOME_SPECS, affected=SOME_SPECS)
-        self.assertEqual({n for n, r in results.items() if r == 'success'}, LIGHT | PR_SUITES | BOTH_EVENTS | {CT_CHANGED, CT_AFFECTED, 'gate'})
-        self.assertTrue(gate(self.workflow, 'pull_request', results, changed=SOME_SPECS, affected=SOME_SPECS))
-        # One list being empty never excuses the other job's skip.
-        self.assertFalse(gate(self.workflow, 'pull_request', {**results, CT_AFFECTED: 'skipped'}, changed=SOME_SPECS, affected=SOME_SPECS))
-
-    def test_failed_or_missing_spec_list_never_counts_as_no_specs(self):
-        for job, key in SPEC_JOBS:
-            for value in ('error', ''):
-                with self.subTest(job=job, value=value):
-                    results = schedule(self.workflow, 'pull_request', **{key: value})
-                    self.assertEqual(results[job], 'success')
-                    self.assertFalse(gate(self.workflow, 'pull_request', {**results, job: 'skipped'}, **{key: value}))
-            with self.subTest(job=job, value='error after no specs'):
-                no_specs = schedule(self.workflow, 'pull_request')
-                self.assertFalse(gate(self.workflow, 'pull_request', no_specs, **{key: 'error'}))
-
-    def test_release_shaped_pr_skips_spec_list_jobs(self):
-        for job, key in SPEC_JOBS:
-            with self.subTest(job=job):
-                results = schedule(self.workflow, 'pull_request', fast='true', **{key: SOME_SPECS})
-                self.assertEqual(results[job], 'skipped')
-                self.assertTrue(gate(self.workflow, 'pull_request', results, fast='true', **{key: SOME_SPECS}))
-
-    def test_queue_gate_rejects_a_failed_spec_list_run(self):
-        results = schedule(self.workflow, 'merge_group')
-        for job, key in SPEC_JOBS:
-            with self.subTest(job=job):
-                self.assertTrue(gate(self.workflow, 'merge_group', results, **{key: SOME_SPECS}))
-                for outcome in ('failure', 'cancelled', ''):
-                    self.assertFalse(gate(self.workflow, 'merge_group', {**results, job: outcome}))
+    def test_component_tests_run_nightly_not_on_prs_or_in_the_queue(self):
+        jobs = self.workflow['jobs']
+        self.assertFalse(CT_JOBS & set(jobs))
+        self.assertFalse(CT_JOBS & set(jobs['gate']['needs']))
+        self.assertFalse({k for k in jobs['release-fast-path']['outputs'] if k.startswith('ct_')})
+        self.assertNotIn('ct-contract-paths.mjs', yaml.safe_dump(jobs['release-fast-path']))
+        self.assertNotIn('ct-changed-specs.mjs', (ROOT / '.github/workflows/intent-pr.yml').read_text())
+        gate_env = next(s for s in jobs['gate']['steps'] if s.get('name') == 'Check results')['env']
+        self.assertFalse({k for k in gate_env if k.startswith('CT_')})
+        self.assertFalse(re.search(r'\bneeds\.test-ct', yaml.safe_dump(jobs)))
+        nightly = yaml.safe_load((ROOT / '.github/workflows/nightly-browser-tests.yml').read_text())
+        self.assertIn('schedule', nightly[True])
+        self.assertIn('workflow_dispatch', nightly[True])
+        caller = nightly['jobs']['test-ct']
+        self.assertEqual(caller['uses'], './.github/workflows/browser-tests.yml')
+        self.assertEqual(caller['with']['suite'], 'ct')
+        browser = yaml.safe_load((ROOT / '.github/workflows/browser-tests.yml').read_text())
+        self.assertIn("inputs.suite == 'ct'", browser['jobs']['test-ct']['if'])
+        self.assertIn("github.event_name == 'schedule'", browser['jobs']['test-ct']['if'])
 
     def test_path_scoped_jobs_gate_both_events_and_skip_only_when_irrelevant(self):
         for event in ('pull_request', 'merge_group'):

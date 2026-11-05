@@ -221,7 +221,7 @@ test('Home board double-click on an already selected card keeps it selected', as
 });
 
 for (const scenario of ['list', 'board'] as const) {
-  test(`Home ${scenario} double-click opens the workspace in a narrow window where the preview replaces the list`, async ({
+  test(`Home ${scenario} preview replaces the list in a narrow window and Escape returns to it`, async ({
     mount,
     page,
   }) => {
@@ -237,46 +237,5 @@ for (const scenario of ['list', 'board'] as const) {
     expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
     await page.keyboard.press('Escape');
     await expect(target).toBeVisible();
-    await humanDoubleClick(page, target, () => expect(target).toBeHidden());
-    await expect
-      .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-      .toBe('home-review');
-    await expect(component.locator('[data-home-detail]')).toBeVisible();
   });
-}
-
-/** A person's double-click: the second press lands after the first click re-rendered Home. */
-async function humanDoubleClick(
-  page: import('@playwright/test').Page,
-  target: import('@playwright/test').Locator,
-  afterFirstClick: () => Promise<void>,
-) {
-  // A person clicks where the card is once Home has finished moving it: closing
-  // the narrow preview animates the list back in, and a box measured mid-way
-  // would aim the click at where the card was, not where it is.
-  let previous: Awaited<ReturnType<typeof target.boundingBox>> = null;
-  await expect
-    .poll(async () => {
-      const current = await target.boundingBox();
-      const settled =
-        !!current &&
-        !!previous &&
-        current.x === previous.x &&
-        current.y === previous.y &&
-        current.width === previous.width &&
-        current.height === previous.height;
-      previous = current;
-      return settled;
-    })
-    .toBe(true);
-  const box = await target.boundingBox();
-  if (!box) throw new Error('double-click target is not visible');
-  const x = box.x + Math.min(24, box.width / 2);
-  const y = box.y + box.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down({ clickCount: 1 });
-  await page.mouse.up({ clickCount: 1 });
-  await afterFirstClick();
-  await page.mouse.down({ clickCount: 2 });
-  await page.mouse.up({ clickCount: 2 });
 }

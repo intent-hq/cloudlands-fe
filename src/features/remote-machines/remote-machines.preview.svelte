@@ -7,7 +7,7 @@
   const state = (name: RemoteMachinesPreviewState) => ({ props: {}, setup: () => setup(name) });
   export const preview = definePreview({
     id: 'remote-machines',
-    title: 'Make a machine available to the backend',
+    title: 'Let the backend run agents on a machine',
     defaultState: 'expose',
     states: {
       expose: state('expose'),

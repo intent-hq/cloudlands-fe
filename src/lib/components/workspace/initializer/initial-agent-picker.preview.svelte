@@ -135,6 +135,7 @@
       | 'compact'
       | 'welcome'
       | 'crowded'
+      | 'builtin'
       | 'start-on-none'
       | 'start-on-machine'
       | 'start-on-unreachable'
@@ -145,6 +146,7 @@
     title: 'Initial agent picker',
     defaultState: 'populated',
     states: {
+      builtin: { props: { state: 'builtin' } },
       populated: { props: { state: 'populated' } },
       orchestration: { props: { state: 'orchestration' } },
       sidebar: { props: { state: 'sidebar' } },
@@ -164,6 +166,7 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { SPECIALISTS } from '$lib/constants/specialists';
   import StartOnPicker from './StartOnPicker.svelte';
   import { selectStartOnOptions } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './InitialAgentPicker.svelte';
@@ -215,47 +218,55 @@
   store.dispatch(
     setFileSpecialists(
       untrack(() =>
-        scenario === 'empty'
-          ? []
-          : [
-              {
-                id: 'fixture-developer',
-                name: 'Developer',
-                description: 'Builds and verifies focused changes.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt:
-                  '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
-                filePath: '/fixture/developer.md',
-                source: 'user',
-                icon: 'developer',
-              },
-              {
-                id: 'fixture-long',
-                name: 'A specialist with a very long descriptive name',
-                description:
-                  'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt: '',
-                filePath: '/fixture/long.md',
-                source: 'user',
-                icon: 'reviewer',
-              },
-              {
-                id: 'fixture-coordinator',
-                name: 'Coordinator',
-                description: 'Plans the work and delegates it.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt: '',
-                filePath: '/fixture/coordinator.md',
-                source: 'user',
-                icon: 'coordinator',
-                role: 'orchestrator',
-              },
-              ...(scenario === 'crowded' ? crowdedSpecialists() : []),
-            ],
+        scenario === 'builtin'
+          ? SPECIALISTS.map((specialist) => ({
+              ...specialist,
+              model: '',
+              behaviorPrompt: specialist.defaultBehaviorPrompt,
+              filePath: `/fixture/${specialist.id}.md`,
+              source: 'user' as const,
+            }))
+          : scenario === 'empty'
+            ? []
+            : [
+                {
+                  id: 'fixture-developer',
+                  name: 'Developer',
+                  description: 'Builds and verifies focused changes.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt:
+                    '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
+                  filePath: '/fixture/developer.md',
+                  source: 'user',
+                  icon: 'developer',
+                },
+                {
+                  id: 'fixture-long',
+                  name: 'A specialist with a very long descriptive name',
+                  description:
+                    'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt: '',
+                  filePath: '/fixture/long.md',
+                  source: 'user',
+                  icon: 'reviewer',
+                },
+                {
+                  id: 'fixture-coordinator',
+                  name: 'Coordinator',
+                  description: 'Plans the work and delegates it.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt: '',
+                  filePath: '/fixture/coordinator.md',
+                  source: 'user',
+                  icon: 'coordinator',
+                  role: 'orchestrator',
+                },
+                ...(scenario === 'crowded' ? crowdedSpecialists() : []),
+              ],
       ),
     ),
   );

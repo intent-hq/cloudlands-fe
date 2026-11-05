@@ -4,16 +4,15 @@
 // @vitest-environment node
 
 /**
- * CI wiring of the CT-contract path list (`scripts/ct-contract-paths.mjs`).
+ * CI wiring of the browser-suite relevance checks and the CI Gate.
  *
- * `verify:changed` consumes the list locally; the PR workflow must consume the
- * same module so `test-ct` runs on `pull_request` when the diff touches a
- * CT-contract path (cloudlands-fe#2441 was ejected from the merge queue with 40
- * CT failures after green PR CI), a CT spec, or a module a discovered spec or
- * the mount harness transitively imports.
- * The step script and the gate script are
- * extracted from the workflow and executed under bash across a scenario table,
- * and the `test-ct` `if:` expression is evaluated the same way, so the
+ * Component tests no longer run on PRs or in the merge queue: the full suite
+ * runs nightly and on manual dispatch (nightly-browser-tests.yml), so
+ * intent-pr.yml neither runs `scripts/ct-contract-paths.mjs` (still used
+ * locally by `verify:changed`) nor gates on a CT job. The root Playwright,
+ * Electron and portable-fixture relevance steps and the gate script are
+ * extracted from the workflow and executed under bash across a scenario
+ * table, and the job `if:` expressions are evaluated the same way, so the
  * assertions hold against runtime behaviour rather than source spelling.
  */
 
@@ -29,8 +28,6 @@ const WORKFLOW_PATH = '.github/workflows/intent-pr.yml';
 const MODULE_PATH = 'scripts/ct-contract-paths.mjs';
 // The module's one local import; the workflow runs in a full checkout.
 const SPEC_PATTERN_PATH = 'playwright/ct-spec-pattern.mjs';
-const CLI_INVOCATION = `${MODULE_PATH} --diff`;
-const CT_OUTPUT = 'needs.release-fast-path.outputs.ct_required';
 const ROOT_PLAYWRIGHT_OUTPUT = 'needs.release-fast-path.outputs.root_playwright_required';
 const FAST_PATH_OUTPUT = 'needs.release-fast-path.outputs.fast_path';
 const ELECTRON_OUTPUT = 'needs.release-fast-path.outputs.electron_required';
@@ -209,7 +206,6 @@ function jobOutputs(lines: string[]): string[] {
 }
 
 const releaseFastPath = jobLines('release-fast-path');
-const testCt = jobLines('test-ct');
 const testPlaywright = jobLines('test-playwright');
 const testElectron = jobLines('test-electron');
 const gate = jobLines('gate');
@@ -221,73 +217,33 @@ const nightlyWorkflow = readFileSync(
   'utf8',
 ).split('\n');
 
-describe(`${WORKFLOW_PATH} consumes ${MODULE_PATH}`, () => {
-  const invocations = workflowLines
-    .map((text, index) => ({ line: index + 1, text }))
-    .filter(({ text }) => !isComment(text) && text.includes(CLI_INVOCATION));
-
-  it('invokes the module exactly once, from the release-fast-path job', () => {
-    expect(invocations.map(({ line }) => line)).toHaveLength(1);
-    expect(releaseFastPath.some((text) => !isComment(text) && text.includes(CLI_INVOCATION))).toBe(
-      true,
-    );
+describe(`${WORKFLOW_PATH} runs no component tests`, () => {
+  it('has no CT job, CT relevance step or CT output', () => {
+    for (const job of ['test-ct', 'test-ct-affected', 'test-ct-changed'])
+      expect(workflowLines).not.toContain(`  ${job}:`);
+    const code = workflowLines.filter((text) => !isComment(text)).join('\n');
+    expect(code).not.toContain(MODULE_PATH);
+    expect(code).not.toContain('ct-changed-specs.mjs');
+    expect(code).not.toMatch(/\bct_(required|affected_specs|affected_over_budget)\b/);
+    expect(code).not.toContain('CT_REQUIRED');
+    expect(releaseFastPath).not.toContain('      - name: Evaluate CT relevance');
   });
 
-  it('exposes the step result as the ct_required job output', () => {
-    const output = jobOutputs(releaseFastPath).find((text) =>
-      text.trim().startsWith('ct_required:'),
-    );
-    expect(output).toBeDefined();
-    const stepId = /steps\.([\w-]+)\.outputs\.ct_required/.exec(output!)?.[1];
-    expect(stepId).toBeDefined();
-    expect(releaseFastPath).toContain(`        id: ${stepId}`);
+  it('keeps the gate off every CT job', () => {
+    const start = gate.indexOf('    needs:');
+    const end = gate.findIndex((text, index) => index > start && text.trim() === ']');
+    const needs = gate.slice(start, end).map((text) => text.trim());
+    expect(needs).not.toContain('test-ct,');
+    expect(needs).not.toContain('test-ct-affected,');
+    expect(gate.join('\n')).not.toContain('needs.test-ct');
   });
 
-  describe('Evaluate CT relevance step', () => {
-    const script = stepRunBlock(releaseFastPath, 'Evaluate CT relevance');
-
-    const runStep = (root: string, base: string) => {
-      const output = join(root, 'github-output');
-      writeFileSync(output, '');
-      const result = bash(script, { BASE_SHA: base, GITHUB_OUTPUT: output }, root);
-      return { ...result, output: readFileSync(output, 'utf8').trim() };
-    };
-
-    it.each([
-      ['a CT-contract path', 'src/lib/styles/tokens.css'],
-      ['a CT spec', 'src/lib/components/ui/button/button.keyboard.ct.spec.ts'],
-      ['the dependency manifest', 'package.json'],
-      ['the dependency lockfile', 'pnpm-lock.yaml'],
-    ])('writes ct_required=true when the diff touches %s', (_name, file) => {
-      const { root, base } = checkoutWith(file);
-      const result = runStep(root, base);
-      expect(result.status, result.stderr).toBe(0);
-      expect(result.output).toBe('ct_required=true');
-    });
-
-    it.each([
-      ['a .svelte component only', 'src/features/agent/view.svelte'],
-      ['a CT spec outside src/', 'test/added.ct.spec.ts'],
-    ])('writes ct_required=false when the diff touches %s', (_name, file) => {
-      const { root, base } = checkoutWith(file);
-      const result = runStep(root, base);
-      expect(result.status, result.stderr).toBe(0);
-      expect(result.output).toBe('ct_required=false');
-    });
-
-    it('requires CT when the module exits non-zero (fail-safe)', () => {
-      const { root, base } = checkoutWith('src/features/agent/view.svelte', 'process.exit(2);\n');
-      const result = runStep(root, base);
-      expect(result.status).toBe(0);
-      expect(result.output).toBe('ct_required=true');
-    });
-
-    it('requires CT when the module prints no ct_required line (fail-safe)', () => {
-      const { root, base } = checkoutWith('src/features/agent/view.svelte', 'console.log("");\n');
-      const result = runStep(root, base);
-      expect(result.status).toBe(0);
-      expect(result.output).toBe('ct_required=true');
-    });
+  it('still runs the full CT suite nightly and on manual dispatch', () => {
+    const nightly = jobLines('test-ct', nightlyWorkflow);
+    expect(jobField(nightly, 'uses')).toBe('./.github/workflows/browser-tests.yml');
+    expect(nightly).toContain('      suite: ct');
+    expect(nightlyWorkflow).toContain("    - cron: '17 2 * * *'");
+    expect(nightlyWorkflow).toContain('  workflow_dispatch:');
   });
 });
 
@@ -392,7 +348,6 @@ describe(`${WORKFLOW_PATH} computes root Playwright relevance in release-fast-pa
 
 type Context = {
   event: string;
-  ctRequired: string;
   rootPlaywrightRequired: string;
   fastPath: string;
   route: string;
@@ -408,11 +363,10 @@ type Context = {
 
 // Evaluates a workflow `if:` expression built from `!cancelled()`, context
 // lookups, string literals, ==/!=, &&, ||, and parentheses — the only forms the
-// test-ct / test-playwright conditions may use — against a substituted context.
+// browser-suite conditions may use — against a substituted context.
 function evaluateCondition(expression: string, context: Context): boolean {
   const lookups: Record<string, string> = {
     'github.event_name': context.event,
-    [CT_OUTPUT]: context.ctRequired,
     [ROOT_PLAYWRIGHT_OUTPUT]: context.rootPlaywrightRequired,
     [FAST_PATH_OUTPUT]: context.fastPath,
     'needs.route.result': context.route,
@@ -440,51 +394,6 @@ function evaluateCondition(expression: string, context: Context): boolean {
   return Boolean(new Function(`return (${source});`)());
 }
 
-describe('test-ct runs on merge_group when ct_required is true', () => {
-  const condition = jobField(testCt, 'if');
-
-  it('depends on release-fast-path and route', () => {
-    const needs = jobField(testCt, 'needs');
-    expect(needs).toContain('release-fast-path');
-    expect(needs).toContain('route');
-  });
-
-  const ok: Context = {
-    event: 'merge_group',
-    ctRequired: 'true',
-    rootPlaywrightRequired: 'false',
-    fastPath: 'false',
-    route: 'success',
-  };
-  it.each<[string, Partial<Context>, boolean]>([
-    ['CT-relevant queue (contract path, spec, or mounted import)', {}, true],
-    ['ordinary queue', { ctRequired: 'false' }, false],
-    ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
-    ['queue whose relevance output is empty (fork / failed job)', { ctRequired: '' }, false],
-    ['queue whose route failed', { route: 'failure' }, false],
-    ['cancelled queue', { cancelled: true }, false],
-    ['PR with empty outputs', { event: 'pull_request', ctRequired: '', fastPath: '' }, false],
-    [
-      'pull_request whose route failed',
-      { event: 'pull_request', ctRequired: '', fastPath: '', route: 'failure' },
-      false,
-    ],
-    [
-      'release-shaped pull_request entry',
-      { event: 'pull_request', ctRequired: 'true', fastPath: 'true' },
-      false,
-    ],
-    [
-      'non-release pull_request entry with computed outputs',
-      { event: 'pull_request', ctRequired: 'false', fastPath: 'false' },
-      false,
-    ],
-    ['CT-relevant pull_request', { event: 'pull_request', ctRequired: 'true' }, false],
-  ])('%s → runs=%s', (_name, overrides, expected) => {
-    expect(evaluateCondition(condition, { ...ok, ...overrides })).toBe(expected);
-  });
-});
-
 describe('test-playwright runs on merge_group when root_playwright_required is true', () => {
   const condition = jobField(testPlaywright, 'if');
 
@@ -494,14 +403,12 @@ describe('test-playwright runs on merge_group when root_playwright_required is t
     expect(needs).toContain('route');
   });
 
-  it('is keyed on root_playwright_required, not ct_required', () => {
+  it('is keyed on root_playwright_required', () => {
     expect(condition).toContain(ROOT_PLAYWRIGHT_OUTPUT);
-    expect(condition).not.toContain(CT_OUTPUT);
   });
 
   const ok: Context = {
     event: 'merge_group',
-    ctRequired: 'false',
     rootPlaywrightRequired: 'true',
     fastPath: 'false',
     route: 'success',
@@ -509,11 +416,6 @@ describe('test-playwright runs on merge_group when root_playwright_required is t
   it.each<[string, Partial<Context>, boolean]>([
     ['root-relevant queue (test/** or playwright.config.ts)', {}, true],
     ['ordinary queue', { rootPlaywrightRequired: 'false' }, false],
-    [
-      'CT-relevant queue that touches no root path',
-      { ctRequired: 'true', rootPlaywrightRequired: 'false' },
-      false,
-    ],
     ['release-shaped queue touching package.json', { fastPath: 'true' }, false],
     [
       'queue whose relevance output is empty (fork / failed job)',
@@ -654,7 +556,6 @@ describe('relevance matchers fail safe when the matcher itself crashes', () => {
 
 describe('authored browser tests require their complete PR suites', () => {
   it.each([
-    ['Evaluate CT relevance', 'ct_required', 'src/components/example.ct.spec.ts'],
     ['Evaluate root Playwright relevance', 'root_playwright_required', 'test/example.spec.ts'],
     [
       'Evaluate root Playwright relevance',
@@ -802,7 +703,6 @@ describe('authored browser tests require their complete PR suites', () => {
 describe('selective Electron queue routing', () => {
   const ok: Context = {
     event: 'merge_group',
-    ctRequired: 'false',
     rootPlaywrightRequired: 'false',
     electronRequired: 'true',
     fastPath: 'false',
@@ -830,7 +730,6 @@ describe('shared browser jobs and nightly routing', () => {
   ];
   const context: Context = {
     event: 'pull_request',
-    ctRequired: 'true',
     rootPlaywrightRequired: 'true',
     electronRequired: 'true',
     fastPath: 'false',
@@ -858,6 +757,12 @@ describe('shared browser jobs and nightly routing', () => {
       expect(jobField(nightly, 'needs')).toBe('runner-route');
       expect(jobField(nightly, 'if')).toBe('${{ !cancelled() }}');
       expect(nightly).toContain('      cloud: ${{ needs.runner-route.outputs.cloud }}');
+      // The queue runs the root and Electron suites selectively; CT runs
+      // only nightly and on manual dispatch.
+      if (job === 'test-ct') {
+        expect(workflowLines).not.toContain(`  ${job}:`);
+        continue;
+      }
       expect(jobField(jobLines(job), 'uses')).toBe(jobField(nightly, 'uses'));
       expect(jobLines(job)).toContain(`      suite: ${suite}`);
       expect(jobLines(job)).toContain('      cloud: ${{ needs.route.outputs.cloud }}');
@@ -888,12 +793,11 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      // Component Tests take the caller's ct-N slot first, then the burst runner
-      // (WarpBuild, or GitHub); the lighter root and Electron suites run on the
-      // free standard runner.
+      // Component Tests take the caller's burst runner (WarpBuild, or GitHub);
+      // the lighter root and Electron suites run on the free standard runner.
       expect(jobField(lines, 'runs-on')).toBe(
         job === 'test-ct'
-          ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}"
+          ? "${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}"
           : 'ubuntu-24.04',
       );
     },
@@ -1129,7 +1033,6 @@ describe('root Playwright hosted shards', () => {
     value.replaceAll('${{ matrix.shard }}', String(shard));
   const ok: Context = {
     event: 'pull_request',
-    ctRequired: 'false',
     rootPlaywrightRequired: 'true',
     fastPath: 'false',
     route: 'success',
@@ -1245,10 +1148,9 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     expect(script).not.toContain('${{');
   });
 
-  it('reads ct_required from the release-fast-path output', () => {
+  it('reads no CT relevance output', () => {
     const step = gate.indexOf('      - name: Check results');
-    const env = gate.slice(step).find((text) => text.trim().startsWith('CT_REQUIRED:'));
-    expect(env).toBe(`          CT_REQUIRED: \${{ ${CT_OUTPUT} }}`);
+    expect(gate.slice(step).some((text) => text.trim().startsWith('CT_'))).toBe(false);
   });
 
   it('depends on route', () => {
@@ -1258,10 +1160,9 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     expect(gate.slice(start, end).some((text) => text.trim() === 'route,')).toBe(true);
   });
 
-  // test-playwright (the root Playwright suite) mirrors test-ct's gating
-  // shape, so the CT scenarios drive both jobs with the same result and
-  // relevance output; the root-specific rows below vary them independently.
-  const results = (ct: string, event = 'merge_group') => ({
+  // `browser` is the root Playwright suite's result; the Electron suite stays
+  // skipped and irrelevant unless a row says otherwise.
+  const results = (browser: string, event = 'merge_group') => ({
     EVENT_NAME: event,
     RESULT_route: 'success',
     RESULT_pr_static: event === 'pull_request' ? 'success' : 'skipped',
@@ -1276,14 +1177,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     RESULT_test_portable_fixtures: 'skipped',
     PORTABLE_FIXTURES_REQUIRED: 'false',
     RESULT_test_integration: event === 'merge_group' ? 'success' : 'skipped',
-    RESULT_test_ct: ct,
-    // No changed or affected CT spec: the PR-only spec-list jobs skip (their
-    // own gate cases live in scripts/test-ci-event-policy.py).
-    RESULT_test_ct_changed: 'skipped',
-    CT_CHANGED_SPECS: '[]',
-    RESULT_test_ct_affected: 'skipped',
-    CT_AFFECTED_SPECS: '[]',
-    RESULT_test_playwright: ct,
+    RESULT_test_playwright: browser,
     RESULT_monorepo_consumer_checks: 'success',
     // The @intent-hq/web package job ran and passed; its skip rules are
     // covered in scripts/test-ci-event-policy.py.
@@ -1301,123 +1195,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
   };
 
   const runGate = (env: Record<string, string>) =>
-    bash(
-      script,
-      { ROOT_PLAYWRIGHT_REQUIRED: env.CT_REQUIRED ?? '', ELECTRON_REQUIRED: 'false', ...env },
-      tmpdir(),
-    );
-
-  it.each([
-    ['edit', true],
-    ['add', true],
-    ['delete', true],
-    ['rename', true],
-    ['unreferenced host', false],
-    ['unit-only fixture', false],
-    ['computed import', true],
-    ['unreadable diff', true],
-  ] as const)(
-    'routes a fixture-only %s through classification, job selection and gate',
-    (change, required) => {
-      const host = 'src/lib/components/chat/input/__tests__/MemberMentionsHost.svelte';
-      const spec = 'src/lib/components/chat/input/__tests__/member-mentions.ct.spec.ts';
-      const { root } = checkoutWith(host);
-      commitFile(
-        root,
-        spec,
-        change === 'computed import'
-          ? "const host = './MemberMentionsHost.svelte'; import(host);"
-          : "import Host from './MemberMentionsHost.svelte';",
-      );
-      commitFile(root, 'src/lib/unit.test.ts', "import data from './unit-data.json';");
-      if (change === 'add') {
-        git(root, 'rm', host);
-        git(root, 'commit', '-q', '-m', 'prepare missing fixture');
-      }
-      const base = git(root, 'rev-parse', 'HEAD');
-      if (change === 'delete') {
-        git(root, 'rm', host);
-        git(root, 'commit', '-q', '-m', 'delete fixture');
-      } else if (change === 'rename') {
-        // Only the old name is imported: Git's rename must retain that dependency.
-        git(root, 'mv', host, 'renamed-host.svelte');
-        git(root, 'commit', '-q', '-m', 'move fixture');
-      } else {
-        const changed =
-          change === 'unreferenced host'
-            ? 'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte'
-            : change === 'unit-only fixture'
-              ? 'src/lib/unit-data.json'
-              : host;
-        commitFile(root, changed, '<div>updated fixture</div>');
-      }
-      // No changed spec or contract path may mask fixture dependency classification.
-      const changedPaths = git(root, 'diff', '--name-only', '--no-renames', base, 'HEAD').split(
-        '\n',
-      );
-      expect(changedPaths).toEqual(
-        change === 'rename'
-          ? ['renamed-host.svelte', host]
-          : [
-              change === 'unreferenced host'
-                ? 'src/lib/components/chat/input/__tests__/UnreferencedHost.svelte'
-                : change === 'unit-only fixture'
-                  ? 'src/lib/unit-data.json'
-                  : host,
-            ],
-      );
-      const output = join(root, 'github-output');
-      const classified = bash(
-        stepRunBlock(releaseFastPath, 'Evaluate CT relevance'),
-        {
-          BASE_SHA: change === 'unreadable diff' ? 'missing-ref' : base,
-          GITHUB_OUTPUT: output,
-        },
-        root,
-      );
-      expect(classified.status, classified.stderr).toBe(0);
-      const line = readFileSync(output, 'utf8').trim();
-      expect(line).toBe(`ct_required=${required}`);
-      if (change === 'computed import' || change === 'unreadable diff') {
-        expect(classified.stderr).toContain('requiring CT (fail-safe)');
-      } else {
-        expect(classified.stderr).not.toContain('requiring CT (fail-safe)');
-      }
-      const ctRequired = line.split('=')[1];
-      const context: Context = {
-        event: 'merge_group',
-        ctRequired,
-        rootPlaywrightRequired: 'false',
-        fastPath: 'false',
-        route: 'success',
-      };
-      expect(evaluateCondition(jobField(testCt, 'if'), context)).toBe(required);
-      for (const outcome of ['success', 'failure', 'cancelled', 'skipped', '']) {
-        const result = runGate({
-          ...results(outcome),
-          FAST_PATH: 'false',
-          CT_REQUIRED: ctRequired,
-          ROOT_PLAYWRIGHT_REQUIRED: 'false',
-          RESULT_test_playwright: 'skipped',
-        });
-        expect(result.status, `${outcome}: ${result.stdout}${result.stderr}`).toBe(
-          outcome === 'success' || (!required && outcome === 'skipped') ? 0 : 1,
-        );
-      }
-      // PRs and release-only entries skip browser execution explicitly.
-      for (const override of [{ event: 'pull_request' }, { fastPath: 'true' }]) {
-        const routed = { ...context, ...override };
-        expect(evaluateCondition(jobField(testCt, 'if'), routed)).toBe(false);
-        const result = runGate({
-          ...results('skipped', routed.event),
-          FAST_PATH: routed.fastPath,
-          CT_REQUIRED: ctRequired,
-          ROOT_PLAYWRIGHT_REQUIRED: 'false',
-        });
-        expect(result.status, result.stdout + result.stderr).toBe(0);
-      }
-    },
-  );
+    bash(script, { ROOT_PLAYWRIGHT_REQUIRED: '', ELECTRON_REQUIRED: 'false', ...env }, tmpdir());
 
   it.each(['pull_request', 'merge_group'])(
     'requires native fixture success on relevant %s diffs',
@@ -1426,7 +1204,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         const result = runGate({
           ...results('success', event),
           FAST_PATH: 'false',
-          CT_REQUIRED: 'true',
+          ROOT_PLAYWRIGHT_REQUIRED: 'true',
           PORTABLE_FIXTURES_REQUIRED: 'true',
           RESULT_test_portable_fixtures: outcome,
         });
@@ -1441,7 +1219,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     const result = runGate({
       ...results('success'),
       FAST_PATH: 'false',
-      CT_REQUIRED: 'true',
+      ROOT_PLAYWRIGHT_REQUIRED: 'true',
       PORTABLE_FIXTURES_REQUIRED: '',
       RESULT_test_portable_fixtures: 'success',
     });
@@ -1471,7 +1249,6 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
           ...results('success', event),
           RESULT_test_playwright: aggregate,
           FAST_PATH: 'false',
-          CT_REQUIRED: 'true',
           ROOT_PLAYWRIGHT_REQUIRED: 'true',
         });
         expect(result.status, `${aggregate}: ${result.stdout}${result.stderr}`).toBe(expected);
@@ -1481,38 +1258,38 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
 
   it.each<[string, Record<string, string>, number]>([
     [
-      'PR, no contract path, CT skipped',
-      { ...results('skipped'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
+      'queue, no root path, root Playwright skipped',
+      { ...results('skipped'), FAST_PATH: 'false', ROOT_PLAYWRIGHT_REQUIRED: 'false' },
       0,
     ],
     [
-      'PR, contract path, CT passed',
-      { ...results('success'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      'queue, root path, root Playwright passed',
+      { ...results('success'), FAST_PATH: 'false', ROOT_PLAYWRIGHT_REQUIRED: 'true' },
       0,
     ],
     [
-      'PR, contract path, CT failed',
-      { ...results('failure'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      'queue, root path, root Playwright failed',
+      { ...results('failure'), FAST_PATH: 'false', ROOT_PLAYWRIGHT_REQUIRED: 'true' },
       1,
     ],
     [
-      'PR, contract path, CT skipped (route failure)',
-      { ...results('skipped'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      'queue, root path, root Playwright skipped (route failure)',
+      { ...results('skipped'), FAST_PATH: 'false', ROOT_PLAYWRIGHT_REQUIRED: 'true' },
       1,
     ],
     [
-      'PR, relevance output empty, CT skipped',
-      { ...results('skipped'), FAST_PATH: 'false', CT_REQUIRED: '' },
+      'queue, relevance output empty, root Playwright skipped',
+      { ...results('skipped'), FAST_PATH: 'false', ROOT_PLAYWRIGHT_REQUIRED: '' },
       1,
     ],
     [
-      'PR, release fast path, CT skipped',
-      { ...results('skipped'), FAST_PATH: 'true', CT_REQUIRED: 'true' },
+      'queue, release fast path, root Playwright skipped',
+      { ...results('skipped'), FAST_PATH: 'true', ROOT_PLAYWRIGHT_REQUIRED: 'true' },
       0,
     ],
     [
-      'PR, no contract path, CT cancelled',
-      { ...results('cancelled'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
+      'queue, no root path, root Playwright cancelled',
+      { ...results('cancelled'), FAST_PATH: 'false', ROOT_PLAYWRIGHT_REQUIRED: 'false' },
       1,
     ],
     [
@@ -1527,7 +1304,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...heavySkipped,
         RESULT_route: 'failure',
         FAST_PATH: 'true',
-        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       1,
     ],
@@ -1542,22 +1319,22 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
       1,
     ],
     [
-      'merge_group, CT passed',
-      { ...results('success', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
+      'merge_group, root Playwright passed, relevance missing',
+      { ...results('success', 'merge_group'), FAST_PATH: '', ROOT_PLAYWRIGHT_REQUIRED: '' },
       1,
     ],
     [
-      'merge_group, CT skipped',
-      { ...results('skipped', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
+      'merge_group, root Playwright skipped, relevance missing',
+      { ...results('skipped', 'merge_group'), FAST_PATH: '', ROOT_PLAYWRIGHT_REQUIRED: '' },
       1,
     ],
     [
-      'merge_group, CT failed',
-      { ...results('failure', 'merge_group'), FAST_PATH: '', CT_REQUIRED: '' },
+      'merge_group, root Playwright failed, relevance missing',
+      { ...results('failure', 'merge_group'), FAST_PATH: '', ROOT_PLAYWRIGHT_REQUIRED: '' },
       1,
     ],
     [
-      'merge_group, release fast path, CT and heavy jobs skipped',
+      'merge_group, release fast path, browser and heavy jobs skipped',
       {
         ...results('skipped', 'merge_group'),
         RESULT_checks: 'skipped',
@@ -1565,13 +1342,17 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         RESULT_test: 'skipped',
         RESULT_test_integration: 'skipped',
         FAST_PATH: 'true',
-        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       0,
     ],
     [
-      'merge_group, fast path false, CT skipped',
-      { ...results('skipped', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'false' },
+      'merge_group, fast path false, irrelevant root Playwright skipped',
+      {
+        ...results('skipped', 'merge_group'),
+        FAST_PATH: 'false',
+        ROOT_PLAYWRIGHT_REQUIRED: 'false',
+      },
       0,
     ],
     [
@@ -1580,13 +1361,13 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...results('success', 'merge_group'),
         RESULT_test_integration: 'skipped',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'false',
+        ROOT_PLAYWRIGHT_REQUIRED: 'false',
       },
       1,
     ],
     [
-      'merge_group, release fast path, CT failed',
-      { ...results('failure', 'merge_group'), FAST_PATH: 'true', CT_REQUIRED: 'true' },
+      'merge_group, release fast path, root Playwright failed',
+      { ...results('failure', 'merge_group'), FAST_PATH: 'true', ROOT_PLAYWRIGHT_REQUIRED: 'true' },
       1,
     ],
     [
@@ -1595,7 +1376,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...results('skipped'),
         RESULT_monorepo_consumer_checks: 'failure',
         FAST_PATH: 'true',
-        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       1,
     ],
@@ -1605,13 +1386,17 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...results('success', 'merge_group'),
         RESULT_monorepo_consumer_checks: 'skipped',
         FAST_PATH: '',
-        CT_REQUIRED: '',
+        ROOT_PLAYWRIGHT_REQUIRED: '',
       },
       1,
     ],
     [
       'pull_request, docs-pr-scope passed',
-      { ...results('success', 'pull_request'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      {
+        ...results('success', 'pull_request'),
+        FAST_PATH: 'false',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+      },
       0,
     ],
     [
@@ -1620,7 +1405,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...results('success', 'pull_request'),
         RESULT_docs_pr_scope: 'failure',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       1,
     ],
@@ -1630,66 +1415,65 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...results('success', 'pull_request'),
         RESULT_docs_pr_scope: 'skipped',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       1,
     ],
     [
       'merge_group, docs-pr-scope skipped',
-      { ...results('success', 'merge_group'), FAST_PATH: 'false', CT_REQUIRED: 'true' },
+      {
+        ...results('success', 'merge_group'),
+        FAST_PATH: 'false',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
+      },
       0,
     ],
     [
-      'PR, CT passed, no test/ path, root Playwright skipped',
+      'queue, no test/ path, root Playwright skipped',
       {
         ...results('success'),
         RESULT_test_playwright: 'skipped',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'false',
       },
       0,
     ],
     [
-      'PR, test/ path, root Playwright passed, CT skipped',
+      'queue, test/ path, root Playwright passed',
       {
         ...results('skipped'),
         RESULT_test_playwright: 'success',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'false',
         ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       0,
     ],
     [
-      'PR, test/ path, root Playwright failed',
+      'queue, test/ path, root Playwright failed',
       {
         ...results('success'),
         RESULT_test_playwright: 'failure',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       1,
     ],
     [
-      'PR, test/ path, root Playwright skipped (route failure)',
+      'queue, test/ path, root Playwright skipped (route failure)',
       {
         ...results('success'),
         RESULT_test_playwright: 'skipped',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'true',
       },
       1,
     ],
     [
-      'PR, root relevance output empty, root Playwright skipped',
+      'queue, root relevance output empty, root Playwright skipped',
       {
         ...results('success'),
         RESULT_test_playwright: 'skipped',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: '',
       },
       1,
@@ -1700,7 +1484,6 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...results('success', 'merge_group'),
         RESULT_test_playwright: 'skipped',
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'false',
       },
       0,
@@ -1710,14 +1493,13 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     expect(result.status, result.stdout + result.stderr).toBe(expected);
   });
 
-  it.each(['test_ct', 'test_playwright', 'test_electron'])(
+  it.each(['test_playwright', 'test_electron'])(
     'requires a relevant %s PR run to succeed',
     (job) => {
       for (const outcome of ['failure', 'cancelled', 'skipped', '']) {
         const result = runGate({
           ...results('success'),
           FAST_PATH: 'false',
-          CT_REQUIRED: 'true',
           ROOT_PLAYWRIGHT_REQUIRED: 'true',
           ELECTRON_REQUIRED: 'true',
           RESULT_test_electron: 'success',
@@ -1728,13 +1510,12 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
     },
   );
 
-  it.each(['CT_REQUIRED', 'ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED'])(
+  it.each(['ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED'])(
     'rejects missing %s even when all jobs report success',
     (output) => {
       const result = runGate({
         ...results('success'),
         FAST_PATH: 'false',
-        CT_REQUIRED: 'true',
         ROOT_PLAYWRIGHT_REQUIRED: 'true',
         ELECTRON_REQUIRED: 'true',
         RESULT_test_electron: 'success',
@@ -1770,7 +1551,7 @@ describe('CI Gate accepts browser skips only by event or explicit relevance outp
         ...heavySkipped,
         RESULT_route: 'failure',
         FAST_PATH: 'true',
-        CT_REQUIRED: 'true',
+        ROOT_PLAYWRIGHT_REQUIRED: 'true',
       });
       expect(result.status).toBe(1);
       expect(result.stdout).toMatch(/^route result 'failure' not acceptable/m);

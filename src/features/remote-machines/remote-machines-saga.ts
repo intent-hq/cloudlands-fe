@@ -293,7 +293,7 @@ function* unexpose(action: ReturnType<typeof remoteMachineUnexposeRequested>): S
   yield* put(remoteMachineRemoved(machineId));
   yield* put(remoteMachineOperationSettled(machineId, null));
   if (result.revoked)
-    yield* call(notify.success, m.remoteMachines_unexpose_success({ machine: name }));
+    yield* call(notify.success, m.remoteMachines_unexpose_success({ machine: name, backend }));
   else yield* call(notify.warning, m.remoteMachines_unexpose_unrevoked_warning({ machine: name }));
 }
 

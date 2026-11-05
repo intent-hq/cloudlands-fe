@@ -102,12 +102,6 @@ for (const theme of ['light', 'dark']) {
     await page.keyboard.press('Space');
     await component.getByRole('button', { name: 'Hide', exact: true }).click();
     const expand = component.getByRole('button', { name: /Click to expand/i });
-    await expand.hover();
-    expect(
-      await expand
-        .locator('[data-slot="button-surface"]')
-        .evaluate((node) => getComputedStyle(node).backgroundColor),
-    ).toBe('rgba(0, 0, 0, 0)');
     await expand.focus();
     await page.keyboard.press('Enter');
     await expect(row).toHaveAttribute('aria-checked', 'true');

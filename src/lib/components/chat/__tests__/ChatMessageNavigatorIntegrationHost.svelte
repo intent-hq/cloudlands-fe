@@ -13,10 +13,8 @@
   import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import {
     addMessage,
-    updateMessage,
     bulkUpsertSessions,
     prependHistoryMessages,
-    replaceMessages,
     seedHistoryAround,
     setHistoryOldestReached,
     setAgentStreaming,
@@ -234,16 +232,6 @@
     );
   }
 
-  function growStreamingTail() {
-    // Bounded synthetic stream update: grow the existing tail, not a new turn.
-    store.dispatch(setAgentStreaming(agentId, true));
-    store.dispatch(
-      updateMessage(agentId, 'assistant-25', {
-        contentBlocks: [{ type: 'text', text: 'Assistant response 25. '.repeat(18) }],
-      }),
-    );
-  }
-
   const navigationState$ = store.createSelector((state) => ({
     historyIds:
       state.agentSessions?.historySegmentsByAgentId?.[agentId]?.messages.map((m) => m.id) ?? [],
@@ -280,12 +268,6 @@
       return structuredClone(page);
     };
   }
-  function truncateNavigationTarget() {
-    const currentMessages = fixtureMessages ?? messages;
-    const targetIndex = currentMessages.findIndex((message) => message.id === 'user-23');
-    store.dispatch(replaceMessages(agentId, currentMessages.slice(0, targetIndex)));
-  }
-
   function discardTranscript(replayed?: true) {
     store.dispatch(
       chatTranscriptSnapshotApplied(
@@ -314,11 +296,6 @@
   <button class="sr-only" data-testid="release-page" onclick={() => pendingPages.shift()?.()}
     >Release page</button
   >
-  <button
-    class="sr-only"
-    data-testid="truncate-navigation-target"
-    onclick={truncateNavigationTarget}>Truncate navigation target</button
-  >
   <button class="sr-only" data-testid="discard-transcript" onclick={() => discardTranscript()}
     >Discard transcript</button
   >
@@ -334,9 +311,6 @@
     >Toggle panel</button
   >
   {#if panelMounted}<PanelLayout {workspaceId} layoutId={workspaceId} contained />{/if}
-  <button class="sr-only" data-testid="grow-streaming-tail" onclick={growStreamingTail}
-    >Grow streaming tail</button
-  >
   <button
     type="button"
     class="sr-only"

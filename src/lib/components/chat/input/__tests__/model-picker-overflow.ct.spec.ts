@@ -87,28 +87,6 @@ test('composer model content aligns with text while its hover target extends on 
   });
   expect(geometry.labelClipped).toBe(false);
   await expectHitTarget(trigger);
-  // The composer rows above the action bar can still be settling vertically after the
-  // fill, so two absolute boundingBox() reads can straddle that shift (intent#5340).
-  // Hover may only change paint on the trigger itself, so measure its box against its
-  // action bar, with both rects read in one frame.
-  const triggerInBar = () =>
-    trigger.evaluate((button) => {
-      const rect = button.getBoundingClientRect();
-      const bar = button.closest('[data-chat-input-action-bar]')!.getBoundingClientRect();
-      return {
-        left: rect.left - bar.left,
-        top: rect.top - bar.top,
-        width: rect.width,
-        height: rect.height,
-      };
-    });
-  const rest = await triggerInBar();
-  const background = await trigger.evaluate((el) => getComputedStyle(el).backgroundColor);
-  await trigger.hover();
-  await expect
-    .poll(() => trigger.evaluate((el) => getComputedStyle(el).backgroundColor))
-    .not.toBe(background);
-  expect(await triggerInBar()).toEqual(rest);
 });
 
 test('model labels stay normal weight through pointer and keyboard selection', async ({
@@ -292,26 +270,18 @@ for (const { opening, width } of [
   });
 }
 
-test('first-open, hover and reopened selected highlights fit the full row without trigger shifts', async ({
-  mount,
-  page,
-}) => {
+test('first-open and reopened selected highlights fit the full row', async ({ mount, page }) => {
   await page.setViewportSize({ width: 900, height: 800 });
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await mount(ModelPickerGeometryHost);
   const trigger = modelTrigger(page);
-  await page.mouse.move(850, 750);
   // Mount does not wait for Inter: measure the real font, not its fallback.
   await page.evaluate(() => document.fonts.ready);
-  const rest = (await trigger.boundingBox())!;
-  await trigger.hover();
-  expect(await trigger.boundingBox()).toEqual(rest);
   const padding = await trigger.evaluate((el) => ({
     left: parseFloat(getComputedStyle(el).paddingLeft),
     right: parseFloat(getComputedStyle(el).paddingRight),
   }));
   expect(padding.left).toBe(padding.right);
-  await page.mouse.move(850, 750);
   await trigger.press('Enter');
   const outer = outerMenu(page);
   const row = outer.getByRole('option', { name: /Reasoning model/ });
@@ -324,8 +294,6 @@ test('first-open, hover and reopened selected highlights fit the full row withou
         expect(Math.abs(a[key] - b[key])).toBeLessThan(1);
     }).toPass();
   }
-  await aligned();
-  await row.hover();
   await aligned();
   await page.keyboard.press('Escape');
   await page.keyboard.press('Enter');

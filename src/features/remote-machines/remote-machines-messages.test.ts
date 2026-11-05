@@ -17,7 +17,7 @@ describe('remote machine failure messages', () => {
     );
     expect(many).toContain('Studio Mac');
     expect(many).toContain('2');
-    expect(many).toContain('still available to Build box');
+    expect(many).toContain('Build box can still run agents on it');
     const one = remoteMachineFailureMessage(
       failure({ code: 'machine-unreachable', unconfirmedStops: ['a-1'] }),
       labels,

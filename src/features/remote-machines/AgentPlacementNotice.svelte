@@ -1,7 +1,9 @@
 <!--
-  Conversation notice for a remote agent that is starting, couldn't start, or
-  whose machine can't be reached or revoked access. Nothing for a local agent
-  or a remote agent that runs normally.
+  Conversation notice for a remote agent that is starting (preparing its
+  checkout or running setup), couldn't start, whose setup script failed, or
+  whose machine can't be reached or revoked access. The checkout and setup
+  output opens here as a read-only log. Nothing for a local agent or a remote
+  agent that runs normally.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
@@ -14,7 +16,12 @@
   import { m } from '$shared/paraglide/messages.js';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { agentMachineLocation, agentPlacementNoticeKind } from './agent-location';
+  import {
+    agentMachineLocation,
+    agentPlacementNoticeKind,
+    placementFailure,
+  } from './agent-location';
+  import RemoteSetupLog from './RemoteSetupLog.svelte';
   import {
     selectCurrentBackendLabel,
     selectRemoteMachine,
@@ -39,24 +46,113 @@
 
   const location = $derived(agentMachineLocation($agent$, $machine$));
   const kind = $derived(agentPlacementNoticeKind($agent$, location));
+  const setup = $derived($agent$?.setup);
+  const failure = $derived(
+    location && $agent$?.placementError
+      ? placementFailure($agent$.placementError, location.name)
+      : null,
+  );
+  const startingDescription = $derived(
+    setup?.state === 'running'
+      ? m.remoteAgent_notice_runningSetup_description()
+      : setup?.state === 'pending'
+        ? m.remoteAgent_notice_preparing_description()
+        : m.remoteAgent_notice_starting_description(),
+  );
+  const startingStep = $derived(
+    setup?.state === 'running'
+      ? m.remoteAgent_status_runningSetup()
+      : setup?.state === 'pending'
+        ? m.remoteAgent_status_preparingCheckout()
+        : null,
+  );
+  const setupFailedDescription = $derived(
+    setup?.exitCode !== undefined
+      ? m.remoteAgent_notice_setupFailed_exitCode({ code: String(setup.exitCode) })
+      : setup?.error?.startsWith('node-setup-timeout')
+        ? m.remoteAgent_notice_setupFailed_timeout()
+        : m.remoteAgent_notice_setupFailed_generic(),
+  );
+  // The log can be opened once the machine sends output, or while setup runs.
+  const canShowOutput = $derived(
+    !!setup && (!!setup.output || setup.state === 'running' || setup.state === 'failed'),
+  );
+  let outputOpen = $state(false);
 
-  function openDevicesSettings() {
+  function openMachinesSettings() {
     void navigateToSettings({ tab: 'devices', hash: 'devices' });
   }
 </script>
 
+{#snippet outputToggle()}
+  {#if canShowOutput}
+    <Button
+      variant="ghost-light"
+      size="compact"
+      class="-my-1 ml-auto shrink-0"
+      aria-expanded={outputOpen}
+      onclick={() => (outputOpen = !outputOpen)}
+    >
+      {outputOpen ? m.remoteAgent_setup_hideOutput() : m.remoteAgent_setup_showOutput()}
+    </Button>
+  {/if}
+{/snippet}
+
 {#if location && kind === 'starting'}
   <div
-    class="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 type-body font-family-child text-muted-foreground {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
-    role="status"
-    aria-live="polite"
+    class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
     data-agent-placement-notice="starting"
+    data-agent-setup-state={setup?.state}
   >
-    <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
-      <IntentMarkLoader size={14} />
-    </span>
-    <span>{m.remoteAgent_notice_starting_title({ machine: location.name })}</span>
-    <span class="text-subtle">{m.remoteAgent_notice_starting_description()}</span>
+    <div class="flex items-center gap-2 type-body font-family-child text-muted-foreground">
+      <span
+        class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
+          <IntentMarkLoader size={14} />
+        </span>
+        <span>{m.remoteAgent_notice_starting_title({ machine: location.name })}</span>
+        {#if startingStep}
+          <span class="text-foreground">{startingStep}</span>
+        {/if}
+        <span class="text-subtle">{startingDescription}</span>
+      </span>
+      {@render outputToggle()}
+    </div>
+    {#if outputOpen && canShowOutput}
+      <RemoteSetupLog
+        machine={location.name}
+        output={setup?.output}
+        truncated={setup?.outputTruncated}
+      />
+    {/if}
+  </div>
+{:else if location && kind === 'setup-failed'}
+  <div
+    class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+    data-agent-placement-notice="setup-failed"
+  >
+    <div class="flex items-center gap-2 type-body font-family-child">
+      <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" role="status">
+        <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
+          <Fa icon={faTriangleExclamation} class="size-3.5! text-warning-ink" />
+        </span>
+        <span class="font-medium text-warning-ink">
+          {m.remoteAgent_notice_setupFailed_title({ machine: location.name })}
+        </span>
+        <span class="text-subtle">{setupFailedDescription}</span>
+      </span>
+      {@render outputToggle()}
+    </div>
+    {#if outputOpen && canShowOutput}
+      <RemoteSetupLog
+        machine={location.name}
+        output={setup?.output}
+        truncated={setup?.outputTruncated}
+      />
+    {/if}
   </div>
 {:else if location && kind}
   {@const danger = kind === 'failed' || kind === 'revoked'}
@@ -83,12 +179,16 @@
           {/if}
         </p>
         {#if kind === 'failed'}
-          {#if $agent$?.placementError?.detail}
+          {#if failure?.message}
             <p class="type-body break-words text-muted-foreground" data-agent-placement-detail>
-              {$agent$.placementError.detail}
+              {failure.message}
             </p>
           {/if}
-          <p class="type-body text-muted-foreground">{m.remoteAgent_notice_failed_hint()}</p>
+          <p class="type-body text-muted-foreground">
+            {failure?.updateRequired
+              ? m.remoteAgent_notice_updateRequired_hint({ machine: location.name })
+              : m.remoteAgent_notice_failed_hint()}
+          </p>
         {:else if kind === 'unreachable'}
           <p class="type-body text-muted-foreground">
             {m.remoteAgent_notice_unreachable_description({
@@ -98,7 +198,10 @@
           </p>
         {:else}
           <p class="type-body text-muted-foreground">
-            {m.remoteAgent_notice_revoked_description({ machine: location.name })}
+            {m.remoteAgent_notice_revoked_description({
+              machine: location.name,
+              backend: $backendLabel$,
+            })}
           </p>
         {/if}
       </div>
@@ -114,8 +217,8 @@
             {m.remoteAgent_notice_checkAgain_label()}
           </Button>
         {:else}
-          <Button variant="secondary" size="sm" onclick={openDevicesSettings}>
-            {m.remoteAgent_notice_openDevices_label()}
+          <Button variant="secondary" size="sm" onclick={openMachinesSettings}>
+            {m.remoteAgent_notice_openMachines_label()}
           </Button>
         {/if}
       </div>
