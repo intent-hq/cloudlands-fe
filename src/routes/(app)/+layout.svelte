@@ -125,7 +125,11 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
-  import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import {
+    isFocusInEditableElement,
+    KeyboardShortcutManager,
+    type KeyboardShortcut,
+  } from '$lib/utils/keyboardShortcuts';
   import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -506,36 +510,16 @@
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =
       typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
-    const register = (opts: {
-      key: string;
-      meta?: boolean;
-      ctrl?: boolean;
-      shift?: boolean;
-      alt?: boolean;
-      description: string;
-      skipInEditableElements?: boolean;
-      global?: boolean;
-      ignoreRepeat?: boolean;
-      enabled?: () => boolean;
-      action: () => void;
-      shortcutId?: ShortcutId;
-      binding?: () => string;
-    }) => {
+    const register = ({ shortcutId, ...opts }: KeyboardShortcut & { shortcutId?: ShortcutId }) => {
+      // Forward every option (preferLocal, allowInTerminal, ...) so registrations behave the
+      // same here as in their unit tests.
       paletteShortcuts!.register({
-        key: opts.key,
+        ...opts,
         meta: !!opts.meta,
         ctrl: !!opts.ctrl,
         shift: !!opts.shift,
         alt: !!opts.alt,
-        description: opts.description,
-        skipInEditableElements: opts.skipInEditableElements,
-        global: opts.global,
-        ignoreRepeat: opts.ignoreRepeat,
-        enabled: opts.enabled,
-        action: opts.action,
-        binding:
-          opts.binding ??
-          (opts.shortcutId ? () => getEffectiveShortcut(opts.shortcutId!) : undefined),
+        binding: opts.binding ?? (shortcutId ? () => getEffectiveShortcut(shortcutId) : undefined),
       });
     };
     const openCmd = () => appStore.dispatch(openPalette());
