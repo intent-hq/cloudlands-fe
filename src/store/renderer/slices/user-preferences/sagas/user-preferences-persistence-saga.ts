@@ -28,6 +28,7 @@ import {
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsBrowserAccessEnabled,
+  selectLabsCursorProviderEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectPauseAnimationsWhenUnfocused,
@@ -60,6 +61,7 @@ import {
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsBrowserAccessEnabled,
+  setLabsCursorProviderEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setPauseAnimationsWhenUnfocused,
@@ -78,6 +80,7 @@ import {
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
   toggleLabsBrowserAccess,
+  toggleLabsCursorProvider,
   togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -103,6 +106,7 @@ const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
 const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
+const LABS_CURSOR_PROVIDER_STORAGE_KEY = 'labs:cursorProviderEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -257,6 +261,13 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setLabsBrowserAccessEnabled(labsBrowserAccessEnabled));
   }
 
+  const labsCursorProviderEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_CURSOR_PROVIDER_STORAGE_KEY,
+  );
+  if (typeof labsCursorProviderEnabled === 'boolean') {
+    yield* put(setLabsCursorProviderEnabled(labsCursorProviderEnabled));
+  }
+
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
   if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
 
@@ -402,6 +413,13 @@ function* persistLabsBrowserAccessWorker() {
   );
 }
 
+function* persistLabsCursorProviderWorker() {
+  yield* setLocalStorageJSON(
+    LABS_CURSOR_PROVIDER_STORAGE_KEY,
+    yield* selectLabsCursorProviderEnabled.effect(),
+  );
+}
+
 function* persistLabsPlainFolderWorkspacesWorker() {
   yield* setLocalStorageJSON(
     LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY,
@@ -525,6 +543,10 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsBrowserAccessEnabled, toggleLabsBrowserAccess],
     persistLabsBrowserAccessWorker,
+  );
+  yield* takeEvery(
+    [setLabsCursorProviderEnabled, toggleLabsCursorProvider],
+    persistLabsCursorProviderWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

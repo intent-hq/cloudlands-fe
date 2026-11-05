@@ -76,6 +76,11 @@ export type UserPreferencesState = {
   /** Shows Settings > Mobile > Browser access; turning it off also stops the server. */
   labsBrowserAccessEnabled: boolean;
   /**
+   * Offers the Cursor provider (Settings > Providers row, onboarding card, test prompt) on
+   * this device. Off never disables Cursor: an enabled Cursor keeps its row and stays usable.
+   */
+  labsCursorProviderEnabled: boolean;
+  /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
    */
@@ -158,6 +163,7 @@ export const initialState: UserPreferencesStoreState = {
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
   labsBrowserAccessEnabled: false,
+  labsCursorProviderEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -457,6 +463,17 @@ const labsBrowserAccessPreference = createBooleanPreference<UserPreferencesStore
 export const setLabsBrowserAccessEnabled = labsBrowserAccessPreference.setAction;
 
 export const toggleLabsBrowserAccess = labsBrowserAccessPreference.toggleAction;
+
+const labsCursorProviderPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsCursorProviderEnabled',
+  setActionName: 'setLabsCursorProviderEnabled',
+  toggleActionName: 'toggleLabsCursorProvider',
+});
+
+export const setLabsCursorProviderEnabled = labsCursorProviderPreference.setAction;
+
+export const toggleLabsCursorProvider = labsCursorProviderPreference.toggleAction;
 
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
