@@ -813,6 +813,7 @@ describe('test-ct-changed workflow job', () => {
     specs: string,
     list: unknown = listReport({ 'a.ct.spec.ts': 2 }),
     listExit = 0,
+    shard = '1/2',
   ) {
     const dir = tempDir();
     const bin = join(dir, 'bin');
@@ -852,6 +853,7 @@ describe('test-ct-changed workflow job', () => {
           ...process.env,
           PATH: `${bin}:${process.env.PATH}`,
           CT_CHANGED_SPECS: specs,
+          CT_CHANGED_SHARD: shard,
           RUNNER_TEMP: dir,
         },
       },
@@ -901,6 +903,21 @@ describe('test-ct-changed workflow job', () => {
     expect(argv).toContain('--retries=0');
     expect(argv).toContain('--grep-invert');
     expect(stderr).toContain('Discovered 86 tests in 10 spec files; repeating each 9 times');
+  });
+
+  it.each(['1/2', '2/2'])('partitions %s after computing repeats from the full list', (shard) => {
+    const { status, argv, listArgv, stderr } = runTestStep(
+      '["src/a/one.ct.spec.ts"]',
+      listReport({ 'one.ct.spec.ts': 534 }),
+      0,
+      shard,
+    );
+    expect(status, stderr).toBe(0);
+    expect(argv).toContain(`--shard=${shard}`);
+    expect(argv).toContain('--repeat-each=3');
+    expect(argv).toContain('--retries=0');
+    expect(listArgv.some((arg) => arg.startsWith('--shard'))).toBe(false);
+    expect(stderr).toContain('repeating each 3 times (1602 runs');
   });
 
   it('fails without launching tests when discovery errors, finds nothing or exits non-zero', () => {

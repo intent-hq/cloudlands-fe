@@ -435,6 +435,7 @@ describe('parity with the test-ct-changed workflow job', () => {
           ...process.env,
           PATH: `${bin}:${process.env.PATH}`,
           CT_CHANGED_SPECS: JSON.stringify(specs),
+          CT_CHANGED_SHARD: '1/2',
           RUNNER_TEMP: dir,
         },
       },
@@ -458,7 +459,9 @@ describe('parity with the test-ct-changed workflow job', () => {
     const [list, build, run] = calls;
     expect(list).toEqual(lines('list-argv'));
     expect(build.slice(0, CT_BUILD_ARGS.length)).toEqual(CT_BUILD_ARGS);
-    expect(run).toEqual(lines('run-argv'));
+    const scheduledRun = lines('run-argv');
+    expect(scheduledRun).toContain('--shard=1/2');
+    expect(run).toEqual(scheduledRun.filter((arg) => !arg.startsWith('--shard=')));
     expect(run).toContain('--repeat-each=16');
   });
 });

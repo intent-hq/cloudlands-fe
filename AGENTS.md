@@ -698,7 +698,7 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   the PR that fixes the flake removes the tag.
 - **Full browser suites never run on PR updates** (PRs run type/lint, unit tests and static
   checks). The exceptions: `test-ct-changed` runs each `.ct.spec.ts` the PR adds or
-  edits 20 times with retries off (`scripts/ct-changed-specs.mjs`; fewer when the
+  edits 20 times with retries off across two isolated shards (`scripts/ct-changed-specs.mjs`; fewer when the
   changed specs hold many tests: about 800 test runs in all, at least 3 each), so any failing repetition is red on the PR, not in the queue; and
   `test-ct-affected` runs once each the existing specs that load a changed file, nearest
   first, up to 40 per PR (`--affected` in the same script; the job log and summary list
