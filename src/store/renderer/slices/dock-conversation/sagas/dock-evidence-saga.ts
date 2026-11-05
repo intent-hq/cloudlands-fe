@@ -263,6 +263,7 @@ function* addCapturedImage(
         displayScale: native.displayScale,
         capturedAt: native.capturedAt,
         source: native.source,
+        ...(native.capture ? { capture: native.capture } : {}),
         ...(native.hash ? { hash: native.hash } : pixels.hash ? { hash: pixels.hash } : {}),
       }
     : {
@@ -272,6 +273,7 @@ function* addCapturedImage(
         height: pixels.height,
         displayScale: pixels.displayScale,
         capturedAt: pixels.capturedAt,
+        ...(pixels.capture ? { capture: pixels.capture } : {}),
         source,
         ...(pixels.hash ? { hash: pixels.hash } : {}),
       };

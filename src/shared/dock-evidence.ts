@@ -1,4 +1,4 @@
-import { DockSavedMediaSchema, type DockSavedMedia, type DockMediaSource } from './dock-media-edit';
+import { DockSavedMediaSchema, type DockSavedMedia, type DockMediaSource, type DockMediaCapture } from './dock-media-edit';
 /**
  * Dock composer screen evidence: captured images, numbered marks, clips and
  * pending editor insertions for one workspace/agent draft.
@@ -76,6 +76,7 @@ export interface DockMark {
 }
 
 export interface DockEvidenceImage {
+  capture?: DockMediaCapture;
   media?: DockSavedMedia;
   mediaError?: 'invalid-saved-edit';
   id: string;
@@ -1286,6 +1287,7 @@ export function fromDockDraftEvidence(
 
 /** Screenshot of the display the dock is on, with the dock excluded. */
 export interface DockCapturedPixels {
+  capture?: DockMediaCapture;
   /** Base64 bytes without a data-URL prefix. */
   base64: string;
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp';

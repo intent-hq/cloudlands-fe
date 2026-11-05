@@ -400,7 +400,13 @@ export class DockEvidenceSessions {
     if (captured.png.length > MAX_PNG_BYTES) return { ok: false, error: 'limit' };
     const id = this.deps.id();
     const capturedAt = nativePixels?.capturedAt ?? new Date(this.deps.now()).toISOString();
+    const display = this.deps.displays().find((row) => row.id === this.deps.placement(session.binding.window)?.displayId);
+    const capture = { mode: request.mode ?? 'fullscreen' as const,
+      frame: (!request.mode || request.mode === 'fullscreen') && display
+        ? { displayId: display.id, rect: { x: display.bounds.x, y: display.bounds.y, w: display.bounds.width, h: display.bounds.height },
+            coordinateSpace: 'screen-points-top-left' as const } : null };
     const pixels = {
+      capture,
       base64: captured.png.toString('base64'),
       mimeType: 'image/png' as const,
       width: captured.width,
@@ -419,6 +425,7 @@ export class DockEvidenceSessions {
           contextItemId: `dock-evidence:${id}`,
           width: pixels.width,
           height: pixels.height,
+          capture: pixels.capture,
           displayScale: pixels.displayScale,
           capturedAt,
           source: request.source ?? 'capture',

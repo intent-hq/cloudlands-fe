@@ -1,3 +1,4 @@
+import { DockMediaCaptureSchema } from '../../../shared/dock-media-edit';
 import { exportDockMedia, transcribeDockMedia, releaseDockMediaJob } from './dock-media-output';
 import { DockMediaExportRequestSchema, DockMediaTranscribeRequestSchema } from '../../../shared/dock-media-output';
 import {
@@ -68,6 +69,7 @@ const geometry = z.discriminatedUnion('kind', [
 ]);
 const pixels = z
   .object({
+    capture: DockMediaCaptureSchema.optional(),
     base64: z
       .string()
       .min(1)

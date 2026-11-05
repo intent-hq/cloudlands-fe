@@ -268,7 +268,7 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
     if (!evidence || !live || JSON.stringify(live) !== before) return;
     const source = DockMediaSourceSchema.parse({ id: crypto.randomUUID(), revision: 0, kind: 'screenshot',
       attachmentId: placed.attachmentId, path: placed.path, durationMs: 0,
-      width: live.width, height: live.height, audio: 'none', visuals: 'clean', batches: dockMediaCaptureBatches([], 0) });
+      width: live.width, height: live.height, ...(live.capture ? { capture: live.capture } : {}), audio: 'none', visuals: 'clean', batches: dockMediaCaptureBatches([], 0) });
     source.capturedMarks = dockMediaCapturedMarks(evidence, source, logicalId);
     const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
     store.dispatch(setComposerContextItems(workspaceId, agentId, items.map((entry) => entry.id === item!.id

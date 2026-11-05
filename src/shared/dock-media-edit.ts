@@ -62,12 +62,20 @@ export const DockMediaBatchSchema = z
     'Reversed batch',
   );
 export type DockMediaBatch = z.infer<typeof DockMediaBatchSchema>;
+/** Global screen points use Electron's top-left display coordinate convention. */
+export const DockMediaCaptureSchema = z.object({
+  mode: z.enum(['fullscreen', 'window', 'region']),
+  frame: z.object({ displayId: z.number().int(), rect: DockMediaRectSchema,
+    coordinateSpace: z.literal('screen-points-top-left') }).strict().nullable(),
+}).strict();
+export type DockMediaCapture = z.infer<typeof DockMediaCaptureSchema>;
 export const DockMediaSourceSchema = z
   .object({
     /** Immutable pixel-generation identity; a retake may replace it under the same logical attachment. */
     id,
     revision,
     kind: z.enum(['recording', 'screenshot']),
+    capture: DockMediaCaptureSchema.optional(),
     /** Daemon file attachment identity, distinct from the logical image/clip ID. */
     attachmentId: id,
     path: z
@@ -613,4 +621,13 @@ export function originalDockMediaEdit(
     source,
     edit: { ...defaultDockMediaEdit(source, source.capturedMarks, media.transcript, null), revision: media.saved?.revision ?? 0 },
   };
+}
+
+/** No origin is inferred for legacy/window/region captures lacking a verified frame. */
+export function dockMediaRetakeMapping(from: DockMediaSource, to: DockMediaSource): { scaleX: number; scaleY: number; offsetX: number; offsetY: number } | null {
+  const a = from.capture?.frame, b = to.capture?.frame;
+  if (!a || !b || a.displayId !== b.displayId || from.kind !== 'screenshot' || to.kind !== 'screenshot') return null;
+  const x = to.width / b.rect.w, y = to.height / b.rect.h;
+  return { scaleX: a.rect.w / from.width * x, scaleY: a.rect.h / from.height * y,
+    offsetX: (a.rect.x - b.rect.x) * x, offsetY: (a.rect.y - b.rect.y) * y };
 }
