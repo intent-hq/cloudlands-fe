@@ -568,6 +568,27 @@ with checks proving they were deleted, and do not change product tooltip behavio
 The Untitled hover test blocked unrelated delegation work and passed only on retry
 ([cloudlands-fe#3895 queue failure](https://github.com/intent-hq/cloudlands-fe/actions/runs/41907311279/job/126845579456)).
 
+#### Do not check in browser gesture choreography tests
+
+**Do not check in browser drag-and-drop or pointer/animation choreography tests.**
+This applies to component, E2E, and Electron suites: mouse move/down/up sequences,
+`dragTo`, coordinate-driven gestures, cancelled,
+Escape or outside drops, hover-triggered drag affordances, resizing, reordering, and
+mid-flight animation frame sampling or reversal sequences.
+Temporary local probes are allowed while building or debugging a feature. They are
+development evidence: remove their code, exclusive fixtures/helpers, assertions, and
+gesture-only settling waits before committing or opening a PR. Screenshots and traces
+may accompany review as evidence; existing tooltip and pixel-comparison bans still apply.
+Delete checked-in violations; never restore, stabilize, quarantine, or replace them with
+timing waits, retries, pixel comparisons, or equivalent gestures. Split mixed tests to
+retain independent actions, keyboard access, navigation, and data contracts. Keep
+deterministic unit tests for ordering, persistence, state transitions, and payloads.
+Ordinary clicks, functional hover controls, scrolling, and live containment/accessibility
+checks remain valid when independent of this choreography. Leave production behavior
+unchanged.
+The Set aside drag test delayed unrelated work when opening a detail pane resized its
+coordinate target ([cloudlands-fe#3895 queue failure](https://github.com/intent-hq/cloudlands-fe/actions/runs/41957371797/job/127015576955)).
+
 #### Pixel comparison tests are forbidden
 
 **Never add, restore, run, or regenerate pixel comparison tests. There are no
@@ -642,7 +663,7 @@ layout later is also a generated appearance baseline. Review must reject equival
 custom comparisons.
 
 Keep independent behavioral assertions: content stays within its live container,
-controls remain reachable, a resize responds to user input, and scrolling preserves
+controls remain reachable, and scrolling preserves
 the user's position. Accessibility minimum target sizes are standards-based bounds,
 not decorative baselines. Small rounding tolerances may support these relationships;
 they must not pin an ornamental dimension or spacing value. Pure layout algorithm
@@ -659,8 +680,8 @@ chromium` and use the same `PLAYWRIGHT_BROWSERS_PATH` for install and tests. Tra
 
 Playwright CT (`*.ct.spec.ts`, run by `pnpm run test:ct`) is for behavior that only a
 real browser can observe: functional layout/geometry, focus and keyboard handling, native
-browser APIs, and motion behavior under the rules above. State, wire, validation, and
-routing logic belong in Vitest — a CT spec
+browser APIs, and settled-state/reduced-motion contracts under the rules above. State,
+wire, validation, and routing logic belong in Vitest — a CT spec
 is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxed on CI.
 
 - **Matrix cells must map to a named contract.** Loop over a width only when that width
@@ -687,9 +708,8 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   paths run those suites; both also run nightly. `pnpm ct:failures <run-id>` lists
   failed/flaky cases, and `nightly-browser-report.yml` files or updates `intent-hq/intent`
   issues for nightly failures ([Nightly browser-test reporting](../../docs/fe/DEVELOPER_GUIDE.md#nightly-browser-test-reporting)).
-- Motion specs that sample animation progress mid-flight are the historical flake source;
-  assert start/end states, and check "no animation is running" with the
-  `src/test/ct-test.ts` helpers, never a one-time `getAnimations()` count: a child's
+- For permitted settled-state or reduced-motion assertions, check "no animation is
+  running" with the `src/test/ct-test.ts` helpers, never a one-time `getAnimations()` count: a child's
   short fade caught mid-flight ejected cloudlands-fe#3651 from the merge queue.
   `expectAnimationsToSettle(locator)` waits for motion to finish (`includeFinished` also
   requires `fill: 'forwards'` leftovers to be removed). `expectNoAnimations(locator, opts)`
@@ -729,12 +749,12 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   helper waits for `region` to settle, presses Enter on the action, then waits for
   `region` to change and settle (`requireChange: false` when it may not). Lint
   (`intent/no-hover-then-click-in-ct`) caps each spec's sites at its shrink-only baseline;
-  keep a pointer click, disabled on the line with the reason, only to cover the pointer
-  path on a row that cannot move.
-- Pause the fake clock: `page.clock.install()` alone keeps time moving with real time, so
-  a slow step lets frame loops run past the frame a test samples (cloudlands-fe#4148:
+  retain an ordinary click only for independent control behavior on a row that cannot move.
+- For permitted timer/state tests, pause the fake clock: `page.clock.install()` alone keeps
+  time moving with real time, so a slow step can advance the state (cloudlands-fe#4148:
   56 of 80 loaded runs failed). Use `installPausedClock(page, beforePause?)` or
-  `pauseClock(page)` (`src/test/ct-test.ts`), then step with `page.clock.runFor`. Lint
+  `pauseClock(page)` (`src/test/ct-test.ts`), then step with `page.clock.runFor`.
+  Do not use clock stepping to check animation choreography. Lint
   (`intent/no-unpaused-clock-in-ct`) rejects an install whose test never pauses; keep
   one, disabled on the line with the reason, only to skip a delay and check settled state.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced

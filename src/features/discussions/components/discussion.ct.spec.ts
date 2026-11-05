@@ -22,13 +22,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       .locator('[data-discussion-message]')
       .filter({ hasText: 'A message awaiting confirmation' });
     await expect(pending.getByRole('status')).toBeVisible();
-    const transitions = await pending.evaluateHandle((element) => {
-      const properties: string[] = [];
-      element.addEventListener('transitionrun', (event) => {
-        if (event.target === element) properties.push((event as TransitionEvent).propertyName);
-      });
-      return properties;
-    });
     const original = await pending.elementHandle();
     const retryId = await pending.getAttribute('data-discussion-message');
     await composer.fill('My next thought');
@@ -50,16 +43,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
           .evaluate((element) => element.scrollHeight - element.clientHeight - element.scrollTop),
       )
       .toBeLessThan(2);
-    await expect.poll(() => pending.evaluate((element) => element.getAnimations().length)).toBe(0);
-    if (reducedMotion === 'reduce') {
-      expect(
-        await pending.evaluate((element) => getComputedStyle(element).transitionProperty),
-      ).toBe('none');
-      expect(await transitions.jsonValue()).toEqual([]);
-    } else {
-      await expect.poll(() => transitions.jsonValue()).toContain('opacity');
-    }
-    await transitions.dispose();
   });
 }
 

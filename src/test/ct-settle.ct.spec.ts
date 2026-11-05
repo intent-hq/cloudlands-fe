@@ -37,17 +37,6 @@ test('waits for a delayed CSS transition', async ({ mount }) => {
   expect(opened.height).toBe(120);
 });
 
-test('lets the next click land on a control the motion moved', async ({ mount }) => {
-  const component = await mount(SettleProbeHarness);
-  const next = component.getByTestId('next');
-  for (let round = 0; round < 3; round += 1) {
-    await clickAndSettle(component.getByTestId('js-toggle'), component.getByTestId('js-region'));
-    await clickAndSettle(component.getByTestId('css-toggle'), component.getByTestId('css-region'));
-    await next.click();
-  }
-  await expect(next).toHaveAttribute('data-clicks', '3');
-});
-
 test('ignores infinite animations inside the region', async ({ mount }) => {
   const component = await mount(SettleProbeHarness);
   const region = component.getByTestId('js-region');

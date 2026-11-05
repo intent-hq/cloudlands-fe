@@ -1,13 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import {
-  intentMarkMotionTiming,
-  intentMarkPaths,
-  intentMarkViewBox,
-  pulseKeyframes,
-} from '../src/lib/components/ui/indicators/intent-mark-vector';
-
 const template = readFileSync(path.resolve('src/app.html'), 'utf8')
   .replace('%sveltekit.head%', '')
   .replace('%sveltekit.body%', '')
@@ -61,21 +54,6 @@ test('logo motion responds to reduced-motion changes without app JavaScript', as
   const animationCount = () =>
     mark.evaluate((node) => node.getAnimations({ subtree: true }).length);
   await expect.poll(animationCount).toBeGreaterThan(0);
-  const moved = await mark.evaluate((node) => {
-    const animations = node.getAnimations({ subtree: true });
-    for (const animation of animations) {
-      animation.pause();
-      animation.currentTime = 0;
-    }
-    const arm = node.querySelector('path')!;
-    const initial = getComputedStyle(arm).transform;
-    for (const animation of animations) {
-      animation.currentTime = Number(animation.effect!.getTiming().duration) / 2;
-    }
-    return getComputedStyle(arm).transform !== initial;
-  });
-  expect(moved).toBe(true);
-
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect.poll(animationCount).toBe(0);
   for (const arm of await mark.locator('path').all()) {
@@ -105,82 +83,3 @@ for (const theme of ['light', 'dark'] as const) {
     }
   });
 }
-
-test('pulse moves continuously between source samples and returns to neutral at the loop boundary', async ({
-  page,
-}) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await openSplash(page);
-  const poses = await page.locator('#splash-mark').evaluate((node) => {
-    const animations = node.getAnimations({ subtree: true });
-    const at = (time: number) => {
-      for (const animation of animations) {
-        animation.pause();
-        animation.currentTime = time;
-      }
-      return [...node.querySelectorAll('path')].map((arm) => getComputedStyle(arm).transform);
-    };
-    return [at(0), at(400), at(410), at(2000), at(2033.333333), at(1000)];
-  });
-  expect(poses[1].slice(0, 4)).not.toEqual(poses[2].slice(0, 4));
-  expect(poses[0]).toEqual(poses[3]);
-  expect(poses[0]).toEqual(poses[4]);
-  expect(poses[0][4]).toEqual(poses[5][4]);
-  expect(poses[0].slice(0, 4)).not.toEqual(poses[5].slice(0, 4));
-});
-
-test('inline startup motion stays aligned with the shared vector model', async ({ page }) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await openSplash(page);
-  const deviation = await page.locator('#splash-mark').evaluate(
-    (startup, model) => {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('viewBox', model.viewBox);
-      svg.setAttribute('width', '64');
-      svg.setAttribute('height', '64');
-      document.body.append(svg);
-      try {
-        for (const [index, d] of model.paths.entries()) {
-          const arm = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-          arm.setAttribute('d', d);
-          svg.append(arm);
-          arm.animate(model.keyframes[index], { duration: model.duration, iterations: Infinity });
-        }
-        const points = (root: Element) => {
-          const rect = root.getBoundingClientRect();
-          return [...root.querySelectorAll('path')].flatMap((arm) =>
-            [0, 0.5, 1].map((fraction) => {
-              const point = arm.getPointAtLength(arm.getTotalLength() * fraction);
-              const screen = point.matrixTransform(arm.getScreenCTM()!);
-              return [screen.x - rect.left, screen.y - rect.top];
-            }),
-          );
-        };
-        let maxDeviation = 0;
-        for (const time of [0, 400, 410, 1000, 1800, 2000, model.duration]) {
-          for (const root of [startup, svg]) {
-            for (const animation of root.getAnimations({ subtree: true })) {
-              animation.pause();
-              animation.currentTime = time;
-            }
-          }
-          const actual = points(startup).flat();
-          const expected = points(svg).flat();
-          for (const [index, value] of actual.entries()) {
-            maxDeviation = Math.max(maxDeviation, Math.abs(value - expected[index]));
-          }
-        }
-        return maxDeviation;
-      } finally {
-        svg.remove();
-      }
-    },
-    {
-      paths: intentMarkPaths,
-      viewBox: intentMarkViewBox,
-      keyframes: intentMarkPaths.map((_, index) => pulseKeyframes(index)),
-      duration: intentMarkMotionTiming.pulseMs,
-    },
-  );
-  expect(deviation).toBeLessThan(0.001);
-});

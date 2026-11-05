@@ -137,19 +137,6 @@ test('non-overflowing tabs keep their controls inside the bounded no-drag region
   const first = component.locator('[data-workspace-tab="geometry-alpha"] [role="tab"]');
   await first.click();
   await expect(component.locator('[data-selected-workspace]')).toHaveText('geometry-alpha');
-  const source = (await first.boundingBox())!;
-  const target = (await component.locator('[data-workspace-tab="geometry-beta"]').boundingBox())!;
-  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(target.x + target.width - 10, target.y + target.height / 2, { steps: 10 });
-  await page.mouse.up();
-  await expect
-    .poll(() =>
-      component
-        .locator('[data-workspace-tab-motion]')
-        .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute('data-workspace-tab-motion'))),
-    )
-    .toEqual(['geometry-beta', 'geometry-alpha', 'geometry-gamma']);
   await component
     .locator('[data-workspace-tab="geometry-alpha"] [data-workspace-tab-close]')
     .click();

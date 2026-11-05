@@ -287,7 +287,7 @@ test('single-select radio rows submit through the keyboard and lock completed an
   await expect(options.nth(1)).toHaveAttribute('aria-checked', 'true');
 });
 
-test('free-text field grows with its content to a six-line cap and keeps a manual resize', async ({
+test('free-text field grows with its content to a six-line cap and resets on submission', async ({
   page,
 }) => {
   await mountWizard(page, { width: 720, height: 640 }, { optionCount: 2, questionCount: 2 });
@@ -339,22 +339,6 @@ test('free-text field grows with its content to a six-line cap and keeps a manua
   await settle();
   expect((await metrics()).height).toBeCloseTo(empty.lineHeight, 1);
 
-  const box = (await field.boundingBox())!;
-  await page.mouse.move(box.x + box.width - 4, box.y + box.height - 4);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 4, box.y + box.height + 60, { steps: 8 });
-  await page.mouse.up();
-  await settle();
-  const dragged = await metrics();
-  expect(dragged.height).toBeGreaterThanOrEqual(empty.lineHeight + 40);
-
-  await page.keyboard.type(' plus more typing after the drag');
-  await page.keyboard.press('Shift+Enter');
-  await page.keyboard.type('and a second line');
-  await settle();
-  const afterTyping = await metrics();
-  expect(afterTyping.value).toBe('short plus more typing after the drag\nand a second line');
-  expect(afterTyping.height).toBeCloseTo(dragged.height, 1);
   await expect(page.getByTestId('panel-boundary')).toHaveAttribute('data-completion-count', '0');
 
   await page.keyboard.press('Enter');

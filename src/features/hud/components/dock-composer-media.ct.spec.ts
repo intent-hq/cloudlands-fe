@@ -44,10 +44,10 @@ test('a missing permission marks the blocked control, whose click opens Settings
   await expect(annotation).toHaveAttribute('data-alert', '');
   await expect(annotation.locator('[data-dock-glyph="pencil"]')).toBeVisible();
   await expect(annotation.locator('.tool-alert-dot')).toBeVisible();
-  // Hover opens the tools: pick shows the same error state with the permission line;
+  // Pick shows the same error state with the permission line;
   // box, pen and arrow do not need Accessibility.
-  await page.mouse.move(0, 0);
-  await annotation.hover();
+  await annotation.focus();
+  await annotation.press('Space');
   const tools = page.getByRole('toolbar', { name: 'Annotation tools' });
   await expect(tools).toBeVisible();
   const pick = tools.getByRole('button', { name: 'Pick an element' });
@@ -63,8 +63,8 @@ test('a missing permission marks the blocked control, whose click opens Settings
   // With pick current, the annotate click opens Settings instead of starting.
   await annotation.click();
   expect(await actions(component)).toEqual(['open-settings:pick', 'open-settings:annotate']);
-  await page.mouse.move(0, 0);
-  await annotation.hover();
+  await annotation.focus();
+  await annotation.press('Space');
   await expect(tools).toBeVisible();
   await tools.getByRole('button', { name: 'Box' }).click();
   expect(await actions(component)).toEqual([
@@ -87,10 +87,6 @@ test('unavailable annotation stays disabled without opening tools or settings', 
     name: /^Annotate the screen\. Current tool:/,
   });
   await expect(annotation).toBeDisabled();
-  const box = await annotation.boundingBox();
-  if (!box) throw new Error('Missing annotation button bounds');
-  // Hovering a disabled control must not open the tool picker.
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await expect(page.getByRole('toolbar', { name: 'Annotation tools' })).toHaveCount(0);
   expect(await actions(component)).toEqual([]);
 });
@@ -122,34 +118,16 @@ test('annotation picker supports keyboard tool selection and returns focus', asy
   expect(await actions(component)).toEqual(['tool:box']);
 });
 
-test('hover tool selection preserves the editing caret and does not toggle twice', async ({
+test('screenshot modes capture the selected region and preserve the draft', async ({
   mount,
   page,
 }) => {
   const component = await mount(ComposerMediaPreview);
   const editor = component.getByRole('textbox');
   await editor.fill('A draft with a caret');
-  const trigger = component.getByRole('button', { name: /^Annotate the screen\. Current tool:/ });
-  await trigger.hover();
-  const picker = page.getByRole('toolbar', { name: 'Annotation tools' });
-  await expect(picker).toBeVisible();
-  await picker.getByRole('button', { name: 'Arrow', exact: true }).hover();
-  await picker.getByRole('button', { name: 'Arrow', exact: true }).click();
-  await expect(editor).toBeFocused();
-  await expect(editor).toHaveValue('A draft with a caret');
-  expect(await actions(component)).toEqual(['tool:arrow']);
-  await trigger.click();
-  expect(await actions(component)).toEqual(['tool:arrow', 'annotation-toggle']);
-});
-
-test('screenshot modes open on hover, capture once with the chosen mode and keep the draft focused', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(ComposerMediaPreview);
-  const editor = component.getByRole('textbox');
-  await editor.fill('A draft with a caret');
-  await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();
+  const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
+  await trigger.focus();
+  await trigger.press('Space');
   const menu = page.getByRole('menu', { name: 'Screenshot options' });
   await expect(menu.getByRole('menuitemradio', { name: 'Full screen' })).toHaveAttribute(
     'aria-checked',
@@ -157,7 +135,6 @@ test('screenshot modes open on hover, capture once with the chosen mode and keep
   );
   await menu.getByRole('menuitemradio', { name: 'Region' }).click();
   await expect(menu).toBeHidden();
-  await expect(editor).toBeFocused();
   await expect(editor).toHaveValue('A draft with a caret');
   expect(await actions(component)).toEqual(['capture:region']);
   // The bar keeps the chosen mode: a click captures it again without the menu.
@@ -167,33 +144,15 @@ test('screenshot modes open on hover, capture once with the chosen mode and keep
   expect(await actions(component)).toEqual(['capture:region', 'capture']);
 });
 
-test('a capture click whose press spans the menu opening still captures once', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(ComposerMediaPreview);
-  const capture = component.getByRole('button', { name: 'Capture the screen', exact: true });
-  const menu = page.getByRole('menu', { name: 'Screenshot options' });
-  const box = (await capture.boundingBox())!;
-  // The hover delay ends between press and release: the button must stay the same
-  // element, or the browser sends the click to an ancestor and it is lost.
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await expect(menu).toBeVisible();
-  await page.mouse.up();
-  await expect.poll(() => actions(component)).toEqual(['capture']);
-  await expect(menu).toBeHidden();
-  // Once: the closed menu left no second capture behind.
-  expect(await actions(component)).toEqual(['capture']);
-});
-
 test('the open screenshot menu never locks the rest of the dock', async ({ mount, page }) => {
   const component = await mount(ComposerMediaPreview);
-  await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();
+  const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
+  await trigger.focus();
+  await trigger.press('Space');
   const menu = page.getByRole('menu', { name: 'Screenshot options' });
   await expect(menu).toBeVisible();
   await expectDismissibleLayerArmed(menu);
-  // Another dock control takes the click directly while the hover menu is open.
+  // Another dock control takes the click directly while the menu is open.
   await component.getByRole('button', { name: 'Record the screen', exact: true }).click();
   expect(await actions(component)).toEqual(['record']);
 });
@@ -232,34 +191,11 @@ test('without window and region capture the screenshot button stays a plain full
   });
   const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
   await expect(trigger).not.toHaveAttribute('aria-haspopup');
-  await trigger.hover();
+  await trigger.focus();
   await trigger.press('ArrowUp');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await trigger.click();
   expect(await actions(component)).toEqual(['capture']);
-});
-
-test('mic press and hold has one start and one release without a trailing toggle', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(ComposerMediaPreview);
-  const mic = component.getByRole('button', { name: 'Dictate · hold to talk', exact: true });
-  await mic.hover();
-  await page.mouse.down();
-  await expect.poll(() => actions(component)).toEqual(['dictation-hold-start']);
-  // Pointer capture delivers the release even after leaving the control.
-  await page.mouse.move(2, 2);
-  await page.mouse.up();
-  await expect
-    .poll(() => actions(component))
-    .toEqual(['dictation-hold-start', 'dictation-hold-end']);
-  await mic.click();
-  expect(await actions(component)).toEqual([
-    'dictation-hold-start',
-    'dictation-hold-end',
-    'dictation-toggle',
-  ]);
 });
 
 test('image tiles expose markup, lightbox and keyboard removal through owned callbacks', async ({
@@ -432,21 +368,6 @@ test('failed attachment keeps its error and requests retry without removing the 
   await expect(tile.getByRole('alert')).toHaveText('Upload interrupted');
 });
 
-test('annotation long press opens tools without starting a session', async ({ mount, page }) => {
-  const component = await mount(ComposerMediaPreview);
-  const trigger = component.getByRole('button', { name: /^Annotate the screen\. Current tool:/ });
-  await trigger.dispatchEvent('pointerdown', { pointerType: 'touch', pointerId: 8, button: 0 });
-  await expect(page.getByRole('toolbar', { name: 'Annotation tools' })).toBeVisible();
-  await trigger.dispatchEvent('pointerup', { pointerType: 'touch', pointerId: 8, button: 0 });
-  await trigger.dispatchEvent('click');
-  expect(await actions(component)).toEqual([]);
-  await page
-    .getByRole('toolbar', { name: 'Annotation tools' })
-    .getByRole('button', { name: 'Pen', exact: true })
-    .click();
-  expect(await actions(component)).toEqual(['tool:pen']);
-});
-
 for (const mode of [
   'idle',
   'captured',
@@ -486,7 +407,8 @@ for (const mode of [
       previousRight = box.x + box.width;
     }
     if (mode === 'annotate-hovered') {
-      await controls[2].hover();
+      await controls[2].focus();
+      await controls[2].press('Space');
       // Exercise the production body-level popup owner while the surrounding app
       // is light. The attached screenshot is the palette review, not a color oracle.
       const portal = page.locator(

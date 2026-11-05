@@ -23,7 +23,6 @@
    */
   let { width = 420, height = 600 }: { width?: number; height?: number } = $props();
   let ready = $state(false);
-  let caption = $state('');
 
   onMount(() => {
     const root = document.documentElement;
@@ -78,7 +77,6 @@
       store,
       close: () => store.dispatch(closeDockConversationRequested()),
       reopen: () => store.dispatch(openDockConversationRequested(conversationWireWorkspace)),
-      setCaption: (text: string) => (caption = text),
     };
     store.dispatch(openDockConversationRequested(conversationWireWorkspace));
     ready = true;
@@ -106,8 +104,6 @@
       </DockConversationSurface>
     {/if}
   </div>
-  <!-- i18n-ignore (synthetic walkthrough caption) -->
-  <p class="caption" data-testid="composer-e2e-caption" aria-live="off">{caption}</p>
 </div>
 
 <style>
@@ -119,14 +115,5 @@
     background: var(--color-background);
     min-height: 100vh;
     box-sizing: border-box;
-  }
-  .caption {
-    margin: 0;
-    width: 420px;
-    font:
-      500 13px/1.4 Inter,
-      system-ui,
-      sans-serif;
-    color: var(--color-muted-foreground);
   }
 </style>
