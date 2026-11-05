@@ -74,17 +74,11 @@ export const DockMediaSourceSchema = z
     height: finite.positive(),
     audio: z.enum(['available', 'none', 'unknown']),
     visuals: z.enum(['clean', 'baked-marks']),
-    /** Needed to distinguish a legacy unchanged clip from a claimed mark removal. */
+    /** Known original representation. Missing legacy baselines can play but cannot export edits. */
     bakedMarks: z.array(DockMediaEditMarkSchema).max(10000).optional(),
   })
   .strict()
   .superRefine((source, ctx) => {
-    if (source.visuals === 'baked-marks' && !source.bakedMarks)
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['bakedMarks'],
-        message: 'Baked marks need their original representation',
-      });
     if (source.kind === 'recording' && source.durationMs <= 0)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
