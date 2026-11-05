@@ -22,7 +22,7 @@ describe('DeviceIconPicker', () => {
 
     const listbox = screen.getByRole('listbox');
     expect(within(listbox).getAllByRole('option')).toHaveLength(17);
-    expect(within(listbox).getByRole('group', { name: 'Devices' })).toBeTruthy();
+    expect(within(listbox).getByRole('group', { name: 'Machines' })).toBeTruthy();
     expect(within(listbox).getByRole('group', { name: 'Wild cards' })).toBeTruthy();
     expect(within(listbox).getAllByRole('option')[0].textContent).toContain('Mac Studio');
 
