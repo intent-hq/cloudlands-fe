@@ -638,7 +638,7 @@ describe('blank model and provider are treated as no choice (intent#8621)', () =
     expect('model' in params).toBe(false);
   });
 
-  it('omits a blank model from createAgentFromConfigRequested and keeps the provider fallback', async () => {
+  it('omits a blank model from createAgentFromConfigRequested and keeps an explicit provider', async () => {
     appStore.dispatch(
       createAgentFromConfigRequested(WS, {
         workspaceId: WorkspaceId(WS),
