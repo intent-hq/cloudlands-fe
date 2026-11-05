@@ -645,7 +645,7 @@ for (const mode of ['notch', 'side-left', 'side-right'] as const) {
         ...(isSide ? { floatingDisplay: display } : {}),
       },
     });
-    if (!isSide) await component.getByTestId('dock-drag-handle').focus();
+    if (!isSide) await component.getByTestId('dock-drag-handle').hover();
     const entries = component.locator(isSide ? '[data-dock-entry]' : '[data-dock-row]');
     const scroller = component.locator('[data-dock-scroll]');
     await expect(entries).toHaveCount(workspaces.length + 1);

@@ -82,7 +82,7 @@ test('the notch model picker: provider, effort and model are clickable through t
   // The preview's native window is 640×600 at the page origin: page = window coordinates.
   await page.setViewportSize({ width: 640, height: 600 });
   const harness = await mount(Harness, { props: { providerChoice: true } });
-  await harness.getByTestId('dock-drag-handle').focus();
+  await harness.getByTestId('dock-drag-handle').hover();
   await harness.locator('[data-dock-row]').first().click();
   const surface = harness.getByTestId('dock-conversation-surface');
   const trigger = surface.locator('[data-chat-input-primary-actions]').getByRole('button').first();

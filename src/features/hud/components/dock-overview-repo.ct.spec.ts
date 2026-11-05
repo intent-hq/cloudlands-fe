@@ -19,7 +19,7 @@ test('overview rows show org/repo alone, without the status message', async ({ m
       : item,
   );
   const component = await mount(DockRailPreview, { props: { ...props, workspaces } });
-  await component.getByTestId('dock-drag-handle').focus();
+  await component.getByTestId('dock-drag-handle').hover();
   await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
   const overview = component.getByTestId('dock-overview');
   const info = test.info();

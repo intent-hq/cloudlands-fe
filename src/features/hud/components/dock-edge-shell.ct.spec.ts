@@ -151,7 +151,7 @@ test('side conversation is one box beside the unchanged rail, unclipped, with no
   const notch = await mount(DockRailPreview, {
     props: { ...dockRailPreview.states.notch.props, conversationFixture: true },
   });
-  await notch.getByTestId('dock-drag-handle').focus();
+  await notch.getByTestId('dock-drag-handle').hover();
   await notch.locator('[data-dock-row]').first().click();
   await expect(notch.getByTestId('dock-conversation-surface')).toBeVisible();
   const notchInsets = await laneInsets(notch);

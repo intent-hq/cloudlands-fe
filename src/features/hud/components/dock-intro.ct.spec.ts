@@ -147,7 +147,7 @@ test('a conversation opened from the intro never holds the notch open after it c
   // Not secretly dismissed: the intro still waits for "Got it" on the next open,
   // and the conversation reopens from the same row.
   expect(await page.evaluate((key) => localStorage.getItem(key), SEEN_KEY)).toBeNull();
-  await component.getByTestId('dock-drag-handle').focus();
+  await component.getByTestId('dock-drag-handle').hover();
   await expect(component.getByTestId('dock-intro')).toBeVisible();
   await component.locator('[data-dock-row]').first().click();
   await expect(component.getByTestId('dock-conversation-surface')).toBeVisible();

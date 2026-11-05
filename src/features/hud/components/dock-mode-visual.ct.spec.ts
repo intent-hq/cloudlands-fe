@@ -105,7 +105,7 @@ for (const mode of ['side-left', 'side-right', 'floating', 'notch'] as const) {
     if (mode.startsWith('side-')) {
       await component.locator('[data-dock-entry]').nth(0).click();
     } else {
-      await component.getByTestId('dock-drag-handle').focus();
+      await component.getByTestId('dock-drag-handle').hover();
       await expect(component.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '1');
       await component.locator('[data-dock-row]').nth(1).click();
     }
@@ -209,7 +209,7 @@ for (const mode of ['side-left', 'side-right', 'floating', 'notch'] as const) {
     await placement.screenshot({ path: testInfo.outputPath(`${mode}-placement-error.png`) });
     await notice.getByRole('button', { name: 'Close', exact: true }).click();
     await expect(notice).toHaveCount(0);
-    await placement.getByTestId('dock-drag-handle').focus();
+    await placement.getByTestId('dock-drag-handle').hover();
     await expect(notice).toHaveCount(0);
     await placement.update({ props: { ...errorProps, placementError: false } });
     await placement.update({ props: errorProps });
