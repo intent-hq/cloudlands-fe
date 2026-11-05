@@ -79,7 +79,7 @@
     <Button
       variant="plain"
       type="button"
-      class="tab-group-trigger type-caption font-medium!"
+      class="tab-group-trigger type-caption font-medium! outline-none!"
       aria-expanded={open}
       aria-label={m.layout_workspaceTabGroup_chip_ariaLabel({
         name: workspaceTabGroupDisplayName(group),
@@ -143,6 +143,19 @@
     padding: 0 8px;
     border-radius: inherit;
     color: inherit;
+  }
+
+  /* Keyboard focus underlines the label, like workspace tabs, instead of
+     drawing the default focus box around the chip. */
+  .tab-group-chip :global(.tab-group-trigger:focus-visible :is(.tab-group-name, .tab-group-count)) {
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+
+  /* An unnamed open chip shows only its dot, so the dot carries focus there. */
+  .tab-group-chip :global(.tab-group-trigger:focus-visible .tab-group-dot) {
+    box-shadow: 0 0 0 2px currentColor;
   }
 
   .tab-group-dot {
