@@ -16,14 +16,13 @@ PR_SUITES = {'checks', 'test'}
 QUEUE_ONLY = HEAVY - PR_SUITES
 # Path-scoped jobs that run on PRs and queue entries alike when relevant.
 BOTH_EVENTS = {'intent-web-package'}
-# PR-only, and only when the diff adds or edits a component test spec.
-CT_CHANGED = 'test-ct-changed'
-# PR-only, and only when an existing spec loads a file the diff changes.
+# PR-only, and only when the diff adds or edits a component test spec or an
+# existing spec loads a file it changes; each spec runs once.
 CT_AFFECTED = 'test-ct-affected'
 NO_SPECS = '[]'
 SOME_SPECS = '["src/a/b.ct.spec.ts"]'
 # Each spec-list job with the schedule()/gate() keyword that feeds its list.
-SPEC_JOBS = [(CT_CHANGED, 'changed'), (CT_AFFECTED, 'affected')]
+SPEC_JOBS = [(CT_AFFECTED, 'affected')]
 
 
 def evaluate(expression, values, success=True):
@@ -41,11 +40,10 @@ def evaluate(expression, values, success=True):
     return bool((explicit or success) and eval(compile(tree, '<condition>', 'eval'), {'__builtins__': {}}))
 
 
-def schedule(workflow, event, fork=False, fast='false', relevant='true', route='success', changed=NO_SPECS, affected=NO_SPECS):
+def schedule(workflow, event, fork=False, fast='false', relevant='true', route='success', affected=NO_SPECS):
     values = {'github.event_name': event, 'github.repository': 'intent-hq/cloudlands-fe',
               'github.event.pull_request.head.repo.full_name': 'outside/fork' if fork else 'intent-hq/cloudlands-fe',
               'needs.release-fast-path.outputs.fast_path': fast,
-              'needs.release-fast-path.outputs.ct_changed_specs': changed,
               'needs.release-fast-path.outputs.ct_affected_specs': affected}
     for key in ('ct_required', 'root_playwright_required', 'electron_required', 'portable_fixtures_required', 'intent_web_package_required'):
         values['needs.release-fast-path.outputs.' + key] = relevant
@@ -65,11 +63,11 @@ def schedule(workflow, event, fork=False, fast='false', relevant='true', route='
     return results
 
 
-def gate(workflow, event, results, fast='false', relevant='true', changed=NO_SPECS, affected=NO_SPECS):
+def gate(workflow, event, results, fast='false', relevant='true', affected=NO_SPECS):
     step = next(s for s in workflow['jobs']['gate']['steps'] if s.get('name') == 'Check results')
     values = {'github.event_name': event, **{'needs.'+k+'.result': v for k, v in results.items()}}
     body = re.sub(r'\$\{\{\s*(.*?)\s*\}\}', lambda m: values.get(m[1], ''), step['run'])
-    env = {**os.environ, 'FAST_PATH': fast, 'CT_CHANGED_SPECS': changed, 'CT_AFFECTED_SPECS': affected}
+    env = {**os.environ, 'FAST_PATH': fast, 'CT_AFFECTED_SPECS': affected}
     for key in ('CT_REQUIRED', 'ROOT_PLAYWRIGHT_REQUIRED', 'ELECTRON_REQUIRED', 'PORTABLE_FIXTURES_REQUIRED', 'INTENT_WEB_PACKAGE_REQUIRED'):
         env[key] = relevant
     return subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', body], env=env, capture_output=True).returncode == 0
@@ -116,12 +114,12 @@ class EventPolicy(unittest.TestCase):
                 self.assertEqual(schedule(self.workflow, 'pull_request')[job], 'skipped')
                 self.assertEqual(schedule(self.workflow, 'merge_group', **{key: SOME_SPECS})[job], 'skipped')
 
-    def test_pr_runs_both_spec_list_jobs_when_both_lists_have_specs(self):
-        results = schedule(self.workflow, 'pull_request', changed=SOME_SPECS, affected=SOME_SPECS)
-        self.assertEqual({n for n, r in results.items() if r == 'success'}, LIGHT | PR_SUITES | BOTH_EVENTS | {CT_CHANGED, CT_AFFECTED, 'gate'})
-        self.assertTrue(gate(self.workflow, 'pull_request', results, changed=SOME_SPECS, affected=SOME_SPECS))
-        # One list being empty never excuses the other job's skip.
-        self.assertFalse(gate(self.workflow, 'pull_request', {**results, CT_AFFECTED: 'skipped'}, changed=SOME_SPECS, affected=SOME_SPECS))
+    def test_pr_has_no_repeated_changed_spec_job(self):
+        # Changed specs run once in test-ct-affected; the 20x repeat job and
+        # its list were dropped for cost.
+        self.assertNotIn('test-ct-changed', self.workflow['jobs'])
+        self.assertNotIn('test-ct-changed', self.workflow['jobs']['gate']['needs'])
+        self.assertNotIn('ct_changed_specs', self.workflow['jobs']['release-fast-path']['outputs'])
 
     def test_failed_or_missing_spec_list_never_counts_as_no_specs(self):
         for job, key in SPEC_JOBS:

@@ -3,10 +3,12 @@
 // @vitest-environment node
 
 /**
- * The changed-spec repetition job (`test-ct-changed` in intent-pr.yml), the
- * affected-spec job (`test-ct-affected`) and the script that feeds both. The diff mode runs against a real temporary git
- * repository; the workflow's test step runs under bash with the CT launcher
- * stubbed, so the assertions cover the arguments Playwright actually receives.
+ * The PR component-test job (`test-ct-affected` in intent-pr.yml), which runs
+ * the PR's own specs and the specs affected by its changes once each, and the
+ * script that feeds it (plus the repetition helpers the local stress runner
+ * uses). The diff modes run against a real temporary git repository; the
+ * workflow's test step runs under bash with the CT launcher stubbed, so the
+ * assertions cover the arguments Playwright actually receives.
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -78,7 +80,7 @@ function graphOf(edges: Record<string, string[]>, headSpecs: string[]) {
   };
 }
 
-function run(argv: string[], readReport?: (path: string) => string) {
+function run(argv: string[]) {
   const out: string[] = [];
   const err: string[] = [];
   let written = '';
@@ -88,7 +90,6 @@ function run(argv: string[], readReport?: (path: string) => string) {
     write: (text: string) => {
       written += text;
     },
-    ...(readReport ? { readReport } : {}),
   });
   return { code, out, err, written };
 }
@@ -237,18 +238,45 @@ describe('affectedCtSpecs', () => {
     expect(affectedCtSpecs(graph, ['src/unrelated.ts'])).toEqual([]);
   });
 
-  it('leaves out changed specs and specs missing from the head tree', () => {
+  it('puts the diff’s own specs first, once each, and leaves out specs missing from the head tree', () => {
     const graph = graphOf(
       {
         'src/a.ct.spec.ts': ['src/Panel.svelte'],
         'src/gone.ct.spec.ts': ['src/Panel.svelte'],
         'src/edited.ct.spec.ts': ['src/Panel.svelte'],
+        'src/z/new.ct.spec.ts': ['src/Unrelated.svelte'],
       },
-      ['src/a.ct.spec.ts', 'src/edited.ct.spec.ts'],
+      ['src/a.ct.spec.ts', 'src/edited.ct.spec.ts', 'src/z/new.ct.spec.ts'],
     );
     expect(
-      affectedCtSpecs(graph, ['src/Panel.svelte', 'src/edited.ct.spec.ts']).map(({ spec }) => spec),
-    ).toEqual(['src/a.ct.spec.ts']);
+      affectedCtSpecs(graph, [
+        'src/Panel.svelte',
+        'src/z/new.ct.spec.ts',
+        'src/edited.ct.spec.ts',
+        'src/gone.ct.spec.ts',
+      ]),
+    ).toEqual([
+      { spec: 'src/edited.ct.spec.ts', via: 'src/edited.ct.spec.ts', distance: 0 },
+      { spec: 'src/z/new.ct.spec.ts', via: 'src/z/new.ct.spec.ts', distance: 0 },
+      { spec: 'src/a.ct.spec.ts', via: 'src/Panel.svelte', distance: 1 },
+    ]);
+  });
+
+  it('keeps the diff’s own specs inside the budget ahead of a hub edit', () => {
+    const hubSpecs = Array.from(
+      { length: CT_AFFECTED_BUDGET * 2 },
+      (_, i) => `src/hub/${String(i).padStart(3, '0')}.ct.spec.ts`,
+    );
+    const edges: Record<string, string[]> = { 'src/z/own.ct.spec.ts': ['src/store/hub.ts'] };
+    for (const spec of hubSpecs) edges[spec] = ['src/store/hub.ts'];
+    const graph = graphOf(edges, [...hubSpecs, 'src/z/own.ct.spec.ts']);
+    const ranked = affectedCtSpecs(graph, ['src/store/hub.ts', 'src/z/own.ct.spec.ts']);
+    expect(ranked[0]).toEqual({
+      spec: 'src/z/own.ct.spec.ts',
+      via: 'src/z/own.ct.spec.ts',
+      distance: 0,
+    });
+    expect(ranked.filter(({ spec }) => spec === 'src/z/own.ct.spec.ts')).toHaveLength(1);
   });
 
   it('follows import cycles without looping and keeps the shortest distance', () => {
@@ -326,10 +354,11 @@ describe('--affected against a real repository', () => {
     expect(cli.status, cli.stderr).toBe(0);
     const lines = cli.stdout.trim().split('\n');
     expect(lines.slice(-2)).toEqual([
-      'ct_affected_specs=["src/chat/__tests__/panel.ct.spec.ts"]',
+      'ct_affected_specs=["src/chat/edited.ct.spec.ts","src/chat/__tests__/panel.ct.spec.ts"]',
       'ct_affected_over_budget=[]',
     ]);
-    expect(lines[0]).toContain('src/chat/Panel.svelte');
+    expect(lines[0]).toBe('run: src/chat/edited.ct.spec.ts (changed by this diff)');
+    expect(lines[1]).toContain('src/chat/Panel.svelte');
   });
 
   it('runs the first CT_AFFECTED_BUDGET specs and reports the rest as over budget', () => {
@@ -420,10 +449,10 @@ describe('a base that moved ahead of the branch', () => {
     );
   });
 
-  it('--affected leaves out specs that load files only main changed', () => {
+  it('--affected lists the branch’s own spec, not specs main changed or loads', () => {
     const { repo, prHead, mainTip } = divergedRepo();
     expect(cli(repo, '--affected', mainTip, prHead).slice(-2)).toEqual([
-      'ct_affected_specs=[]',
+      'ct_affected_specs=["src/pr/own.ct.spec.ts"]',
       'ct_affected_over_budget=[]',
     ]);
   });
@@ -586,45 +615,6 @@ describe('listedCtTests', () => {
   });
 });
 
-describe('--repeat-each-listed', () => {
-  const reading = (report: unknown) => () => JSON.stringify(report);
-
-  it('prints the repetitions for the listed tests and logs the plan', () => {
-    const { code, written, err } = run(
-      ['--repeat-each-listed', 'list.json'],
-      reading(listReport(DOCK_4047)),
-    );
-    expect(code).toBe(0);
-    expect(written).toBe('9\n');
-    expect(err.at(-1)).toBe(
-      'Discovered 86 tests in 10 spec files; repeating each 9 times (774 runs; budget 800, 3-20 repetitions).',
-    );
-  });
-
-  it('exits 1 without a count for an unreadable, malformed, failed or empty listing', () => {
-    const cases: Array<() => string> = [
-      () => {
-        throw new Error('ENOENT: list.json');
-      },
-      () => 'not json',
-      () => '',
-      reading({ suites: 'x' }),
-      reading(listReport({ 'a.ct.spec.ts': 1 }, [{ message: 'boom' }])),
-      reading(listReport({ 'a.ct.spec.ts': 0 })),
-    ];
-    for (const readReport of cases) {
-      const { code, written } = run(['--repeat-each-listed', 'list.json'], readReport);
-      expect(code).toBe(1);
-      expect(written).toBe('');
-    }
-  });
-
-  it('rejects the retired spec-count mode and a missing report path', () => {
-    expect(run(['--repeat-each', '["src/a.ct.spec.ts"]']).code).toBe(2);
-    expect(run(['--repeat-each-listed']).code).toBe(2);
-  });
-});
-
 const workflowLines = readFileSync(resolve('.github/workflows/intent-pr.yml'), 'utf8').split('\n');
 
 // Top-level job blocks live at a two-space indent under `jobs:`.
@@ -710,7 +700,7 @@ describe('release-fast-path diff base', () => {
       'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
     );
     expect(cli(checkout, '--affected', mainTip, 'HEAD').slice(-2)).toEqual([
-      'ct_affected_specs=[]',
+      'ct_affected_specs=["src/pr/own.ct.spec.ts"]',
       'ct_affected_over_budget=[]',
     ]);
   });
@@ -736,195 +726,6 @@ describe('release-fast-path diff base', () => {
   });
 });
 
-describe('test-ct-changed workflow job', () => {
-  const job = jobLines('test-ct-changed');
-  const field = (key: string) =>
-    job
-      .find((text) => text.startsWith(`    ${key}:`))
-      ?.slice(`    ${key}:`.length)
-      .trim() ?? '';
-
-  it('runs on pull requests only when the spec list is not empty', () => {
-    expect(field('if')).toContain("github.event_name == 'pull_request'");
-    expect(field('if')).toContain("needs.release-fast-path.outputs.ct_changed_specs != '[]'");
-    expect(job).toContain(
-      '      CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}',
-    );
-    expect(jobLines('release-fast-path')).toContain(
-      '      ct_changed_specs: ${{ steps.ct-changed.outputs.ct_changed_specs }}',
-    );
-    expect(jobLines('gate')).toContain('        test-ct-changed,');
-  });
-
-  it('lists the specs with the helper in the diff classifier, failing closed', () => {
-    const dir = tempDir();
-    const output = join(dir, 'out');
-    writeFileSync(output, '');
-    const result = spawnSync(
-      'bash',
-      [
-        '-e',
-        '-o',
-        'pipefail',
-        '-c',
-        stepRun(jobLines('release-fast-path'), 'List changed component test specs'),
-      ],
-      {
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          NODE_OPTIONS: '',
-          BASE_SHA: 'not-a-revision',
-          GITHUB_OUTPUT: output,
-        },
-      },
-    );
-    expect(result.status).toBe(0);
-    expect(readFileSync(output, 'utf8')).toBe('ct_changed_specs=error\n');
-  });
-
-  it('writes an empty list when the diff has no spec changes', () => {
-    const dir = tempDir();
-    const output = join(dir, 'out');
-    writeFileSync(output, '');
-    const result = spawnSync(
-      'bash',
-      [
-        '-e',
-        '-o',
-        'pipefail',
-        '-c',
-        stepRun(jobLines('release-fast-path'), 'List changed component test specs'),
-      ],
-      {
-        encoding: 'utf8',
-        env: { ...process.env, NODE_OPTIONS: '', BASE_SHA: 'HEAD', GITHUB_OUTPUT: output },
-      },
-    );
-    expect(result.status).toBe(0);
-    expect(readFileSync(output, 'utf8')).toBe('ct_changed_specs=[]\n');
-  });
-
-  // Runs the workflow's own step under bash with `node scripts/run-ct-tests.mjs`
-  // replaced by a stub that records its argv, one argument per line.
-  // A `--list` call instead writes `list` (a Playwright JSON report) to
-  // $PLAYWRIGHT_JSON_OUTPUT_FILE, records its argv and exits `listExit`.
-  function runTestStep(
-    specs: string,
-    list: unknown = listReport({ 'a.ct.spec.ts': 2 }),
-    listExit = 0,
-  ) {
-    const dir = tempDir();
-    const bin = join(dir, 'bin');
-    mkdirSync(bin);
-    const record = join(dir, 'argv');
-    const listRecord = join(dir, 'list-argv');
-    const listJson = join(dir, 'list-fixture.json');
-    writeFileSync(listJson, JSON.stringify(list));
-    writeFileSync(
-      join(bin, 'node'),
-      [
-        '#!/usr/bin/env bash',
-        'if [ "$1" = scripts/run-ct-tests.mjs ]; then',
-        '  shift',
-        '  for arg in "$@"; do',
-        '    if [ "$arg" = --list ]; then',
-        `      printf '%s\\n' "$@" > "${listRecord}"`,
-        `      cp "${listJson}" "$PLAYWRIGHT_JSON_OUTPUT_FILE"`,
-        `      exit ${listExit}`,
-        '    fi',
-        '  done',
-        `  printf '%s\\n' "$@" > "${record}"`,
-        '  exit 0',
-        'fi',
-        `NODE_OPTIONS= exec "${process.execPath}" "$@"`,
-        '',
-      ].join('\n'),
-    );
-    chmodSync(join(bin, 'node'), 0o755);
-    const result = spawnSync(
-      'bash',
-      ['-e', '-o', 'pipefail', '-c', stepRun(job, 'Repeat changed component tests')],
-      {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${bin}:${process.env.PATH}`,
-          CT_CHANGED_SPECS: specs,
-          RUNNER_TEMP: dir,
-        },
-      },
-    );
-    const lines = (path: string) => {
-      try {
-        return readFileSync(path, 'utf8').trimEnd().split('\n');
-      } catch {
-        return [];
-      }
-    };
-    return {
-      status: result.status,
-      argv: lines(record),
-      listArgv: lines(listRecord),
-      stderr: result.stderr,
-    };
-  }
-
-  it('passes every changed spec, 20 repetitions and no retries to the CT launcher', () => {
-    const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
-    const { status, argv, stderr } = runTestStep(JSON.stringify(specs));
-    expect(status, stderr).toBe(0);
-    expect(argv.slice(0, 2)).toEqual(specs.map(playwrightFilter));
-    expect(argv).toContain('--repeat-each=20');
-    expect(argv).toContain('--retries=0');
-    expect(argv).toContain('--fail-on-flaky-tests');
-    expect(argv).not.toContain('--pass-with-no-tests');
-  });
-
-  it('lists the same filtered, unquarantined tests first and repeats by their count', () => {
-    const specs = Object.keys(DOCK_4047).map((file) => `src/features/hud/components/${file}`);
-    const { status, argv, listArgv, stderr } = runTestStep(
-      JSON.stringify(specs),
-      listReport(DOCK_4047),
-    );
-    expect(status, stderr).toBe(0);
-    expect(listArgv).toEqual([
-      ...specs.map(playwrightFilter),
-      '--list',
-      '--grep-invert',
-      '@quarantine\\b',
-      '--reporter=json',
-    ]);
-    expect(argv.slice(0, specs.length)).toEqual(specs.map(playwrightFilter));
-    expect(argv).toContain('--repeat-each=9');
-    expect(argv).toContain('--retries=0');
-    expect(argv).toContain('--grep-invert');
-    expect(stderr).toContain('Discovered 86 tests in 10 spec files; repeating each 9 times');
-  });
-
-  it('fails without launching tests when discovery errors, finds nothing or exits non-zero', () => {
-    const spec = '["src/a/one.ct.spec.ts"]';
-    for (const [list, exit] of [
-      [listReport({ 'a.ct.spec.ts': 1 }, [{ message: 'load error' }]), 0],
-      [listReport({ 'a.ct.spec.ts': 0 }), 0],
-      [{ unexpected: true }, 0],
-      [listReport({ 'a.ct.spec.ts': 2 }), 1],
-    ] as const) {
-      const { status, argv } = runTestStep(spec, list, exit);
-      expect(status, JSON.stringify(list)).not.toBe(0);
-      expect(argv).toEqual([]);
-    }
-  });
-
-  it('fails before launching tests when the spec list is an error marker', () => {
-    const { status, argv, listArgv } = runTestStep('error');
-    expect(status).not.toBe(0);
-    expect(argv).toEqual([]);
-    expect(listArgv).toEqual([]);
-  });
-});
-
 describe('test-ct-affected workflow job', () => {
   const job = jobLines('test-ct-affected');
   const field = (key: string) =>
@@ -932,6 +733,13 @@ describe('test-ct-affected workflow job', () => {
       .find((text) => text.startsWith(`    ${key}:`))
       ?.slice(`    ${key}:`.length)
       .trim() ?? '';
+
+  it('is the only PR component-test job and never repeats specs', () => {
+    expect(workflowLines).not.toContain('  test-ct-changed:');
+    expect(jobLines('gate').join('\n')).not.toContain('test-ct-changed');
+    expect(jobLines('release-fast-path').join('\n')).not.toContain('ct_changed_specs');
+    expect(job.join('\n')).not.toContain('--repeat-each');
+  });
 
   it('runs on pull requests only when the affected list is not empty', () => {
     expect(field('if')).toContain("github.event_name == 'pull_request'");

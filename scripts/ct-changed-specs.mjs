@@ -1,29 +1,30 @@
 #!/usr/bin/env node
-// Lists the component-test spec files a pull request adds or edits, so PR CI
-// can run just those files many times with retries off (the `test-ct-changed`
-// job in .github/workflows/intent-pr.yml). The full CT suite only runs in the
-// merge queue, so before this job a new or edited spec that passed only some of
-// the time was first caught there, ejecting unrelated PRs: dock-actions.ct.spec.ts
-// ejected cloudlands-fe#3978 and dock-composer-spec.ct.spec.ts (added in #3794)
-// ejected #4002, failing 12 of 40 local runs under CPU load.
+// Lists the component-test specs PR CI runs once each (the `test-ct-affected`
+// job in .github/workflows/intent-pr.yml): the spec files a pull request adds
+// or edits, then the existing specs that load a file it changes. The full CT
+// suite only runs in the merge queue, so before this job a broken spec, or a
+// change to a shared component that broke a spec the PR never touches, was
+// first caught there, ejecting unrelated PRs: cloudlands-fe#4029 edited
+// ChatPanel.svelte with green PR checks and was ejected from the queue by
+// chat-panel-composer-geometry.ct.spec.ts (a 24px shift, failed 3 of 3).
 //
-// It also lists the existing specs that load a file the pull request changes,
-// for the `test-ct-affected` job, which runs each of them once. A change to a
-// shared component can break a spec the PR never touches: cloudlands-fe#4029
-// edited ChatPanel.svelte with green PR checks and was ejected from the queue
-// by chat-panel-composer-geometry.ct.spec.ts (a 24px shift, failed 3 of 3).
+// PR CI no longer repeats changed specs (the 20x `test-ct-changed` job was
+// dropped for cost). To stress a new or edited spec for flakiness before
+// pushing (dock-composer-spec.ct.spec.ts failed 12 of 40 local runs under CPU
+// load and ejected #4002), run `pnpm run test:ct:changed-repeat`
+// (scripts/ct-changed-repeat.mjs), which uses the repetition helpers below.
 //
 // Both list modes diff <head> against the merge-base of <base> and <head> (a
 // three-dot diff; see diffBase in ct-contract-paths.mjs), so files <base>
 // changed after the branch point are not counted as the PR's.
 //
 // Modes:
-//   --diff <base> <head>   prints one `ct_changed_specs=<JSON array>` line for
-//                          $GITHUB_OUTPUT. Any error prints
-//                          `ct_changed_specs=error`, which the job and the CI
-//                          Gate both treat as a failure (never as "no specs").
+//   --diff <base> <head>   prints one `ct_changed_specs=<JSON array>` line
+//                          listing the specs the diff adds or edits. Any error
+//                          prints `ct_changed_specs=error` (never "no specs").
 //   --affected <base> <head>
-//                          prints the plan (one line per affected spec), then
+//                          prints the plan (one line per spec: the diff's own
+//                          specs first, then the affected ones), then
 //                          `ct_affected_specs=<JSON array>` (the first
 //                          CT_AFFECTED_BUDGET, see affectedCtSpecs) and
 //                          `ct_affected_over_budget=<JSON array>` (the rest).
@@ -38,22 +39,16 @@
 //                          arguments as regular expressions over the file
 //                          path, and SvelteKit-style `[id]` or `+page`
 //                          segments would otherwise be read as regex syntax).
-//   --repeat-each-listed <report.json>
-//                          prints the repetition count for the tests a
-//                          Playwright `--list --reporter=json` run discovered
-//                          (see ctChangedRepeatEach). Fails (exit 1) on an
-//                          unreadable or malformed report, any discovery
-//                          error, or zero discovered tests, so the job can
-//                          never silently run nothing.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { isCtSpec, normalizeCtPath } from '../playwright/ct-spec-pattern.mjs';
 import { ctImportGraph, diffBase } from './ct-contract-paths.mjs';
 
 export const OUTPUT_KEY = 'ct_changed_specs';
 export const ERROR_VALUE = 'error';
-// Each changed test runs this many times with retries off. dock-composer-spec
+// For the local stress runner (ct-changed-repeat.mjs): each changed test runs
+// this many times with retries off. dock-composer-spec
 // failed 12 of 40 runs under load, so 20 repetitions miss a flake that common
 // with a probability far below one in a thousand.
 export const CT_CHANGED_REPEAT_EACH = 20;
@@ -73,7 +68,8 @@ export const CT_CHANGED_MIN_REPEAT_EACH = 3;
 
 export const AFFECTED_OUTPUT_KEY = 'ct_affected_specs';
 export const OVER_BUDGET_OUTPUT_KEY = 'ct_affected_over_budget';
-// Affected specs run once each, at most this many per PR (the rest are listed
+// The PR's own specs and the affected specs run once each, at most this many
+// per PR (the PR's own specs first; the rest are listed
 // in the job output, never dropped silently). Measured over the last 100 main
 // commits on 2026-11-02: 28 changed a file some spec loads and 24 of those
 // reached more than 60 specs (hub store modules reach nearly all 409), so the
@@ -142,11 +138,14 @@ export function changedCtSpecs(files) {
   return [...new Set(files.filter(isCtSpec).map(normalizeCtPath))].sort();
 }
 
-// Existing specs that load a changed file. `graph` is ctImportGraph's
-// `{ edges, headSpecs }`; `changed` the diff's paths, deletions included (a
-// spec that imported a deleted file is still worth running). Each result is
-// `{ spec, via, distance }`: `via` is a changed file the spec loads and
-// `distance` the number of import edges from the spec to it.
+// The specs the diff adds or edits, then the existing specs that load a
+// changed file. `graph` is ctImportGraph's `{ edges, headSpecs }`; `changed`
+// the diff's paths, deletions included (a spec that imported a deleted file is
+// still worth running). Each result is `{ spec, via, distance }`: `via` is a
+// changed file the spec loads and `distance` the number of import edges from
+// the spec to it. The diff's own specs come first, sorted, with `via` the spec
+// itself and `distance` 0; a deleted spec is not in the head tree and is left
+// out.
 //
 // About 71% of src/ is reachable from some spec through shared store modules,
 // so a hub edit reaches nearly every spec and the caller can run only a prefix
@@ -164,7 +163,8 @@ export function affectedCtSpecs(graph, changed) {
     }
   }
   const runnable = new Set(graph.headSpecs);
-  const skip = new Set(changedCtSpecs(changed));
+  const own = changedCtSpecs(changed).filter((spec) => runnable.has(spec));
+  const skip = new Set(own);
   const best = new Map();
   for (const file of [...new Set(changed.map(normalizeCtPath))].sort()) {
     // Breadth-first over importers: the first visit is the shortest distance.
@@ -196,9 +196,12 @@ export function affectedCtSpecs(graph, changed) {
       }
     });
   }
-  return [...best.values()]
-    .sort((a, b) => a.round - b.round || a.distance - b.distance || compare(a.spec, b.spec))
-    .map(({ spec, via, distance }) => ({ spec, via, distance }));
+  return [
+    ...own.map((spec) => ({ spec, via: spec, distance: 0 })),
+    ...[...best.values()]
+      .sort((a, b) => a.round - b.round || a.distance - b.distance || compare(a.spec, b.spec))
+      .map(({ spec, via, distance }) => ({ spec, via, distance })),
+  ];
 }
 
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
@@ -240,7 +243,7 @@ export function overBudgetNote(selected, overBudget) {
 function usage() {
   return (
     'usage: ct-changed-specs.mjs --diff <base> <head> | --affected <base> <head> | ' +
-    '--filters <JSON array> | --repeat-each-listed <report.json> | ' +
+    '--filters <JSON array> | ' +
     '--over-budget <JSON array> <JSON array>'
   );
 }
@@ -254,7 +257,6 @@ export function main(
     log = console.log,
     warn = console.error,
     write,
-    readReport = (path) => readFileSync(path, 'utf8'),
   } = {},
 ) {
   const writeOut = write ?? ((text) => process.stdout.write(text));
@@ -268,7 +270,11 @@ export function main(
       const affected = affectedCtSpecs(graph(base, head), diff(base, head, 'ACMD'));
       affected.forEach(({ spec, via, distance }, index) => {
         const mark = index < CT_AFFECTED_BUDGET ? 'run' : 'over budget';
-        log(`${mark}: ${spec} (loads ${via}, ${distance} import${distance === 1 ? '' : 's'} away)`);
+        const why =
+          distance === 0
+            ? 'changed by this diff'
+            : `loads ${via}, ${distance} import${distance === 1 ? '' : 's'} away`;
+        log(`${mark}: ${spec} (${why})`);
       });
       const specs = affected.map(({ spec }) => spec);
       selected = JSON.stringify(specs.slice(0, CT_AFFECTED_BUDGET));
@@ -300,24 +306,6 @@ export function main(
     }
     log(`${OUTPUT_KEY}=${value}`);
     return 0;
-  }
-  if (argv[0] === '--repeat-each-listed' && argv.length === 2) {
-    try {
-      const { total, files } = listedCtTests(JSON.parse(readReport(argv[1])));
-      const repeat = ctChangedRepeatEach(total);
-      for (const { file, tests } of files)
-        warn(`  ${file}: ${tests} test${tests === 1 ? '' : 's'}`);
-      warn(
-        `Discovered ${total} test${total === 1 ? '' : 's'} in ${files.length} spec file${files.length === 1 ? '' : 's'}; ` +
-          `repeating each ${repeat} times (${total * repeat} runs; budget ${CT_CHANGED_TEST_RUN_BUDGET}, ` +
-          `${CT_CHANGED_MIN_REPEAT_EACH}-${CT_CHANGED_REPEAT_EACH} repetitions).`,
-      );
-      writeOut(`${repeat}\n`);
-      return 0;
-    } catch (error) {
-      warn(`ct-changed-specs: ${error instanceof Error ? error.message : error}`);
-      return 1;
-    }
   }
   if (argv[0] === '--filters' && argv.length === 2) {
     try {

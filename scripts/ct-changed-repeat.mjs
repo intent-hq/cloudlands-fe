@@ -1,19 +1,18 @@
 #!/usr/bin/env node
-// Runs PR CI's "Changed Component Tests (repeated)" job (`test-ct-changed` in
-// .github/workflows/intent-pr.yml) locally: the same bundle build, the same
-// changed-spec filters, the same repeat count and the same Playwright flags,
-// so a new or edited spec can be stress-checked before pushing instead of
-// waiting about an hour for CI.
+// Stress-runs the component test specs a branch adds or edits, locally: many
+// repetitions with retries off, so a new or edited spec that passes only some
+// of the time is caught before it reaches the merge queue. PR CI runs these
+// specs once (the `test-ct-affected` job in .github/workflows/intent-pr.yml);
+// it no longer repeats them (the 20x `test-ct-changed` job was dropped for
+// cost), so this is the way to check a spec for flakiness.
 //
 // `verify:changed` runs changed specs once with --retries=2, so it cannot show
-// the flakiness this job catches. Rebuilding the job by hand is easy to get
-// wrong: running the specs without the separate bundle build first died with
-// SIGABRT ("Ineffective mark-compacts near heap limit"), because CI builds the
-// bundle in its own step under a 12 GiB heap and runs the tests under 4 GiB.
-//
-// The plan below (heaps, build args, list args, run args) is the single local
-// copy of the job; scripts/ct-changed-repeat.test.ts runs the workflow's own
-// steps with the CT launcher stubbed and fails when they drift apart.
+// that flakiness. Rebuilding the run by hand is easy to get wrong: running the
+// specs without the separate bundle build first died with SIGABRT
+// ("Ineffective mark-compacts near heap limit"), because the CT bundle must be
+// built in its own step under a 12 GiB heap and the tests run under 4 GiB, as
+// CI's test-ct-affected job does. scripts/ct-changed-repeat.test.ts checks the
+// build step against that job.
 //
 // Usage: pnpm run test:ct:changed-repeat -- [options] [spec paths...] [-- <playwright args>]
 // (`make fe-ct-changed-repeat` from the monorepo root). See usage() below.
@@ -36,7 +35,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 
 export const LAUNCHER = 'scripts/run-ct-tests.mjs';
 export const DEFAULT_BASE = 'origin/main';
-// CI's "Build CT bundle" and "Repeat changed component tests" step heaps.
+// The heaps of CI's "Build CT bundle" and test steps (test-ct-affected).
 export const CT_BUILD_HEAP_MB = 12288;
 export const CT_RUN_HEAP_MB = 4096;
 export const CT_CHANGED_WORKERS = 2;
@@ -82,10 +81,10 @@ export function usage() {
   return [
     'Usage: pnpm run test:ct:changed-repeat -- [options] [spec paths...] [-- <playwright args>]',
     '',
-    'Runs the changed component test specs the way PR CI\'s "Changed Component Tests',
-    '(repeated)" job does: build the CT bundle under a 12 GiB heap, discover the',
-    'unquarantined tests, size the repetitions from their count (as CI does), then run',
-    'them with --retries=0 --fail-on-flaky-tests under a 4 GiB heap.',
+    'Stress-runs the changed component test specs to catch flakiness before pushing:',
+    'build the CT bundle under a 12 GiB heap (as CI does), discover the unquarantined',
+    'tests, size the repetitions from their count, then run them with',
+    '--retries=0 --fail-on-flaky-tests under a 4 GiB heap.',
     '',
     `With no spec paths it selects the ${CT_SPEC_SUFFIX} files changed since`,
     `\`git merge-base <base> HEAD\`, including uncommitted and untracked ones`,
@@ -93,7 +92,7 @@ export function usage() {
     '',
     'Options:',
     `  --base <ref>        Diff base (default ${DEFAULT_BASE}).`,
-    `  --workers <n>       Playwright workers (default ${CT_CHANGED_WORKERS}, as in CI).`,
+    `  --workers <n>       Playwright workers (default ${CT_CHANGED_WORKERS}, as a CI shard).`,
     '  --repeat-each <n>   Override the computed repeat count.',
     '  --skip-build        Reuse the cached CT bundle from an earlier run.',
     '  --dry-run           Print the specs, filters and repeat count (runs discovery',

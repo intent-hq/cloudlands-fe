@@ -206,10 +206,12 @@ describe('GitHub-hosted CI runners', () => {
       'test-2',
       'test-3',
       'test-4',
+      'test-ct-affected',
     ]);
-    // The shards go in shard order; each shard has its own key.
+    // The shards go in shard order; each shard has its own key. Unit Tests
+    // (13 minutes) rank ahead of the PR component-test job (12).
     expect(onSlots(r.slots)).toEqual(['test-1', 'test-2']);
-    for (const key of ['test-3', 'test-4', 'build-web', 'ct-1', 'ct-4'])
+    for (const key of ['test-3', 'test-4', 'test-ct-affected', 'build-web', 'ct-1', 'ct-4'])
       expect(r.slots[key]).toEqual(WARP_8X);
     expect(r.burst).toBe('true');
     expect(r.messages.some((m) => m.includes('free=2 granted=2'))).toBe(true);
@@ -299,8 +301,26 @@ describe('GitHub-hosted CI runners', () => {
     expect(workflow.jobs.route.needs).toEqual(['release-fast-path']);
     expect(listStep['continue-on-error']).toBe(true);
     expect(listStep.env.SKIP_SLOT_KEYS).toBe(
-      "${{ (needs.release-fast-path.outputs.ct_required != 'true' || needs.release-fast-path.outputs.fast_path == 'true') && 'ct' || '' }}",
+      "${{ format('{0},{1}', (needs.release-fast-path.outputs.ct_required != 'true' || needs.release-fast-path.outputs.fast_path == 'true') && 'ct' || '', (needs.release-fast-path.outputs.ct_affected_specs == '[]' || needs.release-fast-path.outputs.fast_path == 'true') && 'test-ct-affected' || '') }}",
     );
+    // A PR whose affected list is empty gives that job's slot back too;
+    // both keys may be dropped at once, and an empty key list drops nothing.
+    const pr = (skip: string) =>
+      route({
+        event: 'pull_request',
+        env: { SLOT_JOBS: filtered(skip), THRESHOLD: '5' },
+        runners: [slot, slot, slot, slot, slot],
+      });
+    expect(onSlots((await pr('ct,')).slots)).toEqual([
+      'test-1',
+      'test-2',
+      'test-3',
+      'test-4',
+      'test-ct-affected',
+    ]);
+    const none = await pr('ct,test-ct-affected');
+    expect(onSlots(none.slots)).toEqual(['test-1', 'test-2', 'test-3', 'test-4']);
+    expect(Object.keys(none.slots)).not.toContain('test-ct-affected');
     const decide = workflow.jobs.route.steps.find((s: { id?: string }) => s.id === 'decide');
     expect(decide.env.SLOT_JOBS).toBe('${{ steps.slot-jobs.outputs.list }}');
   });
@@ -332,7 +352,7 @@ describe('GitHub-hosted CI runners', () => {
     ['an unreadable intent queue', { unreadable: 'intent' }],
   ])('sends every listed heavy job hosted with %s', async (_name, fixture: Fixture) => {
     const r = await route(fixture);
-    expect(Object.keys(r.slots)).toHaveLength(9);
+    expect(Object.keys(r.slots)).toHaveLength(10);
     for (const labels of Object.values(r.slots)) expect(labels).toEqual(WARP_8X);
   });
 
@@ -362,6 +382,8 @@ describe('GitHub-hosted CI runners', () => {
     // Queue-only jobs must say so, or they would hold a slot on every PR.
     for (const id of ['build-web', 'ct'])
       expect(listed.find((j) => j.key === id)!.events).toEqual(['merge_group']);
+    // The PR-only component-test job must not hold a slot in the queue.
+    expect(listed.find((j) => j.key === 'test-ct-affected')!.events).toEqual(['pull_request']);
   });
 
   it('reads the heavy slot count from the CI_LINUX_HEAVY_SLOTS variable', async () => {

@@ -382,11 +382,11 @@ error and retry). `--max-unit-files N` rejects (never truncates) a plan over N f
 combine it with `--resolved-plan` for a budgeted preview, then raise or omit the limit.
 `pnpm run test:unit --maxWorkers=1` runs the full unit suite.
 
-`verify:changed` runs changed component test specs once with retries on. To catch the
-flakiness PR CI's "Changed Component Tests (repeated)" job catches, run
-`pnpm run test:ct:changed-repeat` before pushing: it builds the CT bundle under CI's 12 GiB
-heap, then repeats the changed specs (including uncommitted ones) with CI's repeat count,
-`--retries=0 --fail-on-flaky-tests` and two workers. `--dry-run` prints the filters and
+`verify:changed` runs changed component test specs once with retries on, and so does PR
+CI (`test-ct-affected`). To catch a flaky new or edited spec before it reaches the merge
+queue, run `pnpm run test:ct:changed-repeat` before pushing: it builds the CT bundle under
+CI's 12 GiB heap, then repeats the changed specs (including uncommitted ones) up to 20 times
+each with `--retries=0 --fail-on-flaky-tests` and two workers. `--dry-run` prints the filters and
 repeat count; `--workers N`, `--repeat-each N` and Playwright args after a second `--`
 (e.g. `-- --grep "<title>"`) tune stress runs (`--help` lists the rest).
 
@@ -676,12 +676,13 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   tracking issue and an owner. Quarantined tests still run as an advisory step on shard 1;
   the PR that fixes the flake removes the tag.
 - **Full browser suites never run on PR updates** (PRs run type/lint, unit tests and static
-  checks). The exceptions: `test-ct-changed` runs each `.ct.spec.ts` the PR adds or
-  edits 20 times with retries off (`scripts/ct-changed-specs.mjs`; fewer when the
-  changed specs hold many tests: about 800 test runs in all, at least 3 each), so any failing repetition is red on the PR, not in the queue; and
-  `test-ct-affected` runs once each the existing specs that load a changed file, nearest
-  first, up to 40 per PR (`--affected` in the same script; the job log and summary list
-  any over the cap). Merge-queue entries touching CT-contract paths, specs or anything they
+  checks). The exception: `test-ct-affected` runs once each, with the queue shard
+  settings, every `.ct.spec.ts` the PR adds or edits and then the existing specs that
+  load a changed file, nearest first, up to 40 per PR (`--affected` in
+  `scripts/ct-changed-specs.mjs`; the job log and summary list any over the cap). It
+  takes a heavy intent-cache slot when one is free. PR CI does not repeat changed specs
+  (that job was dropped for cost); stress them locally with
+  `pnpm run test:ct:changed-repeat`. Merge-queue entries touching CT-contract paths, specs or anything they
   transitively import (`scripts/ct-contract-paths.mjs`, shared with `verify:changed`) run the four CT
   shards; root Playwright and Electron lifetime test/harness/config changes run their
   suites. Everything also runs nightly at 02:17 UTC (`nightly-browser-tests.yml`) and on
