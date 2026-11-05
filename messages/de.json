@@ -8410,5 +8410,14 @@
   "dock_screenshotEditor_text": "Text",
   "dock_screenshotEditor_blur": "Vertrauliche Inhalte weichzeichnen",
   "dock_screenshotEditor_retry": "Vorschau erneut laden",
-  "dock_screenshotEditor_click": "Klick"
+  "dock_screenshotEditor_click": "Klick",
+  "dock_screenshotEditor_title": "Screenshot",
+  "dock_screenshotEditor_more": "Weitere Aktionen",
+  "dock_screenshotEditor_reset": "Bearbeitungen zurücksetzen",
+  "dock_screenshotEditor_saveError": "Änderungen konnten nicht gespeichert werden. Bearbeite weiter und versuche es erneut.",
+  "dock_screenshotEditor_retakeError": "Der Screenshot konnte nicht erneut aufgenommen werden. Deine Bearbeitungen bleiben erhalten.",
+  "dock_screenshotEditor_legacyReadonly": "Die Bearbeitung ist erst möglich, wenn das Originalbild und die Markierungsgeometrie verfügbar sind.",
+  "dock_screenshotEditor_previewOnly": "Änderungen an diesem Anhang können noch nicht gespeichert werden.",
+  "dock_screenshotEditor_retakeUnavailable": "Eine neue Aufnahme ist nicht verfügbar.",
+  "dock_screenshotEditor_dictationUnavailable": "Notizdiktat ist nicht verfügbar."
 }

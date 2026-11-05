@@ -8410,5 +8410,14 @@
   "dock_screenshotEditor_text": "テキスト",
   "dock_screenshotEditor_blur": "機密情報をぼかす",
   "dock_screenshotEditor_retry": "プレビューを再試行",
-  "dock_screenshotEditor_click": "クリック"
+  "dock_screenshotEditor_click": "クリック",
+  "dock_screenshotEditor_title": "スクリーンショット",
+  "dock_screenshotEditor_more": "その他の操作",
+  "dock_screenshotEditor_reset": "編集をリセット",
+  "dock_screenshotEditor_saveError": "変更を保存できませんでした。編集を続けてからもう一度お試しください。",
+  "dock_screenshotEditor_retakeError": "スクリーンショットを再撮影できませんでした。編集内容は保持されています。",
+  "dock_screenshotEditor_legacyReadonly": "元の画像とマークの位置情報が利用可能になるまで編集できません。",
+  "dock_screenshotEditor_previewOnly": "この添付ファイルの変更はまだ保存できません。",
+  "dock_screenshotEditor_retakeUnavailable": "再撮影は利用できません。",
+  "dock_screenshotEditor_dictationUnavailable": "メモの音声入力は利用できません。"
 }

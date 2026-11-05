@@ -123,6 +123,13 @@
   }
   function up(event: PointerEvent) {
     if (!gesture || gesture.pointer !== event.pointerId) return;
+    const end = point(event);
+    if (gesture.original && Math.hypot(end.x - gesture.start.x, end.y - gesture.start.y) < 0.001) {
+      gesture = null;
+      if (surface?.hasPointerCapture(event.pointerId))
+        surface.releasePointerCapture(event.pointerId);
+      return;
+    }
     move(event);
     const g = gesture;
     gesture = null;

@@ -36,6 +36,8 @@ export function retakeScreenshotEdit(
     ![map.scaleX, map.scaleY, map.offsetX, map.offsetY, source.width, source.height].every(
       Number.isFinite,
     ) ||
+    source.width <= 0 ||
+    source.height <= 0 ||
     map.scaleX <= 0 ||
     map.scaleY <= 0
   )

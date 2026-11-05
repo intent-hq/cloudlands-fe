@@ -26,16 +26,17 @@
     disabled={disabled || retaking}
     onclick={onCrop}><CropIcon size={16} />{m.dock_screenshotEditor_crop()}</Button
   >
-  {#if onRetake}<Button
-      variant="ghost"
-      size="compact"
-      disabled={disabled || retaking}
-      aria-busy={retaking}
-      onclick={onRetake}
-      ><ArrowsClockwiseIcon size={16} />{retaking
-        ? m.dock_screenshotEditor_retaking()
-        : m.dock_screenshotEditor_retake()}</Button
-    >{/if}
+  <Button
+    variant="ghost"
+    size="compact"
+    disabled={disabled || retaking || !onRetake}
+    tooltip={onRetake ? undefined : m.dock_screenshotEditor_retakeUnavailable()}
+    aria-busy={retaking}
+    onclick={() => onRetake?.()}
+    ><ArrowsClockwiseIcon size={16} />{retaking
+      ? m.dock_screenshotEditor_retaking()
+      : m.dock_screenshotEditor_retake()}</Button
+  >
 </div>
 
 <style>

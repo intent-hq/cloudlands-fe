@@ -8410,5 +8410,14 @@
   "dock_screenshotEditor_text": "Text",
   "dock_screenshotEditor_blur": "Blur sensitive content",
   "dock_screenshotEditor_retry": "Retry preview",
-  "dock_screenshotEditor_click": "Click"
+  "dock_screenshotEditor_click": "Click",
+  "dock_screenshotEditor_title": "Screenshot",
+  "dock_screenshotEditor_more": "More actions",
+  "dock_screenshotEditor_reset": "Reset edits",
+  "dock_screenshotEditor_saveError": "Changes could not be saved. Keep editing and try again.",
+  "dock_screenshotEditor_retakeError": "Could not retake the screenshot. Your edits are still here.",
+  "dock_screenshotEditor_legacyReadonly": "Editing is unavailable until the original image and mark geometry are available.",
+  "dock_screenshotEditor_previewOnly": "Changes cannot be saved for this attachment yet.",
+  "dock_screenshotEditor_retakeUnavailable": "Retake is unavailable.",
+  "dock_screenshotEditor_dictationUnavailable": "Note dictation is unavailable."
 }

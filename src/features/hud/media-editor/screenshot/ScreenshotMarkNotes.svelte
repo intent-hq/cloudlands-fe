@@ -129,44 +129,43 @@
         onfocus={() => onSelect(item.id)}
         oninput={(event) => onNote(item.id, event.currentTarget.value)}
       />
-      {#if onDictation}
-        <Button
-          variant="ghost"
-          size="compact"
-          {disabled}
-          aria-label={m.dock_screenshotEditor_holdFor({ n: item.n })}
-          aria-pressed={dictatingId === item.id}
-          onpointerdown={(event) => {
-            if (disabled || event.button !== 0) return;
+      <Button
+        variant="ghost"
+        size="compact"
+        disabled={disabled || !onDictation}
+        tooltip={onDictation ? undefined : m.dock_screenshotEditor_dictationUnavailable()}
+        aria-label={m.dock_screenshotEditor_holdFor({ n: item.n })}
+        aria-pressed={dictatingId === item.id}
+        onpointerdown={(event) => {
+          if (disabled || !onDictation || event.button !== 0) return;
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          held = item.id;
+          onSelect(item.id);
+          onDictation?.(item.id, 'start');
+        }}
+        onpointerup={stop}
+        onpointercancel={stop}
+        onlostpointercapture={stop}
+        onkeydown={(event) => {
+          if (event.key === ' ' && !event.repeat && !disabled && !!onDictation) {
             event.preventDefault();
-            event.currentTarget.setPointerCapture(event.pointerId);
             held = item.id;
-            onSelect(item.id);
             onDictation?.(item.id, 'start');
-          }}
-          onpointerup={stop}
-          onpointercancel={stop}
-          onlostpointercapture={stop}
-          onkeydown={(event) => {
-            if (event.key === ' ' && !event.repeat && !disabled) {
-              event.preventDefault();
-              held = item.id;
-              onDictation?.(item.id, 'start');
-            }
-          }}
-          onkeyup={(event) => {
-            if (event.key === ' ') {
-              event.preventDefault();
-              stop();
-            }
-          }}
-          onblur={stop}
-        >
-          <MicrophoneIcon size={14} />{dictatingId === item.id
-            ? m.dock_composer_listening_status()
-            : m.dock_screenshotEditor_hold()}
-        </Button>
-      {/if}
+          }
+        }}
+        onkeyup={(event) => {
+          if (event.key === ' ') {
+            event.preventDefault();
+            stop();
+          }
+        }}
+        onblur={stop}
+      >
+        <MicrophoneIcon size={14} />{dictatingId === item.id
+          ? m.dock_composer_listening_status()
+          : m.dock_screenshotEditor_hold()}
+      </Button>
     </section>
   {/each}
 </aside>

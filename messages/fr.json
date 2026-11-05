@@ -8410,5 +8410,14 @@
   "dock_screenshotEditor_text": "Texte",
   "dock_screenshotEditor_blur": "Flouter le contenu sensible",
   "dock_screenshotEditor_retry": "Réessayer l’aperçu",
-  "dock_screenshotEditor_click": "Clic"
+  "dock_screenshotEditor_click": "Clic",
+  "dock_screenshotEditor_title": "Capture d’écran",
+  "dock_screenshotEditor_more": "Autres actions",
+  "dock_screenshotEditor_reset": "Réinitialiser les modifications",
+  "dock_screenshotEditor_saveError": "Les modifications n’ont pas pu être enregistrées. Continuez à modifier et réessayez.",
+  "dock_screenshotEditor_retakeError": "Impossible de reprendre la capture. Vos modifications sont conservées.",
+  "dock_screenshotEditor_legacyReadonly": "La modification sera disponible lorsque l’image originale et la géométrie des marques seront disponibles.",
+  "dock_screenshotEditor_previewOnly": "Les modifications de cette pièce jointe ne peuvent pas encore être enregistrées.",
+  "dock_screenshotEditor_retakeUnavailable": "La reprise de capture n’est pas disponible.",
+  "dock_screenshotEditor_dictationUnavailable": "La dictée de notes n’est pas disponible."
 }

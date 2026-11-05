@@ -136,9 +136,8 @@
   });
 
   function canvasGeometry(geometry: DockMediaGeometry): DockMarkGeometry {
-    if (geometry.kind === 'point')
-      return { kind: 'rect', x: geometry.x - 6, y: geometry.y - 6, w: 12, h: 12 };
-    if (geometry.kind === 'text') return { kind: 'rect', ...dockMediaGeometryRect(geometry) };
+    if (geometry.kind === 'point' || geometry.kind === 'text')
+      return { kind: 'rect', ...dockMediaGeometryRect(geometry) };
     return geometry;
   }
   function apply(next: DockMediaEdit) {
@@ -166,14 +165,18 @@
       const old = mark.geometry;
       const next: DockMediaGeometry =
         old.kind === 'point'
-          ? { ...old, x: b.x + b.w / 2, y: b.y + b.h / 2 }
+          ? {
+              ...old,
+              x: old.x + b.x - dockGeometryRect(canvasGeometry(old)).x,
+              y: old.y + b.y - dockGeometryRect(canvasGeometry(old)).y,
+            }
           : old.kind === 'text'
             ? {
                 ...old,
                 x: b.x,
                 y: b.y,
                 fontSize: Math.max(
-                  1,
+                  0.1,
                   old.fontSize *
                     (b.h !== dockMediaGeometryRect(old).h
                       ? b.h / Math.max(1, dockMediaGeometryRect(old).h)

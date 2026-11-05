@@ -8410,5 +8410,14 @@
   "dock_screenshotEditor_text": "文字",
   "dock_screenshotEditor_blur": "模糊敏感内容",
   "dock_screenshotEditor_retry": "重试预览",
-  "dock_screenshotEditor_click": "点击"
+  "dock_screenshotEditor_click": "点击",
+  "dock_screenshotEditor_title": "截图",
+  "dock_screenshotEditor_more": "更多操作",
+  "dock_screenshotEditor_reset": "重置编辑",
+  "dock_screenshotEditor_saveError": "无法保存更改。请继续编辑后重试。",
+  "dock_screenshotEditor_retakeError": "无法重新截图。编辑内容仍然保留。",
+  "dock_screenshotEditor_legacyReadonly": "在原始图片和标记位置数据可用之前，无法编辑。",
+  "dock_screenshotEditor_previewOnly": "暂时无法保存此附件的更改。",
+  "dock_screenshotEditor_retakeUnavailable": "暂时无法重新截图。",
+  "dock_screenshotEditor_dictationUnavailable": "暂时无法口述备注。"
 }

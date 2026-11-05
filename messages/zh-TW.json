@@ -8410,5 +8410,14 @@
   "dock_screenshotEditor_text": "文字",
   "dock_screenshotEditor_blur": "模糊敏感內容",
   "dock_screenshotEditor_retry": "重試預覽",
-  "dock_screenshotEditor_click": "點擊"
+  "dock_screenshotEditor_click": "點擊",
+  "dock_screenshotEditor_title": "螢幕截圖",
+  "dock_screenshotEditor_more": "更多操作",
+  "dock_screenshotEditor_reset": "重設編輯",
+  "dock_screenshotEditor_saveError": "無法儲存變更。請繼續編輯後再試一次。",
+  "dock_screenshotEditor_retakeError": "無法重新擷取螢幕截圖。編輯內容仍保留。",
+  "dock_screenshotEditor_legacyReadonly": "在原始圖片和標記位置資料可用之前，無法編輯。",
+  "dock_screenshotEditor_previewOnly": "目前尚無法儲存此附件的變更。",
+  "dock_screenshotEditor_retakeUnavailable": "目前無法重新擷取。",
+  "dock_screenshotEditor_dictationUnavailable": "目前無法口述備註。"
 }
