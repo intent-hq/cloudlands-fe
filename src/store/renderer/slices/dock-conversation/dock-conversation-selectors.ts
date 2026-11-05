@@ -36,6 +36,8 @@ import { m } from '$shared/paraglide/messages.js';
 import type { DockConversationMessage, DockNativeSpeechState } from './dock-conversation-types';
 import type { DockSpeechCapability } from '$shared/dock-speech';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import type { Workspace } from '$shared/types';
+import { createChiefVirtualWorkspace } from '../workspace-agents/chief-virtual-workspace';
 import {
   dockClipItemIds,
   recordingDockClip,
@@ -57,6 +59,22 @@ import {
   pendingSubmissionMessage,
   processingSubmissionMessage,
 } from '$lib/components/chat/pending-submission-message';
+
+let chiefFallback: Workspace | null = null;
+
+/**
+ * The conversation's workspace record. The virtual Assistant workspace is never in
+ * `workspace.list`, so a background list refresh drops the record the open flow
+ * inserted; fall back to one stable virtual record (intent-hq/intent#8620).
+ */
+function dockConversationWorkspace(state: StoreState, workspaceId: string): Workspace | null {
+  const row = selectWorkspaceById.select(state, workspaceId);
+  if (row) return row;
+  if (workspaceId !== CHIEF_WORKSPACE_ID) return null;
+  const virtual = createChiefVirtualWorkspace();
+  if (chiefFallback?.title !== virtual.title) chiefFallback = virtual;
+  return chiefFallback;
+}
 
 export const selectDockConversationWorkspaceId = store.createSelector(
   (state) => state.dockConversation.workspaceId,
@@ -190,10 +208,7 @@ export const selectDockConversationView = store.createSelector((state) => {
     queuedMessages,
     queueRows,
     ownPrincipalId: contextCurrent ? selectPresenceOwnPrincipalId.select(state) : null,
-    workspace:
-      contextCurrent && workspaceId
-        ? (selectWorkspaceById.select(state, workspaceId) ?? null)
-        : null,
+    workspace: contextCurrent && workspaceId ? dockConversationWorkspace(state, workspaceId) : null,
     loading,
     streamingStatus:
       contextCurrent && available && agentId
@@ -265,7 +280,7 @@ export const selectDockConversationComposer = store.createSelector((state) => {
   const history = agentId ? selectAgentHistoryMessages.select(state, agentId) : [];
   const live = agentId ? selectAgentMessages.select(state, agentId) : [];
   return {
-    workspace: workspaceId ? (selectWorkspaceById.select(state, workspaceId) ?? null) : null,
+    workspace: workspaceId ? dockConversationWorkspace(state, workspaceId) : null,
     agentId,
     value: view.draft,
     clearRevision: draft?.clearRevision ?? 0,

@@ -343,15 +343,15 @@ export class UnifiedAgentFactory {
         (workspace.id === CHIEF_WORKSPACE_ID ? '/tmp' : undefined);
 
       // Step 6.5: Determine provider early (needed for model resolution)
-      // Determine provider: use explicit config.provider, or get from Redux active-provider slice
-      let provider = config.provider;
+      // Determine provider: use explicit normalized provider, or get from Redux active-provider slice
+      let provider = normalized.provider;
       if (!provider && !isBackend && !normalized.metadata?.specialist) {
         const activeId = await getActiveProviderId();
         if (activeId) {
           // D1(B): never silently spawn on an unavailable provider — this is
           // how an implicit (no explicit provider/specialist codingAgent)
           // agent creation ended up targeting an uninstalled Auggie binary.
-          // An explicit config.provider is a caller's deliberate choice and
+          // An explicit provider is a caller's deliberate choice and
           // is not gated here; only this active-provider fallback is.
           let isActiveProviderAvailable = activeId !== 'antigravity';
           try {
@@ -723,8 +723,10 @@ export class UnifiedAgentFactory {
       rememberSpecialist: config.rememberSpecialist,
       nameExplicitlySet: config.nameExplicitlySet, // Wire `nameExplicitlySet` — false marks a generated placeholder name
       workspaceId: config.workspaceId || (workspace.id as BrandedWorkspaceId),
-      model: config.model, // Don't set default here - createAgent handles provider-aware defaults
-      provider: config.provider, // Preserve provider for propagation to session
+      // A blank model or provider is "no choice" (an unloaded catalog yields ''):
+      // omit it so the daemon resolves its default (intent-hq/intent#8621).
+      model: config.model?.trim() ? config.model : undefined,
+      provider: config.provider?.trim() ? config.provider : undefined,
       reasoningEffort: config.reasoningEffort, // Explicit effort override (triple's third leg)
       initialMessage: config.initialMessage,
       appMessageId: config.appMessageId,
