@@ -9,6 +9,7 @@
   import DockComposerIcon from '../../components/DockComposerIcon.svelte';
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
   import DockRecordingTimeline from './DockRecordingTimeline.svelte';
+  import DockRecordingSendOptions from './DockRecordingSendOptions.svelte';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import {
     defaultDockMediaEdit,
@@ -175,6 +176,7 @@
   subtitle={snapshot.title}
   dirty={edits?.dirty ?? false}
   onCancel={onClose}
+  sidebar={source && edits ? sendOptions : undefined}
   onUndo={edits ? () => edits.undo() : undefined}
   onRedo={edits ? () => edits.redo() : undefined}
   {discardRequest}
@@ -256,6 +258,18 @@
     </div>
   {/snippet}
 </DockCaptureEditorShell>
+
+{#snippet sendOptions()}
+  {#if source && edits}
+    <DockRecordingSendOptions
+      edit={edits.draft}
+      {source}
+      {transcript}
+      enabled={snapshot.output?.ready === true}
+      onChange={(choice) => edits.apply((draft) => ({ ...draft, ...choice }))}
+    />
+  {/if}
+{/snippet}
 
 <style>
   .stage {
