@@ -22,6 +22,9 @@
     selectedId,
     disabled = false,
     dictatingId = null,
+    notePreview = null,
+    onNoteManualEdit,
+    onNoteBlur,
     onSelect,
     onNote,
     onText,
@@ -33,6 +36,9 @@
     selectedId: string | null;
     disabled?: boolean;
     dictatingId?: string | null;
+    notePreview?: { markId: string; text: string } | null;
+    onNoteManualEdit?: (markId: string) => void;
+    onNoteBlur?: (markId: string) => void;
     onElement?: (id: string, selector: string, text: string) => void;
     onSelect: (id: string) => void;
     onNote: (id: string, note: string) => void;
@@ -41,7 +47,7 @@
     onDictation?: (id: string, phase: 'start' | 'stop') => void;
   } = $props();
   let list = $state<HTMLElement | null>(null);
-  let held: string | null = null;
+  let held = $state.raw<{ markId: string; pointerId: number | null } | null>(null);
   $effect(() => {
     if (selectedId)
       list
@@ -49,12 +55,24 @@
         ?.scrollIntoView({ block: 'nearest' });
   });
   onDestroy(stop);
-  function stop() {
-    if (held) {
-      onDictation?.(held, 'stop');
-      held = null;
-    }
+  function stop(pointerId?: number) {
+    const current = held;
+    if (!current || (pointerId !== undefined && current.pointerId !== pointerId)) return;
+    held = null;
+    onDictation?.(current.markId, 'stop');
   }
+  function markBlur(event: FocusEvent, markId: string) {
+    const card =
+      event.currentTarget instanceof HTMLElement
+        ? event.currentTarget.closest('[data-note-id]')
+        : null;
+    if (event.relatedTarget instanceof Node && card?.contains(event.relatedTarget)) return;
+    if (held?.markId === markId) stop();
+    onNoteBlur?.(markId);
+  }
+  $effect(() => {
+    if (held && (disabled || !items.some((item) => item.id === held?.markId))) stop();
+  });
 </script>
 
 <aside bind:this={list} class="notes" aria-label={m.dock_screenshotEditor_marks()}>
@@ -122,12 +140,16 @@
         aria-label={m.dock_screenshotEditor_noteFor({ n: item.n })}
         placeholder={m.dock_screenshotEditor_notePlaceholder()}
         maxlength={20000}
-        value={item.note}
+        value={notePreview?.markId === item.id ? notePreview.text : item.note}
         {disabled}
         minHeight={48}
         autoResize
         onfocus={() => onSelect(item.id)}
-        oninput={(event) => onNote(item.id, event.currentTarget.value)}
+        oninput={(event) => {
+          onNoteManualEdit?.(item.id);
+          onNote(item.id, event.currentTarget.value);
+        }}
+        onblur={(event) => markBlur(event, item.id)}
       />
       <Button
         variant="ghost"
@@ -137,30 +159,34 @@
         aria-label={m.dock_screenshotEditor_holdFor({ n: item.n })}
         aria-pressed={dictatingId === item.id}
         onpointerdown={(event) => {
-          if (disabled || !onDictation || event.button !== 0) return;
+          if (disabled || !onDictation || event.button !== 0 || !event.isPrimary || held) return;
           event.preventDefault();
           event.currentTarget.setPointerCapture(event.pointerId);
-          held = item.id;
+          held = { markId: item.id, pointerId: event.pointerId };
           onSelect(item.id);
           onDictation?.(item.id, 'start');
         }}
-        onpointerup={stop}
-        onpointercancel={stop}
-        onlostpointercapture={stop}
+        onpointerup={(event) => stop(event.pointerId)}
+        onpointercancel={(event) => stop(event.pointerId)}
+        onlostpointercapture={(event) => stop(event.pointerId)}
         onkeydown={(event) => {
-          if (event.key === ' ' && !event.repeat && !disabled && !!onDictation) {
+          if (event.key === ' ' && !event.repeat && !disabled && !!onDictation && !held) {
             event.preventDefault();
-            held = item.id;
+            held = { markId: item.id, pointerId: null };
+            onSelect(item.id);
             onDictation?.(item.id, 'start');
           }
         }}
         onkeyup={(event) => {
-          if (event.key === ' ') {
+          if (event.key === ' ' && held?.pointerId === null) {
             event.preventDefault();
             stop();
           }
         }}
-        onblur={stop}
+        onblur={() => {
+          if (held?.markId === item.id) stop();
+          onNoteBlur?.(item.id);
+        }}
       >
         <MicrophoneIcon size={14} />{dictatingId === item.id
           ? m.dock_composer_listening_status()

@@ -33,6 +33,9 @@
     disabled = false,
     retaking = false,
     dictatingId = null,
+    notePreview = null,
+    onNoteManualEdit,
+    onNoteBlur,
     onRetake,
     onNoteDictation,
     children,
@@ -45,6 +48,9 @@
     disabled?: boolean;
     retaking?: boolean;
     dictatingId?: string | null;
+    notePreview?: { markId: string; text: string } | null;
+    onNoteManualEdit?: (markId: string) => void;
+    onNoteBlur?: (markId: string) => void;
     onRetake?: () => void | Promise<void>;
     onNoteDictation?: (id: string, phase: 'start' | 'stop') => void;
     children?: Snippet<[main: Snippet, sidebar: Snippet, headerActions: Snippet]>;
@@ -315,6 +321,9 @@
     selectedId={selectedMarkId}
     disabled={blocked}
     {dictatingId}
+    {notePreview}
+    {onNoteManualEdit}
+    {onNoteBlur}
     onSelect={(id) => {
       selectedMarkId = id;
       tool = 'pointer';
