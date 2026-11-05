@@ -1,3 +1,4 @@
+import { DockMediaWaveformSchema, type DockMediaAnalyzeRequest, type DockMediaWaveform } from '../../../shared/dock-media-output';
 /** Session-bound offline jobs. No renderer-chosen host paths or backend fallback. */
 import { app, nativeImage } from 'electron';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -204,4 +205,22 @@ export async function transcribeDockMedia(context: DockEvidenceContext, request:
     if (job) await releaseDockMediaJob(context.scope.sessionId, job.id);
     return { ok: true, value: { status: 'unavailable', revision: 1, words: [], error: 'local-recognition-unavailable' } };
   }
+}
+
+export async function analyzeDockMedia(context: DockEvidenceContext, request: DockMediaAnalyzeRequest): Promise<DockNativeResult<DockMediaWaveform>> {
+  let job: Job | undefined;
+  try {
+    const source = request.media.source;
+    if (source.kind !== 'recording' || source.audio !== 'available') return { ok: false, error: 'unavailable' };
+    const binary = await helper('intent-dock-media-transcribe');
+    job = await createJob(context, request.jobId, JSON.stringify(request));
+    const file = await copySource(context, job, request.media);
+    const event = await run(context, job, binary, { source: file, audio: path.join(job.directory, 'waveform.wav'), locale: null,
+      mode: 'waveform', sourceId: source.id, sourceRevision: source.revision, durationMs: source.durationMs }, () => {});
+    const waveform = DockMediaWaveformSchema.parse(event.waveform);
+    check(context, job);
+    if (waveform.sourceId !== source.id || waveform.sourceRevision !== source.revision || waveform.durationMs !== source.durationMs) throw new Error('waveform-source-changed');
+    return { ok: true, value: waveform };
+  } catch { return { ok: false, error: 'failed' }; }
+  finally { if (job) await releaseDockMediaJob(context.scope.sessionId, job.id); }
 }

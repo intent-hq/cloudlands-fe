@@ -23,3 +23,13 @@ export const DockMediaTranscribeRequestSchema = z.object({
 }).strict();
 export type DockMediaTranscribeRequest = z.infer<typeof DockMediaTranscribeRequestSchema>;
 export type DockMediaTranscribeOutput = DockMediaTranscript;
+
+/** Real decoded PCM peaks, indexed on the original source-media clock. */
+export const DockMediaWaveformSchema = z.object({
+  sourceId: z.string().min(1), sourceRevision: z.number().int().nonnegative(),
+  durationMs: z.number().finite().positive().max(120001), intervalMs: z.literal(50),
+  peaks: z.array(z.number().finite().min(0).max(1)).max(2401),
+}).strict().refine((value) => value.peaks.length === Math.ceil(value.durationMs / value.intervalMs), 'Incomplete waveform');
+export type DockMediaWaveform = z.infer<typeof DockMediaWaveformSchema>;
+export const DockMediaAnalyzeRequestSchema = z.object({ jobId: z.string().uuid(), media: DockSavedMediaSchema }).strict();
+export type DockMediaAnalyzeRequest = z.infer<typeof DockMediaAnalyzeRequestSchema>;

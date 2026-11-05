@@ -3,7 +3,7 @@ import AVFoundation
 import Foundation
 import Speech
 
-struct Job: Decodable { let source: String; let audio: String; let locale: String?; let durationMs: Double }
+struct Job: Decodable { let source: String; let audio: String; let locale: String?; let durationMs: Double; let mode: String?; let sourceId: String?; let sourceRevision: Int? }
 func emit(_ value: [String: Any]) {
   if let data = try? JSONSerialization.data(withJSONObject: value) {
     FileHandle.standardOutput.write(data); FileHandle.standardOutput.write(Data([10]))
@@ -38,7 +38,7 @@ func recognize(_ job: Job) async throws -> SFTranscription {
 }
 // Decode PCM in source-media time and write real silence in gaps between mic runs.
 // Recognition timestamps then share the video's clock, including an initially muted mic.
-func prepare(_ job: Job) async throws {
+func prepare(_ job: Job) async throws -> [Double] {
   let asset = AVURLAsset(url: URL(fileURLWithPath: job.source))
   let tracks = try await asset.loadTracks(withMediaType: .audio)
   guard !tracks.isEmpty, job.durationMs.isFinite, job.durationMs > 0, job.durationMs <= 120_001 else { throw fail("audio-unavailable") }
@@ -51,6 +51,7 @@ func prepare(_ job: Job) async throws {
   reader.add(output)
   let file = try AVAudioFile(forWriting: URL(fileURLWithPath: job.audio), settings: format.settings)
   guard reader.startReading() else { throw reader.error ?? fail("audio-reader") }
+  var peaks = [Double](repeating: 0, count: Int(ceil(job.durationMs / 50)))
   var written: Int64 = 0
   let maximum = Int64((job.durationMs * 48).rounded())
   func silence(until target: Int64) throws {
@@ -76,18 +77,30 @@ func prepare(_ job: Job) async throws {
     let status = CMBlockBufferCopyDataBytes(block, atOffset: skip * MemoryLayout<Float>.size,
       dataLength: count * MemoryLayout<Float>.size, destination: channel)
     guard status == kCMBlockBufferNoErr else { throw fail("audio-buffer-copy") }
+    for index in 0..<count {
+      let bucket = Int((written + Int64(index)) / 2400)
+      let amplitude = Double(abs(channel[index]))
+      guard amplitude.isFinite else { throw fail("audio-sample") }
+      if bucket < peaks.count { peaks[bucket] = max(peaks[bucket], min(1, amplitude)) }
+    }
     try file.write(from: buffer); written += Int64(count)
   }
   guard reader.status == .completed else { throw reader.error ?? fail("audio-reader-failed") }
   try silence(until: maximum)
+  return peaks
 }
 func main() async throws {
   let data = FileHandle.standardInput.readDataToEndOfFile()
   guard data.count < 64 * 1024 else { throw fail("invalid-job") }
   let job = try JSONDecoder().decode(Job.self, from: data)
   // Never create a file before confirming existing consent and an on-device model.
-  guard SFSpeechRecognizer.authorizationStatus() == .authorized else { throw fail("speech-not-authorized") }
-  try await prepare(job)
+  guard job.mode == "waveform" || SFSpeechRecognizer.authorizationStatus() == .authorized else { throw fail("speech-not-authorized") }
+  let peaks = try await prepare(job)
+  if job.mode == "waveform" {
+    emit(["event": "complete", "waveform": ["sourceId": job.sourceId ?? "", "sourceRevision": job.sourceRevision ?? 0,
+      "durationMs": job.durationMs, "intervalMs": 50, "peaks": peaks]])
+    return
+  }
   emit(["event": "progress", "fraction": 0.2])
   let transcription = try await recognize(job)
   let text = transcription.formattedString as NSString
