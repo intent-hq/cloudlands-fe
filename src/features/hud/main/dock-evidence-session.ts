@@ -450,6 +450,12 @@ const SELECTION_TIMEOUT_MS = 5 * 60_000;
 
 /** Native selector returns the exact selected frame with its pixels. */
 async function captureSelection(mode: Exclude<DockCaptureMode, 'fullscreen'>, excludeWindowIds: number[] = [], signal?: AbortSignal): Promise<DockNativeResult<SelectedImage>> {
+  const release = dockEvidenceRecorder.reserveSelection();
+  if (!release) return { ok: false, error: 'failed', detail: 'recording-busy' };
+  try { return await captureSelectionReserved(mode, excludeWindowIds, signal); }
+  finally { release(); }
+}
+async function captureSelectionReserved(mode: Exclude<DockCaptureMode, 'fullscreen'>, excludeWindowIds: number[] = [], signal?: AbortSignal): Promise<DockNativeResult<SelectedImage>> {
   if (process.platform !== 'darwin') return { ok: false, error: 'unavailable', detail: 'platform' };
   const roots = app.isPackaged ? [process.resourcesPath] : [path.join(app.getAppPath(), 'resources'), path.resolve(app.getAppPath(), '..', '..', 'resources')];
   let helper: string | undefined;
@@ -459,8 +465,17 @@ async function captureSelection(mode: Exclude<DockCaptureMode, 'fullscreen'>, ex
   }
   if (!helper) return { ok: false, error: 'unavailable', detail: 'selection-helper-missing' };
   try {
-    const stdout = await new Promise<string>((resolve, reject) => execFile(helper!, [mode, ...excludeWindowIds.map(String)],
-      { timeout: SELECTION_TIMEOUT_MS, maxBuffer: 96 * 1024 * 1024, signal }, (error, output) => error ? reject(error) : resolve(output)));
+    let childClosed: Promise<void> | undefined;
+    const stdout = await (async () => {
+      try {
+        return await new Promise<string>((resolve, reject) => {
+          const child = execFile(helper!, [mode, ...excludeWindowIds.map(String)],
+            { timeout: SELECTION_TIMEOUT_MS, maxBuffer: 96 * 1024 * 1024, signal },
+            (error, output) => error ? reject(error) : resolve(output));
+          childClosed = new Promise<void>((done) => child.once('close', () => done()));
+        });
+      } finally { await childClosed; }
+    })();
     const result = JSON.parse(stdout) as Record<string, unknown>;
     if (result.ok !== true) return result.error === 'cancelled' ? { ok: false, error: 'unavailable', detail: 'cancelled' }
       : { ok: false, error: result.error === 'permission' ? 'permission' : result.error === 'unavailable' ? 'unavailable' : 'failed' };

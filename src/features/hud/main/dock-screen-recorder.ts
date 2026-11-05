@@ -84,6 +84,8 @@ export interface DockScreenRecorderDeps {
 }
 
 export interface DockScreenRecorder {
+  /** Synchronous reciprocal lease: no new selector while a clip owns startup/stream/finalization. */
+  reserveSelection(): (() => void) | null;
   capability(): Promise<DockRecordingCapability>;
   /**
    * Screenshot with the dock and controls excluded, so the composer stays visible.
@@ -568,6 +570,7 @@ export function createDockScreenRecorder(
     if (!Number.isSafeInteger(request.displayId) || request.displayId <= 0)
       return fail('unavailable', 'display');
     // One screen capture at a time: a recording's stream answers for itself.
+    if (selectionOwner) return fail('failed', 'selection-busy');
     if (active) return streamStill(active, request);
     if (reservation) return fail('failed', 'recording-busy');
     const helper = await deps.resolveHelper();
@@ -638,10 +641,17 @@ export function createDockScreenRecorder(
     promise: Promise<DockNativeResult<{ startedAt: number }>>;
   }
   let reservation: Reservation | null = null;
+  let selectionOwner: symbol | null = null;
+  const reserveSelection = (): (() => void) | null => {
+    if (active || reservation || selectionOwner) return null;
+    const token = Symbol(); selectionOwner = token;
+    return () => { if (selectionOwner === token) selectionOwner = null; };
+  };
 
   const start = (
     request: DockRecordingStartRequest,
   ): Promise<DockNativeResult<{ startedAt: number }>> => {
+    if (selectionOwner) return Promise.resolve(fail('failed', 'selection-busy'));
     if (active) {
       if (active.clipId === request.clipId) return active.started;
       return Promise.resolve(fail('failed', 'busy'));
@@ -928,6 +938,7 @@ export function createDockScreenRecorder(
   });
 
   return {
+    reserveSelection,
     capability,
     captureStill,
     start,
