@@ -4,7 +4,12 @@
  * the dock's local storage; otherwise it keeps its player dialog.
  */
 import { electronAPI, isElectron } from '$lib/electron-bridge';
-import type { DockEvidenceClip, DockMark } from '$shared/dock-evidence';
+import {
+  dockMediaSourceFor,
+  type DockComposerEvidence,
+  type DockEvidenceClip,
+  type DockMark,
+} from '$shared/dock-evidence';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   type DockCaptureEditorOpenRequest,
@@ -21,11 +26,16 @@ export function dockCaptureEditorPreviewEnabled(): boolean {
   }
 }
 
-/** The editor request for a finished, placed recording and the marks made during it. */
+/**
+ * The editor request for a finished, placed recording and the marks made during it.
+ * Its canonical source, saved edit and transcript go along only when the evidence
+ * holds a valid one for this clip; otherwise the editor opens read-only.
+ */
 export function dockRecordingEditorRequest(input: {
   workspaceId: string;
   agentId: string;
   clip: DockEvidenceClip;
+  evidence: DockComposerEvidence | null;
   marks: readonly DockMark[];
 }): DockCaptureEditorOpenRequest | null {
   const { clip } = input;
@@ -42,13 +52,16 @@ export function dockRecordingEditorRequest(input: {
       atMs: mark.clipMs,
       ...(mark.element?.name ? { label: mark.element.name.slice(0, 200) } : {}),
     }));
+  const source = dockMediaSourceFor(input.evidence ?? undefined, clip.id);
+  const media = source ? clip.media : undefined;
   return {
     kind: 'recording',
     workspaceId: input.workspaceId,
     agentId: input.agentId,
-    attachmentId: clip.id,
-    // A placed recording's attachment path changes only when it is replaced.
-    sourceRevision: clip.path,
+    // The canonical source names the attachment file it describes; without one, the
+    // clip and its placed path (which changes only when it is replaced) identify it.
+    attachmentId: source?.attachmentId ?? clip.id,
+    sourceRevision: source ? `${source.id}:${source.revision}` : clip.path,
     attachmentPath: clip.path,
     title: '',
     durationMs: clip.durationMs,
@@ -58,6 +71,9 @@ export function dockRecordingEditorRequest(input: {
       // Marks drawn while recording are part of the recorded frames.
       visuals: marks.length > 0 ? 'baked-marks' : 'clean',
     },
+    ...(source && media
+      ? { source, saved: media.saved ?? null, transcript: media.transcript ?? null }
+      : {}),
   };
 }
 

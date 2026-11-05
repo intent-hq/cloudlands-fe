@@ -370,6 +370,7 @@ export function createDockComposerController(
                 workspaceId,
                 agentId,
                 clip,
+                evidence: view.evidence,
                 marks: view.evidence?.marks ?? [],
               });
             if (request) void openDockCaptureEditor(request);
