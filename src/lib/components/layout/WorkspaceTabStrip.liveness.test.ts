@@ -36,6 +36,10 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectWorkspaceTabGroups: Object.assign(
+    () => ({ subscribe: (run: (groups: never[]) => void) => (run([]), () => {}) }),
+    { select: () => [] },
+  ),
   selectCurrentWorkspaceTabId: Object.assign(() => fixture().current(), {
     select: () => fixture().store.state.shell.current,
   }),

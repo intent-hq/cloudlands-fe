@@ -65,6 +65,7 @@ vi.mock('$store/renderer/store', () => ({
   },
 }));
 vi.mock('$store/renderer/slices/tab-state/tab-state-selectors', () => ({
+  selectWorkspaceTabGroups: Object.assign(() => readable([]), { select: () => [] }),
   selectCurrentWorkspaceTabId: Object.assign(() => readable('ws-1'), {
     select: () => mocks.nextCurrentId,
   }),

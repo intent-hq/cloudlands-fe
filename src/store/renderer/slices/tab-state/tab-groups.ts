@@ -77,7 +77,7 @@ export function normalizeWorkspaceTabGroups(
   return groups.flatMap((group) => {
     const workspaceIds = group.workspaceIds
       .filter((id) => position.has(id) && !seen.has(id))
-      .sort((left, right) => position.get(left)! - position.get(right)!);
+      .sort((left, right) => (position.get(left) ?? 0) - (position.get(right) ?? 0));
     workspaceIds.forEach((id) => seen.add(id));
     if (workspaceIds.length === 0) return [];
     const lastActiveWorkspaceId =

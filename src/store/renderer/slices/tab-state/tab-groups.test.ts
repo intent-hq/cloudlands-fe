@@ -47,8 +47,12 @@ const members = (state: TabState, groupId: string) =>
 
 describe('resolveMovedWorkspaceTabGroups', () => {
   it('adds a tab dropped between two members of a group', () => {
-    const groups = resolveMovedWorkspaceTabGroups(['a', 'x', 'c', 'b'], [group('g', ['a', 'b'])], 'x');
-    expect(groups[0].workspaceIds).toEqual(['a', 'x']);
+    const groups = resolveMovedWorkspaceTabGroups(
+      ['a', 'x', 'b', 'c'],
+      [group('g', ['a', 'b'])],
+      'x',
+    );
+    expect(groups[0].workspaceIds).toEqual(['a', 'x', 'b']);
   });
 
   it('takes a member out when it is dropped away from the rest of its group', () => {
@@ -68,9 +72,9 @@ describe('resolveMovedWorkspaceTabGroups', () => {
 
 describe('group data hygiene', () => {
   it('drops closed tabs and empty groups', () => {
-    expect(normalizeWorkspaceTabGroups(['a'], [group('g', ['a', 'z']), group('h', ['z'])])).toEqual([
-      group('g', ['a']),
-    ]);
+    expect(normalizeWorkspaceTabGroups(['a'], [group('g', ['a', 'z']), group('h', ['z'])])).toEqual(
+      [group('g', ['a'])],
+    );
   });
 
   it('ignores malformed persisted groups', () => {

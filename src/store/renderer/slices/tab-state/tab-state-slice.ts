@@ -177,6 +177,14 @@ function moveWorkspaceInStacks(
   return areWorkspaceStacksEqual(currentStacks, nextStacks) ? null : nextStacks;
 }
 
+/** Group changes for a reducer update; nothing when no group exists. */
+function updateGroups(
+  state: TabState,
+  update: (groups: WorkspaceTabGroup[]) => WorkspaceTabGroup[],
+): Partial<TabState> {
+  return state.tabGroups?.length ? { tabGroups: update(state.tabGroups) } : {};
+}
+
 function rememberGroupSelection(
   groups: WorkspaceTabGroup[],
   workspaceId: string | null,
@@ -476,7 +484,7 @@ tabStateReducer.with(openWorkspaceTab, (state, { payload: [workspaceId] }) => {
   return withNextVersion(state, {
     openTabs: isNewTab ? addTabFlag(state.openTabs, workspaceId) : state.openTabs,
     currentTabId: workspaceId,
-    tabGroups: rememberGroupSelection(state.tabGroups, workspaceId),
+    ...updateGroups(state, (groups) => rememberGroupSelection(groups, workspaceId)),
     workspaceStacks: isNewTab ? [...state.workspaceStacks, [workspaceId]] : state.workspaceStacks,
     recentlyClosedTabIds: nextRecentlyClosedTabIds,
     recentlyClosedTabAt: pruneClosedTabAt(state.recentlyClosedTabAt, nextRecentlyClosedTabIds),
@@ -512,7 +520,7 @@ tabStateReducer.with(closeWorkspaceTab, (state, { payload: [workspaceId, timesta
     pinnedTabs: removeTabFlag(state.pinnedTabs, workspaceId),
     unsavedTabs: removeTabFlag(state.unsavedTabs, workspaceId),
     workspaceStacks: nextWorkspaceStacks,
-    tabGroups: normalizeWorkspaceTabGroups(nextTabOrder, state.tabGroups),
+    ...updateGroups(state, (groups) => normalizeWorkspaceTabGroups(nextTabOrder, groups)),
     recentlyClosedTabIds: nextRecentlyClosedTabIds,
     recentlyClosedTabAt: pruneClosedTabAt(
       { ...state.recentlyClosedTabAt, [workspaceId]: timestamp },
@@ -562,51 +570,56 @@ tabStateReducer.with(moveWorkspace, (state, { payload: [workspaceId, targetId, p
   if (!nextWorkspaceStacks) return state;
   return withNextVersion(state, {
     workspaceStacks: nextWorkspaceStacks,
-    tabGroups: resolveMovedWorkspaceTabGroups(
-      getWorkspaceTabOrder(nextWorkspaceStacks),
-      state.tabGroups,
-      workspaceId,
+    ...updateGroups(state, (groups) =>
+      resolveMovedWorkspaceTabGroups(
+        getWorkspaceTabOrder(nextWorkspaceStacks),
+        groups,
+        workspaceId,
+      ),
     ),
   });
 });
-tabStateReducer.with(createWorkspaceTabGroup, (state, { payload: [workspaceId, groupId, color] }) => {
-  const tabOrder = getWorkspaceTabOrder(state.workspaceStacks);
-  if (!tabOrder.includes(workspaceId) || state.tabGroups.some((group) => group.id === groupId)) {
-    return state;
-  }
-  const previousGroup = findWorkspaceTabGroup(state.tabGroups, workspaceId);
-  let workspaceStacks = state.workspaceStacks;
-  if (previousGroup && previousGroup.workspaceIds.length > 1) {
-    workspaceStacks = placeAfterInStacks(
+tabStateReducer.with(
+  createWorkspaceTabGroup,
+  (state, { payload: [workspaceId, groupId, color] }) => {
+    const tabOrder = getWorkspaceTabOrder(state.workspaceStacks);
+    if (!tabOrder.includes(workspaceId) || state.tabGroups.some((group) => group.id === groupId)) {
+      return state;
+    }
+    const previousGroup = findWorkspaceTabGroup(state.tabGroups, workspaceId);
+    let workspaceStacks = state.workspaceStacks;
+    if (previousGroup && previousGroup.workspaceIds.length > 1) {
+      workspaceStacks = placeAfterInStacks(
+        workspaceStacks,
+        workspaceId,
+        previousGroup.workspaceIds.at(-1) ?? workspaceId,
+      );
+    }
+    const withoutTab = state.tabGroups.map((group) => ({
+      ...group,
+      workspaceIds: group.workspaceIds.filter((id) => id !== workspaceId),
+    }));
+    const nextGroup: WorkspaceTabGroup = {
+      id: groupId,
+      name: '',
+      color,
+      workspaceIds: [workspaceId],
+      lastActiveWorkspaceId: workspaceId,
+    };
+    return withNextVersion(state, {
       workspaceStacks,
-      workspaceId,
-      previousGroup.workspaceIds.at(-1)!,
-    );
-  }
-  const withoutTab = state.tabGroups.map((group) => ({
-    ...group,
-    workspaceIds: group.workspaceIds.filter((id) => id !== workspaceId),
-  }));
-  const nextGroup: WorkspaceTabGroup = {
-    id: groupId,
-    name: '',
-    color,
-    workspaceIds: [workspaceId],
-    lastActiveWorkspaceId: workspaceId,
-  };
-  return withNextVersion(state, {
-    workspaceStacks,
-    tabGroups: normalizeWorkspaceTabGroups(getWorkspaceTabOrder(workspaceStacks), [
-      ...withoutTab,
-      nextGroup,
-    ]),
-  });
-});
+      tabGroups: normalizeWorkspaceTabGroups(getWorkspaceTabOrder(workspaceStacks), [
+        ...withoutTab,
+        nextGroup,
+      ]),
+    });
+  },
+);
 tabStateReducer.with(addWorkspaceTabToGroup, (state, { payload: [workspaceId, groupId] }) => {
   const target = state.tabGroups.find((group) => group.id === groupId);
   if (!target || target.workspaceIds.includes(workspaceId)) return state;
   if (!getWorkspaceTabOrder(state.workspaceStacks).includes(workspaceId)) return state;
-  const lastMember = target.workspaceIds.at(-1)!;
+  const lastMember = target.workspaceIds.at(-1) ?? workspaceId;
   const workspaceStacks = placeAfterInStacks(state.workspaceStacks, workspaceId, lastMember);
   const tabGroups = state.tabGroups.map((group) => {
     const workspaceIds = group.workspaceIds.filter((id) => id !== workspaceId);
@@ -622,7 +635,7 @@ tabStateReducer.with(addWorkspaceTabToGroup, (state, { payload: [workspaceId, gr
 tabStateReducer.with(removeWorkspaceTabFromGroup, (state, { payload: [workspaceId] }) => {
   const group = findWorkspaceTabGroup(state.tabGroups, workspaceId);
   if (!group) return state;
-  const lastMember = group.workspaceIds.at(-1)!;
+  const lastMember = group.workspaceIds.at(-1) ?? workspaceId;
   const workspaceStacks =
     lastMember === workspaceId
       ? state.workspaceStacks

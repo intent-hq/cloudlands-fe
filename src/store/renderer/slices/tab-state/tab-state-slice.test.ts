@@ -48,6 +48,7 @@ describe('tabStateReducer', () => {
     unsavedTabs: {},
     optimisticTabs: {},
     workspaceStacks: [],
+    tabGroups: [],
     recentlyClosedTabIds: [],
     recentlyClosedTabAt: {},
     version: 0,

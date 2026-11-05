@@ -4,6 +4,7 @@
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
   import type { WorkspaceTabGroup } from '$store/renderer/slices/tab-state/tab-groups';
+  import WorkspaceTabGroupOutline from './WorkspaceTabGroupOutline.svelte';
   import { workspaceTabGroupDisplayName } from './workspace-tab-group-labels';
 
   interface Props {
@@ -12,19 +13,11 @@
     editing?: boolean;
     onToggle: () => void;
     onContextMenu: (event: MouseEvent | KeyboardEvent) => void;
-    onRenameCommit: (name: string) => void;
-    onRenameCancel: () => void;
+    /** Called with the new name, or `null` when the rename is cancelled. */
+    onRenameEnd: (name: string | null) => void;
   }
 
-  let {
-    group,
-    open,
-    editing = false,
-    onToggle,
-    onContextMenu,
-    onRenameCommit,
-    onRenameCancel,
-  }: Props = $props();
+  let { group, open, editing = false, onToggle, onContextMenu, onRenameEnd }: Props = $props();
 
   let draftName = $state('');
   let settled = false;
@@ -42,7 +35,7 @@
   function commit() {
     if (settled) return;
     settled = true;
-    onRenameCommit(draftName);
+    onRenameEnd(draftName);
   }
 
   function handleEditKeydown(event: KeyboardEvent) {
@@ -52,7 +45,7 @@
     } else if (event.key === 'Escape') {
       event.preventDefault();
       settled = true;
-      onRenameCancel();
+      onRenameEnd(null);
     }
   }
 
@@ -61,6 +54,7 @@
   }
 </script>
 
+{#if open}<WorkspaceTabGroupOutline color={group.color} edge="start" />{/if}
 <div
   class={cn('tab-group-chip', open ? 'is-open' : 'is-collapsed', editing && 'is-editing')}
   style:--tab-group-color={`var(--tab-group-${group.color})`}
@@ -71,7 +65,7 @@
     <span class="tab-group-dot" aria-hidden="true"></span>
     <Input
       class="tab-group-name-input type-caption font-medium!"
-      size="sm"
+      size="compact"
       noFocusStyle
       bind:value={draftName}
       placeholder={m.layout_workspaceTabGroup_name_placeholder()}
@@ -186,7 +180,7 @@
     color: hsl(var(--foreground));
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  @container style(--motion-reduced: 1) {
     .tab-group-chip {
       transition: none;
     }

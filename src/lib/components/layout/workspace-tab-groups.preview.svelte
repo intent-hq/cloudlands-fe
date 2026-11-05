@@ -54,7 +54,14 @@
       },
       'collapsed-group': {
         props: {
-          openWorkspaceIds: ['tg-site', 'tg-paper', 'tg-notes', 'tg-survey', 'tg-lukew', 'tg-trace'],
+          openWorkspaceIds: [
+            'tg-site',
+            'tg-paper',
+            'tg-notes',
+            'tg-survey',
+            'tg-lukew',
+            'tg-trace',
+          ],
           activeWorkspaceId: 'tg-site',
           tabGroups: [
             group('research', 'Research', 'purple', ['tg-paper', 'tg-notes', 'tg-survey']),

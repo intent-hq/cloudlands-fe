@@ -25,28 +25,16 @@
     type WorkspaceStatusPresentationState,
   } from '$lib/components/workspace/utils/workspace-status-presentation';
   import {
-    addWorkspaceTabToGroup,
     closeWorkspaceTab,
-    createWorkspaceTabGroup,
     endDrag,
     moveWorkspace,
     openWorkspaceTab,
-    removeWorkspaceTabFromGroup,
     startDrag,
-    ungroupWorkspaceTabGroup,
-    updateWorkspaceTabGroup,
   } from '$store/renderer/slices/tab-state/tab-state-slice';
-  import {
-    applyWorkspaceTabMove,
-    findWorkspaceTabGroup,
-    nextWorkspaceTabGroupColor,
-    resolveMovedWorkspaceTabGroups,
-  } from '$store/renderer/slices/tab-state/tab-groups';
   import {
     getReleasedWorkspaceTabMove,
     getWorkspaceTabAutoScrollDelta,
     getWorkspaceTabInsertionIndex,
-    proposeWorkspaceTabOrder,
     type WorkspaceTabSlot,
   } from '$lib/components/workspace/utils/workspace-tab-drag';
   import {
@@ -74,13 +62,15 @@
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import WorkspaceTabGroupChip from './WorkspaceTabGroupChip.svelte';
+  import WorkspaceTabGroupOutline from './WorkspaceTabGroupOutline.svelte';
+  import WorkspaceTabLoadingTab from './WorkspaceTabLoadingTab.svelte';
   import {
-    buildWorkspaceTabGroupEntries,
-    buildWorkspaceTabGroupMenu,
-  } from './workspace-tab-group-actions';
+    createWorkspaceTabGroupController,
+    type WorkspaceTabMenuTarget,
+  } from './workspace-tab-group-controller';
   import {
-    buildWorkspaceTabStripItems,
-    getWorkspaceTabGroupToggleTarget,
+    layoutWorkspaceTabStrip,
+    proposeGroupedWorkspaceTabOrder,
   } from './workspace-tab-group-items';
   import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
   import {
@@ -164,19 +154,13 @@
     activeWorkspaceId === undefined ? $currentWorkspaceTabId$ : activeWorkspaceId,
   );
   const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
-  const openGroupId = $derived(
-    findWorkspaceTabGroup($workspaceTabGroups$, selectedWorkspaceId)?.id ?? null,
-  );
-  const renderedGroups = $derived(
-    draggedWorkspaceId && proposedTabOrder
-      ? resolveMovedWorkspaceTabGroups(proposedTabOrder, $workspaceTabGroups$, draggedWorkspaceId)
-      : $workspaceTabGroups$,
-  );
-  const stripItems = $derived(
-    buildWorkspaceTabStripItems(renderedTabOrder, renderedGroups, openGroupId),
-  );
-  const renderedTabIds = $derived(
-    stripItems.flatMap((item) => (item.kind === 'tab' ? [item.workspaceId] : [])),
+  const stripLayout = $derived(
+    layoutWorkspaceTabStrip(
+      renderedTabOrder,
+      $workspaceTabGroups$,
+      selectedWorkspaceId,
+      proposedTabOrder ? draggedWorkspaceId : null,
+    ),
   );
   const workspaceTabMotionDuration = $derived(
     reducedMotion.current ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
@@ -199,7 +183,7 @@
       : 'black 100%';
     return `linear-gradient(to right, ${leftStops}, ${rightStops})`;
   });
-  const ownedTabIds = $derived(renderedTabIds.map((id) => `workspace-tab-${id}`).join(' '));
+  const ownedTabIds = $derived(stripLayout.tabIds.map((id) => `workspace-tab-${id}`).join(' '));
   let tabButtons = $state<Record<string, HTMLButtonElement | null>>({});
   const tabSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
@@ -211,43 +195,20 @@
   let layoutTracking = false;
   let dragTracking = false;
   let scrollTracking = false;
-  type TabContextMenuTarget = { kind: 'tab'; workspaceId: string } | { kind: 'group'; groupId: string };
-  let tabContextMenu = $state<(SidebarContextPosition & TabContextMenuTarget) | null>(null);
+  let tabContextMenu = $state<(SidebarContextPosition & WorkspaceTabMenuTarget) | null>(null);
   $effect(() => {
-    const menu = tabContextMenu;
-    if (!menu) return;
-    const stillPresent =
-      menu.kind === 'tab'
-        ? visibleTabIds.includes(menu.workspaceId)
-        : $workspaceTabGroups$.some((group) => group.id === menu.groupId);
-    if (!stillPresent) tabContextMenu = null;
+    void [$workspaceTabGroups$, visibleTabIds];
+    if (tabContextMenu && !tabGroups.hasMenuTarget(tabContextMenu)) tabContextMenu = null;
   });
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     const menu = tabContextMenu;
     if (!menu) return [];
-    if (menu.kind === 'group') {
-      const group = $workspaceTabGroups$.find((candidate) => candidate.id === menu.groupId);
-      if (!group) return [];
-      return buildWorkspaceTabGroupMenu({
-        group,
-        onRename: () => (editingGroupId = group.id),
-        onSetColor: (color) => appStore.dispatch(updateWorkspaceTabGroup(group.id, { color })),
-        onUngroup: () => appStore.dispatch(ungroupWorkspaceTabGroup(group.id)),
-        onCloseGroup: () => closeWorkspaceTabs([...group.workspaceIds]),
-      });
-    }
+    void $workspaceTabGroups$;
+    if (menu.kind === 'group') return tabGroups.groupMenu(menu.groupId);
     const { workspaceId } = menu;
-    const groupEntries = buildWorkspaceTabGroupEntries({
-      groups: $workspaceTabGroups$,
+    return tabGroups.tabMenu(
       workspaceId,
-      onCreateGroup: () => createGroupForTab(workspaceId),
-      onAddToGroup: (groupId) => appStore.dispatch(addWorkspaceTabToGroup(workspaceId, groupId)),
-      onRemoveFromGroup: () => appStore.dispatch(removeWorkspaceTabFromGroup(workspaceId)),
-    });
-    return [
-      ...groupEntries,
-      { type: 'separator' },
-      ...buildWorkspaceTabContextMenu({
+      buildWorkspaceTabContextMenu({
         order: $workspaceTabOrder$,
         workspaceId,
         onClose: () => closeWorkspace(workspaceId),
@@ -255,41 +216,22 @@
         microConnected: $microConnected$,
         onDismiss: () => (tabContextMenu = null),
       }),
-    ];
+    );
   });
 
-  function createGroupForTab(workspaceId: string) {
-    const groupId = crypto.randomUUID();
-    appStore.dispatch(
-      createWorkspaceTabGroup(
-        workspaceId,
-        groupId,
-        nextWorkspaceTabGroupColor(selectWorkspaceTabGroups.select(appStore.state)),
-      ),
-    );
-    editingGroupId = groupId;
-  }
+  const tabGroups = createWorkspaceTabGroupController({
+    getSelectedWorkspaceId: () => selectedWorkspaceId,
+    openWorkspace: (workspaceId) => void openWorkspace(workspaceId),
+    closeWorkspaceTabs: (workspaceIds) => closeWorkspaceTabs(workspaceIds),
+    setEditingGroupId: (groupId) => (editingGroupId = groupId),
+  });
 
-  function toggleWorkspaceTabGroup(groupId: string) {
-    const target = getWorkspaceTabGroupToggleTarget(
-      selectWorkspaceTabOrder.select(appStore.state),
-      selectWorkspaceTabGroups.select(appStore.state),
-      groupId,
-      selectedWorkspaceId,
-    );
-    if (target) void openWorkspace(target);
-  }
-
-  function commitGroupName(groupId: string, name: string) {
-    appStore.dispatch(updateWorkspaceTabGroup(groupId, { name }));
-    editingGroupId = null;
-  }
-
-  function handleGroupContextMenu(event: MouseEvent | KeyboardEvent, groupId: string) {
+  function openTabContextMenu(event: MouseEvent | KeyboardEvent, target: WorkspaceTabMenuTarget) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
     cancelPointerDrag();
-    tabContextMenu = { ...position, kind: 'group', groupId };
+    const tabFocus = target.kind === 'tab' ? tabButtons[target.workspaceId] : undefined;
+    tabContextMenu = { ...position, ...target, returnFocus: tabFocus ?? position.returnFocus };
   }
   const run = (sync: boolean, fn: () => void) => (sync ? flushSync(fn) : fn());
   const reportActiveTabTracking = ({ sync = true } = {}) =>
@@ -687,15 +629,7 @@
   }
 
   function handleWorkspaceTabContextMenu(event: MouseEvent | KeyboardEvent, workspaceId: string) {
-    const position = getSidebarContextPosition(event);
-    if (!position) return;
-    cancelPointerDrag();
-    tabContextMenu = {
-      ...position,
-      kind: 'tab',
-      workspaceId,
-      returnFocus: tabButtons[workspaceId] ?? null,
-    };
+    openTabContextMenu(event, { kind: 'tab', workspaceId });
   }
 
   function moveWorkspaceTab(workspaceId: string, direction: -1 | 1) {
@@ -784,24 +718,12 @@
       dragSession.origin.width,
       slots,
     );
-    const nextVisibleOrder = proposeWorkspaceTabOrder(
+    const nextOrder = proposeGroupedWorkspaceTabOrder(
       dragSession.originalOrder,
+      dragSession.fullOrder,
       draggedWorkspaceId,
       insertionIndex,
     );
-    const visibleMove = getReleasedWorkspaceTabMove(
-      dragSession.originalOrder,
-      nextVisibleOrder,
-      draggedWorkspaceId,
-    );
-    const nextOrder = visibleMove
-      ? applyWorkspaceTabMove(
-          dragSession.fullOrder,
-          draggedWorkspaceId,
-          visibleMove.targetId,
-          visibleMove.placement,
-        )
-      : dragSession.fullOrder;
     if (!proposedTabOrder || !ordersMatch(nextOrder, proposedTabOrder)) {
       proposedTabOrder = nextOrder;
     }
@@ -860,7 +782,7 @@
 
   function startPointerDrag(pointerGrab: WorkspaceTabPointerGrab, clientX: number) {
     const rect = pointerGrab.surface.getBoundingClientRect();
-    const originalOrder = [...renderedTabIds];
+    const originalOrder = [...stripLayout.tabIds];
     const fullOrder = [...visibleTabIds];
     flushSync(() => (draggedWorkspaceId = pointerGrab.workspaceId));
     dragClientX = clientX;
@@ -1045,7 +967,7 @@
     onpointercancel={handleDragPointerCancel}
     onlostpointercapture={handleLostPointerCapture}
   >
-    {#each stripItems as item (item.key)}
+    {#each stripLayout.items as item (item.key)}
       {@const workspaceId = item.kind === 'tab' ? item.workspaceId : item.key}
       {@const workspace = item.kind === 'tab' ? workspaceById.get(workspaceId) : undefined}
       {@const isDragged = item.kind === 'tab' && draggedWorkspaceId === workspaceId}
@@ -1058,7 +980,6 @@
             : 'flex h-(--control-height-medium) items-center px-1',
         )}
         data-workspace-tab-motion={item.kind === 'tab' ? workspaceId : undefined}
-        data-workspace-tab-group-slot={item.kind === 'group' ? item.group.id : undefined}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 36}px` : undefined}
         animate:flip={{
@@ -1081,22 +1002,14 @@
         onoutroend={() => handleTabOutroEnd(workspaceId)}
       >
         {#if item.kind === 'group'}
-          {#if item.open}
-            <span
-              class="tab-group-outline"
-              data-edge="start"
-              style:--tab-group-color={`var(--tab-group-${item.group.color})`}
-              aria-hidden="true"
-            ></span>
-          {/if}
           <WorkspaceTabGroupChip
             group={item.group}
             open={item.open}
             editing={editingGroupId === item.group.id}
-            onToggle={() => toggleWorkspaceTabGroup(item.group.id)}
-            onContextMenu={(event) => handleGroupContextMenu(event, item.group.id)}
-            onRenameCommit={(name) => commitGroupName(item.group.id, name)}
-            onRenameCancel={() => (editingGroupId = null)}
+            onToggle={() => tabGroups.toggle(item.group.id)}
+            onContextMenu={(event) =>
+              openTabContextMenu(event, { kind: 'group', groupId: item.group.id })}
+            onRenameEnd={(name) => tabGroups.finishRename(item.group.id, name)}
           />
         {:else if workspace}
           {@const runningAgentIds = getRunningAgentIds(workspaceId)}
@@ -1232,79 +1145,20 @@
             </Button>
           </div>
         {:else}
-          <div
-            class={cn(
-              'group/workspace-tab relative flex h-(--control-height-medium) w-full min-w-0 shrink-0 items-center border transition-[background-color,border-color,opacity,transform] motion-reduce:transition-none',
-              isCurrent
-                ? 'rounded-t-md border-border border-b-0 bg-sidebar text-foreground shadow-none'
-                : 'rounded-md border-transparent text-muted-foreground',
-            )}
-            data-workspace-tab={workspaceId}
-            data-workspace-tab-visual={workspaceId}
-            data-workspace-tab-loading="true"
-            data-active={isCurrent}
-            style:border-radius={isCurrent
-              ? `${WORKSPACE_TAB_CORNER_RADIUS_PX}px ${WORKSPACE_TAB_CORNER_RADIUS_PX}px 0 0`
-              : `${WORKSPACE_TAB_CORNER_RADIUS_PX}px`}
-            style:transition-duration={`${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
-            style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
-            use:reportActiveTabBounds={isCurrent}
-            use:registerTabSurface={workspaceId}
-            role="presentation"
-            oncontextmenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
-          >
-            <WorkspaceTabFlare
-              side="leading"
-              visible={isCurrent}
-              durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
-            />
-            <WorkspaceTabFlare
-              side="trailing"
-              visible={isCurrent}
-              durationMs={WORKSPACE_TAB_MOTION_DURATION_MS}
-            />
-            <Button
-              variant="plain"
-              type="button"
-              class="absolute -inset-x-px inset-y-0 flex h-auto w-auto min-w-0 cursor-pointer items-center rounded-[inherit] border-0 px-3 pr-10 !px-3 !pr-10 text-left forced-colors:focus-visible:text-[HighlightText]"
-              onclick={(event) => void openWorkspace(workspaceId, event.detail === 0)}
-              onkeydown={(event) => handleTabKeydown(event, workspaceId)}
-              role="tab"
-              aria-label={m.layout_workspaceTabStrip_loading_ariaLabel({ workspaceId })}
-              aria-selected={isCurrent}
-              aria-current={isCurrent ? 'page' : undefined}
-              tabindex={isCurrent ? 0 : -1}
-              bind:ref={tabButtons[workspaceId]}
-              id={`workspace-tab-${workspaceId}`}
-              data-workspace-tab-loading-target
-            >
-              <span
-                class="h-2.5 w-24 animate-pulse rounded-full bg-sidebar-foreground/10 motion-reduce:animate-none"
-                aria-hidden="true"
-                data-workspace-tab-loading-indicator
-              ></span>
-            </Button>
-            <Button
-              variant="plain"
-              size="icon-compact"
-              iconOnly
-              type="button"
-              class="absolute right-1 z-10 flex size-(--control-height-compact) shrink-0 cursor-pointer items-center justify-center rounded text-subtle opacity-70 outline-none! hover:bg-muted hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:text-foreground forced-colors:focus-visible:text-[HighlightText]"
-              onclick={(event) => closeWorkspace(workspaceId, event)}
-              aria-label={m.layout_workspaceTabStrip_close_ariaLabel({ name: workspaceId })}
-              data-workspace-tab-close
-            >
-              <Fa icon={faXmark} class="size-3.5!" />
-            </Button>
-          </div>
+          <WorkspaceTabLoadingTab
+            {workspaceId}
+            {isCurrent}
+            bind:ref={tabButtons[workspaceId]}
+            {reportActiveTabBounds}
+            {registerTabSurface}
+            onOpen={(restoreFocus) => void openWorkspace(workspaceId, restoreFocus)}
+            onClose={(event) => closeWorkspace(workspaceId, event)}
+            onKeydown={(event) => handleTabKeydown(event, workspaceId)}
+            onContextMenu={(event) => handleWorkspaceTabContextMenu(event, workspaceId)}
+          />
         {/if}
         {#if item.kind === 'tab' && item.group}
-          <span
-            class="tab-group-outline"
-            data-edge={item.group.edge}
-            style:--tab-group-color={`var(--tab-group-${item.group.color})`}
-            aria-hidden="true"
-          ></span>
+          <WorkspaceTabGroupOutline color={item.group.color} edge={item.group.edge} />
         {/if}
       </div>
     {/each}
@@ -1324,34 +1178,6 @@
 {/if}
 
 <style>
-  /* One outline around the open group, drawn as joined segments: the chip
-     starts it, member tabs continue it and the last tab ends it. The bottom
-     stays open so the selected tab still joins the panel below. */
-  .tab-group-outline {
-    position: absolute;
-    z-index: 15;
-    inset: 0 -2px 0 0;
-    border-color: hsl(var(--tab-group-color) / 0.5);
-    border-style: solid;
-    border-width: 1px 0 0;
-    box-shadow: 0 0 0 2px hsl(var(--tab-group-color) / 0.16);
-    clip-path: inset(-3px 0 0 0);
-    pointer-events: none;
-  }
-
-  .tab-group-outline[data-edge='start'] {
-    border-left-width: 1px;
-    border-top-left-radius: 9px;
-    clip-path: inset(-3px 0 0 -3px);
-  }
-
-  .tab-group-outline[data-edge='end'] {
-    right: 0;
-    border-right-width: 1px;
-    border-top-right-radius: 9px;
-    clip-path: inset(-3px -3px 0 0);
-  }
-
   [data-workspace-tab][data-active='true'] {
     border-bottom-width: 0;
     box-shadow: none;
@@ -1365,13 +1191,6 @@
     text-decoration-line: underline;
     text-decoration-thickness: 2px;
     text-underline-offset: 2px;
-  }
-
-  :global(
-    button[data-workspace-tab-loading-target]:focus-visible [data-workspace-tab-loading-indicator]
-  ) {
-    background-color: currentColor;
-    opacity: 0.45;
   }
 
   :global(button[data-workspace-tab-close]:focus-visible svg) {

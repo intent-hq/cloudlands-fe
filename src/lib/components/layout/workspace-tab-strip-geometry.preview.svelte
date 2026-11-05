@@ -76,11 +76,11 @@
   const leadingInsetPx = getWorkspaceTabLeadingInsetPx();
   const scrollerMarginLeftPx = getWorkspaceTabScrollerMarginLeftPx();
 
-  const previewWorkspaces = [
+  const previewWorkspaces = () => [
     ...ids.map((id, index) => ({ id, title: `Geometry workspace ${index + 1}` })),
     ...extraWorkspaces,
   ];
-  for (const [index, { id, title }] of previewWorkspaces.entries()) {
+  for (const [index, { id, title }] of previewWorkspaces().entries()) {
     const workspace: Workspace = {
       id: WorkspaceId(id),
       title,

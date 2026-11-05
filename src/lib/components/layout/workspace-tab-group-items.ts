@@ -1,7 +1,13 @@
 import {
+  applyWorkspaceTabMove,
   findWorkspaceTabGroup,
+  resolveMovedWorkspaceTabGroups,
   type WorkspaceTabGroup,
 } from '$store/renderer/slices/tab-state/tab-groups';
+import {
+  getReleasedWorkspaceTabMove,
+  proposeWorkspaceTabOrder,
+} from '$lib/components/workspace/utils/workspace-tab-drag';
 
 /** Where a tab sits inside the outline of the open group. */
 export type WorkspaceTabGroupEdge = 'middle' | 'end';
@@ -82,4 +88,41 @@ export function getWorkspaceTabGroupToggleTarget(
     .reverse()
     .find((id) => !members.has(id));
   return after ?? before ?? null;
+}
+
+/**
+ * Strip items for the rendered order. The open group comes from the stored
+ * groups, so a dragged tab never collapses its group mid-drag; membership
+ * follows the proposed drop position.
+ */
+export function layoutWorkspaceTabStrip(
+  order: readonly string[],
+  groups: readonly WorkspaceTabGroup[],
+  selectedWorkspaceId: string | null | undefined,
+  draggedWorkspaceId: string | null,
+) {
+  const openGroupId = findWorkspaceTabGroup(groups, selectedWorkspaceId)?.id ?? null;
+  const renderedGroups = draggedWorkspaceId
+    ? resolveMovedWorkspaceTabGroups(order, groups, draggedWorkspaceId)
+    : groups;
+  const items = buildWorkspaceTabStripItems(order, renderedGroups, openGroupId);
+  const tabIds = items.flatMap((item) => (item.kind === 'tab' ? [item.workspaceId] : []));
+  return { items, tabIds };
+}
+
+/**
+ * Applies a drop slot among the visible tabs to the full tab order, so hidden
+ * tabs of collapsed groups keep their place next to their group.
+ */
+export function proposeGroupedWorkspaceTabOrder(
+  visibleOrder: readonly string[],
+  fullOrder: readonly string[],
+  draggedId: string,
+  insertionIndex: number,
+): string[] {
+  const nextVisibleOrder = proposeWorkspaceTabOrder([...visibleOrder], draggedId, insertionIndex);
+  const move = getReleasedWorkspaceTabMove([...visibleOrder], nextVisibleOrder, draggedId);
+  return move
+    ? applyWorkspaceTabMove(fullOrder, draggedId, move.targetId, move.placement)
+    : [...fullOrder];
 }
