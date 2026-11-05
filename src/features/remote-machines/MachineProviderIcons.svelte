@@ -17,7 +17,7 @@
   <span
     role="list"
     aria-label={m.settings_devices_providers_ariaLabel()}
-    class="ml-1 inline-flex items-center gap-1.5 border-l border-border pl-2 align-middle"
+    class="ml-1 inline-flex items-center gap-1.5 border-l border-border pl-2"
   >
     {#each providers as entry (entry.id)}
       <span role="listitem" class="inline-flex">
@@ -27,7 +27,10 @@
             aria-label={entry.name}
             class="inline-flex size-3.5 items-center justify-center text-muted-foreground"
           >
-            <span class="inline-flex" aria-hidden="true">
+            <!-- Logos fill the centred 14px box; the Auggie logo's negative
+                 top margin (a nudge for other contexts) would otherwise
+                 stretch it past the box and lift it off centre. -->
+            <span class="inline-flex [&_svg]:m-0" aria-hidden="true">
               {#if hasProviderIcon(entry.id)}
                 <AgentProviderIcon providerId={entry.id} size={14} monochrome />
               {:else}

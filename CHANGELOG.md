@@ -4,6 +4,20 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.286.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.0...v2.286.1) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* **initializer:** keep the worktree switch under the pointer when isolation turns off ([#4170](https://github.com/intent-hq/cloudlands-fe/issues/4170)) ([9f75252](https://github.com/intent-hq/cloudlands-fe/commit/9f75252e6cefd15efebd71c8b8a51838761c3698))
+
+## [2.286.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.285.2...v2.286.0) (2026-11-05)
+
+
+### 🚀 Features
+
+* remove Lead and Implementor and use general-agent delegation ([#3895](https://github.com/intent-hq/cloudlands-fe/issues/3895)) ([df39679](https://github.com/intent-hq/cloudlands-fe/commit/df39679e4109b3a8351808c108bbe5847710c780))
+
 ## [2.285.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.285.1...v2.285.2) (2026-11-05)
 
 

@@ -1,17 +1,17 @@
-// @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-changed-repeat.mjs,
+// @verify-changed-triggers: .github/workflows/browser-tests.yml, scripts/ct-changed-repeat.mjs,
 //   scripts/ct-changed-specs.mjs, scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs
 // @vitest-environment node
 
 /**
- * The local runner for PR CI's repeated changed-spec job
- * (`pnpm run test:ct:changed-repeat`, `make fe-ct-changed-repeat`). The CI
- * parity block runs the workflow's own `test-ct-changed` steps under bash with
- * the CT launcher stubbed and compares the arguments and heaps they use with
- * the script's plan, so a change to either side fails here.
+ * The local stress runner for changed component test specs
+ * (`pnpm run test:ct:changed-repeat`, `make fe-ct-changed-repeat`). CI runs
+ * component tests only nightly (`test-ct` in browser-tests.yml); the CI parity
+ * block checks that the script builds the CT bundle and runs tests with that
+ * job's arguments and heaps, so a change to either side fails here.
  */
 
-import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -20,6 +20,7 @@ import {
   CT_BUILD_HEAP_MB,
   CT_CHANGED_JSON_REPORT,
   CT_RUN_HEAP_MB,
+  LAUNCHER,
   LOCAL_BUILD_GUARD,
   ctChangedListArgs,
   ctChangedRunArgs,
@@ -336,8 +337,8 @@ describe('main', () => {
   });
 });
 
-describe('parity with the test-ct-changed workflow job', () => {
-  const workflowLines = readFileSync(resolve('.github/workflows/intent-pr.yml'), 'utf8').split(
+describe('parity with the nightly test-ct workflow job', () => {
+  const workflowLines = readFileSync(resolve('.github/workflows/browser-tests.yml'), 'utf8').split(
     '\n',
   );
 
@@ -350,7 +351,7 @@ describe('parity with the test-ct-changed workflow job', () => {
   }
 
   function stepLines(stepName: string): string[] {
-    const job = jobLines('test-ct-changed');
+    const job = jobLines('test-ct');
     const start = job.indexOf(`      - name: ${stepName}`);
     if (start === -1) throw new Error(`step ${stepName} not found`);
     const rest = job.slice(start + 1);
@@ -383,85 +384,19 @@ describe('parity with the test-ct-changed workflow job', () => {
     expect(envValue('Build CT bundle', 'NODE_OPTIONS')).toBe(
       `--max-old-space-size=${CT_BUILD_HEAP_MB}`,
     );
-    expect(stepRun('Build CT bundle')).toBe(
-      `node scripts/run-ct-tests.mjs ${CT_BUILD_ARGS.join(' ')}`,
+    // The step wraps the build in a memory sampler; its last line is the build,
+    // through the package script that runs the same launcher.
+    const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'));
+    expect(pkg.scripts['test:ct']).toBe(`node ${LAUNCHER}`);
+    expect(stepRun('Build CT bundle').trim().split('\n').at(-1)).toBe(
+      `pnpm run test:ct ${CT_BUILD_ARGS.join(' ')}`,
     );
   });
 
-  it('repeats the tests under the same heap and JSON report path', () => {
-    expect(envValue('Repeat changed component tests', 'NODE_OPTIONS')).toBe(
+  it('runs the tests under the same heap and JSON report path', () => {
+    expect(envValue('Component tests', 'NODE_OPTIONS')).toBe(
       `--max-old-space-size=${CT_RUN_HEAP_MB}`,
     );
-    expect(envValue('Repeat changed component tests', 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe(
-      CT_CHANGED_JSON_REPORT,
-    );
-  });
-
-  // The workflow's own step under bash, with `node scripts/run-ct-tests.mjs`
-  // replaced by a stub that records each call's argv (and serves `report` to
-  // the --list call), then the script's main() against the same report.
-  it('lists and repeats with the same arguments and repeat count as the script', () => {
-    const specs = ['src/a/one.ct.spec.ts', 'src/routes/[id]/two.ct.spec.ts'];
-    const report = listReport({ 'a/one.ct.spec.ts': 30, 'routes/[id]/two.ct.spec.ts': 20 });
-    const dir = tempDir();
-    const bin = join(dir, 'bin');
-    mkdirSync(bin);
-    const fixture = join(dir, 'report.json');
-    writeFileSync(fixture, JSON.stringify(report));
-    writeFileSync(
-      join(bin, 'node'),
-      [
-        '#!/usr/bin/env bash',
-        'if [ "$1" = scripts/run-ct-tests.mjs ]; then',
-        '  shift',
-        '  for arg in "$@"; do',
-        `    if [ "$arg" = --list ]; then printf '%s\\n' "$@" > "${dir}/list-argv"; cp "${fixture}" "$PLAYWRIGHT_JSON_OUTPUT_FILE"; exit 0; fi`,
-        '  done',
-        `  printf '%s\\n' "$@" > "${dir}/run-argv"`,
-        '  exit 0',
-        'fi',
-        `NODE_OPTIONS= exec "${process.execPath}" "$@"`,
-        '',
-      ].join('\n'),
-    );
-    chmodSync(join(bin, 'node'), 0o755);
-    const result = spawnSync(
-      'bash',
-      ['-e', '-o', 'pipefail', '-c', stepRun('Repeat changed component tests')],
-      {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          PATH: `${bin}:${process.env.PATH}`,
-          CT_CHANGED_SPECS: JSON.stringify(specs),
-          CT_CHANGED_SHARD: '1/2',
-          RUNNER_TEMP: dir,
-        },
-      },
-    );
-    expect(result.status, result.stderr).toBe(0);
-    const lines = (file: string) => readFileSync(join(dir, file), 'utf8').trimEnd().split('\n');
-
-    const calls: string[][] = [];
-    const code = main(specs, {
-      launch: (args: string[]) => {
-        calls.push(args);
-        return 0;
-      },
-      readReport: () => JSON.stringify(report),
-      makeTempDir: () => tempDir(),
-      env: {},
-      log: () => {},
-      warn: () => {},
-    });
-    expect(code).toBe(0);
-    const [list, build, run] = calls;
-    expect(list).toEqual(lines('list-argv'));
-    expect(build.slice(0, CT_BUILD_ARGS.length)).toEqual(CT_BUILD_ARGS);
-    const scheduledRun = lines('run-argv');
-    expect(scheduledRun).toContain('--shard=1/2');
-    expect(run).toEqual(scheduledRun.filter((arg) => !arg.startsWith('--shard=')));
-    expect(run).toContain('--repeat-each=16');
+    expect(envValue('Component tests', 'PLAYWRIGHT_JSON_OUTPUT_FILE')).toBe(CT_CHANGED_JSON_REPORT);
   });
 });

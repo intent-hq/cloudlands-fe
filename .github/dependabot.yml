@@ -11,6 +11,11 @@ updates:
         update-types:
           - 'minor'
           - 'patch'
+        # Packages patched through pnpm.patchedDependencies get their own PR:
+        # a bump the local patch no longer applies to fails install, and that
+        # must not block every other update in the group.
+        exclude-patterns:
+          - 'bits-ui'
 
   - package-ecosystem: 'github-actions'
     directory: '/'

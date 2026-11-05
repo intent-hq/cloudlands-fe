@@ -51,13 +51,9 @@ jobs:
   # deliberate trade-off. The seconds-long jobs (pr-title / conflict-markers
   # / gate) are not routed — they pin directly to ubuntu-24.04. Required
   # test-integration, test-playwright and test-electron also pin to
-  # ubuntu-24.04, and test-ct to its slot or burst runner, but all keep
-  # route's fail-safe guard.
+  # ubuntu-24.04, but all keep route's fail-safe guard.
   route:
     runs-on: ubuntu-24.04
-    # Waits for release-fast-path so a merge-queue run that skips Component
-    # Tests gives their slots to the jobs that run (the slot-jobs step).
-    needs: [release-fast-path]
     # Same-repo PRs only (see fork-PR hardening note above); a skip here also
     # skips the routed heavy jobs through their needs.route.result guard.
     # Runs on merge_group (see the trigger comment) — merge groups come from
@@ -74,34 +70,6 @@ jobs:
       slots: ${{ steps.decide.outputs.slots }}
       cloud: ${{ steps.decide.outputs.cloud }}
     steps:
-      # Drops listed jobs this run will not start, so their slots go to the
-      # jobs that run: test-ct runs only when release-fast-path requires it
-      # and no fast path applies. Filtering here keeps the shared probe script
-      # below identical to runner-route.yml. If this step fails, the probe
-      # reads an empty list and the routed jobs take their hosted fallback.
-      - id: slot-jobs
-        continue-on-error: true
-        env:
-          # Comma-separated keys to drop.
-          SKIP_SLOT_KEYS: ${{ (needs.release-fast-path.outputs.ct_required != 'true' || needs.release-fast-path.outputs.fast_path == 'true') && 'ct' || '' }}
-          # The routed heavy jobs; each reads outputs.slots[key] and only as
-          # many get a slot as are free (see the slot-fitting note in the
-          # script). Minutes are typical merge-queue durations; `events`
-          # keeps a queue-only job from holding a slot on a PR; `shards: 4`
-          # gives each Unit Tests leg its own key (test-1..test-4). Type Check
-          # & Lint is not listed: it runs on the free standard runner (see
-          # the `checks` job).
-          SLOT_JOBS: >-
-            [
-            {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
-            {"key":"build-web","label":"gh-linux-8x","minutes":8,"events":["merge_group"]},
-            {"key":"ct","label":"gh-linux-8x","minutes":36,"shards":4,"events":["merge_group"]}
-            ]
-        run: |
-          set -euo pipefail
-          list=$(jq -ce --arg skip "$SKIP_SLOT_KEYS" '($skip | split(",") | map(select(. != ""))) as $s | map(select(.key as $k | $s | index($k) | not))' <<< "$SLOT_JOBS")
-          echo "slot jobs: $list"
-          echo "list=$list" >> "$GITHUB_OUTPUT"
       - id: decide
         uses: actions/github-script@v9
         env:
@@ -112,8 +80,19 @@ jobs:
           BIGMEM_THRESHOLD: ${{ vars.CI_LINUX_BIGMEM_SLOTS || '0' }}
           WINDOWS_RUNNER_DISABLED: ${{ vars.CI_WINDOWS_RUNNER_DISABLED }}
           MACOS_RUNNER_DISABLED: ${{ vars.CI_MACOS_RUNNER_DISABLED }}
-          # The filtered list from the slot-jobs step above.
-          SLOT_JOBS: ${{ steps.slot-jobs.outputs.list }}
+          # The routed heavy jobs; each reads outputs.slots[key] and only as
+          # many get a slot as are free (see the slot-fitting note in the
+          # script). Minutes are typical merge-queue durations; `events`
+          # keeps a queue-only job from holding a slot on a PR; `shards: 4`
+          # gives each Unit Tests leg its own key (test-1..test-4). Type Check
+          # & Lint is not listed: it runs on the free standard runner (see
+          # the `checks` job). Component tests run nightly, not here
+          # (nightly-browser-tests.yml).
+          SLOT_JOBS: >-
+            [
+            {"key":"test","label":"gh-linux-8x","minutes":13,"shards":4},
+            {"key":"build-web","label":"gh-linux-8x","minutes":8,"events":["merge_group"]}
+            ]
         with:
           # The intent-cache slots serve several repos, so the probe
           # wants to size the queue across all of them — but the default
@@ -464,7 +443,7 @@ jobs:
   # and intentd sidecar pin bumps (auto-pin-intentd.yml) change only the pin
   # value in intentd.version — in both cases the built/tested code is
   # identical to what main already validated and the heavy jobs (checks /
-  # build-web / test / test-integration / test-ct / test-playwright) add no
+  # build-web / test / test-integration / test-playwright) add no
   # signal — their
   # wall time just delays the release. This job diffs the PR against its base and emits fast_path=true
   # only when the diff has exactly one of those shapes (release: files ⊆
@@ -479,26 +458,20 @@ jobs:
   # empty and falls back to full CI), and pr-title / conflict-markers / route
   # / gate still run on every PR. The only required context is "CI Gate"
   # (which always runs), and a job-level skip is safe for every heavy job —
-  # including the test and test-ct shard matrices, where skipping the job
+  # including the test shard matrix, where skipping the job
   # reports 'skipped' for the whole matrix (no per-leg required contexts
   # exist).
-  # The same checkout + base fetch also computes CT relevance: ct_required
-  # is 'true' when the PR diff touches a CT-contract path (the one list in
-  # scripts/ct-contract-paths.mjs, shared with verify:changed), a CT spec,
-  # or any local module a discovered CT spec or the mount harness transitively
-  # imports in either base or head (same module). Fixture changes keep focused local selection
-  # but require the hosted suite (see test-ct / gate). Fail-safe the other
-  # way round from fast_path: the script prints ct_required=true on any
-  # internal error, and the step writes 'true' if the script exits non-zero
-  # or prints nothing — a broken relevance check runs CT, never skips it.
   # The job runs on pull_request AND merge_group (see the trigger comment).
   # On merge_group the diff base is merge_group.base_sha: head_sha is the
   # merge of the PR onto the previous entry (or main), so base_sha..head_sha
   # is exactly the entry's own change — the same shape as the pull_request
   # merge ref, so the script needs no event-specific handling (its
-  # merge-base fallback covers the shallow checkout either way). ct_required
-  # is computed in the queue too, and browser suites execute there.
-  # Root and Electron relevance use the same diff and fail-safe behavior.
+  # merge-base fallback covers the shallow checkout either way).
+  # The same checkout + base fetch also computes root Playwright, Electron,
+  # portable-fixture and @intent-hq/web relevance, each fail-safe: a broken
+  # relevance check runs its suite, never skips it. Component tests are not
+  # run on PRs or in the merge queue; nightly-browser-tests.yml runs the
+  # full suite.
   release-fast-path:
     name: Release PR Fast Path
     # Lightweight job on a standard GitHub-hosted Linux runner.
@@ -511,14 +484,10 @@ jobs:
       contents: read
     outputs:
       fast_path: ${{ steps.decide.outputs.fast_path }}
-      ct_required: ${{ steps.ct.outputs.ct_required }}
       root_playwright_required: ${{ steps.root-playwright.outputs.root_playwright_required }}
       electron_required: ${{ steps.electron.outputs.electron_required }}
       portable_fixtures_required: ${{ steps.portable-fixtures.outputs.portable_fixtures_required }}
       intent_web_package_required: ${{ steps.intent-web-package.outputs.intent_web_package_required }}
-      ct_changed_specs: ${{ steps.ct-changed.outputs.ct_changed_specs }}
-      ct_affected_specs: ${{ steps.ct-affected.outputs.ct_affected_specs }}
-      ct_affected_over_budget: ${{ steps.ct-affected.outputs.ct_affected_over_budget }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -567,46 +536,6 @@ jobs:
           printf '%s\n' "$out"
           line=$(printf '%s\n' "$out" | grep -E '^fast_path=(true|false)$' | tail -n1 || true)
           echo "${line:-fast_path=false}" >> "$GITHUB_OUTPUT"
-      - name: Evaluate CT relevance
-        id: ct
-        run: |
-          set -euo pipefail
-          # Script contract: prints exactly one ct_required=true|false line and
-          # always exits 0 (it already reports true on any internal error).
-          # Belt and braces here too: a non-zero exit or a missing line also
-          # requires CT — a relevance failure must run the suite, never skip it.
-          out=$(node scripts/ct-contract-paths.mjs --diff "$BASE_SHA" HEAD) || {
-            echo "ct-contract-paths.mjs exited non-zero — requiring CT (fail-safe)"
-            out="ct_required=true"
-          }
-          printf '%s\n' "$out"
-          line=$(printf '%s\n' "$out" | grep -E '^ct_required=(true|false)$' | tail -n1 || true)
-          echo "${line:-ct_required=true}" >> "$GITHUB_OUTPUT"
-      - name: List changed component test specs
-        # JSON array of the .ct.spec.ts files this diff adds or edits, for
-        # test-ct-changed. Fail-closed: any error writes `error`, which that
-        # job rejects and the CI Gate never accepts as "no specs changed".
-        id: ct-changed
-        run: |
-          set -euo pipefail
-          out=$(node scripts/ct-changed-specs.mjs --diff "$BASE_SHA" HEAD) || out="ct_changed_specs=error"
-          printf '%s\n' "$out"
-          line=$(printf '%s\n' "$out" | grep -E '^ct_changed_specs=' | tail -n1 || true)
-          echo "${line:-ct_changed_specs=error}" >> "$GITHUB_OUTPUT"
-      - name: List affected component test specs
-        # JSON arrays of the existing specs that load a file this diff changes
-        # (nearest first, capped at CT_AFFECTED_BUDGET) and of those over the
-        # cap, for test-ct-affected. Fail-closed like the changed list: any
-        # error writes `error`, which that job and the CI Gate reject.
-        id: ct-affected
-        run: |
-          set -euo pipefail
-          out=$(node scripts/ct-changed-specs.mjs --affected "$BASE_SHA" HEAD) || out="ct_affected_specs=error"
-          printf '%s\n' "$out"
-          line=$(printf '%s\n' "$out" | grep -E '^ct_affected_specs=' | tail -n1 || true)
-          echo "${line:-ct_affected_specs=error}" >> "$GITHUB_OUTPUT"
-          line=$(printf '%s\n' "$out" | grep -E '^ct_affected_over_budget=' | tail -n1 || true)
-          echo "${line:-ct_affected_over_budget=[]}" >> "$GITHUB_OUTPUT"
       - name: Evaluate root Playwright relevance
         id: root-playwright
         run: |
@@ -617,7 +546,7 @@ jobs:
           # config itself, or the playwright/*-spec-pattern.mjs modules the
           # config reads its testDir/testMatch/testIgnore from (the same set
           # scripts/verify-changed.mjs selects `playwright-full` for). Same
-          # base..head diff and flags as ct-contract-paths.mjs. Fail-safe: a
+          # base..head diff and flags as the other relevance steps. Fail-safe: a
           # git failure requires the suite, never skips it.
           # Keep NUL-delimited paths in a file, never a Bash scalar: otherwise
           # Git quoting or embedded newlines can hide a relevant filename.
@@ -996,7 +925,7 @@ jobs:
     runs-on: ${{ fromJSON(needs.route.outputs.slots || '{}')[format('test-{0}', matrix.shard)] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
     strategy:
       # Let the sibling shard finish so one flaky leg doesn't hide the
-      # other leg's results (same rationale as test-ct).
+      # other leg's results.
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4]
@@ -1258,230 +1187,10 @@ jobs:
       - name: Integration tests
         run: pnpm run test:integration
 
-  # Browser suites run selectively on PRs; nightly-browser-tests.yml runs all.
+  # Browser suites run selectively in the merge queue; nightly-browser-tests.yml
+  # runs all of them, including the component tests (suite: ct), which run
+  # only there and on manual dispatch — never on PRs or in the merge queue.
   # Keep route as a direct guard so failed routing and fork PRs stay fail-safe.
-  test-ct:
-    needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.ct_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
-    permissions:
-      contents: read
-    uses: ./.github/workflows/browser-tests.yml
-    with:
-      suite: ct
-      # Each shard takes its ct-N slot when the route job granted one.
-      slots: ${{ needs.route.outputs.slots }}
-      cloud: ${{ needs.route.outputs.cloud }}
-
-  # Repeats just the component test specs a PR adds or edits, retries off, so
-  # a flaky spec fails on its own PR instead of ejecting unrelated PRs from
-  # the merge queue (dock-actions.ct.spec.ts ejected #3978; the new
-  # dock-composer-spec.ct.spec.ts ejected #4002 and failed 12 of 40 runs
-  # under load). The full suite stays queue-only (#3930: cost); this job runs
-  # only when a spec changed. scripts/ct-changed-specs.mjs lists the specs and
-  # sets the repetition count (20, scaled down for PRs touching many specs).
-  test-ct-changed:
-    name: Changed Component Tests (repeated shard ${{ matrix.shard }}/2)
-    needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.ct_changed_specs != '[]' }}
-    # The same 8-core burst runner as the queue's CT shards, without a slot:
-    # the bundle build below needs their 12 GiB heap.
-    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    permissions:
-      contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}
-      CT_CHANGED_SHARD: ${{ matrix.shard }}/2
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Validate changed spec list
-        # Rejects a missing or `error` list before any setup is paid for.
-        run: |
-          set -euo pipefail
-          node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > /dev/null
-          echo "Changed component test specs: $CT_CHANGED_SPECS"
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Cache pnpm store
-        uses: ./.github/actions/pnpm-store-cache
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        run: pnpm run generate:i18n
-      - name: Resolve CT browser cache
-        id: ct-browser
-        run: |
-          node scripts/run-ct-tests.mjs --print-browser-plan > "$RUNNER_TEMP/ct-browser-plan.json"
-          # shellcheck disable=SC2016
-          node --input-type=module -e '
-          import { readFileSync } from "node:fs";
-          const plan = JSON.parse(readFileSync(process.argv[1], "utf8"));
-          console.log(`cache-key=${plan.cacheKey}`);
-          console.log(`cache-dir=${plan.cacheDir}`);
-          ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        uses: actions/cache@v6
-        with:
-          path: ${{ steps.ct-browser.outputs.cache-dir }}
-          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
-      - name: Install Playwright browsers
-        # The burst image already carries Chromium's shared libraries (see
-        # browser-tests.yml); a missing one fails the first test loudly.
-        timeout-minutes: 8
-        run: node scripts/run-ct-tests.mjs --install-browsers chromium
-      - name: Build CT bundle
-        # Same split as browser-tests.yml: build once under a 12 GiB heap
-        # (--only-changed=HEAD selects no tests on a clean checkout), then
-        # run the tests against the cached bundle under 4 GiB.
-        env:
-          NODE_OPTIONS: '--max-old-space-size=12288'
-        run: node scripts/run-ct-tests.mjs --only-changed=HEAD --pass-with-no-tests --reporter=list
-      - name: Repeat changed component tests
-        # Retries off, so any failing repetition fails the job, and
-        # --fail-on-flaky-tests as a backstop. Two workers, like a queue
-        # shard. Quarantined tests are excluded as in the required lane; a
-        # spec whose tests are all quarantined fails with "No tests found".
-        # The repetitions are sized by the tests Playwright discovers in the
-        # changed specs (--list: no browser, no bundle build). Partition the
-        # runs across two jobs: large cleanups can exceed the global budget
-        # because every test still runs at least three times (#4185).
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
-          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
-        run: |
-          set -euo pipefail
-          # A file, not process substitution, so a failing helper stops the step.
-          node scripts/ct-changed-specs.mjs --filters "$CT_CHANGED_SPECS" > "$RUNNER_TEMP/ct-filters"
-          mapfile -d '' filters < "$RUNNER_TEMP/ct-filters"
-          PLAYWRIGHT_JSON_OUTPUT_FILE="$RUNNER_TEMP/ct-changed-list.json" node scripts/run-ct-tests.mjs \
-            "${filters[@]}" --list --grep-invert '@quarantine\b' --reporter=json > /dev/null
-          repeat=$(node scripts/ct-changed-specs.mjs --repeat-each-listed "$RUNNER_TEMP/ct-changed-list.json")
-          node scripts/run-ct-tests.mjs "${filters[@]}" --repeat-each="$repeat" --retries=0 \
-            --fail-on-flaky-tests --workers=2 --grep-invert '@quarantine\b' --reporter=list,html,json \
-            --shard="$CT_CHANGED_SHARD"
-      - name: Upload playwright report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-ct-changed-report-${{ matrix.shard }}-of-2
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-          if-no-files-found: ignore
-
-  # Runs, once each, the existing component test specs that load a file the
-  # PR changes, so a shared-component edit that breaks a spec the PR never
-  # touched fails here instead of in the merge queue: cloudlands-fe#4029 edited
-  # ChatPanel.svelte with green PR checks and was ejected by
-  # chat-panel-composer-geometry.ct.spec.ts. scripts/ct-changed-specs.mjs
-  # --affected walks the import graph that ct-contract-paths.mjs builds for
-  # the queue, ranks the specs nearest first and caps them at
-  # CT_AFFECTED_BUDGET; the specs over the cap are listed in this job's log
-  # and step summary. Changed specs are left to test-ct-changed. The full
-  # suite stays queue-only.
-  test-ct-affected:
-    name: Affected Component Tests
-    needs: [route, release-fast-path]
-    if: ${{ !cancelled() && github.event_name == 'pull_request' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' && needs.release-fast-path.outputs.ct_affected_specs != '[]' }}
-    # Same runner and bundle split as test-ct-changed.
-    runs-on: ${{ fromJSON(needs.route.outputs.cloud || '{}')['gh-linux-8x'] || fromJSON('["warp-ubuntu-2404-x64-8x"]') }}
-    timeout-minutes: 45
-    permissions:
-      contents: read
-    env:
-      GIT_TERMINAL_PROMPT: '0'
-      CT_AFFECTED_SPECS: ${{ needs.release-fast-path.outputs.ct_affected_specs }}
-      CT_AFFECTED_OVER_BUDGET: ${{ needs.release-fast-path.outputs.ct_affected_over_budget }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Validate affected spec list
-        # Rejects a missing or `error` list before any setup is paid for, and
-        # names every affected spec over the budget instead of skipping it
-        # silently.
-        run: |
-          set -euo pipefail
-          node scripts/ct-changed-specs.mjs --filters "$CT_AFFECTED_SPECS" > /dev/null
-          node scripts/ct-changed-specs.mjs --over-budget "$CT_AFFECTED_SPECS" "${CT_AFFECTED_OVER_BUDGET:-[]}" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 10.30.3
-          run_install: false
-          dest: ~/setup-pnpm-${{ runner.name }}
-      - name: Setup Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: '24'
-      - name: Cache pnpm store
-        uses: ./.github/actions/pnpm-store-cache
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Generate i18n messages
-        run: pnpm run generate:i18n
-      - name: Resolve CT browser cache
-        id: ct-browser
-        run: |
-          node scripts/run-ct-tests.mjs --print-browser-plan > "$RUNNER_TEMP/ct-browser-plan.json"
-          # shellcheck disable=SC2016
-          node --input-type=module -e '
-          import { readFileSync } from "node:fs";
-          const plan = JSON.parse(readFileSync(process.argv[1], "utf8"));
-          console.log(`cache-key=${plan.cacheKey}`);
-          console.log(`cache-dir=${plan.cacheDir}`);
-          ' "$RUNNER_TEMP/ct-browser-plan.json" >> "$GITHUB_OUTPUT"
-      - name: Cache Playwright browsers
-        uses: actions/cache@v6
-        with:
-          path: ${{ steps.ct-browser.outputs.cache-dir }}
-          key: playwright-browsers-${{ runner.os }}-${{ runner.arch }}-${{ steps.ct-browser.outputs.cache-key }}
-      - name: Install Playwright browsers
-        timeout-minutes: 8
-        run: node scripts/run-ct-tests.mjs --install-browsers chromium
-      - name: Build CT bundle
-        env:
-          NODE_OPTIONS: '--max-old-space-size=12288'
-        run: node scripts/run-ct-tests.mjs --only-changed=HEAD --pass-with-no-tests --reporter=list
-      - name: Run affected component tests once
-        # One run per test with the queue shard's settings (retries on, two
-        # workers, --fail-on-flaky-tests), so a test that would eject the
-        # PR from the queue fails here. Quarantined tests are excluded as in
-        # the required lane.
-        env:
-          NODE_OPTIONS: '--max-old-space-size=4096'
-          PLAYWRIGHT_JSON_OUTPUT_FILE: playwright-report/results.json
-        run: |
-          set -euo pipefail
-          node scripts/ct-changed-specs.mjs --filters "$CT_AFFECTED_SPECS" > "$RUNNER_TEMP/ct-filters"
-          mapfile -d '' filters < "$RUNNER_TEMP/ct-filters"
-          node scripts/run-ct-tests.mjs "${filters[@]}" --fail-on-flaky-tests --workers=2 \
-            --grep-invert '@quarantine\b' --reporter=list,html,json
-      - name: Upload playwright report
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-ct-affected-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
-          if-no-files-found: ignore
-
   test-playwright:
     needs: [route, release-fast-path]
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.release-fast-path.outputs.root_playwright_required == 'true' && needs.route.result == 'success' && needs.release-fast-path.outputs.fast_path != 'true' }}
@@ -1586,9 +1295,6 @@ jobs:
         test,
         test-integration,
         test-portable-fixtures,
-        test-ct,
-        test-ct-changed,
-        test-ct-affected,
         test-playwright,
         test-electron,
         monorepo-consumer-checks,
@@ -1600,11 +1306,8 @@ jobs:
           FAST_PATH: ${{ needs.release-fast-path.outputs.fast_path }}
           PORTABLE_FIXTURES_REQUIRED: ${{ needs.release-fast-path.outputs.portable_fixtures_required }}
           INTENT_WEB_PACKAGE_REQUIRED: ${{ needs.release-fast-path.outputs.intent_web_package_required }}
-          CT_REQUIRED: ${{ needs.release-fast-path.outputs.ct_required }}
           ROOT_PLAYWRIGHT_REQUIRED: ${{ needs.release-fast-path.outputs.root_playwright_required }}
           ELECTRON_REQUIRED: ${{ needs.release-fast-path.outputs.electron_required }}
-          CT_CHANGED_SPECS: ${{ needs.release-fast-path.outputs.ct_changed_specs }}
-          CT_AFFECTED_SPECS: ${{ needs.release-fast-path.outputs.ct_affected_specs }}
         run: |
           # route must have succeeded on every run (see the gate comment): a
           # route failure skips the heavy jobs, and a fast-path skip
@@ -1677,34 +1380,12 @@ jobs:
             check_heavy "test" "${{ needs.test.result }}"
             case "${{ needs.build-web.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-portable-fixtures.result }}" in success|skipped) ;; *) exit 1 ;; esac
-            case "${{ needs.test-ct.result }}" in success|skipped) ;; *) exit 1 ;; esac
-            # Changed CT specs: success, or skipped only when none changed
-            # (an `error` or missing list never counts as none) or via the
-            # release-PR fast path.
-            ct_changed_result="${{ needs.test-ct-changed.result }}"
-            if [ "$ct_changed_result" != "success" ]; then
-              if [ "$ct_changed_result" != "skipped" ] || { [ "$CT_CHANGED_SPECS" != "[]" ] && [ "$FAST_PATH" != "true" ]; }; then
-                echo "test-ct-changed result '$ct_changed_result' not acceptable (ct_changed_specs='$CT_CHANGED_SPECS', fast_path='$FAST_PATH')"
-                exit 1
-              fi
-            fi
-            # Affected CT specs: the same rule against the affected list.
-            ct_affected_result="${{ needs.test-ct-affected.result }}"
-            if [ "$ct_affected_result" != "success" ]; then
-              if [ "$ct_affected_result" != "skipped" ] || { [ "$CT_AFFECTED_SPECS" != "[]" ] && [ "$FAST_PATH" != "true" ]; }; then
-                echo "test-ct-affected result '$ct_affected_result' not acceptable (ct_affected_specs='$CT_AFFECTED_SPECS', fast_path='$FAST_PATH')"
-                exit 1
-              fi
-            fi
             case "${{ needs.test-playwright.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-electron.result }}" in success|skipped) ;; *) exit 1 ;; esac
             case "${{ needs.test-integration.result }}" in success|skipped) ;; *) exit 1 ;; esac
             exit 0
           fi
           case "${{ needs.pr-static.result }}" in success|skipped) ;; *) exit 1 ;; esac
-          # PR-only: the queue runs the full CT suite instead.
-          case "${{ needs.test-ct-changed.result }}" in success|skipped) ;; *) exit 1 ;; esac
-          case "${{ needs.test-ct-affected.result }}" in success|skipped) ;; *) exit 1 ;; esac
           # Queued heavy jobs (checks / build-web / test): success, or
           # skipped ONLY via the release-PR fast path (check_heavy above).
           check_heavy "checks" "${{ needs.checks.result }}"
@@ -1738,7 +1419,6 @@ jobs:
             echo "$1 result '$2' not acceptable (required='$3', fast_path='$FAST_PATH')"
             exit 1
           }
-          check_browser "test-ct" "${{ needs.test-ct.result }}" "$CT_REQUIRED"
           check_browser "test-playwright" "${{ needs.test-playwright.result }}" "$ROOT_PLAYWRIGHT_REQUIRED"
           check_browser "test-electron" "${{ needs.test-electron.result }}" "$ELECTRON_REQUIRED"
           # monorepo-consumer-checks: success outright on both events (see

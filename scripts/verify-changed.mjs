@@ -576,7 +576,7 @@ export function createVerificationPlan(files, options = {}) {
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
     else if (ROOT_PLAYWRIGHT_CONFIG_FILES.has(file)) fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
-    // Shared with the pull_request workflow's test-ct relevance step.
+    // The one CT-contract list (scripts/ct-contract-paths.mjs).
     if (isCtContractPath(file)) fullCt = true;
 
     const known =

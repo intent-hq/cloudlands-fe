@@ -1801,11 +1801,14 @@
           </div>
         {/if}
 
+        <!-- transition-none: the reduced-motion blanket gives every element a 0.01ms
+             transition, which would hold flex-shrink at 1 for one frame and let the
+             growing isolation footer squeeze this pinned body, jumping the switch. -->
         <div
           bind:this={modeBodyEl}
-          class="flex flex-col {modeBodyHeight ? 'shrink-0' : 'flex-1'} {hasIsolationControl
-            ? 'min-h-52'
-            : 'min-h-0'}"
+          class="flex flex-col transition-none {modeBodyHeight
+            ? 'shrink-0'
+            : 'flex-1'} {hasIsolationControl ? 'min-h-52' : 'min-h-0'}"
           style:height={modeBodyHeight ? `${modeBodyHeight}px` : undefined}
         >
           {#if directMode && currentBranch}
