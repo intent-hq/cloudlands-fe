@@ -38,6 +38,7 @@ import type { AppliedSettingChange } from '$lib/client/app-client';
 import { applyWorkspaceCatalogUpdate } from './workspace-catalog-updates';
 import { selectProviderStatusMap } from '../agent-availability/agent-availability-selectors';
 import { removeWorkspaceEntity } from '../workspace/workspace-slice';
+import { agentSkillsChanged } from '../skills/skills-slice';
 import { hostExecutionConnectionChanged } from '../host-execution/host-execution-slice';
 import { copyServerForState, mapDaemonMcpState } from '../mcp-settings/mcp-settings-normalization';
 import {
@@ -259,6 +260,10 @@ function* onEvent(
   const scope =
     event.workspaceId || (typeof data?.workspaceId === 'string' ? data.workspaceId : undefined);
   const targets = scope ? mounted.filter((id) => id === scope) : mounted;
+  // A remote agent's machine reported a different catalog (§5.34).
+  if ((event.type as string) === 'skills:changed' && scope && typeof data?.agentId === 'string') {
+    yield* put(agentSkillsChanged(scope, data.agentId));
+  }
   for (const workspaceId of targets) {
     // WorkspaceEventType covers timeline events; daemon catalog events have additional names.
     switch (event.type as string) {

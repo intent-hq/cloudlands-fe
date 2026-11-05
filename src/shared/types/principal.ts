@@ -35,6 +35,8 @@ interface HostCapabilities {
   messageBlockPages?: 1;
   /** A saved script lists remote agents' runs on their machines in `machineRuns` (PROTOCOL `methods/scripts.md`). */
   remoteScripts?: 1;
+  /** `skill.list` `agentId`: a remote agent's machine skills (PROTOCOL §5.34). */
+  remoteAgentSkills?: 1;
   invitationAccountSearch?: boolean;
   workspaceGuestRoles?: boolean;
   hostMembership: boolean;
@@ -85,6 +87,7 @@ export function parsePrincipalSnapshot(hello: unknown, value: unknown): Principa
     ...(bag.workspaceAutoArchiveOptOut === 1 ? { workspaceAutoArchiveOptOut: 1 as const } : {}),
     ...(bag.messageBlockPages === 1 ? { messageBlockPages: 1 as const } : {}),
     ...(bag.remoteScripts === 1 ? { remoteScripts: 1 as const } : {}),
+    ...(bag.remoteAgentSkills === 1 ? { remoteAgentSkills: 1 as const } : {}),
     invitationAccountSearch: bag.invitationAccountSearch === 1,
     workspaceGuestRoles: bag.workspaceGuestRoles === 1,
     hostMembership: bag.hostMembership === 1,

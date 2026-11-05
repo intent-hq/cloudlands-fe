@@ -451,6 +451,12 @@
   -webkit-box-decoration-break: clone;
 }
 
+/* A skill the remote agent's machine does not have: it still sends. */
+.skill-command-chip--unavailable {
+  border-style: dashed;
+  opacity: 0.65;
+}
+
 .skill-command-chip.ProseMirror-selectednode {
   outline: 1px solid hsl(var(--ring));
   outline-offset: 1px;

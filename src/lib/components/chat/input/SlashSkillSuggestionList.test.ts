@@ -36,6 +36,21 @@ describe('SlashSkillSuggestionList', () => {
     expect(screen.getByRole('status').textContent).toContain('No matching skills');
   });
 
+  it('names the machine when a remote agent has no skills, and shows a notice row', () => {
+    const onSelect = vi.fn();
+    const view = render(SlashSkillSuggestionList, {
+      props: { items: [], emptyLabel: 'No skills on Mac Studio', onSelect },
+    });
+    expect(screen.getByRole('status').textContent).toContain('No skills on Mac Studio');
+    expect(screen.queryByText('No matching skills')).toBeNull();
+
+    view.rerender({ items, notice: 'Update Intent on Mac Studio to see its skills', onSelect });
+    expect(screen.getAllByRole('option')).toHaveLength(2);
+    expect(screen.getByRole('note').textContent).toContain(
+      'Update Intent on Mac Studio to see its skills',
+    );
+  });
+
   it('renders a compact slash-free list', () => {
     const view = render(SlashSkillSuggestionList, { props: { items, onSelect: vi.fn() } });
     const surface = view.container.querySelector('.slash-skill-suggestion-list');

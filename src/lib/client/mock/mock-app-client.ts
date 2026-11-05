@@ -156,6 +156,7 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
   readonly skills: AppClient['skills'] = {
     list: async (workspaceId) =>
       workspaceId === String(fx.MOCK_WORKSPACE_ID) ? fx.mockSkills : [],
+    listForAgent: async () => ({ skills: fx.mockSkills, stale: false, unavailable: null }),
     subscribe: (handler) => emitOnce(handler, fx.mockSkills),
   };
 
