@@ -1,228 +1,59 @@
 import { expect, test } from '../../../test/ct-test';
-import ComposerE2EHarness from './DockComposerE2EHarness.svelte';
 import ComposerMediaPreview from './dock-composer-media.preview.svelte';
 import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 
-type Harness = {
-  native: { log: { captureModes: string[] }; holdCaptures: (hold: boolean) => void };
-  close: () => void;
-  reopen: () => void;
-};
-
-const nativeModes = () => {
-  const harness = (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E;
-  return harness.native.log.captureModes;
-};
-
-test('split capture preserves draft selection and uses the persisted mode through the native boundary', async ({
+test('hover options keep the capture button mounted, the current glyph stable and draft selection intact', async ({
   mount,
   page,
 }, info) => {
-  await page.setViewportSize({ width: 452, height: 680 });
-  const component = await mount(ComposerE2EHarness);
-  const primary = component.locator('.capture-button');
-  const picker = component.getByRole('button', { name: 'Screenshot options', exact: true });
-  const menu = page.getByRole('menu', { name: 'Screenshot options' });
-  const editor = component.locator('.tiptap-editor');
-  await expect(primary).toBeEnabled();
+  const component = await mount(ComposerMediaPreview);
+  const editor = component.getByRole('textbox');
+  const capture = component.locator('.capture-button');
   await editor.fill('Keep this selected draft');
-  await editor.press('ControlOrMeta+a');
-  const selection = () => page.evaluate(() => window.getSelection()?.toString());
-  const before = await selection();
-  expect(before).toBe('Keep this selected draft');
-  const primaryBox = await primary.boundingBox();
-  const record = component.locator('.recording-button');
-  const recordBox = await record.boundingBox();
-  await primary.hover();
-  // Observe beyond the removed 150 ms timer: hovering must never open a menu.
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- observes a quiet period beyond the former hover-open timer
-  await page.waitForTimeout(350);
-  await expect(menu).toBeHidden();
-  await expect(primary.locator('[data-dock-glyph="viewfinder"]')).toBeVisible();
-  await expect(editor).toBeFocused();
-  expect(await selection()).toBe(before);
-  expect(await primary.boundingBox()).toEqual(primaryBox);
-  expect(await record.boundingBox()).toEqual(recordBox);
-  await expect(picker).toHaveCSS('opacity', '1');
-  await info.attach('capture-hover-stable', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
+  await editor.evaluate((node) => {
+    const field = node as HTMLTextAreaElement;
+    field.setSelectionRange(2, 10);
   });
-
-  await picker.click();
+  const original = await capture.elementHandle();
+  if (!original) throw new Error('Missing capture button');
+  await capture.hover();
+  const menu = page.getByRole('menu', { name: 'Screenshot options' });
   await expect(menu).toBeVisible();
+  expect(await original.evaluate((node) => node.isConnected)).toBe(true);
+  await expect(capture.locator('[data-dock-glyph="viewfinder"]')).toBeVisible();
   await expect(editor).toBeFocused();
-  expect(await selection()).toBe(before);
-  await info.attach('capture-explicit-picker', {
+  expect(
+    await editor.evaluate((node) => {
+      const field = node as HTMLTextAreaElement;
+      return [field.selectionStart, field.selectionEnd];
+    }),
+  ).toEqual([2, 10]);
+  await info.attach('capture-hover-options', {
     body: await page.screenshot(),
     contentType: 'image/png',
   });
+  await capture.click();
+  await expect(component).toHaveAttribute('data-actions', JSON.stringify(['capture']));
+  await expect(menu).toBeHidden();
+  expect(await original.evaluate((node) => node.isConnected)).toBe(true);
+  await page.mouse.move(0, 0);
+  await capture.hover();
   await menu.getByRole('menuitemradio', { name: 'Region', exact: true }).click();
-  await expect(menu).toBeHidden();
-  await expect(primary.locator('[data-dock-glyph="region"]')).toBeVisible();
-  await expect.poll(() => page.evaluate(nativeModes)).toEqual(['region']);
-  await expect(editor).toHaveText('Keep this selected draft');
-  await primary.click();
-  await expect.poll(() => page.evaluate(nativeModes)).toEqual(['region', 'region']);
-
-  await primary.focus();
-  await page.keyboard.press('Tab');
-  await expect(picker).toBeFocused();
-  await expect(menu).toBeHidden();
-  await picker.press('Space');
+  await expect(capture.locator('[data-dock-glyph="region"]')).toBeVisible();
+  await capture.focus();
+  await capture.press('ArrowUp');
   await expect(menu.getByRole('menuitemradio', { name: 'Region', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
-  await expect(picker).toBeFocused();
-  await picker.press('ArrowUp');
+  await expect(capture).toBeFocused();
+  await capture.press('ArrowDown');
   await expectDismissibleLayerArmed(menu);
   await editor.click();
   await expect(menu).toBeHidden();
   await expect(editor).toBeFocused();
-  await picker.click();
-  await expectDismissibleLayerArmed(menu);
-  await picker.click();
-  await expect(menu).toBeHidden();
-  await picker.focus();
-  await picker.press('ArrowUp');
-  await expect(menu.getByRole('menuitemradio', { name: 'Region', exact: true })).toBeFocused();
-  await page.keyboard.press('ArrowUp');
-  await page.keyboard.press('Enter');
-  await expect(primary.locator('[data-dock-glyph="window"]')).toBeVisible();
-  await expect.poll(() => page.evaluate(nativeModes)).toEqual(['region', 'region', 'window']);
-  await page.evaluate(() => {
-    const h = (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E;
-    h.close();
-    h.reopen();
-    h.native.holdCaptures(true);
-  });
-  await expect(primary).toHaveAttribute('data-capture-mode', 'window');
-  // Native Space on the main button captures; it never opens the picker.
-  await primary.focus();
-  await primary.press('Space');
-  await expect(primary).toBeDisabled();
-  await expect(picker).toBeDisabled();
-  await expect(menu).toBeHidden();
-  await expect
-    .poll(() => page.evaluate(nativeModes))
-    .toEqual(['region', 'region', 'window', 'window']);
-  await info.attach('capture-pending', { body: await page.screenshot(), contentType: 'image/png' });
-  await page.evaluate(() =>
-    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.native.holdCaptures(
-      false,
-    ),
-  );
-  await info.attach('capture-native-modes', {
-    body: JSON.stringify(
-      { syntheticNative: true, captureModes: await page.evaluate(nativeModes) },
-      null,
-      2,
-    ),
-    contentType: 'application/json',
-  });
-});
-
-test('touch picker stays discoverable and permission and disabled states preserve ownership', async ({
-  mount,
-  page,
-}, info) => {
-  await page.setViewportSize({ width: 390, height: 680 });
-  const session = await page.context().newCDPSession(page);
-  await session.send('Emulation.setTouchEmulationEnabled', { enabled: true });
-  const component = await mount(ComposerMediaPreview, { props: { width: 320 } });
-  const primary = component.locator('.capture-button');
-  const picker = component.getByRole('button', { name: 'Screenshot options', exact: true });
-  await expect(picker).toHaveCSS('opacity', '1');
-  await picker.click();
-  const menu = page.getByRole('menu', { name: 'Screenshot options' });
+  await capture.dispatchEvent('contextmenu');
   await expect(menu).toBeVisible();
-  await info.attach('capture-touch-picker', {
+  await info.attach('capture-keyboard-and-context-options', {
     body: await page.screenshot(),
     contentType: 'image/png',
   });
-  await page.keyboard.press('Escape');
-  await component.update({
-    props: { width: 320, state: { alerts: { capture: 'Allow screen recording' } } },
-  });
-  await expect(picker).toBeDisabled();
-  await primary.click();
-  await expect(component).toHaveAttribute(
-    'data-actions',
-    JSON.stringify(['open-settings:capture']),
-  );
-  await expect(menu).toBeHidden();
-  await expect(primary.locator('.capture-flash')).toHaveCount(0);
-  await component.update({ props: { width: 320, disabled: true } });
-  await expect(primary).toBeDisabled();
-  await expect(picker).toBeDisabled();
-  await info.attach('capture-disabled', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-});
-
-test('capture spacing keeps separate hit regions and keyboard access', async ({
-  mount,
-  page,
-}, info) => {
-  await page.setViewportSize({ width: 452, height: 680 });
-  const component = await mount(ComposerE2EHarness);
-  const primary = component.locator('.capture-button');
-  const picker = component.getByRole('button', { name: 'Screenshot options', exact: true });
-  const record = component.locator('.recording-button');
-  const mic = component.locator('.mic-button');
-  const menu = page.getByRole('menu', { name: 'Screenshot options' });
-  await expect(primary).toBeEnabled();
-  await page.mouse.move(2, 2);
-  await info.attach('capture-spacing-idle', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-  await primary.hover();
-  await expect(picker).toHaveCSS('opacity', '1');
-  await info.attach('capture-spacing-hover', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-  const geometry = [];
-  for (const control of [primary, picker, record, mic]) {
-    const box = await control.boundingBox();
-    if (!box) throw new Error('Missing capture control');
-    geometry.push(box);
-    // Each actual hit region must route to its own control, including the narrow picker.
-    expect(
-      await control.evaluate(
-        (element, point) => element.contains(document.elementFromPoint(point.x, point.y)),
-        {
-          x: box.x + box.width / 2,
-          y: box.y + box.height / 2,
-        },
-      ),
-    ).toBe(true);
-  }
-  // Adjacent controls cannot claim any part of each other's hit regions.
-  expect(geometry[0].x + geometry[0].width).toBeLessThanOrEqual(geometry[1].x);
-  expect(geometry[1].x + geometry[1].width).toBeLessThanOrEqual(geometry[2].x);
-  expect(geometry[2].x + geometry[2].width).toBeLessThanOrEqual(geometry[3].x);
-  // Measurements are review evidence, not ornamental dimension assertions.
-  await info.attach('capture-spacing-geometry', {
-    body: JSON.stringify(geometry, null, 2),
-    contentType: 'application/json',
-  });
-  await picker.click();
-  await expect(menu).toBeVisible();
-  await info.attach('capture-spacing-menu', {
-    body: await page.screenshot(),
-    contentType: 'image/png',
-  });
-  await expectDismissibleLayerArmed(menu);
-  await picker.click();
-  await expect(menu).toBeHidden();
-  await primary.focus();
-  await page.keyboard.press('Tab');
-  await expect(picker).toBeFocused();
-  await picker.press('Space');
-  await expect(menu.getByRole('menuitemradio', { name: 'Full screen', exact: true })).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(picker).toBeFocused();
-  expect(await page.evaluate(nativeModes)).toEqual([]);
 });

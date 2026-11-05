@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
-  import CaretDownIcon from 'phosphor-svelte/lib/CaretDown';
+  import { onDestroy, tick } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import DockComposerIcon from './DockComposerIcon.svelte';
   import DockCaptureModeMenu, { DOCK_CAPTURE_GLYPHS } from './DockCaptureModeMenu.svelte';
@@ -47,11 +46,23 @@
   let open = $state(false);
   let trigger = $state<HTMLButtonElement | null>(null);
   let keyboardOpen = $state(false);
-  // Pointer activation preserves the editor selection. Keyboard activation returns
-  // to the dedicated picker, so Space on the primary remains a capture action.
   let returnFocus: HTMLElement | 'trigger' | null = null;
+  let stickyOpen = false;
+  let suppressClick = false;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  let closeTimer: ReturnType<typeof setTimeout> | undefined;
+  let holdTimer: ReturnType<typeof setTimeout> | undefined;
+  function cancelTimers(): void {
+    clearTimeout(hoverTimer);
+    clearTimeout(closeTimer);
+    clearTimeout(holdTimer);
+  }
+  onDestroy(cancelTimers);
   $effect(() => {
-    if (!pickable) open = false;
+    if (!pickable) {
+      cancelTimers();
+      open = false;
+    }
   });
 
   // Choice, Escape and outside dismissal restore the activation context.
@@ -66,128 +77,134 @@
     const target = returnFocus === 'trigger' ? trigger : returnFocus;
     returnFocus = null;
     keyboardOpen = false;
+    stickyOpen = false;
     if (target?.isConnected) void tick().then(() => target.focus({ preventScroll: true }));
   });
 
-  function show(fromKeyboard: boolean): void {
+  function show(input: 'hover' | 'keyboard' | 'touch'): void {
+    cancelTimers();
     if (!pickable) return;
-    keyboardOpen = fromKeyboard;
+    if (open) {
+      if (input === 'keyboard') {
+        keyboardOpen = true;
+        stickyOpen = true;
+        returnFocus = 'trigger';
+      }
+      return;
+    }
+    keyboardOpen = input === 'keyboard';
+    stickyOpen = input !== 'hover';
     const active = document.activeElement;
-    returnFocus = fromKeyboard ? 'trigger' : active instanceof HTMLElement ? active : null;
+    returnFocus = keyboardOpen ? 'trigger' : active instanceof HTMLElement ? active : null;
     open = true;
   }
+  function enter(event: PointerEvent): void {
+    clearTimeout(closeTimer);
+    if (!pickable || event.pointerType !== 'mouse' || open) return;
+    hoverTimer = setTimeout(() => show('hover'), 150);
+  }
+  function leave(): void {
+    clearTimeout(hoverTimer);
+    clearTimeout(holdTimer);
+    clearTimeout(closeTimer);
+    if (!stickyOpen)
+      closeTimer = setTimeout(() => {
+        open = false;
+      }, 250);
+  }
   function choose(next: DockComposerCaptureMode): void {
+    cancelTimers();
     open = false;
     onSelect?.(next);
   }
 </script>
 
-<div class="capture-split" data-open={open || undefined}>
-  <Button
-    variant="ghost-light"
-    size="icon-sm"
-    class="media-button capture-button"
-    disabled={blocked}
-    aria-label={modeLabel}
-    aria-busy={media.capturePending || undefined}
-    data-alert={media.alerts?.capture ? '' : undefined}
-    data-capture-mode={mode}
-    {tooltip}
-    tooltipDisabled={open}
-    onpointerdown={(event) => {
-      if (event.pointerType === 'mouse') event.preventDefault();
+<Button
+  bind:ref={trigger}
+  variant="ghost-light"
+  size="icon-sm"
+  class="media-button capture-button"
+  disabled={blocked}
+  aria-label={modeLabel}
+  aria-haspopup={pickable ? 'menu' : undefined}
+  aria-expanded={pickable ? open : undefined}
+  aria-busy={media.capturePending || undefined}
+  data-alert={media.alerts?.capture ? '' : undefined}
+  data-capture-mode={mode}
+  {tooltip}
+  tooltipDisabled={open}
+  onpointerenter={enter}
+  onpointerleave={leave}
+  onpointerdown={(event) => {
+    clearTimeout(hoverTimer);
+    suppressClick = false;
+    if (event.pointerType === 'mouse') event.preventDefault();
+    if (event.pointerType === 'touch' && pickable) {
+      holdTimer = setTimeout(() => {
+        suppressClick = true;
+        show('touch');
+      }, 450);
+    }
+  }}
+  onpointerup={() => clearTimeout(holdTimer)}
+  onpointercancel={() => clearTimeout(holdTimer)}
+  oncontextmenu={(event) => {
+    if (!pickable) return;
+    event.preventDefault();
+    if ((event as PointerEvent).pointerType === 'touch') suppressClick = true;
+    show('touch');
+  }}
+  onkeydown={(event) => {
+    if (
+      !pickable ||
+      !(
+        ['ArrowUp', 'ArrowDown', 'ContextMenu'].includes(event.key) ||
+        (event.shiftKey && event.key === 'F10')
+      )
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    show('keyboard');
+  }}
+  onclick={() => {
+    cancelTimers();
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
+    open = false;
+    if (media.alerts?.capture) onAlert?.();
+    else onCapture();
+  }}
+>
+  {#if media.alerts?.capture}<span class="alert-dot" aria-hidden="true"></span>{/if}
+  {#key media.captureRevision}
+    {#if media.captureRevision > initialCaptureRevision}<span
+        class="capture-flash"
+        aria-hidden="true"
+      ></span>{/if}
+  {/key}
+  <DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[mode]} />
+</Button>
+{#if menuLabels && media.captureModesAvailable}
+  <DockCaptureModeMenu
+    bind:open
+    anchor={trigger}
+    {mode}
+    labels={menuLabels}
+    label={labels.captureOptions}
+    focusChecked={keyboardOpen}
+    onSelect={choose}
+    onpointerenter={() => clearTimeout(closeTimer)}
+    onpointerleave={leave}
+    onInteractOutside={() => {
+      returnFocus = null;
     }}
-    onclick={() => {
-      open = false;
-      if (media.alerts?.capture) onAlert?.();
-      else onCapture();
-    }}
-  >
-    {#if media.alerts?.capture}<span class="alert-dot" aria-hidden="true"></span>{/if}
-    {#key media.captureRevision}
-      {#if media.captureRevision > initialCaptureRevision}<span
-          class="capture-flash"
-          aria-hidden="true"
-        ></span>{/if}
-    {/key}
-    <DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[mode]} />
-  </Button>
-  {#if menuLabels && media.captureModesAvailable}
-    <Button
-      bind:ref={trigger}
-      variant="ghost-light"
-      size="icon-sm"
-      class="capture-picker"
-      disabled={!pickable}
-      aria-label={labels.captureOptions}
-      aria-haspopup="menu"
-      aria-expanded={open}
-      tooltip={labels.captureOptions}
-      tooltipDisabled={open}
-      onpointerdown={(event) => {
-        if (event.pointerType === 'mouse') event.preventDefault();
-      }}
-      onclick={(event) => {
-        if (open) open = false;
-        else show(event.detail === 0);
-      }}
-      onkeydown={(event) => {
-        if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
-        event.preventDefault();
-        event.stopPropagation();
-        show(true);
-      }}
-    >
-      <CaretDownIcon size={12} aria-hidden="true" />
-    </Button>
-    <DockCaptureModeMenu
-      bind:open
-      anchor={trigger}
-      {mode}
-      labels={menuLabels}
-      label={labels.captureOptions}
-      focusChecked={keyboardOpen}
-      onSelect={choose}
-      onInteractOutside={() => {
-        returnFocus = null;
-      }}
-    />
-  {/if}
-</div>
+  />
+{/if}
 
 <style>
-  .capture-split {
-    display: flex;
-    flex: none;
-    align-items: center;
-  }
-  /* The picker occupies the shared inter-control gap, rather than adding a
-     second gap after capture. Its hit region stays separate from both buttons. */
-  .capture-split:has(:global(.capture-picker)) {
-    margin-inline-end: calc(-1 * var(--capture-picker-width, 12px));
-  }
-  .capture-split :global(.capture-picker) {
-    position: relative;
-    width: var(--capture-picker-width, 12px);
-    min-width: var(--capture-picker-width, 12px);
-    height: 30px;
-    padding: 0;
-    border-radius: 8px;
-    color: hsl(var(--muted-foreground));
-  }
-  /* Reserve the segment's space: revealing it never shifts the main action. */
-  @media (hover: hover) and (pointer: fine) {
-    .capture-split :global(.capture-picker) {
-      opacity: 0;
-      transition: opacity var(--spring-fast) var(--spring-fast-ease);
-    }
-    .capture-split:hover :global(.capture-picker),
-    .capture-split:focus-within :global(.capture-picker),
-    .capture-split[data-open] :global(.capture-picker) {
-      opacity: 1;
-    }
-  }
-
   .capture-flash {
     position: absolute;
     inset: 0;
@@ -204,9 +221,6 @@
     }
   }
   @container style(--motion-reduced: 1) {
-    .capture-split :global(.capture-picker) {
-      transition: none;
-    }
     .capture-flash {
       animation: none;
     }
