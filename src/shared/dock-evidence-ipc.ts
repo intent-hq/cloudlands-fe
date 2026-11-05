@@ -40,6 +40,7 @@ export type DockEvidencePixelsResult = DockNativeResult<DockEvidenceCaptureResul
 export type DockEvidencePrivacyPane = 'screen' | 'microphone' | 'speech' | 'accessibility';
 
 export type DockEvidenceControl =
+  | { action: 'media-waveform'; request: import('./dock-media-output').DockMediaAnalyzeRequest }
   | { action: 'media-export'; request: import('./dock-media-output').DockMediaExportRequest }
   | { action: 'media-transcribe'; request: import('./dock-media-output').DockMediaTranscribeRequest }
   | { action: 'media-job-cancel'; jobId: string }

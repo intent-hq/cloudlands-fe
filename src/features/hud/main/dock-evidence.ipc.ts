@@ -1,6 +1,6 @@
 import { DockMediaCaptureSchema } from '../../../shared/dock-media-edit';
-import { exportDockMedia, transcribeDockMedia, releaseDockMediaJob } from './dock-media-output';
-import { DockMediaExportRequestSchema, DockMediaTranscribeRequestSchema } from '../../../shared/dock-media-output';
+import { exportDockMedia, transcribeDockMedia, releaseDockMediaJob, analyzeDockMedia } from './dock-media-output';
+import { DockMediaExportRequestSchema, DockMediaTranscribeRequestSchema, DockMediaAnalyzeRequestSchema } from '../../../shared/dock-media-output';
 import {
   app,
   BrowserWindow,
@@ -86,6 +86,7 @@ const pixels = z
   })
   .strict();
 const controlSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('media-waveform'), request: DockMediaAnalyzeRequestSchema }).strict(),
   z.object({ action: z.literal('media-export'), request: DockMediaExportRequestSchema }).strict(),
   z.object({ action: z.literal('media-transcribe'), request: DockMediaTranscribeRequestSchema }).strict(),
   z.object({ action: z.literal('media-job-cancel'), jobId: z.string().uuid() }).strict(),
@@ -442,6 +443,9 @@ function createMediaBinder() {
     const current = () => state.context.isCurrent();
     let result: DockNativeResult<unknown>;
     switch (control.action) {
+      case 'media-waveform':
+        result = await analyzeDockMedia(state.context, control.request);
+        break;
       case 'media-export':
         result = await exportDockMedia(state.context, control.request, (fraction) => {
           send(state, { kind: 'evidence', event: { type: 'media-progress', jobId: control.request.jobId, fraction } });

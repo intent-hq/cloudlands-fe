@@ -20,7 +20,6 @@ import { execFile as nodeExecFile, spawn as nodeSpawn } from 'node:child_process
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { access, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { promisify } from 'node:util';
 import { app } from 'electron';
 import type {
   DockCapturedPixels,
@@ -84,6 +83,8 @@ export interface DockScreenRecorderDeps {
 }
 
 export interface DockScreenRecorder {
+  /** Synchronous reciprocal lease: no new selector while a clip owns startup/stream/finalization. */
+  reserveSelection(): (() => void) | null;
   capability(): Promise<DockRecordingCapability>;
   /**
    * Screenshot with the dock and controls excluded, so the composer stays visible.
@@ -184,7 +185,6 @@ function helperCandidates(): string[] {
   ];
 }
 
-const execute = promisify(nodeExecFile);
 
 const defaultDockScreenRecorderDeps: DockScreenRecorderDeps = {
   platform: process.platform,
@@ -200,11 +200,17 @@ const defaultDockScreenRecorderDeps: DockScreenRecorderDeps = {
     return null;
   },
   spawn: (file, args) => nodeSpawn(file, args, { stdio: ['pipe', 'pipe', 'pipe'] }),
-  execFile: (file, args, options) =>
-    execute(file, args, {
-      timeout: options?.timeoutMs ?? 5_000,
-      maxBuffer: options?.maxBuffer ?? MAX_LINE,
-    }),
+  execFile: async (file, args, options) => {
+    let closed: Promise<void> | undefined;
+    try {
+      return await new Promise<{ stdout: string }>((resolve, reject) => {
+        const child = nodeExecFile(file, args, {
+          timeout: options?.timeoutMs ?? 5_000, maxBuffer: options?.maxBuffer ?? MAX_LINE,
+        }, (error, stdout) => error ? reject(error) : resolve({ stdout }));
+        closed = new Promise<void>((done) => child.once('close', () => done()));
+      });
+    } finally { await closed; }
+  },
   fileSize: async (file) => (await stat(file)).size,
   readFile: (file) => readFile(file),
   removeFile: (file) => rm(file, { force: true }),
@@ -568,8 +574,11 @@ export function createDockScreenRecorder(
     if (!Number.isSafeInteger(request.displayId) || request.displayId <= 0)
       return fail('unavailable', 'display');
     // One screen capture at a time: a recording's stream answers for itself.
+    if (selectionOwner || standaloneStillOwner) return fail('failed', 'capture-busy');
     if (active) return streamStill(active, request);
     if (reservation) return fail('failed', 'recording-busy');
+    const token = Symbol(); standaloneStillOwner = token;
+    try {
     const helper = await deps.resolveHelper();
     if (!helper) return fail('unavailable', 'helper-missing');
     let raw: Record<string, unknown>;
@@ -596,6 +605,7 @@ export function createDockScreenRecorder(
       return fail(errorCode(raw.code), typeof raw.detail === 'string' ? raw.detail : undefined);
     }
     return stillPixels(raw);
+    } finally { if (standaloneStillOwner === token) standaloneStillOwner = null; }
   };
 
   const stillPixels = (raw: Record<string, unknown>): DockNativeResult<DockCapturedPixels> => {
@@ -638,10 +648,18 @@ export function createDockScreenRecorder(
     promise: Promise<DockNativeResult<{ startedAt: number }>>;
   }
   let reservation: Reservation | null = null;
+  let selectionOwner: symbol | null = null;
+  let standaloneStillOwner: symbol | null = null;
+  const reserveSelection = (): (() => void) | null => {
+    if (active || reservation || selectionOwner || standaloneStillOwner) return null;
+    const token = Symbol(); selectionOwner = token;
+    return () => { if (selectionOwner === token) selectionOwner = null; };
+  };
 
   const start = (
     request: DockRecordingStartRequest,
   ): Promise<DockNativeResult<{ startedAt: number }>> => {
+    if (selectionOwner || standaloneStillOwner) return Promise.resolve(fail('failed', 'capture-busy'));
     if (active) {
       if (active.clipId === request.clipId) return active.started;
       return Promise.resolve(fail('failed', 'busy'));
@@ -928,6 +946,7 @@ export function createDockScreenRecorder(
   });
 
   return {
+    reserveSelection,
     capability,
     captureStill,
     start,
