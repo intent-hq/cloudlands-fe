@@ -465,6 +465,25 @@ export const IPC_CHANNELS = {
     SIGNAL: 'dock-annotation:signal',
   },
 
+  DOCK_CAPTURE_EDITOR: {
+    OPEN: 'dock-capture-editor:open',
+    GET: 'dock-capture-editor:get',
+    CLOSE: 'dock-capture-editor:close',
+    /** editor → main: the answer to main's CONFIRM_DISCARD request (by its id). */
+    DISCARD: 'dock-capture-editor:discard',
+    KEEP: 'dock-capture-editor:keep',
+    /** main → editor send: the session changed (re-read it with GET). */
+    CHANGED: 'dock-capture-editor:changed',
+    /** main → editor send: closing or switching would lose edits; ask first. */
+    CONFIRM_DISCARD: 'dock-capture-editor:confirm-discard',
+    /** editor → main: save this edit (DockMediaSaveRequest); resolves with the outcome. */
+    SAVE: 'dock-capture-editor:save',
+    /** main → the opening dock send: persist this save (DockCaptureEditorSaveRequested). */
+    SAVE_REQUESTED: 'dock-capture-editor:save-requested',
+    /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
+    SAVE_RESULT: 'dock-capture-editor:save-result',
+  },
+
   DOCK_MEDIA: {
     CLIPBOARD_WRITE: 'dock-media:clipboard-write',
     CLIPBOARD_READ: 'dock-media:clipboard-read',
@@ -1197,6 +1216,9 @@ export const IPC_CHANNELS = {
 
 // Event channels that are sent from main to renderer
 export const EVENT_CHANNELS = [
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CHANGED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CONFIRM_DISCARD,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.SAVE_REQUESTED,
   IPC_CHANNELS.DOCK_CONTEXT.CHANGED,
   IPC_CHANNELS.DOCK_SHORTCUTS.CHANGED,
   IPC_CHANNELS.DOCK_EVIDENCE.EVENT,
