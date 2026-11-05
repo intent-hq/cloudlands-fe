@@ -74,6 +74,11 @@ export interface DockCaptureEditorOpenRequest {
    * attachment opens read-only: it plays, but nothing can be edited or saved.
    */
   source?: DockMediaSource;
+  /**
+   * After a saved retake, the first capture: its captured marks are the Reset
+   * baseline, carried onto the current pixels by their frames.
+   */
+  originalSource?: DockMediaSource;
   /** The saved edit of this source, if any. */
   saved?: DockMediaEdit | null;
   transcript?: DockMediaTranscript | null;
@@ -142,6 +147,7 @@ export const DockCaptureEditorOpenSchema = z
       })
       .strict(),
     source: DockMediaSourceSchema.optional(),
+    originalSource: DockMediaSourceSchema.optional(),
     saved: DockMediaEditSchema.nullable().optional(),
     transcript: DockMediaTranscriptSchema.nullable().optional(),
   })
@@ -162,6 +168,14 @@ export const DockCaptureEditorOpenSchema = z
         request.saved.sourceId === request.source.id &&
         request.saved.sourceRevision === request.source.revision),
     'Edit does not match the source',
+  )
+  .refine(
+    (request) =>
+      !request.originalSource ||
+      (request.source?.kind === 'screenshot' &&
+        request.originalSource.kind === 'screenshot' &&
+        request.originalSource.id !== request.source.id),
+    'Original source does not precede this source',
   );
 
 /** Close (and Discard, Keep editing) name the session they mean; others are untouched. */

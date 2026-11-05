@@ -678,6 +678,7 @@ async function save(
       ...(candidate && stored
         ? {
             source: candidate,
+            originalSource: current.snapshot.originalSource ?? current.snapshot.source,
             mediaUrl: stored.mediaUrl,
             attachmentId: candidate.attachmentId,
             width: candidate.width,

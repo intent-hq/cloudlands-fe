@@ -21,10 +21,16 @@ import { selectComposerContextItems } from '../../transient-ui/transient-ui-sele
 import { getPrincipalActionContext } from '../../principal/principal-context';
 import type { DockSavedMedia } from '$shared/dock-media-edit';
 import { setComposerContextItems } from '../../transient-ui/transient-ui-slice';
-import { toDockDraftEvidence } from '$shared/dock-evidence';
+import {
+  recordingDockClip,
+  toDockDraftEvidence,
+  type DockCapturedPixels,
+  type DockNativeResult,
+} from '$shared/dock-evidence';
 import { applyDockMediaSave, DockMediaSaveRequestSchema } from '$shared/dock-media-edit';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
+  type DockCaptureEditorRetakeResult,
   type DockCaptureEditorSaveResult,
 } from '$shared/dock-capture-editor';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
@@ -322,11 +328,71 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
       width: source.width, height: source.height, durationMs: source.durationMs,
       provenance: { hasMicAudio: source.audio === 'available', visuals: source.visuals },
       marks: [], source, saved: media.saved, transcript: media.transcript,
+      ...(media.originalSource ? { originalSource: media.originalSource } : {}),
     };
     yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request));
     yield* fork(analyzeAndPublish, workspaceId, agentId, logicalId, authority);
     yield* recognizeAndPersist(workspaceId, agentId, logicalId, authority);
   } finally { settled.close(); yield* put(chatDraftOwnerReleased(ownerId)); }
+}
+
+const retakeSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    pair: z.object({ workspaceId: z.string().min(1), agentId: z.string().min(1) }).strict(),
+    expected: z
+      .object({ sourceId: z.string().min(1), sourceRevision: z.number().int().nonnegative() })
+      .strict(),
+  })
+  .strict();
+
+/**
+ * Retake (screenshot editor): capture again in the source's own mode and place the
+ * pixels as a new, immutable file; reply with that candidate's canonical source. The
+ * draft, its attachment and its evidence do not change here: Save swaps the candidate
+ * in (applyDockMediaSave), and an abandoned candidate is only an unused file. A
+ * capture without a verified frame on the source's display cannot carry the marks
+ * over, so it is refused before anything is placed. Exactly one reply per request.
+ */
+function* retakeCapture(request: z.infer<typeof retakeSchema>): SagaGenerator<void> {
+  const { requestId, pair: { workspaceId, agentId }, expected } = request;
+  const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
+  const service = dockMediaNativeService();
+  const current = () => !!authority && authority === getPrincipalActionContext(store.state) &&
+    isDockBindingCurrent(binding) && service === dockMediaNativeService();
+  // The session's source must still be this pair's, unchanged, at every step.
+  const sourceNow = () => evidenceOf(workspaceId, agentId)?.images.find((row) =>
+    row.media?.source.id === expected.sourceId && row.media.source.revision === expected.sourceRevision)?.media?.source ?? null;
+  let reply: DockCaptureEditorRetakeResult = { requestId, ok: false, error: 'failed' };
+  try {
+    const evidence = evidenceOf(workspaceId, agentId), original = sourceNow();
+    const mode = original?.capture?.mode, frame = original?.capture?.frame;
+    // One capture at a time, and never while a recording or annotate session holds the screen.
+    if (!current() || !service || !evidence || !original || original.kind !== 'screenshot' || !mode || !frame ||
+        evidence.capture.pending || evidence.annotation || recordingDockClip(evidence)) return;
+    let result: DockNativeResult<DockCapturedPixels>;
+    try { result = yield* call([service, service.captureDisplay], mode); } catch { return; }
+    if (!current()) return;
+    if (!result.ok) {
+      reply = { requestId, ok: false,
+        error: result.detail === 'cancelled' ? 'cancelled' : result.error === 'permission' ? 'permission' : 'failed' };
+      return;
+    }
+    const pixels = result.value, taken = pixels.capture;
+    if (taken?.mode !== mode || !taken.frame || taken.frame.displayId !== frame.displayId || !sourceNow()) return;
+    const extension = pixels.mimeType.split('/')[1] ?? 'png';
+    const placed = yield* call(placeDockMediaImage, workspaceId, `capture-retake-${crypto.randomUUID()}.${extension}`,
+      { data: pixels.base64, mimeType: pixels.mimeType }, binding);
+    if (!current() || !sourceNow()) return;
+    const source = DockMediaSourceSchema.safeParse({ id: crypto.randomUUID(), revision: 0, kind: 'screenshot',
+      attachmentId: placed.attachmentId, path: placed.path, durationMs: 0, width: pixels.width, height: pixels.height,
+      capture: taken, audio: 'none', visuals: 'clean', batches: dockMediaCaptureBatches([], 0) });
+    if (source.success) reply = { requestId, ok: true, source: source.data };
+  } catch { /* Placement failed or the backend changed: the reply stays failed. */ }
+  finally {
+    try { yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE_RESULT, reply)); }
+    catch { /* A retired main cannot receive it; its own timeout brings the editor back. */ }
+  }
 }
 
 /** Sole dock listener; the editor and main have separate, strictly bound ends. */
@@ -356,6 +422,19 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
       bufferPolicy: {
         kind: 'lossless',
         rationale: 'Each editor save requires a correlated durable result.',
+      },
+    },
+  );
+  yield* takeEveryFromElectronChannel<object>(
+    DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE_REQUESTED,
+    function* (value) {
+      const parsed = retakeSchema.safeParse(value);
+      if (parsed.success) yield* retakeCapture(parsed.data);
+    },
+    {
+      bufferPolicy: {
+        kind: 'lossless',
+        rationale: 'Each retake request requires exactly one correlated result.',
       },
     },
   );
