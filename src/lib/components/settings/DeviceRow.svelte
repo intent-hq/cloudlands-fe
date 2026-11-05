@@ -618,22 +618,27 @@
     {/snippet}
     {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
     {#snippet meta()}
-      {#if platform}
-        <MachinePlatformIcon {platform} />
-      {/if}
-      {#if exposedMachine}
-        <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
-      {/if}
-      {#if openStatus === 'connected' && device.intentdVersion}
-        {#if daemonBehindTooltip}
-          <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
-            <span>{device.intentdVersion}</span>
-          </Tooltip>
-        {:else}
-          <span>{device.intentdVersion}</span>
+      <!-- One title-line-high flex row centres every part (platform icon,
+           badge, version, provider icons) on the name; inline icons with
+           vertical-align: middle sat ~1.5px below cap-height text. -->
+      <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
+        {#if platform}
+          <MachinePlatformIcon {platform} />
         {/if}
-      {/if}
-      <MachineProviderIcons {providers} />
+        {#if exposedMachine}
+          <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
+        {/if}
+        {#if openStatus === 'connected' && device.intentdVersion}
+          {#if daemonBehindTooltip}
+            <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
+              <span>{device.intentdVersion}</span>
+            </Tooltip>
+          {:else}
+            <span>{device.intentdVersion}</span>
+          {/if}
+        {/if}
+        <MachineProviderIcons {providers} />
+      </span>
     {/snippet}
     {#snippet trailing()}
       <RowActions
