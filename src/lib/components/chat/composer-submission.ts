@@ -81,3 +81,56 @@ export function buildWorkspaceContextString(
 
   return appendContextItemContent(parts.join('\n'), items);
 }
+
+/**
+ * Where a chat send originates. Only the composer's own submit carries the
+ * composer's context; a suggested prompt (click, Ctrl/Alt+1-3, starter
+ * prompts) sends its text bare and leaves the composer draft untouched.
+ */
+export type ChatSendSource = 'composer' | 'suggested-prompt';
+
+/** Composer state a composer send folds into its message. */
+export interface ComposerSendContext {
+  contextItems: ContextItem[];
+  checkedPanels: PanelContextItem[];
+  checkedSelections: SelectionContextItem[];
+  noteIds?: string[];
+  pickedMentions?: Record<string, unknown>;
+}
+
+/**
+ * Decide what a send carries and how the composer is cleaned up afterwards.
+ * `readComposer` is only called for composer sends, so a suggested prompt can
+ * never pick up attachments, mentions, checked panels or note ids.
+ */
+export function planChatSend(
+  source: ChatSendSource,
+  text: string,
+  readComposer: () => ComposerSendContext,
+) {
+  if (source === 'suggested-prompt') {
+    return {
+      fields: {},
+      hasAttachments: false,
+      cleanup: { clearInput: false, followBottom: true, historyText: null },
+    };
+  }
+  const composer = readComposer();
+  const { imageBlocks, fileBlocks } = extractAttachmentBlocks(composer.contextItems);
+  return {
+    fields: {
+      contextItems: composer.contextItems,
+      workspaceContextStr: buildWorkspaceContextString(
+        composer.contextItems,
+        composer.checkedPanels,
+        composer.checkedSelections,
+      ),
+      noteIds: composer.noteIds,
+      ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
+      ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
+      ...(composer.pickedMentions ? { messageMetadata: composer.pickedMentions } : {}),
+    },
+    hasAttachments: imageBlocks.length > 0 || fileBlocks.length > 0,
+    cleanup: { clearInput: true, followBottom: true, historyText: text },
+  };
+}
