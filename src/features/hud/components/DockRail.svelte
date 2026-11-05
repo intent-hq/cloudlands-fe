@@ -8,6 +8,7 @@
   } from '$shared/dock-placement';
   import { onDestroy, onMount, tick, type Snippet } from 'svelte';
   import Logo from '$lib/components/Logo.svelte';
+  import { isDockRecordingOwnerOnly } from '$shared/dock-shortcuts';
   import { Button } from '$lib/components/ui/button';
   import WorkspaceHoverCard from '$lib/components/workspace/WorkspaceHoverCard.svelte';
   import { m } from '$shared/paraglide/messages.js';
@@ -546,7 +547,9 @@
       rendererWidth = shellElement?.clientWidth || window.innerWidth;
       schedulePointerRegion(railExpanded ? 'expanded' : 'collapsed');
     };
-    const handleDockFocusRequest = () => {
+    const handleDockFocusRequest = (context?: unknown) => {
+      // A recording-owner shortcut is not a request to open or focus the dock.
+      if (isDockRecordingOwnerOnly(context)) return;
       hoverDismissed = false;
       windowFocused = true;
       cancelClose();

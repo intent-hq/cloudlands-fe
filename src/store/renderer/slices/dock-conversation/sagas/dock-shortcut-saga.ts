@@ -37,6 +37,27 @@ function* waitForNative(pairId: string): SagaGenerator<void> {
     yield* take(dockNativeSpeechSessionChanged);
   }
 }
+/**
+ * A shortcut while a recording keeps the notch out of sight: it acts on the pair that
+ * owns the live recording (same admitted authority, current pair, native owner) or
+ * not at all. Record stops it, annotate draws in its session (bringing its bar back
+ * if needed), dictate toggles speech there. No focus, selection or destination.
+ */
+function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void> {
+  const dock = appStore.state.dockConversation;
+  const authority = getPrincipalActionContext(appStore.state);
+  const { workspaceId, agentId } = dock;
+  if (!authority || dock.authority !== authority || !workspaceId || !agentId) return;
+  if (dock.nativeSpeech.pairId !== JSON.stringify([workspaceId, agentId])) return;
+  if (!recordingDockClip(evidenceOf(workspaceId, agentId))) return;
+  if (context.action === 'record')
+    yield* put(dockEvidenceRecordToggleRequested(workspaceId, agentId));
+  else if (context.action === 'annotate')
+    yield* put(dockEvidenceAnnotationToggleRequested(workspaceId, agentId));
+  else if (context.action === 'dictate')
+    yield* put(dockSpeechToggleRequested(workspaceId, agentId));
+}
+
 function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   if (
     !context ||
@@ -45,6 +66,11 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     !valid(context)
   )
     return;
+  // While a recording hides the notch: only that recording's own pair, never routed.
+  if (context.recordingOwnerOnly === true) {
+    yield* recordingOwnerAction(context);
+    return;
+  }
   // Stop the already-active native owner before consulting a new foreground destination.
   // Retained evidence alone is insufficient: the same pair and admitted authority must still own native.
   const dock = appStore.state.dockConversation;

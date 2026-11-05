@@ -932,21 +932,27 @@ export function focusDockWindow(
   if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
   if (recordingHidden(window)) {
     // Out of sight for a recording: never shown or focused, and a focus-only request
-    // (or capture) is not routed meanwhile. Record, annotate and dictate still reach
-    // the dock, where they stop or act on the live recording's own session.
+    // (or capture) does nothing meanwhile. Record, annotate and dictate reach the dock
+    // flagged owner-only: they act on the live recording's own pair, never route.
     const action = context?.action;
     if (
+      context &&
       (action === 'record' || action === 'annotate' || action === 'dictate') &&
       !window.webContents.isDestroyed()
     )
-      window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, context);
+      window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, {
+        ...context,
+        recordingOwnerOnly: true,
+      });
     return;
   }
   dockFocusedByIntentAt = Date.now();
   window.show();
   window.focus();
-  if (!window.webContents.isDestroyed())
-    window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, context);
+  // Only main sets the owner-only flag, and only above.
+  const plain = context ? { ...context } : context;
+  if (plain) delete plain.recordingOwnerOnly;
+  if (!window.webContents.isDestroyed()) window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, plain);
 }
 
 export function closeDockWindow(): void {

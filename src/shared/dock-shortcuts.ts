@@ -21,6 +21,20 @@ export interface DockShortcutContext {
   workspaceId?: string;
   /** Ephemeral main-verified local/tunnel address on this backend. Never persisted. */
   serviceAddress?: string;
+  /**
+   * Set by main only, while a recording keeps the notch out of sight: act on that
+   * recording's own pair (Stop, draw, dictate) and nothing else. Never focus, open,
+   * select or route to a destination; with no live recording there, do nothing.
+   */
+  recordingOwnerOnly?: boolean;
+}
+/** A focus-dock payload that only drives the live recording (see `recordingOwnerOnly`). */
+export function isDockRecordingOwnerOnly(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { recordingOwnerOnly?: unknown }).recordingOwnerOnly === true
+  );
 }
 export interface DockShortcutSelection {
   workspaceId: string;
