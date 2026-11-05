@@ -28,36 +28,44 @@
 }
 
 /*
- * One outline around the open group, drawn as joined segments: the chip
- * starts it, member tabs continue it and the last tab ends it. The bottom
- * stays open so the selected tab still joins the panel below.
+ * The open group sits on one soft background, drawn as joined segments: the
+ * chip starts it, member tabs continue it and the last tab ends it. It is
+ * painted under the tabs, so the selected tab still rises out of it and joins
+ * the panel below.
  */
-[data-tab-group-edge]::after {
+[data-tab-group-edge]::before {
   content: '';
   position: absolute;
-  z-index: 15;
-  inset: 0 -2px 0 0;
-  border-color: hsl(var(--tab-group-color) / 0.5);
-  border-style: solid;
-  border-width: 1px 0 0;
-  box-shadow: 0 0 0 2px hsl(var(--tab-group-color) / 0.16);
-  clip-path: inset(-3px 0 0 0);
+  inset: 4px -2px 4px 0;
+  background: hsl(var(--muted) / 0.55);
   pointer-events: none;
 }
 
-[data-tab-group-edge='start']::after {
-  border-left-width: 1px;
-  border-top-left-radius: 9px;
-  clip-path: inset(-3px 0 0 -3px);
+[data-tab-group-edge='start']::before {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
 }
 
-[data-tab-group-edge='end']::after {
+[data-tab-group-edge='end']::before {
   right: 0;
-  border-right-width: 1px;
-  border-top-right-radius: 9px;
-  clip-path: inset(-3px -3px 0 0);
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
 }
 
+/* Thin dividers between the group's unselected tabs, as in the chip row. */
+[data-tab-group-edge]:not(:has([data-active='true']))
+  + [data-tab-group-member]:not([data-tab-group-hidden]):not(:has([data-active='true']))::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: -1px;
+  width: 1px;
+  background: hsl(var(--border));
+  pointer-events: none;
+}
+
+[data-tab-group-hidden]::before,
 [data-tab-group-hidden]::after {
   display: none;
 }
