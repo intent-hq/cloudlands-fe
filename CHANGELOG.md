@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.285.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.285.1...v2.285.2) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* **build:** isolate preload output from main modules (intent-hq/intent[#8370](https://github.com/intent-hq/cloudlands-fe/issues/8370)) ([#4068](https://github.com/intent-hq/cloudlands-fe/issues/4068)) ([0e17c3b](https://github.com/intent-hq/cloudlands-fe/commit/0e17c3b4259b0f10e7fe680ea070f3dc5a2a9e8d))
+* bump intentd sidecar to v0.11.129 ([#4181](https://github.com/intent-hq/cloudlands-fe/issues/4181)) ([25be3da](https://github.com/intent-hq/cloudlands-fe/commit/25be3da2bb43a511e951d7acbb09ac2725c10b97))
+* refine workspace pickers and script recency ([#4180](https://github.com/intent-hq/cloudlands-fe/issues/4180)) ([0d68d07](https://github.com/intent-hq/cloudlands-fe/commit/0d68d07e5abb23a2106859bcb7f83e8c9c12cbaa))
+
 ## [2.285.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.285.0...v2.285.1) (2026-11-04)
 
 
