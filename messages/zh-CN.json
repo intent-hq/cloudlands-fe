@@ -8339,6 +8339,8 @@
   "dock_captureEditor_voiceTranscript_unavailable": "此录制没有文字稿。",
   "dock_captureEditor_transcript_unavailable": "此录制没有文字稿。",
   "dock_captureEditor_readonly_note": "此录制可在此播放，但暂时无法编辑。",
+  "dock_captureEditor_wordEdit_label": "更正字词",
+  "dock_captureEditor_toggleMark_tooltip": "按住 Shift 点按以包含或排除",
   "dock_captureEditor_saveConflict_label": "打开后此录制已更改。请关闭后重新打开再编辑。",
   "dock_captureEditor_saveFailed_label": "无法保存。请重试。",
   "dock_captureEditor_transcript_pending": "正在转写…",

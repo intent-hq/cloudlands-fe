@@ -38,13 +38,17 @@
     cuts = [],
     onCut,
     onRestore,
+    onToggleMark,
   }: {
     durationMs: number;
     currentMs: number;
-    marks: readonly DockCaptureEditorMark[];
+    /** Pins; an excluded mark shows hollow. */
+    marks: readonly (DockCaptureEditorMark & { excluded?: boolean })[];
     activeMarkId?: string | null;
     onSeek: (ms: number) => void;
     onMark: (mark: DockCaptureEditorMark) => void;
+    /** Shift-click a pin: include or exclude that mark. */
+    onToggleMark?: (markId: string) => void;
     /** The trimmed range; null without trimming. */
     trim?: DockMediaRange | null;
     /** What plays and is kept (trim minus cuts). */
@@ -278,7 +282,12 @@
           mark: mark.label || toolLabels[mark.tool](),
           time: formatRecordingTime(mark.atMs),
         })}
-        onclick={() => onMark(mark)}
+        data-excluded={mark.excluded || undefined}
+        tooltip={onToggleMark ? m.dock_captureEditor_toggleMark_tooltip() : undefined}
+        onclick={(event: MouseEvent) => {
+          if (event.shiftKey && onToggleMark) onToggleMark(mark.id);
+          else onMark(mark);
+        }}
       >
         <DockComposerIcon glyph={glyphs[mark.tool]} size={11} />
       </Button>
@@ -323,6 +332,10 @@
     color: hsl(var(--foreground));
     transform: translateX(-50%);
     cursor: pointer;
+  }
+  .track :global(.pin[data-excluded]) {
+    background: transparent;
+    opacity: 0.6;
   }
   .track :global(.pin[data-active]) {
     border-color: hsl(var(--primary));

@@ -8339,6 +8339,8 @@
   "dock_captureEditor_voiceTranscript_unavailable": "この録画の文字起こしはありません。",
   "dock_captureEditor_transcript_unavailable": "この録画の文字起こしはありません。",
   "dock_captureEditor_readonly_note": "この録画はここで再生できますが、まだ編集はできません。",
+  "dock_captureEditor_wordEdit_label": "単語を修正",
+  "dock_captureEditor_toggleMark_tooltip": "Shift キーを押しながらクリックで含める/除外",
   "dock_captureEditor_saveConflict_label": "開いてからこの録画が変更されました。編集するには閉じて開き直してください。",
   "dock_captureEditor_saveFailed_label": "保存できませんでした。もう一度お試しください。",
   "dock_captureEditor_transcript_pending": "文字起こし中…",

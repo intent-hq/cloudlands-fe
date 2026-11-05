@@ -8339,6 +8339,8 @@
   "dock_captureEditor_voiceTranscript_unavailable": "Kein Transkript für diese Aufnahme.",
   "dock_captureEditor_transcript_unavailable": "Kein Transkript für diese Aufnahme.",
   "dock_captureEditor_readonly_note": "Diese Aufnahme kann hier abgespielt, aber noch nicht bearbeitet werden.",
+  "dock_captureEditor_wordEdit_label": "Wort korrigieren",
+  "dock_captureEditor_toggleMark_tooltip": "Umschalt-Klick zum Ein- oder Ausschließen",
   "dock_captureEditor_saveConflict_label": "Diese Aufnahme hat sich seit dem Öffnen geändert. Schließe und öffne sie erneut, um sie zu bearbeiten.",
   "dock_captureEditor_saveFailed_label": "Speichern fehlgeschlagen. Versuche es erneut.",
   "dock_captureEditor_transcript_pending": "Wird transkribiert …",

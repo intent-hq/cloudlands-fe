@@ -2,9 +2,11 @@
   import { tick } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import type {
     DockMediaBatch,
     DockMediaEditMark,
+    DockMediaRange,
     DockMediaTranscript,
   } from '$shared/dock-media-edit';
   import DockComposerIcon, {
@@ -19,6 +21,10 @@
    * happened, the current word highlighted and kept in view. Clicking a timed word or
    * a pill moves the shared playhead; untimed text cannot be jumped to. It stays
    * usable, dimmed, when the voice choice is not Transcript.
+   *
+   * Editing (with the callbacks): select words and press Delete to cut that stretch
+   * (struck here, hatched on the timeline); click a struck passage to restore it.
+   * Double-click a word to correct it: corrections change the text sent, not the audio.
    */
   let {
     transcript,
@@ -29,6 +35,12 @@
     dimmed = false,
     onSeek,
     onMark,
+    cuts = [],
+    wordEdits = {},
+    onCut,
+    onRestore,
+    onWordEdit,
+    onToggleMark,
   }: {
     transcript: DockMediaTranscript | null;
     batches: readonly DockMediaBatch[];
@@ -38,7 +50,54 @@
     dimmed?: boolean;
     onSeek: (ms: number) => void;
     onMark: (mark: DockMediaEditMark) => void;
+    cuts?: readonly DockMediaRange[];
+    /** Corrected text by recognition unit id. */
+    wordEdits?: Readonly<Record<string, string>>;
+    onCut?: (range: DockMediaRange) => void;
+    onRestore?: (range: DockMediaRange) => void;
+    /** `text` null drops the correction (back to what was recognized). */
+    onWordEdit?: (wordId: string, text: string | null) => void;
+    /** Shift-click a pill: include or exclude that mark. */
+    onToggleMark?: (markId: string) => void;
   } = $props();
+
+  type Word = DockMediaTranscript['words'][number];
+  /** The cut a timed word falls in, if any. */
+  function cutOf(word: Word): DockMediaRange | null {
+    if (word.startMs === null || word.endMs === null) return null;
+    return cuts.find((cut) => word.startMs! >= cut.startMs && word.endMs! <= cut.endMs) ?? null;
+  }
+
+  let editing = $state<{ id: string; value: string } | null>(null);
+  function commitEdit(word: Word): void {
+    const current = editing;
+    editing = null;
+    if (!current || current.id !== word.id || !onWordEdit) return;
+    const value = current.value.trim();
+    const shown = wordEdits[word.id] ?? word.text;
+    if (!value || value === shown) return;
+    onWordEdit(word.id, value === word.text ? null : value);
+  }
+
+  /** Delete or Backspace with words selected in the transcript cuts their stretch. */
+  function onWindowKeydown(event: KeyboardEvent): void {
+    if (!onCut || !list || editing || (event.key !== 'Delete' && event.key !== 'Backspace')) return;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (!list.contains(range.commonAncestorContainer)) return;
+    let startMs = Infinity;
+    let endMs = -Infinity;
+    for (const node of list.querySelectorAll<HTMLElement>('[data-start][data-end]')) {
+      if (!range.intersectsNode(node)) continue;
+      startMs = Math.min(startMs, Number(node.dataset.start));
+      endMs = Math.max(endMs, Number(node.dataset.end));
+    }
+    if (!Number.isFinite(startMs) || !(endMs > startMs)) return;
+    event.preventDefault();
+    selection.removeAllRanges();
+    onCut({ startMs, endMs });
+  }
 
   const ready = $derived(transcript?.status === 'ready' ? transcript : null);
   const layout = $derived(ready ? layoutTranscript(ready.words, batches, marks) : []);
@@ -64,13 +123,35 @@
     );
   });
 
-  /** A click on a timed word moves the playhead to it (delegated: words are not buttons). */
+  /**
+   * A click on a timed word moves the playhead to it; on a struck (cut) word, it
+   * restores that cut. Delegated: words are not buttons.
+   */
   function onWordClick(event: MouseEvent): void {
+    if (window.getSelection()?.isCollapsed === false) return;
     const word = (event.target as Element).closest<HTMLElement>('[data-start]');
-    const start = Number(word?.dataset.start);
-    if (word && Number.isFinite(start)) onSeek(start);
+    if (!word) return;
+    const cutStart = Number(word.dataset.cutStart);
+    const cutEnd = Number(word.dataset.cutEnd);
+    if (onRestore && Number.isFinite(cutStart) && Number.isFinite(cutEnd)) {
+      onRestore({ startMs: cutStart, endMs: cutEnd });
+      return;
+    }
+    const start = Number(word.dataset.start);
+    if (Number.isFinite(start)) onSeek(start);
+  }
+  function onWordDoubleClick(event: MouseEvent): void {
+    if (!onWordEdit || !ready) return;
+    const id = (event.target as Element).closest<HTMLElement>('[data-word-id]')?.dataset.wordId;
+    const word = id ? ready.words.find((row) => row.id === id) : undefined;
+    if (!word) return;
+    event.preventDefault();
+    window.getSelection()?.removeAllRanges();
+    editing = { id: word.id, value: wordEdits[word.id] ?? word.text };
   }
 </script>
+
+<svelte:window onkeydown={onWindowKeydown} />
 
 <section class="transcript" data-transcript data-dimmed={dimmed || undefined}>
   {#if !transcript || transcript.status === 'unavailable' || transcript.status === 'failed'}
@@ -81,7 +162,7 @@
     <p class="status">{m.dock_captureEditor_transcript_noSpeech()}</p>
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -- word clicks are a pointer shortcut; marks (buttons) and the timeline carry keyboard navigation -->
-    <div class="batches" bind:this={list} onclick={onWordClick}>
+    <div class="batches" bind:this={list} onclick={onWordClick} ondblclick={onWordDoubleClick}>
       {#each layout as batch (batch.id)}
         <div class="batch" data-batch={batch.n}>
           <h3 class="batch-header">
@@ -95,13 +176,36 @@
           </h3>
           <p class="text">
             {#each batch.pieces as piece, index (piece.kind === 'word' ? piece.word.id : `m:${piece.mark.id}:${index}`)}
-              {#if piece.kind === 'word'}
+              {#if piece.kind === 'word' && editing?.id === piece.word.id}
+                {@const word = piece.word}
+                <Input
+                  class="word-input"
+                  size="sm"
+                  aria-label={m.dock_captureEditor_wordEdit_label()}
+                  bind:value={editing.value}
+                  autofocus
+                  onblur={() => commitEdit(word)}
+                  onkeydown={(event: KeyboardEvent) => {
+                    event.stopPropagation();
+                    if (event.key === 'Enter') commitEdit(word);
+                    else if (event.key === 'Escape') editing = null;
+                  }}
+                />{' '}
+              {:else if piece.kind === 'word'}
+                {@const cut = cutOf(piece.word)}
                 <span
                   class="word"
                   data-word-id={piece.word.id}
                   data-start={piece.timed ? piece.word.startMs : undefined}
+                  data-end={piece.timed ? piece.word.endMs : undefined}
+                  data-cut-start={cut?.startMs}
+                  data-cut-end={cut?.endMs}
+                  data-cut={cut ? '' : undefined}
+                  data-edited={piece.word.id in wordEdits || undefined}
                   data-current={piece.word.id === current || undefined}
-                  data-untimed={!piece.timed || undefined}>{piece.word.text}</span
+                  data-untimed={!piece.timed || undefined}
+                  title={cut && onRestore ? m.dock_captureEditor_restoreCut_tooltip() : undefined}
+                  >{wordEdits[piece.word.id] ?? piece.word.text}</span
                 >{' '}
               {:else}
                 <Button
@@ -115,7 +219,11 @@
                     mark: piece.mark.label || piece.mark.kind,
                     time: formatRecordingTime(piece.mark.atMs),
                   })}
-                  onclick={() => onMark(piece.mark)}
+                  tooltip={onToggleMark ? m.dock_captureEditor_toggleMark_tooltip() : undefined}
+                  onclick={(event: MouseEvent) => {
+                    if (event.shiftKey && onToggleMark) onToggleMark(piece.mark.id);
+                    else onMark(piece.mark);
+                  }}
                 >
                   <DockComposerIcon glyph={glyphs[piece.mark.kind]} size={11} />
                   <span>{piece.mark.label || piece.mark.kind}</span>
@@ -163,6 +271,19 @@
   .word[data-current] {
     border-radius: 3px;
     background: hsl(var(--primary) / 0.2);
+  }
+  .word[data-cut] {
+    text-decoration: line-through;
+    color: hsl(var(--muted-foreground));
+  }
+  .word[data-edited] {
+    text-decoration: underline dotted;
+  }
+  .text :global(.word-input) {
+    display: inline-block;
+    width: 8em;
+    height: 20px;
+    font-size: 12px;
   }
   .word[data-untimed] {
     color: hsl(var(--muted-foreground));

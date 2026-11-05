@@ -109,12 +109,13 @@
     arrow: 'arrow',
     text: 'pen',
   } as const;
-  const pins = $derived<DockCaptureEditorMark[]>(
+  const pins = $derived<(DockCaptureEditorMark & { excluded?: boolean })[]>(
     edits
       ? edits.draft.marks.map((mark) => ({
           id: mark.id,
           tool: toolOf[mark.kind],
           atMs: mark.atMs,
+          excluded: !mark.included,
           ...(mark.label ? { label: mark.label } : {}),
         }))
       : snapshot.marks,
@@ -172,6 +173,19 @@
     activeMarkId = null;
     failed = false;
   });
+
+  // Marks drawn while recording are part of the frames: including or excluding one is
+  // honest only on a clean source.
+  const marksEditable = !!source && markRemovable(source);
+  /** Include or exclude a mark (Shift-click): one edit. */
+  function toggleMark(markId: string): void {
+    edits?.apply((draft) => ({
+      ...draft,
+      marks: draft.marks.map((mark) =>
+        mark.id === markId ? { ...mark, included: !mark.included } : mark,
+      ),
+    }));
+  }
 
   /** Cut a stretch: one edit; overlapping or touching cuts merge into one. */
   function cut(range: DockMediaRange): void {
@@ -317,6 +331,7 @@
           seek(ms);
         }}
         onMark={jumpTo}
+        onToggleMark={marksEditable ? toggleMark : undefined}
       />
     </div>
   {/snippet}
@@ -348,6 +363,18 @@
           video?.pause();
           seek(mark.atMs);
         }}
+        cuts={edits.draft.cuts}
+        wordEdits={edits.draft.wordEdits}
+        onCut={timeEditable ? cut : undefined}
+        onRestore={timeEditable ? restore : undefined}
+        onWordEdit={(wordId, text) =>
+          edits.apply((draft) => {
+            const wordEdits = { ...draft.wordEdits };
+            if (text === null) delete wordEdits[wordId];
+            else wordEdits[wordId] = text.slice(0, 20_000);
+            return { ...draft, wordEdits };
+          })}
+        onToggleMark={marksEditable ? toggleMark : undefined}
       />
     </div>
   {:else}
