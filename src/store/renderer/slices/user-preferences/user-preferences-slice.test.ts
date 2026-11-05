@@ -32,6 +32,8 @@ import {
   setLabsMultiplayerEnabled,
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
+  setLabsCursorProviderEnabled,
+  toggleLabsCursorProvider,
   setLabsSettingsVisible,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -635,6 +637,14 @@ describe('userPreferencesReducer', () => {
       const disabled = userPreferencesReducer(enabled, toggleLabsPlainFolderWorkspaces());
       expect(enabled.labsPlainFolderWorkspacesEnabled).toBe(true);
       expect(disabled.labsPlainFolderWorkspacesEnabled).toBe(false);
+    });
+
+    it('defaults the Cursor provider lab to disabled and sets/toggles it', () => {
+      expect(initialState.labsCursorProviderEnabled).toBe(false);
+      const enabled = userPreferencesReducer(initialState, setLabsCursorProviderEnabled(true));
+      const disabled = userPreferencesReducer(enabled, toggleLabsCursorProvider());
+      expect(enabled.labsCursorProviderEnabled).toBe(true);
+      expect(disabled.labsCursorProviderEnabled).toBe(false);
     });
 
     it('has no Provider profiles lab preference: profiles are always on', () => {

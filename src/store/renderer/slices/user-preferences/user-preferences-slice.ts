@@ -604,6 +604,7 @@ labsMultiplayerPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsBrowserAccessPreference.register(userPreferencesReducer);
+labsCursorProviderPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
