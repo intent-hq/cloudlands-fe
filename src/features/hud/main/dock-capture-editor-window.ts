@@ -144,6 +144,12 @@ let session: Session | null = null;
 let pending: Pending | null = null;
 /** Set while main itself closes the window (after Discard, or with nothing to lose). */
 let closingAllowed = false;
+/**
+ * Every open admitted so far. An open that awaited (readiness, preferences) goes on
+ * only if no newer open started, and the editor was not closed or its owner retired
+ * meanwhile: those bump it too.
+ */
+let openGeneration = 0;
 
 function routeUrl(route: string): string {
   if (process.env.NODE_ENV === 'development')
@@ -193,6 +199,7 @@ function endSession(): void {
 }
 
 function closeEditor(): void {
+  openGeneration += 1;
   dropPending();
   endSession();
   const window = editor;
@@ -290,6 +297,8 @@ function createEditorWindow(backendId: string): BrowserWindow {
   });
   window.on('closed', () => {
     if (editor !== window) return;
+    // Closed by the person: an open still awaiting must not reopen it.
+    openGeneration += 1;
     dropPending();
     editor = null;
     editorBackendId = null;
@@ -338,6 +347,7 @@ async function open(
   const mediaUrl = mediaUrlFor(rest.workspaceId, canonical, binding.backendId);
   if (!mediaUrl) return unavailable('invalid-path');
 
+  const generation = ++openGeneration;
   // Whether sending honors saved edits of this source (asked of the output owner),
   // and the person's last saved choice, the default for a new edit.
   const [output, rememberedChoice] = await Promise.all([
@@ -348,8 +358,10 @@ async function open(
       ? getDockMediaChoiceLocalPref().catch(() => null)
       : Promise.resolve(null),
   ]);
-  // Nothing may have changed meanwhile: the same dock window, document and binding.
+  // Nothing may have changed meanwhile: no newer open or close, and the same dock
+  // window, document and binding.
   if (
+    generation !== openGeneration ||
     getDockWindow() !== dock ||
     event.sender.isDestroyed() ||
     event.sender.mainFrame !== event.senderFrame ||
