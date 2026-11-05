@@ -2,6 +2,7 @@ import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/t
 import { store as appStore } from '$store/renderer/store';
 import { nextWorkspaceTabGroupColor } from '$store/renderer/slices/tab-state/tab-groups';
 import {
+  selectOpenWorkspaceTabGroupId,
   selectWorkspaceTabGroups,
   selectWorkspaceTabGroupsEnabled,
   selectWorkspaceTabOrder,
@@ -10,6 +11,7 @@ import {
   addWorkspaceTabToGroup,
   createWorkspaceTabGroup,
   removeWorkspaceTabFromGroup,
+  setOpenWorkspaceTabGroup,
   ungroupWorkspaceTabGroup,
   updateWorkspaceTabGroup,
 } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -17,7 +19,7 @@ import {
   buildWorkspaceTabGroupEntries,
   buildWorkspaceTabGroupMenu,
 } from './workspace-tab-group-actions';
-import { getWorkspaceTabGroupToggleTarget } from './workspace-tab-group-items';
+import { resolveWorkspaceTabGroupToggle } from './workspace-tab-group-items';
 
 export type WorkspaceTabMenuTarget =
   { kind: 'tab'; workspaceId: string } | { kind: 'group'; groupId: string };
@@ -46,16 +48,18 @@ export function createWorkspaceTabGroupController({
   }
 
   return {
-    /** Opens a collapsed group at its last tab, or collapses the open one. */
+    /** Opens a collapsed group, or collapses the open one. */
     toggle(groupId: string) {
-      const order = selectWorkspaceTabOrder.select(appStore.state);
-      const target = getWorkspaceTabGroupToggleTarget(
-        order,
+      const toggle = resolveWorkspaceTabGroupToggle(
+        selectWorkspaceTabOrder.select(appStore.state),
         groups(),
         groupId,
         getSelectedWorkspaceId(),
+        selectOpenWorkspaceTabGroupId.select(appStore.state),
       );
-      if (target) openWorkspace(target);
+      if (!toggle) return;
+      appStore.dispatch(setOpenWorkspaceTabGroup(toggle.openGroupId));
+      if (toggle.selectWorkspaceId) openWorkspace(toggle.selectWorkspaceId);
     },
     /** Saves `name` and leaves rename mode; `null` cancels the rename. */
     finishRename(groupId: string, name: string | null) {

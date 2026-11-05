@@ -15,10 +15,11 @@ import {
   openWorkspaceTab,
   removeWorkspaceTabFromGroup,
   serializeWorkspaceTabsState,
+  setOpenWorkspaceTabGroup,
   tabStateReducer,
   type TabState,
 } from './tab-state-slice';
-import { selectWorkspaceTabGroups } from './tab-state-selectors';
+import { selectOpenWorkspaceTabGroupId, selectWorkspaceTabGroups } from './tab-state-selectors';
 
 const group = (id: string, workspaceIds: string[]): WorkspaceTabGroup => ({
   id,
@@ -104,6 +105,34 @@ describe('selectWorkspaceTabGroups', () => {
   });
 });
 
+describe('open group', () => {
+  const openGroup = (state: TabState) =>
+    selectOpenWorkspaceTabGroupId.select({
+      tabState: state,
+      userPreferences: { labsTabGroupsEnabled: true },
+    } as never);
+
+  it('stays open when an ungrouped tab is selected', () => {
+    let state = stateWithTabs(['a', 'b', 'c'], [group('g', ['b', 'c'])]);
+    state = tabStateReducer(state, openWorkspaceTab('b'));
+    state = tabStateReducer(state, openWorkspaceTab('a'));
+    expect(openGroup(state)).toBe('g');
+  });
+
+  it('closes only when toggled closed', () => {
+    let state = stateWithTabs(['a', 'b'], [group('g', ['b'])]);
+    state = tabStateReducer(state, setOpenWorkspaceTabGroup('g'));
+    state = tabStateReducer(state, setOpenWorkspaceTabGroup(null));
+    expect(openGroup(state)).toBeNull();
+  });
+
+  it('always shows the group holding the current tab', () => {
+    const state = stateWithTabs(['b', 'a'], [group('g', ['b'])]);
+    expect(state.currentTabId).toBe('b');
+    expect(openGroup(tabStateReducer(state, setOpenWorkspaceTabGroup(null)))).toBe('g');
+  });
+});
+
 describe('tab group reducer', () => {
   it('moves a tab added to a group to the end of that group', () => {
     const state = tabStateReducer(
@@ -154,8 +183,9 @@ describe('tab group reducer', () => {
       stateWithTabs(['a', 'b', 'c'], [group('g', ['b', 'c'])]),
       openWorkspaceTab('c'),
     );
-    expect(serializeWorkspaceTabsState(state).tabGroups).toEqual([
-      { ...group('g', ['b', 'c']), lastActiveWorkspaceId: 'c' },
-    ]);
+    expect(serializeWorkspaceTabsState(state)).toMatchObject({
+      tabGroups: [{ ...group('g', ['b', 'c']), lastActiveWorkspaceId: 'c' }],
+      openTabGroupId: 'g',
+    });
   });
 });

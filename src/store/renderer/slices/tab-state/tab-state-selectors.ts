@@ -58,6 +58,20 @@ export const selectWorkspaceTabOrder = store.createSelector((state) => {
 
 const NO_TAB_GROUPS: WorkspaceTabGroup[] = [];
 
+/**
+ * The expanded group: the group of the current tab when it has one (a selected
+ * tab is never hidden), otherwise the group the user last opened.
+ */
+export const selectOpenWorkspaceTabGroupId = store.createSelector((state): string | null => {
+  if (state.userPreferences?.labsTabGroupsEnabled !== true) return null;
+  const { tabGroups, openTabGroupId, currentTabId } = state.tabState;
+  const currentGroup = currentTabId
+    ? tabGroups.find((group) => group.workspaceIds.includes(currentTabId))
+    : undefined;
+  if (currentGroup) return currentGroup.id;
+  return tabGroups.some((group) => group.id === openTabGroupId) ? openTabGroupId : null;
+});
+
 export const selectWorkspaceTabGroupsEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsTabGroupsEnabled === true;
 });

@@ -39,6 +39,7 @@
   } from '$lib/components/workspace/utils/workspace-tab-drag';
   import {
     selectCurrentWorkspaceTabId,
+    selectOpenWorkspaceTabGroupId,
     selectWorkspaceTabGroups,
     selectWorkspaceTabOrder,
   } from '$store/renderer/slices/tab-state/tab-state-selectors';
@@ -72,7 +73,7 @@
     layoutWorkspaceTabStrip,
     proposeGroupedWorkspaceTabOrder,
   } from './workspace-tab-group-items';
-  import { prepareTabOutros, workspaceTabLifecycleMotion } from './workspace-tab-lifecycle-motion';
+  import { prepareTabOutros, workspaceTabStripItemMotion } from './workspace-tab-strip-item-motion';
   import {
     WORKSPACE_TAB_CORNER_RADIUS_PX,
     WORKSPACE_TAB_EDGE_FADE_WIDTH_PX,
@@ -107,7 +108,8 @@
   const workspaceTabOrder$ = selectWorkspaceTabOrder();
   const workspaceItems$ = selectWorkspaceItems();
   const workspaceTabStatuses$ = selectWorkspaceTabStatuses();
-  const workspaceTabGroups$ = selectWorkspaceTabGroups();
+  const groups$ = selectWorkspaceTabGroups();
+  const openGroup$ = selectOpenWorkspaceTabGroupId();
   let editingGroupId = $state<string | null>(null);
   let workspaceHoverCardOpenDelay = $state(WORKSPACE_HOVER_CARD_OPEN_DELAY_MS);
   const openWorkspaceHoverCardIds = new Set<string>();
@@ -155,12 +157,7 @@
   );
   const visualActiveWorkspaceId = $derived(selectedWorkspaceId);
   const stripLayout = $derived(
-    layoutWorkspaceTabStrip(
-      renderedTabOrder,
-      $workspaceTabGroups$,
-      selectedWorkspaceId,
-      proposedTabOrder ? draggedWorkspaceId : null,
-    ),
+    layoutWorkspaceTabStrip(renderedTabOrder, $groups$, $openGroup$, draggedWorkspaceId),
   );
   const workspaceTabMotionDuration = $derived(
     reducedMotion.current ? 0 : WORKSPACE_TAB_MOTION_DURATION_MS,
@@ -197,13 +194,13 @@
   let scrollTracking = false;
   let tabContextMenu = $state<(SidebarContextPosition & WorkspaceTabMenuTarget) | null>(null);
   $effect(() => {
-    void [$workspaceTabGroups$, visibleTabIds];
+    void [$groups$, visibleTabIds];
     if (tabContextMenu && !tabGroups.hasMenuTarget(tabContextMenu)) tabContextMenu = null;
   });
   const tabContextMenuItems = $derived.by<SidebarMenuEntry[]>(() => {
     const menu = tabContextMenu;
     if (!menu) return [];
-    void $workspaceTabGroups$;
+    void $groups$;
     if (menu.kind === 'group') return tabGroups.groupMenu(menu.groupId);
     const { workspaceId } = menu;
     return tabGroups.tabMenu(
@@ -986,13 +983,13 @@
           duration: isDragged ? 0 : workspaceTabMotionDuration,
           easing: workspaceTabMotionEasing,
         }}
-        in:workspaceTabLifecycleMotion={{
+        in:workspaceTabStripItemMotion={{
           duration: lifecycleMotionReady && !isDragged ? workspaceTabMotionDuration : 0,
           easing: workspaceTabMotionEasing,
           phase: 'intro',
           onFrame: () => scheduleOverflowRefresh(),
         }}
-        out:workspaceTabLifecycleMotion={{
+        out:workspaceTabStripItemMotion={{
           duration: lifecycleMotionReady && !isDragged ? workspaceTabMotionDuration : 0,
           easing: workspaceTabMotionEasing,
           phase: 'outro',

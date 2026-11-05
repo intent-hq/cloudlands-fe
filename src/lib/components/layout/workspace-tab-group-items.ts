@@ -64,22 +64,38 @@ export function buildWorkspaceTabStripItems(
   return items;
 }
 
+export interface WorkspaceTabGroupToggle {
+  openGroupId: string | null;
+  /** Tab to select so the current tab is never hidden; null keeps the selection. */
+  selectWorkspaceId: string | null;
+}
+
 /**
- * The tab to select when a group chip is activated. Opening a group selects
- * its last selected tab. Collapsing the open group selects the nearest tab
- * outside it, or returns null when every tab is in the group.
+ * What a click on a group chip does. A collapsed group opens; it selects its
+ * last selected tab only when the current tab sits in the group that will
+ * collapse. The open group collapses; when it holds the current tab, the
+ * nearest tab outside it is selected, and with no such tab nothing happens.
  */
-export function getWorkspaceTabGroupToggleTarget(
+export function resolveWorkspaceTabGroupToggle(
   order: readonly string[],
   groups: readonly WorkspaceTabGroup[],
   groupId: string,
   currentTabId: string | null | undefined,
-): string | null {
+  openGroupId: string | null,
+): WorkspaceTabGroupToggle | null {
   const group = groups.find((candidate) => candidate.id === groupId);
   if (!group) return null;
-  if (findWorkspaceTabGroup(groups, currentTabId) !== group) {
-    return group.lastActiveWorkspaceId ?? group.workspaceIds[0] ?? null;
+  const currentGroup = findWorkspaceTabGroup(groups, currentTabId);
+  if (openGroupId !== groupId) {
+    const hidesCurrent = currentGroup !== undefined && currentGroup !== group;
+    return {
+      openGroupId: groupId,
+      selectWorkspaceId: hidesCurrent
+        ? (group.lastActiveWorkspaceId ?? group.workspaceIds[0] ?? null)
+        : null,
+    };
   }
+  if (currentGroup !== group) return { openGroupId: null, selectWorkspaceId: null };
   const members = new Set(group.workspaceIds);
   const firstIndex = order.findIndex((id) => members.has(id));
   const after = order.slice(firstIndex).find((id) => !members.has(id));
@@ -87,21 +103,21 @@ export function getWorkspaceTabGroupToggleTarget(
     .slice(0, firstIndex)
     .reverse()
     .find((id) => !members.has(id));
-  return after ?? before ?? null;
+  const outside = after ?? before;
+  return outside ? { openGroupId: null, selectWorkspaceId: outside } : null;
 }
 
 /**
- * Strip items for the rendered order. The open group comes from the stored
- * groups, so a dragged tab never collapses its group mid-drag; membership
- * follows the proposed drop position.
+ * Strip items for the rendered order. The open group is fixed for the drag,
+ * so a dragged tab never collapses its group mid-drag; membership follows the
+ * proposed drop position.
  */
 export function layoutWorkspaceTabStrip(
   order: readonly string[],
   groups: readonly WorkspaceTabGroup[],
-  selectedWorkspaceId: string | null | undefined,
+  openGroupId: string | null,
   draggedWorkspaceId: string | null,
 ) {
-  const openGroupId = findWorkspaceTabGroup(groups, selectedWorkspaceId)?.id ?? null;
   const renderedGroups = draggedWorkspaceId
     ? resolveMovedWorkspaceTabGroups(order, groups, draggedWorkspaceId)
     : groups;

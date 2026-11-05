@@ -45,6 +45,7 @@ export type PersistedWorkspaceTabsState = {
   tabOrder: string[];
   workspaceStacks?: string[][];
   tabGroups?: WorkspaceTabGroup[];
+  openTabGroupId?: string | null;
 };
 
 export type TabState = {
@@ -57,8 +58,12 @@ export type TabState = {
   unsavedTabs: TabFlagMap;
   optimisticTabs: TabFlagMap;
   workspaceStacks: string[][];
-  /** Tab groups; the open group is always the group of the current tab. */
   tabGroups: WorkspaceTabGroup[];
+  /**
+   * The one expanded group. It stays open until its chip is clicked again;
+   * selecting a tab inside another group opens that group instead.
+   */
+  openTabGroupId: string | null;
   recentlyClosedTabIds: string[];
   recentlyClosedTabAt: Record<string, number>;
   version: number;
@@ -185,6 +190,14 @@ function updateGroups(
   return state.tabGroups?.length ? { tabGroups: update(state.tabGroups) } : {};
 }
 
+/** Opens the group holding `workspaceId`, so selecting a hidden tab reveals it. */
+function openGroupOf(state: TabState, workspaceId: string): Partial<TabState> {
+  const group = state.tabGroups?.length
+    ? findWorkspaceTabGroup(state.tabGroups, workspaceId)
+    : undefined;
+  return group && group.id !== state.openTabGroupId ? { openTabGroupId: group.id } : {};
+}
+
 function rememberGroupSelection(
   groups: WorkspaceTabGroup[],
   workspaceId: string | null,
@@ -215,7 +228,7 @@ export const serializeWorkspaceTabsState = (
     | 'optimisticTabs'
     | 'workspaceStacks'
   > &
-    Partial<Pick<TabState, 'tabGroups'>>,
+    Partial<Pick<TabState, 'tabGroups' | 'openTabGroupId'>>,
 ): PersistedWorkspaceTabsState => ({
   openTabs: Object.keys(state.openTabs),
   currentTabId: state.currentTabId,
@@ -224,7 +237,9 @@ export const serializeWorkspaceTabsState = (
   optimisticTabs: Object.keys(state.optimisticTabs),
   tabOrder: getWorkspaceTabOrder(state.workspaceStacks),
   workspaceStacks: state.workspaceStacks,
-  ...(state.tabGroups?.length ? { tabGroups: state.tabGroups } : {}),
+  ...(state.tabGroups?.length
+    ? { tabGroups: state.tabGroups, openTabGroupId: state.openTabGroupId ?? null }
+    : {}),
 });
 
 const initialState: TabState = {
@@ -238,6 +253,7 @@ const initialState: TabState = {
   optimisticTabs: {},
   workspaceStacks: [],
   tabGroups: [],
+  openTabGroupId: null,
   recentlyClosedTabIds: [],
   recentlyClosedTabAt: {},
   version: 0,
@@ -322,6 +338,10 @@ export const updateWorkspaceTabGroup = createAction<
   [groupId: string, changes: { name?: string; color?: WorkspaceTabGroupColor }]
 >('tabState/updateWorkspaceTabGroup');
 /** Removes the group; its tabs stay open in place. */
+/** Expands `groupId` (collapsing any other group), or collapses every group with null. */
+export const setOpenWorkspaceTabGroup = createAction<[groupId: string | null]>(
+  'tabState/setOpenWorkspaceTabGroup',
+);
 export const ungroupWorkspaceTabGroup = createAction<[groupId: string]>(
   'tabState/ungroupWorkspaceTabGroup',
 );
@@ -485,6 +505,7 @@ tabStateReducer.with(openWorkspaceTab, (state, { payload: [workspaceId] }) => {
     openTabs: isNewTab ? addTabFlag(state.openTabs, workspaceId) : state.openTabs,
     currentTabId: workspaceId,
     ...updateGroups(state, (groups) => rememberGroupSelection(groups, workspaceId)),
+    ...openGroupOf(state, workspaceId),
     workspaceStacks: isNewTab ? [...state.workspaceStacks, [workspaceId]] : state.workspaceStacks,
     recentlyClosedTabIds: nextRecentlyClosedTabIds,
     recentlyClosedTabAt: pruneClosedTabAt(state.recentlyClosedTabAt, nextRecentlyClosedTabIds),
@@ -612,6 +633,7 @@ tabStateReducer.with(
         ...withoutTab,
         nextGroup,
       ]),
+      openTabGroupId: groupId,
     });
   },
 );
@@ -661,6 +683,11 @@ tabStateReducer.with(updateWorkspaceTabGroup, (state, { payload: [groupId, chang
       candidate === group ? { ...candidate, name, color } : candidate,
     ),
   });
+});
+tabStateReducer.with(setOpenWorkspaceTabGroup, (state, { payload: [groupId] }) => {
+  const next = groupId && state.tabGroups.some((group) => group.id === groupId) ? groupId : null;
+  if (next === state.openTabGroupId) return state;
+  return withNextVersion(state, { openTabGroupId: next });
 });
 tabStateReducer.with(ungroupWorkspaceTabGroup, (state, { payload: [groupId] }) => {
   if (!state.tabGroups.some((group) => group.id === groupId)) return state;
@@ -742,6 +769,10 @@ tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsSt
       getWorkspaceTabOrder(workspaceStacks),
       parsePersistedWorkspaceTabGroups(workspaceTabsState.tabGroups),
     ),
+    openTabGroupId:
+      typeof workspaceTabsState.openTabGroupId === 'string'
+        ? workspaceTabsState.openTabGroupId
+        : null,
     recentlyClosedTabIds: [],
     recentlyClosedTabAt: {},
   };
