@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { store } from '../../store';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { selectContextListedProviderIds } from './workspace-catalog-selectors';
-import { MOCK_PROVIDER_CATALOG } from '../../../../test/fixtures/provider-catalog.fixture';
+import {
+  MOCK_CURSOR_PROVIDER,
+  MOCK_PROVIDER_CATALOG,
+} from '../../../../test/fixtures/provider-catalog.fixture';
 import type { StoreState } from '../../types';
 
 describe('provider visibility follows the execution host', () => {
@@ -48,6 +51,55 @@ describe('provider visibility follows the execution host', () => {
           } as StoreState;
           const ids = selectContextListedProviderIds.select(state, workspaceId);
           expect(ids.includes('auggie')).toBe(listed);
+          expect(ids).toContain('codex');
+        } finally {
+          dispose();
+        }
+      },
+    );
+  }
+});
+
+describe('the Cursor Labs gate on listed providers', () => {
+  for (const workspaceId of [undefined, 'remote']) {
+    it.each([
+      [false, false, false],
+      [false, true, true],
+      [true, false, true],
+      [true, true, true],
+    ])(
+      `lists Cursor on ${workspaceId ?? 'local'} with lab=%s enabled=%s: %s`,
+      (lab, enabled, listed) => {
+        const dispose = store.init();
+        try {
+          const providers = [...MOCK_PROVIDER_CATALOG.providers, MOCK_CURSOR_PROVIDER];
+          const readiness = { cursor: { available: true, authenticated: true } };
+          const state = {
+            ...store.state,
+            userPreferences: { ...store.state.userPreferences, labsCursorProviderEnabled: lab },
+            agentAvailability: {
+              ...store.state.agentAvailability,
+              providerStatusMap: readiness,
+            },
+            providerSettings: {
+              ...store.state.providerSettings,
+              enabledProviders: { cursor: enabled },
+            },
+            providerCatalog: {
+              ...store.state.providerCatalog,
+              providers: createCollection('id', providers),
+              byWorkspaceId: {
+                remote: {
+                  catalog: { providers },
+                  readiness,
+                  specialists: [],
+                  settings: [{ path: 'providers.enabled', value: { cursor: enabled } }],
+                },
+              },
+            },
+          } as StoreState;
+          const ids = selectContextListedProviderIds.select(state, workspaceId);
+          expect(ids.includes('cursor')).toBe(listed);
           expect(ids).toContain('codex');
         } finally {
           dispose();
