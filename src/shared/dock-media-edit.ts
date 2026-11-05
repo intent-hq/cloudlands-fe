@@ -251,8 +251,17 @@ function atTime(atMs: number, ranges: readonly DockMediaRange[], durationMs: num
   const at = atMs === durationMs ? Math.max(0, atMs - 0.001) : atMs;
   return ranges.some((range) => at >= range.startMs && at < range.endMs);
 }
+export const DOCK_MEDIA_POINT_RADIUS = 6;
+
 /** Canonical source-pixel hit/crop/resize rectangle. Text uses top-left and all lines. */
 export function dockMediaGeometryRect(g: DockMediaGeometry): DockMediaRect {
+  if (g.kind === 'point')
+    return {
+      x: g.x - DOCK_MEDIA_POINT_RADIUS,
+      y: g.y - DOCK_MEDIA_POINT_RADIUS,
+      w: DOCK_MEDIA_POINT_RADIUS * 2,
+      h: DOCK_MEDIA_POINT_RADIUS * 2,
+    };
   if (g.kind === 'rect') return { x: g.x, y: g.y, w: g.w, h: g.h };
   if (g.kind === 'text') {
     const lines = g.text.split('\n');

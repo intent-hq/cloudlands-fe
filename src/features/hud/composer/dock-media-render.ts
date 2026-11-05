@@ -2,6 +2,7 @@
 import {
   numberDockMediaMarks,
   dockMediaGeometryRect,
+  DOCK_MEDIA_POINT_RADIUS,
   planDockMediaOutput,
   type DockMediaEdit,
   type DockMediaSource,
@@ -87,7 +88,7 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
         );
     } else if (g.kind === 'point') {
       context.beginPath();
-      context.arc(g.x, g.y, 6, 0, Math.PI * 2);
+      context.arc(g.x, g.y, DOCK_MEDIA_POINT_RADIUS, 0, Math.PI * 2);
       context.stroke();
     } else {
       const points = g.kind === 'path' ? g.points : [g.from, g.to];
