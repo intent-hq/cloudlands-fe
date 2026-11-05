@@ -48,6 +48,8 @@ let pointerState: { active: boolean; regions: DockPointerRect[]; revision?: numb
 };
 let sessionPaused = false;
 const captureHiddenWindows = new WeakSet<BrowserWindow>();
+/** Out of sight while a recording runs: transparent and click-through, still on screen. */
+const recordingHiddenWindows = new WeakSet<BrowserWindow>();
 const closingDockWindows = new WeakSet<BrowserWindow>();
 let removeLifecycleListeners: (() => void) | null = null;
 let backendRefreshSequence: Promise<void> = Promise.resolve();
@@ -158,6 +160,11 @@ export function setDockPointerRegions(
   if (snapshot && state.revision !== snapshot.revision) return false;
   pointerState = state;
   try {
+    if (recordingHiddenWindows.has(window)) {
+      applyPointerRouting(window, true);
+      updateNativeCursor(window, false);
+      return true;
+    }
     if (placementController?.isDragging || placementController?.isResizing) {
       presenceFor(window).update({
         inside: false,
@@ -801,6 +808,31 @@ export function setDockHiddenForCapture(
     placementController?.setCaptureHidden(false);
     if (canRevealDock(window)) window.showInactive();
   }
+}
+
+/**
+ * Keeps the dock out of sight while a recording runs (its tool bar is the control
+ * then) and brings it back when the recording ends. The window stays shown, only
+ * transparent and click-through: the recording's capture and its mark images keep
+ * their usual rules (the dock is excluded from both either way), and nothing in the
+ * dock's document is torn down.
+ */
+export function setDockHiddenForRecording(hidden: boolean): void {
+  const window = getDockWindow();
+  if (!window || recordingHiddenWindows.has(window) === hidden) return;
+  if (hidden) {
+    recordingHiddenWindows.add(window);
+    placementController?.cancelInteraction();
+    window.setOpacity(0);
+    applyPointerRouting(window, true);
+    return;
+  }
+  recordingHiddenWindows.delete(window);
+  window.setOpacity(1);
+  window.webContents.invalidate();
+  // Re-route at once from the live cursor.
+  appliedPointerRouting.delete(window);
+  setDockPointerRegions(window, pointerState);
 }
 
 /**
