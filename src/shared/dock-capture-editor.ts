@@ -10,6 +10,7 @@
  * same backend binding) owns the session.
  */
 import { z } from 'zod';
+import { DockMediaWaveformSchema, type DockMediaWaveform } from './dock-media-output';
 import { IPC_CHANNELS } from './ipc-registry';
 import { DOCK_MARK_TOOLS, type DockMarkTool } from './dock-evidence';
 import {
@@ -81,6 +82,8 @@ export interface DockCaptureEditorOpenRequest {
    * it does; until then edits are a preview and are never stored.
    */
   output?: { ready: boolean; reason?: DockMediaOutputError };
+  /** Real decoded audio peaks of the source, when the dock has analyzed it (main-set). */
+  waveform?: DockMediaWaveform;
   /** The person's last saved Video/Voice choice: the default for a new edit (main-set). */
   rememberedChoice?: DockMediaChoice;
 }
@@ -335,3 +338,15 @@ export interface DockCaptureEditorNoteDictationUpdate {
   final: boolean;
   error?: DockCaptureEditorNoteError;
 }
+
+/** dock → main: the open source's waveform (decoded peaks on the source clock). */
+export const DockCaptureEditorWaveformUpdateSchema = z
+  .object({
+    pair: z
+      .object({ workspaceId: z.string().min(1).max(200), agentId: z.string().min(1).max(200) })
+      .strict(),
+    sourceId: z.string().min(1).max(512),
+    sourceRevision: z.number().int().nonnegative(),
+    waveform: DockMediaWaveformSchema,
+  })
+  .strict();

@@ -39,6 +39,7 @@
     onCut,
     onRestore,
     onToggleMark,
+    waveform = null,
   }: {
     durationMs: number;
     currentMs: number;
@@ -49,6 +50,8 @@
     onMark: (mark: DockCaptureEditorMark) => void;
     /** Shift-click a pin: include or exclude that mark. */
     onToggleMark?: (markId: string) => void;
+    /** Decoded audio peaks (0–1) every `intervalMs` from the start of the source. */
+    waveform?: { peaks: readonly number[]; intervalMs: number; durationMs: number } | null;
     /** The trimmed range; null without trimming. */
     trim?: DockMediaRange | null;
     /** What plays and is kept (trim minus cuts). */
@@ -90,6 +93,21 @@
     pen: () => m.dock_recordingToolbar_draw_label(),
     arrow: () => m.dock_recordingToolbar_arrow_label(),
   };
+  // The waveform as one SVG path: a vertical bar per peak, centred.
+  const wave = $derived.by(() => {
+    if (!waveform || !waveform.peaks.length || durationMs <= 0) return null;
+    const bars = waveform.peaks
+      .map((peak, index) => {
+        const h = Math.max(0.5, peak * 45);
+        return `M${index + 0.5} ${50 - h}V${50 + h}`;
+      })
+      .join('');
+    return {
+      path: bars,
+      count: waveform.peaks.length,
+      width: Math.min(100, (waveform.durationMs / durationMs) * 100),
+    };
+  });
   const pinned = $derived(
     marks.filter((mark): mark is DockCaptureEditorMark & { atMs: number } => mark.atMs !== null),
   );
@@ -208,7 +226,19 @@
     onlostpointercapture={() => endDrag(false)}
     onkeydown={onKeydown}
   >
-    <div class="rail"></div>
+    {#if wave}
+      <svg
+        class="wave"
+        style:width={`${wave.width}%`}
+        viewBox={`0 0 ${wave.count} 100`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <path d={wave.path} />
+      </svg>
+    {:else}
+      <div class="rail"></div>
+    {/if}
     {#each kept ?? [] as range, index (index)}
       <div
         class="kept"
@@ -311,6 +341,19 @@
   .track:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
+  }
+  .wave {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: 0;
+    height: calc(100% - 12px);
+    pointer-events: none;
+  }
+  .wave path {
+    stroke: hsl(var(--muted-foreground) / 0.55);
+    stroke-width: 0.6;
+    vector-effect: non-scaling-stroke;
   }
   .rail {
     position: absolute;

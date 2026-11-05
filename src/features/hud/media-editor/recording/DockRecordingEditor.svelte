@@ -346,6 +346,7 @@
         }}
         onMark={jumpTo}
         onToggleMark={marksEditable ? toggleMark : undefined}
+        waveform={snapshot.waveform ?? null}
       />
     </div>
   {/snippet}

@@ -23,6 +23,7 @@ import {
   canonicalDockAttachmentPath,
   DockCaptureEditorSaveResultSchema,
   DockCaptureEditorTranscriptUpdateSchema,
+  DockCaptureEditorWaveformUpdateSchema,
   DockCaptureEditorNoteDictationSchema,
   DockCaptureEditorNoteDictationTextSchema,
   type DockCaptureEditorNoteDictationAck,
@@ -537,6 +538,27 @@ export function setupDockCaptureEditorIPC(): void {
       ...(parsed.data.error ? { error: parsed.data.error } : {}),
     };
     editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_UPDATE, update);
+    return true;
+  });
+  // The open source's waveform, from the dock that opened it (for that source only).
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.WAVEFORM_UPDATE, (event, value: unknown) => {
+    const parsed = DockCaptureEditorWaveformUpdateSchema.safeParse(value);
+    const current = session;
+    const source = current?.snapshot.source;
+    if (!parsed.success || !current || !source) return false;
+    if (event.sender !== current.owner.sender) return false;
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    if (getStrictBackendBindingForWebContents(event.sender) !== current.owner.binding) return false;
+    const update = parsed.data;
+    if (
+      update.pair.workspaceId !== current.snapshot.workspaceId ||
+      update.pair.agentId !== current.snapshot.agentId ||
+      update.sourceId !== source.id ||
+      update.sourceRevision !== source.revision
+    )
+      return false;
+    current.snapshot = { ...current.snapshot, waveform: update.waveform };
+    if (usable(editor)) editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
     return true;
   });
   // A newer transcript of the open session's source, from the dock that opened it.

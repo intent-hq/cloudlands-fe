@@ -497,6 +497,8 @@ export const IPC_CHANNELS = {
     NOTE_DICTATION_TEXT: 'dock-capture-editor:note-dictation-text',
     /** main → editor send: the note dictation's text (DockCaptureEditorNoteDictationUpdate). */
     NOTE_DICTATION_UPDATE: 'dock-capture-editor:note-dictation-update',
+    /** dock → main: the open source's decoded waveform peaks (DockCaptureEditorWaveformUpdate). */
+    WAVEFORM_UPDATE: 'dock-capture-editor:waveform-update',
     /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
     SAVE_RESULT: 'dock-capture-editor:save-result',
   },
