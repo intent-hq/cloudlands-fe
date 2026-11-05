@@ -13,6 +13,7 @@ import {
   selectIsAnyProviderLoading,
 } from '../agent-availability/agent-availability-selectors';
 import { store } from '../../store';
+import { selectLabsCursorProviderEnabled } from '../user-preferences/user-preferences-selectors';
 import type { Specialist } from '$lib/constants/specialists';
 import { selectSpecialists } from '../specialists/specialists-selectors';
 import {
@@ -93,9 +94,12 @@ export const selectContextListedProviderIds = store.createSelector(
     const status = workspaceId
       ? (selectWorkspaceCatalog.select(state, workspaceId)?.readiness ?? {})
       : selectProviderStatusMap.select(state);
+    const gates = { cursorLabEnabled: selectLabsCursorProviderEnabled.select(state) };
     return selectContextProviderEntries
       .select(state, workspaceId)
-      .filter((p) => isProviderListed(p.id, status[p.id]?.available, enabled[p.id] === true))
+      .filter((p) =>
+        isProviderListed(p.id, status[p.id]?.available, enabled[p.id] === true, gates),
+      )
       .map((p) => p.id);
   },
 );

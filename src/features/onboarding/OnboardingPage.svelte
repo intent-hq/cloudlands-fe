@@ -28,6 +28,7 @@
     selectEffectiveDefaultProviderId,
     selectProviderCatalogEntries,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectLabsCursorProviderEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { goto } from '$app/navigation';
   import { notify } from '$lib/components/patterns/notify';
   import { m } from '$shared/paraglide/messages.js';
@@ -186,6 +187,7 @@
   const gitRequirement$ = selectGitRequirement();
   const hostRole$ = selectHostRole();
   const providerCatalogEntries$ = selectProviderCatalogEntries();
+  const labsCursor$ = selectLabsCursorProviderEnabled();
 
   let projectSelection = $state<ProjectSelection | null>(null);
   let projectName = $derived.by(() => {
@@ -774,7 +776,9 @@
     $providerCatalogEntries$.find((entry) => entry.id === onboardingGridSelectedProviderId),
   );
   const shouldTestOnboardingProvider = $derived(
-    shouldRunOnboardingTestPrompt(onboardingSelectedCatalogEntry),
+    shouldRunOnboardingTestPrompt(onboardingSelectedCatalogEntry, {
+      cursorLabEnabled: $labsCursor$,
+    }),
   );
 
   /** Advance from the welcome step, first committing the grid's resolved

@@ -131,4 +131,21 @@ describe('isOnboardingProviderVisible', () => {
       }),
     ).toBe(false);
   });
+
+  it.each([
+    [false, false, false],
+    [false, true, false],
+    [true, false, true],
+    [true, true, true],
+  ])('shows the Cursor card with lab=%s enabled=%s: %s', (cursorLabEnabled, enabled, shown) => {
+    expect(
+      isOnboardingProviderVisible({
+        provider: { id: 'cursor' },
+        isFeatureEnabled: featureEnabled,
+        status: { available: true },
+        enabled,
+        cursorLabEnabled,
+      }),
+    ).toBe(shown);
+  });
 });

@@ -52,6 +52,8 @@ export interface ProviderAvailabilityResult {
     unsloth: ProviderStatus;
     /** Absent when connected to a daemon without Antigravity support. */
     antigravity?: ProviderStatus;
+    /** Absent when connected to a daemon without Cursor support. */
+    cursor?: ProviderStatus;
   };
   /**
    * Provider IDs that are hidden because their required env var or feature
@@ -85,6 +87,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   grok: 'grok',
   unsloth: 'unsloth',
   antigravity: 'antigravity',
+  cursor: 'cursor',
 };
 
 const PROVIDER_AVAILABILITY_ID_TO_KEY = new Map(

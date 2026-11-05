@@ -36,6 +36,7 @@
   } from '$store/renderer/slices/agent-availability/agent-availability-selectors';
 
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import { selectLabsCursorProviderEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectIsProviderEnabled,
     selectProviderDefaultConfigs,
@@ -87,6 +88,7 @@
   const activeProviderId = selectActiveProviderId();
   const enabledProviders$ = selectEnabledProviders();
   const catalogEntries$ = selectProviderCatalogEntries();
+  const labsCursor$ = selectLabsCursorProviderEnabled();
   // Shared per-provider status pipeline (agent-availability slice), fed by
   // the CHECK_SINGLE fan-out so each row settles on its own probe.
   const providerStatusMap$ = selectProviderStatusMap();
@@ -122,6 +124,7 @@
       requiresAuth: false,
     },
     pi: { docsUrl: 'https://pi.dev/docs/latest/quickstart', requiresAuth: false },
+    cursor: { docsUrl: 'https://cursor.com/docs/cli/installation', requiresAuth: true },
   };
 
   // Helper to get provider availability from the shared status map
@@ -181,6 +184,7 @@
       availabilityByProviderId: $providerStatusMap$,
       hiddenProviderIds: $hiddenProviders$,
       activeProviderId: $activeProviderId,
+      cursorLabEnabled: $labsCursor$,
     }),
   );
 

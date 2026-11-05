@@ -25,6 +25,25 @@ describe('shouldRunOnboardingTestPrompt', () => {
     expect(shouldRunOnboardingTestPrompt(undefined)).toBe(false);
   });
 
+  it('tests Cursor only while its Labs switch is on', () => {
+    const cursor = entry({ id: 'cursor', displayName: 'Cursor', supportsTestPrompt: true });
+    expect(shouldRunOnboardingTestPrompt(cursor)).toBe(false);
+    expect(shouldRunOnboardingTestPrompt(cursor, { cursorLabEnabled: false })).toBe(false);
+    expect(shouldRunOnboardingTestPrompt(cursor, { cursorLabEnabled: true })).toBe(true);
+    expect(
+      shouldRunOnboardingTestPrompt(
+        { ...cursor, supportsTestPrompt: undefined },
+        { cursorLabEnabled: true },
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps Claude Code independent of the Cursor lab', () => {
+    expect(
+      shouldRunOnboardingTestPrompt(entry({ supportsTestPrompt: true }), { cursorLabEnabled: false }),
+    ).toBe(true);
+  });
+
   it.each([
     'auggie',
     'codex',

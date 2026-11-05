@@ -10,17 +10,25 @@
 
 import { m } from '$shared/paraglide/messages.js';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
+import { CURSOR_PROVIDER_ID } from '$shared/provider-visibility';
 
-const ONBOARDING_TEST_PROMPT_PROVIDERS = new Set(['claude-code']);
+const ONBOARDING_TEST_PROMPT_PROVIDERS = new Set(['claude-code', CURSOR_PROVIDER_ID]);
 
 /**
  * Whether onboarding should test an allowlisted provider. The capability
  * flag is always present on rows from a daemon that serves
  * `host.providerTestPrompt`; absence (older daemon without the RPC) is treated
  * as unsupported so onboarding never sends a test the daemon cannot run.
+ * Cursor is tested only while its per-device Labs switch is on.
  */
-export function shouldRunOnboardingTestPrompt(entry: ProviderCatalogEntry | undefined): boolean {
-  return entry?.supportsTestPrompt === true && ONBOARDING_TEST_PROMPT_PROVIDERS.has(entry.id);
+export function shouldRunOnboardingTestPrompt(
+  entry: ProviderCatalogEntry | undefined,
+  gates: { cursorLabEnabled?: boolean } = {},
+): boolean {
+  if (entry?.supportsTestPrompt !== true || !ONBOARDING_TEST_PROMPT_PROVIDERS.has(entry.id)) {
+    return false;
+  }
+  return entry.id !== CURSOR_PROVIDER_ID || gates.cursorLabEnabled === true;
 }
 
 /** Actionable guidance for one structured test-prompt failure. */

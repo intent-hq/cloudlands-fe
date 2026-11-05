@@ -33,6 +33,8 @@
  *                 CLI directly — presence requires BOTH `opencode` and
  *                 `unsloth` to resolve; local-only — no login surface, so
  *                 available ⇒ authenticated.
+ *  - cursor:      daemon discovery's installed and gatedOff verdict (the
+ *                 daemon resolves the `cursor-agent` CLI).
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
@@ -217,6 +219,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const auggie: ProviderStatus = { available: auggieCheck.available === true };
   const claudeCode = claudeCodeStatusFromDiscovery(discovery);
   const antigravity = antigravityFromDiscovery(discovery);
+  const cursor = providerStatusFromDiscovery(discovery, 'cursor');
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
   // cortex: presence of the `cortex` CLI; no auth surface probed (the
   // daemon's providerAuthStatus sweep does not cover cortex).
@@ -253,6 +256,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   withAuth(droid, authVerdicts['droid']);
   withAuth(grok, authVerdicts['grok']);
   withAuth(antigravity, authVerdicts['antigravity']);
+  withAuth(cursor, authVerdicts['cursor']);
 
   return {
     hasAnyProvider:
@@ -266,7 +270,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       droid.available ||
       grok.available ||
       unsloth.available ||
-      antigravity.available,
+      antigravity.available ||
+      cursor.available,
     providers: {
       auggie,
       claudeCode,
@@ -279,6 +284,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       grok,
       unsloth,
       antigravity,
+      cursor,
     },
     hiddenProviders,
   };
@@ -388,6 +394,11 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
 
   if (providerId === 'antigravity') {
     const status = await checkAntigravityAvailability();
+    return status.available ? withAuth(status, await checkAuth()) : status;
+  }
+
+  if (providerId === 'cursor') {
+    const status = providerStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 

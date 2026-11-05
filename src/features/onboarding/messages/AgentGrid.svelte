@@ -24,6 +24,7 @@
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
+  import { selectLabsCursorProviderEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     selectActiveProviderId,
     selectEnabledProviders,
@@ -95,6 +96,7 @@
     grok: { color1: '#000000', color2: '#252525' },
     unsloth: { color1: '#0FA47F', color2: '#106B55' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
+    cursor: { color1: '#14120B', color2: '#26251E' },
   };
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
@@ -140,6 +142,10 @@
       installCommand: 'curl -fsSL https://opencode.ai/install | bash',
       docsUrl: 'https://docs.unsloth.ai',
     },
+    cursor: {
+      installCommand: 'curl https://cursor.com/install -fsS | bash',
+      docsUrl: 'https://cursor.com/docs/cli/installation',
+    },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
       docsUrl: 'https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-cli',
@@ -149,6 +155,7 @@
   const catalogEntries$ = selectProviderCatalogEntries();
   const enabledProviders$ = selectEnabledProviders();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
+  const labsCursor$ = selectLabsCursorProviderEnabled();
 
   /** Cache carrying the per-mount shuffled id order across catalog
    *  re-emissions. Deliberately non-reactive: it is bookkeeping for
@@ -185,6 +192,7 @@
           isFeatureEnabled: (code) => selectIsFeatureEnabled.select(state, code),
           status: statusMap[p.id],
           enabled: $enabledProviders$[p.id] === true,
+          cursorLabEnabled: $labsCursor$,
         }),
       )
       .map((p) => {
