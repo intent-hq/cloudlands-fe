@@ -1,3 +1,4 @@
+import { dockMediaEditSaga } from './dock-media-edit-saga';
 import { dockContextLinksSaga } from './dock-context-links-saga';
 import { dockShortcutSaga } from './dock-shortcut-saga';
 import { readDockLastTool } from '../dock-composer-last-tool';
@@ -744,6 +745,7 @@ export function* dockConversationSaga(): SagaGenerator<void> {
   yield* fork(dockContextLinksSaga);
   yield* fork(dockShortcutSaga);
   yield* fork(dockEvidenceSaga);
+  yield* fork(dockMediaEditSaga);
   yield* fork(dockNativeSessionSaga);
   yield* takeEvery(
     dockConversationContextItemsChanged,

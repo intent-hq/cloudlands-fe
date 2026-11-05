@@ -35,6 +35,8 @@ export interface ChatDraftSaveOutcome {
  * draft at schedule time; a failed write restores the switch-back cache to it.
  */
 export interface ChatDraftSaveRequest {
+  /** Explicit operations cannot migrate to another backend/principal while queued. */
+  authority?: string;
   workspaceId: string;
   agentId: string;
   text: string;

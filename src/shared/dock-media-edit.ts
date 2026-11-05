@@ -86,6 +86,8 @@ export const DockMediaSourceSchema = z
     /** Actual Clear boundaries, independent of microphone or transcription status. */
     batches: z.array(DockMediaBatchSchema).max(10000),
     visuals: z.enum(['clean', 'baked-marks']),
+    /** Immutable capture baseline. Missing legacy baselines cannot offer Reset. */
+    capturedMarks: z.array(DockMediaEditMarkSchema).max(10000).optional(),
     /** Known original representation. Missing legacy baselines can play but cannot export edits. */
     bakedMarks: z.array(DockMediaEditMarkSchema).max(10000).optional(),
   })
@@ -186,6 +188,11 @@ export const DockMediaSaveRequestSchema = z
     pair: z.object({ workspaceId: id, agentId: id }).strict(),
     expectedEditRevision: revision,
     edit: DockMediaEditSchema,
+    /** Main authorizes and fills source from this session's immutable candidate. */
+    replacement: z
+      .object({ candidateToken: id, source: DockMediaSourceSchema })
+      .strict()
+      .optional(),
   })
   .strict();
 export type DockMediaSaveRequest = z.infer<typeof DockMediaSaveRequestSchema>;
@@ -272,8 +279,7 @@ export function dockMediaGeometryRect(g: DockMediaGeometry): DockMediaRect {
       h: lines.length * g.fontSize * 1.4,
     };
   }
-  const points =
-    g.kind === 'path' ? g.points : [g.from, g.to];
+  const points = g.kind === 'path' ? g.points : [g.from, g.to];
   const left = Math.min(...points.map((p) => p.x)),
     top = Math.min(...points.map((p) => p.y));
   return {
@@ -521,6 +527,8 @@ export function planDockMediaOutput(
 export const DockSavedMediaSchema = z
   .object({
     source: DockMediaSourceSchema,
+    /** First captured pixel generation survives retakes for recovery/Reset. */
+    originalSource: DockMediaSourceSchema.optional(),
     saved: DockMediaEditSchema.nullable(),
     transcript: DockMediaTranscriptSchema.nullable(),
   })
@@ -550,20 +558,23 @@ export function applyDockMediaSave(
     !DockSavedMediaSchema.safeParse(media).success
   )
     return { status: 'invalid-edit' };
-  if (
-    request.sourceId !== media.source.id ||
-    request.sourceRevision !== media.source.revision ||
-    request.edit.sourceId !== media.source.id ||
-    request.edit.sourceRevision !== media.source.revision ||
-    request.edit.kind !== media.source.kind
-  )
+  if (request.sourceId !== media.source.id || request.sourceRevision !== media.source.revision)
     return { status: 'stale-source' };
   if (
     request.expectedEditRevision !== (media.saved?.revision ?? 0) ||
     request.edit.revision !== request.expectedEditRevision
   )
     return { status: 'revision-conflict' };
-  const planned = planDockMediaOutput(request.edit, media.source, media.transcript);
+  const source = request.replacement?.source ?? media.source;
+  if (
+    source.kind !== media.source.kind ||
+    (request.replacement && (source.kind !== 'screenshot' || source.id === media.source.id)) ||
+    request.edit.sourceId !== source.id ||
+    request.edit.sourceRevision !== source.revision ||
+    request.edit.kind !== source.kind
+  )
+    return { status: 'stale-source' };
+  const planned = planDockMediaOutput(request.edit, source, media.transcript);
   if (
     planned.errors.some(
       (error) =>
@@ -575,7 +586,23 @@ export function applyDockMediaSave(
     status: 'saved',
     media: {
       ...media,
+      source,
+      ...(request.replacement
+        ? { originalSource: media.originalSource ?? media.source, transcript: null }
+        : {}),
       saved: { ...structuredClone(request.edit), revision: request.expectedEditRevision + 1 },
     },
+  };
+}
+
+/** Reset cannot invent an empty baseline for an older attachment. */
+export function originalDockMediaEdit(
+  media: DockSavedMedia,
+): { source: DockMediaSource; edit: DockMediaEdit } | null {
+  const source = media.originalSource ?? media.source;
+  if (!source.capturedMarks) return null;
+  return {
+    source,
+    edit: defaultDockMediaEdit(source, source.capturedMarks, media.transcript, null),
   };
 }

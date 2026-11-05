@@ -178,13 +178,15 @@ const SAFE_SEGMENT = /^[^\u0000-\u001f\u007f/\\:*?"<>|]+$/;
  * is not enough; anything else is null.
  */
 export function canonicalDockAttachmentPath(value: string): string | null {
-  if (!value || value.length > 1024 || value.startsWith('/') || value.includes('\\')) return null;
+  if (!value || value.length > 1024 || value.startsWith('/') || value.includes('\\'))
+    return null;
   if (/^[A-Za-z]:/.test(value)) return null;
   const segments = value.split('/');
   if (segments.length <= ATTACHMENT_ROOT.length) return null;
   if (ATTACHMENT_ROOT.some((part, index) => segments[index] !== part)) return null;
   for (const segment of segments.slice(ATTACHMENT_ROOT.length))
-    if (!segment || segment === '.' || segment === '..' || !SAFE_SEGMENT.test(segment)) return null;
+    if (!segment || segment === '.' || segment === '..' || !SAFE_SEGMENT.test(segment))
+      return null;
   return segments.join('/');
 }
 

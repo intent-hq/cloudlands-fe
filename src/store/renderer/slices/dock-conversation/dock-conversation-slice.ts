@@ -1,3 +1,5 @@
+import type { DockMediaSaveRequest, DockSavedMedia } from '$shared/dock-media-edit';
+import type { DockCaptureEditorSaveResult } from '$shared/dock-capture-editor';
 import type { DockMediaClipboardContent, DockPasteOrigin } from '$shared/dock-media-clipboard';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
@@ -305,6 +307,16 @@ export const dockEvidenceDictationFinished = createAction<
   ]
 >('dockConversation/evidenceDictationFinished');
 /** Add or update one clip by id; null removes that clip only. */
+export const dockMediaEditSaveRequested = createAction<
+  [requestId: string, request: DockMediaSaveRequest, authority: string]
+>('dockConversation/mediaEditSaveRequested');
+export const dockMediaEditSaveSettled = createAction<
+  [requestId: string, result: DockCaptureEditorSaveResult]
+>('dockConversation/mediaEditSaveSettled');
+/** CAS also protects a failed write's rollback from replacing a newer edit/source. */
+export const dockEvidenceMediaChanged = createAction<
+  [workspaceId: string, agentId: string, logicalId: string, expected: DockSavedMedia, next: DockSavedMedia]
+>('dockConversation/evidenceMediaChanged');
 export const dockEvidenceClipChanged = createAction<
   [workspaceId: string, agentId: string, clipId: string, clip: DockEvidenceClip | null]
 >('dockConversation/evidenceClipChanged');
@@ -882,6 +894,24 @@ dockConversationReducer.with(
       if (e.dictation?.id !== dictationId) return e;
       const ended = patchDockEvidence(e, { dictation: null });
       return insertion ? enqueueDockInsertion(ended, insertion) : ended;
+    }),
+);
+dockConversationReducer.with(
+  dockEvidenceMediaChanged,
+  (state, { payload: [ws, agent, logicalId, expected, next] }) =>
+    withEvidence(state, ws, agent, (e) => {
+      const matches = (row: { id: string; media?: DockSavedMedia }) =>
+        row.id === logicalId && JSON.stringify(row.media) === JSON.stringify(expected);
+      if (expected.source.kind === 'screenshot') {
+        if (!e.images.some(matches)) return e;
+        return patchDockEvidence(e, {
+          images: e.images.map((row) => matches(row) ? { ...row, width: next.source.width, height: next.source.height, media: next } : row),
+        });
+      }
+      if (!e.clips.some(matches)) return e;
+      return patchDockEvidence(e, {
+        clips: e.clips.map((row) => matches(row) ? { ...row, path: next.source.path, media: next } : row),
+      });
     }),
 );
 dockConversationReducer.with(

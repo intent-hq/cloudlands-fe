@@ -1,3 +1,5 @@
+import { store } from '$store/renderer/store';
+import { getPrincipalActionContext } from '../../principal/principal-context';
 import type { Task } from 'redux-saga';
 import { call, cancel, delay, fork, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { appClient } from '$lib/client';
@@ -13,6 +15,7 @@ import {
   chatDraftRestoreSettled,
   chatDraftSaveCancelled,
   chatDraftSaveFlushRequested,
+  chatDraftSavePairFlushRequested,
   chatDraftSaveScheduled,
   chatDraftSaveSettled,
   chatDraftSaveStarted,
@@ -95,6 +98,18 @@ export function* chatDraftsSaga(
     yield* call(commitPending, ownerId);
   }
 
+  function* flushPair(
+    { payload: [workspaceId, agentId] }: ReturnType<typeof chatDraftSavePairFlushRequested>,
+  ): SagaGenerator<void> {
+    // Preserve insertion order: an older debounced owner cannot overwrite the
+    // explicit save that was scheduled after it. All writes still use one FIFO.
+    for (const [ownerId, entry] of Object.entries(pending)) {
+      if (entry.request.workspaceId !== workspaceId || entry.request.agentId !== agentId) continue;
+      yield* cancel(entry.timer);
+      yield* call(commitPending, ownerId);
+    }
+  }
+
   function* cancelPending(action: ReturnType<typeof chatDraftSaveCancelled>): SagaGenerator<void> {
     yield* dropPending(action.payload[0]);
   }
@@ -145,6 +160,8 @@ export function* chatDraftsSaga(
     const pair = pairState(key);
     const save = pair.committed[requestId] ?? { epoch: pair.epoch, rollback: request.rollback };
     try {
+      if (request.authority && request.authority !== getPrincipalActionContext(store.state))
+        throw new Error('draft-authority-changed');
       yield* call(
         [drafts, drafts.set],
         workspaceId,
@@ -176,6 +193,7 @@ export function* chatDraftsSaga(
   yield* takeEvery(chatDraftRestoreRequested, restore);
   yield* takeEvery(chatDraftSaveScheduled, schedule);
   yield* takeEvery([chatDraftSaveFlushRequested, chatDraftOwnerReleased], flush);
+  yield* takeEvery(chatDraftSavePairFlushRequested, flushPair);
   yield* takeEvery(chatDraftSaveCancelled, cancelPending);
   yield* takeEvery(chatDraftClearRequested, invalidatePair);
   yield* takeEveryByContextFIFO(
