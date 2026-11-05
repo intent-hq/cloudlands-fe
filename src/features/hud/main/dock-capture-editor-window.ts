@@ -18,7 +18,7 @@ import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   DOCK_CAPTURE_EDITOR_ROUTE,
   DockCaptureEditorCloseSchema,
-  DockCaptureEditorDirtySchema,
+  DockCaptureEditorAnswerSchema,
   DockCaptureEditorOpenSchema,
   canonicalDockAttachmentPath,
   type DockCaptureEditorOpenResult,
@@ -53,14 +53,16 @@ const MIN_SIZE = { width: 640, height: 480 };
 interface Session {
   snapshot: DockCaptureEditorSnapshot;
   backendId: string;
-  /** The editor reported unsaved edits in this session. */
-  dirty: boolean;
   /** Ends this session when the opening dock document's binding is retired. */
   stopWatching: () => void;
 }
 
-/** What waits for the person's Discard: closing the window, or opening another source. */
-type Pending = { kind: 'close' } | { kind: 'retarget'; next: Session };
+/**
+ * What waits for the editor's answer: closing the window, or opening another source.
+ * Only the editor knows whether it has unsaved edits, so it is asked every time; it
+ * answers Discard at once when it has none. `requestId` ties the answer to this ask.
+ */
+type Pending = { requestId: string } & ({ kind: 'close' } | { kind: 'retarget'; next: Session });
 
 let editor: BrowserWindow | null = null;
 let editorBackendId: string | null = null;
@@ -120,14 +122,25 @@ function closeEditor(): void {
   }
 }
 
-/** Unsaved edits: ask the person in the editor before `next` happens. */
-function askDiscard(next: Pending): void {
+/**
+ * Ask the editor before `next` happens. A close asked while a question is open keeps
+ * that question; a newer switch replaces it under a new request id, so an answer to
+ * the earlier one does nothing.
+ */
+function askDiscard(next: { kind: 'close' } | { kind: 'retarget'; next: Session }): void {
+  if (pending && next.kind === 'close') return;
+  if (!usable(editor) || !session) {
+    if (next.kind === 'retarget') showSession(next.next);
+    else closeEditor();
+    return;
+  }
   dropPending();
-  pending = next;
-  if (usable(editor) && session)
-    editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, {
-      openId: session.snapshot.openId,
-    });
+  const requestId = randomUUID();
+  pending = { ...next, requestId };
+  editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, {
+    openId: session.snapshot.openId,
+    requestId,
+  });
 }
 
 /** Show `next` in the editor: in the open window when it is the same backend's. */
@@ -183,9 +196,10 @@ function createEditorWindow(backendId: string): BrowserWindow {
     if (editor === window && usable(window))
       window.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
   });
-  // The window's own close (its button, Cmd+W) asks first when edits would be lost.
+  // The window's own close (its button, Cmd+W) asks the editor first; it closes at
+  // once without unsaved edits. A document that is gone has nothing to ask.
   window.on('close', (event) => {
-    if (closingAllowed || editor !== window || !session?.dirty) return;
+    if (closingAllowed || editor !== window || !session || window.webContents.isCrashed()) return;
     event.preventDefault();
     askDiscard({ kind: 'close' });
   });
@@ -241,11 +255,11 @@ function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpe
   const next: Session = {
     snapshot: { ...rest, openId, mediaUrl, ...(output ? { output } : {}) },
     backendId: binding.backendId,
-    dirty: false,
     stopWatching,
   };
-  // Unsaved edits are never replaced silently: the editor asks, and this opens on Discard.
-  if (usable(editor) && session?.dirty) askDiscard({ kind: 'retarget', next });
+  // An open session is never replaced silently: the editor is asked (it answers at
+  // once when it has no unsaved edits), and this opens on Discard.
+  if (usable(editor) && session) askDiscard({ kind: 'retarget', next });
   else showSession(next);
   return { ok: true, openId };
 }
@@ -280,18 +294,12 @@ export function setupDockCaptureEditorIPC(): void {
     closeEditor();
     return true;
   });
-  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DIRTY, (event, request: unknown) => {
-    const parsed = DockCaptureEditorDirtySchema.safeParse(request);
-    if (!parsed.success || !fromEditor(event) || !session) return false;
-    if (session.snapshot.openId !== parsed.data.openId) return false;
-    session.dirty = parsed.data.dirty;
-    return true;
-  });
   // The person's answer to main's question: Discard does what was waiting.
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, (event, request: unknown) => {
-    const parsed = DockCaptureEditorCloseSchema.safeParse(request);
+    const parsed = DockCaptureEditorAnswerSchema.safeParse(request);
     if (!parsed.success || !fromEditor(event) || !session || !pending) return false;
     if (session.snapshot.openId !== parsed.data.openId) return false;
+    if (pending.requestId !== parsed.data.requestId) return false;
     const waiting = pending;
     pending = null;
     if (waiting.kind === 'close') closeEditor();
@@ -299,9 +307,10 @@ export function setupDockCaptureEditorIPC(): void {
     return true;
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, (event, request: unknown) => {
-    const parsed = DockCaptureEditorCloseSchema.safeParse(request);
-    if (!parsed.success || !fromEditor(event) || !session) return false;
+    const parsed = DockCaptureEditorAnswerSchema.safeParse(request);
+    if (!parsed.success || !fromEditor(event) || !session || !pending) return false;
     if (session.snapshot.openId !== parsed.data.openId) return false;
+    if (pending.requestId !== parsed.data.requestId) return false;
     dropPending();
     return true;
   });

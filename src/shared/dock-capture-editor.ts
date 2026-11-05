@@ -160,8 +160,12 @@ export const DockCaptureEditorOpenSchema = z
 
 /** Close (and Discard, Keep editing) name the session they mean; others are untouched. */
 export const DockCaptureEditorCloseSchema = z.object({ openId: z.string().uuid() }).strict();
-export const DockCaptureEditorDirtySchema = z
-  .object({ openId: z.string().uuid(), dirty: z.boolean() })
+/**
+ * The answer to one of main's "edits would be lost" requests: Discard does what was
+ * waiting, Keep editing drops it. An answer to an older request does nothing.
+ */
+export const DockCaptureEditorAnswerSchema = z
+  .object({ openId: z.string().uuid(), requestId: z.string().uuid() })
   .strict();
 
 const ATTACHMENT_ROOT = ['.intent', 'attachments'] as const;

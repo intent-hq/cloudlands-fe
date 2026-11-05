@@ -470,9 +470,7 @@ export const IPC_CHANNELS = {
     OPEN: 'dock-capture-editor:open',
     GET: 'dock-capture-editor:get',
     CLOSE: 'dock-capture-editor:close',
-    /** editor → main: whether the open session has unsaved edits. */
-    DIRTY: 'dock-capture-editor:dirty',
-    /** editor → main: the person chose Discard (or Keep editing) for main's request. */
+    /** editor → main: the answer to main's CONFIRM_DISCARD request (by its id). */
     DISCARD: 'dock-capture-editor:discard',
     KEEP: 'dock-capture-editor:keep',
     /** main → editor send: the session changed (re-read it with GET). */

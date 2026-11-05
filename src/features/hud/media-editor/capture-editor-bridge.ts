@@ -11,23 +11,24 @@ import {
 export interface DockCaptureEditorBridge {
   /** Close the session `openId` names (never a newer one main retargeted to). */
   close(openId: string): void;
-  /** Tell main whether the session has unsaved edits (it then asks before losing them). */
-  setDirty(openId: string, dirty: boolean): void;
-  /** The person's answer to main's question (`onConfirmDiscard`). */
-  discard(openId: string): void;
-  keep(openId: string): void;
+  /** The answer to main's request `requestId` (`onConfirmDiscard`). */
+  discard(openId: string, requestId: string): void;
+  keep(openId: string, requestId: string): void;
   dispose(): void;
 }
 
 export function connectDockCaptureEditor(
   onSnapshot: (snapshot: DockCaptureEditorSnapshot | null) => void,
-  /** Main asks before closing or switching would lose the session's edits. */
-  onConfirmDiscard: (openId: string) => void = () => {},
+  /**
+   * Main asks before closing the window or switching it to another source; the page
+   * answers at once without unsaved edits, otherwise after asking the person.
+   */
+  onConfirmDiscard: (openId: string, requestId: string) => void = () => {},
 ): DockCaptureEditorBridge {
   if (!isElectron()) {
     onSnapshot(null);
     const none = () => {};
-    return { close: none, setDirty: none, discard: none, keep: none, dispose: none };
+    return { close: none, discard: none, keep: none, dispose: none };
   }
   const send = (channel: string, payload: unknown) =>
     void electronAPI()
@@ -36,8 +37,9 @@ export function connectDockCaptureEditor(
 
   let disposed = false;
   const confirm = (payload: unknown) => {
-    const openId = (payload as { openId?: unknown } | null)?.openId;
-    if (!disposed && typeof openId === 'string') onConfirmDiscard(openId);
+    const { openId, requestId } = (payload ?? {}) as { openId?: unknown; requestId?: unknown };
+    if (!disposed && typeof openId === 'string' && typeof requestId === 'string')
+      onConfirmDiscard(openId, requestId);
   };
   electronAPI().on(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, confirm);
   let request = 0;
@@ -64,9 +66,9 @@ export function connectDockCaptureEditor(
   else void load();
   return {
     close: (openId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, { openId }),
-    setDirty: (openId, dirty) => send(DOCK_CAPTURE_EDITOR_CHANNELS.DIRTY, { openId, dirty }),
-    discard: (openId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId }),
-    keep: (openId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId }),
+    discard: (openId, requestId) =>
+      send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId, requestId }),
+    keep: (openId, requestId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId, requestId }),
     dispose: () => {
       disposed = true;
       document.removeEventListener('DOMContentLoaded', changed);
