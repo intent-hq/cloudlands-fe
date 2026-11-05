@@ -111,6 +111,7 @@ const AUDIO_INPUT = 'com.apple.security.device.audio-input';
  * picker (Accessibility, TCC-gated) gets no entitlements at all.
  */
 export const DOCK_COMPOSER_SIGNING = Object.freeze([
+  { helper: 'dock-helper/intent-dock-capture-selector', entitlements: null, expectedEntitlements: [] },
   { helper: 'dock-helper/intent-dock-media-export', entitlements: null, expectedEntitlements: [] },
   { helper: 'dock-helper/intent-dock-media-transcribe', entitlements: null, expectedEntitlements: [] },
   {

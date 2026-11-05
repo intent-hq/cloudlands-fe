@@ -109,6 +109,7 @@ mac:
     # entitlements (microphone for recorder/speech, none for the element
     # picker); the deep-sign pass would replace them with the full app set.
     - 'Resources/dock-helper/intent-dock-recorder$'
+    - 'Resources/dock-helper/intent-dock-capture-selector$'
     - 'Resources/dock-helper/intent-dock-media-export$'
     - 'Resources/dock-helper/intent-dock-media-transcribe$'
     - 'Resources/speech-helper/intent-dock-speech$'
