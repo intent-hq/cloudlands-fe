@@ -930,6 +930,18 @@ export function focusDockWindow(
 ): void {
   const window = getDockWindow();
   if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
+  if (recordingHidden(window)) {
+    // Out of sight for a recording: never shown or focused, and a focus-only request
+    // (or capture) is not routed meanwhile. Record, annotate and dictate still reach
+    // the dock, where they stop or act on the live recording's own session.
+    const action = context?.action;
+    if (
+      (action === 'record' || action === 'annotate' || action === 'dictate') &&
+      !window.webContents.isDestroyed()
+    )
+      window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, context);
+    return;
+  }
   dockFocusedByIntentAt = Date.now();
   window.show();
   window.focus();
