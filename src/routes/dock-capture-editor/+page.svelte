@@ -4,7 +4,10 @@
   import DockRecordingEditor from '$features/hud/media-editor/recording/DockRecordingEditor.svelte';
   import DockScreenshotEditorWindow from '$features/hud/media-editor/screenshot/DockScreenshotEditorWindow.svelte';
   import { connectDockCaptureEditor } from '$features/hud/media-editor/capture-editor-bridge';
-  import type { DockCaptureEditorSnapshot } from '$shared/dock-capture-editor';
+  import type {
+    DockCaptureEditorNoteDictationUpdate,
+    DockCaptureEditorSnapshot,
+  } from '$shared/dock-capture-editor';
   import { dockMediaRetakeMapping } from '$shared/dock-media-edit';
 
   let snapshot = $state.raw<DockCaptureEditorSnapshot | null>(null);
@@ -13,6 +16,8 @@
   /** Counts main's questions the person is asked; the answer goes to the latest. */
   let discardRequest = $state(0);
   let latestRequest: string | null = null;
+  /** The latest note dictation text for the open session (the view fences generations). */
+  let noteDictationUpdate = $state.raw<DockCaptureEditorNoteDictationUpdate | null>(null);
   // eslint-disable-next-line intent/no-component-async-data-fetch -- isolated editor window with no app store; the bridge owns its IPC
   const bridge = connectDockCaptureEditor(
     (next) => {
@@ -20,6 +25,7 @@
         discardRequest = 0;
         latestRequest = null;
         dirty = false;
+        noteDictationUpdate = null;
       }
       snapshot = next;
     },
@@ -32,6 +38,9 @@
       }
       latestRequest = requestId;
       discardRequest += 1;
+    },
+    (update) => {
+      if (update.openId === snapshot?.openId) noteDictationUpdate = update;
     },
   );
   onDestroy(() => bridge.dispose());
@@ -77,6 +86,8 @@
             requestId: crypto.randomUUID(),
             result: 'failed',
           }}
+        onNoteDictation={(request) => bridge.noteDictation(request)}
+        {noteDictationUpdate}
         onRetake={snapshot.source?.capture?.frame
           ? async (bundle) => {
               const outcome = await bridge.retake(openId);

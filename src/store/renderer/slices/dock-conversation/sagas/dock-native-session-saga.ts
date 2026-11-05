@@ -22,7 +22,15 @@ import {
   type DockSpeechEndReason,
   type DockSpeechEvent,
 } from '$shared/dock-speech';
-import { dockEvidenceId } from '$shared/dock-evidence';
+import { dockEvidenceId, recordingDockClip } from '$shared/dock-evidence';
+import {
+  DOCK_CAPTURE_EDITOR_CHANNELS,
+  DOCK_NOTE_MAX,
+  type DockCaptureEditorNoteDictationRequested,
+  type DockCaptureEditorNoteDictationText,
+} from '$shared/dock-capture-editor';
+import type { DockInsertionPart } from '$shared/dock-evidence';
+import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import { getPrincipalActionContext } from '../../principal/principal-context';
 import { selectDockNativeScope } from '../dock-conversation-selectors';
 import {
@@ -121,7 +129,126 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
     buffers.expanding(64),
   );
 
+  /**
+   * Note dictation (capture editor, screenshot mark notes): its own speech session,
+   * started only while the microphone is free (no prompt dictation, no recording).
+   * Its text goes to main for that note, never into the prompt; every accepted start
+   * ends with exactly one final report.
+   */
+  let note: {
+    requestId: string;
+    generation: number;
+    speechId: string;
+    transcript: ReturnType<typeof createDockSpeechTranscript>;
+    committed: string;
+  } | null = null;
+  const textOf = (parts: readonly DockInsertionPart[]) =>
+    parts.map((part) => (part.kind === 'text' ? part.text : '')).join('');
+  function reportNote(report: DockCaptureEditorNoteDictationText): void {
+    void window.electronAPI
+      ?.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_TEXT, {
+        ...report,
+        text: report.text.slice(0, DOCK_NOTE_MAX),
+      })
+      .catch(() => undefined);
+  }
+  function* onNoteRequest(value: object): SagaGenerator<void> {
+    const request = value as DockCaptureEditorNoteDictationRequested;
+    if (typeof request.requestId !== 'string' || !Number.isInteger(request.generation)) return;
+    if (request.phase === 'stop') {
+      const live = note;
+      if (!live || live.requestId !== request.requestId || live.generation !== request.generation)
+        return;
+      const stopped = yield* call(async () => {
+        try {
+          return await adapter.speech.stop(live.speechId);
+        } catch {
+          return null;
+        }
+      });
+      // A stop that could not reach native still ends the dictation, once.
+      if (!stopped && note === live) {
+        note = null;
+        reportNote({
+          requestId: live.requestId,
+          generation: live.generation,
+          text: live.committed,
+          final: true,
+          error: 'failed',
+        });
+      }
+      return;
+    }
+    const refuse = (error: 'busy' | 'unavailable' | 'failed' | 'permission') =>
+      reportNote({
+        requestId: request.requestId,
+        generation: request.generation,
+        text: '',
+        final: true,
+        error,
+      });
+    if (
+      request.pair?.workspaceId !== workspaceId ||
+      request.pair?.agentId !== agentId ||
+      !stillCurrent(scope)
+    )
+      return refuse('unavailable');
+    // Never take the microphone from prompt dictation, another note or a recording.
+    if (speech || note || recordingDockClip(evidenceOf(workspaceId, agentId)))
+      return refuse('busy');
+    const speechId = crypto.randomUUID();
+    const live = {
+      requestId: request.requestId,
+      generation: request.generation,
+      speechId,
+      transcript: createDockSpeechTranscript(speechId),
+      committed: '',
+    };
+    note = live;
+    const result = yield* call(async () => {
+      try {
+        return await adapter.speech.start(speechId);
+      } catch {
+        return { ok: false as const, error: 'failed' as const };
+      }
+    });
+    if (!result.ok && note === live) {
+      note = null;
+      refuse(String(result.error).includes('permission') ? 'permission' : 'failed');
+    }
+  }
+  function onNoteSpeech(event: DockSpeechEvent): void {
+    const live = note;
+    if (!live) return;
+    const update = live.transcript.apply(event);
+    if (!update) return;
+    for (const commit of update.commits) live.committed += textOf(commit.parts);
+    if (update.ended) {
+      note = null;
+      const text =
+        live.committed + (update.ended.trailing ? textOf(update.ended.trailing.parts) : '');
+      reportNote({
+        requestId: live.requestId,
+        generation: live.generation,
+        text,
+        final: true,
+        ...(CLEAN_END_REASONS.has(update.ended.reason) ? {} : { error: 'failed' as const }),
+      });
+      return;
+    }
+    reportNote({
+      requestId: live.requestId,
+      generation: live.generation,
+      text: live.committed + textOf(update.interim),
+      final: false,
+    });
+  }
+
   function* onSpeechEvent(speechId: string, event: DockSpeechEvent): SagaGenerator<void> {
+    if (note && note.speechId === speechId) {
+      onNoteSpeech(event);
+      return;
+    }
     const live = speech;
     if (!live || live.id !== speechId || !stillCurrent(scope)) return;
     if (event.type === 'ready') {
@@ -187,7 +314,8 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
   }
 
   function* startSpeech(): SagaGenerator<void> {
-    if (speech || !stillCurrent(scope)) return;
+    // A note dictation holds the microphone until it ends.
+    if (speech || note || !stillCurrent(scope)) return;
     const speechId = crypto.randomUUID();
     speech = { id: speechId, transcript: createDockSpeechTranscript(speechId), stopping: null };
     yield* put(dockNativeSpeechPatched(pairId, { activeId: speechId, pending: true, error: null }));
@@ -334,6 +462,13 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
     yield* put(
       dockNativeSpeechSessionChanged(pairId, 'speech' in result.value ? result.value.speech : null),
     );
+    yield* takeEveryFromElectronChannel<object>(
+      DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_REQUESTED,
+      onNoteRequest,
+      {
+        bufferPolicy: { kind: 'lossless', rationale: 'Each note start or stop needs its answer.' },
+      },
+    );
     yield* takeEvery(dockSpeechStartRequested, function* ({ payload: [ws, agent] }) {
       if (ours(ws, agent)) yield* startSpeech();
     });
@@ -410,6 +545,18 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
   } finally {
     channel.close();
     speech = null;
+    // The session is going: a note dictation still running ends, once.
+    if (note) {
+      const live = note;
+      note = null;
+      reportNote({
+        requestId: live.requestId,
+        generation: live.generation,
+        text: live.committed,
+        final: true,
+        error: 'failed',
+      });
+    }
     if (installed && retireDockEvidenceNative(adapter.service, workspaceId, agentId)) {
       if (appStore.state.dockConversation.nativeSpeech.pairId === pairId)
         appStore.dispatch(dockNativeSpeechSessionChanged(null, null));

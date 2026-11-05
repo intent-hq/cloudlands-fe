@@ -489,6 +489,14 @@ export const IPC_CHANNELS = {
     RETAKE_RESULT: 'dock-capture-editor:retake-result',
     /** dock → main: a newer transcript of the open session's source (DockCaptureEditorTranscriptUpdate). */
     TRANSCRIPT_UPDATE: 'dock-capture-editor:transcript-update',
+    /** editor → main: start or stop dictating into one mark's note. */
+    NOTE_DICTATION: 'dock-capture-editor:note-dictation',
+    /** main → the opening dock send: start/stop that note dictation (DockCaptureEditorNoteDictationRequested). */
+    NOTE_DICTATION_REQUESTED: 'dock-capture-editor:note-dictation-requested',
+    /** dock → main: the note dictation's text so far, or its end (DockCaptureEditorNoteDictationText). */
+    NOTE_DICTATION_TEXT: 'dock-capture-editor:note-dictation-text',
+    /** main → editor send: the note dictation's text (DockCaptureEditorNoteDictationUpdate). */
+    NOTE_DICTATION_UPDATE: 'dock-capture-editor:note-dictation-update',
     /** dock → main: the outcome of that save (DockCaptureEditorSaveResult). */
     SAVE_RESULT: 'dock-capture-editor:save-result',
   },
@@ -1234,6 +1242,8 @@ export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CONFIRM_DISCARD,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.SAVE_REQUESTED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.RETAKE_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_UPDATE,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

@@ -267,3 +267,71 @@ export type DockCaptureEditorRetakeResult = z.infer<typeof DockCaptureEditorReta
 export type DockCaptureEditorRetakeOutcome =
   | { ok: true; candidateToken: string; source: DockMediaSource; mediaUrl: string }
   | { ok: false; error: 'cancelled' | 'permission' | 'failed' };
+
+// ---------------------------------------------------------------------------
+// Note dictation (screenshot marks): hold the mic in a mark's note field to dictate.
+// The adapter mints a monotonic generation per dictation; every accepted start ends
+// with exactly one final update for that generation (stop, natural end or error).
+// ---------------------------------------------------------------------------
+
+export const DOCK_NOTE_MAX = 20_000;
+export type DockCaptureEditorNotePhase = 'start' | 'stop';
+export type DockCaptureEditorNoteError = 'busy' | 'unavailable' | 'failed' | 'permission';
+
+export interface DockCaptureEditorNoteDictationRequest {
+  openId: string;
+  markId: string;
+  /** Integer ≥ 0, minted by the editor, monotonic per editor. */
+  generation: number;
+  phase: DockCaptureEditorNotePhase;
+}
+export const DockCaptureEditorNoteDictationSchema = z
+  .object({
+    openId: z.string().uuid(),
+    markId: z.string().min(1).max(512),
+    generation: z.number().int().nonnegative(),
+    phase: z.enum(['start', 'stop']),
+  })
+  .strict();
+
+/** Start ok: listening started (an update follows); stop ok: a stop was sent for it. */
+export interface DockCaptureEditorNoteDictationAck {
+  ok: boolean;
+  error?: 'busy' | 'unavailable' | 'failed';
+}
+
+/** main → the opening dock. */
+export interface DockCaptureEditorNoteDictationRequested {
+  requestId: string;
+  pair: { workspaceId: string; agentId: string };
+  markId: string;
+  generation: number;
+  phase: DockCaptureEditorNotePhase;
+}
+
+/** dock → main: the dictation's cumulative text, or its end (final, with error if any). */
+export const DockCaptureEditorNoteDictationTextSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    generation: z.number().int().nonnegative(),
+    text: z.string().max(DOCK_NOTE_MAX),
+    final: z.boolean(),
+    error: z.enum(['busy', 'unavailable', 'failed', 'permission']).optional(),
+  })
+  .strict()
+  .refine((value) => !value.error || value.final, 'An error is final');
+export type DockCaptureEditorNoteDictationText = z.infer<
+  typeof DockCaptureEditorNoteDictationTextSchema
+>;
+
+/** main → editor. */
+export interface DockCaptureEditorNoteDictationUpdate {
+  openId: string;
+  markId: string;
+  generation: number;
+  /** The whole text of this dictation so far (≤ 20000). */
+  text: string;
+  /** True exactly once, last: on stop, natural end or error. */
+  final: boolean;
+  error?: DockCaptureEditorNoteError;
+}

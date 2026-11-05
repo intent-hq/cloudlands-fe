@@ -23,6 +23,10 @@ import {
   canonicalDockAttachmentPath,
   DockCaptureEditorSaveResultSchema,
   DockCaptureEditorTranscriptUpdateSchema,
+  DockCaptureEditorNoteDictationSchema,
+  DockCaptureEditorNoteDictationTextSchema,
+  type DockCaptureEditorNoteDictationAck,
+  type DockCaptureEditorNoteDictationUpdate,
   DockCaptureEditorRetakeResultSchema,
   type DockCaptureEditorRetakeOutcome,
   type DockCaptureEditorOpenResult,
@@ -103,6 +107,28 @@ interface PendingRetake {
 const RETAKE_TIMEOUT_MS = 120_000;
 const MAX_CANDIDATES = 4;
 const pendingRetakes = new Map<string, PendingRetake>();
+
+/** The one note dictation of the open session, if any (by its request id). */
+interface NoteDictation {
+  requestId: string;
+  openId: string;
+  markId: string;
+  generation: number;
+  owner: Session['owner'];
+}
+let noteDictation: NoteDictation | null = null;
+
+/** Ask the owning dock to stop a note dictation (its final text then ends it). */
+function stopNoteDictation(note: NoteDictation): void {
+  if (note.owner.sender.isDestroyed()) return;
+  note.owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_REQUESTED, {
+    requestId: note.requestId,
+    pair: null,
+    markId: note.markId,
+    generation: note.generation,
+    phase: 'stop',
+  });
+}
 function settleRetake(requestId: string, result: DockCaptureEditorRetakeOutcome): void {
   const pending = pendingRetakes.get(requestId);
   if (!pending) return;
@@ -188,6 +214,11 @@ function endSession(): void {
   session = null;
   // Its saves can no longer reach the editor: they end as failed (the dock may still
   // finish writing; nothing here claims they were cancelled).
+  // The editor is going: its note dictation stops (nobody is left to receive it).
+  if (ended && noteDictation?.openId === ended.snapshot.openId) {
+    stopNoteDictation(noteDictation);
+    noteDictation = null;
+  }
   if (ended) {
     for (const [requestId, pending] of pendingSaves)
       if (pending.openId === ended.snapshot.openId)
@@ -483,6 +514,31 @@ export function setupDockCaptureEditorIPC(): void {
     settleRetake(parsed.data.requestId, { ok: true, candidateToken, source: candidate, mediaUrl });
     return true;
   });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION, (event, request: unknown) =>
+    dictateNote(event, request),
+  );
+  // The owning dock's note dictation text: only for the dictation main started.
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_TEXT, (event, value: unknown) => {
+    const parsed = DockCaptureEditorNoteDictationTextSchema.safeParse(value);
+    const note = noteDictation;
+    if (!parsed.success || !note || parsed.data.requestId !== note.requestId) return false;
+    if (parsed.data.generation !== note.generation || event.sender !== note.owner.sender)
+      return false;
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    if (getStrictBackendBindingForWebContents(event.sender) !== note.owner.binding) return false;
+    if (parsed.data.final) noteDictation = null;
+    if (!usable(editor) || session?.snapshot.openId !== note.openId) return true;
+    const update: DockCaptureEditorNoteDictationUpdate = {
+      openId: note.openId,
+      markId: note.markId,
+      generation: note.generation,
+      text: parsed.data.text,
+      final: parsed.data.final,
+      ...(parsed.data.error ? { error: parsed.data.error } : {}),
+    };
+    editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_UPDATE, update);
+    return true;
+  });
   // A newer transcript of the open session's source, from the dock that opened it.
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.TRANSCRIPT_UPDATE, (event, value: unknown) => {
     const parsed = DockCaptureEditorTranscriptUpdateSchema.safeParse(value);
@@ -660,4 +716,42 @@ async function retake(
       window.focus();
     }
   }
+}
+
+/**
+ * Start or stop dictating into one mark's note. One at a time per session; a start
+ * goes to the dock that opened it, which refuses (with a final update) while the
+ * microphone is in use by dictation or a recording. A stop names its generation.
+ */
+function dictateNote(
+  event: IpcMainInvokeEvent,
+  request: unknown,
+): DockCaptureEditorNoteDictationAck {
+  const parsed = DockCaptureEditorNoteDictationSchema.safeParse(request);
+  if (!parsed.success || !fromEditor(event) || !session) return { ok: false, error: 'failed' };
+  const { openId, markId, generation, phase } = parsed.data;
+  const { snapshot, owner } = session;
+  if (snapshot.openId !== openId || snapshot.kind !== 'screenshot')
+    return { ok: false, error: 'failed' };
+  if (phase === 'stop') {
+    const note = noteDictation;
+    if (!note || note.openId !== openId || note.markId !== markId || note.generation !== generation)
+      return { ok: false, error: 'failed' };
+    stopNoteDictation(note);
+    return { ok: true };
+  }
+  if (noteDictation) return { ok: false, error: 'busy' };
+  if (owner.sender.isDestroyed()) return { ok: false, error: 'unavailable' };
+  if (getStrictBackendBindingForWebContents(owner.sender) !== owner.binding)
+    return { ok: false, error: 'unavailable' };
+  const requestId = randomUUID();
+  noteDictation = { requestId, openId, markId, generation, owner };
+  owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_REQUESTED, {
+    requestId,
+    pair: { workspaceId: snapshot.workspaceId, agentId: snapshot.agentId },
+    markId,
+    generation,
+    phase: 'start',
+  });
+  return { ok: true };
 }

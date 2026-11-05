@@ -5,6 +5,9 @@
 import { electronAPI, isElectron } from '$lib/electron-bridge';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
+  type DockCaptureEditorNoteDictationAck,
+  type DockCaptureEditorNoteDictationRequest,
+  type DockCaptureEditorNoteDictationUpdate,
   type DockCaptureEditorRetakeOutcome,
   type DockCaptureEditorSaveResult,
   type DockCaptureEditorSnapshot,
@@ -25,6 +28,10 @@ export interface DockCaptureEditorBridge {
   ): Promise<DockCaptureEditorSaveResult | null>;
   /** Capture the screenshot again; main hides the editor meanwhile and keeps the result. */
   retake(openId: string): Promise<DockCaptureEditorRetakeOutcome | null>;
+  /** Start or stop dictating into a mark's note; text arrives via `onNoteUpdate`. */
+  noteDictation(
+    request: DockCaptureEditorNoteDictationRequest,
+  ): Promise<DockCaptureEditorNoteDictationAck>;
   dispose(): void;
 }
 
@@ -35,6 +42,8 @@ export function connectDockCaptureEditor(
    * answers at once without unsaved edits, otherwise after asking the person.
    */
   onConfirmDiscard: (openId: string, requestId: string) => void = () => {},
+  /** A note dictation's text (cumulative; the final one ends it). */
+  onNoteUpdate: (update: DockCaptureEditorNoteDictationUpdate) => void = () => {},
 ): DockCaptureEditorBridge {
   if (!isElectron()) {
     onSnapshot(null);
@@ -45,6 +54,7 @@ export function connectDockCaptureEditor(
       keep: none,
       save: async () => null,
       retake: async () => null,
+      noteDictation: async () => ({ ok: false, error: 'unavailable' }),
       dispose: none,
     };
   }
@@ -60,6 +70,11 @@ export function connectDockCaptureEditor(
       onConfirmDiscard(openId, requestId);
   };
   electronAPI().on(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, confirm);
+  const noteUpdate = (payload: unknown) => {
+    if (!disposed && payload && typeof payload === 'object')
+      onNoteUpdate(payload as DockCaptureEditorNoteDictationUpdate);
+  };
+  electronAPI().on(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_UPDATE, noteUpdate);
   let request = 0;
   const load = async () => {
     const mine = ++request;
@@ -98,6 +113,19 @@ export function connectDockCaptureEditor(
         return null;
       }
     },
+    noteDictation: async (request) => {
+      try {
+        return ((await electronAPI().invoke(
+          DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION,
+          request,
+        )) ?? {
+          ok: false,
+          error: 'failed',
+        }) as DockCaptureEditorNoteDictationAck;
+      } catch {
+        return { ok: false, error: 'failed' };
+      }
+    },
     retake: async (openId) => {
       try {
         return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE, { openId })) ??
@@ -111,6 +139,7 @@ export function connectDockCaptureEditor(
       document.removeEventListener('DOMContentLoaded', changed);
       electronAPI().off(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED, changed);
       electronAPI().off(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, confirm);
+      electronAPI().off(DOCK_CAPTURE_EDITOR_CHANNELS.NOTE_DICTATION_UPDATE, noteUpdate);
     },
   };
 }
