@@ -34,11 +34,32 @@ vi.mock('$store/renderer/store', async () => {
 
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', () => ({
   selectAgentFontStyle: () => mockState.fontStyle,
+  selectChatContentWidth: () => ({
+    subscribe: (run: (value: string) => void) => (run('full'), () => {}),
+  }),
+  selectChatAuroraEnabled: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(true), () => {}),
+  }),
+  selectCollapseToolRuns: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
+  }),
 }));
 vi.mock('$store/renderer/slices/user-preferences/user-preferences-slice', () => ({
   setAgentFontStyle: (style: string) => ({
     type: 'fontSettings/setAgentFontStyle',
     payload: [style],
+  }),
+  setChatContentWidth: (width: string) => ({
+    type: 'userPreferences/setChatContentWidth',
+    payload: [width],
+  }),
+  setChatAuroraEnabled: (enabled: boolean) => ({
+    type: 'userPreferences/setChatAuroraEnabled',
+    payload: [enabled],
+  }),
+  setCollapseToolRuns: (enabled: boolean) => ({
+    type: 'userPreferences/setCollapseToolRuns',
+    payload: [enabled],
   }),
 }));
 

@@ -6,6 +6,7 @@ import { isElectron } from '$lib/electron-bridge';
 import { applyLanguagePreference } from '$lib/i18n/locale';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
+import { isChatContentWidth } from '$shared/chat-content-width';
 import {
   namespaceBackendKey,
   selectActiveBackendId,
@@ -19,6 +20,7 @@ import {
   selectActivityLogPresets,
   selectAgentFontStyle,
   selectChatAuroraEnabled,
+  selectChatContentWidth,
   selectCollapseToolRuns,
   selectCodeFontFamily,
   selectGroupByRepo,
@@ -50,6 +52,7 @@ import {
   saveActivityLogPreset,
   setAgentFontStyle,
   setChatAuroraEnabled,
+  setChatContentWidth,
   setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
@@ -95,6 +98,7 @@ const GROUP_BY_REPO_STORAGE_KEY = 'workspace-list:groupByRepo';
 const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSetup';
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
+const CHAT_CONTENT_WIDTH_STORAGE_KEY = 'chat:contentWidth';
 const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
@@ -197,6 +201,11 @@ export function* hydrateUserPreferencesWorker() {
   const chatAuroraEnabled = yield* getLocalStorageJSON<boolean>(CHAT_AURORA_STORAGE_KEY);
   if (typeof chatAuroraEnabled === 'boolean') {
     yield* put(setChatAuroraEnabled(chatAuroraEnabled));
+  }
+
+  const chatContentWidth = yield* getLocalStorageJSON<unknown>(CHAT_CONTENT_WIDTH_STORAGE_KEY);
+  if (isChatContentWidth(chatContentWidth)) {
+    yield* put(setChatContentWidth(chatContentWidth));
   }
 
   const collapseToolRuns = yield* getLocalStorageJSON<boolean>(COLLAPSE_TOOL_RUNS_STORAGE_KEY);
@@ -353,6 +362,13 @@ function* persistChatAuroraWorker() {
   yield* setLocalStorageJSON(CHAT_AURORA_STORAGE_KEY, yield* selectChatAuroraEnabled.effect());
 }
 
+function* persistChatContentWidthWorker() {
+  yield* setLocalStorageJSON(
+    CHAT_CONTENT_WIDTH_STORAGE_KEY,
+    yield* selectChatContentWidth.effect(),
+  );
+}
+
 function* persistCollapseToolRunsWorker() {
   yield* setLocalStorageJSON(
     COLLAPSE_TOOL_RUNS_STORAGE_KEY,
@@ -497,6 +513,7 @@ function* watchUserPreferenceWrites() {
     persistShowReasoningBlocksWorker,
   );
   yield* takeEvery([setChatAuroraEnabled, toggleChatAurora], persistChatAuroraWorker);
+  yield* takeEvery(setChatContentWidth, persistChatContentWidthWorker);
   yield* takeEvery([setCollapseToolRuns, toggleCollapseToolRuns], persistCollapseToolRunsWorker);
   yield* takeEvery(
     [setShellTransparencyEnabled, toggleShellTransparency],

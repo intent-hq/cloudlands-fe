@@ -179,6 +179,7 @@ const APP_UI_TARGETS: AppUiTarget[] = [
   }),
   ...[
     ['color-theme', 'Color theme', 'Color theme selection.'],
+    ['chat-content-width', 'Full width', 'Full panel width or an 800 px content limit.'],
     ['note-font', 'Notes font', 'Notes/spec font style.'],
     ['agent-chat-font', 'Agent chat font', 'Agent chat font style.'],
     ['code-font', 'Code font', 'Code editor and diff font.'],

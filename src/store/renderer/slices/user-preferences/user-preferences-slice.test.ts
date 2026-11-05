@@ -23,6 +23,7 @@ import {
   resetShortcutOverride,
   saveActivityLogPreset,
   setChatAuroraEnabled,
+  setChatContentWidth,
   setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
@@ -69,6 +70,7 @@ import {
   selectAgentFontStyleLabel,
   selectActivityLogPresets,
   selectChatAuroraEnabled,
+  selectChatContentWidth,
   selectCollapseToolRuns,
   selectCodeFontFamily,
   selectCodeFontFamilyCSS,
@@ -524,6 +526,36 @@ describe('userPreferencesReducer', () => {
   });
 
   describe('appearance preference actions', () => {
+    it('keeps full-width chat by default and supports changing and resetting the limit', () => {
+      expect(initialState.chatContentWidth).toBe('full');
+      let state = initialState;
+      for (const width of ['800', 'full'] as const) {
+        state = userPreferencesReducer(state, setChatContentWidth(width));
+        expect(selectChatContentWidth.select({ userPreferences: state } as any)).toBe(width);
+      }
+      expect(selectChatContentWidth.select({} as any)).toBe('full');
+    });
+
+    it.each([
+      null,
+      undefined,
+      800,
+      '0',
+      '-640',
+      '640',
+      '750',
+      '960',
+      '1200',
+      '800px',
+      '',
+      NaN,
+      Infinity,
+      {},
+    ])('ignores an invalid chat width preference: %j', (value) => {
+      const state = userPreferencesReducer(initialState, setChatContentWidth('800'));
+      expect(userPreferencesReducer(state, setChatContentWidth(value as never))).toBe(state);
+    });
+
     it('defaults aurora and shell transparency to enabled and reduceMotionOnBattery to disabled', () => {
       expect(initialState.chatAuroraEnabled).toBe(true);
       expect(initialState.shellTransparencyEnabled).toBe(true);
