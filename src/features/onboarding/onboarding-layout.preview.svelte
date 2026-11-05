@@ -78,7 +78,7 @@
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
   import {
-    cursorPreviewStatus,
+    CURSOR_UNSUPPORTED_PREVIEW_STATUS,
     previewProviders,
   } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
@@ -322,7 +322,7 @@
     );
   }
   if (seededCursor === 'unsupported')
-    appStore.dispatch(checkSingleProviderSuccess('cursor', cursorPreviewStatus('unsupported')));
+    appStore.dispatch(checkSingleProviderSuccess('cursor', CURSOR_UNSUPPORTED_PREVIEW_STATUS));
   appStore.dispatch(checkAllProvidersComplete());
   appStore.dispatch(goToStep(untrack(() => step)));
   onDestroy(() => {

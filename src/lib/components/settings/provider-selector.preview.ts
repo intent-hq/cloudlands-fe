@@ -171,20 +171,23 @@ const CURSOR_PREVIEW_VERSION = '2026.11.05-86047df';
 const GROK_HOST_REASON =
   'cursor-agent runs the Grok agent host (grok-agent 1.4.2), not the Cursor CLI. Run "cursor-agent update --channel cursor" to switch back, or set providers.paths.cursor to the Cursor install under ~/.local/share/cursor-agent/versions/.';
 
+/** cursor-agent on the Grok agent host, as the provider status seeder maps it. */
+export const CURSOR_UNSUPPORTED_PREVIEW_STATUS: ProviderStatus = {
+  available: false,
+  version: 'grok-agent 1.4.2',
+  unavailableReason: GROK_HOST_REASON,
+  warning: m.settings_providers_cursorUnsupported_warning({ reason: GROK_HOST_REASON }),
+};
+
 /** Mocked Cursor status, shaped like the provider status seeder's discovery mapping. */
-export function cursorPreviewStatus(
+function cursorPreviewStatus(
   status: 'signed-in' | 'signed-out' | 'not-installed' | 'unsupported',
 ): ProviderStatus {
   switch (status) {
     case 'not-installed':
       return { available: false };
     case 'unsupported':
-      return {
-        available: false,
-        version: 'grok-agent 1.4.2',
-        unavailableReason: GROK_HOST_REASON,
-        warning: m.settings_providers_cursorUnsupported_warning({ reason: GROK_HOST_REASON }),
-      };
+      return CURSOR_UNSUPPORTED_PREVIEW_STATUS;
     default:
       return {
         available: true,
