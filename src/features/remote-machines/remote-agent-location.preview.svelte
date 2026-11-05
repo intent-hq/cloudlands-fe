@@ -6,6 +6,10 @@
     | 'local'
     | 'remote-running'
     | 'remote-starting'
+    | 'remote-preparing-checkout'
+    | 'remote-running-setup'
+    | 'remote-setup-failed'
+    | 'remote-update-required'
     | 'remote-failed'
     | 'machine-unreachable'
     | 'machine-revoked'
@@ -29,6 +33,10 @@
       'long-machine-name': sceneState('long-machine-name'),
       'remote-running': sceneState('remote-running'),
       'remote-starting': sceneState('remote-starting'),
+      'remote-preparing-checkout': sceneState('remote-preparing-checkout'),
+      'remote-running-setup': sceneState('remote-running-setup'),
+      'remote-setup-failed': sceneState('remote-setup-failed'),
+      'remote-update-required': sceneState('remote-update-required'),
       'remote-failed': sceneState('remote-failed'),
       'machine-unreachable': sceneState('machine-unreachable'),
       'machine-revoked': sceneState('machine-revoked'),
@@ -178,6 +186,44 @@
       ...extra,
     }) as AgentSession;
 
+  const STARTING_SCENES: Scene[] = [
+    'remote-starting',
+    'remote-preparing-checkout',
+    'remote-running-setup',
+  ];
+  const SETUP_OUTPUT = [
+    'Fetching the workspace from the backend…',
+    'Fetching packages/intentd…',
+    'Fetching packages/cloudlands-fe…',
+    'Checkout ready.',
+    '$ make bootstrap',
+    '\u001b[32m✓\u001b[0m rustup toolchain 1.92.0 installed',
+    'pnpm install --frozen-lockfile',
+    'Lockfile is up to date, resolution step is skipped',
+    'Packages: +1843',
+    'Progress: resolved 1843, reused 1790, downloaded 53, added 1843, done',
+    '',
+  ].join('\n');
+  const SETUP: Partial<Record<Scene, AgentSession['setup']>> = {
+    'remote-preparing-checkout': {
+      state: 'pending',
+      output: SETUP_OUTPUT.split('\n').slice(0, 2).join('\n'),
+    },
+    'remote-running-setup': {
+      state: 'running',
+      startedAt: '2026-11-02T08:24:10.000Z',
+      output: SETUP_OUTPUT,
+    },
+    'remote-setup-failed': {
+      state: 'failed',
+      exitCode: 2,
+      startedAt: '2026-11-02T08:24:10.000Z',
+      finishedAt: '2026-11-02T08:25:02.000Z',
+      output: `${SETUP_OUTPUT}$ cargo build --locked\nerror: failed to download \`serde v1.0.228\`\nmake: *** [bootstrap] Error 2\nSetup script failed in 52s (exit code 2)\n`,
+      outputTruncated: true,
+    },
+  };
+
   const agentsFor = (s: Scene): AgentSession[] => [
     agent('ral-local', 'Spec writer', { updatedAt: '2026-11-02T08:30:00.000Z' }),
     agent('ral-mac', 'iOS build fixer', {
@@ -187,7 +233,17 @@
         'macos',
         'aarch64',
       ),
-      effectiveIsolation: s === 'remote-starting' ? 'pending' : 'isolated',
+      effectiveIsolation: STARTING_SCENES.includes(s) ? 'pending' : 'isolated',
+      ...(SETUP[s] ? { setup: SETUP[s] } : {}),
+      ...(s === 'remote-update-required'
+        ? {
+            status: AgentStatus.Error,
+            placementError: {
+              code: 'remote-launch-failed',
+              detail: `Update Intent on Mac mini to run agents for this workspace: it has submodules or a setup script. {"code":"machine-update-required","machineVersion":"0.11.120","backendVersion":"0.11.134","update":"machine","reason":"prepared-checkout"}`,
+            },
+          }
+        : {}),
       ...(s === 'remote-failed'
         ? {
             status: AgentStatus.Error,

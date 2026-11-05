@@ -58,7 +58,7 @@ vi.mock('$lib/utils/open-external', () => ({
 warmImport(() => import('./ConnectBackendModal.svelte'));
 
 async function fillDetails() {
-  await fireEvent.input(screen.getByLabelText('Device name'), {
+  await fireEvent.input(screen.getByLabelText('Machine name'), {
     target: { value: 'Studio Mac' },
   });
   await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });
@@ -269,7 +269,7 @@ describe('ConnectBackendModal', () => {
       true,
     );
 
-    await fireEvent.input(screen.getByLabelText('Device name'), {
+    await fireEvent.input(screen.getByLabelText('Machine name'), {
       target: { value: 'Render box' },
     });
     expect(screen.queryByRole('button', { name: 'Use Rose accent' })).toBeNull();
@@ -332,7 +332,7 @@ describe('ConnectBackendModal', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(document.activeElement).toBe(picker);
     // Leave the focus-triggered tooltip before asserting dialog dismissal.
-    const name = screen.getByLabelText('Device name');
+    const name = screen.getByLabelText('Machine name');
     name.focus();
     await fireEvent.focus(name);
     await fireEvent.keyDown(name, { key: 'Escape' });
@@ -508,7 +508,7 @@ describe('ConnectBackendModal', () => {
     const continueBtn = () => screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
     expect(continueBtn().disabled).toBe(true);
 
-    await fireEvent.input(screen.getByLabelText('Device name'), {
+    await fireEvent.input(screen.getByLabelText('Machine name'), {
       target: { value: 'Studio Mac' },
     });
     await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });

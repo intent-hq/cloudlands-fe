@@ -13,7 +13,7 @@
   import { workspacePickerStyles } from './workspace-picker-styles';
 
   /**
-   * New Workspace → "Machines": the machine the first agent starts on. Only
+   * New Workspace → "Machine": the machine the first agent starts on. Only
    * rendered while another machine can take it (see `startOnVisible`).
    */
   interface Props {

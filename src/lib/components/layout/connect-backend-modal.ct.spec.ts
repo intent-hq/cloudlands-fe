@@ -16,7 +16,7 @@ for (const { width, height } of [
     });
     const dialog = page.getByRole('dialog');
     const trigger = dialog.getByRole('combobox');
-    await expect(dialog.getByLabel('Device name', { exact: true })).toBeFocused();
+    await expect(dialog.getByLabel('Machine name', { exact: true })).toBeFocused();
     await expect(trigger).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     const appearance = await dialog.locator('[data-connect-appearance]').evaluate((node) => {
@@ -154,7 +154,7 @@ for (const { width, height } of [
     // Focus restoration may reveal the trigger's tooltip. Dismiss that hint
     // before testing the dialog: Escape belongs to the topmost open layer.
     await page.mouse.move(1, 1);
-    await dialog.getByLabel('Device name', { exact: true }).focus();
+    await dialog.getByLabel('Machine name', { exact: true }).focus();
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
   });
