@@ -48,6 +48,7 @@ import { hydrateWorkspaceNavigation } from '../../workspace-navigation/workspace
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { recordLastUsedSetupScript } from '$features/setup-scripts/last-used';
+import { placementFailure } from '$features/remote-machines/agent-location';
 import {
   selectWorkspaceInitializationOutcome,
   selectWorkspaceInitializationResume,
@@ -356,10 +357,14 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
         // nodes.md "Placement subset"): the workspace and its agent exist, so
         // open it and warn rather than offer a Create that would duplicate it.
         const launchNodeId = result.errorCode === 'launch-failed' ? startOnNodeId : undefined;
+        const launchMachine = launchNodeId ? startOnMachineName(launchNodeId) : '';
         const message = launchNodeId
           ? m.workspace_startOn_launchFailed_error({
-              machine: startOnMachineName(launchNodeId),
-              cause: result.launchFailure?.cause ?? result.error,
+              machine: launchMachine,
+              cause: placementFailure(
+                { detail: result.launchFailure?.cause ?? result.error },
+                launchMachine,
+              ).message,
             })
           : result.error;
         const launch = launchNodeId ? result.launchFailure : undefined;
