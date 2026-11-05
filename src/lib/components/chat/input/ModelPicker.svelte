@@ -364,6 +364,11 @@
      * Ignored with `agentId`, whose own placement decides.
      */
     machineId?: string;
+    /**
+     * Name the remote machine on the trigger. Off where a neighbouring row
+     * already names it (New Workspace → Start On).
+     */
+    showMachine?: boolean;
     showManageLink?: boolean;
     portal?: boolean;
     modalAware?: boolean;
@@ -430,6 +435,7 @@
     workspaceId,
     agentId,
     machineId,
+    showMachine = true,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     showManageLink = true,
     portal = true,
@@ -2531,14 +2537,16 @@
         >{triggerLabel}</span
       >
       {#if remoteLocation}
-        <span
-          class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
-          aria-hidden="true"
-          data-remote-model-machine
-        >
-          <Fa icon={faDesktop} class="size-3!" />
-          <span class="truncate">{remoteLocation.name}</span>
-        </span>
+        {#if showMachine}
+          <span
+            class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
+            aria-hidden="true"
+            data-remote-model-machine
+          >
+            <Fa icon={faDesktop} class="size-3!" />
+            <span class="truncate">{remoteLocation.name}</span>
+          </span>
+        {/if}
       {:else if triggerProfileLoading}
         <span
           class="h-3 w-12 shrink rounded-sm bg-muted/50 animate-pulse"
@@ -2569,14 +2577,16 @@
         {/if}
         <span class="text-xs truncate">{triggerLabel}</span>
         {#if remoteLocation}
-          <span
-            class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-xs text-subtle"
-            aria-hidden="true"
-            data-remote-model-machine
-          >
-            <Fa icon={faDesktop} class="size-3!" />
-            <span class="truncate">{remoteLocation.name}</span>
-          </span>
+          {#if showMachine}
+            <span
+              class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-xs text-subtle"
+              aria-hidden="true"
+              data-remote-model-machine
+            >
+              <Fa icon={faDesktop} class="size-3!" />
+              <span class="truncate">{remoteLocation.name}</span>
+            </span>
+          {/if}
         {:else if triggerProfileLoading}
           <span
             class="h-3 w-12 shrink rounded-sm bg-muted/50 animate-pulse"
@@ -2835,14 +2845,16 @@
             >{triggerLabel}</span
           >
           {#if remoteLocation}
-            <span
-              class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
-              aria-hidden="true"
-              data-remote-model-machine
-            >
-              <Fa icon={faDesktop} class="size-3!" />
-              <span class="truncate">{remoteLocation.name}</span>
-            </span>
+            {#if showMachine}
+              <span
+                class="inline-flex min-w-[0.875rem]! max-w-28 shrink-[4] items-center gap-1 overflow-hidden text-subtle"
+                aria-hidden="true"
+                data-remote-model-machine
+              >
+                <Fa icon={faDesktop} class="size-3!" />
+                <span class="truncate">{remoteLocation.name}</span>
+              </span>
+            {/if}
           {:else if triggerProfileLoading && showProfileName}
             <span
               class="h-3 w-12 shrink rounded-sm bg-muted/50 animate-pulse"
