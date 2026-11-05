@@ -48,6 +48,8 @@
     hasNpxFallback: boolean;
     /** Status warning from the availability check (e.g. npx missing for claude-code). */
     warning?: string;
+    /** The CLI is present but refused (e.g. Cursor's Grok agent host); `warning` explains why. */
+    unavailableReason?: string;
   }
 
   export interface ProviderBrandColors {
@@ -280,7 +282,9 @@
         {:else}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
-            >{m.onboarding_providerCard_notInstalled_label()}</span
+            >{provider.unavailableReason
+              ? m.onboarding_providerCard_unsupported_label()
+              : m.onboarding_providerCard_notInstalled_label()}</span
           >
         {/if}
 

@@ -218,13 +218,15 @@
            */
           authDetails: status?.authDetails,
           docsUrl: meta?.docsUrl ?? p.loginDocsUrl ?? '',
-          installCommand: meta?.installCommand ?? '',
+          // A refused CLI (status.unavailableReason) is present: show its warning, not install steps.
+          installCommand: status?.unavailableReason ? '' : (meta?.installCommand ?? ''),
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */
           warning: status?.warning,
+          unavailableReason: status?.unavailableReason,
         };
       });
   });

@@ -42,7 +42,15 @@ vi.mock('$store/renderer/store', async () => {
 
 const cursorStatus = { available: true, authenticated: true };
 
-async function buildState({ lab, cursorEnabled }: { lab: boolean; cursorEnabled: boolean }) {
+async function buildState({
+  lab,
+  cursorEnabled,
+  cursor = cursorStatus,
+}: {
+  lab: boolean;
+  cursorEnabled: boolean;
+  cursor?: object;
+}) {
   const { initialState: setupInitialState } =
     await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
   const { initialState: specialistsInitialState } =
@@ -87,7 +95,7 @@ async function buildState({ lab, cursorEnabled }: { lab: boolean; cursorEnabled:
       ...availabilityInitialState,
       providerStatusMap: {
         codex: { available: true, authenticated: true },
-        cursor: cursorStatus,
+        cursor,
       },
       providerLoadingMap: { codex: false, cursor: false },
       providerUserInfoLoadingMap: {},
@@ -140,7 +148,11 @@ describe('ProviderSelector Cursor Labs gate', () => {
     cleanup();
   });
 
-  async function renderSelector(options: { lab: boolean; cursorEnabled: boolean }) {
+  async function renderSelector(options: {
+    lab: boolean;
+    cursorEnabled: boolean;
+    cursor?: object;
+  }) {
     mocks.state.current = await buildState(options);
     const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
     const result = render(ProviderSelector);
@@ -188,5 +200,46 @@ describe('ProviderSelector Cursor Labs gate', () => {
         ],
       }),
     );
+  });
+
+  it('shows the Cursor CLI version on an installed row', async () => {
+    const result = await renderSelector({
+      lab: true,
+      cursorEnabled: false,
+      cursor: { ...cursorStatus, version: '2026.11.05-86047df' },
+    });
+    expect(result.getByText('2026.11.05-86047df')).toBeTruthy();
+  });
+
+  it('shows unsupported-CLI guidance instead of Install for a refused Cursor CLI', async () => {
+    const reason = 'cursor-agent runs the Grok agent host, not the Cursor CLI.';
+    const warning = m.settings_providers_cursorUnsupported_warning({ reason });
+    const result = await renderSelector({
+      lab: true,
+      cursorEnabled: false,
+      cursor: { available: false, version: 'grok-agent 1.4.2', unavailableReason: reason, warning },
+    });
+    expect(result.getByRole('img', { name: warning })).toBeTruthy();
+    // A refused CLI is not installed-and-usable, so its version is not shown as one.
+    expect(result.queryByText('grok-agent 1.4.2')).toBeNull();
+    await fireEvent.click(result.getByRole('button', { name: CURSOR_ACTIONS }));
+    const menu = await waitFor(() => result.getByRole('menu'));
+    expect(within(menu).getByText(warning)).toBeTruthy();
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providers_install() }),
+    ).toBeNull();
+  });
+
+  it('still offers Install for a Cursor CLI that is simply not installed', async () => {
+    const result = await renderSelector({
+      lab: true,
+      cursorEnabled: false,
+      cursor: { available: false },
+    });
+    await fireEvent.click(result.getByRole('button', { name: CURSOR_ACTIONS }));
+    const menu = await waitFor(() => result.getByRole('menu'));
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_install() }),
+    ).toBeTruthy();
   });
 });

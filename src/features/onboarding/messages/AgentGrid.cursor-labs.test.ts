@@ -18,7 +18,15 @@ vi.mock('$store/renderer/store', async () => {
   });
 });
 
-async function buildState({ lab, cursorEnabled }: { lab: boolean; cursorEnabled: boolean }) {
+async function buildState({
+  lab,
+  cursorEnabled,
+  cursor = { available: true, authenticated: true },
+}: {
+  lab: boolean;
+  cursorEnabled: boolean;
+  cursor?: object;
+}) {
   const { initialState: modelInitialState } =
     await import('$store/renderer/slices/model/model-slice');
   const { initialState: providerSettingsInitialState } =
@@ -48,7 +56,7 @@ async function buildState({ lab, cursorEnabled }: { lab: boolean; cursorEnabled:
       ...availabilityInitialState,
       providerStatusMap: {
         codex: { available: true, authenticated: true },
-        cursor: { available: true, authenticated: true },
+        cursor,
       },
       providerLoadingMap: { codex: false, cursor: false },
       hasCheckedOnce: true,
@@ -61,7 +69,7 @@ warmImport(() => import('./AgentGrid.svelte'));
 describe('AgentGrid Cursor Labs gate', () => {
   afterEach(() => cleanup());
 
-  async function renderGrid(options: { lab: boolean; cursorEnabled: boolean }) {
+  async function renderGrid(options: { lab: boolean; cursorEnabled: boolean; cursor?: object }) {
     mocks.state.current = await buildState(options);
     const AgentGrid = (await import('./AgentGrid.svelte')).default;
     const result = render(AgentGrid);
@@ -79,5 +87,21 @@ describe('AgentGrid Cursor Labs gate', () => {
   ])('lab=%s enabled=%s shows the Cursor card: %s', async (lab, cursorEnabled, shown) => {
     const { container } = await renderGrid({ lab, cursorEnabled });
     expect(container.querySelector('[data-provider-id="cursor"]') !== null).toBe(shown);
+  });
+
+  it('labels a refused Cursor CLI Unsupported with its guidance, not Not installed', async () => {
+    const { m } = await import('$shared/paraglide/messages.js');
+    const reason = 'cursor-agent runs the Grok agent host, not the Cursor CLI.';
+    const warning = m.settings_providers_cursorUnsupported_warning({ reason });
+    const { container } = await renderGrid({
+      lab: true,
+      cursorEnabled: false,
+      cursor: { available: false, unavailableReason: reason, warning },
+    });
+    const card = container.querySelector('[data-provider-id="cursor"]') as HTMLElement;
+    expect(card.textContent).toContain(m.onboarding_providerCard_unsupported_label());
+    expect(card.textContent).not.toContain(m.onboarding_providerCard_notInstalled_label());
+    expect(card.textContent).toContain(warning);
+    expect(card.textContent).not.toContain('cursor.com/install');
   });
 });

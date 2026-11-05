@@ -61,6 +61,8 @@ import {
   selectPrincipalConnectionContext,
 } from '../slices/principal/principal-selectors';
 import { MINIMUM_NODE_VERSION } from '$shared/constants/auggie';
+import { selectLabsCursorProviderEnabled } from '../slices/user-preferences/user-preferences-selectors';
+import { selectEnabledProviders } from '../slices/provider-settings/provider-settings-selectors';
 import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
 import { CODEX_ADAPTER_MISSING_WARNING } from '$shared/constants/codex';
 import { m } from '$shared/paraglide/messages.js';
@@ -182,12 +184,19 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     const statuses = Object.fromEntries(
       Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
         key,
-        withAuth(providerStatusFromDiscovery(discovery, id), auth[id]),
+        withAuth(
+          id === 'cursor'
+            ? cursorStatusFromDiscovery(discovery)
+            : providerStatusFromDiscovery(discovery, id),
+          auth[id],
+        ),
       ]),
     ) as ProviderAvailabilityResult['providers'];
     return {
       providers: statuses,
-      hasAnyProvider: Object.values(statuses).some((status) => status.available),
+      hasAnyProvider: Object.entries(statuses).some(([key, status]) =>
+        countsTowardAnyProvider(PROVIDER_AVAILABILITY_KEY_TO_ID[key] ?? key, status),
+      ),
       hiddenProviders: discovery.providers.filter((row) => row.gatedOff).map((row) => row.id),
     };
   }
@@ -219,7 +228,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const auggie: ProviderStatus = { available: auggieCheck.available === true };
   const claudeCode = claudeCodeStatusFromDiscovery(discovery);
   const antigravity = antigravityFromDiscovery(discovery);
-  const cursor = providerStatusFromDiscovery(discovery, 'cursor');
+  const cursor = cursorStatusFromDiscovery(discovery);
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
   // cortex: presence of the `cortex` CLI; no auth surface probed (the
   // daemon's providerAuthStatus sweep does not cover cortex).
@@ -271,7 +280,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       grok.available ||
       unsloth.available ||
       antigravity.available ||
-      cursor.available,
+      countsTowardAnyProvider('cursor', cursor),
     providers: {
       auggie,
       claudeCode,
@@ -298,6 +307,36 @@ function providerStatusFromDiscovery(
 ): ProviderStatus {
   const row = discovery.providers.find((provider) => provider.id === providerId);
   return { available: row?.installed === true && !row.gatedOff };
+}
+
+/**
+ * Cursor from discovery, plus its CLI version and, for a refused binary (the Grok
+ * agent host), the daemon's reason as row guidance instead of "not installed".
+ */
+function cursorStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === 'cursor');
+  const status = providerStatusFromDiscovery(discovery, 'cursor');
+  if (row?.cliVersion) status.version = row.cliVersion;
+  if (row?.unavailableReason && !row.gatedOff) {
+    status.unavailableReason = row.unavailableReason;
+    status.warning = m.settings_providers_cursorUnsupported_warning({
+      reason: row.unavailableReason,
+    });
+  }
+  return status;
+}
+
+/**
+ * Whether an available provider means the host already has one to use. Cursor
+ * counts only where it can be used: enabled, or offered by its Labs switch.
+ */
+function countsTowardAnyProvider(providerId: string, status: ProviderStatus): boolean {
+  if (!status.available) return false;
+  if (providerId !== 'cursor') return true;
+  return (
+    selectLabsCursorProviderEnabled.select(appStore.state) ||
+    selectEnabledProviders.select(appStore.state).cursor === true
+  );
 }
 
 /** Preserve missing-runner guidance only when discovery confirms the cause. */
@@ -398,7 +437,7 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
   }
 
   if (providerId === 'cursor') {
-    const status = providerStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
+    const status = cursorStatusFromDiscovery(await fetchProviderDiscovery());
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
@@ -484,6 +523,10 @@ interface ProviderDiscoveryEntry {
   secondaryCommand?: string;
   secondaryResolved?: boolean;
   secondaryResolvedPath?: string;
+  /** Version of the resolved CLI (Cursor). */
+  cliVersion?: string;
+  /** Why a resolved CLI is refused; the daemon then reports `installed: false` (Cursor). */
+  unavailableReason?: string;
 }
 
 /**

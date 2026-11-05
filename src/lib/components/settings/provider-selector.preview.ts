@@ -6,7 +6,11 @@ import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
 import { setupProviderSelectorPreviewHandlers } from '../../../test/catalog-preview-ipc';
-import type { ProviderAvailabilityResult } from '$shared/types/provider-availability';
+import type {
+  ProviderAvailabilityResult,
+  ProviderStatus,
+} from '$shared/types/provider-availability';
+import { m } from '$shared/paraglide/messages.js';
 import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice';
 import {
   selectEffectiveDefaultProviderId,
@@ -163,9 +167,36 @@ export function setupProviderDisablePreview(
   };
 }
 
+const CURSOR_PREVIEW_VERSION = '2026.11.05-86047df';
+const GROK_HOST_REASON =
+  'cursor-agent runs the Grok agent host (grok-agent 1.4.2), not the Cursor CLI. Run "cursor-agent update --channel cursor" to switch back, or set providers.paths.cursor to the Cursor install under ~/.local/share/cursor-agent/versions/.';
+
+/** Mocked Cursor status, shaped like the provider status seeder's discovery mapping. */
+export function cursorPreviewStatus(
+  status: 'signed-in' | 'signed-out' | 'not-installed' | 'unsupported',
+): ProviderStatus {
+  switch (status) {
+    case 'not-installed':
+      return { available: false };
+    case 'unsupported':
+      return {
+        available: false,
+        version: 'grok-agent 1.4.2',
+        unavailableReason: GROK_HOST_REASON,
+        warning: m.settings_providers_cursorUnsupported_warning({ reason: GROK_HOST_REASON }),
+      };
+    default:
+      return {
+        available: true,
+        authenticated: status === 'signed-in',
+        version: CURSOR_PREVIEW_VERSION,
+      };
+  }
+}
+
 /** Cursor lab on with a mocked catalog row; `enabled` puts the row under Enabled. */
 export function setupCursorProviderPreview(
-  status: 'signed-in' | 'signed-out' | 'not-installed',
+  status: 'signed-in' | 'signed-out' | 'not-installed' | 'unsupported',
   { lab = true, enabled = false }: { lab?: boolean; enabled?: boolean } = {},
 ) {
   const restoreProviders = setupProviderSelector();
@@ -183,14 +214,7 @@ export function setupCursorProviderPreview(
       cursor: enabled,
     }),
   );
-  appStore.dispatch(
-    checkSingleProviderSuccess(
-      'cursor',
-      status === 'not-installed'
-        ? { available: false }
-        : { available: true, authenticated: status === 'signed-in' },
-    ),
-  );
+  appStore.dispatch(checkSingleProviderSuccess('cursor', cursorPreviewStatus(status)));
   return () => {
     appStore.dispatch(checkSingleProviderSuccess('cursor', previousStatus ?? { available: false }));
     appStore.dispatch(setLabsCursorProviderEnabled(previousLab));
@@ -216,6 +240,8 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
       props: {},
       setup: () => setupCursorProviderPreview('not-installed'),
     },
+    // cursor-agent on the Grok agent host: the daemon's reason replaces Install.
+    'cursor-unsupported': { props: {}, setup: () => setupCursorProviderPreview('unsupported') },
     // Lab off never hides an enabled Cursor: the row keeps its Disable action.
     'cursor-enabled-lab-off': {
       props: {},

@@ -174,6 +174,8 @@
         loginCommandHint: provider.loginCommandHint,
         hasNpxFallback: status?.hasNpxFallback ?? false,
         warning: status?.warning,
+        version: status?.version,
+        unavailableReason: status?.unavailableReason,
       };
     }),
   );
@@ -331,7 +333,8 @@
               (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
             {@const needsLogin = provider.available && provider.authenticated === false}
             {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
-            {@const canInstall = provider.id !== 'antigravity' && !provider.available}
+            {@const canInstall =
+              provider.id !== 'antigravity' && !provider.available && !provider.unavailableReason}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
             {@const hasNodeMissing =
@@ -364,6 +367,9 @@
                     >
                       {provider.name}
                     </span>
+                    {#if provider.available && provider.version}
+                      <span class="type-caption text-muted-foreground">{provider.version}</span>
+                    {/if}
                   </div>
                 </div>
 

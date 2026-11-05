@@ -20,6 +20,14 @@ export interface ProviderStatus {
   warning?: string;
   /** Whether this provider supports npx fallback when binary is unresolved. */
   hasNpxFallback?: boolean;
+  /** CLI version the daemon reported for the resolved binary (discovery `cliVersion`). */
+  version?: string;
+  /**
+   * Daemon reason a resolved binary is refused (discovery `unavailableReason`), e.g. a
+   * `cursor-agent` that runs the Grok agent host. The CLI is present but unusable, so
+   * the UI shows this guidance instead of install instructions.
+   */
+  unavailableReason?: string;
 }
 
 /**

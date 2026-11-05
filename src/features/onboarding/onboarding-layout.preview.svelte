@@ -23,8 +23,8 @@
     onOpenExternal?: (payload: unknown) => void;
     /** Plain-folder workspaces Labs on, with the remembered toggle choice. */
     plainFolder?: 'off' | 'on';
-    /** Cursor lab on, with a mocked signed-in Cursor catalog row. */
-    cursor?: boolean;
+    /** Cursor lab on, with a mocked Cursor catalog row (signed in unless `unsupported`). */
+    cursor?: boolean | 'unsupported';
   }
   export const preview = definePreview<Props>({
     id: 'onboarding-layout',
@@ -34,6 +34,7 @@
       welcome: { props: { step: 'welcome' } },
       'welcome-all-providers': { props: { step: 'welcome', allProviders: true } },
       'welcome-cursor': { props: { step: 'welcome', cursor: true } },
+      'welcome-cursor-unsupported': { props: { step: 'welcome', cursor: 'unsupported' } },
       forge: { props: { step: 'forge' } },
       'forge-gitlab-update-required': {
         props: { step: 'forge', gitlabSetupSupported: false },
@@ -76,7 +77,10 @@
   import GitLabAuthConnection from '$lib/components/settings/GitLabAuthConnection.svelte';
   import { overrideMockIpcHandler } from '$shared/ipc-mock-router';
   import CompactWorkspaceInitializer from '$lib/components/workspace/CompactWorkspaceInitializer.svelte';
-  import { previewProviders } from '$lib/components/settings/provider-selector.preview';
+  import {
+    cursorPreviewStatus,
+    previewProviders,
+  } from '$lib/components/settings/provider-selector.preview';
   import { store as appStore } from '$store/renderer/store';
   import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
@@ -317,6 +321,8 @@
       }),
     );
   }
+  if (seededCursor === 'unsupported')
+    appStore.dispatch(checkSingleProviderSuccess('cursor', cursorPreviewStatus('unsupported')));
   appStore.dispatch(checkAllProvidersComplete());
   appStore.dispatch(goToStep(untrack(() => step)));
   onDestroy(() => {
