@@ -2,23 +2,35 @@
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import type { DockCaptureEditorMark } from '$shared/dock-capture-editor';
+  import type { DockMediaRange } from '$shared/dock-media-edit';
   import DockComposerIcon, {
     type DockComposerGlyph,
   } from '../../components/DockComposerIcon.svelte';
-  import { formatRecordingTime, timeAtPointer, timelinePercent } from './recording-editor-model';
+  import {
+    clampTrim,
+    formatRecordingTime,
+    timeAtPointer,
+    timelinePercent,
+  } from './recording-editor-model';
 
   /**
    * The recording's timeline: the playhead (click or drag to move it), and a pin at
    * each mark's time; clicking a pin jumps to its mark. Video, timeline and the mark
    * label share this one playhead.
+   *
+   * With `trim`, handles at both ends trim the whole recording (drag, or arrow keys
+   * on a focused handle); what falls outside is dimmed. `kept` shades what plays.
    */
   let {
     durationMs,
     currentMs,
     marks,
     activeMarkId = null,
+    trim = null,
+    kept = null,
     onSeek,
     onMark,
+    onTrim,
   }: {
     durationMs: number;
     currentMs: number;
@@ -26,10 +38,15 @@
     activeMarkId?: string | null;
     onSeek: (ms: number) => void;
     onMark: (mark: DockCaptureEditorMark) => void;
+    /** The trimmed range; null without trimming. */
+    trim?: DockMediaRange | null;
+    /** What plays and is kept (trim minus cuts). */
+    kept?: readonly DockMediaRange[] | null;
+    onTrim?: (range: DockMediaRange) => void;
   } = $props();
 
   let track = $state<HTMLDivElement | null>(null);
-  let dragging: number | null = null;
+  let dragging: { pointerId: number; part: 'playhead' | 'start' | 'end' } | null = null;
 
   const glyphs: Record<DockCaptureEditorMark['tool'], DockComposerGlyph> = {
     pick: 'click',
@@ -47,19 +64,49 @@
     marks.filter((mark): mark is DockCaptureEditorMark & { atMs: number } => mark.atMs !== null),
   );
 
-  function seekTo(event: PointerEvent): void {
-    if (!track) return;
+  function timeAt(event: PointerEvent): number {
+    if (!track) return 0;
     const box = track.getBoundingClientRect();
-    onSeek(timeAtPointer(event.clientX, box.left, box.width, durationMs));
+    return timeAtPointer(event.clientX, box.left, box.width, durationMs);
+  }
+  function moveTrim(part: 'start' | 'end', ms: number): void {
+    if (!trim || !onTrim) return;
+    onTrim(
+      clampTrim(
+        part === 'start' ? { ...trim, startMs: ms } : { ...trim, endMs: ms },
+        part,
+        durationMs,
+      ),
+    );
+  }
+  function apply(event: PointerEvent): void {
+    if (!dragging) return;
+    if (dragging.part === 'playhead') onSeek(timeAt(event));
+    else moveTrim(dragging.part, timeAt(event));
   }
   function onPointerDown(event: PointerEvent): void {
-    if (event.button !== 0 || (event.target as Element).closest('[data-pin]')) return;
-    dragging = event.pointerId;
+    const target = event.target as Element;
+    if (event.button !== 0 || target.closest('[data-pin]')) return;
+    const handle = target.closest<HTMLElement>('[data-handle]')?.dataset.handle;
+    dragging = {
+      pointerId: event.pointerId,
+      part: handle === 'start' || handle === 'end' ? handle : 'playhead',
+    };
     track?.setPointerCapture(event.pointerId);
-    seekTo(event);
+    apply(event);
   }
   function onPointerMove(event: PointerEvent): void {
-    if (dragging === event.pointerId) seekTo(event);
+    if (dragging?.pointerId === event.pointerId) apply(event);
+  }
+  function onHandleKeydown(event: KeyboardEvent, part: 'start' | 'end'): void {
+    if (!trim) return;
+    const step = event.shiftKey ? 5000 : 1000;
+    const at = part === 'start' ? trim.startMs : trim.endMs;
+    if (event.key === 'ArrowLeft') moveTrim(part, at - step);
+    else if (event.key === 'ArrowRight') moveTrim(part, at + step);
+    else return;
+    event.preventDefault();
+    event.stopPropagation();
   }
   const endDrag = () => (dragging = null);
   function onKeydown(event: KeyboardEvent): void {
@@ -91,6 +138,44 @@
     onkeydown={onKeydown}
   >
     <div class="rail"></div>
+    {#each kept ?? [] as range, index (index)}
+      <div
+        class="kept"
+        style:left={`${timelinePercent(range.startMs, durationMs)}%`}
+        style:width={`${timelinePercent(range.endMs, durationMs) - timelinePercent(range.startMs, durationMs)}%`}
+      ></div>
+    {/each}
+    {#if trim}
+      <div
+        class="outside"
+        style:left="0"
+        style:width={`${timelinePercent(trim.startMs, durationMs)}%`}
+      ></div>
+      <div
+        class="outside"
+        style:left={`${timelinePercent(trim.endMs, durationMs)}%`}
+        style:right="0"
+      ></div>
+      {#each ['start', 'end'] as const as part (part)}
+        {@const at = part === 'start' ? trim.startMs : trim.endMs}
+        <div
+          class="handle"
+          data-handle={part}
+          role="slider"
+          tabindex={onTrim ? 0 : -1}
+          aria-disabled={!onTrim}
+          aria-label={part === 'start'
+            ? m.dock_captureEditor_trimStart_label()
+            : m.dock_captureEditor_trimEnd_label()}
+          aria-valuemin={0}
+          aria-valuemax={Math.round(durationMs / 1000)}
+          aria-valuenow={Math.round(at / 1000)}
+          aria-valuetext={formatRecordingTime(at)}
+          style:left={`${timelinePercent(at, durationMs)}%`}
+          onkeydown={(event) => onHandleKeydown(event, part)}
+        ></div>
+      {/each}
+    {/if}
     {#each pinned as mark (mark.id)}
       <Button
         variant="plain"
@@ -155,6 +240,38 @@
     color: hsl(var(--primary-foreground));
   }
   .track :global(.pin:focus-visible) {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 1px;
+  }
+  .kept {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    border-radius: 4px;
+    background: hsl(var(--primary) / 0.18);
+    pointer-events: none;
+  }
+  .outside {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: hsl(var(--background) / 0.55);
+    pointer-events: none;
+  }
+  .handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    border-radius: 4px;
+    background: hsl(var(--primary));
+    transform: translateX(-50%);
+    cursor: ew-resize;
+  }
+  .handle[aria-disabled='true'] {
+    display: none;
+  }
+  .handle:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 1px;
   }

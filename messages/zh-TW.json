@@ -8322,6 +8322,8 @@
   "dock_captureEditor_keepEditing_label": "繼續編輯",
   "dock_captureEditor_recording_title": "錄製 · {duration}",
   "dock_captureEditor_timeline_label": "時間軸",
+  "dock_captureEditor_trimStart_label": "修剪開頭",
+  "dock_captureEditor_trimEnd_label": "修剪結尾",
   "dock_captureEditor_pin_ariaLabel": "{time} 的{mark}",
   "dock_captureEditor_unavailable_label": "無法播放此錄製。",
   "dock_captureEditor_video_ariaLabel": "錄製",

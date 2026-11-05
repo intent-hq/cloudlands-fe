@@ -180,7 +180,14 @@ function open(event: IpcMainInvokeEvent, request: unknown): DockCaptureEditorOpe
   const stopWatching = onStrictBackendBindingRetired(sender, () => {
     if (session?.snapshot.openId === openId) closeEditor();
   });
-  session = { snapshot: { ...rest, openId, mediaUrl }, backendId: binding.backendId, stopWatching };
+  // Sending does not yet apply saved edits, so nothing can be saved: an edit of a
+  // known source is a preview, and a source without one opens read-only.
+  const output = rest.source ? { ready: false } : undefined;
+  session = {
+    snapshot: { ...rest, openId, mediaUrl, ...(output ? { output } : {}) },
+    backendId: binding.backendId,
+    stopWatching,
+  };
 
   if (usable(editor)) {
     // Retarget the open (stage 1: never edited) window to this attachment.

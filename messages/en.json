@@ -8322,6 +8322,8 @@
   "dock_captureEditor_keepEditing_label": "Keep editing",
   "dock_captureEditor_recording_title": "Recording · {duration}",
   "dock_captureEditor_timeline_label": "Timeline",
+  "dock_captureEditor_trimStart_label": "Trim start",
+  "dock_captureEditor_trimEnd_label": "Trim end",
   "dock_captureEditor_pin_ariaLabel": "{mark} at {time}",
   "dock_captureEditor_unavailable_label": "This recording can’t be played.",
   "dock_captureEditor_video_ariaLabel": "Recording",

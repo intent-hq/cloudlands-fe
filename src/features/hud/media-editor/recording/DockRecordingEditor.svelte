@@ -9,11 +9,19 @@
   import DockComposerIcon from '../../components/DockComposerIcon.svelte';
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
   import DockRecordingTimeline from './DockRecordingTimeline.svelte';
+  import { createEditTransaction } from '../edit-transaction.svelte';
+  import {
+    defaultDockMediaEdit,
+    markRemovable,
+    subtractDockMediaRanges,
+    type DockMediaEdit,
+  } from '$shared/dock-media-edit';
   import {
     FRAME_MS,
     STEP_MS,
     clampTime,
     formatRecordingTime,
+    nextKeptTime,
     recordingKeyAction,
   } from './recording-editor-model';
 
@@ -22,12 +30,28 @@
    * area, with play controls and the timeline below it. Video, timeline and the mark
    * label share one playhead.
    *
-   * This is the foundation: it plays the recording as captured (marks drawn while
-   * recording are part of its frames) and navigates by its marks. Editing, the send
-   * options and Save come with the output that honors them.
+   * It plays the recording as captured (marks drawn while recording are part of its
+   * frames) and navigates by its marks. With a canonical source, the edit is a draft
+   * (undo, redo, Esc asks before discarding): trim handles set what is kept, and
+   * playback skips the rest. Save appears only once sending honors a saved edit; a
+   * source without a canonical description opens read-only.
    */
   let { snapshot, onClose }: { snapshot: DockCaptureEditorSnapshot; onClose: () => void } =
     $props();
+
+  // One session per mount (the page remounts the view for each open).
+  const source = snapshot.source ?? null;
+  const transcript = snapshot.transcript ?? null;
+  const edits = source
+    ? createEditTransaction<DockMediaEdit>(
+        snapshot.saved ?? defaultDockMediaEdit(source, source.bakedMarks ?? [], transcript, null),
+      )
+    : null;
+  // Recorded marks are part of the frames: cutting time away would not remove them.
+  const timeEditable = !!source && (markRemovable(source) || !source.bakedMarks?.length);
+  const kept = $derived(
+    edits ? subtractDockMediaRanges([edits.draft.trim], edits.draft.cuts) : null,
+  );
 
   let video = $state<HTMLVideoElement | null>(null);
   let currentMs = $state(0);
@@ -42,7 +66,17 @@
   // The playhead follows the video smoothly while it plays.
   let frame: number | undefined;
   function follow(): void {
-    if (video) currentMs = video.currentTime * 1000;
+    if (video) {
+      currentMs = video.currentTime * 1000;
+      // Play only what is kept: skip past what was trimmed or cut away.
+      if (kept && !video.paused) {
+        const next = nextKeptTime(currentMs, kept);
+        if (next === null) {
+          video.pause();
+          seek(kept.at(-1)?.endMs ?? currentMs);
+        } else if (next !== currentMs) seek(next);
+      }
+    }
     frame = paused ? undefined : requestAnimationFrame(follow);
   }
   $effect(() => {
@@ -72,8 +106,13 @@
   }
   function toggle(): void {
     if (!video) return;
-    if (video.paused) void video.play().catch(() => undefined);
-    else video.pause();
+    if (!video.paused) {
+      video.pause();
+      return;
+    }
+    // From the end (or outside what is kept), play from the start of what is kept.
+    if (kept?.length && nextKeptTime(currentMs, kept) === null) seek(kept[0].startMs);
+    void video.play().catch(() => undefined);
   }
   function step(ms: number): void {
     video?.pause();
@@ -97,7 +136,10 @@
 <DockCaptureEditorShell
   title={m.dock_captureEditor_recording_title({ duration: formatRecordingTime(durationMs) })}
   subtitle={snapshot.title}
+  dirty={edits?.dirty ?? false}
   onCancel={onClose}
+  onUndo={edits ? () => edits.undo() : undefined}
+  onRedo={edits ? () => edits.redo() : undefined}
 >
   {#snippet main()}
     <div class="stage">
@@ -157,6 +199,11 @@
         {currentMs}
         marks={snapshot.marks}
         {activeMarkId}
+        trim={timeEditable && edits ? edits.draft.trim : null}
+        {kept}
+        onTrim={timeEditable && edits
+          ? (trim) => edits.apply((draft) => ({ ...draft, trim }))
+          : undefined}
         onSeek={(ms) => {
           activeMarkId = null;
           seek(ms);

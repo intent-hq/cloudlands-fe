@@ -12,6 +12,15 @@
 import { z } from 'zod';
 import { IPC_CHANNELS } from './ipc-registry';
 import { DOCK_MARK_TOOLS, type DockMarkTool } from './dock-evidence';
+import {
+  DockMediaEditSchema,
+  DockMediaSourceSchema,
+  DockMediaTranscriptSchema,
+  type DockMediaEdit,
+  type DockMediaOutputError,
+  type DockMediaSource,
+  type DockMediaTranscript,
+} from './dock-media-edit';
 
 export const DOCK_CAPTURE_EDITOR_CHANNELS = IPC_CHANNELS.DOCK_CAPTURE_EDITOR;
 export const DOCK_CAPTURE_EDITOR_ROUTE = '/dock-capture-editor';
@@ -56,6 +65,19 @@ export interface DockCaptureEditorOpenRequest {
   height?: number;
   marks: DockCaptureEditorMark[];
   provenance: DockCaptureEditorProvenance;
+  /**
+   * The canonical source (shared/dock-media-edit) when it is known. Without it the
+   * attachment opens read-only: it plays, but nothing can be edited or saved.
+   */
+  source?: DockMediaSource;
+  /** The saved edit of this source, if any. */
+  saved?: DockMediaEdit | null;
+  transcript?: DockMediaTranscript | null;
+  /**
+   * Whether sending honors a saved edit of this source. Save is offered only when
+   * it does; until then edits are a preview and are never stored.
+   */
+  output?: { ready: boolean; reason?: DockMediaOutputError };
 }
 
 /** What the editor window receives: the request, with main's own media URL. */
@@ -111,8 +133,28 @@ export const DockCaptureEditorOpenSchema = z
         visuals: z.enum(['clean', 'baked-marks']),
       })
       .strict(),
+    source: DockMediaSourceSchema.optional(),
+    saved: DockMediaEditSchema.nullable().optional(),
+    transcript: DockMediaTranscriptSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  // The canonical source must describe this very attachment, and an edit this source.
+  .refine(
+    (request) =>
+      !request.source ||
+      (request.source.path === request.attachmentPath &&
+        request.source.attachmentId === request.attachmentId &&
+        request.source.kind === request.kind),
+    'Source does not match the attachment',
+  )
+  .refine(
+    (request) =>
+      !request.saved ||
+      (!!request.source &&
+        request.saved.sourceId === request.source.id &&
+        request.saved.sourceRevision === request.source.revision),
+    'Edit does not match the source',
+  );
 
 /** Close names the session it means; any other one stays open. */
 export const DockCaptureEditorCloseSchema = z.object({ openId: z.string().uuid() }).strict();

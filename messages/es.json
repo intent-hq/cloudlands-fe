@@ -8322,6 +8322,8 @@
   "dock_captureEditor_keepEditing_label": "Seguir editando",
   "dock_captureEditor_recording_title": "Grabación · {duration}",
   "dock_captureEditor_timeline_label": "Línea de tiempo",
+  "dock_captureEditor_trimStart_label": "Recortar inicio",
+  "dock_captureEditor_trimEnd_label": "Recortar final",
   "dock_captureEditor_pin_ariaLabel": "{mark} en {time}",
   "dock_captureEditor_unavailable_label": "No se puede reproducir esta grabación.",
   "dock_captureEditor_video_ariaLabel": "Grabación",

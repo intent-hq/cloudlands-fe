@@ -61,3 +61,38 @@ export function recordingKeyAction(event: KeyboardEvent): RecordingKeyAction | n
       return null;
   }
 }
+
+/** The shortest a trimmed recording can be. */
+export const MIN_TRIM_MS = 500;
+
+/**
+ * Moves one end of the trim and keeps it valid: inside the recording, and never
+ * shorter than `MIN_TRIM_MS` (the moved end stops at the other).
+ */
+export function clampTrim(
+  range: { startMs: number; endMs: number },
+  moved: 'start' | 'end',
+  durationMs: number,
+): { startMs: number; endMs: number } {
+  const span = Math.min(MIN_TRIM_MS, durationMs);
+  const startMs = clampTime(range.startMs, durationMs);
+  const endMs = clampTime(range.endMs, durationMs);
+  return moved === 'start'
+    ? { startMs: Math.min(startMs, endMs - span), endMs }
+    : { startMs, endMs: Math.max(endMs, startMs + span) };
+}
+
+/**
+ * Where playback goes from `ms` so it only plays what is kept: `ms` itself inside a
+ * kept range, else the start of the next one, else null (nothing kept is left).
+ */
+export function nextKeptTime(
+  ms: number,
+  kept: readonly { startMs: number; endMs: number }[],
+): number | null {
+  for (const range of kept) {
+    if (ms < range.startMs) return range.startMs;
+    if (ms < range.endMs) return ms;
+  }
+  return null;
+}
