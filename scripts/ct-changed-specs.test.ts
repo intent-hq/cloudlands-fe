@@ -1,12 +1,13 @@
 // @verify-changed-triggers: .github/workflows/intent-pr.yml, scripts/ct-changed-specs.mjs,
-//   scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs
+//   scripts/ct-changed-repeat.mjs, scripts/ct-contract-paths.mjs, playwright/ct-spec-pattern.mjs
 // @vitest-environment node
 
 /**
  * The changed-spec list and repetition helpers the local stress runner
  * (scripts/ct-changed-repeat.mjs) uses, and the release-fast-path step that
- * resolves the diff base for every relevance step in intent-pr.yml. The diff
- * mode runs against a real temporary git repository and the step under bash.
+ * resolves the diff base for every relevance step in intent-pr.yml. The
+ * runner's spec selection (localChangedSpecs) runs against real temporary git
+ * repositories and the step under bash.
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -14,19 +15,17 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { localChangedSpecs } from './ct-changed-repeat.mjs';
 import {
   CT_CHANGED_MIN_REPEAT_EACH,
   CT_CHANGED_REPEAT_EACH,
   CT_CHANGED_TEST_RUN_BUDGET,
   changedCtSpecs,
-  changedFiles,
   ctChangedRepeatEach,
   listedCtTests,
-  main,
   playwrightFilter,
 } from './ct-changed-specs.mjs';
 
-const SCRIPT = resolve('scripts/ct-changed-specs.mjs');
 const temps: string[] = [];
 afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
@@ -64,20 +63,6 @@ function initRepo() {
   git(repo, 'config', 'user.email', 'ci@example.com');
   git(repo, 'config', 'user.name', 'CI');
   return repo;
-}
-
-function run(argv: string[]) {
-  const out: string[] = [];
-  const err: string[] = [];
-  let written = '';
-  const code = main(argv, {
-    log: (line: string) => out.push(line),
-    warn: (line: string) => err.push(line),
-    write: (text: string) => {
-      written += text;
-    },
-  });
-  return { code, out, err, written };
 }
 
 // A Playwright `--list --reporter=json` report: one suite per spec file, each
@@ -133,75 +118,27 @@ describe('changedCtSpecs', () => {
   });
 });
 
-describe('--diff against a real repository', () => {
+describe('localChangedSpecs against a real repository', () => {
   it('lists added, edited and moved specs but not deleted ones', () => {
-    const repo = tempDir();
-    git(repo, 'init', '-q', '-b', 'main');
-    git(repo, 'config', 'user.email', 'ci@example.com');
-    git(repo, 'config', 'user.name', 'CI');
+    const repo = initRepo();
     write(repo, 'src/edit.ct.spec.ts');
     write(repo, 'src/delete.ct.spec.ts');
     write(repo, 'src/move/old.ct.spec.ts', 'stable body long enough to be detected as a rename');
     write(repo, 'src/untouched.ct.spec.ts');
-    git(repo, 'add', '-A');
-    git(repo, 'commit', '-qm', 'base');
-    const base = git(repo, 'rev-parse', 'HEAD');
+    const base = commitAll(repo, 'base');
 
     write(repo, 'src/edit.ct.spec.ts', 'edited');
     rmSync(join(repo, 'src/delete.ct.spec.ts'));
     git(repo, 'mv', 'src/move/old.ct.spec.ts', 'src/move/new.ct.spec.ts');
     write(repo, 'src/routes/[id]/+page.ct.spec.ts');
     write(repo, 'src/lib/component.svelte');
-    git(repo, 'add', '-A');
-    git(repo, 'commit', '-qm', 'head');
+    commitAll(repo, 'head');
 
-    const cwd = process.cwd();
-    process.chdir(repo);
-    try {
-      expect(changedCtSpecs(changedFiles(base, 'HEAD'))).toEqual([
-        'src/edit.ct.spec.ts',
-        'src/move/new.ct.spec.ts',
-        'src/routes/[id]/+page.ct.spec.ts',
-      ]);
-    } finally {
-      process.chdir(cwd);
-    }
-
-    const cli = spawnSync(process.execPath, [SCRIPT, '--diff', base, 'HEAD'], {
-      cwd: repo,
-      encoding: 'utf8',
-      env: { ...process.env, NODE_OPTIONS: '' },
-    });
-    expect(cli.status).toBe(0);
-    expect(cli.stdout.trim().split('\n').at(-1)).toBe(
-      'ct_changed_specs=["src/edit.ct.spec.ts","src/move/new.ct.spec.ts","src/routes/[id]/+page.ct.spec.ts"]',
-    );
-  });
-
-  it('prints an empty list when no spec changed', () => {
-    const result = main(['--diff', 'a', 'b'], {
-      diff: () => ['src/lib/x.svelte'],
-      log: (line: string) => expect(line).toBe('ct_changed_specs=[]'),
-    });
-    expect(result).toBe(0);
-  });
-
-  it('fails closed with `error` when git fails or arguments are wrong', () => {
-    for (const argv of [
-      ['--diff', 'a', 'b'],
-      ['--diff', 'a'],
-      ['--diff', 'a', 'b', 'c'],
-    ]) {
-      const out: string[] = [];
-      main(argv, {
-        diff: () => {
-          throw new Error('bad revision');
-        },
-        log: (line: string) => out.push(line),
-        warn: () => {},
-      });
-      expect(out).toEqual(['ct_changed_specs=error']);
-    }
+    expect(localChangedSpecs(base, { cwd: repo }).specs).toEqual([
+      'src/edit.ct.spec.ts',
+      'src/move/new.ct.spec.ts',
+      'src/routes/[id]/+page.ct.spec.ts',
+    ]);
   });
 });
 
@@ -224,26 +161,19 @@ function divergedRepo() {
   return { repo, branched, prHead, mainTip };
 }
 
-function cli(repo: string, ...argv: string[]) {
-  const result = spawnSync(process.execPath, [SCRIPT, ...argv], {
-    cwd: repo,
-    encoding: 'utf8',
-    env: { ...process.env, NODE_OPTIONS: '' },
-  });
-  expect(result.status, result.stderr).toBe(0);
-  return result.stdout.trim().split('\n');
+function specs(cwd: string, base: string) {
+  return localChangedSpecs(base, { cwd }).specs;
 }
 
 // cloudlands-fe#4114 (job 126070303811) repeated seven specs, six of them
 // changed only on main, and was cancelled at its time limit: the diff ran
-// from a base that main had since moved past. --diff diffs from the
-// merge-base of base and head, so only the branch's own changes count.
+// from a base that main had since moved past. The selection diffs from the
+// merge-base of base and HEAD (diffBase), so only the branch's own changes count.
 describe('a base that moved ahead of the branch', () => {
-  it('--diff lists only the branch’s own specs', () => {
-    const { repo, prHead, mainTip } = divergedRepo();
-    expect(cli(repo, '--diff', mainTip, prHead).at(-1)).toBe(
-      'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
-    );
+  it('lists only the branch’s own specs', () => {
+    const { repo, mainTip } = divergedRepo();
+    git(repo, 'checkout', '-q', 'pr');
+    expect(specs(repo, mainTip)).toEqual(['src/pr/own.ct.spec.ts']);
   });
 
   it('falls back to the base itself when no merge-base is reachable', () => {
@@ -253,13 +183,11 @@ describe('a base that moved ahead of the branch', () => {
     git(shallow, 'fetch', '-q', '--depth=1', `file://${repo}`, prHead);
     git(shallow, 'fetch', '-q', '--depth=1', `file://${repo}`, branched);
     git(shallow, 'checkout', '-q', prHead);
-    expect(cli(shallow, '--diff', branched, 'HEAD').at(-1)).toBe(
-      'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
-    );
+    expect(specs(shallow, branched)).toEqual(['src/pr/own.ct.spec.ts']);
   });
 });
 
-describe('--filters', () => {
+describe('playwrightFilter', () => {
   it('selects each listed spec and nothing that merely resembles it', () => {
     const root = '/runner/work/cloudlands-fe/cloudlands-fe';
     const spec = 'src/routes/[id]/+page.ct.spec.ts';
@@ -274,20 +202,6 @@ describe('--filters', () => {
     ]) {
       expect(playwrightSelects(filter, `${root}/${other}`), other).toBe(false);
     }
-  });
-
-  it('writes one NUL-terminated filter per spec', () => {
-    const specs = ['src/a.ct.spec.ts', 'src/b.ct.spec.ts'];
-    const { code, written } = run(['--filters', JSON.stringify(specs)]);
-    expect(code).toBe(0);
-    expect(written.split('\0')).toEqual([...specs.map(playwrightFilter), '']);
-  });
-
-  it('rejects an error marker, an empty list and non-spec paths', () => {
-    for (const value of ['error', '', '[]', '["src/a.test.ts"]', '{"a":1}', '[1]']) {
-      expect(run(['--filters', value]).code, value).toBe(1);
-    }
-    expect(run(['--filters']).code).toBe(2);
   });
 });
 
@@ -434,12 +348,11 @@ describe('release-fast-path diff base', () => {
       `BASE_SHA=${mainTip}\n`,
     );
     // The lagging base reproduces the incident; the resolved one does not.
-    expect(cli(checkout, '--diff', branched, 'HEAD').at(-1)).toBe(
-      'ct_changed_specs=["src/main/edited-on-main.ct.spec.ts","src/pr/own.ct.spec.ts"]',
-    );
-    expect(cli(checkout, '--diff', mainTip, 'HEAD').at(-1)).toBe(
-      'ct_changed_specs=["src/pr/own.ct.spec.ts"]',
-    );
+    expect(specs(checkout, branched)).toEqual([
+      'src/main/edited-on-main.ct.spec.ts',
+      'src/pr/own.ct.spec.ts',
+    ]);
+    expect(specs(checkout, mainTip)).toEqual(['src/pr/own.ct.spec.ts']);
   });
 
   it('keeps the event base, fetched, when HEAD is not a merge of the PR head', () => {

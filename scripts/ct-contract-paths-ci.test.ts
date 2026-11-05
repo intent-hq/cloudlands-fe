@@ -793,12 +793,11 @@ describe('shared browser jobs and nightly routing', () => {
           );
         }
       }
-      // Component Tests take the caller's ct-N slot first, then the burst runner
-      // (WarpBuild, or GitHub); the lighter root and Electron suites run on the
-      // free standard runner.
+      // Component Tests take the caller's burst runner (WarpBuild, or GitHub);
+      // the lighter root and Electron suites run on the free standard runner.
       expect(jobField(lines, 'runs-on')).toBe(
         job === 'test-ct'
-          ? "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}"
+          ? "${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}"
           : 'ubuntu-24.04',
       );
     },
