@@ -74,7 +74,7 @@ export interface FileSpecialist {
   resolvedModel?: string;
   resolvedProvider?: string;
   /**
-   * Orchestration role (PROTOCOL §5.11 `role`): 'orchestrator' powers the
+   * Orchestration role (PROTOCOL §5.11 `role`): 'orchestrator' power the
    * New Workspace modal's team card; 'internal' is excluded from the modal's
    * single-agent dropdown only. Undefined for standard specialists.
    */

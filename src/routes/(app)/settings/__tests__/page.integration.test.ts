@@ -662,40 +662,40 @@ describe('settings tab route and focus behavior', () => {
   });
 
   it('activates selected specialist views', async () => {
-    const implementorDefinition = SPECIALISTS.find(({ id }) => id === 'implementor')!;
+    const developerDefinition = SPECIALISTS.find(({ id }) => id === 'developer')!;
     renderSettings('/settings?tab=specialists');
     appStore.dispatch(setBundledSpecialists([]));
     appStore.dispatch(
       setFileSpecialists([
         {
-          id: implementorDefinition.id,
-          name: implementorDefinition.name,
-          description: implementorDefinition.description,
+          id: developerDefinition.id,
+          name: developerDefinition.name,
+          description: developerDefinition.description,
           model: '',
-          behaviorPrompt: `${implementorDefinition.defaultBehaviorPrompt}\nModified`,
-          roleReminder: implementorDefinition.roleReminder,
-          filePath: '/Users/test/.intent/specialists/implementor.md',
+          behaviorPrompt: `${developerDefinition.defaultBehaviorPrompt}\nModified`,
+          roleReminder: developerDefinition.roleReminder,
+          filePath: '/Users/test/.intent/specialists/developer.md',
           source: 'user',
         },
       ]),
     );
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
-    const implementor = await within(navigation).findByRole('button', { name: 'Implementor' });
+    const developer = await within(navigation).findByRole('button', { name: 'Developer' });
     const createSpecialist = within(navigation).getByRole('button', {
       name: 'Create Specialist',
     });
-    expect(implementor.hasAttribute('aria-current')).toBe(false);
+    expect(developer.hasAttribute('aria-current')).toBe(false);
 
-    await fireEvent.click(implementor);
+    await fireEvent.click(developer);
 
-    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
-    expect(implementor.getAttribute('aria-current')).toBe('page');
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:developer');
+    expect(developer.getAttribute('aria-current')).toBe('page');
 
     await fireEvent.click(createSpecialist);
 
     expect(screen.getByTestId('ai-behavior-view').textContent).toContain('create-specialist');
     expect(createSpecialist.getAttribute('aria-current')).toBe('page');
-    expect(implementor.hasAttribute('aria-current')).toBe(false);
+    expect(developer.hasAttribute('aria-current')).toBe(false);
   });
 
   it('activates a specialist after navigating between settings tabs', async () => {
@@ -703,14 +703,14 @@ describe('settings tab route and focus behavior', () => {
     const navigation = screen.getByRole('navigation', { name: 'Settings' });
 
     await fireEvent.click(within(navigation).getByRole('button', { name: 'Providers' }));
-    await fireEvent.click(within(navigation).getByRole('button', { name: 'Implementor' }));
+    await fireEvent.click(within(navigation).getByRole('button', { name: 'Developer' }));
 
     expect(
-      within(navigation).getByRole('button', { name: 'Implementor' }).getAttribute('aria-current'),
+      within(navigation).getByRole('button', { name: 'Developer' }).getAttribute('aria-current'),
     ).toBe('page');
-    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:implementor');
-    expect(window.location.search).toBe('?tab=specialists&specialist=implementor');
-    expect(window.location.hash).toBe('#specialist-implementor');
+    expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:developer');
+    expect(window.location.search).toBe('?tab=specialists&specialist=developer');
+    expect(window.location.hash).toBe('#specialist-developer');
   });
 
   it('renders the default model row under Providers only, not Agent Behavior', async () => {
@@ -767,9 +767,9 @@ describe('settings tab route and focus behavior', () => {
 
   it('syncs canonical Specialists query views while Settings remains mounted', async () => {
     const replaceState = vi.spyOn(window.history, 'replaceState');
-    renderSettings('/settings?tab=specialists&specialist=implementor#specialist-implementor');
+    renderSettings('/settings?tab=specialists&specialist=developer#specialist-developer');
     expect((await screen.findByTestId('ai-behavior-view')).textContent).toContain(
-      'specialist:implementor',
+      'specialist:developer',
     );
 
     window.history.pushState(
@@ -795,13 +795,11 @@ describe('settings tab route and focus behavior', () => {
     window.history.pushState(
       {},
       '',
-      '/settings?tab=specialists&specialist=implementor#specialist-implementor',
+      '/settings?tab=specialists&specialist=developer#specialist-developer',
     );
     mocks.page.url.href = window.location.href;
     await waitFor(() =>
-      expect(screen.getByTestId('ai-behavior-view').textContent).toContain(
-        'specialist:implementor',
-      ),
+      expect(screen.getByTestId('ai-behavior-view').textContent).toContain('specialist:developer'),
     );
     expect(replaceState).not.toHaveBeenCalled();
   });

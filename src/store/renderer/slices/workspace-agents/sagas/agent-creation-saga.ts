@@ -338,16 +338,20 @@ function* runAgentForNote(
   // specialist — visibility-gated by selectSpecialists (e.g. GitHub-dependent
   // specialists without auth) and not `hidden` (picker surfaces exclude
   // hidden specialists via filterPickableSpecialists, so Run does too); fall
-  // back to implementor for backward compatibility when unset or unavailable.
+  // back to a general agent when unset or unavailable.
   const defaultSpecialistId = yield* selectDefaultSpecialistId.effect(wsId);
   const specialists = yield* selectSpecialists.effect(wsId);
   const configured = defaultSpecialistId
     ? specialists.find((candidate) => candidate.id === defaultSpecialistId && !candidate.hidden)
     : undefined;
-  const specialistId = configured?.id ?? 'implementor';
-  let model = yield* selectExplicitModel.effect(specialistId, wsId);
-  let behaviorPrompt = yield* selectEffectiveBehaviorPrompt.effect(specialistId, wsId);
-  let reasoningEffort = yield* selectExplicitReasoningEffort.effect(specialistId, wsId);
+  const specialistId = configured?.id;
+  const model = specialistId ? yield* selectExplicitModel.effect(specialistId, wsId) : undefined;
+  const behaviorPrompt = specialistId
+    ? yield* selectEffectiveBehaviorPrompt.effect(specialistId, wsId)
+    : undefined;
+  const reasoningEffort = specialistId
+    ? yield* selectExplicitReasoningEffort.effect(specialistId, wsId)
+    : undefined;
   const agents = yield* selectAllWorkspaceAgents.effect(wsId);
   const initial = agents.find(
     (agent) => String(agent.workspaceId) === wsId && agent.isInitialAgent,
@@ -378,7 +382,11 @@ function* runAgentForNote(
       behaviorPrompt,
       reasoningEffort,
       source: 'task-metadata-bar-run',
-      metadata: { taskNoteId: noteId, source: 'task-run', specialist: specialistId },
+      metadata: {
+        taskNoteId: noteId,
+        source: 'task-run',
+        ...(specialistId ? { specialist: specialistId } : {}),
+      },
       initialMessage: buildTaskAgentInitialMessage(note),
     });
     if (!result.success || !result.agentId) {
