@@ -1036,11 +1036,11 @@
           emptyText={m.workspace_agentsList_noSearchResults_label()}
           staticPosition
           size="compact"
-          class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1 pb-2"
+          class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1"
           inputVariant="search"
           inputClass="shrink-0"
           rowClass={workspacePickerStyles.row}
-          viewportClass="min-h-0 max-h-none flex-1 p-0"
+          viewportClass="min-h-0 max-h-none flex-1 p-0 pb-2"
           contentClass="flex min-h-0 max-h-none flex-1 flex-col border-0 shadow-none"
           oncommit={handleAgentCommit}
           onopenchange={(open) => {
