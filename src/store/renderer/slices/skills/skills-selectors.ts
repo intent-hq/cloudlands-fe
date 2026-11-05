@@ -34,7 +34,7 @@ export const selectAgentSkillsLoaded = store.createSelector<[agentId: string], b
 );
 
 /** Whether `skill.list` takes `agentId` (exact `remoteAgentSkills: 1`). */
-export const selectRemoteAgentSkillsSupported = store.createSelector(
+const selectRemoteAgentSkillsSupported = store.createSelector(
   (state): boolean => selectPrincipalSnapshot.select(state)?.capabilities.remoteAgentSkills === 1,
 );
 
