@@ -183,7 +183,8 @@ describe('placementFailure', () => {
     const detail = `Update Intent on mac-mini (it runs 0.11.120; this backend needs 0.11.134 or newer). ${data({})}`;
     expect(placementFailure({ code: 'machine-update-required', detail }, 'Mac mini')).toEqual({
       updateRequired: true,
-      message: 'Update Intent on mac-mini (it runs 0.11.120; this backend needs 0.11.134 or newer).',
+      message:
+        'Update Intent on mac-mini (it runs 0.11.120; this backend needs 0.11.134 or newer).',
     });
     expect(
       placementFailure({ code: 'machine-update-required', detail: 'Update Intent.' }, 'Mac mini'),
@@ -229,9 +230,7 @@ describe('agent row status label', () => {
     const starting = (setup: AgentSession['setup']) =>
       getAgentNodeStatusLabel(remoteAgent({ effectiveIsolation: 'pending', setup }));
     expect(starting({ state: 'pending' })).toBe('Preparing checkout');
-    expect(starting({ state: 'running', startedAt: '2026-11-05T10:00:00Z' })).toBe(
-      'Running setup',
-    );
+    expect(starting({ state: 'running', startedAt: '2026-11-05T10:00:00Z' })).toBe('Running setup');
     expect(starting({ state: 'completed', exitCode: 0 })).toBe('Starting…');
     expect(starting({ state: 'skipped' })).toBe('Starting…');
     expect(getAgentNodeStatusLabel(remoteAgent({ setup: { state: 'failed' } }))).toBe(undefined);

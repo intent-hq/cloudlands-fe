@@ -41,6 +41,8 @@
   {#if truncated}
     <p class="type-caption text-subtle">{m.remoteAgent_setup_outputTruncated()}</p>
   {/if}
+  <!-- A scrollable region needs focus so the keyboard can scroll it. -->
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <pre
     bind:this={log}
     {onscroll}

@@ -28,8 +28,7 @@ export function currentRemoteSetup(
   existing: RemoteSetupStatus | undefined,
   incoming: RemoteSetupStatus | undefined,
 ): RemoteSetupStatus | undefined {
-  if (!incoming || incoming.output !== undefined || existing?.output === undefined)
-    return incoming;
+  if (!incoming || incoming.output !== undefined || existing?.output === undefined) return incoming;
   if (incoming.state === 'pending' || incoming.startedAt !== existing.startedAt) return incoming;
   return {
     ...incoming,

@@ -25,11 +25,7 @@ export interface AgentMachineLocation {
 }
 
 export type AgentPlacementNoticeKind =
-  | 'starting'
-  | 'failed'
-  | 'unreachable'
-  | 'revoked'
-  | 'setup-failed';
+  'starting' | 'failed' | 'unreachable' | 'revoked' | 'setup-failed';
 
 // Product and architecture names are not translated.
 const OS_LABELS: Record<string, string> = {

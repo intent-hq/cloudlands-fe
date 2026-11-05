@@ -16,7 +16,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { agentMachineLocation, agentPlacementNoticeKind, placementFailure } from './agent-location';
+  import {
+    agentMachineLocation,
+    agentPlacementNoticeKind,
+    placementFailure,
+  } from './agent-location';
   import RemoteSetupLog from './RemoteSetupLog.svelte';
   import {
     selectCurrentBackendLabel,
@@ -84,7 +88,7 @@
   {#if canShowOutput}
     <Button
       variant="ghost-light"
-      size="xs"
+      size="compact"
       class="-my-1 ml-auto"
       aria-expanded={outputOpen}
       onclick={() => (outputOpen = !outputOpen)}

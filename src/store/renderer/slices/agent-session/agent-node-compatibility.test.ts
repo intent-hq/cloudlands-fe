@@ -178,14 +178,22 @@ describe('node agent compatibility', () => {
     let state = agentSessionReducer(
       initialState,
       upsertSession(
-        session({ ...pending, setup: { state: 'running', startedAt, output, outputTruncated: true } }),
+        session({
+          ...pending,
+          setup: { state: 'running', startedAt, output, outputTruncated: true },
+        }),
       ),
     );
     state = agentSessionReducer(
       state,
       bulkUpsertSessions([session({ ...pending, setup: { state: 'running', startedAt } })]),
     );
-    expect(row(state)?.setup).toEqual({ state: 'running', startedAt, output, outputTruncated: true });
+    expect(row(state)?.setup).toEqual({
+      state: 'running',
+      startedAt,
+      output,
+      outputTruncated: true,
+    });
     state = agentSessionReducer(
       state,
       event('agent:updated', {
@@ -194,10 +202,7 @@ describe('node agent compatibility', () => {
       }),
     );
     expect(row(state)?.setup).toMatchObject({ state: 'failed', exitCode: 2, output });
-    state = agentSessionReducer(
-      state,
-      event('agent:updated', { setup: { state: 'pending' } }),
-    );
+    state = agentSessionReducer(state, event('agent:updated', { setup: { state: 'pending' } }));
     expect(row(state)?.setup).toEqual({ state: 'pending' });
   });
   it('drops an unknown setup shape without losing the other placement fields', () => {
