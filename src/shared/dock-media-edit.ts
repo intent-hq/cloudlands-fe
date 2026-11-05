@@ -249,20 +249,38 @@ function atTime(atMs: number, ranges: readonly DockMediaRange[], durationMs: num
   const at = atMs === durationMs ? Math.max(0, atMs - 0.001) : atMs;
   return ranges.some((range) => at >= range.startMs && at < range.endMs);
 }
+/** Canonical source-pixel hit/crop/resize rectangle. Text uses top-left and all lines. */
+export function dockMediaGeometryRect(g: DockMediaGeometry): DockMediaRect {
+  if (g.kind === 'rect') return { x: g.x, y: g.y, w: g.w, h: g.h };
+  if (g.kind === 'text') {
+    const lines = g.text.split('\n');
+    return {
+      x: g.x,
+      y: g.y,
+      w: Math.max(1, ...lines.map((line) => line.length)) * g.fontSize * 0.65,
+      h: lines.length * g.fontSize * 1.4,
+    };
+  }
+  const points =
+    g.kind === 'path' ? g.points : g.kind === 'arrow' ? [g.from, g.to] : [{ x: g.x, y: g.y }];
+  const left = Math.min(...points.map((p) => p.x)),
+    top = Math.min(...points.map((p) => p.y));
+  return {
+    x: left,
+    y: top,
+    w: Math.max(1, Math.max(...points.map((p) => p.x)) - left),
+    h: Math.max(1, Math.max(...points.map((p) => p.y)) - top),
+  };
+}
 function croppedOut(mark: DockMediaEditMark, crop: DockMediaEdit['crop']): boolean {
   if (!crop) return false;
-  const g = mark.geometry;
-  const points =
-    g.kind === 'path'
-      ? g.points
-      : g.kind === 'arrow'
-        ? [g.from, g.to]
-        : [{ x: g.x, y: g.y }, ...(g.kind === 'rect' ? [{ x: g.x + g.w, y: g.y + g.h }] : [])];
-  const left = Math.min(...points.map((p) => p.x)),
-    right = Math.max(...points.map((p) => p.x));
-  const top = Math.min(...points.map((p) => p.y)),
-    bottom = Math.max(...points.map((p) => p.y));
-  return right < crop.x || left > crop.x + crop.w || bottom < crop.y || top > crop.y + crop.h;
+  const bounds = dockMediaGeometryRect(mark.geometry);
+  return (
+    bounds.x + bounds.w < crop.x ||
+    bounds.x > crop.x + crop.w ||
+    bounds.y + bounds.h < crop.y ||
+    bounds.y > crop.y + crop.h
+  );
 }
 export function canUseHighlights(edit: DockMediaEdit): boolean {
   const kept = subtractDockMediaRanges([edit.trim], edit.cuts);

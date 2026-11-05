@@ -1,6 +1,7 @@
 /** One raster display list for capture-editor preview, screenshot output and video overlays. */
 import {
   numberDockMediaMarks,
+  dockMediaGeometryRect,
   planDockMediaOutput,
   type DockMediaEdit,
   type DockMediaSource,
@@ -21,25 +22,6 @@ export const DOCK_MEDIA_PAINT = {
 export type DockMediaPaintOp =
   | { kind: 'geometry'; geometry: DockMediaGeometry }
   | { kind: 'badge'; x: number; y: number; radius: number; label: string };
-function bounds(g: DockMediaGeometry) {
-  if (g.kind === 'rect') return { left: g.x, top: g.y, right: g.x + g.w, bottom: g.y + g.h };
-  if (g.kind === 'text')
-    return {
-      left: g.x,
-      top: g.y,
-      right:
-        g.x + Math.max(...g.text.split('\n').map((line) => line.length)) * g.fontSize * 0.65,
-      bottom: g.y + g.text.split('\n').length * g.fontSize * DOCK_MEDIA_PAINT.textLineHeight,
-    };
-  const points =
-    g.kind === 'path' ? g.points : g.kind === 'arrow' ? [g.from, g.to] : [{ x: g.x, y: g.y }];
-  return {
-    left: Math.min(...points.map((p) => p.x)),
-    top: Math.min(...points.map((p) => p.y)),
-    right: Math.max(...points.map((p) => p.x)),
-    bottom: Math.max(...points.map((p) => p.y)),
-  };
-}
 export function layoutDockMediaMarks(
   edit: DockMediaEdit,
   source: DockMediaSource,
@@ -53,13 +35,13 @@ export function layoutDockMediaMarks(
         source.kind === 'screenshot' || (atMs >= row.mark.atMs && atMs < row.visibleUntilMs),
     )
     .flatMap(({ n, mark }): DockMediaPaintOp[] => {
-      const box = bounds(mark.geometry);
+      const box = dockMediaGeometryRect(mark.geometry);
       return [
         { kind: 'geometry', geometry: mark.geometry },
         {
           kind: 'badge',
-          x: Math.min(crop.x + crop.w - r, Math.max(crop.x + r, box.right)),
-          y: Math.min(crop.y + crop.h - r, Math.max(crop.y + r, box.top)),
+          x: Math.min(crop.x + crop.w - r, Math.max(crop.x + r, box.x + box.w)),
+          y: Math.min(crop.y + crop.h - r, Math.max(crop.y + r, box.y)),
           radius: r,
           label: String(n),
         },
