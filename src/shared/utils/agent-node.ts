@@ -20,16 +20,24 @@ export function currentAgentCheckpoint(
     : existing;
 }
 
+const SETUP_FINISHED = new Set(['completed', 'failed', 'skipped']);
+
 /**
  * Rows and deltas omit setup output; only detail reads carry it. Keep the
- * known output while the same setup run is reported without it.
+ * known output until another setup run is reported: a different `startedAt`,
+ * or an unfinished state after a finished one (a fresh launch).
  */
 export function currentRemoteSetup(
   existing: RemoteSetupStatus | undefined,
   incoming: RemoteSetupStatus | undefined,
 ): RemoteSetupStatus | undefined {
   if (!incoming || incoming.output !== undefined || existing?.output === undefined) return incoming;
-  if (incoming.state === 'pending' || incoming.startedAt !== existing.startedAt) return incoming;
+  const otherStart =
+    existing.startedAt !== undefined &&
+    incoming.startedAt !== undefined &&
+    incoming.startedAt !== existing.startedAt;
+  const relaunched = SETUP_FINISHED.has(existing.state) && !SETUP_FINISHED.has(incoming.state);
+  if (otherStart || relaunched) return incoming;
   return {
     ...incoming,
     output: existing.output,

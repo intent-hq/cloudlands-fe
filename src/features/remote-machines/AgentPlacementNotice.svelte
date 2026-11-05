@@ -89,7 +89,7 @@
     <Button
       variant="ghost-light"
       size="compact"
-      class="-my-1 ml-auto"
+      class="-my-1 ml-auto shrink-0"
       aria-expanded={outputOpen}
       onclick={() => (outputOpen = !outputOpen)}
     >
@@ -101,22 +101,24 @@
 {#if location && kind === 'starting'}
   <div
     class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
-    role="status"
-    aria-live="polite"
     data-agent-placement-notice="starting"
     data-agent-setup-state={setup?.state}
   >
-    <div
-      class="flex flex-wrap items-center gap-x-2 gap-y-0.5 type-body font-family-child text-muted-foreground"
-    >
-      <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
-        <IntentMarkLoader size={14} />
+    <div class="flex items-center gap-2 type-body font-family-child text-muted-foreground">
+      <span
+        class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
+          <IntentMarkLoader size={14} />
+        </span>
+        <span>{m.remoteAgent_notice_starting_title({ machine: location.name })}</span>
+        {#if startingStep}
+          <span class="text-foreground">{startingStep}</span>
+        {/if}
+        <span class="text-subtle">{startingDescription}</span>
       </span>
-      <span>{m.remoteAgent_notice_starting_title({ machine: location.name })}</span>
-      {#if startingStep}
-        <span class="text-foreground">{startingStep}</span>
-      {/if}
-      <span class="text-subtle">{startingDescription}</span>
       {@render outputToggle()}
     </div>
     {#if outputOpen && canShowOutput}
@@ -130,17 +132,18 @@
 {:else if location && kind === 'setup-failed'}
   <div
     class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
-    role="status"
     data-agent-placement-notice="setup-failed"
   >
-    <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5 type-body font-family-child">
-      <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
-        <Fa icon={faTriangleExclamation} class="size-3.5! text-warning-ink" />
+    <div class="flex items-center gap-2 type-body font-family-child">
+      <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" role="status">
+        <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
+          <Fa icon={faTriangleExclamation} class="size-3.5! text-warning-ink" />
+        </span>
+        <span class="font-medium text-warning-ink">
+          {m.remoteAgent_notice_setupFailed_title({ machine: location.name })}
+        </span>
+        <span class="text-subtle">{setupFailedDescription}</span>
       </span>
-      <span class="font-medium text-warning-ink">
-        {m.remoteAgent_notice_setupFailed_title({ machine: location.name })}
-      </span>
-      <span class="text-subtle">{setupFailedDescription}</span>
       {@render outputToggle()}
     </div>
     {#if outputOpen && canShowOutput}

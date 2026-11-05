@@ -154,6 +154,30 @@ describe('agent placement notice', () => {
     expect(queryByRole('log')).toBeNull();
   });
 
+  it('shows output that arrives while the log is open, outside the live region', async () => {
+    const running = (output?: string) =>
+      session({
+        effectiveIsolation: 'pending',
+        setup: {
+          state: 'running',
+          startedAt: '2026-11-02T08:00:05Z',
+          ...(output !== undefined ? { output } : {}),
+        },
+      });
+    seed(running());
+    const { container, getByRole } = render(AgentPlacementNotice, { agentId: AGENT });
+    await fireEvent.click(getByRole('button', { name: 'Show output' }));
+    const log = getByRole('log', { name: 'Setup output on Mac mini' });
+    expect(log.textContent).toContain('No output yet.');
+    // A detail read after `agent:updated` brings the output.
+    seed(running('pnpm install --frozen-lockfile\n'));
+    await waitFor(() => expect(log.textContent).toContain('pnpm install --frozen-lockfile'));
+    const live = container.querySelector('[role="status"]');
+    expect(live?.textContent).toContain('Running setup');
+    expect(live?.contains(log)).toBe(false);
+    expect(live?.querySelector('button')).toBeNull();
+  });
+
   it('shows a failed setup after the agent started, with its exit code and output', async () => {
     seed(
       session({

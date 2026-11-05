@@ -205,6 +205,27 @@ describe('node agent compatibility', () => {
     state = agentSessionReducer(state, event('agent:updated', { setup: { state: 'pending' } }));
     expect(row(state)?.setup).toEqual({ state: 'pending' });
   });
+  it('keeps checkout output through pending deltas and into the setup run', () => {
+    const checkout = 'Fetching packages/intentd\u2026\n';
+    const pending = { ...remote, effectiveIsolation: 'pending' };
+    let state = agentSessionReducer(
+      initialState,
+      upsertSession(session({ ...pending, setup: { state: 'pending', output: checkout } })),
+    );
+    state = agentSessionReducer(state, event('agent:updated', { setup: { state: 'pending' } }));
+    expect(row(state)?.setup).toEqual({ state: 'pending', output: checkout });
+    const startedAt = '2026-09-28T09:00:01Z';
+    state = agentSessionReducer(
+      state,
+      event('agent:updated', { setup: { state: 'running', startedAt } }),
+    );
+    expect(row(state)?.setup).toEqual({ state: 'running', startedAt, output: checkout });
+    state = agentSessionReducer(
+      state,
+      event('agent:updated', { setup: { state: 'running', startedAt: '2026-09-28T10:00:00Z' } }),
+    );
+    expect(row(state)?.setup).not.toHaveProperty('output');
+  });
   it('drops an unknown setup shape without losing the other placement fields', () => {
     let state = agentSessionReducer(initialState, upsertSession(session()));
     state = agentSessionReducer(
