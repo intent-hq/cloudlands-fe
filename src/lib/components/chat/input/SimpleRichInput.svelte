@@ -395,7 +395,9 @@
       appStore.dispatch(loadAgentSkillsRequested(skillsWorkspaceId, agentId));
     }
   });
-  const composerSkills = $derived(skillsMachine ? $agentSkills$.skills : $skills$);
+  const composerSkills = $derived(
+    skillsMachine ? (remoteSkillsCopy.hideSkills ? [] : $agentSkills$.skills) : $skills$,
+  );
   const composerSkillsLoading = $derived(
     skillsMachine ? $agentSkills$.loading && $agentSkills$.skills.length === 0 : $skillsLoading$,
   );

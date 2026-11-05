@@ -87,7 +87,7 @@
     <TipTapEditor
       bind:this={editor}
       {value}
-      skills={editorSkills}
+      skills={copy.hideSkills ? [] : editorSkills}
       slashEmptyLabel={copy.emptyLabel}
       slashNotice={copy.notice}
       unavailableSkillTitle={copy.unavailableTitle}

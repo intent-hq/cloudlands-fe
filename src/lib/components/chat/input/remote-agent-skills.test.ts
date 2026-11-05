@@ -21,7 +21,7 @@ describe('remoteSlashCopy', () => {
     ).toMatchObject({ emptyLabel: 'No skills on Mac Studio', notice: undefined });
   });
 
-  it('asks for an update when the machine is too old, keeping project skills', () => {
+  it('asks for an update when the machine is too old, offering no skills', () => {
     expect(
       remoteSlashCopy({
         machine: 'Mac Studio',
@@ -32,7 +32,7 @@ describe('remoteSlashCopy', () => {
       }),
     ).toEqual({
       emptyLabel: 'Update Intent on Mac Studio to see its skills',
-      notice: 'Update Intent on Mac Studio to see its skills',
+      hideSkills: true,
     });
   });
 

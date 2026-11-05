@@ -19,6 +19,8 @@ export interface RemoteSlashCopy {
   emptyLabel?: string;
   /** A muted row under the list. */
   notice?: string;
+  /** The menu offers nothing even if a list arrived (an older machine). */
+  hideSkills?: boolean;
   /** The tooltip of a `/name` chip the machine does not have, or `undefined`. */
   unavailableTitle?: (name: string) => string | undefined;
 }
@@ -27,8 +29,9 @@ export function remoteSlashCopy(input: RemoteSkillsInput | undefined): RemoteSla
   if (!input) return {};
   const { machine } = input;
   if (input.unavailable === 'machine-update-required') {
+    // An older machine gives its agent no catalog: offer nothing, only the update.
     const text = m.chat_slashSkillSuggestionList_machineUpdateRequired_label({ machine });
-    return { emptyLabel: text, notice: text };
+    return { emptyLabel: text, hideSkills: true };
   }
   if (input.unavailable === 'machine-offline') {
     // The list holds only the workspace's project skills, not the machine's.
