@@ -553,6 +553,7 @@ async function save(
             attachmentId: candidate.attachmentId,
             width: candidate.width,
             height: candidate.height,
+            provenance: { ...current.snapshot.provenance, visuals: candidate.visuals },
           }
         : {}),
     };
