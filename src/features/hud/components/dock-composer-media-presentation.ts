@@ -118,7 +118,15 @@ export type DockComposerAttachment = (
        */
       file?: { name: string; imageData: string; imageMimeType: string };
     }
-  | { kind: 'clip'; id: string; url?: string; duration: string; recording: boolean }
+  | {
+      kind: 'clip';
+      id: string;
+      url?: string;
+      duration: string;
+      recording: boolean;
+      /** The saved send choice ("Highlights · Transcript"), once an edit is saved. */
+      summary?: string;
+    }
   | { kind: 'file'; id: string; name: string }
 ) & {
   /** Evidence uses the HUD controller; ordinary attachments use the shared editor's placement API. */

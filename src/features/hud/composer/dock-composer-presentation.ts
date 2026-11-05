@@ -45,6 +45,24 @@ export function dockClipPlaybackUrl(
   return media?.kind === 'video' ? media.url : undefined;
 }
 
+/** A saved recording edit's send choice, for the pill's second line. */
+function dockClipSendSummary(saved: {
+  video: 'full' | 'highlights';
+  voice: 'audio' | 'transcript' | 'off';
+}): string {
+  const video =
+    saved.video === 'full'
+      ? m.dock_captureEditor_videoFull_label()
+      : m.dock_captureEditor_videoHighlights_label();
+  const voice =
+    saved.voice === 'audio'
+      ? m.dock_captureEditor_voiceAudio_label()
+      : saved.voice === 'transcript'
+        ? m.dock_captureEditor_voiceTranscript_label()
+        : m.dock_captureEditor_voiceOff_summary();
+  return `${video} · ${voice}`;
+}
+
 /** Which privacy pane a permission failure points at, if any. */
 function settingsPaneFor(
   captureError: string | null,
@@ -178,6 +196,7 @@ export function buildDockComposerMedia(input: {
         clip.status === 'recording' ? recordedMs(clip, local.now) : clip.durationMs,
       ),
       recording: clip.status === 'recording',
+      ...(clip.media?.saved ? { summary: dockClipSendSummary(clip.media.saved) } : {}),
       ...(clip.status === 'ready' && dockClipPlaybackUrl(input.workspaceId, clip.path)
         ? { url: dockClipPlaybackUrl(input.workspaceId, clip.path) }
         : {}),

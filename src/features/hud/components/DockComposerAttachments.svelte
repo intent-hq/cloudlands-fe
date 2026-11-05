@@ -48,7 +48,10 @@
 
   function label(item: DockComposerAttachment): string {
     if (item.kind === 'image') return labels.image(item.markCount);
-    if (item.kind === 'clip') return labels.clip(item.duration);
+    if (item.kind === 'clip')
+      return item.summary
+        ? `${labels.clip(item.duration)} ${item.summary}`
+        : labels.clip(item.duration);
     return item.name;
   }
   function show(item: DockComposerAttachment, source: HTMLElement): void {
@@ -195,7 +198,8 @@
               {:else}<span class="clip"
                   ><span class="record-dot" aria-hidden="true"></span><span class="duration"
                     >{item.duration}</span
-                  ></span
+                  >{#if item.summary}<span class="summary" data-clip-summary>{item.summary}</span
+                    >{/if}</span
                 >{/if}
             </Button>
           {/if}
@@ -311,6 +315,16 @@
 </ContentDialog>
 
 <style>
+  /* The saved send choice under the duration (Highlights · Transcript). */
+  .summary {
+    display: block;
+    flex-basis: 100%;
+    overflow: hidden;
+    font-size: 10px;
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
   .attachment-row {
     display: flex;
     gap: 8px;
@@ -397,11 +411,15 @@
   .tile :global(.file),
   .clip {
     display: flex;
+    flex-wrap: wrap;
+    align-content: center;
     align-items: center;
     justify-content: center;
     width: 100%;
     height: 100%;
-    gap: 6px;
+    gap: 2px 6px;
+    padding: 0 4px;
+    text-align: center;
   }
   .tile :global(.file) {
     flex-direction: column;

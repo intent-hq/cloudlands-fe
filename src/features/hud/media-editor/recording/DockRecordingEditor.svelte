@@ -9,12 +9,14 @@
   } from '$shared/dock-capture-editor';
   import DockComposerIcon from '../../components/DockComposerIcon.svelte';
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
+  import { DestructiveConfirm } from '$lib/components/patterns/confirm';
   import DockRecordingTimeline from './DockRecordingTimeline.svelte';
   import DockRecordingSendOptions from './DockRecordingSendOptions.svelte';
   import DockRecordingTranscript from './DockRecordingTranscript.svelte';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import {
     defaultDockMediaEdit,
+    canUseHighlights,
     markRemovable,
     mergeDockMediaRanges,
     subtractDockMediaRanges,
@@ -82,8 +84,20 @@
   const canSave = !!edits && !!onSave && snapshot.output?.ready === true;
   let saving = $state(false);
   let saveProblem = $state<'conflict' | 'failed' | null>(null);
+  /** Highlights with every mark excluded sends no clips: warned once, before saving. */
+  let confirmEmptyHighlights = $state(false);
+  let warnedEmptyHighlights = false;
   async function save(): Promise<void> {
     if (!edits || !onSave || saving) return;
+    if (
+      edits.draft.video === 'highlights' &&
+      !canUseHighlights(edits.draft) &&
+      !warnedEmptyHighlights
+    ) {
+      warnedEmptyHighlights = true;
+      confirmEmptyHighlights = true;
+      return;
+    }
     saving = true;
     saveProblem = null;
     const outcome = await onSave(edits.draft);
@@ -336,6 +350,18 @@
     </div>
   {/snippet}
 </DockCaptureEditorShell>
+
+<DestructiveConfirm
+  bind:open={confirmEmptyHighlights}
+  destructive={false}
+  title={m.dock_captureEditor_emptyHighlights_title()}
+  confirmLabel={m.dock_captureEditor_saveAnyway_label()}
+  cancelLabel={m.dock_captureEditor_keepEditing_label()}
+  onConfirm={() => {
+    confirmEmptyHighlights = false;
+    void save();
+  }}
+/>
 
 {#snippet sendOptions()}
   {#if source && edits}
