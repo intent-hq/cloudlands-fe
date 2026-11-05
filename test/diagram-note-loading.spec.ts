@@ -171,7 +171,9 @@ async function expectNoteLoaded(page: Page, count = 1) {
     await expect(presentation).toBeVisible();
   }
   await expect(host.locator('.tiptap-editor-wrapper')).toHaveAttribute('aria-busy', 'false');
-  await expect(host.getByText('Text after the diagram.', { exact: true })).toBeVisible();
+  await expect(
+    host.locator('.tiptap-editor').getByText('Text after the diagram.', { exact: true }),
+  ).toBeVisible();
 }
 
 for (const [name, width, source] of [

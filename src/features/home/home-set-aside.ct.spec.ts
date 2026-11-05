@@ -290,6 +290,7 @@ test('Another window can change personal organization without changing this wind
 
 test('Bringing back work set aside in another window survives reload', async ({ mount, page }) => {
   await mount(Harness, { props: { view: 'board' } });
+  const asideColumn = page.locator('[data-home-board] [data-home-set-aside]');
   const saved = await snapshot(page);
   const otherWindow = await page.context().newPage();
   try {
@@ -304,8 +305,8 @@ test('Bringing back work set aside in another window survives reload', async ({ 
       { key: saved.scope, stored: saved.stored },
     );
     await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-idle');
-    await asideColumn(page).locator('[data-home-workspace="aside-idle"]').hover();
-    await asideColumn(page).getByRole('button', { name: 'Bring back', exact: true }).click();
+    await asideColumn.locator('[data-home-workspace="aside-idle"]').hover();
+    await asideColumn.getByRole('button', { name: 'Bring back', exact: true }).click();
     await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-idle');
     await expect
       .poll(() =>

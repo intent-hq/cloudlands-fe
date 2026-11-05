@@ -63,7 +63,7 @@ test('Architecture navigation preserves authored scene membership and reachable 
   for (const id of ['user', 'renderer']) {
     await expect(root.locator(`[data-node-id="${id}"]`)).toBeVisible();
   }
-  await expect(root.locator('.diagram-edge[data-edge-id="a1"] path.edge-path')).toBeVisible();
+  await expect(root.getByText('explores', { exact: true })).toBeVisible();
   const paint = await root.evaluate(readDiagramPaint);
   expect(paint.finite).toBe(true);
   expect(paint.overflow).toBeLessThanOrEqual(1);
