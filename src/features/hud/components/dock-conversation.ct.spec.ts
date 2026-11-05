@@ -1417,3 +1417,46 @@ test('dock transcript admits every row in view inside the dock route frame, afte
   // Still virtualized: rows far from the viewport remain spacers.
   expect(await component.locator('[data-operational-spacer]').count()).toBeGreaterThan(0);
 });
+
+test('assistant conversation keeps a usable composer after a background workspace refresh (intent#8620)', async ({
+  mount,
+}, testInfo) => {
+  const component = await mount(ConversationWireHarness, {
+    props: { workspaceId: '__chief__', notchChrome: true },
+  });
+  const composer = component.locator('[data-dock-conversation-composer] [contenteditable]');
+  await expect(composer).toHaveAttribute('contenteditable', 'true');
+  await expect(component.getByText('Live history for wire-sub', { exact: true })).toBeVisible();
+  // The open flow has settled; only now does the dock window refresh its workspace list.
+  await component
+    .getByRole('button', { name: 'Refresh synthetic workspace list', exact: true })
+    .click();
+  await expect(composer).toHaveAttribute('contenteditable', 'true');
+  await composer.fill('Still able to reply after the refresh');
+  await expect(composer).toHaveText('Still able to reply after the refresh');
+  await expect(component.getByTestId('composer-submit-button')).toBeEnabled();
+  await component.screenshot({ path: testInfo.outputPath('assistant-after-refresh.png') });
+});
+
+test('assistant conversation without a thread shows a disabled fallback box, then a usable one (intent#8620)', async ({
+  mount,
+}, testInfo) => {
+  const component = await mount(ConversationWireHarness, {
+    props: { workspaceId: '__chief__', notchChrome: true, withoutAgents: true },
+  });
+  await expect(
+    component.getByText('Choose an agent to view its conversation.', { exact: true }),
+  ).toBeVisible();
+  const fallback = component.getByTestId('dock-conversation-fallback-composer');
+  await expect(fallback).toBeVisible();
+  await expect(fallback).toBeDisabled();
+  await component.screenshot({ path: testInfo.outputPath('assistant-without-thread.png') });
+  await component.getByRole('button', { name: 'Publish synthetic agents', exact: true }).click();
+  await component.getByRole('button', { name: 'Retry', exact: true }).click();
+  const composer = component.locator('[data-dock-conversation-composer] [contenteditable]');
+  await expect(composer).toHaveAttribute('contenteditable', 'true');
+  await expect(fallback).toHaveCount(0);
+  await composer.fill('A thread arrived');
+  await expect(composer).toHaveText('A thread arrived');
+  await component.screenshot({ path: testInfo.outputPath('assistant-thread-arrived.png') });
+});

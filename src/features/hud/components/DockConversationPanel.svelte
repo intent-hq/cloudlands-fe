@@ -593,6 +593,7 @@
             maxRows={5}
             textareaProps={{
               'data-dock-conversation-composer': '',
+              'data-testid': 'dock-conversation-fallback-composer',
               'aria-label': m.chat_richInput_editor_ariaLabel(),
               'aria-describedby': sendError
                 ? `${uid}-send-error`

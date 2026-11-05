@@ -71,8 +71,14 @@ export function setupConversationWire(
     operationalHistory?: number;
     /** A second ready provider (Claude Code), and effort levels on Auggie's models. */
     providerChoice?: boolean;
+    /** Workspace the synthetic agents belong to (e.g. the virtual Assistant workspace). */
+    workspaceId?: string;
+    /** List no agents until `publishAgents()`. */
+    withoutAgents?: boolean;
   } = {},
 ) {
+  const wireWorkspace = options.workspaceId ?? conversationWireWorkspace;
+  let agentsListed = !options.withoutAgents;
   const root = document.documentElement;
   const previousWindow = root.dataset.auxiliaryWindow;
   const previousClass = root.className;
@@ -170,7 +176,7 @@ export function setupConversationWire(
   function agent(id: string) {
     return {
       id,
-      workspaceId: conversationWireWorkspace,
+      workspaceId: wireWorkspace,
       name: id === 'wire-main' ? 'Wire coordinator' : 'Wire specialist',
       status: 'runtime_idle',
       provider: 'auggie',
@@ -272,8 +278,9 @@ export function setupConversationWire(
         };
       case 'agent.list':
         return {
-          agents:
-            params.scope === 'background'
+          agents: !agentsListed
+            ? []
+            : params.scope === 'background'
               ? []
               : params.scope === 'delegated'
                 ? [agent('wire-sub')]
@@ -334,7 +341,7 @@ export function setupConversationWire(
       case 'drafts.clear':
         return drafts.clear(String(params.workspaceId), agentId);
       case 'file.placeAttachment': {
-        if (params.workspaceId !== conversationWireWorkspace || typeof params.data !== 'string')
+        if (params.workspaceId !== wireWorkspace || typeof params.data !== 'string')
           throw new Error('Fixture accepts only in-memory attachment bytes for its workspace');
         if (rejectPlacement) {
           rejectPlacement = false;
@@ -456,6 +463,9 @@ export function setupConversationWire(
       if (!recover) messages.get('wire-main')?.push(questionRow);
       setQuestionMarker(conversationWireQuestionId);
       for (const [id, entry] of subscriptions) if (entry.agentId === 'wire-main') publish(id);
+    },
+    publishAgents() {
+      agentsListed = true;
     },
     failNextDismissal() {
       failDismiss = true;
