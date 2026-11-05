@@ -2648,7 +2648,7 @@
   "remoteAgent_notice_checkAgain_label": "Vérifier à nouveau",
   "remoteAgent_notice_failed_hint": "Lancez un nouvel agent pour réessayer.",
   "remoteAgent_notice_failed_title": "Impossible de démarrer sur {machine}",
-  "remoteAgent_notice_openDevices_label": "Ouvrir les réglages Appareils",
+  "remoteAgent_notice_openMachines_label": "Ouvrir les réglages Ordinateurs",
   "remoteAgent_notice_revoked_description": "{machine} a révoqué l'accès de ce backend, cet agent ne peut donc pas s'y exécuter. Autorisez de nouveau {backend} sur {machine}, ou lancez un nouvel agent.",
   "remoteAgent_notice_revoked_title": "{machine} a révoqué l'accès",
   "remoteAgent_notice_starting_description": "Préparation d'une copie isolée de cet espace de travail sur cette machine.",

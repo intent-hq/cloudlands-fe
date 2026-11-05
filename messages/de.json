@@ -2648,7 +2648,7 @@
   "remoteAgent_notice_checkAgain_label": "Erneut prüfen",
   "remoteAgent_notice_failed_hint": "Starten Sie einen neuen Agenten, um es erneut zu versuchen.",
   "remoteAgent_notice_failed_title": "Start auf {machine} fehlgeschlagen",
-  "remoteAgent_notice_openDevices_label": "Geräte-Einstellungen öffnen",
+  "remoteAgent_notice_openMachines_label": "Rechner-Einstellungen öffnen",
   "remoteAgent_notice_revoked_description": "{machine} hat den Zugriff dieses Backends widerrufen, daher kann dieser Agent dort nicht laufen. Erlauben Sie {backend} erneut, auf {machine} Agenten auszuführen, oder starten Sie einen neuen Agenten.",
   "remoteAgent_notice_revoked_title": "{machine} hat den Zugriff widerrufen",
   "remoteAgent_notice_starting_description": "Dort wird eine isolierte Kopie dieses Arbeitsbereichs vorbereitet.",

@@ -2648,7 +2648,7 @@
   "remoteAgent_notice_checkAgain_label": "Volver a comprobar",
   "remoteAgent_notice_failed_hint": "Inicia un agente nuevo para volver a intentarlo.",
   "remoteAgent_notice_failed_title": "No se pudo iniciar en {machine}",
-  "remoteAgent_notice_openDevices_label": "Abrir ajustes de Dispositivos",
+  "remoteAgent_notice_openMachines_label": "Abrir ajustes de Equipos",
   "remoteAgent_notice_revoked_description": "{machine} revocó el acceso de este backend, así que este agente no puede ejecutarse allí. Vuelve a permitir {backend} en {machine} o inicia un agente nuevo.",
   "remoteAgent_notice_revoked_title": "{machine} revocó el acceso",
   "remoteAgent_notice_starting_description": "Preparando allí una copia aislada de este espacio de trabajo.",

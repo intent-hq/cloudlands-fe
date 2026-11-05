@@ -222,7 +222,7 @@ describe('agent placement notice', () => {
     expect(text).toContain('Claude Code is signed out');
     expect(text).toContain('Start a new agent to try again.');
     expect(queryByRole('button', { name: /try again/i })).toBeNull();
-    await fireEvent.click(getByRole('button', { name: 'Open Devices settings' }));
+    await fireEvent.click(getByRole('button', { name: 'Open Machines settings' }));
     expect(navigation.navigateToSettings).toHaveBeenCalledWith({
       tab: 'devices',
       hash: 'devices',

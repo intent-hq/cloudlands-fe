@@ -2648,7 +2648,7 @@
   "remoteAgent_notice_checkAgain_label": "重新检查",
   "remoteAgent_notice_failed_hint": "请启动新的智能体以重试。",
   "remoteAgent_notice_failed_title": "无法在 {machine} 上启动",
-  "remoteAgent_notice_openDevices_label": "打开设备设置",
+  "remoteAgent_notice_openMachines_label": "打开计算机设置",
   "remoteAgent_notice_revoked_description": "{machine} 撤销了此后端的访问权限，因此此智能体无法在那里运行。请在 {machine} 上重新允许 {backend}，或启动新的智能体。",
   "remoteAgent_notice_revoked_title": "{machine} 撤销了访问权限",
   "remoteAgent_notice_starting_description": "正在那里准备此工作区的隔离副本。",

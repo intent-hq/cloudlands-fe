@@ -2648,7 +2648,7 @@
   "remoteAgent_notice_checkAgain_label": "重新檢查",
   "remoteAgent_notice_failed_hint": "請啟動新的代理以重試。",
   "remoteAgent_notice_failed_title": "無法在 {machine} 上啟動",
-  "remoteAgent_notice_openDevices_label": "開啟裝置設定",
+  "remoteAgent_notice_openMachines_label": "開啟電腦設定",
   "remoteAgent_notice_revoked_description": "{machine} 撤銷了此後端的存取權限，因此此代理程式無法在那裡執行。請在 {machine} 上重新允許 {backend}，或啟動新的代理程式。",
   "remoteAgent_notice_revoked_title": "{machine} 撤銷了存取權限",
   "remoteAgent_notice_starting_description": "正在那裡準備此工作區的隔離副本。",

@@ -79,7 +79,7 @@
   );
   let outputOpen = $state(false);
 
-  function openDevicesSettings() {
+  function openMachinesSettings() {
     void navigateToSettings({ tab: 'devices', hash: 'devices' });
   }
 </script>
@@ -214,8 +214,8 @@
             {m.remoteAgent_notice_checkAgain_label()}
           </Button>
         {:else}
-          <Button variant="secondary" size="sm" onclick={openDevicesSettings}>
-            {m.remoteAgent_notice_openDevices_label()}
+          <Button variant="secondary" size="sm" onclick={openMachinesSettings}>
+            {m.remoteAgent_notice_openMachines_label()}
           </Button>
         {/if}
       </div>

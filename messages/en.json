@@ -2648,7 +2648,7 @@
   "remoteAgent_notice_checkAgain_label": "Check again",
   "remoteAgent_notice_failed_hint": "Start a new agent to try again.",
   "remoteAgent_notice_failed_title": "Couldn't start on {machine}",
-  "remoteAgent_notice_openDevices_label": "Open Devices settings",
+  "remoteAgent_notice_openMachines_label": "Open Machines settings",
   "remoteAgent_notice_revoked_description": "{machine} revoked this backend's access, so this agent can't run there. Allow {backend} on {machine} again, or start a new agent.",
   "remoteAgent_notice_revoked_title": "{machine} revoked access",
   "remoteAgent_notice_starting_description": "Preparing an isolated copy of this workspace there.",
