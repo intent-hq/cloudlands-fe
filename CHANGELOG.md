@@ -4,6 +4,37 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.287.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.7...v2.287.0) (2026-11-05)
+
+
+### 🚀 Features
+
+* **chat:** list a remote agent's machine skills in the / menu ([#4206](https://github.com/intent-hq/cloudlands-fe/issues/4206)) ([ac5ed33](https://github.com/intent-hq/cloudlands-fe/commit/ac5ed33e4b3113a92ec49c3bf1a12c1f9e9e6989))
+* **notifications:** remove the in-app agent-finished toast ([#4178](https://github.com/intent-hq/cloudlands-fe/issues/4178)) ([4067786](https://github.com/intent-hq/cloudlands-fe/commit/4067786a82263e4fe4e8752c90798711d38c0304))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.136 ([#4215](https://github.com/intent-hq/cloudlands-fe/issues/4215)) ([994d749](https://github.com/intent-hq/cloudlands-fe/commit/994d7492b170243f387b454da5ef0e0ad922212e))
+* **onboarding:** use a fixed provider order instead of a random shuffle ([#4214](https://github.com/intent-hq/cloudlands-fe/issues/4214)) ([7bfb64c](https://github.com/intent-hq/cloudlands-fe/commit/7bfb64cee47d0dfb756ded0c460754ac5a237408))
+* show clear file-panel read errors and pin Assistant file links ([#4209](https://github.com/intent-hq/cloudlands-fe/issues/4209)) ([e3856b8](https://github.com/intent-hq/cloudlands-fe/commit/e3856b8908369daaed8a157077fd7db4fc0b492b))
+
+## [2.286.7](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.6...v2.286.7) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.135 ([#4210](https://github.com/intent-hq/cloudlands-fe/issues/4210)) ([9e4a446](https://github.com/intent-hq/cloudlands-fe/commit/9e4a446c10132d333ab73159631c7cd51482474a))
+
+## [2.286.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.5...v2.286.6) (2026-11-05)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.134 ([#4208](https://github.com/intent-hq/cloudlands-fe/issues/4208)) ([294f794](https://github.com/intent-hq/cloudlands-fe/commit/294f7944eb8f5c6aadc23365a74d8dd2ae04e166))
+* **i18n:** rename remaining Devices labels to Machines, singular Machine picker ([#4202](https://github.com/intent-hq/cloudlands-fe/issues/4202)) ([a4661a5](https://github.com/intent-hq/cloudlands-fe/commit/a4661a5f6ff18df0241b4b449a0bc6153034526e))
+* **remote:** show a remote agent's checkout preparation, setup and setup output ([#4201](https://github.com/intent-hq/cloudlands-fe/issues/4201)) ([d9ddcad](https://github.com/intent-hq/cloudlands-fe/commit/d9ddcad94da8904cfb466dcfd95b58f2645dd394))
+
 ## [2.286.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.4...v2.286.5) (2026-11-05)
 
 

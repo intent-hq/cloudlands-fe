@@ -35,10 +35,6 @@ import {
 } from 'typed-redux-saga';
 
 import type { AgentIdleEvent } from '$features/events/types';
-import {
-  showAgentIdleToast,
-  type AgentIdleToastPayload,
-} from '$features/agent/agent-attention-toast-service';
 import { handleNotificationNavigate } from '$features/notifications/notification-navigation';
 import { playNotificationSoundPerSettings } from '$features/notifications/notification-sound-gate';
 import { readIdleNotificationGate } from '$features/notifications/utils/idle-gate';
@@ -70,8 +66,7 @@ let loggedPermissionSkip = false;
 
 type NotificationNavigateEvent = { workspaceId?: string; chief?: boolean; agentId?: string };
 type NativeNotificationEvent =
-  | { kind: 'show'; data?: AgentIdleToastPayload }
-  | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
+  { kind: 'show' } | { kind: 'navigate'; data?: NotificationNavigateEvent | null };
 
 function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent> {
   return eventChannel<NativeNotificationEvent>((emit) => {
@@ -79,7 +74,7 @@ function createNativeNotificationChannel(): EventChannel<NativeNotificationEvent
     const listeners = [
       [
         'notification:show',
-        window.electronAPI.on('notification:show', (data) => emit({ kind: 'show', data })),
+        window.electronAPI.on('notification:show', () => emit({ kind: 'show' })),
       ],
       [
         'notification:navigate',
@@ -444,16 +439,7 @@ function* handleNativeNotificationEvent(event: NativeNotificationEvent) {
   try {
     yield* call(playNotificationSoundPerSettings);
   } catch {
-    // A sound failure must not drop the toast below.
-  }
-  // Main skipped the OS banner because the app is frontmost (electron#51885)
-  // and attached `navigateTarget`: show the clickable in-app toast instead.
-  if (event.data?.navigateTarget) {
-    try {
-      yield* call(showAgentIdleToast, event.data);
-    } catch {
-      // Toasts are best-effort.
-    }
+    // Notification sounds are best-effort.
   }
 }
 

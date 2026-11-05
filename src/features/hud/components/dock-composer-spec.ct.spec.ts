@@ -105,14 +105,15 @@ for (const screen of [1, 2, 3, 4, 5, 6] as const) {
       await expect(component.locator('[data-screen-interim]')).toBeVisible();
     }
     if (screen === 2) {
-      await component.locator('[data-dock-media-attachments] .tile').first().hover();
+      await component.locator('[data-dock-media-attachments] .tile button').first().focus();
       await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
     }
     if (screen === 3) {
       const annotate = component.getByRole('button', {
         name: /^Annotate the screen\. Current tool:/,
       });
-      await annotate.hover();
+      await annotate.focus();
+      await annotate.press('Space');
       await expect(page.getByRole('toolbar', { name: 'Annotation tools' })).toBeVisible();
       // The caret is visible in the gap and points at the button that owns the popover.
       const caret = page.locator('.tool-caret span');

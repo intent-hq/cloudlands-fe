@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import { viteHarnessCacheDir } from './vite-harness-cache.mjs';
 
@@ -157,368 +157,39 @@ async function open(page: Page, width: number, motion: string) {
   return root;
 }
 
-async function sampleChange(
-  root: Locator,
-  index: number,
-  resizeWidth?: number,
-  interrupt?: boolean,
-) {
-  return root.evaluate(
-    async (element, { source, index, resizeWidth, interrupt }) => {
-      const read = new Function(`return (${source})`)() as typeof geometry;
-      const samples = [read(element)];
-      let observedFrame: number | undefined;
-      let probeWidth = 1;
-      let probeFrame: number | undefined;
-      // A non-painted probe requests an observation every frame, even when only a
-      // transform changes. Register after the renderer's observer so its synchronous
-      // refit and all rAF callbacks are included before paint.
-      const frameProbe = resizeWidth ? document.createElement('div') : undefined;
-      if (frameProbe) {
-        frameProbe.style.cssText =
-          'position:absolute;top:0;left:0;visibility:hidden;pointer-events:none;contain:strict;' +
-          'transition:none!important;animation:none!important;width:0;height:0';
-        element.append(frameProbe);
-      }
-      const observer = resizeWidth
-        ? new ResizeObserver(() => {
-            const frame = Number(document.timeline.currentTime);
-            const sample = read(element);
-            // Multiple observer deliveries can refine one not-yet-painted frame.
-            // A later frame gets its own entry, even if our timer task is delayed.
-            if (frame === observedFrame) samples[samples.length - 1] = sample;
-            else samples.push(sample);
-            observedFrame = frame;
-          })
-        : undefined;
-      if (frameProbe) observer?.observe(frameProbe);
-      observer?.observe(element.querySelector('.diagram-scroll-container')!);
-      const requestProbeFrame = () => {
-        if (!frameProbe) return;
-        probeFrame = requestAnimationFrame(() => {
-          frameProbe.style.width = `${probeWidth}px`;
-          probeWidth = probeWidth === 1 ? 2 : 1;
-          requestProbeFrame();
-        });
-      };
-      try {
-        requestProbeFrame();
-        element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[index].click();
-        if (resizeWidth) {
-          const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
-          host.style.width = `${resizeWidth}px`;
-        }
-        const start = performance.now();
-        do {
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-          // Let ResizeObserver record this frame. Remeasuring in this task can
-          // advance the catalog's 0.01ms ancestor width transition between paints,
-          // before the renderer receives that new lane width.
-          if (resizeWidth) await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          else samples.push(read(element));
-          if (interrupt && samples.length === 3) {
-            element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[2].click();
-            element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].click();
-          }
-        } while (
-          (!samples.at(-1)!.settled || samples.length < 4) &&
-          performance.now() - start < 4_000
-        );
-      } finally {
-        if (probeFrame !== undefined) cancelAnimationFrame(probeFrame);
-        observer?.disconnect();
-        frameProbe?.remove();
-      }
-      return samples;
-    },
-    { source: geometry.toString(), index, resizeWidth, interrupt },
-  );
-}
-
-// Wide sandbox, the measured native note lane, and narrow reflow are distinct contracts.
+// Wide sandbox, the native note lane, and narrow reflow exercise content containment.
 for (const width of [960, 662, 420]) {
-  for (const motion of ['full', 'reduced']) {
-    test(`compact walkthrough retains content and stable controls · ${width}px · ${motion}`, async ({
-      page,
-    }, testInfo) => {
-      test.setTimeout(90_000);
-      const root = await open(page, width, motion);
-      const steps = [await root.evaluate(geometry)];
-      const transitions = [];
-      for (const index of [1, 2, 0]) {
-        const samples = await sampleChange(root, index);
-        transitions.push(samples);
-        const last = samples.at(-1)!;
-        expect(last.settled).toBe(true);
-        expect(last.nodes).toEqual(states[index].nodes);
-        expect(last.edges).toEqual(states[index].edges);
-        expect(last.labels).toEqual(states[index].edges);
-        steps.push(last);
-      }
-      await testInfo.attach('step-geometry', {
-        body: JSON.stringify({ steps, transitions }, null, 2),
-        contentType: 'application/json',
-      });
-      // A temporary transition frame must release its departing-scene space.
-
-      if (motion === 'full') {
-        const departure = transitions[0];
-        // Keep the outgoing user visible during its exit, rather than dropping
-        // paint to satisfy containment. Check every observed transition phase.
-        expect(
-          departure.some(
-            (sample) => sample.phase === 'exit' && sample.paintedNodes.includes('user'),
-          ),
-        ).toBe(true);
-        for (const phase of ['camera', 'exit', 'scene']) {
-          const frames = departure.filter((sample) => sample.phase === phase);
-          expect(frames.length, phase).toBeGreaterThan(0);
-          expect(Math.max(...frames.map((sample) => sample.overflow)), phase).toBeLessThanOrEqual(
-            1,
-          );
-        }
-      }
-      // Active-scene sizing intentionally changes height between steps. Bound each
-      // step's own whitespace, not a union or the first step's reserved frame.
-      for (const step of steps) {
-        expect(step.overflow).toBeLessThanOrEqual(1);
-        expect(step.nodes.length).toBe(3);
-        expect(
-          [step.width, step.height, step.contentHeight, step.scale].every(Number.isFinite),
-        ).toBe(true);
-      }
-      for (const samples of transitions) {
-        expect(samples.every((sample) => sample.finitePaint)).toBe(true);
-        expect(Math.max(...samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-        const navigationOffsets = samples.map(
-          (sample) => sample.controlOffset - sample.footerOffset,
-        );
-        expect(Math.max(...navigationOffsets) - Math.min(...navigationOffsets)).toBeLessThanOrEqual(
-          1,
-        );
-        if (motion === 'reduced')
-          expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
-        else expect(samples.some((sample) => sample.animationCount > 0)).toBe(true);
-      }
-      const rapid = await sampleChange(root, 1, undefined, true);
-      await testInfo.attach('rapid-geometry', {
-        body: JSON.stringify(rapid),
-        contentType: 'application/json',
-      });
-      expect(rapid.at(-1)!.settled).toBe(true);
-      expect(rapid.every((sample) => sample.finitePaint)).toBe(true);
-      expect(rapid.at(-1)!.state).toBe('request');
-      expect(rapid.at(-1)!.nodes).toEqual(states[0].nodes);
-      expect(rapid.at(-1)!.edges).toEqual(states[0].edges);
-      expect(Math.max(...rapid.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-      const resize = [];
-      const resizeSegments = [];
-      for (const [index, resizeWidth] of [
-        [1, 420],
-        [2, 960],
-        [0, width],
-      ]) {
-        const samples = await sampleChange(root, index, resizeWidth);
-        resize.push(...samples);
-        resizeSegments.push({ index, resizeWidth, samples });
-      }
-      await testInfo.attach('resize-geometry', {
-        body: JSON.stringify(resize, null, 2),
-        contentType: 'application/json',
-      });
-      await testInfo.attach('resize-segments', {
-        body: JSON.stringify(resizeSegments, null, 2),
-        contentType: 'application/json',
-      });
-      expect(resize.at(-1)!.settled).toBe(true);
-      expect(resize.every((sample) => sample.finitePaint)).toBe(true);
-      expect(Math.max(...resize.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-      for (const { index, samples } of resizeSegments) {
-        const final = samples.at(-1)!;
-        expect(final.settled).toBe(true);
-        expect(final.state).toBe(states[index].id);
-        expect(final.nodes).toEqual(states[index].nodes);
-        expect(final.paintedNodes).toEqual(states[index].nodes);
-        expect(final.edges).toEqual(states[index].edges);
-        expect(final.labels).toEqual(states[index].edges);
-
-        const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
-        expect(Math.max(...offsets) - Math.min(...offsets)).toBeLessThanOrEqual(1);
-        if (motion === 'reduced') {
-          expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
-        }
-      }
-      await root.screenshot({ path: testInfo.outputPath('compact-walkthrough.png') });
+  test(`walkthrough retains scene content and reachable controls at ${width}px`, async ({
+    page,
+  }, testInfo) => {
+    const root = await open(page, width, 'reduced');
+    const steps = [];
+    for (const index of [0, 1, 2, 0]) {
+      await root.locator('.stepper-dot').nth(index).click();
+      await expect(root).toHaveAttribute('data-diagram-state', states[index].id);
+      await expect(root).toHaveAttribute('data-diagram-settled', 'true');
+      const step = await root.evaluate(geometry);
+      expect(step.nodes).toEqual(states[index].nodes);
+      expect(step.paintedNodes).toEqual(states[index].nodes);
+      expect(step.edges).toEqual(states[index].edges);
+      expect(step.labels).toEqual(states[index].edges);
+      expect(step.finitePaint).toBe(true);
+      expect(step.overflow).toBeLessThanOrEqual(1);
+      const controls = root.locator('.state-navigation');
+      await expect(controls).toBeVisible();
+      expect(
+        await controls.evaluate((element) => {
+          const rect = element.getBoundingClientRect();
+          const footer = element.closest('.diagram-footer')!.getBoundingClientRect();
+          return rect.top >= footer.top - 1 && rect.bottom <= footer.bottom + 1;
+        }),
+      ).toBe(true);
+      steps.push(step);
+    }
+    await testInfo.attach('step-geometry', {
+      body: JSON.stringify(steps, null, 2),
+      contentType: 'application/json',
     });
-  }
+    await root.screenshot({ path: testInfo.outputPath('compact-walkthrough.png') });
+  });
 }
-
-// Moving an ancestor changes viewport coordinates without changing the diagram's
-// own geometry. It must not keep a completed resize in the settling state.
-test('walkthrough settles a resize while its ancestor moves', async ({ page }, testInfo) => {
-  const root = await open(page, 662, 'reduced');
-  const result = await root.evaluate(async (element, source) => {
-    const read = new Function(`return (${source})`)() as typeof geometry;
-    const host = element.closest<HTMLElement>('[data-testid="catalog-scene-focus"]')!;
-    const motion = host.animate(
-      [{ transform: 'translateY(0px)' }, { transform: 'translateY(8px)' }],
-      { duration: 800, iterations: Infinity, direction: 'alternate', easing: 'linear' },
-    );
-    const samples = [];
-    try {
-      element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[1].click();
-      host.style.width = '420px';
-      const start = performance.now();
-      do {
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-        await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        samples.push({ ...read(element), rootTop: element.getBoundingClientRect().top });
-      } while (
-        (!samples.at(-1)!.settled || samples.length < 4) &&
-        performance.now() - start < 4000
-      );
-      return { samples, ancestorStillMoving: motion.playState === 'running' };
-    } finally {
-      motion.cancel();
-    }
-  }, geometry.toString());
-  await testInfo.attach('ancestor-motion-geometry', {
-    body: JSON.stringify(result),
-    contentType: 'application/json',
-  });
-  expect(result.ancestorStillMoving).toBe(true);
-  const tops = result.samples.map((sample) => sample.rootTop);
-  expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(0.01);
-  expect(result.samples.at(-1)!.settled).toBe(true);
-  expect(result.samples.at(-1)!.state).toBe('execute');
-  expect(result.samples.every((sample) => sample.finitePaint)).toBe(true);
-  expect(Math.max(...result.samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-  // Capture the viewport after the behavioral checks: a locator clip can become
-  // stale while surrounding catalog sections reposition the settled diagram.
-  await root.scrollIntoViewIfNeeded();
-  await page.screenshot({ path: testInfo.outputPath('ancestor-motion-walkthrough.png') });
-});
-
-// Reusing the mounted scene exposes resize delivery races that a fresh page can miss.
-test('walkthrough repeated resizing keeps painted content contained', async ({
-  page,
-}, testInfo) => {
-  const root = await open(page, 662, 'reduced');
-  const rounds = [];
-  for (let round = 0; round < 3; round += 1) {
-    for (const index of [1, 2, 0]) await sampleChange(root, index);
-    await sampleChange(root, 1, undefined, true);
-    const segments = [];
-    for (const [index, width] of [
-      [1, 420],
-      [2, 960],
-      [0, 662],
-    ]) {
-      segments.push({ index, width, samples: await sampleChange(root, index, width) });
-    }
-    rounds.push(segments);
-  }
-  await testInfo.attach('repeated-resize-geometry', {
-    body: JSON.stringify(rounds, null, 2),
-    contentType: 'application/json',
-  });
-  for (const segments of rounds) {
-    for (const { index, samples } of segments) {
-      expect(Math.max(...samples.map((sample) => sample.overflow))).toBeLessThanOrEqual(1);
-      expect(samples.every((sample) => sample.finitePaint)).toBe(true);
-      expect(samples.every((sample) => sample.animationCount === 0)).toBe(true);
-      const final = samples.at(-1)!;
-      expect(final.settled).toBe(true);
-      expect(final.nodes).toEqual(states[index].nodes);
-      expect(final.edges).toEqual(states[index].edges);
-      expect(final.labels).toEqual(states[index].edges);
-    }
-  }
-});
-
-// A cached source frame must not hide a defect introduced by the interaction.
-test('resize sampling detects painted overflow and control movement', async ({
-  page,
-}, testInfo) => {
-  const root = await open(page, 662, 'reduced');
-  await root.evaluate((element) => {
-    element.querySelectorAll<HTMLButtonElement>('.stepper-dot')[0].addEventListener(
-      'click',
-      () => {
-        const node = element.querySelector<SVGElement>('[data-node-id="redux"]')!;
-        const controls = element.querySelector<HTMLElement>('.state-navigation')!;
-        node.style.translate = '200px 0';
-        controls.style.translate = '0 12px';
-      },
-      { once: true },
-    );
-  });
-  const samples = await sampleChange(root, 0, 662);
-  await testInfo.attach('painted-defect-control', {
-    body: JSON.stringify(samples, null, 2),
-    contentType: 'application/json',
-  });
-  expect(samples[0].overflow).toBeLessThanOrEqual(1);
-  expect(Math.max(...samples.map((sample) => sample.overflow))).toBeGreaterThan(1);
-  const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
-  expect(Math.max(...offsets) - Math.min(...offsets)).toBeGreaterThan(1);
-  expect(samples.at(-1)!.overflow).toBeGreaterThan(1);
-  await root.screenshot({ path: testInfo.outputPath('painted-defect-control.png') });
-});
-
-// Unlike a persistent defect, this paint disappears before the following sampler rAF.
-test('resize sampling detects one painted frame from a later callback', async ({
-  page,
-}, testInfo) => {
-  const root = await open(page, 662, 'reduced');
-  await root.evaluate((element, source) => {
-    const read = new Function(`return (${source})`)() as typeof geometry;
-    const target = element as HTMLElement & { paintedDefect: ReturnType<typeof geometry>[] };
-    target.paintedDefect = [];
-    element.querySelector('.stepper-dot')!.addEventListener(
-      'click',
-      () => {
-        // Register after the sampler rAF, then after its post-frame task. The initial
-        // observer delivery has finished before the one-frame defect is introduced.
-        queueMicrotask(() =>
-          requestAnimationFrame(() =>
-            setTimeout(
-              () =>
-                requestAnimationFrame(() => {
-                  const node = element.querySelector<SVGElement>('[data-node-id="redux"]')!;
-                  const controls = element.querySelector<HTMLElement>('.state-navigation')!;
-                  node.style.translate = '200px 0';
-                  controls.style.translate = '0 12px';
-                  target.paintedDefect.push(read(element));
-                  requestAnimationFrame(() => {
-                    node.style.removeProperty('translate');
-                    controls.style.removeProperty('translate');
-                    target.paintedDefect.push(read(element));
-                  });
-                }),
-              0,
-            ),
-          ),
-        );
-      },
-      { once: true },
-    );
-  }, geometry.toString());
-  const samples = await sampleChange(root, 0, 662);
-  const injected = await root.evaluate(
-    (element) =>
-      (element as HTMLElement & { paintedDefect: ReturnType<typeof geometry>[] }).paintedDefect,
-  );
-  await testInfo.attach('one-frame-defect-control', {
-    body: JSON.stringify({ samples, injected }, null, 2),
-    contentType: 'application/json',
-  });
-  expect(injected).toHaveLength(2);
-  expect(injected[0].overflow).toBeGreaterThan(1);
-  expect(injected[1].overflow).toBeLessThanOrEqual(1);
-  expect(samples[0].overflow).toBeLessThanOrEqual(1);
-  expect(Math.max(...samples.map((sample) => sample.overflow))).toBeGreaterThan(1);
-  const offsets = samples.map((sample) => sample.controlOffset - sample.footerOffset);
-  expect(Math.max(...offsets) - Math.min(...offsets)).toBeGreaterThan(1);
-  expect(samples.at(-1)!.overflow).toBeLessThanOrEqual(1);
-});

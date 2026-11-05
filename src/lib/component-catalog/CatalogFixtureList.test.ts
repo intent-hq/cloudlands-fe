@@ -258,9 +258,9 @@ describe('CatalogFixtureList real previews', () => {
     dialogRender.unmount();
   });
 
-  it('renders all fourteen Toast catalog states', async () => {
+  it('renders all thirteen Toast catalog states', async () => {
     const { container } = await renderEntry('toast');
-    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(14);
+    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(13);
   });
 
   it('operates the canonical Menu, Sheet, and Accordion previews', async () => {

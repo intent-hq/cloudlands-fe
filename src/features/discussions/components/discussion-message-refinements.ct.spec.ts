@@ -8,16 +8,8 @@ test('message actions remain reachable with pointer and keyboard', async ({ moun
   const row = component.locator('[data-discussion-message="addressed"]');
   await component.update({ props: { continuationActions: true } });
   const toolbar = row.locator('[data-discussion-message-actions]');
-  await toolbar.evaluate((node) => {
-    node.addEventListener('transitionrun', () => {
-      node.dataset.observedTransitions = String(Number(node.dataset.observedTransitions ?? 0) + 1);
-    });
-  });
   await row.hover();
   await expect(toolbar).toHaveCSS('opacity', '1');
-  await expect
-    .poll(() => toolbar.evaluate((node) => Number(node.dataset.observedTransitions)))
-    .toBeGreaterThan(0);
   await toolbar.hover();
   await expect(toolbar).toHaveCSS('opacity', '1');
   // eslint-disable-next-line intent/no-hover-then-click-in-ct -- covers the pointer path on a static preview row

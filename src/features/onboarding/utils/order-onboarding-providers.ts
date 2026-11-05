@@ -1,12 +1,13 @@
 /**
- * Pure helper ordering onboarding provider cards into three tiers while
- * preserving the caller-supplied (mount-time shuffled) order within each
- * tier:
+ * Pure helper ordering onboarding provider cards into three tiers:
  *
  *   1. Immediately usable — `available === true` and `authenticated === true`.
  *   2. Installed but not logged in — `available === true` and
  *      `authenticated !== true` (logged out or auth unknown).
  *   3. Not detected — `available !== true`, or no status received yet.
+ *
+ * Within each tier, Anthropic (Claude Code) comes first, then OpenAI
+ * (Codex), then the remaining providers in catalog order.
  *
  * Tiers are computed from the last-known status only. In-flight refresh
  * flags are deliberately not an input: the agent-availability slice keeps
@@ -14,15 +15,14 @@
  * runs, so a tier-1 provider stays tier 1 until a fresh status actually
  * reports it not-installed or logged-out (sticky tiers, no demotion
  * mid-probe).
- *
- * Inputs are plain values so this stays a dependency-light pure function
- * suitable for unit testing.
  */
 export interface OnboardingProviderTierStatus {
   available?: boolean;
   /** Tri-state auth verdict: true / false / undefined (unknown). */
   authenticated?: boolean;
 }
+
+const PRIORITY_PROVIDER_IDS: readonly string[] = ['claude-code', 'codex'];
 
 /** Tier rank for a provider given its last-known status (1 = first). */
 export function getOnboardingProviderTier(
@@ -32,17 +32,26 @@ export function getOnboardingProviderTier(
   return status.authenticated === true ? 1 : 2;
 }
 
+function priorityRank(id: string): number {
+  const index = PRIORITY_PROVIDER_IDS.indexOf(id);
+  return index === -1 ? PRIORITY_PROVIDER_IDS.length : index;
+}
+
 /**
- * Stable-partition `providers` by tier rank. Within each tier the input
- * order is preserved, so the per-mount shuffle survives status updates.
+ * Order `providers` by tier, then by vendor priority. Ties keep the input
+ * (catalog) order.
  */
 export function orderOnboardingProviders<T extends { id: string }>(
   providers: readonly T[],
   statusMap: Record<string, OnboardingProviderTierStatus | undefined>,
 ): T[] {
-  const tiers: [T[], T[], T[]] = [[], [], []];
-  for (const provider of providers) {
-    tiers[getOnboardingProviderTier(statusMap[provider.id]) - 1].push(provider);
-  }
-  return tiers.flat();
+  return providers
+    .map((provider, index) => ({
+      provider,
+      index,
+      tier: getOnboardingProviderTier(statusMap[provider.id]),
+      priority: priorityRank(provider.id),
+    }))
+    .sort((a, b) => a.tier - b.tier || a.priority - b.priority || a.index - b.index)
+    .map(({ provider }) => provider);
 }

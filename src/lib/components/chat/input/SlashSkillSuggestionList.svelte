@@ -11,6 +11,10 @@
     loading?: boolean;
     error?: string | null;
     listboxId?: string;
+    /** Replaces "No matching skills" (a remote agent's machine). */
+    emptyLabel?: string;
+    /** A muted row under the list. */
+    notice?: string;
     onSelect: (skill: SkillInfo) => void;
     onDismiss?: () => void;
     onRetry?: () => void;
@@ -23,6 +27,8 @@
     loading = false,
     error = null,
     listboxId = `${componentId}-listbox`,
+    emptyLabel,
+    notice,
     onSelect,
     onDismiss,
     onRetry,
@@ -126,7 +132,7 @@
     </div>
   {:else if items.length === 0}
     <div class="slash-skill-state" role="status">
-      {m.chat_slashSkillSuggestionList_noResults_label()}
+      {emptyLabel ?? m.chat_slashSkillSuggestionList_noResults_label()}
     </div>
   {:else}
     <div
@@ -165,6 +171,9 @@
         </Tooltip>
       {/each}
     </div>
+    {#if notice}
+      <div class="slash-skill-notice" role="note">{notice}</div>
+    {/if}
   {/if}
 </div>
 
@@ -183,6 +192,12 @@
   :global(.slash-skill-option:focus-visible) {
     outline: 1px solid hsl(var(--primary-ink));
     outline-offset: -2px;
+  }
+
+  .slash-skill-notice {
+    padding: 6px 12px 8px;
+    color: hsl(var(--muted-foreground));
+    font-size: 12px;
   }
 
   .slash-skill-state {

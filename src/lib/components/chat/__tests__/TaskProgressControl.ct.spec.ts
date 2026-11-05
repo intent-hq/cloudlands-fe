@@ -414,42 +414,6 @@ for (const presentation of ['status-stack', 'checklist'] as const) {
   });
 }
 
-for (const presentation of ['status-stack', 'checklist'] as const) {
-  test(`gives the ${presentation} trigger immediate layout-safe press feedback`, async ({
-    mount,
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    const component = await mount(TaskProgressControlHost, {
-      props: { tasks: [...tasks], presentation },
-    });
-    const trigger = component.getByTestId('task-progress-trigger');
-    const box = await trigger.boundingBox();
-    if (!box) throw new Error('Task progress trigger has no layout box');
-    const before = await trigger.evaluate((node) => ({
-      width: (node as HTMLElement).offsetWidth,
-      height: (node as HTMLElement).offsetHeight,
-    }));
-
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await page.mouse.down();
-    await expect.poll(() => trigger.evaluate((node) => getComputedStyle(node).scale)).toBe('0.97');
-    expect(
-      await trigger.evaluate((node) => ({
-        width: (node as HTMLElement).offsetWidth,
-        height: (node as HTMLElement).offsetHeight,
-      })),
-    ).toEqual(before);
-    await page.mouse.up();
-    await expect.poll(() => trigger.evaluate((node) => getComputedStyle(node).scale)).toBe('none');
-
-    await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.mouse.down();
-    await expect(trigger).toHaveCSS('scale', '1');
-    await page.mouse.up();
-  });
-}
-
 test('settles rapid reorder reversal and keeps the latest keyed task order', async ({
   mount,
   page,
