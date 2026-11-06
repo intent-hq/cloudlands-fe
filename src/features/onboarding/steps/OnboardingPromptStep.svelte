@@ -327,6 +327,12 @@
     onSubmit();
   }
 
+  /** Continue from last-fetched is a submit surface too: same image guard. */
+  function handleContinueFromLastFetched() {
+    if (isProcessingImages) return;
+    onContinueFromLastFetched?.();
+  }
+
   async function processImageFilesInner(files: File[]) {
     const imageFiles: File[] = [];
     for (const file of files) {
@@ -928,7 +934,7 @@
         errorCode={onboardingCreationErrorCode}
         baseRefreshFailure={onboardingBaseRefreshFailure}
         onRetry={handleSubmit}
-        onContinue={onContinueFromLastFetched}
+        onContinue={onContinueFromLastFetched ? handleContinueFromLastFetched : undefined}
       />
     {/if}
 

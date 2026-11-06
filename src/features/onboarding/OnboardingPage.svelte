@@ -620,6 +620,11 @@
   // `error.data` of a `base-refresh-failed` create (PROTOCOL §9.2): category
   // guidance plus the base/remote that Continue from last-fetched names.
   let onboardingBaseRefreshFailure = $state<BaseRefreshFailure | null>(null);
+  // Project and base of the latest submitted create, and of the failure.
+  // Continue re-sends the same create, so it is offered only while they match.
+  let onboardingSubmittedFormKey = '';
+  let onboardingBaseRefreshFormKey = $state('');
+  const onboardingFormKey = $derived(JSON.stringify([projectSelection, selectedPRBranch]));
 
   // Live setup step statuses for WorkspaceSetupCard during creation
   type SetupStepStatus = 'pending' | 'active' | 'done';
@@ -1199,6 +1204,7 @@
     }
     onboardingCreationErrorCode = outcome?.errorCode ?? null;
     onboardingBaseRefreshFailure = outcome?.baseRefreshFailure ?? null;
+    onboardingBaseRefreshFormKey = onboardingSubmittedFormKey;
     if (outcome?.stage === 'pull') {
       onboardingPullError = outcome.error || m.onboarding_page_pullFailed_error();
       onboardingShowPullConflictDialog = true;
@@ -1278,7 +1284,7 @@
   /** Continue from last-fetched: the same create, without refreshing its base (PROTOCOL §9.2). */
   function handleOnboardingContinue() {
     const failure = onboardingBaseRefreshFailure;
-    if (!failure) return;
+    if (!failure || onboardingBaseRefreshFormKey !== onboardingFormKey) return;
     void handleOnboardingSubmit({ baseRef: failure.baseRef, remote: failure.remote });
   }
 
@@ -1375,6 +1381,7 @@
     onboardingCreationError = null;
     onboardingCreationErrorCode = null;
     onboardingBaseRefreshFailure = null;
+    onboardingSubmittedFormKey = onboardingFormKey;
     setupRepoStatus = 'active';
     setupBranchStatus = 'active';
     setupAgentStatus = 'pending';
@@ -1819,7 +1826,10 @@
                           {onboardingCreationError}
                           {onboardingCreationErrorCode}
                           {onboardingBaseRefreshFailure}
-                          onContinueFromLastFetched={handleOnboardingContinue}
+                          onContinueFromLastFetched={onboardingBaseRefreshFormKey ===
+                          onboardingFormKey
+                            ? handleOnboardingContinue
+                            : undefined}
                           {projectSelection}
                           {onboardingGithubRepoInfo}
                           {selectedPRBranch}

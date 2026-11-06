@@ -395,4 +395,47 @@ describe('CompactWorkspaceInitializer shared creation error box', () => {
     await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(2));
     expect(mocks.create.mock.calls[1][0]).not.toHaveProperty('skipBaseRefresh');
   });
+
+  it.each([
+    ['branch', (picker: Picker) => picker.onBranchChange?.({ detail: { branch: 'develop' } })],
+    [
+      'repository',
+      (picker: Picker) =>
+        picker.onRepoChange?.({
+          detail: { path: '/tmp/other-repo', type: 'local', isValid: true, branch: 'main' },
+        }),
+    ],
+  ])(
+    'stops offering Continue once the %s changes after a base-refresh failure',
+    async (_, change) => {
+      mocks.create.mockResolvedValueOnce({
+        ok: false,
+        error: "Couldn't update main from origin: Could not resolve host: github.com",
+        errorCode: 'base-refresh-failed',
+        baseRefreshFailure: {
+          category: 'network',
+          detail: 'Could not resolve host: github.com',
+          baseRef: 'main',
+          remote: 'origin',
+        },
+      });
+
+      seedAutoCreatePrefill();
+      const { component } = render(CompactWorkspaceInitializer, { props: { isExpanded: true } });
+      await component.applyPrefill();
+      expect(await screen.findByText('Continue from last-fetched main')).toBeTruthy();
+
+      change(
+        (window as unknown as { __mockRepoAndBranchPicker: Picker }).__mockRepoAndBranchPicker,
+      );
+
+      await waitFor(() => expect(screen.queryByText('Continue from last-fetched main')).toBeNull());
+      expect(mocks.create).toHaveBeenCalledTimes(1);
+    },
+  );
 });
+
+type Picker = {
+  onRepoChange?: (event: { detail: Record<string, unknown> }) => void;
+  onBranchChange?: (event: { detail: { branch: string } }) => void;
+};

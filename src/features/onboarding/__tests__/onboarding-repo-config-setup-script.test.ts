@@ -1640,6 +1640,20 @@ describe('onboarding model picker (initial Developer agent)', () => {
       );
     });
 
+    it('stops offering Continue once the branch changes after the failure', async () => {
+      mocks.workspaceCreate.mockResolvedValueOnce(failedCreate);
+      renderPage();
+      selectLocalRepo('/repo/a');
+      captured().setInputValue('Build the thing');
+      captured().onSubmit();
+      await waitFor(() => expect(step().onContinueFromLastFetched).toBeTypeOf('function'));
+
+      selectLocalRepo('/repo/a', { branch: 'develop' });
+
+      await waitFor(() => expect(step().onContinueFromLastFetched).toBeUndefined());
+      expect(mocks.workspaceCreate).toHaveBeenCalledTimes(1);
+    });
+
     it('a plain failure carries no base-refresh data', async () => {
       mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'Internal error: boom' });
       renderPage();

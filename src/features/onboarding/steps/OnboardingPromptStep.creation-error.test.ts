@@ -59,6 +59,12 @@ vi.mock('svelte-fa', async () => ({
   ).default,
 }));
 
+const imageMocks = vi.hoisted(() => ({ pending: new Promise<never>(() => {}) }));
+vi.mock('$lib/components/chat/input/image-context-items', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  imageFilesToContextItems: vi.fn(() => imageMocks.pending),
+}));
+
 import OnboardingPromptStep from './OnboardingPromptStep.svelte';
 
 type Props = ComponentProps<typeof OnboardingPromptStep>;
@@ -138,6 +144,30 @@ describe('OnboardingPromptStep creation error box', () => {
     await fireEvent.click(continueButton);
     expect(onContinueFromLastFetched).toHaveBeenCalledOnce();
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('ignores Continue while an image is still converting, like every submit surface', async () => {
+    const onContinueFromLastFetched = vi.fn();
+    const { container } = render(OnboardingPromptStep, {
+      props: props({
+        onboardingCreationError: "Couldn't update main from origin: Could not resolve host",
+        onboardingCreationErrorCode: 'base-refresh-failed',
+        onboardingBaseRefreshFailure: {
+          category: 'network',
+          detail: 'Could not resolve host: github.com',
+          baseRef: 'main',
+          remote: 'origin',
+        },
+        onContinueFromLastFetched,
+      }),
+    });
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const image = new File(['png'], 'shot.png', { type: 'image/png' });
+    await fireEvent.change(input, { target: { files: [image] } });
+
+    const alert = container.querySelector('[role="alert"]') as HTMLElement;
+    await fireEvent.click(within(alert).getByText('Continue from last-fetched main'));
+    expect(onContinueFromLastFetched).not.toHaveBeenCalled();
   });
 
   it('shows the readable cause and Try again without Continue for any other error', () => {

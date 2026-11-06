@@ -1796,7 +1796,22 @@
     message: string;
     errorCode: string | null;
     baseRefreshFailure: BaseRefreshFailure | null;
+    /** The repository and base the failed create used; see `createFormKey`. */
+    formKey: string;
   } | null = $state(null);
+  // Repository and base of the latest submitted create. Continue re-sends the
+  // same create, so it is offered only while the form still matches it.
+  let submittedFormKey = '';
+  const createFormKey = $derived(
+    JSON.stringify([
+      repoType,
+      repoPath,
+      githubUrl,
+      branch,
+      selectedPRBranch,
+      selectedPRTargetBranch,
+    ]),
+  );
   let controlsContainer: HTMLDivElement | null = $state(null);
   let richTextarea: RichTextarea | null = $state(null);
 
@@ -2228,7 +2243,10 @@
 
   /** Continue from last-fetched: the same create, without refreshing its base (PROTOCOL §9.2). */
   async function handleContinueFromLastFetched() {
-    const failure = createFailure?.message === error ? createFailure?.baseRefreshFailure : null;
+    const failure =
+      createFailure?.message === error && createFailure.formKey === createFormKey
+        ? createFailure.baseRefreshFailure
+        : null;
     if (!failure) return;
     await submitWorkspace(undefined, { baseRef: failure.baseRef, remote: failure.remote });
   }
@@ -2315,6 +2333,7 @@
     pullContinuation = null;
     isCreating = true;
     error = null;
+    submittedFormKey = createFormKey;
 
     const initializationResourceId = `${admission}:${generation}`;
     let handedOff = false;
@@ -2623,6 +2642,7 @@
           message,
           errorCode: outcome.errorCode ?? null,
           baseRefreshFailure: outcome.baseRefreshFailure ?? null,
+          formKey: submittedFormKey,
         };
       } else {
         error = failureMessage
@@ -3734,7 +3754,9 @@
               errorCode={createFailure.errorCode}
               baseRefreshFailure={createFailure.baseRefreshFailure}
               onRetry={isCreating ? undefined : handleSubmit}
-              onContinue={isCreating ? undefined : handleContinueFromLastFetched}
+              onContinue={isCreating || createFailure.formKey !== createFormKey
+                ? undefined
+                : handleContinueFromLastFetched}
             />
           </div>
         {:else if error}
