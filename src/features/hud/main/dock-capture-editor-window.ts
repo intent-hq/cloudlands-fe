@@ -35,6 +35,7 @@ import {
   type DockCaptureEditorSnapshot,
 } from '../../../shared/dock-capture-editor';
 import {
+  DOCK_MEDIA_OUTPUT_VERSION,
   DockMediaEditSchema,
   DockMediaSaveRequestSchema,
   type DockMediaSaveRequest,
@@ -682,6 +683,11 @@ async function save(
     expectedEditRevision,
     edit: { ...parsed.data.edit, revision: expectedEditRevision },
     ...(candidate && token ? { replacement: { candidateToken: token, source: candidate } } : {}),
+    // Only the output owner's admitted version vouches for blur strokes and sticky
+    // notes; never the editor's word. Without it the schema refuses such an edit.
+    ...(snapshot.output?.version === DOCK_MEDIA_OUTPUT_VERSION
+      ? { outputVersion: DOCK_MEDIA_OUTPUT_VERSION }
+      : {}),
   };
   if (!DockMediaSaveRequestSchema.safeParse(canonical).success) return failed();
   const requestId = randomUUID();

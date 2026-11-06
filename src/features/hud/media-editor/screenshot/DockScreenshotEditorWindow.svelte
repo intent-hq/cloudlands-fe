@@ -29,6 +29,7 @@
     DockCaptureEditorNoteDictationUpdate,
   } from '$shared/dock-capture-editor';
   import {
+    DOCK_MEDIA_OUTPUT_VERSION,
     defaultDockMediaEdit,
     DockMediaEditSchema,
     DockMediaSourceSchema,
@@ -330,7 +331,19 @@
     active = false;
   });
   $effect(() => onDirtyChange?.(dirty));
-  const canSave = $derived(!!onSave && !!snapshot.output?.ready && !!edits);
+  // Blur strokes and sticky notes need the output owner's admitted version; an older
+  // pipeline would drop them, so such an edit is not saved there.
+  const needsNewOutput = $derived(
+    !!edits &&
+      (!!edits.draft.edit.blurStrokes?.length ||
+        edits.draft.edit.marks.some(
+          (mark) => mark.geometry.kind === 'text' && mark.geometry.style === 'sticky',
+        )),
+  );
+  const outputAdmitted = $derived(snapshot.output?.version === DOCK_MEDIA_OUTPUT_VERSION);
+  const canSave = $derived(
+    !!onSave && !!snapshot.output?.ready && !!edits && (!needsNewOutput || outputAdmitted),
+  );
 
   async function save() {
     if (!edits || !onSave || !canSave || saving || retaking || noteSession) return;
