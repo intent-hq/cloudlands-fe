@@ -6,6 +6,7 @@ import {
 } from '../../../../test/catalog-preview-ipc';
 import { mockInvoke, overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { store } from '$store/renderer/store';
+import { setupStartOnPreview, startOnPreviewMachine } from './start-on.preview-fixtures';
 import {
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerLastSelectedRepo,
@@ -20,7 +21,13 @@ import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 
 type WorkspaceFormScenario =
-  'default' | 'long' | 'empty' | 'config-error' | 'orchestration' | 'many-repos';
+  | 'default'
+  | 'long'
+  | 'empty'
+  | 'config-error'
+  | 'orchestration'
+  | 'many-repos'
+  | 'remote-attachments';
 
 export function setupWorkspaceFormPreview(
   scenario: WorkspaceFormScenario,
@@ -111,6 +118,13 @@ export function setupWorkspaceFormPreview(
       })),
     );
   }
+  if (scenario === 'remote-attachments') {
+    restores.push(
+      setupStartOnPreview([startOnPreviewMachine('d-mac', 'Mac mini', 'connected', ['gpt-5.4'])], {
+        remoteBackend: false,
+      }),
+    );
+  }
   if (scenario === 'many-repos') {
     const repositories = Array.from({ length: 12 }, (_, index) => {
       const name = `history-repo-${String(index + 1).padStart(2, '0')}`;
@@ -152,6 +166,7 @@ export function setupWorkspaceFormPreview(
         selectedProvider: 'codex',
         selectedModel: 'gpt-5.4',
         modelWasOverridden: true,
+        ...(scenario === 'remote-attachments' ? { startOnMachineId: 'd-mac' } : {}),
       }),
     );
   }

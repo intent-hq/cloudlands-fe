@@ -368,3 +368,40 @@ test('a missing repository keeps creation disabled without losing the draft', as
     contentType: 'image/png',
   });
 });
+
+const LAYOUT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAeklEQVR42g3JIQEEIRAAwE93IQixAZAIAiCQBNgAyBFEINEzdn5fKCFCCzNkEG74fVWpomrVrLJS3fqiK110rZtddrrbXwxliKENc8jBcMeLpSyxtGUuuVjuepFKitTSTJmkmy+2ssXWtrnlZrv7xVGOONoxjzwc9/gDMGt4gVaPnpMAAAAASUVORK5CYII=',
+  'base64',
+);
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`attachments keep the first agent on the chosen machine (${theme})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1100, height: 640 });
+    if (theme === 'dark')
+      await page.addInitScript(() => document.documentElement.classList.add('dark'));
+    await mount(WorkspaceForm, { props: { scenario: 'remote-attachments', modal: true } });
+    if (theme === 'dark') await page.evaluate(() => document.documentElement.classList.add('dark'));
+    const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+    const machine = dialog.getByRole('button', { name: /^Machine / });
+    await expect(machine).toContainText('Mac mini');
+    await dialog.locator('[contenteditable=true]').fill('Fix the layout in the screenshot');
+    await dialog
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles([
+        { name: 'layout.png', mimeType: 'image/png', buffer: LAYOUT_PNG },
+        { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Steps to reproduce') },
+      ]);
+    await expect(dialog.getByTestId('new-workspace-attachments')).toBeVisible();
+    await expect(dialog.getByTestId('start-on-locked-reason')).toHaveCount(0);
+    await expect(machine).toBeEnabled();
+    await expect(machine).toContainText('Mac mini');
+    await testInfo.attach(`remote-attachments-${theme}`, {
+      body: await page.screenshot({ path: testInfo.outputPath(`remote-attachments-${theme}.png`) }),
+      contentType: 'image/png',
+    });
+  });
+}
