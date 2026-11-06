@@ -27,8 +27,21 @@ export interface DockShortcutContext {
    * select or route to a destination; with no live recording there, do nothing.
    */
   recordingOwnerOnly?: boolean;
+  /**
+   * Set by main only: the open shortcut was pressed again while the dock already had the
+   * keyboard. Close it as Escape would (the pinned conversation, or collapse), unless a
+   * recording, an annotate session or dictation is live; never retarget or select.
+   */
+  toggleClose?: boolean;
 }
 /** A focus-dock payload that only drives the live recording (see `recordingOwnerOnly`). */
+export function isDockToggleClose(value: unknown): boolean {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { toggleClose?: unknown }).toggleClose === true
+  );
+}
 export function isDockRecordingOwnerOnly(value: unknown): boolean {
   return (
     !!value &&

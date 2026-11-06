@@ -1,5 +1,9 @@
 import { readDockSavedDestination } from './dock-context-links-saga';
-import { hudDeactivated, dockPlacementCommandRequested } from '../../hud/hud-slice';
+import {
+  hudDeactivated,
+  dockPlacementCommandRequested,
+  dockCloseRequested,
+} from '../../hud/hud-slice';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { takeLatestFromSelector } from '@themislib/themis/saga';
 import { takeEvery } from 'typed-redux-saga';
@@ -66,6 +70,18 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     !valid(context)
   )
     return;
+  // The open shortcut again, while the dock has the keyboard: close as Escape would,
+  // unless a recording, an annotate session or dictation is live (then nothing changes).
+  if (context.toggleClose === true) {
+    if (context.action !== 'focus') return;
+    const dock = appStore.state.dockConversation;
+    const evidence =
+      dock.workspaceId && dock.agentId ? evidenceOf(dock.workspaceId, dock.agentId) : undefined;
+    const live =
+      !!dock.nativeSpeech.activeId || !!recordingDockClip(evidence) || !!evidence?.annotation;
+    if (!live) yield* put(dockCloseRequested());
+    return;
+  }
   // While a recording hides the notch: only that recording's own pair, never routed.
   if (context.recordingOwnerOnly === true) {
     yield* recordingOwnerAction(context);

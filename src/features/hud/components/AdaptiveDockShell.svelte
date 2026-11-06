@@ -56,6 +56,7 @@
     placement,
     onPlacementCommand,
     focusRequest = 0,
+    closeRequest = 0,
     placementError = false,
     dragStartResult,
     resizeStartResult,
@@ -84,6 +85,8 @@
     placement: DockPlacementSnapshot;
     onPlacementCommand: (command: DockPlacementCommand) => void;
     focusRequest?: number;
+    /** Increments when the open shortcut is pressed again: close as Escape would. */
+    closeRequest?: number;
     placementError?: Parameters<typeof dockPlacementFailureMessage>[0];
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
@@ -719,6 +722,11 @@
       return;
     }
     event.preventDefault();
+    closeLikeEscape();
+  }
+  /** What Escape does once nothing else claims it: close the conversation, or collapse. */
+  function closeLikeEscape(): void {
+    if (placement.captureHidden) return;
     if (pinned) {
       onCloseConversation?.();
       return;
@@ -729,6 +737,13 @@
     }
     dismiss();
   }
+  let closeRequestSeen = untrack(() => closeRequest);
+  $effect(() => {
+    const request = closeRequest;
+    if (request === closeRequestSeen) return;
+    closeRequestSeen = request;
+    untrack(closeLikeEscape);
+  });
   onMount(() => {
     reducedMotion = prefersReducedMotion();
     const stopMotion = onReducedMotionChange((value) => {
