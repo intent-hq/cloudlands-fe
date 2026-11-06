@@ -39,6 +39,8 @@
   import DockCompanionContent from './DockCompanionContent.svelte';
   import DockEdgeConversation from './DockEdgeConversation.svelte';
   import type { DockEdgeOpenOrigin } from '$features/hud/utils/dock-edge-shell';
+  import type { DockRecordingIndicator as RecordingState } from '$features/hud/utils/dock-recording-indicator';
+  import DockRecordingIndicator from './DockRecordingIndicator.svelte';
   import DockUpdateStatus from './DockUpdateStatus.svelte';
   import { dockStatusGroups } from '$features/hud/utils/dock-status-groups';
   import { dockPlacementFailureMessage } from '$features/hud/utils/dock-placement-failure';
@@ -49,6 +51,9 @@
   import type { DockMachineOption } from './dock-machine-types';
   let {
     workspaces,
+    recording = null,
+    recordingStopping = false,
+    onStopRecording,
     machines,
     machineId = '',
     machineSwitching = null,
@@ -72,6 +77,9 @@
     onHomeDismiss,
   }: {
     workspaces: DockWorkspaceView[];
+    recording?: RecordingState | null;
+    recordingStopping?: boolean;
+    onStopRecording?: () => void;
     machines?: DockMachineOption[];
     machineId?: string;
     machineSwitching?: string | null;
@@ -198,7 +206,9 @@
           : expandedByUser || dockIntro.hold || (!floating && pending))),
   );
   const statusGroups = $derived(dockStatusGroups(workspaces));
-  const compactWingWidth = $derived(dockCompactWingWidth(statusGroups.length));
+  const compactWingWidth = $derived(
+    Math.max(dockCompactWingWidth(statusGroups.length), recording ? 120 : 0),
+  );
   const rowLimit = 5;
   const conversationResize = useDockConversationResize(
     () => placement,
@@ -210,6 +220,7 @@
   const layout = $derived(
     getDockShellLayout(placement, {
       surfaceExpanded,
+      recording: !!recording,
       conversationOpen: pinned,
       conversationSize: conversationResize.size,
       reveal,
@@ -592,6 +603,15 @@
       if (!disposed) pending = false;
     }
   }
+  function reopenRecording(): void {
+    if (!recording || recording.workspaceId !== conversationWorkspaceId) return;
+    command({ action: 'focus' });
+    conversationPresence.show();
+    expandedByUser = true;
+    keyboardOpen = true;
+    composerAsk.open = recording.workspaceId;
+    composerAsk.request += 1;
+  }
   function openWorkspace(id: string): void {
     if (onOpenConversation) {
       command({ action: 'focus' });
@@ -894,6 +914,7 @@
         <header
           class="companion-header"
           class:side-header={edge}
+          class:recording-header={edge && !!recording}
           style:padding-left={heldGripCenter ? `${heldGripCenter.x - 14}px` : undefined}
           style:padding-top={heldGripCenter ? `${heldGripCenter.y - 14}px` : undefined}
           style:padding-bottom={heldGripCenter ? `${26 - heldGripCenter.y}px` : undefined}
@@ -970,7 +991,17 @@
           >
             <span class="grip-mark"><Logo width={16} /></span>
           </Button>
-          {#if !edge}
+          {#if recording}
+            <div class="header-recording" class:vertical={edge} style:opacity={dragging ? 0 : 1}>
+              <DockRecordingIndicator
+                {recording}
+                stopping={recordingStopping}
+                vertical={edge}
+                onOpen={reopenRecording}
+                onStop={onStopRecording}
+              />
+            </div>
+          {:else if !edge}
             <div class="header-state" style:opacity={dragging ? 0 : 1}>
               <DockUpdateStatus groups={statusGroups} />
             </div>
@@ -1015,6 +1046,7 @@
     <DockSideEntries
       {workspaces}
       railHeight={shown.height}
+      {headerHeight}
       {side}
       railX={placement.surface.x + shown.x}
       railY={placement.surface.y + shown.y}
@@ -1182,6 +1214,25 @@
   }
   .grip-pressed .grip-mark {
     opacity: 0.72;
+  }
+  .header-recording {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+  }
+  .notch .header-recording {
+    position: absolute;
+    right: var(--header-wing-right);
+    margin: 0;
+  }
+  .header-recording.vertical {
+    margin: 0;
+  }
+  .side-header.recording-header {
+    height: var(--header-height);
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 4px;
   }
   .header-state {
     margin-left: auto;

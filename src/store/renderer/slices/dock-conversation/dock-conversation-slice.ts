@@ -173,9 +173,9 @@ export const dockEvidenceToolSelectRequested = createAction<
 export const dockEvidenceMouseModeRequested = createAction<Pair>(
   'dockConversation/evidenceMouseModeRequested',
 );
-export const dockEvidenceRecordToggleRequested = createAction<Pair>(
-  'dockConversation/evidenceRecordToggleRequested',
-);
+export const dockEvidenceRecordToggleRequested = createAction<
+  [workspaceId: string, agentId: string, expectedClipId?: string]
+>('dockConversation/evidenceRecordToggleRequested');
 /** The composer's Screenshot/Record state, mirrored on the annotate tool bar (saga only). */
 export const dockEvidenceBarMediaChanged = createAction<
   [workspaceId: string, agentId: string, media: DockAnnotationMediaState]
@@ -308,8 +308,9 @@ export const dockEvidenceDictationFinished = createAction<
   ]
 >('dockConversation/evidenceDictationFinished');
 /** Add or update one clip by id; null removes that clip only. */
-export const dockEvidenceRecordingBatchCleared = createAction<[workspaceId: string, agentId: string, imageId: string]>(
-  'dockConversation/recordingBatchCleared');
+export const dockEvidenceRecordingBatchCleared = createAction<
+  [workspaceId: string, agentId: string, imageId: string]
+>('dockConversation/recordingBatchCleared');
 export const dockMediaEditorOpenRequested = createAction<
   [workspaceId: string, agentId: string, logicalAttachmentId: string]
 >('dockConversation/mediaEditorOpenRequested');
@@ -321,7 +322,13 @@ export const dockMediaEditSaveSettled = createAction<
 >('dockConversation/mediaEditSaveSettled');
 /** CAS also protects a failed write's rollback from replacing a newer edit/source. */
 export const dockEvidenceMediaChanged = createAction<
-  [workspaceId: string, agentId: string, logicalId: string, expected: DockSavedMedia | null, next: DockSavedMedia]
+  [
+    workspaceId: string,
+    agentId: string,
+    logicalId: string,
+    expected: DockSavedMedia | null,
+    next: DockSavedMedia,
+  ]
 >('dockConversation/evidenceMediaChanged');
 export const dockEvidenceClipChanged = createAction<
   [workspaceId: string, agentId: string, clipId: string, clip: DockEvidenceClip | null]
@@ -928,8 +935,11 @@ dockConversationReducer.with(
       };
     }),
 );
-dockConversationReducer.with(dockEvidenceRecordingBatchCleared, (state, { payload: [ws, agent, imageId] }) =>
-  withEvidence(state, ws, agent, (e) => clearDockRecordingBatch(e, imageId)));
+dockConversationReducer.with(
+  dockEvidenceRecordingBatchCleared,
+  (state, { payload: [ws, agent, imageId] }) =>
+    withEvidence(state, ws, agent, (e) => clearDockRecordingBatch(e, imageId)),
+);
 dockConversationReducer.with(
   dockEvidenceClipChanged,
   (state, { payload: [ws, agent, clipId, clip] }) =>

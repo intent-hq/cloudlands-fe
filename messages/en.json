@@ -8447,5 +8447,6 @@
   "settings_dockLab_moveHint": "Drag the Dock by its logo or header to move it to another position on your screen.",
   "dock_logo_open_label": "Open Intent",
   "dock_logo_menu_hint": "Open Intent · Right-click or press ↓ to switch machine · Drag to move",
-  "dock_logo_move_hint": "Open Intent · Drag to move"
+  "dock_logo_move_hint": "Open Intent · Drag to move",
+  "dock_recordingIndicator_open": "{status} · {elapsed} — Show recording controls"
 }

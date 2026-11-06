@@ -9,6 +9,7 @@ import {
 
 interface DockShellLayoutInput {
   surfaceExpanded: boolean;
+  recording?: boolean;
   conversationOpen?: boolean;
   conversationSize?: { width: number; height: number };
   reveal: number;
@@ -48,6 +49,7 @@ export function getDockShellLayout(
   placement: DockPlacementSnapshot,
   {
     surfaceExpanded,
+    recording = false,
     conversationOpen = false,
     conversationSize = DOCK_CONVERSATION_DEFAULT_SIZE,
     reveal,
@@ -69,13 +71,13 @@ export function getDockShellLayout(
     !dragging && placement.placement.kind === 'notch'
       ? getDockCompactNotchSize(placement.cutout, compactWingWidth)
       : null;
-  const headerHeight = compactNotchSize?.height ?? 40;
+  const headerHeight = edge && recording ? 104 : (compactNotchSize?.height ?? 40);
   // Cap the viewport, not the rendered list: every workspace remains scrollable.
   // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40) and the
   // frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
   const overviewHeight =
     Math.min(workspaceCount, rowLimit) * 52 + 7 + 40 + 16 + (intro ? DOCK_INTRO_HEIGHT : 0);
-  const railHeight = 48 + (Math.min(workspaceCount, rowLimit) + 1) * 32;
+  const railHeight = (edge ? headerHeight + 8 : 48) + (Math.min(workspaceCount, rowLimit) + 1) * 32;
   const full = placement.surface;
   const desiredWidth = dragging
     ? 224

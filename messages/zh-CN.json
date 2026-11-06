@@ -8447,5 +8447,6 @@
   "settings_dockLab_moveHint": "拖动 Dock 的标志或标题栏，可将其移至屏幕上的其他位置。",
   "dock_logo_open_label": "打开 Intent",
   "dock_logo_menu_hint": "打开 Intent · 右键点击或按 ↓ 切换设备 · 拖动以移动",
-  "dock_logo_move_hint": "打开 Intent · 拖动以移动"
+  "dock_logo_move_hint": "打开 Intent · 拖动以移动",
+  "dock_recordingIndicator_open": "{status} · {elapsed} — 显示录制控件"
 }

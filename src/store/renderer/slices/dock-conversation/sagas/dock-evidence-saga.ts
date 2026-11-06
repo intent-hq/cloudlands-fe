@@ -1,3 +1,4 @@
+import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
 import { DockMediaSourceSchema } from '$shared/dock-media-edit';
 import { dockMediaCaptureBatches, dockMediaCapturedMarks } from '$shared/dock-media-source';
 /**
@@ -173,7 +174,9 @@ export function setDockDictationMarkSink(sink: DictationMarkSink | null): void {
 }
 
 /** Same exact draft/principal-scoped adapter used by capture, never a new session. */
-export function dockMediaNativeService(): DockEvidenceNativeService | null { return nativeService; }
+export function dockMediaNativeService(): DockEvidenceNativeService | null {
+  return nativeService;
+}
 
 export function evidenceOf(workspaceId: string, agentId: string): DockComposerEvidence | undefined {
   return getItem(appStore.state.dockConversation.evidence, dockEvidenceId(workspaceId, agentId));
@@ -1001,11 +1004,12 @@ function* closeRecordingBar(workspaceId: string, agentId: string): SagaGenerator
 }
 
 function* toggleRecording({
-  payload: [workspaceId, agentId],
+  payload: [workspaceId, agentId, expectedClipId],
 }: ReturnType<typeof dockEvidenceRecordToggleRequested>): SagaGenerator<void> {
   if (!activePair(workspaceId, agentId)) return;
   const evidence = evidenceOf(workspaceId, agentId);
   const clip = recordingDockClip(evidence);
+  if (recordingToggleIntent(clip?.id, expectedClipId) === 'ignore') return;
   const service = nativeService;
   if (clip) {
     if (!service) return;
@@ -1187,16 +1191,48 @@ function* placeFinishedClip(
     );
     if (!clipOf(workspaceId, agentId, clipId)) return;
     const original = file.original;
-    const sourcePlacement = original ? yield* call(placeAttachmentViaTransport, workspaceId,
-      `clip-${clipId.slice(0, 8)}-original.mp4`,
-      { sourcePath: original.sourcePath, mimeType: 'video/mp4', idempotencyKey: mintPlacementIdempotencyKey() },
-      undefined, undefined, () => !!clipOf(workspaceId, agentId, clipId) && isDockBindingCurrent(binding)) : placed;
+    const sourcePlacement = original
+      ? yield* call(
+          placeAttachmentViaTransport,
+          workspaceId,
+          `clip-${clipId.slice(0, 8)}-original.mp4`,
+          {
+            sourcePath: original.sourcePath,
+            mimeType: 'video/mp4',
+            idempotencyKey: mintPlacementIdempotencyKey(),
+          },
+          undefined,
+          undefined,
+          () => !!clipOf(workspaceId, agentId, clipId) && isDockBindingCurrent(binding),
+        )
+      : placed;
     if (!clipOf(workspaceId, agentId, clipId) || !isDockBindingCurrent(binding)) return;
-    const source = original ? DockMediaSourceSchema.parse({ id: `${clipId}:original`, revision: 0,
-      kind: 'recording', attachmentId: sourcePlacement.attachmentId, path: sourcePlacement.path,
-      durationMs, width: original.width, height: original.height, audio: original.hasMicAudio === true ? 'available' : original.hasMicAudio === false ? 'none' : 'unknown',
-      visuals: 'clean', batches: dockMediaCaptureBatches(original.clearAtMs, durationMs) }) : null;
-    if (source) source.capturedMarks = dockMediaCapturedMarks(evidenceOf(workspaceId, agentId)!, source, clipId);
+    const source = original
+      ? DockMediaSourceSchema.parse({
+          id: `${clipId}:original`,
+          revision: 0,
+          kind: 'recording',
+          attachmentId: sourcePlacement.attachmentId,
+          path: sourcePlacement.path,
+          durationMs,
+          width: original.width,
+          height: original.height,
+          audio:
+            original.hasMicAudio === true
+              ? 'available'
+              : original.hasMicAudio === false
+                ? 'none'
+                : 'unknown',
+          visuals: 'clean',
+          batches: dockMediaCaptureBatches(original.clearAtMs, durationMs),
+        })
+      : null;
+    if (source)
+      source.capturedMarks = dockMediaCapturedMarks(
+        evidenceOf(workspaceId, agentId)!,
+        source,
+        clipId,
+      );
     yield* put(
       setComposerContextItems(
         workspaceId,
@@ -1219,9 +1255,23 @@ function* placeFinishedClip(
         durationMs,
         hasMicAudio: file.hasMicAudio,
         contextItemId,
-        ...(source ? { media: { source, saved: null, transcript: source.audio !== 'none'
-          ? { status: 'pending' as const, revision: 0, words: [] }
-          : { status: 'unavailable' as const, revision: 0, words: [], error: 'no-audio-track' } } } : {}),
+        ...(source
+          ? {
+              media: {
+                source,
+                saved: null,
+                transcript:
+                  source.audio !== 'none'
+                    ? { status: 'pending' as const, revision: 0, words: [] }
+                    : {
+                        status: 'unavailable' as const,
+                        revision: 0,
+                        words: [],
+                        error: 'no-audio-track',
+                      },
+              },
+            }
+          : {}),
         // Playback derives only from the daemon-acknowledged placement path.
         ...(isDockAttachmentPath(placed.path) ? { path: placed.path } : {}),
       }),
