@@ -1180,6 +1180,90 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
     });
   });
 
+  describe('base-refresh failures and Continue (PROTOCOL §9.2)', () => {
+    const baseRefreshFailure = {
+      category: 'auth-required' as const,
+      detail: 'git@github.com: Permission denied (publickey).',
+      baseRef: 'main',
+      remote: 'origin',
+    };
+
+    it('publishes the base-refresh failure data on the correlated outcome', async () => {
+      create.mockResolvedValue({
+        ok: false,
+        error: "Couldn't update main from origin: Permission denied (publickey)",
+        errorCode: 'base-refresh-failed',
+        baseRefreshFailure,
+      });
+      const action = workspaceInitializationRequested(request(), consumer);
+      appStore.dispatch(action);
+
+      await expect(action.promise).rejects.toThrow("Couldn't update main from origin");
+      expect(outcome()).toMatchObject({
+        status: 'failure',
+        stage: 'create',
+        error: "Couldn't update main from origin: Permission denied (publickey)",
+        errorCode: 'base-refresh-failed',
+        baseRefreshFailure,
+      });
+    });
+
+    it('Continue re-sends the onboarding create with skipBaseRefresh and warns once it opens', async () => {
+      const onboardingConsumer = { id: 'onboarding-1', resourceId: 'resource-onboarding' };
+      const action = workspaceInitializationSubmitted(
+        onboardingSubmission({ continueFromLastFetched: { baseRef: 'main', remote: 'origin' } }),
+        onboardingConsumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create).toHaveBeenCalledOnce();
+      expect(create.mock.calls[0]?.[0]).toMatchObject({
+        repositoryPath: '/repo',
+        baseRef: 'main',
+        skipBaseRefresh: true,
+      });
+      expect(notify.warning).toHaveBeenCalledWith(
+        'Started from main as last fetched from origin; it may be out of date.',
+      );
+    });
+
+    it('Continue re-sends the compact create with skipBaseRefresh', async () => {
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ continueFromLastFetched: { baseRef: 'main', remote: 'origin' } }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0]?.[0]).toMatchObject({ skipBaseRefresh: true });
+      expect(notify.warning).toHaveBeenCalledWith(
+        'Started from main as last fetched from origin; it may be out of date.',
+      );
+    });
+
+    it('does not warn when a Continue create fails', async () => {
+      create.mockResolvedValue({ ok: false, error: 'boom' });
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ continueFromLastFetched: { baseRef: 'main', remote: 'origin' } }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).rejects.toThrow('boom');
+      expect(notify.warning).not.toHaveBeenCalled();
+    });
+
+    it('never sends skipBaseRefresh or warns for an ordinary create', async () => {
+      const action = workspaceInitializationSubmitted(compactSubmission(), consumer);
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0]?.[0]).not.toHaveProperty('skipBaseRefresh');
+      expect(notify.warning).not.toHaveBeenCalled();
+    });
+  });
+
   it('rejects stale admission before pull or create starts', async () => {
     const action = workspaceInitializationRequested(
       request({

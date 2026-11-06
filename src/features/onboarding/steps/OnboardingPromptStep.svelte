@@ -46,6 +46,7 @@
   import { isRemoteBackend } from '$lib/components/chat/input/attachment-placement';
   import { shouldTreatAsNewRepo } from '$features/onboarding/utils/treat-as-new-repo';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
+  import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 
   const INITIAL_AGENT_SPECIALIST_ID = DEFAULT_NEW_WORKSPACE_SPECIALIST_ID;
 
@@ -62,6 +63,10 @@
     onboardingCreationError: string | null;
     /** Daemon `error.data.code` for a failed create (PROTOCOL §9.1, monorepo#826). */
     onboardingCreationErrorCode: string | null;
+    /** `error.data` of a `base-refresh-failed` create (PROTOCOL §9.2). */
+    onboardingBaseRefreshFailure?: BaseRefreshFailure | null;
+    /** Continue from last-fetched; offered only for `base-refresh-failed`. */
+    onContinueFromLastFetched?: () => void;
 
     // Project context
     projectSelection: ProjectSelection | null;
@@ -140,6 +145,8 @@
     isOnboardingEnhancing,
     onboardingCreationError,
     onboardingCreationErrorCode,
+    onboardingBaseRefreshFailure = null,
+    onContinueFromLastFetched,
     projectSelection,
     onboardingGithubRepoInfo,
     selectedPRBranch,
@@ -919,7 +926,9 @@
       <WorkspaceCreationError
         message={onboardingCreationError}
         errorCode={onboardingCreationErrorCode}
+        baseRefreshFailure={onboardingBaseRefreshFailure}
         onRetry={handleSubmit}
+        onContinue={onContinueFromLastFetched}
       />
     {/if}
 

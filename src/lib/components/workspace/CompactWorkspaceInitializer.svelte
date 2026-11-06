@@ -74,8 +74,11 @@
     WorkspaceInitializationOutcome,
     WorkspaceInitializerAgentSettings,
     WorkspaceInitializationStagedItem,
+    WorkspaceInitializationStaleBase,
     WorkspaceInitializerRepoSelection,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
+  import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { Input } from '$lib/components/ui/input';
   import { debugConfig } from '$lib/config/debug';
@@ -1785,6 +1788,15 @@
   // on the Create button; null when no create is running.
   let activeCreateProgressId: string | null = $state(null);
   let error: string | null = $state(null);
+  // The create failure behind `error`, shown in the shared creation error box
+  // (cause, guidance, Try again, and Continue for `base-refresh-failed`). It
+  // applies only while `error` still holds its message, so every existing
+  // `error = null` reset also hides the box.
+  let createFailure: {
+    message: string;
+    errorCode: string | null;
+    baseRefreshFailure: BaseRefreshFailure | null;
+  } | null = $state(null);
   let controlsContainer: HTMLDivElement | null = $state(null);
   let richTextarea: RichTextarea | null = $state(null);
 
@@ -2214,7 +2226,28 @@
     await submitWorkspace();
   }
 
-  async function submitWorkspace(continuation?: () => boolean) {
+  /** Continue from last-fetched: the same create, without refreshing its base (PROTOCOL §9.2). */
+  async function handleContinueFromLastFetched() {
+    const failure = createFailure?.message === error ? createFailure?.baseRefreshFailure : null;
+    if (!failure) return;
+    await submitWorkspace(undefined, { baseRef: failure.baseRef, remote: failure.remote });
+  }
+
+  /**
+   * The cause of a failed create as the daemon sent it: never rewritten into
+   * generic git text. Only the client-side transport timeout keeps its
+   * "may still be finishing" wording.
+   */
+  function createFailureMessage(failureMessage: string): string {
+    return failureMessage.toLowerCase().includes('json-rpc request timed out: workspace.create') // i18n-ignore (transport error text)
+      ? getGitErrorMessage(failureMessage)
+      : failureMessage;
+  }
+
+  async function submitWorkspace(
+    continuation?: () => boolean,
+    continueFromLastFetched?: WorkspaceInitializationStaleBase,
+  ) {
     if (continuation && !continuation()) return;
     if (selectWorkspaceInitializationResume.select(appStore.state, initializationConsumerId)) {
       await retryPendingFirstMessage();
@@ -2489,6 +2522,7 @@
         setupScriptProbeKey: setupScriptProbeKey ?? null,
         setupScriptRepoKey: setupScriptRepoKey ?? null,
         formPersistence: debugConfig.get('enableFormPersistence'),
+        ...(continueFromLastFetched ? { continueFromLastFetched } : {}),
       };
       if (!preparationCurrent()) return;
       const initialization = workspaceInitializationSubmitted(submission, {
@@ -2580,6 +2614,16 @@
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
         error = m.workspace_compactInitializer_specialistUnavailable_error();
+      } else if (outcome.stage === 'create') {
+        const message = failureMessage
+          ? createFailureMessage(failureMessage)
+          : m.workspace_compactInitializer_createFailed_error();
+        error = message;
+        createFailure = {
+          message,
+          errorCode: outcome.errorCode ?? null,
+          baseRefreshFailure: outcome.baseRefreshFailure ?? null,
+        };
       } else {
         error = failureMessage
           ? getGitErrorMessage(failureMessage)
@@ -3683,7 +3727,17 @@
         </div>
 
         <!-- Error message -->
-        {#if error}
+        {#if error && createFailure?.message === error}
+          <div class="mt-3 mb-3 px-4.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <WorkspaceCreationError
+              message={createFailure.message}
+              errorCode={createFailure.errorCode}
+              baseRefreshFailure={createFailure.baseRefreshFailure}
+              onRetry={isCreating ? undefined : handleSubmit}
+              onContinue={isCreating ? undefined : handleContinueFromLastFetched}
+            />
+          </div>
+        {:else if error}
           <div
             class="mt-3 mb-3 px-4.5 py-2 text-sm bg-danger-background text-danger"
             transition:slide={{ axis: 'y', tier: 'moderate' }}

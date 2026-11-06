@@ -141,7 +141,9 @@
     WorkspaceInitializationJson,
     WorkspaceInitializationOutcome,
     WorkspaceInitializationStagedItem,
+    WorkspaceInitializationStaleBase,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
   import { createHorizontalPager } from '$lib/interaction';
@@ -615,6 +617,9 @@
   // `onboardingCreationError` so the error block classifies without prose
   // matching.
   let onboardingCreationErrorCode = $state<string | null>(null);
+  // `error.data` of a `base-refresh-failed` create (PROTOCOL §9.2): category
+  // guidance plus the base/remote that Continue from last-fetched names.
+  let onboardingBaseRefreshFailure = $state<BaseRefreshFailure | null>(null);
 
   // Live setup step statuses for WorkspaceSetupCard during creation
   type SetupStepStatus = 'pending' | 'active' | 'done';
@@ -980,6 +985,7 @@
     if (projectIdentityChanged) {
       onboardingCreationError = null;
       onboardingCreationErrorCode = null;
+      onboardingBaseRefreshFailure = null;
     }
     appStore.dispatch(
       setProjectConfig({
@@ -1192,6 +1198,7 @@
       onboardingStagedItems = stagedItems.filter((item) => !(item.imageData && item.imageMimeType));
     }
     onboardingCreationErrorCode = outcome?.errorCode ?? null;
+    onboardingBaseRefreshFailure = outcome?.baseRefreshFailure ?? null;
     if (outcome?.stage === 'pull') {
       onboardingPullError = outcome.error || m.onboarding_page_pullFailed_error();
       onboardingShowPullConflictDialog = true;
@@ -1268,7 +1275,16 @@
     }
   }
 
-  async function handleOnboardingSubmit() {
+  /** Continue from last-fetched: the same create, without refreshing its base (PROTOCOL §9.2). */
+  function handleOnboardingContinue() {
+    const failure = onboardingBaseRefreshFailure;
+    if (!failure) return;
+    void handleOnboardingSubmit({ baseRef: failure.baseRef, remote: failure.remote });
+  }
+
+  async function handleOnboardingSubmit(
+    continueFromLastFetched?: WorkspaceInitializationStaleBase,
+  ) {
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
     if (projectNeedsGit) {
@@ -1358,6 +1374,7 @@
     isOnboardingCreating = true;
     onboardingCreationError = null;
     onboardingCreationErrorCode = null;
+    onboardingBaseRefreshFailure = null;
     setupRepoStatus = 'active';
     setupBranchStatus = 'active';
     setupAgentStatus = 'pending';
@@ -1425,6 +1442,7 @@
         selectedProvider: onboardingSelectedProvider,
         modelWasOverridden: onboardingModelWasOverridden,
         defaultModelPreview: defaultModelPreview ?? undefined,
+        ...(continueFromLastFetched ? { continueFromLastFetched } : {}),
       };
       if (!current()) return;
       handedOff = true;
@@ -1800,6 +1818,8 @@
                           {isOnboardingEnhancing}
                           {onboardingCreationError}
                           {onboardingCreationErrorCode}
+                          {onboardingBaseRefreshFailure}
+                          onContinueFromLastFetched={handleOnboardingContinue}
                           {projectSelection}
                           {onboardingGithubRepoInfo}
                           {selectedPRBranch}
@@ -1820,7 +1840,7 @@
                           selectedModel={onboardingSelectedModel}
                           modelWasOverridden={onboardingModelWasOverridden}
                           onModelChange={handleOnboardingModelChange}
-                          onSubmit={handleOnboardingSubmit}
+                          onSubmit={() => handleOnboardingSubmit()}
                           onEnhancePrompt={handleOnboardingEnhancePrompt}
                           {enhancePromptAvailable}
                           onContentChange={handleOnboardingContentChange}

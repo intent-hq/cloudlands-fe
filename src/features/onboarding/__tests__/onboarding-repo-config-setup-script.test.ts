@@ -42,6 +42,7 @@ const mocks = vi.hoisted(() => {
     getRemoteUrl: vi.fn<(repoPath: string) => Promise<unknown>>(),
     workspaceCreate: vi.fn<(params: Record<string, unknown>) => Promise<unknown>>(),
     toastError: vi.fn(),
+    toastWarning: vi.fn(),
     gitPull: vi.fn<() => Promise<{ success: boolean; error?: string }>>(),
     // Default implementations are (re)installed per test by the top-level
     // beforeEach (installDefaultMockImplementations) after every shared mock
@@ -130,7 +131,7 @@ vi.mock('$lib/client/live/live-prompt-enhancement', () => ({
 }));
 
 vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { success: vi.fn(), error: mocks.toastError },
+  notify: { success: vi.fn(), error: mocks.toastError, warning: mocks.toastWarning },
 }));
 
 vi.mock('$features/onboarding/utils/resolve-onboarding-model', () => ({
@@ -1563,6 +1564,98 @@ describe('onboarding model picker (initial Developer agent)', () => {
       initialAgent: { id: 'agent-1' },
     },
   };
+
+  describe('base-refresh-failed: Continue from last-fetched (PROTOCOL §9.2)', () => {
+    const baseRefreshFailure = {
+      category: 'auth-required',
+      detail: 'git@github.com: Permission denied (publickey).',
+      baseRef: 'main',
+      remote: 'origin',
+    };
+    const failedCreate = {
+      ok: false,
+      error: "Couldn't update main from origin: Permission denied (publickey)",
+      errorCode: 'base-refresh-failed',
+      baseRefreshFailure,
+    };
+    type ErrorProps = {
+      message: string | null;
+      errorCode: string | null;
+      baseRefreshFailure: unknown;
+    };
+    const step = () =>
+      (
+        window as unknown as {
+          __mockOnboardingPromptStep: {
+            getCreationError: () => ErrorProps;
+            getSetupScript: () => string;
+            setSetupScript: (value: string) => void;
+            onContinueFromLastFetched?: () => void;
+          };
+        }
+      ).__mockOnboardingPromptStep;
+
+    it('passes the cause and failure data to the error box, then Continue re-sends with skipBaseRefresh', async () => {
+      mocks.workspaceCreate
+        .mockResolvedValueOnce(failedCreate)
+        .mockResolvedValueOnce(okCreateResult);
+      renderPage();
+      selectLocalRepo('/repo/a');
+      step().setSetupScript('pnpm install');
+      captured().setInputValue('Build the thing');
+      captured().onSubmit();
+
+      await waitFor(() =>
+        expect(step().getCreationError()).toEqual({
+          message: "Couldn't update main from origin: Permission denied (publickey)",
+          errorCode: 'base-refresh-failed',
+          baseRefreshFailure,
+        }),
+      );
+      const first = mocks.workspaceCreate.mock.calls[0][0] as Record<string, unknown>;
+      expect(first).not.toHaveProperty('skipBaseRefresh');
+      expect(mocks.toastWarning).not.toHaveBeenCalled();
+      // Inputs survive the failure.
+      expect(step().getSetupScript()).toBe('pnpm install');
+
+      step().onContinueFromLastFetched?.();
+
+      await waitFor(() => expect(mocks.workspaceCreate).toHaveBeenCalledTimes(2));
+      const second = mocks.workspaceCreate.mock.calls[1][0] as Record<string, unknown>;
+      expect(second).toMatchObject({
+        skipBaseRefresh: true,
+        repositoryPath: '/repo/a',
+        baseRef: 'main',
+      });
+      const { progressId: _a, ...firstRest } = first;
+      const { progressId: _b, skipBaseRefresh: _c, ...secondRest } = second;
+      expect(secondRest).toEqual(firstRest);
+      await waitFor(() =>
+        expect(mocks.toastWarning).toHaveBeenCalledWith(
+          'Started from main as last fetched from origin; it may be out of date.',
+        ),
+      );
+      await waitFor(() =>
+        expect(mocks.goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true }),
+      );
+    });
+
+    it('a plain failure carries no base-refresh data', async () => {
+      mocks.workspaceCreate.mockResolvedValue({ ok: false, error: 'Internal error: boom' });
+      renderPage();
+      selectLocalRepo('/repo/a');
+      captured().setInputValue('Build the thing');
+      captured().onSubmit();
+
+      await waitFor(() =>
+        expect(step().getCreationError()).toEqual({
+          message: 'Internal error: boom',
+          errorCode: null,
+          baseRefreshFailure: null,
+        }),
+      );
+    });
+  });
 
   it('commits the default (never-touched) selection at submit: provider + bare model (monorepo#3044)', async () => {
     mocks.resolveModel.mockImplementation(async () => ({
