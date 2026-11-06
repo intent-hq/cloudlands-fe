@@ -239,7 +239,7 @@ function* analyzeAndPublish(workspaceId: string, agentId: string, logicalId: str
 function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: string, authority: string): SagaGenerator<void> {
   const service = dockMediaNativeService();
   const initial = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId)?.media;
-  if (!initial || !service?.transcribeMedia || initial.source.audio !== 'available' || initial.transcript?.status === 'ready') return;
+  if (!initial || !service?.transcribeMedia || initial.source.audio === 'none' || initial.transcript?.status === 'ready') return;
   const jobId = crypto.randomUUID();
   try {
     const result = yield* call(() => service.transcribeMedia!({ jobId, media: initial }));

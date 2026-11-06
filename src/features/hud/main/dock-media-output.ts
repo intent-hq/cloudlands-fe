@@ -1,3 +1,4 @@
+import { Logger } from '../../../shared/logger';
 import { DockMediaWaveformSchema, type DockMediaAnalyzeRequest, type DockMediaWaveform } from '../../../shared/dock-media-output';
 /** Session-bound offline jobs. No renderer-chosen host paths or backend fallback. */
 import { app, nativeImage } from 'electron';
@@ -13,6 +14,13 @@ import type { DockNativeResult } from '../../../shared/dock-evidence';
 import type { DockEvidenceContext } from './dock-evidence-session';
 import { requestRouted } from '../../backend/main/transfer-connections';
 
+const logger = new Logger('DockMediaOutput');
+const TRANSCRIPT_CODES = new Set(['speech-not-authorized', 'on-device-unavailable', 'recognition-timeout',
+  'no-audio-track', 'audio-duration-unsupported', 'audio-format', 'audio-reader', 'audio-buffer', 'audio-buffer-copy',
+  'audio-timing', 'audio-decode-failed', 'audio-reader-failed', 'audio-sample', 'recognition-alignment', 'invalid-job', 'recognition-failed']);
+class DockMediaJobError extends Error {
+  constructor(readonly code: string, readonly nativeDomain?: string, readonly nativeCode?: number) { super(code); }
+}
 const MAX_BYTES = 128 * 1024 * 1024;
 const jobs = new Map<string, Job>();
 interface Job {
@@ -138,11 +146,12 @@ async function run(context: DockEvidenceContext, job: Job, binary: string, input
   let finish!: () => void;
   job.done = new Promise<void>((resolve) => { finish = resolve; });
   let buffer = '', total = 0, completed: Record<string, unknown> | undefined;
+  let nativeFailure: DockMediaJobError | undefined;
   const timeout = setTimeout(() => { job.stopped = true; child.kill('SIGTERM'); }, 5 * 60_000);
   timeout.unref();
   try {
     return await new Promise((resolve, reject) => {
-      const fail = () => reject(new Error('media-job-failed'));
+      const fail = () => reject(nativeFailure ?? new DockMediaJobError('media-job-failed'));
       child.once('error', fail);
       child.stderr.resume();
       child.stdout.on('data', (bytes: Buffer) => {
@@ -156,6 +165,10 @@ async function run(context: DockEvidenceContext, job: Job, binary: string, input
             const event = JSON.parse(line) as Record<string, unknown>;
             if (event.event === 'progress' && typeof event.fraction === 'number' && Number.isFinite(event.fraction) && context.isCurrent() && !job.stopped)
               progress(Math.max(0, Math.min(1, event.fraction)));
+            if (event.event === 'error') nativeFailure = new DockMediaJobError(
+              typeof event.code === 'string' && TRANSCRIPT_CODES.has(event.code) ? event.code : 'media-job-failed',
+              typeof event.nativeDomain === 'string' ? event.nativeDomain.slice(0, 128) : undefined,
+              typeof event.nativeCode === 'number' && Number.isSafeInteger(event.nativeCode) ? event.nativeCode : undefined);
             if (event.event === 'complete') completed = event;
           } catch { child.kill('SIGTERM'); fail(); }
         }
@@ -217,20 +230,28 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
 export async function transcribeDockMedia(context: DockEvidenceContext, request: DockMediaTranscribeRequest,
   progress: (fraction: number) => void): Promise<DockNativeResult<import('../../../shared/dock-media-edit').DockMediaTranscript>> {
   let job: Job | undefined;
+  let stage: 'helper' | 'source' | 'recognition' = 'helper';
   try {
-    if (request.media.source.audio === 'none') return { ok: true, value: { status: 'no-speech', revision: 1, words: [] } };
+    if (request.media.source.audio === 'none') return { ok: true, value: { status: 'unavailable', revision: 1, words: [], error: 'no-audio-track' } };
     const binary = await helper('intent-dock-media-transcribe');
     job = await createJob(context, request.jobId, JSON.stringify(request));
+    stage = 'source';
     const file = await copySource(context, job, request.media);
+    stage = 'recognition';
     const event = await run(context, job, binary, { source: file, audio: path.join(job.directory, 'speech.wav'), locale: request.locale ?? null,
       durationMs: request.media.source.durationMs }, progress);
     const transcript = DockMediaTranscriptSchema.parse(event.transcript);
     check(context, job);
     await releaseDockMediaJob(context.scope.sessionId, job.id);
     return { ok: true, value: transcript };
-  } catch {
+  } catch (error) {
     if (job) await releaseDockMediaJob(context.scope.sessionId, job.id);
-    return { ok: true, value: { status: 'unavailable', revision: 1, words: [], error: 'local-recognition-unavailable' } };
+    const code = error instanceof DockMediaJobError ? error.code
+      : stage === 'helper' ? 'local-helper-unavailable' : stage === 'source' ? 'source-unavailable' : 'recognition-failed';
+    const unavailable = ['no-audio-track', 'speech-not-authorized', 'on-device-unavailable', 'local-helper-unavailable'].includes(code);
+    logger.warn('Local transcription did not complete', { stage, code,
+      ...(error instanceof DockMediaJobError ? { nativeDomain: error.nativeDomain, nativeCode: error.nativeCode } : {}) });
+    return { ok: true, value: { status: unavailable ? 'unavailable' : 'failed', revision: 1, words: [], error: code } };
   }
 }
 

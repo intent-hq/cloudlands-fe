@@ -3,6 +3,7 @@ import AVFoundation
 import Foundation
 import Speech
 
+var processingStage = "input"
 struct Job: Decodable { let source: String; let audio: String; let locale: String?; let durationMs: Double; let mode: String?; let sourceId: String?; let sourceRevision: Int? }
 func emit(_ value: [String: Any]) {
   if let data = try? JSONSerialization.data(withJSONObject: value) {
@@ -41,7 +42,8 @@ func recognize(_ job: Job) async throws -> SFTranscription {
 func prepare(_ job: Job) async throws -> [Double] {
   let asset = AVURLAsset(url: URL(fileURLWithPath: job.source))
   let tracks = try await asset.loadTracks(withMediaType: .audio)
-  guard !tracks.isEmpty, job.durationMs.isFinite, job.durationMs > 0, job.durationMs <= 120_001 else { throw fail("audio-unavailable") }
+  guard job.durationMs.isFinite, job.durationMs > 0, job.durationMs <= 120_001 else { throw fail("audio-duration-unsupported") }
+  guard !tracks.isEmpty else { throw fail("no-audio-track") }
   let reader = try AVAssetReader(asset: asset)
   let settings: [String: Any] = [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000,
     AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
@@ -95,6 +97,7 @@ func main() async throws {
   let job = try JSONDecoder().decode(Job.self, from: data)
   // Never create a file before confirming existing consent and an on-device model.
   guard job.mode == "waveform" || SFSpeechRecognizer.authorizationStatus() == .authorized else { throw fail("speech-not-authorized") }
+  processingStage = "decode"
   let peaks = try await prepare(job)
   if job.mode == "waveform" {
     emit(["event": "complete", "waveform": ["sourceId": job.sourceId ?? "", "sourceRevision": job.sourceRevision ?? 0,
@@ -102,6 +105,7 @@ func main() async throws {
     return
   }
   emit(["event": "progress", "fraction": 0.2])
+  processingStage = "recognition"
   let transcription = try await recognize(job)
   let text = transcription.formattedString as NSString
   var units: [[String: Any]] = [], cursor = 0
@@ -128,6 +132,16 @@ func main() async throws {
 }
 Task {
   do { try await main(); exit(0) }
-  catch { emit(["event": "error", "code": "local-recognition-unavailable"]); exit(1) }
+  catch {
+    let native = error as NSError
+    let known = Set(["speech-not-authorized", "on-device-unavailable", "recognition-timeout", "no-audio-track",
+      "audio-duration-unsupported", "audio-format", "audio-reader", "audio-buffer", "audio-buffer-copy",
+      "audio-timing", "audio-reader-failed", "audio-sample", "recognition-alignment", "invalid-job"])
+    let code = native.domain == "media-transcript" && known.contains(native.localizedDescription)
+      ? native.localizedDescription : processingStage == "decode" ? "audio-decode-failed" : "recognition-failed"
+    // Only bounded machine metadata; never recognition text or arbitrary error descriptions.
+    emit(["event": "error", "code": code, "nativeDomain": String(native.domain.prefix(128)), "nativeCode": native.code])
+    exit(1)
+  }
 }
 RunLoop.main.run()

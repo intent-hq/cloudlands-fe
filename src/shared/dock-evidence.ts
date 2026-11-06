@@ -1334,7 +1334,7 @@ export const DOCK_CAPTURE_MODES: readonly DockCaptureMode[] = ['fullscreen', 'wi
 /** A finished clip written by native to a host path, ready for attachment placement. */
 export interface DockClipFile {
   /** Fresh dual-source recorder metadata; absent on legacy baked-only clips. */
-  original?: { sourcePath: string; size: number; width: number; height: number; clearAtMs: number[] };
+  original?: { sourcePath: string; size: number; width: number; height: number; clearAtMs: number[]; hasMicAudio?: boolean };
   sourcePath: string;
   mimeType: string;
   size: number;
