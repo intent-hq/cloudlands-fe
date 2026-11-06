@@ -233,6 +233,7 @@ export const CreateWorkspaceRequestSchema = z.object({
   environmentConfig: EnvironmentConfigSchema.optional(),
   isNewRepo: z.boolean().optional(),
   skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
+  skipBaseRefresh: z.boolean().optional(), // Continue from last-fetched after base-refresh-failed (PROTOCOL §5.1 / §9.2)
   progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
   contextLinks: z.array(ContextLinkSchema).max(20).optional(), // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1)
   // The applied proposal card (PROTOCOL §5.1 "Proposal origin").
