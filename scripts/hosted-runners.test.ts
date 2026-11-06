@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/*.yml, .github/actions/*/action.yml, scripts/setup-sccache.py
+// @verify-changed-triggers: .github/workflows/*.yml, .github/actions/*/action.yml, scripts/setup-sccache.py, scripts/download_retry.py, scripts/test-setup-sccache.py
 // @vitest-environment node
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
