@@ -13,6 +13,7 @@ export function useDockConversationPresence(
   engaged: () => boolean = () => false,
   /** False where only an explicit open (a click) discloses the conversation. */
   autoOpen: () => boolean = () => true,
+  hoverDelayMs: () => number = () => 0,
 ) {
   let open = $state(false);
   let pointerInside = false;
@@ -20,6 +21,7 @@ export function useDockConversationPresence(
   let approach: { x: number; y: number; at: number } | null = null;
   let keyboard = $state(false);
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 
   function portal(node: Node | null): boolean {
     return (
@@ -70,6 +72,22 @@ export function useDockConversationPresence(
   function cancel(): void {
     clearTimeout(timer);
     timer = undefined;
+    clearTimeout(hoverTimer);
+    hoverTimer = undefined;
+  }
+  function hover(): void {
+    if (blocked() || !workspaceId() || (!open && !autoOpen())) return;
+    if (open || hoverDelayMs() === 0) {
+      show();
+      return;
+    }
+    clearTimeout(timer);
+    timer = undefined;
+    if (hoverTimer !== undefined) return;
+    hoverTimer = setTimeout(() => {
+      hoverTimer = undefined;
+      if (pointerInside && !blocked() && workspaceId() && autoOpen()) show();
+    }, hoverDelayMs());
   }
   function settle(): void {
     cancel();
@@ -124,7 +142,7 @@ export function useDockConversationPresence(
       pointerInside = owns(event.target as Node);
       approach = pointerInside ? null : point(event);
       if (!pointerInside) settle();
-      else if (workspaceId() && (open || autoOpen())) show();
+      else hover();
     };
     const out = (event: PointerEvent) => {
       pointerInside = owns(event.relatedTarget as Node | null);
