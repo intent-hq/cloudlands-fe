@@ -21,6 +21,7 @@
     subtitle,
     dirty = false,
     saving = false,
+    saveBlocked = false,
     onCancel,
     onSave,
     onUndo,
@@ -38,6 +39,8 @@
     subtitle?: string;
     dirty?: boolean;
     saving?: boolean;
+    /** Save stays in place but cannot run (an edit still open, or unsupported output). */
+    saveBlocked?: boolean;
     onCancel: () => void;
     onSave?: () => void;
     onUndo?: () => void;
@@ -103,7 +106,7 @@
       requestClose();
     } else if (mod && key === 's' && onSave) {
       event.preventDefault();
-      if (dirty && !saving) onSave();
+      if (dirty && !saving && !saveBlocked) onSave();
     } else if (mod && key === 'z' && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       if (event.shiftKey) onRedo?.();
@@ -129,7 +132,7 @@
         <Button
           variant={dirty ? 'primary' : 'secondary'}
           size="sm"
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || saveBlocked}
           data-save
           onclick={() => onSave?.()}>{m.dock_captureEditor_save_label()}</Button
         >

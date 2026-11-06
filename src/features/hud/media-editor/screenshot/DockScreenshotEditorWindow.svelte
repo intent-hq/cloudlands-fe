@@ -346,13 +346,11 @@
    * applied or cancelled, nothing saves or retakes (it would silently leave it out).
    */
   let interactionPending = $state(false);
-  const canSave = $derived(
-    !!onSave &&
-      !!snapshot.output?.ready &&
-      !!edits &&
-      !interactionPending &&
-      (!needsNewOutput || outputAdmitted),
-  );
+  // Save is offered whenever this session can save at all, and stays in place; a
+  // pending edit or an edit the output cannot carry only disables it.
+  const saveCapable = $derived(!!onSave && !!snapshot.output?.ready && !!edits);
+  const saveBlocked = $derived(interactionPending || (needsNewOutput && !outputAdmitted));
+  const canSave = $derived(saveCapable && !saveBlocked);
 
   async function save() {
     if (!edits || !onSave || !canSave || saving || retaking || noteSession || interactionPending)
@@ -437,6 +435,7 @@
     disabled={saving}
     {retaking}
     onInteractionPending={(pending) => (interactionPending = pending)}
+    newToolsEnabled={outputAdmitted}
     {dictatingId}
     onRetake={onRetake ? retake : undefined}
     onNoteDictation={onNoteDictation ? dictateNote : undefined}
@@ -446,9 +445,10 @@
         title={m.dock_screenshotEditor_title()}
         subtitle={snapshot.title}
         {dirty}
-        saving={saving || !!noteSession || interactionPending}
+        saving={saving || !!noteSession}
+        {saveBlocked}
         onCancel={close}
-        onSave={canSave ? save : undefined}
+        onSave={saveCapable ? save : undefined}
         onUndo={undo}
         onRedo={redo}
         {discardRequest}
@@ -460,7 +460,7 @@
       >
         {#snippet main()}
           {#if error}<p class="status type-caption" role="alert">{error}</p>{/if}
-          {#if !canSave}<p class="status type-caption">
+          {#if !saveCapable}<p class="status type-caption">
               {m.dock_screenshotEditor_previewOnly()}
             </p>{/if}
           {@render contentMain()}
