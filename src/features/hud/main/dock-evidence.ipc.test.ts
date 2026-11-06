@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   capture: vi.fn(),
   cancel: vi.fn(),
   context: vi.fn(),
+  dock: vi.fn(),
+  hideDockForRecording: vi.fn(),
+  releaseDockRecordingHide: vi.fn(),
   setCaptureExclusionIds: vi.fn(),
   recorder: {
     onEnded: vi.fn(),
@@ -57,7 +60,9 @@ vi.mock('../../../main/dock-window', () => ({
   getDockVisibleSurfaceRegions: vi.fn(() => []),
   getDockVisibleSurfaceBounds: vi.fn(() => null),
   getDockPlacementSnapshot: vi.fn(() => null),
-  getDockWindow: () => null,
+  getDockWindow: mocks.dock,
+  hideDockForRecording: mocks.hideDockForRecording,
+  releaseDockRecordingHide: mocks.releaseDockRecordingHide,
 }));
 vi.mock('./dock-annotation-window', () => ({
   setupDockAnnotationIPC: vi.fn(),
@@ -79,6 +84,7 @@ describe('dock evidence IPC', () => {
     vi.clearAllMocks();
     mocks.handlers.clear();
     mocks.context.mockReturnValue(null);
+    mocks.dock.mockReturnValue(null);
     mocks.annotation.overlayWindowIds.mockReturnValue([]);
     setupDockEvidenceIPC();
   });
@@ -587,6 +593,17 @@ describe('dock evidence IPC', () => {
     finish({ ok: true, value: undefined });
     expect(await pending).toEqual({ ok: false, error: 'unavailable' });
     expect(f.send).not.toHaveBeenCalled();
+  });
+
+  it('keeps the owned Dock visible while excluding it from the recording', async () => {
+    const f = mediaContext();
+    mocks.dock.mockReturnValue(mocks.context().window);
+    mocks.recorder.start.mockResolvedValue({ ok: true, value: { startedAt: 10 } });
+    expect(await f.invoke({ action: 'clip-start', clipId: requestId, maxMs: 120000 })).toMatchObject({ ok: true });
+    expect(mocks.recorder.start).toHaveBeenCalledWith(
+      expect.objectContaining({ displayId: 7, excludeWindowIds: [42] }),
+    );
+    expect(mocks.hideDockForRecording).not.toHaveBeenCalled();
   });
 
   it('starts recording on the authoritative display with the mic on, kept after dictation ends', async () => {
