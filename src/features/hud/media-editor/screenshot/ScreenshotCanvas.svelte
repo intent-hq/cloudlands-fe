@@ -141,6 +141,21 @@
         : {}),
     });
   });
+  const textLeading = $derived.by(() => {
+    const fontSize = textShape?.text?.fontSize ?? 1;
+    if (typeof document === 'undefined') return -fontSize * 0.2;
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context) return -fontSize * 0.2;
+    context.font = `${fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
+    const alphabetic = context.measureText('Mg');
+    context.textBaseline = 'top';
+    const top = context.measureText('Mg');
+    // Canvas top baseline and the browser's 1.4 line box share this font's metrics.
+    return (
+      (alphabetic.fontBoundingBoxAscent + alphabetic.fontBoundingBoxDescent - fontSize * 1.4) / 2 -
+      top.fontBoundingBoxAscent
+    );
+  });
   $effect(() => {
     onGesturePending(!!gesture || !!cropGesture);
   });
@@ -732,7 +747,7 @@
           style:--capture-text-halo={DOCK_MEDIA_PAINT.halo}
           style:--capture-text-stroke={`${2 * Math.max(1, Math.max(width, height) / 1440)}px`}
           style:--capture-text-outline={`${unit}px`}
-          style:--capture-text-leading={`${-textShape.text.fontSize * 0.2}px`}
+          style:--capture-text-leading={`${textLeading}px`}
           style:padding={`${textShape.text.padding}px`}
           onpointerdown={(event) => event.stopPropagation()}
           onkeydown={(event) => {
@@ -897,6 +912,7 @@
     padding: 0;
     resize: none;
     font: inherit;
+    letter-spacing: normal;
     line-height: inherit;
     border-radius: 0;
     border: 0;
