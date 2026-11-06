@@ -2680,6 +2680,7 @@
   "remoteAgent_updateRequired_preparedCheckout": "此工作区包含子模块或设置脚本，因此 {machine} 需要更新版本的 Intent 才能运行它的智能体。",
   "remoteAgent_attachmentsUnsupported_error": "此后端需要更新版本的 Intent 才能向其他机器上的智能体发送附件。",
   "remoteAgent_attachmentsTooLarge_error": "附件太大，无法发送到其他机器：{detail}",
+  "remoteAgent_attachmentsTooLargeSized_error": "图片太大，无法发送到其他机器（{size} MB，上限为 {limit} MB）。请发送更少或更小的图片。",
   "remoteAgent_attachmentsTooLargeNoDetail_error": "附件太大，无法发送到其他机器。请移除一些后重试。",
   "settings_browserAccess_accessKey_description": "浏览器只会询问一次此密钥。重置后所有浏览器都会退出登录。",
   "settings_browserAccess_accessKey_label": "访问密钥",

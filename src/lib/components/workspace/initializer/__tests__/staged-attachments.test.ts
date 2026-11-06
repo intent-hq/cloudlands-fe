@@ -647,10 +647,7 @@ describe('sendHeldFirstMessage', () => {
     );
 
     expect(result.errorDetail).toBe(
-      m.remoteAgent_attachmentsTooLarge_error({
-        detail:
-          "this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images",
-      }),
+      m.remoteAgent_attachmentsTooLargeSized_error({ size: '9', limit: '8' }),
     );
   });
 

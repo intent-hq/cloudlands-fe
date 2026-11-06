@@ -2680,6 +2680,7 @@
   "remoteAgent_updateRequired_preparedCheckout": "このワークスペースにはサブモジュールまたはセットアップスクリプトがあるため、{machine} でエージェントを実行するには新しいバージョンの Intent が必要です。",
   "remoteAgent_attachmentsUnsupported_error": "別のマシン上のエージェントに添付ファイルを送るには、このバックエンドに新しいバージョンの Intent が必要です。",
   "remoteAgent_attachmentsTooLarge_error": "添付ファイルが大きすぎて別のマシンに送れません: {detail}",
+  "remoteAgent_attachmentsTooLargeSized_error": "画像が大きすぎて別のマシンに送れません ({size} MB、上限は {limit} MB)。画像の数を減らすか、小さくしてください。",
   "remoteAgent_attachmentsTooLargeNoDetail_error": "添付ファイルが大きすぎて別のマシンに送れません。いくつか削除してもう一度お試しください。",
   "settings_browserAccess_accessKey_description": "ブラウザはこのキーを最初に 1 回だけ求めます。リセットするとすべてのブラウザがサインアウトします。",
   "settings_browserAccess_accessKey_label": "アクセスキー",

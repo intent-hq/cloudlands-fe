@@ -965,11 +965,7 @@ describe('chatSendSaga', () => {
     ],
     [
       "attachments-too-large-for-machine: agent.sendMessage: this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images",
-      () =>
-        m.remoteAgent_attachmentsTooLarge_error({
-          detail:
-            "this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images",
-        }),
+      () => m.remoteAgent_attachmentsTooLargeSized_error({ size: '9', limit: '8' }),
     ],
   ])('reads a remote agent attachment refusal in plain words: %s', async (message, expected) => {
     const { BackendError } = await import('$lib/client/live/backend-transport-types');

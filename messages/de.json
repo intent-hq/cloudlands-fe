@@ -2680,6 +2680,7 @@
   "remoteAgent_updateRequired_preparedCheckout": "{machine} braucht eine neuere Intent-Version, um Agenten für diesen Arbeitsbereich auszuführen, weil er Submodule oder ein Setup-Skript hat.",
   "remoteAgent_attachmentsUnsupported_error": "Dieses Backend braucht eine neuere Intent-Version, um Anhänge an einen Agenten auf einem anderen Rechner zu senden.",
   "remoteAgent_attachmentsTooLarge_error": "Die Anhänge sind zu groß für einen anderen Rechner: {detail}",
+  "remoteAgent_attachmentsTooLargeSized_error": "Die Bilder sind zu groß für einen anderen Rechner ({size} MB; das Limit ist {limit} MB). Sende weniger oder kleinere Bilder.",
   "remoteAgent_attachmentsTooLargeNoDetail_error": "Die Anhänge sind zu groß für einen anderen Rechner. Entferne einige und versuche es erneut.",
   "settings_browserAccess_accessKey_description": "Ein Browser fragt einmal nach diesem Schlüssel. Wenn du ihn zurücksetzt, werden alle Browser abgemeldet.",
   "settings_browserAccess_accessKey_label": "Zugriffsschlüssel",

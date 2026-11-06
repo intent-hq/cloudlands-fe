@@ -2680,6 +2680,7 @@
   "remoteAgent_updateRequired_preparedCheckout": "{machine} necesita una versión más reciente de Intent para ejecutar agentes de este espacio de trabajo, porque tiene submódulos o un script de configuración.",
   "remoteAgent_attachmentsUnsupported_error": "Este backend necesita una versión más reciente de Intent para enviar archivos adjuntos a un agente en otra máquina.",
   "remoteAgent_attachmentsTooLarge_error": "Los archivos adjuntos son demasiado grandes para otra máquina: {detail}",
+  "remoteAgent_attachmentsTooLargeSized_error": "Las imágenes son demasiado grandes para otra máquina ({size} MB; el límite es {limit} MB). Envía menos imágenes o más pequeñas.",
   "remoteAgent_attachmentsTooLargeNoDetail_error": "Los archivos adjuntos son demasiado grandes para otra máquina. Quita algunos e inténtalo de nuevo.",
   "settings_browserAccess_accessKey_description": "Un navegador pide esta clave una vez. Al restablecerla se cierra la sesión en todos los navegadores.",
   "settings_browserAccess_accessKey_label": "Clave de acceso",

@@ -2680,6 +2680,7 @@
   "remoteAgent_updateRequired_preparedCheckout": "此工作區包含子模組或設定腳本，因此 {machine} 需要較新版本的 Intent 才能執行它的代理程式。",
   "remoteAgent_attachmentsUnsupported_error": "此後端需要較新版本的 Intent 才能將附件傳送給其他機器上的代理程式。",
   "remoteAgent_attachmentsTooLarge_error": "附件太大，無法傳送到其他機器：{detail}",
+  "remoteAgent_attachmentsTooLargeSized_error": "圖片太大，無法傳送到其他機器（{size} MB，上限為 {limit} MB）。請傳送較少或較小的圖片。",
   "remoteAgent_attachmentsTooLargeNoDetail_error": "附件太大，無法傳送到其他機器。請移除一些後再試一次。",
   "settings_browserAccess_accessKey_description": "瀏覽器只會詢問一次此金鑰。重設後所有瀏覽器都會登出。",
   "settings_browserAccess_accessKey_label": "存取金鑰",

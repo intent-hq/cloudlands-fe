@@ -2680,6 +2680,7 @@
   "remoteAgent_updateRequired_preparedCheckout": "{machine} needs a newer version of Intent to run agents for this workspace, because the workspace has submodules or a setup script.",
   "remoteAgent_attachmentsUnsupported_error": "This backend needs a newer version of Intent to send attachments to an agent on another machine.",
   "remoteAgent_attachmentsTooLarge_error": "Attachments are too large to send to another machine: {detail}",
+  "remoteAgent_attachmentsTooLargeSized_error": "Images are too large to send to another machine ({size} MB; the limit is {limit} MB). Send fewer or smaller images.",
   "remoteAgent_attachmentsTooLargeNoDetail_error": "Attachments are too large to send to another machine. Remove some and try again.",
   "settings_browserAccess_accessKey_description": "A browser asks for this key once. Resetting it signs out every browser.",
   "settings_browserAccess_accessKey_label": "Access key",
