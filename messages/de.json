@@ -8443,5 +8443,9 @@
   "dock_screenshotEditor_previewOnly": "Änderungen an diesem Anhang können noch nicht gespeichert werden.",
   "dock_screenshotEditor_retakeUnavailable": "Eine neue Aufnahme ist nicht verfügbar.",
   "dock_screenshotEditor_dictationUnavailable": "Notizdiktat ist nicht verfügbar.",
-  "dock_screenshotEditor_resetUnavailable": "Zurücksetzen ist erst möglich, wenn der ursprüngliche Aufnahmezustand verfügbar ist."
+  "dock_screenshotEditor_resetUnavailable": "Zurücksetzen ist erst möglich, wenn der ursprüngliche Aufnahmezustand verfügbar ist.",
+  "settings_dockLab_moveHint": "Ziehe das Dock am Logo oder an der Kopfzeile an eine andere Position auf dem Bildschirm.",
+  "dock_logo_open_label": "Intent öffnen",
+  "dock_logo_menu_hint": "Intent öffnen · Rechtsklick oder ↓ zum Rechnerwechsel · Zum Verschieben ziehen",
+  "dock_logo_move_hint": "Intent öffnen · Zum Verschieben ziehen"
 }

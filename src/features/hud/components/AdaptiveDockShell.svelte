@@ -3,6 +3,7 @@
   import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Logo from '$lib/components/Logo.svelte';
+  import { activateIntentFromDock } from '$features/hud/dock-context-menu';
   import { spring } from '$lib/motion';
   import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
   import { m } from '$shared/paraglide/messages.js';
@@ -921,10 +922,10 @@
             variant="ghost"
             size="icon-sm"
             class="dock-grip"
-            aria-label={machines ? m.dock_machineSwitch_label() : m.dock_drag_label()}
-            aria-haspopup={machines ? 'menu' : undefined}
-            aria-expanded={machines ? machineMenuOpen : undefined}
-            title={machines ? m.dock_machineMenu_hint() : m.dock_drag_label()}
+            aria-label={m.dock_logo_open_label()}
+            aria-haspopup={machines && onMachine ? 'menu' : undefined}
+            aria-expanded={machines && onMachine ? machineMenuOpen : undefined}
+            title={machines && onMachine ? m.dock_logo_menu_hint() : m.dock_logo_move_hint()}
             data-testid="dock-drag-handle"
             wrapContent={false}
             onpointerdown={pointerDown}
@@ -934,17 +935,37 @@
             onlostpointercapture={() => {
               if (gesture) pointerEnd(true);
             }}
+            oncontextmenu={(event) => {
+              if (!machines || !onMachine || dragging || placement.captureHidden || gesture) return;
+              event.preventDefault();
+              event.stopPropagation();
+              machineMenuOpen = true;
+            }}
+            onkeydown={(event) => {
+              if (!machines || !onMachine || dragging || placement.captureHidden || gesture) return;
+              if (
+                event.key === 'ArrowDown' ||
+                event.key === 'ContextMenu' ||
+                (event.shiftKey && event.key === 'F10')
+              ) {
+                event.preventDefault();
+                event.stopPropagation();
+                machineMenuOpen = true;
+              }
+            }}
             onclick={(event) => {
+              // The logo is an app action; the surrounding header keeps its own click behavior.
+              event.stopPropagation();
               if (suppressClick) {
                 event.preventDefault();
                 suppressClick = false;
                 return;
               }
-              if (machines && onMachine) {
-                machineMenuOpen = !machineMenuOpen;
+              if (gesture || awaitingDragStart !== null || dragging || placement.captureHidden)
                 return;
-              }
-              if (!edge) expandedByUser = floating ? true : !expandedByUser;
+              machineMenuOpen = false;
+              // eslint-disable-next-line intent/no-component-async-data-fetch -- request main to show its own window, without fetching domain data
+              activateIntentFromDock();
             }}
           >
             <span class="grip-mark"><Logo width={16} /></span>
