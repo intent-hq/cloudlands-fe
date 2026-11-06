@@ -687,7 +687,8 @@ target below the supported ladder.
 New product controls compose the canonical primitives; do not introduce raw `button`, `input`,
 `select`, or `textarea` hosts. The raw-element audit is a shrinking ratchet: remove an exception or
 lower a ceiling when a migration lands, and never raise a ceiling to accommodate new markup.
-After an intentional fixture or catalog-contract change, update catalog snapshots with `NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u` and review the generated diff before staging it.
+The catalog contract suite checks accessibility with axe. Review appearance changes in the browser
+with the relevant sandbox scene; do not pin CSS classes or serialized fixture markup in snapshots.
 
 ## Verification and audits
 
