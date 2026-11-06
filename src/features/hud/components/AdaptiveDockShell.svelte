@@ -15,6 +15,7 @@
   import { createDockPointerRegionController } from '$features/hud/utils/dock-pointer-routing';
   import { openDockWorkspace, openDockAssistant } from '$features/hud/dock-navigation';
   import { dockHeightStep } from '$features/hud/utils/dock-motion';
+  import { DOCK_NOTCH_HOVER_DELAY_MS } from '$features/hud/utils/dock-hover-intent';
   import {
     createFrameLoop,
     createGrowGate,
@@ -115,6 +116,7 @@
     () => placement.captureHidden || placement.phase === 'dragging',
     () => conversationResize.held,
     () => !edge,
+    () => (notch ? DOCK_NOTCH_HOVER_DELAY_MS : 0),
   );
   const conversationVisible = $derived(pinned && conversationPresence.open);
   let conversationRegions: DockPointerRect[] = [];
@@ -449,6 +451,7 @@
   $effect(() => {
     if (placement.captureHidden) {
       untrack(() => {
+        cancelOpen();
         pointerInside = false;
         pointerEnd(true);
         shellTween.animate(0, true);
@@ -491,6 +494,7 @@
       return gripElement;
     },
     openKeyboard(returning = false) {
+      cancelOpen();
       conversationPresence.show(!returning);
       expandedByUser = true;
       keyboardOpen = !returning;
@@ -516,6 +520,7 @@
     () => command({ action: 'focus' }),
   );
   function enter(): void {
+    if (disposed || placement.captureHidden) return;
     hoverComposerFocus.enter();
     pointerInside = true;
     clearTimeout(closeTimer);
@@ -523,12 +528,29 @@
     if (pinned) keyboardOpen = false;
     if (edge || expanded) return;
     keyboardOpen = false;
-    clearTimeout(openTimer);
     if (surfaceExpanded) expandedByUser = true;
-    else
-      openTimer = setTimeout(() => {
-        expandedByUser = true;
-      }, spring.fast.settleMs);
+    else if (openTimer === undefined)
+      openTimer = setTimeout(
+        () => {
+          openTimer = undefined;
+          if (
+            !pointerInside ||
+            disposed ||
+            placement.captureHidden ||
+            gesture ||
+            awaitingDragStart !== null ||
+            dragging
+          )
+            return;
+          if (pinned) conversationPresence.show();
+          expandedByUser = true;
+        },
+        notch ? DOCK_NOTCH_HOVER_DELAY_MS : spring.fast.settleMs,
+      );
+  }
+  function cancelOpen(): void {
+    clearTimeout(openTimer);
+    openTimer = undefined;
   }
   function leave(event?: PointerEvent | FocusEvent): void {
     if (event instanceof PointerEvent) {
@@ -536,7 +558,7 @@
       pointerInside = false;
       if (!gesture && awaitingDragStart === null) conversationFocus.pointerLeave(event);
     }
-    clearTimeout(openTimer);
+    cancelOpen();
     clearTimeout(closeTimer);
     if (
       event instanceof FocusEvent &&
@@ -555,6 +577,7 @@
     else closeTimer = setTimeout(close, spring.moderate.settleMs);
   }
   function resetPlacement(): void {
+    cancelOpen();
     stopHeight();
     expandedByUser = false;
     contentVisible = false;
@@ -568,7 +591,7 @@
     hoverComposerFocus.leave();
     if (!pinned) onHomeDismiss?.();
     pointerInside = false;
-    clearTimeout(openTimer);
+    cancelOpen();
     clearTimeout(closeTimer);
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
@@ -640,7 +663,7 @@
       placement.captureHidden
     )
       return;
-    clearTimeout(openTimer);
+    cancelOpen();
     clearTimeout(closeTimer);
     const gripBounds = gripElement?.getBoundingClientRect();
     const surfaceBounds = surfaceElement?.getBoundingClientRect();
@@ -678,7 +701,7 @@
       awaitingDragStart = dragStartResult?.id ?? 0;
       suppressClick = true;
       expandedByUser = false;
-      clearTimeout(openTimer);
+      cancelOpen();
       clearTimeout(closeTimer);
       command({
         action: 'begin-drag',
@@ -776,7 +799,7 @@
     disposed = true;
     growGate.cancel();
     pointerEnd(true);
-    clearTimeout(openTimer);
+    cancelOpen();
     clearTimeout(closeTimer);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
@@ -888,6 +911,7 @@
       onfocusin={(event) => {
         if (gesture !== null || awaitingDragStart !== null || dragging) return;
         if (performance.now() - lastUserInput > 1000) return;
+        cancelOpen();
         expandedByUser = true;
         const target = event.target as HTMLElement;
         // Text entry keeps motion even when it matches :focus-visible after a click.

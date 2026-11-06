@@ -3,6 +3,16 @@
   import { adaptiveDockFixture } from '../dock-rail.preview-fixtures';
   import DockRail from '../DockRail.svelte';
 
+  let {
+    workspaceId = null,
+    focusRequest = 0,
+    hidden = false,
+  }: {
+    workspaceId?: string | null;
+    focusRequest?: number;
+    hidden?: boolean;
+  } = $props();
+
   // Main's presence report is the only hover signal here: the real controller listens
   // on a fake bridge, and the spec emits through window.__dockPresence.
   // eslint-disable-next-line intent/no-component-async-data-fetch -- fake IPC boundary for the presence fixture; no domain data
@@ -20,12 +30,16 @@
   <DockRail
     workspaces={[]}
     viewportHeight={600}
-    placement={adaptiveDockFixture('notch')}
+    placement={{ ...adaptiveDockFixture('notch'), captureHidden: hidden }}
+    conversationWorkspaceId={workspaceId}
+    {focusRequest}
     onPlacementCommand={() => {}}
     {pointerController}
     staticData
     onOpenWorkspace={() => {}}
     onOpenAssistant={() => {}}
     onOpenHud={() => {}}
-  />
+  >
+    {#snippet conversation()}<p>Conversation draft</p>{/snippet}
+  </DockRail>
 </section>
