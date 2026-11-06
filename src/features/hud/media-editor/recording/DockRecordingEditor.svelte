@@ -645,7 +645,7 @@
   .save-problem {
     margin: 0;
     font-size: 12px;
-    color: hsl(var(--destructive));
+    color: hsl(var(--danger));
   }
   .readonly-note {
     margin: 0;
