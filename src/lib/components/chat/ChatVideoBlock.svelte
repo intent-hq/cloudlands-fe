@@ -84,6 +84,7 @@
     >
       <Button
         bind:ref={triggerRef}
+        wrapContent={false}
         type="button"
         variant="ghost"
         size="default"
@@ -123,7 +124,7 @@
           aria-hidden="true"
         >
           <span
-            class="flex size-11 items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
+            class="flex size-11 shrink-0 aspect-square items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
           >
             <svg viewBox="0 0 20 20" class="ml-0.5 size-5" fill="currentColor">
               <path d="m7 5 7 5-7 5V5Z" />
