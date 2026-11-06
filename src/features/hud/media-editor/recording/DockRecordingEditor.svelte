@@ -421,6 +421,8 @@
   }
   function jumpTo(mark: DockCaptureEditorMark): void {
     if (mark.atMs === null) return;
+    frameTool = null;
+    selectedMarkId = mark.id;
     activeMarkId = mark.id;
     playback?.pause();
     seek(mark.atMs);
@@ -663,6 +665,8 @@
           seek(ms);
         }}
         onMark={(mark) => {
+          frameTool = null;
+          selectedMarkId = mark.id;
           activeMarkId = mark.id;
           playback?.pause();
           seek(mark.atMs);

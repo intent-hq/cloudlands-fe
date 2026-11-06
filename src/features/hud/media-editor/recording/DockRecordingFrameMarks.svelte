@@ -1,7 +1,12 @@
 <script lang="ts">
-  import { tick, onDestroy } from 'svelte';
+  import { tick, onDestroy, untrack } from 'svelte';
   import { dockMediaMarkEditableAt } from '$shared/dock-media-animation';
   import { m } from '$shared/paraglide/messages.js';
+  import {
+    annotationHandles,
+    resizeAnnotationGeometry,
+    type AnnotationHandleId,
+  } from '../annotation-selection';
   import { Input } from '$lib/components/ui/input';
   import {
     dockMediaGeometryRect,
@@ -20,9 +25,7 @@
   import {
     dragGeometry,
     frameBox,
-    frameResizable,
     moveFrameGeometry,
-    resizeFrameGeometry,
     type FrameTool,
   } from './recording-frame-model';
 
@@ -89,6 +92,7 @@
         original: DockMediaGeometry;
         from: { x: number; y: number };
         preview: DockMediaGeometry | null;
+        handle: AnnotationHandleId | null;
       };
   let gesture = $state<Gesture | null>(null);
   let typing = $state<{ x: number; y: number; atMs: number; value: string } | null>(null);
@@ -97,6 +101,15 @@
   let textEntry = $state<HTMLDivElement | null>(null);
   let surface = $state<SVGSVGElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
+  $effect(() => {
+    const currentTool = tool;
+    untrack(() => {
+      const g = gesture;
+      if (!g || (g.kind === 'draw' ? g.tool === currentTool : currentTool === null)) return;
+      gesture = null;
+      if (surface?.hasPointerCapture(g.pointerId)) surface.releasePointerCapture(g.pointerId);
+    });
+  });
 
   // The edit as it will be once the gesture in progress is committed.
   const shownEdit = $derived.by((): DockMediaEdit => {
@@ -185,6 +198,7 @@
       original: mark.geometry,
       from: point,
       preview: null,
+      handle: target?.getAttribute('data-resize') as AnnotationHandleId | null,
     };
   }
   function onPointerMove(event: PointerEvent): void {
@@ -198,7 +212,13 @@
     }
     const preview =
       g.kind === 'resize'
-        ? resizeFrameGeometry(g.original, point, source.width, source.height)
+        ? resizeAnnotationGeometry(
+            g.original,
+            g.handle ?? 'se',
+            point.x - g.from.x,
+            point.y - g.from.y,
+            { x: 0, y: 0, w: source.width, h: source.height },
+          )
         : moveFrameGeometry(
             g.original,
             point.x - g.from.x,
@@ -246,7 +266,7 @@
    * Esc lets it go.
    */
   function onMarkKeydown(event: KeyboardEvent, id: string): void {
-    if (event.defaultPrevented || !editable || !box) return;
+    if (event.defaultPrevented || !editable || !box || tool !== null) return;
     const mark = visible.find((row) => row.mark.id === id)?.mark;
     if (!mark) return;
     if (event.key === 'Delete' || event.key === 'Backspace') {
@@ -316,7 +336,7 @@
       onpointercancel={(event) => onPointerUp(event, false)}
       onlostpointercapture={(event) => onPointerUp(event, false)}
     >
-      {#if editable}
+      {#if editable && tool === null}
         {#each visible as row (row.mark.id)}
           {@const g = row.mark.geometry}
           {@const b = dockMediaGeometryRect(g)}
@@ -332,7 +352,9 @@
               mark: `${row.n}. ${row.mark.label || row.mark.kind}`,
               time: formatRecordingTime(row.mark.atMs),
             })}
-            onfocus={() => onSelect?.(row.mark.id)}
+            onfocus={() => {
+              if (tool === null) onSelect?.(row.mark.id);
+            }}
             onkeydown={(event) => onMarkKeydown(event, row.mark.id)}
           >
             {#if g.kind === 'path' || g.kind === 'arrow'}
@@ -341,17 +363,34 @@
               <rect class="hit-area" x={b.x} y={b.y} width={b.w} height={b.h} />
             {/if}
             {#if selected}
-              <rect class="selection" x={b.x} y={b.y} width={b.w} height={b.h} />
-              {#if frameResizable(g)}
+              {#each annotationHandles(g) as handle (handle.id)}
                 <rect
-                  data-resize
-                  class="handle"
-                  x={b.x + b.w - 5 * box.scale}
-                  y={b.y + b.h - 5 * box.scale}
-                  width={10 * box.scale}
-                  height={10 * box.scale}
+                  data-resize={handle.id === 'move' ? undefined : handle.id}
+                  class="selection-hit"
+                  style:cursor={handle.id === 'from' || handle.id === 'to' || handle.id === 'move'
+                    ? 'move'
+                    : handle.id === 'nw' || handle.id === 'se'
+                      ? 'nwse-resize'
+                      : 'nesw-resize'}
+                  x={Math.max(
+                    0,
+                    Math.min(
+                      handle.x - 8 * box.scale,
+                      source.width - Math.min(16 * box.scale, source.width),
+                    ),
+                  )}
+                  y={Math.max(
+                    0,
+                    Math.min(
+                      handle.y - 8 * box.scale,
+                      source.height - Math.min(16 * box.scale, source.height),
+                    ),
+                  )}
+                  width={Math.min(16 * box.scale, source.width)}
+                  height={Math.min(16 * box.scale, source.height)}
                 />
-              {/if}
+                <circle class="selection-handle" cx={handle.x} cy={handle.y} r={2.5 * box.scale} />
+              {/each}
             {/if}
           </g>
         {/each}
@@ -429,24 +468,20 @@
   .surface:not([data-tool='pointer']) .hit {
     pointer-events: none;
   }
-  .selection {
-    fill: none;
-    stroke: hsl(var(--ring));
+  .selection-hit {
+    fill: transparent;
+    stroke: none;
+    pointer-events: all;
+  }
+  .selection-handle {
+    fill: hsl(var(--background));
+    stroke: hsl(var(--primary-ink));
     stroke-width: 1;
-    stroke-dasharray: 4 3;
     vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
-  .hit:focus-visible .selection {
-    stroke-width: 2;
-  }
-  .handle {
-    fill: hsl(var(--background));
-    stroke: hsl(var(--ring));
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
-    cursor: nwse-resize;
-    pointer-events: all;
+  .hit:focus-visible .selection-handle {
+    fill: hsl(var(--primary-ink));
   }
   .text-entry {
     position: absolute;

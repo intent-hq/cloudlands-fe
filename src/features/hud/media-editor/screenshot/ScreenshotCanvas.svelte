@@ -16,6 +16,11 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
+  import {
+    annotationHandles,
+    resizeAnnotationGeometry,
+    type AnnotationHandleId,
+  } from '../annotation-selection';
   import { Textarea } from '$lib/components/ui/textarea';
   import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { m } from '$shared/paraglide/messages.js';
@@ -101,7 +106,7 @@
     points: DockImagePoint[];
     id: string | null;
     original: DockMarkGeometry | null;
-    resize: 'nw' | 'ne' | 'se' | 'sw' | null;
+    resize: AnnotationHandleId | null;
     preview: DockMarkGeometry | null;
     radius: number;
     tool: ScreenshotTool;
@@ -272,7 +277,7 @@
     const hit = event.target instanceof Element ? event.target.closest('[data-shape-id]') : null;
     const id = hit?.getAttribute('data-shape-id') ?? null;
     const shape = shapes.find((item) => item.id === id);
-    const selecting = tool === 'pointer' || (!!shape && tool !== 'blur');
+    const selecting = tool === 'pointer';
     if (selecting) onSelect(id, event);
     if (selecting && !shape) return;
     if (event.metaKey || event.ctrlKey || event.shiftKey) return;
@@ -285,7 +290,7 @@
       original: selecting && shape ? shape.geometry : null,
       resize: (event.target instanceof Element
         ? event.target.getAttribute('data-resize')
-        : null) as 'nw' | 'ne' | 'se' | 'sw' | null,
+        : null) as AnnotationHandleId | null,
       preview: null,
       radius: brushRadius,
       tool: selecting ? 'pointer' : tool,
@@ -359,29 +364,13 @@
         );
         preview = { kind: 'rect', ...b, x: b.x + dx, y: b.y + dy };
       } else if (g.resize) {
-        // Use the drag delta so grabbing the larger invisible target never snaps a corner.
-        const dx = current.x - g.start.x,
-          dy = current.y - g.start.y;
-        const right = b.x + b.w,
-          bottom = b.y + b.h;
-        const left = g.resize.includes('w')
-          ? clamp(b.x + dx, frame.x, right - Math.min(2, frame.w))
-          : b.x;
-        const top = g.resize.includes('n')
-          ? clamp(b.y + dy, frame.y, bottom - Math.min(2, frame.h))
-          : b.y;
-        const nextRight = g.resize.includes('e')
-          ? clamp(right + dx, b.x + Math.min(2, frame.w), frame.x + frame.w)
-          : right;
-        const nextBottom = g.resize.includes('s')
-          ? clamp(bottom + dy, b.y + Math.min(2, frame.h), frame.y + frame.h)
-          : bottom;
-        preview = fitScreenshotGeometry(g.original, {
-          x: left,
-          y: top,
-          w: nextRight - left,
-          h: nextBottom - top,
-        });
+        preview = resizeAnnotationGeometry(
+          g.original,
+          g.resize,
+          current.x - g.start.x,
+          current.y - g.start.y,
+          frame,
+        );
       } else
         preview = moveScreenshotGeometry(
           g.original,
@@ -449,7 +438,7 @@
     if (crop) onCropChange(crop.original);
   }
   function key(event: KeyboardEvent) {
-    if (disabled) return;
+    if (disabled || (tool !== 'pointer' && !cropCandidate)) return;
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !cropCandidate) {
       event.preventDefault();
       event.stopPropagation();
@@ -506,7 +495,7 @@
     } else onTransform(shape.id, moveScreenshotGeometry(shape.geometry, delta, frame));
   }
   function doubleClick(event: MouseEvent) {
-    if (disabled || cropCandidate || isTextEntryTarget(event.target)) return;
+    if (disabled || tool !== 'pointer' || cropCandidate || isTextEntryTarget(event.target)) return;
     const targetId =
       event.target instanceof Element
         ? event.target.closest('[data-shape-id]')?.getAttribute('data-shape-id')
@@ -543,6 +532,7 @@
     bind:this={surface}
     class="canvas"
     class:hidden
+    data-tool={tool}
     viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`}
     preserveAspectRatio="xMidYMid meet"
     role="application"
@@ -614,66 +604,55 @@
       </g>
     {/if}
     <g class:cropping={!!cropCandidate}>
-      {#each visible as shape (shape.id)}
-        {@const b = dockGeometryRect(shape.geometry)}
-        <g data-shape-id={shape.id} class="shape">
-          {#if shape.blurStroke}
-            <path
-              class="brush-hit"
-              style:stroke-width={shape.blurStroke.radius * 2}
-              d={shape.blurStroke.points.length === 1
-                ? `M${shape.blurStroke.points[0].x},${shape.blurStroke.points[0].y}l.001,0`
-                : screenshotPath({ kind: 'path', points: shape.blurStroke.points })}
-            />
-          {:else if shape.geometry.kind === 'rect'}<rect
-              class="shape-hit"
-              x={b.x}
-              y={b.y}
-              width={b.w}
-              height={b.h}
-            />
-          {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
-          {#if !cropCandidate && (selectedIds.includes(shape.id) || selectedId === shape.id)}
-            <rect class="selection" x={b.x} y={b.y} width={b.w} height={b.h} />
-            {#each [{ id: 'nw', x: b.x, y: b.y }, { id: 'ne', x: b.x + b.w, y: b.y }, { id: 'se', x: b.x + b.w, y: b.y + b.h }, { id: 'sw', x: b.x, y: b.y + b.h }] as handle (handle.id)}
-              <rect
-                data-resize={handle.id}
-                class="selection-hit"
-                style:cursor={handle.id === 'nw' || handle.id === 'se'
-                  ? 'nwse-resize'
-                  : 'nesw-resize'}
-                x={clamp(
-                  handle.x - 8 * unit,
-                  frame.x,
-                  frame.x + frame.w - Math.min(16 * unit, frame.w),
-                )}
-                y={clamp(
-                  handle.y - 8 * unit,
-                  frame.y,
-                  frame.y + frame.h - Math.min(16 * unit, frame.h),
-                )}
-                width={Math.min(16 * unit, frame.w)}
-                height={Math.min(16 * unit, frame.h)}
+      {#if tool === 'pointer' && !cropCandidate}
+        {#each visible as shape (shape.id)}
+          {@const b = dockGeometryRect(shape.geometry)}
+          <g data-shape-id={shape.id} class="shape">
+            {#if shape.blurStroke}
+              <path
+                class="brush-hit"
+                style:stroke-width={shape.blurStroke.radius * 2}
+                d={shape.blurStroke.points.length === 1
+                  ? `M${shape.blurStroke.points[0].x},${shape.blurStroke.points[0].y}l.001,0`
+                  : screenshotPath({ kind: 'path', points: shape.blurStroke.points })}
               />
-              <rect
-                class="handle selection-handle"
-                x={clamp(
-                  handle.x - 3 * unit,
-                  frame.x,
-                  frame.x + frame.w - Math.min(6 * unit, frame.w),
-                )}
-                y={clamp(
-                  handle.y - 3 * unit,
-                  frame.y,
-                  frame.y + frame.h - Math.min(6 * unit, frame.h),
-                )}
-                width={Math.min(6 * unit, frame.w)}
-                height={Math.min(6 * unit, frame.h)}
+            {:else if shape.geometry.kind === 'rect'}<rect
+                class="shape-hit"
+                x={b.x}
+                y={b.y}
+                width={b.w}
+                height={b.h}
               />
-            {/each}
-          {/if}
-        </g>
-      {/each}
+            {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
+            {#if !cropCandidate && (selectedIds.includes(shape.id) || selectedId === shape.id)}
+              {#each annotationHandles(shape.geometry) as handle (handle.id)}
+                <rect
+                  data-resize={handle.id}
+                  class="selection-hit"
+                  style:cursor={handle.id === 'from' || handle.id === 'to'
+                    ? 'move'
+                    : handle.id === 'nw' || handle.id === 'se'
+                      ? 'nwse-resize'
+                      : 'nesw-resize'}
+                  x={clamp(
+                    handle.x - 8 * unit,
+                    frame.x,
+                    frame.x + frame.w - Math.min(16 * unit, frame.w),
+                  )}
+                  y={clamp(
+                    handle.y - 8 * unit,
+                    frame.y,
+                    frame.y + frame.h - Math.min(16 * unit, frame.h),
+                  )}
+                  width={Math.min(16 * unit, frame.w)}
+                  height={Math.min(16 * unit, frame.h)}
+                />
+                <circle class="selection-handle" cx={handle.x} cy={handle.y} r={2.5 * unit} />
+              {/each}
+            {/if}
+          </g>
+        {/each}
+      {/if}
     </g>
     {#if gesture?.preview && !gesture.id}
       {@const b = dockGeometryRect(gesture.preview)}
@@ -793,8 +772,10 @@
     visibility: hidden;
   }
   .canvas:focus-visible {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: -2px;
+    outline: none;
+  }
+  .canvas:focus-visible .selection-handle {
+    fill: hsl(var(--primary-ink));
   }
   .pending-redactions {
     fill: currentColor;
@@ -846,19 +827,16 @@
     vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
-  .selection {
-    fill: none;
-    stroke: hsl(var(--ring));
-    stroke-width: 1;
-    vector-effect: non-scaling-stroke;
-    pointer-events: none;
-  }
   .selection-hit {
     fill: transparent;
     stroke: none;
     pointer-events: all;
   }
   .selection-handle {
+    fill: hsl(var(--background));
+    stroke: hsl(var(--primary-ink));
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
   .handle {

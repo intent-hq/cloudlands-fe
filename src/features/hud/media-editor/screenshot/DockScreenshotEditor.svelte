@@ -294,7 +294,7 @@
     void identity;
   });
   function select(id: string | null, event?: MouseEvent | KeyboardEvent | PointerEvent) {
-    if (blocked || cropCandidate) return;
+    if (blocked || cropCandidate || tool !== 'pointer') return;
     const range = !!event?.shiftKey;
     const toggle = !!event && (event.metaKey || event.ctrlKey);
     const order = cards.map((item) => item.id);
@@ -314,10 +314,19 @@
       selectionAnchor = id;
     }
     selectedMarkId = selectedIds.at(-1) ?? null;
-    if (id) tool = 'pointer';
+  }
+  function selectFromList(id: string | null, event?: MouseEvent | KeyboardEvent | PointerEvent) {
+    if (blocked || cropCandidate) return;
+    tool = 'pointer';
+    select(id, event);
+  }
+  function selectAllFromList() {
+    if (blocked || cropCandidate) return;
+    tool = 'pointer';
+    selectAll();
   }
   function selectAll() {
-    if (blocked || cropCandidate) return;
+    if (blocked || cropCandidate || tool !== 'pointer') return;
     selectedIds = cards.map((item) => item.id);
     selectedMarkId = selectedIds.at(-1) ?? null;
     selectionAnchor ??= selectedIds[0] ?? null;
@@ -325,6 +334,11 @@
   function setTool(next: ScreenshotTool) {
     cropCandidate = null;
     editingTextId = null;
+    if (next !== 'pointer') {
+      selectedIds = [];
+      selectedMarkId = null;
+      selectionAnchor = null;
+    }
     tool = next === 'blur' && !canCreateV2 ? 'pointer' : next;
   }
   function crop() {
@@ -361,7 +375,7 @@
   }
   function remove(id?: string) {
     const ids = new Set(id && !selectedIds.includes(id) ? [id] : selectedIds);
-    if (!ids.size || cropCandidate || blocked) return;
+    if (!ids.size || cropCandidate || blocked || tool !== 'pointer') return;
     // A group deletion is one canonical change and therefore one undo step.
     apply({
       ...draft,
@@ -539,9 +553,9 @@
         },
       ],
     });
-    selectedMarkId = id;
-    selectedIds = [id];
-    selectionAnchor = id;
+    selectedMarkId = kind === 'text' ? id : null;
+    selectedIds = kind === 'text' ? [id] : [];
+    selectionAnchor = kind === 'text' ? id : null;
     if (kind === 'text') {
       tool = 'pointer';
       editingTextId = id;
@@ -644,8 +658,8 @@
     items={cards}
     {selectedIds}
     disabled={blocked || !!cropCandidate}
-    onSelect={select}
-    onSelectAll={selectAll}
+    onSelect={selectFromList}
+    onSelectAll={selectAllFromList}
     onDelete={() => remove()}
   />
 {/snippet}
