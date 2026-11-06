@@ -796,6 +796,17 @@
   }
 
   function openAddStep() {
+    const query = formQuery.trim();
+    if (query && cloneTabVisible) {
+      const github = parseGitHubUrl(normalizeGitHubInput(query));
+      if (github) {
+        preferredForge = 'github';
+        activeTab = 'github';
+        handleGitHubInputChange(`${github.owner}/${github.repo}`);
+      } else if (activeTab === 'github') {
+        handleGitHubInputChange(query);
+      }
+    }
     formStep = 'add';
     void tick().then(() => {
       if (activeTab === 'github') githubInputElement?.focus();
@@ -1691,22 +1702,15 @@
     }
   }
 
-  // Confirm the picked GitHub repo — path-less selection, no clone destination.
-  // Falls back to parsing the raw input so Enter works before the debounced
-  // detection has run.
+  // Confirm current input, never a previous debounced detection.
   function handleConfirmGitHubPick() {
-    let picked = detectedGitHub;
-    if (!picked) {
-      const parsed = parseGitHubUrl(githubUrlInput);
-      if (parsed) {
-        picked = {
-          owner: parsed.owner,
-          repo: parsed.repo,
-          url: `https://github.com/${parsed.owner}/${parsed.repo}`,
-        };
-      }
-    }
-    if (!picked) return;
+    const parsed = parseGitHubUrl(githubUrlInput);
+    if (!parsed) return;
+    const picked = {
+      owner: parsed.owner,
+      repo: parsed.repo,
+      url: `https://github.com/${parsed.owner}/${parsed.repo}`,
+    };
 
     const shorthand = `${picked.owner}/${picked.repo}`;
 

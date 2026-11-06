@@ -475,17 +475,14 @@
       resetBranchStatus();
       clearSearch();
       if (currentRepoPath && currentConnection) {
-        // Try to load saved branch for this repo if persistence is enabled.
-        const savedBranch = getSavedBranchForRepo(currentRepoPath);
-
         // Clear previous selection when repo changes
         logger.debug('Repo changed - resetting branch', {
           previousRepoPath,
           currentRepoPath,
-          savedBranch,
           previousInternalBranch: internalSelectedBranch,
         });
-        internalSelectedBranch = savedBranch;
+        // The branch-list readers restore a saved branch after confirming it.
+        internalSelectedBranch = '';
         defaultBranch = '';
         branches = [];
 
