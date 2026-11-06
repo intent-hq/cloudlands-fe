@@ -18,11 +18,13 @@ const isBrowser = typeof window !== 'undefined';
 export class ThemeManager {
   private static instance: ThemeManager | null = null;
   private currentTheme: Theme = 'system';
-  // The dock and capture toolbar have a window-local dark appearance. Keep the saved app
+  // The dock, capture toolbar and capture editor have a window-local dark appearance. Keep the saved app
   // preference intact; root-level tokens also cover body-portaled shared menus.
   private readonly fixedDarkAppearance =
     isBrowser &&
-    ['dock', 'dock-annotation'].includes(document.documentElement.dataset.auxiliaryWindow ?? '');
+    ['dock', 'dock-annotation', 'dock-capture-editor'].includes(
+      document.documentElement.dataset.auxiliaryWindow ?? '',
+    );
   private mediaQuery: MediaQueryList | null = null;
   /** Single custom theme from user-imported file (not a preset set) */
   private customTheme: ParsedVSCodeTheme | null = null;

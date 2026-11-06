@@ -90,7 +90,9 @@ function* syncWindowTheme(preference: ThemePreference) {
   // must not change other windows or their OS-theme resolution.
   if (
     !isElectron() ||
-    ['dock', 'dock-annotation'].includes(document.documentElement.dataset.auxiliaryWindow ?? '')
+    ['dock', 'dock-annotation', 'dock-capture-editor'].includes(
+      document.documentElement.dataset.auxiliaryWindow ?? '',
+    )
   )
     return;
   try {

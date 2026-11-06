@@ -12,7 +12,7 @@
 import { randomUUID } from 'node:crypto';
 import path, { dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { BrowserWindow, ipcMain, nativeTheme, screen, type IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, ipcMain, screen, type IpcMainInvokeEvent } from 'electron';
 import { Logger } from '../../../shared/logger';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
@@ -299,7 +299,8 @@ function createEditorWindow(backendId: string): BrowserWindow {
   const height = Math.max(1, Math.min(DEFAULT_SIZE.height, area.height - 2 * WINDOW_MARGIN));
   const { tabbingIdentifier: _tabs, ...titleBar } = getWindowTitleBarOptions();
   const window = new BrowserWindow({
-    ...getWindowAppearanceOptions(nativeTheme.shouldUseDarkColors, process.platform, false),
+    // Dark like the dock (the page is fixed dark too), so it never opens on a light frame.
+    ...getWindowAppearanceOptions(true, process.platform, false),
     ...titleBar,
     x: Math.round(area.x + (area.width - width) / 2),
     y: Math.round(area.y + (area.height - height) / 2),
