@@ -272,7 +272,9 @@ export interface DockAnnotationReadyRequest {
 export interface DockAnnotationPointerRequest {
   sessionId: string;
   sequence: number;
-  phase: 'down' | 'cancel';
+  phase: 'down' | 'move' | 'cancel';
+  /** Number of actual accumulated path points; used only for recorded progress. */
+  pointCount?: number;
   /** Overlay DIP of the pointerdown origin (ignored for cancel). */
   x: number;
   y: number;

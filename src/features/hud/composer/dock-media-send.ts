@@ -1,3 +1,4 @@
+import { dockMediaOverlaySpans } from '$shared/dock-media-animation';
 /** Materialize the click's immutable media edits before message admission. */
 import type { DockComposerEvidence, DockEvidenceNativeService } from '$shared/dock-evidence';
 import { defaultDockMediaEdit, planDockMediaOutput, DOCK_MEDIA_OUTPUT_VERSION, type DockSavedMedia } from '$shared/dock-media-edit';
@@ -57,9 +58,8 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
           continue;
         }
         if (!service?.exportMedia) throw new Error('media-export-unavailable');
-        const boundaries = [...new Set([0, source.durationMs, ...plan.marks.flatMap((entry) => [entry.frameAtMs, entry.visibleUntilMs])])].sort((a, b) => a - b);
-        const spans = boundaries.slice(0, -1).map((atMs, index) => ({ atMs, endMs: boundaries[index + 1] }))
-          .filter((span) => plan.marks.some((entry) => span.atMs >= entry.frameAtMs && span.atMs < entry.visibleUntilMs));
+        const spans = dockMediaOverlaySpans(source, edit);
+        if (spans.length > 1000) throw new Error('media-animation-layer-limit');
         const layers = [];
         for (const span of spans) { check(); layers.push({ ...span, png: await renderDockMediaOverlay(source, edit, span.atMs) }); }
         const exported = await service.exportMedia({ outputVersion: DOCK_MEDIA_OUTPUT_VERSION, jobId, media: { ...media, saved: edit }, layers });

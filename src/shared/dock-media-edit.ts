@@ -1,5 +1,6 @@
 /** Saved, source-relative edits. Originals and recognition timings are never rewritten. */
 import { z } from 'zod';
+import { DockGestureProgressSchema } from './dock-gesture-progress';
 
 const finite = z.number().finite();
 const ms = finite.nonnegative();
@@ -95,6 +96,7 @@ export function transformDockMediaText(g: Extract<DockMediaGeometry, { kind: 'te
 }
 export const DockMediaEditMarkSchema = z
   .object({
+    gestureProgress: DockGestureProgressSchema.optional(),
     id,
     atMs: ms,
     batchId: id,
@@ -161,6 +163,13 @@ export const DockMediaSourceSchema = z
   })
   .strict()
   .superRefine((source, ctx) => {
+    for (const mark of source.capturedMarks ?? []) {
+      const progress = mark.gestureProgress;
+      if (progress && (source.kind !== 'recording' || progress.completedAtMs > source.durationMs ||
+          progress.samples.some((sample) => sample.atMs < mark.atMs ||
+            (mark.geometry.kind === 'path' && sample.pointCount > mark.geometry.points.length))))
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['capturedMarks'], message: 'Gesture timing does not match the recording' });
+    }
     if (source.kind === 'recording' && source.durationMs <= 0)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

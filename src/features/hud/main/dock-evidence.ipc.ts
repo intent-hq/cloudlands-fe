@@ -567,6 +567,7 @@ function createMediaBinder() {
               ...(snapshot.placement.kind === 'edge' ? { side: snapshot.placement.side } : {}),
             };
           },
+          clipIdentity: () => current() && !state.clipEnded ? state.clipId ?? undefined : undefined,
           clipMs: () =>
             state.clipId ? (dockEvidenceRecorder.elapsedMs(state.clipId) ?? undefined) : undefined,
           // Annotating while dictating is activity: the mic's silence timer must not

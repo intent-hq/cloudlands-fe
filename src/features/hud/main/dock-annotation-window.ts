@@ -1,3 +1,4 @@
+import type { DockGestureProgress } from '../../../shared/dock-gesture-progress';
 /**
  * Dock composer annotation: one transparent, nonactivating overlay window on the
  * dock's display that turns pick/box/pen/arrow gestures into numbered marks.
@@ -138,6 +139,8 @@ export interface DockAnnotationHost {
   dockAnchor?(): DockToolbarAnchor | null;
   /** Elapsed time of the live clip, when one is recording. */
   clipMs(): number | undefined;
+  /** Identity of the currently owned recording; timing may never cross clips. */
+  clipIdentity?(): string | undefined;
   /**
    * Optional: called synchronously at an accepted pointerdown, before any await,
    * so live speech/clip clocks are stamped at the real click time. The mark may
@@ -182,6 +185,8 @@ export interface DockAnnotationNative {
 }
 
 interface Hold {
+  clipId?: string;
+  progress: DockGestureProgress['samples'];
   sequence: number;
   origin: DockImagePoint;
   tool: DockMarkTool;
@@ -232,6 +237,8 @@ interface Lease {
 }
 
 interface Frozen {
+  clipId?: string;
+  gestureProgress?: DockGestureProgress;
   session: Session;
   lease: Lease;
   tool: DockMarkTool;
@@ -787,6 +794,21 @@ export class DockAnnotationController implements AnnotationService {
       if (session.hold?.sequence === request.sequence) this.release(session);
       return { ok: true };
     }
+    if (request.phase === 'move') {
+      const hold = session.hold, atMs = this.host?.clipMs();
+      if (!hold || hold.sequence !== request.sequence || hold.tool !== request.tool || !hold.clipId ||
+          hold.clipId !== this.host?.clipIdentity?.() || !finitePoint(request) || !this.insideDisplay(session, request) ||
+          !Number.isSafeInteger(request.pointCount) || request.pointCount! < 1 || request.pointCount! > DOCK_ANNOTATION_LIMITS.gesturePoints ||
+          atMs === undefined || !Number.isFinite(atMs) || atMs < (hold.clipMs ?? 0)) return reject('stale');
+      const previous = hold.progress.at(-1);
+      if (previous && (atMs < previous.atMs || request.pointCount! < previous.pointCount)) return reject('stale');
+      const sample = { atMs, pointCount: request.pointCount!, end: { x: request.x, y: request.y } };
+      if (previous?.atMs === atMs) { if (hold.progress.length > 1) hold.progress[hold.progress.length - 1] = sample; }
+      else if (!previous || atMs - previous.atMs >= 32) hold.progress.push(sample);
+      // Keep observed points only; evenly thin older observations under the cap.
+      if (hold.progress.length > 64) hold.progress = hold.progress.filter((_, i) => i === 0 || i % 2 === 0 || i === hold.progress.length - 1);
+      return { ok: true };
+    }
     if (request.phase !== 'down' || !finitePoint(request) || !validTool(request.tool))
       return reject('invalid');
     // Sequences only move forward: a replayed or reordered pointerdown is stale.
@@ -801,6 +823,8 @@ export class DockAnnotationController implements AnnotationService {
     if (session.hold) this.release(session);
     const clipMs = this.host?.clipMs();
     session.hold = {
+      clipId: this.host?.clipIdentity?.(),
+      progress: clipMs === undefined ? [] : [{ atMs: clipMs, pointCount: 1, end: { ...origin } }],
       sequence: request.sequence,
       origin,
       tool: session.tool,
@@ -919,6 +943,9 @@ export class DockAnnotationController implements AnnotationService {
       end: hold.tool === 'pick' ? { ...hold.origin } : { ...points.at(-1)! },
       geometry,
       clipMs: hold.clipMs,
+      clipId: hold.clipId,
+      ...(hold.clipId && hold.clipId === host?.clipIdentity?.() && hold.progress.length && host?.clipMs() !== undefined
+        ? { gestureProgress: { completedAtMs: host.clipMs()!, samples: hold.progress.map((sample) => ({ ...sample, end: { ...sample.end } })) } } : {}),
       markId: hold.markId,
       atEpochMs: hold.atEpochMs,
       excludeWindowIds: [
@@ -1166,8 +1193,15 @@ export class DockAnnotationController implements AnnotationService {
     capture?: DockCapturedPixels,
   ): boolean {
     if (frozen.lease.expired || !this.current(frozen.session)) return false;
+    const sameClip = frozen.clipId ? frozen.clipId === this.host?.clipIdentity?.() : !this.host?.clipIdentity;
+    const width = capture?.width ?? frozen.session.image?.width;
+    const height = capture?.height ?? frozen.session.image?.height;
+    const progress = sameClip && frozen.gestureProgress && width && height && frozen.tool !== 'pick'
+      ? { ...frozen.gestureProgress, samples: frozen.gestureProgress.samples.map((sample) => ({ ...sample,
+          end: { x: sample.end.x * width / frozen.display.bounds.width, y: sample.end.y * height / frozen.display.bounds.height } })) } : undefined;
     this.emit({
       type: 'mark',
+      ...(progress ? { gestureProgress: progress } : {}),
       sessionId: frozen.session.id,
       tool: frozen.tool,
       geometry,
@@ -1175,7 +1209,7 @@ export class DockAnnotationController implements AnnotationService {
       ...(capture ? { capture } : {}),
       markId: frozen.markId,
       gestureAtEpochMs: frozen.atEpochMs,
-      ...(frozen.clipMs !== undefined && Number.isFinite(frozen.clipMs) && frozen.clipMs >= 0
+      ...(sameClip && frozen.clipMs !== undefined && Number.isFinite(frozen.clipMs) && frozen.clipMs >= 0
         ? { clipMs: Math.round(frozen.clipMs) }
         : {}),
     });

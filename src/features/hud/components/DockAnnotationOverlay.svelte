@@ -154,12 +154,17 @@
         : [event];
     const next = samples.map(local);
     if (current.tool === 'pen') {
-      if (current.points.length + next.length > DOCK_ANNOTATION_LIMITS.gesturePoints) return;
+      if (current.points.length + next.length > DOCK_ANNOTATION_LIMITS.gesturePoints - 1) return;
       current.points = [...current.points, ...next];
     } else {
       current.points = [current.origin, next.at(-1) ?? current.origin];
     }
     gesture = { ...current };
+    // Main stamps the recording clock. Never send renderer wall-clock timing.
+    const end = current.points.at(-1) ?? current.origin;
+    void current.down.then((ok) => ok && transport.pointer({ sessionId: current.sessionId,
+      sequence: current.sequence, phase: 'move', tool: current.tool,
+      x: end.x, y: end.y, pointCount: current.points.length })).catch(() => {});
   }
 
   function onPointerUp(event: PointerEvent) {

@@ -1,3 +1,4 @@
+import { DockGestureProgressSchema, type DockGestureProgress } from './dock-gesture-progress';
 import { DockSavedMediaSchema, type DockSavedMedia, type DockMediaSource, type DockMediaCapture } from './dock-media-edit';
 /**
  * Dock composer screen evidence: captured images, numbered marks, clips and
@@ -60,6 +61,7 @@ export interface DockMarkElement {
 }
 
 export interface DockMark {
+  gestureProgress?: DockGestureProgress;
   id: string;
   imageId: string;
   tool: DockMarkTool;
@@ -482,11 +484,25 @@ export function sanitizeDockMark(mark: DockMark, image: DockEvidenceImage): Dock
   if (!(DOCK_MARK_TOOLS as readonly string[]).includes(mark.tool)) return null;
   const geometry = sanitizeGeometry(mark.geometry, image);
   if (!geometry) return null;
+  const parsedProgress = DockGestureProgressSchema.safeParse(mark.gestureProgress);
+  let gestureProgress = parsedProgress.success ? parsedProgress.data : undefined;
+  // Match the existing final-path decimation exactly. A progress count is an
+  // observed prefix index, never a time-derived fraction of the final stroke.
+  if (gestureProgress && mark.geometry.kind === 'path' && geometry.kind === 'path') {
+    const count = mark.geometry.points.length;
+    const stride = Math.ceil(count / DOCK_EVIDENCE_LIMITS.penPoints);
+    const indices = Array.from({ length: count }, (_, i) => i).filter((i) => i % stride === 0);
+    if (indices.at(-1) !== count - 1) indices.push(count - 1);
+    const kept = indices.slice(-DOCK_EVIDENCE_LIMITS.penPoints);
+    gestureProgress = { ...gestureProgress, samples: gestureProgress.samples.map((sample) => ({ ...sample,
+      pointCount: kept.filter((index) => index < sample.pointCount).length })) };
+  }
   return {
     id: mark.id,
     imageId: image.id,
     tool: mark.tool,
     geometry,
+    ...(gestureProgress ? { gestureProgress } : {}),
     bounds: dockGeometryBounds(geometry),
     element: sanitizeElement(mark.element),
     createdAt: finite(mark.createdAt) ? mark.createdAt : 0,
@@ -1366,6 +1382,7 @@ export type DockEvidenceNativeEvent =
       markId?: string;
       /** Epoch ms of the gesture start, for point-of-speech offsets. */
       gestureAtEpochMs?: number;
+      gestureProgress?: DockGestureProgress;
     }
   | { type: 'annotation-ended'; sessionId: string }
   /** The tool was switched on the overlay's on-screen tool bar. */
