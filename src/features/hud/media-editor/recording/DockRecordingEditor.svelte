@@ -83,6 +83,23 @@
           ),
       )
     : null;
+  // The default was chosen before the transcript arrived. When it resolves (to "no
+  // speech", say), an untouched default follows it, as one new baseline: never over a
+  // saved edit or anything the person changed. The default never opts into audio.
+  let defaultedFor = snapshot.transcript?.status ?? null;
+  $effect(() => {
+    const status = transcript?.status ?? null;
+    if (!edits || !source || snapshot.saved || status === defaultedFor) return;
+    defaultedFor = status;
+    if (edits.dirty) return;
+    const next = defaultDockMediaEdit(
+      source,
+      source.capturedMarks ?? source.bakedMarks ?? [],
+      transcript,
+      snapshot.rememberedChoice ?? null,
+    );
+    if (next.voice !== edits.draft.voice || next.video !== edits.draft.video) edits.commit(next);
+  });
   // Recorded marks are part of the frames: cutting time away would not remove them.
   const timeEditable = !!source && (markRemovable(source) || !source.bakedMarks?.length);
   // Save: offered only when sending honors a saved edit of this source.
