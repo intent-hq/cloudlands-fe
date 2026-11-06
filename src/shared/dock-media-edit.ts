@@ -252,6 +252,7 @@ export type DockMediaEdit = z.infer<typeof DockMediaEditSchema>;
 export const DockMediaSaveRequestSchema = z
   .object({
     openId: id,
+    outputVersion: z.literal(DOCK_MEDIA_OUTPUT_VERSION).optional(),
     sourceId: id,
     sourceRevision: revision,
     pair: z.object({ workspaceId: id, agentId: id }).strict(),
@@ -263,7 +264,11 @@ export const DockMediaSaveRequestSchema = z
       .strict()
       .optional(),
   })
-  .strict();
+  .strict()
+  .refine((request) => (
+    !(request.edit.blurStrokes?.length || request.edit.marks.some((mark) => mark.geometry.kind === 'text' && mark.geometry.style === 'sticky')) ||
+    request.outputVersion === DOCK_MEDIA_OUTPUT_VERSION
+  ), 'This edit requires an admitted output version');
 export type DockMediaSaveRequest = z.infer<typeof DockMediaSaveRequestSchema>;
 export const DOCK_MEDIA_CHOICE_PREF = 'dock-media-last-saved-choice-v1';
 

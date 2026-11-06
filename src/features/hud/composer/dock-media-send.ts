@@ -1,6 +1,6 @@
 /** Materialize the click's immutable media edits before message admission. */
 import type { DockComposerEvidence, DockEvidenceNativeService } from '$shared/dock-evidence';
-import { defaultDockMediaEdit, planDockMediaOutput, type DockSavedMedia } from '$shared/dock-media-edit';
+import { defaultDockMediaEdit, planDockMediaOutput, DOCK_MEDIA_OUTPUT_VERSION, type DockSavedMedia } from '$shared/dock-media-edit';
 import { renderDockMediaImage, renderDockMediaOverlay } from './dock-media-render';
 import { fetchDockMediaBytes } from './dock-media-clipboard';
 import { arrayBufferToBase64 } from '$features/voice/utils/wav-encoder';
@@ -62,7 +62,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
           .filter((span) => plan.marks.some((entry) => span.atMs >= entry.frameAtMs && span.atMs < entry.visibleUntilMs));
         const layers = [];
         for (const span of spans) { check(); layers.push({ ...span, png: await renderDockMediaOverlay(source, edit, span.atMs) }); }
-        const exported = await service.exportMedia({ jobId, media: { ...media, saved: edit }, layers });
+        const exported = await service.exportMedia({ outputVersion: DOCK_MEDIA_OUTPUT_VERSION, jobId, media: { ...media, saved: edit }, layers });
         check();
         if (!exported.ok) throw new Error('media-export-failed');
         const files = [exported.value.video, ...exported.value.frames];
