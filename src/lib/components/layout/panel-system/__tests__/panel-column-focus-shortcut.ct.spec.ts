@@ -8,7 +8,7 @@ type Chord = { key: string; altKey?: boolean; shiftKey?: boolean };
 const nextColumn: Chord = { key: 'ArrowRight', altKey: true };
 const previousColumn: Chord = { key: 'ArrowLeft', altKey: true };
 
-async function dispatchChord(target: Locator, chord: Chord, modifier: 'Meta' | 'Control') {
+async function dispatchChord(target: Locator, chord: Chord, modifier: 'Meta' | 'Control' | null) {
   return target.evaluate(
     (element, { chord, modifier }) => {
       (element as HTMLElement).focus();
@@ -75,7 +75,7 @@ for (const { platform, navigatorPlatform, isMac, modifier } of [
     await expect(state).toHaveAttribute('data-focused-panel', 'p1');
   });
 
-  test(`former Mod+Shift+[ / ] chords no longer move column focus on ${platform}`, async ({
+  test(`only Mod+Alt+Arrow moves column focus from editable targets on ${platform}`, async ({
     mount,
     page,
   }) => {
@@ -86,9 +86,26 @@ for (const { platform, navigatorPlatform, isMac, modifier } of [
     const state = component.getByTestId('mod-w-state');
     await expect(state).toHaveAttribute('data-focused-panel', 'p2');
 
+    // Former column chords (now workspace switching) must not move column focus.
+    const formerChords: Chord[] = [']', '}', '[', '{'].map((key) => ({ key, shiftKey: true }));
     for (const targetId of ['shortcut-input', 'shortcut-editor', 'shortcut-terminal']) {
-      for (const key of [']', '}', '[', '{']) {
-        await dispatchChord(component.getByTestId(targetId), { key, shiftKey: true }, modifier);
+      for (const chord of formerChords) {
+        await dispatchChord(component.getByTestId(targetId), chord, modifier);
+        await expect(state).toHaveAttribute('data-focused-panel', 'p2');
+      }
+    }
+
+    // Mod+Arrow and Alt+Arrow alone are caret moves in editable content; leave them alone.
+    for (const targetId of ['shortcut-input', 'shortcut-editor', 'shortcut-terminal']) {
+      for (const key of ['ArrowRight', 'ArrowLeft']) {
+        const modOnly = await dispatchChord(component.getByTestId(targetId), { key }, modifier);
+        expect(modOnly).toEqual({ active: true, defaultPrevented: false });
+        const altOnly = await dispatchChord(
+          component.getByTestId(targetId),
+          { key, altKey: true },
+          null,
+        );
+        expect(altOnly).toEqual({ active: true, defaultPrevented: false });
         await expect(state).toHaveAttribute('data-focused-panel', 'p2');
       }
     }
