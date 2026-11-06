@@ -3,7 +3,6 @@
   import { menuItem } from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
-  import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
   import RectangleIcon from 'phosphor-svelte/lib/RectangleIcon';
   import ScribbleIcon from 'phosphor-svelte/lib/ScribbleIcon';
   import ArrowUpRightIcon from 'phosphor-svelte/lib/ArrowUpRightIcon';
@@ -86,7 +85,6 @@
 <div class="mark-panel">
   <div class="rail-heading">
     <span>{m.dock_screenshotEditor_marks()}</span>
-    <span class="count">{items.length}</span>
   </div>
   <div
     class="rail"
@@ -126,15 +124,6 @@
   </div>
   {#if !items.length}
     <p class="empty">{m.dock_screenshotEditor_empty()}</p>
-  {:else}
-    <Button
-      variant="ghost"
-      size="compact"
-      disabled={disabled || !selectedIds.length}
-      onclick={onDelete}
-    >
-      <TrashIcon size={14} />{m.dock_screenshotEditor_deleteSelected()}
-    </Button>
   {/if}
 </div>
 
@@ -153,9 +142,6 @@
     padding: 0 8px 4px;
     color: hsl(var(--muted-foreground));
     font-size: 12px;
-  }
-  .count {
-    font-variant-numeric: tabular-nums;
   }
   .empty {
     margin: 0;

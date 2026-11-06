@@ -8410,7 +8410,7 @@
   "dock_screenshotEditor_canvas": "Screenshot canvas. Arrow keys move the selected mark; Shift and arrows resize it. Delete removes it.",
   "dock_screenshotEditor_tools": "Screenshot drawing tools",
   "dock_screenshotEditor_deleteSelected": "Delete selected mark",
-  "dock_screenshotEditor_marks": "Marks",
+  "dock_screenshotEditor_marks": "Annotations",
   "dock_screenshotEditor_empty": "Add a mark to leave a note. Blur regions are not numbered.",
   "dock_screenshotEditor_mark": "Mark {n} · {kind}",
   "dock_screenshotEditor_deleteMark": "Delete mark {n}",

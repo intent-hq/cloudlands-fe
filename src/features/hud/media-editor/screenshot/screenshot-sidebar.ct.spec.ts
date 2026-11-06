@@ -7,7 +7,7 @@ test('sidebar empty state keeps crop, retake and bottom actions reachable', asyn
 }, info) => {
   await page.setViewportSize({ width: 1100, height: 700 });
   const fixture = await mount(ScreenshotSidebarHarness);
-  await expect(fixture.getByRole('listbox', { name: 'Marks' })).toBeAttached();
+  await expect(fixture.getByRole('listbox', { name: 'Annotations' })).toBeAttached();
   await expect(fixture.getByRole('option')).toHaveCount(0);
   await expect(
     fixture.getByText('Add a mark to leave a note. Blur regions are not numbered.'),
@@ -24,6 +24,10 @@ test('sidebar selection and deletion preserve scrolling and anchored actions at 
 }, info) => {
   await page.setViewportSize({ width: 1100, height: 700 });
   const fixture = await mount(ScreenshotSidebarHarness, { props: { count: 30 } });
+  await expect(fixture.locator('.rail-heading')).toHaveText('Annotations');
+  await expect(
+    fixture.locator('aside').getByRole('button', { name: 'Delete selected mark', exact: true }),
+  ).toHaveCount(0);
   const options = fixture.getByRole('option');
   await expect(options).toHaveCount(30);
   await options.first().click();
