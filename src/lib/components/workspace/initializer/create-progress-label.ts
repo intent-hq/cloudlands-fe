@@ -3,8 +3,8 @@
  * §5.1/§6.5) to localized Create-button labels. Phases are daemon-owned
  * strings on the unified 0–100 provisioning scale: the parsed clone phases
  * (`counting`, `compressing`, `receiving`, `resolving`, `checkout`) plus the
- * synthetic milestones (`starting`, `cache`, `submodules`, `cow-copy`,
- * `worktree`, `finalizing`, `complete`). Unknown phases fall back to the
+ * synthetic milestones (`starting`, `cache`, `base-refresh`, `submodules`,
+ * `cow-copy`, `worktree`, `finalizing`, `complete`). Unknown phases fall back to the
  * generic "Preparing workspace…" label so a daemon that grows new
  * milestones never breaks the button.
  */
@@ -23,11 +23,27 @@ function submoduleCounter(message: string | undefined): { current: number; total
   return { current: Number(match[1]), total: Number(match[2]) };
 }
 
+/**
+ * Extract the base and remote from the daemon's `base-refresh` message
+ * ("Updating <baseRef> from <remote>..."). Like the submodule counter, they
+ * live only in the message.
+ */
+function baseRefreshTarget(message: string | undefined): { base: string; remote: string } | null {
+  const match = message?.match(/^Updating (\S+) from (\S+?)(?:\.\.\.|…)?$/); // i18n-ignore (daemon wire text)
+  return match ? { base: match[1], remote: match[2] } : null;
+}
+
 /** Localized stage label for one progress entry (no percent suffix). */
 export function createProgressLabel(entry: WorkspaceCreateProgressEntry): string {
   switch (entry.phase) {
     case 'cache':
       return m.workspace_compactInitializer_progressCache_label();
+    case 'base-refresh': {
+      const target = baseRefreshTarget(entry.message);
+      return target
+        ? m.workspace_compactInitializer_progressBaseRefresh_label(target)
+        : m.workspace_compactInitializer_progressBaseRefreshGeneric_label();
+    }
     case 'counting':
       return m.workspace_compactInitializer_progressCounting_label();
     case 'compressing':
