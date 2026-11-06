@@ -3,6 +3,28 @@ import WorkspaceForm from './workspace-form.preview.svelte';
 
 const dialogName = 'New Workspace';
 
+test('submission keeps the create control mounted without moving focus to context actions', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(WorkspaceForm, { props: { modal: true, scenario: 'selection-recovery' } });
+  const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+  const prompt = dialog.locator('[contenteditable=true]');
+  await prompt.fill('Keep the submission focus stable.');
+  const create = dialog.locator('[data-dialog-primary-action]');
+  const original = await create.elementHandle();
+  if (!original) throw new Error('The create control is missing');
+  await create.press('Enter');
+  await expect(page.getByTestId('workspace-submissions')).not.toHaveText('[]');
+  expect(await original.evaluate((element) => element.isConnected)).toBe(true);
+  await expect(dialog.getByRole('button', { name: 'Add context', exact: true })).not.toBeFocused();
+  await expect(create).toBeDisabled();
+  await testInfo.attach('workspace-submission-focus', {
+    body: await page.screenshot({ path: testInfo.outputPath('workspace-submission-focus.png') }),
+    contentType: 'image/png',
+  });
+});
+
 test('first workspace keeps adding a codebase discoverable with no repository history', async ({
   mount,
   page,
@@ -11,6 +33,7 @@ test('first workspace keeps adding a codebase discoverable with no repository hi
   await mount(WorkspaceForm, { props: { scenario: 'empty', modal: true } });
   const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
   await expect(dialog.getByRole('button', { name: /Create workspace/ })).toBeDisabled();
+  await expect(dialog.locator('[contenteditable=true]')).toBeFocused();
   await expect(dialog.getByRole('button', { name: /^Select a branch:/ })).toHaveCount(0);
   const codebase = dialog.getByRole('button', { name: /^Codebase\b/ });
   await codebase.click();
@@ -37,7 +60,9 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
   await mount(WorkspaceForm, { props: { modal: true } });
   const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
   const prompt = dialog.locator('[contenteditable=true]');
-  await prompt.fill('Refine the workspace navigation.');
+  await expect(prompt).toBeFocused();
+  await page.keyboard.type('Refine the workspace navigation.');
+  await expect(prompt).toHaveText('Refine the workspace navigation.');
   const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
   await branch.focus();
   await branch.press('Enter');

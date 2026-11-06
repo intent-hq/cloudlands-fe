@@ -3776,37 +3776,24 @@
 
         <div class="settings-footer mt-auto pt-6">
           <!-- Create button -->
-          {#snippet createButton(progressLabel?: string)}
-            <WorkspaceCreateButton
-              creating={isCreating}
-              valid={isValid}
-              onclick={handleSubmit}
-              disabled={isEnhancing || isProcessingImages}
-              label={isPulling
-                ? m.workspace_compactInitializer_pullingLatest_label()
-                : (progressLabel ?? CREATION_STAGES[creationStage])}
-            />
-          {/snippet}
           <div class="w-full">
-            {#if isCreating && !isPulling && activeCreateProgressId}
-              <!-- Key on the progressId: the component binds its selector at
-                 init, so a new create must destroy/recreate it. It wraps the
-                 Button so the bottom-edge bar is a sibling overlay of the
-                 button rather than a child of its content slot. -->
-              {#key activeCreateProgressId}
-                <CreateButtonProgress
-                  class="w-full"
-                  progressId={activeCreateProgressId}
-                  fallbackLabel={CREATION_STAGES[creationStage]}
-                >
-                  {#snippet children(label)}
-                    {@render createButton(label)}
-                  {/snippet}
-                </CreateButtonProgress>
-              {/key}
-            {:else}
-              {@render createButton()}
-            {/if}
+            <CreateButtonProgress
+              class="w-full"
+              progressId={isCreating && !isPulling ? activeCreateProgressId : null}
+              fallbackLabel={CREATION_STAGES[creationStage]}
+            >
+              {#snippet children(progressLabel)}
+                <WorkspaceCreateButton
+                  creating={isCreating}
+                  valid={isValid}
+                  onclick={handleSubmit}
+                  disabled={isEnhancing || isProcessingImages}
+                  label={isPulling
+                    ? m.workspace_compactInitializer_pullingLatest_label()
+                    : progressLabel}
+                />
+              {/snippet}
+            </CreateButtonProgress>
           </div>
         </div>
       </div>
