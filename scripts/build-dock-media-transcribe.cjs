@@ -7,6 +7,7 @@ const { binaryMatchesArchitecture } = require('./macos-native.cjs');
 
 const root = path.resolve(__dirname, '..');
 const source = path.join(root, 'resources/dock/media-transcribe.swift');
+const accumulator = path.join(root, 'resources/dock/media-transcript-accumulator.swift');
 const infoPlist = path.join(root, 'resources/dock/recorder-info.plist');
 const destination = path.join(root, 'resources/dock-helper/intent-dock-media-transcribe');
 const DEPLOYMENT_TARGET = '13.0';
@@ -16,7 +17,7 @@ function upToDate() {
   if (!fs.existsSync(destination) || !binaryMatchesArchitecture(destination, process.arch))
     return false;
   const built = fs.statSync(destination).mtimeMs;
-  return [source, infoPlist, __filename].every((input) => fs.statSync(input).mtimeMs < built);
+  return [source, accumulator, infoPlist, __filename].every((input) => fs.statSync(input).mtimeMs < built);
 }
 
 function main() {
@@ -52,6 +53,7 @@ function main() {
         '-o',
         temporary,
         source,
+        accumulator,
         '-Xlinker',
         '-sectcreate',
         '-Xlinker',

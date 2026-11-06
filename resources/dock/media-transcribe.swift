@@ -11,25 +11,37 @@ func emit(_ value: [String: Any]) {
   }
 }
 func fail(_ text: String) -> NSError { NSError(domain: "media-transcript", code: 1, userInfo: [NSLocalizedDescriptionKey: text]) }
-func recognize(_ job: Job) async throws -> SFTranscription {
+func recognize(_ job: Job) async throws -> [MediaTranscriptUnit] {
   guard SFSpeechRecognizer.authorizationStatus() == .authorized else { throw fail("speech-not-authorized") }
   let recognizer = job.locale.flatMap { SFSpeechRecognizer(locale: Locale(identifier: $0)) } ?? SFSpeechRecognizer()
   guard let recognizer, recognizer.isAvailable, recognizer.supportsOnDeviceRecognition else { throw fail("on-device-unavailable") }
   recognizer.queue = OperationQueue()
+  recognizer.queue.maxConcurrentOperationCount = 1
   let request = SFSpeechURLRecognitionRequest(url: URL(fileURLWithPath: job.audio))
   request.requiresOnDeviceRecognition = true
-  request.shouldReportPartialResults = false
+  request.shouldReportPartialResults = true
   return try await withCheckedThrowingContinuation { continuation in
     let lock = NSLock()
     var settled = false
     var task: SFSpeechRecognitionTask?
-    func settle(_ result: Result<SFTranscription, Error>) {
+    var accumulated = MediaTranscriptAccumulator()
+    func settle(_ result: Result<[MediaTranscriptUnit], Error>) {
       lock.lock(); guard !settled else { lock.unlock(); return }; settled = true; lock.unlock()
       continuation.resume(with: result)
     }
     task = recognizer.recognitionTask(with: request) { result, error in
-      if let result, result.isFinal { settle(.success(result.bestTranscription)) }
-      else if let error { settle(.failure(error)) }
+      lock.lock()
+      guard !settled else { lock.unlock(); return }
+      var outcome: Result<[MediaTranscriptUnit], Error>?
+      do {
+        if let result {
+          accumulated.receive(try transcriptUnits(result.bestTranscription), isFinal: result.isFinal)
+          if result.isFinal { outcome = .success(accumulated.units) }
+          else if let error { outcome = .failure(error) }
+        } else if let error { outcome = .failure(error) }
+      } catch { outcome = .failure(error) }
+      lock.unlock()
+      if let outcome { settle(outcome) }
     }
     DispatchQueue.global().asyncAfter(deadline: .now() + 180) {
       lock.lock(); let expired = !settled; lock.unlock()
@@ -91,7 +103,7 @@ func prepare(_ job: Job) async throws -> [Double] {
   try silence(until: maximum)
   return peaks
 }
-func main() async throws {
+func transcribeJob() async throws {
   let data = FileHandle.standardInput.readDataToEndOfFile()
   guard data.count < 64 * 1024 else { throw fail("invalid-job") }
   let job = try JSONDecoder().decode(Job.self, from: data)
@@ -119,46 +131,62 @@ func main() async throws {
   }
   emit(["event": "progress", "fraction": 0.2])
   processingStage = "recognition"
-  let transcription = try await recognize(job)
+  let recognized = try await recognize(job)
+  let words: [[String: Any]] = recognized.enumerated().map { index, unit in
+    ["id": "unit-\(index)", "text": unit.text,
+      "startMs": unit.startMs as Any? ?? NSNull(), "endMs": unit.endMs as Any? ?? NSNull(),
+      "alignment": unit.alignment]
+  }
+  emit(["event": "complete", "transcript": ["status": recognized.isEmpty ? "no-speech" : "ready",
+    "revision": 1, "words": words]])
+}
+
+func transcriptUnits(_ transcription: SFTranscription) throws -> [MediaTranscriptUnit] {
   let text = transcription.formattedString as NSString
-  var units: [[String: Any]] = [], cursor = 0
+  var units: [MediaTranscriptUnit] = [], cursor = 0
   func gap(to end: Int) {
     if end > cursor {
-      units.append(["id": "gap-\(cursor)", "text": text.substring(with: NSRange(location: cursor, length: end - cursor)),
-        "startMs": NSNull(), "endMs": NSNull(), "alignment": "untimed"])
+      units.append(MediaTranscriptUnit(text: text.substring(with: NSRange(location: cursor, length: end - cursor)),
+        startMs: nil, endMs: nil, alignment: "untimed"))
     }
   }
-  for (index, segment) in transcription.segments.enumerated() {
+  for segment in transcription.segments {
     let range = segment.substringRange
     guard range.location >= cursor, NSMaxRange(range) <= text.length,
       segment.timestamp.isFinite, segment.duration.isFinite, segment.timestamp >= 0, segment.duration >= 0 else { throw fail("recognition-alignment") }
     gap(to: range.location)
     let content = text.substring(with: range)
-    units.append(["id": "unit-\(index)", "text": content,
-      "startMs": segment.timestamp * 1000, "endMs": (segment.timestamp + segment.duration) * 1000,
-      "alignment": content.split(whereSeparator: { $0.isWhitespace }).count <= 1 ? "word" : "segment"])
+    units.append(MediaTranscriptUnit(text: content,
+      startMs: segment.timestamp * 1000, endMs: (segment.timestamp + segment.duration) * 1000,
+      alignment: content.split(whereSeparator: { $0.isWhitespace }).count <= 1 ? "word" : "segment"))
     cursor = NSMaxRange(range)
   }
   gap(to: text.length)
-  emit(["event": "complete", "transcript": ["status": text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "no-speech" : "ready",
-    "revision": 1, "words": units]])
+  return units
 }
-if CommandLine.arguments.contains("--capability") {
-  emit(["event": "capability", "features": ["audio-probe"]])
-  exit(0)
-}
-Task {
-  do { try await main(); exit(0) }
-  catch {
-    let native = error as NSError
-    let known = Set(["speech-not-authorized", "on-device-unavailable", "recognition-timeout", "no-audio-track",
-      "audio-duration-unsupported", "audio-format", "audio-reader", "audio-buffer", "audio-buffer-copy",
-      "audio-timing", "audio-reader-failed", "audio-sample", "recognition-alignment", "invalid-job"])
-    let code = native.domain == "media-transcript" && known.contains(native.localizedDescription)
-      ? native.localizedDescription : processingStage == "decode" ? "audio-decode-failed" : "recognition-failed"
-    // Only bounded machine metadata; never recognition text or arbitrary error descriptions.
-    emit(["event": "error", "code": code, "nativeDomain": String(native.domain.prefix(128)), "nativeCode": native.code])
-    exit(1)
+
+@main struct MediaTranscribeCommand {
+  static func main() {
+    if CommandLine.arguments.contains("--capability") {
+      emit(["event": "capability", "features": ["audio-probe"]])
+      exit(0)
+    }
+    Task {
+      do { try await transcribeJob(); exit(0) }
+      catch {
+        let native = error as NSError
+        let known = Set(["speech-not-authorized", "on-device-unavailable", "recognition-timeout", "no-audio-track",
+          "audio-duration-unsupported", "audio-format", "audio-reader", "audio-buffer", "audio-buffer-copy",
+          "audio-timing", "audio-reader-failed", "audio-sample", "recognition-alignment", "invalid-job"])
+        let code = native.domain == "media-transcript" && known.contains(native.localizedDescription)
+          ? native.localizedDescription : processingStage == "decode" ? "audio-decode-failed" : "recognition-failed"
+        // Only bounded machine metadata; never recognition text or arbitrary error descriptions.
+        emit(["event": "error", "code": code, "nativeDomain": String(native.domain.prefix(128)), "nativeCode": native.code])
+        exit(1)
+
   }
 }
 RunLoop.main.run()
+
+  }
+}
