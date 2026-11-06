@@ -57,7 +57,7 @@
     <ToggleGroup.Root
       type="single"
       variant="flat"
-      class="w-full"
+      class="send-choice w-full"
       aria-labelledby="send-video-label"
       disabled={!enabled}
       value={video}
@@ -83,7 +83,7 @@
     <ToggleGroup.Root
       type="single"
       variant="flat"
-      class="w-full"
+      class="send-choice w-full"
       aria-labelledby="send-voice-label"
       disabled={!enabled}
       value={voiceChoice}
@@ -129,5 +129,37 @@
   .label {
     font-size: 11px;
     color: hsl(var(--muted-foreground));
+  }
+  /*
+   * Which option is chosen must read at a glance, in light and dark: a visible track,
+   * and the chosen segment as a raised solid fill with a border, a small shadow and
+   * full-strength medium text. Local to these two controls; the shared toggle group
+   * and its hover highlight are unchanged.
+   */
+  .options :global(.send-choice) {
+    padding: 2px;
+    border-radius: 8px;
+    background: hsl(var(--muted));
+  }
+  .options :global(.send-choice [data-state='off']) {
+    color: hsl(var(--muted-foreground));
+  }
+  .options :global(.send-choice [data-state='on']) {
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-weight: 600;
+    box-shadow:
+      0 0 0 1px hsl(var(--foreground) / 0.14),
+      0 1px 2px hsl(0 0% 0% / 0.14);
+  }
+  :global(.dark) .options :global(.send-choice [data-state='on']) {
+    background: hsl(var(--foreground) / 0.2);
+    box-shadow:
+      0 0 0 1px hsl(var(--foreground) / 0.28),
+      0 1px 2px hsl(0 0% 0% / 0.4);
+  }
+  /* A chosen option that cannot be changed now still shows as chosen. */
+  .options :global(.send-choice [data-state='on']:disabled) {
+    opacity: 0.75;
   }
 </style>
