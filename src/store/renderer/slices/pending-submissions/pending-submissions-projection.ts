@@ -9,6 +9,7 @@ export interface PendingQueueDisplayRow {
   confirmedId?: string;
   confirmed?: QueuedMessage;
   content: string;
+  messageMetadata?: QueuedMessage['messageMetadata'];
   imageBlocks: NonNullable<QueuedMessage['imageBlocks']>;
   fileBlocks: NonNullable<QueuedMessage['fileBlocks']>;
   deliveryGroups?: QueuedMessage['deliveryGroups'];
@@ -24,6 +25,7 @@ function confirmedRow(message: QueuedMessage, blocked: boolean): PendingQueueDis
     confirmedId: message.id,
     confirmed: message,
     content: message.content,
+    messageMetadata: message.messageMetadata,
     imageBlocks: [...(message.imageBlocks ?? [])],
     fileBlocks: [...(message.fileBlocks ?? [])],
     deliveryGroups: message.deliveryGroups,
@@ -109,6 +111,7 @@ export function projectPendingSubmissions(
       const created: PendingQueueDisplayRow = {
         key: submission.id,
         content: submission.content,
+        messageMetadata: submission.messageMetadata,
         imageBlocks: [...(submission.imageBlocks ?? [])],
         fileBlocks: [...(submission.fileBlocks ?? [])],
         contextItems: [...(submission.contextItems ?? [])],

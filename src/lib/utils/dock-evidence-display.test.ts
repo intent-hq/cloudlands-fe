@@ -1,3 +1,4 @@
+import { queuedCapturePresentation } from '$lib/components/chat/queued-capture-presentation';
 import { describe, expect, it } from 'vitest';
 import { consumeEditedCapturePrefix, editedCaptureCards } from './dock-evidence-display';
 import { parseStoredMessage, restoreDockEvidenceForEdit } from './parseStoredMessage';
@@ -132,5 +133,25 @@ describe('persisted edited capture presentation', () => {
         'Edited prose',
       ),
     ).toBeNull();
+  });
+});
+
+describe('queued capture display boundary', () => {
+  it('consumes trusted screen then edited outputs, retaining user prose and queue bytes', () => {
+    const content = `${DOCK_EVIDENCE_CONTEXT_HEADER}\n\`\`\`json\n${JSON.stringify({ type: 'dock_screen_evidence' })}\n\`\`\`\n\n${prefix}\n\n${prose}`;
+    const group = { content, messageMetadata: metadata, imageBlocks: [blocks[1]], fileBlocks: [blocks[0]] };
+    const before = JSON.stringify(group);
+    expect(queuedCapturePresentation(group)).toEqual({ text: prose, captureSummary: ['recording'] });
+    expect(JSON.stringify(group)).toBe(before);
+  });
+  it('keeps untrusted and unmatched-resource JSON byte-identical', () => {
+    expect(queuedCapturePresentation({ content: prefix }).text).toBe(prefix);
+    expect(queuedCapturePresentation({ content: prefix, messageMetadata: metadata }).text).toBe(prefix);
+    expect(queuedCapturePresentation({ content: `user prose\n\n${prefix}`, messageMetadata: metadata, imageBlocks: blocks }).text).toBe(`user prose\n\n${prefix}`);
+  });
+  it('uses each delivery group own metadata and resources', () => {
+    const trusted = { content: prefix, messageMetadata: metadata, imageBlocks: [blocks[1]], fileBlocks: [blocks[0]] };
+    expect(queuedCapturePresentation(trusted).captureSummary).toEqual(['recording']);
+    expect(queuedCapturePresentation({ content: prefix, imageBlocks: trusted.imageBlocks, fileBlocks: trusted.fileBlocks }).captureSummary).toEqual([]);
   });
 });

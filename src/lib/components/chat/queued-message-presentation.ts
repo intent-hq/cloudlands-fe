@@ -11,6 +11,7 @@ export function queuePresentationMessages(rows: PendingQueueDisplayRow[]): Queue
     ...row.confirmed,
     id: row.key,
     content: row.content,
+    messageMetadata: row.messageMetadata,
     imageBlocks: row.imageBlocks,
     fileBlocks: row.fileBlocks,
     deliveryGroups: row.deliveryGroups,
