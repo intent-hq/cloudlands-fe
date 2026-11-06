@@ -78,7 +78,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     if (!dockInputLive()) yield* put(dockCloseRequested());
     return;
   }
-  // While a recording hides the notch: only that recording's own pair, never routed.
+  // While a recording is live: only that recording's own pair, never routed.
   if (context.recordingOwnerOnly === true) {
     yield* recordingOwnerAction(context);
     return;
