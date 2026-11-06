@@ -70,7 +70,7 @@ import {
 const logger = new Logger('DockCaptureEditor');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const DEFAULT_SIZE = { width: 1040, height: 720 };
+const DEFAULT_SIZE = { width: 1240, height: 780 };
 const WINDOW_MARGIN = 48;
 const MIN_SIZE = { width: 640, height: 480 };
 

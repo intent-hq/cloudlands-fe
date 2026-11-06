@@ -113,8 +113,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 14px 16px;
-    border-bottom: 1px solid hsl(var(--border));
+    padding: 6px 4px 16px;
   }
   /* Like Settings: the label on the left, the compact control on the right. */
   .group {
