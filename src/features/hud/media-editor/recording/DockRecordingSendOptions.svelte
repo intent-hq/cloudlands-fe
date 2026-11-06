@@ -1,6 +1,7 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
+  import { keepToggleSelected } from '$lib/components/settings/utils/keep-toggle-selected';
   import {
     canUseHighlights,
     voiceOptions,
@@ -67,8 +68,11 @@
           onChange({ video: value, voice: voiceChoice });
       }}
     >
-      <ToggleGroup.Item value="full">{m.dock_captureEditor_videoFull_label()}</ToggleGroup.Item>
+      <ToggleGroup.Item {...keepToggleSelected} value="full"
+        >{m.dock_captureEditor_videoFull_label()}</ToggleGroup.Item
+      >
       <ToggleGroup.Item
+        {...keepToggleSelected}
         value="highlights"
         disabled={!enabled || !highlights}
         tooltip={highlights ? undefined : m.dock_captureEditor_videoHighlights_disabled()}
@@ -92,18 +96,22 @@
       }}
     >
       <ToggleGroup.Item
+        {...keepToggleSelected}
         value="audio"
         disabled={!enabled || !voice.audio.enabled}
         tooltip={voice.audio.reason ? reasons[voice.audio.reason]() : undefined}
         >{m.dock_captureEditor_voiceAudio_label()}</ToggleGroup.Item
       >
       <ToggleGroup.Item
+        {...keepToggleSelected}
         value="transcript"
         disabled={!enabled || !voice.transcript.enabled}
         tooltip={voice.transcript.reason ? reasons[voice.transcript.reason]() : undefined}
         >{m.dock_captureEditor_voiceTranscript_label()}</ToggleGroup.Item
       >
-      <ToggleGroup.Item value="off">{m.dock_captureEditor_voiceOff_label()}</ToggleGroup.Item>
+      <ToggleGroup.Item {...keepToggleSelected} value="off"
+        >{m.dock_captureEditor_voiceOff_label()}</ToggleGroup.Item
+      >
     </ToggleGroup.Root>
   </div>
 </section>
