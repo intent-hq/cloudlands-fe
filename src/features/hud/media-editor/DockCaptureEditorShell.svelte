@@ -309,4 +309,15 @@
       overflow: auto;
     }
   }
+  /*
+   * Stacked with its actions in the sidebar: the media keeps most of the height and the
+   * sidebar gets a bounded share that scrolls inside, so a long transcript can never
+   * push Save and Cancel out of reach.
+   */
+  @media (max-width: 900px) {
+    .capture-editor[data-footer-actions] .body[data-sidebar-layout='panel'] {
+      grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+      overflow: hidden;
+    }
+  }
 </style>
