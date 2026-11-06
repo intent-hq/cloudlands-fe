@@ -91,7 +91,8 @@
     const status = transcript?.status ?? null;
     if (!edits || !source || snapshot.saved || status === defaultedFor) return;
     defaultedFor = status;
-    if (edits.dirty) return;
+    // Untouched means no history at all: an undone change is still the person's.
+    if (edits.dirty || edits.canUndo || edits.canRedo) return;
     const next = defaultDockMediaEdit(
       source,
       source.capturedMarks ?? source.bakedMarks ?? [],
