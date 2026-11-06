@@ -7007,7 +7007,6 @@
   "workspace_initialAgentPicker_model_label": "Modell",
   "workspace_initialAgentPicker_startOn_label": "Rechner",
   "workspace_initialAgentPicker_searchMachines_placeholder": "Rechner suchen",
-  "workspace_initialAgentPicker_startOnAttachments_description": "Mit Anhängen startet der Agent auf {backend}",
   "workspace_initialAgentPicker_startOnNewRepo_description": "Neue Repositorys starten auf {backend}",
   "workspace_initialAgentPicker_startOnPlainFolder_description": "Ordner ohne Git starten auf {backend}",
   "workspace_initialAgentPicker_teamMode_label": "Agenten-Orchestrierung",

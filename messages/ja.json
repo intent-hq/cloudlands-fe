@@ -7007,7 +7007,6 @@
   "workspace_initialAgentPicker_model_label": "モデル",
   "workspace_initialAgentPicker_startOn_label": "マシン",
   "workspace_initialAgentPicker_searchMachines_placeholder": "マシンを検索",
-  "workspace_initialAgentPicker_startOnAttachments_description": "添付ファイルがある場合は {backend} で開始します",
   "workspace_initialAgentPicker_startOnNewRepo_description": "新しいリポジトリは {backend} で開始します",
   "workspace_initialAgentPicker_startOnPlainFolder_description": "git のないフォルダは {backend} で開始します",
   "workspace_initialAgentPicker_teamMode_label": "エージェントオーケストレーション",

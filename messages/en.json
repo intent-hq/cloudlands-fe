@@ -7007,7 +7007,6 @@
   "workspace_initialAgentPicker_model_label": "Model",
   "workspace_initialAgentPicker_startOn_label": "Machine",
   "workspace_initialAgentPicker_searchMachines_placeholder": "Search machines",
-  "workspace_initialAgentPicker_startOnAttachments_description": "Attachments start on {backend}",
   "workspace_initialAgentPicker_startOnNewRepo_description": "New repositories start on {backend}",
   "workspace_initialAgentPicker_startOnPlainFolder_description": "Folders without git start on {backend}",
   "workspace_initialAgentPicker_teamMode_label": "Agent orchestration",

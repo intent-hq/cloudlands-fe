@@ -7007,7 +7007,6 @@
   "workspace_initialAgentPicker_model_label": "모델",
   "workspace_initialAgentPicker_startOn_label": "컴퓨터",
   "workspace_initialAgentPicker_searchMachines_placeholder": "머신 검색",
-  "workspace_initialAgentPicker_startOnAttachments_description": "첨부 파일이 있으면 {backend}에서 시작합니다",
   "workspace_initialAgentPicker_startOnNewRepo_description": "새 저장소는 {backend}에서 시작합니다",
   "workspace_initialAgentPicker_startOnPlainFolder_description": "git이 없는 폴더는 {backend}에서 시작합니다",
   "workspace_initialAgentPicker_teamMode_label": "에이전트 오케스트레이션",
