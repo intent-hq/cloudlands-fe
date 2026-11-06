@@ -156,7 +156,19 @@
 
 <section class="transcript" data-transcript data-dimmed={dimmed || undefined}>
   {#if !transcript || transcript.status === 'unavailable' || transcript.status === 'failed'}
-    <p class="status">{m.dock_captureEditor_transcript_unavailable()}</p>
+    <!-- Why there are no words, as the recognizer reported it; "no speech" is only a
+         recognition that finished and heard none. -->
+    <p class="status" data-transcript-reason={transcript?.error ?? undefined}>
+      {transcript?.error === 'no-audio-track'
+        ? m.dock_captureEditor_transcript_noAudio()
+        : transcript?.error === 'speech-not-authorized'
+          ? m.dock_captureEditor_transcript_speechOff()
+          : transcript?.error === 'on-device-unavailable'
+            ? m.dock_captureEditor_transcript_onDeviceUnavailable()
+            : transcript?.status === 'failed'
+              ? m.dock_captureEditor_transcript_failed()
+              : m.dock_captureEditor_transcript_unavailable()}
+    </p>
   {:else if transcript.status === 'pending'}
     <p class="status" role="status">{m.dock_captureEditor_transcript_pending()}</p>
   {:else if transcript.status === 'no-speech'}
