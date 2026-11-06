@@ -277,36 +277,8 @@ test('conversation stays dark with light or system app preferences and keeps nar
   await page.keyboard.press('Escape');
   await expect(page.locator('.model-picker-panel')).toHaveCount(0);
   await expect(modelTrigger).toBeFocused();
-  // The dock footer has no + menu; its one popup is the annotate tool picker.
+  // The dock footer has no + menu.
   await expect(component.getByTestId('prompt-actions-trigger')).toHaveCount(0);
-  const annotate = component.getByRole('button', { name: /^Annotate the screen/ });
-  await expect(annotate).toBeEnabled();
-  const tools = page.getByRole('toolbar', { name: 'Annotation tools', exact: true });
-  // Every tool stays inside the narrow window and the dock's hit regions.
-  await annotate.focus();
-  await annotate.press('ArrowUp');
-  await assertPopup(tools);
-  for (const name of ['Pick an element', 'Box', 'Pen', 'Arrow']) {
-    const tool = tools.getByRole('button', { name, exact: true });
-    await expect(tool).toBeEnabled();
-    const box = (await tool.boundingBox())!;
-    const hit = await page.evaluate(
-      ([x, y]) => document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label'),
-      [box.x + box.width / 2, box.y + box.height / 2],
-    );
-    expect(hit).toBe(name);
-  }
-  await page.screenshot({ path: testInfo.outputPath('conversation-annotate-tools.png') });
-  await page.keyboard.press('Escape');
-  await expect(tools).toHaveCount(0);
-  // Keyboard: focus the button, ArrowUp opens on the current tool, Escape returns focus.
-  await annotate.focus();
-  await annotate.press('ArrowUp');
-  await assertPopup(tools);
-  await expect(tools.getByRole('button', { name: 'Pick an element', exact: true })).toBeFocused();
-  await page.keyboard.press('Escape');
-  await expect(tools).toHaveCount(0);
-  await expect(annotate).toBeFocused();
   await expect(component.getByTestId('dock-conversation-surface')).toBeVisible();
   await editor.fill('');
   await editor.pressSequentially('@');

@@ -98,6 +98,8 @@
       if (request.action === 'end') ended = true;
       if (request.action === 'clear') cleared = true;
       if (request.action === 'record') recordingSince = recordingSince ? null : Date.now() - 65_000;
+      // The recording tool bar's Done stops the recording (the session's end is the dock's).
+      if (request.action === 'done') recordingSince = null;
       return true;
     },
   };

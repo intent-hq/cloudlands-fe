@@ -73,7 +73,7 @@ import {
   showDockEvidenceNotice,
   type DockEvidenceNotice,
 } from '$features/hud/composer/dock-evidence-notice';
-import { DOCK_MARK_TOOLS } from '$shared/dock-evidence';
+import { DOCK_MARK_TOOLS, type DockAnnotationMediaAction } from '$shared/dock-evidence';
 import { setComposerContextItems } from '../../transient-ui/transient-ui-slice';
 import { selectComposerContextItems } from '../../transient-ui/transient-ui-selectors';
 import { getPrincipalActionContext } from '../../principal/principal-context';
@@ -584,6 +584,20 @@ function* toggleAnnotation({
   if (!activePair(workspaceId, agentId)) return;
   const session = evidenceOf(workspaceId, agentId)?.annotation;
   if (session && session.mode !== 'dictation' && !stillImageId) {
+    // While recording, annotating means "draw now" in the recording's own session:
+    // the same clip, timer, mic and pause carry on, and its tool bar stays.
+    if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
+      const tool = toolFor(workspaceId);
+      yield* put(dockEvidenceToolSet(workspaceId, tool));
+      const service = nativeService;
+      if (service)
+        try {
+          yield* call([service, service.setAnnotationTool], session.id, tool);
+        } catch {
+          // The session already ended natively; the recording itself is unaffected.
+        }
+      return;
+    }
     yield* endSession(workspaceId, agentId);
     return;
   }
@@ -913,6 +927,45 @@ function clipCancelled(result: DockNativeResult<unknown>): boolean {
   return !result.ok && result.error === 'failed' && result.detail === 'cancelled';
 }
 
+/** Annotate sessions a recording opened for its tool bar; they close with that recording. */
+const recordingBarSessions = new Set<string>();
+
+/**
+ * A recording always runs with its on-screen tool bar. Started from the composer
+ * (or a shortcut) with no annotate session open, open one in mouse mode first: the
+ * screen stays usable, and the bar's tools are there when wanted. If the session
+ * cannot open (a permission), the recording still starts without the bar.
+ */
+function* openRecordingBar(workspaceId: string, agentId: string): SagaGenerator<void> {
+  const session = evidenceOf(workspaceId, agentId)?.annotation;
+  if (session && session.mode !== 'dictation') return;
+  if (
+    !selectDockComposerEvidence.select(appStore.state, workspaceId, agentId).capabilities.annotate
+  )
+    return;
+  if (session) yield* endSession(workspaceId, agentId);
+  yield* startSession(workspaceId, agentId, toolFor(workspaceId), 'live');
+  const opened = evidenceOf(workspaceId, agentId)?.annotation;
+  const service = nativeService;
+  if (!opened || opened.mode !== 'live' || !service) return;
+  // One annotate session exists at a time: only the latest can still be open.
+  recordingBarSessions.clear();
+  recordingBarSessions.add(opened.id);
+  if (!service.setAnnotationMouse) return;
+  try {
+    yield* call([service, service.setAnnotationMouse], opened.id);
+  } catch {
+    // The session already ended natively; the recording goes ahead without it.
+  }
+}
+
+/** Stopping a recording closes the tool bar session it opened (not one the person opened). */
+function* closeRecordingBar(workspaceId: string, agentId: string): SagaGenerator<void> {
+  const session = evidenceOf(workspaceId, agentId)?.annotation;
+  if (!session || !recordingBarSessions.delete(session.id)) return;
+  yield* endSession(workspaceId, agentId);
+}
+
 function* toggleRecording({
   payload: [workspaceId, agentId],
 }: ReturnType<typeof dockEvidenceRecordToggleRequested>): SagaGenerator<void> {
@@ -930,6 +983,7 @@ function* toggleRecording({
       result = { ok: false, error: 'failed' };
     }
     if (nativeService === service) yield* finishClip(workspaceId, agentId, clip.id, result);
+    if (activePair(workspaceId, agentId)) yield* closeRecordingBar(workspaceId, agentId);
     return;
   }
   // Each finished recording is its own attachment; a new one starts beside them.
@@ -943,6 +997,8 @@ function* toggleRecording({
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }
+  if (nativeService !== service || !activePair(workspaceId, agentId)) return;
+  yield* openRecordingBar(workspaceId, agentId);
   if (nativeService !== service || !activePair(workspaceId, agentId)) return;
   const id = crypto.randomUUID();
   const hasMicAudio = evidence?.dictation?.status === 'listening';
@@ -971,6 +1027,7 @@ function* toggleRecording({
   )
     return;
   if (started.ok) stampRecordingInSpeech(workspaceId, agentId, id, false);
+  else yield* closeRecordingBar(workspaceId, agentId);
   if (!started.ok && started.error === 'permission' && activePair(workspaceId, agentId)) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'permission'));
     yield* notice(workspaceId, agentId, screenPermissionNotice('record'));
@@ -1196,8 +1253,12 @@ function* sendBarMedia(workspaceId: string, agentId: string): SagaGenerator<void
 function* barMediaAction(
   workspaceId: string,
   agentId: string,
-  action: 'capture' | 'record',
+  action: DockAnnotationMediaAction,
 ): SagaGenerator<void> {
+  if (action !== 'capture' && action !== 'record') {
+    yield* recordingToolbarAction(workspaceId, agentId, action);
+    return;
+  }
   const view = selectDockComposerEvidence.select(appStore.state, workspaceId, agentId);
   if (action === 'record' && view.recording) {
     yield* put(dockEvidenceRecordToggleRequested(workspaceId, agentId));
@@ -1214,6 +1275,85 @@ function* barMediaAction(
   }
   if (view.capabilities.record && view.clips.length < DOCK_EVIDENCE_LIMITS.clips)
     yield* put(dockEvidenceRecordToggleRequested(workspaceId, agentId));
+}
+
+const DOCK_ANNOTATION_MEDIA_ACTIONS: readonly DockAnnotationMediaAction[] = [
+  'capture',
+  'record',
+  'pause',
+  'resume',
+  'done',
+  'discard',
+  'discard-undo',
+  'discard-confirm',
+];
+
+/** Pause or resume the live clip; its paused time is cut from the clip and its timer. */
+function* setRecordingPaused(
+  workspaceId: string,
+  agentId: string,
+  paused: boolean,
+): SagaGenerator<boolean> {
+  const clip = recordingDockClip(evidenceOf(workspaceId, agentId));
+  const service = nativeService;
+  if (!clip || !service?.pauseClip) return false;
+  if (!!clip.pausedAt === paused) return true;
+  let result: DockNativeResult<{ paused: boolean }>;
+  try {
+    result = yield* call([service, service.pauseClip], clip.id, paused);
+  } catch {
+    result = { ok: false, error: 'failed' };
+  }
+  const current = clipOf(workspaceId, agentId, clip.id);
+  if (!result.ok || !current || current.status !== 'recording') return false;
+  const now = Date.now();
+  yield* put(
+    dockEvidenceClipChanged(
+      workspaceId,
+      agentId,
+      clip.id,
+      paused
+        ? { ...current, pausedAt: now }
+        : {
+            ...current,
+            pausedAt: null,
+            pausedMs: (current.pausedMs ?? 0) + Math.max(0, now - (current.pausedAt ?? now)),
+          },
+    ),
+  );
+  return true;
+}
+
+/**
+ * The recording tool bar. Done: the screen's marks go (they are in the clip already),
+ * the clip stops and attaches, and the session ends. Discard pauses capture and clears
+ * the screen while the bar offers Undo; Undo leaves the clip paused, and confirm (the
+ * undo window ran out) deletes it and ends the session.
+ */
+function* recordingToolbarAction(
+  workspaceId: string,
+  agentId: string,
+  action: Exclude<DockAnnotationMediaAction, 'capture' | 'record'>,
+): SagaGenerator<void> {
+  if (action === 'pause' || action === 'resume') {
+    yield* setRecordingPaused(workspaceId, agentId, action === 'pause');
+    return;
+  }
+  if (action === 'discard-undo') return;
+  const clip = recordingDockClip(evidenceOf(workspaceId, agentId));
+  if (action === 'discard') {
+    if (clip) yield* setRecordingPaused(workspaceId, agentId, true);
+    yield* clearAnnotation(workspaceId, agentId);
+    return;
+  }
+  yield* clearAnnotation(workspaceId, agentId);
+  if (clip)
+    yield* put(
+      action === 'done'
+        ? dockEvidenceRecordToggleRequested(workspaceId, agentId)
+        : dockEvidenceClipRemoveRequested(workspaceId, agentId, clip.id),
+    );
+  yield* endSession(workspaceId, agentId);
 }
 
 function* watchNative(): SagaGenerator<void> {
@@ -1259,7 +1399,7 @@ function* watchNative(): SagaGenerator<void> {
         const owner = getItems(appStore.state.dockConversation.evidence).find(
           (row) => row.annotation?.id === event.sessionId,
         );
-        if (owner && (event.action === 'capture' || event.action === 'record')) {
+        if (owner && DOCK_ANNOTATION_MEDIA_ACTIONS.includes(event.action)) {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
           if (activePair(workspaceId, agentId))
             yield* fork(barMediaAction, workspaceId, agentId, event.action);

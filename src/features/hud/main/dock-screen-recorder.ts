@@ -92,6 +92,11 @@ export interface DockScreenRecorder {
   captureStill(request: DockStillRequest): Promise<DockNativeResult<DockCapturedPixels>>;
   start(request: DockRecordingStartRequest): Promise<DockNativeResult<{ startedAt: number }>>;
   setMicrophone(clipId: string, on: boolean): Promise<DockNativeResult<{ micActive: boolean }>>;
+  /**
+   * Pause or resume the live clip. Paused time is cut from the clip and from its
+   * duration limit; resolves with the helper's resulting state.
+   */
+  setPaused(clipId: string, paused: boolean): Promise<DockNativeResult<{ paused: boolean }>>;
   setMarks(clipId: string, marks: readonly DockRecordingMark[]): boolean;
   /** Strict: `{ok:false, detail:'exclusion-missing'}` when any requested window is gone. */
   setExcludedWindows(clipId: string, windowIds: readonly number[]): Promise<DockNativeResult<void>>;
@@ -101,7 +106,15 @@ export interface DockScreenRecorder {
   onEnded(
     listener: (clipId: string, result: DockNativeResult<DockRecordedClip>) => void,
   ): () => void;
+  /** Live microphone signal of the recording clip: input level (0…1) and whether it is open. */
+  onSignal(listener: (clipId: string, signal: DockRecordingSignal) => void): () => void;
   dispose(): Promise<void>;
+}
+
+interface DockRecordingSignal {
+  level: number;
+  /** The microphone is open (authorized, available) for this clip. */
+  mic: boolean;
 }
 
 type HelperEvent = Record<string, unknown> & { event?: unknown };
@@ -121,7 +134,14 @@ interface ActiveClip {
   cancelled: boolean;
   micReplies: ((active: boolean) => void)[];
   excludeReplies: ((reply: { ok: boolean; detail?: string }) => void)[];
+  pauseReplies: ((paused: boolean) => void)[];
   timers: Set<unknown>;
+  /** Wall time spent paused before the current pause, and when that pause began. */
+  pausedMs: number;
+  pausedAt: number | null;
+  /** The recording-limit backstop, rescheduled around pauses. */
+  limitTimer: unknown;
+  mic: boolean;
 }
 
 const fail = <T>(error: DockEvidenceErrorCode, detail?: string): DockNativeResult<T> => ({
@@ -221,7 +241,43 @@ export function createDockScreenRecorder(
 ): DockScreenRecorder {
   const deps: DockScreenRecorderDeps = { ...defaultDockScreenRecorderDeps, ...overrides };
   const listeners = new Set<(clipId: string, result: DockNativeResult<DockRecordedClip>) => void>();
+  const signalListeners = new Set<(clipId: string, signal: DockRecordingSignal) => void>();
   let active: ActiveClip | null = null;
+
+  const signal = (clip: ActiveClip, level: number) => {
+    for (const listener of signalListeners) {
+      try {
+        listener(clip.clipId, { level, mic: clip.mic });
+      } catch (error) {
+        logger.warn('Clip signal listener failed', { error });
+      }
+    }
+  };
+
+  /** Recorded (unpaused) wall time of the clip so far. */
+  const recordedMs = (clip: ActiveClip): number =>
+    clip.startedAt === null
+      ? 0
+      : Math.max(0, (clip.pausedAt ?? deps.now()) - clip.startedAt - clip.pausedMs);
+
+  const scheduleLimit = (clip: ActiveClip) => {
+    if (clip.limitTimer !== undefined) {
+      deps.clearTimeout(clip.limitTimer);
+      clip.timers.delete(clip.limitTimer);
+      clip.limitTimer = undefined;
+    }
+    if (clip.pausedAt !== null) return;
+    const handle = deps.setTimeout(
+      () => {
+        clip.timers.delete(handle);
+        clip.limitTimer = undefined;
+        if (clip.phase === 'recording') requestStop(clip);
+      },
+      Math.max(0, clip.maxMs - recordedMs(clip)) + LIMIT_GRACE_MS,
+    );
+    clip.timers.add(handle);
+    clip.limitTimer = handle;
+  };
 
   const later = (clip: ActiveClip, ms: number, fn: () => void) => {
     const handle = deps.setTimeout(() => {
@@ -245,6 +301,7 @@ export function createDockScreenRecorder(
     clip.timers.clear();
     for (const reply of clip.micReplies.splice(0)) reply(false);
     for (const reply of clip.excludeReplies.splice(0)) reply({ ok: false, detail: 'ended' });
+    for (const reply of clip.pauseReplies.splice(0)) reply(false);
     clip.resolveStarted(
       clip.startedAt !== null && !clip.cancelled
         ? { ok: true, value: { startedAt: clip.startedAt } }
@@ -326,13 +383,33 @@ export function createDockScreenRecorder(
         clip.phase = 'recording';
         clip.startedAt = deps.now();
         clip.resolveStarted({ ok: true, value: { startedAt: clip.startedAt } });
-        later(clip, clip.maxMs + LIMIT_GRACE_MS, () => {
-          if (clip.phase === 'recording') requestStop(clip);
-        });
+        scheduleLimit(clip);
         return;
       case 'mic':
-        clip.micReplies.shift()?.(event.active === true);
+        clip.mic = event.active === true;
+        if (!clip.mic) signal(clip, 0);
+        clip.micReplies.shift()?.(clip.mic);
         return;
+      case 'paused': {
+        const paused = event.paused === true;
+        if (clip.phase === 'recording' && paused !== (clip.pausedAt !== null)) {
+          if (paused) clip.pausedAt = deps.now();
+          else if (clip.pausedAt !== null) {
+            clip.pausedMs += deps.now() - clip.pausedAt;
+            clip.pausedAt = null;
+          }
+          scheduleLimit(clip);
+          if (paused) signal(clip, 0);
+        }
+        clip.pauseReplies.shift()?.(paused);
+        return;
+      }
+      case 'level': {
+        const level = Number(event.level);
+        if (clip.phase === 'recording' && clip.pausedAt === null && Number.isFinite(level))
+          signal(clip, Math.min(1, Math.max(0, level)));
+        return;
+      }
       case 'exclude':
         clip.excludeReplies.shift()?.({
           ok: event.ok === true,
@@ -533,7 +610,12 @@ export function createDockScreenRecorder(
       cancelled: false,
       micReplies: [],
       excludeReplies: [],
+      pauseReplies: [],
       timers: new Set(),
+      pausedMs: 0,
+      pausedAt: null,
+      limitTimer: undefined,
+      mic: false,
     };
     active = clip;
     if (reservation?.clipId === clip.clipId) reservation = null;
@@ -606,6 +688,25 @@ export function createDockScreenRecorder(
     return { ok: true, value: { micActive: on && micActive } };
   };
 
+  const setPaused = async (
+    clipId: string,
+    paused: boolean,
+  ): Promise<DockNativeResult<{ paused: boolean }>> => {
+    const clip = current(clipId);
+    if (!clip || clip.phase !== 'recording') return fail('failed', 'not-recording');
+    if (!send(clip, { cmd: paused ? 'pause' : 'resume' })) return fail('failed', 'helper-gone');
+    const state = await new Promise<boolean | null>((resolve) => {
+      clip.pauseReplies.push(resolve);
+      later(clip, REPLY_TIMEOUT_MS, () => {
+        const index = clip.pauseReplies.indexOf(resolve);
+        if (index >= 0) clip.pauseReplies.splice(index, 1);
+        resolve(null);
+      });
+    });
+    if (state === null) return fail('failed', 'timeout');
+    return state === paused ? { ok: true, value: { paused } } : fail('failed', 'not-recording');
+  };
+
   const setMarks = (clipId: string, marks: readonly DockRecordingMark[]): boolean => {
     const clip = current(clipId);
     if (!clip || clip.phase === 'finishing') return false;
@@ -644,7 +745,7 @@ export function createDockScreenRecorder(
   const elapsedMs = (clipId: string): number | null => {
     const clip = current(clipId);
     if (!clip || clip.startedAt === null) return null;
-    return Math.min(clip.maxMs, Math.max(0, deps.now() - clip.startedAt));
+    return Math.min(clip.maxMs, recordedMs(clip));
   };
 
   const ended = new Map<string, Promise<DockNativeResult<DockRecordedClip>>>();
@@ -704,6 +805,7 @@ export function createDockScreenRecorder(
     captureStill,
     start,
     setMicrophone,
+    setPaused,
     setMarks,
     setExcludedWindows,
     elapsedMs,
@@ -714,6 +816,11 @@ export function createDockScreenRecorder(
         listener(clipId, result);
       listeners.add(wrapped);
       return () => listeners.delete(wrapped);
+    },
+    onSignal(listener) {
+      const wrapped = (clipId: string, value: DockRecordingSignal) => listener(clipId, value);
+      signalListeners.add(wrapped);
+      return () => signalListeners.delete(wrapped);
     },
     async dispose() {
       if (active) await cancel(active.clipId);

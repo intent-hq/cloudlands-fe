@@ -243,19 +243,24 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   await expect(bar.getByRole('button', { name: 'Box' })).toHaveAttribute('aria-pressed', 'true');
   await expect(bar.getByRole('button', { name: 'Mouse' })).toHaveAttribute('aria-pressed', 'false');
 
-  // Record: the composer's red pill with the stop square and a running timer.
+  // Record: while the recording is live, the recording tool bar replaces this one
+  // (its own spec: dock-recording-toolbar.ct.spec.ts), with the composer's timer.
   const idleWidth = await reportedWidth();
   await bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' }).click();
-  const stop = bar.getByRole('button', { name: 'Stop recording' });
-  await expect(stop).toHaveAttribute('data-recording');
-  await expect(stop).toHaveAttribute('aria-pressed', 'true');
-  await expect(stop.locator('[data-record-time]')).toHaveText(/^1:0[5-9]$/);
-  // The wider bar re-reports its rect, so main keeps all of it clickable.
-  await expect.poll(reportedWidth).toBeGreaterThan(idleWidth);
+  const recordingBar = page.getByRole('toolbar', { name: 'Recording tools' });
+  await expect(recordingBar).toBeVisible();
+  await expect(bar).toHaveCount(0);
+  await expect(
+    recordingBar.getByTestId('recording-chip').locator('[data-recording-time]'),
+  ).toHaveText(/^1:0[5-9]$/);
+  // The recording bar reports its own rect, so main keeps it clickable.
+  await expect.poll(reportedWidth).not.toBe(idleWidth);
+  const recordingBox = (await recordingBar.boundingBox())!;
   const recordingShot = await page.screenshot({
-    clip: await toolbarClip(),
+    clip: { x: 290, y: Math.max(0, recordingBox.y - 48), width: 700, height: 150 },
   });
-  await stop.click();
+  // Done stops the recording; the annotate bar comes back.
+  await recordingBar.locator('[data-done]').click();
   await expect(bar.getByRole('button', { name: 'Record the screen · ⌘⇧R' })).toHaveAttribute(
     'aria-pressed',
     'false',
@@ -309,7 +314,7 @@ test('Screenshot and Record on the tool bar run the composer actions with its lo
   expect((await toolbar()).map((row) => row.action)).toEqual([
     'capture',
     'record',
-    'record',
+    'done',
     'capture',
     'clear',
     'end',
@@ -389,5 +394,77 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     );
     expect(actions.map((row: { action: string }) => row.action)).toEqual(['capture', 'capture']);
     expect(await recorded(page, 'pointers')).toEqual([]);
+  });
+}
+
+for (const scheme of ['light', 'dark'] as const) {
+  test(`the bar stays dark, drags by its grip and keeps its place from annotate to record and back (${scheme} system)`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await mount(Harness, { props: { fixture: 'live-empty', media: dockAnnotationMediaIdle } });
+    const annotateBar = page.getByTestId('dock-annotation-toolbar');
+    const recordingBar = page.getByTestId('dock-recording-toolbar');
+    await expect(annotateBar).toBeVisible();
+    await expectAnimationsToSettle(annotateBar);
+    /** The bar's bottom centre: what both bars keep through a swap. */
+    const anchor = async (bar: Locator) => {
+      const box = (await bar.boundingBox())!;
+      return { cx: Math.round(box.x + box.width / 2), bottom: Math.round(box.y + box.height) };
+    };
+    /** Same place, within the 1 px of rounding a bar of another width centres with. */
+    const expectSamePlace = (actual: { cx: number; bottom: number }, place: typeof actual) => {
+      expect(Math.abs(actual.cx - place.cx)).toBeLessThanOrEqual(1);
+      expect(Math.abs(actual.bottom - place.bottom)).toBeLessThanOrEqual(1);
+    };
+    const background = (bar: Locator) =>
+      bar.evaluate((node) => getComputedStyle(node).backgroundColor);
+    const dragGrip = async (grip: Locator, dx: number, dy: number) => {
+      const box = (await grip.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width / 2 + dx / 2, box.y + box.height / 2 + dy / 2);
+      await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy);
+      await page.mouse.up();
+    };
+
+    // The annotate bar moves by its grip.
+    const start = await anchor(annotateBar);
+    await dragGrip(annotateBar.locator('.toolbar-grip'), -220, -160);
+    const moved = await anchor(annotateBar);
+    expect(moved.cx).toBeCloseTo(start.cx - 220, -1);
+    expect(moved.bottom).toBeCloseTo(start.bottom - 160, -1);
+    // A button click is a click, never a drag.
+    await annotateBar.getByRole('button', { name: 'Box' }).click();
+    expect(await anchor(annotateBar)).toEqual(moved);
+    const dark = await background(annotateBar);
+
+    // Record: the recording bar appears exactly where the annotate bar was, just as dark.
+    await annotateBar.getByRole('button', { name: 'Record the screen · ⌘⇧R' }).click();
+    await expect(recordingBar).toBeVisible();
+    await expect(annotateBar).toHaveCount(0);
+    expectSamePlace(await anchor(recordingBar), moved);
+    expect(await background(recordingBar)).toBe(dark);
+    await expect(recordingBar.locator('.grip')).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath(`recording-bar-${scheme}.png`) });
+
+    // Dragged far past the screen edge, it stays fully on screen.
+    await dragGrip(recordingBar.locator('.grip'), -2000, -2000);
+    const area = JSON.parse(
+      (await page.getByTestId('dock-annotation-harness').getAttribute('data-work-area'))!,
+    ) as { x: number; y: number };
+    const clamped = (await recordingBar.boundingBox())!;
+    expect(Math.round(clamped.x)).toBeGreaterThanOrEqual(area.x);
+    expect(Math.round(clamped.y)).toBeGreaterThanOrEqual(area.y);
+    const corner = await anchor(recordingBar);
+    // Its buttons stay buttons: pausing does not move it.
+    await recordingBar.getByTestId('recording-chip').click();
+    expect(await anchor(recordingBar)).toEqual(corner);
+
+    // Done: the annotate bar comes back where the recording bar was.
+    await recordingBar.locator('[data-done]').click();
+    await expect(annotateBar).toBeVisible();
+    expectSamePlace(await anchor(annotateBar), corner);
   });
 }

@@ -159,7 +159,7 @@
     const media = dockAnnotationBarMedia(
       bound.media.state,
       labels,
-      recording?.startedAt ?? null,
+      recording ?? null,
       $view$.sending,
     );
     const key = JSON.stringify([workspaceId, agentId, media]);

@@ -447,6 +447,7 @@ export const IPC_CHANNELS = {
     GET_STILL: 'dock-annotation:get-still',
     STATE: 'dock-annotation:state',
     TOOLBAR: 'dock-annotation:toolbar',
+    SIGNAL: 'dock-annotation:signal',
   },
 
   // Power (Electron powerMonitor → renderer)
@@ -1179,6 +1180,7 @@ export const IPC_CHANNELS = {
 export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_EVIDENCE.EVENT,
   IPC_CHANNELS.DOCK_ANNOTATION.STATE,
+  IPC_CHANNELS.DOCK_ANNOTATION.SIGNAL,
   IPC_CHANNELS.BACKEND.REPOSITORY_CHECKOUT.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY.RETIRED,
   IPC_CHANNELS.BACKEND.REPOSITORY_SELECTION.RETIRED,

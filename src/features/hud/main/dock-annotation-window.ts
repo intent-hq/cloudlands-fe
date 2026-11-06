@@ -505,6 +505,21 @@ export class DockAnnotationController implements AnnotationService {
    * sessions (the dock sends it on change, not per session), so a new session's
    * bar shows it at once.
    */
+  /** The live recording's microphone, pushed to the overlay's time chip as it changes. */
+  setRecordingSignal(signal: { level: number; mic: boolean } | null): void {
+    const window = this.window;
+    if (!usable(window)) return;
+    const value =
+      signal && Number.isFinite(signal.level)
+        ? { level: Math.min(1, Math.max(0, signal.level)), mic: signal.mic === true }
+        : null;
+    try {
+      window.webContents.send(DOCK_ANNOTATION_CHANNELS.SIGNAL, value);
+    } catch (error) {
+      logger.debug('Failed to publish the recording signal', { error });
+    }
+  }
+
   setAnnotationMedia(media: unknown): void {
     const next = sanitizeDockAnnotationMedia(media);
     if (!next) return;
@@ -724,6 +739,25 @@ export class DockAnnotationController implements AnnotationService {
     if (request.action === 'capture' || request.action === 'record') {
       // The dock runs the composer's own action (and its permission and limit
       // rules); the session, its tool and mouse mode stay as they are.
+      this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action });
+      return true;
+    }
+    if (request.action === 'pause') {
+      if (typeof request.paused !== 'boolean') return false;
+      this.emit({
+        type: 'annotation-media',
+        sessionId: session.id,
+        action: request.paused ? 'pause' : 'resume',
+      });
+      return true;
+    }
+    if (
+      request.action === 'done' ||
+      request.action === 'discard' ||
+      request.action === 'discard-undo' ||
+      request.action === 'discard-confirm'
+    ) {
+      // The recording tool bar's own actions; the dock applies them to its live clip.
       this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action });
       return true;
     }

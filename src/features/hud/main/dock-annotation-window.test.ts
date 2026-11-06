@@ -1096,6 +1096,8 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
         alert: false,
         recording: true,
         startedAt: 1_700_000_000_000,
+        pausedAt: null,
+        pausedMs: 0,
       },
     };
     const sent = () =>
@@ -1112,6 +1114,7 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
       { ...media, capture: { ...media.capture, revision: -1 } },
       { ...media, capture: { ...media.capture, revision: Number.NaN } },
       { ...media, record: { ...media.record, recording: 'yes' } },
+      { ...media, record: { ...media.record, pausedMs: -1 } },
     ]) {
       t.controller.setAnnotationMedia(bad);
       expect(sent().media).toEqual(media);
@@ -1121,6 +1124,26 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
     expect(t.events.slice(-2)).toEqual([
       { type: 'annotation-media', sessionId: 's1', action: 'capture' },
       { type: 'annotation-media', sessionId: 's1', action: 'record' },
+    ]);
+    // The recording tool bar: pause/resume, Done, and discard with undo or confirm.
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'pause', paused: true })).toBe(
+      true,
+    );
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'pause', paused: false })).toBe(
+      true,
+    );
+    expect(
+      t.controller.handleToolbar({ sessionId: 's1', action: 'pause', paused: 'yes' } as never),
+    ).toBe(false);
+    for (const action of ['done', 'discard', 'discard-undo', 'discard-confirm'] as const)
+      expect(t.controller.handleToolbar({ sessionId: 's1', action })).toBe(true);
+    expect(t.events.slice(-6).map((event) => (event as { action: string }).action)).toEqual([
+      'pause',
+      'resume',
+      'done',
+      'discard',
+      'discard-undo',
+      'discard-confirm',
     ]);
     // A stale session's click is refused.
     expect(t.controller.handleToolbar({ sessionId: 'other', action: 'record' })).toBe(false);

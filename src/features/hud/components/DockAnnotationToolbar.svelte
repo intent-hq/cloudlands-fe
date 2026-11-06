@@ -1,9 +1,12 @@
 <script lang="ts">
+  import DotsSixVerticalIcon from 'phosphor-svelte/lib/DotsSixVerticalIcon';
   import { onDestroy, untrack } from 'svelte';
   import { fade } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
   import {
-    dockToolbarPosition,
+    dockToolbarAnchorAt,
+    dockToolbarPlace,
+    type DockBarAnchor,
     type DockAnnotationOverlayState,
     type DockAnnotationRect,
     type DockAnnotationToolbarRequest,
@@ -24,9 +27,12 @@
   let {
     overlay,
     send,
+    anchor = $bindable(null),
   }: {
     overlay: DockAnnotationOverlayState;
     send: (request: DockAnnotationToolbarRequest) => void;
+    /** Where the person dragged the bar; shared with the recording bar. */
+    anchor?: DockBarAnchor | null;
   } = $props();
 
   const tools: DockMarkTool[] = ['pick', 'box', 'pen', 'arrow'];
@@ -48,14 +54,13 @@
   // it does. It is placed by its width without that growth, so it grows to the right,
   // and is kept inside the work area with its real width.
   let recordButton = $state<HTMLElement | null>(null);
-  let dragged = $state<{ x: number; y: number } | null>(null);
   let drag: { pointerId: number; dx: number; dy: number } | null = null;
   const position = $derived.by(() => {
-    const area = overlay.workArea;
     const growth = width && recordButton ? Math.max(0, recordButton.offsetWidth - TOOL_SIZE) : 0;
-    const start = dragged ?? dockToolbarPosition({ width: width - growth, height }, area);
-    const x = Math.max(area.x, Math.min(start.x, area.x + area.width - width));
-    const y = Math.max(area.y, Math.min(start.y, area.y + area.height - height));
+    const { x, y } = dockToolbarPlace({ width, height }, overlay.workArea, anchor, {
+      width: width - growth,
+      height,
+    });
     return { x: Math.round(x), y: Math.round(y) };
   });
   const rect = $derived<DockAnnotationRect | null>(
@@ -95,7 +100,10 @@
     if (!drag || event.pointerId !== drag.pointerId) return;
     // A release outside the clickable bar can be missed: no buttons held ends it.
     if (event.buttons === 0) return endDrag();
-    dragged = { x: event.clientX - drag.dx, y: event.clientY - drag.dy };
+    anchor = dockToolbarAnchorAt({ width, height }, overlay.workArea, {
+      cx: event.clientX - drag.dx + width / 2,
+      bottom: event.clientY - drag.dy + height,
+    });
   }
   function endDrag() {
     drag = null;
@@ -206,7 +214,7 @@
   data-testid="dock-annotation-toolbar"
   data-dock-palette="notch"
   data-placed={placed || undefined}
-  data-dragged={dragged ? '' : undefined}
+  data-dragged={anchor ? '' : undefined}
   data-dock-shape={overlay.dock?.shape ?? 'none'}
   data-tips={tipsBelow ? 'below' : 'above'}
   style:transform="translate({position.x}px, {position.y}px)"
@@ -221,11 +229,7 @@
 >
   <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
   <span class="toolbar-grip" title={m.dock_annotationToolbar_drag_label()} aria-hidden="true">
-    <svg width="8" height="16" viewBox="0 0 8 16" fill="currentColor">
-      <circle cx="2" cy="3" r="1.25" /><circle cx="6" cy="3" r="1.25" />
-      <circle cx="2" cy="8" r="1.25" /><circle cx="6" cy="8" r="1.25" />
-      <circle cx="2" cy="13" r="1.25" /><circle cx="6" cy="13" r="1.25" />
-    </svg>
+    <DotsSixVerticalIcon size={16} weight="bold" aria-hidden="true" focusable="false" />
   </span>
   <!-- Tools: one group, Mouse first (a mode like the tools); the current one is tinted. -->
   <div class="tool-group" role="group">

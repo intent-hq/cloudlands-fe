@@ -239,6 +239,8 @@ export function createDockEvidenceNative(
     startClip: (clipId, options) =>
       control<void>({ action: 'clip-start', clipId, maxMs: options.maxMs }),
     stopClip: (clipId) => control<DockClipFile>({ action: 'clip-stop', clipId }),
+    pauseClip: (clipId, paused) =>
+      control<{ paused: boolean }>({ action: 'clip-pause', clipId, paused }),
     releaseClip: (clipId) => control<void>({ action: 'clip-release', clipId }),
     subscribe: (listener) => {
       listeners.add(listener);

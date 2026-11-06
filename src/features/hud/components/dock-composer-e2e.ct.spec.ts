@@ -32,7 +32,26 @@ type Harness = {
   holdPlacements: (value: boolean) => void;
   calls: { method: string; params: Record<string, unknown> }[];
   fixture: { settle: (accepted?: boolean) => void };
+  store: {
+    state: { dockConversation: { workspaceId: string | null; agentId: string | null } };
+    dispatch: (action: { type: string; payload: unknown[] }) => void;
+  };
 };
+
+/**
+ * Choose an annotate tool, as the recording tool bar or a tool key does: the
+ * composer itself has no annotate button (capture, record and dictate only).
+ */
+async function chooseTool(page: Page, tool: 'box' | 'pick'): Promise<void> {
+  await page.evaluate((value) => {
+    const { store } = (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E;
+    const { workspaceId, agentId } = store.state.dockConversation;
+    store.dispatch({
+      type: 'dockConversation/evidenceToolSelectRequested',
+      payload: [workspaceId, agentId, value],
+    });
+  }, tool);
+}
 
 async function gesture(
   page: Page,
@@ -77,9 +96,9 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   const component = await mount(ComposerE2EHarness);
   const footer = component.locator('[data-dock-media-footer]');
   await expect(footer).toBeVisible();
-  const annotate = component.getByRole('button', { name: /^Annotate the screen\. Current tool:/ });
-  // Annotate and record enable only once the native capabilities were installed.
-  await expect(annotate).toBeEnabled();
+  // Capture, record and dictate only; record enables once native capabilities are installed.
+  await expect(footer.locator('.controls button')).toHaveCount(3);
+  await expect(component.getByRole('button', { name: /^Record the screen/ })).toBeEnabled();
   const editor = component.locator('.tiptap-editor');
   const tiles = component.locator('[data-dock-media-attachments] .tile');
   const chips = editor.locator('.screen-reference-chip');
@@ -95,15 +114,8 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
   await screen(page, 2);
 
-  // 3 Annotation tools
-  await annotate.focus();
-  await annotate.press('Space');
-  const tools = page.getByRole('toolbar', { name: 'Annotation tools' });
-  await expect(tools).toBeVisible();
-  await screen(page, 3);
-
   // 4 Annotating: box, two shapes
-  await tools.getByRole('button', { name: 'Box' }).click();
+  await chooseTool(page, 'box');
   await expect(component.getByText('Annotating', { exact: true })).toBeVisible();
   const { card, save, cancel } = SYNTHETIC_ELEMENTS;
   await gesture(page, 'box', { x: card.x + 30, y: card.y + 90, w: card.w - 60, h: 100 }, null);
@@ -119,10 +131,7 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await screen(page, 4);
 
   // Pick: switch tool in the open session, then pick an element.
-  await annotate.focus();
-  await annotate.press('Space');
-  await expect(tools).toBeVisible();
-  await tools.getByRole('button', { name: 'Pick an element' }).click();
+  await chooseTool(page, 'pick');
   const saveElement = {
     role: 'button',
     name: 'Save',
@@ -344,4 +353,52 @@ test('closing retires transient media and preserves words and completed captures
     ),
     contentType: 'application/json',
   });
+});
+
+test('Record from the composer opens the recording tool bar in mouse mode, and Stop closes it', async ({
+  mount,
+  page,
+}) => {
+  const component = await mount(ComposerE2EHarness);
+  const footer = component.locator('[data-dock-media-footer]');
+  await expect(footer.locator('.controls button')).toHaveCount(3);
+  const native = () =>
+    page.evaluate(() => {
+      const { native } = (
+        window as unknown as {
+          __dockComposerE2E: {
+            native: {
+              sessionId: string | null;
+              log: {
+                annotations: { id: string; mode: string }[];
+                mouse: string[];
+                ended: string[];
+                clips: { started: string[]; stopped: string[] };
+              };
+            };
+          };
+        }
+      ).__dockComposerE2E;
+      return { sessionId: native.sessionId, ...structuredClone(native.log) };
+    });
+
+  await component.getByRole('button', { name: /^Record the screen/ }).click();
+  await expect(component.getByRole('button', { name: 'Stop recording' })).toBeVisible();
+  // One live session opened for the bar, switched to mouse mode, then the clip started.
+  await expect.poll(async () => (await native()).clips.started.length).toBe(1);
+  const opened = await native();
+  expect(opened.annotations).toHaveLength(1);
+  expect(opened.annotations[0]).toMatchObject({ mode: 'live' });
+  expect(opened.sessionId).toBe(opened.annotations[0]!.id);
+  expect(opened.mouse).toEqual([opened.annotations[0]!.id]);
+
+  // Stop from the composer: the clip is kept and the bar's session closes with it.
+  await component.getByRole('button', { name: 'Stop recording' }).click();
+  await expect.poll(async () => (await native()).sessionId).toBeNull();
+  const stopped = await native();
+  expect(stopped.clips.stopped).toHaveLength(1);
+  expect(stopped.ended).toContain(opened.annotations[0]!.id);
+  await expect(
+    component.locator('[data-dock-media-attachments] .tile[data-kind="clip"]'),
+  ).toHaveCount(1);
 });
