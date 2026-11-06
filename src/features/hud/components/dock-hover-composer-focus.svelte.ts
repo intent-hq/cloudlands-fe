@@ -1,4 +1,4 @@
-import { onDestroy, untrack } from 'svelte';
+import { onDestroy, onMount, untrack } from 'svelte';
 
 /** A genuine notch hover grants one focus attempt after its expansion settles. */
 export function useDockHoverComposerFocus(
@@ -9,12 +9,45 @@ export function useDockHoverComposerFocus(
     settled: boolean;
     blocked: boolean;
     popup: boolean;
+    inputLive?: boolean;
     root: HTMLElement | undefined;
   },
   focusWindow: () => void,
 ) {
   let inside = false;
   let pending = $state<{ workspaceId: string } | null>(null);
+  let passive: HTMLElement | null = null;
+  onMount(() => {
+    const pointer = (event: PointerEvent) => {
+      if (event.target instanceof Node && passive?.contains(event.target)) passive = null;
+    };
+    const key = (event: KeyboardEvent) => {
+      if (document.activeElement !== passive || event.metaKey || event.ctrlKey || event.altKey)
+        return;
+      if (
+        event.isComposing ||
+        event.key.length === 1 ||
+        ['Backspace', 'Delete', 'Enter', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(
+          event.key,
+        )
+      )
+        passive = null;
+    };
+    document.addEventListener('pointerdown', pointer, true);
+    document.addEventListener('keydown', key, true);
+    return () => {
+      document.removeEventListener('pointerdown', pointer, true);
+      document.removeEventListener('keydown', key, true);
+    };
+  });
+  $effect(() => {
+    if (!state().inputLive) return;
+    untrack(() => {
+      cancel();
+      if (passive && document.activeElement === passive) passive.blur();
+      passive = null;
+    });
+  });
   function cancel() {
     pending = null;
   }
@@ -75,6 +108,7 @@ export function useDockHoverComposerFocus(
           ? selection.getRangeAt(0).cloneRange()
           : null;
       focusWindow();
+      passive = target;
       target.focus({ preventScroll: true });
       if (
         range?.commonAncestorContainer.isConnected &&

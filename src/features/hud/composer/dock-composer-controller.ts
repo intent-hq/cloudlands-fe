@@ -1,4 +1,5 @@
 import { isTextEntryTarget } from '$lib/utils/text-entry';
+import { dockRecordingShortcut } from '../components/dock-recording-toolbar';
 /**
  * UI-side owner for one dock draft pair (workspace + agent + authority).
  *
@@ -521,6 +522,13 @@ export function createDockComposerController(
     };
     // Tool keys belong to the annotate session only while not typing; M or 0 is mouse mode.
     if (view.annotating && !fieldFocused) {
+      const shortcut = dockRecordingShortcut(event);
+      if (shortcut?.kind === 'tool')
+        return act(() =>
+          shortcut.tool === 'pointer'
+            ? dispatch(dockEvidenceMouseModeRequested(workspaceId, agentId))
+            : actions.onToolSelect(shortcut.tool),
+        );
       const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
       const tool = TOOL_KEYS[event.key];
       if (tool && plain) return act(() => actions.onToolSelect(tool));

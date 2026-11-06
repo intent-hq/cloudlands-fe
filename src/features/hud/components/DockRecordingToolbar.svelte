@@ -1,6 +1,7 @@
 <script lang="ts">
   import '$lib/styles/dock-tokens.css';
   import DotsSixVerticalIcon from 'phosphor-svelte/lib/DotsSixVerticalIcon';
+  import BroomIcon from 'phosphor-svelte/lib/BroomIcon';
   import { onDestroy, untrack } from 'svelte';
   import { fade, slide } from '$lib/motion';
   import { m } from '$shared/paraglide/messages.js';
@@ -207,12 +208,21 @@
 
   function onKeyDown(event: KeyboardEvent) {
     if (discarding) return;
+    if (
+      (event.key === 'Enter' || event.key === ' ') &&
+      event.target instanceof Element &&
+      event.target.closest('button')
+    )
+      return;
     const shortcut = dockRecordingShortcut(event);
     if (!shortcut) return;
     event.preventDefault();
+    event.stopImmediatePropagation();
     if (shortcut.kind === 'tool') choose(shortcut.tool);
-    else if (shortcut.kind === 'escape') choose('pointer');
-    else if (shortcut.kind === 'pause') {
+    else if (shortcut.kind === 'escape') {
+      if (pointer && !recording) close();
+      else choose('pointer');
+    } else if (shortcut.kind === 'pause') {
       if (recording) togglePause();
     } else done();
   }
@@ -230,7 +240,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeyDown} />
+<svelte:window onkeydowncapture={onKeyDown} />
 
 <div
   class="recording-toolbar"
@@ -292,8 +302,8 @@
             class="rt-text"
             data-clear
             tooltipContentClass="dock-chrome-tooltip"
-            tooltip={m.dock_recordingToolbar_clear_label()}
-            onclick={clear}>{m.dock_recordingToolbar_clear_label()}</Button
+            tooltip={m.dock_annotationToolbar_clear_label()}
+            onclick={clear}><BroomIcon size={16} />{m.dock_annotationToolbar_clear_label()}</Button
           >
         </div>
       {/if}

@@ -112,11 +112,13 @@
   const assistantId = 'dock:assistant';
   const pinned = $derived(!!conversationWorkspaceId);
   let rootElement = $state<HTMLDivElement>();
+  let compactRecording = $state<string | null>(null);
+  const mediaHold = $derived(inputLive && compactRecording !== recording?.clipId);
   const conversationPresence = useDockConversationPresence(
     () => conversationWorkspaceId,
     () => rootElement,
     () => placement.captureHidden || placement.phase === 'dragging',
-    () => conversationResize.held || nativeMenuOpen || inputLive || !!recording,
+    () => conversationResize.held || nativeMenuOpen || mediaHold,
     () => !edge,
     () => (notch ? DOCK_NOTCH_HOVER_DELAY_MS : 0),
   );
@@ -313,10 +315,32 @@
   });
   $effect(() => {
     if (expanded || reveal !== 0) return;
+    const live = inputLive;
     untrack(() => {
-      contentVisible = false;
+      if (!live) contentVisible = false;
       surfaceExpanded = false;
       stopHeight();
+    });
+  });
+  let recordingSeen: string | null = null;
+  $effect(() => {
+    const clipId = recording?.clipId ?? null;
+    if (clipId === recordingSeen) return;
+    recordingSeen = clipId;
+    untrack(() => {
+      compactRecording = clipId;
+      if (!clipId) return;
+      cancelOpen();
+      clearTimeout(closeTimer);
+      hoverComposerFocus.leave();
+      conversationPresence.hide(true);
+      releaseDockIntroHold();
+      dismissedUntilLeave = pointerInside;
+      pointerInside = false;
+      expandedByUser = false;
+      keyboardOpen = false;
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && rootElement?.contains(focused)) focused.blur();
     });
   });
   function command(value: DockPlacementCommand): void {
@@ -518,9 +542,11 @@
     () => ({
       notch,
       workspaceId: conversationWorkspaceId,
+      inputLive,
       expanded,
       settled: reveal === 1 && openHeight === null && !heightLoop.active && !growGate.pending,
       blocked:
+        inputLive ||
         dragging ||
         !!gesture ||
         awaitingDragStart !== null ||

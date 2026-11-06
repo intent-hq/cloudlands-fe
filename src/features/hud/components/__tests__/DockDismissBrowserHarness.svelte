@@ -14,7 +14,14 @@
     intro = false,
     overview = false,
     focusRequest = 0,
-  }: { liveMode?: string; intro?: boolean; overview?: boolean; focusRequest?: number } = $props();
+    recordingLive = false,
+  }: {
+    liveMode?: string;
+    intro?: boolean;
+    overview?: boolean;
+    focusRequest?: number;
+    recordingLive?: boolean;
+  } = $props();
   let placement = $state(adaptiveDockFixture('notch'));
   // svelte-ignore state_referenced_locally
   let workspaceId = $state<string | null>(overview ? null : 'synthetic-workspace');
@@ -25,6 +32,19 @@
   let finishMenu: (() => void) | undefined;
   let emitPresence: ((value: unknown) => void) | undefined;
   let protectedEscapes = $state(0);
+  let stops = $state(0);
+  const recording = $derived(
+    recordingLive
+      ? {
+          workspaceId: 'synthetic-workspace',
+          agentId: 'synthetic-agent',
+          clipId: 'synthetic-recording',
+          startedAt: 1,
+          pausedAt: null,
+          pausedMs: 0,
+        }
+      : null,
+  );
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synthetic native menu lifetime for browser proof
   const restore = overrideMockIpcHandler(WINDOW_CHANNELS.SHOW_DOCK_MENU, () => {
     menuOpen = true;
@@ -84,16 +104,19 @@
   data-workspace={workspaceId ?? ''}
   data-draft={draft}
   data-protected-escapes={protectedEscapes}
+  data-stops={stops}
 >
   <AdaptiveDockShell
     workspaces={[]}
     {placement}
     {pointerController}
     {focusRequest}
+    {recording}
+    onStopRecording={() => (stops += 1)}
     onPlacementCommand={command}
     conversationWorkspaceId={workspaceId}
     onCloseConversation={() => (workspaceId = null)}
-    inputLive={!!liveMode}
+    inputLive={!!liveMode || recordingLive}
     onOpenWorkspace={() => {}}
     onOpenAssistant={() => {}}
     staticData

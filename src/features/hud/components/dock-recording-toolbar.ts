@@ -31,9 +31,20 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 /** V/E/R/D/A select a tool, Space pauses or resumes, Enter is Done, Esc selects Pointer. */
 export function dockRecordingShortcut(
-  event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'>,
+  event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'> & {
+    isComposing?: boolean;
+    defaultPrevented?: boolean;
+  },
 ): DockRecordingShortcut | null {
-  if (event.metaKey || event.ctrlKey || event.altKey || isEditableTarget(event.target)) return null;
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.metaKey ||
+    event.ctrlKey ||
+    event.altKey ||
+    isEditableTarget(event.target)
+  )
+    return null;
   if (event.key === ' ') return { kind: 'pause' };
   if (event.key === 'Enter') return { kind: 'done' };
   if (event.key === 'Escape') return { kind: 'escape' };
