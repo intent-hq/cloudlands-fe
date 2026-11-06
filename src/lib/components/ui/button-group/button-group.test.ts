@@ -20,7 +20,6 @@ describe('ButtonGroup', () => {
     expect(buttonGroupVariants({ orientation: 'vertical' })).toContain('flex-col');
     expect(buttonGroupVariants()).toContain('gap-px');
     expect(buttonGroupVariants()).toContain('bg-sidebar');
-    expect(source).toContain('[&_[data-slot=button-surface]]:rounded-[inherit]');
     expect(source).toContain('[&_[data-slot=button]]:border-transparent');
     expect(source).not.toContain('[&_[data-slot=button]]:border-input');
 

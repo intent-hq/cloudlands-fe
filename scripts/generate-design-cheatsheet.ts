@@ -153,6 +153,7 @@ Existing callers may retain these names, but new code must use the canonical rep
 ${buttonAliases}
 
 - **Geometry escape hatch:** use \`wrapContent={false}\` only for full-card interactive containers whose flex or grid layout requires slotted regions to remain direct button children.
+- **Bordered surfaces:** paint hover and selected backgrounds on the Button root, not its inset \`button-surface\`. Native background clipping keeps custom radii and joined borders aligned. Review \`/sandbox/button?state=surface-geometry\` in both themes.
 
 ### Primitive-internal button decisions
 

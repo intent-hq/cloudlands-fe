@@ -21,10 +21,11 @@
 
 .home-choice-group [data-slot='button'][data-state='active'] {
   color: hsl(var(--background));
+  background: hsl(var(--foreground));
 }
 
 .home-choice-group [data-state='active'] > [data-slot='button-surface'] {
-  background: hsl(var(--foreground));
+  background: inherit;
   box-shadow: none;
 }
 
@@ -215,9 +216,13 @@
   letter-spacing: var(--text-body-tracking);
 }
 
-.home-sidebar [data-state='active'] > [data-slot='button-surface'],
-[data-home-board] [data-state='active'] > [data-slot='button-surface'] {
+.home-sidebar [data-slot='button'][data-state='active'],
+[data-home-board] [data-slot='button'][data-state='active'] {
   background: hsl(var(--selected));
+}
+
+.home-sidebar [data-state='active'] > [data-slot='button-surface'] {
+  background: inherit;
   box-shadow: none;
 }
 

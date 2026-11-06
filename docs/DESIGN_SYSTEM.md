@@ -352,6 +352,10 @@ navigation. `scripts/design-token-allowlist.json` caps this file at those two ar
   smaller public control size.
 - Shape and elevation: `--radius-{small,medium,large}` all resolve to 8px. `--elevation-raised` is a quiet
   one-pixel lift; `--elevation-overlay` is reserved for floating overlays.
+  Bordered Button backgrounds belong on the control root, alongside its border. The browser then
+  keeps inner corners aligned for custom radii and joined controls with a border removed on one side.
+  The inset `button-surface` is reserved for borderless fills and effects; do not repaint it for an
+  outlined state. Review `/sandbox/button?state=surface-geometry` in both themes.
 - Motion: use `--spring-{fast,moderate,slow}` (80/160/240ms) with the matching
   `--spring-*-ease`, or Tailwind `duration-spring-*` and `ease-spring-*`. Exits use the shorter
   `--spring-*-exit` / `duration-spring-*-exit` tweens. Existing `--motion-*` and `--ease-*` names
