@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.291.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.290.2...v2.291.0) (2026-11-06)
+
+
+### 🚀 Features
+
+* **tabs:** Add workspace tab groups behind a Labs setting ([#4212](https://github.com/intent-hq/cloudlands-fe/issues/4212)) ([8249619](https://github.com/intent-hq/cloudlands-fe/commit/824961999d827c4cd8ed825f9584f7142113ebd4))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.140 ([#4234](https://github.com/intent-hq/cloudlands-fe/issues/4234)) ([7a8d0b4](https://github.com/intent-hq/cloudlands-fe/commit/7a8d0b4cbd5651c864ad879359a1d830edb90f74))
+* judge intent-web sign-in lock staleness on the filesystem clock ([#4230](https://github.com/intent-hq/cloudlands-fe/issues/4230)) ([d96950b](https://github.com/intent-hq/cloudlands-fe/commit/d96950b6fffccb9e372141ae73fc9d903edc653d))
+
 ## [2.290.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.290.1...v2.290.2) (2026-11-06)
 
 
