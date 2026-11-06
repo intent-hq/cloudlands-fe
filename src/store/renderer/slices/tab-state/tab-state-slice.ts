@@ -131,11 +131,13 @@ const removeTabFlag = (tabFlags: TabFlagMap, tabId: string): TabFlagMap => {
   return omitKey(tabFlags, tabId);
 };
 
-const withNextVersion = (state: TabState, updates: Partial<TabState>): TabState => ({
-  ...state,
-  ...updates,
-  version: state.version + 1,
-});
+const withNextVersion = (state: TabState, updates: Partial<TabState>): TabState => {
+  const nextState = { ...state, ...updates, version: state.version + 1 };
+  // Chip toggles must stay collapsed until selection actually changes.
+  return nextState.currentTabId === state.currentTabId
+    ? nextState
+    : withSelectedTabGroup(nextState);
+};
 
 function normalizePersistedWorkspaceStacks(
   tabOrder: string[],
@@ -206,10 +208,18 @@ function updateGroups(
   return groups.length ? { tabGroups: toGroupCollection(update(groups)) } : {};
 }
 
-/** Opens the group holding `workspaceId`, so selecting a hidden tab reveals it. */
-function openGroupOf(state: TabState, workspaceId: string): Partial<TabState> {
-  const group = findWorkspaceTabGroup(getWorkspaceTabGroupList(state), workspaceId);
-  return group && group.id !== state.openTabGroupId ? { openTabGroupId: group.id } : {};
+/** Records selection after membership changes, keeping ungrouped selections from closing a group. */
+function withSelectedTabGroup(state: TabState): TabState {
+  const groups = getWorkspaceTabGroupList(state);
+  const group = findWorkspaceTabGroup(groups, state.currentTabId);
+  if (!group) return state;
+  const nextGroups = rememberGroupSelection(groups, state.currentTabId);
+  if (nextGroups === groups && group.id === state.openTabGroupId) return state;
+  return {
+    ...state,
+    tabGroups: nextGroups === groups ? state.tabGroups : toGroupCollection(nextGroups),
+    openTabGroupId: group.id,
+  };
 }
 
 function rememberGroupSelection(
@@ -518,8 +528,6 @@ tabStateReducer.with(openWorkspaceTab, (state, { payload: [workspaceId] }) => {
   return withNextVersion(state, {
     openTabs: isNewTab ? addTabFlag(state.openTabs, workspaceId) : state.openTabs,
     currentTabId: workspaceId,
-    ...updateGroups(state, (groups) => rememberGroupSelection(groups, workspaceId)),
-    ...openGroupOf(state, workspaceId),
     workspaceStacks: isNewTab ? [...state.workspaceStacks, [workspaceId]] : state.workspaceStacks,
     recentlyClosedTabIds: nextRecentlyClosedTabIds,
     recentlyClosedTabAt: pruneClosedTabAt(state.recentlyClosedTabAt, nextRecentlyClosedTabIds),
@@ -735,7 +743,7 @@ tabStateReducer.with(switchToNextWorkspaceTab, (state) => {
   const nextIndex = (currentIndex + 1) % tabOrder.length;
   const nextTabId = tabOrder[nextIndex];
 
-  if (!nextTabId) {
+  if (!nextTabId || nextTabId === state.currentTabId) {
     return state;
   }
 
@@ -753,7 +761,7 @@ tabStateReducer.with(switchToPreviousWorkspaceTab, (state) => {
   const previousIndex = currentIndex <= 0 ? tabOrder.length - 1 : currentIndex - 1;
   const previousTabId = tabOrder[previousIndex];
 
-  if (!previousTabId) {
+  if (!previousTabId || previousTabId === state.currentTabId) {
     return state;
   }
 
@@ -768,7 +776,7 @@ tabStateReducer.with(switchToWorkspaceTabByIndex, (state, { payload: [index] }) 
   }
 
   const nextTabId = tabOrder[index];
-  if (!nextTabId) {
+  if (!nextTabId || nextTabId === state.currentTabId) {
     return state;
   }
 
@@ -782,7 +790,7 @@ tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsSt
     tabOrder,
     workspaceTabsState.workspaceStacks,
   );
-  return {
+  return withSelectedTabGroup({
     ...state,
     openTabs: createTabFlagMap((workspaceTabsState.openTabs ?? []).filter(isWorkspaceTabId)),
     currentTabId:
@@ -807,5 +815,5 @@ tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsSt
         : null,
     recentlyClosedTabIds: [],
     recentlyClosedTabAt: {},
-  };
+  });
 });

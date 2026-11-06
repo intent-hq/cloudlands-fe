@@ -16,8 +16,12 @@ import {
   moveWorkspace,
   openWorkspaceTab,
   removeWorkspaceTabFromGroup,
+  reopenLastClosedWorkspaceTab,
   serializeWorkspaceTabsState,
   setOpenWorkspaceTabGroup,
+  switchToNextWorkspaceTab,
+  switchToPreviousWorkspaceTab,
+  switchToWorkspaceTabByIndex,
   tabStateReducer,
   type TabState,
 } from './tab-state-slice';
@@ -135,6 +139,181 @@ describe('open group', () => {
     const state = stateWithTabs(['b', 'a'], [group('g', ['b'])]);
     expect(state.currentTabId).toBe('b');
     expect(openGroup(tabStateReducer(state, setOpenWorkspaceTabGroup(null)))).toBe('g');
+  });
+
+  it.each([
+    ['next', 'a', 'b', 'c', switchToNextWorkspaceTab()],
+    ['previous', 'd', 'c', 'b', switchToPreviousWorkspaceTab()],
+    ['index', 'a', 'c', 'b', switchToWorkspaceTabByIndex(2)],
+  ] as const)(
+    'records the group and selected member for the %s shortcut before route synchronization',
+    (_name, from, selected, remembered, action) => {
+      let state = stateWithTabs(
+        ['a', 'b', 'c', 'd'],
+        [{ ...group('g', ['b', 'c']), lastActiveWorkspaceId: remembered }],
+      );
+      state = tabStateReducer(state, openWorkspaceTab(from));
+      const previous = state;
+      state = tabStateReducer(state, action);
+
+      expect(state).toMatchObject({
+        currentTabId: selected,
+        openTabGroupId: 'g',
+        version: previous.version + 1,
+      });
+      expect(state.workspaceStacks).toBe(previous.workspaceStacks);
+      expect(getWorkspaceTabGroupList(state)[0].lastActiveWorkspaceId).toBe(selected);
+      expect(openGroup(state)).toBe('g');
+      expect(tabStateReducer(state, openWorkspaceTab(selected))).toBe(state);
+
+      state = tabStateReducer(state, openWorkspaceTab('a'));
+      expect(openGroup(state)).toBe('g');
+      expect(serializeWorkspaceTabsState(state)).toMatchObject({
+        openTabGroupId: 'g',
+        tabGroups: [{ id: 'g', lastActiveWorkspaceId: selected }],
+      });
+    },
+  );
+
+  it('keeps the keyboard-selected group open instead of restoring the previously open group', () => {
+    let state = stateWithTabs(['a', 'b', 'c'], [group('h', ['a']), group('g', ['b'])]);
+    state = tabStateReducer(state, setOpenWorkspaceTabGroup('h'));
+    state = tabStateReducer(state, switchToNextWorkspaceTab());
+    state = tabStateReducer(state, openWorkspaceTab('c'));
+    expect(state.openTabGroupId).toBe('g');
+    expect(openGroup(state)).toBe('g');
+  });
+
+  it.each([
+    ['next neighbor', 'a', 'b', 'c'],
+    ['previous neighbor', 'd', 'c', 'b'],
+  ])('records group selection when closing to the %s', (_name, closed, selected, remembered) => {
+    let state = stateWithTabs(
+      ['a', 'b', 'c', 'd'],
+      [{ ...group('g', ['b', 'c']), lastActiveWorkspaceId: remembered }],
+    );
+    state = tabStateReducer(state, openWorkspaceTab(closed));
+    const previousVersion = state.version;
+    state = tabStateReducer(state, closeWorkspaceTab(closed, 1));
+
+    expect(state).toMatchObject({
+      currentTabId: selected,
+      openTabGroupId: 'g',
+      version: previousVersion + 1,
+    });
+    expect(getWorkspaceTabGroupList(state)[0].lastActiveWorkspaceId).toBe(selected);
+    expect(openGroup(state)).toBe('g');
+    state = tabStateReducer(state, openWorkspaceTab(closed === 'a' ? 'd' : 'a'));
+    expect(openGroup(state)).toBe('g');
+  });
+
+  it('remembers the surviving selected member after closing a member of the same group', () => {
+    let state = stateWithTabs(['a', 'b', 'c'], [group('g', ['b', 'c'])]);
+    state = tabStateReducer(state, openWorkspaceTab('b'));
+    state = tabStateReducer(state, closeWorkspaceTab('b', 1));
+    expect(state.currentTabId).toBe('c');
+    expect(getWorkspaceTabGroupList(state)).toEqual([
+      { ...group('g', ['c']), lastActiveWorkspaceId: 'c' },
+    ]);
+  });
+
+  it('opens the fallback group after closing the last member of the current group', () => {
+    let state = stateWithTabs(['a', 'b', 'c', 'd'], [group('h', ['b']), group('g', ['c'])]);
+    state = tabStateReducer(state, openWorkspaceTab('b'));
+    state = tabStateReducer(state, closeWorkspaceTab('b', 1));
+    expect(getWorkspaceTabGroupList(state)).toEqual([
+      { ...group('g', ['c']), lastActiveWorkspaceId: 'c' },
+    ]);
+    expect(state.openTabGroupId).toBe('g');
+    state = tabStateReducer(state, openWorkspaceTab('d'));
+    expect(openGroup(state)).toBe('g');
+  });
+
+  it('keeps an explicit chip collapse through route synchronization and selection outside the group', () => {
+    let state = stateWithTabs(['a', 'b', 'c'], [group('g', ['b', 'c'])]);
+    state = tabStateReducer(state, switchToWorkspaceTabByIndex(2));
+    state = tabStateReducer(state, setOpenWorkspaceTabGroup(null));
+    expect(tabStateReducer(state, openWorkspaceTab('c'))).toBe(state);
+    state = tabStateReducer(state, openWorkspaceTab('a'));
+    expect(state.openTabGroupId).toBeNull();
+    expect(openGroup(state)).toBeNull();
+    expect(getWorkspaceTabGroupList(state)[0].lastActiveWorkspaceId).toBe('c');
+    expect(tabStateReducer(state, setOpenWorkspaceTabGroup(null))).toBe(state);
+  });
+
+  it('does not undo a chip collapse when closing a background tab', () => {
+    let state = stateWithTabs(['a', 'b', 'c'], [group('g', ['b', 'c'])]);
+    state = tabStateReducer(state, openWorkspaceTab('b'));
+    state = tabStateReducer(state, setOpenWorkspaceTabGroup(null));
+    state = tabStateReducer(state, closeWorkspaceTab('a', 1));
+    expect(state.currentTabId).toBe('b');
+    expect(state.openTabGroupId).toBeNull();
+    expect(getWorkspaceTabGroupList(state)[0].lastActiveWorkspaceId).toBe('b');
+  });
+
+  it.each([
+    ['next', switchToNextWorkspaceTab()],
+    ['previous', switchToPreviousWorkspaceTab()],
+    ['same index', switchToWorkspaceTabByIndex(0)],
+    ['negative index', switchToWorkspaceTabByIndex(-1)],
+    ['missing index', switchToWorkspaceTabByIndex(1)],
+  ] as const)('keeps a %s shortcut with no selection change a no-op', (_name, action) => {
+    let state = stateWithTabs(['b'], [group('g', ['b'])]);
+    state = tabStateReducer(state, setOpenWorkspaceTabGroup(null));
+    expect(tabStateReducer(state, action)).toBe(state);
+  });
+
+  it.each(['a', 'c'])(
+    'records restored group selection when the prior current tab is %s',
+    (current) => {
+      let state = stateWithTabs(['a', 'b', 'c', 'd'], [group('old', ['c'])]);
+      state = tabStateReducer(state, openWorkspaceTab(current));
+      const previousVersion = state.version;
+      state = tabStateReducer(
+        state,
+        loadWorkspaceTabsState({
+          ...serializeWorkspaceTabsState(state),
+          currentTabId: 'c',
+          tabGroups: [
+            { ...group('g', ['b', 'c', 'closed']), lastActiveWorkspaceId: 'b' },
+            group('h', ['d']),
+          ],
+          openTabGroupId: 'h',
+        }),
+      );
+      expect(state.version).toBe(previousVersion);
+      expect(state.openTabGroupId).toBe('g');
+      expect(getWorkspaceTabGroupList(state)[0]).toEqual({
+        ...group('g', ['b', 'c']),
+        lastActiveWorkspaceId: 'c',
+      });
+      state = tabStateReducer(state, openWorkspaceTab('a'));
+      expect(openGroup(state)).toBe('g');
+    },
+  );
+
+  it.each([null, 'g'])(
+    'preserves restored expansion %s when the selected tab is ungrouped',
+    (openTabGroupId) => {
+      let state = stateWithTabs(['a', 'b'], [group('g', ['b'])]);
+      state = tabStateReducer(
+        state,
+        loadWorkspaceTabsState({ ...serializeWorkspaceTabsState(state), openTabGroupId }),
+      );
+      expect(state.openTabGroupId).toBe(openTabGroupId);
+      expect(openGroup(state)).toBe(openTabGroupId);
+    },
+  );
+
+  it('keeps the group and its selected member when reopening an ungrouped tab', () => {
+    let state = stateWithTabs(['a', 'b', 'c'], [group('g', ['b', 'c'])]);
+    state = tabStateReducer(state, openWorkspaceTab('c'));
+    state = tabStateReducer(state, closeWorkspaceTab('a', 1));
+    state = tabStateReducer(state, reopenLastClosedWorkspaceTab());
+    expect(state.currentTabId).toBe('a');
+    expect(state.openTabGroupId).toBe('g');
+    expect(openGroup(state)).toBe('g');
+    expect(getWorkspaceTabGroupList(state)[0].lastActiveWorkspaceId).toBe('c');
   });
 });
 

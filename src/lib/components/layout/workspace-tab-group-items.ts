@@ -128,23 +128,34 @@ export function layoutWorkspaceTabStrip(
   const tabIds = items.flatMap((item) =>
     item.kind === 'tab' && !item.hidden ? [item.workspaceId] : [],
   );
-  return { items, tabIds };
+  const dragItems = items.filter((item) => (item.kind === 'tab' ? !item.hidden : !item.open));
+  return { items, tabIds, dragItems };
 }
 
 /**
- * Applies a drop slot among the visible tabs to the full tab order, so hidden
- * tabs of collapsed groups keep their place next to their group.
+ * Applies a drop slot among visible tabs and collapsed chips to the full order.
+ * Each collapsed chip represents its entire group, so a drop at either edge
+ * leaves the hidden members together.
  */
 export function proposeGroupedWorkspaceTabOrder(
-  visibleOrder: readonly string[],
+  dragItems: readonly WorkspaceTabStripItem[],
   fullOrder: readonly string[],
   draggedId: string,
   insertionIndex: number,
 ): string[] {
-  const nextVisibleOrder = proposeWorkspaceTabOrder([...visibleOrder], draggedId, insertionIndex);
-  const move = getReleasedWorkspaceTabMove([...visibleOrder], nextVisibleOrder, draggedId);
-  return move
-    ? applyWorkspaceTabMove(fullOrder, draggedId, move.targetId, move.placement)
+  const visibleOrder = dragItems.map((item) => item.key);
+  const nextVisibleOrder = proposeWorkspaceTabOrder(visibleOrder, draggedId, insertionIndex);
+  const move = getReleasedWorkspaceTabMove(visibleOrder, nextVisibleOrder, draggedId);
+  if (!move) return [...fullOrder];
+  const target = dragItems.find((item) => item.key === move.targetId);
+  const targetId =
+    target?.kind === 'group'
+      ? move.placement === 'before'
+        ? target.group.workspaceIds[0]
+        : target.group.workspaceIds.at(-1)
+      : move.targetId;
+  return targetId
+    ? applyWorkspaceTabMove(fullOrder, draggedId, targetId, move.placement)
     : [...fullOrder];
 }
 

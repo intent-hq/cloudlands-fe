@@ -73,6 +73,7 @@
     layoutWorkspaceTabStrip,
     proposeGroupedWorkspaceTabOrder,
     workspaceTabGroupSlotAttributes,
+    type WorkspaceTabStripItem,
   } from './workspace-tab-group-items';
   import { prepareTabOutros, workspaceTabStripItemMotion } from './workspace-tab-strip-item-motion';
   import {
@@ -126,8 +127,8 @@
   );
   const visibleTabIds = $derived($workspaceTabOrder$);
   interface WorkspaceTabDragSession {
-    /** Visible tabs at drag start; hidden tabs of collapsed groups are left out. */
-    originalOrder: string[];
+    /** Visible tabs and collapsed group chips at drag start. */
+    originalItems: WorkspaceTabStripItem[];
     /** Every tab at drag start, in store order. */
     fullOrder: string[];
     pointerOffsetX: number;
@@ -183,7 +184,7 @@
   });
   const ownedTabIds = $derived(stripLayout.tabIds.map((id) => `workspace-tab-${id}`).join(' '));
   let tabButtons = $state<Record<string, HTMLButtonElement | null>>({});
-  const tabSurfaces = new Map<string, HTMLElement>();
+  const stripItemSurfaces = new Map<string, HTMLElement>();
   const ACTIVE_TAB_EDGE_GAP = 2;
   const POINTER_DRAG_THRESHOLD = 4;
   const activeTabBoundsPollers = new Set<() => void>();
@@ -569,11 +570,12 @@
     };
   }
 
-  function registerTabSurface(node: HTMLElement, workspaceId: string) {
-    tabSurfaces.set(workspaceId, node);
+  function registerStripItemSurface(node: HTMLElement, key: string | undefined) {
+    if (!key) return;
+    stripItemSurfaces.set(key, node);
     return {
       destroy() {
-        tabSurfaces.delete(workspaceId);
+        stripItemSurfaces.delete(key);
       },
     };
   }
@@ -718,7 +720,7 @@
       slots,
     );
     const nextOrder = proposeGroupedWorkspaceTabOrder(
-      dragSession.originalOrder,
+      dragSession.originalItems,
       dragSession.fullOrder,
       draggedWorkspaceId,
       insertionIndex,
@@ -781,19 +783,19 @@
 
   function startPointerDrag(pointerGrab: WorkspaceTabPointerGrab, clientX: number) {
     const rect = pointerGrab.surface.getBoundingClientRect();
-    const originalOrder = [...stripLayout.tabIds];
+    const originalItems = [...stripLayout.dragItems];
     const fullOrder = [...visibleTabIds];
     flushSync(() => (draggedWorkspaceId = pointerGrab.workspaceId));
     dragClientX = clientX;
     proposedTabOrder = fullOrder;
     dragSession = {
-      originalOrder,
+      originalItems,
       fullOrder,
       pointerOffsetX: pointerGrab.pointerOffsetX,
       origin: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      slots: originalOrder.flatMap((id) => {
+      slots: originalItems.flatMap(({ key: id }) => {
         if (id === pointerGrab.workspaceId) return [];
-        const slotRect = tabSurfaces.get(id)?.getBoundingClientRect();
+        const slotRect = stripItemSurfaces.get(id)?.getBoundingClientRect();
         return slotRect ? [{ id, centerX: slotRect.left + slotRect.width / 2 }] : [];
       }),
       startScrollLeft: stripElement?.scrollLeft ?? 0,
@@ -979,6 +981,7 @@
             : 'flex h-(--control-height-medium) items-center px-1',
         )}
         data-workspace-tab-motion={item.kind === 'tab' ? workspaceId : undefined}
+        use:registerStripItemSurface={item.kind === 'group' ? item.key : undefined}
         {...workspaceTabGroupSlotAttributes(item)}
         style:width={isDragged ? `${dragSession?.origin.width ?? 160}px` : undefined}
         style:height={isDragged ? `${dragSession?.origin.height ?? 36}px` : undefined}
@@ -1051,7 +1054,7 @@
             style:transition-duration={isDragged ? '0ms' : `${WORKSPACE_TAB_MOTION_DURATION_MS}ms`}
             style:transition-timing-function={WORKSPACE_TAB_MOTION_EASING}
             use:reportActiveTabBounds={isCurrent}
-            use:registerTabSurface={workspaceId}
+            use:registerStripItemSurface={workspaceId}
             role="presentation"
             onpointerdown={(event) => handleDragPointerDown(event, workspaceId)}
             onmouseenter={() => pointerOpenEligibleWorkspaceHoverCardIds.add(workspaceId)}
@@ -1150,7 +1153,7 @@
             {isCurrent}
             bind:ref={tabButtons[workspaceId]}
             {reportActiveTabBounds}
-            {registerTabSurface}
+            registerTabSurface={registerStripItemSurface}
             onOpen={(restoreFocus) => void openWorkspace(workspaceId, restoreFocus)}
             onClose={(event) => closeWorkspace(workspaceId, event)}
             onKeydown={(event) => handleTabKeydown(event, workspaceId)}
