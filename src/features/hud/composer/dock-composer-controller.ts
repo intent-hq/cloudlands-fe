@@ -305,7 +305,8 @@ export function createDockComposerController(
         ? JSON.stringify(['saved', saved.source.id, saved.source.revision, saved.source.path, saved.saved])
         : JSON.stringify(tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]));
       wanted.add(tile.image.id);
-      if (previewKeys.get(tile.image.id) === key) continue;
+      const shownKey = previewKeys.get(tile.image.id);
+      if (shownKey === key) continue;
       const item = items.find((row) => row.id === tile.image.contextItemId);
       if (!saved && (!item?.imageData || !item.imageMimeType)) continue;
       previewKeys.set(tile.image.id, key);
@@ -329,9 +330,21 @@ export function createDockComposerController(
         }));
         if (previous) deps.revokeUrl(previous);
       } catch {
-        // The prior thumbnail stays. A saved render that failed is not retried until its
-        // edit or source changes; a live-marks render retries on the next update.
+        // A live-marks render retries on the next update. A saved render that failed is
+        // not retried until its edit or source changes; it keeps an earlier saved
+        // thumbnail, but never falls back to the unedited capture (its blur would be lost).
         if (!saved) previewKeys.delete(tile.image.id);
+        else if (!shownKey?.startsWith('["saved"') && previewKeys.get(tile.image.id) === key) {
+          const previous = get(local).previews[tile.image.id];
+          if (previous) {
+            local.update((state) => {
+              const previews = { ...state.previews };
+              delete previews[tile.image.id];
+              return { ...state, previews };
+            });
+            deps.revokeUrl(previous);
+          }
+        }
       }
     }
     const stale = Object.entries(get(local).previews).filter(([id]) => !wanted.has(id));
