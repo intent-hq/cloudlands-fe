@@ -919,11 +919,11 @@
     ),
   );
   const agentOptions = $derived<ComboboxOption[]>([
-    { value: 'general', label: m.workspace_initialAgentPicker_general_label() },
     ...agentSpecialists.map((specialist) => ({
       value: specialist.id === orchestratorId ? 'orchestration' : `specialist:${specialist.id}`,
       label: specialist.name,
     })),
+    { value: 'general', label: m.workspace_initialAgentPicker_general_label() },
   ]);
   const selectedAgentValue = $derived(
     isTeamMode && orchestrator

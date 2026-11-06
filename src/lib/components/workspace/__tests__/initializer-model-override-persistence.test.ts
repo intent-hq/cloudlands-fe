@@ -770,11 +770,11 @@ describe('initializer remembers the agent setup per repository', () => {
     const agentTrigger = screen.getByRole('button', { name: /^Initial agent\b/ });
     expect(agentTrigger.textContent).toContain('Coordinator');
     await fireEvent.click(agentTrigger);
-    await fireEvent.pointerUp(await screen.findByRole('option', { name: /^General/ }), {
+    await fireEvent.pointerUp(await screen.findByRole('option', { name: /^None/ }), {
       button: 0,
       pointerType: 'mouse',
     });
-    await waitFor(() => expect(agentTrigger.textContent).toContain('General'));
+    await waitFor(() => expect(agentTrigger.textContent).toContain('None'));
 
     mocks.agentByRepo = { 'local:/tmp/repo-a': { ...REPO_A, isTeamMode: true } };
     prefill('/tmp/repo-a', true);
