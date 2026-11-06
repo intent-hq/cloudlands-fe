@@ -435,7 +435,7 @@
     disabled={saving}
     {retaking}
     onInteractionPending={(pending) => (interactionPending = pending)}
-    newToolsEnabled={outputAdmitted}
+    admittedOutputVersion={outputAdmitted ? DOCK_MEDIA_OUTPUT_VERSION : undefined}
     {dictatingId}
     onRetake={onRetake ? retake : undefined}
     onNoteDictation={onNoteDictation ? dictateNote : undefined}
