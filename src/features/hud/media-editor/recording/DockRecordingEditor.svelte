@@ -436,6 +436,14 @@
   }
   function onKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
+    // A focused annotation owns its selection keys, rather than seeking the video.
+    if (
+      frameTool === null &&
+      event.target instanceof Element &&
+      event.target.closest('[data-frame-mark]') &&
+      ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Delete', 'Backspace'].includes(event.key)
+    )
+      return;
     if (event.key === 'Escape' && framePending) return;
     if (
       event.key === 'Escape' &&
