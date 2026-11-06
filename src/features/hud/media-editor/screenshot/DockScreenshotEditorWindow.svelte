@@ -431,7 +431,7 @@
         onDiscardRequested={discard}
         {onKeepEditing}
         sidebar={contentSidebar}
-        sidebarWidth={72}
+        sidebarWidth={52}
         sidebarLayout="rail"
       >
         {#snippet main()}
