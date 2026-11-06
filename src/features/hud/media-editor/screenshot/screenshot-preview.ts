@@ -5,7 +5,12 @@ import type { DockMediaEdit, DockMediaSource } from '$shared/dock-media-edit';
 /** Per-editor immutable pixel cache. Preview uses the exact saved-output renderer. */
 export function createScreenshotPreviewRenderer() {
   const originals = new Map<string, Promise<{ base64: string; mimeType: string }>>();
-  return async (source: DockMediaSource, edit: DockMediaEdit, url: string): Promise<string> => {
+  return async (
+    source: DockMediaSource,
+    edit: DockMediaEdit,
+    url: string,
+    hiddenTextMarkId: string | null = null,
+  ): Promise<string> => {
     const key = JSON.stringify([source.id, source.revision, url]);
     let pixels = originals.get(key);
     if (!pixels) {
@@ -22,7 +27,7 @@ export function createScreenshotPreviewRenderer() {
       }
       void pixels.catch(() => originals.delete(key));
     }
-    const image = await renderDockMediaImage(source, edit, await pixels);
+    const image = await renderDockMediaImage(source, edit, await pixels, { hiddenTextMarkId });
     const bytes = Uint8Array.from(atob(image.data), (c) => c.charCodeAt(0));
     return URL.createObjectURL(new Blob([bytes], { type: image.mimeType }));
   };

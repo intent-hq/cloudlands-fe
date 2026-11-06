@@ -33,6 +33,7 @@ export function layoutDockMediaMarks(
   edit: DockMediaEdit,
   source: DockMediaSource,
   atMs = 0,
+  hiddenTextMarkId?: string | null,
 ): DockMediaPaintOp[] {
   const crop = edit.crop ?? { x: 0, y: 0, w: source.width, h: source.height };
   const unit = Math.max(1, Math.max(source.width, source.height) / 1440);
@@ -47,7 +48,10 @@ export function layoutDockMediaMarks(
       if (!geometry) return [];
       const box = dockMediaGeometryRect(geometry);
       return [
-        { kind: 'geometry', geometry, unit },
+        // Editing suppresses glyphs only; badges and canonical numbering stay unchanged.
+        ...(mark.id === hiddenTextMarkId && geometry.kind === 'text'
+          ? []
+          : [{ kind: 'geometry' as const, geometry, unit }]),
         {
           kind: 'badge',
           x: Math.min(crop.x + crop.w - r, Math.max(crop.x + r, box.x + box.w)),
@@ -93,33 +97,18 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
     }
     else if (g.kind === 'text') {
       const text = layoutDockMediaText(g);
-      if (g.style === 'sticky') {
-        const radius = Math.min(6, text.width / 2, text.height / 2);
-        context.fillStyle = DOCK_MEDIA_PAINT.accent;
-        context.beginPath();
-        context.moveTo(g.x + radius, g.y);
-        context.lineTo(g.x + text.width - radius, g.y);
-        context.quadraticCurveTo(g.x + text.width, g.y, g.x + text.width, g.y + radius);
-        context.lineTo(g.x + text.width, g.y + text.height - radius);
-        context.quadraticCurveTo(g.x + text.width, g.y + text.height, g.x + text.width - radius, g.y + text.height);
-        context.lineTo(g.x + radius, g.y + text.height);
-        context.quadraticCurveTo(g.x, g.y + text.height, g.x, g.y + text.height - radius);
-        context.lineTo(g.x, g.y + radius);
-        context.quadraticCurveTo(g.x, g.y, g.x + radius, g.y);
-        context.closePath();
-        context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = 2 * unit; context.stroke();
-        context.fill();
-      }
-      context.fillStyle = g.style === 'sticky' ? DOCK_MEDIA_PAINT.ink : DOCK_MEDIA_PAINT.accent;
-      context.textAlign = 'left'; context.textBaseline = 'top';
+      // Legacy sticky metadata still controls wrapping and bounds, never a filled label.
+      context.fillStyle = DOCK_MEDIA_PAINT.accent;
+      context.textAlign = 'left';
+      context.textBaseline = 'top';
       context.font = `${g.fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
       text.lines.forEach((line, index) => {
-        const x = g.x + text.padding, y = g.y + text.padding + index * text.lineHeight;
-        if (g.style === 'sticky') context.fillText(line, x, y, text.width - 2 * text.padding);
-        else {
-          context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = 2 * unit;
-          context.strokeText(line, x, y); context.fillText(line, x, y);
-        }
+        const x = g.x + text.padding,
+          y = g.y + text.padding + index * text.lineHeight;
+        context.strokeStyle = DOCK_MEDIA_PAINT.halo;
+        context.lineWidth = 2 * unit;
+        context.strokeText(line, x, y);
+        context.fillText(line, x, y);
       });
     } else if (g.kind === 'point') {
       context.beginPath();
@@ -176,6 +165,7 @@ export async function renderDockMediaImage(
   source: DockMediaSource,
   edit: DockMediaEdit,
   pixels: { base64: string; mimeType: string },
+  preview?: { hiddenTextMarkId: string | null },
 ): Promise<{ data: string; mimeType: string; width: number; height: number }> {
   const plan = planDockMediaOutput(edit, source, null);
   if (source.kind !== 'screenshot' || plan.errors.length)
@@ -237,7 +227,7 @@ export async function renderDockMediaImage(
     );
     output.context.scale(output.image.width / crop.w, output.image.height / crop.h);
     output.context.translate(-crop.x, -crop.y);
-    paintDockMediaMarks(output.context, layoutDockMediaMarks(edit, source));
+    paintDockMediaMarks(output.context, layoutDockMediaMarks(edit, source, 0, preview?.hiddenTextMarkId));
     const png = await output.image.convertToBlob({ type: 'image/png' });
     return {
       data: arrayBufferToBase64(await png.arrayBuffer()),

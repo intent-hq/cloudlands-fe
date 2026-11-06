@@ -7,7 +7,7 @@
     geometry: DockMarkGeometry;
     blur?: boolean;
     blurStroke?: DockMediaBlurStroke;
-    text?: { value: string; fontSize: number };
+    text?: { value: string; fontSize: number; padding: number; width: number; wrapped: boolean };
   }
   export type ScreenshotTool =
     'pointer' | 'element' | 'box' | 'draw' | 'arrow' | 'text' | 'blur' | 'crop';
@@ -15,6 +15,7 @@
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
   import { Textarea } from '$lib/components/ui/textarea';
   import { m } from '$shared/paraglide/messages.js';
   import { dockGeometryRect } from '$shared/dock-annotation';
@@ -42,6 +43,7 @@
     onGesturePending,
     cropCandidate = null,
     editingTextId = $bindable(null),
+    editingRasterReady = true,
     disabled = false,
     raster = false,
     hidden = false,
@@ -72,6 +74,7 @@
     onGesturePending: (pending: boolean) => void;
     cropCandidate?: DockImageRect | null;
     editingTextId?: string | null;
+    editingRasterReady?: boolean;
     disabled?: boolean;
     raster?: boolean;
     hidden?: boolean;
@@ -645,17 +648,23 @@
         />
       {/each}
     {/if}
-    {#if textShape?.text && textSession}
+    {#if textShape?.text && textSession && editingRasterReady}
       {@const b = dockGeometryRect(textShape.geometry)}
       <foreignObject
         x={b.x}
         y={b.y}
-        width={Math.min(frame.x + frame.w - b.x, Math.max(b.w, 160 * unit))}
+        width={Math.min(
+          frame.x + frame.w - b.x,
+          textShape.text.wrapped ? textShape.text.width : Math.max(b.w, 160 * unit),
+        )}
         height={Math.min(frame.y + frame.h - b.y, Math.max(b.h + 16 * unit, 72 * unit))}
       >
         <div
           class="inline-text"
           style:font-size={`${textShape.text.fontSize}px`}
+          style:font-family={DOCK_MEDIA_PAINT.fontFamily}
+          style:--capture-text-accent={DOCK_MEDIA_PAINT.accent}
+          style:padding={`${textShape.text.padding}px`}
           onpointerdown={(event) => event.stopPropagation()}
           onkeydown={(event) => {
             event.stopPropagation();
@@ -679,6 +688,7 @@
             bind:value={textValue}
             class="text-input"
             maxlength={10000}
+            wrap={textShape.text.wrapped ? 'soft' : 'off'}
             aria-label={m.dock_screenshotEditor_text()}
             minHeight={0}
             noFocusStyle
@@ -802,6 +812,7 @@
     width: 100%;
     height: 100%;
     line-height: 1.4;
+    box-sizing: border-box;
   }
   .inline-text :global(.text-input) {
     width: 100%;
@@ -812,6 +823,10 @@
     font: inherit;
     line-height: inherit;
     border-radius: 0;
-    background: hsl(var(--background));
+    border: 0;
+    background: transparent;
+    color: var(--capture-text-accent);
+    caret-color: var(--capture-text-accent);
+    box-shadow: none;
   }
 </style>

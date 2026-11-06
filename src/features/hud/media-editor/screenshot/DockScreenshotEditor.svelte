@@ -111,6 +111,7 @@
   }
   const visualKey = $derived(
     JSON.stringify({
+      editingTextId,
       crop: previewEdit.crop,
       blur: previewEdit.blurRegions,
       strokes: previewEdit.blurStrokes,
@@ -129,6 +130,7 @@
     frameKey: string;
     attempt: number;
     redactionKey: string;
+    hiddenTextMarkId: string | null;
   };
   let queuedPreview: PreviewJob | null = null;
   let rendering = false;
@@ -145,7 +147,7 @@
         const job = queuedPreview;
         queuedPreview = null;
         try {
-          const next = await renderPreview(job.source, job.edit, job.url);
+          const next = await renderPreview(job.source, job.edit, job.url, job.hiddenTextMarkId);
           // Decode before publishing, then keep the prior SVG frame until its load receipt.
           const image = new Image();
           image.src = next;
@@ -201,6 +203,7 @@
     queuedPreview = {
       source: currentSource,
       edit: untrack(() => previewEdit),
+      hiddenTextMarkId: editingTextId,
       url,
       key,
       frameKey: currentFrame,
@@ -229,7 +232,14 @@
       id: mark.id,
       geometry: canvasGeometry(mark.geometry),
       ...(mark.geometry.kind === 'text'
-        ? { text: { value: mark.geometry.text, fontSize: mark.geometry.fontSize } }
+        ? {
+            text: {
+              value: mark.geometry.text,
+              fontSize: mark.geometry.fontSize,
+              ...layoutDockMediaText(mark.geometry),
+              wrapped: mark.geometry.style === 'sticky',
+            },
+          }
         : {}),
     })),
     ...(draft.blurStrokes ?? []).map((stroke) => ({
@@ -600,6 +610,7 @@
         {cropCandidate}
         onCropChange={(candidate) => (cropCandidate = candidate)}
         bind:editingTextId
+        editingRasterReady={displayedPreview?.key === visualKey}
         onText={text}
         disabled={blocked || !frameReady || previewFailed}
         onSelect={select}
