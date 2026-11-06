@@ -2,6 +2,19 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { BrowserTabNavigation } from './tab-state-types';
 import { omitKey } from '../../utils/utils';
+import {
+  createCollection,
+  getItems,
+  type Collection,
+} from '@themislib/themis/utils/collections/collection-utils';
+import {
+  findWorkspaceTabGroup,
+  normalizeWorkspaceTabGroups,
+  parsePersistedWorkspaceTabGroups,
+  resolveMovedWorkspaceTabGroups,
+  type WorkspaceTabGroup,
+  type WorkspaceTabGroupColor,
+} from './tab-groups';
 
 type HandleDropZoneType = 'row-above' | 'row-below' | 'column-left' | 'column-right';
 type TabFlagMap = Record<string, boolean>;
@@ -28,6 +41,16 @@ export interface HandleDropInfo {
   label: string;
 }
 
+export type WorkspaceTabGroupCollection = Collection<WorkspaceTabGroup, 'id'>;
+
+/** Ordered groups from tab state; tolerates states built before groups existed. */
+export const getWorkspaceTabGroupList = (state: {
+  tabGroups?: WorkspaceTabGroupCollection;
+}): WorkspaceTabGroup[] => (state.tabGroups ? getItems(state.tabGroups) : []);
+
+const toGroupCollection = (groups: WorkspaceTabGroup[]): WorkspaceTabGroupCollection =>
+  createCollection('id', groups);
+
 export type PersistedWorkspaceTabsState = {
   openTabs: string[];
   currentTabId: string | null;
@@ -36,6 +59,8 @@ export type PersistedWorkspaceTabsState = {
   optimisticTabs: string[];
   tabOrder: string[];
   workspaceStacks?: string[][];
+  tabGroups?: WorkspaceTabGroup[];
+  openTabGroupId?: string | null;
 };
 
 export type TabState = {
@@ -48,6 +73,12 @@ export type TabState = {
   unsavedTabs: TabFlagMap;
   optimisticTabs: TabFlagMap;
   workspaceStacks: string[][];
+  tabGroups: WorkspaceTabGroupCollection;
+  /**
+   * The one expanded group. It stays open until its chip is clicked again;
+   * selecting a tab inside another group opens that group instead.
+   */
+  openTabGroupId: string | null;
   recentlyClosedTabIds: string[];
   recentlyClosedTabAt: Record<string, number>;
   version: number;
@@ -100,11 +131,13 @@ const removeTabFlag = (tabFlags: TabFlagMap, tabId: string): TabFlagMap => {
   return omitKey(tabFlags, tabId);
 };
 
-const withNextVersion = (state: TabState, updates: Partial<TabState>): TabState => ({
-  ...state,
-  ...updates,
-  version: state.version + 1,
-});
+const withNextVersion = (state: TabState, updates: Partial<TabState>): TabState => {
+  const nextState = { ...state, ...updates, version: state.version + 1 };
+  // Chip toggles must stay collapsed until selection actually changes.
+  return nextState.currentTabId === state.currentTabId
+    ? nextState
+    : withSelectedTabGroup(nextState);
+};
 
 function normalizePersistedWorkspaceStacks(
   tabOrder: string[],
@@ -166,6 +199,49 @@ function moveWorkspaceInStacks(
   return areWorkspaceStacksEqual(currentStacks, nextStacks) ? null : nextStacks;
 }
 
+/** Group changes for a reducer update; nothing when no group exists. */
+function updateGroups(
+  state: TabState,
+  update: (groups: WorkspaceTabGroup[]) => WorkspaceTabGroup[],
+): Partial<TabState> {
+  const groups = getWorkspaceTabGroupList(state);
+  return groups.length ? { tabGroups: toGroupCollection(update(groups)) } : {};
+}
+
+/** Records selection after membership changes, keeping ungrouped selections from closing a group. */
+function withSelectedTabGroup(state: TabState): TabState {
+  const groups = getWorkspaceTabGroupList(state);
+  const group = findWorkspaceTabGroup(groups, state.currentTabId);
+  if (!group) return state;
+  const nextGroups = rememberGroupSelection(groups, state.currentTabId);
+  if (nextGroups === groups && group.id === state.openTabGroupId) return state;
+  return {
+    ...state,
+    tabGroups: nextGroups === groups ? state.tabGroups : toGroupCollection(nextGroups),
+    openTabGroupId: group.id,
+  };
+}
+
+function rememberGroupSelection(
+  groups: WorkspaceTabGroup[],
+  workspaceId: string | null,
+): WorkspaceTabGroup[] {
+  const group = findWorkspaceTabGroup(groups, workspaceId);
+  if (!group || !workspaceId || group.lastActiveWorkspaceId === workspaceId) return groups;
+  return groups.map((candidate) =>
+    candidate === group ? { ...candidate, lastActiveWorkspaceId: workspaceId } : candidate,
+  );
+}
+
+/** Moves `workspaceId` directly after `targetId`, keeping all other stacks. */
+function placeAfterInStacks(
+  workspaceStacks: string[][],
+  workspaceId: string,
+  targetId: string,
+): string[][] {
+  return moveWorkspaceInStacks(workspaceStacks, workspaceId, targetId, 'after') ?? workspaceStacks;
+}
+
 export const serializeWorkspaceTabsState = (
   state: Pick<
     TabState,
@@ -175,7 +251,8 @@ export const serializeWorkspaceTabsState = (
     | 'unsavedTabs'
     | 'optimisticTabs'
     | 'workspaceStacks'
-  >,
+  > &
+    Partial<Pick<TabState, 'tabGroups' | 'openTabGroupId'>>,
 ): PersistedWorkspaceTabsState => ({
   openTabs: Object.keys(state.openTabs),
   currentTabId: state.currentTabId,
@@ -184,6 +261,9 @@ export const serializeWorkspaceTabsState = (
   optimisticTabs: Object.keys(state.optimisticTabs),
   tabOrder: getWorkspaceTabOrder(state.workspaceStacks),
   workspaceStacks: state.workspaceStacks,
+  ...(getWorkspaceTabGroupList(state).length
+    ? { tabGroups: getWorkspaceTabGroupList(state), openTabGroupId: state.openTabGroupId ?? null }
+    : {}),
 });
 
 const initialState: TabState = {
@@ -196,6 +276,8 @@ const initialState: TabState = {
   unsavedTabs: {},
   optimisticTabs: {},
   workspaceStacks: [],
+  tabGroups: createCollection<WorkspaceTabGroup, 'id'>('id', []),
+  openTabGroupId: null,
   recentlyClosedTabIds: [],
   recentlyClosedTabAt: {},
   version: 0,
@@ -264,6 +346,29 @@ export const moveWorkspace =
   createAction<[workspaceId: string, targetWorkspaceId: string, placement: WorkspaceDropPlacement]>(
     'tabState/moveWorkspace',
   );
+/** Puts `workspaceId` in a new group of its own. */
+export const createWorkspaceTabGroup = createAction<
+  [workspaceId: string, groupId: string, color: WorkspaceTabGroupColor]
+>('tabState/createWorkspaceTabGroup');
+/** Moves `workspaceId` to the end of `groupId`. */
+export const addWorkspaceTabToGroup = createAction<[workspaceId: string, groupId: string]>(
+  'tabState/addWorkspaceTabToGroup',
+);
+/** Takes `workspaceId` out of its group and places it just after the group. */
+export const removeWorkspaceTabFromGroup = createAction<[workspaceId: string]>(
+  'tabState/removeWorkspaceTabFromGroup',
+);
+export const updateWorkspaceTabGroup = createAction<
+  [groupId: string, changes: { name?: string; color?: WorkspaceTabGroupColor }]
+>('tabState/updateWorkspaceTabGroup');
+/** Removes the group; its tabs stay open in place. */
+/** Expands `groupId` (collapsing any other group), or collapses every group with null. */
+export const setOpenWorkspaceTabGroup = createAction<[groupId: string | null]>(
+  'tabState/setOpenWorkspaceTabGroup',
+);
+export const ungroupWorkspaceTabGroup = createAction<[groupId: string]>(
+  'tabState/ungroupWorkspaceTabGroup',
+);
 export const switchToNextWorkspaceTab = createAction('tabState/switchToNextWorkspaceTab');
 export const switchToPreviousWorkspaceTab = createAction('tabState/switchToPreviousWorkspaceTab');
 export const switchToWorkspaceTabByIndex = createAction<[index: number]>(
@@ -458,6 +563,7 @@ tabStateReducer.with(closeWorkspaceTab, (state, { payload: [workspaceId, timesta
     pinnedTabs: removeTabFlag(state.pinnedTabs, workspaceId),
     unsavedTabs: removeTabFlag(state.unsavedTabs, workspaceId),
     workspaceStacks: nextWorkspaceStacks,
+    ...updateGroups(state, (groups) => normalizeWorkspaceTabGroups(nextTabOrder, groups)),
     recentlyClosedTabIds: nextRecentlyClosedTabIds,
     recentlyClosedTabAt: pruneClosedTabAt(
       { ...state.recentlyClosedTabAt, [workspaceId]: timestamp },
@@ -507,6 +613,124 @@ tabStateReducer.with(moveWorkspace, (state, { payload: [workspaceId, targetId, p
   if (!nextWorkspaceStacks) return state;
   return withNextVersion(state, {
     workspaceStacks: nextWorkspaceStacks,
+    ...updateGroups(state, (groups) =>
+      resolveMovedWorkspaceTabGroups(
+        getWorkspaceTabOrder(nextWorkspaceStacks),
+        groups,
+        workspaceId,
+      ),
+    ),
+  });
+});
+tabStateReducer.with(
+  createWorkspaceTabGroup,
+  (state, { payload: [workspaceId, groupId, color] }) => {
+    const tabOrder = getWorkspaceTabOrder(state.workspaceStacks);
+    if (
+      !tabOrder.includes(workspaceId) ||
+      getWorkspaceTabGroupList(state).some((group) => group.id === groupId)
+    ) {
+      return state;
+    }
+    const previousGroup = findWorkspaceTabGroup(getWorkspaceTabGroupList(state), workspaceId);
+    let workspaceStacks = state.workspaceStacks;
+    if (previousGroup && previousGroup.workspaceIds.length > 1) {
+      workspaceStacks = placeAfterInStacks(
+        workspaceStacks,
+        workspaceId,
+        previousGroup.workspaceIds.at(-1) ?? workspaceId,
+      );
+    }
+    const withoutTab = getWorkspaceTabGroupList(state).map((group) => ({
+      ...group,
+      workspaceIds: group.workspaceIds.filter((id) => id !== workspaceId),
+    }));
+    const nextGroup: WorkspaceTabGroup = {
+      id: groupId,
+      name: '',
+      color,
+      workspaceIds: [workspaceId],
+      lastActiveWorkspaceId: workspaceId,
+    };
+    return withNextVersion(state, {
+      workspaceStacks,
+      tabGroups: toGroupCollection(
+        normalizeWorkspaceTabGroups(getWorkspaceTabOrder(workspaceStacks), [
+          ...withoutTab,
+          nextGroup,
+        ]),
+      ),
+      openTabGroupId: groupId,
+    });
+  },
+);
+tabStateReducer.with(addWorkspaceTabToGroup, (state, { payload: [workspaceId, groupId] }) => {
+  const target = getWorkspaceTabGroupList(state).find((group) => group.id === groupId);
+  if (!target || target.workspaceIds.includes(workspaceId)) return state;
+  if (!getWorkspaceTabOrder(state.workspaceStacks).includes(workspaceId)) return state;
+  const lastMember = target.workspaceIds.at(-1) ?? workspaceId;
+  const workspaceStacks = placeAfterInStacks(state.workspaceStacks, workspaceId, lastMember);
+  const tabGroups = getWorkspaceTabGroupList(state).map((group) => {
+    const workspaceIds = group.workspaceIds.filter((id) => id !== workspaceId);
+    return group.id === groupId
+      ? { ...group, workspaceIds: [...workspaceIds, workspaceId] }
+      : { ...group, workspaceIds };
+  });
+  return withNextVersion(state, {
+    workspaceStacks,
+    tabGroups: toGroupCollection(
+      normalizeWorkspaceTabGroups(getWorkspaceTabOrder(workspaceStacks), tabGroups),
+    ),
+  });
+});
+tabStateReducer.with(removeWorkspaceTabFromGroup, (state, { payload: [workspaceId] }) => {
+  const group = findWorkspaceTabGroup(getWorkspaceTabGroupList(state), workspaceId);
+  if (!group) return state;
+  const lastMember = group.workspaceIds.at(-1) ?? workspaceId;
+  const workspaceStacks =
+    lastMember === workspaceId
+      ? state.workspaceStacks
+      : placeAfterInStacks(state.workspaceStacks, workspaceId, lastMember);
+  const tabGroups = getWorkspaceTabGroupList(state).map((candidate) =>
+    candidate === group
+      ? { ...candidate, workspaceIds: candidate.workspaceIds.filter((id) => id !== workspaceId) }
+      : candidate,
+  );
+  return withNextVersion(state, {
+    workspaceStacks,
+    tabGroups: toGroupCollection(
+      normalizeWorkspaceTabGroups(getWorkspaceTabOrder(workspaceStacks), tabGroups),
+    ),
+  });
+});
+tabStateReducer.with(updateWorkspaceTabGroup, (state, { payload: [groupId, changes] }) => {
+  const group = getWorkspaceTabGroupList(state).find((candidate) => candidate.id === groupId);
+  if (!group) return state;
+  const name = changes.name === undefined ? group.name : changes.name.trim();
+  const color = changes.color ?? group.color;
+  if (name === group.name && color === group.color) return state;
+  return withNextVersion(state, {
+    tabGroups: toGroupCollection(
+      getWorkspaceTabGroupList(state).map((candidate) =>
+        candidate === group ? { ...candidate, name, color } : candidate,
+      ),
+    ),
+  });
+});
+tabStateReducer.with(setOpenWorkspaceTabGroup, (state, { payload: [groupId] }) => {
+  const next =
+    groupId && getWorkspaceTabGroupList(state).some((group) => group.id === groupId)
+      ? groupId
+      : null;
+  if (next === state.openTabGroupId) return state;
+  return withNextVersion(state, { openTabGroupId: next });
+});
+tabStateReducer.with(ungroupWorkspaceTabGroup, (state, { payload: [groupId] }) => {
+  if (!getWorkspaceTabGroupList(state).some((group) => group.id === groupId)) return state;
+  return withNextVersion(state, {
+    tabGroups: toGroupCollection(
+      getWorkspaceTabGroupList(state).filter((group) => group.id !== groupId),
+    ),
   });
 });
 tabStateReducer.with(switchToNextWorkspaceTab, (state) => {
@@ -519,7 +743,7 @@ tabStateReducer.with(switchToNextWorkspaceTab, (state) => {
   const nextIndex = (currentIndex + 1) % tabOrder.length;
   const nextTabId = tabOrder[nextIndex];
 
-  if (!nextTabId) {
+  if (!nextTabId || nextTabId === state.currentTabId) {
     return state;
   }
 
@@ -537,7 +761,7 @@ tabStateReducer.with(switchToPreviousWorkspaceTab, (state) => {
   const previousIndex = currentIndex <= 0 ? tabOrder.length - 1 : currentIndex - 1;
   const previousTabId = tabOrder[previousIndex];
 
-  if (!previousTabId) {
+  if (!previousTabId || previousTabId === state.currentTabId) {
     return state;
   }
 
@@ -552,7 +776,7 @@ tabStateReducer.with(switchToWorkspaceTabByIndex, (state, { payload: [index] }) 
   }
 
   const nextTabId = tabOrder[index];
-  if (!nextTabId) {
+  if (!nextTabId || nextTabId === state.currentTabId) {
     return state;
   }
 
@@ -566,7 +790,7 @@ tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsSt
     tabOrder,
     workspaceTabsState.workspaceStacks,
   );
-  return {
+  return withSelectedTabGroup({
     ...state,
     openTabs: createTabFlagMap((workspaceTabsState.openTabs ?? []).filter(isWorkspaceTabId)),
     currentTabId:
@@ -579,7 +803,17 @@ tabStateReducer.with(loadWorkspaceTabsState, (state, { payload: [workspaceTabsSt
       (workspaceTabsState.optimisticTabs ?? []).filter(isWorkspaceTabId),
     ),
     workspaceStacks,
+    tabGroups: toGroupCollection(
+      normalizeWorkspaceTabGroups(
+        getWorkspaceTabOrder(workspaceStacks),
+        parsePersistedWorkspaceTabGroups(workspaceTabsState.tabGroups),
+      ),
+    ),
+    openTabGroupId:
+      typeof workspaceTabsState.openTabGroupId === 'string'
+        ? workspaceTabsState.openTabGroupId
+        : null,
     recentlyClosedTabIds: [],
     recentlyClosedTabAt: {},
-  };
+  });
 });

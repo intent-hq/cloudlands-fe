@@ -77,6 +77,7 @@ export type UserPreferencesState = {
   labsPlainFolderWorkspacesEnabled: boolean;
   /** Shows Settings > Mobile > Browser access; turning it off also stops the server. */
   labsBrowserAccessEnabled: boolean;
+  labsTabGroupsEnabled: boolean;
   /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
@@ -161,6 +162,7 @@ export const initialState: UserPreferencesStoreState = {
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
   labsBrowserAccessEnabled: false,
+  labsTabGroupsEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -465,6 +467,17 @@ export const setLabsBrowserAccessEnabled = labsBrowserAccessPreference.setAction
 
 export const toggleLabsBrowserAccess = labsBrowserAccessPreference.toggleAction;
 
+const labsTabGroupsPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsTabGroupsEnabled',
+  setActionName: 'setLabsTabGroupsEnabled',
+  toggleActionName: 'toggleLabsTabGroups',
+});
+
+export const setLabsTabGroupsEnabled = labsTabGroupsPreference.setAction;
+
+export const toggleLabsTabGroups = labsTabGroupsPreference.toggleAction;
+
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'nativeReviewEnabled',
@@ -599,6 +612,7 @@ labsMultiplayerPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsBrowserAccessPreference.register(userPreferencesReducer);
+labsTabGroupsPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,
