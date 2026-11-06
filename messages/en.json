@@ -8424,6 +8424,8 @@
   "dock_screenshotEditor_holdFor": "Hold to dictate note for mark {n}",
   "dock_screenshotEditor_hold": "Hold to dictate",
   "dock_screenshotEditor_crop": "Crop",
+  "dock_screenshotEditor_applyCrop": "Apply crop",
+  "dock_screenshotEditor_cancelCrop": "Cancel crop",
   "dock_screenshotEditor_retake": "Retake",
   "dock_screenshotEditor_retaking": "Retaking…",
   "dock_screenshotEditor_readonly": "This image already contains marks. Editing requires its original image.",

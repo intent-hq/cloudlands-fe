@@ -8,24 +8,42 @@
     retaking = false,
     disabled = false,
     onCrop,
+    onApplyCrop,
+    canApplyCrop = true,
     onRetake,
   }: {
     cropping?: boolean;
     retaking?: boolean;
     disabled?: boolean;
     onCrop: () => void;
+    onApplyCrop?: () => void;
+    canApplyCrop?: boolean;
     onRetake?: () => void;
   } = $props();
 </script>
 
 <div class="actions">
-  <Button
-    variant="ghost"
-    size="compact"
-    aria-pressed={cropping}
-    disabled={disabled || retaking}
-    onclick={onCrop}><CropIcon size={16} />{m.dock_screenshotEditor_crop()}</Button
-  >
+  <div class="crop-actions" role="group" aria-label={m.dock_screenshotEditor_crop()}>
+    {#if cropping}
+      <Button
+        size="compact"
+        disabled={disabled || retaking || !canApplyCrop || !onApplyCrop}
+        onclick={() => onApplyCrop?.()}
+        ><CropIcon size={16} />{m.dock_screenshotEditor_applyCrop()}</Button
+      >
+      <Button variant="ghost" size="compact" disabled={disabled || retaking} onclick={onCrop}
+        >{m.dock_screenshotEditor_cancelCrop()}</Button
+      >
+    {:else}
+      <Button
+        variant="ghost"
+        size="compact"
+        aria-pressed={false}
+        disabled={disabled || retaking}
+        onclick={onCrop}><CropIcon size={16} />{m.dock_screenshotEditor_crop()}</Button
+      >
+    {/if}
+  </div>
   <Button
     variant="ghost"
     size="compact"
@@ -40,9 +58,11 @@
 </div>
 
 <style>
-  .actions {
+  .actions,
+  .crop-actions {
     display: flex;
     align-items: center;
     gap: 4px;
+    flex-wrap: wrap;
   }
 </style>

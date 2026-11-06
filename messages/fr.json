@@ -8424,6 +8424,8 @@
   "dock_screenshotEditor_holdFor": "Maintenir pour dicter une note pour la marque {n}",
   "dock_screenshotEditor_hold": "Maintenir pour dicter",
   "dock_screenshotEditor_crop": "Recadrer",
+  "dock_screenshotEditor_applyCrop": "Appliquer le recadrage",
+  "dock_screenshotEditor_cancelCrop": "Annuler le recadrage",
   "dock_screenshotEditor_retake": "Reprendre",
   "dock_screenshotEditor_retaking": "Nouvelle capture…",
   "dock_screenshotEditor_readonly": "Cette image contient déjà des marques. L’image originale est nécessaire pour la modifier.",

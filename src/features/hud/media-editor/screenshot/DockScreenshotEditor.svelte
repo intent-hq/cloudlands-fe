@@ -637,16 +637,10 @@
     {retaking}
     disabled={blocked}
     onCrop={crop}
+    onApplyCrop={applyCrop}
+    canApplyCrop={!previewPending && !previewFailed}
     onRetake={cropCandidate || editingTextId ? undefined : onRetake}
   />
-  {#if cropCandidate}
-    <Button variant="ghost" size="compact" onclick={crop}
-      >{m.chat_messageEditor_cancel_label()}</Button
-    >
-    <Button size="compact" disabled={blocked || previewPending || previewFailed} onclick={applyCrop}
-      >{m.chat_shared_apply_label()}</Button
-    >
-  {/if}
 {/snippet}
 {#if children}
   {@render children(main, sidebar, headerActions)}

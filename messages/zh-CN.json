@@ -8424,6 +8424,8 @@
   "dock_screenshotEditor_holdFor": "按住以口述标记 {n} 的备注",
   "dock_screenshotEditor_hold": "按住以口述",
   "dock_screenshotEditor_crop": "裁剪",
+  "dock_screenshotEditor_applyCrop": "应用裁剪",
+  "dock_screenshotEditor_cancelCrop": "取消裁剪",
   "dock_screenshotEditor_retake": "重新截图",
   "dock_screenshotEditor_retaking": "正在重新截图…",
   "dock_screenshotEditor_readonly": "此图片已包含标记。编辑需要原始图片。",
