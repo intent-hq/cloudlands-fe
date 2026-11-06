@@ -180,6 +180,58 @@ export function dockToolbarPosition(
 }
 
 /**
+ * Chrome of the framed Mark up window around its screenshot (DIP): the frame
+ * inset, and the tool bar row under the image.
+ */
+export const DOCK_STILL_FRAME = {
+  inset: 12,
+  toolbar: 52,
+  /** Band under the fitted image for the zoom controls, so they never cover it at fit. */
+  zoomBar: 64,
+  minWidth: 480,
+  minHeight: 360,
+  /** Largest share of the work area the window takes. */
+  maxShare: 0.85,
+} as const;
+
+/**
+ * Global DIP bounds of the framed Mark up window: the screenshot at no more than
+ * its own DIP size, fitted into most of the work area, with room for the frame
+ * and tool bar, centred on the work area.
+ */
+export function dockStillWindowBounds(
+  workArea: DockAnnotationRect,
+  image: { width: number; height: number; displayScale?: number },
+): DockAnnotationRect {
+  const { inset, toolbar, zoomBar, minWidth, minHeight, maxShare } = DOCK_STILL_FRAME;
+  const chromeX = inset * 2;
+  const chromeY = inset * 2 + toolbar + zoomBar;
+  const maxWidth = Math.max(minWidth, Math.floor(workArea.width * maxShare));
+  const maxHeight = Math.max(minHeight, Math.floor(workArea.height * maxShare));
+  const scale = finite(image.displayScale) && image.displayScale > 0 ? image.displayScale : 1;
+  const natural = { width: image.width / scale, height: image.height / scale };
+  const fit = Math.min(
+    1,
+    (maxWidth - chromeX) / natural.width,
+    (maxHeight - chromeY) / natural.height,
+  );
+  const width = Math.min(
+    workArea.width,
+    Math.max(minWidth, Math.round(natural.width * fit + chromeX)),
+  );
+  const height = Math.min(
+    workArea.height,
+    Math.max(minHeight, Math.round(natural.height * fit + chromeY)),
+  );
+  return {
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
+    y: Math.round(workArea.y + (workArea.height - height) / 2),
+    width,
+    height,
+  };
+}
+
+/**
  * The overlay's on-screen tool bar. `rect` reports where it sits (overlay DIP; null
  * when hidden) so main keeps it clickable and never lets a gesture start on it.
  */

@@ -3,6 +3,7 @@
   import { fade, scale } from '$lib/motion';
   import {
     DOCK_ANNOTATION_LIMITS,
+    DOCK_STILL_FRAME,
     dockAnnotationViewport,
     dockGeometryRect,
     gestureOverlayGeometry,
@@ -15,6 +16,7 @@
   } from '$shared/dock-annotation';
   import type { DockImagePoint, DockMarkGeometry, DockMarkTool } from '$shared/dock-evidence';
   import DockAnnotationToolbar from './DockAnnotationToolbar.svelte';
+  import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
 
   let {
     overlay,
@@ -52,27 +54,38 @@
   let pending = $state.raw<Pending[]>([]);
   let root = $state<HTMLDivElement | null>(null);
 
+  // Mark up is a framed window: gestures and marks live in the still's image pixels,
+  // drawn on the zoomable image itself.
+  const framed = $derived(overlay?.mode === 'still' && !!overlay.still);
+  /** Gesture surface: the whole overlay, or the still image in the framed window. */
+  let surface = $state<HTMLDivElement | null>(null);
+  let stageWidth = $state(0);
+  let stageHeight = $state(0);
+  let zoom = $state(1);
+  const stillFit = $derived(
+    framed && overlay?.still && stageWidth > 0 && stageHeight > 0
+      ? Math.min(
+          stageWidth / overlay.still.width,
+          Math.max(1, stageHeight - DOCK_STILL_FRAME.zoomBar) / overlay.still.height,
+        )
+      : null,
+  );
+  /** Image pixels per screen pixel: strokes and badges keep their on-screen size. */
+  const unit = $derived(stillFit ? 1 / (stillFit * zoom) : 1);
+
   const imageSize = $derived(overlay?.still ?? overlay?.image ?? null);
   const view = $derived(
     overlay && imageSize ? dockAnnotationViewport(overlay.display, imageSize, overlay.mode) : null,
   );
   const marks = $derived(
-    overlay && view
-      ? overlay.marks.map((mark) => ({
-          ...mark,
-          overlay: mapDockGeometry(mark.geometry, (point) => imageToOverlay(point, view)),
-        }))
-      : [],
-  );
-  const stillFrame = $derived(
-    overlay?.still && view
-      ? {
-          left: view.offsetX,
-          top: view.offsetY,
-          width: overlay.still.width * view.scaleX,
-          height: overlay.still.height * view.scaleY,
-        }
-      : null,
+    overlay && framed
+      ? overlay.marks.map((mark) => ({ ...mark, overlay: mark.geometry }))
+      : overlay && view
+        ? overlay.marks.map((mark) => ({
+            ...mark,
+            overlay: mapDockGeometry(mark.geometry, (point) => imageToOverlay(point, view)),
+          }))
+        : [],
   );
   const draft = $derived.by(() => {
     if (!gesture || gesture.tool === 'pick') return null;
@@ -94,17 +107,31 @@
   });
 
   function local(event: PointerEvent): DockImagePoint {
+    const still = framed ? overlay?.still : null;
+    if (still && surface) {
+      // The rendered box includes the zoom: map straight back to image pixels.
+      const rect = surface.getBoundingClientRect();
+      return {
+        x: ((event.clientX - rect.left) / rect.width) * still.width,
+        y: ((event.clientY - rect.top) / rect.height) * still.height,
+      };
+    }
     const rect = root?.getBoundingClientRect();
     return { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) };
   }
+
+  /** The element that owns the gesture's pointer capture. */
+  const captureTarget = () => (framed ? surface : root);
 
   function onPointerDown(event: PointerEvent) {
     // Mouse mode: the screen is used normally; nothing here is a gesture.
     if (!overlay || overlay.mouse || event.button !== 0 || !event.isPrimary) return;
     const origin = local(event);
     // Dock and owned popups are never gesture origins.
-    if (pointInRects(origin, overlay.excluded)) return;
+    if (!framed && pointInRects(origin, overlay.excluded)) return;
     event.preventDefault();
+    // Drawing on the still never pans the zoom viewport around it.
+    if (framed) event.stopPropagation();
     if (gesture) cancel();
     sequence += 1;
     const request: DockAnnotationPointerRequest = {
@@ -116,7 +143,7 @@
       tool: overlay.tool,
     };
     try {
-      root?.setPointerCapture(event.pointerId);
+      captureTarget()?.setPointerCapture(event.pointerId);
     } catch {
       // A pointer that already ended cannot be captured; pointerup will not arrive.
       return;
@@ -221,7 +248,8 @@
 
   function releaseCapture(pointerId: number) {
     try {
-      if (root?.hasPointerCapture(pointerId)) root.releasePointerCapture(pointerId);
+      const target = captureTarget();
+      if (target?.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
     } catch {
       // Already released.
     }
@@ -275,9 +303,10 @@
 
   function badgeCenter(geometry: DockMarkGeometry): DockImagePoint {
     const rect = dockGeometryRect(geometry);
-    const width = overlay?.display.width ?? Infinity;
-    const height = overlay?.display.height ?? Infinity;
-    const half = BADGE / 2;
+    const bounds = framed ? overlay?.still : overlay?.display;
+    const width = bounds?.width ?? Infinity;
+    const height = bounds?.height ?? Infinity;
+    const half = (BADGE / 2) * unit;
     return {
       x: Math.min(width - half, Math.max(half, rect.x + rect.w)),
       y: Math.min(height - half, Math.max(half, rect.y)),
@@ -292,7 +321,7 @@
 
   function arrowHead(from: DockImagePoint, to: DockImagePoint): string {
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    const size = 11;
+    const size = 11 * unit;
     const spread = Math.PI / 7;
     const a = {
       x: to.x - size * Math.cos(angle - spread),
@@ -335,111 +364,161 @@
       height={geometry.h}
       rx={tool === 'pick' ? 3 : 2}
       class="dock-annotation-stroke"
-      stroke-width="2"
+      stroke-width={2 * unit}
     />
   {:else if geometry.kind === 'arrow'}
     <path
       d={`M${geometry.from.x} ${geometry.from.y} L${geometry.to.x} ${geometry.to.y} ${arrowHead(geometry.from, geometry.to)}`}
       class="dock-annotation-stroke"
-      stroke-width="2.5"
+      stroke-width={2.5 * unit}
     />
   {:else}
-    <path d={pathData(geometry.points)} class="dock-annotation-stroke" stroke-width="2.5" />
+    <path d={pathData(geometry.points)} class="dock-annotation-stroke" stroke-width={2.5 * unit} />
   {/if}
 {/snippet}
 
-<div
-  bind:this={root}
-  class="dock-annotation-overlay"
-  class:is-still={!!overlay?.still}
-  data-testid="dock-annotation-overlay"
-  data-mode={overlay?.mode ?? 'idle'}
-  data-tool={overlay?.tool ?? ''}
-  style:cursor={overlay && !overlay.mouse ? CURSORS[overlay.tool] : 'default'}
-  role="presentation"
-  onpointerdown={onPointerDown}
-  onpointermove={onPointerMove}
-  onpointerup={onPointerUp}
-  onpointercancel={cancel}
-  onlostpointercapture={onLostCapture}
->
-  {#if overlay}
-    {#if overlay.still && stillFrame}
-      <div class="dock-annotation-backdrop" transition:fade={{ tier: 'fast' }}></div>
-      {#if stillUrl}
-        <img
-          class="dock-annotation-still"
-          src={stillUrl}
-          alt=""
-          draggable="false"
-          style:left="{stillFrame.left}px"
-          style:top="{stillFrame.top}px"
-          style:width="{stillFrame.width}px"
-          style:height="{stillFrame.height}px"
-          transition:scale={{ tier: 'fast', distance: 0.015 }}
+{#snippet canvas()}
+  {#each marks as mark (mark.n + ':' + JSON.stringify(mark.geometry))}
+    {@const badge = badgeCenter(mark.overlay)}
+    <g
+      class="dock-annotation-mark"
+      data-mark={mark.n}
+      in:scale={{ tier: 'fast' }}
+      out:fade={{ tier: 'fast' }}
+    >
+      {@render shape(mark.overlay, mark.tool)}
+      <circle
+        cx={badge.x}
+        cy={badge.y}
+        r={(BADGE / 2) * unit}
+        class="dock-annotation-badge"
+        stroke-width={unit}
+      />
+      <text x={badge.x} y={badge.y} class="dock-annotation-badge-text" font-size={11 * unit}
+        >{mark.n}</text
+      >
+    </g>
+  {/each}
+
+  {#each pending as row (row.key)}
+    <g
+      class="dock-annotation-pending"
+      class:is-rejected={row.status === 'rejected'}
+      out:fade={{ tier: 'fast' }}
+    >
+      {#if row.geometry}
+        {@render shape(row.geometry, row.tool)}
+      {:else}
+        <circle
+          cx={row.origin.x}
+          cy={row.origin.y}
+          r={9 * unit}
+          class="dock-annotation-stroke"
+          stroke-width={2 * unit}
         />
       {/if}
-    {:else}
-      <div class="dock-annotation-edge" transition:fade={{ tier: 'fast' }}></div>
-    {/if}
+    </g>
+  {/each}
 
-    <svg
-      class="dock-annotation-canvas"
-      width={overlay.display.width}
-      height={overlay.display.height}
-      viewBox={`0 0 ${overlay.display.width} ${overlay.display.height}`}
-      aria-hidden="true"
-    >
-      {#each marks as mark (mark.n + ':' + JSON.stringify(mark.geometry))}
-        {@const badge = badgeCenter(mark.overlay)}
-        <g
-          class="dock-annotation-mark"
-          data-mark={mark.n}
-          in:scale={{ tier: 'fast' }}
-          out:fade={{ tier: 'fast' }}
-        >
-          {@render shape(mark.overlay, mark.tool)}
-          <circle cx={badge.x} cy={badge.y} r={BADGE / 2} class="dock-annotation-badge" />
-          <text x={badge.x} y={badge.y} class="dock-annotation-badge-text">{mark.n}</text>
-        </g>
-      {/each}
-
-      {#each pending as row (row.key)}
-        <g
-          class="dock-annotation-pending"
-          class:is-rejected={row.status === 'rejected'}
-          out:fade={{ tier: 'fast' }}
-        >
-          {#if row.geometry}
-            {@render shape(row.geometry, row.tool)}
-          {:else}
-            <circle
-              cx={row.origin.x}
-              cy={row.origin.y}
-              r="9"
-              class="dock-annotation-stroke"
-              stroke-width="2"
-            />
-          {/if}
-        </g>
-      {/each}
-
-      {#if draft && gesture}
-        <g class="dock-annotation-draft">
-          {@render shape(draft, gesture.tool)}
-        </g>
-      {/if}
-    </svg>
-
-    <!-- Annotate sessions only: dictation clicks need no tools. -->
-    {#if overlay.mode !== 'dictation' && transport.toolbar && overlay.workArea}
-      <DockAnnotationToolbar
-        {overlay}
-        send={(request) => void transport.toolbar?.(request).catch(() => false)}
-      />
-    {/if}
+  {#if draft && gesture}
+    <g class="dock-annotation-draft">
+      {@render shape(draft, gesture.tool)}
+    </g>
   {/if}
-</div>
+{/snippet}
+
+{#snippet toolbar(state: DockAnnotationOverlayState, inFrame: boolean)}
+  <!-- Annotate sessions only: dictation clicks need no tools. -->
+  {#if state.mode !== 'dictation' && transport.toolbar && state.workArea}
+    <DockAnnotationToolbar
+      overlay={state}
+      framed={inFrame}
+      send={(request) => void transport.toolbar?.(request).catch(() => false)}
+    />
+  {/if}
+{/snippet}
+
+{#if framed && overlay?.still}
+  <!-- Mark up: a window framing the still, zoomable like image previews, tools below.
+       The frame itself moves the window. -->
+  <div
+    class="dock-annotation-frame"
+    data-testid="dock-annotation-overlay"
+    data-mode="still"
+    data-tool={overlay.tool}
+    transition:fade={{ tier: 'fast' }}
+  >
+    <div
+      class="dock-annotation-stage"
+      bind:clientWidth={stageWidth}
+      bind:clientHeight={stageHeight}
+    >
+      {#if stillFit}
+        <ZoomPanViewport wheelPans minZoom={1} maxZoom={8} onScaleChange={(next) => (zoom = next)}>
+          <div
+            bind:this={surface}
+            class="dock-annotation-surface"
+            data-testid="dock-annotation-surface"
+            style:width="{overlay.still.width * stillFit}px"
+            style:height="{overlay.still.height * stillFit}px"
+            style:margin-bottom="{DOCK_STILL_FRAME.zoomBar}px"
+            style:cursor={CURSORS[overlay.tool]}
+            role="presentation"
+            onpointerdown={onPointerDown}
+            onpointermove={onPointerMove}
+            onpointerup={onPointerUp}
+            onpointercancel={cancel}
+            onlostpointercapture={onLostCapture}
+          >
+            {#if stillUrl}
+              <img class="dock-annotation-still" src={stillUrl} alt="" draggable="false" />
+            {/if}
+            <svg
+              class="dock-annotation-canvas"
+              viewBox={`0 0 ${overlay.still.width} ${overlay.still.height}`}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {@render canvas()}
+            </svg>
+          </div>
+        </ZoomPanViewport>
+      {/if}
+    </div>
+    <div class="dock-annotation-frame-tools">
+      {@render toolbar(overlay, true)}
+    </div>
+  </div>
+{:else}
+  <div
+    bind:this={root}
+    class="dock-annotation-overlay"
+    data-testid="dock-annotation-overlay"
+    data-mode={overlay?.mode ?? 'idle'}
+    data-tool={overlay?.tool ?? ''}
+    style:cursor={overlay && !overlay.mouse ? CURSORS[overlay.tool] : 'default'}
+    role="presentation"
+    onpointerdown={onPointerDown}
+    onpointermove={onPointerMove}
+    onpointerup={onPointerUp}
+    onpointercancel={cancel}
+    onlostpointercapture={onLostCapture}
+  >
+    {#if overlay}
+      <div class="dock-annotation-edge" transition:fade={{ tier: 'fast' }}></div>
+      <svg
+        class="dock-annotation-canvas"
+        width={overlay.display.width}
+        height={overlay.display.height}
+        viewBox={`0 0 ${overlay.display.width} ${overlay.display.height}`}
+        aria-hidden="true"
+      >
+        {@render canvas()}
+      </svg>
+      {@render toolbar(overlay, false)}
+    {/if}
+  </div>
+{/if}
 
 <style>
   .dock-annotation-overlay {
@@ -466,20 +545,53 @@
     box-shadow: inset 0 0 0 1.5px hsl(var(--primary) / 0.32);
   }
 
-  .dock-annotation-backdrop {
-    position: absolute;
+  /* Mark up window: the dock's dark card; its bare frame drags the window. */
+  .dock-annotation-frame {
+    position: fixed;
     inset: 0;
-    pointer-events: none;
-    background: hsl(var(--background) / 0.9);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 12px 0;
+    overflow: hidden;
+    border-radius: 16px;
+    border: 1px solid hsl(var(--theme-dark-border));
+    background: hsl(var(--theme-dark-surface-3));
+    color: hsl(var(--theme-dark-foreground));
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-app-region: drag;
+  }
+
+  .dock-annotation-stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 10px;
+    background: hsl(var(--theme-dark-surface-1));
+    -webkit-app-region: no-drag;
+  }
+
+  .dock-annotation-surface {
+    position: relative;
+    flex: none;
+    touch-action: none;
   }
 
   .dock-annotation-still {
     position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     pointer-events: none;
-    border-radius: 10px;
-    box-shadow:
-      0 0 0 1px hsl(var(--border)),
-      0 24px 64px hsl(var(--background) / 0.5);
+  }
+
+  .dock-annotation-frame-tools {
+    display: flex;
+    flex: none;
+    justify-content: center;
+    height: 52px;
   }
 
   .dock-annotation-stroke {
@@ -498,12 +610,10 @@
   .dock-annotation-badge {
     fill: hsl(var(--primary));
     stroke: hsl(var(--primary-foreground));
-    stroke-width: 1;
   }
 
   .dock-annotation-badge-text {
     fill: hsl(var(--primary-foreground));
-    font-size: 11px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     text-anchor: middle;

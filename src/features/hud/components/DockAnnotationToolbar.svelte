@@ -23,13 +23,21 @@
    */
   let {
     overlay,
+    framed = false,
     send,
   }: {
     overlay: DockAnnotationOverlayState;
+    /**
+     * Docked under the still in the Mark up window: in flow, no grip, mouse, pick or
+     * capture controls (they act on the live screen), and Done ends the session.
+     */
+    framed?: boolean;
     send: (request: DockAnnotationToolbarRequest) => void;
   } = $props();
 
-  const tools: DockMarkTool[] = ['pick', 'box', 'pen', 'arrow'];
+  const tools: DockMarkTool[] = $derived(
+    framed ? ['box', 'pen', 'arrow'] : ['pick', 'box', 'pen', 'arrow'],
+  );
   const glyphs = { pick: 'target', box: 'box', pen: 'pen', arrow: 'arrow' } as const;
   const labels: Record<DockMarkTool, string> = {
     pick: m.dock_composer_pick_label(),
@@ -69,6 +77,8 @@
     return () => cancelAnimationFrame(frame);
   });
   $effect(() => {
+    // In the framed window the bar is outside the image: never a gesture origin anyway.
+    if (framed) return;
     const request: DockAnnotationToolbarRequest = {
       sessionId: overlay.sessionId,
       action: 'rect',
@@ -103,7 +113,13 @@
 
   // Tooltips go below only when there is no room above the toolbar.
   const TIP_ROOM = 40;
-  const tipsBelow = $derived(position.y - overlay.workArea.y < TIP_ROOM);
+  const tipsBelow = $derived(!framed && position.y - overlay.workArea.y < TIP_ROOM);
+  /** Where tooltips must stay: the work area, or the framed window itself. */
+  let viewportWidth = $state(0);
+  let viewportHeight = $state(0);
+  const tipArea = $derived<DockAnnotationRect>(
+    framed ? { x: 0, y: 0, width: viewportWidth, height: viewportHeight } : overlay.workArea,
+  );
   /** Shift a tooltip sideways so it stays inside the work area (overlay = client coords). */
   function clampTip(node: HTMLElement, area: DockAnnotationRect) {
     let current = area;
@@ -127,7 +143,7 @@
     };
   }
   // Screenshot and Record: the composer's own buttons (state sent by the dock).
-  const media = $derived(overlay.media);
+  const media = $derived(framed ? null : overlay.media);
   // An existing image on mount is not a new capture. Only the accepted revision
   // acknowledges success; a pending -> idle transition can also mean failure.
   let captureRevision: number | null = untrack(() => overlay.media?.capture.revision ?? null);
@@ -194,7 +210,10 @@
   const attachLabel = m.dock_annotationToolbar_save_label();
   // What Attach will put in the composer: the marks on screen now.
   const attachCount = $derived(overlay.marks.length);
-  const primaryLabel = $derived(attachCount > 0 ? attachLabel : m.dock_composer_done_label());
+  // A still's marks are already on its tile: the framed bar only ever says Done.
+  const primaryLabel = $derived(
+    attachCount > 0 && !framed ? attachLabel : m.dock_composer_done_label(),
+  );
   const clearLabel = m.dock_annotationToolbar_clear_label();
   const endLabel = m.dock_composer_endAnnotation_label();
 </script>
@@ -205,44 +224,47 @@
   aria-label={m.annotation_toolbar_ariaLabel()}
   data-testid="dock-annotation-toolbar"
   data-dock-palette="notch"
+  data-framed={framed || undefined}
   data-placed={placed || undefined}
   data-dragged={dragged ? '' : undefined}
   data-dock-shape={overlay.dock?.shape ?? 'none'}
   data-tips={tipsBelow ? 'below' : 'above'}
-  style:transform="translate({position.x}px, {position.y}px)"
+  style:transform={framed ? undefined : `translate(${position.x}px, ${position.y}px)`}
   bind:offsetWidth={width}
   bind:offsetHeight={height}
-  onpointerdown={onPointerDown}
+  onpointerdown={framed ? undefined : onPointerDown}
   onpointermove={onPointerMove}
   onpointerup={endDrag}
   onpointercancel={endDrag}
   onlostpointercapture={endDrag}
   transition:fade={{ tier: 'fast' }}
 >
-  <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
-  <span class="toolbar-grip" title={m.dock_annotationToolbar_drag_label()} aria-hidden="true">
-    <svg width="8" height="16" viewBox="0 0 8 16" fill="currentColor">
-      <circle cx="2" cy="3" r="1.25" /><circle cx="6" cy="3" r="1.25" />
-      <circle cx="2" cy="8" r="1.25" /><circle cx="6" cy="8" r="1.25" />
-      <circle cx="2" cy="13" r="1.25" /><circle cx="6" cy="13" r="1.25" />
-    </svg>
-  </span>
+  {#if !framed}
+    <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
+    <span class="toolbar-grip" title={m.dock_annotationToolbar_drag_label()} aria-hidden="true">
+      <svg width="8" height="16" viewBox="0 0 8 16" fill="currentColor">
+        <circle cx="2" cy="3" r="1.25" /><circle cx="6" cy="3" r="1.25" />
+        <circle cx="2" cy="8" r="1.25" /><circle cx="6" cy="8" r="1.25" />
+        <circle cx="2" cy="13" r="1.25" /><circle cx="6" cy="13" r="1.25" />
+      </svg>
+    </span>
+  {/if}
   <!-- Tools: one group, Mouse first (a mode like the tools); the current one is tinted. -->
   <div class="tool-group" role="group">
     <!-- Mouse mode: use the screen normally; the session and its marks stay. -->
-    <Button
-      variant="ghost-light"
-      size="icon-sm"
-      class="dock-annotation-tool"
-      data-tool="mouse"
-      data-active={overlay.mouse || undefined}
-      aria-label={mouseLabel}
-      aria-pressed={overlay.mouse}
-      onclick={() => send({ sessionId: overlay.sessionId, action: 'mouse' })}
-    >
-      <DockComposerIcon glyph="cursor" size={18} />
-      <span class="tip" role="tooltip" use:clampTip={overlay.workArea}>{mouseLabel}</span>
-    </Button>
+    {#if !framed}<Button
+        variant="ghost-light"
+        size="icon-sm"
+        class="dock-annotation-tool"
+        data-tool="mouse"
+        data-active={overlay.mouse || undefined}
+        aria-label={mouseLabel}
+        aria-pressed={overlay.mouse}
+        onclick={() => send({ sessionId: overlay.sessionId, action: 'mouse' })}
+      >
+        <DockComposerIcon glyph="cursor" size={18} />
+        <span class="tip" role="tooltip" use:clampTip={tipArea}>{mouseLabel}</span>
+      </Button>{/if}
     {#each tools as tool (tool)}
       {@const blocked = tool === 'pick' && overlay.pick === 'permission'}
       <Button
@@ -259,7 +281,7 @@
       >
         <DockComposerIcon glyph={glyphs[tool]} size={18} />
         {#if blocked}<span class="alert-dot" aria-hidden="true"></span>{/if}
-        <span class="tip" role="tooltip" use:clampTip={overlay.workArea}
+        <span class="tip" role="tooltip" use:clampTip={tipArea}
           >{blocked ? m.dock_composer_accessibilityPermission_tooltip() : labels[tool]}</span
         >
       </Button>
@@ -296,7 +318,7 @@
         class="tip"
         data-feedback={captureFeedback ? '' : undefined}
         role="tooltip"
-        use:clampTip={overlay.workArea}>{captureFeedback ?? media.capture.tooltip}</span
+        use:clampTip={tipArea}>{captureFeedback ?? media.capture.tooltip}</span
       >
       <span class="sr-only" role="status" aria-live="polite">{captureFeedback ?? ''}</span>
     </Button>
@@ -325,7 +347,7 @@
         >
       {:else}<DockComposerIcon glyph="video" size={18} />{/if}
       {#if media.record.alert}<span class="alert-dot" aria-hidden="true"></span>{/if}
-      <span class="tip" role="tooltip" use:clampTip={overlay.workArea}>{media.record.tooltip}</span>
+      <span class="tip" role="tooltip" use:clampTip={tipArea}>{media.record.tooltip}</span>
     </Button>
   {/if}
   <span class="divider" aria-hidden="true"></span>
@@ -342,7 +364,7 @@
       onclick={() =>
         send({ sessionId: overlay.sessionId, action: attachCount > 0 ? 'commit' : 'end' })}
     >
-      <DockComposerIcon glyph={attachCount > 0 ? 'paperclip' : 'check'} size={16} />
+      <DockComposerIcon glyph={attachCount > 0 && !framed ? 'paperclip' : 'check'} size={16} />
       <span class="attach-label" aria-hidden="true">{primaryLabel}</span>
       {#if attachCount > 0}<span class="attach-count" data-attach-count aria-hidden="true"
           >{formatInteger(attachCount)}</span
@@ -358,23 +380,26 @@
         onclick={() => send({ sessionId: overlay.sessionId, action: 'clear' })}
       >
         <DockComposerIcon glyph="trash" size={16} />
-        <span class="tip" role="tooltip" use:clampTip={overlay.workArea}>{clearLabel}</span>
+        <span class="tip" role="tooltip" use:clampTip={tipArea}>{clearLabel}</span>
       </Button>
     {/if}
   </div>
-  <!-- Ends the session (marks already attached stay); the bar goes away. -->
-  <Button
-    variant="ghost-light"
-    size="icon-sm"
-    class="dock-annotation-tool"
-    data-end
-    aria-label={endLabel}
-    onclick={() => send({ sessionId: overlay.sessionId, action: 'end' })}
-  >
-    <DockComposerIcon glyph="x" size={18} />
-    <span class="tip" role="tooltip" use:clampTip={overlay.workArea}>{endLabel}</span>
-  </Button>
+  <!-- Ends the session (marks already attached stay); the bar goes away. Done
+       already closes the framed window. -->
+  {#if !framed}<Button
+      variant="ghost-light"
+      size="icon-sm"
+      class="dock-annotation-tool"
+      data-end
+      aria-label={endLabel}
+      onclick={() => send({ sessionId: overlay.sessionId, action: 'end' })}
+    >
+      <DockComposerIcon glyph="x" size={18} />
+      <span class="tip" role="tooltip" use:clampTip={tipArea}>{endLabel}</span>
+    </Button>{/if}
 </div>
+
+<svelte:window bind:innerWidth={viewportWidth} bind:innerHeight={viewportHeight} />
 
 <style>
   /* The reference bar mapped to the dark overlay: a dark card, neutral raised tiles,
@@ -400,6 +425,19 @@
   }
   /* Settles with the moderate spring; reduced motion moves at once. Once the user
      has dragged it, it follows the pointer exactly. */
+  /* Docked in the Mark up window's frame: in flow and flat on the frame's card;
+     the space around the buttons still moves the window. */
+  .dock-annotation-toolbar[data-framed] {
+    position: static;
+    align-self: center;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+    cursor: default;
+  }
+  .dock-annotation-toolbar[data-framed] :global(button) {
+    -webkit-app-region: no-drag;
+  }
   .dock-annotation-toolbar[data-placed]:not([data-dragged]) {
     transition: transform var(--spring-moderate) var(--spring-moderate-ease);
   }

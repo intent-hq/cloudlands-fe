@@ -148,7 +148,6 @@
     beforeSubmit,
     onCapture: noop,
     onRecordToggle: noop,
-    onAnnotationToggle: noop,
     onToolSelect: noop,
     onDictationToggle: noop,
     onDictationHoldStart: noop,

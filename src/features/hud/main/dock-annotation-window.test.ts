@@ -68,7 +68,18 @@ class FakeWindow extends EventEmitter {
   hide = () => {
     this.visible = false;
   };
-  setBounds = () => {};
+  bounds: unknown = null;
+  shadow = false;
+  movable = false;
+  setBounds = (bounds: unknown) => {
+    this.bounds = bounds;
+  };
+  setHasShadow = (shadow: boolean) => {
+    this.shadow = shadow;
+  };
+  setMovable = (movable: boolean) => {
+    this.movable = movable;
+  };
   getMediaSourceId = () => 'window:4242:0';
   destroy = () => {
     this.destroyed = true;
@@ -642,7 +653,7 @@ describe('DockAnnotationController', () => {
     expect(t.events).toEqual([]);
   });
 
-  it('still markup maps into the frozen pixels, never captures, and refuses picks', async () => {
+  it('still markup is a framed window taking image-pixel marks; it never captures or picks', async () => {
     const t = setup();
     const still = {
       imageId: 'img-1',
@@ -662,12 +673,22 @@ describe('DockAnnotationController', () => {
       reason: 'unavailable',
     });
     expect(t.issues).toEqual([{ sessionId: 's1', kind: 'pick', error: 'unavailable' }]);
+    // Its own movable, shadowed window inside the display, not a full-screen overlay.
+    const frame = t.windows[0];
+    const bounds = frame.bounds as { x: number; y: number; width: number; height: number };
+    expect(bounds.width).toBeLessThan(DISPLAY.bounds.width);
+    expect(bounds.height).toBeLessThan(DISPLAY.bounds.height);
+    expect(bounds.x).toBeGreaterThan(DISPLAY.bounds.x);
+    expect(bounds.x + bounds.width).toBeLessThan(DISPLAY.bounds.x + DISPLAY.bounds.width);
+    expect(frame).toMatchObject({ shadow: true, movable: true });
+    // Clickable at once, wherever the cursor is.
+    expect(frame.ignore.at(-1)).toBe(false);
     await t.controller.setAnnotationTool('s1', 'box');
-    // 1200×900 contained in 1440×900 → scale 1, offset x 120.
+    // The framed window sends image pixels; a point past the image is clamped to it.
     await t.gesture(
       [
-        { x: 120, y: 0 },
-        { x: 220, y: 50 },
+        { x: 1100, y: 850 },
+        { x: 1300, y: 950 },
       ],
       'box',
     );
@@ -675,7 +696,11 @@ describe('DockAnnotationController', () => {
     expect(
       marks(t.events).map(({ geometry, element, capture }) => ({ geometry, element, capture })),
     ).toEqual([
-      { geometry: { kind: 'rect', x: 0, y: 0, w: 100, h: 50 }, element: null, capture: undefined },
+      {
+        geometry: { kind: 'rect', x: 1100, y: 850, w: 100, h: 50 },
+        element: null,
+        capture: undefined,
+      },
     ]);
     expect(t.controller.handleStill({ sessionId: 's1' })).toEqual({
       dataUrl: 'data:image/png;base64,AAAA',

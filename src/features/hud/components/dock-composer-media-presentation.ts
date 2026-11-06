@@ -17,9 +17,6 @@ export interface DockComposerMediaLabels {
   clipLimit: string;
   record: string;
   stopRecording: string;
-  annotate: string;
-  annotationTools: string;
-  annotateCurrent: (tool: string) => string;
   tools: Record<DockComposerTool, string>;
   dictate: string;
   stopDictating: string;
@@ -84,7 +81,6 @@ interface DockComposerMediaActions {
   /** Choose a mode and capture with it at once. */
   onCaptureModeSelect?: (mode: DockComposerCaptureMode) => void;
   onRecordToggle: () => void;
-  onAnnotationToggle: () => void;
   onToolSelect: (tool: DockComposerTool) => void;
   onDictationToggle: () => void;
   /** The owner handles stop-before-start races and shares the canonical mic session. */
@@ -94,11 +90,13 @@ interface DockComposerMediaActions {
   onAlert?: (target: DockComposerAlertTarget) => void;
 }
 
-export interface DockComposerMediaFooterProps extends DockComposerMediaActions {
+export interface DockComposerMediaFooterProps extends Omit<
+  DockComposerMediaActions,
+  'onToolSelect'
+> {
   state: DockComposerMediaState;
   labels: DockComposerMediaLabels;
   disabled?: boolean;
-  annotationNotice?: string;
   model?: Snippet;
   /** Canonical send/stop/queue control; this surface never implements admission. */
   send?: Snippet;

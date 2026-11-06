@@ -32,9 +32,14 @@
     maxZoom?: number;
     /** Reports scale changes after the content transform updates. */
     onScaleChange?: (scale: number) => void;
+    /**
+     * Plain wheel (two-finger scroll) pans and only pinch or ctrl+wheel zooms, for
+     * content whose own drags draw instead of panning.
+     */
+    wheelPans?: boolean;
   }
 
-  let { children, minZoom = 0.25, maxZoom = 8, onScaleChange }: Props = $props();
+  let { children, minZoom = 0.25, maxZoom = 8, onScaleChange, wheelPans = false }: Props = $props();
 
   const KEYBOARD_ZOOM_FACTOR = 1.25;
   const WHEEL_ZOOM_INTENSITY = 0.0015;
@@ -98,6 +103,11 @@
 
   function handleWheel(e: WheelEvent) {
     e.preventDefault();
+    if (wheelPans && !e.ctrlKey) {
+      offsetX -= e.deltaX;
+      offsetY -= e.deltaY;
+      return;
+    }
     // Trackpad pinch arrives as ctrl+wheel with small deltas
     const intensity = e.ctrlKey ? PINCH_ZOOM_INTENSITY : WHEEL_ZOOM_INTENSITY;
     zoomAtPoint(e.clientX, e.clientY, scale * Math.exp(-e.deltaY * intensity));

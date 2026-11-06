@@ -29,9 +29,6 @@ export function createDockComposerLabels(): DockComposerLabels {
     }),
     record: m.dock_composer_record_tooltip({ shortcut: formatShortcut('mod+shift+r') }),
     stopRecording: m.dock_composer_stopRecording_tooltip(),
-    annotate: m.dock_composer_annotate_tooltip({ shortcut: formatShortcut('mod+shift+a') }),
-    annotationTools: m.annotation_toolbar_ariaLabel(),
-    annotateCurrent: (tool) => m.dock_composer_annotate_ariaLabel({ tool }),
     tools: {
       pick: m.dock_composer_pick_label(),
       box: m.dock_composer_box_label(),

@@ -33,37 +33,36 @@ test('draws authoritative numbered marks from Retina image pixels at overlay sca
   expect(await numbers(box, 'rect', ['x', 'y', 'width', 'height'])).toEqual([600, 100, 200, 120]);
 });
 
-test('still markup letterboxes the frozen image and maps its marks into the same frame', async ({
+test('Mark up frames the still with its marks and docks the tools below it', async ({
   mount,
   page,
 }) => {
+  // The framed window is smaller than the display; its page is the window.
+  await page.setViewportSize({ width: 820, height: 640 });
   await mount(Harness, { props: { fixture: 'still' } });
-  const still = page.locator('img');
-  await expect(still).toHaveCount(1);
-  await expectAnimationsToSettle(still);
-  const frame = (await still.boundingBox())!;
-  // The mark must track its authoritative image coordinates within the live image,
-  // independently of the viewport's chosen letterbox spacing.
+  const surface = page.getByTestId('dock-annotation-surface');
+  await expectAnimationsToSettle(page.getByTestId('dock-annotation-overlay'));
+  const frame = (await surface.boundingBox())!;
+  const image = dockAnnotationStill.still!;
+  // The whole still is visible at its own aspect ratio inside the window.
+  expect(frame.width).toBeCloseTo(frame.height * (image.width / image.height), 0);
+  expect(frame.x).toBeGreaterThanOrEqual(0);
+  expect(frame.y).toBeGreaterThanOrEqual(0);
+  expect(frame.x + frame.width).toBeLessThanOrEqual(820);
+  // The tool bar sits below the image, not over it, and offers only still tools.
+  const toolbar = page.getByTestId('dock-annotation-toolbar');
+  const bar = (await toolbar.boundingBox())!;
+  expect(bar.y).toBeGreaterThanOrEqual(frame.y + frame.height);
+  expect(bar.y + bar.height).toBeLessThanOrEqual(640);
+  await expect(toolbar.getByRole('button', { name: 'Box' })).toBeVisible();
+  await expect(toolbar.getByRole('button', { name: /pick/i })).toHaveCount(0);
+  // The authoritative mark is drawn where its image pixels are.
   const mark = dockAnnotationStill.marks[0].geometry;
   if (mark.kind !== 'rect') throw new Error('Expected rectangle fixture');
-  const image = dockAnnotationStill.image!;
-  // Letterboxing preserves the captured image's aspect ratio and keeps it on screen.
-  expect(frame.width).toBeCloseTo(frame.height * (image.width / image.height), 1);
-  const viewport = (await page.getByTestId('dock-annotation-overlay').boundingBox())!;
-  expect(frame.x).toBeGreaterThanOrEqual(viewport.x - 1);
-  expect(frame.y).toBeGreaterThanOrEqual(viewport.y - 1);
-  expect(frame.x + frame.width).toBeLessThanOrEqual(viewport.x + viewport.width + 1);
-  expect(frame.y + frame.height).toBeLessThanOrEqual(viewport.y + viewport.height + 1);
-  const [x, y, width, height] = await numbers(page.locator('[data-mark="1"]'), 'rect', [
-    'x',
-    'y',
-    'width',
-    'height',
-  ]);
-  expect(x).toBeCloseTo(frame.x + (mark.x / image.width) * frame.width, 1);
-  expect(y).toBeCloseTo(frame.y + (mark.y / image.height) * frame.height, 1);
-  expect(width).toBeCloseTo((mark.w / image.width) * frame.width, 1);
-  expect(height).toBeCloseTo((mark.h / image.height) * frame.height, 1);
+  const box = (await page.locator('[data-mark="1"] rect').boundingBox())!;
+  expect(box.x).toBeCloseTo(frame.x + (mark.x / image.width) * frame.width, 0);
+  expect(box.y).toBeCloseTo(frame.y + (mark.y / image.height) * frame.height, 0);
+  expect(box.width).toBeCloseTo((mark.w / image.width) * frame.width, 0);
 });
 
 test('the on-screen toolbar stays reachable, switches tools and attaches the session marks', async ({

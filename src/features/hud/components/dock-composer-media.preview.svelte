@@ -6,15 +6,13 @@
     DockComposerMediaState,
   } from './dock-composer-media-presentation';
 
-  type PreviewMode =
-    'idle' | 'captured' | 'annotate-hovered' | 'annotating' | 'dictating' | 'recording';
+  type PreviewMode = 'idle' | 'captured' | 'annotating' | 'dictating' | 'recording';
   interface PreviewProps {
     mode?: PreviewMode;
     width?: number;
     state?: Partial<DockComposerMediaState>;
     items?: DockComposerAttachment[];
     disabled?: boolean;
-    annotationNotice?: string;
     /** Motion fixtures only: confirm capture and recording at once, like a fast native owner. */
     simulateConfirm?: boolean;
   }
@@ -26,7 +24,6 @@
     states: {
       idle: { props: { mode: 'idle' } },
       captured: { props: { mode: 'captured' } },
-      'annotate-hovered': { props: { mode: 'annotate-hovered' } },
       'capture-window': { props: { mode: 'idle', state: { captureMode: 'window' } } },
       'capture-region': { props: { mode: 'idle', state: { captureMode: 'region' } } },
       'capture-fullscreen-only': {
@@ -41,8 +38,6 @@
           mode: 'idle',
           state: {
             alerts: {
-              annotate: 'Allow Accessibility in System Settings.',
-              pick: 'Allow Accessibility in System Settings.',
               mic: 'Allow microphone and speech recognition in System Settings.',
             },
           },
@@ -61,9 +56,6 @@
     clipLimit: 'Up to 5 recordings',
     record: 'Record the screen',
     stopRecording: 'Stop recording',
-    annotate: 'Annotate the screen',
-    annotationTools: 'Annotation tools',
-    annotateCurrent: (tool) => `Annotate the screen. Current tool: ${tool}`,
     tools: { pick: 'Pick an element', box: 'Box', pen: 'Pen', arrow: 'Arrow' },
     dictate: 'Dictate · hold to talk',
     stopDictating: 'Stop dictating',
@@ -106,7 +98,6 @@
     state: overrides,
     items: suppliedItems,
     disabled = false,
-    annotationNotice,
     simulateConfirm = false,
   }: PreviewProps = $props();
   let mediaState = $state<DockComposerMediaState>({
@@ -144,7 +135,7 @@
     };
     items =
       suppliedItems ??
-      (mode === 'idle' || mode === 'annotate-hovered'
+      (mode === 'idle'
         ? []
         : [
             {
@@ -228,7 +219,6 @@
         state={mediaState}
         {labels}
         {disabled}
-        {annotationNotice}
         onAlert={(target) => record(`open-settings:${target}`)}
         onCapture={() => {
           record('capture');
@@ -242,11 +232,6 @@
         onRecordToggle={() => {
           record('record');
           if (simulateConfirm) mediaState = { ...mediaState, recording: !mediaState.recording };
-        }}
-        onAnnotationToggle={() => record('annotation-toggle')}
-        onToolSelect={(tool) => {
-          record(`tool:${tool}`);
-          mediaState = { ...mediaState, tool, toolUsed: true, annotationActive: true };
         }}
         onDictationToggle={() => record('dictation-toggle')}
         onDictationHoldStart={() => record('dictation-hold-start')}

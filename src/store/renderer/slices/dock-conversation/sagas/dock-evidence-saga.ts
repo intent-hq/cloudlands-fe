@@ -588,7 +588,9 @@ function* toggleAnnotation({
     return;
   }
   if (session) yield* endSession(workspaceId, agentId);
-  const tool = toolFor(workspaceId);
+  const remembered = toolFor(workspaceId);
+  // A frozen image has no live element to pick.
+  const tool = stillImageId && remembered === 'pick' ? 'box' : remembered;
   yield* put(dockEvidenceToolSet(workspaceId, tool));
   yield* startSession(workspaceId, agentId, tool, stillImageId ? 'still' : 'live', stillImageId);
 }

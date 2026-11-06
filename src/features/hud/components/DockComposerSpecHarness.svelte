@@ -91,7 +91,6 @@
     attachments,
     onCapture: () => record('capture'),
     onRecordToggle: () => record('record'),
-    onAnnotationToggle: () => record('annotate'),
     onToolSelect: (tool) => record(`tool:${tool}`),
     onDictationToggle: () => record('dictate'),
     onDictationHoldStart: () => record('hold-start'),

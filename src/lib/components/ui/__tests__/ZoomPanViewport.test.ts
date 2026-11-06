@@ -27,7 +27,12 @@ const children = createRawSnippet(() => ({
 }));
 
 async function setup(
-  props: { minZoom?: number; maxZoom?: number; onScaleChange?: (scale: number) => void } = {},
+  props: {
+    minZoom?: number;
+    maxZoom?: number;
+    onScaleChange?: (scale: number) => void;
+    wheelPans?: boolean;
+  } = {},
 ) {
   const result = render(ZoomPanViewport, { props: { children, ...props } });
   await tick();
@@ -76,6 +81,16 @@ describe('ZoomPanViewport', () => {
       clientX: 0,
       clientY: 0,
     });
+    expect(getScale(content)).toBeGreaterThan(1);
+  });
+
+  it('with wheelPans, a plain wheel pans and only pinch zooms', async () => {
+    const { viewport, content } = await setup({ wheelPans: true });
+    await fireEvent.wheel(viewport, { deltaX: 30, deltaY: -40, clientX: 0, clientY: 0 });
+    expect(getScale(content)).toBe(1);
+    expect(getTranslate(content)).toEqual({ x: -30, y: 40 });
+
+    await fireEvent.wheel(viewport, { deltaY: -20, ctrlKey: true, clientX: 0, clientY: 0 });
     expect(getScale(content)).toBeGreaterThan(1);
   });
 

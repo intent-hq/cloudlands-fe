@@ -843,7 +843,8 @@ describe('dock composer keyboard shortcuts', () => {
     expect(capture.defaultPrevented).toBe(true);
     // The same event (e.g. a duplicate listener) is never acted on twice.
     expect(controller.handleKey(capture)).toBe(false);
-    expect(controller.handleKey(key({ key: 'A', metaKey: true, shiftKey: true }))).toBe(true);
+    // Annotating starts only from a screenshot's Mark up: the chord is the platform's.
+    expect(controller.handleKey(key({ key: 'A', metaKey: true, shiftKey: true }))).toBe(false);
     // Record is not available: the chord is left to the platform.
     expect(controller.handleKey(key({ key: 'R', metaKey: true, shiftKey: true }))).toBe(false);
     // Ctrl is not the macOS modifier.
@@ -851,7 +852,6 @@ describe('dock composer keyboard shortcuts', () => {
     expect(dispatched().filter((type) => type.startsWith('dockConversation/evidence'))).toEqual([
       'dockConversation/evidenceCapabilitiesChanged',
       'dockConversation/evidenceCaptureRequested',
-      'dockConversation/evidenceAnnotationToggleRequested',
     ]);
     spy.mockRestore();
     await controller.dispose();

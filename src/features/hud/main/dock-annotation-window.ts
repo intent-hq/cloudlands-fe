@@ -46,6 +46,7 @@ import {
   dockDifferenceHash,
   dockGeometryRect,
   dockHashDistance,
+  dockStillWindowBounds,
   dockWindowIdFromMediaSourceId,
   gestureOverlayGeometry,
   overlayGeometryToImage,
@@ -391,7 +392,7 @@ export class DockAnnotationController implements AnnotationService {
 
     let window: BrowserWindow;
     try {
-      window = this.overlayFor(display, backendId);
+      window = this.overlayFor(display, backendId, still?.pixels ?? null);
     } catch (error) {
       logger.warn('Failed to create the dock annotation overlay', { error });
       return { ok: false, error: 'failed' };
@@ -453,7 +454,7 @@ export class DockAnnotationController implements AnnotationService {
       const stillValid =
         this.current(session) &&
         this.host === host &&
-        sameDisplay(session.display, host.dockDisplay()) &&
+        (session.mode === 'still' || sameDisplay(session.display, host.dockDisplay())) &&
         session.window === window &&
         windowIdOf(window) === windowId;
       if (!stillValid || !excluded) {
@@ -899,9 +900,9 @@ export class DockAnnotationController implements AnnotationService {
     // A frozen image has no live element under it, and a pick needs one: never invent it.
     if (frozen.tool === 'pick') return this.refuse(session, 'pick', 'unavailable');
     const image = session.image;
-    const view = image && dockAnnotationViewport(session.display.bounds, image, 'still');
-    if (!image || !view || !session.still || !frozen.geometry) return reject('failed');
-    const geometry = overlayGeometryToImage(frozen.geometry, view, image);
+    if (!image || !session.still || !frozen.geometry) return reject('failed');
+    // The framed window sends still gestures in image pixels: clamp only.
+    const geometry = overlayGeometryToImage(frozen.geometry, IMAGE_SPACE, image);
     if (!geometry) return reject('outside');
     return this.emitMark(frozen, geometry, null) ? { ok: true } : reject('stale');
   }
@@ -1275,11 +1276,13 @@ export class DockAnnotationController implements AnnotationService {
   }
 
   private insideDisplay(session: Session, point: DockImagePoint): boolean {
-    const { width, height } = session.display.bounds;
+    const { width, height } = session.still?.pixels ?? session.display.bounds;
     return point.x >= 0 && point.y >= 0 && point.x < width && point.y < height;
   }
 
   private excludedAt(session: Session, local: DockImagePoint): boolean {
+    // The framed still window has no dock or popups over its image.
+    if (session.mode === 'still') return false;
     return (
       pointInRects(local, this.localExcluded(session)) ||
       (!!session.toolbar && pointInRects(local, [session.toolbar]))
@@ -1305,7 +1308,16 @@ export class DockAnnotationController implements AnnotationService {
       return;
     }
     const host = this.host;
-    if (!host || host.retired() || !sameDisplay(session.display, host.dockDisplay())) {
+    if (!host || host.retired()) {
+      this.finish(session, true);
+      return;
+    }
+    // The framed still window is a window of its own: always clickable, wherever the dock is.
+    if (session.mode === 'still') {
+      this.setInteractive(session, true);
+      return;
+    }
+    if (!sameDisplay(session.display, host.dockDisplay())) {
       this.finish(session, true);
       return;
     }
@@ -1340,22 +1352,31 @@ export class DockAnnotationController implements AnnotationService {
     if (!this.stopDisplays)
       this.stopDisplays = this.native.onDisplaysChanged(() => {
         const session = this.session;
-        if (session && !sameDisplay(session.display, this.host?.dockDisplay()))
+        if (
+          session &&
+          session.mode !== 'still' &&
+          !sameDisplay(session.display, this.host?.dockDisplay())
+        )
           this.finish(session, true);
       });
   }
 
-  private overlayFor(display: Display, backendId: string): BrowserWindow {
+  private overlayFor(
+    display: Display,
+    backendId: string,
+    still: DockCapturedPixels | null,
+  ): BrowserWindow {
     this.cancelIdle?.();
     this.cancelIdle = null;
     let window = this.window;
     // A retained overlay is reused only for the same backend binding.
     if (usable(window) && this.windowBackendId === backendId) {
-      window.setBounds({ ...display.bounds });
+      frameWindow(window, display, still);
       return window;
     }
     this.destroyWindow();
     window = this.native.createWindow(display, backendId);
+    frameWindow(window, display, still);
     this.window = window;
     this.windowBackendId = backendId;
     const current = window;
@@ -1441,6 +1462,24 @@ function routeUrl(route: string): string {
   if (process.env.NODE_ENV === 'development')
     return `http://127.0.0.1:${process.env.DEV_PORT || '5190'}${route}`;
   return `app://workspaces${route}`;
+}
+
+/** Still gestures already arrive in image pixels. */
+const IMAGE_SPACE = { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
+
+/**
+ * Live and dictation sessions cover the display, click-through and flat. Mark up
+ * frames its still in a movable, shadowed window centred on the work area.
+ */
+function frameWindow(
+  window: BrowserWindow,
+  display: Display,
+  still: DockCapturedPixels | null,
+): void {
+  const area = display.workArea ?? display.bounds;
+  window.setBounds(still ? dockStillWindowBounds(area, still) : { ...display.bounds });
+  window.setHasShadow(!!still);
+  window.setMovable(!!still);
 }
 
 function createOverlayWindow(display: Display, backendId: string): BrowserWindow {

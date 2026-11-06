@@ -7,7 +7,7 @@ import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry';
 
 /**
  * End-to-end walkthrough of the dock composer with synthetic content only:
- * capture → annotate (box, pick) → dictate with click chips → delete a chip
+ * capture → Mark up (box) → dictate with click chips → delete a chip
  * (renumber) → record start/stop → send. Production conversation, controller,
  * sagas, editor and send; the daemon wire and the native helper are scripted
  * (no screen capture, microphone, recording or real message).
@@ -69,7 +69,7 @@ async function screen(page: Page, n: number): Promise<void> {
   await info.attach(`dock-composer-e2e-${n}`, { path, contentType: 'image/png' });
 }
 
-test('dock composer walkthrough: capture, annotate, dictate, renumber, record, send', async ({
+test('dock composer walkthrough: capture, mark up, dictate, renumber, record, send', async ({
   mount,
   page,
 }) => {
@@ -77,9 +77,8 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   const component = await mount(ComposerE2EHarness);
   const footer = component.locator('[data-dock-media-footer]');
   await expect(footer).toBeVisible();
-  const annotate = component.getByRole('button', { name: /^Annotate the screen\. Current tool:/ });
-  // Annotate and record enable only once the native capabilities were installed.
-  await expect(annotate).toBeEnabled();
+  // Record enables only once the native capabilities were installed.
+  await expect(component.getByRole('button', { name: /^Record the screen/ })).toBeEnabled();
   const editor = component.locator('.tiptap-editor');
   const tiles = component.locator('[data-dock-media-attachments] .tile');
   const chips = editor.locator('.screen-reference-chip');
@@ -95,19 +94,14 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
   await screen(page, 2);
 
-  // 3 Annotation tools
-  await annotate.focus();
-  await annotate.press('Space');
-  const tools = page.getByRole('toolbar', { name: 'Annotation tools' });
-  await expect(tools).toBeVisible();
+  // 3 Mark up: the screenshot's pencil is the only way into annotating.
+  await tiles.first().getByRole('button', { name: 'Mark up' }).click();
+  await expect(component.getByText('Annotating', { exact: true })).toBeVisible();
   await screen(page, 3);
 
-  // 4 Annotating: box, two shapes
-  await tools.getByRole('button', { name: 'Box' }).click();
-  await expect(component.getByText('Annotating', { exact: true })).toBeVisible();
+  // 4 Annotating the still: three boxes
   const { card, save, cancel } = SYNTHETIC_ELEMENTS;
   await gesture(page, 'box', { x: card.x + 30, y: card.y + 90, w: card.w - 60, h: 100 }, null);
-  // The session image either reuses the unmarked capture or adds one; the mark lands either way.
   await expect(
     component.getByRole('button', { name: 'Screenshot with 1 marks. Open' }),
   ).toBeVisible();
@@ -115,38 +109,20 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(
     component.getByRole('button', { name: 'Screenshot with 2 marks. Open' }),
   ).toBeVisible();
-  await page.mouse.move(5, VIEW.height - 5);
-  await screen(page, 4);
-
-  // Pick: switch tool in the open session, then pick an element.
-  await annotate.focus();
-  await annotate.press('Space');
-  await expect(tools).toBeVisible();
-  await tools.getByRole('button', { name: 'Pick an element' }).click();
-  const saveElement = {
-    role: 'button',
-    name: 'Save',
-    path: 'main > form.settings > div.actions > button.save',
-    source: null,
-  };
-  await gesture(page, 'pick', { x: save.x, y: save.y, w: save.w, h: save.h }, saveElement);
+  await gesture(page, 'box', { x: save.x, y: save.y, w: save.w, h: save.h }, null);
   await expect(
     component.getByRole('button', { name: 'Screenshot with 3 marks. Open' }),
   ).toBeVisible();
   await page.mouse.move(5, VIEW.height - 5);
+  await screen(page, 4);
 
   // 5 Dictating with click chips
   await component.getByRole('button', { name: /^Dictate/ }).click();
   await expect(component.getByText('Listening', { exact: true })).toBeVisible();
   await say(page, 'Closer, but this');
-  await gesture(
-    page,
-    'pick',
-    { x: card.x, y: card.y, w: card.w, h: card.h },
-    { role: 'dialog', name: 'Workspace name', path: 'main > form.settings', source: null },
-  );
+  await gesture(page, 'box', { x: card.x, y: card.y, w: card.w, h: card.h }, null);
   await say(page, ' still has the old shadow, and this one');
-  await gesture(page, 'pick', { x: save.x, y: save.y, w: save.w, h: save.h }, saveElement);
+  await gesture(page, 'box', { x: save.x, y: save.y, w: save.w, h: save.h }, null);
   await say(page, ' drops its hover');
   await expect(component.locator('[data-screen-interim]')).toBeVisible();
   await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
@@ -283,7 +259,6 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   expect(params.messageMetadata?.type).toBe('dock_screen_evidence');
   const marks = (params.messageMetadata?.images ?? []).flatMap((image) => image.marks ?? []);
   expect(marks.map((mark) => mark.n)).toEqual([1, 2, 3, 4]);
-  expect(marks.filter((mark) => mark.tool === 'pick').every((mark) => mark.element)).toBe(true);
   expect(placements.filter((row) => 'sourcePath' in row)).toHaveLength(1);
 });
 

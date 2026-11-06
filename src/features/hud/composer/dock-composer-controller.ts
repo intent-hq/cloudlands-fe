@@ -325,7 +325,6 @@ export function createDockComposerController(
     },
     // Stops the live recording, or starts another one beside the finished clips.
     onRecordToggle: () => dispatch(dockEvidenceRecordToggleRequested(workspaceId, agentId)),
-    onAnnotationToggle: () => dispatch(dockEvidenceAnnotationToggleRequested(workspaceId, agentId)),
     onToolSelect: (tool: DockMarkTool) =>
       dispatch(dockEvidenceToolSelectRequested(workspaceId, agentId, tool)),
     onDictationToggle: () => dispatch(dockSpeechToggleRequested(workspaceId, agentId)),
@@ -389,8 +388,6 @@ export function createDockComposerController(
         : false;
     if (matchesShortcut(event, 'mod+shift+r', mac))
       return caps.record || view.recording ? act(actions.onRecordToggle) : false;
-    if (matchesShortcut(event, 'mod+shift+a', mac))
-      return caps.annotate || view.annotating ? act(actions.onAnnotationToggle) : false;
     if (matchesShortcut(event, 'mod+shift+m', mac))
       return view.speech.available || view.speech.active ? act(actions.onDictationToggle) : false;
     // Tool keys belong to the annotate session only while not typing; M or 0 is mouse mode.
