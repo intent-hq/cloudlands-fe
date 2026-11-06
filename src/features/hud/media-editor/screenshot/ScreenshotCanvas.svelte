@@ -241,12 +241,13 @@
   });
   $effect(() => {
     const id = editingTextId;
+    const shape = textShape;
     if (!id || disabled) {
       textSession = null;
       return;
     }
-    const shape = untrack(() => shapes.find((item) => item.id === id));
     if (!shape?.text) return;
+    if (textSession?.id === id && textSession.document === documentKey) return;
     textSession = { id, document: documentKey, original: shape.text.value };
     textValue = shape.text.value;
   });
