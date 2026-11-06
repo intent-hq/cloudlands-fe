@@ -81,7 +81,12 @@
     onCloseAutoFocus={(event) => event.preventDefault()}
   >
     <Menu.Group>
-      {#if label}<Menu.Label>{label}</Menu.Label>{/if}
+      {#if label}
+        <Menu.Label
+          class="min-h-0 font-normal text-left text-foreground [&>[data-slot=menu-item-leading]]:hidden"
+          >{label}</Menu.Label
+        >
+      {/if}
       <Menu.RadioGroup value={mode}>
         {#each DOCK_CAPTURE_MODES as option (option)}
           <Menu.RadioItem
