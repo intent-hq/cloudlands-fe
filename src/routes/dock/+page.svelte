@@ -13,8 +13,6 @@
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import DockConversation from '$features/hud/components/DockConversation.svelte';
   import { openDockConversation, choosePendingDockShortcut } from '$features/hud/dock-navigation';
-  import { showDockContextMenu } from '$features/hud/dock-context-menu';
-  import { wantsDockContextMenu } from '$features/hud/dock-context-target';
   import { initDockIntro } from '$features/hud/intro/dock-intro.svelte';
   import { selectDockConversationWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import {
@@ -130,17 +128,7 @@
   <DockConversation onOpenWorkspace={openDockConversation} />
 {/snippet}
 
-<!-- Right-click anywhere on the dock opens its native menu (move, hide); text fields
-     and the open conversation keep their normal edit menu. -->
-<svelte:window
-  onblur={cancelPendingShortcut}
-  oncontextmenu={(event) => {
-    if (!$placement$ || !wantsDockContextMenu(event.target)) return;
-    event.preventDefault();
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- fire-and-forget request for a main-owned native menu; nothing is loaded
-    showDockContextMenu();
-  }}
-/>
+<svelte:window onblur={cancelPendingShortcut} />
 
 <Screen class="fixed inset-0 overflow-clip bg-transparent" data-testid="dock-route">
   {#if $placement$}

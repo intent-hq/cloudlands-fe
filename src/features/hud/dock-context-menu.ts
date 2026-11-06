@@ -1,3 +1,4 @@
+import type { DockContextMenuRequest, DockContextMenuResult } from '$shared/dock-context-menu';
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
 
 interface DockMenuBridge {
@@ -9,9 +10,18 @@ interface DockMenuBridge {
  * the dock window, so this talks to the preload bridge directly; without one
  * (web build, component tests) it does nothing.
  */
-export function showDockContextMenu(): void {
+export async function showDockContextMenu(
+  state: DockContextMenuRequest = {},
+): Promise<DockContextMenuResult> {
   const bridge = (globalThis as { electronAPI?: DockMenuBridge }).electronAPI;
-  void bridge?.invoke(WINDOW_CHANNELS.SHOW_DOCK_MENU, {}).catch(() => {});
+  try {
+    const result = await bridge?.invoke(WINDOW_CHANNELS.SHOW_DOCK_MENU, state);
+    if (result && typeof result === 'object' && 'shown' in result)
+      return result as DockContextMenuResult;
+  } catch {
+    /* Releasing the caller's hold also covers IPC failure. */
+  }
+  return { shown: false };
 }
 
 /**

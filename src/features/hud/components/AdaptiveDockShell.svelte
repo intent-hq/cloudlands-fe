@@ -3,7 +3,8 @@
   import { onDestroy, onMount, tick, untrack, type Snippet } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import Logo from '$lib/components/Logo.svelte';
-  import { activateIntentFromDock } from '$features/hud/dock-context-menu';
+  import { activateIntentFromDock, showDockContextMenu } from '$features/hud/dock-context-menu';
+  import { wantsDockContextMenu } from '$features/hud/dock-context-target';
   import { spring } from '$lib/motion';
   import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
   import { m } from '$shared/paraglide/messages.js';
@@ -114,7 +115,7 @@
     () => conversationWorkspaceId,
     () => rootElement,
     () => placement.captureHidden || placement.phase === 'dragging',
-    () => conversationResize.held,
+    () => conversationResize.held || nativeMenuOpen,
     () => !edge,
     () => (notch ? DOCK_NOTCH_HOVER_DELAY_MS : 0),
   );
@@ -141,6 +142,7 @@
   );
   let conversationPopupOpen = false;
   let machineMenuOpen = $state(false);
+  let nativeMenuOpen = $state(false);
   let machineRegions: DockPointerRect[] = [];
   let popupEscapeEvent: KeyboardEvent | null = null;
   const dragging = $derived(placement.phase === 'dragging');
@@ -202,7 +204,8 @@
   const expanded = $derived(
     !edge &&
       !dragging &&
-      (machineMenuOpen ||
+      (nativeMenuOpen ||
+        machineMenuOpen ||
         (pinned
           ? conversationVisible
           : expandedByUser || dockIntro.hold || (!floating && pending))),
@@ -514,7 +517,7 @@
         placement.captureHidden ||
         placement.phase !== 'idle' ||
         conversationResize.held,
-      popup: machineMenuOpen || conversationPopupOpen,
+      popup: nativeMenuOpen || machineMenuOpen || conversationPopupOpen,
       root: rootElement,
     }),
     () => command({ action: 'focus' }),
@@ -567,7 +570,7 @@
     )
       return;
     const close = () => {
-      if (gesture || awaitingDragStart !== null || dragging) return;
+      if (nativeMenuOpen || gesture || awaitingDragStart !== null || dragging) return;
       if (!conversationFocus.keepsOverviewOpen(pointerInside, keyboardOpen)) {
         expandedByUser = false;
         if (!pinned) onHomeDismiss?.();
@@ -575,6 +578,38 @@
     };
     if (event instanceof FocusEvent && keyboardOpen) closeTimer = setTimeout(close, 0);
     else closeTimer = setTimeout(close, spring.moderate.settleMs);
+  }
+  async function contextMenu(event: MouseEvent): Promise<void> {
+    if (placement.captureHidden || dragging || gesture || !wantsDockContextMenu(event.target))
+      return;
+    event.preventDefault();
+    if (nativeMenuOpen) return;
+    nativeMenuOpen = true;
+    cancelOpen();
+    clearTimeout(closeTimer);
+    const current = machineId;
+    try {
+      const result = await showDockContextMenu({
+        machines,
+        currentId: machineId,
+        pending: machineSwitching,
+        error: machineError,
+      });
+      if (
+        !disposed &&
+        !placement.captureHidden &&
+        !dragging &&
+        machineId === current &&
+        !machineSwitching &&
+        result.backendId &&
+        result.backendId !== machineId &&
+        machines?.some((item) => item.id === result.backendId)
+      )
+        onMachine?.(result.backendId);
+    } finally {
+      nativeMenuOpen = false;
+      if (!disposed) leave();
+    }
   }
   function resetPlacement(): void {
     cancelOpen();
@@ -832,6 +867,7 @@
   />
 {/if}
 <svelte:window
+  oncontextmenu={contextMenu}
   onpointerdowncapture={() => {
     lastUserInput = performance.now();
   }}
@@ -944,6 +980,21 @@
           style:padding-bottom={heldGripCenter ? `${26 - heldGripCenter.y}px` : undefined}
           onpointerdown={(event) => {
             if (!(event.target as HTMLElement).closest('button')) pointerDown(event);
+          }}
+          ondblclick={(event) => {
+            if (
+              event.defaultPrevented ||
+              (event.target as HTMLElement).closest('button') ||
+              suppressClick ||
+              gesture ||
+              awaitingDragStart !== null ||
+              dragging ||
+              placement.captureHidden
+            )
+              return;
+            event.preventDefault();
+            machineMenuOpen = false;
+            activateIntentFromDock();
           }}
           onclick={(event) => {
             // A notch click requests typing in the pinned conversation.

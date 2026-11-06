@@ -1320,3 +1320,19 @@ export const WindowSwitchDockBackendSchema = z
     backendId: z.string().trim().min(1).max(256),
   })
   .strict();
+
+export const WindowShowDockMenuSchema = z
+  .object({
+    machines: z
+      .array(
+        z
+          .object({ id: z.string().trim().min(1).max(256), label: z.string().min(1).max(512) })
+          .strict(),
+      )
+      .max(256)
+      .optional(),
+    currentId: z.string().max(256).optional(),
+    pending: z.string().max(256).nullable().optional(),
+    error: z.boolean().optional(),
+  })
+  .strict();

@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from 'electron';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import {
   EmptySchema,
+  WindowShowDockMenuSchema,
   WindowSetDockPointerRegionSchema,
   WindowUpdateDockPlacementSchema,
   WindowSwitchDockBackendSchema,
@@ -88,14 +89,17 @@ export function registerDockPlacementHandlers(): void {
   ipcMain.handle(
     WINDOW_CHANNELS.SHOW_DOCK_MENU,
     createSafeValidatedHandler(
-      EmptySchema,
-      async (event) => {
+      WindowShowDockMenuSchema,
+      async (event, request) => {
         const window = BrowserWindow.fromWebContents(event.sender);
         // Only the dock's own top-level document can open its menu.
         if (!window || window !== getDockWindow() || event.senderFrame !== event.sender.mainFrame)
           return { shown: false };
-        showDockContextMenu(window);
-        return { shown: true };
+        const frame = event.senderFrame;
+        const result = await showDockContextMenu(window, request);
+        if (window.isDestroyed() || window !== getDockWindow() || frame !== event.sender.mainFrame)
+          return { shown: false };
+        return result;
       },
       WINDOW_CHANNELS.SHOW_DOCK_MENU,
     ),
