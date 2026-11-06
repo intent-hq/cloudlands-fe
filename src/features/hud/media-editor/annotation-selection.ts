@@ -4,7 +4,7 @@ import {
   type DockMediaGeometry,
   type DockMediaRect,
 } from '$shared/dock-media-edit';
-import { fitScreenshotGeometry, moveScreenshotGeometry } from './screenshot/screenshot-geometry';
+import { fitScreenshotGeometry } from './screenshot/screenshot-geometry';
 
 export type AnnotationHandleId = 'nw' | 'ne' | 'se' | 'sw' | 'from' | 'to' | 'move';
 /** UI handles only; never part of the canonical paint/export display list. */
@@ -44,8 +44,14 @@ export function resizeAnnotationGeometry<G extends DockMediaGeometry>(
       ? geometry
       : { ...geometry, [handle]: next };
   }
-  if (geometry.kind === 'point' && handle === 'move')
-    return moveScreenshotGeometry(geometry, { x: dx, y: dy }, frame) as G;
+  if (geometry.kind === 'point' && handle === 'move') {
+    const bounds = dockMediaGeometryRect(geometry);
+    return {
+      ...geometry,
+      x: geometry.x + clamp(dx, frame.x - bounds.x, frame.x + frame.w - bounds.x - bounds.w),
+      y: geometry.y + clamp(dy, frame.y - bounds.y, frame.y + frame.h - bounds.y - bounds.h),
+    };
+  }
   if (geometry.kind === 'point' || handle === 'move') return geometry;
   const b = dockMediaGeometryRect(geometry),
     right = b.x + b.w,
