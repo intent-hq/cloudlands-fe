@@ -330,7 +330,7 @@ export async function updateDockPlacement(
     setImmediate(() => {
       if (window !== getDockWindow() || captureHiddenWindows.has(window) || sessionPaused) return;
       try {
-        closeDockWindow();
+        dockHide();
       } catch (error) {
         logger.warn('Failed to dismiss dock window', { error });
       }
@@ -1003,6 +1003,13 @@ export function focusDockWindow(
   const plain = context ? { ...context } : context;
   if (plain) delete plain.recordingOwnerOnly;
   if (!window.webContents.isDestroyed()) window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, plain);
+}
+
+let dockHide: () => void = closeDockWindow;
+
+/** Routes the dock's own Hide command, so main can remember it as a user hide. */
+export function setDockHideHandler(handler: () => void): void {
+  dockHide = handler;
 }
 
 export function closeDockWindow(): void {
