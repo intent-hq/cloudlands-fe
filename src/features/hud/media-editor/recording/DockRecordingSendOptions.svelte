@@ -58,7 +58,7 @@
       type="single"
       variant="outline"
       size="sm"
-      class="send-choice w-full"
+      class="shrink-0"
       aria-labelledby="send-video-label"
       disabled={!enabled}
       value={video}
@@ -67,12 +67,9 @@
           onChange({ video: value, voice: voiceChoice });
       }}
     >
-      <ToggleGroup.Item value="full" class="flex-1"
-        >{m.dock_captureEditor_videoFull_label()}</ToggleGroup.Item
-      >
+      <ToggleGroup.Item value="full">{m.dock_captureEditor_videoFull_label()}</ToggleGroup.Item>
       <ToggleGroup.Item
         value="highlights"
-        class="flex-1"
         disabled={!enabled || !highlights}
         tooltip={highlights ? undefined : m.dock_captureEditor_videoHighlights_disabled()}
         >{m.dock_captureEditor_videoHighlights_label()}</ToggleGroup.Item
@@ -85,7 +82,7 @@
       type="single"
       variant="outline"
       size="sm"
-      class="send-choice w-full"
+      class="shrink-0"
       aria-labelledby="send-voice-label"
       disabled={!enabled}
       value={voiceChoice}
@@ -96,21 +93,17 @@
     >
       <ToggleGroup.Item
         value="audio"
-        class="flex-1"
         disabled={!enabled || !voice.audio.enabled}
         tooltip={voice.audio.reason ? reasons[voice.audio.reason]() : undefined}
         >{m.dock_captureEditor_voiceAudio_label()}</ToggleGroup.Item
       >
       <ToggleGroup.Item
         value="transcript"
-        class="flex-1"
         disabled={!enabled || !voice.transcript.enabled}
         tooltip={voice.transcript.reason ? reasons[voice.transcript.reason]() : undefined}
         >{m.dock_captureEditor_voiceTranscript_label()}</ToggleGroup.Item
       >
-      <ToggleGroup.Item value="off" class="flex-1"
-        >{m.dock_captureEditor_voiceOff_label()}</ToggleGroup.Item
-      >
+      <ToggleGroup.Item value="off">{m.dock_captureEditor_voiceOff_label()}</ToggleGroup.Item>
     </ToggleGroup.Root>
   </div>
 </section>
@@ -123,22 +116,15 @@
     padding: 14px 16px;
     border-bottom: 1px solid hsl(var(--border));
   }
+  /* Like Settings: the label on the left, the compact control on the right. */
   .group {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
   }
   .label {
-    font-size: 11px;
+    font-size: 12px;
     color: hsl(var(--muted-foreground));
-  }
-  /*
-   * Settings' segmented control (outline, small), with the chosen option always shown,
-   * not only on hover: the app's selected fill with a hairline edge, in light and dark.
-   */
-  .options :global(.send-choice [data-state='on']) {
-    background: hsl(var(--selected));
-    color: hsl(var(--foreground));
-    box-shadow: inset 0 0 0 1px hsl(var(--border));
   }
 </style>
