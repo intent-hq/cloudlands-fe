@@ -961,33 +961,37 @@ export class DockAnnotationController implements AnnotationService {
         : this.native.picker.hit(frozen.elementPoint, { element: true }),
     ]);
     if (!live()) return reject('stale');
-    if (!originHit.checked) return this.refuse(session, 'target', 'unavailable');
     // While a clip records, the whole screen is in it: a drawn mark (not a pick, which
     // names an element) is about the screen, so it is kept over the desktop or across
-    // windows, where it used to be dropped without a word. Otherwise the dock, menus,
+    // windows, where it used to be dropped without a word, and window and element
+    // details only enrich it when they can be read. Otherwise the dock, menus,
     // desktop, menu bar and other system surfaces are never targets.
     const anywhere = !pick && frozen.clipMs !== undefined;
+    if (!originHit.checked && !anywhere) return this.refuse(session, 'target', 'unavailable');
     if (!originHit.window && !anywhere) {
       logger.info('Dock annotation mark refused: no app window under it', { tool: frozen.tool });
       return reject('outside');
     }
-    const target = originHit.window
-      ? { ...originHit.window, bounds: { ...originHit.window.bounds } }
-      : null;
+    const target =
+      originHit.checked && originHit.window
+        ? { ...originHit.window, bounds: { ...originHit.window.bounds } }
+        : null;
     if (!pick && !anywhere && target && !pointInRects(endGlobal, [target.bounds])) {
       logger.info('Dock annotation mark refused: it leaves its window', { tool: frozen.tool });
       return reject('outside');
     }
     // Intent's own main window: its page says where the browser panel is (never
     // markable) and which element is under the gesture.
-    const own = target
+    const probed = target
       ? await this.native.intentWindow(target.windowId, {
           panelPoints: pick ? [originGlobal] : [originGlobal, endGlobal, frozen.elementPoint],
           elementPoint: pick ? originGlobal : frozen.elementPoint,
         })
       : null;
     if (!live()) return reject('stale');
-    if (own?.kind === 'failed') return reject('failed');
+    if (probed?.kind === 'failed' && !anywhere) return reject('failed');
+    // A recording draw whose window details could not be read is kept without them.
+    const own = probed?.kind === 'failed' ? null : probed;
     // Intent's browser panel is a separate page: a drawn mark keeps its screenshot
     // without an element; a pick has nothing to name there.
     if (own?.kind === 'intent' && own.inPanel && pick)
@@ -1007,7 +1011,7 @@ export class DockAnnotationController implements AnnotationService {
       ax = originHit.element;
       if (!ax || !toDockMarkElement(ax)) return this.refuse(session, 'pick', 'unavailable');
     } else {
-      ax = (samePoint ? originHit : elementHit)?.element ?? null;
+      ax = target ? ((samePoint ? originHit : elementHit)?.element ?? null) : null;
     }
     const frozenElement = ax ? { ...ax, rect: { ...ax.rect } } : null;
 
