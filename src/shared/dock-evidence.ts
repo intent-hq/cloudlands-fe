@@ -1281,6 +1281,8 @@ export type DockEvidenceNativeEvent =
   | { type: 'annotation-commit'; sessionId: string }
   /** Clear on the tool bar: the current marks (and a live session's image) are dropped. */
   | { type: 'annotation-clear'; sessionId: string }
+  /** Undo or redo pressed in the focused Mark up window: the dock's mark history. */
+  | { type: 'annotation-history'; sessionId: string; action: 'undo' | 'redo' }
   /** Screenshot or Record on the tool bar: the dock runs the composer's own action. */
   | { type: 'annotation-media'; sessionId: string; action: 'capture' | 'record' }
   /**

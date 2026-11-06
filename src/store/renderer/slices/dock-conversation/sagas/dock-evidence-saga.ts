@@ -1257,6 +1257,18 @@ function* watchNative(): SagaGenerator<void> {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
           if (activePair(workspaceId, agentId)) yield* fork(clearAnnotation, workspaceId, agentId);
         }
+      } else if (event.type === 'annotation-history') {
+        const owner = getItems(appStore.state.dockConversation.evidence).find(
+          (row) => row.annotation?.id === event.sessionId,
+        );
+        if (owner) {
+          const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
+          yield* put(
+            event.action === 'undo'
+              ? dockEvidenceAnnotationUndoRequested(workspaceId, agentId)
+              : dockEvidenceAnnotationRedoRequested(workspaceId, agentId),
+          );
+        }
       } else if (event.type === 'annotation-media') {
         const owner = getItems(appStore.state.dockConversation.evidence).find(
           (row) => row.annotation?.id === event.sessionId,

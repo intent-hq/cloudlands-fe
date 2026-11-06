@@ -1,6 +1,10 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  import { dockStillWindowBounds, type DockAnnotationOverlayState } from '$shared/dock-annotation';
+  import {
+    DOCK_STILL_FRAME,
+    dockStillWindowBounds,
+    type DockAnnotationOverlayState,
+  } from '$shared/dock-annotation';
   import { dockAnnotationStill } from './dock-annotation-overlay.fixtures';
 
   interface PreviewProps {
@@ -57,6 +61,7 @@
   import '$lib/styles/dock-tokens.css';
   import DockAnnotationOverlay from './DockAnnotationOverlay.svelte';
   import type { DockAnnotationOverlayTransport } from '$shared/dock-annotation';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
 
   let { marked = true, displayScale = 2 }: PreviewProps = $props();
   // Sized exactly as main frames this still on a 1440×875 work area.
@@ -64,6 +69,7 @@
     dockStillWindowBounds(
       { x: 0, y: 0, width: 1440, height: 875 },
       { width: W, height: H, displayScale },
+      isMacPlatform() ? DOCK_STILL_FRAME.macTitleBar : 0,
     ),
   );
 

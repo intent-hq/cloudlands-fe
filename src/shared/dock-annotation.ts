@@ -188,6 +188,8 @@ export const DOCK_STILL_FRAME = {
   toolbar: 52,
   /** Band under the fitted image for the zoom controls, so they never cover it at fit. */
   zoomBar: 64,
+  /** macOS: the strip the traffic lights sit in (hidden-inset title bar). */
+  macTitleBar: 36,
   minWidth: 480,
   minHeight: 360,
   /** Largest share of the work area the window takes. */
@@ -202,10 +204,12 @@ export const DOCK_STILL_FRAME = {
 export function dockStillWindowBounds(
   workArea: DockAnnotationRect,
   image: { width: number; height: number; displayScale?: number },
+  /** Extra top chrome: the macOS title bar strip, 0 under a native frame. */
+  titleBar = 0,
 ): DockAnnotationRect {
   const { inset, toolbar, zoomBar, minWidth, minHeight, maxShare } = DOCK_STILL_FRAME;
   const chromeX = inset * 2;
-  const chromeY = inset * 2 + toolbar + zoomBar;
+  const chromeY = inset * 2 + toolbar + zoomBar + titleBar;
   const maxWidth = Math.max(minWidth, Math.floor(workArea.width * maxShare));
   const maxHeight = Math.max(minHeight, Math.floor(workArea.height * maxShare));
   const scale = finite(image.displayScale) && image.displayScale > 0 ? image.displayScale : 1;
@@ -243,6 +247,9 @@ export type DockAnnotationToolbarRequest = { sessionId: string } & (
   /** Clear: remove the current marks without attaching anything; the tool stays. */
   | { action: 'clear' }
   | { action: 'end' }
+  /** Cmd/Ctrl+Z (and Shift) in the focused Mark up window: the dock's mark history. */
+  | { action: 'undo' }
+  | { action: 'redo' }
   /** Screenshot / Record (start or stop): the composer's own action, in the dock. */
   | { action: 'capture' }
   | { action: 'record' }

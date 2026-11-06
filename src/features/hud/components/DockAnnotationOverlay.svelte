@@ -13,10 +13,13 @@
     type DockAnnotationOverlayState,
     type DockAnnotationOverlayTransport,
     type DockAnnotationPointerRequest,
+    type DockAnnotationToolbarRequest,
   } from '$shared/dock-annotation';
   import type { DockImagePoint, DockMarkGeometry, DockMarkTool } from '$shared/dock-evidence';
   import DockAnnotationToolbar from './DockAnnotationToolbar.svelte';
   import ZoomPanViewport from '$lib/components/ui/ZoomPanViewport.svelte';
+  import { isMacPlatform } from '$lib/utils/shortcuts';
+  import { m } from '$shared/paraglide/messages.js';
 
   let {
     overlay,
@@ -118,6 +121,27 @@
     }
     const rect = root?.getBoundingClientRect();
     return { x: event.clientX - (rect?.left ?? 0), y: event.clientY - (rect?.top ?? 0) };
+  }
+
+  // The Mark up window is a normal window and can hold keyboard focus. It answers the
+  // dock's own annotate keys: Escape ends, 2-4 choose a tool, Cmd/Ctrl+Z undo and redo.
+  const mac = isMacPlatform();
+  const FRAMED_TOOL_KEYS: Record<string, DockMarkTool> = { '2': 'box', '3': 'pen', '4': 'arrow' };
+  function onFramedKey(event: KeyboardEvent) {
+    const send = transport.toolbar;
+    if (!framed || !overlay || !send || event.isComposing || event.defaultPrevented) return;
+    const sessionId = overlay.sessionId;
+    const mod = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+    const plain = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+    let request: DockAnnotationToolbarRequest | null = null;
+    if (plain && event.key === 'Escape') request = { sessionId, action: 'end' };
+    else if (plain && FRAMED_TOOL_KEYS[event.key] && !event.repeat)
+      request = { sessionId, action: 'tool', tool: FRAMED_TOOL_KEYS[event.key] };
+    else if (mod && !event.altKey && event.key.toLowerCase() === 'z')
+      request = { sessionId, action: event.shiftKey ? 'redo' : 'undo' };
+    if (!request) return;
+    event.preventDefault();
+    void send(request).catch(() => false);
   }
 
   /** The element that owns the gesture's pointer capture. */
@@ -438,16 +462,25 @@
   {/if}
 {/snippet}
 
+<svelte:window onkeydown={onFramedKey} />
+<svelte:head>
+  {#if framed}<title>{m.dock_composer_markUp_label()}</title>{/if}
+</svelte:head>
+
 {#if framed && overlay?.still}
   <!-- Mark up: a window framing the still, zoomable like image previews, tools below.
-       The frame itself moves the window. -->
+       On macOS its title bar strip holds the traffic lights; the bare frame moves it. -->
   <div
     class="dock-annotation-frame"
     data-testid="dock-annotation-overlay"
     data-mode="still"
     data-tool={overlay.tool}
-    transition:fade={{ tier: 'fast' }}
+    data-mac-title-bar={mac || undefined}
+    style:--mac-title-bar="{DOCK_STILL_FRAME.macTitleBar}px"
   >
+    {#if mac}
+      <div class="dock-annotation-title" aria-hidden="true">{m.dock_composer_markUp_label()}</div>
+    {/if}
     <div
       class="dock-annotation-stage"
       bind:clientWidth={stageWidth}
@@ -545,7 +578,7 @@
     box-shadow: inset 0 0 0 1.5px hsl(var(--primary) / 0.32);
   }
 
-  /* Mark up window: the dock's dark card; its bare frame drags the window. */
+  /* Mark up window: the dock's dark surface; its bare frame drags the window. */
   .dock-annotation-frame {
     position: fixed;
     inset: 0;
@@ -554,13 +587,27 @@
     gap: 12px;
     padding: 12px 12px 0;
     overflow: hidden;
-    border-radius: 16px;
-    border: 1px solid hsl(var(--theme-dark-border));
     background: hsl(var(--theme-dark-surface-3));
     color: hsl(var(--theme-dark-foreground));
     user-select: none;
     -webkit-user-select: none;
     -webkit-app-region: drag;
+  }
+
+  .dock-annotation-frame[data-mac-title-bar] {
+    padding-top: var(--mac-title-bar);
+  }
+
+  /* Centred in the traffic-light strip, as macOS windows title themselves. */
+  .dock-annotation-title {
+    position: absolute;
+    inset: 0 0 auto;
+    height: var(--mac-title-bar);
+    display: grid;
+    place-items: center;
+    font-size: var(--text-caption-size);
+    color: hsl(var(--theme-dark-muted-foreground));
+    pointer-events: none;
   }
 
   .dock-annotation-stage {

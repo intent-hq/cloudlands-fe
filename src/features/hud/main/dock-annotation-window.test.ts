@@ -68,17 +68,13 @@ class FakeWindow extends EventEmitter {
   hide = () => {
     this.visible = false;
   };
+  kind = '';
   bounds: unknown = null;
-  shadow = false;
-  movable = false;
   setBounds = (bounds: unknown) => {
     this.bounds = bounds;
   };
-  setHasShadow = (shadow: boolean) => {
-    this.shadow = shadow;
-  };
-  setMovable = (movable: boolean) => {
-    this.movable = movable;
+  setContentBounds = (bounds: unknown) => {
+    this.bounds = bounds;
   };
   getMediaSourceId = () => 'window:4242:0';
   destroy = () => {
@@ -156,9 +152,10 @@ function setup(
   const settled: string[] = [];
   const timers: { callback: () => void; ms: number }[] = [];
   const native: DockAnnotationNative = {
-    createWindow: (_display, backendId) => {
+    createWindow: (_display, backendId, kind) => {
       const window = new FakeWindow();
       window.backendId = backendId;
+      window.kind = kind;
       windows.push(window);
       return window as unknown as BrowserWindow;
     },
@@ -673,14 +670,14 @@ describe('DockAnnotationController', () => {
       reason: 'unavailable',
     });
     expect(t.issues).toEqual([{ sessionId: 's1', kind: 'pick', error: 'unavailable' }]);
-    // Its own movable, shadowed window inside the display, not a full-screen overlay.
-    const frame = t.windows[0];
+    // Its own window inside the display, not the full-screen overlay.
+    const frame = t.windows[0]!;
+    expect(frame.kind).toBe('still');
     const bounds = frame.bounds as { x: number; y: number; width: number; height: number };
     expect(bounds.width).toBeLessThan(DISPLAY.bounds.width);
     expect(bounds.height).toBeLessThan(DISPLAY.bounds.height);
     expect(bounds.x).toBeGreaterThan(DISPLAY.bounds.x);
     expect(bounds.x + bounds.width).toBeLessThan(DISPLAY.bounds.x + DISPLAY.bounds.width);
-    expect(frame).toMatchObject({ shadow: true, movable: true });
     // Clickable at once, wherever the cursor is.
     expect(frame.ignore.at(-1)).toBe(false);
     await t.controller.setAnnotationTool('s1', 'box');
@@ -705,6 +702,21 @@ describe('DockAnnotationController', () => {
     expect(t.controller.handleStill({ sessionId: 's1' })).toEqual({
       dataUrl: 'data:image/png;base64,AAAA',
     });
+    // Cmd/Ctrl+Z in the focused window reaches the dock's mark history.
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'undo' })).toBe(true);
+    expect(t.events.at(-1)).toEqual({
+      type: 'annotation-history',
+      sessionId: 's1',
+      action: 'undo',
+    });
+    // The window's own close button ends the session.
+    frame.destroy();
+    expect(t.events.at(-1)).toEqual({ type: 'annotation-ended', sessionId: 's1' });
+    expect(t.controller.isActive()).toBe(false);
+    // A later live session gets the full-display overlay, not a Mark up window.
+    await t.start('live', 'box', 's2');
+    expect(t.windows.at(-1)!.kind).toBe('overlay');
+    expect(t.windows).toHaveLength(2);
   });
 
   it('pick reports the actual accessibility role, name and frame with no invented path or source', async () => {

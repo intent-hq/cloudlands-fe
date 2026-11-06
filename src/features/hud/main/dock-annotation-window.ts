@@ -41,6 +41,7 @@ import { DOCK_MARK_TOOLS } from '../../../shared/dock-evidence';
 import {
   DOCK_ANNOTATION_CHANNELS,
   DOCK_ANNOTATION_LIMITS,
+  DOCK_STILL_FRAME,
   boundGesturePoints,
   dockAnnotationViewport,
   dockDifferenceHash,
@@ -165,8 +166,12 @@ export interface DockAnnotationHost {
 
 /** Native boundaries of this controller; tests replace them. */
 export interface DockAnnotationNative {
-  /** Must stamp `backendId` on the window before it loads its document. */
-  createWindow(display: Display, backendId: string): BrowserWindow;
+  /**
+   * Must stamp `backendId` on the window before it loads its document. `still` is
+   * the Mark up window: a normal window with the platform's close, minimise and
+   * maximise controls; otherwise the full-display click-through overlay.
+   */
+  createWindow(display: Display, backendId: string, kind: DockAnnotationWindowKind): BrowserWindow;
   cursor(): DockImagePoint;
   hash(png: Buffer): string | null;
   picker: Pick<DockElementPicker, 'hit' | 'access' | 'warm' | 'dispose'>;
@@ -250,6 +255,8 @@ interface Frozen {
 }
 
 export type DockGestureOutcome = 'committed' | 'rejected' | 'cancelled';
+
+type DockAnnotationWindowKind = 'overlay' | 'still';
 
 const unavailable = <T>(): DockNativeResult<T> => ({ ok: false, error: 'unavailable' });
 const reject = (
@@ -335,6 +342,7 @@ export class DockAnnotationController implements AnnotationService {
   private media: DockAnnotationMediaState | null = null;
   private window: BrowserWindow | null = null;
   private windowBackendId: string | null = null;
+  private windowKind: DockAnnotationWindowKind | null = null;
   /**
    * The session whose hidden overlay is behind the exclusion barrier; its id is
    * already reported. Only that session (or its finish) releases the reservation.
@@ -720,6 +728,11 @@ export class DockAnnotationController implements AnnotationService {
     }
     if (request.action === 'end') {
       this.finish(session, true);
+      return true;
+    }
+    if (request.action === 'undo' || request.action === 'redo') {
+      // The focused Mark up window forwards Cmd/Ctrl+Z: the dock owns mark history.
+      this.emit({ type: 'annotation-history', sessionId: session.id, action: request.action });
       return true;
     }
     if (request.action === 'capture' || request.action === 'record') {
@@ -1368,17 +1381,19 @@ export class DockAnnotationController implements AnnotationService {
   ): BrowserWindow {
     this.cancelIdle?.();
     this.cancelIdle = null;
+    const kind: DockAnnotationWindowKind = still ? 'still' : 'overlay';
     let window = this.window;
     // A retained overlay is reused only for the same backend binding.
-    if (usable(window) && this.windowBackendId === backendId) {
+    if (usable(window) && this.windowBackendId === backendId && this.windowKind === kind) {
       frameWindow(window, display, still);
       return window;
     }
     this.destroyWindow();
-    window = this.native.createWindow(display, backendId);
+    window = this.native.createWindow(display, backendId, kind);
     frameWindow(window, display, still);
     this.window = window;
     this.windowBackendId = backendId;
+    this.windowKind = kind;
     const current = window;
     const onGone = () => {
       if (this.window !== current) return;
@@ -1405,6 +1420,12 @@ export class DockAnnotationController implements AnnotationService {
   }
 
   private hideWindow(): void {
+    // Every Mark up opens a fresh window: never one left minimised, maximised or moved.
+    if (this.windowKind === 'still') {
+      this.publish(null);
+      this.destroyWindow();
+      return;
+    }
     const window = this.window;
     if (usable(window)) {
       try {
@@ -1435,6 +1456,7 @@ export class DockAnnotationController implements AnnotationService {
     const window = this.window;
     this.window = null;
     this.windowBackendId = null;
+    this.windowKind = null;
     if (window && !window.isDestroyed()) window.destroy();
     this.announceWindows();
   }
@@ -1467,22 +1489,83 @@ function routeUrl(route: string): string {
 /** Still gestures already arrive in image pixels. */
 const IMAGE_SPACE = { scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0 };
 
+/** The Mark up frame's dark surface (`--theme-dark-surface-3`), shown before it paints. */
+const STILL_WINDOW_BACKGROUND = '#252525';
+
+/** macOS draws its traffic lights over the Mark up window's own title bar strip. */
+const STILL_TITLE_BAR = process.platform === 'darwin' ? DOCK_STILL_FRAME.macTitleBar : 0;
+
 /**
- * Live and dictation sessions cover the display, click-through and flat. Mark up
- * frames its still in a movable, shadowed window centred on the work area.
+ * Live and dictation sessions cover the display. Mark up frames its still in a
+ * window centred on the work area; its content (not its native frame) is sized.
  */
 function frameWindow(
   window: BrowserWindow,
   display: Display,
   still: DockCapturedPixels | null,
 ): void {
+  if (!still) {
+    window.setBounds({ ...display.bounds });
+    return;
+  }
   const area = display.workArea ?? display.bounds;
-  window.setBounds(still ? dockStillWindowBounds(area, still) : { ...display.bounds });
-  window.setHasShadow(!!still);
-  window.setMovable(!!still);
+  window.setContentBounds(dockStillWindowBounds(area, still, STILL_TITLE_BAR));
 }
 
-function createOverlayWindow(display: Display, backendId: string): BrowserWindow {
+function createDockAnnotationWindow(
+  display: Display,
+  backendId: string,
+  kind: DockAnnotationWindowKind,
+): BrowserWindow {
+  const window = kind === 'still' ? createStillWindow(display) : createOverlayWindow(display);
+  // Classified as the dock annotation overlay before any document (even about:blank) loads.
+  registerDockAnnotationWindow(window);
+  fixWebContentsZoom(window.webContents);
+  // One step below the dock's floating level so the dock stays the composer above it.
+  window.setAlwaysOnTop(true, 'floating', -1);
+  // The same backend binding as the dock survives the renderer bootstrap.
+  stampWindowWithBackend(window, backendId);
+  void window.loadURL(routeUrl('/dock-annotation')).catch((error) => {
+    logger.warn('Failed to load the dock annotation overlay', { error });
+  });
+  return window;
+}
+
+const annotationWebPreferences = () => ({
+  preload: path.join(__dirname, '../../../preload-build/preload/index.js'),
+  contextIsolation: true,
+  nodeIntegration: false,
+  // The window paints its first frame while still hidden (the ready handshake waits
+  // for it); a throttled hidden window never runs that frame and the start times out.
+  backgroundThrottling: false,
+});
+
+/**
+ * Mark up: an ordinary window (traffic lights on macOS, the native frame elsewhere)
+ * that can be moved, resized, minimised and closed. Closing it ends the session.
+ */
+function createStillWindow(display: Display): BrowserWindow {
+  return new BrowserWindow({
+    ...display.workArea,
+    show: false,
+    useContentSize: true,
+    minWidth: DOCK_STILL_FRAME.minWidth,
+    minHeight: DOCK_STILL_FRAME.minHeight + STILL_TITLE_BAR,
+    ...(process.platform === 'darwin'
+      ? {
+          titleBarStyle: 'hiddenInset' as const,
+          frame: false,
+          trafficLightPosition: { x: 12, y: 13 },
+        }
+      : { frame: true }),
+    acceptFirstMouse: true,
+    backgroundColor: STILL_WINDOW_BACKGROUND,
+    fullscreenable: false,
+    webPreferences: annotationWebPreferences(),
+  });
+}
+
+function createOverlayWindow(display: Display): BrowserWindow {
   const window = new BrowserWindow({
     ...display.bounds,
     show: false,
@@ -1502,31 +1585,14 @@ function createOverlayWindow(display: Display, backendId: string): BrowserWindow
     maximizable: false,
     fullscreenable: false,
     hasShadow: false,
-    webPreferences: {
-      preload: path.join(__dirname, '../../../preload-build/preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      // The overlay paints its first frame while still hidden (the ready handshake waits
-      // for it); a throttled hidden window never runs that frame and the start times out.
-      backgroundThrottling: false,
-    },
+    webPreferences: annotationWebPreferences(),
   });
-  // Classified as the dock annotation overlay before any document (even about:blank) loads.
-  registerDockAnnotationWindow(window);
-  fixWebContentsZoom(window.webContents);
-  // One step below the dock's floating level so the dock stays the composer above it.
-  window.setAlwaysOnTop(true, 'floating', -1);
   if (process.platform === 'darwin')
     window.setVisibleOnAllWorkspaces(true, {
       visibleOnFullScreen: true,
       skipTransformProcessType: true,
     });
   window.setIgnoreMouseEvents(true, { forward: true });
-  // The same backend binding as the dock survives the renderer bootstrap.
-  stampWindowWithBackend(window, backendId);
-  void window.loadURL(routeUrl('/dock-annotation')).catch((error) => {
-    logger.warn('Failed to load the dock annotation overlay', { error });
-  });
   return window;
 }
 
@@ -1542,7 +1608,7 @@ function hashPng(png: Buffer): string | null {
 }
 
 export const dockAnnotationController = new DockAnnotationController(null, {
-  createWindow: createOverlayWindow,
+  createWindow: createDockAnnotationWindow,
   cursor: () => screen.getCursorScreenPoint(),
   hash: hashPng,
   picker: createDockElementPicker(),
