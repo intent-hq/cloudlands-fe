@@ -37,6 +37,8 @@ export interface DockRailPreviewProps {
     close(): void;
     dismiss(): void;
   };
+  /** Controlled recording presentation only; never starts or stops native media. */
+  recordingFixture?: 'running' | 'paused' | 'stopping';
   machineFixture?: boolean;
   failMachineOnce?: boolean;
   resizeAcknowledgement?: 'accept' | 'reject' | 'defer';
@@ -282,12 +284,22 @@ function adaptiveState(
   };
 }
 
+function recordingState(shape: DockShape, mode: 'running' | 'paused' | 'stopping' = 'running') {
+  const base = adaptiveState(shape);
+  return { props: { ...base.props, recordingFixture: mode } };
+}
+
 export const dockRailPreview = definePreview<DockRailPreviewProps>({
   id: 'dock-rail',
   title: 'Workspace dock rail',
   defaultState: 'four-mixed',
   states: {
     notch: adaptiveState('notch'),
+    'recording-notch': recordingState('notch'),
+    'recording-floating': recordingState('floating'),
+    'recording-edge': recordingState('edge'),
+    'recording-paused': recordingState('notch', 'paused'),
+    'recording-stopping': recordingState('floating', 'stopping'),
     'notch-empty': adaptiveState('notch', 'right', 'dark', []),
     'notch-many-updates': adaptiveState(
       'notch',

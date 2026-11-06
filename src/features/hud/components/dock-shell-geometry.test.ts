@@ -57,3 +57,59 @@ describe('lifted shell helpers', () => {
     });
   });
 });
+
+describe('compact recording geometry', () => {
+  const edge = {
+    ...placement,
+    shape: 'edge',
+    placement: { kind: 'edge', displayId: 1, side: 'left', along: 0 },
+    surface: { x: 0, y: 0, width: 40, height: 144 },
+  } as DockPlacementSnapshot;
+  it('reserves a 104px recording header without changing the ordinary 40px edge header', () => {
+    const compact = { ...input, surfaceExpanded: false, reveal: 0, workspaceCount: 0 };
+    const normal = getDockShellLayout(edge, compact),
+      recording = getDockShellLayout(edge, { ...compact, recording: true });
+    expect(normal.headerHeight).toBe(40);
+    expect(recording.headerHeight).toBe(104);
+    expect(recording.desiredHeight - normal.desiredHeight).toBe(64);
+    expect(recording.compactWidth).toBe(40);
+  });
+  it('fits the recording header, gap and Assistant row in the minimum edge surface', () => {
+    const layout = getDockShellLayout(edge, {
+      ...input,
+      surfaceExpanded: false,
+      reveal: 0,
+      workspaceCount: 0,
+      recording: true,
+    });
+    expect(layout.headerHeight + 8 + 32).toBe(layout.desiredHeight);
+    expect(layout.shown.height).toBe(144);
+    expect(layout.shown.height).toBeGreaterThanOrEqual(layout.headerHeight + 8 + 32);
+  });
+  it('keeps floating height and the hardware cutout unchanged while reserving recording wing space', () => {
+    const floating = {
+      ...placement,
+      shape: 'floating',
+      placement: { kind: 'floating', displayId: 1, x: 0.5, y: 0.5 },
+    } as DockPlacementSnapshot;
+    expect(
+      getDockShellLayout(floating, { ...input, surfaceExpanded: false, reveal: 0, recording: true })
+        .headerHeight,
+    ).toBe(40);
+    const notch = {
+      ...placement,
+      shape: 'notch',
+      cutout: { x: 140, y: 0, width: 200, height: 32 },
+    } as DockPlacementSnapshot;
+    const layout = getDockShellLayout(notch, {
+      ...input,
+      surfaceExpanded: false,
+      reveal: 0,
+      recording: true,
+      compactWingWidth: 120,
+    });
+    expect(layout.compactWidth).toBe(200 + 2 * 120);
+    expect(layout.shown.width).toBeLessThanOrEqual(notch.surface.width);
+    expect(layout.headerHeight).toBe(32);
+  });
+});
