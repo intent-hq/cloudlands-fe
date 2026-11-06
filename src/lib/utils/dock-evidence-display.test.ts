@@ -1,3 +1,10 @@
+import { queuePresentationMessages } from '$lib/components/chat/queued-message-presentation';
+import { projectPendingSubmissions } from '$store/renderer/slices/pending-submissions/pending-submissions-projection';
+import {
+  buildDockEvidenceContext,
+  buildDockEvidenceMetadata,
+  emptyDockEvidence,
+} from '$shared/dock-evidence';
 import { queuedCapturePresentation } from '$lib/components/chat/queued-capture-presentation';
 import { describe, expect, it } from 'vitest';
 import { consumeEditedCapturePrefix, editedCaptureCards } from './dock-evidence-display';
@@ -139,19 +146,111 @@ describe('persisted edited capture presentation', () => {
 describe('queued capture display boundary', () => {
   it('consumes trusted screen then edited outputs, retaining user prose and queue bytes', () => {
     const content = `${DOCK_EVIDENCE_CONTEXT_HEADER}\n\`\`\`json\n${JSON.stringify({ type: 'dock_screen_evidence' })}\n\`\`\`\n\n${prefix}\n\n${prose}`;
-    const group = { content, messageMetadata: metadata, imageBlocks: [blocks[1]], fileBlocks: [blocks[0]] };
+    const group = {
+      content,
+      messageMetadata: metadata,
+      imageBlocks: [blocks[1]],
+      fileBlocks: [blocks[0]],
+    };
     const before = JSON.stringify(group);
-    expect(queuedCapturePresentation(group)).toEqual({ text: prose, captureSummary: ['recording'] });
+    expect(queuedCapturePresentation(group)).toEqual({
+      text: prose,
+      captureSummary: ['recording'],
+    });
     expect(JSON.stringify(group)).toBe(before);
   });
   it('keeps untrusted and unmatched-resource JSON byte-identical', () => {
     expect(queuedCapturePresentation({ content: prefix }).text).toBe(prefix);
-    expect(queuedCapturePresentation({ content: prefix, messageMetadata: metadata }).text).toBe(prefix);
-    expect(queuedCapturePresentation({ content: `user prose\n\n${prefix}`, messageMetadata: metadata, imageBlocks: blocks }).text).toBe(`user prose\n\n${prefix}`);
+    expect(queuedCapturePresentation({ content: prefix, messageMetadata: metadata }).text).toBe(
+      prefix,
+    );
+    expect(
+      queuedCapturePresentation({
+        content: `user prose\n\n${prefix}`,
+        messageMetadata: metadata,
+        imageBlocks: blocks,
+      }).text,
+    ).toBe(`user prose\n\n${prefix}`);
   });
   it('uses each delivery group own metadata and resources', () => {
-    const trusted = { content: prefix, messageMetadata: metadata, imageBlocks: [blocks[1]], fileBlocks: [blocks[0]] };
+    const trusted = {
+      content: prefix,
+      messageMetadata: metadata,
+      imageBlocks: [blocks[1]],
+      fileBlocks: [blocks[0]],
+    };
     expect(queuedCapturePresentation(trusted).captureSummary).toEqual(['recording']);
-    expect(queuedCapturePresentation({ content: prefix, imageBlocks: trusted.imageBlocks, fileBlocks: trusted.fileBlocks }).captureSummary).toEqual([]);
+    expect(
+      queuedCapturePresentation({
+        content: prefix,
+        imageBlocks: trusted.imageBlocks,
+        fileBlocks: trusted.fileBlocks,
+      }).captureSummary,
+    ).toEqual([]);
+  });
+});
+
+describe('recording-only queued producer envelope', () => {
+  it('uses the real images-empty producer through queue projection, without legacy clips', () => {
+    const evidence = emptyDockEvidence('generated');
+    const context = { workspaceId: 'w', agentId: 'a', appUrl: 'intent://local/workspace/w' };
+    const meta = { ...buildDockEvidenceMetadata(evidence, context), edited_captures: [row] };
+    const content = `${buildDockEvidenceContext(evidence, context)}\n\n${prefix}\n\nSynthetic user prose`;
+    const message = {
+      id: 'q',
+      content,
+      queuedAt: '',
+      position: 0,
+      messageMetadata: meta,
+      imageBlocks: [blocks[1]],
+      fileBlocks: [blocks[0]],
+    } as never;
+    const projected = queuePresentationMessages(
+      projectPendingSubmissions(undefined, [message]).queue,
+    )[0];
+    expect(queuedCapturePresentation(projected)).toEqual({
+      text: 'Synthetic user prose',
+      captureSummary: ['recording'],
+    });
+  });
+  it('retains exact confirmed provenance when the optional projection metadata field is absent', () => {
+    const confirmed = {
+      id: 'q',
+      queuedAt: '',
+      position: 0,
+      content: prefix,
+      messageMetadata: metadata,
+    };
+    const row = {
+      key: 'q',
+      confirmed,
+      content: prefix,
+      imageBlocks: [blocks[1]],
+      fileBlocks: [blocks[0]],
+      contextItems: [],
+      contributions: [],
+      blocksMutations: false,
+    } as never;
+    expect(queuedCapturePresentation(queuePresentationMessages([row])[0]).captureSummary).toEqual([
+      'recording',
+    ]);
+    const changed = { ...(row as object), content: `other user JSON\n${prefix}` } as never;
+    expect(queuePresentationMessages([changed])[0].messageMetadata).toBeUndefined();
+  });
+  it('uses resource-array kind for otherwise valid references without a redundant type field', () => {
+    const group = {
+      content: prefix,
+      messageMetadata: metadata,
+      imageBlocks: [{ attachmentId: 'frame-1', mimeType: 'image/png' }],
+      fileBlocks: [{ attachmentId: 'video-1', mimeType: 'video/mp4' }],
+    };
+    expect(queuedCapturePresentation(group)).toEqual({ text: '', captureSummary: ['recording'] });
+    expect(queuedCapturePresentation({ ...group, messageMetadata: undefined }).text).toBe(prefix);
+    expect(
+      queuedCapturePresentation({
+        ...group,
+        fileBlocks: [{ type: 'image', attachmentId: 'video-1', mimeType: 'video/mp4' }],
+      }).text,
+    ).toBe(prefix);
   });
 });

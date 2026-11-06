@@ -319,12 +319,35 @@ export function hasDockEvidence(evidence: DockComposerEvidence | undefined): boo
 /**
  * Content identity of what a send carries. Session, capture-status and editor
  * insertion changes do not alter it, so they never block clearing an admitted draft.
+ * Recognition is derived output, not a new user edit: a background transcript
+ * arrival must not retain already-admitted attachments. Saved edits, source
+ * identities and paths still participate and preserve concurrent user changes.
  */
 export function dockEvidenceFingerprint(evidence: DockComposerEvidence | undefined): string {
   return JSON.stringify([
-    evidence?.images.map((image) => [image.id, image.media?.source, image.media?.saved?.revision, image.media?.transcript?.revision, image.mediaError]) ?? [],
-    evidence?.marks.map((mark) => mark.id) ?? [],
-    evidence?.clips.map((clip) => [clip.id, clip.status, clip.media?.source, clip.media?.saved?.revision, clip.media?.transcript?.revision, clip.mediaError]) ?? [],
+    evidence?.images.map((image) => [
+      image.id,
+      image.media?.source,
+      image.media?.saved?.revision,
+      image.mediaError,
+    ]) ?? [],
+    evidence?.marks.map((mark) => [
+      mark.id,
+      mark.imageId,
+      mark.tool,
+      mark.geometry,
+      mark.element,
+      mark.clipId,
+      mark.clipMs,
+      mark.gestureProgress,
+    ]) ?? [],
+    evidence?.clips.map((clip) => [
+      clip.id,
+      clip.status,
+      clip.media?.source,
+      clip.media?.saved?.revision,
+      clip.mediaError,
+    ]) ?? [],
   ]);
 }
 

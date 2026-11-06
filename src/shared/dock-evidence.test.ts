@@ -587,3 +587,49 @@ describe('dock screen evidence', () => {
     expect(still.marks).toEqual([]);
   });
 });
+
+it('Send ownership ignores derived transcript arrivals but detects saved user edits and source replacement', () => {
+  const evidence = emptyDockEvidence('synthetic');
+  const media = {
+    source: { id: 'source', revision: 0, path: '.intent/attachments/synthetic.mp4' },
+    saved: { revision: 1 },
+    transcript: { revision: 1, status: 'pending' },
+  };
+  evidence.clips = [
+    {
+      id: 'clip',
+      status: 'ready',
+      startedAt: 1,
+      durationMs: 1000,
+      hasMicAudio: true,
+      media,
+    } as never,
+  ];
+  const before = dockEvidenceFingerprint(evidence);
+  const recognition = structuredClone(evidence);
+  recognition.clips[0].media!.transcript = { status: 'ready', revision: 2, words: [] };
+  expect(dockEvidenceFingerprint(recognition)).toBe(before);
+  recognition.clips[0].media!.saved!.revision = 2;
+  expect(dockEvidenceFingerprint(recognition)).not.toBe(before);
+  const replaced = structuredClone(evidence);
+  replaced.clips[0].media!.source.path = '.intent/attachments/replaced.mp4';
+  expect(dockEvidenceFingerprint(replaced)).not.toBe(before);
+});
+
+it('Send ownership detects changed geometry on an existing mark identity', () => {
+  const evidence = emptyDockEvidence('generated');
+  evidence.marks = [
+    {
+      id: 'mark',
+      imageId: 'image',
+      tool: 'box',
+      geometry: { kind: 'rect', x: 1, y: 2, w: 3, h: 4 },
+      bounds: { x: 1, y: 2, w: 3, h: 4 },
+      element: null,
+      createdAt: 1,
+    },
+  ];
+  const before = dockEvidenceFingerprint(evidence);
+  evidence.marks[0].geometry = { kind: 'rect', x: 10, y: 2, w: 3, h: 4 };
+  expect(dockEvidenceFingerprint(evidence)).not.toBe(before);
+});
