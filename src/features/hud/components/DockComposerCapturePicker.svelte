@@ -40,7 +40,14 @@
   const tooltip = $derived(
     media.alerts?.capture ??
       media.captureTooltip ??
-      (media.captureDisabled ? labels.captureLimit : modeLabel),
+      (media.captureDisabled
+        ? labels.captureLimit
+        : (labels.actionHints?.capture.label ?? modeLabel)),
+  );
+  const tooltipShortcut = $derived(
+    !media.alerts?.capture && !media.captureTooltip && !media.captureDisabled
+      ? labels.actionHints?.capture.shortcut
+      : undefined,
   );
 
   let open = $state(false);
@@ -132,6 +139,7 @@
   data-alert={media.alerts?.capture ? '' : undefined}
   data-capture-mode={mode}
   {tooltip}
+  {tooltipShortcut}
   tooltipContentClass="dock-chrome-tooltip"
   tooltipDisabled={open}
   onpointerenter={enter}
@@ -195,6 +203,8 @@
     {mode}
     labels={menuLabels}
     label={labels.captureOptions}
+    heading={labels.actionHints?.capture.label}
+    shortcut={labels.actionHints?.capture.shortcut}
     focusChecked={keyboardOpen}
     onSelect={choose}
     onpointerenter={() => clearTimeout(closeTimer)}

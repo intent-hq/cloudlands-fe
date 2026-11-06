@@ -12,6 +12,8 @@
   import { tick } from 'svelte';
   import '$lib/styles/dock-tokens.css';
   import * as Menu from '$lib/components/ui/menu';
+  import { ShortcutChip } from '$lib/components/ui/kbd';
+  import { formatShortcut } from '$lib/utils/shortcuts';
   import { DOCK_CAPTURE_MODES } from '$shared/dock-evidence';
   import DockComposerIcon from './DockComposerIcon.svelte';
 
@@ -25,6 +27,8 @@
     mode,
     labels,
     label,
+    heading,
+    shortcut,
     focusChecked = false,
     onSelect,
     onInteractOutside,
@@ -36,6 +40,8 @@
     mode: DockCaptureMode;
     labels: Record<DockCaptureMode, string>;
     label?: string;
+    heading?: string;
+    shortcut?: string;
     /** Keyboard opening: focus the current mode. Pointer opening never takes focus. */
     focusChecked?: boolean;
     onSelect: (mode: DockCaptureMode) => void;
@@ -81,11 +87,15 @@
     onCloseAutoFocus={(event) => event.preventDefault()}
   >
     <Menu.Group>
-      {#if label}
+      {#if heading || label}
         <Menu.Label
           class="min-h-0 font-normal text-left text-foreground [&>[data-slot=menu-item-leading]]:hidden"
-          >{label}</Menu.Label
         >
+          <span class="capture-menu-heading">
+            <span>{heading ?? label}</span>
+            {#if shortcut}<ShortcutChip>{formatShortcut(shortcut)}</ShortcutChip>{/if}
+          </span>
+        </Menu.Label>
       {/if}
       <Menu.RadioGroup value={mode}>
         {#each DOCK_CAPTURE_MODES as option (option)}
@@ -103,3 +113,13 @@
     </Menu.Group>
   </Menu.Content>
 </Menu.Root>
+
+<style>
+  .capture-menu-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+  }
+</style>

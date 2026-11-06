@@ -8204,6 +8204,7 @@
   "dock_composer_captureFullscreen_label": "Pantalla completa",
   "dock_composer_captureWindow_label": "Ventana",
   "dock_composer_captureRegion_label": "Región",
+  "dock_composer_screenshotAction_label": "Hacer una captura de pantalla",
   "dock_composer_captureModes_ariaLabel": "Opciones de captura",
   "dock_composer_record_tooltip": "Grabar la pantalla · {shortcut}",
   "dock_composer_stopRecording_tooltip": "Detener grabación",

@@ -8204,6 +8204,7 @@
   "dock_composer_captureFullscreen_label": "전체 화면",
   "dock_composer_captureWindow_label": "창",
   "dock_composer_captureRegion_label": "영역",
+  "dock_composer_screenshotAction_label": "스크린샷 찍기",
   "dock_composer_captureModes_ariaLabel": "스크린샷 옵션",
   "dock_composer_record_tooltip": "화면 녹화 · {shortcut}",
   "dock_composer_stopRecording_tooltip": "녹화 중지",

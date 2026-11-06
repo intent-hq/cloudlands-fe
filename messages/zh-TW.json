@@ -8204,6 +8204,7 @@
   "dock_composer_captureFullscreen_label": "全螢幕",
   "dock_composer_captureWindow_label": "視窗",
   "dock_composer_captureRegion_label": "區域",
+  "dock_composer_screenshotAction_label": "擷取螢幕截圖",
   "dock_composer_captureModes_ariaLabel": "截圖選項",
   "dock_composer_record_tooltip": "錄製螢幕 · {shortcut}",
   "dock_composer_stopRecording_tooltip": "停止錄製",

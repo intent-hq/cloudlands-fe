@@ -8204,6 +8204,7 @@
   "dock_composer_captureFullscreen_label": "全画面",
   "dock_composer_captureWindow_label": "ウインドウ",
   "dock_composer_captureRegion_label": "範囲",
+  "dock_composer_screenshotAction_label": "スクリーンショットを撮る",
   "dock_composer_captureModes_ariaLabel": "スクリーンショットのオプション",
   "dock_composer_record_tooltip": "画面を録画 · {shortcut}",
   "dock_composer_stopRecording_tooltip": "録画を停止",

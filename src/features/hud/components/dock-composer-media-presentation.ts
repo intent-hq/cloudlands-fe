@@ -7,6 +7,8 @@ export type DockComposerCaptureMode = DockCaptureMode;
 
 export interface DockComposerMediaLabels {
   capture: string;
+  /** Action copy and configured bindings stay separate for muted shortcut hints. */
+  actionHints?: Record<'capture' | 'record' | 'dictate', { label: string; shortcut: string }>;
   /** Capture button tooltip per mode (full screen uses `capture`). */
   captureMode?: Record<Exclude<DockComposerCaptureMode, 'fullscreen'>, string>;
   /** Menu row labels. */

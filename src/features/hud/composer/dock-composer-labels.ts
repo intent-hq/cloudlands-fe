@@ -14,9 +14,25 @@ export type DockComposerLabels = DockComposerMediaLabels & {
 export function createDockComposerLabels(
   overrides: ShortcutOverrides | (() => ShortcutOverrides) = {},
 ): DockComposerLabels {
+  const binding = (id: 'dock.capture' | 'dock.record' | 'dock.annotate' | 'dock.dictate') =>
+    resolveShortcut(id, typeof overrides === 'function' ? overrides() : overrides);
   const key = (id: 'dock.capture' | 'dock.record' | 'dock.annotate' | 'dock.dictate') =>
-    formatShortcut(resolveShortcut(id, typeof overrides === 'function' ? overrides() : overrides));
+    formatShortcut(binding(id));
   return {
+    actionHints: {
+      get capture() {
+        return {
+          label: m.dock_composer_screenshotAction_label(),
+          shortcut: binding('dock.capture'),
+        };
+      },
+      get record() {
+        return { label: m.ui_shortcuts_dockRecord_label(), shortcut: binding('dock.record') };
+      },
+      get dictate() {
+        return { label: m.dock_shortcut_dictate_label(), shortcut: binding('dock.dictate') };
+      },
+    },
     get capture() {
       return m.dock_composer_capture_tooltip({ shortcut: key('dock.capture') });
     },
