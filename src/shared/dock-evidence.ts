@@ -1388,6 +1388,7 @@ export type DockEvidenceNativeEvent =
   | { type: 'clip-ended'; clipId: string; result: DockNativeResult<DockClipFile> };
 
 export interface DockEvidenceNativeService {
+  probeMediaAudio?(request: import('./dock-media-output').DockMediaAudioProbeRequest): Promise<DockNativeResult<import('./dock-media-output').DockMediaAudioProbe>>;
   analyzeMedia?(request: import('./dock-media-output').DockMediaAnalyzeRequest): Promise<DockNativeResult<import('./dock-media-output').DockMediaWaveform>>;
   exportMedia?(request: import('./dock-media-output').DockMediaExportRequest): Promise<DockNativeResult<import('./dock-media-output').DockMediaNativeOutput>>;
   transcribeMedia?(request: import('./dock-media-output').DockMediaTranscribeRequest): Promise<DockNativeResult<import('./dock-media-edit').DockMediaTranscript>>;

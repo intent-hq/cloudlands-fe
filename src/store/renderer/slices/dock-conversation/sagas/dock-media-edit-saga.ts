@@ -299,6 +299,45 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
     item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === item!.id);
   }
   if (!row || !item || !current()) return;
+  // Repair historical mic flags from the exact original container, never from
+  // an exported Voice Off file or from the annotated writer's append receipt.
+  const service = dockMediaNativeService(), beforeProbe = row.media;
+  if (beforeProbe?.source.kind === 'recording' && service?.probeMediaAudio) {
+    const jobId = crypto.randomUUID();
+    let probed: Awaited<ReturnType<NonNullable<typeof service.probeMediaAudio>>> | undefined;
+    try { probed = yield* call(() => service.probeMediaAudio!({ jobId, media: beforeProbe })); }
+    catch { /* Missing/old helper leaves metadata unchanged; never guess audio. */ }
+    finally { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
+    if (!current() || service !== dockMediaNativeService()) return;
+    const liveItem = publishedMediaItem(workspaceId, agentId, logicalId, beforeProbe, row.contextItemId);
+    if (!liveItem || liveItem.id !== item.id) return;
+    if (probed?.ok && probed.value.sourceId === beforeProbe.source.id &&
+        probed.value.sourceRevision === beforeProbe.source.revision) {
+      const audio = probed.value.populatedTrackCount > 0 ? 'available' as const : 'none' as const;
+      if (audio !== beforeProbe.source.audio) {
+        const correctedSource = { ...beforeProbe.source, audio, revision: beforeProbe.source.revision + 1 };
+        const corrected: DockSavedMedia = {
+          ...beforeProbe,
+          source: correctedSource,
+          ...(beforeProbe.originalSource?.id === beforeProbe.source.id &&
+              beforeProbe.originalSource.revision === beforeProbe.source.revision &&
+              beforeProbe.originalSource.path === beforeProbe.source.path
+            ? { originalSource: correctedSource } : {}),
+          // Metadata correction does not change the user's saved Video/Voice choice.
+          saved: beforeProbe.saved ? { ...beforeProbe.saved, sourceRevision: correctedSource.revision } : null,
+          transcript: beforeProbe.transcript?.status === 'ready' ? beforeProbe.transcript : {
+            status: audio === 'available' ? 'pending' : 'unavailable',
+            revision: (beforeProbe.transcript?.revision ?? 0) + 1, words: [],
+            ...(audio === 'none' ? { error: 'no-audio-track' } : {}),
+          },
+        };
+        if (!replaceMediaState(workspaceId, agentId, logicalId, beforeProbe, corrected)) return;
+      }
+    }
+    row = evidenceOf(workspaceId, agentId)?.clips.find((entry) => entry.id === logicalId);
+    item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === liveItem.id);
+    if (!row || !item || !current()) return;
+  }
   // Legacy recordings stay read-only; no guessed dimensions, batches or clean pixels.
   const media = row.media, source = media?.source;
   if (!source || !media) return;

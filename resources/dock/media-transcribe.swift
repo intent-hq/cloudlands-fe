@@ -95,6 +95,19 @@ func main() async throws {
   let data = FileHandle.standardInput.readDataToEndOfFile()
   guard data.count < 64 * 1024 else { throw fail("invalid-job") }
   let job = try JSONDecoder().decode(Job.self, from: data)
+  if job.mode == "audio-probe" {
+    let asset = AVURLAsset(url: URL(fileURLWithPath: job.source))
+    let tracks = try await asset.loadTracks(withMediaType: .audio)
+    guard tracks.count <= 128 else { throw fail("audio-format") }
+    var populated = 0
+    for track in tracks {
+      let segments = try await track.load(.segments)
+      if segments.contains(where: { !$0.isEmpty && $0.timeMapping.target.duration.seconds.isFinite && $0.timeMapping.target.duration.seconds > 0 }) { populated += 1 }
+    }
+    emit(["event": "complete", "audioProbe": ["sourceId": job.sourceId ?? "", "sourceRevision": job.sourceRevision ?? 0,
+      "trackCount": tracks.count, "populatedTrackCount": populated]])
+    return
+  }
   // Never create a file before confirming existing consent and an on-device model.
   guard job.mode == "waveform" || SFSpeechRecognizer.authorizationStatus() == .authorized else { throw fail("speech-not-authorized") }
   processingStage = "decode"
@@ -129,6 +142,10 @@ func main() async throws {
   gap(to: text.length)
   emit(["event": "complete", "transcript": ["status": text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "no-speech" : "ready",
     "revision": 1, "words": units]])
+}
+if CommandLine.arguments.contains("--capability") {
+  emit(["event": "capability", "features": ["audio-probe"]])
+  exit(0)
 }
 Task {
   do { try await main(); exit(0) }
