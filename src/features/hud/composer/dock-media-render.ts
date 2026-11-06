@@ -15,23 +15,26 @@ import { arrayBufferToBase64 } from '$features/voice/utils/wav-encoder';
 export const DOCK_MEDIA_PAINT = {
   accent: '#DDEC61',
   ink: '#080808',
-  stroke: 2,
-  pen: 2.5,
-  badgeRadius: 9,
+  stroke: 3,
+  pen: 3.5,
+  badgeRadius: 11,
+  arrowHead: 16,
+  halo: 'rgba(8, 8, 8, 0.55)',
   textLineHeight: 1.4,
   fontFamily: 'system-ui, sans-serif',
   blurRadius: DOCK_MEDIA_BLUR_RADIUS,
 } as const;
 export type DockMediaPaintOp =
-  | { kind: 'geometry'; geometry: DockMediaGeometry }
-  | { kind: 'badge'; x: number; y: number; radius: number; label: string };
+  | { kind: 'geometry'; geometry: DockMediaGeometry; unit?: number }
+  | { kind: 'badge'; x: number; y: number; radius: number; label: string; unit?: number };
 export function layoutDockMediaMarks(
   edit: DockMediaEdit,
   source: DockMediaSource,
   atMs = 0,
 ): DockMediaPaintOp[] {
   const crop = edit.crop ?? { x: 0, y: 0, w: source.width, h: source.height };
-  const r = Math.min(DOCK_MEDIA_PAINT.badgeRadius, crop.w / 2, crop.h / 2);
+  const unit = Math.max(1, Math.max(source.width, source.height) / 1440);
+  const r = Math.min(DOCK_MEDIA_PAINT.badgeRadius * unit, crop.w / 2, crop.h / 2);
   return numberDockMediaMarks(edit, source)
     .filter(
       (row) =>
@@ -40,13 +43,14 @@ export function layoutDockMediaMarks(
     .flatMap(({ n, mark }): DockMediaPaintOp[] => {
       const box = dockMediaGeometryRect(mark.geometry);
       return [
-        { kind: 'geometry', geometry: mark.geometry },
+        { kind: 'geometry', geometry: mark.geometry, unit },
         {
           kind: 'badge',
           x: Math.min(crop.x + crop.w - r, Math.max(crop.x + r, box.x + box.w)),
           y: Math.min(crop.y + crop.h - r, Math.max(crop.y + r, box.y)),
           radius: r,
           label: String(n),
+          unit,
         },
       ];
     });
@@ -59,10 +63,16 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
   context.lineCap = 'round';
   context.lineJoin = 'round';
   for (const op of ops) {
+    const unit = op.unit ?? 1;
+    const visibleStroke = (width: number) => {
+      context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = width + 2 * unit; context.stroke();
+      context.strokeStyle = DOCK_MEDIA_PAINT.accent; context.lineWidth = width; context.stroke();
+    };
     if (op.kind === 'badge') {
       context.fillStyle = DOCK_MEDIA_PAINT.accent;
       context.beginPath();
       context.arc(op.x, op.y, op.radius, 0, Math.PI * 2);
+      context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = 2 * unit; context.stroke();
       context.fill();
       context.fillStyle = DOCK_MEDIA_PAINT.ink;
       context.font = `600 ${op.radius * 1.2}px ${DOCK_MEDIA_PAINT.fontFamily}`;
@@ -73,8 +83,10 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
     }
     const g = op.geometry;
     context.fillStyle = DOCK_MEDIA_PAINT.accent;
-    context.lineWidth = g.kind === 'path' ? DOCK_MEDIA_PAINT.pen : DOCK_MEDIA_PAINT.stroke;
-    if (g.kind === 'rect') context.strokeRect(g.x, g.y, g.w, g.h);
+    const width = (g.kind === 'path' ? DOCK_MEDIA_PAINT.pen : DOCK_MEDIA_PAINT.stroke) * unit;
+    if (g.kind === 'rect') {
+      context.beginPath(); context.rect(g.x, g.y, g.w, g.h); visibleStroke(width);
+    }
     else if (g.kind === 'text') {
       const text = layoutDockMediaText(g);
       if (g.style === 'sticky') {
@@ -90,7 +102,9 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
         context.quadraticCurveTo(g.x, g.y + text.height, g.x, g.y + text.height - radius);
         context.lineTo(g.x, g.y + radius);
         context.quadraticCurveTo(g.x, g.y, g.x + radius, g.y);
-        context.closePath(); context.fill();
+        context.closePath();
+        context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = 2 * unit; context.stroke();
+        context.fill();
       }
       context.fillStyle = g.style === 'sticky' ? DOCK_MEDIA_PAINT.ink : DOCK_MEDIA_PAINT.accent;
       context.textAlign = 'left'; context.textBaseline = 'top';
@@ -98,12 +112,15 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
       text.lines.forEach((line, index) => {
         const x = g.x + text.padding, y = g.y + text.padding + index * text.lineHeight;
         if (g.style === 'sticky') context.fillText(line, x, y, text.width - 2 * text.padding);
-        else context.fillText(line, x, y);
+        else {
+          context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = 2 * unit;
+          context.strokeText(line, x, y); context.fillText(line, x, y);
+        }
       });
     } else if (g.kind === 'point') {
       context.beginPath();
       context.arc(g.x, g.y, DOCK_MEDIA_POINT_RADIUS, 0, Math.PI * 2);
-      context.stroke();
+      visibleStroke(width);
     } else {
       const points = g.kind === 'path' ? g.points : [g.from, g.to];
       context.beginPath();
@@ -112,7 +129,7 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
       );
       if (g.kind === 'arrow') {
         const angle = Math.atan2(g.to.y - g.from.y, g.to.x - g.from.x),
-          head = 14;
+          head = DOCK_MEDIA_PAINT.arrowHead * unit;
         context.moveTo(
           g.to.x - head * Math.cos(angle - Math.PI / 6),
           g.to.y - head * Math.sin(angle - Math.PI / 6),
@@ -123,7 +140,7 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
           g.to.y - head * Math.sin(angle + Math.PI / 6),
         );
       }
-      context.stroke();
+      visibleStroke(width);
     }
   }
   context.restore();
