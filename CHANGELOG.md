@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.290.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.290.1...v2.290.2) (2026-11-06)
+
+
+### 🐛 Bug Fixes
+
+* **workspace:** let attachments start on a remote machine ([#4224](https://github.com/intent-hq/cloudlands-fe/issues/4224)) ([f484f79](https://github.com/intent-hq/cloudlands-fe/commit/f484f799b8b242e8f38ae41f36eb63ca708fb1b1))
+
 ## [2.290.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.290.0...v2.290.1) (2026-11-06)
 
 
