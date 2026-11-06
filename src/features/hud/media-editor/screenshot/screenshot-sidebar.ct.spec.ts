@@ -1,7 +1,7 @@
 import { expect, test } from '../../../../test/ct-test';
 import ScreenshotSidebarHarness from './__fixtures__/ScreenshotSidebarHarness.svelte';
 
-test('sidebar empty state keeps crop, retake and bottom actions reachable', async ({
+test('sidebar empty state keeps crop and bottom actions reachable', async ({
   mount,
   page,
 }, info) => {
@@ -14,7 +14,7 @@ test('sidebar empty state keeps crop, retake and bottom actions reachable', asyn
   ).toBeVisible();
   await expect(fixture.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
   await expect(fixture.getByRole('button', { name: 'Crop', exact: true })).toHaveCount(1);
-  await expect(fixture.getByRole('button', { name: 'Retake', exact: true })).toHaveCount(1);
+  await expect(fixture.getByRole('button', { name: 'Retake', exact: true })).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('sidebar-empty.png') });
 });
 

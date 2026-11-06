@@ -440,7 +440,7 @@
     onRetake={onRetake ? retake : undefined}
     onNoteDictation={onNoteDictation ? dictateNote : undefined}
   >
-    {#snippet children(contentMain, contentSidebar, contentHeader)}
+    {#snippet children(contentMain, contentSidebar)}
       <DockCaptureEditorShell
         title={m.dock_screenshotEditor_title()}
         subtitle={snapshot.title}
@@ -465,9 +465,6 @@
               {m.dock_screenshotEditor_previewOnly()}
             </p>{/if}
           {@render contentMain()}
-        {/snippet}
-        {#snippet headerActions()}
-          {@render contentHeader()}
         {/snippet}
       </DockCaptureEditorShell>
     {/snippet}

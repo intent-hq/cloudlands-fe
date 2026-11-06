@@ -41,7 +41,6 @@
     selectedMarkId = $bindable(null),
     disabled = false,
     retaking = false,
-    onRetake,
     onInteractionPending,
     admittedOutputVersion = 1,
     children,
@@ -582,9 +581,6 @@
         <Button variant="ghost" size="compact" onclick={() => previewRetry++}
           >{m.dock_screenshotEditor_retry()}</Button
         >{/if}
-      {#if tool === 'crop'}<p class="type-caption notice">
-          {m.dock_screenshotEditor_cropHint()}
-        </p>{/if}
       <ScreenshotCanvas
         sourceUrl={source.visuals === 'clean' ? (previewUrl ?? '') : sourceUrl}
         raster={source.visuals === 'clean'}
@@ -625,10 +621,16 @@
         {tool}
         canBlur={canCreateV2}
         disabled={blocked || !!cropCandidate}
-        canDelete={!!selectedIds.length && !cropCandidate}
         onSelect={setTool}
-        onDelete={() => remove()}
-      />
+      >
+        <ScreenshotHeaderActions
+          cropping={tool === 'crop'}
+          disabled={blocked}
+          onCrop={crop}
+          onApplyCrop={applyCrop}
+          canApplyCrop={!previewPending && !previewFailed}
+        />
+      </ScreenshotTools>
     </div>
   </div>
 {/snippet}
@@ -642,22 +644,11 @@
     onDelete={() => remove()}
   />
 {/snippet}
-{#snippet headerActions()}
-  <ScreenshotHeaderActions
-    cropping={tool === 'crop'}
-    {retaking}
-    disabled={blocked}
-    onCrop={crop}
-    onApplyCrop={applyCrop}
-    canApplyCrop={!previewPending && !previewFailed}
-    onRetake={cropCandidate || editingTextId ? undefined : onRetake}
-  />
-{/snippet}
+{#snippet headerActions()}{/snippet}
 {#if children}
   {@render children(main, sidebar, headerActions)}
 {:else}
   <div class="standalone" data-screenshot-editor>
-    <div class="header">{@render headerActions()}</div>
     <div class="body">
       {@render main()}
       <div class="sidebar">{@render sidebar()}</div>
@@ -709,12 +700,6 @@
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-medium);
     overflow: hidden;
-  }
-  .header {
-    display: flex;
-    justify-content: end;
-    padding: 12px;
-    border-bottom: 1px solid hsl(var(--border));
   }
   .body {
     display: grid;

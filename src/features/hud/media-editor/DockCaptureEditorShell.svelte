@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
-  import { DestructiveConfirm } from '$lib/components/patterns/confirm';
+  import { FormDialog } from '$lib/components/patterns/confirm';
   import { isMacPlatform } from '$lib/utils/shortcuts';
   import { isTextEntryTarget } from '$lib/utils/text-entry';
 
@@ -128,13 +128,13 @@
 {#snippet actions()}
   <div class="actions">
     {#if !footerActions}{@render headerActions?.()}{/if}
-    <Button variant="ghost" size="sm" onclick={requestClose}
+    <Button variant="ghost" size="default" onclick={requestClose}
       >{m.dock_captureEditor_cancel_label()}</Button
     >
     {#if onSave}
       <Button
         variant={dirty ? 'primary' : 'secondary'}
-        size="sm"
+        size="default"
         disabled={!dirty || saving || saveBlocked}
         data-save
         onclick={() => onSave?.()}>{m.dock_captureEditor_save_label()}</Button
@@ -186,13 +186,21 @@
   </div>
 </div>
 
-<DestructiveConfirm
+<FormDialog
+  size="sm"
+  class="max-w-90 [&_[data-slot=dialog-header]]:px-5 [&_[data-slot=dialog-header]]:pt-5 [&_[data-slot=dialog-title]]:text-base [&_[data-slot=dialog-footer]]:p-5"
+  showCloseButton={false}
+  dismissOnInteractOutside={false}
+  focusCancel
+  enterKey="ignore"
+  modEnter="ignore"
+  submitVariant="destructive"
   bind:open={confirming}
   title={m.dock_captureEditor_discard_title()}
   description={m.dock_captureEditor_discard_description()}
-  confirmLabel={m.dock_captureEditor_discard_label()}
+  submitLabel={m.dock_captureEditor_discard_label()}
   cancelLabel={m.dock_captureEditor_keepEditing_label()}
-  onConfirm={() => {
+  onSubmit={() => {
     confirming = false;
     if (fromMain) onDiscardRequested?.();
     else onCancel();

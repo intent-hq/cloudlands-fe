@@ -2,7 +2,7 @@ import { expect, test } from '../../../../test/ct-test';
 import ScreenshotEditorHarness from './__fixtures__/ScreenshotEditorHarness.svelte';
 import type { DockMediaEdit } from '$shared/dock-media-edit';
 
-test('screenshot draft tools, notes, crop and retake share the shell transaction', async ({
+test('screenshot draft tools, notes and crop share the shell transaction', async ({
   mount,
   page,
 }, info) => {
@@ -88,13 +88,7 @@ test('screenshot draft tools, notes, crop and retake share the shell transaction
   await canvas.focus();
   await page.keyboard.press('ControlOrMeta+z');
   await expect.poll(async () => (await draft()).marks.length).toBe(4);
-  await fixture.getByRole('button', { name: 'Retake', exact: true }).click();
-  await expect(fixture).toHaveAttribute('data-source', /"width":600/);
-  await expect.poll(async () => (await draft()).marks.length).toBe(2);
-  await canvas.focus();
-  await page.keyboard.press('ControlOrMeta+z');
-  await expect(fixture).toHaveAttribute('data-source', /"width":800/);
-  await expect.poll(async () => (await draft()).marks.length).toBe(4);
+  await expect(fixture.getByRole('button', { name: 'Retake', exact: true })).toHaveCount(0);
   await page.keyboard.press('ControlOrMeta+s');
   await expect(fixture).not.toHaveAttribute('data-saved', '');
   const saved = JSON.parse((await fixture.getAttribute('data-saved')) ?? '{}') as DockMediaEdit;
@@ -104,7 +98,7 @@ test('screenshot draft tools, notes, crop and retake share the shell transaction
   await expect(fixture.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
   await info.attach('screenshot-editor-saved-draft', {
     body: JSON.stringify(
-      { syntheticSource: true, syntheticRetake: true, syntheticDictation: true, saved },
+      { syntheticSource: true, syntheticDictation: true, saved },
       null,
       2,
     ),
