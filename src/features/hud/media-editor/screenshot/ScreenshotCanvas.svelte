@@ -17,6 +17,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
   import { Textarea } from '$lib/components/ui/textarea';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { m } from '$shared/paraglide/messages.js';
   import { dockGeometryRect } from '$shared/dock-annotation';
   import type { DockImagePoint } from '$shared/dock-evidence';
@@ -485,7 +486,7 @@
     } else onTransform(shape.id, moveScreenshotGeometry(shape.geometry, delta, frame));
   }
   function doubleClick(event: MouseEvent) {
-    if (disabled || cropCandidate) return;
+    if (disabled || cropCandidate || isTextEntryTarget(event.target)) return;
     const targetId =
       event.target instanceof Element
         ? event.target.closest('[data-shape-id]')?.getAttribute('data-shape-id')
