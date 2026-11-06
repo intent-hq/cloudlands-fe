@@ -8443,5 +8443,9 @@
   "dock_screenshotEditor_previewOnly": "Les modifications de cette pièce jointe ne peuvent pas encore être enregistrées.",
   "dock_screenshotEditor_retakeUnavailable": "La reprise de capture n’est pas disponible.",
   "dock_screenshotEditor_dictationUnavailable": "La dictée de notes n’est pas disponible.",
-  "dock_screenshotEditor_resetUnavailable": "La réinitialisation sera disponible lorsque l’état original de la capture sera disponible."
+  "dock_screenshotEditor_resetUnavailable": "La réinitialisation sera disponible lorsque l’état original de la capture sera disponible.",
+  "settings_dockLab_moveHint": "Faites glisser le Dock par son logo ou son en-tête pour le déplacer sur votre écran.",
+  "dock_logo_open_label": "Ouvrir Intent",
+  "dock_logo_menu_hint": "Ouvrir Intent · Clic droit ou ↓ pour changer de machine · Glisser pour déplacer",
+  "dock_logo_move_hint": "Ouvrir Intent · Glisser pour déplacer"
 }

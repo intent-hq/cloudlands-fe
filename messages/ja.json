@@ -8443,5 +8443,9 @@
   "dock_screenshotEditor_previewOnly": "この添付ファイルの変更はまだ保存できません。",
   "dock_screenshotEditor_retakeUnavailable": "再撮影は利用できません。",
   "dock_screenshotEditor_dictationUnavailable": "メモの音声入力は利用できません。",
-  "dock_screenshotEditor_resetUnavailable": "元のキャプチャ状態が利用可能になるまでリセットできません。"
+  "dock_screenshotEditor_resetUnavailable": "元のキャプチャ状態が利用可能になるまでリセットできません。",
+  "settings_dockLab_moveHint": "Dock のロゴまたはヘッダーをドラッグして、画面上の別の位置に移動できます。",
+  "dock_logo_open_label": "Intent を開く",
+  "dock_logo_menu_hint": "Intent を開く · 右クリックまたは ↓ でマシンを切り替え · ドラッグで移動",
+  "dock_logo_move_hint": "Intent を開く · ドラッグで移動"
 }

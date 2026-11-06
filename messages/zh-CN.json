@@ -8443,5 +8443,9 @@
   "dock_screenshotEditor_previewOnly": "暂时无法保存此附件的更改。",
   "dock_screenshotEditor_retakeUnavailable": "暂时无法重新截图。",
   "dock_screenshotEditor_dictationUnavailable": "暂时无法口述备注。",
-  "dock_screenshotEditor_resetUnavailable": "原始截图状态可用后才能重置。"
+  "dock_screenshotEditor_resetUnavailable": "原始截图状态可用后才能重置。",
+  "settings_dockLab_moveHint": "拖动 Dock 的标志或标题栏，可将其移至屏幕上的其他位置。",
+  "dock_logo_open_label": "打开 Intent",
+  "dock_logo_menu_hint": "打开 Intent · 右键点击或按 ↓ 切换设备 · 拖动以移动",
+  "dock_logo_move_hint": "打开 Intent · 拖动以移动"
 }
