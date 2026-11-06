@@ -203,13 +203,10 @@
   onDestroy(() => {
     if (frame !== undefined) cancelAnimationFrame(frame);
   });
-  // A new attachment in the same window starts over.
-  $effect(() => {
-    snapshot.openId;
-    currentMs = 0;
-    activeMarkId = null;
-    failed = false;
-  });
+  // A new attachment in the same window starts over because the route keys this view by
+  // its open identity. Nothing here resets on a snapshot update (a transcript or waveform
+  // arriving replaces the whole snapshot object): that used to put the playhead back to
+  // 0 while the video stayed on its frame, so a mark drawn next landed at 0 and vanished.
 
   // Marks drawn while recording are part of the frames: including or excluding one is
   // honest only on a clean source.
