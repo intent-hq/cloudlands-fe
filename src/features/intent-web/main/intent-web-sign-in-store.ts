@@ -10,6 +10,14 @@
  * still holds its token. A lock left by a crashed process is taken over once
  * it is older than `staleLockMs` (every critical section is a few file
  * operations), by renaming it aside so only one waiter wins.
+ *
+ * A lock's age is measured on the filesystem's clock, not this process's: its
+ * mtime is compared with the mtime of a probe file this waiter writes beside
+ * it. Subtracting a file timestamp from `Date.now()` mixes two clocks, so a
+ * process clock running ahead of the filesystem's would take over a live
+ * holder's lock (two holders, so a single-use code could be consumed twice),
+ * and one running behind would wait out a crashed holder's lock until it timed
+ * out.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -57,10 +65,32 @@ export function createFileSignInStore(
     }
   };
 
+  /**
+   * The filesystem clock's reading minus `Date.now()`, measured once per
+   * contended acquire with a probe file in the data directory.
+   */
+  const filesystemClockOffset = async (): Promise<number> => {
+    const probe = `${lockFile}.${crypto.randomUUID()}.probe`;
+    try {
+      const handle = await fs.promises.open(probe, 'wx', 0o600);
+      try {
+        const before = Date.now();
+        await handle.writeFile('probe');
+        const { mtimeMs } = await handle.stat();
+        return mtimeMs - (before + Date.now()) / 2;
+      } finally {
+        await handle.close();
+      }
+    } finally {
+      await fs.promises.rm(probe, { force: true });
+    }
+  };
+
   /** Take the lock; resolves with this holder's token. */
   const acquire = async (): Promise<string> => {
     const token = crypto.randomUUID();
     const deadline = Date.now() + lockTimeoutMs;
+    let clockOffset: number | undefined;
     for (;;) {
       try {
         await fs.promises.writeFile(lockFile, token, { mode: 0o600, flag: 'wx' });
@@ -68,7 +98,8 @@ export function createFileSignInStore(
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
-      await takeOverIfStale();
+      clockOffset ??= await filesystemClockOffset().catch(() => 0);
+      await takeOverIfStale(clockOffset);
       if (Date.now() > deadline) throw new Error(`Timed out waiting for ${lockFile}`);
       await sleep(10 + Math.random() * 20);
     }
@@ -80,7 +111,7 @@ export function createFileSignInStore(
    * stale one this waiter inspected; a fresh lock taken meanwhile by another
    * process is put back.
    */
-  const takeOverIfStale = async (): Promise<void> => {
+  const takeOverIfStale = async (clockOffset: number): Promise<void> => {
     // One handle, so the age and the token describe the same file even if
     // another waiter replaces the lock in between.
     let seen: string;
@@ -88,7 +119,7 @@ export function createFileSignInStore(
       const handle = await fs.promises.open(lockFile, 'r');
       try {
         const { mtimeMs } = await handle.stat();
-        if (Date.now() - mtimeMs <= staleLockMs) return;
+        if (Date.now() + clockOffset - mtimeMs <= staleLockMs) return;
         seen = await handle.readFile('utf8');
       } finally {
         await handle.close();
