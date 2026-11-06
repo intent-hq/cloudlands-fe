@@ -14,6 +14,7 @@
     poster?: string;
     allowFileMedia?: boolean;
     canOpenFile?: () => boolean;
+    fluid?: boolean;
   }
 
   let {
@@ -22,6 +23,7 @@
     poster,
     allowFileMedia = true,
     canOpenFile,
+    fluid = false,
   }: Props = $props();
   let lightboxOpen = $state(false);
   let frameReady = $state(false);
@@ -77,8 +79,8 @@
     </div>
   {:else}
     <div
-      class="group relative aspect-video w-full max-h-40 max-w-2xl"
-      style="width: min(100%, calc(10rem * 16 / 9));"
+      class="group relative aspect-video w-full max-w-2xl {fluid ? 'max-h-72' : 'max-h-40'}"
+      style:width={fluid ? 'min(100%, calc(18rem * 16 / 9))' : 'min(100%, calc(10rem * 16 / 9))'}
     >
       <Button
         bind:ref={triggerRef}
