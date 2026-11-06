@@ -86,7 +86,15 @@ export interface DockCaptureEditorOpenRequest {
    * Whether sending honors a saved edit of this source. Save is offered only when
    * it does; until then edits are a preview and are never stored.
    */
-  output?: { ready: boolean; reason?: DockMediaOutputError };
+  output?: {
+    ready: boolean;
+    reason?: DockMediaOutputError;
+    /**
+     * The output pipeline's version (main-set from the output owner): 2 honors blur
+     * strokes and sticky notes. Missing means 1, which must not save edits using them.
+     */
+    version?: number;
+  };
   /** Real decoded audio peaks of the source, when the dock has analyzed it (main-set). */
   waveform?: DockMediaWaveform;
   /** The person's last saved Video/Voice choice: the default for a new edit (main-set). */
