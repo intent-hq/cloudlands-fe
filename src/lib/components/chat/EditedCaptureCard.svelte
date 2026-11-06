@@ -50,6 +50,22 @@
     );
     return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   });
+  function toolLabel(kind: EditedCapture['marks'][number]['kind'] | undefined): string {
+    switch (kind) {
+      case 'box':
+        return m.dock_composer_box_label();
+      case 'draw':
+        return m.dock_recordingToolbar_draw_label();
+      case 'arrow':
+        return m.dock_recordingToolbar_arrow_label();
+      case 'text':
+        return m.dock_screenshotEditor_text();
+      case 'element':
+        return m.dock_recordingToolbar_element_label();
+      default:
+        return m.dock_screenshotEditor_click();
+    }
+  }
   const count = $derived(
     capture.marks.length === 1
       ? m.dock_captureEditor_markCount_one()
@@ -89,6 +105,9 @@
         fluid
         source={{ kind: 'workspace', url: videoUrl, mimeType: videoMimeType }}
         name={title}
+        poster={capture.frames?.[0]
+          ? (images[capture.frames[0].attachment_id] ?? undefined)
+          : undefined}
         allowFileMedia={!readOnly}
         canOpenFile={() => !readOnly}
       />
@@ -143,7 +162,7 @@
           {@const src = images[frame.attachment_id]}
           {@const label = m.dock_screenshotEditor_mark({
             n: mark?.n ?? 0,
-            kind: mark?.label || m.dock_captureEditor_addedMark_label(),
+            kind: mark?.label.trim() ? mark.label : toolLabel(mark?.kind),
           })}
           <Button
             variant="plain"

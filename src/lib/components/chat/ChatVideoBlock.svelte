@@ -84,6 +84,7 @@
     >
       <Button
         bind:ref={triggerRef}
+        wrapContent={false}
         type="button"
         variant="ghost"
         size="default"
@@ -98,10 +99,10 @@
           class="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground"
           aria-hidden="true"
         >
-          <svg viewBox="0 0 24 24" class="size-10" fill="none">
-            <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" />
-            <path d="m10 9 5 3-5 3V9Z" fill="currentColor" />
-          </svg>
+          {#if !fluid}<svg viewBox="0 0 24 24" class="size-10" fill="none">
+              <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" />
+              <path d="m10 9 5 3-5 3V9Z" fill="currentColor" />
+            </svg>{/if}
         </div>
         <video
           src={videoUrl}
@@ -123,7 +124,7 @@
           aria-hidden="true"
         >
           <span
-            class="flex size-11 items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
+            class="flex size-11 shrink-0 aspect-square items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
           >
             <svg viewBox="0 0 20 20" class="ml-0.5 size-5" fill="currentColor">
               <path d="m7 5 7 5-7 5V5Z" />
