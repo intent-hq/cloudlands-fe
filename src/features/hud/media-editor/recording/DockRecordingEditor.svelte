@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { untrack } from 'svelte';
+  import { createRecordingPlayback } from './recording-playback';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import type {
@@ -34,7 +35,9 @@
     STEP_MS,
     clampTime,
     formatRecordingTime,
-    nextKeptTime,
+    recordingOutputDuration,
+    recordingSourceToOutput,
+    recordingOutputToSource,
     recordingKeyAction,
   } from './recording-editor-model';
 
@@ -182,27 +185,33 @@
     onDirtyChange?.(edits?.dirty ?? false);
   });
 
-  // The playhead follows the video smoothly while it plays.
-  let frame: number | undefined;
-  function follow(): void {
-    if (video) {
-      currentMs = video.currentTime * 1000;
-      // Play only what is kept: skip past what was trimmed or cut away.
-      if (kept && !video.paused) {
-        const next = nextKeptTime(currentMs, kept);
-        if (next === null) {
-          video.pause();
-          seek(kept.at(-1)?.endMs ?? currentMs);
-        } else if (next !== currentMs) seek(next);
-      }
-    }
-    frame = paused ? undefined : requestAnimationFrame(follow);
-  }
+  const playbackRanges = $derived(kept ?? [{ startMs: 0, endMs: durationMs }]);
+  const outputDurationMs = $derived(recordingOutputDuration(playbackRanges));
+  const outputMs = $derived(recordingSourceToOutput(currentMs, playbackRanges));
+  let playback: ReturnType<typeof createRecordingPlayback> | null = null;
   $effect(() => {
-    if (!paused && frame === undefined) frame = requestAnimationFrame(follow);
+    const node = video;
+    if (!node) return;
+    const player = untrack(() =>
+      createRecordingPlayback(
+        node,
+        () => playbackRanges,
+        (at, stopped) => {
+          currentMs = at;
+          paused = stopped;
+        },
+      ),
+    );
+    playback = player;
+    return () => {
+      player.destroy();
+      if (playback === player) playback = null;
+    };
   });
-  onDestroy(() => {
-    if (frame !== undefined) cancelAnimationFrame(frame);
+  $effect(() => {
+    void playbackRanges;
+    void video;
+    untrack(() => playback?.refresh());
   });
   // A new attachment in the same window starts over because the route keys this view by
   // its open identity. Nothing here resets on a snapshot update (a transcript or waveform
@@ -235,7 +244,7 @@
   const frameKept = $derived(frameMs !== null);
   /** Choosing a tool or starting a gesture pauses; the gesture keeps the paused frame. */
   function pauseForFrame(): number {
-    if (video && !video.paused) video.pause();
+    playback?.pause();
     if (video) currentMs = video.currentTime * 1000;
     return keptFrame(currentMs) ?? Math.floor(currentMs);
   }
@@ -350,29 +359,20 @@
   }
 
   function seek(ms: number): void {
-    const next = clampTime(ms, durationMs);
-    currentMs = next;
-    if (video) video.currentTime = next / 1000;
+    playback?.seek(clampTime(ms, durationMs));
   }
   function jumpTo(mark: DockCaptureEditorMark): void {
     if (mark.atMs === null) return;
     activeMarkId = mark.id;
-    video?.pause();
+    playback?.pause();
     seek(mark.atMs);
   }
   function toggle(): void {
-    if (!video) return;
-    if (!video.paused) {
-      video.pause();
-      return;
-    }
-    // From the end (or outside what is kept), play from the start of what is kept.
-    if (kept?.length && nextKeptTime(currentMs, kept) === null) seek(kept[0].startMs);
-    void video.play().catch(() => undefined);
+    playback?.toggle();
   }
   function step(ms: number): void {
-    video?.pause();
-    seek(currentMs + ms);
+    playback?.pause();
+    seek(recordingOutputToSource(clampTime(outputMs + ms, outputDurationMs), playbackRanges));
   }
   function onKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
@@ -417,15 +417,6 @@
             playsinline
             preload="auto"
             aria-label={m.dock_captureEditor_video_ariaLabel()}
-            onplay={() => (paused = false)}
-            onpause={() => {
-              paused = true;
-              if (video) currentMs = video.currentTime * 1000;
-            }}
-            onended={() => (paused = true)}
-            onseeked={() => {
-              if (video) currentMs = video.currentTime * 1000;
-            }}
             onloadedmetadata={() => {
               if (video && Number.isFinite(video.duration)) mediaDurationMs = video.duration * 1000;
             }}
@@ -497,7 +488,7 @@
           <DockComposerIcon glyph={paused ? 'play' : 'pause'} size={14} />
         </Button>
         <span class="time" data-time
-          >{formatRecordingTime(currentMs)} / {formatRecordingTime(durationMs)}</span
+          >{formatRecordingTime(outputMs)} / {formatRecordingTime(outputDurationMs)}</span
         >
       </CaptureEditorToolbar>
       {#if saveProblem}
@@ -574,7 +565,7 @@
       />
       {#if filler?.ranges.length}
         <div class="transcript-tools">
-          <Button variant="ghost" size="xs" onclick={previewFiller} data-cut-filler
+          <Button variant="ghost" size="compact" onclick={previewFiller} data-cut-filler
             >{m.dock_captureEditor_cutFiller_label()}</Button
           >
         </div>

@@ -3,7 +3,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import type { DockCaptureEditorMark } from '$shared/dock-capture-editor';
-  import type { DockMediaRange } from '$shared/dock-media-edit';
+  import { subtractDockMediaRanges, type DockMediaRange } from '$shared/dock-media-edit';
   import DockComposerIcon, {
     type DockComposerGlyph,
   } from '../../components/DockComposerIcon.svelte';
@@ -12,6 +12,9 @@
     formatRecordingTime,
     timeAtPointer,
     timelinePercent,
+    recordingOutputDuration,
+    recordingSourceToOutput,
+    recordingOutputToSource,
   } from './recording-editor-model';
 
   /**
@@ -22,9 +25,10 @@
    * With `trim`, handles at both ends trim the whole recording (drag, or arrow keys
    * on a focused handle); what falls outside is dimmed. `kept` shades what plays.
    *
-   * With `onCut`, a click-drag across the track selects a range (a plain click still
-   * moves the playhead); Delete or Backspace cuts it, Esc clears it. Cut stretches are
-   * hatched; clicking one restores it.
+   * Cuts collapse on the display clock. Selection, pins, waveform and keyboard seeks
+   * map back to the same source clock used by the edit/export. A small join restores
+   * a cut; Undo remains an ordinary editor transaction. Trimmed margins remain
+   * available to the edge handles, so extending a trim does not require Undo.
    */
   let {
     durationMs,
@@ -65,6 +69,19 @@
   } = $props();
 
   let track = $state<HTMLDivElement | null>(null);
+  // Remove cuts, not source pixels. Keep trim margins available to its handles.
+  const axisRanges = $derived(subtractDockMediaRanges([{ startMs: 0, endMs: durationMs }], cuts));
+  const axisDurationMs = $derived(recordingOutputDuration(axisRanges));
+  const axisCurrentMs = $derived(recordingSourceToOutput(currentMs, axisRanges));
+  const percent = (sourceMs: number) =>
+    timelinePercent(recordingSourceToOutput(sourceMs, axisRanges), axisDurationMs);
+  const sourceAt = (outputMs: number, edge: 'after' | 'before' = 'after') =>
+    recordingOutputToSource(outputMs, axisRanges, edge);
+  $effect(() => {
+    void cuts;
+    void trim;
+    selection = null;
+  });
 
   // Zoom (Cmd/Ctrl + wheel, or pinch, which arrives as a Ctrl wheel): the track grows
   // up to 8x inside a scroller, keeping the time under the pointer in place.
@@ -93,7 +110,7 @@
   });
   // While zoomed, keep the playhead in view as it moves (playback, seeking).
   $effect(() => {
-    const at = timelinePercent(currentMs, durationMs) / 100;
+    const at = timelinePercent(axisCurrentMs, axisDurationMs) / 100;
     if (zoom === 1 || !scroller || !track) return;
     const x = at * track.offsetWidth;
     const { scrollLeft, clientWidth } = scroller;
@@ -132,26 +149,30 @@
   // The waveform as one SVG path: a vertical bar per peak, centred.
   const wave = $derived.by(() => {
     if (!waveform || !waveform.peaks.length || durationMs <= 0) return null;
+    if (axisDurationMs <= 0) return null;
     const bars = waveform.peaks
-      .map((peak, index) => {
-        const h = Math.max(0.5, peak * 45);
-        return `M${index + 0.5} ${50 - h}V${50 + h}`;
+      .flatMap((peak, index) => {
+        const at = index * waveform.intervalMs;
+        if (!axisRanges.some((range) => at >= range.startMs && at < range.endMs)) return [];
+        const h = Math.max(0.5, peak * 45),
+          x = (recordingSourceToOutput(at, axisRanges) / axisDurationMs) * 1000;
+        return [`M${x} ${50 - h}V${50 + h}`];
       })
       .join('');
-    return {
-      path: bars,
-      count: waveform.peaks.length,
-      width: Math.min(100, (waveform.durationMs / durationMs) * 100),
-    };
+    return { path: bars };
   });
   const pinned = $derived(
-    marks.filter((mark): mark is DockCaptureEditorMark & { atMs: number } => mark.atMs !== null),
+    marks.filter(
+      (mark): mark is DockCaptureEditorMark & { atMs: number } =>
+        mark.atMs !== null &&
+        axisRanges.some((range) => mark.atMs! >= range.startMs && mark.atMs! < range.endMs),
+    ),
   );
 
   function timeAt(event: PointerEvent): number {
     if (!track) return 0;
     const box = track.getBoundingClientRect();
-    return timeAtPointer(event.clientX, box.left, box.width, durationMs);
+    return timeAtPointer(event.clientX, box.left, box.width, axisDurationMs);
   }
   function trimmed(base: DockMediaRange, part: 'start' | 'end', ms: number): DockMediaRange {
     return clampTrim(
@@ -166,7 +187,12 @@
   function apply(event: PointerEvent): void {
     if (!dragging) return;
     if (dragging.part !== 'playhead') {
-      if (trim && onTrim) previewTrim = trimmed(trim, dragging.part, timeAt(event));
+      if (trim && onTrim)
+        previewTrim = trimmed(
+          trim,
+          dragging.part,
+          sourceAt(timeAt(event), dragging.part === 'end' ? 'before' : 'after'),
+        );
       return;
     }
     // Past a few pixels, a drag on the track selects a range instead of scrubbing.
@@ -182,7 +208,7 @@
         startMs: Math.min(at, dragging.originMs),
         endMs: Math.max(at, dragging.originMs),
       };
-    } else onSeek(timeAt(event));
+    } else onSeek(sourceAt(timeAt(event)));
   }
   function onPointerDown(event: PointerEvent): void {
     const target = event.target as Element;
@@ -196,6 +222,7 @@
       originMs: timeAt(event),
       selecting: false,
     };
+    (handle ? target.closest<HTMLElement>('[data-handle]') : track)?.focus({ preventScroll: true });
     track?.setPointerCapture(event.pointerId);
     apply(event);
   }
@@ -225,20 +252,24 @@
       event.preventDefault();
       const range = selection;
       selection = null;
-      if (range.endMs > range.startMs) onCut(range);
+      if (range.endMs > range.startMs)
+        onCut({ startMs: sourceAt(range.startMs), endMs: sourceAt(range.endMs, 'before') });
+      event.stopPropagation();
       return;
     }
     if (selection && event.key === 'Escape') {
       // Clears the selection only; the shell's Esc (close) does not run.
       event.preventDefault();
       selection = null;
+      event.stopPropagation();
       return;
     }
     const step = event.shiftKey ? 5000 : 1000;
-    if (event.key === 'ArrowLeft') onSeek(currentMs - step);
-    else if (event.key === 'ArrowRight') onSeek(currentMs + step);
-    else if (event.key === 'Home') onSeek(0);
-    else if (event.key === 'End') onSeek(durationMs);
+    if (event.key === 'ArrowLeft') onSeek(sourceAt(Math.max(0, axisCurrentMs - step)));
+    else if (event.key === 'ArrowRight')
+      onSeek(sourceAt(Math.min(axisDurationMs, axisCurrentMs + step)));
+    else if (event.key === 'Home') onSeek(sourceAt(0));
+    else if (event.key === 'End') onSeek(sourceAt(axisDurationMs));
     else return;
     event.preventDefault();
   }
@@ -258,9 +289,9 @@
     tabindex="0"
     aria-label={m.dock_captureEditor_timeline_label()}
     aria-valuemin={0}
-    aria-valuemax={Math.round(durationMs / 1000)}
-    aria-valuenow={Math.round(currentMs / 1000)}
-    aria-valuetext={formatRecordingTime(currentMs)}
+    aria-valuemax={Math.round(axisDurationMs / 1000)}
+    aria-valuenow={Math.round(axisCurrentMs / 1000)}
+    aria-valuetext={formatRecordingTime(axisCurrentMs)}
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={() => endDrag(true)}
@@ -271,8 +302,8 @@
     {#if wave}
       <svg
         class="wave"
-        style:width={`${wave.width}%`}
-        viewBox={`0 0 ${wave.count} 100`}
+        style:width="100%"
+        viewBox="0 0 1000 100"
         preserveAspectRatio="none"
         aria-hidden="true"
       >
@@ -284,21 +315,13 @@
     {#each kept ?? [] as range, index (index)}
       <div
         class="kept"
-        style:left={`${timelinePercent(range.startMs, durationMs)}%`}
-        style:width={`${timelinePercent(range.endMs, durationMs) - timelinePercent(range.startMs, durationMs)}%`}
+        style:left={`${percent(range.startMs)}%`}
+        style:width={`${percent(range.endMs) - percent(range.startMs)}%`}
       ></div>
     {/each}
     {#if shownTrim}
-      <div
-        class="outside"
-        style:left="0"
-        style:width={`${timelinePercent(shownTrim.startMs, durationMs)}%`}
-      ></div>
-      <div
-        class="outside"
-        style:left={`${timelinePercent(shownTrim.endMs, durationMs)}%`}
-        style:right="0"
-      ></div>
+      <div class="outside" style:left="0" style:width={`${percent(shownTrim.startMs)}%`}></div>
+      <div class="outside" style:left={`${percent(shownTrim.endMs)}%`} style:right="0"></div>
       {#each ['start', 'end'] as const as part (part)}
         {@const at = part === 'start' ? shownTrim.startMs : shownTrim.endMs}
         <div
@@ -314,7 +337,7 @@
           aria-valuemax={Math.round(durationMs / 1000)}
           aria-valuenow={Math.round(at / 1000)}
           aria-valuetext={formatRecordingTime(at)}
-          style:left={`${timelinePercent(at, durationMs)}%`}
+          style:left={`${percent(at)}%`}
           onkeydown={(event) => onHandleKeydown(event, part)}
         ></div>
       {/each}
@@ -325,7 +348,7 @@
         class="cut"
         data-cut
         disabled={!onRestore}
-        style={`left: ${timelinePercent(cut.startMs, durationMs)}%; width: ${timelinePercent(cut.endMs, durationMs) - timelinePercent(cut.startMs, durationMs)}%`}
+        style={`left: ${percent(cut.startMs)}%`}
         aria-label={m.dock_captureEditor_restoreCut_label({
           start: formatRecordingTime(cut.startMs),
           end: formatRecordingTime(cut.endMs),
@@ -338,8 +361,8 @@
       <div
         class="selection"
         data-selection
-        style:left={`${timelinePercent(selection.startMs, durationMs)}%`}
-        style:width={`${timelinePercent(selection.endMs, durationMs) - timelinePercent(selection.startMs, durationMs)}%`}
+        style:left={`${timelinePercent(selection.startMs, axisDurationMs)}%`}
+        style:width={`${timelinePercent(selection.endMs, axisDurationMs) - timelinePercent(selection.startMs, axisDurationMs)}%`}
       ></div>
     {/if}
     {#each pinned as mark (mark.id)}
@@ -349,7 +372,7 @@
         class="pin"
         data-pin={mark.id}
         data-active={mark.id === activeMarkId || undefined}
-        style={`left: ${timelinePercent(mark.atMs, durationMs)}%`}
+        style={`left: ${percent(mark.atMs)}%`}
         aria-label={m.dock_captureEditor_pin_ariaLabel({
           mark: mark.label || toolLabels[mark.tool](),
           time: formatRecordingTime(mark.atMs),
@@ -364,7 +387,7 @@
         <DockComposerIcon glyph={glyphs[mark.tool]} size={11} />
       </Button>
     {/each}
-    <div class="playhead" style:left={`${timelinePercent(currentMs, durationMs)}%`}></div>
+    <div class="playhead" style:left={`${timelinePercent(axisCurrentMs, axisDurationMs)}%`}></div>
   </div>
 </div>
 
@@ -385,8 +408,11 @@
     touch-action: none;
   }
   .track:focus-visible {
-    outline: 2px solid hsl(var(--ring));
-    outline-offset: 2px;
+    outline: none;
+  }
+  .track:focus-visible .playhead {
+    background: hsl(var(--primary));
+    box-shadow: 0 0 0 2px hsl(var(--background));
   }
   .wave {
     position: absolute;
@@ -455,7 +481,9 @@
     top: 4px;
     bottom: 4px;
     height: auto;
-    min-width: 2px;
+    width: 6px;
+    min-width: 6px;
+    transform: translateX(-50%);
     padding: 0;
     border-radius: 4px;
     background: repeating-linear-gradient(

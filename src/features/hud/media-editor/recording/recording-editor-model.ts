@@ -96,3 +96,35 @@ export function nextKeptTime(
   }
   return null;
 }
+
+/** Kept source intervals share one contiguous, non-destructive output clock. */
+export type RecordingRange = { startMs: number; endMs: number };
+export function recordingOutputDuration(ranges: readonly RecordingRange[]): number {
+  return ranges.reduce((total, range) => total + Math.max(0, range.endMs - range.startMs), 0);
+}
+/** Removed source time maps to its join; surviving source moments do not move. */
+export function recordingSourceToOutput(ms: number, ranges: readonly RecordingRange[]): number {
+  let elapsed = 0;
+  for (const range of ranges) {
+    if (ms < range.startMs) return elapsed;
+    if (ms < range.endMs) return elapsed + ms - range.startMs;
+    elapsed += range.endMs - range.startMs;
+  }
+  return elapsed;
+}
+/** At a join, seeking/start handles use the following frame; end handles use the preceding edge. */
+export function recordingOutputToSource(
+  ms: number,
+  ranges: readonly RecordingRange[],
+  edge: 'after' | 'before' = 'after',
+): number {
+  let remaining = Math.max(0, ms);
+  for (let index = 0; index < ranges.length; index++) {
+    const range = ranges[index],
+      length = range.endMs - range.startMs;
+    if (remaining < length || (remaining === length && edge === 'before'))
+      return range.startMs + remaining;
+    remaining -= length;
+  }
+  return ranges.at(-1)?.endMs ?? 0;
+}
