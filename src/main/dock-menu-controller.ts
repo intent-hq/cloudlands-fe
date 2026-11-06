@@ -19,11 +19,13 @@ export function createDockMenuController(deps: DockMenuControllerDependencies) {
   const trackWindow = (window: DockMenuWindow): void => {
     if (trackedWindows.has(window)) return;
     trackedWindows.add(window);
+    // Only an explicit hide (setEnabled(false)) is remembered. Any other close (the
+    // dock's own Hide, a renderer crash, a backend switch) leaves the preference on, so
+    // with the Notch setting enabled the dock comes back at the next launch instead of
+    // staying missing until the setting is toggled off and on.
     window.on('closed', () => {
-      const preferenceWrite = controllerClosures.delete(window)
-        ? Promise.resolve()
-        : deps.writeEnabledPreference(false);
-      void preferenceWrite.finally(deps.onStateChange);
+      controllerClosures.delete(window);
+      deps.onStateChange();
     });
   };
 
