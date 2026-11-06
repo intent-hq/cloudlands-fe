@@ -122,9 +122,6 @@
       </Button>
     {/each}
   </div>
-  {#if !items.length}
-    <p class="empty">{m.dock_screenshotEditor_empty()}</p>
-  {/if}
 </div>
 
 <style>
@@ -142,13 +139,6 @@
     padding: 0 8px 4px;
     color: hsl(var(--muted-foreground));
     font-size: 12px;
-  }
-  .empty {
-    margin: 0;
-    padding: 8px;
-    font-size: 12px;
-    line-height: 1.5;
-    color: hsl(var(--muted-foreground));
   }
   .rail {
     display: flex;
