@@ -107,8 +107,9 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
           y = g.y + text.padding + index * text.lineHeight;
         context.strokeStyle = DOCK_MEDIA_PAINT.halo;
         context.lineWidth = 2 * unit;
-        context.strokeText(line, x, y);
-        context.fillText(line, x, y);
+        const maxWidth = g.style === 'sticky' ? text.width - 2 * text.padding : undefined;
+        context.strokeText(line, x, y, maxWidth);
+        context.fillText(line, x, y, maxWidth);
       });
     } else if (g.kind === 'point') {
       context.beginPath();
