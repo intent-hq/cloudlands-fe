@@ -1,3 +1,5 @@
+import { recordedMarkProgress } from '$shared/dock-media-animation';
+import { gestureGeometryAt } from '$shared/dock-gesture-progress';
 /** One raster display list for capture-editor preview, screenshot output and video overlays. */
 import {
   numberDockMediaMarks,
@@ -41,9 +43,11 @@ export function layoutDockMediaMarks(
         source.kind === 'screenshot' || (atMs >= row.mark.atMs && atMs < row.visibleUntilMs),
     )
     .flatMap(({ n, mark }): DockMediaPaintOp[] => {
-      const box = dockMediaGeometryRect(mark.geometry);
+      const geometry = source.kind === 'recording' ? gestureGeometryAt(mark.geometry, recordedMarkProgress(source, mark), atMs) : mark.geometry;
+      if (!geometry) return [];
+      const box = dockMediaGeometryRect(geometry);
       return [
-        { kind: 'geometry', geometry: mark.geometry, unit },
+        { kind: 'geometry', geometry, unit },
         {
           kind: 'badge',
           x: Math.min(crop.x + crop.w - r, Math.max(crop.x + r, box.x + box.w)),

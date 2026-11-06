@@ -1,5 +1,6 @@
 /** Saved, source-relative edits. Originals and recognition timings are never rewritten. */
 import { z } from 'zod';
+import { DockGestureProgressSchema, type DockGestureProgress } from './dock-gesture-progress';
 
 const finite = z.number().finite();
 const ms = finite.nonnegative();
@@ -95,6 +96,7 @@ export function transformDockMediaText(g: Extract<DockMediaGeometry, { kind: 'te
 }
 export const DockMediaEditMarkSchema = z
   .object({
+    gestureProgress: DockGestureProgressSchema.optional(),
     id,
     atMs: ms,
     batchId: id,
@@ -161,6 +163,13 @@ export const DockMediaSourceSchema = z
   })
   .strict()
   .superRefine((source, ctx) => {
+    for (const mark of source.capturedMarks ?? []) {
+      const progress = mark.gestureProgress;
+      if (progress && (source.kind !== 'recording' || progress.completedAtMs > source.durationMs ||
+          progress.samples.some((sample) => sample.atMs < mark.atMs ||
+            (mark.geometry.kind === 'path' && sample.pointCount > mark.geometry.points.length))))
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['capturedMarks'], message: 'Gesture timing does not match the recording' });
+    }
     if (source.kind === 'recording' && source.durationMs <= 0)
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -492,6 +501,11 @@ export function dockMediaBatchAt(source: DockMediaSource, atMs: number): DockMed
       ) ?? null
   );
 }
+/** Edited geometry has no recorded timing of its own; only an unchanged captured gesture animates. */
+export function recordedMarkProgress(source: DockMediaSource, mark: DockMediaEditMark): DockGestureProgress | undefined {
+  const original = source.capturedMarks?.find((entry) => entry.id === mark.id);
+  return original && JSON.stringify(original.geometry) === JSON.stringify(mark.geometry) ? original.gestureProgress : undefined;
+}
 /** Creation order is canonical; excluded/cropped/cut marks receive no output number. */
 export function numberDockMediaMarks(
   edit: DockMediaEdit,
@@ -587,7 +601,7 @@ export function planDockMediaOutput(
             mergeDockMediaRanges(
               included.map((mark) => ({
                 startMs: Math.max(edit.trim.startMs, mark.atMs - 3000),
-                endMs: Math.min(edit.trim.endMs, mark.atMs + 3000),
+                endMs: Math.min(edit.trim.endMs, source.durationMs, (recordedMarkProgress(source, mark)?.completedAtMs ?? mark.atMs) + 3000),
               })),
             ),
             edit.cuts,

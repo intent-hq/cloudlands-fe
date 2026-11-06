@@ -272,7 +272,9 @@ export interface DockAnnotationReadyRequest {
 export interface DockAnnotationPointerRequest {
   sessionId: string;
   sequence: number;
-  phase: 'down' | 'cancel';
+  phase: 'down' | 'move' | 'cancel';
+  /** Number of actual accumulated path points; used only for recorded progress. */
+  pointCount?: number;
   /** Overlay DIP of the pointerdown origin (ignored for cancel). */
   x: number;
   y: number;
@@ -596,4 +598,13 @@ export function dockWindowIdFromMediaSourceId(mediaSourceId: string): number | n
   if (!match) return null;
   const id = Number(match[1]);
   return Number.isSafeInteger(id) && id > 0 && id <= 0xffffffff ? id : null;
+}
+
+/** Reserve the release slot without bridging any later, unobserved capped tail. */
+export function extendDockPenPoints(state: { points: readonly DockImagePoint[]; capped: boolean }, next: readonly DockImagePoint[], limit = DOCK_ANNOTATION_LIMITS.gesturePoints): { points: DockImagePoint[]; capped: boolean } {
+  if (state.capped || state.points.length + next.length > limit - 1) return { points: [...state.points], capped: true };
+  return { points: [...state.points, ...next], capped: false };
+}
+export function finishDockPenPoints(state: { points: readonly DockImagePoint[]; capped: boolean }, end: DockImagePoint): DockImagePoint[] {
+  return state.capped ? [...state.points] : [...state.points, end];
 }
