@@ -66,6 +66,7 @@
   let selectedIds = $state<string[]>([]);
   let selectionAnchor = $state<string | null>(null);
   let editingTextId = $state<string | null>(null);
+  const sourceIdentity = $derived(`${source.id}:${source.revision}`);
   let gesturePending = $state(false);
   let gesturePreview = $state<{ id: string; geometry: DockMarkGeometry } | null>(null);
   const brushRadius = DOCK_MEDIA_BLUR_RADIUS;
@@ -280,7 +281,7 @@
   });
   $effect(() => {
     // Retargeting the editor cancels local interaction, without touching either draft.
-    const identity = `${source.id}:${source.revision}`;
+    const identity = sourceIdentity;
     untrack(() => {
       cropCandidate = null;
       tool = 'pointer';
@@ -621,7 +622,7 @@
         {frame}
         {shapes}
         {tool}
-        documentKey={`${source.id}:${source.revision}`}
+        documentKey={sourceIdentity}
         selectedId={selectedMarkId}
         {selectedIds}
         {brushRadius}
