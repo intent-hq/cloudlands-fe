@@ -294,8 +294,8 @@ function createEditorWindow(backendId: string): BrowserWindow {
   const display = dock ? screen.getDisplayMatching(dock.getBounds()) : screen.getPrimaryDisplay();
   const area = display.workArea;
   // Always a bounded window with a visible margin, never the whole screen.
-  const width = Math.min(DEFAULT_SIZE.width, area.width - 2 * WINDOW_MARGIN);
-  const height = Math.min(DEFAULT_SIZE.height, area.height - 2 * WINDOW_MARGIN);
+  const width = Math.max(1, Math.min(DEFAULT_SIZE.width, area.width - 2 * WINDOW_MARGIN));
+  const height = Math.max(1, Math.min(DEFAULT_SIZE.height, area.height - 2 * WINDOW_MARGIN));
   const { tabbingIdentifier: _tabs, ...titleBar } = getWindowTitleBarOptions();
   const window = new BrowserWindow({
     ...getWindowAppearanceOptions(nativeTheme.shouldUseDarkColors, process.platform, false),
@@ -304,8 +304,9 @@ function createEditorWindow(backendId: string): BrowserWindow {
     y: Math.round(area.y + (area.height - height) / 2),
     width,
     height,
-    minWidth: Math.min(MIN_SIZE.width, area.width),
-    minHeight: Math.min(MIN_SIZE.height, area.height),
+    // Never larger than the window itself, or the minimum would undo the margin.
+    minWidth: Math.min(MIN_SIZE.width, width),
+    minHeight: Math.min(MIN_SIZE.height, height),
     show: false,
     skipTaskbar: false,
     fullscreenable: false,

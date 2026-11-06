@@ -84,7 +84,10 @@
     const item = items.find((candidate) => candidate.id === id);
     if (disabled || !item || !imageReady(item)) return;
     open = false;
-    onMarkUp(id);
+    // In the capture editor preview, editing an existing screenshot is the bounded
+    // editor, never the full-screen live annotate overlay.
+    if (onEdit) onEdit(id);
+    else onMarkUp(id);
   }
   function deleteKey(event: KeyboardEvent, id: string): void {
     if (event.key !== 'Delete' || disabled) return;
@@ -236,7 +239,7 @@
                 {disabled}
                 aria-label={onEdit ? labels.edit : labels.markUp}
                 tooltip={onEdit ? labels.edit : labels.markUp}
-                onclick={() => (onEdit ? onEdit(item.id) : markup(item.id))}
+                onclick={() => markup(item.id)}
               >
                 <DockComposerIcon glyph="pencil" />
               </Button>
