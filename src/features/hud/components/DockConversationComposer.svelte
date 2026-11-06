@@ -468,16 +468,6 @@
     onHistoryPrev={() => (disposed ? null : (onHistoryPrev?.() ?? null))}
     onHistoryNext={() => (disposed ? null : (onHistoryNext?.() ?? null))}
   />
-  {#if preparingSubmission || pending}
-    <div
-      class={`${COMPOSER_INSET_CLASS} type-caption text-muted-foreground py-1`}
-      role="status"
-      aria-live="polite"
-      data-testid="dock-send-progress"
-    >
-      {m.dock_conversation_pending_label()}
-    </div>
-  {/if}
 </div>
 
 {#snippet mediaActions()}
