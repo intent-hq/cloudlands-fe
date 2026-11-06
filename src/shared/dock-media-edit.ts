@@ -50,6 +50,7 @@ export const DockMediaGeometrySchema = z.discriminatedUnion('kind', [
       fontSize: finite.positive(),
       style: z.literal('sticky').optional(),
       width: finite.positive().max(4096).optional(),
+      padding: finite.nonnegative().max(1024).optional(),
     })
     .strict(),
 ]);
@@ -58,7 +59,7 @@ export type DockMediaGeometry = z.infer<typeof DockMediaGeometrySchema>;
 export function layoutDockMediaText(g: Extract<DockMediaGeometry, { kind: 'text' }>): {
   lines: string[]; width: number; height: number; padding: number; lineHeight: number;
 } {
-  const lineHeight = g.fontSize * 1.4, padding = g.style === 'sticky' ? 8 : 0;
+  const lineHeight = g.fontSize * 1.4, padding = g.style === 'sticky' ? (g.padding ?? 8) : 0;
   if (g.style !== 'sticky') {
     const lines = g.text.split('\n');
     return { lines, width: Math.max(1, ...lines.map((line) => line.length)) * g.fontSize * 0.65,
@@ -78,6 +79,19 @@ export function layoutDockMediaText(g: Extract<DockMediaGeometry, { kind: 'text'
     lines.push(remaining);
   }
   return { lines, width, height: lines.length * lineHeight + padding * 2, padding, lineHeight };
+}
+/** Retake/resize preserves the label's source-pixel presentation parameters. */
+export function transformDockMediaText(g: Extract<DockMediaGeometry, { kind: 'text' }>,
+  mapping: { scaleX: number; scaleY: number; offsetX: number; offsetY: number }): Extract<DockMediaGeometry, { kind: 'text' }> {
+  const layout = layoutDockMediaText(g);
+  const parsed = DockMediaGeometrySchema.parse({ ...g,
+    x: g.x * mapping.scaleX + mapping.offsetX, y: g.y * mapping.scaleY + mapping.offsetY,
+    fontSize: g.fontSize * Math.abs(mapping.scaleY),
+    ...(g.style === 'sticky' ? { width: layout.width * Math.abs(mapping.scaleX),
+      padding: layout.padding * Math.min(Math.abs(mapping.scaleX), Math.abs(mapping.scaleY)) } : {}),
+  });
+  if (parsed.kind !== 'text') throw new Error('invalid-text-transform');
+  return parsed;
 }
 export const DockMediaEditMarkSchema = z
   .object({
