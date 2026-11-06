@@ -1,4 +1,4 @@
-import { dockMediaOverlaySpans, recordedMarkProgress } from '../../../shared/dock-media-animation';
+import { dockMediaOverlaySpans, dockMediaFrameAt } from '../../../shared/dock-media-animation';
 import { Logger } from '../../../shared/logger';
 import { DockMediaWaveformSchema, DockMediaAudioProbeSchema, type DockMediaAudioProbeRequest, type DockMediaAudioProbe, type DockMediaAnalyzeRequest, type DockMediaWaveform } from '../../../shared/dock-media-output';
 /** Session-bound offline jobs. No renderer-chosen host paths or backend fallback. */
@@ -214,7 +214,11 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
       layers.push({ path: target, startMs: span.atMs, endMs: span.endMs });
     }
     const output = path.join(job.directory, 'output.mp4');
-    const frames = plan.marks.map((entry, index) => ({ path: path.join(job!.directory, `frame-${index}.png`), atMs: Math.min(source.durationMs - 1, Math.max(entry.frameAtMs, recordedMarkProgress(source, entry.mark)?.completedAtMs ?? entry.frameAtMs)) }));
+    const frames = plan.marks.map((entry, index) => {
+      const atMs = dockMediaFrameAt(source, plan, entry);
+      if (atMs === null) throw new Error('media-frame-outside-kept-span');
+      return { path: path.join(job!.directory, `frame-${index}.png`), atMs };
+    });
     const completed = await run(context, job, binary, { outputVersion: DOCK_MEDIA_OUTPUT_VERSION, source: file, output, ranges: plan.clips, muted: plan.muted, layers, frames,
       expectedWidth: source.width, expectedHeight: source.height, expectedDurationMs: source.durationMs,
       crop: edit.crop, blurRegions: edit.blurRegions, blurStrokes: edit.blurStrokes ?? [], blurRadius: DOCK_MEDIA_BLUR_RADIUS }, progress);

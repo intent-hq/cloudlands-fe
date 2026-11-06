@@ -9,7 +9,7 @@ export const DockMediaExportRequestSchema = z.object({
     atMs: z.number().finite().nonnegative(),
     endMs: z.number().finite().nonnegative(),
     png: z.string().min(1).max(48 * 1024 * 1024),
-  }).strict()).max(1000),
+  }).strict()).max(10000),
 }).strict();
 export type DockMediaExportRequest = z.infer<typeof DockMediaExportRequestSchema>;
 export interface DockMediaNativeFile { sourcePath: string; mimeType: string; size: number }

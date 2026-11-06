@@ -1193,6 +1193,7 @@ export class DockAnnotationController implements AnnotationService {
     capture?: DockCapturedPixels,
   ): boolean {
     if (frozen.lease.expired || !this.current(frozen.session)) return false;
+    if (frozen.clipId && frozen.clipId !== this.host?.clipIdentity?.()) return false;
     const sameClip = frozen.clipId ? frozen.clipId === this.host?.clipIdentity?.() : !this.host?.clipIdentity;
     const width = capture?.width ?? frozen.session.image?.width;
     const height = capture?.height ?? frozen.session.image?.height;

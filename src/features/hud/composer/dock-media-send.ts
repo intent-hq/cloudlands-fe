@@ -59,7 +59,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
         }
         if (!service?.exportMedia) throw new Error('media-export-unavailable');
         const spans = dockMediaOverlaySpans(source, edit);
-        if (spans.length > 1000) throw new Error('media-animation-layer-limit');
+        if (spans.length > 10000) throw new Error('media-animation-layer-limit');
         const layers = [];
         for (const span of spans) { check(); layers.push({ ...span, png: await renderDockMediaOverlay(source, edit, span.atMs) }); }
         const exported = await service.exportMedia({ outputVersion: DOCK_MEDIA_OUTPUT_VERSION, jobId, media: { ...media, saved: edit }, layers });
