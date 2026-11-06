@@ -1013,7 +1013,7 @@ export class DockAnnotationController implements AnnotationService {
     } else {
       ax = target ? ((samePoint ? originHit : elementHit)?.element ?? null) : null;
     }
-    const frozenElement = ax ? { ...ax, rect: { ...ax.rect } } : null;
+    let frozenElement = ax ? { ...ax, rect: { ...ax.rect } } : null;
 
     // 2. Clean capture of the dock display without the dock, its popups or this overlay.
     const captured = await host
@@ -1045,12 +1045,17 @@ export class DockAnnotationController implements AnnotationService {
     const aspect = display.bounds.width / display.bounds.height;
     if (Math.abs(shot.width / shot.height - aspect) > aspect * 0.01) return reject('failed');
 
-    // 3. Late-capture fence: the target window must not have moved or changed meanwhile
-    //    (a screen-wide recording mark has no window to fence).
+    // 3. Late-capture fence: the target window must not have moved or changed meanwhile.
+    //    A recording draw is about the screen: if its window cannot be confirmed, the mark
+    //    is kept and only its now unverified element is dropped. Session and display
+    //    are always checked.
     if (target) {
       const after = await this.native.picker.hit(originGlobal, { element: false });
       if (!live() || !sameDisplay(display, host.dockDisplay())) return reject('stale');
-      if (!after.checked || !sameTarget(after.window, target)) return reject('stale');
+      if (!after.checked || !sameTarget(after.window, target)) {
+        if (!anywhere) return reject('stale');
+        frozenElement = null;
+      }
     }
 
     const hash = this.native.hash(shot.png);
