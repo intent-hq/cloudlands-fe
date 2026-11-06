@@ -962,30 +962,38 @@ export class DockAnnotationController implements AnnotationService {
     ]);
     if (!live()) return reject('stale');
     if (!originHit.checked) return this.refuse(session, 'target', 'unavailable');
-    // Dock, menus, desktop, menu bar and other system surfaces are never targets.
-    if (!originHit.window) {
+    // While a clip records, the whole screen is in it: a drawn mark (not a pick, which
+    // names an element) is about the screen, so it is kept over the desktop or across
+    // windows, where it used to be dropped without a word. Otherwise the dock, menus,
+    // desktop, menu bar and other system surfaces are never targets.
+    const anywhere = !pick && frozen.clipMs !== undefined;
+    if (!originHit.window && !anywhere) {
       logger.info('Dock annotation mark refused: no app window under it', { tool: frozen.tool });
       return reject('outside');
     }
-    const target = { ...originHit.window, bounds: { ...originHit.window.bounds } };
-    if (!pick && !pointInRects(endGlobal, [target.bounds])) {
+    const target = originHit.window
+      ? { ...originHit.window, bounds: { ...originHit.window.bounds } }
+      : null;
+    if (!pick && !anywhere && target && !pointInRects(endGlobal, [target.bounds])) {
       logger.info('Dock annotation mark refused: it leaves its window', { tool: frozen.tool });
       return reject('outside');
     }
     // Intent's own main window: its page says where the browser panel is (never
     // markable) and which element is under the gesture.
-    const own = await this.native.intentWindow(target.windowId, {
-      panelPoints: pick ? [originGlobal] : [originGlobal, endGlobal, frozen.elementPoint],
-      elementPoint: pick ? originGlobal : frozen.elementPoint,
-    });
+    const own = target
+      ? await this.native.intentWindow(target.windowId, {
+          panelPoints: pick ? [originGlobal] : [originGlobal, endGlobal, frozen.elementPoint],
+          elementPoint: pick ? originGlobal : frozen.elementPoint,
+        })
+      : null;
     if (!live()) return reject('stale');
-    if (own.kind === 'failed') return reject('failed');
+    if (own?.kind === 'failed') return reject('failed');
     // Intent's browser panel is a separate page: a drawn mark keeps its screenshot
     // without an element; a pick has nothing to name there.
-    if (own.kind === 'intent' && own.inPanel && pick)
+    if (own?.kind === 'intent' && own.inPanel && pick)
       return this.refuse(session, 'pick', 'unavailable');
     let ax: DockAxElement | null;
-    if (own.kind === 'intent') {
+    if (own?.kind === 'intent') {
       ax = own.inPanel ? null : own.element;
       if (pick && (!ax || !toDockMarkElement(ax)))
         return this.refuse(session, 'pick', 'unavailable');
@@ -1033,10 +1041,13 @@ export class DockAnnotationController implements AnnotationService {
     const aspect = display.bounds.width / display.bounds.height;
     if (Math.abs(shot.width / shot.height - aspect) > aspect * 0.01) return reject('failed');
 
-    // 3. Late-capture fence: the target window must not have moved or changed meanwhile.
-    const after = await this.native.picker.hit(originGlobal, { element: false });
-    if (!live() || !sameDisplay(display, host.dockDisplay())) return reject('stale');
-    if (!after.checked || !sameTarget(after.window, target)) return reject('stale');
+    // 3. Late-capture fence: the target window must not have moved or changed meanwhile
+    //    (a screen-wide recording mark has no window to fence).
+    if (target) {
+      const after = await this.native.picker.hit(originGlobal, { element: false });
+      if (!live() || !sameDisplay(display, host.dockDisplay())) return reject('stale');
+      if (!after.checked || !sameTarget(after.window, target)) return reject('stale');
+    }
 
     const hash = this.native.hash(shot.png);
     const previous = session.image;
