@@ -1,4 +1,5 @@
 import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
+import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
 import { DockMediaSourceSchema } from '$shared/dock-media-edit';
 import { dockMediaCaptureBatches, dockMediaCapturedMarks } from '$shared/dock-media-source';
 /**
@@ -97,6 +98,7 @@ import {
   dockEvidenceCaptureStarted,
   dockEvidenceSessionRetired,
   dockEvidenceClipChanged,
+  dockMediaEditorOpenRequested,
   dockEvidenceClipRemoveRequested,
   dockEvidenceMediaPasted,
   dockEvidenceDictationChanged,
@@ -344,7 +346,12 @@ function* capture({
       yield* notice(workspaceId, agentId, screenPermissionNotice('capture'));
     return;
   }
-  yield* addCapturedImage(workspaceId, agentId, result.value, 'capture');
+  const known = new Set(evidenceOf(workspaceId, agentId)?.images.map((row) => row.id));
+  const image = yield* addCapturedImage(workspaceId, agentId, result.value, 'capture');
+  // A new screenshot opens straight in the editor, except during an annotate session,
+  // where the user is still drawing on the screen.
+  if (image && !known.has(image.id) && !evidence?.annotation && dockCaptureEditorPreviewEnabled())
+    yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, image.id));
 }
 
 function* startSession(
@@ -1276,6 +1283,9 @@ function* placeFinishedClip(
         ...(isDockAttachmentPath(placed.path) ? { path: placed.path } : {}),
       }),
     );
+    // A finished recording opens straight in the editor once its source is placed.
+    if (source && dockCaptureEditorPreviewEnabled())
+      yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, clipId));
     // The daemon now owns the bytes; native may drop its finished temp file (never re-stops).
     const releasing = service;
     if (releasing?.releaseClip)
