@@ -30,6 +30,22 @@ import Foundation
     var unchanged = chunks
     unchanged.receive([timed("guess", 0, 0)], isFinal: false)
     precondition(text(unchanged) == text(chunks), "A provisional reset erased confirmed utterances")
-    print("{\"cases\":6,\"passed\":true,\"syntheticOnly\":true,\"firstStartMs\":210,\"lastStartMs\":27930}")
+    var rolling = MediaTranscriptAccumulator()
+    rolling.receive([timed("opening", 200, 1200),
+      MediaTranscriptUnit(text: " ", startMs: nil, endMs: nil, alignment: "untimed"),
+      timed("outdated", 12900, 14000)], isFinal: false)
+    rolling.receive([timed("corrected", 12800, 15000),
+      MediaTranscriptUnit(text: " ", startMs: nil, endMs: nil, alignment: "untimed"),
+      timed("closing", 28000, 29000)], isFinal: true)
+    precondition(text(rolling) == "opening corrected closing", "Rolling overlap erased the nonoverlapped prefix")
+    var deletion = MediaTranscriptAccumulator()
+    deletion.receive([timed("keep", 200, 1000), timed("deleted", 1500, 2000)], isFinal: false)
+    deletion.receive([timed("keep", 200, 1000)], isFinal: true)
+    precondition(text(deletion) == "keep", "A same-start revision retained a deleted tail")
+    var leadingDeletion = MediaTranscriptAccumulator()
+    leadingDeletion.receive([timed("deleted", 200, 500), timed("keep", 600, 1000)], isFinal: false, utteranceStartMs: 200)
+    leadingDeletion.receive([timed("keep", 600, 1000)], isFinal: true, utteranceStartMs: 200)
+    precondition(text(leadingDeletion) == "keep", "A revision retained a deleted first word from the same utterance")
+    print("{\"cases\":9,\"passed\":true,\"syntheticOnly\":true,\"firstStartMs\":210,\"lastStartMs\":27930}")
   }
 }

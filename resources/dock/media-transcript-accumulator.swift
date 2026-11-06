@@ -19,7 +19,7 @@ struct MediaTranscriptAccumulator {
   private var spans: [Span] = []
   private var fallback: [MediaTranscriptUnit] = []
 
-  mutating func receive(_ units: [MediaTranscriptUnit], isFinal: Bool) {
+  mutating func receive(_ units: [MediaTranscriptUnit], isFinal: Bool, utteranceStartMs: Double? = nil) {
     guard !units.map(\.text).joined().trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     let timed = units.filter { unit in
       guard let start = unit.startMs, let end = unit.endMs else { return false }
@@ -31,8 +31,33 @@ struct MediaTranscriptAccumulator {
       }
       return
     }
-    spans.removeAll { $0.start < end && start < $0.end }
-    spans.append(Span(start: start, end: end, units: units))
+    // Metadata keeps the utterance origin stable even when a revision deletes
+    // its first word. Without an origin, the snapshot's first timed unit defines
+    // the replacement window. A rolling window can begin inside an older
+    // cumulative snapshot: retain the genuinely earlier units, not its whole tail.
+    let replacementStart = utteranceStartMs.flatMap { $0.isFinite && $0 >= 0 && $0 <= start ? $0 : nil } ?? start
+    var retained: [Span] = []
+    for span in spans {
+      if span.end <= replacementStart || span.start >= end {
+        retained.append(span)
+        continue
+      }
+      guard span.start < replacementStart else { continue }
+      var prefix: [MediaTranscriptUnit] = []
+      for unit in span.units {
+        if let unitStart = unit.startMs, let unitEnd = unit.endMs,
+          unitStart >= replacementStart || unitEnd > replacementStart { break }
+        prefix.append(unit)
+      }
+      while let last = prefix.last, last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        prefix.removeLast()
+      }
+      if let prefixEnd = prefix.compactMap(\.endMs).max() {
+        retained.append(Span(start: span.start, end: prefixEnd, units: prefix))
+      }
+    }
+    spans = retained
+    spans.append(Span(start: replacementStart, end: end, units: units))
     spans.sort { $0.start < $1.start }
     fallback = []
   }

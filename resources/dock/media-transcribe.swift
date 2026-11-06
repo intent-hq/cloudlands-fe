@@ -35,7 +35,8 @@ func recognize(_ job: Job) async throws -> [MediaTranscriptUnit] {
       var outcome: Result<[MediaTranscriptUnit], Error>?
       do {
         if let result {
-          accumulated.receive(try transcriptUnits(result.bestTranscription), isFinal: result.isFinal)
+          accumulated.receive(try transcriptUnits(result.bestTranscription), isFinal: result.isFinal,
+            utteranceStartMs: result.speechRecognitionMetadata.map { $0.speechStartTimestamp * 1000 })
           if result.isFinal { outcome = .success(accumulated.units) }
           else if let error { outcome = .failure(error) }
         } else if let error { outcome = .failure(error) }
