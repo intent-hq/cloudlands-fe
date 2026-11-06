@@ -526,20 +526,26 @@
         height={raster ? frame.h : height}
       />
     {/if}
-    <image
-      href={sourceUrl}
-      x={raster ? frame.x : 0}
-      y={raster ? frame.y : 0}
-      width={raster ? frame.w : width}
-      height={raster ? frame.h : height}
-      onload={(event) => {
-        const url = event.currentTarget.href.baseVal;
-        if (url !== sourceUrl) return;
-        loadedUrl = url;
-        onRasterReady?.(url);
-      }}
-      onerror={(event) => onRasterError?.(event.currentTarget.href.baseVal)}
-    />
+    {#each [sourceUrl] as incomingUrl (incomingUrl)}
+      <image
+        href={incomingUrl}
+        x={raster ? frame.x : 0}
+        y={raster ? frame.y : 0}
+        width={raster ? frame.w : width}
+        height={raster ? frame.h : height}
+        onload={(event) => {
+          // This node belongs to one URL for its entire lifetime. Delayed events
+          // from a retired node cannot acknowledge its replacement's resource.
+          if (incomingUrl !== sourceUrl || event.currentTarget.href.baseVal !== incomingUrl) return;
+          loadedUrl = incomingUrl;
+          onRasterReady?.(incomingUrl);
+        }}
+        onerror={(event) => {
+          if (incomingUrl === sourceUrl && event.currentTarget.href.baseVal === incomingUrl)
+            onRasterError?.(incomingUrl);
+        }}
+      />
+    {/each}
     {#if redactionPending}
       <g class="pending-redactions" aria-hidden="true">
         {#each pendingRedactions as shape (shape.id)}
