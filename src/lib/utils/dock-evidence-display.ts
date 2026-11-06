@@ -5,6 +5,9 @@
  * agent-readable preamble stays in the message text; it is only hidden here.
  */
 
+import { z } from 'zod';
+import { DockMediaEditMarkSchema, DockMediaRangeSchema } from '$shared/dock-media-edit';
+
 type Metadata = Record<string, unknown> | null | undefined;
 
 /** The message's own metadata (the persisted messageMetadata) marks it as dock evidence. */
@@ -87,4 +90,158 @@ export function dockEvidenceRecordingNumbers(
     if (block.attachmentId && block.mimeType?.startsWith('video/'))
       numbers.set(block.attachmentId, (n += 1));
   return numbers;
+}
+
+const captureMark = DockMediaEditMarkSchema.pick({
+  id: true,
+  kind: true,
+  label: true,
+  note: true,
+  context: true,
+  geometry: true,
+})
+  .extend({ n: z.number().int().positive(), at_ms: z.number().finite().nonnegative() })
+  .strict();
+const editedCapture = z
+  .object({
+    id: z.string().min(1),
+    kind: z.enum(['screenshot', 'recording']),
+    video: z.enum(['full', 'highlights']),
+    voice: z.enum(['audio', 'transcript', 'off']),
+    transcript: z.string().nullable(),
+    batches: z.array(z.unknown()).optional(),
+    marks: z.array(captureMark).max(1000),
+    video_attachment_id: z.string().min(1).nullable().optional(),
+    frames: z
+      .array(z.object({ mark_id: z.string().min(1), attachment_id: z.string().min(1) }).strict())
+      .max(1000)
+      .optional(),
+    kept_ms: z.array(DockMediaRangeSchema).max(1000).optional(),
+  })
+  .strict();
+export type EditedCapture = z.infer<typeof editedCapture> & { primaryId: string | null };
+export interface CaptureResource {
+  type: string;
+  attachmentId?: string;
+  mimeType?: string;
+}
+
+/** Join only persisted producer rows to resources actually present on this message. */
+export function editedCaptureCards(
+  metadata: Metadata,
+  blocks: readonly CaptureResource[],
+): EditedCapture[] {
+  if (!isDockEvidenceMessage(metadata)) return [];
+  try {
+    if ((JSON.stringify(metadata?.edited_captures)?.length ?? 0) > 262144) return [];
+  } catch {
+    return [];
+  }
+  const parsed = z.array(editedCapture).min(1).max(12).safeParse(metadata?.edited_captures);
+  if (!parsed.success) return [];
+  const rows = parsed.data,
+    ids = new Set<string>(),
+    resources = new Map(blocks.filter((b) => b.attachmentId).map((b) => [b.attachmentId!, b]));
+  const images = Array.isArray(metadata?.images) ? metadata.images : [];
+  const clips = Array.isArray(metadata?.clips) ? metadata.clips : [];
+  const result: EditedCapture[] = [];
+  for (const row of rows) {
+    if (ids.has(row.id)) return [];
+    ids.add(row.id);
+    if (
+      new Set(row.marks.map((mark) => mark.id)).size !== row.marks.length ||
+      new Set(row.marks.map((mark) => mark.n)).size !== row.marks.length
+    )
+      return [];
+    let primaryId: string | null = null;
+    if (row.kind === 'screenshot') {
+      const image = images.find(
+        (value) =>
+          value && typeof value === 'object' && (value as Record<string, unknown>).id === row.id,
+      ) as Record<string, unknown> | undefined;
+      if (
+        typeof image?.attachment_id !== 'string' ||
+        resources.get(image.attachment_id)?.type !== 'image'
+      )
+        return [];
+      primaryId = image.attachment_id;
+      if (
+        row.video_attachment_id !== undefined ||
+        row.frames !== undefined ||
+        row.kept_ms !== undefined
+      )
+        return [];
+    } else {
+      if (
+        !clips.some(
+          (value) =>
+            value && typeof value === 'object' && (value as Record<string, unknown>).id === row.id,
+        )
+      )
+        return [];
+      if (row.video_attachment_id === undefined || !row.frames || !row.kept_ms) return [];
+      if (
+        row.kept_ms.some(
+          (range, index) => index > 0 && range.startMs < row.kept_ms![index - 1].endMs,
+        )
+      )
+        return [];
+      primaryId = row.video_attachment_id;
+      if (primaryId) {
+        const resource = resources.get(primaryId);
+        if (
+          resource?.type !== 'file' ||
+          !['video/mp4', 'video/webm'].includes(resource.mimeType ?? '')
+        )
+          return [];
+      } else if (row.frames.length || row.kept_ms.length) return [];
+      const frameIds = new Set<string>();
+      for (const frame of row.frames) {
+        if (
+          frameIds.has(frame.attachment_id) ||
+          !row.marks.some((mark) => mark.id === frame.mark_id) ||
+          resources.get(frame.attachment_id)?.type !== 'image'
+        )
+          return [];
+        frameIds.add(frame.attachment_id);
+      }
+    }
+    result.push({ ...row, primaryId });
+  }
+  return result;
+}
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, item) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
+      : item,
+  ) ?? '';
+/** Consume only the exact known producer block at a context boundary, backed by metadata AND resource joins. */
+export function consumeEditedCapturePrefix(
+  text: string,
+  metadata: Metadata,
+  blocks: readonly CaptureResource[],
+): { prefix: string; remaining: string; attachmentIds: string[] } | null {
+  const opening = '[Edited capture outputs]\n'; // i18n-ignore (persisted producer marker)
+  if (!text.startsWith(opening)) return null;
+  const end = text.indexOf('\n', opening.length),
+    boundary = end < 0 ? text.length : end;
+  if (boundary - opening.length > 262144 || (end >= 0 && !text.startsWith('\n\n', end)))
+    return null;
+  try {
+    const json = JSON.parse(text.slice(opening.length, boundary));
+    if (canonical(json) !== canonical(metadata?.edited_captures)) return null;
+  } catch {
+    return null;
+  }
+  const rows = editedCaptureCards(metadata, blocks);
+  if (!rows.length) return null;
+  return {
+    prefix: text.slice(0, boundary),
+    remaining: text.slice(boundary).replace(/^\n\n/, ''),
+    attachmentIds: rows.flatMap((row) => [
+      ...(row.primaryId ? [row.primaryId] : []),
+      ...(row.frames ?? []).map((frame) => frame.attachment_id),
+    ]),
+  };
 }

@@ -93,11 +93,14 @@
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import {
+    consumeEditedCapturePrefix,
+    editedCaptureCards,
     dockEvidenceMarks,
     dockEvidenceRecordingNumbers,
     isDockEvidenceMessage,
     splitScreenTokens,
   } from '$lib/utils/dock-evidence-display';
+  import EditedCaptureCard from './EditedCaptureCard.svelte';
   import AutomatedWakeCardHeader from './AutomatedWakeCardHeader.svelte';
   import { getAutomatedWakePresentation } from './automated-wake-presentation';
   import {
@@ -543,10 +546,12 @@
     pills: ContextPill[];
     cleanText: string;
     evidence: boolean;
+    editedCaptures: boolean;
   } {
     const pills: ContextPill[] = [];
     let cleanText = text;
     let evidence = false;
+    let editedCaptures = false;
 
     // Match context patterns at the start of the message
     // Each pattern can optionally be followed by a code block containing the content
@@ -601,6 +606,15 @@
     let foundMatch = true;
     while (foundMatch) {
       foundMatch = false;
+      const edited =
+        !editedCaptures &&
+        consumeEditedCapturePrefix(cleanText, message?.metadata, message?.contentBlocks ?? []);
+      if (edited) {
+        editedCaptures = true;
+        cleanText = edited.remaining;
+        foundMatch = true;
+        continue;
+      }
       // Keep display and edit recognition identical. The message's own metadata
       // trusts the exact header + fence; without it only a valid body is accepted.
       // The agent-readable block stays in the text sent to the agent; it is hidden
@@ -667,7 +681,7 @@
       }
     }
 
-    return { pills, cleanText: cleanText.trim(), evidence };
+    return { pills, cleanText: cleanText.trim(), evidence, editedCaptures };
   }
 
   // Parse text into segments with inline mentions rendered as chips
@@ -1277,6 +1291,7 @@
       pills: [],
       cleanText: rawText,
       evidence: false,
+      editedCaptures: false,
       segments: [{ type: 'text' as const, content: rawText }] as MessageSegment[],
     };
   });
@@ -1287,6 +1302,40 @@
       ? (message?.metadata as unknown as Record<string, unknown>)
       : null,
   );
+  const captureCards = $derived(
+    parsedMessage.editedCaptures
+      ? editedCaptureCards(message?.metadata, message?.contentBlocks ?? [])
+      : [],
+  );
+  const captureResourceIds = $derived(
+    new Set(
+      captureCards.flatMap((capture) => [
+        ...(capture.primaryId ? [capture.primaryId] : []),
+        ...(capture.frames ?? []).map((frame) => frame.attachment_id),
+      ]),
+    ),
+  );
+  const captureImageSources = $derived(
+    Object.fromEntries(
+      imageBlocks
+        .filter((block) => block.attachmentId && captureResourceIds.has(block.attachmentId))
+        .map((block) => [block.attachmentId!, imageBlockSrc(block)]),
+    ),
+  );
+  const ordinaryImageBlocks = $derived(
+    imageBlocks.filter(
+      (block) => !block.attachmentId || !captureResourceIds.has(block.attachmentId),
+    ),
+  );
+  const ordinaryFileBlocks = $derived(
+    fileBlocks.filter(
+      (block) => !block.attachmentId || !captureResourceIds.has(block.attachmentId),
+    ),
+  );
+  function openCaptureImage(id: string, opener: HTMLButtonElement) {
+    const index = imageBlocks.findIndex((block) => block.attachmentId === id);
+    if (index >= 0) openImageLightbox(imageBlocks[index], opener, index);
+  }
   const evidenceMarks = $derived(dockEvidenceMarks(evidenceMetadata));
   const toolLabels: Record<string, string> = {
     pick: m.dock_composer_pick_label(),
@@ -1432,7 +1481,11 @@
       ? getPresentedUserMessageText(message, workspace?.ownerPrincipalId)
       : getMessageText();
     const evidenceMessage = isDockEvidenceMessage(message?.metadata);
-    const parsed = parseStoredMessage(rawText, { trustedEvidence: evidenceMessage });
+    const parsed = parseStoredMessage(rawText, {
+      trustedEvidence: evidenceMessage,
+      metadata: message?.metadata,
+      blocks: message?.contentBlocks ?? [],
+    });
     editValue = parsed.userMessage;
     // Evidence screenshots are 'Image n' in image order, recordings 'Recording n'.
     let imageNumber = 0;
@@ -1990,10 +2043,36 @@
                   {/each}
                 {/if}
               </div>
+              {#if captureCards.length && !isSticky}
+                <div class="mt-3 flex min-w-0 flex-col gap-2">
+                  {#each captureCards as capture (capture.id)}
+                    <EditedCaptureCard
+                      {capture}
+                      workspaceId={getOwningWorkspaceId()}
+                      {readOnly}
+                      videoMimeType={fileBlocks.find(
+                        (block) => block.attachmentId === capture.primaryId,
+                      )?.mimeType === 'video/webm'
+                        ? 'video/webm'
+                        : 'video/mp4'}
+                      images={captureImageSources}
+                      onImage={openCaptureImage}
+                      onImageError={(id, src) => {
+                        const block = imageBlocks.find((block) => block.attachmentId === id);
+                        if (block) handleReferenceImageError(block, src);
+                      }}
+                      onOpenFile={(id) => {
+                        const block = fileBlocks.find((block) => block.attachmentId === id);
+                        if (block) openAttachmentReference(block);
+                      }}
+                    />
+                  {/each}
+                </div>
+              {/if}
               <!-- Attached images -->
-              {#if imageBlocks.length > 0 && !isSticky}
+              {#if ordinaryImageBlocks.length > 0 && !isSticky}
                 <div class="flex flex-wrap gap-1.5 mt-2">
-                  {#each imageBlocks as imageBlock, i (i)}
+                  {#each ordinaryImageBlocks as imageBlock, i (i)}
                     {@const src = imageBlockSrc(imageBlock)}
                     <Button
                       type="button"
@@ -2006,7 +2085,11 @@
                         : ''}"
                       aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
                       onclick={(e) => {
-                        openImageLightbox(imageBlock, e.currentTarget as HTMLButtonElement, i);
+                        openImageLightbox(
+                          imageBlock,
+                          e.currentTarget as HTMLButtonElement,
+                          imageBlocks.indexOf(imageBlock),
+                        );
                       }}
                       onkeydown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -2044,9 +2127,9 @@
 
               <!-- Attached files: attachment-reference chips open the file in a
                tab (resolved by attachmentId). -->
-              {#if fileBlocks.length > 0 && !isSticky}
+              {#if ordinaryFileBlocks.length > 0 && !isSticky}
                 <div class="flex flex-wrap gap-1.5 mt-2">
-                  {#each fileBlocks as fileBlock, i (i)}
+                  {#each ordinaryFileBlocks as fileBlock, i (i)}
                     {@const secondary = fileChipSecondaryText(fileBlock)}
                     <Button
                       type="button"

@@ -10,6 +10,7 @@
  * This utility extracts these into structured context items and clean user message.
  */
 
+import { consumeEditedCapturePrefix, type CaptureResource } from './dock-evidence-display';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
 import { m } from '$shared/paraglide/messages.js';
 import { DOCK_EVIDENCE_CONTEXT_HEADER } from '$shared/dock-evidence';
@@ -166,7 +167,7 @@ export function consumeDockEvidencePrefix(
  * numbers refer to immutable pixels: removing/reordering a referenced image
  * cannot safely be repaired by renumbering the text. Null keeps the edit open.
  */
-export function restoreDockEvidenceForEdit(
+function restoreScreenEvidenceForEdit(
   originalItems: readonly ContextItem[],
   items: readonly ContextItem[],
   userText: string,
@@ -208,6 +209,39 @@ export function restoreDockEvidenceForEdit(
     if (!id || !hasClip(originalItems) || !hasClip(items)) return null;
   }
   return `${parsed.prefix}\n\n${userText}`;
+}
+
+/** Preserve the producer block and all of its exact resource joins during regenerate. */
+export function restoreDockEvidenceForEdit(
+  originalItems: readonly ContextItem[],
+  items: readonly ContextItem[],
+  userText: string,
+): string | null {
+  const retained = items.filter((item) => item.metadata?.kind === 'dock_edited_captures');
+  if (retained.length > 1) return null;
+  if (!retained.length) return restoreScreenEvidenceForEdit(originalItems, items, userText);
+  const item = retained[0],
+    original = originalItems.find((candidate) => candidate.id === item.id);
+  if (!item.content || original?.content !== item.content) return null;
+  const ids = original.metadata?.attachmentIds;
+  if (
+    !Array.isArray(ids) ||
+    !ids.every(
+      (id) =>
+        typeof id === 'string' &&
+        items.some((candidate) => {
+          const originalResource = originalItems.find((resource) => resource.attachmentId === id);
+          return (
+            candidate.attachmentId === id &&
+            !!originalResource &&
+            candidate.imageMimeType === originalResource.imageMimeType &&
+            candidate.attachmentMimeType === originalResource.attachmentMimeType
+          );
+        }),
+    )
+  )
+    return null;
+  return restoreScreenEvidenceForEdit(originalItems, items, `${item.content}\n\n${userText}`);
 }
 
 export interface ParsedMessage {
@@ -317,7 +351,11 @@ const contextPatterns: ContextPattern[] = [
 export function parseStoredMessage(
   text: string,
   /** The message metadata marks dock evidence: its exact prefix is the producer's. */
-  options: { trustedEvidence?: boolean } = {},
+  options: {
+    trustedEvidence?: boolean;
+    metadata?: Record<string, unknown>;
+    blocks?: readonly CaptureResource[];
+  } = {},
 ): ParsedMessage {
   const contextItems: ContextItem[] = [];
   let remaining = text;
@@ -326,6 +364,21 @@ export function parseStoredMessage(
   let foundMatch = true;
   while (foundMatch) {
     foundMatch = false;
+    const edited =
+      !contextItems.some((item) => item.metadata?.kind === 'dock_edited_captures') &&
+      consumeEditedCapturePrefix(remaining, options.metadata, options.blocks ?? []);
+    if (edited) {
+      contextItems.push({
+        id: `edit-capture-outputs-${contextItems.length}`,
+        type: 'selection',
+        label: m.annotation_feedback_heading(),
+        content: edited.prefix,
+        metadata: { kind: 'dock_edited_captures', attachmentIds: edited.attachmentIds },
+      });
+      remaining = edited.remaining;
+      foundMatch = true;
+      continue;
+    }
     const evidence = consumeDockEvidencePrefix(remaining, {
       trusted: options.trustedEvidence,
     });
