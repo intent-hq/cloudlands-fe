@@ -156,6 +156,17 @@
       top.fontBoundingBoxAscent
     );
   });
+  const textWidth = $derived.by(() => {
+    const text = textShape?.text;
+    if (!text || !textLayout) return 0;
+    if (text.wrapped || typeof document === 'undefined') return textLayout.width + 2 * unit;
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context) return textLayout.width + 2 * unit;
+    context.font = `${text.fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
+    return (
+      Math.max(...textValue.split('\n').map((line) => context.measureText(line).width)) + 2 * unit
+    );
+  });
   $effect(() => {
     onGesturePending(!!gesture || !!cropGesture);
   });
@@ -736,7 +747,7 @@
       <foreignObject
         x={b.x}
         y={b.y}
-        width={Math.min(frame.x + frame.w - b.x, Math.max(12 * unit, textLayout.width + 2 * unit))}
+        width={Math.min(frame.x + frame.w - b.x, Math.max(12 * unit, textWidth))}
         height={Math.min(frame.y + frame.h - b.y, textLayout.height)}
         style:overflow="visible"
       >
