@@ -462,6 +462,7 @@
                 aria-pressed={frameTool === entry.tool}
                 aria-label={frameToolLabels[entry.tool ?? 'pointer']()}
                 tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
+                tooltipContentClass="dock-chrome-tooltip"
                 onclick={() => {
                   frameTool = entry.tool;
                   pauseForFrame();
@@ -481,6 +482,7 @@
             ? m.dock_captureEditor_play_label()
             : m.dock_captureEditor_pause_label()}
           tooltip={paused ? m.dock_captureEditor_play_label() : m.dock_captureEditor_pause_label()}
+          tooltipContentClass="dock-chrome-tooltip"
           tooltipShortcut="space"
           disabled={failed}
           onclick={toggle}
