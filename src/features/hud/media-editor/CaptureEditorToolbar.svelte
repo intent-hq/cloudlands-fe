@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '$lib/styles/dock-tokens.css';
   import type { Snippet } from 'svelte';
 
   let { label, children }: { label: string; children: Snippet } = $props();

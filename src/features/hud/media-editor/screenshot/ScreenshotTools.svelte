@@ -42,6 +42,7 @@
       size="icon-sm"
       aria-label={item.label}
       tooltip={item.label}
+      tooltipContentClass="dock-chrome-tooltip"
       aria-pressed={tool === item.id}
       active={tool === item.id}
       disabled={disabled || (item.id === 'blur' && !canBlur)}
