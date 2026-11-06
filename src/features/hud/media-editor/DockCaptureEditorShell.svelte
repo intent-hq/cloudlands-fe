@@ -144,14 +144,17 @@
     background: hsl(var(--background));
     color: hsl(var(--foreground));
   }
-  /* The window's own title bar: draggable, clear of the traffic lights. */
+  /*
+   * The window's own title bar: draggable, and compact. The editor hides the native
+   * window buttons (Cancel, Esc and Cmd+W close it), so the title starts at the edge.
+   */
   .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    height: 48px;
-    padding: 0 12px 0 84px;
+    height: 44px;
+    padding: 0 10px 0 16px;
     border-bottom: 1px solid hsl(var(--border));
     -webkit-app-region: drag;
   }
@@ -177,7 +180,7 @@
   .actions {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     -webkit-app-region: no-drag;
   }
   .body {

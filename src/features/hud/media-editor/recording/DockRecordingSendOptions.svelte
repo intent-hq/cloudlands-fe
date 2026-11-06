@@ -118,7 +118,7 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-    padding: 12px;
+    padding: 14px 16px;
     border-bottom: 1px solid hsl(var(--border));
   }
   .group {
@@ -131,35 +131,17 @@
     color: hsl(var(--muted-foreground));
   }
   /*
-   * Which option is chosen must read at a glance, in light and dark: a visible track,
-   * and the chosen segment as a raised solid fill with a border, a small shadow and
-   * full-strength medium text. Local to these two controls; the shared toggle group
-   * and its hover highlight are unchanged.
+   * Settings' segmented control (outline, small), with the chosen option always shown,
+   * not only on hover: the app's selected fill with a hairline edge, in light and dark.
    */
   .options :global(.send-choice) {
-    padding: 2px;
-    border-radius: 8px;
-    background: hsl(var(--muted));
-  }
-  .options :global(.send-choice [data-state='off']) {
-    color: hsl(var(--muted-foreground));
+    border: 1px solid hsl(var(--border));
+    background: transparent;
+    box-shadow: none;
   }
   .options :global(.send-choice [data-state='on']) {
-    background: hsl(var(--background));
+    background: hsl(var(--selected));
     color: hsl(var(--foreground));
-    font-weight: 600;
-    box-shadow:
-      0 0 0 1px hsl(var(--foreground) / 0.14),
-      0 1px 2px hsl(0 0% 0% / 0.14);
-  }
-  :global(.dark) .options :global(.send-choice [data-state='on']) {
-    background: hsl(var(--foreground) / 0.2);
-    box-shadow:
-      0 0 0 1px hsl(var(--foreground) / 0.28),
-      0 1px 2px hsl(0 0% 0% / 0.4);
-  }
-  /* A chosen option that cannot be changed now still shows as chosen. */
-  .options :global(.send-choice [data-state='on']:disabled) {
-    opacity: 0.75;
+    box-shadow: inset 0 0 0 1px hsl(var(--border));
   }
 </style>

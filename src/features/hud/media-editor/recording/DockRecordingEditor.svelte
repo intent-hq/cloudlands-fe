@@ -614,14 +614,16 @@
     left: 50%;
     display: flex;
     gap: 2px;
-    padding: 3px;
+    padding: 2px;
     border: 1px solid hsl(var(--border));
-    border-radius: 9px;
-    background: hsl(var(--background) / 0.92);
+    border-radius: var(--radius-medium);
+    background: hsl(var(--card));
+    box-shadow: var(--elevation-raised);
     transform: translateX(-50%);
   }
   .frame-tools :global([aria-pressed='true']) {
-    background: hsl(var(--primary) / 0.18);
+    background: hsl(var(--selected));
+    color: hsl(var(--foreground));
   }
   .save-problem {
     margin: 0;
@@ -630,7 +632,7 @@
   }
   .readonly-note {
     margin: 0;
-    padding: 10px 12px 0;
+    padding: 10px 16px 0;
     font-size: 11px;
     color: hsl(var(--muted-foreground));
   }
@@ -647,7 +649,7 @@
     gap: 8px;
     flex: 1;
     min-height: 0;
-    padding: 12px;
+    padding: 12px 16px 14px;
   }
   /* The video takes all the room the controls and timeline leave. */
   .frame {
@@ -657,8 +659,8 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
-    border-radius: 10px;
-    background: hsl(var(--secondary));
+    border-radius: var(--radius-medium);
+    background: hsl(var(--foreground) / 0.04);
   }
   video {
     width: 100%;
