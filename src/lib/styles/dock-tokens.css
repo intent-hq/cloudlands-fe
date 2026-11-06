@@ -134,6 +134,12 @@
   --color-border: hsl(var(--theme-dark-border));
 }
 
+/* The mode checkmark uses the dark surface's readable accent under either app theme. */
+.dock-capture-mode-menu[data-dock-palette='notch'] {
+  --primary-ink: var(--theme-dark-primary-ink);
+  --color-primary-ink: hsl(var(--theme-dark-primary-ink));
+}
+
 /* A dock tooltip is chrome, including when its portal is under a light app body.
    Only opted-in dock/capture callers use this surface; app tooltips keep their defaults. */
 .dock-chrome-tooltip {

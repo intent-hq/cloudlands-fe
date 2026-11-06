@@ -63,7 +63,7 @@
     align="center"
     sideOffset={6}
     preventScroll={false}
-    class="dock-media-tool-popover min-w-44"
+    class="dock-media-tool-popover dock-capture-mode-menu min-w-44"
     data-dock-palette="notch"
     aria-label={label}
     onInteractOutside={(event) => {
