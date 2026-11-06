@@ -122,6 +122,8 @@ Use `Select` for a short, closed set of values and `Combobox` from
 Give the trigger a purpose-specific accessible name; the selected value and search
 placeholder are not substitutes for that name. `Combobox` requires `ariaLabel` and also
 accepts `ariaLabelledby` and `ariaDescribedby` for field integration.
+Result panels keep the menu's inner gutter, including with `inputVariant="search"`.
+Use `viewportClass` to remove it only when the enclosing picker supplies that inset.
 
 `onsearch(query)` may return options or groups synchronously or asynchronously. Supply
 localized `emptyText`, `errorText`, and `retryText` where the default is insufficient;
@@ -144,7 +146,7 @@ Keep group actions outside selectable options; use
 
 Search inside a menu or picker has one appearance: `<Input variant="search">`,
 `<Combobox inputVariant="search">`, and the built-in `Dropdown` search. It is
-body-sized and transparent on the popover surface, with a light placeholder and
+the same text size as options and transparent on the popover surface, with a light placeholder and
 caret focus. Use a 4px top inset and a 4px gap before results. Do not add a border, focus ring, leading
 icon, title block, or custom padding. Put a compact control such as refresh or clear beside the field with
 `Combobox inputAction` or `Dropdown searchAction`. Preview: `/sandbox/menu-search`.
@@ -427,8 +429,9 @@ an existing description reference is preserved. Do not rely on color alone to ex
 a command is unavailable.
 
 The public `menuOverlay()` recipe from `$lib/components/ui/menu` supplies the same shell
-for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Prefer
-the semantic components in feature code. Recipes provide styling, not keyboard, focus,
+for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Both use
+`type-caption`, so custom content and summaries in nested menus match the option text.
+Prefer the semantic components in feature code. Recipes provide styling, not keyboard, focus,
 checked-state, or dismissal behavior.
 
 `Menu.Indicator` owns the trailing glyph, slot, and decorative `aria-hidden` contract for
@@ -467,12 +470,17 @@ are distinct capabilities, not duplicate commands. Dropdowns and submenus must r
 least an 8px viewport gutter, including when their trigger sits at an edge. Menu labels
 and descriptions are left-aligned; trailing shortcuts and indicators keep their own slots.
 When any visible row has a leading icon, reserve that icon column across the entire popup,
-including group headings and rows separated by dividers. Descriptions align with their labels.
+including group headings and rows separated by dividers. Section captions can use
+`Menu.Label alignIconColumn={false}` to align with the leading artwork instead. Descriptions align with their labels.
 Each submenu decides independently; entirely iconless popups do not reserve an icon column.
 Align leading icons and trailing shortcuts with the first line of the label, not the vertical
 center of a multiline label or description. Keep this contract in shared row anatomy so
 composed panel menus and action-model menus behave the same way.
 Destructive leading icons inherit the label's destructive color, including hover and focus.
+Use `Menu.CheckboxItem indicator="switch"` for independent on/off settings. The row remains
+a menu checkbox with one keyboard target; the switch is a decorative state indicator and does
+not paint the row as a selected choice. `Menu.Footer` provides a flush metadata strip; any
+action it contains still uses a semantic menu item.
 Submenus prefer the right side and align their first row with the parent row; viewport
 collisions may flip or shift them, while preserving the viewport gutter.
 Menus must fit the viewport, scroll internally, support keyboard/typeahead navigation, and

@@ -31,6 +31,7 @@ import { powerReducer } from './slices/power/power-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
 import { globalModalsReducer } from './slices/global-modals/global-modals-slice';
 import { knownReposReducer } from './slices/known-repos/known-repos-slice';
+import { pluginsSettingsReducer } from './slices/plugins-settings/plugins-settings-slice';
 import { deepLinksReducer } from './slices/deep-links/deep-links-slice';
 import { modelReducer } from './slices/model/model-slice';
 import { specialistsReducer } from './slices/specialists/specialists-slice';
@@ -155,6 +156,7 @@ export const reducers = {
   featureCodes: featureCodesReducer,
   globalModals: globalModalsReducer,
   knownRepos: knownReposReducer,
+  pluginsSettings: pluginsSettingsReducer,
   deepLinks: deepLinksReducer,
   model: modelReducer,
   agentModel: agentModelReducer,

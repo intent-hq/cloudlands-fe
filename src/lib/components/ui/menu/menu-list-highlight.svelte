@@ -60,10 +60,11 @@
     const isDisabled = (item: HTMLElement) =>
       item.hasAttribute('data-disabled') || item.getAttribute('aria-disabled') === 'true';
     const isSelected = (item: HTMLElement) =>
-      item.hasAttribute('data-selected') ||
-      item.getAttribute('data-state') === 'checked' ||
-      item.getAttribute('aria-selected') === 'true' ||
-      item.getAttribute('aria-checked') === 'true';
+      item.dataset.selectionAppearance !== 'indicator' &&
+      (item.hasAttribute('data-selected') ||
+        item.getAttribute('data-state') === 'checked' ||
+        item.getAttribute('aria-selected') === 'true' ||
+        item.getAttribute('aria-checked') === 'true');
 
     const sync = () => {
       const nextItems = Array.from(container.querySelectorAll<HTMLElement>(itemSelector)).filter(
@@ -117,6 +118,7 @@
         'aria-selected',
         'aria-checked',
         'aria-disabled',
+        'data-selection-appearance',
       ],
     });
     const syncKeyboardIndex = () => {

@@ -1099,11 +1099,7 @@
             data-submenu
             in:panelEnter={menuOverlayTransition.enter}
             out:panelExit={menuOverlayTransition.exit}
-            class={cn(
-              menuOverlay(),
-              'min-w-45 overflow-hidden rounded-md border border-border',
-              'py-1',
-            )}
+            class={cn(menuOverlay(), 'min-w-45 overflow-hidden py-1')}
             style={submenuStyle}
             onmouseleave={() => (openSubmenu = null)}
             role="menu"

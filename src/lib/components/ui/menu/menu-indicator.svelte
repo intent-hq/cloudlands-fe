@@ -19,16 +19,20 @@
 <span
   {...restProps}
   data-slot={slot ?? (state === 'submenu' ? 'menu-sub-chevron' : 'menu-item-indicator')}
-  class={cn(OPTION_LIST_END_SLOT_CLASS, state !== 'submenu' && 'text-primary-ink', className)}
+  class={cn(
+    OPTION_LIST_END_SLOT_CLASS,
+    state === 'submenu' ? 'text-muted-foreground' : 'text-primary-ink',
+    className,
+  )}
   aria-hidden="true"
 >
   {#if state !== 'empty'}
     <Fa
       icon={state === 'mixed' ? faMinus : state === 'submenu' ? faChevronRight : faCheck}
-      size="var(--menu-icon-size)"
-      class={state === 'submenu'
-        ? 'size-(--menu-icon-size) rtl:rotate-180'
-        : 'size-(--menu-icon-size)'}
+      size={state === 'submenu'
+        ? 'calc(var(--space-2) + var(--space-1) / 2)'
+        : 'var(--menu-icon-size)'}
+      class={state === 'submenu' ? 'size-2.5 rtl:rotate-180' : 'size-(--menu-icon-size)'}
     />
   {/if}
 </span>

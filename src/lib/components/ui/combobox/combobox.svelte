@@ -13,7 +13,6 @@
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import { menuItem, menuOverlay } from '../menu/menu-recipes';
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
-  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { useSize, type UiSize } from '$lib/components/ui/size-context';
   import {
     textEntryControlClasses,
@@ -567,19 +566,19 @@
   {#snippet contentBody()}
     {#if header || headerAction}
       <div class="flex min-w-0 shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-        {#if header}<span class="type-caption min-w-0 truncate font-medium text-muted-foreground"
+        {#if header}<span class="type-caption min-w-0 truncate font-normal text-muted-foreground"
             >{header}</span
           >{/if}
         {#if headerAction}<div class="ml-auto">{@render headerAction()}</div>{/if}
       </div>
     {/if}
     {#if busy}
-      <div class="type-body px-3 py-2 text-muted-foreground" role="status">
+      <div class="type-caption px-3 py-2 text-muted-foreground" role="status">
         {m.ui_combobox_loadingOptions_message()}
       </div>
     {:else if searchFailed}
       <div class="flex items-center gap-2 px-3 py-2">
-        <span class="type-body text-muted-foreground" role="status">{errorText}</span>
+        <span class="type-caption text-muted-foreground" role="status">{errorText}</span>
         <Button
           bind:ref={retryRef}
           variant="ghost"
@@ -589,13 +588,12 @@
         >
       </div>
     {:else if !hasOptions}
-      <div class="type-body px-3 py-2 text-muted-foreground" role="status">{emptyText}</div>
+      <div class="type-caption px-3 py-2 text-muted-foreground" role="status">{emptyText}</div>
     {/if}
     <ComboboxPrimitive.Viewport
       class={cn(
-        OPTION_LIST_CONTAINER_CLASS,
-        inputVariant === 'search' && 'p-0',
-        'max-h-72 overscroll-contain overflow-y-auto',
+        'max-h-72 overflow-y-auto overscroll-contain p-1.5',
+        (loading || filteredGroups.length === 0) && 'p-0',
         viewportClass,
       )}
     >
@@ -638,7 +636,7 @@
                       </ComboboxPrimitive.GroupHeading>
                       {@render groupHeader(group)}
                     {:else}
-                      <div class="type-caption px-2 py-1.5 font-medium text-muted-foreground">
+                      <div class="type-caption px-2.5 py-1.5 font-normal text-muted-foreground">
                         <ComboboxPrimitive.GroupHeading class="inline">
                           <span>{group.label}</span>
                           {#if groupDescription}{@render groupDescription(group)}{/if}
@@ -737,7 +735,7 @@
       onInteractOutside={oninteractoutside}
       data-static-position
       data-surface-level={surface}
-      class={cn(menuOverlay(), 'w-full max-h-72 rounded-(--radius-medium)', contentClass)}
+      class={cn(menuOverlay(), 'w-full max-h-72', contentClass)}
       style="max-width: calc(100vw - var(--space-4));"
       child={staticContentChild}
     />
@@ -756,11 +754,7 @@
         sideOffset={4}
         collisionPadding={OVERLAY_VIEWPORT_GUTTER}
         data-surface-level={surface}
-        class={cn(
-          menuOverlay(),
-          'w-(--bits-combobox-anchor-width) max-h-72 rounded-(--radius-medium)',
-          contentClass,
-        )}
+        class={cn(menuOverlay(), 'w-(--bits-combobox-anchor-width) max-h-72', contentClass)}
         style="max-width: calc(100vw - var(--space-4));"
         child={contentChild}
       />
