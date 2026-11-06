@@ -32,6 +32,7 @@
     main,
     sidebar,
     sidebarWidth = 300,
+    sidebarLayout = 'panel',
   }: {
     title: string;
     subtitle?: string;
@@ -53,6 +54,11 @@
     sidebar?: Snippet;
     /** The sidebar card's width in CSS pixels (a slim rail for screenshots). */
     sidebarWidth?: number;
+    /**
+     * `panel` (a full sidebar) stacks under the media in narrow windows; `rail` (a slim
+     * column of chips) always stays on the right.
+     */
+    sidebarLayout?: 'panel' | 'rail';
   } = $props();
 
   // A generated file name ("clip-1a2b3c4d.mp4") says nothing the title does not; a name
@@ -133,6 +139,7 @@
   <div
     class="body"
     data-has-sidebar={!!sidebar || undefined}
+    data-sidebar-layout={sidebar ? sidebarLayout : undefined}
     style:--sidebar-width={`${sidebarWidth}px`}
   >
     <main class="main">{@render main()}</main>
@@ -221,19 +228,19 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    border-radius: 12px;
+    border-radius: var(--radius-large);
     background: hsl(var(--muted) / 0.55);
   }
   .sidebar {
     min-height: 0;
     overflow: auto;
     border: 1px solid hsl(var(--border));
-    border-radius: 12px;
+    border-radius: var(--radius-large);
     background: hsl(var(--card));
   }
-  /* Narrow windows: the sidebar moves below the main area instead of narrowing. */
+  /* Narrow windows: a full sidebar moves below the media instead of narrowing it. */
   @media (max-width: 900px) {
-    .body[data-has-sidebar] {
+    .body[data-sidebar-layout='panel'] {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: minmax(0, 1fr) auto;
       overflow: auto;

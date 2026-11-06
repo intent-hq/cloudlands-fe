@@ -432,6 +432,7 @@
         {onKeepEditing}
         sidebar={contentSidebar}
         sidebarWidth={72}
+        sidebarLayout="rail"
       >
         {#snippet main()}
           {#if error}<p class="status type-caption" role="alert">{error}</p>{/if}
