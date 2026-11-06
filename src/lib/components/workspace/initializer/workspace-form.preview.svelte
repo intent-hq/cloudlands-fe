@@ -3,7 +3,14 @@
   import { setupWorkspaceFormPreview } from './workspace-form.preview-fixtures';
 
   interface Props {
-    scenario?: 'default' | 'long' | 'empty' | 'config-error' | 'orchestration' | 'many-repos';
+    scenario?:
+      | 'default'
+      | 'long'
+      | 'empty'
+      | 'config-error'
+      | 'orchestration'
+      | 'many-repos'
+      | 'remote-attachments';
     modal?: boolean;
   }
 
@@ -27,6 +34,11 @@
       modal: { props: { modal: true } },
       'modal-long': { props: { modal: true, scenario: 'long' } },
       history: { props: { modal: true, scenario: 'many-repos' } },
+      // Attachments with the first agent on another machine: Machine stays editable.
+      'remote-attachments': {
+        props: { scenario: 'remote-attachments' },
+        setup: () => setupWorkspaceFormPreview('remote-attachments'),
+      },
     },
   });
 </script>

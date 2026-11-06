@@ -8,6 +8,7 @@
  * failures mark the item `failed` (visible pill with retry) and block the
  * first-message send — never a silent drop.
  */
+import { remoteAttachmentFailure } from '$features/remote-machines/agent-location';
 import type { FileBlock, ImageBlock } from '$lib/client/app-client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { ContextItem, PlaceAttachmentResult } from '$lib/components/chat/input/context-api';
@@ -311,18 +312,23 @@ export async function sendHeldFirstMessage(
       const error = typeof result.error === 'string' ? result.error.trim() : '';
       return {
         sent: false,
-        errorDetail: error.length > 0 ? error : undefined,
+        errorDetail: error.length > 0 ? readableSendError(error) : undefined,
         ...placedImageBlocks(imageBlocks),
       };
     }
     return { sent: true };
   } catch (error) {
+    const detail = extractPlacementErrorDetail(error);
     return {
       sent: false,
-      errorDetail: extractPlacementErrorDetail(error),
+      errorDetail: detail ? readableSendError(detail) : undefined,
       ...placedImageBlocks(imageBlocks),
     };
   }
+}
+
+function readableSendError(detail: string): string {
+  return remoteAttachmentFailure(detail) ?? detail;
 }
 
 /**
