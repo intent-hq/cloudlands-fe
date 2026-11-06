@@ -31,6 +31,7 @@
   import GitHubLinkSettings from '$lib/components/settings/GitHubLinkSettings.svelte';
   import KeyboardShortcutsSettings from '$lib/components/settings/KeyboardShortcutsSettings.svelte';
   import ColorThemeSettings from '$lib/components/settings/ColorThemeSettings.svelte';
+  import ChatAppearanceSettings from '$lib/components/settings/ChatAppearanceSettings.svelte';
   import ReduceMotionOnBatterySettings from '$lib/components/settings/ReduceMotionOnBatterySettings.svelte';
   import PauseAnimationsWhenUnfocusedSettings from '$lib/components/settings/PauseAnimationsWhenUnfocusedSettings.svelte';
   import NotificationSettings from '$lib/components/settings/NotificationSettings.svelte';
@@ -58,8 +59,6 @@
   import {
     resetNotificationSettings,
     setAgentFontStyle,
-    setChatAuroraEnabled,
-    setCollapseToolRuns,
     setCodeFontFamily,
     setNoteFontStyle,
     setShellTransparencyEnabled,
@@ -68,8 +67,6 @@
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectAgentFontStyle,
-    selectChatAuroraEnabled,
-    selectCollapseToolRuns,
     selectCodeFontFamily,
     selectCodeFontFamilyCSS,
     selectCodeFontOptions,
@@ -106,8 +103,6 @@
   const codeFontFamily = selectCodeFontFamily();
   const codeFontFamilyCSS = selectCodeFontFamilyCSS();
   const codeFontOptions = selectCodeFontOptions();
-  const chatAuroraEnabled = selectChatAuroraEnabled();
-  const collapseToolRuns = selectCollapseToolRuns();
   const shellTransparencyEnabled = selectShellTransparencyEnabled();
   const themePreference = selectThemePreference();
   const daemonTransport$ = selectDaemonTransport();
@@ -695,50 +690,7 @@
               >
                 <ColorThemeSettings bind:this={colorThemeSettingsRef} />
               </section>
-              <section
-                id="chat-aurora"
-                data-highlight-id="chat-aurora"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-appearance-chatAurora-label-field"
-                  label={m.settings_appearance_chatAurora_label()}
-                  description={m.settings_appearance_chatAurora_description()}
-                >
-                  <Switch
-                    id="chat-aurora-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$chatAuroraEnabled}
-                    onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
-                    ariaLabel={m.settings_appearance_chatAurora_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
-              <section
-                id="collapse-tool-runs"
-                data-highlight-id="collapse-tool-runs"
-                use:highlightTarget
-                data-slot="settings-section-body"
-                class="px-6 py-4"
-              >
-                <SettingsFieldRow
-                  id="settings-appearance-collapseToolRuns-label-field"
-                  label={m.settings_appearance_collapseToolRuns_label()}
-                  description={m.settings_appearance_collapseToolRuns_description()}
-                >
-                  <Switch
-                    id="collapse-tool-runs-switch"
-                    size="sm"
-                    class="mb-auto"
-                    checked={$collapseToolRuns}
-                    onCheckedChange={(enabled) => appStore.dispatch(setCollapseToolRuns(enabled))}
-                    ariaLabel={m.settings_appearance_collapseToolRuns_label()}
-                  />
-                </SettingsFieldRow>
-              </section>
+              <ChatAppearanceSettings />
               <section
                 id="translucent-window"
                 data-highlight-id="translucent-window"

@@ -4,9 +4,17 @@
   import { faSliders } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
-  import { selectAgentFontStyle } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import {
+    selectAgentFontStyle,
+    selectChatContentWidth,
+    selectChatAuroraEnabled,
+    selectCollapseToolRuns,
+  } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import {
     setAgentFontStyle,
+    setChatContentWidth,
+    setChatAuroraEnabled,
+    setCollapseToolRuns,
     type AgentFontStyle,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { store as appStore } from '$store/renderer/store';
@@ -18,6 +26,9 @@
     agentId,
   }: { embedded?: boolean; workspaceId?: string; agentId?: string } = $props();
   const fontStyle = selectAgentFontStyle();
+  const chatContentWidth = selectChatContentWidth();
+  const chatAuroraEnabled = selectChatAuroraEnabled();
+  const collapseToolRuns = selectCollapseToolRuns();
   let open = $state(false);
   const fontLabel = $derived(
     $fontStyle === 'sans' ? m.settings_fontStyle_sans() : m.settings_fontStyle_mono(),
@@ -40,6 +51,30 @@
   </Menu.RadioGroup>
 {/snippet}
 
+{#snippet chatAppearanceItems()}
+  <Menu.CheckboxItem
+    checked={$chatContentWidth === 'full'}
+    closeOnSelect={false}
+    onCheckedChange={(enabled) => appStore.dispatch(setChatContentWidth(enabled ? 'full' : '800'))}
+  >
+    {m.settings_appearance_chatContentWidth_label()}
+  </Menu.CheckboxItem>
+  <Menu.CheckboxItem
+    checked={$chatAuroraEnabled}
+    closeOnSelect={false}
+    onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
+  >
+    {m.settings_appearance_chatAurora_label()}
+  </Menu.CheckboxItem>
+  <Menu.CheckboxItem
+    checked={$collapseToolRuns}
+    closeOnSelect={false}
+    onCheckedChange={(enabled) => appStore.dispatch(setCollapseToolRuns(enabled))}
+  >
+    {m.settings_appearance_collapseToolRuns_label()}
+  </Menu.CheckboxItem>
+{/snippet}
+
 {#snippet desktopPermission()}
   {#if workspaceId && agentId}
     {#key `${workspaceId}:${agentId}`}
@@ -58,6 +93,7 @@
       {@render fontItems()}
     </Menu.SubContent>
   </Menu.Sub>
+  {@render chatAppearanceItems()}
   {@render desktopPermission()}
 {:else}
   <Menu.Root bind:open>
@@ -77,8 +113,10 @@
         </Button>
       {/snippet}
     </Menu.Trigger>
-    <Menu.Content align="end" class="w-56" aria-label={m.ui_viewSettings_font_label()}>
+    <Menu.Content align="end" class="w-56" aria-label={m.ui_viewSettings_trigger_tooltip()}>
       {@render fontItems()}
+      <Menu.Separator />
+      {@render chatAppearanceItems()}
       {@render desktopPermission()}
     </Menu.Content>
   </Menu.Root>

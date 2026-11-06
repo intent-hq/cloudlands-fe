@@ -63,6 +63,10 @@ export const selectChatAuroraEnabled = store.createSelector((state) => {
   return state.userPreferences?.chatAuroraEnabled ?? true;
 });
 
+export const selectChatContentWidth = store.createSelector((state) => {
+  return state.userPreferences?.chatContentWidth ?? 'full';
+});
+
 export const selectCollapseToolRuns = store.createSelector((state) => {
   return state.userPreferences?.collapseToolRuns ?? false;
 });

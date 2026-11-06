@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import type { HTMLAttributes } from 'svelte/elements';
   import { cn } from '$lib/utils/cn';
+  import { selectChatContentWidth } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   let {
     children,
@@ -18,6 +19,8 @@
     operational?: boolean;
     element?: HTMLDivElement;
   } = $props();
+
+  const chatContentWidth = selectChatContentWidth();
 </script>
 
 <div
@@ -27,6 +30,7 @@
   class:chief
   class:composer-prompt-lane={composer}
   class:regular-chat-content-inset={operational && !chief}
+  style:max-width={$chatContentWidth === 'full' ? undefined : `${$chatContentWidth}px`}
 >
   {@render children()}
 </div>

@@ -133,7 +133,9 @@ describe('Fonts & Colors settings migration', () => {
         within(document.getElementById('agent-chat-font')!).getByRole('radio', { name: 'Mono' }),
       );
 
-      const codeFont = document.querySelector<HTMLElement>('[data-select-trigger]')!;
+      const codeFont = within(document.getElementById('code-font')!).getByRole('combobox', {
+        name: 'Font',
+      });
       await fireEvent.keyDown(codeFont, { key: 'Enter' });
       expect(await screen.findByRole('option', { name: LONG_FONT_NAME })).toBeTruthy();
       await fireEvent.keyDown(codeFont, { key: 'ArrowDown' });

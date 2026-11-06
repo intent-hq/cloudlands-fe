@@ -2,6 +2,7 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
+import { isChatContentWidth, type ChatContentWidth } from '$shared/chat-content-width';
 import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import type { UpdateChannel } from '$features/auto-update/types';
 import type { AgentRulesEditorState, UserPreferencesStoreState } from './user-preferences-types';
@@ -55,6 +56,7 @@ export type UserPreferencesState = {
   /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
   showReasoningBlocks: boolean;
   chatAuroraEnabled: boolean;
+  chatContentWidth: ChatContentWidth;
   /** Whether runs of consecutive tool calls and thinking steps collapse into one chat row. */
   collapseToolRuns: boolean;
   shellTransparencyEnabled: boolean;
@@ -149,6 +151,7 @@ export const initialState: UserPreferencesStoreState = {
   providerSetupHydratedBackendId: null,
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
+  chatContentWidth: 'full',
   collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
@@ -357,6 +360,10 @@ const chatAuroraPreference = createBooleanPreference<UserPreferencesStoreState>(
 export const setChatAuroraEnabled = chatAuroraPreference.setAction;
 
 export const toggleChatAurora = chatAuroraPreference.toggleAction;
+
+export const setChatContentWidth = createAction<[width: ChatContentWidth]>(
+  'userPreferences/setChatContentWidth',
+);
 
 const collapseToolRunsPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
@@ -578,6 +585,11 @@ userPreferencesReducer.with(
 );
 showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
+userPreferencesReducer.with(setChatContentWidth, (state, { payload: [width] }) =>
+  !isChatContentWidth(width) || state.chatContentWidth === width
+    ? state
+    : { ...state, chatContentWidth: width },
+);
 collapseToolRunsPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);

@@ -4845,6 +4845,7 @@
   "settings_aiBehavior_usageHint": "Seleccione este especialista al iniciar un chat para usar su modelo y su prompt de sistema. Puede personalizar ambos a continuación.",
   "settings_appearance_chatAurora_description": "Brillo animado detrás del cuadro de redacción mientras un agente responde.",
   "settings_appearance_chatAurora_label": "Aurora del chat",
+  "settings_appearance_chatContentWidth_label": "Ancho completo",
   "settings_appearance_collapseToolRuns_description": "Agrupa en una fila desplegable las llamadas a herramientas y los pasos de razonamiento consecutivos del chat.",
   "settings_appearance_collapseToolRuns_label": "Contraer actividad de herramientas",
   "settings_appearance_pauseAnimationsWhenUnfocused_description": "Pausa las animaciones en bucle mientras otra ventana está en primer plano.",
