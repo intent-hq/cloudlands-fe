@@ -52,6 +52,17 @@
     sidebar?: Snippet;
   } = $props();
 
+  // A generated file name ("clip-1a2b3c4d.mp4") says nothing the title does not; a name
+  // the person gave stays.
+  const shownSubtitle = $derived(
+    subtitle &&
+      !/^(clip|screenshot|recording|capture(-original|-retake)?)-[0-9a-f-]+\.(mp4|mov|webm|png|jpe?g|webp)$/i.test(
+        subtitle.trim(),
+      )
+      ? subtitle
+      : undefined,
+  );
+
   let confirming = $state(false);
   /** The open question came from main (window close or a switch), not from Esc/Cancel. */
   let fromMain = false;
@@ -98,7 +109,7 @@
   <header class="header">
     <div class="titles">
       <h1 class="title">{title}</h1>
-      {#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
+      {#if shownSubtitle}<span class="subtitle">{shownSubtitle}</span>{/if}
     </div>
     <div class="actions">
       {@render headerActions?.()}

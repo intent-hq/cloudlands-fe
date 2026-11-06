@@ -14,7 +14,8 @@
   import DockRecordingSendOptions from './DockRecordingSendOptions.svelte';
   import DockRecordingTranscript from './DockRecordingTranscript.svelte';
   import DockRecordingFrameMarks from './DockRecordingFrameMarks.svelte';
-  import * as Menu from '$lib/components/ui/menu';
+  import { ActionMenu } from '$lib/components/patterns/action-menu';
+  import DotsThreeIcon from 'phosphor-svelte/lib/DotsThreeIcon';
   import { findFillerCuts, type FillerCuts } from './recording-transcript-model';
   import { frameToolKind, type FrameTool } from './recording-frame-model';
   import { createEditTransaction } from '../edit-transaction.svelte';
@@ -508,22 +509,28 @@
 />
 
 {#snippet overflow()}
-  <Menu.Root>
-    <Menu.Trigger
-      class="flex h-7 w-7 items-center justify-center rounded-md hover:bg-accent"
-      aria-label={m.dock_captureEditor_more_label()}
-    >
-      <span aria-hidden="true">⋯</span>
-    </Menu.Trigger>
-    <Menu.Content align="end">
-      <Menu.Item disabled={!timeEditable || transcript?.status !== 'ready'} onSelect={previewFiller}
-        >{m.dock_captureEditor_cutFiller_label()}</Menu.Item
-      >
-      <Menu.Item disabled={!original} onSelect={() => original && edits?.reset(original.edit)}
-        >{m.dock_captureEditor_resetEdits_label()}</Menu.Item
-      >
-    </Menu.Content>
-  </Menu.Root>
+  <ActionMenu
+    ariaLabel={m.dock_captureEditor_more_label()}
+    actions={[
+      {
+        id: 'cut-filler',
+        label: m.dock_captureEditor_cutFiller_label(),
+        disabled: !timeEditable || transcript?.status !== 'ready',
+      },
+      { id: 'reset', label: m.dock_captureEditor_resetEdits_label(), disabled: !original },
+    ]}
+    onAction={(id) => {
+      if (id === 'cut-filler') previewFiller();
+      else if (id === 'reset' && original) edits?.reset(original.edit);
+    }}
+  >
+    {#snippet trigger({ props })}<Button
+        {...props}
+        variant="ghost"
+        size="icon-sm"
+        aria-label={m.dock_captureEditor_more_label()}><DotsThreeIcon size={18} /></Button
+      >{/snippet}
+  </ActionMenu>
 {/snippet}
 
 <DestructiveConfirm

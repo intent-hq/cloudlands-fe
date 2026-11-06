@@ -314,6 +314,9 @@ function createEditorWindow(backendId: string): BrowserWindow {
     },
   });
   registerDockCaptureEditorWindow(window);
+  // A compact utility editor: no traffic lights (Cancel, Esc and Cmd+W close it), the
+  // normal frame, shadow and resizing kept; the header is its drag area.
+  if (process.platform === 'darwin') window.setWindowButtonVisibility(false);
   fixWebContentsZoom(window.webContents);
   stampWindowWithBackend(window, backendId);
   // The document is bound to its backend on dom-ready (stampWindowWithBackend's own

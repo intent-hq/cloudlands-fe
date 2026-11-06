@@ -56,7 +56,8 @@
     <span class="label" id="send-video-label">{m.dock_captureEditor_video_label()}</span>
     <ToggleGroup.Root
       type="single"
-      variant="flat"
+      variant="outline"
+      size="sm"
       class="send-choice w-full"
       aria-labelledby="send-video-label"
       disabled={!enabled}
@@ -82,7 +83,8 @@
     <span class="label" id="send-voice-label">{m.dock_captureEditor_voice_label()}</span>
     <ToggleGroup.Root
       type="single"
-      variant="flat"
+      variant="outline"
+      size="sm"
       class="send-choice w-full"
       aria-labelledby="send-voice-label"
       disabled={!enabled}
@@ -134,11 +136,6 @@
    * Settings' segmented control (outline, small), with the chosen option always shown,
    * not only on hover: the app's selected fill with a hairline edge, in light and dark.
    */
-  .options :global(.send-choice) {
-    border: 1px solid hsl(var(--border));
-    background: transparent;
-    box-shadow: none;
-  }
   .options :global(.send-choice [data-state='on']) {
     background: hsl(var(--selected));
     color: hsl(var(--foreground));
