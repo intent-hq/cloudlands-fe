@@ -8,7 +8,11 @@ import { setGitLabAuthStatus } from '$store/renderer/slices/gitlab-auth/gitlab-a
 import { setGitHubAuthState } from '$store/renderer/slices/github-auth/github-auth-slice';
 import type { RepositoryCheckoutSession } from '$shared/types/repository-checkout';
 
-export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab', configAvailable = true) {
+export function setupSelectedRepositoryForm(
+  provider: 'github' | 'gitlab',
+  configAvailable = true,
+  { deferHydration = false }: { deferHydration?: boolean } = {},
+) {
   const restore = setupRecentRepositoriesPreview();
   const instanceBaseUrl = 'https://git.example.test/Forge';
   const projectPath = 'fixture-owner/app';
@@ -107,21 +111,23 @@ export function setupSelectedRepositoryForm(provider: 'github' | 'gitlab', confi
       oauthUrl: null,
     }),
   );
-  appStore.dispatch(
-    hydrateWorkspaceInitializer({
-      compactFormState: {
-        repoType: provider,
-        repoPath: provider === 'github' ? projectPath : '',
-        githubUrl: provider === 'github' ? `https://github.com/${projectPath}` : '',
-        branch: provider === 'github' ? 'trunk' : '',
-        isValidPath: true,
-        isTeamMode: false,
-        ...(provider === 'gitlab'
-          ? { repositoryCheckoutDraft: { instanceBaseUrl, projectPath, mode: 'cached' as const } }
-          : {}),
-      },
-    }),
-  );
+  if (!deferHydration) {
+    appStore.dispatch(
+      hydrateWorkspaceInitializer({
+        compactFormState: {
+          repoType: provider,
+          repoPath: provider === 'github' ? projectPath : '',
+          githubUrl: provider === 'github' ? `https://github.com/${projectPath}` : '',
+          branch: provider === 'github' ? 'trunk' : '',
+          isValidPath: true,
+          isTeamMode: false,
+          ...(provider === 'gitlab'
+            ? { repositoryCheckoutDraft: { instanceBaseUrl, projectPath, mode: 'cached' as const } }
+            : {}),
+        },
+      }),
+    );
+  }
   const stopGit = appStore.runSaga(workspaceInitializerGitSaga);
   const stopCheckout = appStore.runSaga(repositoryCheckoutSaga);
   return () => {

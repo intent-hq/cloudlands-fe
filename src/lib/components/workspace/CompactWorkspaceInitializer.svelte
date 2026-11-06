@@ -398,6 +398,12 @@
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
         else if (data.repoPath) {
+          const repositoryChanged = repositorySelectionChanged({
+            repoPath: data.repoPath,
+            repoType: 'local',
+            githubUrl: '',
+            isNewRepo: false,
+          });
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -411,7 +417,7 @@
           // checkout or a branch that doesn't exist in the local repo. An
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
-          branch = '';
+          if (repositoryChanged) branch = '';
         } else if (data.githubUrl) {
           // A GitHub repo from a deep link (clone, "Fix in Intent"): select it
           // the same way the Home GitHub prefill does — a local checkout of
@@ -540,6 +546,20 @@
   let branch = $state(savedState?.branch ?? '');
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
+
+  function repositorySelectionChanged(
+    next: Pick<
+      CompactWorkspaceInitializerFormState,
+      'repoPath' | 'repoType' | 'githubUrl' | 'isNewRepo'
+    >,
+  ): boolean {
+    return (
+      (next.repoPath ?? repoPath) !== repoPath ||
+      (next.repoType ?? repoType) !== repoType ||
+      (next.githubUrl ?? githubUrl) !== githubUrl ||
+      (next.isNewRepo ?? isNewRepo) !== isNewRepo
+    );
+  }
   // Plain-folder workspaces (Labs). The pick is bound to its path, so any other
   // repo change (restore, prefill, new pick) drops it.
   const initializeGitChoice = createInitializeGitChoice();
@@ -1312,6 +1332,12 @@
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
         else if (data.repoPath) {
+          const repositoryChanged = repositorySelectionChanged({
+            repoPath: data.repoPath,
+            repoType: 'local',
+            githubUrl: '',
+            isNewRepo: false,
+          });
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -1325,7 +1351,7 @@
           // checkout or a branch that doesn't exist in the local repo. An
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
-          branch = '';
+          if (repositoryChanged) branch = '';
         }
         if (!hasCheckoutDraft && data.branch) branch = data.branch;
         // A link for a folder with no workspace (the `intent` CLI) asks for
@@ -1555,6 +1581,7 @@
       queueMicrotask(() => {
         lastAppliedInitialRepoKey = repoKey;
         const formState = mapInitialRepoToFormState(repo);
+        const repositoryChanged = repositorySelectionChanged(formState);
         if (formState.repoType === 'gitlab')
           restoreCheckout(formState.repositoryCheckoutDraft, formState.invalidCheckoutDraft);
 
@@ -1562,7 +1589,8 @@
         if (formState.isValidPath !== undefined) isValidPath = formState.isValidPath;
         if (formState.isNewRepo !== undefined) isNewRepo = formState.isNewRepo;
         if (formState.scope !== undefined) scope = formState.scope;
-        if (formState.branch !== undefined) branch = formState.branch;
+        if (formState.branch !== undefined && (repositoryChanged || formState.branch !== ''))
+          branch = formState.branch;
         if (formState.repoType !== undefined) repoType = formState.repoType;
         if (formState.githubUrl !== undefined) githubUrl = formState.githubUrl;
         if (formState.remoteSetup) remoteSetup = formState.remoteSetup;
@@ -2109,6 +2137,13 @@
       plainFolder?: 'existing' | 'new';
     }>,
   ) {
+    const repositoryChanged =
+      repositorySelectionChanged({
+        repoPath: event.detail.path,
+        repoType: event.detail.type,
+        githubUrl: event.detail.githubUrl || '',
+        isNewRepo: !!event.detail.isNewRepo,
+      }) || plainFolderPick?.kind !== event.detail.plainFolder;
     appStore.dispatch(checkoutClosed(checkoutFormId));
     folderSelectionRevision++;
     repoPath = event.detail.path;
@@ -2122,11 +2157,13 @@
     isValidPath = event.detail.isValidPath ?? false;
     scope = event.detail.scope || '';
     githubUrl = event.detail.githubUrl || '';
-    branch = isNewRepo
-      ? 'main'
-      : event.detail.type === 'remote'
-        ? event.detail.remoteSetup?.branch || 'main'
-        : '';
+    if (repositoryChanged || event.detail.type === 'remote') {
+      branch = isNewRepo
+        ? 'main'
+        : event.detail.type === 'remote'
+          ? event.detail.remoteSetup?.branch || 'main'
+          : '';
+    }
 
     // Handle remote setup from repo selector
     if (event.detail.type === 'remote' && event.detail.remoteSetup) {
@@ -2151,14 +2188,14 @@
       if (next !== null) skipIsolation = next;
     }
 
-    // Reset GitHub auth state when repo changes - will be updated by BranchSelector
-    githubAuthNeeded = 'none';
-
-    // Reset branch status state when repo changes
-    branchBehind = 0;
-    pullError = null;
-    selectedPRBranch = '';
-    selectedPRTargetBranch = '';
+    // Reselecting the same repository does not reload BranchSelector.
+    if (repositoryChanged) {
+      githubAuthNeeded = 'none';
+      branchBehind = 0;
+      pullError = null;
+      selectedPRBranch = '';
+      selectedPRTargetBranch = '';
+    }
   }
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
