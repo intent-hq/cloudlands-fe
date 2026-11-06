@@ -425,8 +425,9 @@ an existing description reference is preserved. Do not rely on color alone to ex
 a command is unavailable.
 
 The public `menuOverlay()` recipe from `$lib/components/ui/menu` supplies the same shell
-for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Prefer
-the semantic components in feature code. Recipes provide styling, not keyboard, focus,
+for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Both use
+`type-caption`, so custom content and summaries in nested menus match the option text.
+Prefer the semantic components in feature code. Recipes provide styling, not keyboard, focus,
 checked-state, or dismissal behavior.
 
 `Menu.Indicator` owns the trailing glyph, slot, and decorative `aria-hidden` contract for
