@@ -37,7 +37,7 @@ test('sidebar selection and deletion preserve scrolling and anchored actions at 
   await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
   await page.keyboard.press('Backspace');
   await expect(options).toHaveCount(29);
-  await expect(fixture.getByRole('button', { name: 'Attach', exact: true })).toBeEnabled();
+  await expect(fixture.getByRole('button', { name: 'Save changes', exact: true })).toBeEnabled();
   await options.first().click();
   await page.screenshot({ path: info.outputPath('sidebar-selection-wide.png') });
   for (const width of [620, 390]) {
@@ -52,10 +52,10 @@ test('sidebar selection and deletion preserve scrolling and anchored actions at 
     expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(700);
     await expect(fixture.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
     await expect(
-      fixture.getByRole('button', { name: 'Attach', exact: true }),
+      fixture.getByRole('button', { name: 'Save changes', exact: true }),
     ).toBeInViewport();
     await page.screenshot({ path: info.outputPath(`sidebar-narrow-${width}.png`) });
   }
-  await fixture.getByRole('button', { name: 'Attach', exact: true }).click();
+  await fixture.getByRole('button', { name: 'Save changes', exact: true }).click();
   await expect(fixture).toHaveAttribute('data-saved', 'true');
 });

@@ -26,10 +26,10 @@ async function draw(page: Page, fixture: Locator, kind: 'screenshot' | 'recordin
   });
   await page.mouse.up();
   await expect(fixture).toHaveAttribute('data-dirty', 'true');
-  await expect(fixture.getByRole('button', { name: 'Attach', exact: true })).toBeEnabled();
+  await expect(fixture.locator('[data-attach]')).toBeEnabled();
 }
 for (const kind of ['screenshot', 'recording'] as const) {
-  test(`${kind}: clean Attach, save-only, dirty Attach and duplicate guard`, async ({
+  test(`${kind}: clean Attach, removed save shortcut, dirty Save and duplicate guard`, async ({
     mount,
     page,
   }, info) => {
@@ -39,7 +39,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
       props: { kind, admitted: false },
       hooksConfig: { mockBackend: {} },
     });
-    const attach = fixture.getByRole('button', { name: 'Attach', exact: true });
+    const attach = fixture.locator('[data-attach]');
     await expect(attach).toBeEnabled();
     await page.keyboard.press('ControlOrMeta+Enter');
     await expect(fixture).toHaveAttribute('data-closes', '1');
@@ -47,16 +47,16 @@ for (const kind of ['screenshot', 'recording'] as const) {
     await fixture.update({ props: { kind, epoch: 1, admitted: true } });
     await draw(page, fixture, kind);
     await page.keyboard.press('ControlOrMeta+s');
-    await expect(fixture).toHaveAttribute('data-dirty', 'false');
+    await expect(fixture).toHaveAttribute('data-dirty', 'true');
+    expect((await requests(fixture)).filter((x) => x.channel.endsWith(':save'))).toHaveLength(0);
     await expect(fixture).toHaveAttribute('data-closes', '1');
-    await draw(page, fixture, kind);
     await fixture.update({ props: { kind, epoch: 1, mode: 'defer' } });
     await attach.click();
     await page.keyboard.press('ControlOrMeta+Enter');
     await expect(attach).toBeDisabled();
     await expect
       .poll(async () => (await requests(fixture)).filter((x) => x.channel.endsWith(':save')).length)
-      .toBe(2);
+      .toBe(1);
     await fixture.update({ props: { kind, epoch: 1, mode: 'defer', release: 1 } });
     await expect(fixture).toHaveAttribute('data-closes', '2');
     await info.attach('wire-receipt', {
@@ -75,7 +75,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
     });
     await page.evaluate(() => document.documentElement.classList.add('dark'));
     await draw(page, fixture, kind);
-    await fixture.getByRole('button', { name: 'Attach', exact: true }).click();
+    await fixture.locator('[data-attach]').click();
     await expect(fixture.getByRole('alert')).toBeVisible();
     await expect(fixture).toHaveAttribute('data-dirty', 'true');
     await expect(fixture).toHaveAttribute('data-closes', '0');
@@ -91,13 +91,13 @@ for (const kind of ['screenshot', 'recording'] as const) {
     await expectAnimationsToSettle(fixture);
     await page.screenshot({ path: info.outputPath(`${kind}-attach-ready.png`) });
     await fixture.update({ props: { kind, mode: 'defer' } });
-    await fixture.getByRole('button', { name: 'Attach', exact: true }).click();
+    await fixture.locator('[data-attach]').click();
     await fixture.update({ props: { kind, mode: 'defer', principal: 'B', release: 1 } });
     await expect(fixture.getByRole('alert')).toBeVisible();
     await expect(fixture).toHaveAttribute('data-closes', '0');
     await fixture.update({ props: { kind, epoch: 1, mode: 'defer' } });
     await draw(page, fixture, kind);
-    await fixture.getByRole('button', { name: 'Attach', exact: true }).click();
+    await fixture.locator('[data-attach]').click();
     const closeCountBeforeRetarget = (await requests(fixture)).filter((x) =>
       x.channel.endsWith(':close'),
     ).length;
@@ -119,7 +119,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
   }) => {
     await page.setViewportSize({ width: 1100, height: 780 });
     const fixture = await mount(Harness, { props: { kind }, hooksConfig: { mockBackend: {} } });
-    const attach = fixture.getByRole('button', { name: 'Attach', exact: true });
+    const attach = fixture.locator('[data-attach]');
     async function beginText(fraction: number) {
       await fixture.getByRole('button', { name: 'Text', exact: true }).click();
       const surface =
@@ -143,7 +143,8 @@ for (const kind of ['screenshot', 'recording'] as const) {
     await expect(fixture).toHaveAttribute('data-closes', '0');
     await expect(attach).toBeEnabled();
     await page.keyboard.press('ControlOrMeta+s');
-    await expect(fixture).toHaveAttribute('data-dirty', 'false');
+    await expect(fixture).toHaveAttribute('data-dirty', 'true');
+    expect((await requests(fixture)).filter((x) => x.channel.endsWith(':save'))).toHaveLength(0);
     await expect(fixture).toHaveAttribute('data-closes', '0');
     await beginText(0.6);
     await page.keyboard.press('Escape');
@@ -160,7 +161,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
       hooksConfig: { mockBackend: {} },
     });
     await draw(page, fixture, kind);
-    const attach = fixture.getByRole('button', { name: 'Attach', exact: true });
+    const attach = fixture.locator('[data-attach]');
     await attach.click();
     await expect(fixture.getByRole('alert')).toHaveText(
       'Could not close the editor. Try Attach again.',
@@ -244,7 +245,7 @@ for (const kind of ['screenshot', 'recording'] as const) {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.4);
     await expect(fixture).toHaveAttribute('data-dirty', 'true');
-    await expect(fixture.getByRole('button', { name: 'Attach', exact: true })).toBeDisabled();
+    await expect(fixture.locator('[data-attach]')).toBeDisabled();
     await fixture.update({ props: { kind, nativeRequest: 1 } });
     const dialog = page.getByRole('dialog', { name: 'Discard changes?' });
     await expect(dialog).toBeVisible();
@@ -263,11 +264,11 @@ test('screenshot crop cancels before Close; legacy main receives a guarded close
     hooksConfig: { mockBackend: {} },
   });
   await fixture.getByRole('button', { name: 'Crop', exact: true }).click();
-  await expect(fixture.getByRole('button', { name: 'Attach', exact: true })).toBeDisabled();
+  await expect(fixture.locator('[data-attach]')).toBeDisabled();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).not.toBeVisible();
   await expect(fixture).toHaveAttribute('data-closes', '0');
-  await fixture.getByRole('button', { name: 'Attach', exact: true }).click();
+  await fixture.locator('[data-attach]').click();
   await expect(fixture).toHaveAttribute('data-closes', '1');
   const closes = (await requests(fixture)).filter((x) => x.channel.endsWith(':close'));
   expect(closes.map((x) => x.request)).toEqual([
@@ -285,7 +286,7 @@ test('close IPC rejection and timeout release Attach busy state', async ({ mount
     props: { closeMode: 'throw' },
     hooksConfig: { mockBackend: {} },
   });
-  const attach = fixture.getByRole('button', { name: 'Attach', exact: true });
+  const attach = fixture.locator('[data-attach]');
   await expect(attach).toBeEnabled();
   await attach.click();
   await expect(fixture.getByRole('alert')).toBeVisible();

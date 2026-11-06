@@ -14,7 +14,7 @@
    * windows. The kind's view fills `main` and `sidebar`.
    *
    * Attach keeps the capture and closes; dirty edits are saved first by the view.
-   * Cmd+Enter attaches, Cmd+S saves edits without closing, and Escape asks before
+   * Cmd+Enter saves changes and closes, and Escape asks before
    * closing a dirty draft. Close always preserves the original attachment.
    */
   let {
@@ -73,6 +73,9 @@
      */
     actionsPlacement?: 'header' | 'sidebar';
   } = $props();
+  const primaryLabel = $derived(
+    dirty ? m.dock_captureEditor_save_label() : m.dock_captureEditor_attach_label(),
+  );
   const footerActions = $derived(actionsPlacement === 'sidebar' && !!sidebar);
 
   // A generated file name ("clip-1a2b3c4d.mp4") says nothing the title does not; a name
@@ -114,9 +117,17 @@
     fromMain = false;
   }
 
-  function onCloseShortcut(event: KeyboardEvent): void {
+  function onWindowShortcut(event: KeyboardEvent): void {
     const mod = isMacPlatform() ? event.metaKey : event.ctrlKey;
-    if (!mod || event.key.toLowerCase() !== 'w') return;
+    if (!mod) return;
+    if (event.key.toLowerCase() === 's') {
+      // Save is the explicit primary action; do not open a native Save dialog or
+      // commit a pending field through the former shortcut.
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (event.key.toLowerCase() !== 'w') return;
     // The native app accelerator targets the active pane, not this utility window.
     // Own it even while a confirmation is open so it cannot reach another pane.
     event.preventDefault();
@@ -146,9 +157,6 @@
     } else if (mod && key === 'enter' && onAttach && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       if (!saving && !saveBlocked && (!dirty || onSave)) onAttach();
-    } else if (mod && key === 's' && onSave) {
-      event.preventDefault();
-      if (dirty && !saving && !saveBlocked) onSave();
     } else if (mod && key === 'z' && !saving && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       if (event.shiftKey) onRedo?.();
@@ -157,7 +165,7 @@
   }
 </script>
 
-<svelte:window onkeydowncapture={onCloseShortcut} onkeydown={onKeydown} />
+<svelte:window onkeydowncapture={onWindowShortcut} onkeydown={onKeydown} />
 
 {#snippet actions()}
   <div class="actions">
@@ -177,15 +185,15 @@
         variant="primary"
         size="default"
         disabled={saving || saveBlocked || (dirty && !onSave)}
-        tooltip={m.dock_captureEditor_attach_tooltip()}
+        tooltip={primaryLabel}
         tooltipShortcut="mod+Enter"
         tooltipContentClass="dock-chrome-tooltip"
         loading={saving}
-        aria-label={m.dock_captureEditor_attach_label()}
+        aria-label={primaryLabel}
         data-attach
         onclick={onAttach}
       >
-        {m.dock_captureEditor_attach_label()}
+        {primaryLabel}
         <kbd class="attach-shortcut">{formatShortcut('mod+Enter')}</kbd>
       </Button>
     {:else if onSave}
@@ -196,11 +204,6 @@
         loading={saving}
         data-save
         onclick={() => onSave?.()}>{m.dock_captureEditor_save_label()}</Button
-      >
-    {/if}
-    {#if onAttach && onSave}
-      <span class="save-hint"
-        >{m.dock_captureEditor_saveHint({ shortcut: formatShortcut('mod+s') })}</span
       >
     {/if}
   </div>
@@ -329,12 +332,7 @@
     opacity: 0.7;
     margin-inline-start: 4px;
   }
-  .save-hint {
-    flex-basis: 100%;
-    text-align: end;
-    font-size: 11px;
-    color: hsl(var(--muted-foreground));
-  }
+
   .drag-strip {
     height: 14px;
     flex: none;
