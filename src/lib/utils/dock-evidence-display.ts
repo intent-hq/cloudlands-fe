@@ -143,7 +143,6 @@ export function editedCaptureCards(
     ids = new Set<string>(),
     resources = new Map(blocks.filter((b) => b.attachmentId).map((b) => [b.attachmentId!, b]));
   const images = Array.isArray(metadata?.images) ? metadata.images : [];
-  const clips = Array.isArray(metadata?.clips) ? metadata.clips : [];
   const result: EditedCapture[] = [];
   for (const row of rows) {
     if (ids.has(row.id)) return [];
@@ -172,13 +171,6 @@ export function editedCaptureCards(
       )
         return [];
     } else {
-      if (
-        !clips.some(
-          (value) =>
-            value && typeof value === 'object' && (value as Record<string, unknown>).id === row.id,
-        )
-      )
-        return [];
       if (row.video_attachment_id === undefined || !row.frames || !row.kept_ms) return [];
       if (
         row.kept_ms.some(

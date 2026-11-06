@@ -178,7 +178,9 @@ function restoreScreenEvidenceForEdit(
   const item = retained[0];
   const original = originalItems.find((candidate) => candidate.id === item.id);
   if (!item.content || original?.content !== item.content) return null;
-  const parsed = consumeDockEvidencePrefix(item.content);
+  const parsed = consumeDockEvidencePrefix(item.content, {
+    trusted: original?.metadata?.trustedProducer === true,
+  });
   if (!parsed || parsed.remaining) return null;
   // The strict consumer has already validated this exact compact body.
   const body = JSON.parse(parsed.prefix.split('\n')[2]) as {
@@ -186,6 +188,8 @@ function restoreScreenEvidenceForEdit(
     clip?: { attachment_id: string | null };
     clips?: { attachment_id: string | null }[];
   };
+  if (!Array.isArray(body.images) || (body.clips !== undefined && !Array.isArray(body.clips)))
+    return null;
   const images = (source: readonly ContextItem[]) =>
     source.filter(
       (candidate) => candidate.imageMimeType && (candidate.attachmentId || candidate.imageData),
@@ -203,6 +207,7 @@ function restoreScreenEvidenceForEdit(
   )
     return null;
   for (const clip of body.clips ?? (body.clip ? [body.clip] : [])) {
+    if (!clip || typeof clip !== 'object') return null;
     const id = clip.attachment_id;
     const hasClip = (source: readonly ContextItem[]) =>
       source.some((candidate) => candidate.attachmentId === id && !candidate.imageMimeType);
@@ -388,7 +393,11 @@ export function parseStoredMessage(
         type: 'selection',
         label: m.annotation_feedback_heading(),
         content: evidence.prefix,
-        metadata: { kind: 'dock_screen_evidence', version: 1 },
+        metadata: {
+          kind: 'dock_screen_evidence',
+          version: 1,
+          trustedProducer: options.trustedEvidence === true,
+        },
       });
       remaining = evidence.remaining;
       foundMatch = true;
