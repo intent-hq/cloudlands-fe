@@ -76,7 +76,7 @@ test('collapsed conversation waits for hover but keyboard opening remains immedi
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   await page.clock.runFor(500);
   await expect(shell).toHaveAttribute('data-expanded', 'false');
-  await component.update({ workspaceId: 'workspace-one', focusRequest: 1 });
+  await component.update({ props: { workspaceId: 'workspace-one', focusRequest: 1 } });
   await expect(shell).toHaveAttribute('data-expanded', 'true');
 });
 
@@ -88,9 +88,9 @@ test('capture hiding cancels pending notch opening', async ({ mount, page }) => 
   const surface = page.getByTestId('dock-surface');
   await surface.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await page.clock.runFor(60);
-  await component.update({ hidden: true });
+  await component.update({ props: { hidden: true } });
   await page.clock.runFor(200);
-  await component.update({ hidden: false });
+  await component.update({ props: { hidden: false } });
   await page.clock.runFor(200);
   await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-expanded', 'false');
 });
