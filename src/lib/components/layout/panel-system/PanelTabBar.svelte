@@ -1341,24 +1341,21 @@
           </Menu.Group>
         {/if}
       {:else}
-        {@render renameAction()}
-        {#if activeTab && isTabRenameable(activeTab) && onTabRename}
-          <Menu.Separator />
-        {/if}
         {#if contentActions?.display}
           <Menu.Group data-panel-actions-section="display">
             {@render contentActions.display()}
           </Menu.Group>
           <Menu.Separator />
         {/if}
-        {#if contentActions?.primary || contentActions?.actions || contentActions?.destructive}
+        {#if (activeTab && isTabRenameable(activeTab) && onTabRename) || contentActions?.primary || contentActions?.actions || contentActions?.destructive}
           <Menu.Group data-panel-actions-section="actions">
             <Menu.Label alignIconColumn={false}
               >{m.layout_panelTabBar_actionsSection_label()}</Menu.Label
             >
-            {@render contentActions.primary?.()}
-            {@render contentActions.actions?.()}
-            {@render contentActions.destructive?.()}
+            {@render renameAction()}
+            {@render contentActions?.primary?.()}
+            {@render contentActions?.actions?.()}
+            {@render contentActions?.destructive?.()}
           </Menu.Group>
           {#if paneMoveDirections.some((direction) => direction.enabled)}
             <Menu.Separator />
