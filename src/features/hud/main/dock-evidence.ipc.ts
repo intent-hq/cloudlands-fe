@@ -31,7 +31,6 @@ import {
   getDockVisibleSurfaceBounds,
   getDockVisibleSurfaceRegions,
   getDockWindow,
-  hideDockForRecording,
   releaseDockRecordingHide,
 } from '../../../main/dock-window';
 import { isDockAnnotationWindow } from '../../../main/dock-annotation-identity';
@@ -709,16 +708,9 @@ function createMediaBinder() {
         } finally {
           clipStartPending = false;
         }
+        // The notch stays in sight while it records, with its recording status and Stop;
+        // the dock is excluded from the recording either way.
         if (!result.ok) state.clipEnded = true;
-        // Out of sight while it records (its tool bar is the control), only for a clip
-        // still current on the session's own dock window.
-        else if (
-          current() &&
-          state.clipId === control.clipId &&
-          !state.clipEnded &&
-          state.context.window === getDockWindow()
-        )
-          hideDockForRecording(state.context.window, control.clipId);
         break;
       }
       case 'clip-pause':
