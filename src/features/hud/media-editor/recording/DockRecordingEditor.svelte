@@ -219,20 +219,34 @@
   // is kept (a mark on a cut frame would never be seen).
   let frameTool = $state<FrameTool | null>(null);
   let selectedMarkId = $state<string | null>(null);
-  const frameKept = $derived(
-    !!kept?.some((range) => currentMs >= range.startMs && currentMs < range.endMs),
-  );
-  /** Choosing a tool or starting a gesture pauses; the gesture keeps the paused time. */
+  /**
+   * One frame clock for drawing and painting: the shown time as a whole millisecond
+   * inside the kept range it falls in. Rounding never leaves the range (a fractional
+   * start rounds up, the very end of a range, or of the video, is its last
+   * millisecond), so a mark drawn on a frame is on screen on that frame and kept.
+   */
+  function keptFrame(ms: number): number | null {
+    const at = Math.min(ms, durationMs);
+    const range = kept?.find((r) => at >= r.startMs && at <= r.endMs && r.endMs > r.startMs);
+    if (!range) return null;
+    const first = Math.ceil(range.startMs);
+    const last = Math.ceil(range.endMs) - 1;
+    return last < first ? null : Math.min(last, Math.max(first, Math.floor(at)));
+  }
+  const frameMs = $derived(keptFrame(currentMs));
+  const frameKept = $derived(frameMs !== null);
+  /** Choosing a tool or starting a gesture pauses; the gesture keeps the paused frame. */
   function pauseForFrame(): number {
     if (video && !video.paused) video.pause();
     if (video) currentMs = video.currentTime * 1000;
-    // Down, never up: a mark is on screen from its time, so it must not start after this frame.
-    return Math.floor(currentMs);
+    return keptFrame(currentMs) ?? Math.floor(currentMs);
   }
   function drawMark(tool: FrameTool, geometry: DockMediaGeometry, atMs: number): void {
     if (!edits || !source) return;
-    const batchId =
-      dockMediaBatchAt(source, atMs)?.id ?? source.batches.at(-1)?.id ?? 'editor-batch';
+    // The batch on screen at this frame. After the last Clear no batch is: an editor
+    // batch id (not one of the source's) keeps the mark on screen to the end, where
+    // falling back to the cleared batch would hide it as soon as it was drawn.
+    const batchId = dockMediaBatchAt(source, atMs)?.id ?? 'editor';
     const id = crypto.randomUUID();
     edits.apply((draft) => ({
       ...draft,
@@ -423,7 +437,7 @@
           <DockRecordingFrameMarks
             {source}
             edit={edits.draft}
-            atMs={currentMs}
+            atMs={frameMs ?? currentMs}
             tool={frameTool}
             editable={frameKept}
             selectedId={selectedMarkId}

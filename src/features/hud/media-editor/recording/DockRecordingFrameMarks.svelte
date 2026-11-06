@@ -71,7 +71,14 @@
   const box = $derived(frameBox(width, height, source.width, source.height));
 
   type Gesture =
-    | { kind: 'draw'; pointerId: number; atMs: number; points: { x: number; y: number }[] }
+    | {
+        kind: 'draw';
+        pointerId: number;
+        atMs: number;
+        /** The tool the gesture began with; a tool change mid-drag does not change it. */
+        tool: Exclude<FrameTool, 'text'>;
+        points: { x: number; y: number }[];
+      }
     | {
         kind: 'move' | 'resize';
         pointerId: number;
@@ -97,7 +104,7 @@
     };
   });
   const drawPreview = $derived(
-    gesture?.kind === 'draw' && tool && tool !== 'text' ? dragGeometry(tool, gesture.points) : null,
+    gesture?.kind === 'draw' ? dragGeometry(gesture.tool, gesture.points) : null,
   );
   // Exactly the marks the export paints at this time, numbered as it numbers them.
   const visible = $derived(
@@ -151,7 +158,7 @@
     if (tool) {
       const begun = onBegin();
       surface.setPointerCapture(event.pointerId);
-      gesture = { kind: 'draw', pointerId: event.pointerId, atMs: begun, points: [point] };
+      gesture = { kind: 'draw', pointerId: event.pointerId, atMs: begun, tool, points: [point] };
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
@@ -199,9 +206,11 @@
     gesture = null;
     if (!commit) return;
     if (g.kind === 'draw') {
-      if (!tool || tool === 'text') return;
-      const geometry = dragGeometry(tool, g.points);
-      if (geometry) onDraw?.(tool, geometry, g.atMs);
+      // The release point counts too: a quick drag may have had no move in between.
+      const last = at(event);
+      const points = last && g.points.length < 4096 ? [...g.points, last] : g.points;
+      const geometry = dragGeometry(g.tool, points);
+      if (geometry) onDraw?.(g.tool, geometry, g.atMs);
     } else if (g.preview && JSON.stringify(g.preview) !== JSON.stringify(g.original)) {
       onChange?.(g.id, g.preview);
     }
