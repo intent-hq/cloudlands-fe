@@ -15,6 +15,11 @@
   import { openDockConversation, choosePendingDockShortcut } from '$features/hud/dock-navigation';
   import { initDockIntro } from '$features/hud/intro/dock-intro.svelte';
   import { selectDockConversationWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { selectCurrentDockComposerEvidence } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import {
+    selectPttRecording,
+    selectVoiceTranscribing,
+  } from '$store/renderer/slices/hardware-console/hardware-console-selectors';
   import {
     openDockConversationRequested,
     closeDockConversationRequested,
@@ -61,6 +66,16 @@
   );
   const dockWorkspaces$ = selectDockWorkspaces();
   const recording$ = selectDockRecordingIndicator();
+  const evidence$ = selectCurrentDockComposerEvidence();
+  const pttRecording$ = selectPttRecording();
+  const transcribing$ = selectVoiceTranscribing();
+  const inputLive = $derived(
+    !!$recording$ ||
+      !!$evidence$?.view.speech.active ||
+      !!$evidence$?.view.annotating ||
+      $pttRecording$ ||
+      $transcribing$,
+  );
   let stoppingClipId = $state<string | null>(null);
   $effect(() => {
     if ($recording$?.clipId !== stoppingClipId) stoppingClipId = null;
@@ -133,6 +148,7 @@
 <Screen class="fixed inset-0 overflow-clip bg-transparent" data-testid="dock-route">
   {#if $placement$}
     <DockRail
+      {inputLive}
       recording={$recording$}
       recordingStopping={stoppingClipId !== null}
       onStopRecording={stopRecording}

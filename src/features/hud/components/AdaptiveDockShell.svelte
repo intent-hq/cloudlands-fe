@@ -33,7 +33,7 @@
     type DockDragFinish,
   } from './dock-shell-geometry';
   import { useDockConversationPresence } from './dock-conversation-presence.svelte';
-  import { dockIntro } from '$features/hud/intro/dock-intro.svelte';
+  import { dockIntro, releaseDockIntroHold } from '$features/hud/intro/dock-intro.svelte';
   import { useDockConversationResize } from './dock-conversation-resize.svelte';
   import { useDockHoverComposerFocus } from './dock-hover-composer-focus.svelte';
   import { useDockShellResize } from './dock-shell-resize.svelte';
@@ -54,6 +54,7 @@
   let {
     workspaces,
     recording = null,
+    inputLive = false,
     recordingStopping = false,
     onStopRecording,
     machines,
@@ -75,11 +76,11 @@
     conversation,
     conversationWorkspaceId = null,
     onOpenConversation,
-    onCloseConversation,
     onHomeDismiss,
   }: {
     workspaces: DockWorkspaceView[];
     recording?: RecordingState | null;
+    inputLive?: boolean;
     recordingStopping?: boolean;
     onStopRecording?: () => void;
     machines?: DockMachineOption[];
@@ -115,7 +116,7 @@
     () => conversationWorkspaceId,
     () => rootElement,
     () => placement.captureHidden || placement.phase === 'dragging',
-    () => conversationResize.held || nativeMenuOpen,
+    () => conversationResize.held || nativeMenuOpen || inputLive || !!recording,
     () => !edge,
     () => (notch ? DOCK_NOTCH_HOVER_DELAY_MS : 0),
   );
@@ -172,6 +173,7 @@
   let keyboardOpen = $state(false);
   let lastUserInput = Number.NEGATIVE_INFINITY;
   let pointerInside = false;
+  let dismissedUntilLeave = false;
   let openTimer: ReturnType<typeof setTimeout> | undefined;
   let closeTimer: ReturnType<typeof setTimeout> | undefined;
   let measureFrame: number | undefined;
@@ -307,6 +309,14 @@
           focused.blur();
         shellSpring.animate(0, instant);
       }
+    });
+  });
+  $effect(() => {
+    if (expanded || reveal !== 0) return;
+    untrack(() => {
+      contentVisible = false;
+      surfaceExpanded = false;
+      stopHeight();
     });
   });
   function command(value: DockPlacementCommand): void {
@@ -523,7 +533,7 @@
     () => command({ action: 'focus' }),
   );
   function enter(): void {
-    if (disposed || placement.captureHidden) return;
+    if (disposed || placement.captureHidden || dismissedUntilLeave) return;
     hoverComposerFocus.enter();
     pointerInside = true;
     clearTimeout(closeTimer);
@@ -557,6 +567,8 @@
   }
   function leave(event?: PointerEvent | FocusEvent): void {
     if (event instanceof PointerEvent) {
+      dismissedUntilLeave = false;
+      conversationPresence.leave();
       hoverComposerFocus.leave();
       pointerInside = false;
       if (!gesture && awaitingDragStart === null) conversationFocus.pointerLeave(event);
@@ -573,7 +585,10 @@
       if (nativeMenuOpen || gesture || awaitingDragStart !== null || dragging) return;
       if (!conversationFocus.keepsOverviewOpen(pointerInside, keyboardOpen)) {
         expandedByUser = false;
-        if (!pinned) onHomeDismiss?.();
+        if (!pinned) {
+          releaseDockIntroHold();
+          onHomeDismiss?.();
+        }
       }
     };
     if (event instanceof FocusEvent && keyboardOpen) closeTimer = setTimeout(close, 0);
@@ -589,6 +604,7 @@
     clearTimeout(closeTimer);
     const current = machineId;
     try {
+      // eslint-disable-next-line intent/no-component-async-data-fetch -- native menu lifetime, not domain data
       const result = await showDockContextMenu({
         machines,
         currentId: machineId,
@@ -622,8 +638,11 @@
     void tick().then(() => gripElement?.focus({ preventScroll: true }));
   }
   function dismiss(): void {
-    if (placement.captureHidden) return;
+    if (placement.captureHidden || inputLive || recording || nativeMenuOpen) return;
     hoverComposerFocus.leave();
+    conversationPresence.hide(pointerInside);
+    releaseDockIntroHold();
+    dismissedUntilLeave = pointerInside;
     if (!pinned) onHomeDismiss?.();
     pointerInside = false;
     cancelOpen();
@@ -631,7 +650,6 @@
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     dragFrame = measureFrame = undefined;
-    shellSpring.cancel();
     stopHeight();
     pointerEnd(true);
     expandedByUser = false;
@@ -805,15 +823,34 @@
   }
   /** What Escape does once nothing else claims it: close the conversation, or collapse. */
   function closeLikeEscape(): void {
-    if (placement.captureHidden) return;
+    if (placement.captureHidden || nativeMenuOpen || inputLive || recording) return;
     if (pinned) {
-      onCloseConversation?.();
+      dismiss();
       return;
     }
     if (edge && sidePreviewOpen) {
       sideCloseRequest += 1;
       return;
     }
+    dismiss();
+  }
+  function outsidePointer(event: PointerEvent): void {
+    lastUserInput = performance.now();
+    const target = event.target;
+    if (
+      !(target instanceof Node) ||
+      rootElement?.contains(target) ||
+      (target instanceof Element && target.closest('[data-dock-conversation-portals]')) ||
+      nativeMenuOpen ||
+      machineMenuOpen ||
+      conversationPopupOpen ||
+      gesture ||
+      awaitingDragStart !== null ||
+      dragging ||
+      conversationResize.held ||
+      (!expanded && !edgeState.held)
+    )
+      return;
     dismiss();
   }
   let closeRequestSeen = untrack(() => closeRequest);
@@ -868,9 +905,7 @@
 {/if}
 <svelte:window
   oncontextmenu={contextMenu}
-  onpointerdowncapture={() => {
-    lastUserInput = performance.now();
-  }}
+  onpointerdowncapture={outsidePointer}
   onkeydowncapture={(event) => {
     lastUserInput = performance.now();
     if (gesture || awaitingDragStart !== null || dragging) keydown(event);
@@ -890,6 +925,7 @@
   onkeydown={keydown}
   onblur={() => {
     hoverComposerFocus.leave();
+    if (!nativeMenuOpen) releaseDockIntroHold();
     pointerInside = false;
     pointerEnd(true);
     expandedByUser = false;
@@ -940,6 +976,7 @@
       style:--camera-width={`${cameraWidth}px`}
       style:--grip-press-duration={`${gesture ? spring.fast.settleMs : spring.fast.exit.duration}ms`}
       onpointerdowncapture={() => {
+        dismissedUntilLeave = false;
         keyboardOpen = false;
       }}
       onpointerenter={enter}
@@ -994,6 +1031,7 @@
               return;
             event.preventDefault();
             machineMenuOpen = false;
+            // eslint-disable-next-line intent/no-component-async-data-fetch -- native app activation, not domain data
             activateIntentFromDock();
           }}
           onclick={(event) => {
@@ -1004,7 +1042,13 @@
               if (!control) suppressClick = false;
               return;
             }
-            if (notch && pinned && !(grip && machines && onMachine)) composerAsk.request += 1;
+            if (notch && pinned && !(grip && machines && onMachine)) {
+              cancelOpen();
+              conversationPresence.show();
+              expandedByUser = true;
+              keyboardOpen = false;
+              composerAsk.request += 1;
+            }
           }}
           onpointermove={pointerMove}
           onpointerup={(event) => pointerEnd(false, event)}

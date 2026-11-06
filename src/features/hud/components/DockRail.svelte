@@ -56,6 +56,7 @@
 
   interface Props {
     recording?: DockRecordingIndicator | null;
+    inputLive?: boolean;
     recordingStopping?: boolean;
     onStopRecording?: () => void;
     conversation?: Snippet;
@@ -87,6 +88,7 @@
   let {
     workspaces,
     recording = null,
+    inputLive = false,
     recordingStopping = false,
     onStopRecording,
     machines,
@@ -616,6 +618,7 @@
 
 {#if placement && onPlacementCommand}
   <AdaptiveDockShell
+    {inputLive}
     {recording}
     {recordingStopping}
     {onStopRecording}
