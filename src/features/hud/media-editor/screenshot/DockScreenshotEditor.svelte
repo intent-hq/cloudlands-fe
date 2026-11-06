@@ -707,7 +707,7 @@
   }
   .body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 48px;
+    grid-template-columns: minmax(0, 1fr) 260px;
     min-height: 0;
     height: 100%;
   }

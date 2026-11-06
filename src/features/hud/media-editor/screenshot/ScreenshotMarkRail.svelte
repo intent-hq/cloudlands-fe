@@ -1,7 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { menuItem } from '$lib/components/ui/menu';
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
+  import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
   import RectangleIcon from 'phosphor-svelte/lib/RectangleIcon';
   import ScribbleIcon from 'phosphor-svelte/lib/ScribbleIcon';
   import ArrowUpRightIcon from 'phosphor-svelte/lib/ArrowUpRightIcon';
@@ -81,61 +83,107 @@
   }
 </script>
 
-<div
-  class="rail"
-  role="listbox"
-  aria-label={m.dock_screenshotEditor_marks()}
-  aria-multiselectable="true"
-  tabindex={items.length ? -1 : 0}
-  onkeydown={key}
->
-  {#each items as item (item.id)}
-    {@const Icon = icons[item.kind]}
-    {@const label =
-      item.n === null
-        ? screenshotKindLabel('blur')
-        : m.dock_screenshotEditor_mark({ n: item.n, kind: screenshotKindLabel(item.kind) })}
+<div class="mark-panel">
+  <div class="rail-heading">
+    <span>{m.dock_screenshotEditor_marks()}</span>
+    <span class="count">{items.length}</span>
+  </div>
+  <div
+    class="rail"
+    role="listbox"
+    aria-label={m.dock_screenshotEditor_marks()}
+    aria-multiselectable="true"
+    tabindex={items.length ? -1 : 0}
+    onkeydown={key}
+  >
+    {#each items as item (item.id)}
+      {@const Icon = icons[item.kind]}
+      {@const label =
+        item.n === null
+          ? screenshotKindLabel('blur')
+          : m.dock_screenshotEditor_mark({ n: item.n, kind: screenshotKindLabel(item.kind) })}
+      <Button
+        variant="ghost"
+        size="compact"
+        class={menuItem({ class: 'mark-chip' })}
+        role="option"
+        aria-label={label}
+        aria-selected={selectedIds.includes(item.id)}
+        active={selectedIds.includes(item.id)}
+        tooltip={label}
+        {disabled}
+        tabindex={tabId === item.id ? 0 : -1}
+        onfocus={() => (focusedId = item.id)}
+        onclick={(event) => {
+          focusedId = item.id;
+          onSelect(item.id, event);
+        }}
+      >
+        <Icon size={14} />
+        <span class="mark-label">{label}</span>
+      </Button>
+    {/each}
+  </div>
+  {#if !items.length}
+    <p class="empty">{m.dock_screenshotEditor_empty()}</p>
+  {:else}
     <Button
       variant="ghost"
       size="compact"
-      class="mark-chip"
-      role="option"
-      aria-label={label}
-      aria-selected={selectedIds.includes(item.id)}
-      active={selectedIds.includes(item.id)}
-      tooltip={label}
-      {disabled}
-      tabindex={tabId === item.id ? 0 : -1}
-      onfocus={() => (focusedId = item.id)}
-      onclick={(event) => {
-        focusedId = item.id;
-        onSelect(item.id, event);
-      }}
+      disabled={disabled || !selectedIds.length}
+      onclick={onDelete}
     >
-      <Icon size={14} />{#if item.n !== null}<span class="number">{item.n}</span>{/if}
+      <TrashIcon size={14} />{m.dock_screenshotEditor_deleteSelected()}
     </Button>
-  {/each}
+  {/if}
 </div>
 
 <style>
+  .mark-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 4px;
+    min-width: 0;
+  }
+  .rail-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 8px 4px;
+    color: hsl(var(--muted-foreground));
+    font-size: 12px;
+  }
+  .count {
+    font-variant-numeric: tabular-nums;
+  }
+  .empty {
+    margin: 0;
+    padding: 8px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: hsl(var(--muted-foreground));
+  }
   .rail {
     display: flex;
     flex-direction: column;
     gap: 4px;
     align-items: stretch;
     min-width: 0;
-    height: 100%;
-    overflow-y: auto;
-    padding: 6px 4px;
+    padding: 0;
   }
   .rail :global(.mark-chip) {
     width: 100%;
-    padding: 5px 2px;
-    gap: 3px;
+    justify-content: flex-start;
+    padding: 6px 8px;
+    gap: 8px;
     min-height: 32px;
   }
-  .number {
-    font-variant-numeric: tabular-nums;
-    font-size: 11px;
+  .mark-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+    font-size: 12px;
   }
 </style>

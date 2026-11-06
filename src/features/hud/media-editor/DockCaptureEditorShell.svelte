@@ -127,7 +127,7 @@
 
 {#snippet actions()}
   <div class="actions">
-    {@render headerActions?.()}
+    {#if !footerActions}{@render headerActions?.()}{/if}
     <Button variant="ghost" size="sm" onclick={requestClose}
       >{m.dock_captureEditor_cancel_label()}</Button
     >
@@ -174,7 +174,10 @@
       <aside class="sidebar" data-flat={footerActions || undefined}>
         {#if footerActions}
           <div class="sidebar-scroll">{@render sidebar()}</div>
-          <footer class="sidebar-footer">{@render actions()}</footer>
+          <footer class="sidebar-footer">
+            {#if headerActions}<div class="footer-tools">{@render headerActions()}</div>{/if}
+            {@render actions()}
+          </footer>
         {:else}
           {@render sidebar()}
         {/if}
@@ -271,9 +274,19 @@
   }
   .sidebar-footer {
     display: flex;
-    justify-content: flex-end;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
     flex: none;
-    padding: 10px 4px 0;
+    padding: 12px 4px 0;
+  }
+  .sidebar-footer .actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+  .footer-tools {
+    padding-bottom: 12px;
+    border-bottom: 1px solid hsl(var(--border));
   }
   .body {
     display: grid;

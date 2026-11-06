@@ -455,8 +455,9 @@
         onDiscardRequested={discard}
         {onKeepEditing}
         sidebar={contentSidebar}
-        sidebarWidth={52}
-        sidebarLayout="rail"
+        sidebarWidth={260}
+        sidebarLayout="panel"
+        actionsPlacement="sidebar"
       >
         {#snippet main()}
           {#if error}<p class="status type-caption" role="alert">{error}</p>{/if}
