@@ -25,3 +25,9 @@ export function dockMediaFrameAt(source: DockMediaSource, plan: ReturnType<typeo
   const after = spans.find(r => r.end > desired) ?? spans.at(-1);
   return after ? Math.max(after.start, Math.min(desired, after.end - Math.min(1, (after.end-after.start)/2))) : null;
 }
+
+/** Partial captured strokes are painted but cannot edit invisible future geometry. */
+export function dockMediaMarkEditableAt(source: DockMediaSource, mark: DockMediaEdit['marks'][number], atMs: number): boolean {
+  const progress = recordedMarkProgress(source, mark);
+  return !progress || atMs >= progress.completedAtMs;
+}

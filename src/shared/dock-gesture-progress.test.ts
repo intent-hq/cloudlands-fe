@@ -1,5 +1,5 @@
 import { defaultDockMediaEdit, planDockMediaOutput, type DockMediaSource, type DockMediaEditMark } from './dock-media-edit';
-import { dockMediaOverlaySpans, recordedMarkProgress, dockMediaFrameAt } from './dock-media-animation';
+import { dockMediaOverlaySpans, recordedMarkProgress, dockMediaFrameAt, dockMediaMarkEditableAt } from './dock-media-animation';
 import { sanitizeDockMark } from './dock-evidence';
 import { describe, it, expect } from 'vitest';
 import { DockGestureProgressSchema, gestureGeometryAt } from './dock-gesture-progress';
@@ -51,4 +51,10 @@ describe('recording animation plan',()=>{
   expect(partial?.kind==='path'&&partial.points.every(p=>p.x<300)).toBe(true);
   expect(gestureGeometryAt(clean.geometry as never,clean.gestureProgress,1000)).toEqual(clean.geometry);
  });
+});
+
+it('selection is disabled through the captured in-progress interval, but static edited shapes are editable',()=>{
+ expect(dockMediaMarkEditableAt(source,captured,5000)).toBe(false);
+ expect(dockMediaMarkEditableAt(source,captured,7000)).toBe(true);
+ expect(dockMediaMarkEditableAt(source,{...captured,geometry:{kind:'point',x:4,y:4}},5000)).toBe(true);
 });
