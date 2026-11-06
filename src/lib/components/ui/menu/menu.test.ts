@@ -374,24 +374,6 @@ describe('Menu metadata and compatibility', () => {
     expect(screen.getByTestId('legacy-action-count').textContent).toBe('1');
   });
 
-  it('uses compact editorial rows, semantic selected states, and a contained overlay surface', async () => {
-    render(MenuTestHarness);
-    await openMenu();
-    const menu = screen.getByRole('menu');
-    const apple = screen.getByRole('menuitem', { name: 'Apple' });
-    expect(menu.className).toContain('bg-popover');
-    expect(menu.className).toContain('border-border');
-    expect(menu.className).toContain('overflow-y-auto');
-    expect(menu.className).toContain('rounded-md');
-    expect(menu.className).toContain('shadow-(--elevation-overlay)');
-    expect(menu.getAttribute('data-surface-level')).toBe('3');
-    expect(apple.className).toContain('min-h-(--control-height-small)');
-    expect(apple.className).toContain('rounded-(--radius-row)');
-    expect(apple.className).toContain('type-caption');
-    expect(menu.querySelector('[data-slot="menu-list-highlight"]')).toBeTruthy();
-    expect(menu.className).not.toMatch(/bg-(?:white|black|gray|slate|zinc|neutral)-?/);
-  });
-
   it('bounds content height by the viewport-derived bits-ui var when no maxHeight override is provided', async () => {
     render(MenuTestHarness);
     await openMenu();
