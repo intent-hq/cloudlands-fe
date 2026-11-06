@@ -8320,6 +8320,7 @@
   "dock_captureEditor_cancel_label": "취소",
   "dock_captureEditor_save_label": "변경 사항 저장",
   "dock_captureEditor_discard_title": "변경 사항을 버릴까요?",
+  "dock_captureEditor_discard_description": "이 캡처에 대한 편집 내용이 사라집니다.",
   "dock_captureEditor_discard_label": "버리기",
   "dock_captureEditor_keepEditing_label": "계속 편집",
   "dock_captureEditor_recording_title": "녹화 · {duration}",

@@ -8320,6 +8320,7 @@
   "dock_captureEditor_cancel_label": "キャンセル",
   "dock_captureEditor_save_label": "変更を保存",
   "dock_captureEditor_discard_title": "変更を破棄しますか？",
+  "dock_captureEditor_discard_description": "このキャプチャへの編集は失われます。",
   "dock_captureEditor_discard_label": "破棄",
   "dock_captureEditor_keepEditing_label": "編集を続ける",
   "dock_captureEditor_recording_title": "録画 · {duration}",
