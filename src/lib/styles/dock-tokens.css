@@ -133,3 +133,20 @@
   --border: var(--theme-dark-border);
   --color-border: hsl(var(--theme-dark-border));
 }
+
+/* A dock tooltip is chrome, including when its portal is under a light app body.
+   Only opted-in dock/capture callers use this surface; app tooltips keep their defaults. */
+.dock-chrome-tooltip {
+  color-scheme: dark;
+  --background: var(--theme-dark-surface-4);
+  --foreground: var(--theme-dark-foreground);
+  --muted-foreground: var(--theme-dark-muted-foreground);
+  --color-foreground: hsl(var(--theme-dark-foreground));
+  --color-muted-foreground: hsl(var(--theme-dark-muted-foreground));
+  --color-shortcut-foreground: hsl(var(--theme-dark-muted-foreground));
+  --color-muted: hsl(var(--theme-dark-surface-5));
+  --color-border: hsl(var(--theme-dark-border));
+  background-color: hsl(var(--theme-dark-surface-4));
+  color: hsl(var(--theme-dark-foreground));
+  border: 1px solid hsl(var(--theme-dark-border));
+}

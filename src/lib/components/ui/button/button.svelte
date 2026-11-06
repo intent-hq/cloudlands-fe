@@ -35,6 +35,7 @@
     tooltipAlign = 'center',
     tooltipDelayDuration = 200,
     tooltipClass = undefined,
+    tooltipContentClass = undefined,
     'aria-label': ariaLabel,
     'aria-labelledby': ariaLabelledby,
     title,
@@ -211,6 +212,7 @@
     delayDuration={tooltipDelayDuration}
     disabled={tooltipDisabled}
     class={tooltipClass}
+    contentClass={tooltipContentClass}
   >
     {@render content()}
   </TooltipShortcut>
