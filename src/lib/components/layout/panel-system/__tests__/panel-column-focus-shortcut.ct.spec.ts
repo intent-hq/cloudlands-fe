@@ -2,17 +2,20 @@ import { expect, test } from '../../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
 import PanelModWShortcutHarness from './mocks/PanelModWShortcutHarness.svelte';
 
-async function dispatchColumnFocus(
-  target: Locator,
-  key: '[' | ']' | '{' | '}',
-  modifier: 'Meta' | 'Control',
-) {
+type Chord = { key: string; altKey?: boolean; shiftKey?: boolean };
+
+// Focus Next/Previous Column is Mod+Alt+Right/Left (moved from Mod+Shift+] / [ in #4205).
+const nextColumn: Chord = { key: 'ArrowRight', altKey: true };
+const previousColumn: Chord = { key: 'ArrowLeft', altKey: true };
+
+async function dispatchChord(target: Locator, chord: Chord, modifier: 'Meta' | 'Control') {
   return target.evaluate(
-    (element, { key, modifier }) => {
+    (element, { chord, modifier }) => {
       (element as HTMLElement).focus();
       const event = new KeyboardEvent('keydown', {
-        key,
-        shiftKey: true,
+        key: chord.key,
+        altKey: chord.altKey ?? false,
+        shiftKey: chord.shiftKey ?? false,
         metaKey: modifier === 'Meta',
         ctrlKey: modifier === 'Control',
         bubbles: true,
@@ -24,7 +27,7 @@ async function dispatchColumnFocus(
         defaultPrevented: event.defaultPrevented,
       };
     },
-    { key, modifier },
+    { chord, modifier },
   );
 }
 
@@ -48,27 +51,46 @@ for (const { platform, navigatorPlatform, isMac, modifier } of [
     const state = component.getByTestId('mod-w-state');
     const targets = ['shortcut-input', 'shortcut-editor', 'shortcut-terminal'];
     const chords = [
-      { key: ']' as const, panelId: 'p3' },
-      { key: '{' as const, panelId: 'p2' },
-      { key: '}' as const, panelId: 'p3' },
-      { key: '[' as const, panelId: 'p2' },
+      { chord: nextColumn, panelId: 'p3' },
+      { chord: previousColumn, panelId: 'p2' },
+      { chord: nextColumn, panelId: 'p3' },
+      { chord: previousColumn, panelId: 'p2' },
     ];
 
     for (const targetId of targets) {
-      for (const { key, panelId } of chords) {
-        const result = await dispatchColumnFocus(component.getByTestId(targetId), key, modifier);
+      for (const { chord, panelId } of chords) {
+        const result = await dispatchChord(component.getByTestId(targetId), chord, modifier);
         expect(result).toEqual({ active: true, defaultPrevented: true });
         await expect(state).toHaveAttribute('data-focused-panel', panelId);
       }
     }
 
     await component.locator('[data-panel-id="p1"]').click({ position: { x: 20, y: 80 } });
-    const unavailable = await dispatchColumnFocus(
+    const unavailable = await dispatchChord(
       component.getByTestId('shortcut-terminal'),
-      '[',
+      previousColumn,
       modifier,
     );
     expect(unavailable).toEqual({ active: true, defaultPrevented: false });
     await expect(state).toHaveAttribute('data-focused-panel', 'p1');
+  });
+
+  test(`former Mod+Shift+[ / ] chords no longer move column focus on ${platform}`, async ({
+    mount,
+    page,
+  }) => {
+    await page.evaluate((value) => {
+      Object.defineProperty(window.navigator, 'platform', { configurable: true, value });
+    }, navigatorPlatform);
+    const component = await mount(PanelModWShortcutHarness, { props: { isMac } });
+    const state = component.getByTestId('mod-w-state');
+    await expect(state).toHaveAttribute('data-focused-panel', 'p2');
+
+    for (const targetId of ['shortcut-input', 'shortcut-editor', 'shortcut-terminal']) {
+      for (const key of [']', '}', '[', '{']) {
+        await dispatchChord(component.getByTestId(targetId), { key, shiftKey: true }, modifier);
+        await expect(state).toHaveAttribute('data-focused-panel', 'p2');
+      }
+    }
   });
 }
