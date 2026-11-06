@@ -146,9 +146,10 @@
       .join('');
     return { path: bars };
   });
+  const numbered = $derived(marks.map((mark, index) => ({ ...mark, n: mark.n ?? index + 1 })));
   const pinned = $derived(
-    marks.filter(
-      (mark): mark is DockCaptureEditorMark & { atMs: number; n?: number } =>
+    numbered.filter(
+      (mark): mark is DockCaptureEditorMark & { atMs: number; n: number } =>
         mark.atMs !== null &&
         axisRanges.some((range) => mark.atMs! >= range.startMs && mark.atMs! < range.endMs),
     ),
@@ -367,9 +368,9 @@
         data-pin={mark.id}
         data-active={mark.id === activeMarkId || undefined}
         style={`left: ${percent(mark.atMs)}%`}
-        aria-label={formatInteger(mark.n ?? 0)}
+        aria-label={formatInteger(mark.n)}
         onclick={() => onMark(mark)}
-        >{formatInteger(mark.n ?? 0)}
+        >{formatInteger(mark.n)}
       </Button>
     {/each}
     <div class="playhead" style:left={`${timelinePercent(axisCurrentMs, axisDurationMs)}%`}></div>

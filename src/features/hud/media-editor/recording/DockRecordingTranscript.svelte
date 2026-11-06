@@ -38,7 +38,7 @@
     onRestore,
     onWordEdit,
     onDeleteMark,
-    markNumbers = {},
+    markNumbers,
     onInteractionPending,
   }: {
     transcript: DockMediaTranscript | null;
@@ -107,6 +107,21 @@
   const current = $derived(ready ? currentWordId(ready.words, currentMs) : null);
 
   let list = $state<HTMLElement | null>(null);
+  const numbers = $derived(
+    markNumbers ?? Object.fromEntries(marks.map((mark, index) => [mark.id, index + 1])),
+  );
+  function deletePill(markId: string): void {
+    if (!onDeleteMark) return;
+    const before = [...(list?.querySelectorAll<HTMLElement>('[data-mark-pill]') ?? [])];
+    const index = before.findIndex((node) => node.dataset.markPill === markId);
+    onDeleteMark(markId);
+    void tick().then(() => {
+      const remaining = list?.querySelectorAll<HTMLElement>('[data-mark-pill]');
+      const next = remaining?.[Math.min(Math.max(0, index), remaining.length - 1)];
+      (next ?? list)?.focus({ preventScroll: true });
+    });
+  }
+
   // Keep the current word in view as it plays.
   $effect(() => {
     const id = current;
@@ -169,7 +184,14 @@
     <p class="status">{m.dock_captureEditor_transcript_noSpeech()}</p>
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -- word clicks are a pointer shortcut; marks (buttons) and the timeline carry keyboard navigation -->
-    <div class="batches" bind:this={list} onclick={onWordClick} ondblclick={onWordDoubleClick}>
+    <div
+      class="batches"
+      role="group"
+      tabindex="-1"
+      bind:this={list}
+      onclick={onWordClick}
+      ondblclick={onWordDoubleClick}
+    >
       {#each layout as batch (batch.id)}
         <div class="batch" data-batch={batch.n}>
           <p class="text">
@@ -217,16 +239,16 @@
                   class="mark-pill"
                   data-mark-pill={piece.mark.id}
                   data-active={piece.mark.id === activeMarkId || undefined}
-                  aria-label={formatInteger(markNumbers[piece.mark.id])}
+                  aria-label={formatInteger(numbers[piece.mark.id])}
                   onclick={() => onMark(piece.mark)}
                   onkeydown={(event: KeyboardEvent) => {
                     if (!onDeleteMark || (event.key !== 'Delete' && event.key !== 'Backspace'))
                       return;
                     event.preventDefault();
                     event.stopPropagation();
-                    onDeleteMark(piece.mark.id);
+                    deletePill(piece.mark.id);
                   }}
-                  >{formatInteger(markNumbers[piece.mark.id])}
+                  >{formatInteger(numbers[piece.mark.id])}
                 </Button>{' '}
               {/if}
             {/each}
