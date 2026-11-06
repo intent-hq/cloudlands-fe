@@ -645,7 +645,7 @@
     gap: 8px;
     flex: 1;
     min-height: 0;
-    padding: 12px 16px 14px;
+    padding: 12px 12px 10px;
   }
   /* The video takes all the room the controls and timeline leave. */
   .frame {
@@ -656,7 +656,6 @@
     min-height: 0;
     overflow: hidden;
     border-radius: var(--radius-medium);
-    background: hsl(var(--foreground) / 0.04);
   }
   video {
     width: 100%;

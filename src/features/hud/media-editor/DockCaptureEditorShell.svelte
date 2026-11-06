@@ -180,7 +180,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-    height: 44px;
+    height: 40px;
     flex: none;
     padding: 0 10px 0 16px;
     -webkit-app-region: drag;
