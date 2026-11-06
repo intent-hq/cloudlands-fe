@@ -54,7 +54,8 @@ export function showDockContextMenu(
   state: DockContextMenuRequest = {},
 ): Promise<DockContextMenuResult> {
   const active = activeMenus.get(window);
-  if (active) return active;
+  // A second document must never inherit the first document's menu selection.
+  if (active) return Promise.resolve({ shown: false });
   if (window.isDestroyed()) return Promise.resolve({ shown: false });
   const run = (command: DockPlacementCommand) => {
     if (window.isDestroyed()) return;

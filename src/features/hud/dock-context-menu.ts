@@ -15,7 +15,14 @@ export async function showDockContextMenu(
 ): Promise<DockContextMenuResult> {
   const bridge = (globalThis as { electronAPI?: DockMenuBridge }).electronAPI;
   try {
-    const result = await bridge?.invoke(WINDOW_CHANNELS.SHOW_DOCK_MENU, state);
+    // Svelte props may be reactive proxies; Electron requires cloneable plain data.
+    const request: DockContextMenuRequest = {
+      machines: state.machines?.map(({ id, label }) => ({ id, label })),
+      currentId: state.currentId,
+      pending: state.pending,
+      error: state.error,
+    };
+    const result = await bridge?.invoke(WINDOW_CHANNELS.SHOW_DOCK_MENU, request);
     if (result && typeof result === 'object' && 'shown' in result)
       return result as DockContextMenuResult;
   } catch {

@@ -4,8 +4,10 @@
  * command the in-dock controls send — move to notch/left/right/floating, or
  * hide (dismiss, which Window > Show Intent Dock reverses).
  */
+import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
+import type { DockContextMenuRequest } from '../shared/dock-context-menu';
 import { m } from '../shared/paraglide/messages.js';
 
 const mocks = vi.hoisted(() => ({
@@ -55,12 +57,15 @@ vi.mock('./dock-window', () => ({
 import { registerDockPlacementHandlers } from './dock-placement-ipc';
 import { buildDockContextMenuTemplate, showDockContextMenu } from './dock-context-menu';
 
-type FakeWindow = {
+type FakeWindow = EventEmitter & {
   isDestroyed: () => boolean;
   webContents: { mainFrame: object; window?: unknown };
 };
 function fakeWindow(): FakeWindow {
-  const window: FakeWindow = { isDestroyed: () => false, webContents: { mainFrame: {} } };
+  const window: FakeWindow = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    webContents: { mainFrame: {} as object, window: undefined as unknown },
+  });
   window.webContents.window = window;
   return window;
 }
@@ -74,16 +79,36 @@ beforeEach(() => {
 });
 
 describe('window:show-dock-menu', () => {
-  const show = (event: unknown) => mocks.handlers.get(WINDOW_CHANNELS.SHOW_DOCK_MENU)!(event, {});
+  const show = (event: unknown, request: DockContextMenuRequest = {}) =>
+    mocks.handlers.get(WINDOW_CHANNELS.SHOW_DOCK_MENU)!(event, request);
 
   it("opens the native menu over the dock for the dock's top-level document", async () => {
     const dock = fakeWindow();
     mocks.dockWindow = dock;
-    await expect(
-      show({ sender: dock.webContents, senderFrame: dock.webContents.mainFrame }),
-    ).resolves.toEqual({ shown: true });
+    const pending = show(
+      { sender: dock.webContents, senderFrame: dock.webContents.mainFrame },
+      {
+        machines: [
+          { id: 'local', label: 'This Mac' },
+          { id: 'remote', label: 'Build server' },
+        ],
+        currentId: 'local',
+      },
+    );
+    let closed = false;
+    void Promise.resolve(pending).then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    const template = mocks.buildFromTemplate.mock.calls[0]![0];
+    expect(template[0].submenu[0]).toMatchObject({ checked: true, enabled: false });
+    template[0].submenu[1].click();
+    mocks.popup.mock.calls[0]![0].callback();
+    await expect(pending).resolves.toEqual({ shown: true, backendId: 'remote' });
     expect(mocks.buildFromTemplate).toHaveBeenCalledTimes(1);
-    expect(mocks.popup).toHaveBeenCalledWith({ window: dock });
+    expect(mocks.popup).toHaveBeenCalledWith({ window: dock, callback: expect.any(Function) });
+    expect(dock.listenerCount('closed')).toBe(0);
   });
 
   it('refuses another window, an unknown sender, and a dock subframe', async () => {
@@ -97,6 +122,10 @@ describe('window:show-dock-menu', () => {
     ])
       await expect(show(event)).resolves.toEqual({ shown: false });
     expect(mocks.popup).not.toHaveBeenCalled();
+    const pending = show({ sender: dock.webContents, senderFrame: dock.webContents.mainFrame });
+    dock.webContents.mainFrame = {};
+    mocks.popup.mock.calls[0]![0].callback();
+    await expect(pending).resolves.toEqual({ shown: false });
   });
 });
 
@@ -122,15 +151,23 @@ describe('dock context menu items', () => {
     ]);
   });
 
-  it('runs the chosen command against the dock window, and nothing once it is gone', () => {
+  it('runs the chosen command against the dock window, and nothing once it is gone', async () => {
     const dock = fakeWindow();
-    showDockContextMenu(dock as never);
+    const pending = showDockContextMenu(dock as never, {
+      machines: [
+        { id: 'local', label: 'This Mac' },
+        { id: 'remote', label: 'Build server' },
+      ],
+      currentId: 'local',
+    });
     const template = mocks.buildFromTemplate.mock.calls[0]![0] as Array<{ click?: () => void }>;
     template.at(-1)!.click!();
     expect(mocks.updateDockPlacement).toHaveBeenCalledWith(dock, { action: 'dismiss' });
     mocks.updateDockPlacement.mockClear();
     dock.isDestroyed = () => true;
-    template[0]!.click!();
+    template[2]!.click!();
     expect(mocks.updateDockPlacement).not.toHaveBeenCalled();
+    dock.emit('closed');
+    await expect(pending).resolves.toEqual({ shown: true });
   });
 });

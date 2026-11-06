@@ -8,6 +8,9 @@ test('header activation and native menu hold, cancel, and device selection', asy
   page,
 }, info) => {
   const harness = await mount(Harness, { hooksConfig: { mockBackend: {} } });
+  await page.getByRole('button', { name: 'Open menu with reactive devices' }).click();
+  await expect(harness).not.toHaveAttribute('data-request', 'null');
+  await page.getByRole('button', { name: 'Cancel native menu' }).click();
   const shell = page.getByTestId('dock-shell');
   const header = page.locator('.companion-header');
   const activationCount = () => harness.getAttribute('data-activations');
@@ -36,4 +39,32 @@ test('header activation and native menu hold, cancel, and device selection', asy
     /machine:remote-build/,
   );
   await page.screenshot({ path: info.outputPath('native-device-selected.png') });
+});
+
+test('conversation header activates Intent and opens devices while body keeps its edit menu', async ({
+  mount,
+  page,
+}, info) => {
+  const harness = await mount(Harness, {
+    props: { conversationFixture: true },
+    hooksConfig: { mockBackend: {} },
+  });
+  await page.getByTestId('dock-drag-handle').hover();
+  await page.locator('[data-dock-row]').first().click();
+  const surface = page.getByTestId('dock-conversation-surface');
+  await expect(surface).toBeVisible();
+  const header = surface.locator('[data-dock-chrome]');
+  await header.dispatchEvent('dblclick', { button: 0 });
+  await expect(harness).toHaveAttribute('data-activations', '1');
+  await header.dispatchEvent('contextmenu', { button: 2 });
+  await expect(harness).not.toHaveAttribute('data-request', 'null');
+  await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-expanded', 'true');
+  await page.screenshot({ path: info.outputPath('conversation-header-devices.png') });
+  await page.getByRole('button', { name: 'Cancel native menu' }).click();
+  await expect(harness).toHaveAttribute('data-request', 'null');
+  await surface.locator('[data-dock-conversation]').dispatchEvent('contextmenu', { button: 2 });
+  await expect(harness).toHaveAttribute('data-request', 'null');
+  const editor = surface.getByRole('textbox').first();
+  await editor.dispatchEvent('contextmenu', { button: 2 });
+  await expect(harness).toHaveAttribute('data-request', 'null');
 });
