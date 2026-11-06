@@ -348,9 +348,16 @@ function* capture({
   }
   const known = new Set(evidenceOf(workspaceId, agentId)?.images.map((row) => row.id));
   const image = yield* addCapturedImage(workspaceId, agentId, result.value, 'capture');
-  // A new screenshot opens straight in the editor, except during an annotate session,
-  // where the user is still drawing on the screen.
-  if (image && !known.has(image.id) && !evidence?.annotation && dockCaptureEditorPreviewEnabled())
+  // A new screenshot opens straight in the editor, except when an annotate session was
+  // open at the start or began while it was taken: the user is drawing on the screen.
+  if (
+    image &&
+    !known.has(image.id) &&
+    !evidence?.annotation &&
+    !evidenceOf(workspaceId, agentId)?.annotation &&
+    activePair(workspaceId, agentId) &&
+    dockCaptureEditorPreviewEnabled()
+  )
     yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, image.id));
 }
 
@@ -1283,8 +1290,14 @@ function* placeFinishedClip(
         ...(isDockAttachmentPath(placed.path) ? { path: placed.path } : {}),
       }),
     );
-    // A finished recording opens straight in the editor once its source is placed.
-    if (source && dockCaptureEditorPreviewEnabled())
+    // A finished recording opens straight in the editor once its source is placed, only
+    // for the conversation still selected on the same backend.
+    if (
+      source &&
+      activePair(workspaceId, agentId) &&
+      isDockBindingCurrent(binding) &&
+      dockCaptureEditorPreviewEnabled()
+    )
       yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, clipId));
     // The daemon now owns the bytes; native may drop its finished temp file (never re-stops).
     const releasing = service;
