@@ -1010,6 +1010,7 @@
       }
       void resolveAttachmentImageUrl(wsId, attachmentId).then((url) => {
         if (url) referenceImageUrls = { ...referenceImageUrls, [attachmentId]: url };
+        else failedReferenceImages = { ...failedReferenceImages, [attachmentId]: true };
       });
     }
   });
@@ -2056,6 +2057,7 @@
                         ? 'video/webm'
                         : 'video/mp4'}
                       images={captureImageSources}
+                      imageFailures={failedReferenceImages}
                       onImage={openCaptureImage}
                       onImageError={(id, src) => {
                         const block = imageBlocks.find((block) => block.attachmentId === id);

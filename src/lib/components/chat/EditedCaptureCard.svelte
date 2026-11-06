@@ -14,6 +14,7 @@
     readOnly = false,
     videoMimeType = 'video/mp4',
     images,
+    imageFailures,
     onImage,
     onImageError,
     onOpenFile,
@@ -23,6 +24,7 @@
     workspaceId: string | null | undefined;
     readOnly?: boolean;
     images: Record<string, string | null>;
+    imageFailures: Record<string, true>;
     onImage: (id: string, opener: HTMLButtonElement) => void;
     onImageError: (id: string, src: string) => void;
     onOpenFile: (id: string) => void;
@@ -55,7 +57,8 @@
   );
 </script>
 
-<article class="capture-card" aria-label={title}>
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions (event barrier; descendants own their accessible controls) -->
+<article class="capture-card" aria-label={title} ondblclick={(event) => event.stopPropagation()}>
   <header>
     <div class="identity">
       {#if capture.kind === 'recording'}<VideoCameraIcon size={16} />{:else}<ImageIcon
@@ -122,7 +125,13 @@
           onerror={() => capture.primaryId && onImageError(capture.primaryId, src)}
         />
       </Button>
-    {:else}<MediaUnavailable name={title} reason="load-failed" />{/if}
+    {:else if imageFailures[capture.primaryId]}<MediaUnavailable
+        name={title}
+        reason="load-failed"
+      />
+    {:else}<div class="image-loading" role="img" aria-label={title} aria-busy="true">
+        <ImageIcon size={24} />
+      </div>{/if}
   {/if}
   {#if capture.frames?.length}
     <details class="frames">
@@ -202,6 +211,7 @@
     display: block;
     width: 100%;
     height: auto;
+    aspect-ratio: 16 / 9;
     max-height: 18rem;
     margin-top: 10px;
     padding: 0;
@@ -212,8 +222,21 @@
   :global(.image-preview) img {
     display: block;
     width: 100%;
+    height: 100%;
     max-height: 18rem;
     object-fit: contain;
+  }
+  .image-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 16/9;
+    width: 100%;
+    max-height: 18rem;
+    margin-top: 10px;
+    border-radius: var(--radius-small);
+    background: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
   }
   .capture-card :global(.open-recording) {
     width: 100%;
