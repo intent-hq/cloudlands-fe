@@ -10,6 +10,7 @@
 
 <script lang="ts">
   import { tick } from 'svelte';
+  import '$lib/styles/dock-tokens.css';
   import * as Menu from '$lib/components/ui/menu';
   import { DOCK_CAPTURE_MODES } from '$shared/dock-evidence';
   import DockComposerIcon from './DockComposerIcon.svelte';
@@ -62,7 +63,7 @@
     align="center"
     sideOffset={6}
     preventScroll={false}
-    class="dock-media-tool-popover min-w-0 rounded-[10px] p-[3px] shadow-none"
+    class="dock-media-tool-popover min-w-44"
     data-dock-palette="notch"
     aria-label={label}
     onInteractOutside={(event) => {
@@ -79,18 +80,21 @@
     onOpenAutoFocus={(event) => event.preventDefault()}
     onCloseAutoFocus={(event) => event.preventDefault()}
   >
-    <Menu.RadioGroup value={mode}>
-      {#each DOCK_CAPTURE_MODES as option (option)}
-        <Menu.RadioItem
-          value={option}
-          closeOnSelect
-          data-capture-mode={option}
-          onSelect={() => onSelect(option)}
-        >
-          {#snippet leading()}<DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[option]} />{/snippet}
-          {labels[option]}
-        </Menu.RadioItem>
-      {/each}
-    </Menu.RadioGroup>
+    <Menu.Group>
+      {#if label}<Menu.Label>{label}</Menu.Label>{/if}
+      <Menu.RadioGroup value={mode}>
+        {#each DOCK_CAPTURE_MODES as option (option)}
+          <Menu.RadioItem
+            value={option}
+            closeOnSelect
+            data-capture-mode={option}
+            onSelect={() => onSelect(option)}
+          >
+            {#snippet leading()}<DockComposerIcon glyph={DOCK_CAPTURE_GLYPHS[option]} />{/snippet}
+            {labels[option]}
+          </Menu.RadioItem>
+        {/each}
+      </Menu.RadioGroup>
+    </Menu.Group>
   </Menu.Content>
 </Menu.Root>

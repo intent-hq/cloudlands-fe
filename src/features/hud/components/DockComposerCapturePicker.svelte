@@ -132,6 +132,7 @@
   data-alert={media.alerts?.capture ? '' : undefined}
   data-capture-mode={mode}
   {tooltip}
+  tooltipContentClass="dock-chrome-tooltip"
   tooltipDisabled={open}
   onpointerenter={enter}
   onpointerleave={leave}

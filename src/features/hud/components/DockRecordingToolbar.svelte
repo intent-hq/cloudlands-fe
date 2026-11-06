@@ -1,4 +1,5 @@
 <script lang="ts">
+  import '$lib/styles/dock-tokens.css';
   import DotsSixVerticalIcon from 'phosphor-svelte/lib/DotsSixVerticalIcon';
   import { onDestroy, untrack } from 'svelte';
   import { fade, slide } from '$lib/motion';
@@ -253,7 +254,11 @@
   transition:fade={{ tier: 'fast' }}
 >
   <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
-  <TooltipShortcut label={m.dock_annotationToolbar_drag_label()} delayDuration={200}>
+  <TooltipShortcut
+    label={m.dock_annotationToolbar_drag_label()}
+    delayDuration={200}
+    contentClass="dock-chrome-tooltip"
+  >
     <span class="grip" data-grip aria-hidden="true">
       <DotsSixVerticalIcon size={16} weight="bold" aria-hidden="true" focusable="false" />
     </span>
@@ -266,6 +271,7 @@
         variant="ghost-light"
         size="sm"
         class="rt-text rt-undo"
+        tooltipContentClass="dock-chrome-tooltip"
         tooltip={m.dock_recordingToolbar_undo_label()}
         onclick={undoDiscard}>{m.dock_recordingToolbar_undo_label()}</Button
       >
@@ -285,6 +291,7 @@
             size="sm"
             class="rt-text"
             data-clear
+            tooltipContentClass="dock-chrome-tooltip"
             tooltip={m.dock_recordingToolbar_clear_label()}
             onclick={clear}>{m.dock_recordingToolbar_clear_label()}</Button
           >
@@ -303,6 +310,7 @@
           data-testid="recording-chip"
           data-idle
           disabled={!!record?.disabled || !!overlay.still}
+          tooltipContentClass="dock-chrome-tooltip"
           tooltip={record?.tooltip ?? m.dock_recordingToolbar_record_label()}
           aria-label={m.dock_recordingToolbar_record_label()}
           onclick={() => act({ sessionId, action: 'record' })}
@@ -316,6 +324,7 @@
           class="rt-icon rt-discard"
           data-close
           aria-label={m.dock_composer_endAnnotation_label()}
+          tooltipContentClass="dock-chrome-tooltip"
           tooltip={m.dock_composer_endAnnotation_label()}
           onclick={close}
         >
@@ -327,6 +336,7 @@
           class="rt-done"
           data-done
           aria-label={marked ? m.dock_annotationToolbar_save_label() : m.dock_composer_done_label()}
+          tooltipContentClass="dock-chrome-tooltip"
           tooltip={marked ? m.dock_annotationToolbar_save_label() : m.dock_composer_done_label()}
           tooltipShortcut="enter"
           onclick={done}
@@ -343,6 +353,7 @@
           data-testid="recording-chip"
           data-no-mic={noMic || undefined}
           aria-pressed={paused}
+          tooltipContentClass="dock-chrome-tooltip"
           tooltip={chipTip}
           tooltipShortcut={noMic ? undefined : 'space'}
           aria-label={paused
@@ -371,6 +382,7 @@
           class="rt-icon rt-discard"
           data-discard
           aria-label={m.dock_recordingToolbar_discard_label()}
+          tooltipContentClass="dock-chrome-tooltip"
           tooltip={m.dock_recordingToolbar_discard_label()}
           onclick={discard}
         >
@@ -382,6 +394,7 @@
           class="rt-done"
           data-done
           aria-label={m.dock_composer_done_label()}
+          tooltipContentClass="dock-chrome-tooltip"
           tooltip={m.dock_composer_done_label()}
           tooltipShortcut="enter"
           onclick={done}
@@ -405,6 +418,7 @@
     data-tool={tool}
     aria-checked={selected}
     aria-label={toolLabels[tool]}
+    tooltipContentClass="dock-chrome-tooltip"
     tooltip={blocked ? m.dock_composer_accessibilityPermission_tooltip() : toolLabels[tool]}
     tooltipShortcut={blocked ? undefined : DOCK_RECORDING_TOOL_KEYS[tool]}
     disabled={tool === 'pick' && !!overlay.still}

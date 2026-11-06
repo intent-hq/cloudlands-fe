@@ -100,6 +100,7 @@
       aria-pressed={state.recording}
       aria-busy={state.recordingPending || undefined}
       data-alert={alerts.record ? '' : undefined}
+      tooltipContentClass="dock-chrome-tooltip"
       tooltip={alerts.record ??
         state.recordingTooltip ??
         (state.recording ? labels.stopRecording : labels.record)}
@@ -130,6 +131,7 @@
       aria-pressed={state.dictating}
       aria-busy={state.dictationPending || undefined}
       data-alert={alerts.mic ? '' : undefined}
+      tooltipContentClass="dock-chrome-tooltip"
       tooltip={alerts.mic ??
         state.dictationTooltip ??
         (state.dictating ? labels.stopDictating : labels.dictate)}

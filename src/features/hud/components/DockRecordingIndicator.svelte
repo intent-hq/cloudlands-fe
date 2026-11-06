@@ -42,6 +42,7 @@
     class="recording-time"
     onclick={onOpen}
     aria-label={m.dock_recordingIndicator_open({ status, elapsed })}
+    tooltipContentClass="dock-chrome-tooltip"
     tooltip={m.dock_recordingIndicator_open({ status, elapsed })}
   >
     <span class="recording-dot" class:paused={recording.pausedAt !== null} aria-hidden="true"
@@ -54,6 +55,7 @@
     class="recording-stop"
     disabled={stopping || !onStop}
     aria-label={m.dock_composer_stopRecording_tooltip()}
+    tooltipContentClass="dock-chrome-tooltip"
     tooltip={m.dock_composer_stopRecording_tooltip()}
     aria-busy={stopping}
     onclick={() => onStop?.()}><StopIcon size={12} weight="fill" /></Button

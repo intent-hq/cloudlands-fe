@@ -1021,7 +1021,9 @@
             aria-label={m.dock_logo_open_label()}
             aria-haspopup={machines && onMachine ? 'menu' : undefined}
             aria-expanded={machines && onMachine ? machineMenuOpen : undefined}
-            title={machines && onMachine ? m.dock_logo_menu_hint() : m.dock_logo_move_hint()}
+            tooltip={machines && onMachine ? m.dock_logo_menu_hint() : m.dock_logo_move_hint()}
+            tooltipContentClass="dock-chrome-tooltip"
+            tooltipDisabled={machineMenuOpen || nativeMenuOpen || dragging || !!gesture}
             data-testid="dock-drag-handle"
             wrapContent={false}
             onpointerdown={pointerDown}

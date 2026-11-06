@@ -226,6 +226,7 @@
                 class="tile-action"
                 {disabled}
                 aria-label={labels.retry}
+                tooltipContentClass="dock-chrome-tooltip"
                 tooltip={labels.retry}
                 onclick={() => onRetry?.(item.id)}
               >
@@ -238,6 +239,7 @@
                 class="tile-action"
                 {disabled}
                 aria-label={onEdit ? labels.edit : labels.markUp}
+                tooltipContentClass="dock-chrome-tooltip"
                 tooltip={onEdit ? labels.edit : labels.markUp}
                 onclick={() => markup(item.id)}
               >
@@ -250,6 +252,7 @@
                 class="tile-action"
                 {disabled}
                 aria-label={onEdit ? labels.edit : labels.play}
+                tooltipContentClass="dock-chrome-tooltip"
                 tooltip={onEdit ? labels.edit : labels.play}
                 onclick={(event) => {
                   if (event.currentTarget instanceof HTMLElement) show(item, event.currentTarget);
@@ -264,6 +267,7 @@
               class="tile-action"
               {disabled}
               aria-label={labels.remove}
+              tooltipContentClass="dock-chrome-tooltip"
               tooltip={labels.remove}
               onclick={() => remove(item.id)}
             >
