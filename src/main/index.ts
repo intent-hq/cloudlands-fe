@@ -1047,11 +1047,12 @@ const bootFlow = app.whenReady().then(async () => {
     },
   });
   // The dock's own Hide is a user hide: remember it like the menu toggle. A failed
-  // preference write still closes the dock.
+  // preference write still closes the dock it was asked for, never a replacement.
   setDockHideHandler(() => {
+    const window = getDockWindow();
     void dockMenuController.setEnabled(false).catch((error: unknown) => {
       logger.warn('Failed to remember dock hide', { error });
-      closeDockWindow();
+      if (window && getDockWindow() === window) closeDockWindow();
     });
   });
 

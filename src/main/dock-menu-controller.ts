@@ -40,7 +40,8 @@ export function createDockMenuController(deps: DockMenuControllerDependencies) {
         const window = deps.getWindow();
         if (window) trackWindow(window);
         await deps.writeEnabledPreference(false);
-        if (window) {
+        // Close only the window this hide was asked for; a replacement may exist by now.
+        if (window && deps.getWindow() === window) {
           deps.closeWindow();
           return;
         }
