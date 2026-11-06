@@ -4,13 +4,22 @@
   import { m } from '$shared/paraglide/messages.js';
   import { onDestroy, untrack, type Snippet } from 'svelte';
   import { createScreenshotPreviewRenderer } from './screenshot-preview';
-  import { dockMediaGeometryRect } from '$shared/dock-media-edit';
+  import {
+    dockMediaGeometryRect,
+    dockMediaBlurStrokeBounds,
+    transformDockMediaBlurStroke,
+    transformDockMediaText,
+    layoutDockMediaText,
+    DOCK_MEDIA_BLUR_RADIUS,
+    DOCK_MEDIA_OUTPUT_VERSION,
+  } from '$shared/dock-media-edit';
   import {
     numberDockMediaMarks,
     type DockMediaEdit,
     type DockMediaSource,
     type DockMediaGeometry,
     type DockMediaEditMark,
+    type DockMediaBlurStroke,
   } from '$shared/dock-media-edit';
   import type { DockMarkGeometry } from '$shared/dock-evidence';
   import { dockGeometryRect } from '$shared/dock-annotation';
@@ -19,7 +28,7 @@
     type ScreenshotShape,
   } from './ScreenshotCanvas.svelte';
   import ScreenshotTools from './ScreenshotTools.svelte';
-  import ScreenshotMarkNotes from './ScreenshotMarkNotes.svelte';
+  import ScreenshotMarkRail from './ScreenshotMarkRail.svelte';
   import ScreenshotHeaderActions from './ScreenshotHeaderActions.svelte';
   import { cropScreenshotEdit } from './screenshot-edit-geometry';
   import { screenshotContains } from './screenshot-geometry';
@@ -32,12 +41,9 @@
     selectedMarkId = $bindable(null),
     disabled = false,
     retaking = false,
-    dictatingId = null,
-    notePreview = null,
-    onNoteManualEdit,
-    onNoteBlur,
     onRetake,
-    onNoteDictation,
+    onInteractionPending,
+    admittedOutputVersion = 1,
     children,
   }: {
     source: DockMediaSource;
@@ -52,9 +58,32 @@
     onNoteManualEdit?: (markId: string) => void;
     onNoteBlur?: (markId: string) => void;
     onRetake?: () => void | Promise<void>;
+    onInteractionPending?: (pending: boolean) => void;
+    admittedOutputVersion?: number;
     onNoteDictation?: (id: string, phase: 'start' | 'stop') => void;
     children?: Snippet<[main: Snippet, sidebar: Snippet, headerActions: Snippet]>;
   } = $props();
+  let cropCandidate = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+  let selectedIds = $state<string[]>([]);
+  let selectionAnchor = $state<string | null>(null);
+  let editingTextId = $state<string | null>(null);
+  let gesturePending = $state(false);
+  let gesturePreview = $state<{ id: string; geometry: DockMarkGeometry } | null>(null);
+  const brushRadius = DOCK_MEDIA_BLUR_RADIUS;
+  const canCreateV2 = $derived(admittedOutputVersion === DOCK_MEDIA_OUTPUT_VERSION);
+  $effect(() => {
+    onInteractionPending?.(!!cropCandidate || !!editingTextId || gesturePending);
+  });
+  onDestroy(() => onInteractionPending?.(false));
+  const movingMark = $derived(
+    !!gesturePreview && draft.marks.some((mark) => mark.id === gesturePreview?.id),
+  );
+  const previewEdit = $derived.by(() => {
+    const edit = gesturePreview
+      ? transformedEdit(gesturePreview.id, gesturePreview.geometry)
+      : draft;
+    return cropCandidate ? { ...edit, crop: null } : edit;
+  });
   const renderPreview = createScreenshotPreviewRenderer();
   let previewUrl = $state<string | null>(null);
   let previewPending = $state(false);
@@ -62,61 +91,109 @@
   let previewRetry = $state(0);
   const visualKey = $derived(
     JSON.stringify({
-      crop: draft.crop,
-      blur: draft.blurRegions,
-      marks: draft.marks.map((mark) => ({
+      crop: previewEdit.crop,
+      blur: previewEdit.blurRegions,
+      strokes: previewEdit.blurStrokes,
+      marks: previewEdit.marks.map((mark) => ({
         id: mark.id,
         geometry: mark.geometry,
         included: mark.included,
       })),
     }),
   );
+  type PreviewJob = {
+    source: DockMediaSource;
+    edit: DockMediaEdit;
+    url: string;
+    key: string;
+    frameKey: string;
+    attempt: number;
+  };
+  let queuedPreview: PreviewJob | null = null;
+  let rendering = false;
+  let destroyed = false;
+  const frameKey = $derived(
+    JSON.stringify([source.id, source.revision, sourceUrl, previewEdit.crop]),
+  );
+  // One renderer at a time, with only the newest queued gesture frame retained.
+  async function drainPreview() {
+    if (rendering) return;
+    rendering = true;
+    try {
+      while (queuedPreview && !destroyed) {
+        const job = queuedPreview;
+        queuedPreview = null;
+        try {
+          const next = await renderPreview(job.source, job.edit, job.url);
+          const sameFrame = job.frameKey === frameKey && job.attempt === previewRetry;
+          if (destroyed || !sameFrame || (job.key !== visualKey && !gesturePreview)) {
+            URL.revokeObjectURL(next);
+            continue;
+          }
+          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          previewUrl = next;
+          if (job.key === visualKey) previewPending = false;
+          previewFailed = false;
+        } catch {
+          if (!destroyed && job.key === visualKey && job.frameKey === frameKey) {
+            previewPending = false;
+            previewFailed = true;
+          }
+        }
+      }
+    } finally {
+      rendering = false;
+    }
+  }
   $effect(() => {
-    const paintRevision = visualKey;
-    const currentSource = source,
-      currentEdit = untrack(() => draft),
+    const key = visualKey,
+      currentFrame = frameKey,
+      currentSource = source,
       url = sourceUrl,
       attempt = previewRetry;
     if (currentSource.visuals !== 'clean') {
-      previewUrl = null;
       previewPending = false;
+      previewFailed = false;
       return;
     }
-    let active = true;
     previewPending = true;
     previewFailed = false;
-    void renderPreview(currentSource, currentEdit, url).then(
-      (next) => {
-        if (!active || attempt !== previewRetry || paintRevision !== visualKey) {
-          URL.revokeObjectURL(next);
-          return;
-        }
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        previewUrl = next;
-        previewPending = false;
-      },
-      () => {
-        if (active) {
-          previewPending = false;
-          previewFailed = true;
-        }
-      },
-    );
-    return () => {
-      active = false;
+    queuedPreview = {
+      source: currentSource,
+      edit: untrack(() => previewEdit),
+      url,
+      key,
+      frameKey: currentFrame,
+      attempt,
     };
+    void drainPreview();
   });
   onDestroy(() => {
+    destroyed = true;
+    queuedPreview = null;
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   });
   let tool = $state<ScreenshotTool>('pointer');
   const blocked = $derived(disabled || retaking || source.visuals !== 'clean');
-  const frame = $derived(draft.crop ?? { x: 0, y: 0, w: source.width, h: source.height });
+  const frame = $derived(
+    cropCandidate
+      ? { x: 0, y: 0, w: source.width, h: source.height }
+      : (draft.crop ?? { x: 0, y: 0, w: source.width, h: source.height }),
+  );
   const numbered = $derived(numberDockMediaMarks(draft, source));
   const shapes = $derived<ScreenshotShape[]>([
     ...numbered.map(({ mark }) => ({
       id: mark.id,
       geometry: canvasGeometry(mark.geometry),
+      ...(mark.geometry.kind === 'text'
+        ? { text: { value: mark.geometry.text, fontSize: mark.geometry.fontSize } }
+        : {}),
+    })),
+    ...(draft.blurStrokes ?? []).map((stroke) => ({
+      id: stroke.id,
+      geometry: { kind: 'rect' as const, ...dockMediaBlurStrokeBounds(stroke) },
+      blur: true,
+      blurStroke: stroke,
     })),
     ...draft.blurRegions.map((region) => ({
       id: region.id,
@@ -124,22 +201,84 @@
       blur: true,
     })),
   ]);
-  const cards = $derived(
-    numbered.map(({ n, mark }) => ({
-      id: mark.id,
-      n,
-      kind: screenshotKindLabel(mark.kind),
-      note: mark.note,
-      ...(mark.geometry.kind === 'text' ? { text: mark.geometry.text } : {}),
-      element:
-        mark.kind === 'element'
-          ? { path: mark.context.selector, name: mark.context.text ?? '' }
-          : null,
-    })),
-  );
+  const cards = $derived([
+    ...numbered.map(({ n, mark }) => ({ id: mark.id, n, kind: mark.kind })),
+    ...draft.blurRegions.map(({ id }) => ({ id, n: null, kind: 'blur' as const })),
+    ...(draft.blurStrokes ?? []).map(({ id }) => ({ id, n: null, kind: 'blur' as const })),
+  ]);
   $effect(() => {
-    if (selectedMarkId && !shapes.some((s) => s.id === selectedMarkId)) selectedMarkId = null;
+    const ids = new Set(shapes.map((shape) => shape.id));
+    if (selectedMarkId && !ids.has(selectedMarkId)) selectedMarkId = null;
+    if (selectedIds.some((id) => !ids.has(id)))
+      selectedIds = selectedIds.filter((id) => ids.has(id));
+    if (editingTextId && !ids.has(editingTextId)) editingTextId = null;
   });
+  $effect(() => {
+    // Retargeting the editor cancels local interaction, without touching either draft.
+    const identity = `${source.id}:${source.revision}`;
+    untrack(() => {
+      cropCandidate = null;
+      tool = 'pointer';
+      selectedIds = [];
+      selectedMarkId = null;
+      selectionAnchor = null;
+      editingTextId = null;
+      gesturePending = false;
+      gesturePreview = null;
+    });
+    void identity;
+  });
+  function select(id: string | null, event?: MouseEvent | KeyboardEvent | PointerEvent) {
+    if (blocked || cropCandidate) return;
+    const range = !!event?.shiftKey;
+    const toggle = !!event && (event.metaKey || event.ctrlKey);
+    const order = cards.map((item) => item.id);
+    if (id && range && selectionAnchor && order.includes(selectionAnchor) && order.includes(id)) {
+      const a = order.indexOf(selectionAnchor),
+        b = order.indexOf(id);
+      const span = order.slice(Math.min(a, b), Math.max(a, b) + 1);
+      selectedIds = toggle ? [...new Set([...selectedIds, ...span])] : span;
+    } else {
+      selectedIds = id
+        ? toggle
+          ? selectedIds.includes(id)
+            ? selectedIds.filter((value) => value !== id)
+            : [...selectedIds, id]
+          : [id]
+        : [];
+      selectionAnchor = id;
+    }
+    selectedMarkId = selectedIds.at(-1) ?? null;
+    if (id) tool = 'pointer';
+  }
+  function selectAll() {
+    if (blocked || cropCandidate) return;
+    selectedIds = cards.map((item) => item.id);
+    selectedMarkId = selectedIds.at(-1) ?? null;
+    selectionAnchor ??= selectedIds[0] ?? null;
+  }
+  function setTool(next: ScreenshotTool) {
+    cropCandidate = null;
+    editingTextId = null;
+    tool = next === 'blur' && !canCreateV2 ? 'pointer' : next;
+  }
+  function crop() {
+    if (blocked) return;
+    if (cropCandidate) {
+      cropCandidate = null;
+      tool = 'pointer';
+      return;
+    }
+    editingTextId = null;
+    cropCandidate = { ...(draft.crop ?? { x: 0, y: 0, w: source.width, h: source.height }) };
+    tool = 'crop';
+  }
+  function applyCrop() {
+    if (!cropCandidate || blocked) return;
+    apply(cropScreenshotEdit(draft, cropCandidate));
+    cropCandidate = null;
+    tool = 'pointer';
+  }
 
   function canvasGeometry(geometry: DockMediaGeometry): DockMarkGeometry {
     if (geometry.kind === 'point' || geometry.kind === 'text')
@@ -155,60 +294,109 @@
       marks: draft.marks.map((mark) => (mark.id === id ? { ...mark, ...patch } : mark)),
     });
   }
-  function remove(id: string) {
+  function remove(id?: string) {
+    const ids = new Set(id && !selectedIds.includes(id) ? [id] : selectedIds);
+    if (!ids.size || cropCandidate || blocked) return;
+    // A group deletion is one canonical change and therefore one undo step.
     apply({
       ...draft,
-      marks: draft.marks.filter((mark) => mark.id !== id),
-      blurRegions: draft.blurRegions.filter((region) => region.id !== id),
+      marks: draft.marks.filter((mark) => !ids.has(mark.id)),
+      blurRegions: draft.blurRegions.filter((region) => !ids.has(region.id)),
+      blurStrokes: draft.blurStrokes?.filter((stroke) => !ids.has(stroke.id)),
     });
+    selectedIds = [];
     selectedMarkId = null;
+    editingTextId = null;
   }
-  function transform(id: string, geometry: DockMarkGeometry) {
-    const mark = draft.marks.find((mark) => mark.id === id);
-    const b = dockGeometryRect(geometry);
-    if (!screenshotContains(frame, b)) return;
+  function transformedEdit(id: string, geometry: DockMarkGeometry): DockMediaEdit {
+    const mark = draft.marks.find((item) => item.id === id),
+      b = dockGeometryRect(geometry);
     if (mark) {
-      const old = mark.geometry;
+      if (!screenshotContains(frame, b)) return draft;
+      const old = mark.geometry,
+        oldBounds = dockMediaGeometryRect(old);
       const next: DockMediaGeometry =
         old.kind === 'point'
-          ? {
-              ...old,
-              x: old.x + b.x - dockGeometryRect(canvasGeometry(old)).x,
-              y: old.y + b.y - dockGeometryRect(canvasGeometry(old)).y,
-            }
+          ? { ...old, x: old.x + b.x - oldBounds.x, y: old.y + b.y - oldBounds.y }
           : old.kind === 'text'
-            ? {
-                ...old,
-                x: b.x,
-                y: b.y,
-                fontSize: Math.max(
-                  0.1,
-                  old.fontSize *
-                    (b.h !== dockMediaGeometryRect(old).h
-                      ? b.h / Math.max(1, dockMediaGeometryRect(old).h)
-                      : b.w / Math.max(1, dockMediaGeometryRect(old).w)),
-                ),
-              }
+            ? transformDockMediaText(old, {
+                scaleX: b.w / Math.max(0.0001, oldBounds.w),
+                scaleY: b.h / Math.max(0.0001, oldBounds.h),
+                offsetX: b.x - (old.x * b.w) / Math.max(0.0001, oldBounds.w),
+                offsetY: b.y - (old.y * b.h) / Math.max(0.0001, oldBounds.h),
+              })
             : geometry;
-      update(id, { geometry: next });
-    } else
-      apply({
+      if (!screenshotContains(frame, dockMediaGeometryRect(next))) return draft;
+      return {
         ...draft,
-        blurRegions: draft.blurRegions.map((region) => (region.id === id ? { id, ...b } : region)),
+        marks: draft.marks.map((item) => (item.id === id ? { ...item, geometry: next } : item)),
+      };
+    }
+    const stroke = draft.blurStrokes?.find((item) => item.id === id);
+    if (stroke) {
+      const old = dockMediaBlurStrokeBounds(stroke);
+      const scaleX = b.w / old.w,
+        scaleY = b.h / old.h;
+      const next = transformDockMediaBlurStroke(stroke, {
+        scaleX,
+        scaleY,
+        offsetX: b.x - old.x * scaleX,
+        offsetY: b.y - old.y * scaleY,
       });
+      if (
+        next.points.some(
+          (p) =>
+            p.x < frame.x || p.y < frame.y || p.x > frame.x + frame.w || p.y > frame.y + frame.h,
+        )
+      )
+        return draft;
+      return {
+        ...draft,
+        blurStrokes: draft.blurStrokes?.map((item) => (item.id === id ? next : item)),
+      };
+    }
+    if (!screenshotContains(frame, b)) return draft;
+    return {
+      ...draft,
+      blurRegions: draft.blurRegions.map((region) => (region.id === id ? { id, ...b } : region)),
+    };
+  }
+  function transform(id: string, geometry: DockMarkGeometry) {
+    const next = transformedEdit(id, geometry);
+    if (next !== draft) apply(next);
+  }
+  function blur(points: DockMediaBlurStroke['points'], radius: number) {
+    if (blocked || !canCreateV2 || !points.length) return;
+    const id = crypto.randomUUID();
+    apply({ ...draft, blurStrokes: [...(draft.blurStrokes ?? []), { id, radius, points }] });
+    selectedMarkId = id;
+    selectedIds = [id];
+    selectionAnchor = id;
   }
   /** Esc with a tool chosen puts it down (before the shell's Esc closes the editor). */
   function onToolEscape(event: KeyboardEvent): void {
-    if (event.key !== 'Escape' || tool === 'pointer' || event.defaultPrevented) return;
+    if (event.defaultPrevented) return;
     const target = event.target as HTMLElement | null;
     if (
       target?.closest(
-        'input, textarea, [contenteditable="true"], [role="menu"], [role="dialog"], [role="alertdialog"], [role="listbox"]',
+        'input, textarea, [contenteditable="true"], [role="menu"], [role="dialog"], [role="alertdialog"]',
       )
     )
       return;
-    event.preventDefault();
-    tool = 'pointer';
+    if (event.key === 'Enter' && target?.closest('button')) return;
+    if (cropCandidate && (event.key === 'Enter' || event.key === 'Escape')) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (event.key === 'Enter') applyCrop();
+      else {
+        cropCandidate = null;
+        tool = 'pointer';
+      }
+    } else if (event.key === 'Escape' && tool !== 'pointer') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setTool('pointer');
+    }
   }
   function draw(nextTool: ScreenshotTool, geometry: DockMarkGeometry) {
     if (blocked) return;
@@ -216,18 +404,10 @@
     if (!screenshotContains(frame, bounds)) return;
     if (nextTool === 'crop') {
       if (bounds.w < 2 || bounds.h < 2) return;
-      apply(cropScreenshotEdit(draft, bounds));
-      tool = 'pointer';
+      cropCandidate = bounds;
       return;
     }
     const id = crypto.randomUUID();
-    if (nextTool === 'blur') {
-      if (bounds.w < 2 || bounds.h < 2) return;
-      apply({ ...draft, blurRegions: [...draft.blurRegions, { id, ...bounds }] });
-      selectedMarkId = id;
-      tool = 'pointer';
-      return;
-    }
     const kind: DockMediaEditMark['kind'] =
       nextTool === 'draw'
         ? 'draw'
@@ -246,12 +426,20 @@
             x: bounds.x,
             y: bounds.y,
             text: m.dock_screenshotEditor_text(),
+            ...(canCreateV2
+              ? {
+                  style: 'sticky' as const,
+                  width: Math.min(4096, bounds.w),
+                  padding: Math.min(8, bounds.w / 8, bounds.h / 8),
+                }
+              : {}),
             fontSize: Math.max(
               0.1,
               Math.min(
                 24,
-                bounds.h / 1.4,
-                bounds.w / Math.max(1, m.dock_screenshotEditor_text().length * 0.65),
+                (bounds.h - 2 * Math.min(8, bounds.w / 8, bounds.h / 8)) / 1.4,
+                (bounds.w - 2 * Math.min(8, bounds.w / 8, bounds.h / 8)) /
+                  Math.max(1, m.dock_screenshotEditor_text().length * 0.65),
               ),
             ),
           }
@@ -275,12 +463,29 @@
       ],
     });
     selectedMarkId = id;
-    if (kind === 'text') tool = 'pointer';
+    selectedIds = [id];
+    selectionAnchor = id;
+    if (kind === 'text') {
+      tool = 'pointer';
+      editingTextId = id;
+    }
   }
   function text(id: string, value: string) {
-    const mark = draft.marks.find((m) => m.id === id);
-    if (mark?.geometry.kind === 'text')
-      update(id, { geometry: { ...mark.geometry, text: value }, label: value.slice(0, 2048) });
+    const mark = draft.marks.find((item) => item.id === id);
+    if (mark?.geometry.kind !== 'text') return;
+    let geometry = { ...mark.geometry, text: value };
+    const layout = layoutDockMediaText(geometry),
+      available = frame.y + frame.h - geometry.y;
+    if (layout.height > available) {
+      const scale = available / layout.height;
+      geometry = {
+        ...geometry,
+        fontSize: Math.max(0.0001, geometry.fontSize * scale),
+        ...(geometry.style === 'sticky' ? { padding: layout.padding * scale } : {}),
+      };
+    }
+    if (screenshotContains(frame, dockMediaGeometryRect(geometry)))
+      update(id, { geometry, label: value.slice(0, 2048) });
   }
 </script>
 
@@ -290,16 +495,17 @@
   <div class="main-view">
     <ScreenshotTools
       {tool}
-      disabled={blocked}
-      canDelete={!!selectedMarkId}
-      onSelect={(next) => (tool = next)}
-      onDelete={() => selectedMarkId && remove(selectedMarkId)}
+      canBlur={canCreateV2}
+      disabled={blocked || !!cropCandidate}
+      canDelete={!!selectedIds.length && !cropCandidate}
+      onSelect={setTool}
+      onDelete={() => remove()}
     />
     <div class="image-view">
       {#if source.visuals !== 'clean'}<p class="type-caption notice">
           {m.dock_screenshotEditor_readonly()}
         </p>{/if}
-      {#if previewPending}<p class="type-caption notice" role="status">
+      {#if previewPending && !previewUrl}<p class="type-caption notice" role="status">
           {m.dock_screenshotEditor_preparing()}
         </p>{/if}
       {#if previewFailed}<p class="type-caption notice" role="alert">
@@ -314,19 +520,26 @@
       <ScreenshotCanvas
         sourceUrl={source.visuals === 'clean' ? (previewUrl ?? '') : sourceUrl}
         raster={source.visuals === 'clean'}
-        hidden={previewPending || previewFailed}
+        hidden={(previewPending && !movingMark) || previewFailed}
         width={source.width}
         height={source.height}
         {frame}
         {shapes}
         {tool}
+        documentKey={`${source.id}:${source.revision}`}
         selectedId={selectedMarkId}
-        disabled={blocked || previewPending || previewFailed}
-        onSelect={(id) => {
-          selectedMarkId = id;
-          // Picking a mark puts the drawing tool down, so it can be moved and edited.
-          if (id && tool !== 'crop') tool = 'pointer';
-        }}
+        {selectedIds}
+        {brushRadius}
+        onBlurStroke={blur}
+        onGesturePending={(pending) => (gesturePending = pending)}
+        onGesturePreview={(preview) => (gesturePreview = preview)}
+        {cropCandidate}
+        onCropChange={(candidate) => (cropCandidate = candidate)}
+        bind:editingTextId
+        onText={text}
+        disabled={blocked || (previewPending && !gesturePending) || previewFailed}
+        onSelect={select}
+        onSelectAll={selectAll}
         onDraw={draw}
         onTransform={transform}
         onDelete={remove}
@@ -335,29 +548,13 @@
   </div>
 {/snippet}
 {#snippet sidebar()}
-  <ScreenshotMarkNotes
+  <ScreenshotMarkRail
     items={cards}
-    selectedId={selectedMarkId}
-    disabled={blocked}
-    {dictatingId}
-    {notePreview}
-    {onNoteManualEdit}
-    {onNoteBlur}
-    onSelect={(id) => {
-      selectedMarkId = id;
-      tool = 'pointer';
-    }}
-    onNote={(id, note) => update(id, { note })}
-    onText={text}
-    onElement={(id, selector, value) => {
-      const mark = draft.marks.find((mark) => mark.id === id);
-      if (mark)
-        update(id, {
-          context: { ...mark.context, selector: selector || null, text: value || null },
-        });
-    }}
-    onDelete={remove}
-    onDictation={onNoteDictation}
+    {selectedIds}
+    disabled={blocked || !!cropCandidate}
+    onSelect={select}
+    onSelectAll={selectAll}
+    onDelete={() => remove()}
   />
 {/snippet}
 {#snippet headerActions()}
@@ -365,9 +562,17 @@
     cropping={tool === 'crop'}
     {retaking}
     disabled={blocked}
-    onCrop={() => (tool = tool === 'crop' ? 'pointer' : 'crop')}
-    {onRetake}
+    onCrop={crop}
+    onRetake={cropCandidate || editingTextId ? undefined : onRetake}
   />
+  {#if cropCandidate}
+    <Button variant="ghost" size="compact" onclick={crop}
+      >{m.chat_messageEditor_cancel_label()}</Button
+    >
+    <Button size="compact" disabled={blocked || previewPending || previewFailed} onclick={applyCrop}
+      >{m.chat_shared_apply_label()}</Button
+    >
+  {/if}
 {/snippet}
 {#if children}
   {@render children(main, sidebar, headerActions)}
@@ -384,11 +589,13 @@
 <style>
   .main-view {
     display: flex;
-    align-items: start;
-    gap: 12px;
+    align-items: stretch;
+    gap: 8px;
+    flex: 1;
+    height: 100%;
     min-width: 0;
     min-height: 0;
-    padding: 16px;
+    padding: 8px;
   }
   .image-view {
     display: flex;
@@ -397,8 +604,14 @@
     min-width: 0;
     min-height: 0;
     gap: 8px;
+    position: relative;
   }
   .notice {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 1;
+    pointer-events: none;
     margin: 0;
     color: hsl(var(--muted-foreground));
     line-height: 1.5;
@@ -418,18 +631,11 @@
   }
   .body {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    min-height: 0;
+    height: 100%;
   }
   .sidebar {
     border-inline-start: 1px solid hsl(var(--border));
-  }
-  @media (max-width: 899px) {
-    .body {
-      grid-template-columns: minmax(0, 1fr);
-    }
-    .sidebar {
-      border-inline-start: 0;
-      border-top: 1px solid hsl(var(--border));
-    }
   }
 </style>

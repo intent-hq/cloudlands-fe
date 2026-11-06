@@ -1,16 +1,21 @@
 <script lang="ts" module>
+  import type { DockMediaBlurStroke } from '$shared/dock-media-edit';
   import type { DockImageRect, DockMarkGeometry } from '$shared/dock-evidence';
-  /** Presentation only. Canonical draft is owned by the shared editor transaction. */
+  /** Hit regions only; the canonical renderer owns every painted mark. */
   export interface ScreenshotShape {
     id: string;
     geometry: DockMarkGeometry;
     blur?: boolean;
+    blurStroke?: DockMediaBlurStroke;
+    text?: { value: string; fontSize: number };
   }
   export type ScreenshotTool =
     'pointer' | 'element' | 'box' | 'draw' | 'arrow' | 'text' | 'blur' | 'crop';
 </script>
 
 <script lang="ts">
+  import { onDestroy, untrack } from 'svelte';
+  import { Textarea } from '$lib/components/ui/textarea';
   import { m } from '$shared/paraglide/messages.js';
   import { dockGeometryRect } from '$shared/dock-annotation';
   import type { DockImagePoint } from '$shared/dock-evidence';
@@ -18,7 +23,6 @@
     fitScreenshotGeometry,
     moveScreenshotGeometry,
     screenshotPath,
-    screenshotPoint,
     screenshotRect,
   } from './screenshot-geometry';
 
@@ -30,13 +34,24 @@
     shapes,
     tool,
     selectedId,
+    selectedIds = [],
+    documentKey,
+    brushRadius,
+    onBlurStroke,
+    onGesturePreview,
+    onGesturePending,
+    cropCandidate = null,
+    editingTextId = $bindable(null),
     disabled = false,
     raster = false,
     hidden = false,
     onSelect,
+    onSelectAll,
     onDraw,
     onTransform,
     onDelete,
+    onCropChange,
+    onText,
   }: {
     sourceUrl: string;
     width: number;
@@ -45,15 +60,28 @@
     shapes: readonly ScreenshotShape[];
     tool: ScreenshotTool;
     selectedId: string | null;
+    selectedIds?: readonly string[];
+    documentKey: string;
+    brushRadius: number;
+    onBlurStroke: (points: DockImagePoint[], radius: number) => void;
+    onGesturePreview: (preview: { id: string; geometry: DockMarkGeometry } | null) => void;
+    onGesturePending: (pending: boolean) => void;
+    cropCandidate?: DockImageRect | null;
+    editingTextId?: string | null;
     disabled?: boolean;
     raster?: boolean;
     hidden?: boolean;
-    onSelect: (id: string | null) => void;
+    onSelect: (id: string | null, event?: PointerEvent | MouseEvent | KeyboardEvent) => void;
+    onSelectAll: () => void;
     onDraw: (tool: ScreenshotTool, geometry: DockMarkGeometry) => void;
     onTransform: (id: string, geometry: DockMarkGeometry) => void;
-    onDelete: (id: string) => void;
+    onDelete: (id?: string) => void;
+    onCropChange: (crop: DockImageRect) => void;
+    onText: (id: string, value: string) => void;
   } = $props();
+  let cursor = $state<DockImagePoint | null>(null);
   let surface = $state<SVGSVGElement | null>(null);
+  let unit = $state(1);
   let gesture = $state<{
     pointer: number;
     start: DockImagePoint;
@@ -62,31 +90,178 @@
     original: DockMarkGeometry | null;
     resize: boolean;
     preview: DockMarkGeometry | null;
+    radius: number;
+    tool: ScreenshotTool;
   } | null>(null);
+  let cropGesture = $state<{
+    pointer: number;
+    start: DockImagePoint;
+    original: DockImageRect;
+    handle: string; // move, draw, or one of the eight compass handles
+  } | null>(null);
+  let textInput = $state<HTMLTextAreaElement | null>(null);
+  let textValue = $state('');
+  let textSession = $state<{ id: string; document: string; original: string } | null>(null);
+  const textShape = $derived(shapes.find((shape) => shape.id === editingTextId && shape.text));
+  $effect(() => {
+    onGesturePending(!!gesture || !!cropGesture);
+  });
+  $effect(() => {
+    onGesturePreview(
+      gesture?.id && gesture.preview ? { id: gesture.id, geometry: gesture.preview } : null,
+    );
+  });
+  onDestroy(() => {
+    onGesturePending(false);
+    onGesturePreview(null);
+  });
+  $effect(() => {
+    const currentTool = tool,
+      cropping = !!cropCandidate;
+    untrack(() => {
+      if (gesture && gesture.tool !== currentTool) {
+        const pointer = gesture.pointer;
+        gesture = null;
+        release(pointer);
+      }
+      if (cropGesture && !cropping) {
+        const pointer = cropGesture.pointer;
+        cropGesture = null;
+        release(pointer);
+      }
+    });
+  });
   const visible = $derived(
-    shapes.map((s) =>
-      gesture?.id === s.id && gesture.preview ? { ...s, geometry: gesture.preview } : s,
+    shapes.map((shape) =>
+      gesture?.id === shape.id && gesture.preview ? { ...shape, geometry: gesture.preview } : shape,
     ),
   );
-
-  function point(event: PointerEvent): DockImagePoint {
-    if (!surface) return { x: frame.x, y: frame.y };
-    const bounds = surface.getBoundingClientRect();
-    return screenshotPoint({ x: event.clientX, y: event.clientY }, bounds, frame);
+  const handles = $derived(
+    cropCandidate
+      ? [
+          { id: 'nw', x: cropCandidate.x, y: cropCandidate.y },
+          { id: 'n', x: cropCandidate.x + cropCandidate.w / 2, y: cropCandidate.y },
+          { id: 'ne', x: cropCandidate.x + cropCandidate.w, y: cropCandidate.y },
+          {
+            id: 'e',
+            x: cropCandidate.x + cropCandidate.w,
+            y: cropCandidate.y + cropCandidate.h / 2,
+          },
+          { id: 'se', x: cropCandidate.x + cropCandidate.w, y: cropCandidate.y + cropCandidate.h },
+          {
+            id: 's',
+            x: cropCandidate.x + cropCandidate.w / 2,
+            y: cropCandidate.y + cropCandidate.h,
+          },
+          { id: 'sw', x: cropCandidate.x, y: cropCandidate.y + cropCandidate.h },
+          { id: 'w', x: cropCandidate.x, y: cropCandidate.y + cropCandidate.h / 2 },
+        ]
+      : [],
+  );
+  $effect(() => {
+    const svg = surface,
+      currentFrame = frame;
+    if (!svg) return;
+    const resize = () => {
+      const box = svg.getBoundingClientRect();
+      unit =
+        1 / Math.max(0.0001, Math.min(box.width / currentFrame.w, box.height / currentFrame.h));
+    };
+    const observer = new ResizeObserver(resize);
+    observer.observe(svg);
+    resize();
+    return () => observer.disconnect();
+  });
+  $effect(() => {
+    const identity = documentKey;
+    untrack(() => {
+      const pointers = [gesture?.pointer, cropGesture?.pointer];
+      gesture = null;
+      cropGesture = null;
+      textSession = null;
+      editingTextId = null;
+      cursor = null;
+      for (const pointer of pointers) if (pointer !== undefined) release(pointer);
+    });
+    void identity;
+  });
+  $effect(() => {
+    const id = editingTextId;
+    if (!id || disabled) {
+      textSession = null;
+      return;
+    }
+    const shape = untrack(() => shapes.find((item) => item.id === id));
+    if (!shape?.text) return;
+    textSession = { id, document: documentKey, original: shape.text.value };
+    textValue = shape.text.value;
+  });
+  $effect(() => {
+    if (textInput && textSession) {
+      textInput.focus({ preventScroll: true });
+      textInput.select();
+    }
+  });
+  function finishText(save: boolean) {
+    const session = textSession,
+      value = textValue;
+    textSession = null;
+    editingTextId = null;
+    if (save && !disabled && session?.document === documentKey && value !== session.original)
+      onText(session.id, value);
+  }
+  function point(event: PointerEvent, clamped = true): DockImagePoint {
+    // Invert the actual SVG transform, including preserveAspectRatio letterboxing.
+    const matrix = surface?.getScreenCTM();
+    if (!matrix) return { x: frame.x, y: frame.y };
+    const p = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+    return clamped
+      ? { x: clamp(p.x, frame.x, frame.x + frame.w), y: clamp(p.y, frame.y, frame.y + frame.h) }
+      : { x: p.x, y: p.y };
+  }
+  function clamp(value: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, value));
+  }
+  function release(pointer: number) {
+    if (surface?.hasPointerCapture(pointer)) surface.releasePointerCapture(pointer);
   }
   function down(event: PointerEvent) {
     if (disabled || event.button !== 0 || !surface) return;
+    const start = point(event, false);
+    if (
+      start.x < frame.x ||
+      start.y < frame.y ||
+      start.x > frame.x + frame.w ||
+      start.y > frame.y + frame.h
+    )
+      return;
     event.preventDefault();
+    finishText(true);
     surface.focus({ preventScroll: true });
+    if (cropCandidate) {
+      const handle =
+        event.target instanceof Element ? event.target.getAttribute('data-crop-handle') : null;
+      const inside =
+        start.x >= cropCandidate.x &&
+        start.x <= cropCandidate.x + cropCandidate.w &&
+        start.y >= cropCandidate.y &&
+        start.y <= cropCandidate.y + cropCandidate.h;
+      cropGesture = {
+        pointer: event.pointerId,
+        start,
+        original: { ...cropCandidate },
+        handle: handle ?? (inside ? 'move' : 'draw'),
+      };
+      surface.setPointerCapture(event.pointerId);
+      return;
+    }
     const hit = event.target instanceof Element ? event.target.closest('[data-shape-id]') : null;
     const id = hit?.getAttribute('data-shape-id') ?? null;
-    const shape = shapes.find((s) => s.id === id);
-    // Pressing on an existing mark selects and moves it with any drawing tool (there is
-    // no pointer button); crop always drags its area.
-    const selecting = tool === 'pointer' || (!!shape && tool !== 'crop');
-    if (selecting) onSelect(id);
-    const start = point(event);
+    const shape = shapes.find((item) => item.id === id);
+    const selecting = tool === 'pointer' || (!!shape && tool !== 'blur');
+    if (selecting) onSelect(id, event);
     if (selecting && !shape) return;
+    if (event.metaKey || event.ctrlKey || event.shiftKey) return;
     surface.setPointerCapture(event.pointerId);
     gesture = {
       pointer: event.pointerId,
@@ -96,61 +271,133 @@
       original: selecting && shape ? shape.geometry : null,
       resize: event.target instanceof Element && event.target.hasAttribute('data-resize'),
       preview: null,
+      radius: brushRadius,
+      tool: selecting ? 'pointer' : tool,
     };
   }
+  function moveCrop(event: PointerEvent) {
+    const g = cropGesture;
+    if (!g || g.pointer !== event.pointerId) return;
+    const p = point(event),
+      b = g.original,
+      dx = p.x - g.start.x,
+      dy = p.y - g.start.y;
+    const minW = Math.min(2, frame.w),
+      minH = Math.min(2, frame.h);
+    if (g.handle === 'move') {
+      onCropChange({
+        ...b,
+        x: clamp(b.x + dx, frame.x, frame.x + frame.w - b.w),
+        y: clamp(b.y + dy, frame.y, frame.y + frame.h - b.h),
+      });
+      return;
+    }
+    if (g.handle === 'draw') {
+      const rect = screenshotRect(g.start, p);
+      if (rect.w >= minW && rect.h >= minH) onCropChange(rect);
+      return;
+    }
+    let left = b.x,
+      top = b.y,
+      right = b.x + b.w,
+      bottom = b.y + b.h;
+    if (g.handle.includes('w')) left = clamp(b.x + dx, frame.x, right - minW);
+    if (g.handle.includes('e')) right = clamp(b.x + b.w + dx, left + minW, frame.x + frame.w);
+    if (g.handle.includes('n')) top = clamp(b.y + dy, frame.y, bottom - minH);
+    if (g.handle.includes('s')) bottom = clamp(b.y + b.h + dy, top + minH, frame.y + frame.h);
+    onCropChange({ x: left, y: top, w: right - left, h: bottom - top });
+  }
   function move(event: PointerEvent) {
-    if (!gesture || gesture.pointer !== event.pointerId) return;
-    const current = point(event);
+    const hover = point(event, false);
+    cursor =
+      hover.x >= frame.x &&
+      hover.y >= frame.y &&
+      hover.x <= frame.x + frame.w &&
+      hover.y <= frame.y + frame.h
+        ? hover
+        : null;
+    if (cropGesture) {
+      moveCrop(event);
+      return;
+    }
     const g = gesture;
+    if (!g || g.pointer !== event.pointerId) return;
+    const current = point(event);
     let preview: DockMarkGeometry;
     if (g.original) {
-      const bounds = dockGeometryRect(g.original);
-      preview = g.resize
-        ? fitScreenshotGeometry(g.original, {
-            ...bounds,
-            w: Math.max(2, current.x - bounds.x),
-            h: Math.max(2, current.y - bounds.y),
-          })
-        : moveScreenshotGeometry(
-            g.original,
-            { x: current.x - g.start.x, y: current.y - g.start.y },
-            frame,
-          );
-    } else if (tool === 'draw') {
-      const points = g.points.length < 256 ? [...g.points, current] : g.points;
+      const b = dockGeometryRect(g.original);
+      const stroke = shapes.find((shape) => shape.id === g.id)?.blurStroke;
+      if (stroke && !g.resize) {
+        // A brush may cover the source edge; clamp its centers, not its overhanging radius.
+        const xs = stroke.points.map((p) => p.x),
+          ys = stroke.points.map((p) => p.y);
+        const dx = clamp(
+          current.x - g.start.x,
+          frame.x - Math.min(...xs),
+          frame.x + frame.w - Math.max(...xs),
+        );
+        const dy = clamp(
+          current.y - g.start.y,
+          frame.y - Math.min(...ys),
+          frame.y + frame.h - Math.max(...ys),
+        );
+        preview = { kind: 'rect', ...b, x: b.x + dx, y: b.y + dy };
+      } else
+        preview = g.resize
+          ? fitScreenshotGeometry(g.original, {
+              ...b,
+              w: clamp(current.x - b.x, Math.min(2, frame.w), frame.x + frame.w - b.x),
+              h: clamp(current.y - b.y, Math.min(2, frame.h), frame.y + frame.h - b.y),
+            })
+          : moveScreenshotGeometry(
+              g.original,
+              { x: current.x - g.start.x, y: current.y - g.start.y },
+              frame,
+            );
+    } else if (g.tool === 'draw' || g.tool === 'blur') {
+      const previous = g.points.at(-1)!;
+      const points =
+        g.points.length < (g.tool === 'blur' ? 4096 : 256) &&
+        Math.hypot(current.x - previous.x, current.y - previous.y) > 0.1
+          ? [...g.points, current]
+          : g.points;
       gesture = { ...g, points, preview: { kind: 'path', points } };
       return;
-    } else if (tool === 'arrow') preview = { kind: 'arrow', from: g.start, to: current };
+    } else if (g.tool === 'arrow') preview = { kind: 'arrow', from: g.start, to: current };
     else preview = { kind: 'rect', ...screenshotRect(g.start, current) };
     gesture = { ...g, preview };
   }
   function up(event: PointerEvent) {
+    if (cropGesture?.pointer === event.pointerId) {
+      moveCrop(event);
+      cropGesture = null;
+      release(event.pointerId);
+      return; // Local candidate only.
+    }
     if (!gesture || gesture.pointer !== event.pointerId) return;
     const end = point(event);
     if (gesture.original && Math.hypot(end.x - gesture.start.x, end.y - gesture.start.y) < 0.001) {
       gesture = null;
-      if (surface?.hasPointerCapture(event.pointerId))
-        surface.releasePointerCapture(event.pointerId);
+      release(event.pointerId);
       return;
     }
     move(event);
     const g = gesture;
     gesture = null;
-    if (surface?.hasPointerCapture(event.pointerId)) surface.releasePointerCapture(event.pointerId);
-    const dragged = g?.preview ? dockGeometryRect(g.preview) : null;
-    if (
-      g &&
-      !g.original &&
-      (tool === 'text' || tool === 'element') &&
-      (!dragged || Math.min(dragged.w, dragged.h) < 2)
-    ) {
+    release(event.pointerId);
+    if (g && !g.original && g.tool === 'blur') {
+      onBlurStroke(g.points, g.radius);
+      return;
+    }
+    const b = g?.preview ? dockGeometryRect(g.preview) : null;
+    if (g && !g.original && g.tool === 'text' && (!b || Math.min(b.w, b.h) < 2)) {
       const w = Math.min(160, frame.w),
         h = Math.min(40, frame.h);
       if (w < 2 || h < 2) return;
       g.preview = {
         kind: 'rect',
-        x: Math.max(frame.x, Math.min(g.start.x, frame.x + frame.w - w)),
-        y: Math.max(frame.y, Math.min(g.start.y, frame.y + frame.h - h)),
+        x: clamp(g.start.x, frame.x, frame.x + frame.w - w),
+        y: clamp(g.start.y, frame.y, frame.y + frame.h - h),
         w,
         h,
       };
@@ -159,14 +406,26 @@
     const bounds = dockGeometryRect(g.preview);
     if (!g.original && Math.max(bounds.w, bounds.h) < 2) return;
     if (g.id) onTransform(g.id, g.preview);
-    else onDraw(tool, g.preview);
+    else onDraw(g.tool, g.preview);
+  }
+  function cancelPointer() {
+    const crop = cropGesture;
+    cropGesture = null;
+    gesture = null;
+    if (crop) onCropChange(crop.original);
   }
   function key(event: KeyboardEvent) {
-    if (disabled || !selectedId) return;
-    if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (disabled) return;
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'a' && !cropCandidate) {
       event.preventDefault();
       event.stopPropagation();
-      onDelete(selectedId);
+      onSelectAll();
+      return;
+    }
+    if ((event.key === 'Delete' || event.key === 'Backspace') && !cropCandidate) {
+      event.preventDefault();
+      event.stopPropagation();
+      onDelete();
       return;
     }
     const shifts: Record<string, DockImagePoint> = {
@@ -175,9 +434,29 @@
       ArrowUp: { x: 0, y: -1 },
       ArrowDown: { x: 0, y: 1 },
     };
-    const shift = shifts[event.key];
-    const shape = shapes.find((s) => s.id === selectedId);
-    if (!shift || !shape || event.metaKey || event.ctrlKey || event.altKey) return;
+    const delta = shifts[event.key];
+    if (!delta || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (cropCandidate) {
+      event.preventDefault();
+      event.stopPropagation();
+      const b = cropCandidate;
+      onCropChange(
+        event.shiftKey
+          ? {
+              ...b,
+              w: clamp(b.w + delta.x, Math.min(2, frame.w), frame.x + frame.w - b.x),
+              h: clamp(b.h + delta.y, Math.min(2, frame.h), frame.y + frame.h - b.y),
+            }
+          : {
+              ...b,
+              x: clamp(b.x + delta.x, frame.x, frame.x + frame.w - b.w),
+              y: clamp(b.y + delta.y, frame.y, frame.y + frame.h - b.h),
+            },
+      );
+      return;
+    }
+    const shape = shapes.find((item) => item.id === selectedId);
+    if (!shape) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.shiftKey) {
@@ -186,11 +465,24 @@
         shape.id,
         fitScreenshotGeometry(shape.geometry, {
           ...b,
-          w: Math.max(2, Math.min(frame.x + frame.w - b.x, b.w + shift.x)),
-          h: Math.max(2, Math.min(frame.y + frame.h - b.y, b.h + shift.y)),
+          w: clamp(b.w + delta.x, 2, frame.x + frame.w - b.x),
+          h: clamp(b.h + delta.y, 2, frame.y + frame.h - b.y),
         }),
       );
-    } else onTransform(shape.id, moveScreenshotGeometry(shape.geometry, shift, frame));
+    } else onTransform(shape.id, moveScreenshotGeometry(shape.geometry, delta, frame));
+  }
+  function doubleClick(event: MouseEvent) {
+    if (disabled || cropCandidate) return;
+    const id =
+      event.target instanceof Element
+        ? event.target.closest('[data-shape-id]')?.getAttribute('data-shape-id')
+        : null;
+    if (id && shapes.some((shape) => shape.id === id && shape.text)) {
+      event.preventDefault();
+      event.stopPropagation();
+      onSelect(id);
+      editingTextId = id;
+    }
   }
 </script>
 
@@ -198,19 +490,22 @@
   <svg
     bind:this={surface}
     class="canvas"
-    class:raster
     class:hidden
     viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`}
-    style:aspect-ratio={`${frame.w} / ${frame.h}`}
+    preserveAspectRatio="xMidYMid meet"
     role="application"
     aria-label={m.dock_screenshotEditor_canvas()}
     tabindex="0"
     onpointerdown={down}
     onpointermove={move}
     onpointerup={up}
-    onpointercancel={() => (gesture = null)}
-    onlostpointercapture={() => (gesture = null)}
+    onpointercancel={cancelPointer}
+    onlostpointercapture={cancelPointer}
+    onpointerleave={() => {
+      if (!gesture) cursor = null;
+    }}
     onkeydown={key}
+    ondblclick={doubleClick}
   >
     <image
       href={sourceUrl}
@@ -219,34 +514,121 @@
       width={raster ? frame.w : width}
       height={raster ? frame.h : height}
     />
-    {#each visible as shape (shape.id)}
-      {@const b = dockGeometryRect(shape.geometry)}
-      <g data-shape-id={shape.id} class:selected={selectedId === shape.id} class="shape">
-        {#if shape.geometry.kind === 'rect'}
-          <rect class="shape-hit" x={b.x} y={b.y} width={b.w} height={b.h} />
-        {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
-        {#if selectedId === shape.id}
-          <rect class="selection" x={b.x} y={b.y} width={b.w} height={b.h} />
-          <rect
-            data-resize
-            class="handle"
-            x={b.x + b.w - 5}
-            y={b.y + b.h - 5}
-            width="10"
-            height="10"
-          />
-        {/if}
-      </g>
-    {/each}
+    <g class:cropping={!!cropCandidate}>
+      {#each visible as shape (shape.id)}
+        {@const b = dockGeometryRect(shape.geometry)}
+        <g data-shape-id={shape.id} class="shape">
+          {#if shape.blurStroke}
+            <path
+              class="brush-hit"
+              style:stroke-width={shape.blurStroke.radius * 2}
+              d={shape.blurStroke.points.length === 1
+                ? `M${shape.blurStroke.points[0].x},${shape.blurStroke.points[0].y}l.001,0`
+                : screenshotPath({ kind: 'path', points: shape.blurStroke.points })}
+            />
+          {:else if shape.geometry.kind === 'rect'}<rect
+              class="shape-hit"
+              x={b.x}
+              y={b.y}
+              width={b.w}
+              height={b.h}
+            />
+          {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
+          {#if !cropCandidate && (selectedIds.includes(shape.id) || selectedId === shape.id)}
+            <rect class="selection" x={b.x} y={b.y} width={b.w} height={b.h} />
+            <rect
+              data-resize
+              class="handle"
+              x={b.x + b.w - 4 * unit}
+              y={b.y + b.h - 4 * unit}
+              width={8 * unit}
+              height={8 * unit}
+            />
+          {/if}
+        </g>
+      {/each}
+    </g>
     {#if gesture?.preview && !gesture.id}
       {@const b = dockGeometryRect(gesture.preview)}
-      {#if gesture.preview.kind === 'rect'}<rect
+      {#if tool === 'blur'}
+        <path
+          class="brush-guide"
+          style:stroke-width={gesture.radius * 2}
+          d={screenshotPath(gesture.preview)}
+        />
+      {:else if gesture.preview.kind === 'rect'}<rect
           class="mark preview"
           x={b.x}
           y={b.y}
           width={b.w}
           height={b.h}
-        />{:else}<path class="mark preview" d={screenshotPath(gesture.preview)} />{/if}
+        />
+      {:else}<path class="mark preview" d={screenshotPath(gesture.preview)} />{/if}
+    {/if}
+    {#if tool === 'blur' && cursor && !disabled && !cropCandidate}
+      <circle class="brush-cursor" cx={cursor.x} cy={cursor.y} r={brushRadius} />
+    {/if}
+    {#if cropCandidate}
+      {@const c = cropCandidate}
+      <path
+        class="crop-dim"
+        fill-rule="evenodd"
+        d={`M${frame.x},${frame.y}h${frame.w}v${frame.h}h${-frame.w}Z M${c.x},${c.y}h${c.w}v${c.h}h${-c.w}Z`}
+      />
+      <rect class="crop-boundary" x={c.x} y={c.y} width={c.w} height={c.h} />
+      {#each handles as handle (handle.id)}
+        <rect
+          class="handle crop-handle"
+          data-crop-handle={handle.id}
+          style:cursor={`${handle.id}-resize`}
+          x={clamp(handle.x - 5 * unit, frame.x, frame.x + frame.w - 10 * unit)}
+          y={clamp(handle.y - 5 * unit, frame.y, frame.y + frame.h - 10 * unit)}
+          width={10 * unit}
+          height={10 * unit}
+        />
+      {/each}
+    {/if}
+    {#if textShape?.text && textSession}
+      {@const b = dockGeometryRect(textShape.geometry)}
+      <foreignObject
+        x={b.x}
+        y={b.y}
+        width={Math.min(frame.x + frame.w - b.x, Math.max(b.w, 160 * unit))}
+        height={Math.min(frame.y + frame.h - b.y, Math.max(b.h + 16 * unit, 72 * unit))}
+      >
+        <div
+          class="inline-text"
+          style:font-size={`${textShape.text.fontSize}px`}
+          onpointerdown={(event) => event.stopPropagation()}
+          onkeydown={(event) => {
+            event.stopPropagation();
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              finishText(false);
+              surface?.focus();
+            } else if (
+              (event.metaKey || event.ctrlKey) &&
+              (event.key === 'Enter' || event.key.toLowerCase() === 's')
+            ) {
+              event.preventDefault();
+              finishText(true);
+              surface?.focus();
+            }
+          }}
+          role="group"
+        >
+          <Textarea
+            bind:ref={textInput}
+            bind:value={textValue}
+            class="text-input"
+            maxlength={10000}
+            aria-label={m.dock_screenshotEditor_text()}
+            minHeight={0}
+            noFocusStyle
+            onblur={() => finishText(true)}
+          />
+        </div>
+      </foreignObject>
     {/if}
   </svg>
 </div>
@@ -256,17 +638,19 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+    flex: 1;
     min-width: 0;
     min-height: 0;
-    padding: 24px;
+    overflow: hidden;
     background: hsl(var(--muted));
     border-radius: var(--radius-medium);
   }
   .canvas {
     display: block;
     width: 100%;
-    height: auto;
-    max-height: 100%;
+    height: 100%;
+    min-height: 0;
     touch-action: none;
     outline: none;
     overflow: hidden;
@@ -276,10 +660,13 @@
   }
   .canvas:focus-visible {
     outline: 2px solid hsl(var(--ring));
-    outline-offset: 4px;
+    outline-offset: -2px;
   }
   .shape {
     cursor: move;
+  }
+  .cropping {
+    pointer-events: none;
   }
   .mark {
     fill: transparent;
@@ -298,6 +685,26 @@
   .shape-hit {
     fill: transparent;
   }
+  .brush-hit {
+    fill: none;
+    stroke: transparent;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .brush-guide {
+    fill: none;
+    stroke: hsl(var(--primary) / 0.25);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+  }
+  .brush-cursor {
+    fill: transparent;
+    stroke: hsl(var(--foreground));
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
   .selection {
     fill: none;
     stroke: hsl(var(--ring));
@@ -315,5 +722,32 @@
   }
   .preview {
     pointer-events: none;
+  }
+  .crop-dim {
+    fill: hsl(var(--background) / 0.65);
+    pointer-events: none;
+  }
+  .crop-boundary {
+    fill: transparent;
+    stroke: hsl(var(--primary));
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+    cursor: move;
+  }
+  .inline-text {
+    width: 100%;
+    height: 100%;
+    line-height: 1.4;
+  }
+  .inline-text :global(.text-input) {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    padding: 0;
+    resize: none;
+    font: inherit;
+    line-height: inherit;
+    border-radius: 0;
+    background: hsl(var(--background));
   }
 </style>

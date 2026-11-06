@@ -2,7 +2,6 @@
   import { screenshotKindLabel } from './screenshot-labels';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
-  import CursorClickIcon from 'phosphor-svelte/lib/CursorClickIcon';
   import RectangleIcon from 'phosphor-svelte/lib/RectangleIcon';
   import ScribbleIcon from 'phosphor-svelte/lib/ScribbleIcon';
   import ArrowUpRightIcon from 'phosphor-svelte/lib/ArrowUpRightIcon';
@@ -14,19 +13,20 @@
     tool,
     disabled = false,
     canDelete = false,
+    canBlur = true,
     onSelect,
     onDelete,
   }: {
     tool: ScreenshotTool;
     disabled?: boolean;
     canDelete?: boolean;
+    canBlur?: boolean;
     onSelect: (tool: ScreenshotTool) => void;
     onDelete: () => void;
   } = $props();
   // No pointer button: with no tool chosen, marks are selected and moved directly.
   // Clicking the chosen tool again (or Esc) goes back to that.
   const tools = [
-    { id: 'element', label: screenshotKindLabel('element'), icon: CursorClickIcon },
     { id: 'box', label: screenshotKindLabel('box'), icon: RectangleIcon },
     { id: 'draw', label: screenshotKindLabel('draw'), icon: ScribbleIcon },
     { id: 'arrow', label: screenshotKindLabel('arrow'), icon: ArrowUpRightIcon },
@@ -44,7 +44,7 @@
       tooltip={item.label}
       aria-pressed={tool === item.id}
       active={tool === item.id}
-      {disabled}
+      disabled={disabled || (item.id === 'blur' && !canBlur)}
       onclick={() => onSelect(tool === item.id ? 'pointer' : item.id)}
       ><item.icon size={18} /></Button
     >
@@ -66,7 +66,7 @@
     flex-direction: column;
     align-items: center;
     gap: 4px;
-    padding: 8px;
+    padding: 4px;
     border: 1px solid hsl(var(--border));
     border-radius: var(--radius-medium);
     background: hsl(var(--background));
