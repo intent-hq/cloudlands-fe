@@ -1,8 +1,7 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, within } from '@testing-library/svelte';
 import type { ComponentProps } from 'svelte';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { m } from '$shared/paraglide/messages.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('$store/renderer/slices/specialists/specialists-selectors', async () => {
   const { readable } = await import('svelte/store');

@@ -9,7 +9,7 @@
 
 export const BASE_REFRESH_FAILED_CODE = 'base-refresh-failed';
 
-export const BASE_REFRESH_CATEGORIES = [
+const BASE_REFRESH_CATEGORIES = [
   'auth-required',
   'ssh-host-key',
   'network',

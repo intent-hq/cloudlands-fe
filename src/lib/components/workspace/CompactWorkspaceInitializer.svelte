@@ -3744,12 +3744,12 @@
           >
             {error}
           </div>
-          {#if repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
-            <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
-            <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
-              >{m.collaboration_host_refresh_label()}</Button
-            >
-          {/if}
+        {/if}
+        {#if error && repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
+          <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
+          <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
+            >{m.collaboration_host_refresh_label()}</Button
+          >
         {/if}
         <!-- Validation hint -->
         {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitNoticeAvailability !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
