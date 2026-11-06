@@ -101,7 +101,7 @@
     points: DockImagePoint[];
     id: string | null;
     original: DockMarkGeometry | null;
-    resize: boolean;
+    resize: 'nw' | 'ne' | 'se' | 'sw' | null;
     preview: DockMarkGeometry | null;
     radius: number;
     tool: ScreenshotTool;
@@ -283,7 +283,9 @@
       points: [start],
       id: selecting ? id : null,
       original: selecting && shape ? shape.geometry : null,
-      resize: event.target instanceof Element && event.target.hasAttribute('data-resize'),
+      resize: (event.target instanceof Element
+        ? event.target.getAttribute('data-resize')
+        : null) as 'nw' | 'ne' | 'se' | 'sw' | null,
       preview: null,
       radius: brushRadius,
       tool: selecting ? 'pointer' : tool,
@@ -356,18 +358,36 @@
           frame.y + frame.h - Math.max(...ys),
         );
         preview = { kind: 'rect', ...b, x: b.x + dx, y: b.y + dy };
+      } else if (g.resize) {
+        // Use the drag delta so grabbing the larger invisible target never snaps a corner.
+        const dx = current.x - g.start.x,
+          dy = current.y - g.start.y;
+        const right = b.x + b.w,
+          bottom = b.y + b.h;
+        const left = g.resize.includes('w')
+          ? clamp(b.x + dx, frame.x, right - Math.min(2, frame.w))
+          : b.x;
+        const top = g.resize.includes('n')
+          ? clamp(b.y + dy, frame.y, bottom - Math.min(2, frame.h))
+          : b.y;
+        const nextRight = g.resize.includes('e')
+          ? clamp(right + dx, b.x + Math.min(2, frame.w), frame.x + frame.w)
+          : right;
+        const nextBottom = g.resize.includes('s')
+          ? clamp(bottom + dy, b.y + Math.min(2, frame.h), frame.y + frame.h)
+          : bottom;
+        preview = fitScreenshotGeometry(g.original, {
+          x: left,
+          y: top,
+          w: nextRight - left,
+          h: nextBottom - top,
+        });
       } else
-        preview = g.resize
-          ? fitScreenshotGeometry(g.original, {
-              ...b,
-              w: clamp(current.x - b.x, Math.min(2, frame.w), frame.x + frame.w - b.x),
-              h: clamp(current.y - b.y, Math.min(2, frame.h), frame.y + frame.h - b.y),
-            })
-          : moveScreenshotGeometry(
-              g.original,
-              { x: current.x - g.start.x, y: current.y - g.start.y },
-              frame,
-            );
+        preview = moveScreenshotGeometry(
+          g.original,
+          { x: current.x - g.start.x, y: current.y - g.start.y },
+          frame,
+        );
     } else if (g.tool === 'draw' || g.tool === 'blur') {
       const previous = g.points.at(-1)!;
       const points =
@@ -606,14 +626,42 @@
           {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
           {#if !cropCandidate && (selectedIds.includes(shape.id) || selectedId === shape.id)}
             <rect class="selection" x={b.x} y={b.y} width={b.w} height={b.h} />
-            <rect
-              data-resize
-              class="handle"
-              x={b.x + b.w - 4 * unit}
-              y={b.y + b.h - 4 * unit}
-              width={8 * unit}
-              height={8 * unit}
-            />
+            {#each [{ id: 'nw', x: b.x, y: b.y }, { id: 'ne', x: b.x + b.w, y: b.y }, { id: 'se', x: b.x + b.w, y: b.y + b.h }, { id: 'sw', x: b.x, y: b.y + b.h }] as handle (handle.id)}
+              <rect
+                data-resize={handle.id}
+                class="selection-hit"
+                style:cursor={handle.id === 'nw' || handle.id === 'se'
+                  ? 'nwse-resize'
+                  : 'nesw-resize'}
+                x={clamp(
+                  handle.x - 8 * unit,
+                  frame.x,
+                  frame.x + frame.w - Math.min(16 * unit, frame.w),
+                )}
+                y={clamp(
+                  handle.y - 8 * unit,
+                  frame.y,
+                  frame.y + frame.h - Math.min(16 * unit, frame.h),
+                )}
+                width={Math.min(16 * unit, frame.w)}
+                height={Math.min(16 * unit, frame.h)}
+              />
+              <rect
+                class="handle selection-handle"
+                x={clamp(
+                  handle.x - 3 * unit,
+                  frame.x,
+                  frame.x + frame.w - Math.min(6 * unit, frame.w),
+                )}
+                y={clamp(
+                  handle.y - 3 * unit,
+                  frame.y,
+                  frame.y + frame.h - Math.min(6 * unit, frame.h),
+                )}
+                width={Math.min(6 * unit, frame.w)}
+                height={Math.min(6 * unit, frame.h)}
+              />
+            {/each}
           {/if}
         </g>
       {/each}
@@ -793,8 +841,15 @@
     fill: none;
     stroke: hsl(var(--ring));
     stroke-width: 1;
-    stroke-dasharray: 4 3;
     vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+  .selection-hit {
+    fill: transparent;
+    stroke: none;
+    pointer-events: all;
+  }
+  .selection-handle {
     pointer-events: none;
   }
   .handle {
