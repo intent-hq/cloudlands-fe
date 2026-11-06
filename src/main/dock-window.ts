@@ -272,7 +272,10 @@ function clearTrackedWindow(window: BrowserWindow): void {
 function resetDockPointerRouting(window: BrowserWindow): void {
   const revision = placementController?.getSnapshot()?.revision;
   const reset = { active: false, regions: [], revision };
-  if (setDockPointerRegions(window, reset) && pointerState === reset) lastResetState = reset;
+  // Track the assignment itself: on platforms without pointer forwarding the state is
+  // still reset even though the call reports false.
+  setDockPointerRegions(window, reset);
+  if (pointerState === reset) lastResetState = reset;
 }
 
 export function getDockPlacementSnapshot(window: BrowserWindow): DockPlacementSnapshot | null {
