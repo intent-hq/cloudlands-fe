@@ -76,7 +76,7 @@
     height: 6px;
     flex: none;
     border-radius: 50%;
-    background: hsl(var(--destructive));
+    background: hsl(var(--danger));
   }
   .recording-dot.paused {
     background: hsl(var(--muted-foreground));
