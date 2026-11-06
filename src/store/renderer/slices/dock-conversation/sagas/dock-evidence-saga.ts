@@ -866,6 +866,7 @@ function* onNativeMark(
       imageId,
       tool: event.tool,
       geometry: event.geometry,
+      ...(event.gestureProgress ? { gestureProgress: event.gestureProgress } : {}),
       bounds: dockGeometryBounds(event.geometry),
       element: event.element,
       createdAt: gestureAt,

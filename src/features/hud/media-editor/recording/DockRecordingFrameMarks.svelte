@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import { dockMediaMarkEditableAt } from '$shared/dock-media-animation';
   import { m } from '$shared/paraglide/messages.js';
   import { Input } from '$lib/components/ui/input';
   import {
@@ -109,7 +110,8 @@
   // Exactly the marks the export paints at this time, numbered as it numbers them.
   const visible = $derived(
     numberDockMediaMarks(shownEdit, source).filter(
-      (row) => atMs >= row.mark.atMs && atMs < row.visibleUntilMs,
+      (row) => atMs >= row.mark.atMs && atMs < row.visibleUntilMs &&
+        dockMediaMarkEditableAt(source, row.mark, atMs),
     ),
   );
   const ops = $derived.by((): DockMediaPaintOp[] => {
@@ -164,7 +166,7 @@
     const target = event.target instanceof Element ? event.target : null;
     const hit = target?.closest<SVGGElement>('[data-frame-mark]') ?? null;
     const id = hit?.dataset.frameMark ?? null;
-    const mark = id ? edit.marks.find((row) => row.id === id) : undefined;
+    const mark = id ? visible.find((row) => row.mark.id === id)?.mark : undefined;
     onSelect?.(mark ? mark.id : null);
     if (!mark || !hit) return;
     onBegin();
@@ -239,7 +241,7 @@
    */
   function onMarkKeydown(event: KeyboardEvent, id: string): void {
     if (event.defaultPrevented || !editable || !box) return;
-    const mark = edit.marks.find((row) => row.id === id);
+    const mark = visible.find((row) => row.mark.id === id)?.mark;
     if (!mark) return;
     if (event.key === 'Delete' || event.key === 'Backspace') {
       event.preventDefault();

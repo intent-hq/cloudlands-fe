@@ -1366,3 +1366,34 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
     expect(activity).toHaveBeenCalledTimes(4);
   });
 });
+
+describe('recorded gesture progress lifetime', () => {
+  it('stamps actual move clock, commits once, rejects late move after up or cancel', async () => {
+    const t = setup(); let clipId: string | undefined = 'clip-a';
+    t.host.clipIdentity = () => clipId; t.host.clip = 100;
+    await t.start('live', 'pen');
+    const request = { sessionId: 's1', sequence: t.nextSequence(), tool: 'pen' as const, x: 10, y: 10 };
+    expect(t.controller.handlePointer({ ...request, phase: 'down' }).ok).toBe(true);
+    t.host.clip = 180;
+    expect(t.controller.handlePointer({ ...request, phase: 'move', x: 30, y: 30, pointCount: 2 }).ok).toBe(true);
+    t.host.clip = 250;
+    await t.controller.handleGesture({ sessionId: 's1', sequence: request.sequence, tool: 'pen', origin: { x: 10, y: 10 }, points: [{ x:10,y:10 },{ x:30,y:30 },{ x:60,y:60 }] });
+    expect(marks(t.events)[0].gestureProgress).toMatchObject({ completedAtMs: 250, samples: [{ atMs: 100, pointCount: 1 },{ atMs: 180, pointCount: 2 }] });
+    expect(t.controller.handlePointer({ ...request, phase:'move', pointCount:3 }).ok).toBe(false);
+    const next = { ...request, sequence:t.nextSequence() };
+    t.controller.handlePointer({ ...next, phase:'down' });
+    t.controller.handlePointer({ ...next, phase:'cancel' });
+    expect(t.controller.handlePointer({ ...next, phase:'move', pointCount:2 }).ok).toBe(false);
+    expect(marks(t.events)).toHaveLength(1);
+    clipId = undefined;
+  });
+  it('rejects the whole frozen mark when the clip changes during capture', async () => {
+    const t = setup(); let clipId = 'clip-a'; t.host.clipIdentity = () => clipId; t.host.clip = 100;
+    await t.start(); t.holdCaptures();
+    const pending = t.gesture([{x:10,y:10},{x:80,y:80}]);
+    await vi.waitFor(() => expect(t.captures).toHaveLength(1));
+    clipId = 'clip-b'; t.releaseCapture();
+    expect((await pending).ok).toBe(false);
+    expect(marks(t.events)).toHaveLength(0);
+  });
+});

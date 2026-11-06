@@ -25,6 +25,10 @@ export function dockMediaCapturedMarks(evidence: DockComposerEvidence, source: D
     const url = mark.element?.source;
     return {
       id: mark.id, atMs, batchId: batch.id, source: 'recording',
+      ...(mark.gestureProgress && mark.gestureProgress.completedAtMs <= source.durationMs ? { gestureProgress: {
+        ...mark.gestureProgress, samples: mark.gestureProgress.samples.map((sample) => ({ ...sample,
+          end: { x: sample.end.x * source.width / image.width, y: sample.end.y * source.height / image.height } })),
+      } } : {}),
       kind: mark.tool === 'pick' ? 'element' : mark.tool === 'pen' ? 'draw' : mark.tool,
       included: entry?.included ?? true, geometry: geometry(mark, source.width / image.width, source.height / image.height),
       label: mark.element?.name ?? '', note: '',

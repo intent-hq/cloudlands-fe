@@ -1,3 +1,4 @@
+import { dockMediaOverlaySpans, dockMediaFrameAt } from '../../../shared/dock-media-animation';
 import { Logger } from '../../../shared/logger';
 import { DockMediaWaveformSchema, DockMediaAudioProbeSchema, type DockMediaAudioProbeRequest, type DockMediaAudioProbe, type DockMediaAnalyzeRequest, type DockMediaWaveform } from '../../../shared/dock-media-output';
 /** Session-bound offline jobs. No renderer-chosen host paths or backend fallback. */
@@ -193,9 +194,7 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
     const plan = planDockMediaOutput(edit, source, media.transcript);
     if (plan.errors.length || !plan.clips.length || source.visuals !== 'clean') throw new Error('media-plan');
     // One raster for every distinct active mark set; main determines their times.
-    const boundaries = [...new Set([0, source.durationMs, ...plan.marks.flatMap((entry) => [entry.frameAtMs, entry.visibleUntilMs])])].sort((a, b) => a - b);
-    const spans = boundaries.slice(0, -1).map((atMs, index) => ({ atMs, endMs: boundaries[index + 1] }))
-      .filter((span) => plan.marks.some((entry) => span.atMs >= entry.frameAtMs && span.atMs < entry.visibleUntilMs));
+    const spans = dockMediaOverlaySpans(source, edit);
     if (request.layers.length !== spans.length || request.layers.reduce((sum, layer) => sum + layer.png.length, 0) > MAX_BYTES) throw new Error('media-layers');
     const binary = await helper('intent-dock-media-export');
     await requireExporterVersion(binary);
@@ -215,7 +214,11 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
       layers.push({ path: target, startMs: span.atMs, endMs: span.endMs });
     }
     const output = path.join(job.directory, 'output.mp4');
-    const frames = plan.marks.map((entry, index) => ({ path: path.join(job!.directory, `frame-${index}.png`), atMs: Math.min(source.durationMs - 1, entry.frameAtMs) }));
+    const frames = plan.marks.map((entry, index) => {
+      const atMs = dockMediaFrameAt(source, plan, entry);
+      if (atMs === null) throw new Error('media-frame-outside-kept-span');
+      return { path: path.join(job!.directory, `frame-${index}.png`), atMs };
+    });
     const completed = await run(context, job, binary, { outputVersion: DOCK_MEDIA_OUTPUT_VERSION, source: file, output, ranges: plan.clips, muted: plan.muted, layers, frames,
       expectedWidth: source.width, expectedHeight: source.height, expectedDurationMs: source.durationMs,
       crop: edit.crop, blurRegions: edit.blurRegions, blurStrokes: edit.blurStrokes ?? [], blurRadius: DOCK_MEDIA_BLUR_RADIUS }, progress);

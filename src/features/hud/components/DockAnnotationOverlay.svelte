@@ -2,10 +2,11 @@
   import { onDestroy } from 'svelte';
   import { fade, scale } from '$lib/motion';
   import {
-    DOCK_ANNOTATION_LIMITS,
     dockAnnotationViewport,
     dockGeometryRect,
     gestureOverlayGeometry,
+    extendDockPenPoints,
+    finishDockPenPoints,
     imageToOverlay,
     mapDockGeometry,
     pointInRects,
@@ -37,6 +38,7 @@
     tool: DockMarkTool;
     origin: DockImagePoint;
     points: DockImagePoint[];
+    capped: boolean;
     down: Promise<boolean>;
   }
   interface Pending {
@@ -134,6 +136,7 @@
       tool: overlay.tool,
       origin,
       points: [origin],
+      capped: false,
       down: transport.pointer(request).then(
         (ack) => ack.ok,
         () => false,
@@ -154,12 +157,18 @@
         : [event];
     const next = samples.map(local);
     if (current.tool === 'pen') {
-      if (current.points.length + next.length > DOCK_ANNOTATION_LIMITS.gesturePoints) return;
-      current.points = [...current.points, ...next];
+      const observed = extendDockPenPoints(current, next);
+      current.points = observed.points;
+      current.capped = observed.capped;
     } else {
       current.points = [current.origin, next.at(-1) ?? current.origin];
     }
     gesture = { ...current };
+    // Main stamps the recording clock. Never send renderer wall-clock timing.
+    const end = current.points.at(-1) ?? current.origin;
+    void current.down.then((ok) => ok && transport.pointer({ sessionId: current.sessionId,
+      sequence: current.sequence, phase: 'move', tool: current.tool,
+      x: end.x, y: end.y, pointCount: current.points.length })).catch(() => {});
   }
 
   function onPointerUp(event: PointerEvent) {
@@ -170,7 +179,7 @@
     const end = local(event);
     const points =
       current.tool === 'pen'
-        ? [...current.points, end]
+        ? finishDockPenPoints(current, end)
         : current.tool === 'pick'
           ? [current.origin]
           : [current.origin, end];
