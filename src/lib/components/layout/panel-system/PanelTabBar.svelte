@@ -1353,7 +1353,9 @@
         {/if}
         {#if contentActions?.primary || contentActions?.actions || contentActions?.destructive}
           <Menu.Group data-panel-actions-section="actions">
-            <Menu.Label>{m.layout_panelTabBar_actionsSection_label()}</Menu.Label>
+            <Menu.Label alignIconColumn={false}
+              >{m.layout_panelTabBar_actionsSection_label()}</Menu.Label
+            >
             {@render contentActions.primary?.()}
             {@render contentActions.actions?.()}
             {@render contentActions.destructive?.()}
@@ -1366,7 +1368,8 @@
       {#if paneMoveDirections.some((direction) => direction.enabled)}
         {#snippet moveControls()}
           <Menu.Group data-panel-actions-section="move">
-            <Menu.Label>{m.layout_panelTabBar_movePanel_label()}</Menu.Label>
+            <Menu.Label alignIconColumn={false}>{m.layout_panelTabBar_movePanel_label()}</Menu.Label
+            >
             <div class="panel-move-pad">
               {#each paneMoveDirections as direction (direction.direction)}
                 <Menu.Item
