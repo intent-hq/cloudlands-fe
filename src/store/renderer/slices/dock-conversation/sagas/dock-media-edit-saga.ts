@@ -2,7 +2,7 @@ import { captureDockPlacementBinding, isDockBindingCurrent, placeDockMediaImage 
 import { dockMediaCapturedMarks, dockMediaCaptureBatches } from '$shared/dock-media-source';
 import { DockMediaSourceSchema } from '$shared/dock-media-edit';
 import type { DockCaptureEditorOpenRequest } from '$shared/dock-capture-editor';
-import { buffers } from 'redux-saga';
+import { buffers, channel, type Channel } from 'redux-saga';
 import {
   actionChannel,
   call,
@@ -242,17 +242,36 @@ function* analyzeAndPublish(workspaceId: string, agentId: string, logicalId: str
   finally { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
 }
 
-function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: string, authority: string): SagaGenerator<void> {
+const recognitionFlights = new Set<{
+  key: string;
+  service: NonNullable<ReturnType<typeof dockMediaNativeService>>;
+  binding: ReturnType<typeof captureDockPlacementBinding>;
+}>();
+
+function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: string, authority: string,
+  binding: ReturnType<typeof captureDockPlacementBinding>): SagaGenerator<void> {
   const service = dockMediaNativeService();
   const initial = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId)?.media;
-  if (!initial || !service?.transcribeMedia || initial.source.audio !== 'available' || initial.transcript?.status === 'ready') return;
+  if (!initial || !service?.transcribeMedia || initial.source.audio === 'none' ||
+      initial.transcript?.status === 'ready' || initial.transcript?.status === 'no-speech') return;
+  const current = () => authority === getPrincipalActionContext(store.state) &&
+    service === dockMediaNativeService() && isDockBindingCurrent(binding);
+  if (!current()) return;
+  const key = JSON.stringify([authority, workspaceId, agentId, logicalId, binding.backendId, binding.generation, initial.source]);
+  if ([...recognitionFlights].some((flight) => flight.key === key && flight.service === service &&
+      flight.binding.transport === binding.transport)) return;
+  const flight = { key, service, binding };
+  // Reserve synchronously before the first yield: repeated Edit fronts the same
+  // editor while this exact source continues its single background recognition.
+  recognitionFlights.add(flight);
   const jobId = crypto.randomUUID();
   try {
     const result = yield* call(() => service.transcribeMedia!({ jobId, media: initial }));
-    if (!result.ok || authority !== getPrincipalActionContext(store.state) || service !== dockMediaNativeService()) return;
+    if (!result.ok || !current()) return;
     const liveRow = evidenceOf(workspaceId, agentId)?.clips.find((row) => row.id === logicalId);
     const live = liveRow?.media;
-    if (!live || live.source.id !== initial.source.id || live.source.revision !== initial.source.revision) return;
+    if (!live || JSON.stringify(live.source) !== JSON.stringify(initial.source) ||
+        !publishedMediaItem(workspaceId, agentId, logicalId, live, liveRow?.contextItemId)) return;
     const transcript = { ...result.value, revision: (live.transcript?.revision ?? 0) + 1 };
     const next = { ...live, transcript };
     if (!replaceMediaState(workspaceId, agentId, logicalId, live, next)) return;
@@ -267,16 +286,25 @@ function* recognizeAndPersist(workspaceId: string, agentId: string, logicalId: s
         attachments: serializeDraftAttachments(selectComposerContextItems.select(store.state, workspaceId, agentId), toDockDraftEvidence(evidenceOf(workspaceId, agentId))), rollback: null }));
       yield* put(chatDraftSavePairFlushRequested(workspaceId, agentId));
       const { written } = yield* race({ written: take(settled), expired: delay(14_000) });
-      if (written?.payload[2] === 'saved' && authority === getPrincipalActionContext(store.state) && service === dockMediaNativeService() &&
+      if (written?.payload[2] === 'saved' && current() &&
           publishedMediaItem(workspaceId, agentId, logicalId, next, liveRow?.contextItemId))
         yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.TRANSCRIPT_UPDATE,
           { pair: { workspaceId, agentId }, sourceId: live.source.id, sourceRevision: live.source.revision, transcript }));
     } finally { settled.close(); yield* put(chatDraftOwnerReleased(ownerId)); }
-  } finally { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
+  } finally {
+    try { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
+    finally { recognitionFlights.delete(flight); }
+  }
+}
+
+interface MediaPreparation {
+  workspaceId: string; agentId: string; logicalId: string; authority: string;
+  binding: ReturnType<typeof captureDockPlacementBinding>;
 }
 
 /** The editor opens only after the source metadata has passed the same durable writer. */
-function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<typeof dockMediaEditorOpenRequested>): SagaGenerator<void> {
+function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<typeof dockMediaEditorOpenRequested>,
+  preparation: Channel<MediaPreparation>): SagaGenerator<void> {
   const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
   if (!authority) return;
   const current = () => getPrincipalActionContext(store.state) === authority && isDockBindingCurrent(binding);
@@ -305,6 +333,46 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
     item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === item!.id);
   }
   if (!row || !item || !current()) return;
+  // Repair historical mic flags from the exact original container, never from
+  // an exported Voice Off file or from the annotated writer's append receipt.
+  const service = dockMediaNativeService(), beforeProbe = row.media;
+  if (beforeProbe?.source.kind === 'recording' && service?.probeMediaAudio &&
+      (beforeProbe.source.audio !== 'available' || beforeProbe.transcript?.error === 'no-audio-track')) {
+    const jobId = crypto.randomUUID();
+    let probed: Awaited<ReturnType<NonNullable<typeof service.probeMediaAudio>>> | undefined;
+    try { probed = yield* call(() => service.probeMediaAudio!({ jobId, media: beforeProbe })); }
+    catch { /* Missing/old helper leaves metadata unchanged; never guess audio. */ }
+    finally { yield* call(() => service.releaseMediaJob?.(jobId).catch(() => {})); }
+    if (!current() || service !== dockMediaNativeService()) return;
+    const liveItem = publishedMediaItem(workspaceId, agentId, logicalId, beforeProbe, row.contextItemId);
+    if (!liveItem || liveItem.id !== item.id) return;
+    if (probed?.ok && probed.value.sourceId === beforeProbe.source.id &&
+        probed.value.sourceRevision === beforeProbe.source.revision) {
+      const audio = probed.value.populatedTrackCount > 0 ? 'available' as const : 'none' as const;
+      if (audio !== beforeProbe.source.audio) {
+        const correctedSource = { ...beforeProbe.source, audio, revision: beforeProbe.source.revision + 1 };
+        const corrected: DockSavedMedia = {
+          ...beforeProbe,
+          source: correctedSource,
+          ...(beforeProbe.originalSource?.id === beforeProbe.source.id &&
+              beforeProbe.originalSource.revision === beforeProbe.source.revision &&
+              beforeProbe.originalSource.path === beforeProbe.source.path
+            ? { originalSource: correctedSource } : {}),
+          // Metadata correction does not change the user's saved Video/Voice choice.
+          saved: beforeProbe.saved ? { ...beforeProbe.saved, sourceRevision: correctedSource.revision } : null,
+          transcript: beforeProbe.transcript?.status === 'ready' ? beforeProbe.transcript : {
+            status: audio === 'available' ? 'pending' : 'unavailable',
+            revision: (beforeProbe.transcript?.revision ?? 0) + 1, words: [],
+            ...(audio === 'none' ? { error: 'no-audio-track' } : {}),
+          },
+        };
+        if (!replaceMediaState(workspaceId, agentId, logicalId, beforeProbe, corrected)) return;
+      }
+    }
+    row = evidenceOf(workspaceId, agentId)?.clips.find((entry) => entry.id === logicalId);
+    item = selectComposerContextItems.select(store.state, workspaceId, agentId).find((entry) => entry.id === liveItem.id);
+    if (!row || !item || !current()) return;
+  }
   // Legacy recordings stay read-only; no guessed dimensions, batches or clean pixels.
   const media = row.media, source = media?.source;
   if (!source || !media) return;
@@ -331,8 +399,9 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
       ...(media.originalSource ? { originalSource: media.originalSource } : {}),
     };
     yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request));
-    yield* fork(analyzeAndPublish, workspaceId, agentId, logicalId, authority);
-    yield* recognizeAndPersist(workspaceId, agentId, logicalId, authority);
+    // Root-owned background work is outside the per-pair Edit FIFO. Attached
+    // forks here would still keep that FIFO call blocked until recognition ends.
+    yield* put(preparation, { workspaceId, agentId, logicalId, authority, binding });
   } finally { settled.close(); yield* put(chatDraftOwnerReleased(ownerId)); }
 }
 
@@ -397,10 +466,22 @@ function* retakeCapture(request: z.infer<typeof retakeSchema>): SagaGenerator<vo
 
 /** Sole dock listener; the editor and main have separate, strictly bound ends. */
 export function* dockMediaEditSaga(): SagaGenerator<void> {
+  const preparation = channel<MediaPreparation>(buffers.expanding());
+  yield* fork(function* prepareOpenedMedia(): SagaGenerator<void> {
+    while (true) {
+      const request = yield* take(preparation);
+      yield* fork(analyzeAndPublish, request.workspaceId, request.agentId, request.logicalId, request.authority);
+      yield* fork(function* recognizeOpenedMedia(): SagaGenerator<void> {
+        try {
+          yield* recognizeAndPersist(request.workspaceId, request.agentId, request.logicalId, request.authority, request.binding);
+        } catch { /* A retired/failed request must not cancel the root-owned worker. */ }
+      });
+    }
+  });
   const completed = yield* actionChannel(dockMediaEditSaveSettled, buffers.expanding());
   yield* takeEveryByContextFIFO(dockMediaEditorOpenRequested,
     ({ payload: [workspaceId, agentId] }: ReturnType<typeof dockMediaEditorOpenRequested>) => JSON.stringify([workspaceId, agentId]),
-    function* (action) { try { yield* openEditor(action); } catch { /* Source/placement errors keep the current draft. */ } }, {});
+    function* (action) { try { yield* openEditor(action, preparation); } catch { /* Source/placement errors keep the current draft. */ } }, {});
   yield* takeEveryByContextFIFO(
     dockMediaEditSaveRequested,
     ({ payload: [, request, authority] }: SaveAction) =>
@@ -453,6 +534,7 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
       }
     }
   } finally {
+    preparation.close();
     completed.close();
   }
 }

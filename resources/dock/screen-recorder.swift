@@ -289,6 +289,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
   var micOn = false
   var micAtStart: Bool
   var hasMicAudio = false
+  var hasCleanMicAudio = false
+  var cleanAudioBuffers = 0
+  var annotatedAudioBuffers = 0
   var limitTimer: DispatchSourceTimer?
   var sizeTimer: DispatchSourceTimer?
   var startWatchdog: DispatchSourceTimer?
@@ -737,8 +740,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
     if let cleanAudio {
       guard cleanAudio.isReadyForMoreMediaData else { return }
       guard cleanAudio.append(buffer) else { return fail("failed", "clean-audio") }
+      hasCleanMicAudio = true; cleanAudioBuffers += 1
     }
-    if audioInput.append(buffer) { hasMicAudio = true }
+    if audioInput.append(buffer) { hasMicAudio = true; annotatedAudioBuffers += 1 }
   }
 
   /// RMS of 32-bit float PCM on a -50 dB…0 dB scale, at most every 66 ms.
@@ -997,7 +1001,9 @@ final class Recorder: NSObject, SCStreamOutput, SCStreamDelegate,
         var finished: [String: Any] = [
           "event": "finished", "reason": reason, "path": self.options.output, "bytes": bytes,
           "durationMs": Int((CMTimeGetSeconds(end - startTime) * 1000).rounded()),
-          "hasMicAudio": hadMic, "mimeType": "video/mp4", "captureApi": captureApi,
+          "hasMicAudio": hadMic, "hasCleanMicAudio": self.hasCleanMicAudio,
+          "cleanAudioBuffers": self.cleanAudioBuffers, "annotatedAudioBuffers": self.annotatedAudioBuffers,
+          "mimeType": "video/mp4", "captureApi": captureApi,
           "width": Int(self.frameSize.width), "height": Int(self.frameSize.height),
           "clearAtMs": self.clearTimes,
           "cleanPath": self.options.cleanOutput,

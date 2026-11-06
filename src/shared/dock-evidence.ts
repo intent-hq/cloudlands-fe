@@ -1334,7 +1334,7 @@ export const DOCK_CAPTURE_MODES: readonly DockCaptureMode[] = ['fullscreen', 'wi
 /** A finished clip written by native to a host path, ready for attachment placement. */
 export interface DockClipFile {
   /** Fresh dual-source recorder metadata; absent on legacy baked-only clips. */
-  original?: { sourcePath: string; size: number; width: number; height: number; clearAtMs: number[] };
+  original?: { sourcePath: string; size: number; width: number; height: number; clearAtMs: number[]; hasMicAudio?: boolean };
   sourcePath: string;
   mimeType: string;
   size: number;
@@ -1388,6 +1388,7 @@ export type DockEvidenceNativeEvent =
   | { type: 'clip-ended'; clipId: string; result: DockNativeResult<DockClipFile> };
 
 export interface DockEvidenceNativeService {
+  probeMediaAudio?(request: import('./dock-media-output').DockMediaAudioProbeRequest): Promise<DockNativeResult<import('./dock-media-output').DockMediaAudioProbe>>;
   analyzeMedia?(request: import('./dock-media-output').DockMediaAnalyzeRequest): Promise<DockNativeResult<import('./dock-media-output').DockMediaWaveform>>;
   exportMedia?(request: import('./dock-media-output').DockMediaExportRequest): Promise<DockNativeResult<import('./dock-media-output').DockMediaNativeOutput>>;
   transcribeMedia?(request: import('./dock-media-output').DockMediaTranscribeRequest): Promise<DockNativeResult<import('./dock-media-edit').DockMediaTranscript>>;

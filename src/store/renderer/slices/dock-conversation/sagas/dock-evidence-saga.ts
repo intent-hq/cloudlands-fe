@@ -1193,7 +1193,7 @@ function* placeFinishedClip(
     if (!clipOf(workspaceId, agentId, clipId) || !isDockBindingCurrent(binding)) return;
     const source = original ? DockMediaSourceSchema.parse({ id: `${clipId}:original`, revision: 0,
       kind: 'recording', attachmentId: sourcePlacement.attachmentId, path: sourcePlacement.path,
-      durationMs, width: original.width, height: original.height, audio: file.hasMicAudio ? 'available' : 'none',
+      durationMs, width: original.width, height: original.height, audio: original.hasMicAudio === true ? 'available' : original.hasMicAudio === false ? 'none' : 'unknown',
       visuals: 'clean', batches: dockMediaCaptureBatches(original.clearAtMs, durationMs) }) : null;
     if (source) source.capturedMarks = dockMediaCapturedMarks(evidenceOf(workspaceId, agentId)!, source, clipId);
     yield* put(
@@ -1218,9 +1218,9 @@ function* placeFinishedClip(
         durationMs,
         hasMicAudio: file.hasMicAudio,
         contextItemId,
-        ...(source ? { media: { source, saved: null, transcript: file.hasMicAudio
+        ...(source ? { media: { source, saved: null, transcript: source.audio !== 'none'
           ? { status: 'pending' as const, revision: 0, words: [] }
-          : { status: 'no-speech' as const, revision: 0, words: [] } } } : {}),
+          : { status: 'unavailable' as const, revision: 0, words: [], error: 'no-audio-track' } } } : {}),
         // Playback derives only from the daemon-acknowledged placement path.
         ...(isDockAttachmentPath(placed.path) ? { path: placed.path } : {}),
       }),
