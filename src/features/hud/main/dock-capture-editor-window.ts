@@ -70,6 +70,7 @@ const logger = new Logger('DockCaptureEditor');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_SIZE = { width: 1040, height: 720 };
+const WINDOW_MARGIN = 48;
 const MIN_SIZE = { width: 640, height: 480 };
 
 interface Session {
@@ -292,8 +293,9 @@ function createEditorWindow(backendId: string): BrowserWindow {
   const dock = getDockWindow();
   const display = dock ? screen.getDisplayMatching(dock.getBounds()) : screen.getPrimaryDisplay();
   const area = display.workArea;
-  const width = Math.min(DEFAULT_SIZE.width, area.width);
-  const height = Math.min(DEFAULT_SIZE.height, area.height);
+  // Always a bounded window with a visible margin, never the whole screen.
+  const width = Math.min(DEFAULT_SIZE.width, area.width - 2 * WINDOW_MARGIN);
+  const height = Math.min(DEFAULT_SIZE.height, area.height - 2 * WINDOW_MARGIN);
   const { tabbingIdentifier: _tabs, ...titleBar } = getWindowTitleBarOptions();
   const window = new BrowserWindow({
     ...getWindowAppearanceOptions(nativeTheme.shouldUseDarkColors, process.platform, false),

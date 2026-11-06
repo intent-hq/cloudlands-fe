@@ -81,16 +81,19 @@
     const hit = event.target instanceof Element ? event.target.closest('[data-shape-id]') : null;
     const id = hit?.getAttribute('data-shape-id') ?? null;
     const shape = shapes.find((s) => s.id === id);
-    if (tool === 'pointer') onSelect(id);
+    // Pressing on an existing mark selects and moves it with any drawing tool (there is
+    // no pointer button); crop always drags its area.
+    const selecting = tool === 'pointer' || (!!shape && tool !== 'crop');
+    if (selecting) onSelect(id);
     const start = point(event);
-    if (tool === 'pointer' && !shape) return;
+    if (selecting && !shape) return;
     surface.setPointerCapture(event.pointerId);
     gesture = {
       pointer: event.pointerId,
       start,
       points: [start],
-      id: tool === 'pointer' ? id : null,
-      original: tool === 'pointer' && shape ? shape.geometry : null,
+      id: selecting ? id : null,
+      original: selecting && shape ? shape.geometry : null,
       resize: event.target instanceof Element && event.target.hasAttribute('data-resize'),
       preview: null,
     };

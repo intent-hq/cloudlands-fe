@@ -197,6 +197,19 @@
         blurRegions: draft.blurRegions.map((region) => (region.id === id ? { id, ...b } : region)),
       });
   }
+  /** Esc with a tool chosen puts it down (before the shell's Esc closes the editor). */
+  function onToolEscape(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || tool === 'pointer' || event.defaultPrevented) return;
+    const target = event.target as HTMLElement | null;
+    if (
+      target?.closest(
+        'input, textarea, [contenteditable="true"], [role="menu"], [role="dialog"], [role="alertdialog"], [role="listbox"]',
+      )
+    )
+      return;
+    event.preventDefault();
+    tool = 'pointer';
+  }
   function draw(nextTool: ScreenshotTool, geometry: DockMarkGeometry) {
     if (blocked) return;
     const bounds = dockGeometryRect(geometry);
@@ -271,6 +284,8 @@
   }
 </script>
 
+<svelte:window onkeydowncapture={onToolEscape} />
+
 {#snippet main()}
   <div class="main-view">
     <ScreenshotTools
@@ -307,7 +322,11 @@
         {tool}
         selectedId={selectedMarkId}
         disabled={blocked || previewPending || previewFailed}
-        onSelect={(id) => (selectedMarkId = id)}
+        onSelect={(id) => {
+          selectedMarkId = id;
+          // Picking a mark puts the drawing tool down, so it can be moved and edited.
+          if (id && tool !== 'crop') tool = 'pointer';
+        }}
         onDraw={draw}
         onTransform={transform}
         onDelete={remove}

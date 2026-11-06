@@ -234,9 +234,9 @@
                 size="icon-sm"
                 class="tile-action"
                 {disabled}
-                aria-label={labels.markUp}
-                tooltip={labels.markUp}
-                onclick={() => markup(item.id)}
+                aria-label={onEdit ? labels.edit : labels.markUp}
+                tooltip={onEdit ? labels.edit : labels.markUp}
+                onclick={() => (onEdit ? onEdit(item.id) : markup(item.id))}
               >
                 <DockComposerIcon glyph="pencil" />
               </Button>
