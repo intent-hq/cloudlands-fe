@@ -122,6 +122,7 @@
       requiresAuth: false,
     },
     pi: { docsUrl: 'https://pi.dev/docs/latest/quickstart', requiresAuth: false },
+    cursor: { docsUrl: 'https://cursor.com/docs/cli/installation', requiresAuth: true },
   };
 
   // Helper to get provider availability from the shared status map
@@ -171,6 +172,8 @@
         loginCommandHint: provider.loginCommandHint,
         hasNpxFallback: status?.hasNpxFallback ?? false,
         warning: status?.warning,
+        version: status?.version,
+        unavailableReason: status?.unavailableReason,
       };
     }),
   );
@@ -327,7 +330,8 @@
               (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
             {@const needsLogin = provider.available && provider.authenticated === false}
             {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
-            {@const canInstall = provider.id !== 'antigravity' && !provider.available}
+            {@const canInstall =
+              provider.id !== 'antigravity' && !provider.available && !provider.unavailableReason}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
             {@const hasNodeMissing =
@@ -360,6 +364,9 @@
                     >
                       {provider.name}
                     </span>
+                    {#if provider.available && provider.version}
+                      <span class="type-caption text-muted-foreground">{provider.version}</span>
+                    {/if}
                   </div>
                 </div>
 
@@ -714,7 +721,7 @@
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">
-    {#if providerId === 'antigravity'}
+    {#if providerId === 'antigravity' || providerId === 'cursor'}
       <AgentProviderIcon {providerId} size={20} class="size-5" />
     {:else if providerId === 'auggie'}
       <AuggieLogo width={22} />

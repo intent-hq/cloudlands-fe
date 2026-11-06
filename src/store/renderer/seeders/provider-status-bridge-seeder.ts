@@ -33,6 +33,8 @@
  *                 CLI directly — presence requires BOTH `opencode` and
  *                 `unsloth` to resolve; local-only — no login surface, so
  *                 available ⇒ authenticated.
+ *  - cursor:      daemon discovery's installed and gatedOff verdict (the
+ *                 daemon resolves the `cursor-agent` CLI).
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
@@ -180,7 +182,12 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     const statuses = Object.fromEntries(
       Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
         key,
-        withAuth(providerStatusFromDiscovery(discovery, id), auth[id]),
+        withAuth(
+          id === 'cursor'
+            ? cursorStatusFromDiscovery(discovery)
+            : providerStatusFromDiscovery(discovery, id),
+          auth[id],
+        ),
       ]),
     ) as ProviderAvailabilityResult['providers'];
     return {
@@ -217,6 +224,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const auggie: ProviderStatus = { available: auggieCheck.available === true };
   const claudeCode = claudeCodeStatusFromDiscovery(discovery);
   const antigravity = antigravityFromDiscovery(discovery);
+  const cursor = cursorStatusFromDiscovery(discovery);
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
   // cortex: presence of the `cortex` CLI; no auth surface probed (the
   // daemon's providerAuthStatus sweep does not cover cortex).
@@ -253,6 +261,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   withAuth(droid, authVerdicts['droid']);
   withAuth(grok, authVerdicts['grok']);
   withAuth(antigravity, authVerdicts['antigravity']);
+  withAuth(cursor, authVerdicts['cursor']);
 
   return {
     hasAnyProvider:
@@ -266,7 +275,8 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       droid.available ||
       grok.available ||
       unsloth.available ||
-      antigravity.available,
+      antigravity.available ||
+      cursor.available,
     providers: {
       auggie,
       claudeCode,
@@ -279,6 +289,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       grok,
       unsloth,
       antigravity,
+      cursor,
     },
     hiddenProviders,
   };
@@ -292,6 +303,23 @@ function providerStatusFromDiscovery(
 ): ProviderStatus {
   const row = discovery.providers.find((provider) => provider.id === providerId);
   return { available: row?.installed === true && !row.gatedOff };
+}
+
+/**
+ * Cursor from discovery, plus its CLI version and, for a refused binary (the Grok
+ * agent host), the daemon's reason as row guidance instead of "not installed".
+ */
+function cursorStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === 'cursor');
+  const status = providerStatusFromDiscovery(discovery, 'cursor');
+  if (row?.cliVersion) status.version = row.cliVersion;
+  if (row?.unavailableReason && !row.gatedOff) {
+    status.unavailableReason = row.unavailableReason;
+    status.warning = m.settings_providers_cursorUnsupported_warning({
+      reason: row.unavailableReason,
+    });
+  }
+  return status;
 }
 
 /** Preserve missing-runner guidance only when discovery confirms the cause. */
@@ -391,6 +419,11 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
+  if (providerId === 'cursor') {
+    const status = cursorStatusFromDiscovery(await fetchProviderDiscovery());
+    return status.available ? withAuth(status, await checkAuth()) : status;
+  }
+
   if (providerId === 'auggie') {
     const check = await checkAuggie();
     const status: ProviderStatus = { available: check.available === true };
@@ -473,6 +506,10 @@ interface ProviderDiscoveryEntry {
   secondaryCommand?: string;
   secondaryResolved?: boolean;
   secondaryResolvedPath?: string;
+  /** Version of the resolved CLI (Cursor). */
+  cliVersion?: string;
+  /** Why a resolved CLI is refused; the daemon then reports `installed: false` (Cursor). */
+  unavailableReason?: string;
 }
 
 /**

@@ -94,6 +94,7 @@
     grok: { color1: '#000000', color2: '#252525' },
     unsloth: { color1: '#0FA47F', color2: '#106B55' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
+    cursor: { color1: '#14120B', color2: '#26251E' },
   };
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
@@ -138,6 +139,10 @@
       // daemon manages the local server; only the opencode CLI is needed.
       installCommand: 'curl -fsSL https://opencode.ai/install | bash',
       docsUrl: 'https://docs.unsloth.ai',
+    },
+    cursor: {
+      installCommand: 'curl https://cursor.com/install -fsS | bash',
+      docsUrl: 'https://cursor.com/docs/cli/installation',
     },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
@@ -193,13 +198,15 @@
            */
           authDetails: status?.authDetails,
           docsUrl: meta?.docsUrl ?? p.loginDocsUrl ?? '',
-          installCommand: meta?.installCommand ?? '',
+          // A refused CLI (status.unavailableReason) is present: show its warning, not install steps.
+          installCommand: status?.unavailableReason ? '' : (meta?.installCommand ?? ''),
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */
           warning: status?.warning,
+          unavailableReason: status?.unavailableReason,
         };
       });
   });
