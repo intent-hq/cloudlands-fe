@@ -12,7 +12,7 @@ import {
   type DockCaptureEditorSaveResult,
   type DockCaptureEditorSnapshot,
 } from '$shared/dock-capture-editor';
-import type { DockMediaEdit } from '$shared/dock-media-edit';
+import { DockMediaEditSchema, type DockMediaEdit } from '$shared/dock-media-edit';
 
 export interface DockCaptureEditorBridge {
   /** Close the session `openId` names (never a newer one main retargeted to). */
@@ -106,8 +106,11 @@ export function connectDockCaptureEditor(
       try {
         return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE, {
           openId,
-          edit,
-          ...(replacement ? { replacement } : {}),
+          // Gesture geometry may still be a nested Svelte $state proxy even in
+          // the raw edit transaction. The canonical schema validates and builds
+          // plain objects/arrays before Electron structured-clones this payload.
+          edit: DockMediaEditSchema.parse(edit),
+          ...(replacement ? { replacement: { candidateToken: replacement.candidateToken } } : {}),
         })) ?? null) as DockCaptureEditorSaveResult | null;
       } catch {
         return null;
