@@ -14,6 +14,7 @@ import Separator from './menu-separator.svelte';
 import StackedContent from './menu-stacked-content.svelte';
 import Label from './menu-label.svelte';
 import Indicator from './menu-indicator.svelte';
+import Footer from './menu-footer.svelte';
 
 const Portal = MenuPrimitive.Portal;
 const CheckboxGroup = MenuPrimitive.CheckboxGroup;
@@ -30,6 +31,7 @@ export {
   Trigger,
   Portal,
   Content,
+  Footer,
   Item,
   ActionRow,
   CommandItem,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import DesktopPermissionMenu from '$features/desktop/renderer/DesktopPermissionMenu.svelte';
   import Fa from 'svelte-fa';
-  import { faSliders } from '@fortawesome/free-solid-svg-icons';
+  import { faSliders, faFont } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
   import {
@@ -78,14 +78,14 @@
 {#snippet desktopPermission()}
   {#if workspaceId && agentId}
     {#key `${workspaceId}:${agentId}`}
-      <DesktopPermissionMenu {workspaceId} {agentId} />
+      <DesktopPermissionMenu {workspaceId} {agentId} separator={!embedded} />
     {/key}
   {/if}
 {/snippet}
 
 {#if embedded}
   <Menu.Sub>
-    <Menu.SubTrigger>
+    <Menu.SubTrigger icon={faFont} iconWeight="regular">
       <span class="min-w-0 flex-1">{m.ui_viewSettings_font_label()}</span>
       <span class="type-caption text-muted-foreground">{fontLabel}</span>
     </Menu.SubTrigger>

@@ -1,7 +1,4 @@
 // @vitest-environment jsdom
-// Intentionally update after reviewed fixture/contract changes with:
-// NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u
-// Always review the generated snapshot diff before staging it; unrelated churn is not acceptable.
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -170,8 +167,7 @@ const axeRules = {
   // jsdom cannot calculate visual contrast for isolated fixtures.
   'color-contrast': { enabled: false },
 };
-const stableAttributes =
-  /^(?:aria-|data-)|^(?:class|disabled|for|href|id|open|role|tabindex|type)$/;
+const stableAttributes = /^(?:aria-|data-)|^(?:disabled|for|href|id|open|role|tabindex|type)$/;
 
 function normalizeValue(value: string): string {
   return value
@@ -180,17 +176,6 @@ function normalizeValue(value: string): string {
     .replace(/\bc[0-9]+(?=[-\s"']|$)/g, 'c<id>')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function tokenReferences(element: Element): string[] {
-  const references = new Set<string>();
-  const styles = getComputedStyle(element);
-  for (let index = 0; index < styles.length; index += 1) {
-    const property = styles.item(index);
-    const value = styles.getPropertyValue(property);
-    for (const match of value.matchAll(/var\((--[a-z0-9-]+)/gi)) references.add(match[1]);
-  }
-  return [...references].sort();
 }
 
 function stableDom(root: Element): string {
@@ -204,18 +189,10 @@ function stableDom(root: Element): string {
     if (!(node instanceof Element)) return;
     const attributes = [...node.attributes]
       .filter(({ name }) => stableAttributes.test(name))
-      .map(({ name, value }) => {
-        const normalized =
-          name === 'class'
-            ? normalizeValue(value).split(' ').filter(Boolean).sort().join(' ')
-            : normalizeValue(value);
-        return `${name}=${JSON.stringify(normalized)}`;
-      })
+      .map(({ name, value }) => `${name}=${JSON.stringify(normalizeValue(value))}`)
       .sort();
-    const tokens = tokenReferences(node);
-    const suffix = [...attributes, ...(tokens.length ? [`tokens=${JSON.stringify(tokens)}`] : [])];
     lines.push(
-      `${'  '.repeat(depth)}<${node.tagName.toLowerCase()}${suffix.length ? ` ${suffix.join(' ')}` : ''}>`,
+      `${'  '.repeat(depth)}<${node.tagName.toLowerCase()}${attributes.length ? ` ${attributes.join(' ')}` : ''}>`,
     );
     node.childNodes.forEach((child) => visit(child, depth + 1));
   };

@@ -250,7 +250,12 @@
             data-testid="browser-tab-close"
             data-browser-tab-id={entry.tab.id}
           >
-            <Fa icon={faXmark} size={16} class="size-4! shrink-0" />
+            <span
+              class="inline-flex size-(--menu-icon-size) items-center justify-center"
+              aria-hidden="true"
+            >
+              <Fa icon={faXmark} class="size-(--menu-icon-size)! shrink-0" />
+            </span>
           </Menu.Item>
         </div>
       {/each}
@@ -315,14 +320,16 @@
             <Button
               variant="plain"
               wrapContent={false}
-              class="{menuItem()} min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}"
+              class="{menuItem()} h-auto min-w-0 flex-1 {entry.hidden ? 'opacity-60' : ''}"
               data-testid="browser-tabs-menu-item"
               data-browser-tab-id={entry.tab.id}
               data-hidden={entry.hidden || undefined}
               onkeydown={(event) => handleTabKeydown(event, index)}
               onclick={() => handleTabClick(entry)}
             >
-              {@render favicon(entry)}
+              <span class="first-line-icon w-(--menu-icon-size)" aria-hidden="true">
+                {@render favicon(entry)}
+              </span>
               <span class="min-w-0 flex-1 truncate text-muted-foreground">{label}</span>
             </Button>
             <Button

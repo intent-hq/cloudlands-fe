@@ -13,6 +13,6 @@
 <MenuPrimitive.Separator
   bind:ref
   data-slot="menu-separator"
-  class={cn('-mx-1 my-1.5 border-t border-border', className)}
+  class={cn('mx-2.5 my-1.5 border-t border-border', className)}
   {...restProps}
 />
