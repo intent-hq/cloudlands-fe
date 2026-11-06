@@ -28,6 +28,7 @@
     selectDockMachineSwitch,
     selectDockPlacement,
     selectDockFocusRequest,
+    selectDockCloseRequest,
     selectDockPlacementError,
     selectDockDragStartResult,
     selectDockResizeStartResult,
@@ -61,6 +62,7 @@
   const dockWorkspaces$ = selectDockWorkspaces();
   const placement$ = selectDockPlacement();
   const focusRequest$ = selectDockFocusRequest();
+  const closeRequest$ = selectDockCloseRequest();
   const placementError$ = selectDockPlacementError();
   const dragStartResult$ = selectDockDragStartResult();
   const resizeStartResult$ = selectDockResizeStartResult();
@@ -127,6 +129,7 @@
       onMachine={(id) => appStore.dispatch(dockMachineSwitchRequested(id))}
       placement={$placement$}
       focusRequest={$focusRequest$}
+      closeRequest={$closeRequest$}
       placementError={$placementError$}
       dragStartResult={$dragStartResult$}
       resizeStartResult={$resizeStartResult$}

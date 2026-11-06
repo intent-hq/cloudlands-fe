@@ -1525,6 +1525,7 @@ export const selectDockPlacementError = store.createSelector(
   (state) => state.hud.dockPlacementError,
 );
 export const selectDockFocusRequest = store.createSelector((state) => state.hud.dockFocusRequest);
+export const selectDockCloseRequest = store.createSelector((state) => state.hud.dockCloseRequest);
 
 export const selectDockDragStartResult = store.createSelector(
   (state) => state.hud.dockDragStartResult,
