@@ -1,7 +1,8 @@
 /** Renderer describes edits and raster layers; main alone chooses every native path. */
 import { z } from 'zod';
-import { DockSavedMediaSchema, type DockMediaTranscript } from './dock-media-edit';
+import { DockSavedMediaSchema, DOCK_MEDIA_OUTPUT_VERSION, type DockMediaTranscript } from './dock-media-edit';
 export const DockMediaExportRequestSchema = z.object({
+  outputVersion: z.literal(DOCK_MEDIA_OUTPUT_VERSION),
   jobId: z.string().uuid(),
   media: DockSavedMediaSchema,
   layers: z.array(z.object({

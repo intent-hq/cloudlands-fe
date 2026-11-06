@@ -3,6 +3,8 @@ import {
   numberDockMediaMarks,
   dockMediaGeometryRect,
   DOCK_MEDIA_POINT_RADIUS,
+  DOCK_MEDIA_BLUR_RADIUS,
+  layoutDockMediaText,
   planDockMediaOutput,
   type DockMediaEdit,
   type DockMediaSource,
@@ -18,7 +20,7 @@ export const DOCK_MEDIA_PAINT = {
   badgeRadius: 9,
   textLineHeight: 1.4,
   fontFamily: 'system-ui, sans-serif',
-  blurRadius: 16,
+  blurRadius: DOCK_MEDIA_BLUR_RADIUS,
 } as const;
 export type DockMediaPaintOp =
   | { kind: 'geometry'; geometry: DockMediaGeometry }
@@ -70,22 +72,34 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
       continue;
     }
     const g = op.geometry;
+    context.fillStyle = DOCK_MEDIA_PAINT.accent;
     context.lineWidth = g.kind === 'path' ? DOCK_MEDIA_PAINT.pen : DOCK_MEDIA_PAINT.stroke;
     if (g.kind === 'rect') context.strokeRect(g.x, g.y, g.w, g.h);
     else if (g.kind === 'text') {
-      context.fillStyle = DOCK_MEDIA_PAINT.accent;
-      context.textAlign = 'left';
-      context.textBaseline = 'top';
+      const text = layoutDockMediaText(g);
+      if (g.style === 'sticky') {
+        const radius = Math.min(6, text.width / 2, text.height / 2);
+        context.fillStyle = DOCK_MEDIA_PAINT.accent;
+        context.beginPath();
+        context.moveTo(g.x + radius, g.y);
+        context.lineTo(g.x + text.width - radius, g.y);
+        context.quadraticCurveTo(g.x + text.width, g.y, g.x + text.width, g.y + radius);
+        context.lineTo(g.x + text.width, g.y + text.height - radius);
+        context.quadraticCurveTo(g.x + text.width, g.y + text.height, g.x + text.width - radius, g.y + text.height);
+        context.lineTo(g.x + radius, g.y + text.height);
+        context.quadraticCurveTo(g.x, g.y + text.height, g.x, g.y + text.height - radius);
+        context.lineTo(g.x, g.y + radius);
+        context.quadraticCurveTo(g.x, g.y, g.x + radius, g.y);
+        context.closePath(); context.fill();
+      }
+      context.fillStyle = g.style === 'sticky' ? DOCK_MEDIA_PAINT.ink : DOCK_MEDIA_PAINT.accent;
+      context.textAlign = 'left'; context.textBaseline = 'top';
       context.font = `${g.fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
-      g.text
-        .split('\n')
-        .forEach((line, index) =>
-          context.fillText(
-            line,
-            g.x,
-            g.y + index * g.fontSize * DOCK_MEDIA_PAINT.textLineHeight,
-          ),
-        );
+      text.lines.forEach((line, index) => {
+        const x = g.x + text.padding, y = g.y + text.padding + index * text.lineHeight;
+        if (g.style === 'sticky') context.fillText(line, x, y, text.width - 2 * text.padding);
+        else context.fillText(line, x, y);
+      });
     } else if (g.kind === 'point') {
       context.beginPath();
       context.arc(g.x, g.y, DOCK_MEDIA_POINT_RADIUS, 0, Math.PI * 2);
@@ -153,7 +167,7 @@ export async function renderDockMediaImage(
       throw new Error('stale-source-pixels');
     const original = canvas(source.width, source.height);
     original.context.drawImage(bitmap, 0, 0);
-    if (edit.blurRegions.length) {
+    if (edit.blurRegions.length || edit.blurStrokes?.length) {
       const blurred = canvas(source.width, source.height);
       // An opaque backing prevents filtered edge alpha from exposing sharp source pixels.
       blurred.context.fillStyle = '#000000';
@@ -162,14 +176,30 @@ export async function renderDockMediaImage(
       blurred.context.filter = filter;
       if (blurred.context.filter !== filter) throw new Error('capture-blur-unavailable');
       blurred.context.drawImage(bitmap, 0, 0);
-      for (const region of edit.blurRegions) {
-        original.context.save();
-        original.context.beginPath();
-        original.context.rect(region.x, region.y, region.w, region.h);
-        original.context.clip();
-        original.context.drawImage(blurred.image, 0, 0);
-        original.context.restore();
+      const mask = canvas(source.width, source.height);
+      mask.context.fillStyle = '#ffffff'; mask.context.strokeStyle = '#ffffff';
+      mask.context.lineCap = 'round'; mask.context.lineJoin = 'round';
+      for (const region of edit.blurRegions) mask.context.fillRect(region.x, region.y, region.w, region.h);
+      for (const stroke of edit.blurStrokes ?? []) {
+        const points = stroke.points.filter((p, index) => index === 0 || p.x !== stroke.points[index - 1].x || p.y !== stroke.points[index - 1].y);
+        mask.context.beginPath();
+        if (points.length === 1) {
+          const p = points[0];
+          mask.context.arc(p.x, p.y, stroke.radius, 0, Math.PI * 2); mask.context.fill();
+        } else {
+          mask.context.lineWidth = stroke.radius * 2;
+          mask.context.moveTo(points[0].x, points[0].y);
+          for (const p of points.slice(1)) mask.context.lineTo(p.x, p.y);
+          mask.context.stroke();
+        }
       }
+      // Alpha-zero coverage leaves the original source pixel unchanged. Opaque
+      // blurred pixels replace only the actual circular/rectangular mask union.
+      const masked = canvas(source.width, source.height);
+      masked.context.drawImage(blurred.image, 0, 0);
+      masked.context.globalCompositeOperation = 'destination-in';
+      masked.context.drawImage(mask.image, 0, 0);
+      original.context.drawImage(masked.image, 0, 0);
     }
     const crop = edit.crop ?? { x: 0, y: 0, w: source.width, h: source.height };
     const output = canvas(crop.w, crop.h);

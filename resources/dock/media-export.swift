@@ -8,8 +8,11 @@ import UniformTypeIdentifiers
 struct Range: Decodable { let startMs: Double; let endMs: Double }
 struct Layer: Decodable { let path: String; let startMs: Double; let endMs: Double }
 struct Frame: Decodable { let path: String; let atMs: Double }
+struct Point: Decodable { let x: Double; let y: Double }
+struct BlurStroke: Decodable { let radius: Double; let points: [Point] }
 struct Rect: Decodable { let x: Double; let y: Double; let w: Double; let h: Double }
 struct Job: Decodable {
+  let outputVersion: Int?
   let source: String
   let output: String
   let ranges: [Range]
@@ -21,6 +24,8 @@ struct Job: Decodable {
   let expectedDurationMs: Double
   let crop: Rect?
   let blurRegions: [Rect]
+  let blurStrokes: [BlurStroke]?
+  let blurRadius: Double?
 }
 func emit(_ value: [String: Any]) {
   guard let data = try? JSONSerialization.data(withJSONObject: value) else { return }
@@ -32,6 +37,7 @@ func main() async throws {
   let data = FileHandle.standardInput.readDataToEndOfFile()
   guard data.count <= 8 * 1024 * 1024 else { throw failure("job-too-large") }
   let job = try JSONDecoder().decode(Job.self, from: data)
+  guard job.outputVersion == 2 else { throw failure("output-version-unavailable") }
   guard !job.ranges.isEmpty, job.ranges.count <= 10000, job.layers.count <= 10000, job.frames.count <= 10000 else { throw failure("invalid-job") }
   let source = URL(fileURLWithPath: job.source), output = URL(fileURLWithPath: job.output)
   guard source.standardizedFileURL != output.standardizedFileURL, !FileManager.default.fileExists(atPath: output.path) else { throw failure("output-exists") }
@@ -47,13 +53,43 @@ func main() async throws {
       rect.x >= 0, rect.y >= 0, rect.w > 0, rect.h > 0,
       rect.x + rect.w <= Double(size.width), rect.y + rect.h <= Double(size.height) else { throw failure("invalid-geometry") }
   }
+  let strokes = job.blurStrokes ?? []
+  let blurRadius = job.blurRadius ?? 16
+  guard strokes.count <= 1000, strokes.reduce(0, { $0 + $1.points.count }) <= 200000,
+    blurRadius.isFinite, blurRadius > 0, blurRadius <= 128 else { throw failure("invalid-blur") }
+  for stroke in strokes {
+    guard stroke.radius.isFinite, stroke.radius > 0, stroke.radius <= 4096, !stroke.points.isEmpty, stroke.points.count <= 4096,
+      stroke.points.allSatisfy({ $0.x.isFinite && $0.y.isFinite && $0.x >= 0 && $0.y >= 0 && $0.x <= Double(size.width) && $0.y <= Double(size.height) }) else { throw failure("invalid-brush") }
+  }
+  var blurMask: CIImage?
+  if !job.blurRegions.isEmpty || !strokes.isEmpty {
+    guard let mask = CGContext(data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8, bytesPerRow: 0,
+      space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { throw failure("blur-mask-unavailable") }
+    mask.setFillColor(gray: 0, alpha: 1); mask.fill(extent)
+    mask.translateBy(x: 0, y: size.height); mask.scaleBy(x: 1, y: -1)
+    mask.setFillColor(gray: 1, alpha: 1); mask.setStrokeColor(gray: 1, alpha: 1)
+    mask.setLineCap(.round); mask.setLineJoin(.round)
+    for rect in job.blurRegions { mask.fill(CGRect(x: rect.x, y: rect.y, width: rect.w, height: rect.h)) }
+    for stroke in strokes {
+      var points: [Point] = []
+      for p in stroke.points { if points.last?.x != p.x || points.last?.y != p.y { points.append(p) } }
+      if points.count == 1 {
+        let p = points[0]; mask.fillEllipse(in: CGRect(x: p.x - stroke.radius, y: p.y - stroke.radius, width: stroke.radius * 2, height: stroke.radius * 2))
+      } else {
+        mask.beginPath(); mask.setLineWidth(stroke.radius * 2)
+        mask.move(to: CGPoint(x: points[0].x, y: points[0].y))
+        for p in points.dropFirst() { mask.addLine(to: CGPoint(x: p.x, y: p.y)) }
+        mask.strokePath()
+      }
+    }
+    guard let image = mask.makeImage() else { throw failure("blur-mask-unavailable") }
+    blurMask = CIImage(cgImage: image)
+  }
   func edited(_ sourceImage: CIImage, atMs: Double, layers: [(CIImage, Double, Double)]) -> CIImage {
     var image = sourceImage
-    for region in job.blurRegions {
-      // Shared model is top-left; CoreImage has a bottom-left pixel origin.
-      let rect = CGRect(x: region.x, y: Double(size.height) - region.y - region.h, width: region.w, height: region.h)
-      let blurred = image.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: 12]).cropped(to: rect)
-      image = blurred.composited(over: image)
+    if let blurMask {
+      let blurred = sourceImage.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: blurRadius]).cropped(to: extent)
+      image = blurred.applyingFilter("CIBlendWithMask", parameters: [kCIInputBackgroundImageKey: sourceImage, kCIInputMaskImageKey: blurMask])
     }
     for (overlay, from, to) in layers where atMs >= from && atMs < to { image = overlay.composited(over: image) }
     if let crop = job.crop {
@@ -105,7 +141,7 @@ func main() async throws {
   }
   guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { throw failure("export-unavailable") }
   exporter.outputURL = output; exporter.outputFileType = .mp4
-  if !layers.isEmpty || job.crop != nil || !job.blurRegions.isEmpty {
+  if !layers.isEmpty || job.crop != nil || blurMask != nil {
     let filtered = AVVideoComposition(asset: composition) { request in
       let outputMs = request.compositionTime.seconds * 1000
       let span = timeline.first { outputMs >= $0.start && outputMs < $0.start + $0.length }
@@ -151,7 +187,11 @@ func main() async throws {
     guard CGImageDestinationFinalize(destination) else { throw failure("frame-failed") }
   }
   success = true
-  emit(["event":"complete","path":output.path,"durationMs":cursor.seconds * 1000,"muted":job.muted,"framePaths":job.frames.map(\.path)])
+  emit(["event":"complete","outputVersion":2,"path":output.path,"durationMs":cursor.seconds * 1000,"muted":job.muted,"framePaths":job.frames.map(\.path)])
+}
+if CommandLine.arguments.dropFirst().first == "--capability" {
+  emit(["event":"capability","outputVersion":2,"features":["blur-strokes","legacy-rect-blur","canonical-overlay"]])
+  exit(0)
 }
 Task {
   do { try await main(); exit(0) }

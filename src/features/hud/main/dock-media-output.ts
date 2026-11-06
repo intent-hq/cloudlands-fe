@@ -5,7 +5,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { access, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
-  defaultDockMediaEdit, planDockMediaOutput, DockMediaTranscriptSchema,
+  defaultDockMediaEdit, planDockMediaOutput, DockMediaTranscriptSchema, DOCK_MEDIA_BLUR_RADIUS, DOCK_MEDIA_OUTPUT_VERSION,
   type DockSavedMedia,
 } from '../../../shared/dock-media-edit';
 import type { DockMediaExportRequest, DockMediaNativeOutput, DockMediaTranscribeRequest } from '../../../shared/dock-media-output';
@@ -34,10 +34,34 @@ async function helper(name: string): Promise<string> {
   }
   throw new Error('media-helper-unavailable');
 }
-export async function dockMediaOutputReady(source: DockSavedMedia['source'], _saved?: DockSavedMedia['saved']): Promise<{ ready: boolean; reason?: 'legacy-baked-marks' }> {
+/** Old helpers may decode unknown JSON fields without applying them. Probe first,
+ * then require the same version in the actual completion before any placement. */
+async function requireExporterVersion(binary: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(binary, ['--capability'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    let text = '';
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('media-capability-timeout')); }, 2000);
+    timer.unref(); child.stdin.on('error', (error) => { clearTimeout(timer); reject(error); }); child.stdin.end(); child.stderr.resume();
+    child.once('error', (error) => { clearTimeout(timer); reject(error); });
+    child.stdout.on('data', (bytes: Buffer) => {
+      text += bytes.toString('utf8');
+      if (text.length > 16384) { child.kill('SIGKILL'); reject(new Error('media-capability-invalid')); }
+    });
+    child.once('close', (code) => {
+      clearTimeout(timer);
+      try {
+        const value = JSON.parse(text.trim()) as Record<string, unknown>;
+        if (code !== 0 || value.event !== 'capability' || value.outputVersion !== DOCK_MEDIA_OUTPUT_VERSION ||
+          !Array.isArray(value.features) || !value.features.includes('blur-strokes')) throw new Error('media-capability-unavailable');
+        resolve();
+      } catch (error) { reject(error); }
+    });
+  });
+}
+export async function dockMediaOutputReady(source: DockSavedMedia['source'], _saved?: DockSavedMedia['saved']): Promise<{ ready: boolean; version?: number; reason?: 'legacy-baked-marks' }> {
   if (source.visuals !== 'clean') return { ready: false, reason: 'legacy-baked-marks' };
-  if (source.kind === 'screenshot') return { ready: true };
-  try { await helper('intent-dock-media-export'); return { ready: true }; }
+  if (source.kind === 'screenshot') return { ready: true, version: DOCK_MEDIA_OUTPUT_VERSION };
+  try { await requireExporterVersion(await helper('intent-dock-media-export')); return { ready: true, version: DOCK_MEDIA_OUTPUT_VERSION }; }
   catch { return { ready: false }; }
 }
 async function createJob(context: DockEvidenceContext, id: string, fingerprint: string): Promise<Job> {
@@ -157,6 +181,8 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
       .filter((span) => plan.marks.some((entry) => span.atMs >= entry.frameAtMs && span.atMs < entry.visibleUntilMs));
     if (request.layers.length !== spans.length || request.layers.reduce((sum, layer) => sum + layer.png.length, 0) > MAX_BYTES) throw new Error('media-layers');
     const binary = await helper('intent-dock-media-export');
+    await requireExporterVersion(binary);
+    check(context);
     job = await createJob(context, request.jobId, JSON.stringify(request));
     const file = await copySource(context, job, media);
     const layers: { path: string; startMs: number; endMs: number }[] = [];
@@ -173,10 +199,11 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
     }
     const output = path.join(job.directory, 'output.mp4');
     const frames = plan.marks.map((entry, index) => ({ path: path.join(job!.directory, `frame-${index}.png`), atMs: Math.min(source.durationMs - 1, entry.frameAtMs) }));
-    await run(context, job, binary, { source: file, output, ranges: plan.clips, muted: plan.muted, layers, frames,
+    const completed = await run(context, job, binary, { outputVersion: DOCK_MEDIA_OUTPUT_VERSION, source: file, output, ranges: plan.clips, muted: plan.muted, layers, frames,
       expectedWidth: source.width, expectedHeight: source.height, expectedDurationMs: source.durationMs,
-      crop: edit.crop, blurRegions: edit.blurRegions }, progress);
+      crop: edit.crop, blurRegions: edit.blurRegions, blurStrokes: edit.blurStrokes ?? [], blurRadius: DOCK_MEDIA_BLUR_RADIUS }, progress);
     check(context, job);
+    if (completed.outputVersion !== DOCK_MEDIA_OUTPUT_VERSION) throw new Error('media-output-version-mismatch');
     const videoSize = (await stat(output)).size;
     if (videoSize <= 0 || videoSize > MAX_BYTES) throw new Error('media-output-size');
     const frameFiles = await Promise.all(frames.map(async (frame, index) => ({ sourcePath: frame.path, mimeType: 'image/png', size: (await stat(frame.path)).size, markId: plan.marks[index].mark.id })));
