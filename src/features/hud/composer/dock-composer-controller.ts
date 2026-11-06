@@ -144,7 +144,9 @@ export function createDockComposerController(
   const local = writable<DockComposerLocalState>({ now: deps.now(), previews: {} });
   let disposed = false;
   let ticker: ReturnType<typeof setInterval> | undefined;
-  const previewKeys = new Map<string, string>();
+  const previewRequests = new Map<string, { key: string }>();
+  // Provenance belongs to the URL actually installed, never to an in-flight request.
+  const displayedPreviews = new Map<string, { saved: boolean; source: string }>();
   let previewGeneration = 0;
 
   const evidence = (): EvidenceView =>
@@ -174,7 +176,8 @@ export function createDockComposerController(
     clearInterval(ticker);
     ticker = undefined;
     for (const url of Object.values(get(local).previews)) deps.revokeUrl(url);
-    previewKeys.clear();
+    previewRequests.clear();
+    displayedPreviews.clear();
   }
 
   /** Poll the store via `.select` (no readable outside component init) until `done` or the pair retires. */
@@ -296,37 +299,54 @@ export function createDockComposerController(
   // -------------------------------------------------------------------------
 
   async function refreshPreviews(view: EvidenceView, items: readonly ContextItem[]): Promise<void> {
+    if (!current()) return;
     const generation = ++previewGeneration;
     const wanted = new Set(view.tiles.map((tile) => tile.image.id));
-    // Removed images go first, synchronously: their keys are cleared even while a render
-    // is in flight (so it is dropped on return), and a later, newer refresh's previews
-    // are never swept by this one's stale view.
-    for (const id of [...previewKeys.keys()]) if (!wanted.has(id)) previewKeys.delete(id);
-    const stale = Object.entries(get(local).previews).filter(([id]) => !wanted.has(id));
-    if (stale.length) {
+    // Retire removed attachments before awaiting anything. An older refresh must
+    // never sweep URLs or requests installed by a newer view.
+    for (const id of previewRequests.keys()) if (!wanted.has(id)) previewRequests.delete(id);
+    for (const [id, url] of Object.entries(get(local).previews)) {
+      if (wanted.has(id)) continue;
+      displayedPreviews.delete(id);
       local.update((state) => {
         const previews = { ...state.previews };
-        for (const [id] of stale) delete previews[id];
+        delete previews[id];
         return { ...state, previews };
       });
-      for (const [, url] of stale) deps.revokeUrl(url);
+      deps.revokeUrl(url);
     }
     for (const tile of view.tiles) {
-      // A newer refresh owns every tile from here; renders already started still land
-      // when their key is unchanged.
-      if (generation !== previewGeneration) return;
-      // A saved edit shows as saved (from its own source and revision); otherwise the
-      // capture with its live marks.
+      if (generation !== previewGeneration || !current()) return;
       const media = tile.image.media;
       const saved = media?.saved ? { ...media, saved: media.saved } : null;
+      const source = JSON.stringify(media?.source ?? [tile.image.id, tile.image.contextItemId]);
+      // Retakes may keep the logical tile ID while replacing its immutable source.
+      if (displayedPreviews.get(tile.image.id)?.source !== source) {
+        const previous = get(local).previews[tile.image.id];
+        displayedPreviews.delete(tile.image.id);
+        if (previous) {
+          local.update((state) => {
+            const previews = { ...state.previews };
+            delete previews[tile.image.id];
+            return { ...state, previews };
+          });
+          deps.revokeUrl(previous);
+        }
+      }
       const key = saved
-        ? JSON.stringify(['saved', saved.source.id, saved.source.revision, saved.source.path, saved.saved])
-        : JSON.stringify(tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]));
-      const shownKey = previewKeys.get(tile.image.id);
-      if (shownKey === key) continue;
+        ? JSON.stringify(['saved', source, saved.saved])
+        : JSON.stringify([
+            'live',
+            source,
+            tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]),
+          ]);
+      if (previewRequests.get(tile.image.id)?.key === key) continue;
+      previewRequests.delete(tile.image.id);
       const item = items.find((row) => row.id === tile.image.contextItemId);
       if (!saved && (!item?.imageData || !item.imageMimeType)) continue;
-      previewKeys.set(tile.image.id, key);
+      const request = { key };
+      previewRequests.set(tile.image.id, request);
+      const ownsRequest = () => current() && previewRequests.get(tile.image.id) === request;
       try {
         const url = saved
           ? await deps.createSavedPreviewUrl(workspaceId, saved)
@@ -335,25 +355,27 @@ export function createDockComposerController(
               tile.image,
               tile.marks,
             );
-        // Stale work (a newer save, another source, another pair or principal) is dropped.
-        if (disposed || !current() || previewKeys.get(tile.image.id) !== key) {
+        if (!ownsRequest()) {
           deps.revokeUrl(url);
           continue;
         }
         const previous = get(local).previews[tile.image.id];
+        displayedPreviews.set(tile.image.id, { saved: !!saved, source });
         local.update((state) => ({
           ...state,
           previews: { ...state.previews, [tile.image.id]: url },
         }));
-        if (previous) deps.revokeUrl(previous);
+        if (previous && previous !== url) deps.revokeUrl(previous);
       } catch {
-        // A live-marks render retries on the next update. A saved render that failed is
-        // not retried until its edit or source changes; it keeps an earlier saved
-        // thumbnail, but never falls back to the unedited capture (its blur would be lost).
-        if (!saved) {
-          if (previewKeys.get(tile.image.id) === key) previewKeys.delete(tile.image.id);
-        } else if (!shownKey?.startsWith('["saved"') && previewKeys.get(tile.image.id) === key) {
+        // Only the current request may mutate state. Failed saved renders retain
+        // a successful saved URL from this source, never an unedited capture.
+        if (!ownsRequest()) continue;
+        if (!saved) previewRequests.delete(tile.image.id);
+        else {
+          const displayed = displayedPreviews.get(tile.image.id);
+          if (displayed?.saved && displayed.source === source) continue;
           const previous = get(local).previews[tile.image.id];
+          displayedPreviews.delete(tile.image.id);
           if (previous) {
             local.update((state) => {
               const previews = { ...state.previews };
