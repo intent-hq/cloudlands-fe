@@ -1,3 +1,11 @@
+import * as mediaSend from '$features/hud/composer/dock-media-send';
+import {
+  defaultDockMediaEdit,
+  type DockSavedMedia,
+  type DockMediaSource,
+} from '$shared/dock-media-edit';
+import { emptyDockEvidence, dockEvidenceId } from '$shared/dock-evidence';
+import { dockEvidenceRestored, dockEvidenceMediaChanged } from '../dock-conversation-slice';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createWorkspaceId, createAgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -2261,4 +2269,130 @@ describe('dock annotate Done on the on-screen bar', () => {
     expect(evidenceView().evidence?.insertions).toEqual(queued);
     expect(evidenceView().evidence?.clips).toEqual(clips);
   });
+});
+
+describe('held capture preparation local-admission content CAS', () => {
+  it.each(['recognition', 'saved-edit', 'source-replacement'] as const)(
+    'handles %s arriving during preparation without duplicate delivery or wrong cleanup',
+    async (change) => {
+      await open();
+      const source: DockMediaSource = {
+        id: 'generated-source',
+        revision: 0,
+        kind: 'recording',
+        attachmentId: 'generated-original',
+        path: '.intent/attachments/generated.mp4',
+        durationMs: 1000,
+        width: 320,
+        height: 180,
+        audio: 'available',
+        visuals: 'clean',
+        batches: [{ id: 'b', atMs: 0, clearAtMs: null }],
+        capturedMarks: [],
+      };
+      const transcript = { status: 'pending' as const, revision: 1, words: [] };
+      const media: DockSavedMedia = {
+        source,
+        saved: { ...defaultDockMediaEdit(source, [], transcript), revision: 1, voice: 'off' },
+        transcript,
+      };
+      const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
+      evidence.clips = [
+        {
+          id: 'generated-clip',
+          status: 'ready',
+          startedAt: 1,
+          durationMs: 1000,
+          hasMicAudio: true,
+          contextItemId: 'generated-item',
+          path: source.path,
+          media,
+        },
+      ];
+      appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
+      const item: ContextItem = {
+        id: 'generated-item',
+        type: 'file',
+        label: 'Synthetic recording',
+        attachmentId: source.attachmentId,
+        path: source.path,
+        attachmentMimeType: 'video/mp4',
+      };
+      appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, [item]));
+      appStore.dispatch(
+        dockConversationDraftChanged(workspaceA, mainA, 'Synthetic capture prompt'),
+      );
+      const started = deferred<void>(),
+        gate = deferred<void>();
+      const spy = vi.spyOn(mediaSend, 'prepareDockMediaSend').mockImplementationOnce(async () => {
+        started.resolve();
+        await gate.promise;
+        return {
+          images: {},
+          files: [
+            {
+              type: 'file',
+              attachmentId: 'generated-output',
+              fileName: 'generated.mp4',
+              mimeType: 'video/mp4',
+              size: 100,
+            },
+          ],
+          frames: [],
+          metadata: [],
+        };
+      });
+      try {
+        appStore.dispatch(sendDockConversationRequested());
+        await started.promise;
+        expect(view().sending).toBe(true);
+        appStore.dispatch(sendDockConversationRequested());
+        const next = structuredClone(media);
+        if (change === 'recognition') next.transcript = { status: 'ready', revision: 2, words: [] };
+        if (change === 'saved-edit')
+          next.saved = {
+            ...next.saved!,
+            revision: 2,
+            wordEdits: { 'generated-word': 'Synthetic correction' },
+          };
+        if (change === 'source-replacement') {
+          next.source = {
+            ...next.source,
+            id: 'replacement-source',
+            revision: 1,
+            attachmentId: 'replacement-file',
+            path: '.intent/attachments/replacement.mp4',
+          };
+          next.saved = { ...next.saved!, sourceId: next.source.id, sourceRevision: 1 };
+        }
+        appStore.dispatch(
+          dockEvidenceMediaChanged(workspaceA, mainA, 'generated-clip', media, next),
+        );
+        gate.resolve();
+        await vi.waitFor(() => expect(sent).toHaveLength(1));
+        if (change === 'recognition') {
+          await vi.waitFor(() => expect(view().draft).toBe(''));
+          expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([]);
+          expect(
+            selectDockComposerEvidence.select(appStore.state, workspaceA, mainA).evidence?.clips ??
+              [],
+          ).toHaveLength(0);
+        } else {
+          expect(view().draft).toBe('Synthetic capture prompt');
+          expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([
+            item,
+          ]);
+          expect(
+            selectDockComposerEvidence.select(appStore.state, workspaceA, mainA).evidence?.clips[0]
+              .media,
+          ).toEqual(next);
+        }
+        expect(spy).toHaveBeenCalledTimes(1);
+        // The test has not emitted a daemon acceptance yet: cleanup is local admission.
+      } finally {
+        gate.resolve();
+        spy.mockRestore();
+      }
+    },
+  );
 });
