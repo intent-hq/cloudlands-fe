@@ -77,8 +77,15 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     const dock = appStore.state.dockConversation;
     const evidence =
       dock.workspaceId && dock.agentId ? evidenceOf(dock.workspaceId, dock.agentId) : undefined;
+    // The composer's own mic (push-to-talk, a transcription in flight) counts as live
+    // too: closing could unmount it, and its Escape would cancel the recording.
+    const hardware = appStore.state.hardwareConsole;
     const live =
-      !!dock.nativeSpeech.activeId || !!recordingDockClip(evidence) || !!evidence?.annotation;
+      !!dock.nativeSpeech.activeId ||
+      !!recordingDockClip(evidence) ||
+      !!evidence?.annotation ||
+      hardware.pttRecording ||
+      hardware.voiceTranscribing;
     if (!live) yield* put(dockCloseRequested());
     return;
   }

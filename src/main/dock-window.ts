@@ -53,7 +53,11 @@ let selectionRegions: {
   window: BrowserWindow;
   document: number;
   state: { active: boolean; regions: DockPointerRect[]; revision?: number };
+  /** The reset in effect when the selection began: the hide's reset must be a new one. */
+  resetBefore: object | null;
 } | null = null;
+/** The state object the last hide/close reset installed (identity, not value). */
+let lastResetState: object | null = null;
 /** Counts main-frame navigations of the dock: hit regions belong to one document. */
 let dockDocument = 0;
 let pointerState: { active: boolean; regions: DockPointerRect[]; revision?: number } = {
@@ -252,6 +256,7 @@ function clearTrackedWindow(window: BrowserWindow): void {
     pendingBackendSwitch = null;
   }
   if (!window.isDestroyed()) resetDockPointerRouting(window);
+  if (selectionRegions?.window === window) selectionRegions = null;
   appliedPointerRouting.delete(window);
   pointerPresence.delete(window);
   clearTimeout(readyFallbacks.get(window));
@@ -266,7 +271,8 @@ function clearTrackedWindow(window: BrowserWindow): void {
 
 function resetDockPointerRouting(window: BrowserWindow): void {
   const revision = placementController?.getSnapshot()?.revision;
-  setDockPointerRegions(window, { active: false, regions: [], revision });
+  const reset = { active: false, regions: [], revision };
+  if (setDockPointerRegions(window, reset) && pointerState === reset) lastResetState = reset;
 }
 
 export function getDockPlacementSnapshot(window: BrowserWindow): DockPlacementSnapshot | null {
@@ -902,6 +908,7 @@ export function setDockHiddenForSelection(
       window,
       document: dockDocument,
       state: { ...pointerState, regions: [...pointerState.regions] },
+      resetBefore: lastResetState,
     };
     // The pointer poll stops while hidden, so its last "inside" would outlive the
     // selection: back over the dock, no enter would ever be sent, and the dock would
@@ -921,14 +928,17 @@ export function setDockHiddenForSelection(
     // renderer will not republish unchanged geometry); otherwise its own next publish
     // (a new revision or document always republishes) supplies them.
     const revision = placementController?.getSnapshot()?.revision;
+    // "Nothing newer" is identity, not value: the live state must still be the very
+    // reset object this selection's hide installed. Any publication meanwhile, even an
+    // intentional inactive/empty one, is a different object and wins.
     if (
       held &&
       held.window === window &&
       held.document === dockDocument &&
       held.state.revision === revision &&
-      !pointerState.active &&
-      pointerState.regions.length === 0 &&
-      pointerState.revision === revision
+      lastResetState !== null &&
+      lastResetState !== held.resetBefore &&
+      pointerState === lastResetState
     )
       pointerState = held.state;
     // Re-route at once from the live cursor rather than the pre-selection state.
