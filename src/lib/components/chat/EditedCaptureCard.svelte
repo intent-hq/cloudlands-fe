@@ -86,6 +86,7 @@
     </div>
     {#if videoUrl}
       <ChatVideoBlock
+        fluid
         source={{ kind: 'workspace', url: videoUrl, mimeType: videoMimeType }}
         name={title}
         allowFileMedia={!readOnly}
