@@ -176,6 +176,7 @@
        inward), so the side panel's lanes match notch and floating. The inline depth stays
        within the transcript scrollbar's transparent outer border, clear of its thumb. */
     --dock-resize-depth-inline: 4px;
+    --dock-resize-depth-inline-start: 8px;
     --dock-resize-corner: 16px;
     position: relative;
     display: flex;
