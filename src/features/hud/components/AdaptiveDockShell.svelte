@@ -1152,7 +1152,8 @@
             {conversation}
             {conversationWorkspaceId}
             focusRequest={focusRequest + composerAsk.request}
-            focusComposerOnMount={notch && composerAsk.open === conversationWorkspaceId}
+            focusComposerOnMount={conversationPresence.keyboardOpen ||
+              (notch && composerAsk.open === conversationWorkspaceId)}
             onOpen={openWorkspace}
             onRegionsChange={conversationRegionsChanged}
             onPopupStateChange={(open) => {
