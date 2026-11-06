@@ -33,13 +33,14 @@
   let emitPresence: ((value: unknown) => void) | undefined;
   let protectedEscapes = $state(0);
   let stops = $state(0);
+  const recordingStartedAt = Date.now();
   const recording = $derived(
     recordingLive
       ? {
           workspaceId: 'synthetic-workspace',
           agentId: 'synthetic-agent',
           clipId: 'synthetic-recording',
-          startedAt: 1,
+          startedAt: recordingStartedAt,
           pausedAt: null,
           pausedMs: 0,
         }
