@@ -38,6 +38,8 @@ export interface McpServerConfig {
   disabled?: boolean;
   /** Present on workspace-scoped daemon list responses. */
   workspaceDisabled?: boolean;
+  /** The plugin that provides this server (PROTOCOL §5.57); its definition is read-only. */
+  plugin?: string;
   // Daemon-assigned identifier populated when the config was read from the
   // wire (`mcp.servers.list`, PROTOCOL §5.22). Used by the daemon-events
   // bridge to resolve `mcp.servers:status-changed` payloads (keyed by
