@@ -14,7 +14,7 @@
 <CreateButtonProgress {progressId} {fallbackLabel}>
   {#snippet children(label)}
     <Button variant="primary" disabled>
-      <span>{@render label()}</span>
+      <span data-testid="create-progress-label">{label}</span>
     </Button>
   {/snippet}
 </CreateButtonProgress>

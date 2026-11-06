@@ -14,7 +14,7 @@ function entry(phase: string, message?: string): WorkspaceCreateProgressEntry {
 describe('createProgressLabel', () => {
   it.each([
     ['starting', 'Preparing workspace…'],
-    ['cache', 'Preparing repository cache…'],
+    ['cache', 'Preparing cache…'],
     ['counting', 'Counting objects…'],
     ['compressing', 'Compressing objects…'],
     ['receiving', 'Cloning repository…'],
@@ -34,7 +34,7 @@ describe('createProgressLabel', () => {
 
   it('renders the submodule (N/M) counter parsed from the daemon message', () => {
     expect(createProgressLabel(entry('submodules', 'Cloning submodules (2/3)'))).toBe(
-      'Cloning submodules (2/3)…',
+      'Submodules (2/3)…',
     );
   });
 

@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { ShortcutChip } from '$lib/components/ui/kbd';
   import {
     selectWorkspaceCreationVisible,
     selectPrincipalActionContext,
@@ -14,7 +13,7 @@
     readSkipIsolation,
     resolveSidebarRepositoryDefault,
   } from './initializer/sidebar-repository-default';
-  import { tick, untrack, onMount, onDestroy, type Snippet } from 'svelte';
+  import { tick, untrack, onMount, onDestroy } from 'svelte';
   import {
     type InitialRepoInfo,
     getLastSelectedRepoHydrationAction,
@@ -127,6 +126,7 @@
   import Button from '../ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
+  import WorkspaceCreateButton from './initializer/WorkspaceCreateButton.svelte';
   import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import IssueSuggestions, {
@@ -3743,48 +3743,16 @@
 
         <div class="settings-footer mt-auto pt-6">
           <!-- Create button -->
-          {#snippet createButton(progressLabel?: Snippet)}
-            <Button
-              variant="primary"
-              wrapContent={false}
-              class="w-full h-auto min-h-11 justify-start gap-3 py-2 type-body font-medium"
-              data-dialog-primary-action
+          {#snippet createButton(progressLabel?: string)}
+            <WorkspaceCreateButton
+              creating={isCreating}
+              valid={isValid}
               onclick={handleSubmit}
-              disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
-            >
-              {#if isCreating}
-                <IntentMarkLoader size={14} />
-                <span class="min-w-0 flex-1 text-left">
-                  {#if isPulling}
-                    {m.workspace_compactInitializer_pullingLatest_label()}
-                  {:else if progressLabel}
-                    {@render progressLabel()}
-                  {:else}
-                    {CREATION_STAGES[creationStage]}
-                  {/if}
-                </span>
-              {:else}
-                <span class="min-w-0 flex-1 whitespace-normal text-left"
-                  >{m.workspace_compactInitializer_createWorkspace_label()}</span
-                >
-                <!-- Always rendered so the button never resizes when validity flips;
-                   `invisible` reserves the space while hiding it (incl. from AT). -->
-                <span
-                  class="inline-flex shrink-0 items-center gap-0.5 font-normal text-primary-foreground/75"
-                  class:invisible={!isValid}
-                  aria-hidden={!isValid ? 'true' : undefined}
-                >
-                  <ShortcutChip
-                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
-                    >{navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'}</ShortcutChip
-                  >
-                  <ShortcutChip
-                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
-                    >↵</ShortcutChip
-                  >
-                </span>
-              {/if}
-            </Button>
+              disabled={isEnhancing || isProcessingImages}
+              label={isPulling
+                ? m.workspace_compactInitializer_pullingLatest_label()
+                : (progressLabel ?? CREATION_STAGES[creationStage])}
+            />
           {/snippet}
           <div class="w-full">
             {#if isCreating && !isPulling && activeCreateProgressId}
