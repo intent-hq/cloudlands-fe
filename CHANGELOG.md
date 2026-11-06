@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.288.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.287.0...v2.288.0) (2026-11-06)
+
+
+### 🚀 Features
+
+* switch workspace tabs with Cmd+Shift+[ / ] ([#4205](https://github.com/intent-hq/cloudlands-fe/issues/4205)) ([6b418ef](https://github.com/intent-hq/cloudlands-fe/commit/6b418ef7daab567c327e3f68ef3c1fba9b401f59))
+
+
+### 🐛 Bug Fixes
+
+* keep the Assistant notch composer and omit a blank model ([#4204](https://github.com/intent-hq/cloudlands-fe/issues/4204)) ([c0872fc](https://github.com/intent-hq/cloudlands-fe/commit/c0872fc46aa1c55570d3df6b4dd3ddf4bfe6d641))
+* refine workspace creation button feedback ([#4217](https://github.com/intent-hq/cloudlands-fe/issues/4217)) ([76aab80](https://github.com/intent-hq/cloudlands-fe/commit/76aab808693d967afb735f47569711fce4b456bd))
+
 ## [2.287.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.286.7...v2.287.0) (2026-11-05)
 
 
