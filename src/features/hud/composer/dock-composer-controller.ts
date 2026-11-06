@@ -57,6 +57,7 @@ import {
 import type { DockComposerMediaLabels } from '$features/hud/components/dock-composer-media-presentation';
 import type { DockSettingsPane } from './dock-composer-presentation';
 import { createDockEvidencePreviewUrl } from './dock-evidence-render';
+import { createDockSavedPreviewUrl } from './dock-saved-preview';
 import {
   dockMediaCopyRequest,
   fetchDockMediaBytes,
@@ -86,6 +87,7 @@ export interface DockComposerLocalState {
 
 export interface DockComposerControllerDeps {
   createPreviewUrl: typeof createDockEvidencePreviewUrl;
+  createSavedPreviewUrl: typeof createDockSavedPreviewUrl;
   revokeUrl: (url: string) => void;
   now: () => number;
   /** Resolves after the editor processed the latest controlled props. */
@@ -112,6 +114,7 @@ export interface DockComposerControllerDeps {
 
 const defaultDeps: DockComposerControllerDeps = {
   createPreviewUrl: createDockEvidencePreviewUrl,
+  createSavedPreviewUrl: createDockSavedPreviewUrl,
   revokeUrl: (url) => URL.revokeObjectURL(url),
   now: () => Date.now(),
   tick: () => new Promise((resolve) => requestAnimationFrame(() => resolve())),
@@ -294,19 +297,28 @@ export function createDockComposerController(
   async function refreshPreviews(view: EvidenceView, items: readonly ContextItem[]): Promise<void> {
     const wanted = new Set<string>();
     for (const tile of view.tiles) {
-      const key = JSON.stringify(tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]));
+      // A saved edit shows as saved (from its own source and revision); otherwise the
+      // capture with its live marks.
+      const media = tile.image.media;
+      const saved = media?.saved ? { ...media, saved: media.saved } : null;
+      const key = saved
+        ? JSON.stringify(['saved', saved.source.id, saved.source.revision, saved.source.path, saved.saved])
+        : JSON.stringify(tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]));
       wanted.add(tile.image.id);
       if (previewKeys.get(tile.image.id) === key) continue;
       const item = items.find((row) => row.id === tile.image.contextItemId);
-      if (!item?.imageData || !item.imageMimeType) continue;
+      if (!saved && (!item?.imageData || !item.imageMimeType)) continue;
       previewKeys.set(tile.image.id, key);
       try {
-        const url = await deps.createPreviewUrl(
-          { base64: item.imageData, mimeType: item.imageMimeType },
-          tile.image,
-          tile.marks,
-        );
-        if (disposed || previewKeys.get(tile.image.id) !== key) {
+        const url = saved
+          ? await deps.createSavedPreviewUrl(workspaceId, saved)
+          : await deps.createPreviewUrl(
+              { base64: item!.imageData!, mimeType: item!.imageMimeType! },
+              tile.image,
+              tile.marks,
+            );
+        // Stale work (a newer save, another source, another pair or principal) is dropped.
+        if (disposed || !current() || previewKeys.get(tile.image.id) !== key) {
           deps.revokeUrl(url);
           continue;
         }
@@ -317,7 +329,9 @@ export function createDockComposerController(
         }));
         if (previous) deps.revokeUrl(previous);
       } catch {
-        previewKeys.delete(tile.image.id);
+        // The prior thumbnail stays. A saved render that failed is not retried until its
+        // edit or source changes; a live-marks render retries on the next update.
+        if (!saved) previewKeys.delete(tile.image.id);
       }
     }
     const stale = Object.entries(get(local).previews).filter(([id]) => !wanted.has(id));
