@@ -2,6 +2,7 @@ export { animatedHeight } from './animated-height.svelte';
 export {
   exitFallbackMs,
   prefersReducedMotion,
+  panelSpring,
   spring,
   Spring,
   springValue,

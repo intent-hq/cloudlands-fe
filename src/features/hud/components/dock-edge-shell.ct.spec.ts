@@ -1,6 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
+import DockEdgeMotionHarness from './__tests__/DockEdgeMotionHarness.svelte';
 import { dockRailPreview, adaptiveDockFixture } from './dock-rail.preview-fixtures';
 import {
   dockLocalRect,
@@ -170,7 +171,7 @@ test('side conversation is one box beside the unchanged rail, unclipped, with no
 });
 
 test.describe('side shell motion', () => {
-  test('side shell grows from the entry and shrinks back on close', async ({
+  test('side shell slides from edge and releases input regions on close', async ({
     mount,
     page,
   }, testInfo) => {
@@ -271,128 +272,137 @@ test.describe('side shell motion', () => {
     await page.waitForTimeout(300);
   });
 
-  test('the box grows out of the hovered card, sits on its entry, and shrinks back into the card', async ({
+  test('edge slide preserves velocity on reversal with equivalent 60 and 120 Hz cadence', async ({
     mount,
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference', colorScheme: 'dark' });
-    // The clock owns every frame from mount on, so each read sees one frame.
-    await page.clock.install();
-    const side = await mountSide(mount, page);
-    await page.clock.runFor(100);
-    const entries = side.locator('[data-dock-entry]');
-    const entry = entries.nth(2);
-    const preview = side.getByTestId('dock-preview');
-    const shell = side.getByTestId('dock-edge-shell');
-    await entry.hover();
-    for (let i = 0; i < 60 && !(await preview.isVisible()); i += 1) await page.clock.runFor(16);
-    await page.clock.runFor(200);
-    await expect(preview).toHaveCSS('opacity', '1');
-    // The card's content may still settle (its height, so its centred top): wait until
-    // its rect holds still, then click it as measured.
-    let card = (await preview.boundingBox())!;
-    for (let i = 0; i < 30; i += 1) {
-      await page.clock.runFor(50);
-      await page.waitForTimeout(50);
-      const next = (await preview.boundingBox())!;
-      const still = (['x', 'y', 'width', 'height'] as const).every(
-        (key) => Math.abs(next[key] - card[key]) < 0.5,
-      );
-      card = next;
-      if (still) break;
+    const now = new Date('2026-11-06T12:00:00Z');
+    await page.clock.install({ time: now });
+    await page.clock.pauseAt(now);
+    const results: { hz: number; opening: number; samples: number[] }[] = [];
+    for (const hz of [60, 120]) {
+      await page.evaluate((hz) => {
+        window.requestAnimationFrame = (callback) =>
+          window.setTimeout(() => callback(performance.now()), 1000 / hz);
+        window.cancelAnimationFrame = (id) => window.clearTimeout(id);
+      }, hz);
+      const component = await mount(DockEdgeMotionHarness);
+      const shell = component.getByTestId('dock-edge-shell');
+      const frame = () =>
+        shell.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return {
+            x: box.x,
+            y: box.y,
+            width: box.width,
+            height: box.height,
+            reveal: Number(node.getAttribute('data-reveal')),
+          };
+        });
+      await component.update({ props: { open: true } });
+      await page.clock.runFor(104);
+      const cadenceProgress = (await frame()).reveal;
+      await component.update({ props: { open: false } });
+      await page.clock.runFor(500);
+      await expect(shell).toHaveCount(0);
+      await component.update({ props: { open: true } });
+      await page.clock.runFor(32);
+      const opening = await frame();
+      expect(opening.reveal).toBeGreaterThan(0);
+      expect(opening.reveal).toBeLessThan(0.7);
+      await component.update({ props: { open: false } });
+      expect(await frame()).toEqual(opening);
+      await page.clock.runFor(Math.ceil(1000 / hz));
+      const turningClosed = await frame();
+      expect(turningClosed.reveal).toBeGreaterThan(opening.reveal);
+      await page.clock.runFor(500);
+      await expect(shell).toHaveCount(0);
+      await component.update({ props: { open: true } });
+      await page.clock.runFor(500);
+      await expect(shell).toHaveAttribute('data-reveal', '1');
+      await component.update({ props: { open: false } });
+      await page.clock.runFor(32);
+      const closing = await frame();
+      expect(closing.reveal).toBeLessThan(1);
+      await component.update({ props: { open: true } });
+      expect(await frame()).toEqual(closing);
+      await page.clock.runFor(Math.ceil(1000 / hz));
+      const turningOpen = await frame();
+      expect(turningOpen.reveal).toBeLessThan(closing.reveal);
+      const samples = [opening.reveal, turningClosed.reveal, closing.reveal, turningOpen.reveal];
+      for (let i = 0; i < 32; i++) {
+        await page.clock.runFor(16);
+        const next = await frame();
+        expect(next.width).toBeCloseTo(400, 3);
+        expect(next.height).toBeCloseTo(420, 3);
+        expect(next.y).toBeCloseTo(opening.y, 3);
+        samples.push(next.reveal);
+      }
+      await expect(shell).toHaveAttribute('data-reveal', '1');
+      expect(samples.every((value) => value >= 0 && value <= 1)).toBe(true);
+      const full = await frame();
+      expect(full.x).toBeLessThan(opening.x);
+      await shot(page, `edge-slide-open-${hz}hz`);
+      results.push({ hz, opening: cadenceProgress, samples });
+      await component.update({ props: { open: false } });
+      await page.clock.runFor(500);
+      await expect(shell).toHaveCount(0);
+      const state = JSON.parse((await component.getAttribute('data-state'))!);
+      expect(state).toMatchObject({ held: false, reveal: 0, shell: null });
+      await component.unmount();
     }
-    const cardRadius = await preview.evaluate((node) =>
-      parseFloat(getComputedStyle(node).borderTopLeftRadius),
-    );
-    await entry.click();
-    // One DOM read per frame (rect, reveal and radius together; null while there is no box).
-    const frameOf = () =>
-      page.evaluate(() => {
-        const node = document.querySelector('[data-testid="dock-edge-shell"]');
-        if (!node) return null;
-        const rect = node.getBoundingClientRect();
+    expect(Math.abs(results[0].opening - results[1].opening)).toBeLessThan(0.03);
+    await test.info().attach('edge-reversal-cadence.json', {
+      body: JSON.stringify(results, null, 2),
+      contentType: 'application/json',
+    });
+  });
+
+  test('edge reduced motion fades in 200 ms without translation and releases hidden input regions', async ({
+    mount,
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
+    const now = new Date('2026-11-06T12:00:00Z');
+    await page.clock.install({ time: now });
+    await page.clock.pauseAt(now);
+    const component = await mount(DockEdgeMotionHarness);
+    await component.update({ props: { open: true } });
+    const shell = component.getByTestId('dock-edge-shell');
+    const frame = () =>
+      shell.evaluate((node) => {
+        const box = node.getBoundingClientRect();
         return {
-          box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-          reveal: Number(node.getAttribute('data-reveal')),
+          x: box.x,
+          y: box.y,
+          width: box.width,
+          height: box.height,
           opacity: Number(getComputedStyle(node).opacity),
-          radius: parseFloat(getComputedStyle(node).borderTopLeftRadius),
         };
       });
-    // Step frames until the box exists: its first frame is the card (rect and radius),
-    // and from then on the card is gone, never shown together with the box.
-    let start = await frameOf();
-    for (let i = 0; i < 200 && !start; i += 1) {
-      await page.clock.runFor(4);
-      start = await frameOf();
-    }
-    const { box: first, reveal: firstReveal, radius: firstRadius } = start!;
-    await page.clock.runFor(16);
-    await expect(preview).toHaveCount(0);
-    await shot(page, 'dock-edge-card-morph-start');
-    const reveal = async () =>
-      Number((await shell.getAttribute('data-reveal').catch(() => null)) ?? 0);
-    let mid = 0;
-    for (let i = 0; i < 160 && (await reveal()) < 1; i += 1) {
-      await page.clock.runFor(16);
-      await page.waitForTimeout(16);
-      if (!mid && (await reveal()) >= 0.45) {
-        mid = await reveal();
-        await shot(page, 'dock-edge-card-morph-mid');
-        await expect(preview).toHaveCount(0);
-      }
-    }
-    await expect(shell).toHaveAttribute('data-reveal', '1');
-    const open = (await shell.boundingBox())!;
-    // The first frame is the card, blended toward the panel by the reveal it showed.
-    const lerp = (a: number, b: number) => a + (b - a) * firstReveal;
-    expect(Math.abs(first.x - lerp(card.x, open.x))).toBeLessThanOrEqual(2);
-    expect(Math.abs(first.y - lerp(card.y, open.y))).toBeLessThanOrEqual(2);
-    expect(Math.abs(first.width - lerp(card.width, open.width))).toBeLessThanOrEqual(2);
-    expect(Math.abs(first.height - lerp(card.height, open.height))).toBeLessThanOrEqual(2);
-    // Observed early in the open (the fake clock may land past the very first frame).
-    expect(firstReveal).toBeLessThan(0.5);
-    expect(Math.abs(firstRadius - (cardRadius + (32 - cardRadius) * firstReveal))).toBeLessThan(1);
-    // Vertically it sits on its entry like the card does: centred on it, unless that
-    // would leave the work area (24..700 on this display, 8 px inset), then clamped.
-    const item = (await entry.boundingBox())!;
-    const centred = Math.abs(open.y + open.height / 2 - (item.y + item.height / 2)) <= 1;
-    const clamped =
-      Math.abs(open.y - (24 + 8)) <= 1 || Math.abs(open.y + open.height - (700 - 8)) <= 1;
-    expect(centred || clamped).toBe(true);
-    expect(open.y).toBeGreaterThanOrEqual(24 + 8 - 1);
-    expect(open.y + open.height).toBeLessThanOrEqual(700 - 8 + 1);
-    // Main owns the rect: resize handles and pointer regions follow it.
-    const host = (await side.locator('.dock-preview-host').boundingBox())!;
-    await expect
-      .poll(async () => {
-        const regions: { x: number; y: number; width: number; height: number }[] =
-          JSON.parse((await side.getAttribute('data-preview-pointer')) ?? '{}').regions ?? [];
-        return regions.some(
-          (r) => Math.abs(r.y - (open.y - host.y)) <= 1 && Math.abs(r.height - open.height) <= 1,
-        );
-      })
-      .toBe(true);
-    await shot(page, 'dock-edge-card-morph-open');
-    // Close: back into the card's rect, fading only at the very end.
-    await page.clock.runFor(300);
-    await page.waitForTimeout(200);
-    await page.keyboard.press('Escape');
-    let late: Awaited<ReturnType<typeof frameOf>> = null;
-    for (let i = 0; i < 120; i += 1) {
-      await page.clock.runFor(16);
-      await page.waitForTimeout(16);
-      const frame = await frameOf();
-      if (!frame) break;
-      if (frame.reveal > 0 && frame.reveal < 0.15) late = frame;
-    }
+    await page.clock.runFor(80);
+    await expect.poll(async () => (await frame()).opacity).toBeGreaterThan(0);
+    const partial = await frame();
+    expect(partial.opacity).toBeGreaterThan(0);
+    expect(partial.opacity).toBeLessThan(1);
+    await page.clock.runFor(160);
+    await expect(shell).toHaveCSS('opacity', '1');
+    const full = await frame();
+    expect(full).toEqual({ ...partial, opacity: 1 });
+    await shot(page, 'edge-reduced-motion-open');
+    await component.update({ props: { open: false } });
+    await page.clock.runFor(80);
+    await expect.poll(async () => (await frame()).opacity).toBeLessThan(1);
+    const fading = await frame();
+    expect(fading).toEqual({ ...full, opacity: fading.opacity });
+    expect(fading.opacity).toBeGreaterThan(0);
+    expect(fading.opacity).toBeLessThan(1);
+    await page.clock.runFor(160);
     await expect(shell).toHaveCount(0);
-    expect(late).not.toBeNull();
-    const back = (a: number, b: number) => a + (b - a) * late!.reveal;
-    expect(Math.abs(late!.box.y - back(card.y, open.y))).toBeLessThanOrEqual(2);
-    expect(Math.abs(late!.box.height - back(card.height, open.height))).toBeLessThanOrEqual(2);
-    expect(late!.opacity).toBeLessThan(1);
-    await page.clock.runFor(300);
-    await page.waitForTimeout(300);
+    const state = JSON.parse((await component.getAttribute('data-state'))!);
+    expect(state).toMatchObject({ held: false, reveal: 0, shell: null });
+    await expect(component).toHaveAttribute('data-regions', '[]');
   });
 });
 

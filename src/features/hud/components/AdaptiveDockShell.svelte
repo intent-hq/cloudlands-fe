@@ -19,7 +19,7 @@
   import {
     createFrameLoop,
     createGrowGate,
-    createRevealTween,
+    createRevealSpring,
   } from '$features/hud/utils/dock-shell-frames';
   import {
     dockViewportRect,
@@ -179,7 +179,7 @@
   let surfaceExpanded = $state(false);
   let contentVisible = $state(false);
   let reveal = $state(0);
-  const shellTween = createRevealTween(
+  const shellSpring = createRevealSpring(
     () => reveal,
     (value) => (reveal = value),
   );
@@ -283,7 +283,7 @@
     const room = placement.surface.width > compactWidth || placement.surface.height > compactHeight;
     untrack(() => {
       if (moving) {
-        shellTween.animate(0, true);
+        shellSpring.animate(0, true);
         contentVisible = false;
         surfaceExpanded = false;
         return;
@@ -292,7 +292,7 @@
         surfaceExpanded = true;
         if (room) {
           contentVisible = true;
-          shellTween.animate(1, instant);
+          shellSpring.animate(1, instant);
         }
       } else {
         const focused = document.activeElement;
@@ -302,7 +302,7 @@
           surfaceElement?.contains(focused)
         )
           focused.blur();
-        shellTween.animate(0, instant);
+        shellSpring.animate(0, instant);
       }
     });
   });
@@ -454,7 +454,7 @@
         cancelOpen();
         pointerInside = false;
         pointerEnd(true);
-        shellTween.animate(0, true);
+        shellSpring.animate(0, true);
         contentVisible = false;
         surfaceExpanded = false;
       });
@@ -596,7 +596,7 @@
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     dragFrame = measureFrame = undefined;
-    shellTween.cancel();
+    shellSpring.cancel();
     stopHeight();
     pointerEnd(true);
     expandedByUser = false;
@@ -803,7 +803,7 @@
     clearTimeout(closeTimer);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
-    shellTween.cancel();
+    shellSpring.cancel();
     heightLoop.cancel();
     if (placement.dragToken)
       onPlacementCommand({

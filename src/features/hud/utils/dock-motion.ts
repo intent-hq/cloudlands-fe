@@ -1,4 +1,4 @@
-import { spring, springIn, crispOut, type ImmediateMotionConfig } from '$lib/motion';
+import { spring, panelSpring, springIn, crispOut, type ImmediateMotionConfig } from '$lib/motion';
 
 export const DOCK_HOVER_SCALE_MS = spring.moderate.settleMs;
 export const DOCK_PRESS_SCALE_MS = spring.fast.settleMs;
@@ -9,13 +9,7 @@ export const DOCK_ITEM_SLOT_PX = DOCK_ITEM_TARGET_PX + DOCK_ITEM_GAP_PX;
 export const DOCK_NOTCH_HEIGHT_PX = 28;
 export const DOCK_SHELL_OPEN_MS = spring.slow.settleMs;
 export const DOCK_SHELL_CLOSE_MS = spring.slow.exit.duration;
-/** Large shell morphs (the side conversation box): the slow tier, so travel per frame stays small. */
-export const DOCK_SHELL_REVEAL = {
-  openMs: DOCK_SHELL_OPEN_MS,
-  closeMs: DOCK_SHELL_CLOSE_MS,
-  openEasing: spring.slow.easing,
-  closeEasing: spring.slow.exit.easing,
-};
+export const DOCK_SHELL_REVEAL = panelSpring;
 const DOCK_ACTIVE_SCALE = 1.35;
 const DOCK_NEIGHBOR_SCALE = 1.15;
 const DOCK_SECOND_NEIGHBOR_SCALE = 1.05;
