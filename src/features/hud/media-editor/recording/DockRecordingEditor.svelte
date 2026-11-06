@@ -8,6 +8,7 @@
     DockCaptureEditorSnapshot,
   } from '$shared/dock-capture-editor';
   import DockComposerIcon from '../../components/DockComposerIcon.svelte';
+  import CaptureEditorToolbar from '../CaptureEditorToolbar.svelte';
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
   import { DestructiveConfirm } from '$lib/components/patterns/confirm';
   import DockRecordingTimeline from './DockRecordingTimeline.svelte';
@@ -455,7 +456,7 @@
       </div>
       <!-- One row under the video, on the left: the drawing tools (when marks can be
            drawn), then play and the time. The timeline is below. -->
-      <div class="controls">
+      <CaptureEditorToolbar label={m.dock_captureEditor_frameTools_label()}>
         {#if source && edits && marksEditable && !failed}
           <div
             class="frame-tools"
@@ -480,7 +481,7 @@
               </Button>
             {/each}
           </div>
-          <span class="divider" aria-hidden="true"></span>
+          <span class="capture-tool-separator" aria-hidden="true"></span>
         {/if}
         <Button
           variant="ghost"
@@ -498,7 +499,7 @@
         <span class="time" data-time
           >{formatRecordingTime(currentMs)} / {formatRecordingTime(durationMs)}</span
         >
-      </div>
+      </CaptureEditorToolbar>
       {#if saveProblem}
         <p class="save-problem" role="alert" data-save-problem>
           {saveProblem === 'conflict'
@@ -636,12 +637,6 @@
     display: flex;
     gap: 2px;
   }
-  .divider {
-    width: 1px;
-    height: 18px;
-    margin: 0 4px;
-    background: hsl(var(--border));
-  }
   .save-problem {
     margin: 0;
     font-size: 12px;
@@ -701,12 +696,6 @@
     margin: 0;
     font-size: 13px;
     color: hsl(var(--muted-foreground));
-  }
-  .controls {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 6px;
   }
   .time {
     font-size: 12px;

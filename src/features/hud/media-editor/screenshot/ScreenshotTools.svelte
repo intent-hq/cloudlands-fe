@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CaptureEditorToolbar from '../CaptureEditorToolbar.svelte';
   import { screenshotKindLabel } from './screenshot-labels';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
@@ -35,7 +36,7 @@
   ] as const;
 </script>
 
-<div class="tools" role="group" aria-label={m.dock_screenshotEditor_tools()}>
+<CaptureEditorToolbar label={m.dock_screenshotEditor_tools()}>
   {#each tools as item}
     <Button
       variant="ghost"
@@ -49,7 +50,7 @@
       ><item.icon size={18} /></Button
     >
   {/each}
-  <span class="separator" aria-hidden="true"></span>
+  <span class="capture-tool-separator" aria-hidden="true"></span>
   <Button
     variant="ghost"
     size="icon-sm"
@@ -58,27 +59,4 @@
     disabled={disabled || !canDelete}
     onclick={onDelete}><TrashIcon size={18} /></Button
   >
-</div>
-
-<style>
-  .tools {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
-    padding: 4px;
-    border: 1px solid hsl(var(--border));
-    border-radius: 999px;
-    box-shadow: 0 4px 16px hsl(var(--foreground) / 0.08);
-    background: hsl(var(--background));
-  }
-  .separator {
-    width: 1px;
-    height: 20px;
-    align-self: center;
-    background: hsl(var(--border));
-    margin-inline: 4px;
-  }
-</style>
+</CaptureEditorToolbar>
