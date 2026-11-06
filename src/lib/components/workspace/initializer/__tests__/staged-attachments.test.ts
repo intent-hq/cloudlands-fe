@@ -8,6 +8,7 @@
  * path, missing path, daemon error) mark the item `failed` — visible pill,
  * blocks the first-message send — never a silent drop.
  */
+import { m } from '$shared/paraglide/messages.js';
 import { describe, expect, it, vi } from 'vitest';
 
 // The default key minter reads the daemon protocol version off the store;
@@ -607,6 +608,49 @@ describe('sendHeldFirstMessage', () => {
       errorDetail: 'unknown agent id: agent-1',
       imageBlocks: placedReferences,
     });
+  });
+
+  it('reads a remote agent attachment refusal in plain words', async () => {
+    const request = vi.fn().mockResolvedValue({
+      success: false,
+      error: 'remote-agent-unsupported: attachments need a newer backend',
+    });
+
+    const result = await sendHeldFirstMessage(
+      heldMessage(),
+      [fileBlock],
+      request,
+      stubToReferences,
+    );
+
+    expect(result).toEqual({
+      sent: false,
+      errorDetail: m.remoteAgent_attachmentsUnsupported_error(),
+      imageBlocks: placedReferences,
+    });
+  });
+
+  it('reads a thrown too-large refusal with its size and limit', async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValue(
+        new Error(
+          'attachments-too-large-for-machine: the attachments are 9.1 MiB; the limit is 8 MiB',
+        ),
+      );
+
+    const result = await sendHeldFirstMessage(
+      heldMessage(),
+      [fileBlock],
+      request,
+      stubToReferences,
+    );
+
+    expect(result.errorDetail).toBe(
+      m.remoteAgent_attachmentsTooLarge_error({
+        detail: 'the attachments are 9.1 MiB; the limit is 8 MiB',
+      }),
+    );
   });
 
   it('surfaces the thrown error detail (structured data.detail preferred, like #1287)', async () => {

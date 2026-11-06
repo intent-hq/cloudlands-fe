@@ -184,3 +184,31 @@ export function placementFailure(
     return { updateRequired, message: m.remoteAgent_updateRequired_preparedCheckout({ machine }) };
   return { updateRequired, message: split?.message || detail };
 }
+
+const ATTACHMENTS_TOO_LARGE_PREFIXES = [
+  'attachments-too-large-for-machine:',
+  'node-prompt-too-large:',
+];
+const REMOTE_AGENT_UNSUPPORTED_PREFIX = 'remote-agent-unsupported:';
+
+/**
+ * How a refused message with attachments to a remote agent reads (PROTOCOL
+ * `workspace-routing.md` "Attachments"): too large for the machine link, or a
+ * backend too old to send attachments to another machine. Null for any other
+ * error, which the caller shows as it is.
+ */
+export function remoteAttachmentFailure(text: string): string | null {
+  const message = splitErrorData(text)?.message ?? text;
+  for (const prefix of ATTACHMENTS_TOO_LARGE_PREFIXES) {
+    const at = message.indexOf(prefix);
+    if (at < 0) continue;
+    const detail = message.slice(at + prefix.length).trim();
+    return detail
+      ? m.remoteAgent_attachmentsTooLarge_error({ detail })
+      : m.remoteAgent_attachmentsTooLargeNoDetail_error();
+  }
+  const at = message.indexOf(REMOTE_AGENT_UNSUPPORTED_PREFIX);
+  if (at >= 0 && /attachment/i.test(message.slice(at)))
+    return m.remoteAgent_attachmentsUnsupported_error();
+  return null;
+}

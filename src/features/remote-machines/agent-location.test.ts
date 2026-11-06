@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { describe, expect, it } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
@@ -9,6 +10,7 @@ import {
   machineLocation,
   machinePlatformLabel,
   placementFailure,
+  remoteAttachmentFailure,
 } from './agent-location';
 
 const remoteAgent = (extra: Partial<AgentSession> = {}): AgentSession =>
@@ -270,5 +272,40 @@ describe('machineLocation (an agent not created yet)', () => {
       state: 'ready',
     });
     expect(machineLocation('', machine())).toBeNull();
+  });
+});
+
+describe('remoteAttachmentFailure', () => {
+  it('reads an older backend refusing attachments for a remote agent as an update prompt', () => {
+    expect(
+      remoteAttachmentFailure(
+        'remote-agent-unsupported: attachments can not reach an agent on another machine',
+      ),
+    ).toBe(m.remoteAgent_attachmentsUnsupported_error());
+  });
+
+  it('keeps the size and limit of a too-large refusal, without its code or data', () => {
+    const message = remoteAttachmentFailure(
+      'Invalid params: attachments-too-large-for-machine: the attachments are 12.4 MiB; the limit is 8 MiB {"code":"attachments-too-large-for-machine","size":13002342,"limit":8388608}',
+    );
+    expect(message).toBe(
+      m.remoteAgent_attachmentsTooLarge_error({
+        detail: 'the attachments are 12.4 MiB; the limit is 8 MiB',
+      }),
+    );
+  });
+
+  it('reads a prompt that does not fit the machine link as too large', () => {
+    expect(remoteAttachmentFailure('node-prompt-too-large:')).toBe(
+      m.remoteAgent_attachmentsTooLargeNoDetail_error(),
+    );
+  });
+
+  it('leaves other refusals to the caller', () => {
+    expect(
+      remoteAttachmentFailure('remote-agent-unsupported: ws.app.* is for the Assistant workspace'),
+    ).toBeNull();
+    expect(remoteAttachmentFailure('unknown agent id: agent-1')).toBeNull();
+    expect(remoteAttachmentFailure('')).toBeNull();
   });
 });

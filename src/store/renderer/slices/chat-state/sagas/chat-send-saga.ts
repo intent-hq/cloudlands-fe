@@ -1,4 +1,5 @@
 import { selectQueueMutationBlocked } from '../../pending-submissions/pending-submissions-selectors';
+import { remoteAttachmentFailure } from '$features/remote-machines/agent-location';
 import { prepareSubmissionRetry } from '$features/agent/chat-submission-retry';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
 import {
@@ -520,7 +521,14 @@ function* dispatchToLifecycle(
       if (!result.success) {
         yield* put(chatLastAttemptedMessageSet(agentId, recordedAttempt));
         yield* settle('rejected');
-        yield* put(chatSendFailed(agentId, result.error ?? m.agent_chatSend_queueRejected_error()));
+        yield* put(
+          chatSendFailed(
+            agentId,
+            result.error
+              ? (remoteAttachmentFailure(result.error) ?? result.error)
+              : m.agent_chatSend_queueRejected_error(),
+          ),
+        );
         return;
       }
       yield* put(chatErrorCleared(agentId));
@@ -620,7 +628,10 @@ function* dispatchToLifecycle(
  */
 function* sendFailureMessage(agentId: string, error: unknown): SagaGenerator<string> {
   const replacement = providerReplacementFromError(error);
-  if (!replacement) return error instanceof Error ? error.message : String(error);
+  if (!replacement) {
+    const message = error instanceof Error ? error.message : String(error);
+    return remoteAttachmentFailure(message) ?? message;
+  }
   yield* put(updateSession(agentId, { providerReplacementRequired: replacement }));
   const provider = yield* selectProviderDisplayName.effect(
     providerRefBaseId(replacement.providerRef),
