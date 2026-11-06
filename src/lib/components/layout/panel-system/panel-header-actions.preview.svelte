@@ -294,7 +294,7 @@
       lifecycle: kind === 'agent' ? lifecycleActions : undefined,
       footer: kind === 'agent' ? metadata : undefined,
       actions: kind === 'agent' ? undefined : contentActions,
-      additional: kind === 'agent' ? undefined : primaryActions,
+      additional: kind === 'browser' || kind === 'terminal' ? primaryActions : undefined,
     }}
     onCreateAgent={() => (lastAction = 'new-agent')}
     onCreateNote={() => (lastAction = 'new-note')}
