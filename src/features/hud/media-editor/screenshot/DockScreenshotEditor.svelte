@@ -72,7 +72,12 @@
   const brushRadius = DOCK_MEDIA_BLUR_RADIUS;
   const canCreateV2 = $derived(admittedOutputVersion === DOCK_MEDIA_OUTPUT_VERSION);
   $effect(() => {
-    onInteractionPending?.(!!cropCandidate || !!editingTextId || gesturePending);
+    onInteractionPending?.(
+      !!cropCandidate ||
+        !!editingTextId ||
+        gesturePending ||
+        (source.visuals === 'clean' && (previewPending || displayedPreview?.key !== visualKey)),
+    );
   });
   onDestroy(() => onInteractionPending?.(false));
   const movingMark = $derived(
@@ -89,6 +94,21 @@
   let previewPending = $state(false);
   let previewFailed = $state(false);
   let previewRetry = $state(0);
+  type DisplayedPreview = { url: string; key: string; frameKey: string; redactionKey: string };
+  let publishedPreview = $state<DisplayedPreview | null>(null);
+  let displayedPreview = $state<DisplayedPreview | null>(null);
+  const retiredUrls = new Set<string>();
+  const redactionKey = $derived(
+    JSON.stringify([previewEdit.blurRegions, previewEdit.blurStrokes ?? []]),
+  );
+  const frameReady = $derived(displayedPreview?.frameKey === frameKey);
+  const redactionsReady = $derived(frameReady && displayedPreview?.redactionKey === redactionKey);
+  function rasterReady(url: string) {
+    if (publishedPreview?.url !== url) return;
+    displayedPreview = publishedPreview;
+    for (const retired of retiredUrls) URL.revokeObjectURL(retired);
+    retiredUrls.clear();
+  }
   const visualKey = $derived(
     JSON.stringify({
       crop: previewEdit.crop,
@@ -108,6 +128,7 @@
     key: string;
     frameKey: string;
     attempt: number;
+    redactionKey: string;
   };
   let queuedPreview: PreviewJob | null = null;
   let rendering = false;
@@ -125,12 +146,31 @@
         queuedPreview = null;
         try {
           const next = await renderPreview(job.source, job.edit, job.url);
+          // Decode before publishing, then keep the prior SVG frame until its load receipt.
+          const image = new Image();
+          image.src = next;
+          try {
+            await image.decode();
+          } catch (error) {
+            URL.revokeObjectURL(next);
+            throw error;
+          }
           const sameFrame = job.frameKey === frameKey && job.attempt === previewRetry;
-          if (destroyed || !sameFrame || (job.key !== visualKey && !gesturePreview)) {
+          if (
+            destroyed ||
+            !sameFrame ||
+            (job.key !== visualKey && !(movingMark && job.redactionKey === redactionKey))
+          ) {
             URL.revokeObjectURL(next);
             continue;
           }
-          if (previewUrl) URL.revokeObjectURL(previewUrl);
+          if (previewUrl) retiredUrls.add(previewUrl);
+          publishedPreview = {
+            url: next,
+            key: job.key,
+            frameKey: job.frameKey,
+            redactionKey: job.redactionKey,
+          };
           previewUrl = next;
           if (job.key === visualKey) previewPending = false;
           previewFailed = false;
@@ -165,6 +205,7 @@
       key,
       frameKey: currentFrame,
       attempt,
+      redactionKey,
     };
     void drainPreview();
   });
@@ -172,6 +213,8 @@
     destroyed = true;
     queuedPreview = null;
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    for (const url of retiredUrls) URL.revokeObjectURL(url);
+    retiredUrls.clear();
   });
   let tool = $state<ScreenshotTool>('pointer');
   const blocked = $derived(disabled || retaking || source.visuals !== 'clean');
@@ -198,6 +241,19 @@
     ...draft.blurRegions.map((region) => ({
       id: region.id,
       geometry: { kind: 'rect' as const, x: region.x, y: region.y, w: region.w, h: region.h },
+      blur: true,
+    })),
+  ]);
+  const pendingRedactions = $derived<ScreenshotShape[]>([
+    ...previewEdit.blurRegions.map((region) => ({
+      id: region.id,
+      geometry: { kind: 'rect' as const, x: region.x, y: region.y, w: region.w, h: region.h },
+      blur: true,
+    })),
+    ...(previewEdit.blurStrokes ?? []).map((stroke) => ({
+      id: stroke.id,
+      geometry: { kind: 'rect' as const, ...dockMediaBlurStrokeBounds(stroke) },
+      blurStroke: stroke,
       blur: true,
     })),
   ]);
@@ -500,19 +556,14 @@
 
 {#snippet main()}
   <div class="main-view">
-    <ScreenshotTools
-      {tool}
-      canBlur={canCreateV2}
-      disabled={blocked || !!cropCandidate}
-      canDelete={!!selectedIds.length && !cropCandidate}
-      onSelect={setTool}
-      onDelete={() => remove()}
-    />
     <div class="image-view">
       {#if source.visuals !== 'clean'}<p class="type-caption notice">
           {m.dock_screenshotEditor_readonly()}
         </p>{/if}
-      {#if previewPending && !previewUrl}<p class="type-caption notice" role="status">
+      {#if !previewFailed && (previewPending || publishedPreview?.url !== displayedPreview?.url) && (!frameReady || !redactionsReady)}<p
+          class="type-caption notice"
+          role="status"
+        >
           {m.dock_screenshotEditor_preparing()}
         </p>{/if}
       {#if previewFailed}<p class="type-caption notice" role="alert">
@@ -527,7 +578,13 @@
       <ScreenshotCanvas
         sourceUrl={source.visuals === 'clean' ? (previewUrl ?? '') : sourceUrl}
         raster={source.visuals === 'clean'}
-        hidden={(previewPending && !movingMark) || previewFailed}
+        hidden={source.visuals === 'clean' && !frameReady}
+        redactionPending={source.visuals === 'clean' && !redactionsReady}
+        onRasterReady={rasterReady}
+        onRasterError={(url) => {
+          if (url === previewUrl) previewFailed = true;
+        }}
+        {pendingRedactions}
         width={source.width}
         height={source.height}
         {frame}
@@ -544,12 +601,22 @@
         onCropChange={(candidate) => (cropCandidate = candidate)}
         bind:editingTextId
         onText={text}
-        disabled={blocked || (previewPending && !gesturePending) || previewFailed}
+        disabled={blocked || !frameReady || previewFailed}
         onSelect={select}
         onSelectAll={selectAll}
         onDraw={draw}
         onTransform={transform}
         onDelete={remove}
+      />
+    </div>
+    <div class="toolbar-dock">
+      <ScreenshotTools
+        {tool}
+        canBlur={canCreateV2}
+        disabled={blocked || !!cropCandidate}
+        canDelete={!!selectedIds.length && !cropCandidate}
+        onSelect={setTool}
+        onDelete={() => remove()}
       />
     </div>
   </div>
@@ -596,6 +663,7 @@
 <style>
   .main-view {
     display: flex;
+    flex-direction: column;
     align-items: stretch;
     gap: 8px;
     flex: 1;
@@ -603,6 +671,13 @@
     min-width: 0;
     min-height: 0;
     padding: 8px;
+  }
+  .toolbar-dock {
+    display: flex;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 4px 8px 8px;
+    min-height: 52px;
   }
   .image-view {
     display: flex;

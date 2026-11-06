@@ -45,6 +45,10 @@
     disabled = false,
     raster = false,
     hidden = false,
+    redactionPending = false,
+    onRasterReady,
+    onRasterError,
+    pendingRedactions = [],
     onSelect,
     onSelectAll,
     onDraw,
@@ -71,6 +75,10 @@
     disabled?: boolean;
     raster?: boolean;
     hidden?: boolean;
+    redactionPending?: boolean;
+    onRasterReady?: (url: string) => void;
+    onRasterError?: (url: string) => void;
+    pendingRedactions?: readonly ScreenshotShape[];
     onSelect: (id: string | null, event?: PointerEvent | MouseEvent | KeyboardEvent) => void;
     onSelectAll: () => void;
     onDraw: (tool: ScreenshotTool, geometry: DockMarkGeometry, creationUnit?: number) => void;
@@ -79,6 +87,7 @@
     onCropChange: (crop: DockImageRect) => void;
     onText: (id: string, value: string) => void;
   } = $props();
+  let loadedUrl = $state<string | null>(null);
   let cursor = $state<DockImagePoint | null>(null);
   let surface = $state<SVGSVGElement | null>(null);
   let unit = $state(1);
@@ -181,6 +190,7 @@
       textSession = null;
       editingTextId = null;
       cursor = null;
+      loadedUrl = null;
       for (const pointer of pointers) if (pointer !== undefined) release(pointer);
     });
     void identity;
@@ -507,13 +517,54 @@
     onkeydown={key}
     ondblclick={doubleClick}
   >
+    {#if loadedUrl}
+      <image
+        href={loadedUrl}
+        x={raster ? frame.x : 0}
+        y={raster ? frame.y : 0}
+        width={raster ? frame.w : width}
+        height={raster ? frame.h : height}
+      />
+    {/if}
     <image
       href={sourceUrl}
       x={raster ? frame.x : 0}
       y={raster ? frame.y : 0}
       width={raster ? frame.w : width}
       height={raster ? frame.h : height}
+      onload={(event) => {
+        const url = event.currentTarget.href.baseVal;
+        if (url !== sourceUrl) return;
+        loadedUrl = url;
+        onRasterReady?.(url);
+      }}
+      onerror={(event) => onRasterError?.(event.currentTarget.href.baseVal)}
     />
+    {#if redactionPending}
+      <g class="pending-redactions" aria-hidden="true">
+        {#each pendingRedactions as shape (shape.id)}
+          {#if shape.blurStroke}
+            {#if shape.blurStroke.points.length === 1}
+              <circle
+                cx={shape.blurStroke.points[0].x}
+                cy={shape.blurStroke.points[0].y}
+                r={shape.blurStroke.radius}
+              />
+            {:else}
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width={shape.blurStroke.radius * 2}
+                d={screenshotPath({ kind: 'path', points: shape.blurStroke.points })}
+              />
+            {/if}
+          {:else}
+            {@const bounds = dockGeometryRect(shape.geometry)}
+            <rect x={bounds.x} y={bounds.y} width={bounds.w} height={bounds.h} />
+          {/if}
+        {/each}
+      </g>
+    {/if}
     <g class:cropping={!!cropCandidate}>
       {#each visible as shape (shape.id)}
         {@const b = dockGeometryRect(shape.geometry)}
@@ -661,6 +712,13 @@
   .canvas:focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: -2px;
+  }
+  .pending-redactions {
+    fill: currentColor;
+    color: hsl(var(--muted-foreground));
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
   }
   .shape {
     cursor: move;

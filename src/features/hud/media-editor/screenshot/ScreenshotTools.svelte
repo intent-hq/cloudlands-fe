@@ -63,18 +63,22 @@
 <style>
   .tools {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
     gap: 4px;
     padding: 4px;
     border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-medium);
+    border-radius: 999px;
+    box-shadow: 0 4px 16px hsl(var(--foreground) / 0.08);
     background: hsl(var(--background));
   }
   .separator {
-    height: 1px;
-    align-self: stretch;
+    width: 1px;
+    height: 20px;
+    align-self: center;
     background: hsl(var(--border));
-    margin-block: 4px;
+    margin-inline: 4px;
   }
 </style>
