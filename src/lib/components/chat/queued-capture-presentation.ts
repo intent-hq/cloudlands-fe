@@ -42,3 +42,31 @@ export function queuedCapturePresentation(group: {
     ),
   };
 }
+
+interface CaptureUnit {
+  content: string;
+  messageMetadata?: Record<string, unknown>;
+  imageBlocks?: readonly QueueResource[];
+  fileBlocks?: readonly QueueResource[];
+}
+/** A single wrapper may be a projection of the whole confirmed row. Only that
+ * identical unit can inherit its provenance; multi-unit groups need their own. */
+export function queuedCaptureGroup(
+  message: CaptureUnit & { deliveryGroups?: readonly CaptureUnit[] },
+  group: CaptureUnit,
+): CaptureUnit {
+  if (
+    group.messageMetadata !== undefined ||
+    message.deliveryGroups?.length !== 1 ||
+    group.content !== message.content
+  )
+    return group;
+  const references = (unit: CaptureUnit) =>
+    JSON.stringify([
+      (unit.imageBlocks ?? []).map((b) => [b.attachmentId, b.type ?? 'image', b.mimeType]),
+      (unit.fileBlocks ?? []).map((b) => [b.attachmentId, b.type ?? 'file', b.mimeType]),
+    ]);
+  return references(group) === references(message)
+    ? { ...group, messageMetadata: message.messageMetadata }
+    : group;
+}

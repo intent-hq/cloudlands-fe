@@ -1,3 +1,5 @@
+import { createPendingEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-model';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { queuePresentationMessages } from '$lib/components/chat/queued-message-presentation';
 import { projectPendingSubmissions } from '$store/renderer/slices/pending-submissions/pending-submissions-projection';
 import {
@@ -5,7 +7,10 @@ import {
   buildDockEvidenceMetadata,
   emptyDockEvidence,
 } from '$shared/dock-evidence';
-import { queuedCapturePresentation } from '$lib/components/chat/queued-capture-presentation';
+import {
+  queuedCapturePresentation,
+  queuedCaptureGroup,
+} from '$lib/components/chat/queued-capture-presentation';
 import { describe, expect, it } from 'vitest';
 import { consumeEditedCapturePrefix, editedCaptureCards } from './dock-evidence-display';
 import { parseStoredMessage, restoreDockEvidenceForEdit } from './parseStoredMessage';
@@ -252,5 +257,108 @@ describe('recording-only queued producer envelope', () => {
         fileBlocks: [{ type: 'image', attachmentId: 'video-1', mimeType: 'video/mp4' }],
       }).text,
     ).toBe(prefix);
+  });
+});
+
+describe('six-mark recording confirmation and delivery-group pipeline', () => {
+  const kinds = ['box', 'box', 'draw', 'draw', 'draw', 'arrow'];
+  const geometries = [
+    { kind: 'rect', x: 1, y: 2, w: 30, h: 40 },
+    { kind: 'rect', x: 40, y: 2, w: 30, h: 40 },
+    ...Array.from({ length: 3 }, () => ({
+      kind: 'path',
+      points: [
+        { x: 1, y: 1 },
+        { x: 20, y: 20 },
+      ],
+    })),
+    { kind: 'arrow', from: { x: 1, y: 1 }, to: { x: 40, y: 40 } },
+  ];
+  const edited = {
+    ...row,
+    id: 'recording-six',
+    voice: 'off',
+    marks: kinds.map((kind, i) => ({
+      ...row.marks[0],
+      id: `m${i}`,
+      n: i + 1,
+      kind,
+      geometry: geometries[i],
+    })),
+    frames: kinds.map((_, i) => ({ mark_id: `m${i}`, attachment_id: `frame${i}` })),
+    kept_ms: [{ startMs: 0, endMs: 20950 }],
+  };
+  const context = {
+    workspaceId: 'synthetic-workspace',
+    agentId: 'synthetic-agent',
+    appUrl: 'intent://local/workspace/synthetic-workspace',
+  };
+  const evidence = emptyDockEvidence('synthetic');
+  const meta = { ...buildDockEvidenceMetadata(evidence, context), edited_captures: [edited] };
+  const content = `${buildDockEvidenceContext(evidence, context)}\n\n[Edited capture outputs]\n${JSON.stringify([edited])}\n\nSynthetic user prose`;
+  const confirmed = {
+    id: 'six',
+    content,
+    queuedAt: '',
+    position: 0,
+    messageMetadata: meta,
+    imageBlocks: kinds.map((_, i) => ({
+      type: 'image' as const,
+      attachmentId: `frame${i}`,
+      mimeType: 'image/png',
+    })),
+    fileBlocks: [
+      {
+        type: 'file' as const,
+        attachmentId: 'video-1',
+        fileName: 'generated.mp4',
+        mimeType: 'video/mp4',
+      },
+    ],
+  };
+  it('recovers provenance lost by a partial confirmation seed from the identical confirmed row', () => {
+    const entry = createPendingEntry(
+      {
+        workspaceId: 'w',
+        agentId: 'a',
+        authority: 'auth',
+        principalId: 'p',
+        participation: 'part',
+        owner: 'owner',
+      },
+      1,
+    );
+    const { messageMetadata: _, ...seed } = confirmed;
+    entry.seeds = createCollection('id', [seed]);
+    const rows = projectPendingSubmissions(entry, [confirmed]).queue;
+    expect(rows[0].messageMetadata).toBeUndefined();
+    expect(rows[0].confirmed?.messageMetadata).toEqual(meta);
+    const message = queuePresentationMessages(rows)[0];
+    expect(queuedCapturePresentation(message)).toEqual({
+      text: 'Synthetic user prose',
+      captureSummary: ['recording'],
+    });
+  });
+  it('normalizes a single identical delivery unit without borrowing metadata for unrelated groups', () => {
+    const { messageMetadata: _, ...unit } = confirmed;
+    const single = { ...confirmed, deliveryGroups: [unit] };
+    const group = queuedCaptureGroup(single, unit);
+    expect(queuedCapturePresentation(group)).toEqual({
+      text: 'Synthetic user prose',
+      captureSummary: ['recording'],
+    });
+    expect(group.messageMetadata).toEqual(meta);
+    const grouped = {
+      ...confirmed,
+      deliveryGroups: [unit, { content: 'Unrelated synthetic message' }],
+    };
+    expect(queuedCapturePresentation(queuedCaptureGroup(grouped, unit)).text).toBe(content);
+    const own = { ...unit, messageMetadata: meta };
+    expect(
+      queuedCapturePresentation(
+        queuedCaptureGroup({ ...grouped, deliveryGroups: [own, { content: 'Unrelated' }] }, own),
+      ).captureSummary,
+    ).toEqual(['recording']);
+    expect(confirmed.content).toBe(content);
   });
 });
