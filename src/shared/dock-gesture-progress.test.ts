@@ -24,10 +24,10 @@ describe('recorded gesture timing', () => {
 const captured: DockMediaEditMark = { id:'m',atMs:1000,batchId:'b',source:'recording',kind:'draw',included:true,geometry,label:'',note:'',context:{selector:null,text:null,url:null},gestureProgress:{...progress,completedAtMs:7000,samples:progress.samples.map(s=>({...s,atMs:s.atMs+1000}))} };
 const source: DockMediaSource = { id:'s',revision:0,kind:'recording',attachmentId:'f',path:'.intent/attachments/a.mp4',width:100,height:100,durationMs:12000,audio:'none',visuals:'clean',batches:[{id:'b',atMs:0,clearAtMs:9000}],capturedMarks:[captured] };
 describe('recording animation plan',()=>{
- it('keeps long gestures through completion and postroll bounded by Clear; frame stays in cuts/trim',()=>{
+ it('keeps long gestures through completion and postroll; Clear only ends marks and frames stay in cuts/trim',()=>{
   const edit=defaultDockMediaEdit(source,[captured],null);edit.video='highlights';
   const plan=planDockMediaOutput(edit,source,null);
-  expect(plan.clips).toEqual([{startMs:0,endMs:9000}]);
+  expect(plan.clips).toEqual([{startMs:0,endMs:10000}]);
   edit.cuts=[{startMs:6500,endMs:8000}];edit.trim={startMs:500,endMs:8500};
   const cutPlan=planDockMediaOutput(edit,source,null);
   const frame=dockMediaFrameAt(source,cutPlan,cutPlan.marks[0]);
@@ -57,4 +57,13 @@ it('selection is disabled through the captured in-progress interval, but static 
  expect(dockMediaMarkEditableAt(source,captured,5000)).toBe(false);
  expect(dockMediaMarkEditableAt(source,captured,7000)).toBe(true);
  expect(dockMediaMarkEditableAt(source,{...captured,geometry:{kind:'point',x:4,y:4}},5000)).toBe(true);
+});
+
+it('legacy highlights retain postroll after Clear without truncating video context',()=>{
+ const {gestureProgress:_,...legacy}=captured;
+ const s={...source,durationMs:10000,batches:[{id:'b',atMs:0,clearAtMs:1500}],capturedMarks:[legacy]};
+ const edit=defaultDockMediaEdit(s,[legacy],null);edit.video='highlights';
+ const plan=planDockMediaOutput(edit,s,null);
+ expect(plan.clips).toEqual([{startMs:0,endMs:4000}]);
+ expect(plan.marks[0].visibleUntilMs).toBe(1500);
 });

@@ -601,7 +601,7 @@ export function planDockMediaOutput(
             mergeDockMediaRanges(
               included.map((mark) => ({
                 startMs: Math.max(edit.trim.startMs, mark.atMs - 3000),
-                endMs: Math.min(edit.trim.endMs, source.batches.find(batch => batch.id === mark.batchId)?.clearAtMs ?? source.durationMs, (recordedMarkProgress(source, mark)?.completedAtMs ?? mark.atMs) + 3000),
+                endMs: Math.min(edit.trim.endMs, source.durationMs, (recordedMarkProgress(source, mark)?.completedAtMs ?? mark.atMs) + 3000),
               })),
             ),
             edit.cuts,
