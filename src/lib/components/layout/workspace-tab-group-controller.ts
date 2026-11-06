@@ -1,15 +1,20 @@
 import type { SidebarMenuEntry } from '$lib/components/ui/sidebar-context-menu/types';
 import { store as appStore } from '$store/renderer/store';
-import { nextWorkspaceTabGroupColor } from '$store/renderer/slices/tab-state/tab-groups';
+import {
+  layoutWorkspaceTabsByProject,
+  nextWorkspaceTabGroupColor,
+} from '$store/renderer/slices/tab-state/tab-groups';
 import {
   selectOpenWorkspaceTabGroupId,
   selectWorkspaceTabGroups,
   selectWorkspaceTabGroupsEnabled,
   selectWorkspaceTabOrder,
 } from '$store/renderer/slices/tab-state/tab-state-selectors';
+import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
   addWorkspaceTabToGroup,
   createWorkspaceTabGroup,
+  groupWorkspaceTabsByProject,
   removeWorkspaceTabFromGroup,
   setOpenWorkspaceTabGroup,
   ungroupWorkspaceTabGroup,
@@ -20,6 +25,7 @@ import {
   buildWorkspaceTabGroupMenu,
 } from './workspace-tab-group-actions';
 import { resolveWorkspaceTabGroupToggle } from './workspace-tab-group-items';
+import { resolveWorkspaceTabProjects } from './workspace-tab-projects';
 
 export type WorkspaceTabMenuTarget =
   { kind: 'tab'; workspaceId: string } | { kind: 'group'; groupId: string };
@@ -45,6 +51,20 @@ export function createWorkspaceTabGroupController({
     const color = nextWorkspaceTabGroupColor(groups());
     appStore.dispatch(createWorkspaceTabGroup(workspaceId, groupId, color));
     setEditingGroupId(groupId);
+  }
+
+  /** Regroups tabs by project, or undefined when that would change nothing. */
+  function groupByProjectAction(): (() => void) | undefined {
+    const state = appStore.state;
+    const projects = resolveWorkspaceTabProjects(selectWorkspaceItems.select(state));
+    const stacks = state.tabState.workspaceStacks;
+    const layout = layoutWorkspaceTabsByProject(stacks, groups(), projects);
+    const unchanged =
+      JSON.stringify(layout.workspaceStacks) === JSON.stringify(stacks) &&
+      JSON.stringify(layout.groups.map((group) => [group.id, group.workspaceIds])) ===
+        JSON.stringify(groups().map((group) => [group.id, group.workspaceIds]));
+    if (layout.groups.length === 0 || unchanged) return undefined;
+    return () => appStore.dispatch(groupWorkspaceTabsByProject(projects));
   }
 
   return {
@@ -81,6 +101,7 @@ export function createWorkspaceTabGroupController({
         onCreateGroup: () => createGroupForTab(workspaceId),
         onAddToGroup: (groupId) => appStore.dispatch(addWorkspaceTabToGroup(workspaceId, groupId)),
         onRemoveFromGroup: () => appStore.dispatch(removeWorkspaceTabFromGroup(workspaceId)),
+        onGroupByProject: groupByProjectAction(),
       });
       return [...groupEntries, { type: 'separator' }, ...entries];
     },
@@ -93,6 +114,7 @@ export function createWorkspaceTabGroupController({
         onSetColor: (color) => appStore.dispatch(updateWorkspaceTabGroup(group.id, { color })),
         onUngroup: () => appStore.dispatch(ungroupWorkspaceTabGroup(group.id)),
         onCloseGroup: () => closeWorkspaceTabs([...group.workspaceIds]),
+        onGroupByProject: groupByProjectAction(),
       });
     },
   };

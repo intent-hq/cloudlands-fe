@@ -3605,6 +3605,7 @@
   "layout_workspaceTabGroup_color_orange_label": "橙色",
   "layout_workspaceTabGroup_color_pink_label": "粉色",
   "layout_workspaceTabGroup_color_purple_label": "紫色",
+  "layout_workspaceTabGroup_groupByProject_label": "按项目对标签页分组",
   "layout_workspaceTabGroup_name_ariaLabel": "分组名称",
   "layout_workspaceTabGroup_name_placeholder": "为此分组命名",
   "layout_workspaceTabGroup_remove_label": "从分组中移除",

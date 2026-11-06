@@ -1,5 +1,6 @@
 import {
   faFolderPlus,
+  faFolderTree,
   faLayerGroup,
   faPalette,
   faPen,
@@ -25,6 +26,8 @@ export interface WorkspaceTabGroupEntriesOptions {
   onCreateGroup: () => void;
   onAddToGroup: (groupId: string) => void;
   onRemoveFromGroup: () => void;
+  /** Omitted when grouping by project would change nothing. */
+  onGroupByProject?: () => void;
 }
 
 /** Tab context-menu entries that put a tab into, or take it out of, a group. */
@@ -34,6 +37,7 @@ export function buildWorkspaceTabGroupEntries({
   onCreateGroup,
   onAddToGroup,
   onRemoveFromGroup,
+  onGroupByProject,
 }: WorkspaceTabGroupEntriesOptions): SidebarMenuEntry[] {
   const currentGroup = findWorkspaceTabGroup(groups, workspaceId);
   const otherGroups = groups.filter((group) => group !== currentGroup);
@@ -65,7 +69,17 @@ export function buildWorkspaceTabGroupEntries({
       onClick: onRemoveFromGroup,
     });
   }
+  if (onGroupByProject) entries.push(groupByProjectEntry(onGroupByProject));
   return entries;
+}
+
+function groupByProjectEntry(onClick: () => void): SidebarMenuEntry {
+  return {
+    id: 'tab-group-by-project',
+    label: m.layout_workspaceTabGroup_groupByProject_label(),
+    icon: faFolderTree,
+    onClick,
+  };
 }
 
 export interface WorkspaceTabGroupMenuOptions {
@@ -74,6 +88,8 @@ export interface WorkspaceTabGroupMenuOptions {
   onSetColor: (color: WorkspaceTabGroupColor) => void;
   onUngroup: () => void;
   onCloseGroup: () => void;
+  /** Omitted when grouping by project would change nothing. */
+  onGroupByProject?: () => void;
 }
 
 /** Context menu for a group chip. */
@@ -83,6 +99,7 @@ export function buildWorkspaceTabGroupMenu({
   onSetColor,
   onUngroup,
   onCloseGroup,
+  onGroupByProject,
 }: WorkspaceTabGroupMenuOptions): SidebarMenuEntry[] {
   return [
     {
@@ -106,6 +123,7 @@ export function buildWorkspaceTabGroupMenu({
       })),
     },
     { type: 'separator' },
+    ...(onGroupByProject ? [groupByProjectEntry(onGroupByProject)] : []),
     {
       id: 'tab-group-ungroup',
       label: m.layout_workspaceTabGroup_ungroup_label(),

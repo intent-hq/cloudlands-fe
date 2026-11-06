@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import {
+  layoutWorkspaceTabsByProject,
+  moveWorkspaceTabGroupInStacks,
   nextWorkspaceTabGroupColor,
   normalizeWorkspaceTabGroups,
   parsePersistedWorkspaceTabGroups,
@@ -12,8 +14,10 @@ import {
   closeWorkspaceTab,
   createWorkspaceTabGroup,
   getWorkspaceTabGroupList,
+  groupWorkspaceTabsByProject,
   loadWorkspaceTabsState,
   moveWorkspace,
+  moveWorkspaceTabGroup,
   openWorkspaceTab,
   removeWorkspaceTabFromGroup,
   reopenLastClosedWorkspaceTab,
@@ -371,5 +375,116 @@ describe('tab group reducer', () => {
       tabGroups: [{ ...group('g', ['b', 'c']), lastActiveWorkspaceId: 'c' }],
       openTabGroupId: 'g',
     });
+  });
+});
+
+describe('layoutWorkspaceTabsByProject', () => {
+  const projects = {
+    a1: { key: 'acme/app', name: 'app' },
+    a2: { key: 'acme/app', name: 'app' },
+    b1: { key: 'acme/api', name: 'api' },
+    b2: { key: 'acme/api', name: 'api' },
+    c1: { key: 'acme/docs', name: 'docs' },
+  };
+
+  it('sorts tabs by first appearance and groups projects with two or more tabs', () => {
+    const layout = layoutWorkspaceTabsByProject(
+      [['b1'], ['x'], ['a1'], ['c1'], ['b2'], ['a2']],
+      [],
+      projects,
+    );
+    expect(layout.workspaceStacks.flat()).toEqual(['b1', 'b2', 'x', 'a1', 'a2', 'c1']);
+    expect(
+      layout.groups.map(({ name, color, workspaceIds }) => [name, color, workspaceIds]),
+    ).toEqual([
+      ['api', 'blue', ['b1', 'b2']],
+      ['app', 'green', ['a1', 'a2']],
+    ]);
+  });
+
+  it('replaces manual groups and keeps the name and color of an earlier project group', () => {
+    const earlier: WorkspaceTabGroup = {
+      id: 'project:acme/app',
+      name: 'Frontend',
+      color: 'blue',
+      workspaceIds: ['a1'],
+      lastActiveWorkspaceId: 'a1',
+    };
+    const layout = layoutWorkspaceTabsByProject(
+      [['b1'], ['a1'], ['b2'], ['a2']],
+      [earlier, group('manual', ['b1', 'b2'])],
+      projects,
+    );
+    expect(layout.groups).toEqual([
+      { id: 'project:acme/api', name: 'api', color: 'green', workspaceIds: ['b1', 'b2'] },
+      { ...earlier, workspaceIds: ['a1', 'a2'] },
+    ]);
+  });
+
+  it('moves a stack with the project of its first tab', () => {
+    const layout = layoutWorkspaceTabsByProject([['a1', 'b1'], ['b2'], ['a2']], [], projects);
+    expect(layout.workspaceStacks).toEqual([['a1', 'b1'], ['a2'], ['b2']]);
+    expect(layout.groups.map((candidate) => candidate.workspaceIds)).toEqual([['a1', 'b1', 'a2']]);
+  });
+});
+
+describe('moveWorkspaceTabGroupInStacks', () => {
+  const groups = [group('g', ['b', 'c']), group('h', ['e', 'f'])];
+  const stacks = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => [id]);
+
+  it('moves every member as one block', () => {
+    expect(moveWorkspaceTabGroupInStacks(stacks, groups, 'g', 'f', 'after')?.flat()).toEqual([
+      'a',
+      'd',
+      'e',
+      'f',
+      'b',
+      'c',
+    ]);
+  });
+
+  it('snaps a target inside another group to that group edge', () => {
+    expect(moveWorkspaceTabGroupInStacks(stacks, groups, 'g', 'f', 'before')?.flat()).toEqual([
+      'a',
+      'd',
+      'b',
+      'c',
+      'e',
+      'f',
+    ]);
+  });
+
+  it('returns null when the group does not move', () => {
+    expect(moveWorkspaceTabGroupInStacks(stacks, groups, 'g', 'd', 'before')).toBeNull();
+    expect(moveWorkspaceTabGroupInStacks(stacks, groups, 'g', 'c', 'after')).toBeNull();
+  });
+});
+
+describe('group reducers', () => {
+  it('moves a group and keeps its members', () => {
+    const state = tabStateReducer(
+      stateWithTabs(['a', 'b', 'c', 'd'], [group('g', ['a', 'b'])]),
+      moveWorkspaceTabGroup('g', 'd', 'after'),
+    );
+    expect(order(state)).toEqual(['c', 'd', 'a', 'b']);
+    expect(members(state, 'g')).toEqual(['a', 'b']);
+  });
+
+  it('groups by project and opens the group of the current tab', () => {
+    const state = tabStateReducer(
+      stateWithTabs(['a1', 'b1', 'a2', 'b2']),
+      groupWorkspaceTabsByProject({
+        a1: { key: 'app', name: 'app' },
+        a2: { key: 'app', name: 'app' },
+        b1: { key: 'api', name: 'api' },
+        b2: { key: 'api', name: 'api' },
+      }),
+    );
+    expect(order(state)).toEqual(['a1', 'a2', 'b1', 'b2']);
+    expect(state.openTabGroupId).toBe('project:app');
+    expect(getWorkspaceTabGroupList(state).map((candidate) => candidate.name)).toEqual([
+      'app',
+      'api',
+    ]);
   });
 });

@@ -1,6 +1,7 @@
 <script lang="ts" module>
   import { definePreview } from '$lib/component-catalog/preview-definition';
   import type { WorkspaceTabGroup } from '$store/renderer/slices/tab-state/tab-groups';
+  import type { Workspace as PreviewWorkspace } from '$shared/types';
 
   export interface WorkspaceTabStripGeometryPreviewProps {
     activeWorkspaceId?: string;
@@ -8,8 +9,12 @@
     interactive?: boolean;
     zoomFactor?: number;
     fullTitlebar?: boolean;
-    /** Extra tabs (id and title) appended after the default geometry tabs. */
-    extraWorkspaces?: Array<{ id: string; title: string }>;
+    /** Extra tabs appended after the default geometry tabs. */
+    extraWorkspaces?: Array<
+      { id: string; title: string } & Partial<
+        Pick<PreviewWorkspace, 'repositoryOwner' | 'repositoryName'>
+      >
+    >;
     tabGroups?: WorkspaceTabGroup[];
     widthPx?: number;
   }
@@ -80,8 +85,9 @@
     ...ids.map((id, index) => ({ id, title: `Geometry workspace ${index + 1}` })),
     ...extraWorkspaces,
   ];
-  for (const [index, { id, title }] of previewWorkspaces().entries()) {
+  for (const [index, { id, title, ...repository }] of previewWorkspaces().entries()) {
     const workspace: Workspace = {
+      ...repository,
       id: WorkspaceId(id),
       title,
       branch: `geometry-${index + 1}`,

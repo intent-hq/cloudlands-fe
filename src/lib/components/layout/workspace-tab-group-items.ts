@@ -1,12 +1,14 @@
 import {
   applyWorkspaceTabMove,
   findWorkspaceTabGroup,
+  moveWorkspaceTabGroupInStacks,
   resolveMovedWorkspaceTabGroups,
   type WorkspaceTabGroup,
 } from '$store/renderer/slices/tab-state/tab-groups';
 import {
   getReleasedWorkspaceTabMove,
   proposeWorkspaceTabOrder,
+  type WorkspaceTabMove,
 } from '$lib/components/workspace/utils/workspace-tab-drag';
 import { workspaceTabGroupColorValue } from './workspace-tab-group-labels';
 
@@ -24,7 +26,7 @@ export type WorkspaceTabStripItem =
     }
   | { kind: 'group'; key: string; group: WorkspaceTabGroup; open: boolean };
 
-const workspaceTabGroupItemKey = (groupId: string) => `tab-group:${groupId}`;
+export const workspaceTabGroupItemKey = (groupId: string) => `tab-group:${groupId}`;
 
 /**
  * Lays out the strip: each group gets a header chip before its first tab.
@@ -157,6 +159,75 @@ export function proposeGroupedWorkspaceTabOrder(
   return targetId
     ? applyWorkspaceTabMove(fullOrder, draggedId, targetId, move.placement)
     : [...fullOrder];
+}
+
+/** The workspace a drop next to `item` lands beside: a chip's first or last member. */
+function dropTargetWorkspaceId(
+  item: WorkspaceTabStripItem | undefined,
+  placement: WorkspaceTabMove['placement'],
+): string | undefined {
+  if (item?.kind !== 'group') return item?.workspaceId;
+  return placement === 'before' ? item.group.workspaceIds[0] : item.group.workspaceIds.at(-1);
+}
+
+/** Applies a drop slot for a dragged collapsed group chip to the full order. */
+export function proposeWorkspaceTabGroupOrder(
+  dragItems: readonly WorkspaceTabStripItem[],
+  fullOrder: readonly string[],
+  groups: readonly WorkspaceTabGroup[],
+  groupId: string,
+  insertionIndex: number,
+): string[] {
+  const chipKey = workspaceTabGroupItemKey(groupId);
+  const visibleOrder = dragItems.map((item) => item.key);
+  const nextVisibleOrder = proposeWorkspaceTabOrder(visibleOrder, chipKey, insertionIndex);
+  const move = getReleasedWorkspaceTabMove(visibleOrder, nextVisibleOrder, chipKey);
+  if (!move) return [...fullOrder];
+  const target = dragItems.find((item) => item.key === move.targetId);
+  const targetId = dropTargetWorkspaceId(target, move.placement);
+  const stacks =
+    targetId &&
+    moveWorkspaceTabGroupInStacks(
+      fullOrder.map((id) => [id]),
+      groups,
+      groupId,
+      targetId,
+      move.placement,
+    );
+  return stacks ? stacks.flat() : [...fullOrder];
+}
+
+/** Applies a drop slot for the dragged strip item, a tab or a collapsed group chip. */
+export function proposeWorkspaceStripDragOrder(
+  dragItems: readonly WorkspaceTabStripItem[],
+  fullOrder: readonly string[],
+  groups: readonly WorkspaceTabGroup[],
+  draggedKey: string,
+  insertionIndex: number,
+): string[] {
+  const dragged = dragItems.find((item) => item.key === draggedKey);
+  return dragged?.kind === 'group'
+    ? proposeWorkspaceTabGroupOrder(dragItems, fullOrder, groups, dragged.group.id, insertionIndex)
+    : proposeGroupedWorkspaceTabOrder(dragItems, fullOrder, draggedKey, insertionIndex);
+}
+
+/** Where a dragged group was released: before the tab after it, else after the tab before it. */
+export function getReleasedWorkspaceTabGroupMove(
+  originalOrder: readonly string[],
+  proposedOrder: readonly string[],
+  groups: readonly WorkspaceTabGroup[],
+  groupId: string,
+): [targetId: string, placement: WorkspaceTabMove['placement']] | null {
+  const group = groups.find((candidate) => candidate.id === groupId);
+  if (!group || originalOrder.join('\0') === proposedOrder.join('\0')) return null;
+  const members = new Set(group.workspaceIds);
+  const first = proposedOrder.findIndex((id) => members.has(id));
+  const last = proposedOrder.findLastIndex((id) => members.has(id));
+  if (first < 0) return null;
+  const nextId = proposedOrder[last + 1];
+  if (nextId) return [nextId, 'before'];
+  const previousId = proposedOrder[first - 1];
+  return previousId ? [previousId, 'after'] : null;
 }
 
 /**

@@ -13,13 +13,26 @@
     group: WorkspaceTabGroup;
     open: boolean;
     editing?: boolean;
-    onToggle: () => void;
+    /** Pointer position of the chip while it is dragged; null when it is not. */
+    drag?: { left: number; top: number; width: number } | null;
+    onToggle: (event: MouseEvent) => void;
+    /** Starts a drag; collapsed chips only. */
+    onPointerDown?: (event: PointerEvent) => void;
     onContextMenu: (event: MouseEvent | KeyboardEvent) => void;
     /** Called with the new name, or `null` when the rename is cancelled. */
     onRenameEnd: (name: string | null) => void;
   }
 
-  let { group, open, editing = false, onToggle, onContextMenu, onRenameEnd }: Props = $props();
+  let {
+    group,
+    open,
+    editing = false,
+    drag = null,
+    onToggle,
+    onPointerDown,
+    onContextMenu,
+    onRenameEnd,
+  }: Props = $props();
 
   let draftName = $state('');
   let settled = false;
@@ -56,11 +69,24 @@
   }
 </script>
 
+{#if drag}
+  <div class="tab-group-chip-placeholder" style:width="{drag.width}px" aria-hidden="true"></div>
+{/if}
 <div
-  class={cn('tab-group-chip', open ? 'is-open' : 'is-collapsed', editing && 'is-editing')}
+  class={cn(
+    'tab-group-chip',
+    open ? 'is-open' : 'is-collapsed',
+    editing && 'is-editing',
+    drag && 'is-dragging',
+  )}
   style:--tab-group-color={workspaceTabGroupColorValue(group.color)}
+  style:left={drag ? `${drag.left}px` : undefined}
+  style:top={drag ? `${drag.top}px` : undefined}
   data-workspace-tab-group={group.id}
   data-open={open}
+  data-dragging={drag !== null}
+  role="presentation"
+  onpointerdown={open || editing ? undefined : onPointerDown}
 >
   {#if editing}
     <span class="tab-group-dot" aria-hidden="true"></span>
@@ -115,6 +141,17 @@
     transition:
       background-color var(--spring-moderate) var(--ease-spring-moderate),
       color var(--spring-moderate) var(--ease-spring-moderate);
+  }
+
+  .tab-group-chip-placeholder {
+    height: 22px;
+    flex: none;
+  }
+
+  .tab-group-chip.is-dragging {
+    position: fixed;
+    z-index: 50;
+    pointer-events: none;
   }
 
   .tab-group-chip.is-collapsed {

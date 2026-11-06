@@ -3605,6 +3605,7 @@
   "layout_workspaceTabGroup_color_orange_label": "Orange",
   "layout_workspaceTabGroup_color_pink_label": "Pink",
   "layout_workspaceTabGroup_color_purple_label": "Purple",
+  "layout_workspaceTabGroup_groupByProject_label": "Group tabs by project",
   "layout_workspaceTabGroup_name_ariaLabel": "Group name",
   "layout_workspaceTabGroup_name_placeholder": "Name this group",
   "layout_workspaceTabGroup_remove_label": "Remove from group",

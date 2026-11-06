@@ -148,3 +148,92 @@ export function applyWorkspaceTabMove(
   remaining.splice(targetIndex + (placement === 'after' ? 1 : 0), 0, workspaceId);
   return remaining;
 }
+
+export interface WorkspaceTabProject {
+  /** Stable project identity, such as `owner/name` or the repository path. */
+  key: string;
+  /** Group name for the project. */
+  name: string;
+}
+
+export interface WorkspaceTabProjectLayout {
+  workspaceStacks: string[][];
+  groups: WorkspaceTabGroup[];
+}
+
+const projectGroupId = (projectKey: string) => `project:${projectKey}`;
+
+/**
+ * Sorts stacks so each project's tabs sit together, in order of each project's
+ * first tab, and replaces all groups with one group per project that has two or
+ * more tabs. A stack follows the project of its first tab. Groups from an
+ * earlier run keep their name and color.
+ */
+export function layoutWorkspaceTabsByProject(
+  workspaceStacks: readonly (readonly string[])[],
+  groups: readonly WorkspaceTabGroup[],
+  projects: Readonly<Record<string, WorkspaceTabProject>>,
+): WorkspaceTabProjectLayout {
+  const stackKey = (stack: readonly string[]) => {
+    const project = projects[stack[0] ?? ''];
+    return project ? projectGroupId(project.key) : `tab:${stack[0]}`;
+  };
+  const buckets = new Map<string, string[][]>();
+  for (const stack of workspaceStacks) {
+    const key = stackKey(stack);
+    buckets.set(key, [...(buckets.get(key) ?? []), [...stack]]);
+  }
+  const previous = new Map(groups.map((group) => [group.id, group]));
+  const planned = [...buckets].flatMap(([id, stacks]) => {
+    const workspaceIds = stacks.flat();
+    const project = projects[workspaceIds[0] ?? ''];
+    if (!project || workspaceIds.length < 2) return [];
+    return [{ id, project, workspaceIds, previous: previous.get(id) }];
+  });
+  const colored = planned.flatMap((plan) => (plan.previous ? [plan.previous] : []));
+  const nextGroups = planned.map(({ id, project, workspaceIds, previous: earlier }) => {
+    const lastActive = earlier?.lastActiveWorkspaceId;
+    const group: WorkspaceTabGroup = {
+      id,
+      name: earlier?.name ?? project.name,
+      color: earlier?.color ?? nextWorkspaceTabGroupColor(colored),
+      workspaceIds,
+      lastActiveWorkspaceId:
+        lastActive && workspaceIds.includes(lastActive) ? lastActive : undefined,
+    };
+    if (!earlier) colored.push(group);
+    return group;
+  });
+  return { workspaceStacks: [...buckets.values()].flat(), groups: nextGroups };
+}
+
+/**
+ * Moves every member of `groupId` as one block before or after `targetId`. A
+ * target inside another group snaps to that group's edge, so groups stay
+ * contiguous. Returns null when nothing moves.
+ */
+export function moveWorkspaceTabGroupInStacks(
+  workspaceStacks: readonly (readonly string[])[],
+  groups: readonly WorkspaceTabGroup[],
+  groupId: string,
+  targetId: string,
+  placement: 'before' | 'after',
+): string[][] | null {
+  const group = groups.find((candidate) => candidate.id === groupId);
+  if (!group || group.workspaceIds.includes(targetId)) return null;
+  const targetGroup = findWorkspaceTabGroup(groups, targetId);
+  const anchorId = targetGroup
+    ? ((placement === 'before' ? targetGroup.workspaceIds[0] : targetGroup.workspaceIds.at(-1)) ??
+      targetId)
+    : targetId;
+  const members = new Set(group.workspaceIds);
+  const split = (keep: (id: string) => boolean) =>
+    workspaceStacks.map((stack) => stack.filter(keep)).filter((stack) => stack.length > 0);
+  const moved = split((id) => members.has(id));
+  const rest = split((id) => !members.has(id));
+  const anchorIndex = rest.findIndex((stack) => stack.includes(anchorId));
+  if (moved.length === 0 || anchorIndex < 0) return null;
+  rest.splice(anchorIndex + (placement === 'after' ? 1 : 0), 0, ...moved);
+  const before = workspaceStacks.flat().join('\0');
+  return rest.flat().join('\0') === before ? null : rest;
+}
