@@ -17,6 +17,25 @@ export const DockMediaRectSchema = z
 export type DockMediaRect = z.infer<typeof DockMediaRectSchema>;
 export const DockMediaBlurRegionSchema = DockMediaRectSchema.extend({ id });
 export type DockMediaBlurRegion = z.infer<typeof DockMediaBlurRegionSchema>;
+export const DOCK_MEDIA_BLUR_RADIUS = 16;
+export const DOCK_MEDIA_OUTPUT_VERSION = 2;
+export const DockMediaBlurStrokeSchema = z.object({
+  id, radius: finite.positive().max(4096), points: z.array(point).min(1).max(4096),
+}).strict();
+export type DockMediaBlurStroke = z.infer<typeof DockMediaBlurStrokeSchema>;
+export function dockMediaBlurStrokeBounds(stroke: DockMediaBlurStroke): DockMediaRect {
+  const xs = stroke.points.map((p) => p.x), ys = stroke.points.map((p) => p.y);
+  const x = Math.min(...xs) - stroke.radius, y = Math.min(...ys) - stroke.radius;
+  return { x, y, w: Math.max(...xs) + stroke.radius - x, h: Math.max(...ys) + stroke.radius - y };
+}
+export function transformDockMediaBlurStroke(stroke: DockMediaBlurStroke,
+  mapping: { scaleX: number; scaleY: number; offsetX: number; offsetY: number }): DockMediaBlurStroke {
+  // Preserve coverage conservatively if a retake has nonuniform pixel scaling.
+  return DockMediaBlurStrokeSchema.parse({ ...stroke,
+    radius: stroke.radius * Math.max(Math.abs(mapping.scaleX), Math.abs(mapping.scaleY)),
+    points: stroke.points.map((p) => ({ x: p.x * mapping.scaleX + mapping.offsetX, y: p.y * mapping.scaleY + mapping.offsetY })),
+  });
+}
 export const DockMediaGeometrySchema = z.discriminatedUnion('kind', [
   DockMediaRectSchema.extend({ kind: z.literal('rect') }),
   z.object({ kind: z.literal('point'), x: finite, y: finite }).strict(),
@@ -29,10 +48,37 @@ export const DockMediaGeometrySchema = z.discriminatedUnion('kind', [
       y: finite,
       text: z.string().max(10000),
       fontSize: finite.positive(),
+      style: z.literal('sticky').optional(),
+      width: finite.positive().max(4096).optional(),
     })
     .strict(),
 ]);
 export type DockMediaGeometry = z.infer<typeof DockMediaGeometrySchema>;
+/** Shared card wrapping/bounds for painting, hit testing, crop and retake. */
+export function layoutDockMediaText(g: Extract<DockMediaGeometry, { kind: 'text' }>): {
+  lines: string[]; width: number; height: number; padding: number; lineHeight: number;
+} {
+  const lineHeight = g.fontSize * 1.4, padding = g.style === 'sticky' ? 8 : 0;
+  if (g.style !== 'sticky') {
+    const lines = g.text.split('\n');
+    return { lines, width: Math.max(1, ...lines.map((line) => line.length)) * g.fontSize * 0.65,
+      height: lines.length * lineHeight, padding, lineHeight };
+  }
+  const width = Math.max(padding * 2 + 1, g.width ?? 240);
+  const maxChars = Math.max(1, Math.floor((width - padding * 2) / (g.fontSize * 0.65)));
+  const lines: string[] = [];
+  for (const paragraph of g.text.split('\n')) {
+    let remaining = paragraph;
+    while (remaining.length > maxChars) {
+      const space = remaining.lastIndexOf(' ', maxChars);
+      const end = space > 0 ? space : maxChars;
+      lines.push(remaining.slice(0, end).trimEnd());
+      remaining = remaining.slice(end).trimStart();
+    }
+    lines.push(remaining);
+  }
+  return { lines, width, height: lines.length * lineHeight + padding * 2, padding, lineHeight };
+}
 export const DockMediaEditMarkSchema = z
   .object({
     id,
@@ -168,6 +214,7 @@ export const DockMediaEditSchema = z
     cuts: z.array(DockMediaRangeSchema).max(10000),
     marks: z.array(DockMediaEditMarkSchema).max(10000),
     blurRegions: z.array(DockMediaBlurRegionSchema).max(1000),
+    blurStrokes: z.array(DockMediaBlurStrokeSchema).max(1000).optional(),
     crop: DockMediaRectSchema.nullable(),
     video: z.enum(['full', 'highlights']),
     voice: z.enum(['audio', 'transcript', 'off']),
@@ -279,13 +326,8 @@ export function dockMediaGeometryRect(g: DockMediaGeometry): DockMediaRect {
     };
   if (g.kind === 'rect') return { x: g.x, y: g.y, w: g.w, h: g.h };
   if (g.kind === 'text') {
-    const lines = g.text.split('\n');
-    return {
-      x: g.x,
-      y: g.y,
-      w: Math.max(1, ...lines.map((line) => line.length)) * g.fontSize * 0.65,
-      h: lines.length * g.fontSize * 1.4,
-    };
+    const layout = layoutDockMediaText(g);
+    return { x: g.x, y: g.y, w: layout.width, h: layout.height };
   }
   const points = g.kind === 'path' ? g.points : [g.from, g.to];
   const left = Math.min(...points.map((p) => p.x)),
@@ -349,6 +391,7 @@ export function defaultDockMediaEdit(
     cuts: [],
     marks: structuredClone([...marks]),
     blurRegions: [],
+    blurStrokes: [],
     crop: null,
     video: rememberedChoice?.video ?? 'highlights',
     voice: rememberedChoice?.voice ?? 'transcript',
@@ -496,7 +539,8 @@ export function planDockMediaOutput(
   }
   if (
     source.visuals === 'baked-marks' &&
-    (JSON.stringify(edit.marks) !== JSON.stringify(source.bakedMarks) ||
+    (edit.blurRegions.length > 0 || (edit.blurStrokes?.length ?? 0) > 0 ||
+      JSON.stringify(edit.marks) !== JSON.stringify(source.bakedMarks) ||
       (!!source.bakedMarks?.length &&
         (edit.cuts.length > 0 ||
           !!edit.crop ||
@@ -505,6 +549,12 @@ export function planDockMediaOutput(
   ) {
     errors.push('legacy-baked-marks');
     return empty;
+  }
+  const strokes = edit.blurStrokes ?? [];
+  if (new Set(strokes.map((stroke) => stroke.id)).size !== strokes.length ||
+      strokes.reduce((sum, stroke) => sum + stroke.points.length, 0) > 200000 ||
+      strokes.some((stroke) => stroke.points.some((p) => p.x < 0 || p.y < 0 || p.x > source.width || p.y > source.height))) {
+    errors.push('invalid-edit'); return empty;
   }
   const kept = subtractDockMediaRanges([edit.trim], edit.cuts);
   const marks = numberDockMediaMarks(edit, source);
