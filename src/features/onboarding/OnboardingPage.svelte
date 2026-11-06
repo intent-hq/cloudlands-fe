@@ -624,7 +624,6 @@
   // Continue re-sends the same create, so it is offered only while they match.
   let onboardingSubmittedFormKey = '';
   let onboardingBaseRefreshFormKey = $state('');
-  const onboardingFormKey = $derived(JSON.stringify([projectSelection, selectedPRBranch]));
 
   // Live setup step statuses for WorkspaceSetupCard during creation
   type SetupStepStatus = 'pending' | 'active' | 'done';
@@ -850,6 +849,8 @@
 
   // Track the selected PR's source branch and number
   let selectedPRBranch = $state<string>('');
+  // Continue from last-fetched is offered only while this matches the failed create.
+  const onboardingFormKey = $derived(JSON.stringify([projectSelection, selectedPRBranch]));
   let selectedPRNumber = $state<number | null>(null);
   let lastFetchedPRIdentifier: string | null = null;
   let onboardingContentChangeTimer: ReturnType<typeof setTimeout> | null = null;
