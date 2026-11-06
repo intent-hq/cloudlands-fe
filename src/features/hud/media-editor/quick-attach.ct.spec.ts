@@ -325,6 +325,7 @@ test('pending crop is protected by Close and native discard request; clean ModW 
   await dialog.getByRole('button', { name: 'Keep editing', exact: true }).click();
   await expect(fixture).toHaveAttribute('data-kept', '1');
   await expect(fixture).toHaveAttribute('data-discarded', '0');
+  await expect(dialog).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(fixture.getByRole('button', { name: 'Crop', exact: true })).toBeVisible();
   await expect(fixture).toHaveAttribute('data-dirty', 'false');

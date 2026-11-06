@@ -166,6 +166,7 @@
       variant="ghost"
       size="default"
       disabled={saving}
+      aria-label={m.dock_captureEditor_close_label()}
       tooltip={m.dock_captureEditor_close_tooltip()}
       tooltipShortcut="Esc"
       tooltipContentClass="dock-chrome-tooltip"
