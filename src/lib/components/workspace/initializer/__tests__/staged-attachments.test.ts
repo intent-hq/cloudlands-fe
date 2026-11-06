@@ -635,7 +635,7 @@ describe('sendHeldFirstMessage', () => {
       .fn()
       .mockRejectedValue(
         new Error(
-          'attachments-too-large-for-machine: the attachments are 9.1 MiB; the limit is 8 MiB',
+          "attachments-too-large-for-machine: agent.sendMessage: this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images",
         ),
       );
 
@@ -648,7 +648,8 @@ describe('sendHeldFirstMessage', () => {
 
     expect(result.errorDetail).toBe(
       m.remoteAgent_attachmentsTooLarge_error({
-        detail: 'the attachments are 9.1 MiB; the limit is 8 MiB',
+        detail:
+          "this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images",
       }),
     );
   });

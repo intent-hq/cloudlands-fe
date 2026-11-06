@@ -284,13 +284,14 @@ describe('remoteAttachmentFailure', () => {
     ).toBe(m.remoteAgent_attachmentsUnsupported_error());
   });
 
-  it('keeps the size and limit of a too-large refusal, without its code or data', () => {
+  it('keeps the size and limit of a too-large refusal, without its code, method or data', () => {
     const message = remoteAttachmentFailure(
-      'Invalid params: attachments-too-large-for-machine: the attachments are 12.4 MiB; the limit is 8 MiB {"code":"attachments-too-large-for-machine","size":13002342,"limit":8388608}',
+      `Invalid params: attachments-too-large-for-machine: agent.sendMessage: this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images {"code":"attachments-too-large-for-machine"}`,
     );
     expect(message).toBe(
       m.remoteAgent_attachmentsTooLarge_error({
-        detail: 'the attachments are 12.4 MiB; the limit is 8 MiB',
+        detail:
+          "this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images",
       }),
     );
   });

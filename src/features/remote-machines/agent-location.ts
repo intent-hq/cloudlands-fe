@@ -202,7 +202,11 @@ export function remoteAttachmentFailure(text: string): string | null {
   for (const prefix of ATTACHMENTS_TOO_LARGE_PREFIXES) {
     const at = message.indexOf(prefix);
     if (at < 0) continue;
-    const detail = message.slice(at + prefix.length).trim();
+    // The backend names the refused method first (`agent.sendMessage: …`).
+    const detail = message
+      .slice(at + prefix.length)
+      .trim()
+      .replace(/^[a-z][\w]*(?:\.[\w]+)+:\s*/i, '');
     return detail
       ? m.remoteAgent_attachmentsTooLarge_error({ detail })
       : m.remoteAgent_attachmentsTooLargeNoDetail_error();
