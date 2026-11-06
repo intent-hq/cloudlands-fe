@@ -8424,6 +8424,8 @@
   "dock_screenshotEditor_holdFor": "Gedrückt halten, um eine Notiz für Markierung {n} zu diktieren",
   "dock_screenshotEditor_hold": "Zum Diktieren gedrückt halten",
   "dock_screenshotEditor_crop": "Zuschneiden",
+  "dock_screenshotEditor_applyCrop": "Zuschnitt anwenden",
+  "dock_screenshotEditor_cancelCrop": "Zuschnitt abbrechen",
   "dock_screenshotEditor_retake": "Neu aufnehmen",
   "dock_screenshotEditor_retaking": "Neue Aufnahme…",
   "dock_screenshotEditor_readonly": "Dieses Bild enthält bereits Markierungen. Zum Bearbeiten wird das Original benötigt.",

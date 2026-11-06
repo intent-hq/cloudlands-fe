@@ -8424,6 +8424,8 @@
   "dock_screenshotEditor_holdFor": "長押ししてマーク {n} のメモを音声入力",
   "dock_screenshotEditor_hold": "長押しして音声入力",
   "dock_screenshotEditor_crop": "切り抜き",
+  "dock_screenshotEditor_applyCrop": "切り抜きを適用",
+  "dock_screenshotEditor_cancelCrop": "切り抜きをキャンセル",
   "dock_screenshotEditor_retake": "再撮影",
   "dock_screenshotEditor_retaking": "再撮影中…",
   "dock_screenshotEditor_readonly": "この画像にはすでにマークが含まれています。編集には元の画像が必要です。",

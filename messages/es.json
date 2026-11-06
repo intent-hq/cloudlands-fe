@@ -8424,6 +8424,8 @@
   "dock_screenshotEditor_holdFor": "Mantén pulsado para dictar una nota para la marca {n}",
   "dock_screenshotEditor_hold": "Mantén pulsado para dictar",
   "dock_screenshotEditor_crop": "Recortar",
+  "dock_screenshotEditor_applyCrop": "Aplicar recorte",
+  "dock_screenshotEditor_cancelCrop": "Cancelar recorte",
   "dock_screenshotEditor_retake": "Volver a capturar",
   "dock_screenshotEditor_retaking": "Capturando…",
   "dock_screenshotEditor_readonly": "Esta imagen ya contiene marcas. Para editarla se necesita la imagen original.",
