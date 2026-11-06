@@ -8220,6 +8220,7 @@
   "dock_composer_recordingEnd_chip": "录屏 {n} 结束",
   "dock_composer_markUp_label": "标注",
   "dock_composer_play_label": "播放",
+  "dock_composer_edit_label": "编辑",
   "dock_composer_capturePending_label": "正在截取屏幕…",
   "dock_composer_captureComplete_label": "已截取屏幕截图",
   "dock_composer_done_label": "完成",

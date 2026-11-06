@@ -261,6 +261,9 @@ function askDiscard(next: { kind: 'close' } | { kind: 'retarget'; next: Session 
   dropPending();
   const requestId = randomUUID();
   pending = { ...next, requestId };
+  // The question shows in the editor: bring it forward, or a click on a pill would
+  // seem to do nothing while the editor sits behind other windows.
+  bringEditorForward(editor);
   editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CONFIRM_DISCARD, {
     openId: session.snapshot.openId,
     requestId,
@@ -349,6 +352,15 @@ function createEditorWindow(backendId: string): BrowserWindow {
 const REVEAL_FALLBACK_MS = 8000;
 
 /** Show and focus a not-yet-shown editor (its first reveal, at the dock's request). */
+/** Bring the open editor in front of other windows (it may be visible but behind them). */
+function bringEditorForward(window: BrowserWindow): void {
+  if (editor !== window || !usable(window)) return;
+  if (window.isMinimized()) window.restore();
+  noteDockCaptureEditorFocused();
+  window.show();
+  window.focus();
+}
+
 function revealEditor(window: BrowserWindow): void {
   if (editor !== window || !usable(window) || !session || window.isVisible()) return;
   noteDockCaptureEditorFocused();
@@ -422,6 +434,24 @@ async function open(
     candidates: new Map(),
     stopWatching,
   };
+  // The same source already open: just bring its editor forward, keeping its edits.
+  const opened = session?.snapshot;
+  if (
+    usable(editor) &&
+    session &&
+    opened &&
+    session.backendId === next.backendId &&
+    opened.workspaceId === next.snapshot.workspaceId &&
+    opened.agentId === next.snapshot.agentId &&
+    opened.attachmentId === next.snapshot.attachmentId &&
+    !!opened.source &&
+    opened.source.id === next.snapshot.source?.id &&
+    opened.source.revision === next.snapshot.source.revision
+  ) {
+    stopWatching();
+    bringEditorForward(editor);
+    return { ok: true, openId: opened.openId };
+  }
   // An open session is never replaced silently: the editor is asked (it answers at
   // once when it has no unsaved edits), and this opens on Discard.
   if (usable(editor) && session) askDiscard({ kind: 'retarget', next });

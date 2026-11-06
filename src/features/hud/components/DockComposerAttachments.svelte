@@ -246,13 +246,13 @@
                 size="icon-sm"
                 class="tile-action"
                 {disabled}
-                aria-label={labels.play}
-                tooltip={labels.play}
+                aria-label={onEdit ? labels.edit : labels.play}
+                tooltip={onEdit ? labels.edit : labels.play}
                 onclick={(event) => {
                   if (event.currentTarget instanceof HTMLElement) show(item, event.currentTarget);
                 }}
               >
-                <DockComposerIcon glyph="play" />
+                <DockComposerIcon glyph={onEdit ? 'pencil' : 'play'} />
               </Button>
             {/if}
             <Button

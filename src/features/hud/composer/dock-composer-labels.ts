@@ -63,6 +63,7 @@ export function createDockComposerLabels(
     markUp: m.dock_composer_markUp_label(),
     remove: m.chat_contextChip_remove_label(),
     play: m.dock_composer_play_label(),
+    edit: m.dock_composer_edit_label(),
     done: m.dock_composer_done_label(),
     attachments: m.context_attachments_title_label(),
     retry: m.chat_shared_retry_label(),

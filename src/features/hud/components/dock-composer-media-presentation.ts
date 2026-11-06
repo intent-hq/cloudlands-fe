@@ -29,6 +29,8 @@ export interface DockComposerMediaLabels {
   markUp: string;
   remove: string;
   play: string;
+  /** The capture editor's open action on a recording tile (in its preview). */
+  edit: string;
   done: string;
   attachments: string;
   retry: string;
