@@ -529,6 +529,15 @@
   }
 </script>
 
+<svelte:window
+  onkeydowncapture={(event) => {
+    if (event.key === 'Escape' && (gesture || cropGesture)) {
+      event.preventDefault();
+      cancelPointer();
+    }
+  }}
+/>
+
 <div class="canvas-stage">
   <svg
     bind:this={surface}

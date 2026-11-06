@@ -16,7 +16,9 @@ import { DockMediaEditSchema, type DockMediaEdit } from '$shared/dock-media-edit
 
 export interface DockCaptureEditorBridge {
   /** Close the session `openId` names (never a newer one main retargeted to). */
-  close(openId: string): void;
+  close(openId: string): Promise<boolean>;
+  /** Finish this capture; older main builds still close safely by openId. */
+  attach(openId: string): Promise<boolean>;
   /** The answer to main's request `requestId` (`onConfirmDiscard`). */
   discard(openId: string, requestId: string): void;
   keep(openId: string, requestId: string): void;
@@ -49,7 +51,8 @@ export function connectDockCaptureEditor(
     onSnapshot(null);
     const none = () => {};
     return {
-      close: none,
+      close: async () => false,
+      attach: async () => false,
       discard: none,
       keep: none,
       save: async () => null,
@@ -64,6 +67,24 @@ export function connectDockCaptureEditor(
       .catch(() => false);
 
   let disposed = false;
+  const requestClose = async (payload: { openId: string; intent?: 'attach' }): Promise<boolean> => {
+    if (disposed) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        electronAPI()
+          .invoke(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, payload)
+          .then((result) => result === true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), 5000);
+        }),
+      ]);
+    } catch {
+      return false;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  };
   const confirm = (payload: unknown) => {
     const { openId, requestId } = (payload ?? {}) as { openId?: unknown; requestId?: unknown };
     if (!disposed && typeof openId === 'string' && typeof requestId === 'string')
@@ -98,7 +119,13 @@ export function connectDockCaptureEditor(
     document.addEventListener('DOMContentLoaded', changed, { once: true });
   else void load();
   return {
-    close: (openId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, { openId }),
+    close: (openId) => requestClose({ openId }),
+    attach: async (openId) => {
+      if (await requestClose({ openId, intent: 'attach' })) return true;
+      // An older main rejects the optional intent. Retry only the same session;
+      // its existing openId guard cannot close a newer attachment.
+      return !disposed && (await requestClose({ openId }));
+    },
     discard: (openId, requestId) =>
       send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId, requestId }),
     keep: (openId, requestId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId, requestId }),

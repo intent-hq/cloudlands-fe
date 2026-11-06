@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onDestroy } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
@@ -41,6 +41,7 @@
     onRestore,
     onWordEdit,
     onToggleMark,
+    onInteractionPending,
   }: {
     transcript: DockMediaTranscript | null;
     batches: readonly DockMediaBatch[];
@@ -59,6 +60,7 @@
     onWordEdit?: (wordId: string, text: string | null) => void;
     /** Shift-click a pill: include or exclude that mark. */
     onToggleMark?: (markId: string) => void;
+    onInteractionPending?: (pending: boolean) => void;
   } = $props();
 
   type Word = DockMediaTranscript['words'][number];
@@ -69,6 +71,8 @@
   }
 
   let editing = $state<{ id: string; value: string } | null>(null);
+  $effect(() => onInteractionPending?.(!!editing));
+  onDestroy(() => onInteractionPending?.(false));
   function commitEdit(word: Word): void {
     const current = editing;
     editing = null;
@@ -200,8 +204,13 @@
                   onblur={() => commitEdit(word)}
                   onkeydown={(event: KeyboardEvent) => {
                     event.stopPropagation();
-                    if (event.key === 'Enter') commitEdit(word);
-                    else if (event.key === 'Escape') editing = null;
+                    if (
+                      event.key === 'Enter' ||
+                      ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's')
+                    ) {
+                      event.preventDefault();
+                      commitEdit(word);
+                    } else if (event.key === 'Escape') editing = null;
                   }}
                 />{' '}
               {:else if piece.kind === 'word'}

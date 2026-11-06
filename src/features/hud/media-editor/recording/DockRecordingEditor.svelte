@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { createRecordingPlayback } from './recording-playback';
   import { m } from '$shared/paraglide/messages.js';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Button } from '$lib/components/ui/button';
   import type {
     DockCaptureEditorMark,
@@ -20,6 +21,7 @@
   import { frameToolKind, type FrameTool } from './recording-frame-model';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import {
+    DockMediaEditSchema,
     defaultDockMediaEdit,
     dockMediaBatchAt,
     canUseHighlights,
@@ -55,6 +57,7 @@
   let {
     snapshot,
     onClose,
+    onAttach,
     discardRequest = 0,
     onDirtyChange,
     onDiscardRequested,
@@ -63,6 +66,7 @@
   }: {
     snapshot: DockCaptureEditorSnapshot;
     onClose: () => void;
+    onAttach?: () => void | boolean | Promise<void | boolean>;
     /** Main's "edits would be lost" questions (window close, a switch); see the shell. */
     discardRequest?: number;
     onDirtyChange?: (dirty: boolean) => void;
@@ -109,36 +113,90 @@
   const timeEditable = !!source && (markRemovable(source) || !source.bakedMarks?.length);
   // Save: offered only when sending honors a saved edit of this source.
   const canSave = !!edits && !!onSave && snapshot.output?.ready === true;
+  // The route remounts by openId; late saves must not finish a newer session.
+  const openId = snapshot.openId;
+  const workspaceId = snapshot.workspaceId;
+  const agentId = snapshot.agentId;
+  const ownsSnapshot = () =>
+    snapshot.openId === openId &&
+    snapshot.workspaceId === workspaceId &&
+    snapshot.agentId === agentId;
+  let active = true;
+  onDestroy(() => {
+    active = false;
+  });
+  let finishing = $state(false);
+  let framePending = $state(false);
+  let transcriptPending = $state(false);
+  const interactionPending = $derived(framePending || transcriptPending);
   let saving = $state(false);
-  let saveProblem = $state<'conflict' | 'failed' | null>(null);
+  let saveProblem = $state<'conflict' | 'failed' | 'close' | null>(null);
   /** Highlights with every mark excluded sends no clips: warned once, before saving. */
   let confirmEmptyHighlights = $state(false);
   let warnedEmptyHighlights = false;
-  async function save(): Promise<void> {
-    if (!edits || !onSave || saving) return;
+  let attachAfterWarning = false;
+  async function finishAttachment(): Promise<void> {
+    if (!active || finishing || !ownsSnapshot()) return;
+    finishing = true;
+    onDirtyChange?.(false);
+    try {
+      const accepted = await (onAttach ?? onClose)();
+      if (!active || !ownsSnapshot()) return;
+      if (accepted === false) {
+        saveProblem = 'close';
+        finishing = false;
+      }
+    } catch {
+      if (active && ownsSnapshot()) {
+        saveProblem = 'close';
+        finishing = false;
+      }
+    }
+  }
+  function attach(): void {
+    if (!active || saving || finishing || interactionPending) return;
+    if (edits?.dirty) void save(true);
+    else void finishAttachment();
+  }
+  async function save(attachAfterSave = false): Promise<void> {
+    if (!edits || !onSave || !canSave || saving || finishing || interactionPending) return;
     if (
       edits.draft.video === 'highlights' &&
       !canUseHighlights(edits.draft) &&
       !warnedEmptyHighlights
     ) {
+      attachAfterWarning = attachAfterSave;
       warnedEmptyHighlights = true;
       confirmEmptyHighlights = true;
       return;
     }
     saving = true;
     saveProblem = null;
-    const outcome = await onSave(edits.draft);
-    saving = false;
-    if (outcome?.result === 'saved' && outcome.saved) {
-      // Saved: this is the new baseline, and the editor closes back to its pill.
-      edits.commit(outcome.saved);
-      onClose();
-      return;
+    const draft = edits.draft;
+    try {
+      const outcome = await onSave(draft);
+      if (!active || !ownsSnapshot() || edits.draft !== draft) return;
+      if (
+        outcome?.result === 'saved' &&
+        outcome.saved &&
+        DockMediaEditSchema.safeParse(outcome.saved).success &&
+        outcome.saved.sourceId === draft.sourceId &&
+        outcome.saved.sourceRevision === draft.sourceRevision
+      ) {
+        edits.commit(outcome.saved);
+        onDirtyChange?.(false);
+        if (attachAfterSave) await finishAttachment();
+        return;
+      }
+      saveProblem =
+        outcome?.result === 'revision-conflict' || outcome?.result === 'stale-source'
+          ? 'conflict'
+          : 'failed';
+    } catch {
+      if (active) saveProblem = 'failed';
+    } finally {
+      if (active) saving = false;
     }
-    saveProblem =
-      outcome?.result === 'revision-conflict' || outcome?.result === 'stale-source'
-        ? 'conflict'
-        : 'failed';
   }
 
   // Pins: the edit's marks when there is a canonical source, else the recording's own.
@@ -182,7 +240,7 @@
 
   // Main asks before closing or switching would lose these edits.
   $effect(() => {
-    onDirtyChange?.(edits?.dirty ?? false);
+    onDirtyChange?.(interactionPending || (edits?.dirty ?? false));
   });
 
   const playbackRanges = $derived(kept ?? [{ startMs: 0, endMs: durationMs }]);
@@ -376,6 +434,21 @@
   }
   function onKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
+    if (event.key === 'Escape' && framePending) return;
+    if (
+      event.key === 'Escape' &&
+      !isTextEntryTarget(event.target) &&
+      !(
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]')
+      ) &&
+      (frameTool || selectedMarkId)
+    ) {
+      event.preventDefault();
+      frameTool = null;
+      selectedMarkId = null;
+      return;
+    }
     const action = recordingKeyAction(event);
     if (!action) return;
     event.preventDefault();
@@ -387,14 +460,16 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydowncapture={onKeydown} />
 
 <DockCaptureEditorShell
   title={m.dock_captureEditor_recording_title({ duration: formatRecordingTime(durationMs) })}
   subtitle={snapshot.title}
-  dirty={edits?.dirty ?? false}
-  {saving}
-  onSave={canSave ? save : undefined}
+  dirty={interactionPending || (edits?.dirty ?? false)}
+  saving={saving || finishing}
+  saveBlocked={interactionPending}
+  onAttach={attach}
+  onSave={canSave ? () => void save() : undefined}
   onCancel={onClose}
   sidebar={sendOptions}
   actionsPlacement="sidebar"
@@ -405,7 +480,7 @@
   {onKeepEditing}
 >
   {#snippet main()}
-    <div class="stage">
+    <div class="stage" inert={saving}>
       <div class="frame">
         {#if failed}
           <p class="unavailable" role="status">{m.dock_captureEditor_unavailable_label()}</p>
@@ -431,6 +506,7 @@
             tool={frameTool}
             editable={frameKept}
             selectedId={selectedMarkId}
+            onInteractionPending={(pending) => (framePending = pending)}
             onBegin={pauseForFrame}
             onDraw={drawMark}
             onChange={changeMark}
@@ -495,9 +571,11 @@
       </CaptureEditorToolbar>
       {#if saveProblem}
         <p class="save-problem" role="alert" data-save-problem>
-          {saveProblem === 'conflict'
-            ? m.dock_captureEditor_saveConflict_label()
-            : m.dock_captureEditor_saveFailed_label()}
+          {saveProblem === 'close'
+            ? m.dock_captureEditor_attachError()
+            : saveProblem === 'conflict'
+              ? m.dock_captureEditor_saveConflict_label()
+              : m.dock_captureEditor_saveFailed_label()}
         </p>
       {/if}
       <DockRecordingTimeline
@@ -533,7 +611,7 @@
   cancelLabel={m.dock_captureEditor_keepEditing_label()}
   onConfirm={() => {
     confirmEmptyHighlights = false;
-    void save();
+    void save(attachAfterWarning);
   }}
 />
 
@@ -557,7 +635,7 @@
 
 {#snippet sendOptions()}
   {#if source && edits}
-    <div class="sidebar-content">
+    <div class="sidebar-content" inert={saving}>
       <DockRecordingSendOptions
         edit={edits.draft}
         {source}
@@ -573,6 +651,7 @@
         </div>
       {/if}
       <DockRecordingTranscript
+        onInteractionPending={(pending) => (transcriptPending = pending)}
         {transcript}
         batches={source.batches}
         marks={edits.draft.marks}
@@ -604,7 +683,7 @@
     </div>
   {:else}
     <!-- Playback only: the same sidebar, nothing to change; says why. -->
-    <div class="sidebar-content">
+    <div class="sidebar-content" inert={saving}>
       <DockRecordingSendOptions
         edit={null}
         source={null}
@@ -614,6 +693,7 @@
       />
       <p class="readonly-note" data-readonly-note>{m.dock_captureEditor_readonly_note()}</p>
       <DockRecordingTranscript
+        onInteractionPending={(pending) => (transcriptPending = pending)}
         transcript={null}
         batches={[]}
         marks={[]}

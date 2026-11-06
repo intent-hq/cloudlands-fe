@@ -441,6 +441,7 @@
   /** Esc with a tool chosen puts it down (before the shell's Esc closes the editor). */
   function onToolEscape(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
+    if (event.key === 'Escape' && gesturePending) return;
     const target = event.target as HTMLElement | null;
     if (
       target?.closest(
@@ -461,6 +462,10 @@
       event.preventDefault();
       event.stopImmediatePropagation();
       setTool('pointer');
+    } else if (event.key === 'Escape' && selectedIds.length) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      select(null);
     }
   }
   function draw(nextTool: ScreenshotTool, geometry: DockMarkGeometry, creationUnit = 1) {

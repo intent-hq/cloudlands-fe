@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import '$lib/styles/dock-tokens.css';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { FormDialog } from '$lib/components/patterns/confirm';
-  import { isMacPlatform } from '$lib/utils/shortcuts';
+  import { formatShortcut, isMacPlatform } from '$lib/utils/shortcuts';
   import { isTextEntryTarget } from '$lib/utils/text-entry';
 
   /**
@@ -12,9 +13,9 @@
    * area, and a fixed-width sidebar that stacks under the main area on narrow
    * windows. The kind's view fills `main` and `sidebar`.
    *
-   * Save changes stays muted until there is an unsaved change. Cancel throws edits
-   * away; Esc with unsaved changes asks once. Cmd+S saves; Cmd+Z / Shift+Cmd+Z undo
-   * and redo. A view without saving yet passes no `onSave`, and no Save is shown.
+   * Attach keeps the capture and closes; dirty edits are saved first by the view.
+   * Cmd+Enter attaches, Cmd+S saves edits without closing, and Escape asks before
+   * closing a dirty draft. Close always preserves the original attachment.
    */
   let {
     title,
@@ -24,6 +25,7 @@
     saveBlocked = false,
     onCancel,
     onSave,
+    onAttach,
     onUndo,
     onRedo,
     discardRequest = 0,
@@ -44,6 +46,7 @@
     saveBlocked?: boolean;
     onCancel: () => void;
     onSave?: () => void;
+    onAttach?: () => void;
     onUndo?: () => void;
     onRedo?: () => void;
     /**
@@ -91,11 +94,17 @@
     const request = discardRequest;
     if (request <= answered) return;
     answered = request;
+    // A durable write in flight cannot be discarded or retargeted midway.
+    if (saving) {
+      onKeepEditing?.();
+      return;
+    }
     fromMain = true;
     confirming = true;
   });
 
   function requestClose(): void {
+    if (saving) return;
     fromMain = false;
     if (dirty) confirming = true;
     else onCancel();
@@ -105,17 +114,42 @@
     fromMain = false;
   }
 
+  function onCloseShortcut(event: KeyboardEvent): void {
+    const mod = isMacPlatform() ? event.metaKey : event.ctrlKey;
+    if (!mod || event.key.toLowerCase() !== 'w') return;
+    // The native app accelerator targets the active pane, not this utility window.
+    // Own it even while a confirmation is open so it cannot reach another pane.
+    event.preventDefault();
+    if (
+      !confirming &&
+      !(
+        event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]')
+      )
+    )
+      requestClose();
+  }
+
   function onKeydown(event: KeyboardEvent): void {
-    if (event.defaultPrevented || confirming) return;
+    if (
+      event.defaultPrevented ||
+      confirming ||
+      (event.target instanceof Element &&
+        event.target.closest('[role="dialog"], [role="alertdialog"]'))
+    )
+      return;
     const mod = isMacPlatform() ? event.metaKey : event.ctrlKey;
     const key = event.key.toLowerCase();
     if (event.key === 'Escape') {
       event.preventDefault();
       requestClose();
+    } else if (mod && key === 'enter' && onAttach && !isTextEntryTarget(event.target)) {
+      event.preventDefault();
+      if (!saving && !saveBlocked && (!dirty || onSave)) onAttach();
     } else if (mod && key === 's' && onSave) {
       event.preventDefault();
       if (dirty && !saving && !saveBlocked) onSave();
-    } else if (mod && key === 'z' && !isTextEntryTarget(event.target)) {
+    } else if (mod && key === 'z' && !saving && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       if (event.shiftKey) onRedo?.();
       else onUndo?.();
@@ -123,21 +157,49 @@
   }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydowncapture={onCloseShortcut} onkeydown={onKeydown} />
 
 {#snippet actions()}
   <div class="actions">
     {#if !footerActions}{@render headerActions?.()}{/if}
-    <Button variant="ghost" size="default" onclick={requestClose}
-      >{m.dock_captureEditor_cancel_label()}</Button
+    <Button
+      variant="ghost"
+      size="default"
+      disabled={saving}
+      tooltip={m.dock_captureEditor_close_tooltip()}
+      tooltipShortcut="Esc"
+      tooltipContentClass="dock-chrome-tooltip"
+      onclick={requestClose}>{m.dock_captureEditor_close_label()}</Button
     >
-    {#if onSave}
+    {#if onAttach}
+      <Button
+        variant="primary"
+        size="default"
+        disabled={saving || saveBlocked || (dirty && !onSave)}
+        tooltip={m.dock_captureEditor_attach_tooltip()}
+        tooltipShortcut="mod+Enter"
+        tooltipContentClass="dock-chrome-tooltip"
+        loading={saving}
+        aria-label={m.dock_captureEditor_attach_label()}
+        data-attach
+        onclick={onAttach}
+      >
+        {m.dock_captureEditor_attach_label()}
+        <kbd class="attach-shortcut">{formatShortcut('mod+Enter')}</kbd>
+      </Button>
+    {:else if onSave}
       <Button
         variant={dirty ? 'primary' : 'secondary'}
         size="default"
         disabled={!dirty || saving || saveBlocked}
+        loading={saving}
         data-save
         onclick={() => onSave?.()}>{m.dock_captureEditor_save_label()}</Button
+      >
+    {/if}
+    {#if onAttach && onSave}
+      <span class="save-hint"
+        >{m.dock_captureEditor_saveHint({ shortcut: formatShortcut('mod+s') })}</span
       >
     {/if}
   </div>
@@ -254,10 +316,23 @@
     text-overflow: ellipsis;
   }
   .actions {
+    flex-wrap: wrap;
     display: flex;
     align-items: center;
     gap: 6px;
     -webkit-app-region: no-drag;
+  }
+  .attach-shortcut {
+    font: inherit;
+    font-size: 11px;
+    opacity: 0.7;
+    margin-inline-start: 4px;
+  }
+  .save-hint {
+    flex-basis: 100%;
+    text-align: end;
+    font-size: 11px;
+    color: hsl(var(--muted-foreground));
   }
   .drag-strip {
     height: 14px;

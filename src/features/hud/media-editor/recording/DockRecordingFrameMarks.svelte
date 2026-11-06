@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from 'svelte';
+  import { tick, onDestroy } from 'svelte';
   import { dockMediaMarkEditableAt } from '$shared/dock-media-animation';
   import { m } from '$shared/paraglide/messages.js';
   import { Input } from '$lib/components/ui/input';
@@ -50,6 +50,7 @@
     onChange,
     onSelect,
     onDelete,
+    onInteractionPending,
   }: {
     /** A clean source: its frames carry no marks of their own. */
     source: DockMediaSource;
@@ -65,6 +66,7 @@
     onChange?: (markId: string, geometry: DockMediaGeometry) => void;
     onSelect?: (markId: string | null) => void;
     onDelete?: (markId: string) => void;
+    onInteractionPending?: (pending: boolean) => void;
   } = $props();
 
   let width = $state(0);
@@ -90,6 +92,8 @@
       };
   let gesture = $state<Gesture | null>(null);
   let typing = $state<{ x: number; y: number; atMs: number; value: string } | null>(null);
+  $effect(() => onInteractionPending?.(!!(gesture || typing)));
+  onDestroy(() => onInteractionPending?.(false));
   let textEntry = $state<HTMLDivElement | null>(null);
   let surface = $state<SVGSVGElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -110,7 +114,9 @@
   // Exactly the marks the export paints at this time, numbered as it numbers them.
   const visible = $derived(
     numberDockMediaMarks(shownEdit, source).filter(
-      (row) => atMs >= row.mark.atMs && atMs < row.visibleUntilMs &&
+      (row) =>
+        atMs >= row.mark.atMs &&
+        atMs < row.visibleUntilMs &&
         dockMediaMarkEditableAt(source, row.mark, atMs),
     ),
   );
@@ -273,6 +279,15 @@
   }
 </script>
 
+<svelte:window
+  onkeydowncapture={(event) => {
+    if (event.key === 'Escape' && gesture) {
+      event.preventDefault();
+      gesture = null;
+    }
+  }}
+/>
+
 <div class="frame-marks" bind:clientWidth={width} bind:clientHeight={height}>
   {#if box}
     <canvas
@@ -356,8 +371,13 @@
           onblur={commitText}
           onkeydown={(event: KeyboardEvent) => {
             event.stopPropagation();
-            if (event.key === 'Enter') commitText();
-            else if (event.key === 'Escape') typing = null;
+            if (
+              event.key === 'Enter' ||
+              ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's')
+            ) {
+              event.preventDefault();
+              commitText();
+            } else if (event.key === 'Escape') typing = null;
           }}
         />
       </div>

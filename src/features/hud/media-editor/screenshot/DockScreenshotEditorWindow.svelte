@@ -43,6 +43,7 @@
   let {
     snapshot,
     onClose,
+    onAttach,
     discardRequest = 0,
     onDirtyChange,
     onDiscardRequested,
@@ -54,6 +55,7 @@
   }: {
     snapshot: DockCaptureEditorSnapshot;
     onClose: () => void;
+    onAttach?: () => void | boolean | Promise<void | boolean>;
     discardRequest?: number;
     onDirtyChange?: (dirty: boolean) => void;
     onDiscardRequested?: () => void;
@@ -95,9 +97,16 @@
   const initial = seed(snapshot);
   // svelte-ignore state_referenced_locally -- late callbacks may not close a new session.
   const openId = snapshot.openId;
+  const workspaceId = snapshot.workspaceId;
+  const agentId = snapshot.agentId;
+  const ownsSnapshot = () =>
+    snapshot.openId === openId &&
+    snapshot.workspaceId === workspaceId &&
+    snapshot.agentId === agentId;
   const edits = initial ? createEditTransaction(initial) : null;
   let active = true;
   let saving = $state(false);
+  let finishing = $state(false);
   let retaking = $state(false);
   let error = $state<string | null>(null);
   type NoteControl = {
@@ -137,7 +146,9 @@
       : null,
   );
   const dirty = $derived(
-    !!edits?.dirty || !!(noteSession && notePreview?.text !== noteSession.baseline),
+    interactionPending ||
+      !!edits?.dirty ||
+      !!(noteSession && notePreview?.text !== noteSession.baseline),
   );
   function ownsNote(session: NoteSession, bundle = edits?.draft): boolean {
     if (
@@ -305,6 +316,7 @@
     edits.apply(next);
   }
   function close(): void {
+    if (saving || finishing) return;
     void cancelNote();
     onClose();
   }
@@ -352,8 +364,40 @@
   const saveBlocked = $derived(interactionPending || (needsNewOutput && !outputAdmitted));
   const canSave = $derived(saveCapable && !saveBlocked);
 
-  async function save() {
-    if (!edits || !onSave || !canSave || saving || retaking || noteSession || interactionPending)
+  async function finishAttachment(): Promise<void> {
+    if (!active || finishing || !ownsSnapshot()) return;
+    finishing = true;
+    onDirtyChange?.(false);
+    try {
+      const accepted = await (onAttach ?? onClose)();
+      if (!active || !ownsSnapshot()) return;
+      if (accepted === false) {
+        error = m.dock_captureEditor_attachError();
+        finishing = false;
+      }
+    } catch {
+      if (active && ownsSnapshot()) {
+        error = m.dock_captureEditor_attachError();
+        finishing = false;
+      }
+    }
+  }
+  function attach(): void {
+    if (!active || saving || finishing || retaking || noteSession || saveBlocked) return;
+    if (dirty) void save(true);
+    else void finishAttachment();
+  }
+  async function save(attachAfterSave = false) {
+    if (
+      !edits ||
+      !onSave ||
+      !canSave ||
+      saving ||
+      finishing ||
+      retaking ||
+      noteSession ||
+      interactionPending
+    )
       return;
     const bundle = edits.draft;
     if (planDockMediaOutput(bundle.edit, bundle.source, null).errors.length) {
@@ -369,10 +413,12 @@
           ? { replacement: { candidateToken: bundle.candidateToken } }
           : {}),
       });
-      if (!active || snapshot.openId !== openId || edits.draft !== bundle) return;
+      if (!active || !ownsSnapshot() || edits.draft !== bundle) return;
       if (
         result.result !== 'saved' ||
         !result.saved ||
+        result.saved.sourceId !== bundle.source.id ||
+        result.saved.sourceRevision !== bundle.source.revision ||
         !DockMediaEditSchema.safeParse(result.saved).success ||
         planDockMediaOutput(result.saved, bundle.source, null).errors.length
       ) {
@@ -381,7 +427,7 @@
       }
       edits.commit({ ...bundle, edit: result.saved });
       onDirtyChange?.(false);
-      onClose();
+      if (attachAfterSave) await finishAttachment();
     } catch {
       if (active) error = m.dock_screenshotEditor_saveError();
     } finally {
@@ -396,9 +442,9 @@
     error = null;
     try {
       await stopping;
-      if (!active || snapshot.openId !== openId || edits.draft !== bundle) return;
+      if (!active || !ownsSnapshot() || edits.draft !== bundle) return;
       const candidate = await onRetake(bundle);
-      if (!active || snapshot.openId !== openId || edits.draft !== bundle || !candidate) return;
+      if (!active || !ownsSnapshot() || edits.draft !== bundle || !candidate) return;
       if (
         !DockMediaSourceSchema.safeParse(candidate.source).success ||
         typeof candidate.candidateToken !== 'string' ||
@@ -445,10 +491,11 @@
         title={m.dock_screenshotEditor_title()}
         subtitle={snapshot.title}
         {dirty}
-        saving={saving || !!noteSession}
+        saving={saving || finishing || !!noteSession}
         {saveBlocked}
         onCancel={close}
-        onSave={saveCapable ? save : undefined}
+        onSave={saveCapable ? () => void save() : undefined}
+        onAttach={attach}
         onUndo={undo}
         onRedo={redo}
         {discardRequest}
@@ -471,6 +518,8 @@
   </DockScreenshotEditor>
 {:else}
   <DockCaptureEditorShell
+    onAttach={attach}
+    saving={finishing}
     title={m.dock_screenshotEditor_title()}
     subtitle={snapshot.title}
     onCancel={onClose}
@@ -479,6 +528,7 @@
     {onKeepEditing}
   >
     {#snippet main()}
+      {#if error}<p class="status type-caption" role="alert">{error}</p>{/if}
       <p class="status type-caption">{m.dock_screenshotEditor_legacyReadonly()}</p>
       <img class="original" src={snapshot.mediaUrl} alt={snapshot.title} />
     {/snippet}
