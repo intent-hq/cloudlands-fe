@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.290.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.289.1...v2.290.0) (2026-11-06)
+
+
+### 🚀 Features
+
+* **providers:** add the Cursor provider ([#4207](https://github.com/intent-hq/cloudlands-fe/issues/4207)) ([c7c2b54](https://github.com/intent-hq/cloudlands-fe/commit/c7c2b548889c473d82ae2227f263e33f850463fa))
+
 ## [2.289.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.289.0...v2.289.1) (2026-11-06)
 
 
