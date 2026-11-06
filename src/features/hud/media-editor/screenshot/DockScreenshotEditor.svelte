@@ -398,7 +398,7 @@
       setTool('pointer');
     }
   }
-  function draw(nextTool: ScreenshotTool, geometry: DockMarkGeometry) {
+  function draw(nextTool: ScreenshotTool, geometry: DockMarkGeometry, creationUnit = 1) {
     if (blocked) return;
     const bounds = dockGeometryRect(geometry);
     if (!screenshotContains(frame, bounds)) return;
@@ -419,6 +419,13 @@
               ? 'arrow'
               : 'box';
     if ((kind === 'box' || kind === 'element') && (bounds.w < 2 || bounds.h < 2)) return;
+    // Size only newly created labels in screen pixels, then store source coordinates.
+    // Reopened labels keep their canonical saved font, width and padding.
+    const labelUnit = Number.isFinite(creationUnit) && creationUnit > 0 ? creationUnit : 1;
+    const labelWidth = canCreateV2 ? Math.min(4096, bounds.w) : bounds.w;
+    const labelPadding = canCreateV2
+      ? Math.min(1024, 8 * labelUnit, labelWidth / 8, bounds.h / 8)
+      : 0;
     const value: DockMediaGeometry =
       kind === 'text'
         ? {
@@ -429,16 +436,16 @@
             ...(canCreateV2
               ? {
                   style: 'sticky' as const,
-                  width: Math.min(4096, bounds.w),
-                  padding: Math.min(8, bounds.w / 8, bounds.h / 8),
+                  width: labelWidth,
+                  padding: labelPadding,
                 }
               : {}),
             fontSize: Math.max(
               0.1,
               Math.min(
-                24,
-                (bounds.h - 2 * Math.min(8, bounds.w / 8, bounds.h / 8)) / 1.4,
-                (bounds.w - 2 * Math.min(8, bounds.w / 8, bounds.h / 8)) /
+                24 * labelUnit,
+                (bounds.h - 2 * labelPadding) / 1.4,
+                (labelWidth - 2 * labelPadding) /
                   Math.max(1, m.dock_screenshotEditor_text().length * 0.65),
               ),
             ),

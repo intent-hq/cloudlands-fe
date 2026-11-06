@@ -73,7 +73,7 @@
     hidden?: boolean;
     onSelect: (id: string | null, event?: PointerEvent | MouseEvent | KeyboardEvent) => void;
     onSelectAll: () => void;
-    onDraw: (tool: ScreenshotTool, geometry: DockMarkGeometry) => void;
+    onDraw: (tool: ScreenshotTool, geometry: DockMarkGeometry, creationUnit?: number) => void;
     onTransform: (id: string, geometry: DockMarkGeometry) => void;
     onDelete: (id?: string) => void;
     onCropChange: (crop: DockImageRect) => void;
@@ -391,8 +391,8 @@
     }
     const b = g?.preview ? dockGeometryRect(g.preview) : null;
     if (g && !g.original && g.tool === 'text' && (!b || Math.min(b.w, b.h) < 2)) {
-      const w = Math.min(160, frame.w),
-        h = Math.min(40, frame.h);
+      const w = Math.min(160 * unit, frame.w, 4096),
+        h = Math.min(40 * unit, frame.h);
       if (w < 2 || h < 2) return;
       g.preview = {
         kind: 'rect',
@@ -406,7 +406,7 @@
     const bounds = dockGeometryRect(g.preview);
     if (!g.original && Math.max(bounds.w, bounds.h) < 2) return;
     if (g.id) onTransform(g.id, g.preview);
-    else onDraw(g.tool, g.preview);
+    else onDraw(g.tool, g.preview, unit);
   }
   function cancelPointer() {
     const crop = cropGesture;
