@@ -61,6 +61,26 @@ import { classifyTool } from '$lib/utils/tool-classifier';
 import { getLastMeaningfulLine } from '$lib/utils/text-utils';
 import { selectHardwareConsoleKeySlots } from '../hardware-console/hardware-console-selectors';
 
+import { ownedDockRecording } from '$features/hud/utils/dock-recording-indicator';
+import { getPrincipalActionContext } from '../principal/principal-context';
+
+/** A live native recording owned by this dock's selected draft and principal. */
+export const selectDockRecordingIndicator = store.createSelector((state) => {
+  const dock = state.dockConversation;
+  const pairId =
+    dock.workspaceId && dock.agentId ? JSON.stringify([dock.workspaceId, dock.agentId]) : null;
+  return ownedDockRecording(
+    {
+      workspaceId: dock.workspaceId,
+      agentId: dock.agentId,
+      authority: dock.authority,
+      nativePairId: dock.nativeSpeech.pairId,
+      evidence: pairId ? getItem(dock.evidence, pairId) : null,
+    },
+    getPrincipalActionContext(state),
+  );
+});
+
 export const selectHudActive = store.createSelector((state) => state.hud.active);
 
 export const selectHudFeed = store.createSelector((state) => state.hud.feed);

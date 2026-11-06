@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { DockRecordingIndicator } from '$features/hud/utils/dock-recording-indicator';
   import AdaptiveDockShell from './AdaptiveDockShell.svelte';
   import type { DockMachineOption } from './dock-machine-types';
   import type {
@@ -54,6 +55,9 @@
   import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
 
   interface Props {
+    recording?: DockRecordingIndicator | null;
+    recordingStopping?: boolean;
+    onStopRecording?: () => void;
     conversation?: Snippet;
     conversationWorkspaceId?: string | null;
     onOpenConversation?: (workspaceId: string) => void;
@@ -82,6 +86,9 @@
 
   let {
     workspaces,
+    recording = null,
+    recordingStopping = false,
+    onStopRecording,
     machines,
     machineId,
     machineSwitching,
@@ -609,6 +616,9 @@
 
 {#if placement && onPlacementCommand}
   <AdaptiveDockShell
+    {recording}
+    {recordingStopping}
+    {onStopRecording}
     {machines}
     {machineId}
     {machineSwitching}

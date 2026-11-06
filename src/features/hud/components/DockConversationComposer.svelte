@@ -273,7 +273,15 @@
   }
 
   function submit(text: string, forceSubmit = false): void {
-    if (disposed || preparingSubmission || (media && composing)) return;
+    if (
+      disposed ||
+      disabled ||
+      inputLocked ||
+      pending ||
+      preparingSubmission ||
+      (media && composing)
+    )
+      return;
     const beforeSubmit = media?.beforeSubmit;
     if (!beforeSubmit) {
       commitSubmission(text, forceSubmit);
@@ -397,7 +405,7 @@
     {screenInterim}
     screenSpeechActive={!!media?.state.dictating}
     pendingContent={!!media?.state.dictating || (screenInterim?.length ?? 0) > 0}
-    submitPending={preparingSubmission}
+    submitPending={preparingSubmission || pending}
     {fileAttachmentPolicy}
     deferScreenEvidenceFlush={!!media?.beforeSubmit}
     onScreenInsertionApplied={(id, committedText) => {
@@ -460,6 +468,16 @@
     onHistoryPrev={() => (disposed ? null : (onHistoryPrev?.() ?? null))}
     onHistoryNext={() => (disposed ? null : (onHistoryNext?.() ?? null))}
   />
+  {#if preparingSubmission || pending}
+    <div
+      class={`${COMPOSER_INSET_CLASS} type-caption text-muted-foreground py-1`}
+      role="status"
+      aria-live="polite"
+      data-testid="dock-send-progress"
+    >
+      {m.dock_conversation_pending_label()}
+    </div>
+  {/if}
 </div>
 
 {#snippet mediaActions()}

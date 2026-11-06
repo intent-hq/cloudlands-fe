@@ -20,11 +20,13 @@
   import {
     openDockConversationRequested,
     closeDockConversationRequested,
+    dockEvidenceRecordToggleRequested,
     dockShortcutChanged,
   } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
   import {
     selectDockWorkspaces,
+    selectDockRecordingIndicator,
     selectDockMachineSwitch,
     selectDockPlacement,
     selectDockFocusRequest,
@@ -60,6 +62,28 @@
     })),
   );
   const dockWorkspaces$ = selectDockWorkspaces();
+  const recording$ = selectDockRecordingIndicator();
+  let stoppingClipId = $state<string | null>(null);
+  $effect(() => {
+    if ($recording$?.clipId !== stoppingClipId) stoppingClipId = null;
+  });
+  function stopRecording() {
+    const shown = $recording$,
+      current = selectDockRecordingIndicator.select(appStore.state);
+    if (
+      !shown ||
+      !current ||
+      stoppingClipId ||
+      shown.clipId !== current.clipId ||
+      shown.workspaceId !== current.workspaceId ||
+      shown.agentId !== current.agentId
+    )
+      return;
+    stoppingClipId = current.clipId;
+    appStore.dispatch(
+      dockEvidenceRecordToggleRequested(current.workspaceId, current.agentId, current.clipId),
+    );
+  }
   const placement$ = selectDockPlacement();
   const focusRequest$ = selectDockFocusRequest();
   const closeRequest$ = selectDockCloseRequest();
@@ -121,6 +145,9 @@
 <Screen class="fixed inset-0 overflow-clip bg-transparent" data-testid="dock-route">
   {#if $placement$}
     <DockRail
+      recording={$recording$}
+      recordingStopping={stoppingClipId !== null}
+      onStopRecording={stopRecording}
       workspaces={$dockWorkspaces$}
       {machines}
       machineId={$currentConnectionId$}

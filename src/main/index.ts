@@ -341,6 +341,7 @@ import {
   getDockWindow,
   isDockFocusOwnDoing,
   isDockWindow,
+  setDockHideHandler,
 } from './dock-window';
 import { createDockMenuController } from './dock-menu-controller';
 import { registerDockActivateAppHandler } from './dock-placement-ipc';
@@ -1044,6 +1045,15 @@ const bootFlow = app.whenReady().then(async () => {
       syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
       app.emit('dock-window-state-changed');
     },
+  });
+  // The dock's own Hide is a user hide: remember it like the menu toggle. A failed
+  // preference write still closes the dock it was asked for, never a replacement.
+  setDockHideHandler(() => {
+    const window = getDockWindow();
+    void dockMenuController.setEnabled(false).catch((error: unknown) => {
+      logger.warn('Failed to remember dock hide', { error });
+      if (window && getDockWindow() === window) closeDockWindow();
+    });
   });
 
   // Function to rebuild and set the application menu. Callers fire-and-forget

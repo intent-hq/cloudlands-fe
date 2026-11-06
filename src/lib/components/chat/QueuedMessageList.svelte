@@ -6,7 +6,7 @@
     type PendingQueueDisplayRow,
   } from '$store/renderer/slices/pending-submissions/pending-submissions-projection';
   import { queuePresentationMessages, queuePresentationLabel } from './queued-message-presentation';
-  import { queuedCapturePresentation } from './queued-capture-presentation';
+  import { queuedCapturePresentation, queuedCaptureGroup } from './queued-capture-presentation';
   import { USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     findQueuedMessageForEdit,
@@ -1224,7 +1224,7 @@
                       {/if}
                       <div class="queued-message-body min-w-0 flex-1">
                         {#each message.deliveryGroups?.length ? message.deliveryGroups : [message] as group, index (index)}
-                          {@const captureDisplay = queuedCapturePresentation({ ...group, content: presentedQueuedText(message, group.content) })}
+                          {@const captureDisplay = queuedCapturePresentation({ ...queuedCaptureGroup(message, group), content: presentedQueuedText(message, group.content) })}
                           {@const groupText = captureDisplay.text}
                           <div
                             class={message.deliveryGroups?.length

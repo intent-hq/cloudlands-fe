@@ -8447,5 +8447,6 @@
   "settings_dockLab_moveHint": "Faites glisser le Dock par son logo ou son en-tête pour le déplacer sur votre écran.",
   "dock_logo_open_label": "Ouvrir Intent",
   "dock_logo_menu_hint": "Ouvrir Intent · Clic droit ou ↓ pour changer de machine · Glisser pour déplacer",
-  "dock_logo_move_hint": "Ouvrir Intent · Glisser pour déplacer"
+  "dock_logo_move_hint": "Ouvrir Intent · Glisser pour déplacer",
+  "dock_recordingIndicator_open": "{status} · {elapsed} — Afficher les commandes d’enregistrement"
 }

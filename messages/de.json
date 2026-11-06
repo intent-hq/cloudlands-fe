@@ -8447,5 +8447,6 @@
   "settings_dockLab_moveHint": "Ziehe das Dock am Logo oder an der Kopfzeile an eine andere Position auf dem Bildschirm.",
   "dock_logo_open_label": "Intent öffnen",
   "dock_logo_menu_hint": "Intent öffnen · Rechtsklick oder ↓ zum Rechnerwechsel · Zum Verschieben ziehen",
-  "dock_logo_move_hint": "Intent öffnen · Zum Verschieben ziehen"
+  "dock_logo_move_hint": "Intent öffnen · Zum Verschieben ziehen",
+  "dock_recordingIndicator_open": "{status} · {elapsed} — Aufnahmesteuerung anzeigen"
 }

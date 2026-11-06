@@ -8447,5 +8447,6 @@
   "settings_dockLab_moveHint": "拖曳 Dock 的標誌或標題列，即可移至螢幕上的其他位置。",
   "dock_logo_open_label": "開啟 Intent",
   "dock_logo_menu_hint": "開啟 Intent · 按右鍵或 ↓ 切換裝置 · 拖曳以移動",
-  "dock_logo_move_hint": "開啟 Intent · 拖曳以移動"
+  "dock_logo_move_hint": "開啟 Intent · 拖曳以移動",
+  "dock_recordingIndicator_open": "{status} · {elapsed} — 顯示錄製控制項"
 }

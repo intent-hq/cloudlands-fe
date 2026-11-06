@@ -199,6 +199,84 @@ const finishHandoff = async () => {
   await flush();
 };
 
+describe('region selection preserves only current dock click regions', () => {
+  const region = { x: 0, y: 0, width: 80, height: 40 };
+  const publish = (regions = [region], active = true) =>
+    dock.setDockPointerRegions(window, {
+      active,
+      regions,
+      revision: fixture.placementRevision,
+    });
+
+  it('restores unchanged geometry after the selection hide clears it', () => {
+    publish();
+    expect(dock.getDockVisibleSurfaceBounds(window)).toEqual(region);
+
+    dock.setDockHiddenForSelection(true, { window });
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toEqual(region);
+    expect(window.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
+  });
+
+  it('does not resurrect regions after a newer inactive publication', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    publish([], false);
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('keeps newer active geometry instead of the pre-selection regions', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    const newer = { x: 0, y: 0, width: 120, height: 40 };
+    publish([newer]);
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toEqual(newer);
+  });
+
+  it('leaves a declined reveal hidden with no restored click regions', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    vi.mocked(window.showInactive).mockClear();
+    dock.setDockHiddenForSelection(false, { window, restore: false });
+
+    expect(window.showInactive).not.toHaveBeenCalled();
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('does not restore a previous placement revision', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    fixture.placementRevision += 1;
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('does not restore a previous document after navigation', () => {
+    publish();
+    dock.setDockHiddenForSelection(true, { window });
+    window.webContents.emit('did-start-navigation', {}, 'app://replacement/dock', false, true);
+    dock.markDockRendererReady(window);
+    dock.setDockHiddenForSelection(false, { window });
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+
+  it('still clears regions for an ordinary hide', () => {
+    publish();
+    window.hide();
+    window.showInactive();
+
+    expect(dock.getDockVisibleSurfaceBounds(window)).toBeNull();
+  });
+});
+
 describe('owned dock capture visibility release', () => {
   it('releases a stale document barrier without showing it and keeps legacy restoration', () => {
     dock.setDockHiddenForCapture(true, { window });

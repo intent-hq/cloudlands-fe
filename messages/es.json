@@ -8447,5 +8447,6 @@
   "settings_dockLab_moveHint": "Arrastra el Dock por su logotipo o encabezado para moverlo a otra posición de la pantalla.",
   "dock_logo_open_label": "Abrir Intent",
   "dock_logo_menu_hint": "Abrir Intent · Clic derecho o ↓ para cambiar de equipo · Arrastra para mover",
-  "dock_logo_move_hint": "Abrir Intent · Arrastra para mover"
+  "dock_logo_move_hint": "Abrir Intent · Arrastra para mover",
+  "dock_recordingIndicator_open": "{status} · {elapsed} — Mostrar controles de grabación"
 }
