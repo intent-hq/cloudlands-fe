@@ -145,6 +145,7 @@ export function createDockComposerController(
   let disposed = false;
   let ticker: ReturnType<typeof setInterval> | undefined;
   const previewKeys = new Map<string, string>();
+  let previewGeneration = 0;
 
   const evidence = (): EvidenceView =>
     selectDockComposerEvidence.select(appStore.state, workspaceId, agentId);
@@ -295,8 +296,25 @@ export function createDockComposerController(
   // -------------------------------------------------------------------------
 
   async function refreshPreviews(view: EvidenceView, items: readonly ContextItem[]): Promise<void> {
-    const wanted = new Set<string>();
+    const generation = ++previewGeneration;
+    const wanted = new Set(view.tiles.map((tile) => tile.image.id));
+    // Removed images go first, synchronously: their keys are cleared even while a render
+    // is in flight (so it is dropped on return), and a later, newer refresh's previews
+    // are never swept by this one's stale view.
+    for (const id of [...previewKeys.keys()]) if (!wanted.has(id)) previewKeys.delete(id);
+    const stale = Object.entries(get(local).previews).filter(([id]) => !wanted.has(id));
+    if (stale.length) {
+      local.update((state) => {
+        const previews = { ...state.previews };
+        for (const [id] of stale) delete previews[id];
+        return { ...state, previews };
+      });
+      for (const [, url] of stale) deps.revokeUrl(url);
+    }
     for (const tile of view.tiles) {
+      // A newer refresh owns every tile from here; renders already started still land
+      // when their key is unchanged.
+      if (generation !== previewGeneration) return;
       // A saved edit shows as saved (from its own source and revision); otherwise the
       // capture with its live marks.
       const media = tile.image.media;
@@ -304,7 +322,6 @@ export function createDockComposerController(
       const key = saved
         ? JSON.stringify(['saved', saved.source.id, saved.source.revision, saved.source.path, saved.saved])
         : JSON.stringify(tile.marks.map(({ n, mark }) => [n, mark.id, mark.geometry]));
-      wanted.add(tile.image.id);
       const shownKey = previewKeys.get(tile.image.id);
       if (shownKey === key) continue;
       const item = items.find((row) => row.id === tile.image.contextItemId);
@@ -333,8 +350,9 @@ export function createDockComposerController(
         // A live-marks render retries on the next update. A saved render that failed is
         // not retried until its edit or source changes; it keeps an earlier saved
         // thumbnail, but never falls back to the unedited capture (its blur would be lost).
-        if (!saved) previewKeys.delete(tile.image.id);
-        else if (!shownKey?.startsWith('["saved"') && previewKeys.get(tile.image.id) === key) {
+        if (!saved) {
+          if (previewKeys.get(tile.image.id) === key) previewKeys.delete(tile.image.id);
+        } else if (!shownKey?.startsWith('["saved"') && previewKeys.get(tile.image.id) === key) {
           const previous = get(local).previews[tile.image.id];
           if (previous) {
             local.update((state) => {
@@ -345,18 +363,6 @@ export function createDockComposerController(
             deps.revokeUrl(previous);
           }
         }
-      }
-    }
-    const stale = Object.entries(get(local).previews).filter(([id]) => !wanted.has(id));
-    if (stale.length) {
-      local.update((state) => {
-        const previews = { ...state.previews };
-        for (const [id] of stale) delete previews[id];
-        return { ...state, previews };
-      });
-      for (const [id, url] of stale) {
-        previewKeys.delete(id);
-        deps.revokeUrl(url);
       }
     }
   }
