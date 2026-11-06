@@ -81,6 +81,15 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
   if (!enabled || !window) return;
   const binding = getStrictBackendBindingForWebContents(window.webContents);
   if (!binding) return;
+  // Pressed again while the dock has the keyboard, the open shortcut closes it: the dock
+  // gets the same Escape a person would press (close the conversation, or collapse).
+  // Record, annotate and dictate already toggle in the dock (stop and keep, end, stop).
+  if (action === 'focus' && window.isFocused() && !window.webContents.isDestroyed()) {
+    generation++;
+    for (const type of ['keyDown', 'keyUp'] as const)
+      window.webContents.sendInputEvent({ type, keyCode: 'Escape' });
+    return;
+  }
   const request = ++generation;
   const observed = await readDockForegroundObservation(binding.backendId, true);
   if (
