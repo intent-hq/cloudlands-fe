@@ -98,10 +98,10 @@
           class="absolute inset-0 flex items-center justify-center bg-muted text-muted-foreground"
           aria-hidden="true"
         >
-          <svg viewBox="0 0 24 24" class="size-10" fill="none">
-            <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" />
-            <path d="m10 9 5 3-5 3V9Z" fill="currentColor" />
-          </svg>
+          {#if !fluid}<svg viewBox="0 0 24 24" class="size-10" fill="none">
+              <rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" />
+              <path d="m10 9 5 3-5 3V9Z" fill="currentColor" />
+            </svg>{/if}
         </div>
         <video
           src={videoUrl}

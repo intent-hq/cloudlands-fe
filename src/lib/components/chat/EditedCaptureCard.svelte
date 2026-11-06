@@ -89,6 +89,9 @@
         fluid
         source={{ kind: 'workspace', url: videoUrl, mimeType: videoMimeType }}
         name={title}
+        poster={capture.frames?.[0]
+          ? (images[capture.frames[0].attachment_id] ?? undefined)
+          : undefined}
         allowFileMedia={!readOnly}
         canOpenFile={() => !readOnly}
       />
