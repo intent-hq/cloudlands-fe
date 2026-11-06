@@ -9,10 +9,7 @@
     DockMediaRange,
     DockMediaTranscript,
   } from '$shared/dock-media-edit';
-  import DockComposerIcon, {
-    type DockComposerGlyph,
-  } from '../../components/DockComposerIcon.svelte';
-  import { formatRecordingTime } from './recording-editor-model';
+  import { formatInteger } from '$lib/i18n/format';
   import { currentWordId, layoutTranscript } from './recording-transcript-model';
 
   /**
@@ -40,7 +37,8 @@
     onCut,
     onRestore,
     onWordEdit,
-    onToggleMark,
+    onDeleteMark,
+    markNumbers = {},
     onInteractionPending,
   }: {
     transcript: DockMediaTranscript | null;
@@ -58,8 +56,8 @@
     onRestore?: (range: DockMediaRange) => void;
     /** `text` null drops the correction (back to what was recognized). */
     onWordEdit?: (wordId: string, text: string | null) => void;
-    /** Shift-click a pill: include or exclude that mark. */
-    onToggleMark?: (markId: string) => void;
+    onDeleteMark?: (markId: string) => void;
+    markNumbers?: Readonly<Record<string, number>>;
     onInteractionPending?: (pending: boolean) => void;
   } = $props();
 
@@ -107,14 +105,6 @@
   const ready = $derived(transcript?.status === 'ready' ? transcript : null);
   const layout = $derived(ready ? layoutTranscript(ready.words, batches, marks) : []);
   const current = $derived(ready ? currentWordId(ready.words, currentMs) : null);
-  const glyphs: Record<DockMediaEditMark['kind'], DockComposerGlyph> = {
-    click: 'click',
-    element: 'click',
-    box: 'box',
-    draw: 'pen',
-    arrow: 'arrow',
-    text: 'pencil',
-  };
 
   let list = $state<HTMLElement | null>(null);
   // Keep the current word in view as it plays.
@@ -182,15 +172,6 @@
     <div class="batches" bind:this={list} onclick={onWordClick} ondblclick={onWordDoubleClick}>
       {#each layout as batch (batch.id)}
         <div class="batch" data-batch={batch.n}>
-          <h3 class="batch-header">
-            {m.dock_captureEditor_batch_label({
-              n: batch.n,
-              time: formatRecordingTime(batch.atMs),
-            })}
-            · {batch.markCount === 1
-              ? m.dock_captureEditor_markCount_one()
-              : m.dock_captureEditor_markCount_other({ count: batch.markCount })}
-          </h3>
           <p class="text">
             {#each batch.pieces as piece, index (piece.kind === 'word' ? piece.word.id : `m:${piece.mark.id}:${index}`)}
               {#if piece.kind === 'word' && editing?.id === piece.word.id}
@@ -232,23 +213,20 @@
               {:else}
                 <Button
                   variant="plain"
-                  size="sm"
+                  size="compact"
                   class="mark-pill"
                   data-mark-pill={piece.mark.id}
                   data-active={piece.mark.id === activeMarkId || undefined}
-                  data-excluded={!piece.mark.included || undefined}
-                  aria-label={m.dock_captureEditor_pin_ariaLabel({
-                    mark: piece.mark.label || piece.mark.kind,
-                    time: formatRecordingTime(piece.mark.atMs),
-                  })}
-                  tooltip={onToggleMark ? m.dock_captureEditor_toggleMark_tooltip() : undefined}
-                  onclick={(event: MouseEvent) => {
-                    if (event.shiftKey && onToggleMark) onToggleMark(piece.mark.id);
-                    else onMark(piece.mark);
+                  aria-label={formatInteger(markNumbers[piece.mark.id])}
+                  onclick={() => onMark(piece.mark)}
+                  onkeydown={(event: KeyboardEvent) => {
+                    if (!onDeleteMark || (event.key !== 'Delete' && event.key !== 'Backspace'))
+                      return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onDeleteMark(piece.mark.id);
                   }}
-                >
-                  <DockComposerIcon glyph={glyphs[piece.mark.kind]} size={11} />
-                  <span>{piece.mark.label || piece.mark.kind}</span>
+                  >{formatInteger(markNumbers[piece.mark.id])}
                 </Button>{' '}
               {/if}
             {/each}
@@ -277,12 +255,6 @@
   }
   .batch + .batch {
     margin-top: 12px;
-  }
-  .batch-header {
-    margin: 0 0 4px;
-    font-size: 11px;
-    font-weight: 500;
-    color: hsl(var(--muted-foreground));
   }
   .text {
     margin: 0;

@@ -4,9 +4,7 @@
   import { Button } from '$lib/components/ui/button';
   import type { DockCaptureEditorMark } from '$shared/dock-capture-editor';
   import { subtractDockMediaRanges, type DockMediaRange } from '$shared/dock-media-edit';
-  import DockComposerIcon, {
-    type DockComposerGlyph,
-  } from '../../components/DockComposerIcon.svelte';
+  import { formatInteger } from '$lib/i18n/format';
   import {
     clampTrim,
     formatRecordingTime,
@@ -43,18 +41,17 @@
     cuts = [],
     onCut,
     onRestore,
-    onToggleMark,
+    onDeleteMark,
     waveform = null,
   }: {
     durationMs: number;
     currentMs: number;
     /** Pins; an excluded mark shows hollow. */
-    marks: readonly (DockCaptureEditorMark & { excluded?: boolean })[];
+    marks: readonly (DockCaptureEditorMark & { n?: number })[];
     activeMarkId?: string | null;
     onSeek: (ms: number) => void;
     onMark: (mark: DockCaptureEditorMark) => void;
-    /** Shift-click a pin: include or exclude that mark. */
-    onToggleMark?: (markId: string) => void;
+    onDeleteMark?: (markId: string) => void;
     /** Decoded audio peaks (0–1) every `intervalMs` from the start of the source. */
     waveform?: { peaks: readonly number[]; intervalMs: number; durationMs: number } | null;
     /** The trimmed range; null without trimming. */
@@ -134,18 +131,6 @@
   let previewTrim = $state<DockMediaRange | null>(null);
   const shownTrim = $derived(previewTrim ?? trim);
 
-  const glyphs: Record<DockCaptureEditorMark['tool'], DockComposerGlyph> = {
-    pick: 'click',
-    box: 'box',
-    pen: 'pen',
-    arrow: 'arrow',
-  };
-  const toolLabels: Record<DockCaptureEditorMark['tool'], () => string> = {
-    pick: () => m.dock_recordingToolbar_element_label(),
-    box: () => m.dock_recordingToolbar_rectangle_label(),
-    pen: () => m.dock_recordingToolbar_draw_label(),
-    arrow: () => m.dock_recordingToolbar_arrow_label(),
-  };
   // The waveform as one SVG path: a vertical bar per peak, centred.
   const wave = $derived.by(() => {
     if (!waveform || !waveform.peaks.length || durationMs <= 0) return null;
@@ -163,7 +148,7 @@
   });
   const pinned = $derived(
     marks.filter(
-      (mark): mark is DockCaptureEditorMark & { atMs: number } =>
+      (mark): mark is DockCaptureEditorMark & { atMs: number; n?: number } =>
         mark.atMs !== null &&
         axisRanges.some((range) => mark.atMs! >= range.startMs && mark.atMs! < range.endMs),
     ),
@@ -248,6 +233,15 @@
     if (commit && preview && onTrim) onTrim(preview);
   }
   function onKeydown(event: KeyboardEvent): void {
+    const pin =
+      event.target instanceof Element ? event.target.closest<HTMLElement>('[data-pin]') : null;
+    if (pin?.dataset.pin && onDeleteMark && (event.key === 'Delete' || event.key === 'Backspace')) {
+      event.preventDefault();
+      event.stopPropagation();
+      onDeleteMark(pin.dataset.pin);
+      track?.focus({ preventScroll: true });
+      return;
+    }
     if (selection && onCut && (event.key === 'Delete' || event.key === 'Backspace')) {
       event.preventDefault();
       const range = selection;
@@ -373,18 +367,9 @@
         data-pin={mark.id}
         data-active={mark.id === activeMarkId || undefined}
         style={`left: ${percent(mark.atMs)}%`}
-        aria-label={m.dock_captureEditor_pin_ariaLabel({
-          mark: mark.label || toolLabels[mark.tool](),
-          time: formatRecordingTime(mark.atMs),
-        })}
-        data-excluded={mark.excluded || undefined}
-        tooltip={onToggleMark ? m.dock_captureEditor_toggleMark_tooltip() : undefined}
-        onclick={(event: MouseEvent) => {
-          if (event.shiftKey && onToggleMark) onToggleMark(mark.id);
-          else onMark(mark);
-        }}
-      >
-        <DockComposerIcon glyph={glyphs[mark.tool]} size={11} />
+        aria-label={formatInteger(mark.n ?? 0)}
+        onclick={() => onMark(mark)}
+        >{formatInteger(mark.n ?? 0)}
       </Button>
     {/each}
     <div class="playhead" style:left={`${timelinePercent(axisCurrentMs, axisDurationMs)}%`}></div>

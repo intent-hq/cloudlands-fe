@@ -23,6 +23,7 @@
   import {
     DockMediaEditSchema,
     defaultDockMediaEdit,
+    numberDockMediaMarks,
     dockMediaBatchAt,
     canUseHighlights,
     markRemovable,
@@ -208,16 +209,19 @@
     arrow: 'arrow',
     text: 'pen',
   } as const;
-  const pins = $derived<(DockCaptureEditorMark & { excluded?: boolean })[]>(
-    edits
-      ? edits.draft.marks.map((mark) => ({
+  const numberedMarks = $derived(source && edits ? numberDockMediaMarks(edits.draft, source) : []);
+  const markNumbers = $derived(
+    Object.fromEntries(numberedMarks.map(({ n, mark }) => [mark.id, n])),
+  );
+  const pins = $derived<(DockCaptureEditorMark & { n: number })[]>(
+    source && edits
+      ? numberedMarks.map(({ n, mark }) => ({
           id: mark.id,
+          n,
           tool: toolOf[mark.kind],
           atMs: mark.atMs,
-          excluded: !mark.included,
-          ...(mark.label ? { label: mark.label } : {}),
         }))
-      : snapshot.marks,
+      : snapshot.marks.map((mark, index) => ({ ...mark, n: index + 1 })),
   );
 
   const kept = $derived(
@@ -236,7 +240,6 @@
   const durationMs = $derived(
     snapshot.source?.durationMs ?? (mediaDurationMs || snapshot.durationMs || 0),
   );
-  const activeMark = $derived(pins.find((mark) => mark.id === activeMarkId) ?? null);
 
   // Main asks before closing or switching would lose these edits.
   $effect(() => {
@@ -345,6 +348,7 @@
       marks: draft.marks.filter((mark) => mark.id !== markId),
     }));
     if (selectedMarkId === markId) selectedMarkId = null;
+    if (activeMarkId === markId) activeMarkId = null;
   }
   const frameTools: {
     tool: FrameTool | null;
@@ -391,16 +395,6 @@
     edits?.apply((draft) => ({
       ...draft,
       cuts: mergeDockMediaRanges([...draft.cuts, ...shown.ranges]),
-    }));
-  }
-
-  /** Include or exclude a mark (Shift-click): one edit. */
-  function toggleMark(markId: string): void {
-    edits?.apply((draft) => ({
-      ...draft,
-      marks: draft.marks.map((mark) =>
-        mark.id === markId ? { ...mark, included: !mark.included } : mark,
-      ),
     }));
   }
 
@@ -524,12 +518,6 @@
             onDelete={deleteMark}
           />
         {/if}
-        {#if activeMark && activeMark.atMs !== null}
-          <span class="mark-label" data-mark-label
-            >{formatRecordingTime(activeMark.atMs)} · {activeMark.label ||
-              m.dock_captureEditor_mark_label()}</span
-          >
-        {/if}
       </div>
       <!-- One row under the video, on the left: the drawing tools (when marks can be
            drawn), then play and the time. The timeline is below. -->
@@ -606,7 +594,7 @@
           seek(ms);
         }}
         onMark={jumpTo}
-        onToggleMark={marksEditable ? toggleMark : undefined}
+        onDeleteMark={marksEditable ? deleteMark : undefined}
         waveform={snapshot.waveform ?? null}
       />
     </div>
@@ -664,7 +652,8 @@
         onInteractionPending={(pending) => (transcriptPending = pending)}
         {transcript}
         batches={source.batches}
-        marks={edits.draft.marks}
+        marks={numberedMarks.map(({ mark }) => mark)}
+        {markNumbers}
         {currentMs}
         {activeMarkId}
         dimmed={edits.draft.voice !== 'transcript'}
@@ -690,7 +679,7 @@
             else wordEdits[wordId] = text.slice(0, 20_000);
             return { ...draft, wordEdits };
           })}
-        onToggleMark={marksEditable ? toggleMark : undefined}
+        onDeleteMark={marksEditable ? deleteMark : undefined}
       />
     </div>
   {:else}
@@ -767,15 +756,6 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
-  }
-  .mark-label {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    background: hsl(var(--background) / 0.85);
-    font-size: 11px;
   }
   .unavailable {
     margin: 0;
