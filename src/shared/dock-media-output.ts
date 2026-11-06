@@ -34,3 +34,13 @@ export const DockMediaWaveformSchema = z.object({
 export type DockMediaWaveform = z.infer<typeof DockMediaWaveformSchema>;
 export const DockMediaAnalyzeRequestSchema = z.object({ jobId: z.string().uuid(), media: DockSavedMediaSchema }).strict();
 export type DockMediaAnalyzeRequest = z.infer<typeof DockMediaAnalyzeRequestSchema>;
+
+/** Container/track metadata only; no PCM decode, Speech or permission request. */
+export const DockMediaAudioProbeRequestSchema = DockMediaAnalyzeRequestSchema;
+export type DockMediaAudioProbeRequest = z.infer<typeof DockMediaAudioProbeRequestSchema>;
+export const DockMediaAudioProbeSchema = z.object({
+  sourceId: z.string().min(1), sourceRevision: z.number().int().nonnegative(),
+  trackCount: z.number().int().nonnegative().max(128),
+  populatedTrackCount: z.number().int().nonnegative().max(128),
+}).strict().refine((value) => value.populatedTrackCount <= value.trackCount);
+export type DockMediaAudioProbe = z.infer<typeof DockMediaAudioProbeSchema>;

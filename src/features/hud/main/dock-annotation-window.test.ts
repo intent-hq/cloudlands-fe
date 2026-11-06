@@ -578,6 +578,95 @@ describe('DockAnnotationController', () => {
     expect(t.captures).toEqual([]);
   });
 
+  it.each(['box', 'arrow'] as const)(
+    'keeps a recording %s over a screen area without an app window',
+    async (tool) => {
+      const t = setup({ hit: () => ({ ...noHit, window: null }) });
+      await t.start('live', tool);
+      t.host.clip = 2500;
+
+      await expect(
+        t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }], tool),
+      ).resolves.toEqual({ ok: true });
+      expect(marks(t.events)).toHaveLength(1);
+      expect(marks(t.events)[0]).toMatchObject({ tool, clipMs: 2500 });
+      expect(t.captures).toHaveLength(1);
+      expect(t.captures[0]!.excluded).toEqual(expect.arrayContaining([11, 12, 4242]));
+    },
+  );
+
+  it('keeps a recording arrow that crosses the starting app window', async () => {
+    const narrow = { ...appWindow, bounds: { ...appWindow.bounds, width: 900 } };
+    const t = setup({
+      hit: (point) => ({ ...noHit, window: point.x > -540 ? null : narrow }),
+    });
+    await t.start('live', 'arrow');
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture([{ x: 800, y: 100 }, { x: 1000, y: 300 }], 'arrow'),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]).toMatchObject({ tool: 'arrow', clipMs: 2500 });
+  });
+
+  it('keeps a recording drawing when window lookup is unavailable', async () => {
+    const t = setup({
+      hit: () => ({ checked: false, access: 'unavailable', window: null, element: null }),
+    });
+    await t.start();
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }]),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]!.element).toBeNull();
+  });
+
+  it('keeps a recording drawing when Intent window details are unavailable', async () => {
+    const t = setup({ intent: async () => ({ kind: 'failed' }) });
+    await t.start();
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }]),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]!.element).toBeNull();
+  });
+
+  it('keeps a recording drawing when its target cannot be confirmed after capture', async () => {
+    const t = setup();
+    await t.start();
+    t.host.clip = 2500;
+    t.io.onCaptured = () => {
+      t.io.hit = () => ({ ...noHit, window: null });
+    };
+
+    await expect(
+      t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }]),
+    ).resolves.toEqual({ ok: true });
+    expect(marks(t.events)).toHaveLength(1);
+    expect(marks(t.events)[0]!.element).toBeNull();
+  });
+
+  it('still excludes dock controls and requires a target for picks during recording', async () => {
+    const t = setup({ hit: () => ({ ...noHit, window: null }) });
+    await t.start();
+    t.host.clip = 2500;
+
+    await expect(
+      t.gesture([{ x: 1200, y: 10 }, { x: 1300, y: 90 }]),
+    ).resolves.toEqual({ ok: false, reason: 'excluded' });
+    await t.controller.setAnnotationTool('s1', 'pick');
+    await expect(
+      t.gesture([{ x: 100, y: 100 }], 'pick'),
+    ).resolves.toEqual({ ok: false, reason: 'outside' });
+    expect(marks(t.events)).toEqual([]);
+    expect(t.captures).toEqual([]);
+  });
+
   it('fences stale sequences, mismatched origins and replaced sessions', async () => {
     const t = setup();
     await t.start();

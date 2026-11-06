@@ -405,7 +405,12 @@ export function createDockScreenRecorder(
     settle(clip, {
       ok: true,
       value: {
-        original: { sourcePath: clip.cleanPath, size: cleanSize, width, height, clearAtMs },
+        original: { sourcePath: clip.cleanPath, size: cleanSize, width, height, clearAtMs,
+          // Old helpers' positive primary append proves clean append happened first;
+          // a negative primary flag cannot prove the separate clean track is empty.
+          ...(typeof event.hasCleanMicAudio === 'boolean' ? { hasMicAudio: event.hasCleanMicAudio }
+            : event.hasMicAudio === true ? { hasMicAudio: true } : {}),
+        },
         clipId: clip.clipId,
         sourcePath: clip.outputPath,
         mimeType: 'video/mp4',

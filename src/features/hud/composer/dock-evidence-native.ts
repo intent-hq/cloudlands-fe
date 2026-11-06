@@ -241,6 +241,7 @@ export function createDockEvidenceNative(
     stopClip: (clipId) => control<DockClipFile>({ action: 'clip-stop', clipId }),
     pauseClip: (clipId, paused) =>
       control<{ paused: boolean }>({ action: 'clip-pause', clipId, paused }),
+    probeMediaAudio: (request) => control<import('$shared/dock-media-output').DockMediaAudioProbe>({ action: 'media-audio-probe', request }),
     analyzeMedia: (request) => control<import('$shared/dock-media-output').DockMediaWaveform>({ action: 'media-waveform', request }),
     exportMedia: (request) => control<import('$shared/dock-media-output').DockMediaNativeOutput>({ action: 'media-export', request }),
     transcribeMedia: (request) => control<import('$shared/dock-media-edit').DockMediaTranscript>({ action: 'media-transcribe', request }),
