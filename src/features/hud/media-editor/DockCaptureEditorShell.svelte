@@ -31,6 +31,7 @@
     headerActions,
     main,
     sidebar,
+    sidebarWidth = 300,
   }: {
     title: string;
     subtitle?: string;
@@ -50,6 +51,8 @@
     headerActions?: Snippet;
     main: Snippet;
     sidebar?: Snippet;
+    /** The sidebar card's width in CSS pixels (a slim rail for screenshots). */
+    sidebarWidth?: number;
   } = $props();
 
   // A generated file name ("clip-1a2b3c4d.mp4") says nothing the title does not; a name
@@ -127,7 +130,11 @@
       {/if}
     </div>
   </header>
-  <div class="body" data-has-sidebar={!!sidebar || undefined}>
+  <div
+    class="body"
+    data-has-sidebar={!!sidebar || undefined}
+    style:--sidebar-width={`${sidebarWidth}px`}
+  >
     <main class="main">{@render main()}</main>
     {#if sidebar}<aside class="sidebar">{@render sidebar()}</aside>{/if}
   </div>
@@ -148,6 +155,12 @@
 />
 
 <style>
+  /*
+   * A media tool, not a document: the window is one surface, the media sits in a
+   * rounded inset panel that takes most of it, and the sidebar is a card beside it.
+   * The top strip is the window's drag area (no native buttons), with a quiet title
+   * and the two actions.
+   */
   .capture-editor {
     display: flex;
     flex-direction: column;
@@ -155,18 +168,14 @@
     background: hsl(var(--background));
     color: hsl(var(--foreground));
   }
-  /*
-   * The window's own title bar: draggable, and compact. The editor hides the native
-   * window buttons (Cancel, Esc and Cmd+W close it), so the title starts at the edge.
-   */
   .header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 12px;
     height: 44px;
+    flex: none;
     padding: 0 10px 0 16px;
-    border-bottom: 1px solid hsl(var(--border));
     -webkit-app-region: drag;
   }
   .titles {
@@ -177,8 +186,9 @@
   }
   .title {
     margin: 0;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
+    color: hsl(var(--muted-foreground));
     white-space: nowrap;
   }
   .subtitle {
@@ -191,28 +201,35 @@
   .actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     -webkit-app-region: no-drag;
   }
   .body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
     flex: 1;
     min-height: 0;
+    padding: 0 10px 10px;
   }
   .body[data-has-sidebar] {
-    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-columns: minmax(0, 1fr) var(--sidebar-width, 300px);
   }
   .main {
     display: flex;
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    background: hsl(var(--muted) / 0.55);
   }
   .sidebar {
     min-height: 0;
     overflow: auto;
-    border-left: 1px solid hsl(var(--border));
+    border: 1px solid hsl(var(--border));
+    border-radius: 12px;
+    background: hsl(var(--card));
   }
   /* Narrow windows: the sidebar moves below the main area instead of narrowing. */
   @media (max-width: 900px) {
@@ -220,10 +237,6 @@
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: minmax(0, 1fr) auto;
       overflow: auto;
-    }
-    .sidebar {
-      border-left: 0;
-      border-top: 1px solid hsl(var(--border));
     }
   }
 </style>

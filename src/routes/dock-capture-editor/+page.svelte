@@ -4,7 +4,6 @@
   import DockRecordingEditor from '$features/hud/media-editor/recording/DockRecordingEditor.svelte';
   import DockScreenshotEditorWindow from '$features/hud/media-editor/screenshot/DockScreenshotEditorWindow.svelte';
   import { connectDockCaptureEditor } from '$features/hud/media-editor/capture-editor-bridge';
-  import { screenshotCaptureBaseline } from '$features/hud/media-editor/capture-baseline';
   import type {
     DockCaptureEditorNoteDictationUpdate,
     DockCaptureEditorSnapshot,
@@ -77,7 +76,6 @@
            placed on the new image exactly. -->
       <DockScreenshotEditorWindow
         {snapshot}
-        captureBaseline={screenshotCaptureBaseline(snapshot)}
         {discardRequest}
         onClose={() => bridge.close(openId)}
         onDirtyChange={(value) => (dirty = value)}

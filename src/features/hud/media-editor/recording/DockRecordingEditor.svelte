@@ -14,15 +14,12 @@
   import DockRecordingSendOptions from './DockRecordingSendOptions.svelte';
   import DockRecordingTranscript from './DockRecordingTranscript.svelte';
   import DockRecordingFrameMarks from './DockRecordingFrameMarks.svelte';
-  import { ActionMenu } from '$lib/components/patterns/action-menu';
-  import DotsThreeIcon from 'phosphor-svelte/lib/DotsThreeIcon';
   import { findFillerCuts, type FillerCuts } from './recording-transcript-model';
   import { frameToolKind, type FrameTool } from './recording-frame-model';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import {
     defaultDockMediaEdit,
     dockMediaBatchAt,
-    originalDockMediaEdit,
     canUseHighlights,
     markRemovable,
     mergeDockMediaRanges,
@@ -270,28 +267,33 @@
     text: () => m.dock_captureEditor_frameText_label(),
   };
 
-  // Reset edits: back to the recording as captured (its captured marks and defaults),
-  // as one undoable change. Only with an authoritative capture baseline.
-  const original = $derived.by(() => {
-    if (!source) return null;
-    const found = originalDockMediaEdit({ source, saved: snapshot.saved ?? null, transcript });
-    return found?.edit.sourceId === source.id ? found : null;
-  });
-  // Cut filler: offered with a ready transcript; shows what it found before applying.
+  // Cut filler: offered only when the transcript has word-aligned filler or long gaps
+  // inside what is kept. It shows what it found first, and applies only that, re-checked.
+  const filler = $derived(
+    edits && timeEditable && transcript?.status === 'ready' && kept
+      ? findFillerCuts(transcript.words, kept, edits.draft.wordEdits)
+      : null,
+  );
   let fillerPreview = $state<FillerCuts | null>(null);
   let fillerOpen = $state(false);
   function previewFiller(): void {
-    if (!edits || transcript?.status !== 'ready' || !kept) return;
-    fillerPreview = findFillerCuts(transcript.words, kept);
+    if (!filler?.ranges.length) return;
+    fillerPreview = filler;
     fillerOpen = true;
   }
   function applyFiller(): void {
-    const found = fillerPreview;
+    const shown = fillerPreview;
+    // Trim, cuts, corrections or the transcript changed meanwhile: show the new result.
+    if (!filler || JSON.stringify(filler) !== JSON.stringify(shown)) {
+      fillerPreview = filler;
+      fillerOpen = !!filler?.ranges.length;
+      return;
+    }
     fillerOpen = false;
-    if (!found?.ranges.length) return;
+    if (!shown?.ranges.length) return;
     edits?.apply((draft) => ({
       ...draft,
-      cuts: mergeDockMediaRanges([...draft.cuts, ...found.ranges]),
+      cuts: mergeDockMediaRanges([...draft.cuts, ...shown.ranges]),
     }));
   }
 
@@ -364,7 +366,6 @@
   {saving}
   onSave={canSave ? save : undefined}
   onCancel={onClose}
-  headerActions={edits ? overflow : undefined}
   sidebar={sendOptions}
   onUndo={edits ? () => edits.undo() : undefined}
   onRedo={edits ? () => edits.redo() : undefined}
@@ -508,38 +509,14 @@
   }}
 />
 
-{#snippet overflow()}
-  <ActionMenu
-    ariaLabel={m.dock_captureEditor_more_label()}
-    actions={[
-      {
-        id: 'cut-filler',
-        label: m.dock_captureEditor_cutFiller_label(),
-        disabled: !timeEditable || transcript?.status !== 'ready',
-      },
-      { id: 'reset', label: m.dock_captureEditor_resetEdits_label(), disabled: !original },
-    ]}
-    onAction={(id) => {
-      if (id === 'cut-filler') previewFiller();
-      else if (id === 'reset' && original) edits?.reset(original.edit);
-    }}
-  >
-    {#snippet trigger({ props })}<Button
-        {...props}
-        variant="ghost"
-        size="icon-sm"
-        aria-label={m.dock_captureEditor_more_label()}><DotsThreeIcon size={18} /></Button
-      >{/snippet}
-  </ActionMenu>
-{/snippet}
-
 <DestructiveConfirm
   bind:open={fillerOpen}
   destructive={false}
+  description={m.dock_captureEditor_cutFiller_gapNote()}
   title={fillerPreview?.ranges.length
     ? m.dock_captureEditor_cutFiller_title({
         words: fillerPreview.fillerCount,
-        pauses: fillerPreview.pauseCount,
+        gaps: fillerPreview.gapCount,
         seconds: Math.round((fillerPreview.totalMs / 1000) * 10) / 10,
       })
     : m.dock_captureEditor_cutFiller_none()}
@@ -560,6 +537,13 @@
         enabled={snapshot.output?.ready === true}
         onChange={(choice) => edits.apply((draft) => ({ ...draft, ...choice }))}
       />
+      {#if filler?.ranges.length}
+        <div class="transcript-tools">
+          <Button variant="ghost" size="xs" onclick={previewFiller} data-cut-filler
+            >{m.dock_captureEditor_cutFiller_label()}</Button
+          >
+        </div>
+      {/if}
       <DockRecordingTranscript
         {transcript}
         batches={source.batches}
@@ -642,6 +626,11 @@
     padding: 10px 16px 0;
     font-size: 11px;
     color: hsl(var(--muted-foreground));
+  }
+  .transcript-tools {
+    display: flex;
+    justify-content: flex-end;
+    padding: 6px 10px 0;
   }
   /* Send options stay put; the transcript below scrolls on its own. */
   .sidebar-content {

@@ -34,9 +34,6 @@
     DockMediaSourceSchema,
     planDockMediaOutput,
   } from '$shared/dock-media-edit';
-  import { Button } from '$lib/components/ui/button';
-  import { ActionMenu } from '$lib/components/patterns/action-menu';
-  import DotsThreeIcon from 'phosphor-svelte/lib/DotsThreeIcon';
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import DockScreenshotEditor from './DockScreenshotEditor.svelte';
@@ -44,7 +41,6 @@
 
   let {
     snapshot,
-    captureBaseline,
     onClose,
     discardRequest = 0,
     onDirtyChange,
@@ -56,8 +52,6 @@
     noteDictationUpdate = null,
   }: {
     snapshot: DockCaptureEditorSnapshot;
-    /** Main-provided capture baseline; never inferred from the current saved edit. */
-    captureBaseline?: ScreenshotEditorBundle;
     onClose: () => void;
     discardRequest?: number;
     onDirtyChange?: (dirty: boolean) => void;
@@ -101,31 +95,6 @@
   // svelte-ignore state_referenced_locally -- late callbacks may not close a new session.
   const openId = snapshot.openId;
   const edits = initial ? createEditTransaction(initial) : null;
-  function authoritativeBaseline(
-    value: ScreenshotEditorBundle | undefined,
-  ): ScreenshotEditorBundle | null {
-    if (
-      !value ||
-      !initial ||
-      value.source.kind !== 'screenshot' ||
-      value.source.visuals !== 'clean'
-    )
-      return null;
-    if (
-      value.candidateToken !== undefined &&
-      (!value.candidateToken.trim() || value.candidateToken.length > 512)
-    )
-      return null;
-    const sameSource =
-      value.source.id === initial.source.id && value.source.revision === initial.source.revision;
-    if (!sameSource && !value.candidateToken) return null;
-    return DockMediaSourceSchema.safeParse(value.source).success &&
-      DockMediaEditSchema.safeParse(value.edit).success &&
-      !planDockMediaOutput(value.edit, value.source, null).errors.length
-      ? value
-      : null;
-  }
-  const original = $derived(authoritativeBaseline(captureBaseline));
   let active = true;
   let saving = $state(false);
   let retaking = $state(false);
@@ -462,6 +431,7 @@
         onDiscardRequested={discard}
         {onKeepEditing}
         sidebar={contentSidebar}
+        sidebarWidth={72}
       >
         {#snippet main()}
           {#if error}<p class="status type-caption" role="alert">{error}</p>{/if}
@@ -472,30 +442,6 @@
         {/snippet}
         {#snippet headerActions()}
           {@render contentHeader()}
-          <ActionMenu
-            ariaLabel={m.dock_screenshotEditor_more()}
-            actions={[
-              {
-                id: 'reset',
-                label: m.dock_screenshotEditor_reset(),
-                disabled: saving || retaking || !original,
-                disabledReason: original ? undefined : m.dock_screenshotEditor_resetUnavailable(),
-              },
-            ]}
-            onAction={() => {
-              if (original && !saving && !retaking) {
-                void cancelNote();
-                edits.reset(original);
-              }
-            }}
-          >
-            {#snippet trigger({ props })}<Button
-                {...props}
-                variant="ghost"
-                size="icon-sm"
-                aria-label={m.dock_screenshotEditor_more()}><DotsThreeIcon size={18} /></Button
-              >{/snippet}
-          </ActionMenu>
         {/snippet}
       </DockCaptureEditorShell>
     {/snippet}

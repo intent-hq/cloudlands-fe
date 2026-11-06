@@ -89,58 +89,68 @@ export function currentWordId(words: readonly Word[], ms: number): string | null
 }
 
 const FILLER = new Set(['um', 'umm', 'uh', 'uhh', 'er', 'erm', 'ah', 'hmm', 'mm']);
-/** A pause this long between words is offered as cut, keeping a little either side. */
-const LONG_PAUSE_MS = 2000;
-const PAUSE_MARGIN_MS = 300;
+/** A gap this long between two recognized words is offered, keeping a little either side. */
+const LONG_GAP_MS = 2000;
+const GAP_MARGIN_MS = 300;
 
 export interface FillerCuts {
+  /** Merged, non-overlapping stretches to cut. */
   ranges: { startMs: number; endMs: number }[];
   fillerCount: number;
-  pauseCount: number;
+  /** Long gaps between recognized words: no words there, which is not proof of silence. */
+  gapCount: number;
+  /** Total of the merged stretches. */
   totalMs: number;
 }
 
 /**
- * "Cut filler" (Capture and recording editor spec): timed filler words ("um", "uh")
- * and long silences between timed words, inside `kept` (what is not already trimmed
- * or cut). Only genuinely timed recognition units count; nothing is guessed.
+ * "Cut filler" (Capture and recording editor spec): filler words ("um", "uh") and long
+ * gaps between recognized words, inside `kept` (what is not already trimmed or cut).
+ * Only units the recognizer aligned word by word count, and a gap is only measured
+ * between two such units that are next to each other in the transcript: untimed or
+ * segment-level text in between is never bridged over. A word the person corrected is
+ * judged by its corrected text.
  */
 export function findFillerCuts(
   words: readonly Word[],
   kept: readonly { startMs: number; endMs: number }[],
+  wordEdits: Readonly<Record<string, string>> = {},
 ): FillerCuts {
   const inside = (start: number, end: number) =>
     kept.some((range) => start >= range.startMs && end <= range.endMs);
-  const timed = words.filter(
-    (word): word is Word & { startMs: number; endMs: number } =>
-      word.alignment !== 'untimed' && word.startMs !== null && word.endMs !== null,
-  );
-  const ranges: FillerCuts['ranges'] = [];
+  const aligned = (word: Word | undefined): word is Word & { startMs: number; endMs: number } =>
+    !!word && word.alignment === 'word' && word.startMs !== null && word.endMs !== null;
+  const raw: FillerCuts['ranges'] = [];
   let fillerCount = 0;
-  let pauseCount = 0;
-  for (const word of timed) {
-    const bare = word.text.toLowerCase().replace(/[^\p{L}]/gu, '');
+  let gapCount = 0;
+  words.forEach((word, index) => {
+    if (!aligned(word)) return;
+    const bare = (wordEdits[word.id] ?? word.text).toLowerCase().replace(/[^\p{L}]/gu, '');
     if (FILLER.has(bare) && inside(word.startMs, word.endMs)) {
-      ranges.push({ startMs: word.startMs, endMs: word.endMs });
+      raw.push({ startMs: word.startMs, endMs: word.endMs });
       fillerCount += 1;
     }
-  }
-  for (let i = 1; i < timed.length; i += 1) {
-    const start = timed[i - 1].endMs + PAUSE_MARGIN_MS;
-    const end = timed[i].startMs - PAUSE_MARGIN_MS;
-    if (
-      timed[i].startMs - timed[i - 1].endMs >= LONG_PAUSE_MS &&
-      end > start &&
-      inside(start, end)
-    ) {
-      ranges.push({ startMs: start, endMs: end });
-      pauseCount += 1;
+    const previous = words[index - 1];
+    if (!aligned(previous)) return;
+    const start = previous.endMs + GAP_MARGIN_MS;
+    const end = word.startMs - GAP_MARGIN_MS;
+    if (word.startMs - previous.endMs >= LONG_GAP_MS && end > start && inside(start, end)) {
+      raw.push({ startMs: start, endMs: end });
+      gapCount += 1;
     }
-  }
+  });
+  const ranges = [...raw]
+    .sort((a, b) => a.startMs - b.startMs)
+    .reduce<FillerCuts['ranges']>((merged, range) => {
+      const last = merged.at(-1);
+      if (last && range.startMs <= last.endMs) last.endMs = Math.max(last.endMs, range.endMs);
+      else merged.push({ ...range });
+      return merged;
+    }, []);
   return {
     ranges,
     fillerCount,
-    pauseCount,
+    gapCount,
     totalMs: ranges.reduce((sum, range) => sum + range.endMs - range.startMs, 0),
   };
 }
