@@ -8320,6 +8320,7 @@
   "dock_captureEditor_cancel_label": "Annuler",
   "dock_captureEditor_save_label": "Enregistrer les modifications",
   "dock_captureEditor_discard_title": "Abandonner les modifications ?",
+  "dock_captureEditor_discard_description": "Vos modifications de cette capture seront perdues.",
   "dock_captureEditor_discard_label": "Abandonner",
   "dock_captureEditor_keepEditing_label": "Continuer à modifier",
   "dock_captureEditor_recording_title": "Enregistrement · {duration}",

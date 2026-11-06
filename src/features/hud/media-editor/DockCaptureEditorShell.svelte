@@ -186,6 +186,7 @@
 <DestructiveConfirm
   bind:open={confirming}
   title={m.dock_captureEditor_discard_title()}
+  description={m.dock_captureEditor_discard_description()}
   confirmLabel={m.dock_captureEditor_discard_label()}
   cancelLabel={m.dock_captureEditor_keepEditing_label()}
   onConfirm={() => {

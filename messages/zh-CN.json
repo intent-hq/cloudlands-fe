@@ -8320,6 +8320,7 @@
   "dock_captureEditor_cancel_label": "取消",
   "dock_captureEditor_save_label": "保存更改",
   "dock_captureEditor_discard_title": "放弃更改？",
+  "dock_captureEditor_discard_description": "对此捕获的编辑将会丢失。",
   "dock_captureEditor_discard_label": "放弃",
   "dock_captureEditor_keepEditing_label": "继续编辑",
   "dock_captureEditor_recording_title": "录制 · {duration}",
