@@ -341,12 +341,22 @@
         )),
   );
   const outputAdmitted = $derived(snapshot.output?.version === DOCK_MEDIA_OUTPUT_VERSION);
+  /**
+   * A crop being adjusted or text being typed is not in the draft yet: until it is
+   * applied or cancelled, nothing saves or retakes (it would silently leave it out).
+   */
+  let interactionPending = $state(false);
   const canSave = $derived(
-    !!onSave && !!snapshot.output?.ready && !!edits && (!needsNewOutput || outputAdmitted),
+    !!onSave &&
+      !!snapshot.output?.ready &&
+      !!edits &&
+      !interactionPending &&
+      (!needsNewOutput || outputAdmitted),
   );
 
   async function save() {
-    if (!edits || !onSave || !canSave || saving || retaking || noteSession) return;
+    if (!edits || !onSave || !canSave || saving || retaking || noteSession || interactionPending)
+      return;
     const bundle = edits.draft;
     if (planDockMediaOutput(bundle.edit, bundle.source, null).errors.length) {
       error = m.dock_screenshotEditor_saveError();
@@ -381,7 +391,7 @@
     }
   }
   async function retake() {
-    if (!edits || !onRetake || saving || retaking) return;
+    if (!edits || !onRetake || saving || retaking || interactionPending) return;
     const bundle = edits.draft;
     const stopping = cancelNote();
     retaking = true;
@@ -426,6 +436,7 @@
     onNoteBlur={stopNote}
     disabled={saving}
     {retaking}
+    onInteractionPending={(pending) => (interactionPending = pending)}
     {dictatingId}
     onRetake={onRetake ? retake : undefined}
     onNoteDictation={onNoteDictation ? dictateNote : undefined}
@@ -435,7 +446,7 @@
         title={m.dock_screenshotEditor_title()}
         subtitle={snapshot.title}
         {dirty}
-        saving={saving || !!noteSession}
+        saving={saving || !!noteSession || interactionPending}
         onCancel={close}
         onSave={canSave ? save : undefined}
         onUndo={undo}
