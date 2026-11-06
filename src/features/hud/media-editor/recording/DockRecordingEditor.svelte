@@ -583,7 +583,7 @@
         }}
         onMark={(mark) => {
           activeMarkId = mark.id;
-          video?.pause();
+          playback?.pause();
           seek(mark.atMs);
         }}
         cuts={edits.draft.cuts}
