@@ -16,6 +16,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
   import { DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
+  import { layoutDockMediaText } from '$shared/dock-media-edit';
   import {
     annotationHandles,
     resizeAnnotationGeometry,
@@ -90,7 +91,12 @@
     pendingRedactions?: readonly ScreenshotShape[];
     onSelect: (id: string | null, event?: PointerEvent | MouseEvent | KeyboardEvent) => void;
     onSelectAll: () => void;
-    onDraw: (tool: ScreenshotTool, geometry: DockMarkGeometry, creationUnit?: number) => void;
+    onDraw: (
+      tool: ScreenshotTool,
+      geometry: DockMarkGeometry,
+      creationUnit?: number,
+      autoWidthText?: boolean,
+    ) => void;
     onTransform: (id: string, geometry: DockMarkGeometry) => void;
     onDelete: (id?: string) => void;
     onCropChange: (crop: DockImageRect) => void;
@@ -121,6 +127,20 @@
   let textValue = $state('');
   let textSession = $state<{ id: string; document: string; original: string } | null>(null);
   const textShape = $derived(shapes.find((shape) => shape.id === editingTextId && shape.text));
+  const textLayout = $derived.by(() => {
+    const text = textShape?.text;
+    if (!text) return null;
+    return layoutDockMediaText({
+      kind: 'text',
+      x: 0,
+      y: 0,
+      text: textValue,
+      fontSize: text.fontSize,
+      ...(text.wrapped
+        ? { style: 'sticky' as const, width: text.width, padding: text.padding }
+        : {}),
+    });
+  });
   $effect(() => {
     onGesturePending(!!gesture || !!cropGesture);
   });
@@ -413,7 +433,8 @@
       return;
     }
     const b = g?.preview ? dockGeometryRect(g.preview) : null;
-    if (g && !g.original && g.tool === 'text' && (!b || Math.min(b.w, b.h) < 2)) {
+    const autoWidthText = !!g && !g.original && g.tool === 'text' && (!b || Math.min(b.w, b.h) < 2);
+    if (g && autoWidthText) {
       const w = Math.min(160 * unit, frame.w, 4096),
         h = Math.min(40 * unit, frame.h);
       if (w < 2 || h < 2) return;
@@ -429,7 +450,7 @@
     const bounds = dockGeometryRect(g.preview);
     if (!g.original && Math.max(bounds.w, bounds.h) < 2) return;
     if (g.id) onTransform(g.id, g.preview);
-    else onDraw(g.tool, g.preview, unit);
+    else onDraw(g.tool, g.preview, unit, autoWidthText);
   }
   function cancelPointer() {
     const crop = cropGesture;
@@ -624,7 +645,7 @@
                 height={b.h}
               />
             {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
-            {#if !cropCandidate && (selectedIds.includes(shape.id) || selectedId === shape.id)}
+            {#if !cropCandidate && editingTextId !== shape.id && (selectedIds.includes(shape.id) || selectedId === shape.id)}
               {#each annotationHandles(shape.geometry) as handle (handle.id)}
                 <rect
                   data-resize={handle.id}
@@ -694,22 +715,24 @@
         />
       {/each}
     {/if}
-    {#if textShape?.text && textSession && editingRasterReady}
+    {#if textShape?.text && textLayout && textSession && editingRasterReady}
       {@const b = dockGeometryRect(textShape.geometry)}
       <foreignObject
         x={b.x}
         y={b.y}
-        width={Math.min(
-          frame.x + frame.w - b.x,
-          textShape.text.wrapped ? textShape.text.width : Math.max(b.w, 160 * unit),
-        )}
-        height={Math.min(frame.y + frame.h - b.y, Math.max(b.h + 16 * unit, 72 * unit))}
+        width={Math.min(frame.x + frame.w - b.x, Math.max(12 * unit, textLayout.width + 2 * unit))}
+        height={Math.min(frame.y + frame.h - b.y, textLayout.height)}
+        style:overflow="visible"
       >
         <div
           class="inline-text"
           style:font-size={`${textShape.text.fontSize}px`}
           style:font-family={DOCK_MEDIA_PAINT.fontFamily}
           style:--capture-text-accent={DOCK_MEDIA_PAINT.accent}
+          style:--capture-text-halo={DOCK_MEDIA_PAINT.halo}
+          style:--capture-text-stroke={`${2 * Math.max(1, Math.max(width, height) / 1440)}px`}
+          style:--capture-text-outline={`${unit}px`}
+          style:--capture-text-leading={`${-textShape.text.fontSize * 0.2}px`}
           style:padding={`${textShape.text.padding}px`}
           onpointerdown={(event) => event.stopPropagation()}
           onkeydown={(event) => {
@@ -865,6 +888,7 @@
     height: 100%;
     line-height: 1.4;
     box-sizing: border-box;
+    outline: var(--capture-text-outline) solid hsl(var(--ring));
   }
   .inline-text :global(.text-input) {
     width: 100%;
@@ -879,6 +903,10 @@
     background: transparent;
     color: var(--capture-text-accent);
     caret-color: var(--capture-text-accent);
+    -webkit-text-stroke: var(--capture-text-stroke) var(--capture-text-halo);
+    paint-order: stroke fill;
+    position: relative;
+    top: var(--capture-text-leading);
     box-shadow: none;
   }
 </style>

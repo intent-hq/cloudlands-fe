@@ -482,7 +482,12 @@
       select(null);
     }
   }
-  function draw(nextTool: ScreenshotTool, geometry: DockMarkGeometry, creationUnit = 1) {
+  function draw(
+    nextTool: ScreenshotTool,
+    geometry: DockMarkGeometry,
+    creationUnit = 1,
+    autoWidthText = false,
+  ) {
     if (blocked) return;
     const bounds = dockGeometryRect(geometry);
     if (!screenshotContains(frame, bounds)) return;
@@ -507,9 +512,10 @@
     // Reopened labels keep their canonical saved font, width and padding.
     const labelUnit = Number.isFinite(creationUnit) && creationUnit > 0 ? creationUnit : 1;
     const labelWidth = canCreateV2 ? Math.min(4096, bounds.w) : bounds.w;
-    const labelPadding = canCreateV2
-      ? Math.min(1024, 8 * labelUnit, labelWidth / 8, bounds.h / 8)
-      : 0;
+    const labelPadding =
+      canCreateV2 && !autoWidthText
+        ? Math.min(1024, 8 * labelUnit, labelWidth / 8, bounds.h / 8)
+        : 0;
     const value: DockMediaGeometry =
       kind === 'text'
         ? {
@@ -517,7 +523,7 @@
             x: bounds.x,
             y: bounds.y,
             text: m.dock_screenshotEditor_text(),
-            ...(canCreateV2
+            ...(canCreateV2 && !autoWidthText
               ? {
                   style: 'sticky' as const,
                   width: labelWidth,
