@@ -223,7 +223,7 @@
     if (save && !disabled && session?.document === documentKey && value !== session.original)
       onText(session.id, value);
   }
-  function point(event: PointerEvent, clamped = true): DockImagePoint {
+  function point(event: PointerEvent | MouseEvent, clamped = true): DockImagePoint {
     // Invert the actual SVG transform, including preserveAspectRatio letterboxing.
     const matrix = surface?.getScreenCTM();
     if (!matrix) return { x: frame.x, y: frame.y };
@@ -486,10 +486,19 @@
   }
   function doubleClick(event: MouseEvent) {
     if (disabled || cropCandidate) return;
-    const id =
+    const targetId =
       event.target instanceof Element
         ? event.target.closest('[data-shape-id]')?.getAttribute('data-shape-id')
         : null;
+    // Pointer capture can retarget a native double-click to the SVG itself.
+    const at = point(event, false);
+    const id =
+      targetId ??
+      shapes.findLast((shape) => {
+        if (!shape.text) return false;
+        const b = dockGeometryRect(shape.geometry);
+        return at.x >= b.x && at.y >= b.y && at.x <= b.x + b.w && at.y <= b.y + b.h;
+      })?.id;
     if (id && shapes.some((shape) => shape.id === id && shape.text)) {
       event.preventDefault();
       event.stopPropagation();
