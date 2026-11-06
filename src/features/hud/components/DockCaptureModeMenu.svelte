@@ -93,7 +93,9 @@
         >
           <span class="capture-menu-heading">
             <span>{heading ?? label}</span>
-            {#if shortcut}<ShortcutChip>{formatShortcut(shortcut)}</ShortcutChip>{/if}
+            {#if shortcut}<ShortcutChip class="text-muted-foreground"
+                >{formatShortcut(shortcut)}</ShortcutChip
+              >{/if}
           </span>
         </Menu.Label>
       {/if}
