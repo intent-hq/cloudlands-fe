@@ -17,6 +17,7 @@ export const menuMetadata = {
     'CheckboxItem',
     'CommandItem',
     'Content',
+    'Footer',
     'Group',
     'GroupHeading',
     'Indicator',
@@ -64,6 +65,7 @@ export const menuMetadata = {
   owner: '007-B5',
   useWhen: [
     'Presenting commands with shared keyboard, focus, and dismissal behavior.',
+    'Use CheckboxItem indicator="switch" for independent on/off settings, Label alignIconColumn={false} for section captions, and Footer for quiet menu metadata.',
     'Keeping an unavailable command visible with CommandItem disabledReason; the localized reason disables activation and is linked with aria-describedby.',
   ],
   callers: [

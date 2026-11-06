@@ -81,7 +81,7 @@ describe('desktop permission in the agent menu', () => {
       };
       render(AgentViewSettingsDropdown, { workspaceId: 'workspace', agentId: 'agent' });
       await fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
-      const checkbox = screen.getByRole('menuitemcheckbox', { name: 'Allow desktop control' });
+      const checkbox = screen.getByRole('menuitemcheckbox', { name: 'Desktop control' });
       expect(checkbox.getAttribute('aria-checked')).toBe(String(allowed));
       expect(screen.queryByText(/Windows workstation/)).toBeNull();
       expect(screen.queryByText(/use Stop to end current control/)).toBeNull();
@@ -95,6 +95,6 @@ describe('desktop permission in the agent menu', () => {
     mockState.desktop = undefined;
     render(AgentViewSettingsDropdown, { workspaceId: 'workspace', agentId: 'agent' });
     await fireEvent.click(screen.getByRole('button', { name: 'View settings' }));
-    expect(screen.queryByRole('menuitemcheckbox', { name: 'Allow desktop control' })).toBeNull();
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'Desktop control' })).toBeNull();
   });
 });

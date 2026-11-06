@@ -28,7 +28,7 @@
   data-destructive={destructive ? '' : undefined}
   class={cn(
     menuItem(),
-    'data-[destructive]:text-danger data-[destructive]:focus:text-danger',
+    'data-[destructive]:bg-danger-background/50 data-[destructive]:text-danger data-[destructive]:focus:text-danger',
     className,
   )}
   {...restProps}

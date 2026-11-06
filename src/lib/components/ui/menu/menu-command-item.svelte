@@ -34,7 +34,7 @@
       {icon}
       weight={iconWeight}
       size={16}
-      class={destructive ? 'size-4 text-current' : 'size-4 text-muted-foreground opacity-70'}
+      class={destructive ? 'size-4 text-current' : 'size-4 text-muted-foreground/80'}
     />
   {/if}
 {/snippet}

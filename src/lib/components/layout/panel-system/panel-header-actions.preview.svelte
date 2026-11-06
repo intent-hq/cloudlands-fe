@@ -29,6 +29,7 @@
   import { store } from '$store/renderer/store';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { AgentStatus } from '$shared/types/agent.types';
+  import { desktopEntryPatched } from '$store/renderer/slices/desktop-control/desktop-control-slice';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
   import {
     clearPanelLayout,
@@ -38,7 +39,16 @@
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { PREVIEW_FIXTURE_IDS } from '$lib/component-catalog/preview-fixtures';
   import * as Menu from '$lib/components/ui/menu';
-  import { faCopy, faArrowDown, faTrash, faRobot, faRightLeft } from '$lib/icons/phosphor-icons';
+  import {
+    faCopy,
+    faArrowDown,
+    faTrash,
+    faRobot,
+    faRightLeft,
+    faBell,
+    faBoxArchive,
+  } from '$lib/icons/phosphor-icons';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
@@ -60,6 +70,8 @@
   let lastAction = $state('');
   let selectedTab = $state('header-current');
   let atBottom = $state(false);
+  let notifications = $state(true);
+  const harnessVersion = '3.8';
   const tabs = $derived<PanelTab[]>(
     reorderedTabs ??
       (kind === 'empty'
@@ -95,6 +107,19 @@
   );
 
   onMount(() => {
+    const desktopGeneration = store.state.desktopControl.generation;
+    if (kind === 'agent') {
+      store.dispatch(
+        desktopEntryPatched(workspaceId, agentId, desktopGeneration, {
+          permission: {
+            computerId: 'preview-computer',
+            computerName: 'Preview computer',
+            allowed: false,
+          },
+          loading: false,
+        }),
+      );
+    }
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Preview-only in-memory handler registration; no domain data is fetched.
     const restoreWorkspaceLookup = overrideMockIpcHandler('workspace:get', (payload) => {
       const id = (payload as { id?: string } | undefined)?.id;
@@ -127,6 +152,13 @@
       }),
     );
     return () => {
+      if (kind === 'agent')
+        store.dispatch(
+          desktopEntryPatched(workspaceId, agentId, desktopGeneration, {
+            permission: undefined,
+            loading: false,
+          }),
+        );
       restoreWorkspaceLookup();
       store.dispatch(clearPanelLayout(workspaceId));
     };
@@ -186,7 +218,47 @@
 {/snippet}
 
 {#snippet displayActions()}
-  {#if kind === 'agent'}<AgentViewSettingsDropdown embedded />{/if}
+  {#if kind === 'agent'}
+    <AgentViewSettingsDropdown embedded {workspaceId} {agentId} />
+    <Menu.CheckboxItem indicator="switch" bind:checked={notifications}>
+      {#snippet leading()}<Fa icon={faBell} size={14} class="text-muted-foreground" />{/snippet}
+      Notifications
+    </Menu.CheckboxItem>
+  {/if}
+{/snippet}
+
+{#snippet conversationActions()}
+  <Menu.CommandItem icon={faCopy} label="Copy conversation" onclick={() => (lastAction = 'copy')} />
+  {@render primaryActions()}
+{/snippet}
+
+{#snippet lifecycleActions()}
+  <Menu.CommandItem
+    icon={faRightLeft}
+    label="Replace agent…"
+    onclick={() => (lastAction = 'replace')}
+  />
+  <Menu.CommandItem
+    icon={faBoxArchive}
+    label="Retire agent"
+    onclick={() => (lastAction = 'retire')}
+  />
+  <Menu.CommandItem
+    icon={faTrash}
+    label="Delete agent…"
+    destructive
+    onclick={() => (lastAction = 'delete')}
+  />
+{/snippet}
+
+{#snippet metadata()}
+  <Menu.Footer>
+    <Menu.CommandItem
+      class="min-h-0 px-0 py-0"
+      label={`Lead specialist · Harness v${harnessVersion}`}
+      onclick={() => (lastAction = 'harness')}
+    />
+  </Menu.Footer>
 {/snippet}
 
 {#snippet contentActions()}
@@ -218,8 +290,11 @@
     {workspaceId}
     contentActions={{
       display: kind === 'agent' ? displayActions : undefined,
-      actions: contentActions,
-      additional: primaryActions,
+      conversation: kind === 'agent' ? conversationActions : undefined,
+      lifecycle: kind === 'agent' ? lifecycleActions : undefined,
+      footer: kind === 'agent' ? metadata : undefined,
+      actions: kind === 'agent' ? undefined : contentActions,
+      additional: kind === 'agent' ? undefined : primaryActions,
     }}
     onCreateAgent={() => (lastAction = 'new-agent')}
     onCreateNote={() => (lastAction = 'new-note')}

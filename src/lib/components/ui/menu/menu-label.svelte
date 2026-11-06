@@ -15,11 +15,13 @@
     children,
     icon,
     iconWeight,
+    alignIconColumn = true,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.GroupHeadingProps> & {
     children?: Snippet;
     icon?: IconDefinition;
     iconWeight?: IconWeight;
+    alignIconColumn?: boolean;
   } = $props();
   const reserveIcon = useMenuIconColumn(() => !!icon);
 </script>
@@ -29,21 +31,29 @@
   data-slot="menu-label"
   class={cn(
     OPTION_LIST_ROW_CLASS,
-    'flex items-start gap-2 font-medium text-muted-foreground',
+    'flex min-h-0 items-start gap-2.5 px-2.5 py-1 font-normal text-muted-foreground',
+    !alignIconColumn &&
+      'menu-section-label px-2 leading-(--text-caption-line-height) text-muted-foreground/80',
     className,
   )}
   {...restProps}
 >
-  {#if icon || reserveIcon()}
+  {#if icon || (alignIconColumn && reserveIcon())}
     <span
       data-slot="menu-item-leading"
       class="first-line-icon w-(--menu-icon-size)"
       aria-hidden="true"
     >
       {#if icon}
-        <Fa {icon} weight={iconWeight} size="xs" class="size-4 text-muted-foreground opacity-70" />
+        <Fa {icon} weight={iconWeight} size="xs" class="size-4 text-muted-foreground" />
       {/if}
     </span>
   {/if}
   {@render children?.()}
 </MenuPrimitive.GroupHeading>
+
+<style>
+  :global(.menu-section-label) {
+    font-size: calc(var(--text-caption-size) - 0.125rem);
+  }
+</style>
