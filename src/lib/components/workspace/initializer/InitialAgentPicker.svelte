@@ -72,6 +72,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import StartOnPicker from './StartOnPicker.svelte';
+  import { writable } from 'svelte/store';
   import { buildMachineModelGroups } from '$lib/components/chat/input/model-picker-groups';
   import { expandProviderIdsWithProfiles } from '$shared/provider-profiles';
   import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -80,6 +81,7 @@
     selectRemoteMachines,
     selectRemoteMachinesVisible,
     selectRemoteModelSwitchSupport,
+    selectStartOnCloud,
     selectStartOnOptions,
     selectStartOnVisible,
   } from '$features/remote-machines/remote-machines-selectors';
@@ -89,6 +91,7 @@
     machineModelFallback,
     resolveStartOn,
     START_ON_BACKEND,
+    START_ON_E2B,
   } from '$features/remote-machines/start-on';
 
   const logger = createLogger('InitialAgentPicker');
@@ -206,9 +209,22 @@
   const startOnVisible$ = selectStartOnVisible();
   const startOnOptions$ = selectStartOnOptions();
   const startOnMachines$ = selectRemoteMachines();
+  // E2B needs a configuration that brings its own key or token.
+  const startOnProviderRef = writable<string | undefined>(undefined);
+  $effect(() => {
+    startOnProviderRef.set(selectedProvider);
+  });
+  const startOnCloud$ = selectStartOnCloud(startOnProviderRef);
+  const startOnChoices = $derived(
+    $startOnOptions$.map((option) =>
+      option.kind === 'cloud' && $startOnCloud$?.unavailableReason
+        ? { ...option, disabled: true, reason: $startOnCloud$.unavailableReason, hint: undefined }
+        : option,
+    ),
+  );
   const effectiveStartOn = $derived(
     $startOnVisible$ && !startOnBackendOnly
-      ? resolveStartOn(startOnMachineId, $startOnMachines$)
+      ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$)
       : START_ON_BACKEND,
   );
   const startOnMachine = $derived(
@@ -1098,7 +1114,9 @@
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
-      machineId={effectiveStartOn || undefined}
+      machineId={effectiveStartOn && effectiveStartOn !== START_ON_E2B
+        ? effectiveStartOn
+        : undefined}
       showMachine={false}
       silentFallback
       portal={true}
@@ -1111,7 +1129,7 @@
     <StartOnPicker
       {presentation}
       value={effectiveStartOn}
-      options={$startOnOptions$}
+      options={startOnChoices}
       onChange={handleStartOnChange}
       lockedReason={startOnBackendOnly === 'plain-folder'
         ? m.workspace_initialAgentPicker_startOnPlainFolder_description({

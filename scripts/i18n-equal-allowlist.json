@@ -390,5 +390,14 @@
   "settings_plugins_details": ["de"],
   "settings_plugins_skills": ["de", "fr", "es"],
   "settings_plugins_skillCount_one": ["fr", "es"],
-  "settings_plugins_skillCount_many": ["fr", "es"]
+  "settings_plugins_skillCount_many": ["fr", "es"],
+  "cloudMachines_agent_chip": "*",
+  "cloudMachines_cost_estimate": "*",
+  "cloudMachines_row_template": "*",
+  "cloudMachines_size_label": ["de", "es", "ja", "ko", "zh-CN", "zh-TW"],
+  "cloudMachines_form_minutes": ["fr"],
+  "cloudMachines_form_hours": ["fr", "es"],
+  "cloudMachines_uptime_minutes": ["fr", "es"],
+  "cloudMachines_uptime_hours": ["fr", "es"],
+  "cloudMachines_uptime_hoursMinutes": ["fr", "es"]
 }

@@ -23,6 +23,10 @@
   } from './agent-location';
   import RemoteSetupLog from './RemoteSetupLog.svelte';
   import {
+    cloudErrorText,
+    E2B_DASHBOARD_URL,
+  } from '$features/cloud-machines/cloud-machines-format';
+  import {
     selectCurrentBackendLabel,
     selectRemoteMachine,
     selectRemoteMachinesVisible,
@@ -59,12 +63,25 @@
         ? m.remoteAgent_notice_preparing_description()
         : m.remoteAgent_notice_starting_description(),
   );
+  const cloudStep = $derived($agent$?.cloudStart?.step);
+  const cloudFailure = $derived(failure?.cloud ? cloudErrorText(failure.cloud) : null);
   const startingStep = $derived(
-    setup?.state === 'running'
-      ? m.remoteAgent_status_runningSetup()
-      : setup?.state === 'pending'
-        ? m.remoteAgent_status_preparingCheckout()
-        : null,
+    cloudStep === 'creating-sandbox'
+      ? m.cloudMachines_start_creating()
+      : cloudStep === 'starting-daemon'
+        ? m.cloudMachines_start_daemon()
+        : cloudStep === 'connecting'
+          ? m.cloudMachines_start_connecting()
+          : setup?.state === 'running'
+            ? m.remoteAgent_status_runningSetup()
+            : setup?.state === 'pending'
+              ? m.remoteAgent_status_preparingCheckout()
+              : null,
+  );
+  const startingTitle = $derived(
+    location?.cloud
+      ? m.cloudMachines_start_title()
+      : m.remoteAgent_notice_starting_title({ machine: location?.name ?? '' }),
   );
   const setupFailedDescription = $derived(
     setup?.exitCode !== undefined
@@ -113,7 +130,7 @@
         <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
           <IntentMarkLoader size={14} />
         </span>
-        <span>{m.remoteAgent_notice_starting_title({ machine: location.name })}</span>
+        <span>{startingTitle}</span>
         {#if startingStep}
           <span class="text-foreground">{startingStep}</span>
         {/if}
@@ -170,7 +187,9 @@
       />
       <div class="min-w-0 space-y-1">
         <p class="type-body font-medium {danger ? 'text-danger' : 'text-warning-ink'}">
-          {#if kind === 'failed'}
+          {#if kind === 'failed' && cloudFailure}
+            {cloudFailure.title}
+          {:else if kind === 'failed'}
             {m.remoteAgent_notice_failed_title({ machine: location.name })}
           {:else if kind === 'unreachable'}
             {m.remoteAgent_notice_unreachable_title({ machine: location.name })}
@@ -178,7 +197,11 @@
             {m.remoteAgent_notice_revoked_title({ machine: location.name })}
           {/if}
         </p>
-        {#if kind === 'failed'}
+        {#if kind === 'failed' && cloudFailure}
+          <p class="type-body text-muted-foreground" data-agent-placement-detail>
+            {cloudFailure.description}
+          </p>
+        {:else if kind === 'failed'}
           {#if failure?.message}
             <p class="type-body break-words text-muted-foreground" data-agent-placement-detail>
               {failure.message}
@@ -220,6 +243,15 @@
           <Button variant="secondary" size="sm" onclick={openMachinesSettings}>
             {m.remoteAgent_notice_openMachines_label()}
           </Button>
+          {#if failure?.cloud && failure.cloud.code !== 'cloud-profile-required'}
+            <Button
+              variant="ghost"
+              size="sm"
+              href={E2B_DASHBOARD_URL}
+              target="_blank"
+              rel="noopener noreferrer">{m.cloudMachines_dashboardOpen_label()}</Button
+            >
+          {/if}
         {/if}
       </div>
     {/if}

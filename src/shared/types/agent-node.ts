@@ -19,9 +19,10 @@ export const AgentPlacementSchema = z
     (value) => !value.exclusive || (value.target === 'remote' && value.checkout === 'isolated'),
   );
 /** Prepared platform requests; an empty object is distinct from an omitted request. */
-export const AgentPlacementRequestSchema = z
+const AgentPlacementRequestShape = z
   .object({
-    target: z.enum(['local', 'remote']).optional(),
+    // `e2b` (cloud machines): a new sandbox; needs `cloudMachines: 1`.
+    target: z.enum(['local', 'remote', 'e2b']).optional(),
     checkout: z.enum(['shared', 'worktree', 'isolated']).optional(),
     os: z.enum(['linux', 'macos']).optional(),
     arch: z.enum(['x86_64', 'aarch64']).optional(),
@@ -32,8 +33,19 @@ export const AgentPlacementRequestSchema = z
       .optional(),
     exclusive: z.boolean().optional(),
   })
-  .strict()
-  .refine((value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated')
+  .strict();
+export const AgentPlacementRequestSchema = AgentPlacementRequestShape.refine(
+  (value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated',
+)
+  .refine(
+    (value) =>
+      value.target !== 'e2b' ||
+      ((value.checkout ?? 'isolated') === 'isolated' &&
+        !value.os &&
+        !value.arch &&
+        !value.nodeId &&
+        !value.exclusive),
+  )
   .refine(
     (value) =>
       !value.exclusive ||
@@ -41,10 +53,15 @@ export const AgentPlacementRequestSchema = z
   );
 export type AgentPlacementRequest = z.infer<typeof AgentPlacementRequestSchema>;
 
-/** Agent projections include platform fields, but always resolve target and checkout. */
-const AgentResolvedPlacementSchema = AgentPlacementRequestSchema.and(
+/**
+ * Agent projections include platform fields, but always resolve target and
+ * checkout. A cloud agent's projection is read as reported (no request rules).
+ */
+const AgentResolvedPlacementSchema = AgentPlacementRequestShape.refine(
+  (value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated',
+).and(
   z.object({
-    target: z.enum(['local', 'remote']),
+    target: z.enum(['local', 'remote', 'e2b']),
     checkout: z.enum(['shared', 'worktree', 'isolated']),
   }),
 );
@@ -83,6 +100,12 @@ export const AgentNodeFieldsSchema = z.object({
   nodeState: z.enum(['ready', 'offline', 'incompatible', 'removed']).optional(),
   checkpoint: AgentCheckpointSchema.optional(),
   placementError: z.object({ code: z.string(), detail: z.string() }).optional(),
+  /** Cloud machines: present while the agent's E2B sandbox starts. */
+  cloudStart: z
+    .object({ step: z.string().min(1) })
+    .passthrough()
+    .optional()
+    .catch(undefined),
   // An unknown shape drops only `setup`, never the other placement fields.
   setup: RemoteSetupStatusSchema.optional().catch(undefined),
   // Opaque diagnostic text: never a frontend or head filesystem path.

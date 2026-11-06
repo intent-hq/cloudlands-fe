@@ -13,6 +13,10 @@
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
+import { parseCloudMachineError, type CloudMachineErrorData } from '$shared/types/cloud-machines';
+
+/** Where an agent on E2B is in its sandbox's life. */
+type AgentCloudState = 'starting' | 'running' | 'paused' | 'resuming' | 'pausing' | 'stopping';
 
 type AgentMachineState = 'ready' | 'unreachable' | 'revoked';
 
@@ -22,6 +26,8 @@ export interface AgentMachineLocation {
   /** "macOS arm64"; null when neither the agent nor the machine reports it. */
   platform: string | null;
   state: AgentMachineState;
+  /** Agents on E2B: the sandbox state; absent for other machines or when unknown. */
+  cloud?: { state: AgentCloudState | null };
 }
 
 export type AgentPlacementNoticeKind =
@@ -49,7 +55,22 @@ export function machinePlatformLabel(os?: string, arch?: string): string | null 
 
 /** True when the agent is placed on another machine. */
 function isRemoteAgent(agent: AgentSession | null | undefined): boolean {
-  return agent?.placement?.target === 'remote';
+  return agent?.placement?.target === 'remote' || agent?.placement?.target === 'e2b';
+}
+
+const CLOUD_STATES = new Set<string>(['running', 'paused', 'resuming', 'pausing', 'stopping']);
+
+/** The sandbox state of an agent on E2B, from its start fields or its sandbox row. */
+function agentCloudState(
+  agent: AgentSession,
+  machine: RemoteMachine | null,
+): AgentCloudState | null {
+  if (agent.placementError) return null;
+  if (agent.cloudStart) return 'starting';
+  if (!agent.nodeId) return agent.effectiveIsolation === 'pending' ? 'starting' : null;
+  const state = machine?.cloud?.state;
+  if (state && CLOUD_STATES.has(state)) return state as AgentCloudState;
+  return agent.effectiveIsolation === 'pending' ? 'starting' : null;
 }
 
 /**
@@ -63,6 +84,15 @@ export function agentMachineLocation(
   if (!agent || !isRemoteAgent(agent)) return null;
   const nodeId = agent.nodeId ?? agent.placement?.nodeId ?? '';
   const listed = machine && machine.id === nodeId ? machine : null;
+  if (agent.placement?.target === 'e2b')
+    return {
+      nodeId,
+      name: agent.nodeName?.trim() || 'E2B', // i18n-ignore (product name)
+      platform: machinePlatformLabel(listed?.platform?.os, listed?.platform?.arch),
+      // A paused sandbox drops its link on purpose: never "unreachable".
+      state: 'ready',
+      cloud: { state: agentCloudState(agent, listed) },
+    };
   const platform =
     machinePlatformLabel(agent.placement?.os, agent.placement?.arch) ??
     machinePlatformLabel(listed?.platform?.os, listed?.platform?.arch);
@@ -103,8 +133,39 @@ export function machineLocation(
   };
 }
 
+/** "running", "paused", … for an agent on E2B; null when unknown. */
+function cloudStateLabel(state: AgentCloudState | null | undefined): string | null {
+  switch (state) {
+    case 'starting':
+      return m.cloudMachines_agent_starting();
+    case 'running':
+      return m.cloudMachines_agent_running();
+    case 'paused':
+      return m.cloudMachines_agent_paused();
+    case 'resuming':
+      return m.cloudMachines_agent_resuming();
+    case 'pausing':
+      return m.cloudMachines_agent_pausing();
+    case 'stopping':
+      return m.cloudMachines_agent_stopping();
+    default:
+      return null;
+  }
+}
+
+/** "E2B · paused" for an agent on E2B, else the machine name. */
+export function agentMachineChipLabel(location: AgentMachineLocation): string {
+  const state = cloudStateLabel(location.cloud?.state);
+  return state ? m.cloudMachines_agent_chip({ machine: location.name, state }) : location.name;
+}
+
 /** "Runs on Mac mini · macOS arm64", plus the machine state when it has one. */
 export function agentMachineTooltip(location: AgentMachineLocation): string {
+  if (location.cloud) {
+    const state = cloudStateLabel(location.cloud.state);
+    const where = m.remoteAgent_location_tooltipNoPlatform({ machine: location.name });
+    return state ? m.remoteAgent_location_tooltipWithState({ location: where, state }) : where;
+  }
   const where = location.platform
     ? m.remoteAgent_location_tooltip({ machine: location.name, platform: location.platform })
     : m.remoteAgent_location_tooltipNoPlatform({ machine: location.name });
@@ -137,7 +198,7 @@ export function agentPlacementNoticeKind(
   if (agent.placementError) return 'failed';
   if (location.state === 'revoked') return 'revoked';
   if (location.state === 'unreachable') return 'unreachable';
-  if (agent.effectiveIsolation === 'pending') return 'starting';
+  if (agent.effectiveIsolation === 'pending' || agent.cloudStart) return 'starting';
   if (agent.setup?.state === 'failed') return 'setup-failed';
   return null;
 }
@@ -146,6 +207,8 @@ export interface PlacementFailure {
   message: string;
   /** The machine must update Intent before an agent can start there. */
   updateRequired: boolean;
+  /** A cloud machine error (E2B), when the failure carries one. */
+  cloud?: CloudMachineErrorData;
 }
 
 /**
@@ -182,6 +245,10 @@ export function placementFailure(
     error.code === 'machine-update-required' || split?.data.code === 'machine-update-required';
   if (updateRequired && split?.data.reason === 'prepared-checkout')
     return { updateRequired, message: m.remoteAgent_updateRequired_preparedCheckout({ machine }) };
+  const cloud =
+    parseCloudMachineError(split?.data) ??
+    (error.code ? parseCloudMachineError({ code: error.code }) : null);
+  if (cloud) return { updateRequired, message: split?.message || detail, cloud };
   return { updateRequired, message: split?.message || detail };
 }
 

@@ -3,6 +3,7 @@ import { desktopControlReducer } from './slices/desktop-control/desktop-control-
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
+import { cloudMachinesReducer } from '$features/cloud-machines/cloud-machines-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
 import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
 import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
@@ -268,4 +269,5 @@ export const reducers = {
   invitationAccountSearch: invitationAccountSearchReducer,
   hostMembership: hostMembershipReducer,
   remoteMachines: remoteMachinesReducer,
+  cloudMachines: cloudMachinesReducer,
 } as const;
