@@ -180,6 +180,9 @@ test('native menu holds expansion only for the lifetime of the menu', async ({
   test.skip(baseline);
   await page.setViewportSize({ width: 1000, height: 740 });
   await mount(Harness, { hooksConfig: { mockBackend: {} } });
+  await page.mouse.move(900, 700);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '0');
   await page.getByTestId('dock-drag-handle').hover();
   const shell = page.getByTestId('dock-shell');
   await expect(shell).toHaveAttribute('data-reveal', '1');

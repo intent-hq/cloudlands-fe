@@ -976,6 +976,7 @@
       style:--camera-width={`${cameraWidth}px`}
       style:--grip-press-duration={`${gesture ? spring.fast.settleMs : spring.fast.exit.duration}ms`}
       onpointerdowncapture={() => {
+        pointerInside = true;
         dismissedUntilLeave = false;
         keyboardOpen = false;
       }}
