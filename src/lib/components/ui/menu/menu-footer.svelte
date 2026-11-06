@@ -15,7 +15,7 @@
 <div
   data-slot="menu-footer"
   class={cn(
-    'menu-footer type-caption relative z-10 -mx-1.5 -mb-1.5 mt-1.5 border-t border-border bg-muted/20 px-3.5 py-1.5 leading-(--text-caption-line-height) font-normal text-muted-foreground/80 [&_[data-menu-item]]:hover:bg-hover [&_[data-menu-item]]:focus-visible:bg-hover',
+    'menu-footer type-caption relative z-10 -mx-1.5 -mb-1.5 mt-1.5 border-t border-border bg-muted/20 px-3.5 py-1.5 leading-(--text-caption-line-height) font-normal text-muted-foreground [&_[data-menu-item]]:hover:bg-hover [&_[data-menu-item]]:focus-visible:bg-hover',
     className,
   )}
   {...restProps}

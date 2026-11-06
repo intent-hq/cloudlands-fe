@@ -33,7 +33,7 @@
     OPTION_LIST_ROW_CLASS,
     'flex min-h-0 items-start gap-2.5 px-2.5 py-1 font-normal text-muted-foreground',
     !alignIconColumn &&
-      'menu-section-label px-2 leading-(--text-caption-line-height) text-muted-foreground/80',
+      'menu-section-label px-2 leading-(--text-caption-line-height) text-muted-foreground',
     className,
   )}
   {...restProps}
