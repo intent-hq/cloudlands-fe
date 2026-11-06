@@ -9,6 +9,7 @@ import { takeLatestFromSelector } from '@themislib/themis/saga';
 import { takeEvery } from 'typed-redux-saga';
 import { recordingDockClip } from '$shared/dock-evidence';
 import { evidenceOf } from './dock-evidence-saga';
+import { dockInputLive } from './dock-live-input';
 import { findDockService, isDockServiceCurrent } from './dock-service-routing';
 import { m } from '$shared/paraglide/messages.js';
 import { call, put, race, take, takeLatest, delay, type SagaGenerator } from 'typed-redux-saga';
@@ -74,19 +75,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   // unless a recording, an annotate session or dictation is live (then nothing changes).
   if (context.toggleClose === true) {
     if (context.action !== 'focus') return;
-    const dock = appStore.state.dockConversation;
-    const evidence =
-      dock.workspaceId && dock.agentId ? evidenceOf(dock.workspaceId, dock.agentId) : undefined;
-    // The composer's own mic (push-to-talk, a transcription in flight) counts as live
-    // too: closing could unmount it, and its Escape would cancel the recording.
-    const hardware = appStore.state.hardwareConsole;
-    const live =
-      !!dock.nativeSpeech.activeId ||
-      !!recordingDockClip(evidence) ||
-      !!evidence?.annotation ||
-      hardware.pttRecording ||
-      hardware.voiceTranscribing;
-    if (!live) yield* put(dockCloseRequested());
+    if (!dockInputLive()) yield* put(dockCloseRequested());
     return;
   }
   // While a recording hides the notch: only that recording's own pair, never routed.

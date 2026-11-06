@@ -311,8 +311,9 @@ export const dockEvidenceDictationFinished = createAction<
 export const dockEvidenceRecordingBatchCleared = createAction<
   [workspaceId: string, agentId: string, imageId: string]
 >('dockConversation/recordingBatchCleared');
+/** `capture`: opened by a new screenshot or recording, so the dock closes behind it. */
 export const dockMediaEditorOpenRequested = createAction<
-  [workspaceId: string, agentId: string, logicalAttachmentId: string]
+  [workspaceId: string, agentId: string, logicalAttachmentId: string, origin?: 'capture']
 >('dockConversation/mediaEditorOpenRequested');
 export const dockMediaEditSaveRequested = createAction<
   [requestId: string, request: DockMediaSaveRequest, authority: string]

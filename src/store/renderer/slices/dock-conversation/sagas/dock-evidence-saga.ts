@@ -358,7 +358,7 @@ function* capture({
     activePair(workspaceId, agentId) &&
     dockCaptureEditorPreviewEnabled()
   )
-    yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, image.id));
+    yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, image.id, 'capture'));
 }
 
 function* startSession(
@@ -1298,7 +1298,7 @@ function* placeFinishedClip(
       isDockBindingCurrent(binding) &&
       dockCaptureEditorPreviewEnabled()
     )
-      yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, clipId));
+      yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, clipId, 'capture'));
     // The daemon now owns the bytes; native may drop its finished temp file (never re-stops).
     const releasing = service;
     if (releasing?.releaseClip)

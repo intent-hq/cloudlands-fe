@@ -30,6 +30,7 @@ import {
 import { applyDockMediaSave, DockMediaSaveRequestSchema } from '$shared/dock-media-edit';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
+  type DockCaptureEditorOpenResult,
   type DockCaptureEditorRetakeResult,
   type DockCaptureEditorSaveResult,
 } from '$shared/dock-capture-editor';
@@ -49,6 +50,8 @@ import {
   dockEvidenceMediaChanged,
 } from '../dock-conversation-slice';
 import { evidenceOf, dockMediaNativeService } from './dock-evidence-saga';
+import { dockInputLive } from './dock-live-input';
+import { dockCloseRequested } from '../../hud/hud-slice';
 
 const requestSchema = z
   .object({
@@ -303,7 +306,7 @@ interface MediaPreparation {
 }
 
 /** The editor opens only after the source metadata has passed the same durable writer. */
-function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<typeof dockMediaEditorOpenRequested>,
+function* openEditor({ payload: [workspaceId, agentId, logicalId, origin] }: ReturnType<typeof dockMediaEditorOpenRequested>,
   preparation: Channel<MediaPreparation>): SagaGenerator<void> {
   const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
   if (!authority) return;
@@ -398,7 +401,15 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId] }: ReturnType<
       marks: [], source, saved: media.saved, transcript: media.transcript,
       ...(media.originalSource ? { originalSource: media.originalSource } : {}),
     };
-    yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request));
+    const opened = (yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request))) as
+      DockCaptureEditorOpenResult | undefined;
+    // A new capture's editor takes over: the dock closes behind it, as Escape would,
+    // once the editor is open and only for the conversation still shown. Live input
+    // (dictation, a recording, an annotate session, the mic) keeps it open.
+    const dock = store.state.dockConversation;
+    if (origin === 'capture' && opened?.ok && current() &&
+        dock.workspaceId === workspaceId && dock.agentId === agentId && !dockInputLive())
+      yield* put(dockCloseRequested());
     // Root-owned background work is outside the per-pair Edit FIFO. Attached
     // forks here would still keep that FIFO call blocked until recognition ends.
     yield* put(preparation, { workspaceId, agentId, logicalId, authority, binding });
