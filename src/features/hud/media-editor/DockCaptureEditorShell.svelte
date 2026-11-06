@@ -34,6 +34,7 @@
     sidebar,
     sidebarWidth = 300,
     sidebarLayout = 'panel',
+    actionsPlacement = 'header',
   }: {
     title: string;
     subtitle?: string;
@@ -62,7 +63,14 @@
      * column of chips) always stays on the right.
      */
     sidebarLayout?: 'panel' | 'rail';
+    /**
+     * `header`: the title and actions sit in the top strip. `sidebar`: no visible header
+     * (the title stays for assistive tech, a slim strip keeps the window draggable) and
+     * the actions are pinned at the bottom of a flat sidebar.
+     */
+    actionsPlacement?: 'header' | 'sidebar';
   } = $props();
+  const footerActions = $derived(actionsPlacement === 'sidebar' && !!sidebar);
 
   // A generated file name ("clip-1a2b3c4d.mp4") says nothing the title does not; a name
   // the person gave stays.
@@ -117,28 +125,44 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="capture-editor" data-testid="capture-editor">
-  <header class="header">
-    <div class="titles">
-      <h1 class="title">{title}</h1>
-      {#if shownSubtitle}<span class="subtitle">{shownSubtitle}</span>{/if}
-    </div>
-    <div class="actions">
-      {@render headerActions?.()}
-      <Button variant="ghost" size="sm" onclick={requestClose}
-        >{m.dock_captureEditor_cancel_label()}</Button
+{#snippet actions()}
+  <div class="actions">
+    {@render headerActions?.()}
+    <Button variant="ghost" size="sm" onclick={requestClose}
+      >{m.dock_captureEditor_cancel_label()}</Button
+    >
+    {#if onSave}
+      <Button
+        variant={dirty ? 'primary' : 'secondary'}
+        size="sm"
+        disabled={!dirty || saving || saveBlocked}
+        data-save
+        onclick={() => onSave?.()}>{m.dock_captureEditor_save_label()}</Button
       >
-      {#if onSave}
-        <Button
-          variant={dirty ? 'primary' : 'secondary'}
-          size="sm"
-          disabled={!dirty || saving || saveBlocked}
-          data-save
-          onclick={() => onSave?.()}>{m.dock_captureEditor_save_label()}</Button
-        >
-      {/if}
-    </div>
-  </header>
+    {/if}
+  </div>
+{/snippet}
+
+<div
+  class="capture-editor"
+  data-testid="capture-editor"
+  data-footer-actions={footerActions || undefined}
+>
+  {#if footerActions}
+    <!-- No visible header: a slim strip keeps the window draggable; the title is for
+         assistive tech only. -->
+    <header class="drag-strip">
+      <h1 class="sr-only">{title}</h1>
+    </header>
+  {:else}
+    <header class="header">
+      <div class="titles">
+        <h1 class="title">{title}</h1>
+        {#if shownSubtitle}<span class="subtitle">{shownSubtitle}</span>{/if}
+      </div>
+      {@render actions()}
+    </header>
+  {/if}
   <div
     class="body"
     data-has-sidebar={!!sidebar || undefined}
@@ -146,7 +170,16 @@
     style:--sidebar-width={`${sidebarWidth}px`}
   >
     <main class="main">{@render main()}</main>
-    {#if sidebar}<aside class="sidebar">{@render sidebar()}</aside>{/if}
+    {#if sidebar}
+      <aside class="sidebar" data-flat={footerActions || undefined}>
+        {#if footerActions}
+          <div class="sidebar-scroll">{@render sidebar()}</div>
+          <footer class="sidebar-footer">{@render actions()}</footer>
+        {:else}
+          {@render sidebar()}
+        {/if}
+      </aside>
+    {/if}
   </div>
 </div>
 
@@ -213,6 +246,33 @@
     align-items: center;
     gap: 6px;
     -webkit-app-region: no-drag;
+  }
+  .drag-strip {
+    height: 14px;
+    flex: none;
+    -webkit-app-region: drag;
+  }
+  /* Flat sidebar: no card, no border; its content scrolls, the actions stay put. */
+  .sidebar[data-flat] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+  .sidebar-scroll {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+  }
+  .sidebar-footer {
+    display: flex;
+    justify-content: flex-end;
+    flex: none;
+    padding: 10px 4px 0;
   }
   .body {
     display: grid;

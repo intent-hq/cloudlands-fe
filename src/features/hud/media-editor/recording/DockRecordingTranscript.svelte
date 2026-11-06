@@ -255,7 +255,7 @@
     flex: 1;
     min-height: 0;
     overflow: auto;
-    padding: 12px 16px;
+    padding: 0 4px 8px;
     font-size: 12px;
     line-height: 1.6;
   }

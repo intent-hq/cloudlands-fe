@@ -396,6 +396,7 @@
   onSave={canSave ? save : undefined}
   onCancel={onClose}
   sidebar={sendOptions}
+  actionsPlacement="sidebar"
   onUndo={edits ? () => edits.undo() : undefined}
   onRedo={edits ? () => edits.redo() : undefined}
   {discardRequest}
@@ -444,30 +445,6 @@
             onSelect={(id) => (selectedMarkId = id)}
             onDelete={deleteMark}
           />
-          {#if marksEditable}
-            <div
-              class="frame-tools"
-              role="toolbar"
-              aria-label={m.dock_captureEditor_frameTools_label()}
-            >
-              {#each frameTools as entry (entry.glyph)}
-                <Button
-                  variant="plain"
-                  size="icon-sm"
-                  aria-pressed={frameTool === entry.tool}
-                  aria-label={frameToolLabels[entry.tool ?? 'pointer']()}
-                  tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
-                  onclick={() => {
-                    frameTool = entry.tool;
-                    pauseForFrame();
-                    if (entry.tool) selectedMarkId = null;
-                  }}
-                >
-                  <DockComposerIcon glyph={entry.glyph} size={16} />
-                </Button>
-              {/each}
-            </div>
-          {/if}
         {/if}
         {#if activeMark && activeMark.atMs !== null}
           <span class="mark-label" data-mark-label
@@ -476,7 +453,35 @@
           >
         {/if}
       </div>
+      <!-- One row under the video, on the left: the drawing tools (when marks can be
+           drawn), then play and the time. The timeline is below. -->
       <div class="controls">
+        {#if source && edits && marksEditable && !failed}
+          <div
+            class="frame-tools"
+            role="toolbar"
+            aria-label={m.dock_captureEditor_frameTools_label()}
+          >
+            {#each frameTools as entry (entry.glyph)}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                active={frameTool === entry.tool}
+                aria-pressed={frameTool === entry.tool}
+                aria-label={frameToolLabels[entry.tool ?? 'pointer']()}
+                tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
+                onclick={() => {
+                  frameTool = entry.tool;
+                  pauseForFrame();
+                  if (entry.tool) selectedMarkId = null;
+                }}
+              >
+                <DockComposerIcon glyph={entry.glyph} size={16} />
+              </Button>
+            {/each}
+          </div>
+          <span class="divider" aria-hidden="true"></span>
+        {/if}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -627,23 +632,15 @@
 {/snippet}
 
 <style>
-  /* The drawing tools float over the bottom of the video. */
   .frame-tools {
-    position: absolute;
-    bottom: 10px;
-    left: 50%;
     display: flex;
     gap: 2px;
-    padding: 2px;
-    border: 1px solid hsl(var(--border));
-    border-radius: var(--radius-medium);
-    background: hsl(var(--card));
-    box-shadow: var(--elevation-raised);
-    transform: translateX(-50%);
   }
-  .frame-tools :global([aria-pressed='true']) {
-    background: hsl(var(--selected));
-    color: hsl(var(--foreground));
+  .divider {
+    width: 1px;
+    height: 18px;
+    margin: 0 4px;
+    background: hsl(var(--border));
   }
   .save-problem {
     margin: 0;
@@ -652,14 +649,14 @@
   }
   .readonly-note {
     margin: 0;
-    padding: 10px 16px 0;
+    padding: 6px 4px 0;
     font-size: 11px;
     color: hsl(var(--muted-foreground));
   }
   .transcript-tools {
     display: flex;
     justify-content: flex-end;
-    padding: 6px 10px 0;
+    padding: 0 0 4px;
   }
   /* Send options stay put; the transcript below scrolls on its own. */
   .sidebar-content {
