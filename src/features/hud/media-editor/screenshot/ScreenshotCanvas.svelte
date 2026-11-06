@@ -912,7 +912,9 @@
     padding: 0;
     resize: none;
     font: inherit;
+    font-weight: 400;
     letter-spacing: normal;
+    -webkit-font-smoothing: auto;
     line-height: inherit;
     border-radius: 0;
     border: 0;
