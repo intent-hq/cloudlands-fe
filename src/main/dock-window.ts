@@ -42,6 +42,20 @@ const DOCK_ROUTE_PREFIX = '/dock';
 
 let dockWindowRef: BrowserWindow | null = null;
 let placementController: DockPlacementController | null = null;
+/**
+ * The hit regions the dock had when a system selection hid it. Hiding clears the live
+ * regions (as any hide must), but the selection keeps the document mounted and the
+ * renderer deduplicates unchanged geometry, so it never republishes them: on reveal the
+ * dock would be click-through everywhere. Restored only for the same document and
+ * placement revision, and only if nothing newer arrived meanwhile.
+ */
+let selectionRegions: {
+  window: BrowserWindow;
+  document: number;
+  state: { active: boolean; regions: DockPointerRect[]; revision?: number };
+} | null = null;
+/** Counts main-frame navigations of the dock: hit regions belong to one document. */
+let dockDocument = 0;
 let pointerState: { active: boolean; regions: DockPointerRect[]; revision?: number } = {
   active: false,
   regions: [],
@@ -634,6 +648,7 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     resetDockPointerRouting(window);
   });
   window.webContents.on('did-start-navigation', (_event, url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) dockDocument += 1;
     if (dockWindowRef === window && mainFrame && !inPlace) resetDockRendererReady(window);
     const operation = pendingBackendSwitch;
     if (!operation || operation.window !== window || inPlace || !mainFrame) return;
@@ -883,6 +898,11 @@ export function setDockHiddenForSelection(
     if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
     captureHiddenWindows.add(window);
     placementController?.cancelInteraction();
+    selectionRegions = {
+      window,
+      document: dockDocument,
+      state: { ...pointerState, regions: [...pointerState.regions] },
+    };
     // The pointer poll stops while hidden, so its last "inside" would outlive the
     // selection: back over the dock, no enter would ever be sent, and the dock would
     // stay collapsed and click-through. Forget it, as a capture's suppression does.
@@ -892,8 +912,25 @@ export function setDockHiddenForSelection(
     return;
   }
   captureHiddenWindows.delete(window);
+  const held = selectionRegions;
+  selectionRegions = null;
   if (owner.restore !== false && canRevealDock(window)) {
     window.showInactive();
+    // The hide cleared the regions. Bring back the ones from before the selection when
+    // they still describe this document and placement and nothing newer arrived (the
+    // renderer will not republish unchanged geometry); otherwise its own next publish
+    // (a new revision or document always republishes) supplies them.
+    const revision = placementController?.getSnapshot()?.revision;
+    if (
+      held &&
+      held.window === window &&
+      held.document === dockDocument &&
+      held.state.revision === revision &&
+      !pointerState.active &&
+      pointerState.regions.length === 0 &&
+      pointerState.revision === revision
+    )
+      pointerState = held.state;
     // Re-route at once from the live cursor rather than the pre-selection state.
     appliedPointerRouting.delete(window);
     setDockPointerRegions(window, pointerState);
