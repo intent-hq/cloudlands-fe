@@ -16,6 +16,7 @@
   import { PREVIEW_FIXTURE_TIMESTAMPS } from '$lib/component-catalog/preview-fixtures';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
+  import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
@@ -129,6 +130,17 @@
     };
   }
 
+  /** Labs: the E2B cloud machines command, from off or on. */
+  function setupCloudLab(enabled: boolean) {
+    const previous = appStore.state.userPreferences?.labsCloudMachinesEnabled === true;
+    appStore.dispatch(setLabsCloudMachinesEnabled(enabled));
+    const stop = setupPaletteNoteSearch();
+    return () => {
+      stop();
+      appStore.dispatch(setLabsCloudMachinesEnabled(previous));
+    };
+  }
+
   export const preview = definePreview<{ initialQuery: string; withoutWorkspace?: boolean }>({
     id: 'command-palette',
     title: 'Command palette',
@@ -149,6 +161,14 @@
         setup: setupPaletteNoteSearch,
       },
       multiplayer: { props: { initialQuery: 'multiplayer' }, setup },
+      'labs-e2b-off': {
+        props: { initialQuery: 'E2B', withoutWorkspace: true },
+        setup: () => setupCloudLab(false),
+      },
+      'labs-e2b-on': {
+        props: { initialQuery: 'E2B', withoutWorkspace: true },
+        setup: () => setupCloudLab(true),
+      },
       'provider-profiles': {
         props: { initialQuery: 'provider profiles', withoutWorkspace: true },
         setup: setupPaletteNoteSearch,

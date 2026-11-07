@@ -31,6 +31,7 @@ import {
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsBrowserAccessEnabled,
   selectLabsTabGroupsEnabled,
+  selectLabsCloudMachinesEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectPauseAnimationsWhenUnfocused,
@@ -65,6 +66,7 @@ import {
   setLabsPlainFolderWorkspacesEnabled,
   setLabsBrowserAccessEnabled,
   setLabsTabGroupsEnabled,
+  setLabsCloudMachinesEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setPauseAnimationsWhenUnfocused,
@@ -84,6 +86,7 @@ import {
   toggleLabsPlainFolderWorkspaces,
   toggleLabsBrowserAccess,
   toggleLabsTabGroups,
+  toggleLabsCloudMachines,
   togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -111,6 +114,7 @@ const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
 const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
 const LABS_TAB_GROUPS_STORAGE_KEY = 'labs:tabGroupsEnabled';
+const LABS_CLOUD_MACHINES_STORAGE_KEY = 'labs:cloudMachinesEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -275,6 +279,13 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setLabsTabGroupsEnabled(labsTabGroupsEnabled));
   }
 
+  const labsCloudMachinesEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_CLOUD_MACHINES_STORAGE_KEY,
+  );
+  if (typeof labsCloudMachinesEnabled === 'boolean') {
+    yield* put(setLabsCloudMachinesEnabled(labsCloudMachinesEnabled));
+  }
+
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
   if (validAgentFont(agentFont)) yield* put(setAgentFontStyle(agentFont.fontStyle));
 
@@ -427,6 +438,13 @@ function* persistLabsBrowserAccessWorker() {
   );
 }
 
+function* persistLabsCloudMachinesWorker() {
+  yield* setLocalStorageJSON(
+    LABS_CLOUD_MACHINES_STORAGE_KEY,
+    yield* selectLabsCloudMachinesEnabled.effect(),
+  );
+}
+
 function* persistLabsTabGroupsWorker() {
   yield* setLocalStorageJSON(
     LABS_TAB_GROUPS_STORAGE_KEY,
@@ -560,6 +578,10 @@ function* watchUserPreferenceWrites() {
     persistLabsBrowserAccessWorker,
   );
   yield* takeEvery([setLabsTabGroupsEnabled, toggleLabsTabGroups], persistLabsTabGroupsWorker);
+  yield* takeEvery(
+    [setLabsCloudMachinesEnabled, toggleLabsCloudMachines],
+    persistLabsCloudMachinesWorker,
+  );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);
   yield* takeEvery(setCodeFontFamily, persistCodeFontWorker);

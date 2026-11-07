@@ -2562,7 +2562,7 @@
           // A new repository or a plain folder has no commit for a remote agent to start from.
           startOnMachineId: startOnBackendOnly
             ? ''
-            : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
+            : selectEffectiveStartOn.select(appStore.state, startOnMachineId, selectedProvider),
         },
         rememberAgentRepoKey,
         setupScriptExplicit,

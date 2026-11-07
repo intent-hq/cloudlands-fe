@@ -10,6 +10,7 @@ import { invitationAccountSearchSaga } from './slices/invitation-account-search/
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { remoteMachinesSaga } from '$features/remote-machines/remote-machines-saga';
+import { cloudMachinesSaga } from '$features/cloud-machines/cloud-machines-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
 import { repositoryCheckoutSaga } from './slices/repository-checkout/sagas/repository-checkout-saga';
@@ -276,6 +277,7 @@ export const sagas = [
   browserClientsSaga,
   personalDevicesSaga,
   remoteMachinesSaga,
+  cloudMachinesSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,

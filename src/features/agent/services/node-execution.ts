@@ -77,7 +77,9 @@ export class NodeExecutionClient {
     const placement = AgentPlacementRequestSchema.parse(input);
     const checkLabs = () => {
       if (
-        (placement.target === 'remote' || placement.exclusive === true) &&
+        (placement.target === 'remote' ||
+          placement.target === 'e2b' ||
+          placement.exclusive === true) &&
         !this.remoteEnabled()
       ) {
         throw new Error(m.agent_placement_labsRequired());

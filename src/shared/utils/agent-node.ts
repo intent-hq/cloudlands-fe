@@ -64,6 +64,7 @@ export function hasNodeOwnedAgentPath(agent?: AgentNodeFields | null): boolean {
   return (
     !!agent &&
     (agent.placement?.target === 'remote' ||
+      agent.placement?.target === 'e2b' ||
       agent.placement?.checkout === 'isolated' ||
       agent.nodePath !== undefined)
   );

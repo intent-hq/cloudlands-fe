@@ -152,8 +152,12 @@
     faTriangleExclamation,
     faCircleInfo,
   } from '@fortawesome/free-solid-svg-icons';
-  import { faDesktop } from '$lib/icons/phosphor-icons';
-  import { agentMachineLocation, machineLocation } from '$features/remote-machines/agent-location';
+  import { faCloud, faDesktop } from '$lib/icons/phosphor-icons';
+  import {
+    agentMachineChipLabel,
+    agentMachineLocation,
+    machineLocation,
+  } from '$features/remote-machines/agent-location';
   import {
     selectCurrentBackendLabel,
     selectDefaultHasOverrides,
@@ -2543,8 +2547,8 @@
             aria-hidden="true"
             data-remote-model-machine
           >
-            <Fa icon={faDesktop} class="size-3!" />
-            <span class="truncate">{remoteLocation.name}</span>
+            <Fa icon={remoteLocation.cloud ? faCloud : faDesktop} class="size-3!" />
+            <span class="truncate">{agentMachineChipLabel(remoteLocation)}</span>
           </span>
         {/if}
       {:else if triggerProfileLoading}
@@ -2583,8 +2587,8 @@
               aria-hidden="true"
               data-remote-model-machine
             >
-              <Fa icon={faDesktop} class="size-3!" />
-              <span class="truncate">{remoteLocation.name}</span>
+              <Fa icon={remoteLocation.cloud ? faCloud : faDesktop} class="size-3!" />
+              <span class="truncate">{agentMachineChipLabel(remoteLocation)}</span>
             </span>
           {/if}
         {:else if triggerProfileLoading}

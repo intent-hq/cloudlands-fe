@@ -41,6 +41,7 @@
     selectLabsPlainFolderWorkspacesEnabled,
     selectLabsBrowserAccessEnabled,
     selectLabsTabGroupsEnabled,
+    selectLabsCloudMachinesEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
@@ -147,6 +148,7 @@
   const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
   const labsTabGroups$ = selectLabsTabGroupsEnabled();
+  const labsCloudMachines$ = selectLabsCloudMachinesEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -178,6 +180,7 @@
           $labsPlainFolders$,
           $labsBrowserAccess$,
           $labsTabGroups$,
+          $labsCloudMachines$,
         ),
     ),
   );
