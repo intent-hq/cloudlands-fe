@@ -198,7 +198,8 @@
   </article>
 {/if}
 {#if compact && capture.voice === 'transcript' && capture.transcript}
-  <details class="compact-transcript">
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions (preserve native word selection without opening the parent message editor) -->
+  <details class="compact-transcript" ondblclick={(event) => event.stopPropagation()}>
     <summary class="type-caption">{m.dock_captureEditor_voiceTranscript_label()}</summary>
     <p class="type-body whitespace-pre-wrap">{capture.transcript}</p>
   </details>
