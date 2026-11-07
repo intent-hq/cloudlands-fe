@@ -35,10 +35,12 @@ import {
   DEFAULT_CONNECTION_ACCENT,
   LOCAL_CONNECTION_ID,
   isConnectionAccent,
+  isDaemonMode,
   isDetectedDeviceKind,
   isDeviceIconChoice,
   type ConnectionAccent,
   type ConnectionRecord,
+  type DaemonMode,
   type DetectedDeviceKind,
   type DeviceIconChoice,
 } from '../../../shared/types/connections';
@@ -106,6 +108,12 @@ interface StoredConnection {
    * bump the LWW clock or notify sync.
    */
   updateSupported?: boolean | null;
+  /**
+   * Detected running mode (`regular` / `node`), refreshed on every connect.
+   * Observational per-machine state like `daemonVersion`: never part of the
+   * keychain-sync surface.
+   */
+  daemonMode?: DaemonMode | null;
   /**
    * Candidate hosts (#1746): the primary `host` first, then any additional IPs
    * the backend reported via `server.pairingInfo`. Absent on records written
@@ -188,6 +196,8 @@ export interface NewConnection {
   tcAddress?: string;
   /** "Detect all backend IPs" option (#1746); absent = enabled. */
   detectHosts?: boolean;
+  /** Mode detected while testing the credential; absent keeps a known mode. */
+  daemonMode?: DaemonMode;
   /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` keeps the
    * record local-only (never pushed to the keychain), `false` explicitly
@@ -301,6 +311,7 @@ export function createConnectionsStore(options: {
       hostname: stored.hostname ?? null,
       daemonVersion: stored.daemonVersion ?? null,
       updateSupported: stored.updateSupported ?? null,
+      ...(isDaemonMode(stored.daemonMode) ? { daemonMode: stored.daemonMode } : {}),
       syncExcluded: stored.syncExcluded === true,
       detectHosts: stored.detectHosts !== false,
       isLocal: false,
@@ -652,6 +663,8 @@ export function createConnectionsStore(options: {
         // Re-pair carries fresh pairing-URI facts: a tc= param overwrites, but
         // an absent one keeps the known address (older daemons/QRs omit it).
         if (conn.tcAddress !== undefined) survivor.tcAddress = conn.tcAddress;
+        if (conn.daemonMode) survivor.daemonMode = conn.daemonMode;
+        else if (fingerprintChanged) delete survivor.daemonMode;
         survivor.detectHosts = conn.detectHosts ?? true;
         survivor.syncExcluded = conn.syncExcluded ?? survivor.syncExcluded ?? false;
         survivor.hostname ??= duplicates.find((c) => c.hostname != null)?.hostname ?? null;
@@ -675,6 +688,7 @@ export function createConnectionsStore(options: {
         tcAddress: conn.tcAddress,
         detectHosts: conn.detectHosts ?? true,
         syncExcluded: conn.syncExcluded ?? false,
+        ...(conn.daemonMode ? { daemonMode: conn.daemonMode } : {}),
         encToken,
         updatedAt: stamp,
       };
@@ -1081,6 +1095,22 @@ export function createConnectionsStore(options: {
   }
 
   /**
+   * Persist the detected running mode of a remote daemon. Observational like
+   * {@link setDaemonVersion}: no LWW stamp, no sync notification. Returns
+   * `true` when the stored value changed.
+   */
+  async function setDaemonMode(id: string, mode: DaemonMode): Promise<boolean> {
+    if (!isDaemonMode(mode)) return false;
+    return mutate(async (state) => {
+      const conn = state.connections.find((c) => c.id === id);
+      if (!conn || conn.daemonMode === mode) return false;
+      conn.daemonMode = mode;
+      await writeState(state);
+      return true;
+    });
+  }
+
+  /**
    * Persist whether the remote daemon reports self-update support
    * (`updateSupported` from its `system.status`). `null` clears the flag back
    * to "unknown" — used when a successful `system.status` lacks the field (the
@@ -1463,6 +1493,7 @@ export function createConnectionsStore(options: {
     setDetectedDeviceKind,
     setDaemonVersion,
     setUpdateSupported,
+    setDaemonMode,
     setTcAddress,
     forget,
     getActiveId,

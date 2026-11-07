@@ -28,6 +28,7 @@ export const {
   setDetectedDeviceKind,
   setDaemonVersion,
   setUpdateSupported,
+  setDaemonMode,
   setTcAddress,
   forget,
   getActiveId,

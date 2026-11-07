@@ -2785,9 +2785,9 @@ describe('connections:* IPC handlers', () => {
         ]),
       });
     });
-    // Only the self-fingerprint probe and the reconnect-hello hostname,
-    // updateSupported and provider re-captures may hit the wire here — never a
-    // fingerprint capture.
+    // Only the self-fingerprint probe, the reconnect-hello hostname,
+    // updateSupported and provider re-captures, and the daemon-mode probe of a
+    // hello without `daemonMode` may hit the wire here — never a fingerprint capture.
     expect(
       rpc.calls.every(
         (method) =>
@@ -2795,7 +2795,8 @@ describe('connections:* IPC handlers', () => {
           method === 'host.status' ||
           method === 'system.status' ||
           method === 'host.providerDiscovery' ||
-          method === 'host.executionContext',
+          method === 'host.executionContext' ||
+          method === 'workspace.get',
       ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
