@@ -221,11 +221,11 @@ function* refresh(): SagaGenerator<void> {
 
 function* expose(action: ReturnType<typeof remoteMachineExposeRequested>): SagaGenerator<void> {
   if (!labsEnabled()) return;
-  const [connectionId, enableListener] = action.payload;
+  const [connectionId, enableListener, confirmed] = action.payload;
   if (store.state.remoteMachines.pending[connectionId]) return;
   const machine = selectConnectionLabel.select(store.state, connectionId);
   const backend = selectCurrentBackendLabel.select(store.state);
-  if (!enableListener) {
+  if (!enableListener && !confirmed) {
     const accepted = yield* call(confirm, {
       title: m.remoteMachines_expose_confirmTitle({ machine, backend }),
       description: m.remoteMachines_expose_warning({ machine, backend }),

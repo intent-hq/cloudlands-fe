@@ -44,9 +44,12 @@ export const remoteMachineChanged = createAction<[machine: RemoteMachine]>(
 export const remoteMachineRemoved = createAction<[machineId: string]>(
   'remoteMachines/machineRemoved',
 );
-/** Owner action on a saved machine row: make it available to the current backend. */
+/**
+ * Owner action on a saved machine row: make it available to the current
+ * backend. `confirmed` skips the confirmation when the node prompt already asked.
+ */
 export const remoteMachineExposeRequested = createAction<
-  [connectionId: string, enableListener?: RemoteMachineListener]
+  [connectionId: string, enableListener?: RemoteMachineListener, confirmed?: boolean]
 >('remoteMachines/exposeRequested');
 /** "Stop letting <backend> run agents here": remove from the backend, revoke on the machine. */
 export const remoteMachineUnexposeRequested = createAction<

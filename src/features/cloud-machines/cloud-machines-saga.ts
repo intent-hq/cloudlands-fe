@@ -1,5 +1,5 @@
 /**
- * Cloud machines (renderer): load the E2B provider and live sandboxes of the
+ * Cloud machines (renderer): load the E2B entries and live sandboxes of the
  * current backend and drive the owner actions (PROTOCOL `methods/nodes.md` →
  * "Cloud machines (E2B)"). The API key goes straight from the form into one
  * `cloudMachines.configure` request; it is never put in state or logged.
@@ -20,9 +20,10 @@ import { store } from '$store/renderer/store';
 import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
 import {
-  CLOUD_CONFIGURE_KEY,
-  CLOUD_REMOVE_KEY,
-  CLOUD_VALIDATE_KEY,
+  cloudConfigureKey,
+  cloudFormKey,
+  cloudRemoveKey,
+  cloudValidateKey,
   cloudMachineChanged,
   cloudMachineDeleteRequested,
   cloudMachineOperationSettled,
@@ -60,15 +61,22 @@ function cloudFailure(error: unknown): CloudMachineFailure {
   };
 }
 
-async function readCloudSupported(): Promise<boolean> {
+async function readCloudSupport(): Promise<{ supported: boolean; entries: boolean }> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
-      server?: { capabilities?: { remoteMachines?: unknown; cloudMachines?: unknown } | null };
+      server?: {
+        capabilities?: {
+          remoteMachines?: unknown;
+          cloudMachines?: unknown;
+          cloudMachineEntries?: unknown;
+        } | null;
+      };
     } | null;
     const capabilities = hello?.server?.capabilities;
-    return capabilities?.remoteMachines === 1 && capabilities.cloudMachines === 1;
+    const supported = capabilities?.remoteMachines === 1 && capabilities.cloudMachines === 1;
+    return { supported, entries: supported && capabilities.cloudMachineEntries === 1 };
   } catch {
-    return false;
+    return { supported: false, entries: false };
   }
 }
 
@@ -99,7 +107,7 @@ function* refresh(): SagaGenerator<void> {
     return;
   }
   const started = generation();
-  const supported = yield* call(readCloudSupported);
+  const { supported, entries } = yield* call(readCloudSupport);
   if (!supported) {
     if (started === generation())
       yield* put(cloudMachinesLoaded({ supported: false, providers: [], machines: [], readAt: 0 }));
@@ -112,21 +120,27 @@ function* refresh(): SagaGenerator<void> {
     list = null;
   }
   if (started !== generation() || !list) return;
-  yield* put(cloudMachinesLoaded({ supported: true, ...list, readAt: Date.now() }));
+  yield* put(cloudMachinesLoaded({ supported: true, entries, ...list, readAt: Date.now() }));
 }
 
 function* configure(
   action: ReturnType<typeof cloudMachinesConfigureRequested>,
 ): SagaGenerator<void> {
   const [input, validateOnly] = action.payload;
-  const key = validateOnly ? CLOUD_VALIDATE_KEY : CLOUD_CONFIGURE_KEY;
+  const formKey = cloudFormKey(input);
+  const key = validateOnly ? cloudValidateKey(formKey) : cloudConfigureKey(formKey);
   if (store.state.cloudMachines.pending[key]) return;
+  // Entry fields go only to a backend that keeps entries (`cloudMachineEntries: 1`).
+  const entries = store.state.cloudMachines.entries;
   const started = generation();
   yield* put(cloudMachineOperationStarted(key, validateOnly ? 'testing' : 'saving'));
-  if (validateOnly) yield* put(cloudMachineValidated(null));
+  if (validateOnly) yield* put(cloudMachineValidated(formKey, null));
   try {
     const result = yield* call(backendRequest<{ provider?: unknown }>, 'cloudMachines.configure', {
       provider: PROVIDER,
+      ...(entries && input.cloudMachineId ? { cloudMachineId: input.cloudMachineId } : {}),
+      ...(entries && input.name ? { name: input.name } : {}),
+      ...(entries && input.apiKeyFrom && !input.apiKey ? { apiKeyFrom: input.apiKeyFrom } : {}),
       ...(input.apiKey ? { apiKey: input.apiKey } : {}),
       ...(input.size ? { size: input.size } : {}),
       ...(input.idlePauseMinutes !== undefined ? { idlePauseMinutes: input.idlePauseMinutes } : {}),
@@ -135,7 +149,7 @@ function* configure(
     });
     if (started !== generation()) return;
     const provider = parseCloudMachineProvider(result?.provider);
-    if (validateOnly) yield* put(cloudMachineValidated(provider));
+    if (validateOnly) yield* put(cloudMachineValidated(formKey, provider));
     else if (provider) yield* put(cloudProviderChanged(provider));
     yield* put(cloudMachineOperationSettled(key, null));
     if (!validateOnly) yield* call(notify.success, m.cloudMachines_saved_toast());
@@ -145,14 +159,30 @@ function* configure(
   }
 }
 
+/** The live sandboxes started from one entry. */
+function entrySandboxIds(cloudMachineId: string): string[] {
+  return Object.values(store.state.cloudMachines.machines)
+    .filter((machine) => machine.cloud?.cloudMachineId === cloudMachineId)
+    .map((machine) => machine.id);
+}
+
 function* remove(action: ReturnType<typeof cloudMachinesRemoveRequested>): SagaGenerator<void> {
-  const [stopAgents] = action.payload;
-  if (store.state.cloudMachines.pending[CLOUD_REMOVE_KEY]) return;
-  const sandboxes = Object.keys(store.state.cloudMachines.machines).length;
+  const [cloudMachineId, stopAgents] = action.payload;
+  const key = cloudRemoveKey(cloudMachineId);
+  if (store.state.cloudMachines.pending[key]) return;
+  const { entries, providers } = store.state.cloudMachines;
+  const sandboxes = entrySandboxIds(cloudMachineId).length;
+  const name = providers[cloudMachineId]?.name;
   const accepted = yield* call(confirm, {
-    title: m.cloudMachines_remove_confirmTitle(),
-    description:
-      sandboxes > 0
+    title:
+      entries && name
+        ? m.cloudMachines_remove_entry_confirmTitle({ name })
+        : m.cloudMachines_remove_confirmTitle(),
+    description: entries
+      ? sandboxes > 0
+        ? m.cloudMachines_remove_entryWithSandboxes_description()
+        : m.cloudMachines_remove_entry_description()
+      : sandboxes > 0
         ? m.cloudMachines_remove_confirmWithSandboxes_description()
         : m.cloudMachines_remove_confirm_description(),
     confirmLabel: m.cloudMachines_remove_label(),
@@ -160,25 +190,26 @@ function* remove(action: ReturnType<typeof cloudMachinesRemoveRequested>): SagaG
   });
   if (!accepted) return;
   const started = generation();
-  yield* put(cloudMachineOperationStarted(CLOUD_REMOVE_KEY, 'removing'));
+  yield* put(cloudMachineOperationStarted(key, 'removing'));
   try {
     const result = yield* call(
       backendRequest<{ unconfirmedStops?: unknown }>,
       'cloudMachines.remove',
       {
         provider: PROVIDER,
+        ...(entries ? { cloudMachineId } : {}),
         ...(stopAgents || sandboxes > 0 ? { stopAgents: true } : {}),
       },
     );
     if (started !== generation()) return;
-    yield* put(cloudProviderRemoved(PROVIDER));
-    for (const machineId of Object.keys(store.state.cloudMachines.machines))
+    yield* put(cloudProviderRemoved(cloudMachineId));
+    for (const machineId of entrySandboxIds(cloudMachineId))
       yield* put(cloudMachineRemoved(machineId));
-    yield* put(cloudMachineOperationSettled(CLOUD_REMOVE_KEY, null));
+    yield* put(cloudMachineOperationSettled(key, null));
     yield* call(unconfirmedWarning, result?.unconfirmedStops);
   } catch (error) {
     if (started !== generation()) return;
-    yield* put(cloudMachineOperationSettled(CLOUD_REMOVE_KEY, cloudFailure(error)));
+    yield* put(cloudMachineOperationSettled(key, cloudFailure(error)));
   }
 }
 
@@ -213,8 +244,9 @@ function* deleteSandbox(
   if (store.state.cloudMachines.pending[machineId]) return;
   const machine = store.state.cloudMachines.machines[machineId];
   if (!machine) return;
+  const entryName = store.state.cloudMachines.providers[machine.cloud?.cloudMachineId ?? '']?.name;
   const accepted = yield* call(confirm, {
-    title: m.cloudMachines_delete_confirmTitle({ agent: sandboxLabel(machine) }),
+    title: m.cloudMachines_delete_confirmTitle({ agent: sandboxLabel(machine, entryName) }),
     description: m.cloudMachines_delete_confirm_description(),
     confirmLabel: m.cloudMachines_delete_label(),
     destructive: true,

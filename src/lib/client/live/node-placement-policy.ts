@@ -44,6 +44,9 @@ async function remoteInitialAgentPlacement(
   // A new E2B sandbox needs the cloud machines contract as well.
   if (checked.target === 'e2b' && caps.cloudMachines !== 1)
     throw new Error(m.agent_placement_unavailable());
+  // A named E2B entry needs a backend that keeps entries.
+  if (checked.cloudMachineId !== undefined && caps.cloudMachineEntries !== 1)
+    throw new Error(m.agent_placement_unavailable());
   return true;
 }
 

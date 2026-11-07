@@ -17,6 +17,7 @@
  * override individual channels via `registerMockIpcHandler` after this runs.
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
+import type { PairLinkCommitResult } from '$shared/types/pair-link';
 import { CONNECTION_CHANNELS, LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import type {
   ConnectionRecord,
@@ -103,6 +104,9 @@ const FORWARDED_DEVICE_CHANNELS = [
   CONNECTION_CHANNELS.UPDATE,
   CONNECTION_CHANNELS.TEST,
   CONNECTION_CHANNELS.ROTATE_SECRET,
+  CONNECTION_CHANNELS.PAIR_LINK_INSPECT,
+  CONNECTION_CHANNELS.PAIR_LINK_COMMIT,
+  CONNECTION_CHANNELS.PAIR_LINK_DISCARD,
 ] as const;
 
 for (const channel of FORWARDED_DEVICE_CHANNELS) {
@@ -116,6 +120,13 @@ for (const channel of FORWARDED_DEVICE_CHANNELS) {
       const { id } = arg as OpenConnectionParams;
       return { status: 'opened', id } satisfies OpenConnectionResult;
     }
+    // No main process to test a pair link or hold its credential: nothing is kept.
+    if (channel === CONNECTION_CHANNELS.PAIR_LINK_DISCARD) return { ok: true };
+    if (
+      channel === CONNECTION_CHANNELS.PAIR_LINK_INSPECT ||
+      channel === CONNECTION_CHANNELS.PAIR_LINK_COMMIT
+    )
+      return { ok: false, code: 'failed' } satisfies PairLinkCommitResult;
     return { status: 'failed', reason: 'connect-failed' };
   });
 }

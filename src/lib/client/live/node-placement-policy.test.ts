@@ -427,4 +427,23 @@ describe('remote initial agent (daemon-to-daemon placement subset)', () => {
         ),
       ).rejects.toThrow();
   });
+  it('names an E2B entry only to a backend that keeps entries', async () => {
+    const named = {
+      initialAgent: {
+        placement: { target: 'e2b', checkout: 'isolated', cloudMachineId: 'e2b-3f9a0c71d2b4' },
+      },
+    };
+    const caps = { remoteMachines: 1, remoteInitialAgent: 1, cloudMachines: 1 };
+    await expect(
+      prepareNodeRequest('workspace.create', named, d2d(caps), () => true),
+    ).rejects.toThrow('unavailable');
+    expect(
+      await prepareNodeRequest(
+        'workspace.create',
+        named,
+        d2d({ ...caps, cloudMachineEntries: 1 }),
+        () => true,
+      ),
+    ).toEqual(named);
+  });
 });

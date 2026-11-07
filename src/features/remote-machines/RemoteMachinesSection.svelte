@@ -34,6 +34,14 @@
   const backendLabel$ = selectCurrentBackendLabel();
   const remoteScriptsSupported$ = selectRemoteScriptsSupported();
 
+  // Nodes are listed in their own section (Settings → Machines → Nodes).
+  const machines = $derived(
+    $machines$.filter((machine) => {
+      const id = connectionForMachine(machine, $connections$, $localFingerprint$);
+      return !$connections$.some((c) => c.id === id && c.daemonMode === 'node');
+    }),
+  );
+
   function actions(machine: RemoteMachine): ActionDefinition[] {
     return [
       {
@@ -60,7 +68,7 @@
   }
 </script>
 
-{#if $supported$ && $machines$.length > 0}
+{#if $supported$ && machines.length > 0}
   <section class="space-y-3" aria-labelledby="remote-machines-title">
     <div>
       <h3 id="remote-machines-title" class="type-title text-foreground">
@@ -72,7 +80,7 @@
     </div>
     <ListView
       virtualize={false}
-      items={$machines$}
+      items={machines}
       getKey={(machine) => machine.id}
       getText={(machine) => machine.name}
       ariaLabel={m.remoteMachines_section_title({ backend: $backendLabel$ })}

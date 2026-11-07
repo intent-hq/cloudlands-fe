@@ -60,6 +60,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import RemoteMachineBadge from '$features/remote-machines/RemoteMachineBadge.svelte';
+  import NodeStatusBadge from '$features/nodes/NodeStatusBadge.svelte';
   import RemoteMachineNotice from '$features/remote-machines/RemoteMachineNotice.svelte';
   import {
     selectCurrentBackendLabel,
@@ -90,9 +91,26 @@
     onOpenPanel: (panel: Exclude<DevicePanelMode, null>) => void;
     onClosePanel: () => void;
     onRequestRemove: (device: ConnectionRecord) => void;
+    /** Briefly highlighted after it was added. */
+    highlighted?: boolean;
+    /** First row of a list without the local row on top (no divider above). */
+    first?: boolean;
+    /** Last row of its list: the highlight follows the card's rounded corners. */
+    last?: boolean;
   }
 
-  let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
+  let {
+    device,
+    panelMode,
+    onOpenPanel,
+    onClosePanel,
+    onRequestRemove,
+    highlighted = false,
+    first = false,
+    last = false,
+  }: Props = $props();
+  // A node only runs agents for other backends: it is never connected to as a backend.
+  const isNode = $derived(device.daemonMode === 'node');
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
   // intent-web dials the remote itself for tunnel settings, so they do not
@@ -269,10 +287,11 @@
   const exposedMachine = $derived(
     $remoteSupported$ ? machineForConnection($remoteMachines$, device, $localFingerprint$) : null,
   );
+  // A node has no window keeping it connected; main connects it on demand.
   const canExpose = $derived(
     $remoteSupported$ &&
       device.id !== $currentConnectionId$ &&
-      openStatus === 'connected' &&
+      (isNode || openStatus === 'connected') &&
       canOfferExpose(exposedMachine),
   );
   // The exposed-machine report fills in platform/providers only while the
@@ -295,7 +314,7 @@
   );
   const remoteFailure = $derived($remoteFailures$[remoteFailureKey] ?? null);
   const rowActions = $derived.by((): ActionDefinition[] => [
-    ...(!device.isLocal
+    ...(!device.isLocal && !isNode
       ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
       : []),
     ...(canUpdateDaemon
@@ -598,7 +617,15 @@
 </script>
 
 <article
-  class={cn('group/collection-row', !device.isLocal && 'border-t border-border')}
+  class={cn(
+    'group/collection-row transition-colors duration-spring-slow',
+    !device.isLocal && !first && 'border-t border-border',
+    highlighted && 'bg-accent/60',
+    highlighted && first && 'rounded-t-xl',
+    highlighted && last && 'rounded-b-xl',
+  )}
+  data-device-row={device.id}
+  data-highlighted={highlighted || undefined}
   aria-labelledby={`device-${device.id}-name`}
   aria-busy={busy !== null}
 >
@@ -627,6 +654,10 @@
         {/if}
         {#if exposedMachine}
           <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
+        {:else if isNode && exposing}
+          <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
+        {:else if isNode && $remoteSupported$}
+          <NodeStatusBadge label={m.nodes_notUsed_label({ backend: $backendLabel$ })} />
         {/if}
         {#if openStatus === 'connected' && device.intentdVersion}
           {#if daemonBehindTooltip}

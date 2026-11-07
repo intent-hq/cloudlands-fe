@@ -273,6 +273,7 @@
     hosts: [],
     cloud: {
       provider: 'e2b',
+      cloudMachineId: 'e2b',
       sandboxId: 'isx1k2v9',
       state: s === 'e2b-paused' ? 'paused' : 'running',
       template: 'intent/intent-node-4x8:0.240.0',

@@ -4,8 +4,10 @@
  */
 import { m } from '$shared/paraglide/messages.js';
 import {
+  CLOUD_ENTRY_NAME_MAX_BYTES,
   cloudSizeResources,
   estimateCloudCost,
+  utf8Length,
   type CloudMachineErrorData,
 } from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
@@ -15,9 +17,14 @@ export const E2B_DASHBOARD_URL = 'https://e2b.dev/dashboard';
 
 const NAME_PREFIX = /^E2B\s*·\s*/u; // i18n-ignore (backend row name prefix)
 
-/** The agent a sandbox runs, from its row name "E2B · <agent name>". */
-export function sandboxLabel(machine: Pick<RemoteMachine, 'name'>): string {
-  return machine.name.replace(NAME_PREFIX, '').trim() || machine.name;
+/** The agent a sandbox runs, from its row name "<entry name> · <agent name>". */
+export function sandboxLabel(machine: Pick<RemoteMachine, 'name'>, entryName?: string): string {
+  const prefix = entryName ? `${entryName} · ` : null; // i18n-ignore (backend row name format)
+  const name =
+    prefix && machine.name.startsWith(prefix)
+      ? machine.name.slice(prefix.length)
+      : machine.name.replace(NAME_PREFIX, '');
+  return name.trim() || machine.name;
 }
 
 /** "intent-node 0.212.0" for "<project>/intent-node-4x8:0.212.0"; null without a tag. */
@@ -136,4 +143,24 @@ export function cloudErrorText(error: CloudMachineErrorData): {
           };
       }
   }
+}
+
+/**
+ * Why `name` can't name an entry, or null when it can: 1-64 UTF-8 bytes after
+ * trimming, no control characters, and unique among the other entries
+ * regardless of case (PROTOCOL "Named E2B entries"). The backend checks again.
+ */
+export function cloudEntryNameError(
+  name: string,
+  entries: readonly { id: string; name: string }[],
+  selfId?: string,
+): string | null {
+  const trimmed = name.trim();
+  if (!trimmed) return m.cloudMachines_form_name_required();
+  if (utf8Length(trimmed) > CLOUD_ENTRY_NAME_MAX_BYTES || /[\u0000-\u001f\u007f]/u.test(trimmed))
+    return m.cloudMachines_form_name_invalid();
+  const lower = trimmed.toLowerCase();
+  return entries.some((entry) => entry.id !== selfId && entry.name.trim().toLowerCase() === lower)
+    ? m.cloudMachines_form_name_taken()
+    : null;
 }

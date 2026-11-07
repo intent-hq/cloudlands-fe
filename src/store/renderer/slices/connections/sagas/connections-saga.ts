@@ -48,6 +48,7 @@ import {
 import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
+  selectConnections,
   selectConnectionWorkflow,
   selectKeychainSyncState,
   selectSelfPublication,
@@ -95,6 +96,7 @@ import type {
   SelfPublishedStateResult,
   UnpublishSelfResult,
 } from '$shared/types/connections';
+import { nodeConnectionOpened } from '$features/nodes/nodes-slice';
 import {
   addConnectionRequested,
   authRejectedReceived,
@@ -948,6 +950,8 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
         ? { kind: 'captured', fingerprint: result.fingerprint }
         : { kind: 'captureRejected', statusCode: result.statusCode };
     } else if (intent.kind === 'connect') {
+      // A re-pair upserts an existing record; only a brand-new node may be removed when refused.
+      const savedIds = new Set((yield* selectConnections.effect()).map((c) => c.id));
       const add = addConnectionRequested(intent.params);
       yield* call(addConnection, add);
       const { connection } = yield* call(() => add.promise);
@@ -958,6 +962,8 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') outcome = { kind: 'secretUnavailable' };
+      else if (result.status === 'node')
+        yield* put(nodeConnectionOpened(connection.id, !savedIds.has(connection.id)));
     } else if (intent.kind === 'save' || intent.kind === 'localIcon') {
       if (intent.kind === 'save' && intent.secret) {
         yield* put(connectionWorkflowProgress(consumerId, requestId, 'secret'));
@@ -1004,7 +1010,7 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
         outcome = { kind: 'secretUnavailable' };
         if (intent.recovery === 'settings' && (yield* workflowIsCurrent(action)))
           yield* recoverOpenInSettings(action, intent.id);
-      }
+      } else if (result.status === 'node') yield* put(nodeConnectionOpened(intent.id, false));
     } else if (intent.kind === 'forget') {
       yield* call(invokeForgetConnection, { id: intent.id });
     } else {
