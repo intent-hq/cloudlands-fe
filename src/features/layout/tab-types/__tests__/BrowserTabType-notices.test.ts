@@ -114,9 +114,9 @@ describe('browser tab notices above the address bar', () => {
     expect(bar!.compareDocumentPosition(viewer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it('warns on a mirror of a tab without an owner agent, with no agent bar', () => {
+  it('shows no notice on a mirror of a tab without an owner agent', () => {
     renderTab('cli-laptop', false);
-    expect(warning()?.textContent).toContain('travel-air');
+    expect(warning()).toBeNull();
     expect(agentBar()).toBeNull();
   });
 

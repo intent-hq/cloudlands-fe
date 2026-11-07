@@ -1,9 +1,9 @@
 <script lang="ts">
   /**
-   * Notices above a browser tab's address bar. A mirror (the live webview runs
-   * on another client) warns that cookies and page state stay on the host, so
+   * Notices above an agent-owned browser tab's address bar: the controlling
+   * agent (opens its conversation) and, on a mirror whose live webview runs on
+   * another client, a warning that cookies and page state stay on the host, so
    * the page can differ from what the agent sees and its URL follows the host.
-   * An agent-owned tab names its agent and opens the agent conversation.
    */
   import {
     faChevronRight,
@@ -25,7 +25,7 @@
   let { mirrorHostName, agentName, onOpenAgent }: Props = $props();
 </script>
 
-{#if mirrorHostName !== undefined}
+{#if mirrorHostName !== undefined && agentName !== undefined}
   <div
     class="flex shrink-0 items-start gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning-ink"
     data-browser-tab-not-primary
@@ -33,9 +33,7 @@
   >
     <Fa icon={faTriangleExclamation} class="mt-0.5 shrink-0" />
     <span class="min-w-0 flex-1">
-      {agentName !== undefined
-        ? m.browser_tabNotice_notPrimary_agent_description({ host: mirrorHostName })
-        : m.browser_tabNotice_notPrimary_description({ host: mirrorHostName })}
+      {m.browser_tabNotice_notPrimary_description({ host: mirrorHostName })}
     </span>
   </div>
 {/if}
