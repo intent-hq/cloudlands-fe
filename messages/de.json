@@ -8502,5 +8502,7 @@
   "cloudMachines_uptime_underMinute": "unter 1 Min.",
   "cloudMachines_uptime_minutes": "{minutes} Min.",
   "cloudMachines_uptime_hours": "{hours} Std.",
-  "cloudMachines_uptime_hoursMinutes": "{hours} Std. {minutes} Min."
+  "cloudMachines_uptime_hoursMinutes": "{hours} Std. {minutes} Min.",
+  "lib_commandPalette_enableExperimentalCloudMachines_label": "Experimentelle E2B-Cloud-Maschinen aktivieren",
+  "lib_commandPalette_disableExperimentalCloudMachines_label": "Experimentelle E2B-Cloud-Maschinen deaktivieren"
 }

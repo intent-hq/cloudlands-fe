@@ -3,7 +3,7 @@
  * row and its placement, which configurations can run on E2B, and how an
  * agent on E2B and its errors read.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import {
   estimateCloudCost,
@@ -30,7 +30,18 @@ import {
   agentPlacementNoticeKind,
   placementFailure,
 } from '$features/remote-machines/agent-location';
-import { E2B_PROVIDER, E2B_SANDBOXES } from '../../test/cloud-machines-preview';
+import {
+  E2B_PROVIDER,
+  E2B_SANDBOXES,
+  setupCloudMachinesFixture,
+} from '../../test/cloud-machines-preview';
+import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
+import {
+  selectEffectiveStartOn,
+  selectRemoteMachine,
+  selectStartOnOptions,
+} from '$features/remote-machines/remote-machines-selectors';
+import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { cloudProfileBlockReason } from './cloud-machines-selectors';
 import {
   cloudErrorText,
@@ -273,3 +284,45 @@ describe('an agent on E2B', () => {
     expect(quota.cloudDetailKnown).toBe(true);
   });
 });
+
+describe('Labs flag', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('offers E2B in Start On only while the flag is on', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('connected');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    const hasCloud = () =>
+      selectStartOnOptions.select(store.state).some((option) => option.kind === 'cloud');
+    expect(hasCloud()).toBe(true);
+    store.dispatch(setLabsCloudMachinesEnabled(false));
+    expect(hasCloud()).toBe(false);
+    expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_BACKEND);
+  });
+
+  it('still shows an agent already on E2B, with its sandbox state, while the flag is off', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('labs-off');
+    const sandbox = E2B_SANDBOXES[2]!;
+    const location = agentMachineLocation(
+      {
+        id: 'a-paused',
+        nodeName: 'E2B',
+        nodeId: sandbox.id,
+        placement: { target: 'e2b', checkout: 'isolated' },
+      } as AgentSession,
+      selectRemoteMachine.select(store.state, sandbox.id),
+    );
+    expect(location?.cloud?.state).toBe('paused');
+  });
+});
+
+function remoteSnapshot() {
+  return {
+    supported: true,
+    machines: [],
+    localFingerprint: null,
+    executorBackends: null,
+  };
+}

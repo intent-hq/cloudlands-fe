@@ -8502,5 +8502,7 @@
   "cloudMachines_uptime_underMinute": "1 分未満",
   "cloudMachines_uptime_minutes": "{minutes} 分",
   "cloudMachines_uptime_hours": "{hours} 時間",
-  "cloudMachines_uptime_hoursMinutes": "{hours} 時間 {minutes} 分"
+  "cloudMachines_uptime_hoursMinutes": "{hours} 時間 {minutes} 分",
+  "lib_commandPalette_enableExperimentalCloudMachines_label": "実験的な E2B クラウドマシンを有効にする",
+  "lib_commandPalette_disableExperimentalCloudMachines_label": "実験的な E2B クラウドマシンを無効にする"
 }

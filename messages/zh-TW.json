@@ -8502,5 +8502,7 @@
   "cloudMachines_uptime_underMinute": "不到 1 分鐘",
   "cloudMachines_uptime_minutes": "{minutes} 分鐘",
   "cloudMachines_uptime_hours": "{hours} 小時",
-  "cloudMachines_uptime_hoursMinutes": "{hours} 小時 {minutes} 分鐘"
+  "cloudMachines_uptime_hoursMinutes": "{hours} 小時 {minutes} 分鐘",
+  "lib_commandPalette_enableExperimentalCloudMachines_label": "啟用實驗性 E2B 雲端機器",
+  "lib_commandPalette_disableExperimentalCloudMachines_label": "停用實驗性 E2B 雲端機器"
 }

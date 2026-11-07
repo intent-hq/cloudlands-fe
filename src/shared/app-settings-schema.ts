@@ -271,6 +271,18 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsTabGroupsEnabled' },
   },
   {
+    path: 'labs.cloudMachines',
+    label: 'E2B cloud machines (Labs)',
+    description:
+      'Offer E2B cloud machines: set up E2B in Settings → Machines, list its sandboxes, and start agents on a new E2B sandbox. Needs Remote agents. Agents already on E2B keep showing when disabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:cloudMachinesEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsCloudMachinesEnabled' },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

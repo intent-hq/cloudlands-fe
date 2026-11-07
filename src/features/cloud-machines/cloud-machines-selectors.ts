@@ -4,14 +4,22 @@ import type { CloudMachineProvider } from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
 import { store } from '$store/renderer/store';
-import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import {
+  selectLabsCloudMachinesEnabled,
+  selectLabsRemoteAgentsEnabled,
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
 
 type State = typeof store.state;
 
-/** Cloud surfaces show while remote machines do and the backend advertises `cloudMachines: 1`. */
+/**
+ * E2B setup, the sandbox list and the Start On row show while the Labs
+ * "E2B cloud machines" and "Remote agents" flags are on and the backend
+ * advertises `cloudMachines: 1`. Agents already on E2B render without it.
+ */
 export const selectCloudMachinesVisible = store.createSelector(
   (state) =>
+    selectLabsCloudMachinesEnabled.select(state) &&
     selectLabsRemoteAgentsEnabled.select(state) &&
     state.remoteMachines?.supported === true &&
     state.cloudMachines?.supported === true,

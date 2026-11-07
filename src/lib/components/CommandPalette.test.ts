@@ -419,7 +419,7 @@ describe('CommandPalette new actions', () => {
     ['agent defaults', /Agent defaults/i, 'agent-behavior'],
     ['providers', /Providers/i, 'providers'],
     ['connections', /Connections/i, 'connections'],
-    ['machines', /Machines/i, 'devices'],
+    ['machines', /^Machines/i, 'devices'],
     ['mobile', /Mobile/i, 'mobile'],
     ['collaboration', /Collaboration/i, 'collaboration'],
     ['appearance', /Appearance/i, 'display'],

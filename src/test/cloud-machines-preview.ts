@@ -1,4 +1,5 @@
 import { store } from '$store/renderer/store';
+import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setupRemoteMachinesFixture } from './remote-machines-preview';
 import {
   CLOUD_REMOVE_KEY,
@@ -26,7 +27,8 @@ export type CloudMachinesPreviewState =
   | 'connected-no-sandboxes'
   | 'key-rejected'
   | 'remove-in-use'
-  | 'unsupported';
+  | 'unsupported'
+  | 'labs-off';
 
 export const E2B_PROVIDER: CloudMachineProvider = {
   id: 'e2b',
@@ -97,6 +99,8 @@ export const E2B_SANDBOXES: RemoteMachine[] = [
 /** Seed Settings → Machines with E2B in a named state on top of the remote-machines fixture. */
 export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
   const restoreRemote = setupRemoteMachinesFixture('available');
+  const previousCloudLabs = store.state.userPreferences?.labsCloudMachinesEnabled === true;
+  store.dispatch(setLabsCloudMachinesEnabled(state !== 'labs-off'));
   for (const workspace of WORKSPACES)
     store.dispatch(
       setWorkspaceEntity({
@@ -151,6 +155,7 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
   }
   return () => {
     for (const workspace of WORKSPACES) store.dispatch(removeWorkspaceEntity(workspace.id));
+    store.dispatch(setLabsCloudMachinesEnabled(previousCloudLabs));
     restoreRemote();
   };
 }

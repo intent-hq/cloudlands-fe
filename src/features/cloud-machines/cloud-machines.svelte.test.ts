@@ -47,6 +47,14 @@ describe('Add machine', () => {
     expect(view.queryByTestId('add-machine-menu')).toBeNull();
   });
 
+  it('hides E2B setup, the E2B row and its sandboxes while the Labs flag is off', () => {
+    seed('labs-off');
+    const view = render(DevicesSettings);
+    expect(view.queryByTestId('add-machine-menu')).toBeNull();
+    expect(view.container.querySelector('[data-cloud-machine-row]')).toBeNull();
+    expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
+  });
+
   it('stays a plain button once E2B is set up, and the E2B row shows', () => {
     seed('connected');
     const view = render(DevicesSettings);

@@ -28,6 +28,7 @@
       'key-rejected': sceneState('key-rejected'),
       'remove-in-use': sceneState('remove-in-use'),
       unsupported: sceneState('unsupported'),
+      'labs-off': sceneState('labs-off'),
       'start-on': { props: { scene: 'start-on' }, setup: () => setup('connected') },
       'start-on-needs-profile': {
         props: { scene: 'start-on-needs-profile' },

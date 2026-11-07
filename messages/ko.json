@@ -8502,5 +8502,7 @@
   "cloudMachines_uptime_underMinute": "1분 미만",
   "cloudMachines_uptime_minutes": "{minutes}분",
   "cloudMachines_uptime_hours": "{hours}시간",
-  "cloudMachines_uptime_hoursMinutes": "{hours}시간 {minutes}분"
+  "cloudMachines_uptime_hoursMinutes": "{hours}시간 {minutes}분",
+  "lib_commandPalette_enableExperimentalCloudMachines_label": "실험적 E2B 클라우드 머신 사용",
+  "lib_commandPalette_disableExperimentalCloudMachines_label": "실험적 E2B 클라우드 머신 사용 안 함"
 }

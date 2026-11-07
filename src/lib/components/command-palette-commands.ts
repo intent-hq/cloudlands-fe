@@ -88,6 +88,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-cloud-machines',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalCloudMachines_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-cloud-machines',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalCloudMachines_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'enable-experimental-browser-access',
     get label() {
       return m.lib_commandPalette_enableExperimentalBrowserAccess_label();
