@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.298.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.297.0...v2.298.0) (2026-11-07)
+
+
+### 🚀 Features
+
+* **chat:** render ANSI colors in shell tool output ([#4263](https://github.com/intent-hq/cloudlands-fe/issues/4263)) ([60cf4c5](https://github.com/intent-hq/cloudlands-fe/commit/60cf4c5c20ebdd7871b12bed9aa78e9d704abd98))
+
 ## [2.297.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.296.0...v2.297.0) (2026-11-07)
 
 
