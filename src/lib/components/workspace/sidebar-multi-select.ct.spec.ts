@@ -86,6 +86,7 @@ test('Shift-click from keyboard focus preserves the group and Shift+Space or Ent
   await context.press('Shift+Space');
   await expect(context).toHaveAttribute('aria-selected', 'false');
   await expect(agents).toHaveAttribute('aria-selected', 'true');
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Shift+Enter on a sidebar tab extends the selection like Shift+click, not chat.new-line
   await context.press('Shift+Enter');
   await expect(context).toHaveAttribute('aria-selected', 'true');
   await expect(agents).toHaveAttribute('aria-selected', 'true');
@@ -114,6 +115,7 @@ test('keyboard-only selection can start a group without replacing the first pane
   await expect(context).toHaveAttribute('aria-selected', 'true');
   await context.press('Shift+ArrowRight');
   await expect(changes).toBeFocused();
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Shift+Enter on a sidebar tab extends the selection like Shift+click, not chat.new-line
   await changes.press('Shift+Enter');
   for (const tab of [agents, context, changes]) {
     await expect(tab).toHaveAttribute('aria-selected', 'true');

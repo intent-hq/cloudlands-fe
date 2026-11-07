@@ -211,6 +211,7 @@ describe('repository config', () => {
     expect([...offered].sort()).toEqual([
       'intent/no-class-name-assertions-in-tests',
       'intent/no-fixed-wait-timeout-in-tests',
+      'intent/no-hand-typed-shortcut-in-ct',
       'intent/no-hand-written-typing-check',
       'intent/no-hover-then-click-in-ct',
       'intent/no-one-shot-animation-count',
@@ -235,6 +236,10 @@ describe('repository config', () => {
     ['intent/no-raw-mouse-wheel-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
     ['intent/no-wait-for-timeout-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
     ['intent/no-hover-then-click-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
+    [
+      'intent/no-hand-typed-shortcut-in-ct',
+      'src/lib/components/example/__tests__/example.ct.spec.ts',
+    ],
     ['intent/no-hand-written-typing-check', 'src/lib/components/example/example.ts'],
     ['intent/no-class-name-assertions-in-tests', 'src/features/example/__tests__/example.test.ts'],
     ['intent/no-fixed-wait-timeout-in-tests', 'src/features/example/__tests__/example.test.ts'],

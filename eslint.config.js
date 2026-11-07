@@ -43,6 +43,8 @@ import noRawMouseWheelInCtRule from './eslint-rules/no-raw-mouse-wheel-in-ct.js'
 import noWaitForTimeoutInCtRule from './eslint-rules/no-wait-for-timeout-in-ct.js';
 import noHoverThenClickInCtRule from './eslint-rules/no-hover-then-click-in-ct.js';
 import noUnpausedClockInCtRule from './eslint-rules/no-unpaused-clock-in-ct.js';
+import noHandTypedShortcutInCtRule from './eslint-rules/no-hand-typed-shortcut-in-ct.js';
+import { SHORTCUT_DEFAULTS } from './src/lib/utils/shortcut-bindings.ts';
 import noHandWrittenTypingCheckRule from './eslint-rules/no-hand-written-typing-check.js';
 import noScrollIntoViewPrototypeStubRule from './eslint-rules/no-scroll-into-view-prototype-stub.js';
 import noFixedWaitTimeoutInTestsRule from './eslint-rules/no-fixed-wait-timeout-in-tests.js';
@@ -70,6 +72,7 @@ const componentTestReasonedDisableRules = [
   'intent/no-wait-for-timeout-in-ct',
   'intent/no-hover-then-click-in-ct',
   'intent/no-unpaused-clock-in-ct',
+  'intent/no-hand-typed-shortcut-in-ct',
 ];
 
 const intentPlugin = {
@@ -91,6 +94,7 @@ const intentPlugin = {
     'no-wait-for-timeout-in-ct': noWaitForTimeoutInCtRule,
     'no-hover-then-click-in-ct': noHoverThenClickInCtRule,
     'no-unpaused-clock-in-ct': noUnpausedClockInCtRule,
+    'no-hand-typed-shortcut-in-ct': noHandTypedShortcutInCtRule,
     'no-direct-reduced-motion-query': noDirectReducedMotionQueryRule,
     'no-raw-workspace-navigation': noRawWorkspaceNavigationRule,
     'no-hand-written-typing-check': noHandWrittenTypingCheckRule,
@@ -760,6 +764,14 @@ export default [
   // loaded runs failed until the clock was paused). Use installPausedClock / pauseClock
   // from src/test/ct-test.ts. No baseline.
   //
+  // A spec that types a registered shortcut's keys by hand keeps pressing them after the
+  // shortcut moves (cloudlands-fe#4205 moved column focus; nightly failed in
+  // intent-hq/intent#8681 and #8682 until cloudlands-fe#4229). Use shortcutChord from
+  // src/test/shortcut-chords.ts with SHORTCUT_DEFAULTS imported in the spec. The table is
+  // passed as an option so a change to it also changes the lint cache key. Ignored ids are
+  // chords specs press for a native or hard-coded behaviour that shares the keys. No
+  // baseline.
+  //
   // Each of these rules accepts a single-line eslint-disable with a reason as its escape
   // hatch; intent/require-disable-reason checks that the directive gives one.
   {
@@ -774,6 +786,20 @@ export default [
       'intent/no-wait-for-timeout-in-ct': ['error', { baseline: waitForTimeoutInCtBaseline }],
       'intent/no-hover-then-click-in-ct': ['error', { baseline: hoverThenClickInCtBaseline }],
       'intent/no-unpaused-clock-in-ct': 'error',
+      'intent/no-hand-typed-shortcut-in-ct': [
+        'error',
+        {
+          bindings: SHORTCUT_DEFAULTS,
+          ignore: {
+            'editor.copy': 'specs copy text in native fields and ProseMirror, which keep Mod+C',
+            'editor.select-all': 'specs select text in native fields and ProseMirror',
+            'editor.undo': 'ProseMirror history keeps Mod+Z whatever the table says',
+            'editor.redo': 'ProseMirror history keeps Mod+Shift+Z whatever the table says',
+            'global.search':
+              'Mod+F is also the hard-coded local find key; global search yields to it',
+          },
+        },
+      ],
       'intent/require-disable-reason': ['error', { rules: componentTestReasonedDisableRules }],
     },
   },
