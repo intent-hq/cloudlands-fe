@@ -161,7 +161,7 @@
       })),
   );
   const displayColumns = $derived(
-    archived
+    archived || (aside.length === 0 && !draggedWorkspace)
       ? activeColumns
       : [
           ...activeColumns,
