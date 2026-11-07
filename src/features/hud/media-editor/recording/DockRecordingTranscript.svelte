@@ -2,7 +2,8 @@
   import { tick, onDestroy } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
-  import { Input } from '$lib/components/ui/input';
+  import TranscriptTextRun from './TranscriptTextRun.svelte';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import type {
     DockMediaBatch,
     DockMediaEditMark,
@@ -19,9 +20,9 @@
    * a pill moves the shared playhead; untimed text cannot be jumped to. It stays
    * usable, dimmed, when the voice choice is not Transcript.
    *
-   * Editing (with the callbacks): select words and press Delete to cut that stretch
-   * (struck here, hatched on the timeline); click a struck passage to restore it.
-   * Double-click a word to correct it: corrections change the text sent, not the audio.
+   * Editable passages use ordinary continuous text selection and native text Undo.
+   * Draft corrections update as the person types; original recognition timing and
+   * annotation anchors stay fixed. Playback-only words retain seek/cut navigation.
    */
   let {
     transcript,
@@ -37,6 +38,9 @@
     onCut,
     onRestore,
     onWordEdit,
+    onWordEdits,
+    onSubmit,
+    locked = false,
     onDeleteMark,
     markNumbers,
     onInteractionPending,
@@ -56,6 +60,9 @@
     onRestore?: (range: DockMediaRange) => void;
     /** `text` null drops the correction (back to what was recognized). */
     onWordEdit?: (wordId: string, text: string | null) => void;
+    onWordEdits?: (changes: Record<string, string | null>) => void;
+    onSubmit?: () => void;
+    locked?: boolean;
     onDeleteMark?: (markId: string) => void;
     markNumbers?: Readonly<Record<string, number>>;
     onInteractionPending?: (pending: boolean) => void;
@@ -68,22 +75,18 @@
     return cuts.find((cut) => word.startMs! >= cut.startMs && word.endMs! <= cut.endMs) ?? null;
   }
 
-  let editing = $state<{ id: string; value: string } | null>(null);
-  $effect(() => onInteractionPending?.(!!editing));
+  let composing = $state(false);
+  $effect(() => onInteractionPending?.(composing));
   onDestroy(() => onInteractionPending?.(false));
-  function commitEdit(word: Word): void {
-    const current = editing;
-    editing = null;
-    if (!current || current.id !== word.id || !onWordEdit) return;
-    const value = current.value.trim();
-    const shown = wordEdits[word.id] ?? word.text;
-    if (!value || value === shown) return;
-    onWordEdit(word.id, value === word.text ? null : value);
+  function correctText(changes: Record<string, string | null>): void {
+    if (locked) return;
+    if (onWordEdits) onWordEdits(changes);
+    else for (const [id, text] of Object.entries(changes)) onWordEdit?.(id, text);
   }
 
   /** Delete or Backspace with words selected in the transcript cuts their stretch. */
   function onWindowKeydown(event: KeyboardEvent): void {
-    if (event.defaultPrevented || !onCut || !list || editing) return;
+    if (event.defaultPrevented || !onCut || !list || locked || isTextEntryTarget(event.target)) return;
     if (event.key !== 'Delete' && event.key !== 'Backspace') return;
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
@@ -104,6 +107,18 @@
 
   const ready = $derived(transcript?.status === 'ready' ? transcript : null);
   const layout = $derived(ready ? layoutTranscript(ready.words, batches, marks) : []);
+  const runs = $derived(layout.map((batch) => {
+    type Piece = (typeof batch.pieces)[number] | { kind: 'text'; words: Word[] };
+    const pieces: Piece[] = [];
+    for (const piece of batch.pieces) {
+      if (piece.kind === 'word' && (onWordEdits || onWordEdit) && !cutOf(piece.word)) {
+        const previous = pieces.at(-1);
+        if (previous?.kind === 'text') previous.words.push(piece.word);
+        else pieces.push({ kind: 'text', words: [piece.word] });
+      } else pieces.push(piece);
+    }
+    return { ...batch, pieces };
+  }));
   const current = $derived(ready ? currentWordId(ready.words, currentMs) : null);
 
   let list = $state<HTMLElement | null>(null);
@@ -111,7 +126,7 @@
     markNumbers ?? Object.fromEntries(marks.map((mark, index) => [mark.id, index + 1])),
   );
   function deletePill(markId: string): void {
-    if (!onDeleteMark) return;
+    if (!onDeleteMark || locked) return;
     const before = [...(list?.querySelectorAll<HTMLElement>('[data-mark-pill]') ?? [])];
     const index = before.findIndex((node) => node.dataset.markPill === markId);
     onDeleteMark(markId);
@@ -138,6 +153,7 @@
    * restores that cut. Delegated: words are not buttons.
    */
   function onWordClick(event: MouseEvent): void {
+    if (locked) return;
     if (window.getSelection()?.isCollapsed === false) return;
     const word = (event.target as Element).closest<HTMLElement>('[data-start]');
     if (!word) return;
@@ -149,15 +165,6 @@
     }
     const start = Number(word.dataset.start);
     if (Number.isFinite(start)) onSeek(start);
-  }
-  function onWordDoubleClick(event: MouseEvent): void {
-    if (!onWordEdit || !ready) return;
-    const id = (event.target as Element).closest<HTMLElement>('[data-word-id]')?.dataset.wordId;
-    const word = id ? ready.words.find((row) => row.id === id) : undefined;
-    if (!word) return;
-    event.preventDefault();
-    window.getSelection()?.removeAllRanges();
-    editing = { id: word.id, value: wordEdits[word.id] ?? word.text };
   }
 </script>
 
@@ -183,38 +190,26 @@
   {:else if transcript.status === 'no-speech'}
     <p class="status">{m.dock_captureEditor_transcript_noSpeech()}</p>
   {:else}
-    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -- word clicks are a pointer shortcut; marks (buttons) and the timeline carry keyboard navigation -->
+    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -- word clicks are a pointer shortcut; marks (buttons) and the timeline carry keyboard navigation -->
     <div
       class="batches"
       role="group"
       tabindex="-1"
       bind:this={list}
       onclick={onWordClick}
-      ondblclick={onWordDoubleClick}
     >
-      {#each layout as batch (batch.id)}
+      {#each runs as batch (batch.id)}
         <div class="batch" data-batch={batch.n}>
           <p class="text">
-            {#each batch.pieces as piece, index (piece.kind === 'word' ? piece.word.id : `m:${piece.mark.id}:${index}`)}
-              {#if piece.kind === 'word' && editing?.id === piece.word.id}
-                {@const word = piece.word}
-                <Input
-                  class="word-input"
-                  size="sm"
-                  aria-label={m.dock_captureEditor_wordEdit_label()}
-                  bind:value={editing.value}
-                  autofocus
-                  onblur={() => commitEdit(word)}
-                  onkeydown={(event: KeyboardEvent) => {
-                    event.stopPropagation();
-                    if (
-                      event.key === 'Enter' ||
-                      ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's')
-                    ) {
-                      event.preventDefault();
-                      commitEdit(word);
-                    } else if (event.key === 'Escape') editing = null;
-                  }}
+            {#each batch.pieces as piece, index (piece.kind === 'text' ? `t:${piece.words[0].id}` : piece.kind === 'word' ? piece.word.id : `m:${piece.mark.id}:${index}`)}
+              {#if piece.kind === 'text'}
+                <TranscriptTextRun
+                  words={piece.words}
+                  {wordEdits}
+                  {locked}
+                  {onSubmit}
+                  onChange={correctText}
+                  onComposing={(value) => (composing = value)}
                 />{' '}
               {:else if piece.kind === 'word'}
                 {@const cut = cutOf(piece.word)}
@@ -240,9 +235,10 @@
                   data-mark-pill={piece.mark.id}
                   data-active={piece.mark.id === activeMarkId || undefined}
                   aria-label={formatInteger(numbers[piece.mark.id])}
+                  disabled={locked}
                   onclick={() => onMark(piece.mark)}
                   onkeydown={(event: KeyboardEvent) => {
-                    if (!onDeleteMark || (event.key !== 'Delete' && event.key !== 'Backspace'))
+                    if (locked || !onDeleteMark || (event.key !== 'Delete' && event.key !== 'Backspace'))
                       return;
                     event.preventDefault();
                     event.stopPropagation();
@@ -294,12 +290,6 @@
   }
   .word[data-edited] {
     text-decoration: underline dotted;
-  }
-  .text :global(.word-input) {
-    display: inline-block;
-    width: 8em;
-    height: 20px;
-    font-size: 12px;
   }
   .word[data-untimed] {
     color: hsl(var(--muted-foreground));

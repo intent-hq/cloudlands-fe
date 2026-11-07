@@ -633,22 +633,26 @@
 
 {#snippet sendOptions()}
   {#if source && edits}
-    <div class="sidebar-content" inert={saving}>
-      <DockRecordingSendOptions
-        edit={edits.draft}
-        {source}
-        {transcript}
-        enabled={snapshot.output?.ready === true}
-        onChange={(choice) => edits.apply((draft) => ({ ...draft, ...choice }))}
-      />
-      {#if filler?.ranges.length}
-        <div class="transcript-tools">
-          <Button variant="ghost" size="compact" onclick={previewFiller} data-cut-filler
-            >{m.dock_captureEditor_cutFiller_label()}</Button
-          >
-        </div>
-      {/if}
+    <div class="sidebar-content">
+      <div inert={saving || finishing}>
+        <DockRecordingSendOptions
+          edit={edits.draft}
+          {source}
+          {transcript}
+          enabled={snapshot.output?.ready === true}
+          onChange={(choice) => edits.apply((draft) => ({ ...draft, ...choice }))}
+        />
+        {#if filler?.ranges.length}
+          <div class="transcript-tools">
+            <Button variant="ghost" size="compact" onclick={previewFiller} data-cut-filler
+              >{m.dock_captureEditor_cutFiller_label()}</Button
+            >
+          </div>
+        {/if}
+      </div>
       <DockRecordingTranscript
+        locked={saving || finishing}
+        onSubmit={attach}
         onInteractionPending={(pending) => (transcriptPending = pending)}
         {transcript}
         batches={source.batches}
@@ -672,11 +676,13 @@
         wordEdits={edits.draft.wordEdits}
         onCut={timeEditable ? cut : undefined}
         onRestore={timeEditable ? restore : undefined}
-        onWordEdit={(wordId, text) =>
+        onWordEdits={(changes) =>
           edits.apply((draft) => {
             const wordEdits = { ...draft.wordEdits };
-            if (text === null) delete wordEdits[wordId];
-            else wordEdits[wordId] = text.slice(0, 20_000);
+            for (const [wordId, text] of Object.entries(changes)) {
+              if (text === null) delete wordEdits[wordId];
+              else wordEdits[wordId] = text.slice(0, 20_000);
+            }
             return { ...draft, wordEdits };
           })}
         onDeleteMark={marksEditable ? deleteMark : undefined}
