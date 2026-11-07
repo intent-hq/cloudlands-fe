@@ -5,7 +5,7 @@ export const DOCK_ANNOTATION_STYLE = {
   paper: '#F8FAFF',
   stroke: 1.8,
   pen: 1.9,
-  badgeRadius: 7.5,
+  badgeRadius: 11,
   badgeOutline: 0.85,
   badgeTextScale: 1.2,
   arrowHead: 10,
