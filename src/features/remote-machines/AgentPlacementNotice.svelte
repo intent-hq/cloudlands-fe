@@ -64,7 +64,14 @@
         : m.remoteAgent_notice_starting_description(),
   );
   const cloudStep = $derived($agent$?.cloudStart?.step);
-  const cloudFailure = $derived(failure?.cloud ? cloudErrorText(failure.cloud) : null);
+  // Without typed data only the backend's detail says why; keep it over a generic reason.
+  const cloudFailure = $derived.by(() => {
+    if (!failure?.cloud) return null;
+    const text = cloudErrorText(failure.cloud);
+    return failure.cloudDetailKnown || !failure.message
+      ? text
+      : { title: text.title, description: failure.message };
+  });
   const startingStep = $derived(
     cloudStep === 'creating-sandbox'
       ? m.cloudMachines_start_creating()

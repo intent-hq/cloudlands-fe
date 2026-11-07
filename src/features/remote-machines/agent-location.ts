@@ -209,6 +209,11 @@ export interface PlacementFailure {
   updateRequired: boolean;
   /** A cloud machine error (E2B), when the failure carries one. */
   cloud?: CloudMachineErrorData;
+  /**
+   * The cloud error came with its typed data (reason, limit). False when only
+   * the code is known: then `message` (the backend's detail) says why.
+   */
+  cloudDetailKnown?: boolean;
 }
 
 /**
@@ -245,10 +250,10 @@ export function placementFailure(
     error.code === 'machine-update-required' || split?.data.code === 'machine-update-required';
   if (updateRequired && split?.data.reason === 'prepared-checkout')
     return { updateRequired, message: m.remoteAgent_updateRequired_preparedCheckout({ machine }) };
-  const cloud =
-    parseCloudMachineError(split?.data) ??
-    (error.code ? parseCloudMachineError({ code: error.code }) : null);
-  if (cloud) return { updateRequired, message: split?.message || detail, cloud };
+  const typed = parseCloudMachineError(split?.data);
+  const cloud = typed ?? (error.code ? parseCloudMachineError({ code: error.code }) : null);
+  if (cloud)
+    return { updateRequired, message: split?.message || detail, cloud, cloudDetailKnown: !!typed };
   return { updateRequired, message: split?.message || detail };
 }
 

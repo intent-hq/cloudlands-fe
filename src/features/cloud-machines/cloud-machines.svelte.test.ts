@@ -13,6 +13,7 @@ import {
   type CloudMachinesPreviewState,
 } from '../../test/cloud-machines-preview';
 import CloudMachineRow from './CloudMachineRow.svelte';
+import { cloudMachineValidated } from './cloud-machines-slice';
 
 let restore: (() => void) | null = null;
 function seed(state: CloudMachinesPreviewState) {
@@ -81,6 +82,16 @@ describe('setup form', () => {
     seed('setup-tested');
     const view = render(CloudMachineRow, { editing: true, onEdit: () => {}, onClose: () => {} });
     expect(view.container.querySelector('[data-cloud-key-ok]')).not.toBeNull();
+    expect(view.container.querySelector('[data-cloud-sizes-unknown]')).toBeNull();
+  });
+
+  it('keeps the size picker after the test result is cleared by an edit', async () => {
+    seed('setup-tested');
+    const view = render(CloudMachineRow, { editing: true, onEdit: () => {}, onClose: () => {} });
+    store.dispatch(cloudMachineValidated(null));
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('[data-cloud-key-ok]')).toBeNull(),
+    );
     expect(view.container.querySelector('[data-cloud-sizes-unknown]')).toBeNull();
   });
 

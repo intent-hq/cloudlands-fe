@@ -62,8 +62,15 @@
   const busy = $derived(saving || testing);
   const saveFailure = $derived($failures$[CLOUD_CONFIGURE_KEY] ?? null);
   const testFailure = $derived($failures$[CLOUD_VALIDATE_KEY] ?? null);
-  /** Published sizes: from the last test, else the saved provider. */
-  const sizes = $derived<CloudMachineSizeInfo[]>($validated$?.sizes ?? provider?.sizes ?? []);
+  /** Published sizes from the last test, kept when an edit clears the test result. */
+  let testedSizes = $state<CloudMachineSizeInfo[] | null>(
+    untrack(() => $validated$?.sizes ?? null),
+  );
+  $effect(() => {
+    const tested = $validated$?.sizes;
+    if (tested) untrack(() => (testedSizes = tested));
+  });
+  const sizes = $derived<CloudMachineSizeInfo[]>(testedSizes ?? provider?.sizes ?? []);
   const keyRequired = $derived(!provider && !apiKey.trim());
   const hourly = $derived(hourlyCostLabel(size));
 

@@ -257,4 +257,19 @@ describe('an agent on E2B', () => {
     );
     expect(profile.cloud?.code).toBe('cloud-profile-required');
   });
+
+  it('keeps the backend detail when a failure carries only the cloud code', () => {
+    const missing = placementFailure(
+      { code: 'cloud-machine-unavailable', detail: 'No intent-node template for 0.212.0' },
+      'E2B',
+    );
+    expect(missing.cloud?.code).toBe('cloud-machine-unavailable');
+    expect(missing.cloudDetailKnown).toBe(false);
+    expect(missing.message).toBe('No intent-node template for 0.212.0');
+    const quota = placementFailure(
+      { code: 'cloud-quota', detail: 'x {"code":"cloud-quota","limit":"plan","retryable":false}' },
+      'E2B',
+    );
+    expect(quota.cloudDetailKnown).toBe(true);
+  });
 });
