@@ -162,17 +162,26 @@ export const selectEffectiveStartOn = store.createSelector(
 );
 
 /**
- * The E2B row for a model: unavailable when the configuration can't run on
- * E2B (no API key or token). Without a model only the provider state counts.
+ * The E2B rows for a model: an entry is unavailable when the configuration
+ * can't run on E2B (no API key or token) or its templates lack the CLI.
+ * Without a model only each entry's state counts.
  */
 function startOnCloudFor(
   state: Parameters<typeof startOnCloud>[0],
   providerRef?: string,
 ): StartOnCloud | null {
   const cloud = startOnCloud(state);
-  if (!cloud || cloud.unavailableReason || !providerRef) return cloud;
-  const blocked = cloudProfileBlockReason(state, providerRef);
-  return blocked ? { unavailableReason: blocked } : cloud;
+  if (!cloud || !providerRef) return cloud;
+  const providers = state.cloudMachines?.providers ?? {};
+  return cloud.map((row) => {
+    if (row.unavailableReason) return row;
+    const blocked = cloudProfileBlockReason(
+      state,
+      providerRef,
+      providers[row.cloudMachineId] ?? null,
+    );
+    return blocked ? { ...row, unavailableReason: blocked } : row;
+  });
 }
 
 /** `startOnCloudFor` as a store, for the picker. */

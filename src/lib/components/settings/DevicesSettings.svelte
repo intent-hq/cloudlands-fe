@@ -27,9 +27,12 @@
   import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
   import CloudMachineRow from '$features/cloud-machines/CloudMachineRow.svelte';
   import {
+    selectCloudEntries,
+    selectCloudEntriesSupported,
     selectCloudMachinesVisible,
-    selectE2bProvider,
   } from '$features/cloud-machines/cloud-machines-selectors';
+  import { NEW_CLOUD_ENTRY } from '$features/cloud-machines/cloud-machines-slice';
+  import { CLOUD_ENTRY_LIMIT, type CloudMachineProvider } from '$shared/types/cloud-machines';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import { faCloud, faDesktop, faLink } from '$lib/icons/phosphor-icons';
   import PairLinkPaste from '$features/nodes/PairLinkPaste.svelte';
@@ -56,38 +59,48 @@
   const currentConnectionId$ = selectCurrentConnectionId();
   // The backend this window uses sits right after the local row.
   const rows = $derived(orderMachineRows($connections$, $currentConnectionId$));
-  // Nodes only run agents for other backends: listed apart, never a backend.
   const machineRows = $derived(rows.filter((device) => device.daemonMode !== 'node'));
-  // One row kind today; other node kinds (for example E2B entries) add a variant here.
-  type NodeListRow = { kind: 'device'; device: ConnectionRecord };
-  const nodeRows = $derived<NodeListRow[]>(
-    rows
-      .filter((device) => device.daemonMode === 'node')
-      .map((device) => ({ kind: 'device', device })),
-  );
-  const highlightId$ = selectHighlightedConnectionId();
-  // Cloud machines (E2B): one row after the saved machines, while set up or being set up.
+  // Cloud machines (E2B). A backend with named entries lists each entry under
+  // Nodes (they only run agents); an older one has one row after the machines.
   const cloudVisible$ = selectCloudMachinesVisible();
-  const e2bProvider$ = selectE2bProvider();
-  let cloudSetupOpen = $state(untrack(() => initialCloudSetup));
-  let cloudEditing = $state(untrack(() => initialCloudSetup));
+  const cloudNamed$ = selectCloudEntriesSupported();
+  const cloudEntries$ = selectCloudEntries();
+  /** The entry whose form is open, or `NEW_CLOUD_ENTRY` while one is added. */
+  let cloudEditing = $state<string | null>(
+    untrack(() => (initialCloudSetup ? NEW_CLOUD_ENTRY : null)),
+  );
   let addMenuOpen = $state(untrack(() => initialAddMenuOpen));
-  const showCloudRow = $derived($cloudVisible$ && (!!$e2bProvider$ || cloudSetupOpen));
-  type MachineListRow = { kind: 'device'; device: ConnectionRecord } | { kind: 'cloud' };
-  const listRows = $derived<MachineListRow[]>([
-    ...machineRows.map((device): MachineListRow => ({ kind: 'device', device })),
-    ...(showCloudRow ? [{ kind: 'cloud' } as const] : []),
+  type CloudRow = { kind: 'cloud'; entry: CloudMachineProvider | null };
+  const cloudRows = $derived<CloudRow[]>(
+    $cloudVisible$
+      ? [
+          ...$cloudEntries$.map((entry): CloudRow => ({ kind: 'cloud', entry })),
+          ...(cloudEditing === NEW_CLOUD_ENTRY ? [{ kind: 'cloud', entry: null } as const] : []),
+        ]
+      : [],
+  );
+  const canAddCloud = $derived(
+    $cloudVisible$ &&
+      cloudEditing !== NEW_CLOUD_ENTRY &&
+      ($cloudNamed$ ? $cloudEntries$.length < CLOUD_ENTRY_LIMIT : $cloudEntries$.length === 0),
+  );
+  type ListRowItem = { kind: 'device'; device: ConnectionRecord } | CloudRow;
+  const rowKey = (row: ListRowItem) =>
+    row.kind === 'device' ? row.device.id : `cloud:${row.entry?.id ?? NEW_CLOUD_ENTRY}`;
+  const rowText = (row: ListRowItem) =>
+    row.kind === 'device' ? row.device.label : (row.entry?.name ?? 'E2B'); // i18n-ignore (product name)
+  // Nodes only run agents for other backends: listed apart, never a backend.
+  const nodeRows = $derived<ListRowItem[]>([
+    ...rows
+      .filter((device) => device.daemonMode === 'node')
+      .map((device): ListRowItem => ({ kind: 'device', device })),
+    ...($cloudNamed$ ? cloudRows : []),
   ]);
-
-  function openCloudSetup() {
-    cloudSetupOpen = true;
-    cloudEditing = true;
-  }
-
-  function closeCloudSetup() {
-    cloudSetupOpen = false;
-    cloudEditing = false;
-  }
+  const highlightId$ = selectHighlightedConnectionId();
+  const listRows = $derived<ListRowItem[]>([
+    ...machineRows.map((device): ListRowItem => ({ kind: 'device', device })),
+    ...($cloudNamed$ ? [] : cloudRows),
+  ]);
 
   let connectModalOpen = $state(false);
   let activeDeviceId = $state<string | null>(untrack(() => initialEditedMachine ?? null));
@@ -150,8 +163,8 @@
   <ListView
     virtualize={false}
     items={listRows}
-    getKey={(row) => (row.kind === 'device' ? row.device.id : 'cloud:e2b')}
-    getText={(row) => (row.kind === 'device' ? row.device.label : 'E2B')}
+    getKey={rowKey}
+    getText={rowText}
     status={$loaded$ ? 'ready' : 'loading'}
     ariaLabel={m.settings_devices_title()}
     class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
@@ -169,11 +182,7 @@
           onRequestRemove={requestRemove}
         />
       {:else}
-        <CloudMachineRow
-          editing={cloudEditing}
-          onEdit={() => (cloudEditing = true)}
-          onClose={closeCloudSetup}
-        />
+        {@render cloudRow(item)}
       {/if}
     {/snippet}
     {#snippet loading()}
@@ -205,24 +214,28 @@
       <ListView
         virtualize={false}
         items={nodeRows}
-        getKey={(row) => row.device.id}
-        getText={(row) => row.device.label}
+        getKey={rowKey}
+        getText={rowText}
         status="ready"
         ariaLabel={m.nodes_section_title()}
         class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
       >
         {#snippet row({ item, index })}
-          {@const device = item.device}
-          <DeviceRow
-            {device}
-            first={index === 0}
-            last={index === nodeRows.length - 1}
-            highlighted={$highlightId$ === device.id}
-            panelMode={activeDeviceId === device.id ? activePanel : null}
-            onOpenPanel={(panel) => openPanel(device.id, panel)}
-            onClosePanel={closePanel}
-            onRequestRemove={requestRemove}
-          />
+          {#if item.kind === 'device'}
+            {@const device = item.device}
+            <DeviceRow
+              {device}
+              first={index === 0}
+              last={index === nodeRows.length - 1}
+              highlighted={$highlightId$ === device.id}
+              panelMode={activeDeviceId === device.id ? activePanel : null}
+              onOpenPanel={(panel) => openPanel(device.id, panel)}
+              onClosePanel={closePanel}
+              onRequestRemove={requestRemove}
+            />
+          {:else}
+            {@render cloudRow(item, index === 0)}
+          {/if}
         {/snippet}
       </ListView>
     </section>
@@ -262,8 +275,11 @@
             >
           </span>
         </Menu.Item>
-        {#if $cloudVisible$ && !$e2bProvider$ && !cloudSetupOpen}
-          <Menu.Item onSelect={openCloudSetup} data-testid="add-cloud-machine">
+        {#if canAddCloud}
+          <Menu.Item
+            onSelect={() => (cloudEditing = NEW_CLOUD_ENTRY)}
+            data-testid="add-cloud-machine"
+          >
             {#snippet leading()}<Fa icon={faCloud} />{/snippet}
             <span class="flex min-w-0 flex-col">
               <span>{m.cloudMachines_addMenu_e2b_label()}</span>
@@ -292,6 +308,19 @@
   <RemoteMachinesSection />
   <BackendsWithAccessSection />
 </div>
+
+{#snippet cloudRow(item: CloudRow, first = false)}
+  {@const formKey = item.entry?.id ?? NEW_CLOUD_ENTRY}
+  <CloudMachineRow
+    entry={item.entry}
+    {first}
+    editing={cloudEditing === formKey}
+    onEdit={() => (cloudEditing = formKey)}
+    onClose={() => {
+      if (cloudEditing === formKey) cloudEditing = null;
+    }}
+  />
+{/snippet}
 
 <ConnectBackendModal bind:open={connectModalOpen} {defaultAccent} />
 

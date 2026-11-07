@@ -32,11 +32,18 @@ const AgentPlacementRequestShape = z
       .refine((id) => new TextEncoder().encode(id).length <= 128)
       .optional(),
     exclusive: z.boolean().optional(),
+    // The E2B entry (`cloudMachineEntries: 1`); only with `target: "e2b"`.
+    cloudMachineId: z
+      .string()
+      .min(1)
+      .refine((id) => new TextEncoder().encode(id).length <= 64)
+      .optional(),
   })
   .strict();
 export const AgentPlacementRequestSchema = AgentPlacementRequestShape.refine(
   (value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated',
 )
+  .refine((value) => value.cloudMachineId === undefined || value.target === 'e2b')
   .refine(
     (value) =>
       value.target !== 'e2b' ||

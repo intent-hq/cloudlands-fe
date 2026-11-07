@@ -1,6 +1,6 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
-import type { CloudMachineProvider } from '$shared/types/cloud-machines';
+import { DEFAULT_CLOUD_MACHINE_ID, type CloudMachineProvider } from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
 import { store } from '$store/renderer/store';
@@ -25,10 +25,19 @@ export const selectCloudMachinesVisible = store.createSelector(
     state.cloudMachines?.supported === true,
 );
 
-/** The saved E2B provider, or null when E2B is not set up. */
-export const selectE2bProvider = store.createSelector(
-  (state): CloudMachineProvider | null => state.cloudMachines?.providers.e2b ?? null,
+/** `cloudMachineEntries: 1`: entries are named and listed under Nodes. */
+export const selectCloudEntriesSupported = store.createSelector(
+  (state) => state.cloudMachines?.entries === true,
 );
+
+function savedEntries(state: State): CloudMachineProvider[] {
+  return Object.values(state.cloudMachines?.providers ?? {}).sort(
+    (a, b) => a.configuredAt.localeCompare(b.configuredAt) || a.name.localeCompare(b.name),
+  );
+}
+
+/** The saved E2B entries, oldest first; empty when E2B is not set up. */
+export const selectCloudEntries = store.createSelector(savedEntries);
 
 /** Live sandboxes, oldest first. */
 export const selectCloudSandboxes = store.createSelector((state): RemoteMachine[] =>
@@ -54,17 +63,22 @@ export const selectCloudValidated = store.createSelector(
 );
 
 /**
- * The E2B Start On row at provider level: null when E2B is not offered,
- * else whether a new sandbox can start at all (the model check comes after).
+ * The E2B Start On rows, one per entry: null when E2B is not offered, else
+ * whether each entry can start a new sandbox at all (the model check comes after).
  */
 export function startOnCloud(state: State): StartOnCloud | null {
   if (!selectCloudMachinesVisible.select(state)) return null;
-  const provider = selectE2bProvider.select(state);
-  if (!provider) return null;
-  return {
+  const entries = savedEntries(state);
+  if (entries.length === 0) return null;
+  const named = state.cloudMachines?.entries === true;
+  return entries.map((entry) => ({
+    cloudMachineId: entry.id,
+    label: named
+      ? m.cloudMachines_startOn_entry_label({ name: entry.name })
+      : m.cloudMachines_startOn_label(),
     unavailableReason:
-      provider.state === 'key-rejected' ? m.cloudMachines_state_keyRejected_label() : null,
-  };
+      entry.state === 'key-rejected' ? m.cloudMachines_state_keyRejected_label() : null,
+  }));
 }
 
 /**
@@ -74,9 +88,14 @@ export function startOnCloud(state: State): StartOnCloud | null {
  * remote-compatible, and the templates must install its CLI
  * (PROTOCOL `methods/nodes.md` → "Placement on E2B").
  */
-export function cloudProfileBlockReason(state: State, providerRef: string): string | null {
+export function cloudProfileBlockReason(
+  state: State,
+  providerRef: string,
+  entry: CloudMachineProvider | null = state.cloudMachines?.providers[DEFAULT_CLOUD_MACHINE_ID] ??
+    null,
+): string | null {
   if (!providerRef) return null;
-  const provider = selectE2bProvider.select(state);
+  const provider = entry;
   const base = providerRefBaseId(providerRef);
   if (provider && provider.agentProviders.length > 0 && !provider.agentProviders.includes(base))
     return m.cloudMachines_startOn_providerMissing();

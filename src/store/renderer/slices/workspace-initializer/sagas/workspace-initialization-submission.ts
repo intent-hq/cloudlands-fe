@@ -316,7 +316,9 @@ export function* prepareCompactWorkspaceInitialization(
   const hasStagedFiles =
     hasStagedFileItems(s.stagedItems as ContextItem[]) || imageBlocks.length > 0;
   const prompt = s.prompt.trim();
-  const startOnPlacement = initialAgentPlacement(s.agent.startOnMachineId);
+  const startOnPlacement = initialAgentPlacement(s.agent.startOnMachineId, {
+    cloudEntries: state.cloudMachines?.entries === true,
+  });
   const initialAgent = {
     // General uses the daemon placeholder so naming does not depend on UI locale.
     ...(specialistId !== undefined ? { name: agentName } : {}),

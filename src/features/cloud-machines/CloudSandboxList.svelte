@@ -1,5 +1,5 @@
 <!--
-  Settings → Machines → E2B: the live sandboxes of everyone who runs agents on
+  Settings → an E2B entry: its live sandboxes, of everyone who runs agents on
   this backend, with who started each, uptime, an estimated cost, Pause and
   Delete. Uptime and cost advance locally between reads while a sandbox runs.
 -->
@@ -32,11 +32,13 @@
 
   interface Props {
     sandboxes: RemoteMachine[];
+    /** The entry's name, which prefixes each row name. */
+    entryName?: string;
     /** Fixed clock for previews and tests; live otherwise. */
     now?: number;
   }
 
-  let { sandboxes, now: fixedNow }: Props = $props();
+  let { sandboxes, entryName, now: fixedNow }: Props = $props();
 
   const readAt$ = selectCloudSandboxReadAt();
   const operations$ = selectCloudOperations();
@@ -108,7 +110,7 @@
     virtualize={false}
     items={sandboxes}
     getKey={(machine) => machine.id}
-    getText={(machine) => sandboxLabel(machine)}
+    getText={(machine) => sandboxLabel(machine, entryName)}
     ariaLabel={m.cloudMachines_sandboxes_title()}
     class="overflow-visible [&>div>div[aria-hidden=true]]:hidden"
   >
@@ -120,7 +122,7 @@
       {@const workspace = workspaceName(machine)}
       {@const pending = $operations$[machine.id]}
       {@const failure = failureText(machine.id)}
-      {@const label = sandboxLabel(machine)}
+      {@const label = sandboxLabel(machine, entryName)}
       <div class="py-1" data-cloud-sandbox={machine.id} data-cloud-sandbox-state={cloud?.state}>
         <div class="flex min-h-8 items-center gap-3">
           <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 type-body">

@@ -21,17 +21,24 @@ import { store } from '$store/renderer/store';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
-import { E2B_PROVIDER, E2B_SANDBOXES } from '../../test/cloud-machines-preview';
+import {
+  E2B_PROVIDER,
+  E2B_SANDBOXES,
+  TEAM_ENTRY,
+  TEAM_SANDBOXES,
+} from '../../test/cloud-machines-preview';
 import { cloudMachinesSaga } from './cloud-machines-saga';
 import {
-  CLOUD_CONFIGURE_KEY,
-  CLOUD_REMOVE_KEY,
-  CLOUD_VALIDATE_KEY,
+  NEW_CLOUD_ENTRY,
+  cloudConfigureKey,
+  cloudRemoveKey,
+  cloudValidateKey,
   cloudMachineDeleteRequested,
   cloudMachinePauseRequested,
   cloudMachinesConfigureRequested,
   cloudMachinesLoaded,
   cloudMachinesRemoveRequested,
+  cloudProviderRemoved,
 } from './cloud-machines-slice';
 
 const SECRET = 'e2b_sk_live_do-not-store-me';
@@ -171,7 +178,7 @@ describe('cloud machines saga — configure', () => {
       size: '4x8',
       validateOnly: true,
     });
-    expect(store.state.cloudMachines.validated).toEqual(E2B_PROVIDER);
+    expect(store.state.cloudMachines.validated[NEW_CLOUD_ENTRY]).toEqual(E2B_PROVIDER);
     expect(store.state.cloudMachines.providers).toEqual({});
     expect(ui.success).not.toHaveBeenCalled();
   });
@@ -194,12 +201,12 @@ describe('cloud machines saga — configure', () => {
     start();
     dispatch(cloudMachinesConfigureRequested({ apiKey: SECRET }, true));
     await settle();
-    expect(store.state.cloudMachines.failures[CLOUD_VALIDATE_KEY]?.cloud).toEqual({
+    expect(store.state.cloudMachines.failures[cloudValidateKey(NEW_CLOUD_ENTRY)]?.cloud).toEqual({
       code: 'cloud-machine-unavailable',
       reason: 'key-rejected',
       retryable: false,
     });
-    expect(store.state.cloudMachines.failures[CLOUD_CONFIGURE_KEY]).toBeUndefined();
+    expect(store.state.cloudMachines.failures[cloudConfigureKey(NEW_CLOUD_ENTRY)]).toBeUndefined();
     expect(JSON.stringify(store.state)).not.toContain(SECRET);
   });
 
@@ -211,7 +218,9 @@ describe('cloud machines saga — configure', () => {
     start();
     dispatch(cloudMachinesConfigureRequested({ apiKey: SECRET }));
     await settle();
-    expect(store.state.cloudMachines.failures[CLOUD_CONFIGURE_KEY]?.forbidden).toBe(true);
+    expect(store.state.cloudMachines.failures[cloudConfigureKey(NEW_CLOUD_ENTRY)]?.forbidden).toBe(
+      true,
+    );
   });
 });
 
@@ -274,10 +283,143 @@ describe('cloud machines saga — sandboxes and removal', () => {
     mock.onRequest('cloudMachines.remove', () => ({ ok: true, unconfirmedStops: [] }));
     seedLoaded();
     start();
-    dispatch(cloudMachinesRemoveRequested());
+    dispatch(cloudMachinesRemoveRequested('e2b'));
     await vi.waitFor(() => expect(store.state.cloudMachines.providers).toEqual({}));
     expect(requests().at(-1)?.params).toEqual({ provider: 'e2b', stopAgents: true });
     expect(store.state.cloudMachines.machines).toEqual({});
-    expect(store.state.cloudMachines.pending[CLOUD_REMOVE_KEY]).toBeUndefined();
+    expect(store.state.cloudMachines.pending[cloudRemoveKey('e2b')]).toBeUndefined();
+  });
+});
+
+describe('cloud machines saga — named entries', () => {
+  const ENTRIES = { remoteMachines: 1, cloudMachines: 1, cloudMachineEntries: 1 };
+
+  function entriesBackend() {
+    const mock = backend(ENTRIES);
+    mock.onRequest('cloudMachines.list', () => ({
+      providers: [E2B_PROVIDER, TEAM_ENTRY],
+      machines: [...E2B_SANDBOXES, ...TEAM_SANDBOXES],
+    }));
+    return mock;
+  }
+
+  function seedEntries() {
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: true,
+        providers: [E2B_PROVIDER, TEAM_ENTRY],
+        machines: [...E2B_SANDBOXES, ...TEAM_SANDBOXES],
+        readAt: 1,
+      }),
+    );
+  }
+
+  it('loads every entry with cloudMachineEntries: 1', async () => {
+    entriesBackend();
+    start();
+    dispatch(remoteLoaded);
+    await vi.waitFor(() => expect(store.state.cloudMachines.loaded).toBe(true));
+    expect(store.state.cloudMachines.entries).toBe(true);
+    expect(Object.keys(store.state.cloudMachines.providers)).toEqual(['e2b', TEAM_ENTRY.id]);
+    expect(store.state.cloudMachines.machines[TEAM_SANDBOXES[0]!.id]?.cloud?.cloudMachineId).toBe(
+      TEAM_ENTRY.id,
+    );
+  });
+
+  it('keeps only the entry "e2b" without cloudMachineEntries', async () => {
+    const mock = backend();
+    mock.onRequest('cloudMachines.list', () => ({
+      providers: [E2B_PROVIDER, TEAM_ENTRY],
+      machines: [],
+    }));
+    start();
+    dispatch(remoteLoaded);
+    await vi.waitFor(() => expect(store.state.cloudMachines.loaded).toBe(true));
+    expect(store.state.cloudMachines.entries).toBe(false);
+    expect(Object.keys(store.state.cloudMachines.providers)).toEqual(['e2b']);
+  });
+
+  it('creates a named entry and stores it by the id the backend picked', async () => {
+    const mock = entriesBackend();
+    mock.onRequest('cloudMachines.configure', () => ({ provider: TEAM_ENTRY }));
+    seedEntries();
+    store.dispatch(cloudProviderRemoved(TEAM_ENTRY.id));
+    start();
+    dispatch(cloudMachinesConfigureRequested({ name: 'Team project', apiKey: SECRET }));
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'e2b',
+      name: 'Team project',
+      apiKey: SECRET,
+    });
+    expect(store.state.cloudMachines.providers[TEAM_ENTRY.id]).toEqual(TEAM_ENTRY);
+    expect(JSON.stringify(store.state)).not.toContain(SECRET);
+  });
+
+  it('copies another entry key with apiKeyFrom and sends no key', async () => {
+    const mock = entriesBackend();
+    mock.onRequest('cloudMachines.configure', () => ({ provider: TEAM_ENTRY }));
+    seedEntries();
+    start();
+    dispatch(cloudMachinesConfigureRequested({ name: 'Team project', apiKeyFrom: 'e2b' }, true));
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'e2b',
+      name: 'Team project',
+      apiKeyFrom: 'e2b',
+      validateOnly: true,
+    });
+    expect(store.state.cloudMachines.validated[NEW_CLOUD_ENTRY]).toEqual(TEAM_ENTRY);
+  });
+
+  it('renames one entry by id and keeps the failure on that entry', async () => {
+    const mock = entriesBackend();
+    mock.onRequest('cloudMachines.configure', () => {
+      throw new BackendError({ code: 'RPC_ERROR', rpcCode: -32602, message: 'name taken' });
+    });
+    seedEntries();
+    start();
+    dispatch(cloudMachinesConfigureRequested({ cloudMachineId: TEAM_ENTRY.id, name: 'E2B' }));
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'e2b',
+      cloudMachineId: TEAM_ENTRY.id,
+      name: 'E2B',
+    });
+    expect(store.state.cloudMachines.failures[cloudConfigureKey(TEAM_ENTRY.id)]?.message).toBe(
+      'name taken',
+    );
+    expect(store.state.cloudMachines.failures[cloudConfigureKey(NEW_CLOUD_ENTRY)]).toBeUndefined();
+  });
+
+  it('never sends entry fields to a backend without cloudMachineEntries', async () => {
+    const mock = backend();
+    mock.onRequest('cloudMachines.configure', () => ({ provider: E2B_PROVIDER }));
+    seedLoaded();
+    start();
+    dispatch(
+      cloudMachinesConfigureRequested({ cloudMachineId: 'e2b', name: 'E2B', apiKeyFrom: 'x' }),
+    );
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({ provider: 'e2b' });
+  });
+
+  it('removes one entry and only its sandboxes', async () => {
+    const mock = entriesBackend();
+    mock.onRequest('cloudMachines.remove', () => ({ ok: true, unconfirmedStops: [] }));
+    seedEntries();
+    start();
+    dispatch(cloudMachinesRemoveRequested(TEAM_ENTRY.id));
+    await vi.waitFor(() =>
+      expect(store.state.cloudMachines.providers[TEAM_ENTRY.id]).toBeUndefined(),
+    );
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'e2b',
+      cloudMachineId: TEAM_ENTRY.id,
+      stopAgents: true,
+    });
+    expect(Object.keys(store.state.cloudMachines.machines)).toEqual(['sb-1', 'sb-2', 'sb-3']);
+    expect(store.state.cloudMachines.providers.e2b).toEqual(E2B_PROVIDER);
   });
 });
