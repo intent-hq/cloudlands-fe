@@ -511,9 +511,9 @@
           <div
             class="trace-name-cell relative flex min-w-0 items-center gap-2 pr-3"
             style="padding-left: {ROW_INSET +
-              Math.min(row.depth * indent, Math.max(0, spanColumn - 128))}px"
+              Math.min(row.depth * indent, Math.max(0, spanColumn - 144))}px"
           >
-            {#each Array.from({ length: Math.min(row.depth, Math.floor(Math.max(0, spanColumn - 128) / indent)) }, (_, level) => level) as level (level)}
+            {#each Array.from({ length: Math.min(row.depth, Math.floor(Math.max(0, spanColumn - 144) / indent)) }, (_, level) => level) as level (level)}
               <span
                 class="trace-tree-guide pointer-events-none absolute inset-y-0 w-px"
                 style="left: {ROW_INSET + level * indent + 5}px"
@@ -526,7 +526,7 @@
                 size="icon-compact"
                 tabindex={-1}
                 disabled={search.length > 0}
-                class="-ml-1 size-4 shrink-0 text-muted-foreground group-hover/row:text-foreground"
+                class="-ml-1 size-5 shrink-0 text-muted-foreground group-hover/row:text-foreground"
                 aria-label={row.open
                   ? m.agentTrace_row_collapse_ariaLabel({ name: label.name })
                   : m.agentTrace_row_expand_ariaLabel({ name: label.name })}
@@ -537,23 +537,23 @@
               >
                 <Fa
                   icon={faChevronRight}
-                  size="xs"
+                  size="sm"
                   class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {row.open
                     ? 'rotate-90'
                     : ''}"
                 />
               </Button>
             {:else}
-              <span class="-ml-1 w-4 shrink-0" aria-hidden="true"></span>
+              <span class="-ml-1 w-5 shrink-0" aria-hidden="true"></span>
             {/if}
             <span
-              class="flex size-5 shrink-0 items-center justify-center text-muted-foreground"
+              class="trace-row-icon flex size-6 shrink-0 items-center justify-center text-base"
               aria-hidden="true"
             >
               {#if span.kind === 'agent'}
-                <AgentAvatar agentId={span.agentId} variant="standard" />
+                <AgentAvatar agentId={span.agentId} variant="emphasized" />
               {:else if label.icon}
-                <Fa icon={label.icon} size="xs" />
+                <Fa icon={label.icon} />
               {/if}
             </span>
             <span
@@ -569,9 +569,9 @@
               >
             {/if}
             {#if span.status === 'running' && span.kind !== 'agent'}
-              <IntentMarkLoader size={12} class="shrink-0" />
+              <IntentMarkLoader size={14} class="shrink-0" />
             {:else if span.status === 'failed'}
-              <Fa icon={faTriangleExclamation} size="xs" class="shrink-0 text-danger" />
+              <Fa icon={faTriangleExclamation} size="sm" class="shrink-0 text-danger" />
             {/if}
           </div>
 
@@ -680,8 +680,18 @@
 </Popover.Root>
 
 <style>
+  .trace-waterfall {
+    --trace-turn-ink: hsl(var(--info));
+    --trace-tool-ink: color-mix(in oklab, hsl(var(--success)) 80%, hsl(var(--info)));
+  }
+  .trace-row-icon {
+    color: var(--trace-turn-ink);
+  }
+  .trace-row[data-kind='tool'] .trace-row-icon {
+    color: var(--trace-tool-ink);
+  }
   .trace-axis {
-    border-bottom: 1px solid hsl(var(--foreground) / 0.08);
+    border-bottom: 1px solid hsl(var(--foreground) / 0.06);
   }
   .trace-name-cell {
     border-right: 1px solid hsl(var(--foreground) / 0.08);
@@ -713,19 +723,20 @@
     opacity: 0;
   }
   /*
-   * Neutral foundation; the citrus accent marks only what is running now.
+   * Violet denotes model turns and teal denotes tool calls. These chart colors
+   * follow the app theme; citrus and danger retain their live/error meanings.
    * Fills are opaque so overlapping tool calls do not stack darker.
    */
   .trace-bar--track {
-    background: color-mix(in srgb, hsl(var(--foreground)) 7%, hsl(var(--background)));
+    background: color-mix(in oklab, var(--trace-turn-ink) 10%, hsl(var(--background)));
   }
   .trace-bar--turn,
   .trace-segment--turn {
-    background: color-mix(in srgb, hsl(var(--foreground)) 25%, hsl(var(--background)));
+    background: color-mix(in oklab, var(--trace-turn-ink) 65%, hsl(var(--background)));
   }
   .trace-bar--tool,
   .trace-segment--tool {
-    background: color-mix(in srgb, hsl(var(--foreground)) 42%, hsl(var(--background)));
+    background: color-mix(in oklab, var(--trace-tool-ink) 78%, hsl(var(--background)));
   }
   .trace-bar--failed,
   .trace-segment--failed {
