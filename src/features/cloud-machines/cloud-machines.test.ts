@@ -4,6 +4,7 @@
  * agent on E2B and its errors read.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import {
   estimateCloudCost,
   parseCloudMachineError,
@@ -115,7 +116,10 @@ describe('cost and uptime', () => {
     const paused = E2B_SANDBOXES[2]!;
     expect(liveRunningSeconds(running, 1000, 61_000)).toBe(42 * 60 + 60);
     expect(liveRunningSeconds(paused, 1000, 61_000)).toBe(17 * 60);
-    expect(formatUptime(72 * 60)).toBe('1 h 12 min');
+    expect(formatUptime(72 * 60)).toBe(
+      m.cloudMachines_uptime_hoursMinutes({ hours: '1', minutes: '12' }),
+    );
+    expect(formatUptime(30)).toBe(m.cloudMachines_uptime_underMinute());
     expect(sandboxLabel(running)).toBe('iOS build fixer');
   });
 });
@@ -222,7 +226,9 @@ describe('an agent on E2B', () => {
     );
     expect(running?.cloud?.state).toBe('running');
     expect(running?.state).toBe('ready');
-    expect(agentMachineChipLabel(running!)).toBe('E2B · running');
+    expect(agentMachineChipLabel(running!)).toBe(
+      m.cloudMachines_agent_chip({ machine: 'E2B', state: m.cloudMachines_agent_running() }),
+    );
     const paused = agentMachineLocation(agent({ nodeId: 'sb-3' }), E2B_SANDBOXES[2]);
     expect(paused?.cloud?.state).toBe('paused');
     expect(agentPlacementNoticeKind(agent({ nodeId: 'sb-3' }), paused)).toBeNull();
@@ -242,7 +248,9 @@ describe('an agent on E2B', () => {
       'E2B',
     );
     expect(quota.cloud).toMatchObject({ code: 'cloud-quota', limit: 'plan' });
-    expect(cloudErrorText(quota.cloud!).description).toMatch(/smaller size/);
+    expect(cloudErrorText(quota.cloud!).description).toBe(
+      m.cloudMachines_error_quotaPlan_description(),
+    );
     const profile = placementFailure(
       { code: 'cloud-profile-required', detail: 'no profile' },
       'E2B',

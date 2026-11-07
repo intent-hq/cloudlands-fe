@@ -36,7 +36,13 @@
   let {
     initialEditedMachine,
     initialCloudSetup = false,
-  }: { initialEditedMachine?: string; initialCloudSetup?: boolean } = $props();
+    initialAddMenuOpen = false,
+  }: {
+    initialEditedMachine?: string;
+    initialCloudSetup?: boolean;
+    /** Previews: open the Add machine menu on mount. */
+    initialAddMenuOpen?: boolean;
+  } = $props();
 
   // Full ordered list (local first) drives the rows AND the empty state (the
   // always-present local row and the "no devices" box must not render
@@ -52,6 +58,7 @@
   const e2bProvider$ = selectE2bProvider();
   let cloudSetupOpen = $state(untrack(() => initialCloudSetup));
   let cloudEditing = $state(untrack(() => initialCloudSetup));
+  let addMenuOpen = $state(untrack(() => initialAddMenuOpen));
   const showCloudRow = $derived($cloudVisible$ && (!!$e2bProvider$ || cloudSetupOpen));
   type MachineListRow = { kind: 'device'; device: ConnectionRecord } | { kind: 'cloud' };
   const listRows = $derived<MachineListRow[]>([
@@ -174,7 +181,7 @@
 
   <div class="flex justify-end">
     {#if $cloudVisible$ && !$e2bProvider$ && !cloudSetupOpen}
-      <Menu.Root>
+      <Menu.Root bind:open={addMenuOpen}>
         <Menu.Trigger>
           {#snippet child({ props })}
             <Button {...props} variant="ghost" size="sm" data-testid="add-machine-menu">

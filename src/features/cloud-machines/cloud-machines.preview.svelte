@@ -49,7 +49,6 @@
 
   let { scene = 'connected' }: Props = $props();
   const connectionId$ = selectCurrentConnectionId();
-  let root = $state<HTMLElement | null>(null);
   let ready = $state(false);
   let startOnValue = $state('');
   let startOnOpen = $state(true);
@@ -75,14 +74,12 @@
 
   onMount(async () => {
     await tick();
-    if (scene === 'add-menu')
-      root?.querySelector<HTMLElement>('[data-testid="add-machine-menu"]')?.click();
+
     ready = true;
   });
 </script>
 
 <div
-  bind:this={root}
   class="min-h-[560px] w-full min-w-0 bg-background p-6 text-foreground"
   data-cloud-machines-scene={scene}
   data-ready={ready ? '' : undefined}
@@ -97,6 +94,9 @@
       />
     </div>
   {:else if $connectionId$ === 'build-box'}
-    <DevicesSettings initialCloudSetup={scene.startsWith('setup')} />
+    <DevicesSettings
+      initialCloudSetup={scene.startsWith('setup')}
+      initialAddMenuOpen={scene === 'add-menu'}
+    />
   {/if}
 </div>

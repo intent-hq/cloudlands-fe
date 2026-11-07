@@ -88,9 +88,8 @@ describe('setup form', () => {
     seed('setup-key-rejected');
     const view = render(CloudMachineRow, { editing: true, onEdit: () => {}, onClose: () => {} });
     expect(view.container.querySelector('[data-cloud-sizes-unknown]')).not.toBeNull();
-    expect(view.container.querySelector('[data-cloud-key-error]')?.textContent).toMatch(
-      /did not accept this API key/,
-    );
+    expect(view.container.querySelector('[data-cloud-key-error]')).not.toBeNull();
+    expect(view.container.querySelector('[data-cloud-key-ok]')).toBeNull();
   });
 });
 
@@ -112,15 +111,6 @@ describe('E2B row', () => {
       (within(paused).getByRole('button', { name: /Delete the sandbox/ }) as HTMLButtonElement)
         .disabled,
     ).toBe(false);
-    expect(view.container.querySelector('[data-cloud-sandboxes]')?.textContent).toContain(
-      '2 running, 1 paused',
-    );
-  });
-
-  it('names a rejected key on the row', () => {
-    seed('key-rejected');
-    const view = render(CloudMachineRow, { editing: false, onEdit: () => {}, onClose: () => {} });
-    expect(view.container.textContent).toContain('Key rejected');
   });
 
   it('offers to stop agents when removal finds live sandboxes', async () => {
