@@ -15,6 +15,7 @@ describe('shortcut registry', () => {
     });
 
     expect(SHORTCUT_CATEGORIES.editor.shortcuts).toContainEqual({
+      id: 'editor.toggle-task-list',
       key: 'mod+shift+9',
       label: 'Toggle Task List',
       contexts: ['editor'],
@@ -94,6 +95,36 @@ describe('shortcut registry', () => {
     ]);
     expect(Object.keys(SHORTCUTS)).not.toContain('RESIZE_PANEL_LEFT');
     expect(Object.keys(SHORTCUTS)).not.toContain('RESIZE_PANEL_RIGHT');
+  });
+});
+
+describe('a binding moved only in the shortcut table', () => {
+  afterEach(() => {
+    vi.doUnmock('../shortcut-bindings');
+    vi.resetModules();
+  });
+
+  it('loads and shows the moved keys in the cheat sheet, settings rows and tooltips', async () => {
+    vi.resetModules();
+    vi.doMock('../shortcut-bindings', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../shortcut-bindings')>();
+      return {
+        ...actual,
+        SHORTCUT_DEFAULTS: {
+          ...actual.SHORTCUT_DEFAULTS,
+          'panel.focus-next-column': 'mod+alt+n',
+        },
+      };
+    });
+
+    const shortcuts = await import('../shortcuts');
+    const row = (list: readonly { id: string; key: string }[]) =>
+      list.find(({ id }) => id === 'panel.focus-next-column')?.key;
+
+    expect(row(shortcuts.SHORTCUT_CATEGORIES.panel.shortcuts)).toBe('mod+alt+n');
+    expect(row(shortcuts.SHORTCUT_REGISTRY)).toBe('mod+alt+n');
+    expect(row(shortcuts.getAllShortcutCategories().panel.shortcuts)).toBe('mod+alt+n');
+    expect(shortcuts.SHORTCUTS.FOCUS_NEXT_COLUMN.key).toBe('mod+alt+n');
   });
 });
 
