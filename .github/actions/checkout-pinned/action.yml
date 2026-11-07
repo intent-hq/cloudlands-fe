@@ -1,0 +1,34 @@
+name: Checkout pinned sparse paths
+description: >-
+  Sparse, depth-1 checkout of a public repository at a pinned ref, with
+  bounded retries on transient network errors (intent-hq/intent#8783).
+  actions/checkout retries its fetch but not the blob:none file download that
+  a sparse checkout does inside `git checkout`, so one dropped github.com
+  connection failed the job. A missing ref still fails at once. Run it after
+  the repository's own checkout: it calls scripts/git-network-retry.sh.
+inputs:
+  repository:
+    description: owner/name on github.com (public; no credentials are used)
+    required: false
+    default: intent-hq/intent
+  ref:
+    description: Branch, tag or full commit SHA
+    required: true
+  path:
+    description: Directory to replace with the checkout
+    required: true
+  sparse-checkout:
+    description: Non-cone sparse-checkout patterns, one per line
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        REPOSITORY: ${{ inputs.repository }}
+        REF: ${{ inputs.ref }}
+        DEST: ${{ inputs.path }}
+        PATTERNS: ${{ inputs.sparse-checkout }}
+      run: >-
+        printf '%s\n' "$PATTERNS" |
+        bash scripts/git-network-retry.sh sparse-checkout "https://github.com/$REPOSITORY" "$REF" "$DEST"
