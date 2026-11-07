@@ -302,14 +302,10 @@ export const SHORTCUT_CATEGORIES: Record<
       entry('panel.create-column-right', () => SHORTCUTS.CREATE_COLUMN_RIGHT.label, ['global']),
       entry('panel.focus-next-column', () => SHORTCUTS.FOCUS_NEXT_COLUMN.label, ['global']),
       entry('panel.maximize', () => m.ui_shortcuts_maximizePanel_label(), ['global']),
-      entry('panel.focus-previous-column', () => SHORTCUTS.FOCUS_PREVIOUS_COLUMN.label, [
-        'global',
-      ]),
+      entry('panel.focus-previous-column', () => SHORTCUTS.FOCUS_PREVIOUS_COLUMN.label, ['global']),
       entry('panel.next-pane', () => SHORTCUTS.NEXT_PANE.label, ['global']),
       entry('panel.previous-pane', () => SHORTCUTS.PREVIOUS_PANE.label, ['global']),
-      entry('panel.move-pane-next-column', () => SHORTCUTS.MOVE_PANE_NEXT_COLUMN.label, [
-        'global',
-      ]),
+      entry('panel.move-pane-next-column', () => SHORTCUTS.MOVE_PANE_NEXT_COLUMN.label, ['global']),
       entry('panel.move-pane-previous-column', () => SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.label, [
         'global',
       ]),
