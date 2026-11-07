@@ -21,8 +21,10 @@ import {
   resolveStartOn,
   START_ON_BACKEND,
   START_ON_E2B,
+  startOnCloudId,
   startOnOptions,
   startOnVisible,
+  type StartOnCloudEntry,
 } from '$features/remote-machines/start-on';
 import {
   agentMachineChipLabel,
@@ -33,6 +35,8 @@ import {
 import {
   E2B_PROVIDER,
   E2B_SANDBOXES,
+  TEAM_ENTRY,
+  TEAM_SANDBOXES,
   setupCloudMachinesFixture,
 } from '../../test/cloud-machines-preview';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
@@ -54,7 +58,19 @@ describe('wire parsing', () => {
   it('drops a key the backend must never send, and unknown providers', () => {
     const provider = parseCloudMachineProvider({ ...E2B_PROVIDER, apiKey: 'e2b_sk_x' });
     expect(provider).not.toHaveProperty('apiKey');
-    expect(parseCloudMachineProvider({ ...E2B_PROVIDER, id: 'modal' })).toBeNull();
+    expect(parseCloudMachineProvider({ ...E2B_PROVIDER, provider: 'modal' })).toBeNull();
+  });
+
+  it('reads named entries, and an older row without provider only as the entry "e2b"', () => {
+    expect(parseCloudMachineProvider(TEAM_ENTRY)).toEqual(TEAM_ENTRY);
+    const { provider: _kind, ...legacy } = E2B_PROVIDER;
+    expect(parseCloudMachineProvider(legacy)).toEqual(E2B_PROVIDER);
+    expect(parseCloudMachineProvider({ ...legacy, id: TEAM_ENTRY.id })).toBeNull();
+    const { cloudMachineId: _id, ...oldCloud } = E2B_SANDBOXES[0]!.cloud!;
+    expect(
+      parseRemoteMachine({ ...E2B_SANDBOXES[0], cloud: oldCloud })?.cloud?.cloudMachineId,
+    ).toBe('e2b');
+    expect(parseRemoteMachine(TEAM_SANDBOXES[0])?.cloud?.cloudMachineId).toBe(TEAM_ENTRY.id);
   });
 
   it('keeps only known, well-formed sizes and defaults the saved size', () => {
@@ -107,6 +123,22 @@ describe('wire parsing', () => {
     ).toBe(false);
   });
 
+  it('accepts cloudMachineId only with target e2b', () => {
+    expect(
+      AgentPlacementRequestSchema.safeParse({ target: 'e2b', cloudMachineId: TEAM_ENTRY.id })
+        .success,
+    ).toBe(true);
+    expect(
+      AgentPlacementRequestSchema.safeParse({
+        target: 'remote',
+        checkout: 'isolated',
+        nodeId: 'd-mac',
+        cloudMachineId: 'e2b',
+      }).success,
+    ).toBe(false);
+    expect(AgentPlacementRequestSchema.safeParse({ cloudMachineId: 'e2b' }).success).toBe(false);
+  });
+
   it('keeps an e2b agent projection, including a linked sandbox and cloudStart', () => {
     const parsed = AgentNodeFieldsSchema.parse({
       nodeId: 'sb-1',
@@ -132,42 +164,55 @@ describe('cost and uptime', () => {
     );
     expect(formatUptime(30)).toBe(m.cloudMachines_uptime_underMinute());
     expect(sandboxLabel(running)).toBe('iOS build fixer');
+    expect(sandboxLabel(TEAM_SANDBOXES[0]!, TEAM_ENTRY.name)).toBe('Release notes');
   });
 });
 
 describe('Start On', () => {
   const machines = [{ ...E2B_SANDBOXES[0]!, id: 'd-mac', name: 'Mac', cloud: undefined }];
+  const entry = (cloudMachineId: string, unavailableReason: string | null = null) =>
+    ({ cloudMachineId, label: `E2B · ${cloudMachineId}`, unavailableReason }) as StartOnCloudEntry;
 
-  it('adds E2B after the machines with the profile hint', () => {
+  it('adds one row per entry after the machines, with the profile hint', () => {
     const options = startOnOptions({
       backendLabel: 'Box',
       machines,
-      cloud: { unavailableReason: null },
+      cloud: [entry('e2b'), entry(TEAM_ENTRY.id, 'key rejected')],
     });
-    expect(options.at(-1)).toMatchObject({ id: START_ON_E2B, kind: 'cloud', disabled: false });
-    expect(options.at(-1)?.hint).toBeTruthy();
+    expect(options.slice(-2)).toMatchObject([
+      { id: START_ON_E2B, label: 'E2B · e2b', kind: 'cloud', disabled: false },
+      {
+        id: startOnCloudId(TEAM_ENTRY.id),
+        kind: 'cloud',
+        disabled: true,
+        reason: 'key rejected',
+      },
+    ]);
+    expect(options.at(-2)?.hint).toBeTruthy();
     expect(
-      startOnOptions({ backendLabel: 'Box', machines, cloud: null }).some(
-        (o) => o.kind === 'cloud',
-      ),
+      startOnOptions({ backendLabel: 'Box', machines, cloud: [] }).some((o) => o.kind === 'cloud'),
     ).toBe(false);
   });
 
-  it('shows with E2B alone, and falls back to the backend when E2B cannot run the model', () => {
-    const cloud = { unavailableReason: null };
+  it('shows with E2B alone, and falls back to the backend when an entry cannot run the model', () => {
+    const cloud = [entry('e2b'), entry(TEAM_ENTRY.id, 'needs a key')];
     expect(
       startOnVisible({ remoteMachinesVisible: true, supported: true, machines: [], cloud }),
     ).toBe(true);
     expect(resolveStartOn(START_ON_E2B, [], cloud)).toBe(START_ON_E2B);
-    expect(resolveStartOn(START_ON_E2B, [], { unavailableReason: 'needs a key' })).toBe(
-      START_ON_BACKEND,
-    );
+    expect(resolveStartOn(startOnCloudId(TEAM_ENTRY.id), [], cloud)).toBe(START_ON_BACKEND);
+    expect(resolveStartOn(startOnCloudId('e2b-gone'), [], cloud)).toBe(START_ON_BACKEND);
     expect(resolveStartOn(START_ON_E2B, [], null)).toBe(START_ON_BACKEND);
   });
 
-  it('sends target e2b for the E2B row', () => {
+  it('names the entry in the placement only when the backend keeps entries', () => {
     expect(initialAgentPlacement(START_ON_E2B)).toEqual({ target: 'e2b', checkout: 'isolated' });
-    expect(initialAgentPlacement('d-mac')).toEqual({
+    expect(initialAgentPlacement(startOnCloudId(TEAM_ENTRY.id), { cloudEntries: true })).toEqual({
+      target: 'e2b',
+      checkout: 'isolated',
+      cloudMachineId: TEAM_ENTRY.id,
+    });
+    expect(initialAgentPlacement('d-mac', { cloudEntries: true })).toEqual({
       target: 'remote',
       checkout: 'isolated',
       nodeId: 'd-mac',
@@ -299,6 +344,20 @@ describe('Labs flag', () => {
     store.dispatch(setLabsCloudMachinesEnabled(false));
     expect(hasCloud()).toBe(false);
     expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_BACKEND);
+  });
+
+  it('lists each entry as "E2B · <name>" in Start On', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('entries');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    const cloud = selectStartOnOptions.select(store.state).filter((o) => o.kind === 'cloud');
+    expect(cloud.map((o) => [o.id, o.label])).toEqual([
+      [START_ON_E2B, m.cloudMachines_startOn_entry_label({ name: 'E2B' })],
+      [
+        startOnCloudId(TEAM_ENTRY.id),
+        m.cloudMachines_startOn_entry_label({ name: 'Team project' }),
+      ],
+    ]);
   });
 
   it('still shows an agent already on E2B, with its sandbox state, while the flag is off', () => {

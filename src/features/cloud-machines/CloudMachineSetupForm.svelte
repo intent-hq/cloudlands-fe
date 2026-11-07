@@ -1,52 +1,87 @@
 <!--
-  Settings → Machines → E2B: the inline setup and edit form. The API key is
+  Settings → an E2B entry: the inline setup and edit form. The API key is
   kept only in this component's local state until it is sent in one
-  `cloudMachines.configure` request; the field is cleared afterwards.
+  `cloudMachines.configure` request; the field is cleared afterwards. A new
+  named entry asks for a name, and can copy another entry's saved key.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { untrack } from 'svelte';
-  import { Button, Input, Label, Select } from '$lib/components/patterns/settings/custom-controls';
-  import { faCircleCheck, faCloud } from '$lib/icons/phosphor-icons';
+  import {
+    Button,
+    Input,
+    Label,
+    Menu,
+    Select,
+  } from '$lib/components/patterns/settings/custom-controls';
+  import { faCircleCheck, faCloud, faKey } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import {
     DEFAULT_CLOUD_MACHINE_SIZE,
     DEFAULT_IDLE_PAUSE_MINUTES,
     DEFAULT_PAUSED_DELETE_DAYS,
     isCloudMachineSize,
+    nextCloudEntryName,
     type CloudMachineProvider,
     type CloudMachineSize,
     type CloudMachineSizeInfo,
   } from '$shared/types/cloud-machines';
   import { store as appStore } from '$store/renderer/store';
   import {
+    selectCloudEntries,
+    selectCloudEntriesSupported,
     selectCloudFailures,
     selectCloudOperations,
     selectCloudValidated,
   } from './cloud-machines-selectors';
   import {
-    CLOUD_CONFIGURE_KEY,
-    CLOUD_VALIDATE_KEY,
+    NEW_CLOUD_ENTRY,
+    cloudConfigureKey,
+    cloudValidateKey,
     cloudMachinesConfigureRequested,
     cloudMachineValidated,
     cloudMachineFailureDismissed,
   } from './cloud-machines-slice';
-  import { cloudErrorText, cloudSizeLabel, hourlyCostLabel } from './cloud-machines-format';
+  import {
+    cloudEntryNameError,
+    cloudErrorText,
+    cloudSizeLabel,
+    hourlyCostLabel,
+  } from './cloud-machines-format';
 
   interface Props {
-    /** The saved provider; null for a first setup. */
-    provider: CloudMachineProvider | null;
+    /** The saved entry; null for a new one. */
+    entry: CloudMachineProvider | null;
     backendLabel: string;
     onClose: () => void;
   }
 
-  let { provider, backendLabel, onClose }: Props = $props();
+  let { entry, backendLabel, onClose }: Props = $props();
+  const provider = $derived(entry);
+  // The form edits one entry (or one new entry) for its whole life.
+  const formKey = untrack(() => entry?.id ?? NEW_CLOUD_ENTRY);
+  const configureKey = cloudConfigureKey(formKey);
+  const validateKey = cloudValidateKey(formKey);
 
   const uid = $props.id();
   const operations$ = selectCloudOperations();
   const failures$ = selectCloudFailures();
-  const validated$ = selectCloudValidated();
+  const validatedByForm$ = selectCloudValidated();
+  const validated = $derived($validatedByForm$[formKey] ?? null);
+  const named$ = selectCloudEntriesSupported();
+  const entries$ = selectCloudEntries();
+  // Other entries whose saved key this one can copy.
+  const keySources = $derived(
+    $named$ ? $entries$.filter((other) => other.id !== provider?.id) : [],
+  );
+  const askName = $derived($named$ && !provider);
 
+  let name = $state(untrack(() => nextCloudEntryName($entries$.map((other) => other.name))));
+  let apiKeyFrom = $state<string | null>(null);
+  const apiKeyFromName = $derived(
+    keySources.find((other) => other.id === apiKeyFrom)?.name ?? null,
+  );
+  const nameError = $derived(askName ? cloudEntryNameError(name, $entries$) : null);
   let apiKey = $state('');
   let size = $state<string>(untrack(() => provider?.size ?? DEFAULT_CLOUD_MACHINE_SIZE));
   let idlePause = $state(
@@ -57,21 +92,19 @@
   );
   let submitted = $state(false);
 
-  const saving = $derived($operations$[CLOUD_CONFIGURE_KEY] === 'saving');
-  const testing = $derived($operations$[CLOUD_VALIDATE_KEY] === 'testing');
+  const saving = $derived($operations$[configureKey] === 'saving');
+  const testing = $derived($operations$[validateKey] === 'testing');
   const busy = $derived(saving || testing);
-  const saveFailure = $derived($failures$[CLOUD_CONFIGURE_KEY] ?? null);
-  const testFailure = $derived($failures$[CLOUD_VALIDATE_KEY] ?? null);
+  const saveFailure = $derived($failures$[configureKey] ?? null);
+  const testFailure = $derived($failures$[validateKey] ?? null);
   /** Published sizes from the last test, kept when an edit clears the test result. */
-  let testedSizes = $state<CloudMachineSizeInfo[] | null>(
-    untrack(() => $validated$?.sizes ?? null),
-  );
+  let testedSizes = $state<CloudMachineSizeInfo[] | null>(untrack(() => validated?.sizes ?? null));
   $effect(() => {
-    const tested = $validated$?.sizes;
+    const tested = validated?.sizes;
     if (tested) untrack(() => (testedSizes = tested));
   });
   const sizes = $derived<CloudMachineSizeInfo[]>(testedSizes ?? provider?.sizes ?? []);
-  const keyRequired = $derived(!provider && !apiKey.trim());
+  const keyRequired = $derived(!provider && !apiKey.trim() && !apiKeyFrom);
   const hourly = $derived(hourlyCostLabel(size));
 
   const IDLE_OPTIONS = [5, 10, 15, 30, 60, 120, 240];
@@ -114,29 +147,39 @@
   /** The size to send: only a known id, and only when it changed or a key is new. */
   function sizeParam(): { size?: CloudMachineSize } {
     if (!isCloudMachineSize(size)) return {};
-    return !provider || size !== provider.size || apiKey.trim() ? { size } : {};
+    return !provider || size !== provider.size || apiKey.trim() || apiKeyFrom ? { size } : {};
+  }
+
+  /** Which entry, its name when new, and its key: pasted or copied. */
+  function entryParams() {
+    return {
+      ...(provider ? { cloudMachineId: provider.id } : {}),
+      ...(askName ? { name: name.trim() } : {}),
+      ...(apiKey.trim() ? { apiKey: apiKey.trim() } : apiKeyFrom ? { apiKeyFrom } : {}),
+    };
   }
 
   function resetTest() {
-    if ($validated$) appStore.dispatch(cloudMachineValidated(null));
-    if (testFailure) appStore.dispatch(cloudMachineFailureDismissed(CLOUD_VALIDATE_KEY));
+    if (validated) appStore.dispatch(cloudMachineValidated(formKey, null));
+    if (testFailure) appStore.dispatch(cloudMachineFailureDismissed(validateKey));
+  }
+
+  function useKeyOf(id: string | null) {
+    apiKeyFrom = id;
+    apiKey = '';
+    resetTest();
   }
 
   function test() {
-    appStore.dispatch(
-      cloudMachinesConfigureRequested(
-        { ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}), ...sizeParam() },
-        true,
-      ),
-    );
+    appStore.dispatch(cloudMachinesConfigureRequested({ ...entryParams(), ...sizeParam() }, true));
   }
 
   function save() {
-    if (keyRequired || busy) return;
+    if (keyRequired || nameError || busy) return;
     submitted = true;
     appStore.dispatch(
       cloudMachinesConfigureRequested({
-        ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        ...entryParams(),
         ...sizeParam(),
         idlePauseMinutes: Number(idlePause),
         pausedDeleteDays: Number(pausedDelete),
@@ -146,7 +189,7 @@
 
   function cancel() {
     resetTest();
-    if (saveFailure) appStore.dispatch(cloudMachineFailureDismissed(CLOUD_CONFIGURE_KEY));
+    if (saveFailure) appStore.dispatch(cloudMachineFailureDismissed(configureKey));
     onClose();
   }
 
@@ -157,6 +200,7 @@
       submitted = false;
       if (saveFailure) return;
       apiKey = '';
+      apiKeyFrom = null;
       resetTest();
       onClose();
     });
@@ -177,23 +221,65 @@
   </p>
 
   <div class="grid gap-x-6 gap-y-4 @xl:grid-cols-[10rem_minmax(0,1fr)]">
+    {#if askName}
+      <Label for="{uid}-name" class="@xl:pt-2">{m.cloudMachines_form_name_label()}</Label>
+      <div class="min-w-0 space-y-1">
+        <Input
+          id="{uid}-name"
+          class="w-full max-w-sm"
+          autocomplete="off"
+          spellcheck={false}
+          placeholder={m.cloudMachines_form_name_placeholder()}
+          bind:value={name}
+          disabled={busy}
+          oninput={resetTest}
+          aria-invalid={nameError ? 'true' : undefined}
+          aria-describedby={nameError ? `${uid}-name-error` : undefined}
+        />
+        {#if nameError}
+          <p id="{uid}-name-error" class="type-body text-danger" data-cloud-name-error>
+            {nameError}
+          </p>
+        {/if}
+      </div>
+    {/if}
+
     <Label for="{uid}-key" class="@xl:pt-2">{m.cloudMachines_form_apiKey_label()}</Label>
     <div class="min-w-0 space-y-1">
       <div class="flex gap-2">
-        <Input
-          id="{uid}-key"
-          type="password"
-          autocomplete="off"
-          spellcheck={false}
-          class="min-w-0 flex-1"
-          placeholder={provider
-            ? m.cloudMachines_form_apiKeySaved_placeholder()
-            : m.cloudMachines_form_apiKey_placeholder()}
-          bind:value={apiKey}
-          disabled={busy}
-          oninput={resetTest}
-          aria-describedby="{uid}-key-note"
-        />
+        {#if apiKeyFromName}
+          <p
+            id="{uid}-key"
+            class="flex min-w-0 flex-1 items-center gap-2 pt-2 type-body text-foreground"
+            data-cloud-key-from
+          >
+            <Fa icon={faKey} class="size-3.5! shrink-0 text-muted-foreground" />
+            <span class="truncate">{m.cloudMachines_form_keyFrom({ name: apiKeyFromName })}</span>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              class="h-auto px-0"
+              disabled={busy}
+              onclick={() => useKeyOf(null)}>{m.cloudMachines_form_keyFrom_clear()}</Button
+            >
+          </p>
+        {:else}
+          <Input
+            id="{uid}-key"
+            type="password"
+            autocomplete="off"
+            spellcheck={false}
+            class="min-w-0 flex-1"
+            placeholder={provider
+              ? m.cloudMachines_form_apiKeySaved_placeholder()
+              : m.cloudMachines_form_apiKey_placeholder()}
+            bind:value={apiKey}
+            disabled={busy}
+            oninput={resetTest}
+            aria-describedby="{uid}-key-note"
+          />
+        {/if}
         <Button
           type="button"
           variant="outline"
@@ -202,7 +288,7 @@
           onclick={test}>{m.cloudMachines_form_test_label()}</Button
         >
       </div>
-      {#if $validated$}
+      {#if validated}
         <p class="flex items-center gap-1.5 type-body text-success" role="status" data-cloud-key-ok>
           <Fa icon={faCircleCheck} class="size-3.5!" />
           {m.cloudMachines_form_keyWorks()}
@@ -215,6 +301,27 @@
       <p id="{uid}-key-note" class="type-body text-muted-foreground">
         {m.cloudMachines_form_apiKey_note({ backend: backendLabel })}
       </p>
+      {#if keySources.length > 0 && !apiKeyFrom}
+        <Menu.Root>
+          <Menu.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props}
+                type="button"
+                variant="link"
+                size="sm"
+                class="h-auto px-0"
+                disabled={busy}>{m.cloudMachines_form_keyFrom_label()}</Button
+              >
+            {/snippet}
+          </Menu.Trigger>
+          <Menu.Content align="start" class="w-64">
+            {#each keySources as source (source.id)}
+              <Menu.Item onSelect={() => useKeyOf(source.id)}>{source.name}</Menu.Item>
+            {/each}
+          </Menu.Content>
+        </Menu.Root>
+      {/if}
     </div>
 
     <Label for="{uid}-size" class="@xl:pt-2">{m.cloudMachines_form_size_label()}</Label>
@@ -293,7 +400,7 @@
     <Button type="button" variant="ghost-light" disabled={saving} onclick={cancel}
       >{m.settings_devices_cancel_label()}</Button
     >
-    <Button type="submit" disabled={busy || keyRequired} loading={saving}
+    <Button type="submit" disabled={busy || keyRequired || !!nameError} loading={saving}
       >{m.cloudMachines_form_save_label()}</Button
     >
   </div>
