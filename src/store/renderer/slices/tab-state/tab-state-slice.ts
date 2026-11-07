@@ -9,6 +9,7 @@ import {
 } from '@themislib/themis/utils/collections/collection-utils';
 import {
   findWorkspaceTabGroup,
+  isWorkspaceTabProjectGroup,
   layoutWorkspaceTabsByProject,
   moveWorkspaceTabGroupInStacks,
   normalizeWorkspaceTabGroups,
@@ -769,7 +770,7 @@ tabStateReducer.with(groupWorkspaceTabsByProject, (state, { payload: [projects] 
     getWorkspaceTabGroupList(state),
     projects,
   );
-  if (layout.groups.length === 0) return state;
+  if (!layout.groups.some(isWorkspaceTabProjectGroup)) return state;
   return withSelectedTabGroup(
     withNextVersion(state, {
       workspaceStacks: layout.workspaceStacks,

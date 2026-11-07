@@ -402,7 +402,7 @@ describe('layoutWorkspaceTabsByProject', () => {
     ]);
   });
 
-  it('replaces manual groups and keeps the name and color of an earlier project group', () => {
+  it('keeps the name and color of an earlier project group', () => {
     const earlier: WorkspaceTabGroup = {
       id: 'project:acme/app',
       name: 'Frontend',
@@ -412,12 +412,26 @@ describe('layoutWorkspaceTabsByProject', () => {
     };
     const layout = layoutWorkspaceTabsByProject(
       [['b1'], ['a1'], ['b2'], ['a2']],
-      [earlier, group('manual', ['b1', 'b2'])],
+      [earlier],
       projects,
     );
     expect(layout.groups).toEqual([
       { id: 'project:acme/api', name: 'api', color: 'green', workspaceIds: ['b1', 'b2'] },
       { ...earlier, workspaceIds: ['a1', 'a2'] },
+    ]);
+  });
+
+  it('keeps manual groups whole and groups only the other tabs by project', () => {
+    const manual = { ...group('manual', ['a1', 'b1']), color: 'green' as const };
+    const layout = layoutWorkspaceTabsByProject(
+      [['b2'], ['a1'], ['b1'], ['a2'], ['x'], ['c1'], ['b3']],
+      [manual],
+      { ...projects, b3: { key: 'acme/api', name: 'api' } },
+    );
+    expect(layout.workspaceStacks.flat()).toEqual(['b2', 'b3', 'a1', 'b1', 'a2', 'x', 'c1']);
+    expect(layout.groups.map(({ id, color, workspaceIds }) => [id, color, workspaceIds])).toEqual([
+      ['project:acme/api', 'blue', ['b2', 'b3']],
+      ['manual', 'green', ['a1', 'b1']],
     ]);
   });
 

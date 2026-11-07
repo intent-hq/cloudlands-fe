@@ -161,20 +161,29 @@ export interface WorkspaceTabProjectLayout {
   groups: WorkspaceTabGroup[];
 }
 
-const projectGroupId = (projectKey: string) => `project:${projectKey}`;
+const PROJECT_GROUP_PREFIX = 'project:';
+const projectGroupId = (projectKey: string) => `${PROJECT_GROUP_PREFIX}${projectKey}`;
+
+/** True for a group made by grouping tabs by project. */
+export function isWorkspaceTabProjectGroup(group: WorkspaceTabGroup): boolean {
+  return group.id.startsWith(PROJECT_GROUP_PREFIX);
+}
 
 /**
  * Sorts stacks so each project's tabs sit together, in order of each project's
- * first tab, and replaces all groups with one group per project that has two or
- * more tabs. A stack follows the project of its first tab. Groups from an
- * earlier run keep their name and color.
+ * first tab, and rebuilds one group per project that has two or more tabs.
+ * Groups made by hand keep their tabs and move as one unit. A stack follows
+ * its first tab. Project groups from an earlier run keep their name and color.
  */
 export function layoutWorkspaceTabsByProject(
   workspaceStacks: readonly (readonly string[])[],
   groups: readonly WorkspaceTabGroup[],
   projects: Readonly<Record<string, WorkspaceTabProject>>,
 ): WorkspaceTabProjectLayout {
+  const manualGroups = groups.filter((group) => !isWorkspaceTabProjectGroup(group));
   const stackKey = (stack: readonly string[]) => {
+    const manualGroup = findWorkspaceTabGroup(manualGroups, stack[0]);
+    if (manualGroup) return `group:${manualGroup.id}`;
     const project = projects[stack[0] ?? ''];
     return project ? projectGroupId(project.key) : `tab:${stack[0]}`;
   };
@@ -187,24 +196,30 @@ export function layoutWorkspaceTabsByProject(
   const planned = [...buckets].flatMap(([id, stacks]) => {
     const workspaceIds = stacks.flat();
     const project = projects[workspaceIds[0] ?? ''];
-    if (!project || workspaceIds.length < 2) return [];
+    if (!project || !id.startsWith(PROJECT_GROUP_PREFIX) || workspaceIds.length < 2) return [];
     return [{ id, project, workspaceIds, previous: previous.get(id) }];
   });
-  const colored = planned.flatMap((plan) => (plan.previous ? [plan.previous] : []));
-  const nextGroups = planned.map(({ id, project, workspaceIds, previous: earlier }) => {
-    const lastActive = earlier?.lastActiveWorkspaceId;
+  const colored = [
+    ...manualGroups,
+    ...planned.flatMap((plan) => (plan.previous ? [plan.previous] : [])),
+  ];
+  const projectGroups = planned.map(({ id, project, workspaceIds, previous: earlier }) => {
     const group: WorkspaceTabGroup = {
       id,
       name: earlier?.name ?? project.name,
       color: earlier?.color ?? nextWorkspaceTabGroupColor(colored),
       workspaceIds,
-      lastActiveWorkspaceId:
-        lastActive && workspaceIds.includes(lastActive) ? lastActive : undefined,
+      lastActiveWorkspaceId: earlier?.lastActiveWorkspaceId,
     };
     if (!earlier) colored.push(group);
     return group;
   });
-  return { workspaceStacks: [...buckets.values()].flat(), groups: nextGroups };
+  const nextStacks = [...buckets.values()].flat();
+  const order = nextStacks.flat();
+  const nextGroups = normalizeWorkspaceTabGroups(order, [...manualGroups, ...projectGroups]).sort(
+    (left, right) => order.indexOf(left.workspaceIds[0]) - order.indexOf(right.workspaceIds[0]),
+  );
+  return { workspaceStacks: nextStacks, groups: nextGroups };
 }
 
 /**

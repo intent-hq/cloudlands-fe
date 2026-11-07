@@ -118,6 +118,13 @@
           tabGroups: [],
         },
       },
+      'mixed-projects-manual-group': {
+        props: {
+          openWorkspaceIds: projectWorkspaces.map((workspace) => workspace.id),
+          activeWorkspaceId: 'pj-fe-2',
+          tabGroups: [group('launch', 'Launch', 'orange', ['pj-fe-3', 'pj-site-1'])],
+        },
+      },
       'open-unnamed': {
         props: {
           openWorkspaceIds: ['tg-site', 'tg-trace', 'tg-trace-api', 'tg-trace-docs', 'tg-app'],
