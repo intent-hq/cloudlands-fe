@@ -349,7 +349,6 @@
     id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
     iconSnippet: sidebarToggleIconSnippet,
-    dividerBefore: true,
     shortcut: 'mod+b',
     onClick: () => {
       appStore.dispatch(toggleSidebar());

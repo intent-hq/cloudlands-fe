@@ -17,6 +17,7 @@
   import KebabIcon from '$lib/components/icons/KebabIcon.svelte';
   import {
     faXmark,
+    faPen,
     faFile,
     faCrosshairs,
     faCopy,
@@ -1282,8 +1283,11 @@
     }}
     align="end"
     side="bottom"
-    contentClass="panel-header-menu panel-actions-menu-content bg-background"
-    subContentClass="panel-header-menu panel-header-submenu bg-background"
+    contentClass={cn(
+      'panel-header-menu panel-actions-menu-content',
+      contentActions?.conversation && 'panel-conversation-menu w-60',
+    )}
+    subContentClass="panel-header-menu panel-header-submenu"
   >
     <!-- i18n-ignore -->
     {#snippet trigger({ props }: { props: Record<string, unknown> })}
@@ -1300,63 +1304,109 @@
       </Button>
     {/snippet}
     {#snippet content({ close }: { close: () => void })}
-      {#if activeTab && isTabRenameable(activeTab) && onTabRename}
-        <Menu.CommandItem
-          label={m.workspace_notes_rename_label()}
-          onclick={async () => {
-            const tab = activeTab;
-            close();
-            // Let the menu restore trigger focus before mounting the editor.
-            await tick();
-            await startInlineRename(tab);
-          }}
-        />
-        <Menu.Separator />
-      {/if}
-      {#if contentActions?.display}
-        <Menu.Group data-panel-actions-section="display">
-          {@render contentActions.display()}
+      {#snippet renameAction()}
+        {#if activeTab && isTabRenameable(activeTab) && onTabRename}
+          <Menu.CommandItem
+            icon={faPen}
+            iconWeight="regular"
+            label={m.workspace_notes_rename_label()}
+            onclick={async () => {
+              const tab = activeTab;
+              close();
+              // Let the menu restore trigger focus before mounting the editor.
+              await tick();
+              await startInlineRename(tab);
+            }}
+          />
+        {/if}
+      {/snippet}
+      {#if contentActions?.conversation}
+        <Menu.Group data-panel-actions-section="conversation">
+          <Menu.Label alignIconColumn={false}>{m.dock_conversation_transcript_label()}</Menu.Label>
+          {@render renameAction()}
+          {@render contentActions.conversation(panelActionsMenuOpen[location])}
         </Menu.Group>
-        <Menu.Separator />
-      {/if}
-      {#if contentActions?.primary || contentActions?.actions || contentActions?.destructive}
-        <Menu.Group data-panel-actions-section="actions">
-          <Menu.Label>{m.layout_panelTabBar_actionsSection_label()}</Menu.Label>
-          {@render contentActions.primary?.()}
-          {@render contentActions.actions?.()}
-          {@render contentActions.destructive?.()}
-        </Menu.Group>
-        {#if paneMoveDirections.some((direction) => direction.enabled)}
+        {#if contentActions.display}
           <Menu.Separator />
+          <Menu.Group data-panel-actions-section="settings">
+            <Menu.Label alignIconColumn={false}>{m.settings_page_title()}</Menu.Label>
+            {@render contentActions.display()}
+          </Menu.Group>
+        {/if}
+        {#if contentActions.lifecycle}
+          <Menu.Separator />
+          <Menu.Group data-panel-actions-section="agent">
+            <Menu.Label alignIconColumn={false}>{m.layout_tabTypes_agent_title()}</Menu.Label>
+            {@render contentActions.lifecycle()}
+          </Menu.Group>
+        {/if}
+      {:else}
+        {#if contentActions?.display}
+          <Menu.Group data-panel-actions-section="display">
+            {@render contentActions.display()}
+          </Menu.Group>
+          <Menu.Separator />
+        {/if}
+        {#if (activeTab && isTabRenameable(activeTab) && onTabRename) || contentActions?.primary || contentActions?.actions || contentActions?.destructive}
+          <Menu.Group data-panel-actions-section="actions">
+            <Menu.Label alignIconColumn={false}
+              >{m.layout_panelTabBar_actionsSection_label()}</Menu.Label
+            >
+            {@render renameAction()}
+            {@render contentActions?.primary?.()}
+            {@render contentActions?.actions?.()}
+            {@render contentActions?.destructive?.()}
+          </Menu.Group>
+          {#if paneMoveDirections.some((direction) => direction.enabled)}
+            <Menu.Separator />
+          {/if}
         {/if}
       {/if}
       {#if paneMoveDirections.some((direction) => direction.enabled)}
-        <Menu.Group data-panel-actions-section="move">
-          <Menu.Label>{m.layout_panelTabBar_movePanel_label()}</Menu.Label>
-          <div class="panel-move-pad">
-            {#each paneMoveDirections as direction (direction.direction)}
-              <Menu.Item
-                class="panel-move-direction panel-move-{direction.direction}"
-                aria-label={direction.label}
-                disabled={!direction.enabled}
-                onSelect={() => {
-                  pendingPaneMoves[location] = direction.move;
-                  close();
-                }}
-              >
-                <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
-                  <g transform="rotate(-90 8 8)" stroke="currentColor" stroke-width="1.33">
-                    <path d="M3 8H12" stroke-linecap="square" />
-                    <path
-                      d="M8.518 3 12.634 7.116C13.122 7.604 13.122 8.396 12.634 8.884L8.518 13"
-                      stroke-linejoin="round"
-                    />
-                  </g>
-                </svg>
-              </Menu.Item>
-            {/each}
-          </div>
-        </Menu.Group>
+        {#snippet moveControls()}
+          <Menu.Group data-panel-actions-section="move">
+            <Menu.Label alignIconColumn={false}>{m.layout_panelTabBar_movePanel_label()}</Menu.Label
+            >
+            <div class="panel-move-pad">
+              {#each paneMoveDirections as direction (direction.direction)}
+                <Menu.Item
+                  class="panel-move-direction panel-move-{direction.direction}"
+                  aria-label={direction.label}
+                  disabled={!direction.enabled}
+                  onSelect={() => {
+                    pendingPaneMoves[location] = direction.move;
+                    close();
+                  }}
+                >
+                  <svg viewBox="0 0 16 16" fill="none" class="size-4!" aria-hidden="true">
+                    <g transform="rotate(-90 8 8)" stroke="currentColor" stroke-width="1.33">
+                      <path d="M3 8H12" stroke-linecap="square" />
+                      <path
+                        d="M8.518 3 12.634 7.116C13.122 7.604 13.122 8.396 12.634 8.884L8.518 13"
+                        stroke-linejoin="round"
+                      />
+                    </g>
+                  </svg>
+                </Menu.Item>
+              {/each}
+            </div>
+          </Menu.Group>
+        {/snippet}
+        {#if contentActions?.conversation}
+          <Menu.Separator />
+          <Menu.Sub>
+            <Menu.SubTrigger icon={faTableColumns} iconWeight="regular">
+              {m.layout_panelTabBar_movePanel_label()}
+            </Menu.SubTrigger>
+            <Menu.SubContent
+              class="panel-header-menu panel-header-submenu panel-actions-menu-content"
+            >
+              {@render moveControls()}
+            </Menu.SubContent>
+          </Menu.Sub>
+        {:else}
+          {@render moveControls()}
+        {/if}
       {/if}
       {#if ($isWorkspaceHostLocal$ && canOpenExternalEditors) || activeTab?.type === 'browser'}
         {#if activeTab}
@@ -1413,6 +1463,7 @@
           {@render contentActions.additional(panelActionsMenuOpen[location])}
         </Menu.Group>
       {/if}
+      {@render contentActions?.footer?.()}
     {/snippet}
   </DropdownMenu>
 {/snippet}
@@ -1907,16 +1958,6 @@
 {/if}
 
 <style>
-  :global(.panel-header-menu) {
-    border: 1px solid hsl(var(--border));
-    border-radius: 9px;
-    padding: 4px;
-    max-width: calc(100vw - 1rem);
-    box-shadow: var(--surface-shadow-3);
-    font-size: 14px;
-    line-height: 1.2;
-    font-weight: 500;
-  }
   :global(
     :is(.panel-header-action-button, .panel-selector-button):not(
       :disabled,
@@ -1934,36 +1975,12 @@
   ) {
     cursor: pointer;
   }
-  :global(.panel-header-menu [data-proximity-highlight='selected']),
-  :global(.panel-header-submenu [data-navigation-message-id][aria-selected='true']) {
-    background: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 5%);
-  }
-  :global(.panel-header-menu [data-proximity-highlight='hover']),
-  :global(.panel-header-submenu [data-navigation-message-id]:hover) {
-    background: color-mix(in srgb, hsl(var(--background)), hsl(var(--foreground)) 7%);
-  }
-  :global(.panel-header-menu [data-slot='menu-separator']) {
-    margin-inline: -4px;
-    margin-block: 6px;
-  }
   :global(.panel-header-submenu) {
     min-width: min(224px, calc(100vw - 1rem));
   }
-  :global(.panel-header-submenu :is([data-slot='input'], button[role='combobox'])) {
-    font-size: inherit;
-    line-height: inherit;
-    font-weight: inherit;
-    height: 32px;
-    padding-left: 10px;
-    border-radius: 7px;
-    background: hsl(var(--background));
-  }
-
-  :global(.panel-actions-menu-content) {
+  :global(.panel-actions-menu-content:not(.panel-conversation-menu)) {
     width: 192px;
     min-width: min(192px, calc(100vw - 1rem));
-    border-radius: 7px;
-    padding-block: 5px;
   }
 
   /* CSS variables for panel tab bar heights */
@@ -2021,9 +2038,6 @@
   :global(.panel-selector-menu [data-slot='menu-command-item'] span.truncate) {
     white-space: normal;
   }
-  :global(.panel-header-menu [data-slot='menu-command-item'] > span:last-child:has(kbd)) {
-    margin-left: 6px;
-  }
   :global(.panel-selector-menu [data-slot='menu-item-leading']) {
     width: 22px;
     height: 22px;
@@ -2034,58 +2048,6 @@
     --agent-avatar-emphasized-surface-size: 22px;
     --agent-avatar-emphasized-art-size: 15px;
     --agent-avatar-emphasized-corner-radius: 5px;
-  }
-  :global(
-    .panel-header-menu:not(.panel-selector-menu) :is([data-menu-item], [data-panel-menu-row])
-  ) {
-    min-height: 30px;
-    font-size: inherit;
-    line-height: inherit;
-    font-weight: inherit;
-    padding: 6px 10px;
-    gap: 10px;
-    border-radius: 7px;
-  }
-  :global(.panel-header-menu [data-panel-menu-row]) {
-    height: auto;
-  }
-  :global(.panel-header-menu :is([data-slot='menu-label'], [data-panel-menu-label])) {
-    font-size: 13px;
-    line-height: 1.3;
-    font-weight: 500;
-    padding: 6px 8px;
-    color: hsl(var(--muted-foreground));
-  }
-  :global(.panel-header-menu [data-slot='menu-command-item'] kbd) {
-    font-size: 11px;
-    color: hsl(var(--muted-foreground));
-  }
-  :global(.panel-header-menu [data-slot='menu-radio-item']) {
-    align-items: center;
-  }
-  :global(.panel-header-menu [data-slot='menu-radio-item'] > [data-slot='menu-item-leading']) {
-    display: none;
-  }
-  :global(.panel-header-menu [data-slot='menu-radio-item'] > [data-slot='menu-item-indicator']) {
-    align-self: center;
-    order: -1;
-    width: 12px;
-    height: 12px;
-    margin: 0;
-  }
-  :global(.panel-header-menu [data-slot='menu-radio-item'] [data-slot='menu-item-indicator'] svg) {
-    display: none;
-  }
-  :global(
-    .panel-header-menu
-      [data-slot='menu-radio-item'][data-state='checked']
-      [data-slot='menu-item-indicator']::after
-  ) {
-    content: '';
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: hsl(var(--success));
   }
   .panel-move-pad {
     position: relative;

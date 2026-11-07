@@ -41,7 +41,7 @@
     return pushEscapeLayer(close);
   });
 
-  // Prepare the form; Dialog.Content owns initial focus on the primary action.
+  // Prepare the form; the dialog owns initial focus on the prompt.
   $effect(() => {
     if (!open || staticPosition) return;
     isExpanded = true;
@@ -76,6 +76,7 @@
   bind:open
   static={staticPosition}
   bind:contentRef
+  initialFocus={contentRef?.querySelector<HTMLElement>('[contenteditable="true"]')}
   size="editor"
   allowOverflow
   title={m.modals_newSpace_title()}

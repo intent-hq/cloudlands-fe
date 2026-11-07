@@ -594,7 +594,7 @@ describe('New Workspace → Start On', () => {
     expect(screen.getByTestId('picker-machine').textContent).toBe('');
   });
 
-  it('keeps the first agent on the backend while files are attached', async () => {
+  it('keeps the chosen machine while files are attached: remote agents receive them', async () => {
     const view = await createWith({ startOnMachineId: MACHINE.id });
     await waitFor(() => expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac'));
     const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
@@ -607,12 +607,11 @@ describe('New Workspace → Start On', () => {
         ],
       },
     });
+    await screen.findByTestId('new-workspace-attachments');
     const row = screen.getByTestId('start-on-picker');
-    await waitFor(() =>
-      expect(row.querySelector('[data-testid="start-on-locked-reason"]')).not.toBeNull(),
-    );
-    expect(row.querySelector('button')?.disabled).toBe(true);
-    expect(screen.getByTestId('picker-machine').textContent).toBe('');
+    expect(row.querySelector('[data-testid="start-on-locked-reason"]')).toBeNull();
+    expect(row.querySelector('button')?.disabled).toBe(false);
+    expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac');
   });
 
   it('lists unreachable and revoked machines disabled with a reason', async () => {

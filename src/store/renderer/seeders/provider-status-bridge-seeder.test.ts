@@ -39,10 +39,13 @@ vi.mock('$store/renderer/store', async () => {
     await import('$store/renderer/utils/test-helpers/store-mock');
   const { initialState, providerCatalogLoaded, providerCatalogReducer } =
     await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
-  const { MOCK_PROVIDER_CATALOG } = await import('../../../test/fixtures/provider-catalog.fixture');
+  const { MOCK_CURSOR_PROVIDER, MOCK_PROVIDER_CATALOG } =
+    await import('../../../test/fixtures/provider-catalog.fixture');
   const providerCatalog = providerCatalogReducer(
     initialState,
-    providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
+    providerCatalogLoaded({
+      providers: [...MOCK_PROVIDER_CATALOG.providers, MOCK_CURSOR_PROVIDER],
+    }),
   );
   return createAppStoreMockModule({ state: () => ({ ...authority.state, providerCatalog }) });
 });
@@ -151,6 +154,123 @@ describe('provider-status-bridge-seeder', () => {
       expect(mockedRequest).not.toHaveBeenCalledWith('host.exec', expect.anything());
     },
   );
+  it.each([true, false, null])(
+    'uses daemon discovery for Cursor and preserves auth=%s',
+    async (authenticated) => {
+      routeDaemon({
+        'host.providerDiscovery': {
+          providers: [
+            { id: 'cursor', installed: true, resolvedPath: '/usr/local/bin/cursor-agent' },
+          ],
+        },
+        'host.providerAuthStatus': authOne('cursor', authenticated),
+      });
+      const response = await mockInvoke<Envelope<{ available: boolean; authenticated?: boolean }>>(
+        PROVIDERS_CHANNELS.CHECK_SINGLE,
+        { providerId: 'cursor', force: true },
+      );
+      expect(response).toMatchObject({
+        success: true,
+        providerId: 'cursor',
+        data: { available: true },
+      });
+      expect(response.data?.authenticated).toBe(authenticated ?? undefined);
+      expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
+    },
+  );
+
+  it.each([
+    ['not installed', { id: 'cursor', installed: false, resolvedPath: null }],
+    ['gated off', { id: 'cursor', installed: true, gatedOff: 'feature' }],
+    ['absent from an older daemon', undefined],
+  ])('reports Cursor unavailable when %s, without an auth probe', async (_label, row) => {
+    routeDaemon({ 'host.providerDiscovery': { providers: row ? [row] : [] } });
+    const response = await mockInvoke<Envelope<{ available: boolean; authenticated?: boolean }>>(
+      PROVIDERS_CHANNELS.CHECK_SINGLE,
+      { providerId: 'cursor', force: true },
+    );
+    expect(response).toEqual({ success: true, providerId: 'cursor', data: { available: false } });
+    expect(mockedRequest).not.toHaveBeenCalledWith('host.providerAuthStatus', expect.anything());
+    expect(mockedRequest).not.toHaveBeenCalledWith('host.findBinary', expect.anything());
+  });
+
+  const GROK_REASON =
+    'cursor-agent runs the Grok agent host (grok-agent 1.4.2), not the Cursor CLI. Run "cursor-agent update --channel cursor" to switch back.';
+
+  it.each([PROVIDERS_CHANNELS.CHECK_SINGLE, PROVIDERS_CHANNELS.GET_AVAILABILITY])(
+    'surfaces a refused Cursor CLI as unsupported guidance, not not-installed, through %s',
+    async (channel) => {
+      routeDaemon({
+        'host.checkAuggie': { available: false },
+        'host.toolAvailability': NO_TOOLS,
+        'host.providerAuthStatus': authSweep(),
+        'host.providerDiscovery': {
+          providers: [
+            {
+              id: 'cursor',
+              installed: false,
+              resolvedPath: '/home/u/.local/bin/cursor-agent',
+              cliVersion: 'grok-agent 1.4.2',
+              unavailableReason: GROK_REASON,
+            },
+          ],
+        },
+      });
+      const response = await mockInvoke<
+        Envelope<ProviderAvailabilityResult & { available: boolean }>
+      >(
+        channel,
+        channel === PROVIDERS_CHANNELS.CHECK_SINGLE
+          ? { providerId: 'cursor', force: true }
+          : undefined,
+      );
+      const status =
+        channel === PROVIDERS_CHANNELS.GET_AVAILABILITY
+          ? response.data?.providers.cursor
+          : response.data;
+      expect(status).toEqual({
+        available: false,
+        version: 'grok-agent 1.4.2',
+        unavailableReason: GROK_REASON,
+        warning: `Cursor CLI unsupported: ${GROK_REASON}`,
+      });
+    },
+  );
+
+  it('reports the Cursor CLI version for an installed Cursor', async () => {
+    routeDaemon({
+      'host.providerDiscovery': {
+        providers: [{ id: 'cursor', installed: true, cliVersion: '2026.11.05-86047df' }],
+      },
+      'host.providerAuthStatus': authOne('cursor', true),
+    });
+    const response = await mockInvoke<Envelope<{ available: boolean }>>(
+      PROVIDERS_CHANNELS.CHECK_SINGLE,
+      { providerId: 'cursor', force: true },
+    );
+    expect(response.data).toEqual({
+      available: true,
+      authenticated: true,
+      version: '2026.11.05-86047df',
+    });
+  });
+
+  it.each([
+    ['an installed', { id: 'cursor', installed: true }, true],
+    ['a refused', { id: 'cursor', installed: false, unavailableReason: 'Grok agent host' }, false],
+  ])('counts %s Cursor CLI toward hasAnyProvider like any provider', async (_l, row, hasAny) => {
+    routeDaemon({
+      'host.checkAuggie': { available: false },
+      'host.toolAvailability': NO_TOOLS,
+      'host.providerAuthStatus': authSweep(),
+      'host.providerDiscovery': { providers: [row] },
+    });
+    const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+      PROVIDERS_CHANNELS.GET_AVAILABILITY,
+    );
+    expect(response.data?.hasAnyProvider).toBe(hasAny);
+  });
+
   beforeAll(async () => {
     const { withLegacyPrincipal } = await import('../../../test/fixtures/principal-state');
     authority.state = withLegacyPrincipal({});

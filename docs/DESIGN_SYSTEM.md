@@ -122,6 +122,8 @@ Use `Select` for a short, closed set of values and `Combobox` from
 Give the trigger a purpose-specific accessible name; the selected value and search
 placeholder are not substitutes for that name. `Combobox` requires `ariaLabel` and also
 accepts `ariaLabelledby` and `ariaDescribedby` for field integration.
+Result panels keep the menu's inner gutter, including with `inputVariant="search"`.
+Use `viewportClass` to remove it only when the enclosing picker supplies that inset.
 
 `onsearch(query)` may return options or groups synchronously or asynchronously. Supply
 localized `emptyText`, `errorText`, and `retryText` where the default is insufficient;
@@ -144,7 +146,7 @@ Keep group actions outside selectable options; use
 
 Search inside a menu or picker has one appearance: `<Input variant="search">`,
 `<Combobox inputVariant="search">`, and the built-in `Dropdown` search. It is
-body-sized and transparent on the popover surface, with a light placeholder and
+the same text size as options and transparent on the popover surface, with a light placeholder and
 caret focus. Use a 4px top inset and a 4px gap before results. Do not add a border, focus ring, leading
 icon, title block, or custom padding. Put a compact control such as refresh or clear beside the field with
 `Combobox inputAction` or `Dropdown searchAction`. Preview: `/sandbox/menu-search`.
@@ -352,6 +354,10 @@ navigation. `scripts/design-token-allowlist.json` caps this file at those two ar
   smaller public control size.
 - Shape and elevation: `--radius-{small,medium,large}` all resolve to 8px. `--elevation-raised` is a quiet
   one-pixel lift; `--elevation-overlay` is reserved for floating overlays.
+  Bordered Button backgrounds belong on the control root, alongside its border. The browser then
+  keeps inner corners aligned for custom radii and joined controls with a border removed on one side.
+  The inset `button-surface` is reserved for borderless fills and effects; do not repaint it for an
+  outlined state. Review `/sandbox/button?state=surface-geometry` in both themes.
 - Motion: use `--spring-{fast,moderate,slow}` (80/160/240ms) with the matching
   `--spring-*-ease`, or Tailwind `duration-spring-*` and `ease-spring-*`. Exits use the shorter
   `--spring-*-exit` / `duration-spring-*-exit` tweens. Existing `--motion-*` and `--ease-*` names
@@ -423,8 +429,9 @@ an existing description reference is preserved. Do not rely on color alone to ex
 a command is unavailable.
 
 The public `menuOverlay()` recipe from `$lib/components/ui/menu` supplies the same shell
-for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Prefer
-the semantic components in feature code. Recipes provide styling, not keyboard, focus,
+for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Both use
+`type-caption`, so custom content and summaries in nested menus match the option text.
+Prefer the semantic components in feature code. Recipes provide styling, not keyboard, focus,
 checked-state, or dismissal behavior.
 
 `Menu.Indicator` owns the trailing glyph, slot, and decorative `aria-hidden` contract for
@@ -463,12 +470,17 @@ are distinct capabilities, not duplicate commands. Dropdowns and submenus must r
 least an 8px viewport gutter, including when their trigger sits at an edge. Menu labels
 and descriptions are left-aligned; trailing shortcuts and indicators keep their own slots.
 When any visible row has a leading icon, reserve that icon column across the entire popup,
-including group headings and rows separated by dividers. Descriptions align with their labels.
+including group headings and rows separated by dividers. Section captions can use
+`Menu.Label alignIconColumn={false}` to align with the leading artwork instead. Descriptions align with their labels.
 Each submenu decides independently; entirely iconless popups do not reserve an icon column.
 Align leading icons and trailing shortcuts with the first line of the label, not the vertical
 center of a multiline label or description. Keep this contract in shared row anatomy so
 composed panel menus and action-model menus behave the same way.
 Destructive leading icons inherit the label's destructive color, including hover and focus.
+Use `Menu.CheckboxItem indicator="switch"` for independent on/off settings. The row remains
+a menu checkbox with one keyboard target; the switch is a decorative state indicator and does
+not paint the row as a selected choice. `Menu.Footer` provides a flush metadata strip; any
+action it contains still uses a semantic menu item.
 Submenus prefer the right side and align their first row with the parent row; viewport
 collisions may flip or shift them, while preserving the viewport gutter.
 Menus must fit the viewport, scroll internally, support keyboard/typeahead navigation, and
@@ -683,7 +695,8 @@ target below the supported ladder.
 New product controls compose the canonical primitives; do not introduce raw `button`, `input`,
 `select`, or `textarea` hosts. The raw-element audit is a shrinking ratchet: remove an exception or
 lower a ceiling when a migration lands, and never raise a ceiling to accommodate new markup.
-After an intentional fixture or catalog-contract change, update catalog snapshots with `NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u` and review the generated diff before staging it.
+The catalog contract suite checks accessibility with axe. Review appearance changes in the browser
+with the relevant sandbox scene; do not pin CSS classes or serialized fixture markup in snapshots.
 
 ## Verification and audits
 

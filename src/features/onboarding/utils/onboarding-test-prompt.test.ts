@@ -25,6 +25,12 @@ describe('shouldRunOnboardingTestPrompt', () => {
     expect(shouldRunOnboardingTestPrompt(undefined)).toBe(false);
   });
 
+  it('tests Cursor when the daemon supports test prompts', () => {
+    const cursor = entry({ id: 'cursor', displayName: 'Cursor', supportsTestPrompt: true });
+    expect(shouldRunOnboardingTestPrompt(cursor)).toBe(true);
+    expect(shouldRunOnboardingTestPrompt({ ...cursor, supportsTestPrompt: undefined })).toBe(false);
+  });
+
   it.each([
     'auggie',
     'codex',

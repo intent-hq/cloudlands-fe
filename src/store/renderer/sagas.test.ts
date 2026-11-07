@@ -116,6 +116,7 @@ describe('renderer app saga registry', () => {
       'mcpSettingsSaga',
       'directoryPickerSaga',
       'statsReadSaga',
+      'pluginsSettingsSaga',
       'prMonitorSaga',
       'scriptMonitorSaga',
       'agentWorkersSaga',

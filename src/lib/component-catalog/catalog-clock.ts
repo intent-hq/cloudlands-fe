@@ -4,14 +4,14 @@
  *
  * A preview that stamps a fixture from the real clock while the component measures that
  * stamp against the real clock again renders differently depending on how slowly it runs:
- * the toast catalog's "18s" attention toast became "20s" on a busy machine and failed its
- * snapshot (2026-10-23). Snapshot suites therefore freeze `Date` at `CATALOG_REFERENCE_NOW`
+ * the toast catalog's "18s" attention toast became "20s" on a busy machine and changed its
+ * rendered age (2026-10-23). Catalog suites therefore freeze `Date` at `CATALOG_REFERENCE_NOW`
  * (`vi.setSystemTime`, Date only), so the fixture stamp and the component's own clock read
  * the same instant. Use `catalogNow()` where the component measures against its live clock
  * (relative ages, countdowns, uptime) and a fixed ISO date for an absolute date.
  */
 
-/** The instant catalog snapshot suites freeze `Date` at (see catalog-contract.test.ts). */
+/** The instant catalog suites freeze `Date` at (see catalog-contract.test.ts). */
 export const CATALOG_REFERENCE_NOW = '2026-09-01T12:00:00.000Z';
 
 /**

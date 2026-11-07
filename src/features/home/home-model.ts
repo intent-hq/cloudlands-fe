@@ -46,15 +46,14 @@ export function getHomeBaseTriageGroup(
   if (workspace.displayStatus === 'blocked' || workspace.displayStatus === 'failed') {
     return 'blocked';
   }
-  if (
-    workspace.attention === 'review_required' ||
-    workspace.displayStatus === 'needs_attention' ||
-    workspace.displayStatus === 'pr_ready'
-  ) {
+  if (workspace.attention === 'review_required' || workspace.displayStatus === 'needs_attention') {
     return 'needs-you';
   }
   if (isHomeRunning(workspace)) {
     return 'running';
+  }
+  if (workspace.displayStatus === 'pr_ready') {
+    return 'needs-you';
   }
   if (workspace.displayStatus === 'complete' || workspace.displayStatus === 'pr_merged') {
     return 'done';

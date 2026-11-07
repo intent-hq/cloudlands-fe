@@ -401,6 +401,12 @@
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
         else if (data.repoPath) {
+          const repositoryChanged = repositorySelectionChanged({
+            repoPath: data.repoPath,
+            repoType: 'local',
+            githubUrl: '',
+            isNewRepo: false,
+          });
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -414,7 +420,7 @@
           // checkout or a branch that doesn't exist in the local repo. An
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
-          branch = '';
+          if (repositoryChanged) branch = '';
         } else if (data.githubUrl) {
           // A GitHub repo from a deep link (clone, "Fix in Intent"): select it
           // the same way the Home GitHub prefill does — a local checkout of
@@ -543,6 +549,20 @@
   let branch = $state(savedState?.branch ?? '');
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
+
+  function repositorySelectionChanged(
+    next: Pick<
+      CompactWorkspaceInitializerFormState,
+      'repoPath' | 'repoType' | 'githubUrl' | 'isNewRepo'
+    >,
+  ): boolean {
+    return (
+      (next.repoPath ?? repoPath) !== repoPath ||
+      (next.repoType ?? repoType) !== repoType ||
+      (next.githubUrl ?? githubUrl) !== githubUrl ||
+      (next.isNewRepo ?? isNewRepo) !== isNewRepo
+    );
+  }
   // Plain-folder workspaces (Labs). The pick is bound to its path, so any other
   // repo change (restore, prefill, new pick) drops it.
   const initializeGitChoice = createInitializeGitChoice();
@@ -708,16 +728,9 @@
   // non-image files (path-only until placed at workspace.create redemption)
   let contextItems = $state<ContextItem[]>([]);
   // Start On: a remote agent starts from the workspace's last commit, which a
-  // new repository or a plain folder lacks, and takes no image or file
-  // attachments, so in those cases the first agent stays here.
-  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | 'attachments' | null>(
-    plainFolder !== null
-      ? 'plain-folder'
-      : isNewRepo
-        ? 'new-repo'
-        : contextItems.some((item) => item.type !== 'folder' && isPreviewableAttachment(item))
-          ? 'attachments'
-          : null,
+  // new repository or a plain folder lacks, so then the first agent stays here.
+  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | null>(
+    plainFolder !== null ? 'plain-folder' : isNewRepo ? 'new-repo' : null,
   );
   // Use saved state first, then fall back to last submitted values, then defaults
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
@@ -1322,6 +1335,12 @@
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
         else if (data.repoPath) {
+          const repositoryChanged = repositorySelectionChanged({
+            repoPath: data.repoPath,
+            repoType: 'local',
+            githubUrl: '',
+            isNewRepo: false,
+          });
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -1335,7 +1354,7 @@
           // checkout or a branch that doesn't exist in the local repo. An
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
-          branch = '';
+          if (repositoryChanged) branch = '';
         }
         if (!hasCheckoutDraft && data.branch) branch = data.branch;
         // A link for a folder with no workspace (the `intent` CLI) asks for
@@ -1565,6 +1584,7 @@
       queueMicrotask(() => {
         lastAppliedInitialRepoKey = repoKey;
         const formState = mapInitialRepoToFormState(repo);
+        const repositoryChanged = repositorySelectionChanged(formState);
         if (formState.repoType === 'gitlab')
           restoreCheckout(formState.repositoryCheckoutDraft, formState.invalidCheckoutDraft);
 
@@ -1572,7 +1592,8 @@
         if (formState.isValidPath !== undefined) isValidPath = formState.isValidPath;
         if (formState.isNewRepo !== undefined) isNewRepo = formState.isNewRepo;
         if (formState.scope !== undefined) scope = formState.scope;
-        if (formState.branch !== undefined) branch = formState.branch;
+        if (formState.branch !== undefined && (repositoryChanged || formState.branch !== ''))
+          branch = formState.branch;
         if (formState.repoType !== undefined) repoType = formState.repoType;
         if (formState.githubUrl !== undefined) githubUrl = formState.githubUrl;
         if (formState.remoteSetup) remoteSetup = formState.remoteSetup;
@@ -2143,6 +2164,13 @@
       plainFolder?: 'existing' | 'new';
     }>,
   ) {
+    const repositoryChanged =
+      repositorySelectionChanged({
+        repoPath: event.detail.path,
+        repoType: event.detail.type,
+        githubUrl: event.detail.githubUrl || '',
+        isNewRepo: !!event.detail.isNewRepo,
+      }) || plainFolderPick?.kind !== event.detail.plainFolder;
     appStore.dispatch(checkoutClosed(checkoutFormId));
     folderSelectionRevision++;
     repoPath = event.detail.path;
@@ -2156,11 +2184,13 @@
     isValidPath = event.detail.isValidPath ?? false;
     scope = event.detail.scope || '';
     githubUrl = event.detail.githubUrl || '';
-    branch = isNewRepo
-      ? 'main'
-      : event.detail.type === 'remote'
-        ? event.detail.remoteSetup?.branch || 'main'
-        : '';
+    if (repositoryChanged || event.detail.type === 'remote') {
+      branch = isNewRepo
+        ? 'main'
+        : event.detail.type === 'remote'
+          ? event.detail.remoteSetup?.branch || 'main'
+          : '';
+    }
 
     // Handle remote setup from repo selector
     if (event.detail.type === 'remote' && event.detail.remoteSetup) {
@@ -2185,14 +2215,14 @@
       if (next !== null) skipIsolation = next;
     }
 
-    // Reset GitHub auth state when repo changes - will be updated by BranchSelector
-    githubAuthNeeded = 'none';
-
-    // Reset branch status state when repo changes
-    branchBehind = 0;
-    pullError = null;
-    selectedPRBranch = '';
-    selectedPRTargetBranch = '';
+    // Reselecting the same repository does not reload BranchSelector.
+    if (repositoryChanged) {
+      githubAuthNeeded = 'none';
+      branchBehind = 0;
+      pullError = null;
+      selectedPRBranch = '';
+      selectedPRTargetBranch = '';
+    }
   }
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
@@ -3454,7 +3484,10 @@
         <!-- Attachment previews: image thumbnails plus staged non-image file
          chips (placed at workspace.create; failed pills show retry) -->
         {#if contextItems.some(isPreviewableAttachment)}
-          <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2 items-center">
+          <div
+            class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2 items-center"
+            data-testid="new-workspace-attachments"
+          >
             {#each contextItems.filter(isPreviewableAttachment) as item (item.id)}
               <AttachmentPreview
                 id={item.id}
@@ -3819,37 +3852,24 @@
 
         <div class="settings-footer mt-auto pt-6">
           <!-- Create button -->
-          {#snippet createButton(progressLabel?: string)}
-            <WorkspaceCreateButton
-              creating={isCreating}
-              valid={isValid}
-              onclick={handleSubmit}
-              disabled={isEnhancing || isProcessingImages}
-              label={isPulling
-                ? m.workspace_compactInitializer_pullingLatest_label()
-                : (progressLabel ?? CREATION_STAGES[creationStage])}
-            />
-          {/snippet}
           <div class="w-full">
-            {#if isCreating && !isPulling && activeCreateProgressId}
-              <!-- Key on the progressId: the component binds its selector at
-                 init, so a new create must destroy/recreate it. It wraps the
-                 Button so the bottom-edge bar is a sibling overlay of the
-                 button rather than a child of its content slot. -->
-              {#key activeCreateProgressId}
-                <CreateButtonProgress
-                  class="w-full"
-                  progressId={activeCreateProgressId}
-                  fallbackLabel={CREATION_STAGES[creationStage]}
-                >
-                  {#snippet children(label)}
-                    {@render createButton(label)}
-                  {/snippet}
-                </CreateButtonProgress>
-              {/key}
-            {:else}
-              {@render createButton()}
-            {/if}
+            <CreateButtonProgress
+              class="w-full"
+              progressId={isCreating && !isPulling ? activeCreateProgressId : null}
+              fallbackLabel={CREATION_STAGES[creationStage]}
+            >
+              {#snippet children(progressLabel)}
+                <WorkspaceCreateButton
+                  creating={isCreating}
+                  valid={isValid}
+                  onclick={handleSubmit}
+                  disabled={isEnhancing || isProcessingImages}
+                  label={isPulling
+                    ? m.workspace_compactInitializer_pullingLatest_label()
+                    : progressLabel}
+                />
+              {/snippet}
+            </CreateButtonProgress>
           </div>
         </div>
       </div>

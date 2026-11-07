@@ -407,7 +407,6 @@
     id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
     iconSnippet: sidebarToggleIconSnippet,
-    dividerBefore: true,
     shortcut: 'mod+b',
     onClick: () => {
       appStore.dispatch(toggleSidebar());
@@ -438,7 +437,6 @@
           id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
-          dividerBefore: true,
           onClick: () => {
             if (!$workspace || !selectCanShareWorkspace.select(appStore.state, $workspace.id))
               return;
@@ -480,7 +478,6 @@
           id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
-          dividerBefore: !shareAction && !leaveAction,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(
@@ -560,7 +557,6 @@
     id: 'primary-client',
     label: m.workspace_drivingClient_menu_label(),
     icon: faGlobe,
-    dividerBefore: true,
     detail: primaryClientOffline
       ? m.workspace_drivingClient_offline_label()
       : primaryClientHere

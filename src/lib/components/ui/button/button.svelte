@@ -4,6 +4,7 @@
   import { useSize } from '$lib/components/ui/size-context';
   import { cn } from '$lib/utils.js';
   import {
+    activeButtonRootVariants,
     activeButtonSurfaceVariants,
     buttonSurfaceVariants,
     buttonVariants,
@@ -55,6 +56,7 @@
         (resolvedSize === 'xs' || resolvedSize === 'sm' || resolvedSize === 'compact') &&
         'has-[>svg]:pl-2 has-[>svg]:pr-2.5',
       className,
+      active && activeButtonRootVariants[variant],
     ),
   );
   const surfaceClass = $derived(

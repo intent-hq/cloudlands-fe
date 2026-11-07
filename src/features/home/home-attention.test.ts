@@ -147,7 +147,7 @@ describe('Home actionable attention', () => {
       }),
     ).toBe('running');
     expect(getHomeStatusCause({ displayStatus: 'pr_ready', scriptsRunning: true })).toBe(
-      'pr_ready',
+      'scripts_running',
     );
     expect(getHomeStatusCause({ displayStatus: 'complete', backgroundTasksRunning: true })).toBe(
       'background_tasks_running',
@@ -178,9 +178,7 @@ describe('Home PR status precedence', () => {
         { pr_open: 'idle', pr_ready: 'needs-you', pr_queued: 'waiting' }[displayStatus],
       );
       expect(getHomeStatusCause({ displayStatus, attention: 'review_required' })).toBe('review');
-      expect(getHomeStatusCause({ displayStatus, activity: 'agent_running' })).toBe(
-        displayStatus === 'pr_ready' ? 'pr_ready' : 'running',
-      );
+      expect(getHomeStatusCause({ displayStatus, activity: 'agent_running' })).toBe('running');
       expect(getHomeStatusCause({ displayStatus, attention: 'unread' })).toBe(
         displayStatus === 'pr_ready' ? 'pr_ready' : 'unread',
       );

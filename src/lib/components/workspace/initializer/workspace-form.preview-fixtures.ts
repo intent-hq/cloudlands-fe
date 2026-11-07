@@ -1,3 +1,5 @@
+import { takeEvery } from 'typed-redux-saga';
+import { appClient } from '$lib/client';
 import { setupSelectedRepositoryForm } from './selected-repository-form.test-fixtures';
 import { setupPreviewProviders } from '$lib/components/settings/provider-selector.preview';
 import {
@@ -6,7 +8,10 @@ import {
 } from '../../../../test/catalog-preview-ipc';
 import { mockInvoke, overrideMockIpcHandler } from '$shared/ipc-mock-router';
 import { store } from '$store/renderer/store';
+import { setupStartOnPreview, startOnPreviewMachine } from './start-on.preview-fixtures';
 import {
+  workspaceInitializationSubmitted,
+  hydrateWorkspaceInitializer,
   setCompactWorkspaceInitializerFormState,
   setWorkspaceInitializerLastSelectedRepo,
   setWorkspaceInitializerRecentRepos,
@@ -20,13 +25,32 @@ import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { modelReloadSaga } from '$store/renderer/slices/model/sagas/model-reload-saga';
 
 type WorkspaceFormScenario =
-  'default' | 'long' | 'empty' | 'config-error' | 'orchestration' | 'many-repos';
+  | 'default'
+  | 'long'
+  | 'empty'
+  | 'config-error'
+  | 'orchestration'
+  | 'many-repos'
+  | 'remote-attachments'
+  | 'selection-recovery'
+  | 'selection-access-error'
+  | 'opening-cold'
+  | 'opening-saved'
+  | 'opening-stale'
+  | 'opening-error'
+  | 'opening-empty'
+  | 'opening-warm'
+  | 'opening-hydration'
+  | 'opening-late-prefill';
 
 export function setupWorkspaceFormPreview(
   scenario: WorkspaceFormScenario,
   onOpenExternal?: (url: string) => void,
+  onBranchRequest?: (request: { repository: string; status: string }) => void,
+  onSubmission?: (submission: { repoPath: string; branch: string; prompt: string }) => void,
 ) {
   const restores: Array<() => void> = [];
+  const opening = scenario.startsWith('opening-');
   restores.push(
     overrideMockIpcHandler('shell:openExternal', (params) => {
       if (
@@ -48,8 +72,183 @@ export function setupWorkspaceFormPreview(
     setupSelectedRepositoryForm(
       scenario === 'config-error' ? 'gitlab' : 'github',
       scenario !== 'config-error',
+      { deferHydration: opening },
     ),
   );
+  if (opening || scenario === 'selection-recovery' || scenario === 'selection-access-error') {
+    // Observe the form action only. This fixture never starts the creation saga.
+    restores.push(
+      store.runSaga(function* () {
+        yield* takeEvery(workspaceInitializationSubmitted, function* (action) {
+          const submission = action.payload.submission;
+          if (submission.entrypoint === 'compact') {
+            const { repoPath, branch, prompt } = submission;
+            onSubmission?.({ repoPath, branch, prompt });
+          }
+        });
+      }),
+    );
+  }
+  if (scenario === 'opening-late-prefill') {
+    const originalBranches = appClient.git.getBranches;
+    const originalStatus = appClient.git.branchStatus;
+    appClient.git.getBranches = async (repository) => {
+      onBranchRequest?.({ repository, status: 'loading' });
+      const result = {
+        branches: ['trunk', 'release/next'],
+        remoteBranches: [],
+        currentBranch: 'release/next',
+        defaultBranch: 'trunk',
+      };
+      onBranchRequest?.({ repository, status: 'ready' });
+      return result;
+    };
+    appClient.git.branchStatus = async (_repository, branch) => ({
+      branch,
+      currentBranch: 'release/next',
+      isCurrentBranch: branch === 'release/next',
+      ahead: 0,
+      behind: 0,
+      hasUncommittedChanges: false,
+    });
+    store.dispatch(
+      hydrateWorkspaceInitializer({
+        compactFormState: {
+          repoType: 'local',
+          repoPath: '/fixture/prefill',
+          githubUrl: '',
+          branch: '',
+          isValidPath: true,
+          selectedSpecialist: 'developer',
+          isTeamMode: false,
+          selectedProvider: 'codex',
+          selectedModel: 'gpt-5.4',
+          modelWasOverridden: true,
+        },
+        branchByRepo: {},
+      }),
+    );
+    restores.push(() => {
+      appClient.git.getBranches = originalBranches;
+      appClient.git.branchStatus = originalStatus;
+    });
+  } else if (opening) {
+    const previousInitializer = store.state.workspaceInitializer;
+    const originalBranches = appClient.integrations.githubBranches;
+    const originalCached = appClient.integrations.githubBranchesCached;
+    let release: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const releaseBranches = () => release?.();
+    window.addEventListener('workspace-form:release-branches', releaseBranches);
+    let requestCount = 0;
+    appClient.integrations.githubBranchesCached = async () =>
+      scenario === 'opening-warm'
+        ? { cached: true, branches: ['cached-default'], defaultBranch: 'cached-default' }
+        : { cached: false, branches: [] };
+    appClient.integrations.githubBranches = async (owner, repo) => {
+      const repository = `${owner}/${repo}`;
+      const attempt = ++requestCount;
+      onBranchRequest?.({ repository, status: 'loading' });
+      await pending;
+      if (scenario === 'opening-error' && attempt === 1) {
+        onBranchRequest?.({ repository, status: 'error' });
+        throw new Error('network unavailable in opening fixture');
+      }
+      if (scenario === 'opening-empty') {
+        onBranchRequest?.({ repository, status: 'empty' });
+        return { branches: [], defaultBranch: '' };
+      }
+      onBranchRequest?.({ repository, status: attempt > 1 ? 'retry-ready' : 'ready' });
+      return {
+        branches: scenario === 'opening-stale' ? ['trunk'] : ['trunk', 'main'],
+        defaultBranch: 'trunk',
+      };
+    };
+    const agentSettings = {
+      selectedSpecialist: 'developer',
+      isTeamMode: false,
+      selectedProvider: 'codex',
+      selectedModel: 'gpt-5.4',
+      modelWasOverridden: true,
+    };
+    const remembered = scenario !== 'opening-cold' && scenario !== 'opening-warm';
+    // Use the production hydration action, held until after mount in the late case.
+    // This isolates the form's hydration consumer, not settings transport or persistence.
+    const finishHydration = () =>
+      store.dispatch(
+        hydrateWorkspaceInitializer({
+          compactFormState:
+            scenario === 'opening-hydration'
+              ? agentSettings
+              : {
+                  ...agentSettings,
+                  repoType: 'github',
+                  repoPath: 'intent-hq/intent',
+                  githubUrl: 'https://github.com/intent-hq/intent',
+                  branch: '',
+                  isValidPath: true,
+                },
+          lastSelectedRepo: {
+            type: 'github',
+            path: 'intent-hq/intent',
+            githubUrl: 'https://github.com/intent-hq/intent',
+            isValidPath: true,
+          },
+          branchByRepo: remembered ? { 'intent-hq/intent': 'main' } : {},
+          recentRepos: [],
+        }),
+      );
+    if (scenario === 'opening-hydration') {
+      window.addEventListener('workspace-form:release-hydration', finishHydration, { once: true });
+    } else {
+      finishHydration();
+    }
+    restores.push(() => {
+      window.removeEventListener('workspace-form:release-branches', releaseBranches);
+      window.removeEventListener('workspace-form:release-hydration', finishHydration);
+      releaseBranches();
+      appClient.integrations.githubBranches = originalBranches;
+      appClient.integrations.githubBranchesCached = originalCached;
+      store.dispatch(
+        hydrateWorkspaceInitializer({
+          branchByRepo: previousInitializer.branchByRepo,
+          lastSelectedRepo: previousInitializer.lastSelectedRepo,
+        }),
+      );
+    });
+  }
+  if (scenario === 'selection-recovery' || scenario === 'selection-access-error') {
+    const originalBranches = appClient.integrations.githubBranches;
+    let release: (() => void) | undefined;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const releaseBranches = () => release?.();
+    window.addEventListener('workspace-form:release-branches', releaseBranches);
+    appClient.integrations.githubBranches = async (owner, repo) => {
+      const repository = `${owner}/${repo}`;
+      onBranchRequest?.({ repository, status: 'loading' });
+      if (scenario === 'selection-access-error') {
+        onBranchRequest?.({ repository, status: 'no-access' });
+        throw new Error('404 Repository not found');
+      }
+      if (repository === 'fixture-owner/new-app') {
+        await pending;
+        onBranchRequest?.({ repository, status: 'ready' });
+        return { branches: ['develop', 'feature/new-app'], defaultBranch: 'develop' };
+      }
+      const result = await originalBranches(owner, repo);
+      onBranchRequest?.({ repository, status: 'ready' });
+      return result;
+    };
+    restores.push(() => {
+      window.removeEventListener('workspace-form:release-branches', releaseBranches);
+      appClient.integrations.githubBranches = originalBranches;
+      releaseBranches();
+    });
+  }
   restores.push(setupPreviewProviders());
   const unavailable = { available: false };
   restores.push(
@@ -111,6 +310,13 @@ export function setupWorkspaceFormPreview(
       })),
     );
   }
+  if (scenario === 'remote-attachments') {
+    restores.push(
+      setupStartOnPreview([startOnPreviewMachine('d-mac', 'Mac mini', 'connected', ['gpt-5.4'])], {
+        remoteBackend: false,
+      }),
+    );
+  }
   if (scenario === 'many-repos') {
     const repositories = Array.from({ length: 12 }, (_, index) => {
       const name = `history-repo-${String(index + 1).padStart(2, '0')}`;
@@ -130,7 +336,7 @@ export function setupWorkspaceFormPreview(
       })),
     );
   }
-  if (scenario !== 'config-error') {
+  if (scenario !== 'config-error' && !opening) {
     const name =
       scenario === 'long'
         ? 'a-deliberately-long-repository-name-for-workspace-navigation'
@@ -152,6 +358,7 @@ export function setupWorkspaceFormPreview(
         selectedProvider: 'codex',
         selectedModel: 'gpt-5.4',
         modelWasOverridden: true,
+        ...(scenario === 'remote-attachments' ? { startOnMachineId: 'd-mac' } : {}),
       }),
     );
   }

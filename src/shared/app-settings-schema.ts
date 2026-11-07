@@ -259,6 +259,18 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     },
   },
   {
+    path: 'labs.tabGroups',
+    label: 'Tab groups (Labs)',
+    description:
+      'Group workspace tabs into named, colored groups that collapse when not in use. Groups you made are kept but hidden while disabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:tabGroupsEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsTabGroupsEnabled' },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

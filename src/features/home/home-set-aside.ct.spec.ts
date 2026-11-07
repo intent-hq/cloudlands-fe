@@ -99,8 +99,7 @@ test('Board keeps background work running and returns a new question', async ({
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   await mount(Harness, { props: { view: 'board', height: 800 } });
   const asideColumn = page.locator('[data-home-board] [data-home-set-aside]');
-  await expect(asideColumn).toBeVisible();
-  await expect(asideColumn.locator('[data-home-workspace]')).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await row(page, 'aside-running').hover();
   await capture(page, testInfo, 'before-dark-board');
   const before = (await snapshot(page)).workspaces.find((item) => item.id === 'aside-running');
@@ -124,6 +123,7 @@ test('Board keeps background work running and returns a new question', async ({
     window.__homeSetAside!.update('aside-running', { displayStatus: 'needs_attention' }),
   );
   await expect(asideColumn.locator('[data-home-workspace="aside-running"]')).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await expect(row(page, 'aside-running')).toBeVisible();
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-running');
   await page.locator('[data-home-set-aside-action="aside-running"]').focus();
@@ -146,7 +146,7 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   const board = page.locator('[data-home-board]');
   const asideColumn = board.locator('[data-home-set-aside]');
   const asideCard = asideColumn.locator('[data-home-workspace="aside-idle"]');
-  await expect(asideColumn).toBeVisible();
+  await expect(asideColumn).toHaveCount(0);
   await capture(page, testInfo, 'kanban-column-empty-light');
   await aside(page, 'aside-idle');
   await expect(asideCard).toBeVisible();
@@ -157,10 +157,12 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   ).toHaveCount(0);
   await page.getByRole('button', { name: /^Undo/ }).click();
   await expect(asideCard).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await aside(page, 'aside-idle');
   await page.locator('[data-home-set-aside-action="aside-idle"]').focus();
   await page.keyboard.press('Enter');
   await expect(asideCard).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await expect(row(page, 'aside-idle')).toBeFocused();
   await aside(page, 'aside-idle');
   await page.evaluate(() => window.__homeSetAside!.configure({ groupBy: 'repository' }));
@@ -171,7 +173,7 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   await page.evaluate(() =>
     window.__homeSetAside!.configure({ filter: 'all', repoKey: 'acme/platform' }),
   );
-  await expect(asideColumn).toBeVisible();
+  await expect(asideColumn).toHaveCount(0);
   await expect(asideCard).toHaveCount(0);
   await expect(row(page, 'aside-other-repo')).toBeVisible();
   await page.evaluate(() => window.__homeSetAside!.configure({ repoKey: null, groupBy: 'status' }));
@@ -179,7 +181,11 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   await page.getByRole('searchbox').fill('Explore keyboard navigation');
   await expect(asideCard).toBeVisible();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await page.getByRole('searchbox').fill('Plan the release');
+  await expect(asideColumn).toHaveCount(0);
+  await expect(row(page, 'aside-other-repo')).toBeVisible();
   await page.getByRole('searchbox').clear();
+  await expect(asideCard).toBeVisible();
   const clearToasts = page.getByRole('button', { name: /^Dismiss all \d+ notifications$/ });
   if (await clearToasts.isVisible()) await clearToasts.click();
   await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
