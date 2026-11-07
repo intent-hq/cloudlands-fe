@@ -258,6 +258,8 @@
   "browser_panel_toggleGroup_ariaLabel": "Tab-Gruppe {name} umschalten",
   "browser_panel_unclaimedGroup_label": "Nicht beansprucht",
   "browser_panel_url_placeholder": "URL eingeben...",
+  "browser_tabNotice_agentControl_label": "Gesteuert von {name}",
+  "browser_tabNotice_notPrimary_description": "Dieser Computer ist für diesen Tab nicht primär. Der Tab läuft auf {host}; Cookies und Seitenzustand bleiben dort. Diese Seite kann daher von dem abweichen, was der Agent sieht. Die Adresse kann sich von selbst ändern.",
   "browser_viewer_closeFailed_error": "Der Tab konnte auf dem Host-Client nicht geschlossen werden",
   "browser_viewer_forceClose_label": "Trotzdem schließen",
   "browser_viewer_hostOffline_description": "{host} ist getrennt. Dieser Tab zeigt die zuletzt bekannte Adresse; die Navigation wird fortgesetzt, sobald {host} wieder verbunden ist.",

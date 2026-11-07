@@ -6,6 +6,8 @@
     /** Mirror tab: header over a placeholder mirror surface (no webview in the sandbox). */
     mirror: { url: string; title?: string; host: BrowserTabHost };
     width: number;
+    /** Notices above the address bar: owner agent, and whether this computer only mirrors the tab. */
+    notices?: { agentName?: string; mirrored: boolean };
   }
 
   export const ONLINE_HOST: BrowserTabHost = { name: 'office-linux', connected: true };
@@ -20,6 +22,34 @@
         props: {
           width: 640,
           mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+        },
+      },
+      'mirror-agent': {
+        props: {
+          width: 640,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: { agentName: 'Docs agent', mirrored: true },
+        },
+      },
+      'mirror-user-tab': {
+        props: {
+          width: 640,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: { mirrored: true },
+        },
+      },
+      'primary-agent': {
+        props: {
+          width: 640,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: { agentName: 'Docs agent', mirrored: false },
+        },
+      },
+      'mirror-agent-narrow': {
+        props: {
+          width: 360,
+          mirror: { url: 'https://intentapp.dev/docs', title: 'Intent docs', host: ONLINE_HOST },
+          notices: { agentName: 'Release notes researcher with a long name', mirrored: true },
         },
       },
       'host-offline': {
@@ -37,9 +67,10 @@
 </script>
 
 <script lang="ts">
+  import BrowserTabNotices from './BrowserTabNotices.svelte';
   import BrowserViewerTabHeader from './BrowserViewerTabHeader.svelte';
 
-  let { mirror, width }: BrowserViewerTabPreviewProps = $props();
+  let { mirror, width, notices }: BrowserViewerTabPreviewProps = $props();
 
   let lastAction = $state('');
 </script>
@@ -48,6 +79,13 @@
   <div
     class="flex h-[320px] flex-col overflow-hidden rounded-lg border border-border bg-background"
   >
+    {#if notices}
+      <BrowserTabNotices
+        mirrorHostName={notices.mirrored && mirror.host.connected ? mirror.host.name : undefined}
+        agentName={notices.agentName}
+        onOpenAgent={() => (lastAction = 'open-agent')}
+      />
+    {/if}
     <BrowserViewerTabHeader
       url={mirror.url}
       title={mirror.title}

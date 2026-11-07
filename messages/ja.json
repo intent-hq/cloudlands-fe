@@ -258,6 +258,8 @@
   "browser_panel_toggleGroup_ariaLabel": "{name} タブグループを切り替え",
   "browser_panel_unclaimedGroup_label": "未所有",
   "browser_panel_url_placeholder": "URL を入力...",
+  "browser_tabNotice_agentControl_label": "{name} が操作中",
+  "browser_tabNotice_notPrimary_description": "このコンピューターはこのタブのプライマリではありません。タブは {host} で実行され、Cookie とページの状態はそこに残るため、このページはエージェントが見ている内容と異なる場合があります。アドレスは自動的に変わることがあります。",
   "browser_viewer_closeFailed_error": "ホストクライアントでタブを閉じられませんでした",
   "browser_viewer_forceClose_label": "それでも閉じる",
   "browser_viewer_hostOffline_description": "{host} は切断されています。このタブには最後に確認されたアドレスが表示されます。{host} が再接続するとナビゲーションが再開されます。",

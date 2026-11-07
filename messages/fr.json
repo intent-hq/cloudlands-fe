@@ -258,6 +258,8 @@
   "browser_panel_toggleGroup_ariaLabel": "Basculer le groupe d'onglets {name}",
   "browser_panel_unclaimedGroup_label": "Non réclamé",
   "browser_panel_url_placeholder": "Saisir l'URL...",
+  "browser_tabNotice_agentControl_label": "Contrôlé par {name}",
+  "browser_tabNotice_notPrimary_description": "Cet ordinateur n’est pas le principal pour cet onglet. Il s’exécute sur {host}, où restent ses cookies et l’état de la page : cette page peut donc différer de ce que voit l’agent. L’adresse peut changer d’elle-même.",
   "browser_viewer_closeFailed_error": "L'onglet n'a pas pu être fermé sur le client hôte",
   "browser_viewer_forceClose_label": "Fermer quand même",
   "browser_viewer_hostOffline_description": "{host} est déconnecté. Cet onglet affiche sa dernière adresse connue ; la navigation reprendra lorsque {host} se reconnectera.",
