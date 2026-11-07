@@ -13,7 +13,6 @@ import ButtonHarness from './ButtonHarness.svelte';
 import { buttonFixtures } from './button.fixtures';
 import { buttonMetadata } from './button.meta';
 import {
-  activeButtonSurfaceVariants,
   buttonCompatibilityAliases,
   buttonEmphasisLadder,
   buttonSizeLadder,
@@ -69,31 +68,6 @@ describe('Button', () => {
     expect(buttonMetadata.apiGuidance?.emphasis).toEqual(buttonEmphasisLadder);
   });
 
-  it('gives default, primary, and secondary solid raised surfaces with pressed states', () => {
-    const defaultButton = buttonVariants({ variant: 'default' });
-    expect(defaultButton).toBe(buttonVariants({ variant: 'secondary' }));
-    expect(defaultButton).toContain('text-secondary-foreground');
-    expect(buttonSurfaceVariants.default).toBe(buttonSurfaceVariants.secondary);
-    expect(activeButtonSurfaceVariants.default).toBe(activeButtonSurfaceVariants.secondary);
-    expect(buttonVariants({ variant: 'primary' })).toContain('text-primary-foreground');
-    expect(buttonSurfaceVariants.primary).toContain('bg-primary');
-    expect(buttonSurfaceVariants.primary).toContain('shadow-(--elevation-raised)');
-    expect(buttonSurfaceVariants.primary).toContain('group-active/button:brightness-90');
-    const outlineButton = buttonVariants({ variant: 'outline' });
-    expect(outlineButton).toContain('text-foreground');
-    expect(buttonSurfaceVariants.outline).toContain('group-hover/button:bg-hover');
-    expect(buttonSurfaceVariants.outline).toContain('group-active/button:bg-active');
-    const secondaryButton = buttonVariants({ variant: 'secondary' });
-    expect(secondaryButton).toContain('text-secondary-foreground');
-    expect(buttonSurfaceVariants.secondary).toContain('bg-secondary');
-    expect(buttonSurfaceVariants.secondary).toContain('shadow-(--elevation-raised)');
-    expect(buttonSurfaceVariants.secondary).toContain('group-active/button:brightness-90');
-    const destructiveButton = buttonVariants({ variant: 'destructive' });
-    expect(destructiveButton).toContain('text-danger-background');
-    expect(buttonSurfaceVariants.destructive).toContain('bg-danger');
-    expect(buttonSurfaceVariants.neumorphic).toBe(buttonSurfaceVariants.outline);
-  });
-
   it('keeps filled and ghost controls borderless while outline controls retain 1px', () => {
     for (const variant of ['default', 'primary', 'secondary', 'destructive', 'ghost'] as const) {
       const classes = buttonVariants({ variant }).split(/\s+/);
@@ -116,8 +90,6 @@ describe('Button', () => {
     expect(contextual.className).toContain('h-(--control-height-compact)');
     expect(explicit.className).toContain('h-(--control-height-large)');
     expect(active.getAttribute('data-state')).toBe('active');
-    expect(active.querySelector('[data-slot="button-surface"]')?.className).toContain('bg-active');
-    expect(activeButtonSurfaceVariants.outline).toContain('bg-active');
 
     const iconButton = screen.getByRole('button', { name: 'Navigate' });
     expect(iconButton.querySelector('[data-slot="button-leading-icon"]')).not.toBeNull();

@@ -354,6 +354,10 @@ navigation. `scripts/design-token-allowlist.json` caps this file at those two ar
   smaller public control size.
 - Shape and elevation: `--radius-{small,medium,large}` all resolve to 8px. `--elevation-raised` is a quiet
   one-pixel lift; `--elevation-overlay` is reserved for floating overlays.
+  Bordered Button backgrounds belong on the control root, alongside its border. The browser then
+  keeps inner corners aligned for custom radii and joined controls with a border removed on one side.
+  The inset `button-surface` is reserved for borderless fills and effects; do not repaint it for an
+  outlined state. Review `/sandbox/button?state=surface-geometry` in both themes.
 - Motion: use `--spring-{fast,moderate,slow}` (80/160/240ms) with the matching
   `--spring-*-ease`, or Tailwind `duration-spring-*` and `ease-spring-*`. Exits use the shorter
   `--spring-*-exit` / `duration-spring-*-exit` tweens. Existing `--motion-*` and `--ease-*` names
@@ -691,7 +695,8 @@ target below the supported ladder.
 New product controls compose the canonical primitives; do not introduce raw `button`, `input`,
 `select`, or `textarea` hosts. The raw-element audit is a shrinking ratchet: remove an exception or
 lower a ceiling when a migration lands, and never raise a ceiling to accommodate new markup.
-After an intentional fixture or catalog-contract change, update catalog snapshots with `NODE_OPTIONS=--max-old-space-size=4096 pnpm vitest run src/lib/component-catalog/catalog-contract.test.ts --maxWorkers=1 -u` and review the generated diff before staging it.
+The catalog contract suite checks accessibility with axe. Review appearance changes in the browser
+with the relevant sandbox scene; do not pin CSS classes or serialized fixture markup in snapshots.
 
 ## Verification and audits
 
