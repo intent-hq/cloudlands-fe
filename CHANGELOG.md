@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.297.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.296.0...v2.297.0) (2026-11-07)
+
+
+### 🚀 Features
+
+* **cloud-machines:** named E2B entries under Nodes ([#4267](https://github.com/intent-hq/cloudlands-fe/issues/4267)) ([34602b0](https://github.com/intent-hq/cloudlands-fe/commit/34602b03a048f2c464f9ff4d6e0308e3d561337e))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.150 ([#4272](https://github.com/intent-hq/cloudlands-fe/issues/4272)) ([736b42e](https://github.com/intent-hq/cloudlands-fe/commit/736b42e2325b7c477983038029923de723225bcc))
+* **nodes:** never save a refused node, on any route ([#4270](https://github.com/intent-hq/cloudlands-fe/issues/4270)) ([2272d5a](https://github.com/intent-hq/cloudlands-fe/commit/2272d5a727fa786adf12fa9aaf588b73bbf117e1))
+
 ## [2.296.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.295.0...v2.296.0) (2026-11-07)
 
 
