@@ -44,8 +44,9 @@ export class DockSendError extends Error {
 /** An allowlisted code for any thrown value; never free text, names or paths. */
 export function dockSendCode(error: unknown): string {
   const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  if (message.length > 64) return 'unclassified';
   const [head, ...native] = message.split(':');
-  if (!KNOWN_CODES.has(head)) return 'unclassified';
+  if (!KNOWN_CODES.has(head) || native.length > 2) return 'unclassified';
   if (head !== 'media-export-failed') return native.length ? 'unclassified' : head;
   return [head, ...native.map((word) => (NATIVE_ERRORS.has(word) ? word : 'other'))].join(':');
 }
