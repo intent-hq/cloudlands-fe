@@ -1,4 +1,5 @@
 import { setDockLabEnabled } from '$lib/dock-lab';
+import { groupTabsByProjectAction } from '$lib/components/layout/workspace-tab-group-controller';
 import { store as appStore } from '$store/renderer/store';
 import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
 import { setMachineRailEnabledRequested } from '$store/renderer/slices/machine-rail/machine-rail-slice';
@@ -25,6 +26,7 @@ const ENABLE_SSH_MACHINE_SETUP = 'enable-experimental-ssh-machine-setup';
 const DISABLE_SSH_MACHINE_SETUP = 'disable-experimental-ssh-machine-setup';
 const ENABLE_TAB_GROUPS = 'enable-experimental-tab-groups';
 const DISABLE_TAB_GROUPS = 'disable-experimental-tab-groups';
+const GROUP_TABS_BY_PROJECT = 'group-tabs-by-project';
 
 /** The Labs command that would set a lab to its current value is hidden. */
 export function isLabCommandHidden(
@@ -37,6 +39,7 @@ export function isLabCommandHidden(
 ): boolean {
   return (
     commandId === (cloudMachinesEnabled ? ENABLE_CLOUD_MACHINES : DISABLE_CLOUD_MACHINES) ||
+    (commandId === GROUP_TABS_BY_PROJECT && !tabGroupsEnabled) ||
     commandId === (tabGroupsEnabled ? ENABLE_TAB_GROUPS : DISABLE_TAB_GROUPS) ||
     commandId === (dockEnabled ? ENABLE_DOCK : DISABLE_DOCK) ||
     commandId === (plainFoldersEnabled ? ENABLE_PLAIN_FOLDERS : DISABLE_PLAIN_FOLDERS) ||
@@ -64,6 +67,10 @@ export function isSshMachineSetupCommandHidden(commandId: string, enabled: boole
 }
 
 export function runLabCommand(commandId: string): boolean {
+  if (commandId === GROUP_TABS_BY_PROJECT) {
+    groupTabsByProjectAction()?.();
+    return true;
+  }
   if (commandId === ENABLE_MACHINE_RAIL || commandId === DISABLE_MACHINE_RAIL) {
     appStore.dispatch(setMachineRailEnabledRequested(commandId === ENABLE_MACHINE_RAIL));
     return true;

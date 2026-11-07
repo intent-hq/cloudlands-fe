@@ -7,6 +7,7 @@ import {
   faFileAlt,
   faFlask,
   faFolderOpen,
+  faFolderTree,
   faGlobe,
   faPaperclip,
   faPlay,
@@ -128,6 +129,13 @@ export const COMMAND_PALETTE_COMMANDS = [
       return m.lib_commandPalette_disableExperimentalSshMachineSetup_label();
     },
     icon: faFlask,
+  },
+  {
+    id: 'group-tabs-by-project',
+    get label() {
+      return m.layout_workspaceTabGroup_groupByProject_label();
+    },
+    icon: faFolderTree,
   },
   {
     id: 'enable-experimental-browser-access',

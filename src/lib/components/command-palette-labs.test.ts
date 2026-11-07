@@ -4,10 +4,14 @@ const mocks = vi.hoisted(() => ({
   dispatch: vi.fn(),
   setDock: vi.fn(),
   electron: { value: true },
+  groupByProject: vi.fn<() => (() => void) | undefined>(),
 }));
 vi.mock('$lib/dock-lab', () => ({ setDockLabEnabled: mocks.setDock }));
 vi.mock('$lib/utils/platform-capabilities', () => ({
   isElectronPlatform: () => mocks.electron.value,
+}));
+vi.mock('$lib/components/layout/workspace-tab-group-controller', () => ({
+  groupTabsByProjectAction: mocks.groupByProject,
 }));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 
@@ -118,6 +122,16 @@ describe('command palette Labs commands', () => {
     expect(actions[2]?.type).toBe(setBrowserAccessEnabledRequested(false).type);
     expect(actions[2]?.payload).toEqual([false]);
     expect(actions).toHaveLength(3);
+  });
+
+  it('groups tabs by project only while tab groups are on', () => {
+    expect(isLabCommandHidden('group-tabs-by-project', false, false, false, false)).toBe(true);
+    expect(isLabCommandHidden('group-tabs-by-project', false, false, false, true)).toBe(false);
+    const group = vi.fn();
+    mocks.groupByProject.mockReturnValueOnce(group).mockReturnValueOnce(undefined);
+    expect(runLabCommand('group-tabs-by-project')).toBe(true);
+    expect(runLabCommand('group-tabs-by-project')).toBe(true);
+    expect(group).toHaveBeenCalledTimes(1);
   });
 
   it('still toggles the dock and ignores other commands', () => {

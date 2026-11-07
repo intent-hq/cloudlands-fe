@@ -364,6 +364,7 @@ vi.mock('@fortawesome/free-solid-svg-icons', () => ({
   faFile: { iconName: 'file' },
   faCog: { iconName: 'cog' },
   faFolderOpen: { iconName: 'folder-open' },
+  faFolderTree: { iconName: 'folder-tree' },
   faTerminal: { iconName: 'terminal' },
   faCommentDots: { iconName: 'comment-dots' },
   faFileAlt: { iconName: 'file-alt' },
