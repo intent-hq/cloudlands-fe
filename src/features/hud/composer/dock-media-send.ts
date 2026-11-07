@@ -93,7 +93,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
         const exported = await service.exportMedia({ outputVersion: DOCK_MEDIA_OUTPUT_VERSION, jobId, media: { ...media, saved: edit }, layers });
         check();
         if (!exported.ok)
-          throw new Error(['media-export-failed', exported.error, exported.detail].filter(Boolean).join(':'));
+          throw new Error(['media-export-failed', exported.error].filter(Boolean).join(':'));
         stage = 'placement';
         const files = [exported.value.video, ...exported.value.frames];
         const references = [];

@@ -508,6 +508,19 @@ function* sendReply(
     // The click owns this immutable snapshot. Edits made during validation are
     // a different draft revision and must neither be sent nor cleared here.
     if (!clickedDraft) return;
+    // A clip sent as its original goes out as its own raw attachment: the click must hold
+    // exactly that placed file, or nothing is sent (the draft stays).
+    for (const clip of evidence?.clips ?? []) {
+      if (!clip.media || !dockMediaSendsOriginal(clip.media)) continue;
+      const item = clickedItems.find((row) => row.id === clip.contextItemId);
+      if (
+        !item ||
+        item.attachmentId !== clip.media.source.attachmentId ||
+        item.path !== clip.media.source.path ||
+        (item.placementStatus !== undefined && item.placementStatus !== 'placed')
+      )
+        throw new DockSendError('validate', 'legacy-original-unavailable');
+    }
     // Composites come only from the click's snapshot (items + evidence).
     const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
       dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], metadata: [] };
