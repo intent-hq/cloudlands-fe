@@ -219,7 +219,9 @@ describe.skipIf(process.platform === 'win32')('git-network-retry.sh', () => {
       });
       expect(status, output).toBe(0);
       expect(git(dest, 'rev-parse', 'HEAD')).toBe(headSha);
-      expect(existsSync(join(dest, 'docs/protocol/fixtures/turn-start/turn-start-events.json'))).toBe(true);
+      expect(
+        existsSync(join(dest, 'docs/protocol/fixtures/turn-start/turn-start-events.json')),
+      ).toBe(true);
       expect(existsSync(join(dest, 'scripts/turn-start-contract.mjs'))).toBe(true);
       expect(existsSync(join(dest, 'docs/protocol/fixtures/other/skip.json'))).toBe(false);
       expect(existsSync(join(dest, 'README.md'))).toBe(false);
@@ -268,9 +270,12 @@ describe.skipIf(process.platform === 'win32')('git-network-retry.sh', () => {
     });
 
     it('rejects an empty pattern list', () => {
-      const { status, output } = runScript(['sparse-checkout', sourceUrl, headSha, join(tmp, 'y')], {
-        input: '\n',
-      });
+      const { status, output } = runScript(
+        ['sparse-checkout', sourceUrl, headSha, join(tmp, 'y')],
+        {
+          input: '\n',
+        },
+      );
       expect(status).toBe(2);
       expect(output).toContain('no sparse-checkout patterns');
     });
