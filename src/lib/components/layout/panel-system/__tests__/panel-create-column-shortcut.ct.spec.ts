@@ -7,13 +7,20 @@ import PanelModWShortcutHarness from './mocks/PanelModWShortcutHarness.svelte';
 const createColumn = (mac: boolean) =>
   shortcutChord(SHORTCUT_DEFAULTS['panel.create-column-right'], mac);
 
-/** Waits until a chord the layout did not handle reaches xterm after `input`, and returns it. */
+/**
+ * Waits until a chord the layout did not handle reaches xterm after `input` as a control
+ * sequence (not as typed text), and returns the whole terminal input.
+ */
 async function terminalInputAfter(state: Locator, input: string): Promise<string> {
   let received = '';
   await expect
     .poll(async () => {
       received = JSON.parse((await state.getAttribute('data-terminal-input'))!);
-      return received.length > input.length && received.startsWith(input);
+      return (
+        received.length > input.length &&
+        received.startsWith(input) &&
+        received.charCodeAt(input.length) < 0x20
+      );
     })
     .toBe(true);
   return received;
