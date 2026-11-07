@@ -1075,6 +1075,11 @@ export const IPC_CHANNELS = {
     SET_TUNNEL: 'connections:set-tunnel',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
+    // Add from an intent://pair link: test + detect (the token stays in main),
+    // then save or drop the pending credential.
+    PAIR_LINK_INSPECT: 'connections:pair-link-inspect',
+    PAIR_LINK_COMMIT: 'connections:pair-link-commit',
+    PAIR_LINK_DISCARD: 'connections:pair-link-discard',
     // Ask one connected remote backend's daemon to self-update (routes
     // `system.requestUpdate` to that backend's pooled client). Structured
     // result — never throws for daemon-side failures (unsupported/old daemon,

@@ -8,11 +8,58 @@ import { JsonRpcError } from './json-rpc-errors';
 import { canonicalFingerprint } from './invited-session-key';
 import { JsonRpcClient } from './json-rpc-client';
 import type { InvitedCandidate, VerifiedInvitedIdentity } from './invited-session-sync';
+import type { DaemonMode } from '$shared/types/connections';
+import { detectDaemonMode } from './daemon-mode';
 
 /** Only the pinned, bearer-authenticated remote daemon may classify a personal credential. */
 export async function inspectPersonalCredential(
   candidate: InvitedCandidate,
 ): Promise<PrincipalSnapshot> {
+  return withCredentialClient(candidate, async (_client, snapshot) => snapshot);
+}
+
+/** A pair-link credential: its principal, the daemon's running mode and its display name. */
+export interface InspectedPairCredential {
+  snapshot: PrincipalSnapshot;
+  /** Null when neither the hello nor the probe could tell. */
+  daemonMode: DaemonMode | null;
+  /** `host.status` pretty name or hostname; null when unavailable. */
+  name: string | null;
+}
+
+/** {@link inspectPersonalCredential} plus mode detection and the machine's name, on one connection. */
+export async function inspectPairCredential(
+  candidate: InvitedCandidate,
+): Promise<InspectedPairCredential> {
+  return withCredentialClient(candidate, async (client, snapshot, hello) => {
+    const request = (method: string, params?: unknown, options?: { timeoutMs?: number }) =>
+      client.request(method, params, options);
+    const daemonMode = await detectDaemonMode(hello, request);
+    return { snapshot, daemonMode, name: await readMachineName(request) };
+  });
+}
+
+async function readMachineName(
+  request: (method: string, params?: unknown, options?: { timeoutMs?: number }) => Promise<unknown>,
+): Promise<string | null> {
+  try {
+    const status = (await request('host.status', undefined, { timeoutMs: 5_000 })) as {
+      prettyHostname?: unknown;
+      hostname?: unknown;
+    } | null;
+    const name = [status?.prettyHostname, status?.hostname].find(
+      (value): value is string => typeof value === 'string' && value.trim().length > 0,
+    );
+    return name ? name.trim().slice(0, 128) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function withCredentialClient<T>(
+  candidate: InvitedCandidate,
+  use: (client: JsonRpcClient, snapshot: PrincipalSnapshot, hello: unknown) => Promise<T>,
+): Promise<T> {
   const fingerprint = canonicalFingerprint(candidate.fingerprint);
   if (
     !candidate.token ||
@@ -47,7 +94,7 @@ export async function inspectPersonalCredential(
     ) {
       throw new Error('Personal credential identity unavailable');
     }
-    return snapshot;
+    return await use(client, snapshot, hello);
   } finally {
     client.dispose();
   }

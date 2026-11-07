@@ -52,16 +52,34 @@ vi.mock('../../../backend/main/desktop-connections-store', () => ({
 }));
 
 const openBackendWindow = vi.fn();
+const NodeWindowRefusedError = vi.hoisted(
+  () =>
+    class NodeWindowRefusedError extends Error {
+      constructor(readonly connectionId: string) {
+        super('node');
+      }
+    },
+);
 vi.mock('../../../backend/main/backend.ipc', () => ({
   get openBackendWindow() {
     return openBackendWindow;
   },
+  NodeWindowRefusedError,
 }));
 
 let mainWindow: unknown = null;
 vi.mock('../../../../main/state', () => ({
   getMainWindow: () => mainWindow,
 }));
+
+const pairLinks = vi.hoisted(() => ({
+  inspect: vi.fn(),
+  commit: vi.fn(),
+  discard: vi.fn(),
+}));
+vi.mock('../../../backend/main/pair-link.ipc', () => ({ getPairLinks: () => pairLinks }));
+const queueDeepLinkForWindow = vi.hoisted(() => vi.fn());
+vi.mock('../pending-deep-links', () => ({ queueDeepLinkForWindow }));
 
 const logLines: string[] = [];
 vi.mock('$shared/logger', () => ({
@@ -105,6 +123,95 @@ beforeEach(() => {
   add.mockResolvedValue({ id: 'new-id' });
   findMatching.mockResolvedValue(null);
   showMessageBox.mockResolvedValue({ response: 0 });
+  pairLinks.inspect.mockResolvedValue({
+    ok: true,
+    pendingId: 'pending-machine',
+    kind: 'machine',
+    label: 'Build box',
+    existingId: null,
+  });
+});
+
+function fakeWindow() {
+  return {
+    isDestroyed: () => false,
+    isMinimized: () => false,
+    restore: vi.fn(),
+    show: vi.fn(),
+    focus: vi.fn(),
+  };
+}
+
+describe('a node pairing link', () => {
+  beforeEach(() => {
+    pairLinks.inspect.mockResolvedValue({
+      ok: true,
+      pendingId: 'pending-node',
+      kind: 'node',
+      label: 'GPU rig',
+      existingId: null,
+    });
+  });
+
+  it('never opens a backend window: the app window asks, with the pending id only', async () => {
+    const window = fakeWindow();
+    mainWindow = window;
+    await handlePairDeepLink(LINK);
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(queueDeepLinkForWindow).toHaveBeenCalledWith(window, {
+      type: 'node-link',
+      params: { pendingId: 'pending-node', label: 'GPU rig', existingId: '' },
+    });
+    expect(JSON.stringify(queueDeepLinkForWindow.mock.calls)).not.toContain(TOKEN);
+    expect(window.focus).toHaveBeenCalled();
+    expect(logLines.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('opens the local window first when the app has none, never the node', async () => {
+    const window = fakeWindow();
+    openBackendWindow.mockImplementation(async (id: string) => {
+      mainWindow = window;
+      return { id };
+    });
+    await handlePairDeepLink(LINK);
+    expect(openBackendWindow).toHaveBeenCalledTimes(1);
+    expect(openBackendWindow).toHaveBeenCalledWith('local');
+    expect(queueDeepLinkForWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('a link marked mode=node whose test fails shows the failure and never opens a window', async () => {
+    pairLinks.inspect.mockResolvedValue({ ok: false, code: 'unreachable', routes: [] });
+    await handlePairDeepLink(`${LINK}&mode=node`);
+    expect(add).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('a node found only when its window opens is not reported as a pairing failure', async () => {
+    pairLinks.inspect.mockResolvedValue({ ok: false, code: 'unreachable', routes: [] });
+    openBackendWindow.mockRejectedValue(new NodeWindowRefusedError('new-id'));
+    await handlePairDeepLink(LINK);
+    expect(add).toHaveBeenCalled();
+    // Only the "connect to this backend?" confirmation, no failure dialog.
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('a full daemon keeps the owner pairing flow and drops its pending credential', async () => {
+    pairLinks.inspect.mockResolvedValue({
+      ok: true,
+      pendingId: 'pending-machine',
+      kind: 'machine',
+      label: 'Build box',
+      existingId: null,
+    });
+    await handlePairDeepLink(LINK);
+    expect(pairLinks.discard).toHaveBeenCalledWith('pending-machine');
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalled();
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
+  });
 });
 
 describe('handlePairDeepLink', () => {

@@ -43,7 +43,7 @@
   );
   const targets = $derived(
     $connections
-      .filter((c) => c.id !== displaySourceId)
+      .filter((c) => c.id !== displaySourceId && c.daemonMode !== 'node')
       .map((c) => ({ value: c.id, label: transferConnectionLabel(c) })),
   );
   let destinationId = $derived(

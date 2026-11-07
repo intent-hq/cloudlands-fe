@@ -1,6 +1,6 @@
 /**
  * Parse the daemon's `intent://pair` pairing URI (PROTOCOL §5 `pairing.getInfo`:
- * `intent://pair?v=1&host=<ip[,ip...]>&port=<p>&fp=<sha256>&token=<t>[&tc=<addr>]`)
+ * `intent://pair?v=1&host=<ip[,ip...]>&port=<p>&fp=<sha256>&token=<t>[&mode=node][&tc=<addr>]`)
  * into its component fields so the connect flow can prefill host/port/token —
  * and capture the optional tailcat tunnel address (`tc=`, PROTOCOL §12.3) that
  * manual entry has no other way to learn before the first connect.
@@ -23,6 +23,11 @@ export interface ParsedPairingUri {
   token: string | null;
   /** tailcat tunnel address from `tc=` (PROTOCOL §12.3). */
   tcAddress: string | null;
+  /**
+   * `mode=node` hint (PROTOCOL `pairing.getInfo`). Not authoritative: the
+   * client trusts the mode the daemon reports after connecting.
+   */
+  modeHint: 'node' | null;
 }
 
 // i18n-ignore (wire constant, PROTOCOL §5 pairing URI scheme)
@@ -61,5 +66,11 @@ export function parsePairingUri(raw: string): ParsedPairingUri | null {
   const fingerprint = (params.get('fp') ?? params.get('certFingerprint'))?.trim() || null;
   const token = params.get('token')?.trim() || null;
   const tcAddress = params.get('tc')?.trim() || null;
-  return { hosts, port, fingerprint, token, tcAddress };
+  const modeHint = params.get('mode')?.trim().toLowerCase() === 'node' ? 'node' : null;
+  return { hosts, port, fingerprint, token, tcAddress, modeHint };
+}
+
+/** The link with every `token=` value replaced, safe to show on screen. */
+export function maskPairingUri(raw: string): string {
+  return raw.trim().replace(/([?&]token=)[^&#]*/gi, '$1••••');
 }
