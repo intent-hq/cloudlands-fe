@@ -38,6 +38,7 @@
     selectedId: string | null;
     /** The span the time axis is zoomed to; `null` shows the whole trace. */
     zoomId: string | null;
+    query?: string;
     onToggle: (spanId: string, open?: boolean) => void;
     onSelect: (spanId: string | null) => void;
     onZoom: (spanId: string | null) => void;
@@ -52,16 +53,16 @@
     expanded,
     selectedId,
     zoomId,
+    query = '',
     onToggle,
     onSelect,
     onZoom,
     onOpenChat,
   }: Props = $props();
 
-  /** Matches `h-8`; the hover and selection surfaces move in whole rows. */
-  const ROW_HEIGHT = 32;
+  const ROW_HEIGHT = 40;
   const ROW_INSET = 12;
-  const MIN_BAR_PX = 4;
+  const MIN_BAR_PX = 6;
   const TICK_SPACING_PX = 76;
   /** Rough caption glyph width, to keep axis labels apart. */
   const LABEL_CHAR_PX = 7;
@@ -76,7 +77,7 @@
 
   const narrow = $derived(width < 560);
   const spanColumn = $derived(
-    Math.round(Math.min(340, Math.max(156, width * (narrow ? 0.48 : 0.36)))),
+    Math.round(Math.min(400, Math.max(160, width * (narrow ? 0.5 : 0.42)))),
   );
   const indent = $derived(narrow ? 12 : 16);
   /** Secondary text yields first when the span column is tight. */
@@ -142,6 +143,24 @@
     }),
   );
   const nowVisible = $derived(trace.live && nowPosition >= 0 && nowPosition <= 100);
+  const search = $derived(query.trim().toLocaleLowerCase());
+  const matchingIds = $derived.by(() => {
+    if (!search) return null;
+    const ids = new Set<string>();
+    const visit = (span: TraceSpan, parentMatches: boolean): boolean => {
+      const label = spanLabel(span);
+      const matches =
+        parentMatches || `${label.name} ${label.detail ?? ''}`.toLocaleLowerCase().includes(search);
+      let descendantMatches = false;
+      for (const child of span.children) {
+        if (visit(child, matches)) descendantMatches = true;
+      }
+      if (matches || descendantMatches) ids.add(span.id);
+      return matches || descendantMatches;
+    };
+    for (const root of trace.roots) visit(root, false);
+    return ids;
+  });
 
   function findSpan(spans: readonly TraceSpan[], spanId: string): TraceSpan | null {
     for (const span of spans) {
@@ -156,8 +175,9 @@
     const out: Row[] = [];
     const walk = (spans: readonly TraceSpan[], depth: number, parentId: string | null) => {
       for (const span of spans) {
+        if (matchingIds && !matchingIds.has(span.id)) continue;
         const hasChildren = span.children.length > 0;
-        const open = hasChildren && expanded.has(span.id);
+        const open = hasChildren && (matchingIds !== null || expanded.has(span.id));
         out.push({ span, depth, parentId, hasChildren, open });
         if (open) walk(span.children, depth + 1, span.id);
       }
@@ -316,7 +336,7 @@
         else if (row.open) move(index + 1);
         break;
       case 'ArrowLeft':
-        if (row.open) onToggle(row.span.id, false);
+        if (row.open && !search) onToggle(row.span.id, false);
         else if (row.parentId) move(indexById.get(row.parentId) ?? index);
         break;
       case 'Enter':
@@ -395,11 +415,13 @@
 <div class="trace-waterfall relative">
   <!-- Axis -->
   <div
-    class="sticky top-0 z-10 grid h-6 items-end bg-background"
+    class="trace-axis sticky top-0 z-10 grid h-9 items-center bg-background"
     style="grid-template-columns: {spanColumn}px 1fr"
     data-trace-axis
   >
-    <div class="flex min-w-0 items-end" style="padding-left: {ROW_INSET - 10}px">
+    <div
+      class="trace-name-cell flex h-full min-w-0 items-center px-3 type-caption text-muted-foreground"
+    >
       {#if zoomSpan}
         <Button
           variant="ghost-light"
@@ -412,12 +434,14 @@
           {#snippet leadingIcon()}<Fa icon={faMagnifyingGlassMinus} size="xs" />{/snippet}
           {m.agentTrace_zoom_reset_label()}
         </Button>
+      {:else}
+        {m.agentTrace_steps_label()}
       {/if}
     </div>
     <div class="relative h-full overflow-hidden" aria-hidden="true">
       {#each tickLabels as tick (tick.offsetMs)}
         <span
-          class="trace-tick absolute bottom-1 type-caption text-muted-foreground tabular-nums whitespace-nowrap"
+          class="trace-tick absolute top-1/2 -translate-y-1/2 type-caption text-muted-foreground tabular-nums whitespace-nowrap"
           style="left: {tick.position}%"
         >
           {formatTraceTick(tick.offsetMs)}
@@ -425,7 +449,7 @@
       {/each}
       {#each dayMarks as mark (mark.left)}
         <span
-          class="trace-tick absolute bottom-1 type-caption font-medium text-foreground whitespace-nowrap"
+          class="trace-tick absolute top-1/2 -translate-y-1/2 type-caption font-medium text-foreground whitespace-nowrap"
           style="left: {mark.left}px"
           data-trace-day
         >
@@ -446,13 +470,13 @@
       onpointerleave={() => (hoverIndex = null)}
     >
       <div
-        class="trace-surface pointer-events-none absolute inset-x-0 top-0 h-8 rounded-(--radius-medium) bg-selected"
+        class="trace-surface pointer-events-none absolute inset-x-0 top-0 h-10 rounded-(--radius-medium) bg-selected"
         class:trace-surface--hidden={selectedIndex < 0}
         style="transform: translateY({Math.max(0, selectedIndex) * ROW_HEIGHT}px)"
         aria-hidden="true"
       ></div>
       <div
-        class="trace-surface pointer-events-none absolute inset-x-0 top-0 h-8 rounded-(--radius-medium) bg-hover"
+        class="trace-surface pointer-events-none absolute inset-x-0 top-0 h-10 rounded-(--radius-medium) bg-hover"
         class:trace-surface--hidden={hoverIndex === null}
         class:trace-surface--jump={hoverJump}
         style="transform: translateY({hoverY}px)"
@@ -465,7 +489,7 @@
         {@const geo = geometry(span)}
         {@const text = barText(span)}
         {@const side = geo.outside || !text ? 'none' : labelSide(geo, text)}
-        {@const showSegments = !row.open && span.segments.length > 0}
+        {@const showSegments = span.segments.length > 0}
         {@const showTrack = row.open || (span.kind === 'agent' && showSegments)}
         <div
           bind:this={rowEls[span.id]}
@@ -477,7 +501,7 @@
           data-trace-row={span.id}
           data-kind={span.kind}
           data-status={span.status}
-          class="trace-row group/row relative grid h-8 scroll-mt-6 cursor-default rounded-(--radius-medium) outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
+          class="trace-row group/row relative grid h-10 scroll-mt-9 cursor-default rounded-(--radius-medium) outline-none focus-visible:ring-1 focus-visible:ring-focus-ring"
           style="grid-template-columns: {spanColumn}px 1fr"
           in:fly={{ tier: 'fast', distance: -4, axis: 'y' }}
           onclick={() => openRow(span)}
@@ -485,14 +509,23 @@
           onkeydown={(event) => onRowKeydown(event, index)}
         >
           <div
-            class="flex min-w-0 items-center gap-1.5 pr-3"
-            style="padding-left: {ROW_INSET + row.depth * indent}px"
+            class="trace-name-cell relative flex min-w-0 items-center gap-2 pr-3"
+            style="padding-left: {ROW_INSET +
+              Math.min(row.depth * indent, Math.max(0, spanColumn - 128))}px"
           >
+            {#each Array.from({ length: Math.min(row.depth, Math.floor(Math.max(0, spanColumn - 128) / indent)) }, (_, level) => level) as level (level)}
+              <span
+                class="trace-tree-guide pointer-events-none absolute inset-y-0 w-px"
+                style="left: {ROW_INSET + level * indent + 5}px"
+                aria-hidden="true"
+              ></span>
+            {/each}
             {#if row.hasChildren}
               <Button
                 variant="plain"
                 size="icon-compact"
                 tabindex={-1}
+                disabled={search.length > 0}
                 class="-ml-1 size-4 shrink-0 text-muted-foreground group-hover/row:text-foreground"
                 aria-label={row.open
                   ? m.agentTrace_row_collapse_ariaLabel({ name: label.name })
@@ -514,19 +547,19 @@
               <span class="-ml-1 w-4 shrink-0" aria-hidden="true"></span>
             {/if}
             <span
-              class="flex size-4 shrink-0 items-center justify-center text-muted-foreground"
+              class="flex size-5 shrink-0 items-center justify-center text-muted-foreground"
               aria-hidden="true"
             >
               {#if span.kind === 'agent'}
-                <AgentAvatar agentId={span.agentId} variant="compact" />
+                <AgentAvatar agentId={span.agentId} variant="standard" />
               {:else if label.icon}
                 <Fa icon={label.icon} size="xs" />
               {/if}
             </span>
             <span
-              class="min-w-0 shrink truncate type-caption {span.contextOnly
-                ? 'text-muted-foreground'
-                : 'text-foreground'}"
+              class="min-w-0 shrink truncate type-body {span.kind === 'agent'
+                ? 'font-medium'
+                : ''} {span.contextOnly ? 'text-muted-foreground' : 'text-foreground'}"
               title={label.name}
               data-trace-name>{label.name}</span
             >
@@ -545,7 +578,7 @@
           <div class="relative min-w-0 overflow-hidden" data-trace-timeline>
             <div
               bind:this={barEls[span.id]}
-              class="trace-bar absolute top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full transition-[left,width] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
+              class="trace-bar absolute top-1/2 h-4 -translate-y-1/2 overflow-hidden rounded-(--radius-small) transition-[left,width] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
               class:trace-bar--track={showTrack}
               class:trace-bar--turn={!showTrack && span.kind === 'turn'}
               class:trace-bar--tool={!showTrack && span.kind === 'tool'}
@@ -607,6 +640,11 @@
       {/if}
     </div>
   </div>
+  {#if rows.length === 0 && search}
+    <p class="px-3 py-10 type-body text-muted-foreground" role="status">
+      {m.agentTrace_search_empty_label()}
+    </p>
+  {/if}
 </div>
 
 <Popover.Root
@@ -642,6 +680,15 @@
 </Popover.Root>
 
 <style>
+  .trace-axis {
+    border-bottom: 1px solid hsl(var(--foreground) / 0.08);
+  }
+  .trace-name-cell {
+    border-right: 1px solid hsl(var(--foreground) / 0.08);
+  }
+  .trace-tree-guide {
+    background: hsl(var(--foreground) / 0.1);
+  }
   .trace-tick {
     transform: translateX(4px);
     transition: left var(--spring-moderate) var(--spring-moderate-ease);
@@ -670,11 +717,11 @@
    * Fills are opaque so overlapping tool calls do not stack darker.
    */
   .trace-bar--track {
-    background: hsl(var(--foreground) / 0.07);
+    background: color-mix(in srgb, hsl(var(--foreground)) 7%, hsl(var(--background)));
   }
   .trace-bar--turn,
   .trace-segment--turn {
-    background: color-mix(in srgb, hsl(var(--foreground)) 16%, hsl(var(--background)));
+    background: color-mix(in srgb, hsl(var(--foreground)) 25%, hsl(var(--background)));
   }
   .trace-bar--tool,
   .trace-segment--tool {

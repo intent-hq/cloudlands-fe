@@ -5,6 +5,7 @@
     | 'live'
     | 'live-now'
     | 'done'
+    | 'large-cost'
     | 'many-tools'
     | 'many-agents'
     | 'long-names'
@@ -30,6 +31,7 @@
       live: { props: { scenario: 'live' } },
       'live-clock': { props: { scenario: 'live-now' } },
       done: { props: { scenario: 'done' } },
+      'large-cost': { props: { scenario: 'large-cost' } },
       collapsed: { props: { scenario: 'done', collapsed: ['agent:agent-lead'] } },
       'sub-agent-open': {
         props: { scenario: 'done', expanded: ['agent:agent-coder', 'agent:agent-research'] },
@@ -63,6 +65,7 @@
     liveFixture,
     liveNowFixture,
     longNamesFixture,
+    largeCostFixture,
     manyAgentsFixture,
     manyToolsFixture,
     minimalFixture,
@@ -83,6 +86,7 @@
     live: liveFixture,
     'live-now': liveNowFixture,
     done: doneFixture,
+    'large-cost': largeCostFixture,
     'many-tools': manyToolsFixture,
     'many-agents': manyAgentsFixture,
     'long-names': longNamesFixture,
@@ -117,7 +121,7 @@
 </script>
 
 <div
-  class="h-[640px] overflow-auto bg-background"
+  class="h-160 overflow-auto bg-background"
   data-preview-agent-trace={scenario}
   data-preview-chat-request={chatRequest}
   data-preview-retries={retries}

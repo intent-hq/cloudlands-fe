@@ -7,10 +7,14 @@
   import { onMount } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
+  import Fa from 'svelte-fa';
+  import { faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
   import AnimatedNumber from '$lib/components/ui/AnimatedNumber.svelte';
   import { EmptyState, ErrorState } from '$lib/components/patterns/screen';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { m } from '$shared/paraglide/messages.js';
+  import { formatInteger } from '$lib/i18n/format';
   import type { Trace, TraceSpan } from '../trace-types';
   import {
     formatCostAmount,
@@ -51,7 +55,6 @@
     onOpenChat,
   }: Props = $props();
 
-  let width = $state(0);
   let waterfallWidth = $state(0);
   let tickNow = $state(Date.now());
   const now = $derived(clock ?? tickNow);
@@ -64,6 +67,7 @@
   // svelte-ignore state_referenced_locally
   let selectedId = $state<string | null>(initialSelectedId);
   let zoomId = $state<string | null>(null);
+  let query = $state('');
   let waterfall = $state<
     { reveal: (spanId: string) => Promise<void>; msPerPixel: () => number } | undefined
   >();
@@ -228,6 +232,7 @@
   /** Each click on the error count opens the next failure. */
   function showNextError() {
     if (failures.length === 0) return;
+    query = '';
     errorCursor = (errorCursor + 1) % failures.length;
     const failure = failures[errorCursor];
     for (const id of failure.ancestors) toggle(id, true);
@@ -242,11 +247,19 @@
   );
   const cost = $derived(formatTraceCost(trace?.stats.usage));
   const tokens = $derived(totalTokens(trace?.stats.usage));
+  const errorCountLabel = $derived(pluralLabel(trace?.stats.errors ?? 0, 'errors'));
+  const metricCount = $derived(
+    1 +
+      Number(Boolean(cost)) +
+      Number(tokens > 0) +
+      Number((trace?.stats.agents ?? 0) > 1) +
+      Number((trace?.stats.toolCalls ?? 0) > 0) +
+      Number((trace?.stats.errors ?? 0) > 0),
+  );
 </script>
 
 <div
-  class="agent-trace flex min-h-full flex-col gap-5 px-5 pt-4 pb-6"
-  bind:clientWidth={width}
+  class="agent-trace flex min-h-full flex-col px-5 pt-4 pb-6"
   data-live={trace?.live ? 'true' : 'false'}
 >
   {#if !trace}
@@ -258,11 +271,11 @@
         </div>
         <div class="flex flex-col pt-6">
           {#each LOADING_ROWS as row, index (index)}
-            <div class="grid h-8 grid-cols-[36%_1fr] items-center">
+            <div class="grid h-10 grid-cols-[42%_1fr] items-center">
               <div class="pr-3" style:padding-left="{row.depth * 20}px">
                 <Skeleton class="h-3" style="width: {row.name}%" />
               </div>
-              <div class="relative h-2">
+              <div class="relative h-4">
                 <Skeleton
                   class="absolute inset-y-0 rounded-full"
                   style="left: {row.left}%; width: {row.width}%"
@@ -287,76 +300,124 @@
       </div>
     {/if}
   {:else}
-    <header class="flex min-w-0 flex-col gap-1">
-      <h2 class="min-w-0 truncate type-body font-medium text-foreground">{title}</h2>
-
-      <p
-        class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 type-caption text-muted-foreground tabular-nums"
-        data-trace-stats
-      >
-        {#if trace.live}
-          <span
-            class="inline-flex h-5 items-center gap-1.5 rounded-full bg-primary px-2 font-medium text-primary-foreground"
-            data-trace-live
-          >
+    <header class="flex min-w-0 flex-col gap-4 pb-4">
+      <div class="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div class="flex min-w-0 items-center gap-3">
+          <h2 class="min-w-0 truncate type-body font-medium text-foreground">{title}</h2>
+          {#if trace.live}
             <span
-              class="size-1.5 animate-pulse rounded-full bg-primary-foreground motion-reduce:animate-none"
-              aria-hidden="true"
-            ></span>
-            {m.agentTrace_status_live_label()}
+              class="inline-flex h-5 items-center gap-1.5 rounded-full bg-primary px-2 font-medium text-primary-foreground"
+              data-trace-live
+            >
+              <span
+                class="size-1.5 animate-pulse rounded-full bg-primary-foreground motion-reduce:animate-none"
+                aria-hidden="true"
+              ></span>
+              {m.agentTrace_status_live_label()}
+            </span>
+          {/if}
+        </div>
+        <div class="relative w-52 max-w-full min-w-0">
+          <span
+            class="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-muted-foreground"
+            aria-hidden="true"
+          >
+            <Fa icon={faMagnifyingGlass} size="sm" />
           </span>
-        {/if}
-        <span class="text-foreground" data-trace-duration>{formatTraceDuration(durationMs)}</span>
-        {#if cost}
-          <span class="text-foreground">
+          <Input
+            type="search"
+            size="compact"
+            class="pl-8"
+            aria-label={m.agentTrace_search_label()}
+            placeholder={m.agentTrace_search_label()}
+            bind:value={query}
+            onkeydown={(event) => {
+              if (event.key === 'Escape' && query) {
+                query = '';
+                event.preventDefault();
+                event.stopPropagation();
+              }
+            }}
+          />
+        </div>
+      </div>
+    </header>
+
+    <dl
+      class="trace-metrics"
+      style="--metric-columns: {metricCount}; --metric-columns-compact: {Math.min(3, metricCount)}"
+      data-trace-stats
+    >
+      <div class="trace-metric">
+        <dt class="type-caption">{m.agentTrace_stats_duration_label()}</dt>
+        <dd class="type-body" data-trace-duration>{formatTraceDuration(durationMs)}</dd>
+      </div>
+      {#if cost}
+        <div class="trace-metric">
+          <dt class="type-caption">{m.agentTrace_stats_cost_label()}</dt>
+          <dd class="type-body">
             <AnimatedNumber
               value={trace.stats.usage?.cost?.amount ?? 0}
               format={(amount) =>
                 formatCostAmount(amount, trace.stats.usage?.cost?.currency ?? 'USD')}
             />
-          </span>
-        {/if}
-        {#if tokens > 0}
-          <span>
-            <AnimatedNumber
-              value={tokens}
-              format={(value) =>
-                m.agentTrace_summary_tokens_label({ value: formatTraceTokens(value) })}
-            />
-          </span>
-        {/if}
-        {#if trace.stats.agents > 1}
-          <span>{pluralLabel(trace.stats.agents, 'agents')}</span>
-        {/if}
-        {#if trace.stats.toolCalls > 0}
-          <span>{pluralLabel(trace.stats.toolCalls, 'toolCalls')}</span>
-        {/if}
-        {#if trace.stats.errors > 0}
-          <Button
-            variant="plain"
-            class="h-auto px-0 text-danger underline-offset-2 hover:underline"
-            onclick={showNextError}
-            data-trace-errors
-          >
-            {pluralLabel(trace.stats.errors, 'errors')}
-          </Button>
-        {/if}
-        {#if status === 'error'}
-          <span class="inline-flex items-center gap-1.5 text-danger" data-trace-load-error>
-            {m.agentTrace_incomplete_label()}
+          </dd>
+        </div>
+      {/if}
+      {#if tokens > 0}
+        <div class="trace-metric">
+          <dt class="type-caption">{m.agentTrace_stats_tokens_label()}</dt>
+          <dd class="type-body">
+            <AnimatedNumber value={tokens} format={formatTraceTokens} />
+          </dd>
+        </div>
+      {/if}
+      {#if trace.stats.agents > 1}
+        <div class="trace-metric">
+          <dt class="type-caption">{m.agentTrace_stats_agents_label()}</dt>
+          <dd class="type-body">{formatInteger(trace.stats.agents)}</dd>
+        </div>
+      {/if}
+      {#if trace.stats.toolCalls > 0}
+        <div class="trace-metric">
+          <dt class="type-caption">{m.agentTrace_stats_toolCalls_label()}</dt>
+          <dd class="type-body">{formatInteger(trace.stats.toolCalls)}</dd>
+        </div>
+      {/if}
+      {#if trace.stats.errors > 0}
+        <div class="trace-metric">
+          <dt class="type-caption">{m.agentTrace_stats_errors_label()}</dt>
+          <dd class="type-body">
             <Button
               variant="plain"
-              class="h-auto px-0 text-danger underline-offset-2 hover:underline"
-              onclick={onRetry}
+              class="h-auto px-0 type-body text-danger underline-offset-2 hover:underline"
+              onclick={showNextError}
+              aria-label={errorCountLabel}
+              data-trace-errors
             >
-              {m.ui_errorToast_retry_label()}
+              {formatInteger(trace.stats.errors)}
             </Button>
-          </span>
-        {/if}
-      </p>
-    </header>
-
-    <div bind:clientWidth={waterfallWidth} class="-mx-3">
+          </dd>
+        </div>
+      {/if}
+    </dl>
+    {#if status === 'error'}
+      <span
+        class="inline-flex flex-wrap items-center gap-1.5 py-3 type-caption text-danger"
+        data-trace-load-error
+        role="status"
+      >
+        {m.agentTrace_incomplete_label()}
+        <Button
+          variant="plain"
+          class="h-auto px-0 text-danger underline-offset-2 hover:underline"
+          onclick={onRetry}
+        >
+          {m.ui_errorToast_retry_label()}
+        </Button>
+      </span>
+    {/if}
+    <div bind:clientWidth={waterfallWidth} class="min-w-0 pt-2">
       {#if waterfallWidth > 0}
         <TraceWaterfall
           bind:this={waterfall}
@@ -366,6 +427,7 @@
           {expanded}
           {selectedId}
           {zoomId}
+          {query}
           onToggle={toggle}
           onSelect={(spanId) => (selectedId = spanId)}
           onZoom={zoom}
@@ -375,3 +437,41 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .agent-trace {
+    container-type: inline-size;
+  }
+  .trace-metrics {
+    display: grid;
+    grid-template-columns: repeat(var(--metric-columns), minmax(0, 1fr));
+    border-block: 1px solid hsl(var(--foreground) / 0.08);
+  }
+  .trace-metric {
+    min-width: 0;
+    padding: 12px;
+    overflow-wrap: anywhere;
+  }
+  .trace-metric + .trace-metric {
+    border-left: 1px solid hsl(var(--foreground) / 0.08);
+  }
+  .trace-metric dt {
+    color: hsl(var(--muted-foreground));
+  }
+  .trace-metric dd {
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+  }
+  @container (max-width: 720px) {
+    .trace-metrics {
+      grid-template-columns: repeat(var(--metric-columns-compact), minmax(0, 1fr));
+    }
+    .trace-metric:nth-child(3n + 1) {
+      border-left: 0;
+    }
+    .trace-metric:nth-child(n + 4) {
+      border-top: 1px solid hsl(var(--foreground) / 0.08);
+    }
+  }
+</style>

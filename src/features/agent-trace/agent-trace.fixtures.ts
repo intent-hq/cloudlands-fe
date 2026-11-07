@@ -151,6 +151,17 @@ const AGENTS: TraceAgentInfo[] = [
   },
 ];
 
+export function largeCostFixture(): TraceFixture {
+  const fixture = doneFixture();
+  for (const record of fixture.records) {
+    if (record.kind !== 'usage') continue;
+    for (const usage of Object.values(record.byAgent)) {
+      if (usage.cost) usage.cost.amount *= 100_000_000;
+    }
+  }
+  return fixture;
+}
+
 function pricingRun(builder: Builder, finished: boolean) {
   const b = builder;
   b.spend(-30, 'agent-lead', 0, 0, 0);

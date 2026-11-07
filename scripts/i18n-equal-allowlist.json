@@ -4,6 +4,8 @@
   "agentTrace_kind_agent_label": ["de", "fr"],
   "agentTrace_kind_withDetail_label": "*",
   "agentTrace_range_label": "*",
+  "agentTrace_stats_agents_label": ["fr"],
+  "agentTrace_stats_tokens_label": ["de", "es"],
   "agentTrace_status_live_label": ["de"],
   "agentTrace_summary_agents_many": ["fr"],
   "agentTrace_summary_agents_one": ["fr"],

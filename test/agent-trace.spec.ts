@@ -62,6 +62,60 @@ const details = (page: Page) => page.locator('[data-trace-details]');
 const chatRequest = (page: Page) =>
   page.locator('[data-preview-chat-request]').getAttribute('data-preview-chat-request');
 
+for (const width of [360, 600]) {
+  test(`large metric values stay readable inside their cells at ${width}px`, async ({ page }) => {
+    test.setTimeout(150_000);
+    const scene = await openScene(page, 'large-cost', { width, theme: 'light' });
+    const fits = await page
+      .locator('[data-trace-stats] > div')
+      .evaluateAll((cells) =>
+        cells.every((cell) =>
+          [...cell.querySelectorAll('dt, dd')].every(
+            (text) => text.scrollWidth <= text.clientWidth,
+          ),
+        ),
+      );
+    expect(fits).toBe(true);
+    expect(await scene.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await page.screenshot({ path: path.join(artifactDir, `large-metrics-${width}.png`) });
+  });
+}
+
+test('search reveals matching steps without losing the collapsed tree or jumping the chat', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await openScene(page, 'collapsed');
+  const lead = row(page, 'agent:agent-lead');
+  const search = page.getByRole('searchbox', { name: 'Search steps' });
+  await expect(lead).toHaveAttribute('aria-expanded', 'false');
+
+  await search.fill('Researcher');
+  await expect(row(page, 'agent:agent-research')).toBeVisible();
+  await expect(lead).toHaveAttribute('aria-expanded', 'true');
+  await expect(row(page, 'agent:agent-writer')).toHaveCount(0);
+  await expect(search).toBeFocused();
+  expect(await chatRequest(page)).toBe('');
+  await page.screenshot({ path: path.join(artifactDir, 'search-steps.png') });
+
+  await search.fill('no-matching-step');
+  await expect(page.getByRole('status').filter({ hasText: 'No matching steps' })).toBeVisible();
+  await search.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(lead).toHaveAttribute('aria-expanded', 'false');
+  await expect(search).toBeFocused();
+
+  await search.fill('Researcher');
+  await page.locator('[data-trace-errors]').click();
+  await expect(search).toHaveValue('');
+  const failedId = await details(page).getAttribute('data-trace-details');
+  await expect(row(page, failedId!)).toHaveAttribute('data-status', 'failed');
+  await expect(row(page, failedId!)).toBeInViewport();
+  expect(await chatRequest(page)).toBe('');
+});
+
 test('live activity keeps growing with the clock', async ({ page }) => {
   test.setTimeout(150_000);
   await openScene(page, 'live-clock');
