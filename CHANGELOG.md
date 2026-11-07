@@ -4,6 +4,16 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.292.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.292.0...v2.292.1) (2026-11-07)
+
+
+### 🐛 Bug Fixes
+
+* align outlined button backgrounds with borders ([#4242](https://github.com/intent-hq/cloudlands-fe/issues/4242)) ([fd22228](https://github.com/intent-hq/cloudlands-fe/commit/fd22228e6ff6c2c9f920f4b4fcfb0456fc74d784))
+* bump intentd sidecar to v0.11.144 ([#4251](https://github.com/intent-hq/cloudlands-fe/issues/4251)) ([f702ade](https://github.com/intent-hq/cloudlands-fe/commit/f702adeeafbfa1851e355bf8c3ca17b961df6315))
+* handle Codex read-file title quotes ([#4247](https://github.com/intent-hq/cloudlands-fe/issues/4247)) ([489f0d8](https://github.com/intent-hq/cloudlands-fe/commit/489f0d81361a6f7f701638ed4e3728024199c9cf))
+* preserve focus in New Workspace ([#4248](https://github.com/intent-hq/cloudlands-fe/issues/4248)) ([6d35ef0](https://github.com/intent-hq/cloudlands-fe/commit/6d35ef02b0d04f6363e86b533b344ae03b9c1ec0))
+
 ## [2.292.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.291.1...v2.292.0) (2026-11-07)
 
 
