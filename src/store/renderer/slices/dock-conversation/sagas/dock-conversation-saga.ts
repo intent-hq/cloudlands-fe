@@ -1,4 +1,4 @@
-import { prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
+import { dockMediaSendsOriginal, prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
 import { DockSendError, dockSendCode, dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
 import { createLogger } from '$lib/utils/client-logger';
 import { dockMediaEditSaga } from './dock-media-edit-saga';
@@ -414,7 +414,9 @@ function* sendReply(
     ? structuredClone(liveEvidence!)
     : null;
   const evidenceItems = dockEvidenceImageItemIds(evidence ?? undefined);
-  const editedClipItems = new Set(evidence?.clips.filter((clip) => clip.media).map((clip) => clip.contextItemId));
+  // An edited clip is replaced by its export; one sent as its original keeps its attachment.
+  const exported = (clip: DockComposerEvidence['clips'][number]) => !!clip.media && !dockMediaSendsOriginal(clip.media);
+  const editedClipItems = new Set(evidence?.clips.filter(exported).map((clip) => clip.contextItemId));
   const sendItems = clickedItems.filter((item) => !evidenceItems.has(item.id) && !editedClipItems.has(item.id));
   const blocks = extractAttachmentBlocks(sendItems);
   if (
@@ -519,8 +521,8 @@ function* sendReply(
     const wireEvidence = evidence ? { ...evidence,
       images: evidence.images.map((image) => materialized.images[image.id]
         ? { ...image, width: materialized.images[image.id].width, height: materialized.images[image.id].height } : image),
-      clips: evidence.clips.filter((clip) => !clip.media),
-      marks: evidence.marks.filter((mark) => !editedImageIds.has(mark.imageId) && !evidence.clips.some((clip) => clip.media && clip.id === mark.clipId)),
+      clips: evidence.clips.filter((clip) => !exported(clip)),
+      marks: evidence.marks.filter((mark) => !editedImageIds.has(mark.imageId) && !evidence.clips.some((clip) => exported(clip) && clip.id === mark.clipId)),
     } : null;
     if (!current(generation, authority)) return;
     const hasTranscript = materialized.metadata.some((entry) => typeof entry.transcript === 'string' && entry.transcript.trim());

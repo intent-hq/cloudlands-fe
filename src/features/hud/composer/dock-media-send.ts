@@ -15,6 +15,23 @@ export interface DockMediaSendResult {
   frames: Array<{ type: 'image'; attachmentId: string; mimeType: string }>;
   metadata: Array<Record<string, unknown>>;
 }
+/**
+ * A legacy recording whose marks are already in its frames, sent unchanged as Full
+ * video with its audio: its original attachment is the output as-is (nothing to render,
+ * cut, mute, crop or blur), sent like a recording without edits. Any other choice for
+ * such a recording still goes through the plan and fails closed.
+ */
+export function dockMediaSendsOriginal(media: DockSavedMedia | undefined): boolean {
+  if (!media || media.source.kind !== 'recording' || media.source.visuals !== 'baked-marks') return false;
+  const source = media.source;
+  const edit = media.saved ?? defaultDockMediaEdit(source, source.capturedMarks ?? [], media.transcript);
+  if (edit.video !== 'full' || edit.voice !== 'audio' || edit.crop || edit.blurRegions.length || edit.blurStrokes?.length)
+    return false;
+  const plan = planDockMediaOutput(edit, source, media.transcript);
+  return !plan.errors.length && !plan.muted && plan.clips.length === 1 &&
+    plan.clips[0].startMs === 0 && plan.clips[0].endMs >= source.durationMs;
+}
+
 export async function prepareDockMediaSend(workspaceId: string, evidence: DockComposerEvidence,
   binding: DockPlacementBinding, service: DockEvidenceNativeService | null,
   current: () => boolean): Promise<DockMediaSendResult> {
@@ -26,7 +43,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
   for (const row of [...evidence.images, ...evidence.clips]) {
     stage = 'validate';
     if (row.mediaError) throw new Error('invalid-saved-edit');
-    if (!row.media) continue;
+    if (!row.media || dockMediaSendsOriginal(row.media)) continue;
     check();
     const media: DockSavedMedia = structuredClone(row.media), source = media.source;
     let edit = media.saved ?? defaultDockMediaEdit(source, source.capturedMarks ?? [], media.transcript);
