@@ -241,6 +241,23 @@ export function consumeEditedCaptureEnvelope(
       (row.video_attachment_id === undefined || !row.frames || !row.kept_ms)
     )
       return null;
+    if (row.kind === 'recording') {
+      const frames = row.frames;
+      const ranges = row.kept_ms;
+      if (!frames || !ranges) return null;
+      if (!row.video_attachment_id && (frames.length || ranges.length)) return null;
+      if (ranges.some((range, index) => index > 0 && range.startMs < ranges[index - 1].endMs))
+        return null;
+      const frameIds = new Set<string>();
+      for (const frame of frames) {
+        if (
+          frameIds.has(frame.attachment_id) ||
+          !row.marks.some((mark) => mark.id === frame.mark_id)
+        )
+          return null;
+        frameIds.add(frame.attachment_id);
+      }
+    }
   }
   const end = text.indexOf('\n', opening.length),
     boundary = end < 0 ? text.length : end;
