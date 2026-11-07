@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 import type { DaemonMode } from '$shared/types/connections';
 import type {
   PairLinkCommitResult,
+  PairLinkInspected,
   PairLinkInspectResult,
   PairLinkKind,
 } from '$shared/types/pair-link';
@@ -52,8 +53,25 @@ interface Pending {
 
 export interface PairLinks {
   inspect(uri: string): Promise<PairLinkInspectResult>;
+  /**
+   * Hold a link whose owner credential was already tested (the deep-link
+   * route tests it once for every principal kind). `daemonMode` null with a
+   * `mode=node` hint counts as a node.
+   */
+  hold(link: TestedPairLink): Promise<PairLinkInspected>;
   commit(pendingId: string): Promise<PairLinkCommitResult>;
   discard(pendingId: string): void;
+}
+
+export interface TestedPairLink {
+  hosts: string[];
+  port: number;
+  fingerprint: string;
+  token: string;
+  tcAddress: string | null;
+  modeHint: 'node' | null;
+  daemonMode: DaemonMode | null;
+  name: string | null;
 }
 
 export function createPairLinks(deps: PairLinkDeps): PairLinks {
@@ -90,7 +108,22 @@ export function createPairLinks(deps: PairLinkDeps): PairLinks {
     if (deps.isInvitation(inspected.snapshot) || !inspected.snapshot.principal.isAdministrator)
       return { ok: false, code: 'not-owner' };
 
-    const daemonMode = inspected.daemonMode ?? (modeHint === 'node' ? 'node' : null);
+    return hold({
+      hosts,
+      port,
+      fingerprint,
+      token,
+      tcAddress,
+      modeHint,
+      daemonMode: inspected.daemonMode,
+      name: inspected.name,
+    });
+  }
+
+  async function hold(link: TestedPairLink): Promise<PairLinkInspected> {
+    const { hosts, port, fingerprint, token, tcAddress } = link;
+    const host = hosts[0] ?? tcAddress ?? '';
+    const daemonMode = link.daemonMode ?? (link.modeHint === 'node' ? 'node' : null);
     const kind: PairLinkKind = daemonMode === 'node' ? 'node' : 'machine';
     const match = await deps.findMatching({
       hosts: hosts.length ? hosts : [host],
@@ -99,7 +132,7 @@ export function createPairLinks(deps: PairLinkDeps): PairLinks {
     });
     const existing =
       match?.fingerprint && pinKey(match.fingerprint) === pinKey(fingerprint) ? match : null;
-    const label = existing?.label ?? inspected.name ?? host;
+    const label = existing?.label ?? link.name ?? host;
 
     prune();
     const pendingId = randomUUID();
@@ -133,5 +166,5 @@ export function createPairLinks(deps: PairLinkDeps): PairLinks {
     pending.delete(pendingId);
   }
 
-  return { inspect, commit, discard };
+  return { inspect, hold, commit, discard };
 }

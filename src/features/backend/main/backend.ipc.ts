@@ -48,6 +48,7 @@ import {
   type HostCertMismatch,
 } from './backend-connection';
 import { detectDaemonMode, reportedDaemonMode } from './daemon-mode';
+import { NODE_REFUSED_MARKER } from '$shared/types/pair-link';
 import { devConsoleCapture } from '../../dev-console/main/dev-console-service';
 import {
   JsonRpcClient,
@@ -114,6 +115,7 @@ import * as connectionsStore from './desktop-connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
 import {
   authenticateInvitedCredential,
+  inspectPairCredential,
   inspectPersonalCredential,
   invitedRole,
 } from './invited-principal';
@@ -5048,16 +5050,18 @@ function registerConnectionsHandlers(): void {
         assertNormalAppOperation();
         const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
         return enqueueConnectionOperation(async (owner) => {
-          const remote = await inspectPersonalCredential({
-            ...params,
+          const { refuseNode, ...connectionParams } = params;
+          const inspected = await inspectPairCredential({
+            ...connectionParams,
             hosts: [params.host],
             tcAddress: params.tcAddress ?? null,
           });
+          const remote = inspected.snapshot;
           const role = invitedRole(remote);
           if (role) {
             if (!allowed()) throw new Error('Multiplayer is unavailable');
             const invited = await guestSessionsStore.add({
-              ...params,
+              ...connectionParams,
               principalId: remote.principal.id,
               login: remote.principal.login,
               identity: remote.principal.identity,
@@ -5071,7 +5075,20 @@ function registerConnectionsHandlers(): void {
           }
           if (!remote.principal.isAdministrator)
             throw new Error('Personal credential identity unavailable');
-          const { connection, activeId } = await saveOwnerConnectionOwned(params, owner);
+          // A node the current backend can't use is refused before anything is
+          // written, so a refused link never changes a saved node either.
+          if (inspected.daemonMode === 'node' && refuseNode)
+            throw new Error(`${NODE_REFUSED_MARKER}:${refuseNode}`);
+          // Unknown mode while nodes are refused: it could be a node, so save nothing.
+          if (!inspected.daemonMode && refuseNode)
+            throw new Error(`${NODE_REFUSED_MARKER}:unknown`);
+          const { connection, activeId } = await saveOwnerConnectionOwned(
+            {
+              ...connectionParams,
+              ...(inspected.daemonMode ? { daemonMode: inspected.daemonMode } : {}),
+            },
+            owner,
+          );
           return {
             connection,
             switched: connection.id === activeId,

@@ -7,6 +7,15 @@
 
 import type { ConnectionRecord } from './connections';
 
+/**
+ * Why the current backend can't use a node: Labs Remote agents is off, or the
+ * backend does not advertise `remoteMachines: 1`. A refused node is never saved.
+ */
+export type NodeRefusal = 'labs-off' | 'backend-unsupported';
+
+/** Error-message marker of a node the Add machine dialog refused before saving. */
+export const NODE_REFUSED_MARKER = 'node-refused';
+
 /** A full daemon goes to Machines; a node goes to Nodes. */
 export type PairLinkKind = 'machine' | 'node';
 

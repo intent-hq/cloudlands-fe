@@ -378,6 +378,11 @@ export interface AddConnectionParams {
    */
   detectHosts?: boolean;
   /**
+   * Set when the current backend can't use nodes: if the daemon turns out to
+   * be a node, main refuses it before saving anything.
+   */
+  refuseNode?: 'labs-off' | 'backend-unsupported';
+  /**
    * Per-backend keychain-sync opt-out (spec Phase 2): `true` when the user
    * unchecked "Save to iCloud" at add time, storing the record local-only
    * (never pushed to the keychain, never touched by pulls). Absent = `false`

@@ -209,6 +209,49 @@ describe('connectionsSaga', () => {
     await run.task.toPromise();
   });
 
+  it.each([
+    ['labs-off', 'To add GPU rig, turn on Remote agents in Settings → Labs.'],
+    ['backend-unsupported', "can't run agents on other machines, so GPU rig wasn't added"],
+  ] as const)(
+    'shows the %s refusal when main refuses a node before saving',
+    async (reason, text) => {
+      const original = invoke.getMockImplementation()!;
+      invoke.mockImplementation((channel: string, params?: unknown) =>
+        channel === CONNECTION_CHANNELS.ADD
+          ? Promise.reject(
+              new Error(
+                `Error invoking remote method 'connections:add': Error: node-refused:${reason}`,
+              ),
+            )
+          : original(channel, params),
+      );
+      const run = start();
+      run.dispatch(
+        connectionWorkflowRequested('modal', {
+          kind: 'connect',
+          enableSync: false,
+          params: {
+            label: 'GPU rig',
+            host: 'h',
+            port: 7443,
+            fingerprint: 'AA',
+            token: 'fixture-only',
+          },
+        }),
+      );
+      await vi.waitFor(() =>
+        expect(getItems(run.getState().connections.workflows)[0]?.outcome?.kind).toBe('error'),
+      );
+      const outcome = getItems(run.getState().connections.workflows)[0].outcome as {
+        message: string;
+      };
+      expect(outcome.message).toContain(text);
+      expect(invoke).not.toHaveBeenCalledWith(CONNECTION_CHANNELS.OPEN, expect.anything());
+      run.task.cancel();
+      await run.task.toPromise();
+    },
+  );
+
   it('preserves shared add and open busy state throughout the connect workflow', async () => {
     let releaseAdd!: (value: { connection: ConnectionRecord; switched: boolean }) => void;
     let releaseOpen!: (value: { status: 'opened'; id: string }) => void;
@@ -236,7 +279,11 @@ describe('connectionsSaga', () => {
       connectionWorkflowRequested('modal', { kind: 'connect', enableSync: false, params }),
     );
     expect(run.getState().connections.status).toBe('connecting');
-    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.ADD, params);
+    // Labs Remote agents is off in this harness: a node would be refused before saving.
+    expect(invoke).toHaveBeenCalledWith(CONNECTION_CHANNELS.ADD, {
+      ...params,
+      refuseNode: 'labs-off',
+    });
     releaseAdd({ connection: REMOTE, switched: false });
     await vi.waitFor(() => expect(run.getState().connections.openingIds).toEqual([REMOTE.id]));
     expect(run.getState().connections.status).toBe('connecting');

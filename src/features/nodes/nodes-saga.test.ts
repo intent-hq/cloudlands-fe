@@ -222,6 +222,15 @@ describe('paste an intent:// link', () => {
     expect(store.state.nodes.paste.error?.node).toBe('GPU rig');
   });
 
+  it('a refused link to an already saved node changes nothing (no credential update)', async () => {
+    setSupport({ labs: false, supported: false });
+    inspectReply = { ...nodeInspected(), existingId: 'gpu-rig' } as PairLinkInspectResult;
+    submit(LINK);
+    await vi.waitFor(() => expect(store.state.nodes.paste.error?.code).toBe('labs-off'));
+    expect(calls(CHANNELS.PAIR_LINK_DISCARD)).toHaveLength(1);
+    expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(0);
+  });
+
   it('refuses a node when the backend cannot run agents elsewhere: nothing saved', async () => {
     setSupport({ labs: true, supported: false });
     submit(LINK);

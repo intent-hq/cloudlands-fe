@@ -26,6 +26,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type {
+  NodeRefusal,
   PairLinkCommitResult,
   PairLinkInspectResult,
   PairLinkInspected,
@@ -119,6 +120,21 @@ function commitReply(reply: unknown): PairLinkCommitResult {
   if (value.ok === true && value.connection && typeof value.connection === 'object')
     return reply as PairLinkCommitResult;
   return { ok: false, code: value.code === 'expired' ? 'expired' : 'failed' };
+}
+
+/**
+ * The refusal message: Labs off points to Settings → Labs; an unsupported
+ * backend is named; an unknown mode asks to try again.
+ */
+export function nodeRefusalMessage(
+  refusal: NodeRefusal | 'unknown',
+  node: string,
+  backend: string,
+): string {
+  if (refusal === 'unknown') return m.nodes_error_failed();
+  return refusal === 'labs-off'
+    ? m.nodes_error_labsOff({ node })
+    : m.nodes_error_backendUnsupported({ node, backend });
 }
 
 /** Labs Remote agents is on and the current backend advertises `remoteMachines: 1`. */
