@@ -1,5 +1,7 @@
 import { expect, test } from '../../../../../test/ct-test';
 import type { Locator } from '@playwright/test';
+import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
+import { shortcutChord } from '../../../../../test/shortcut-chords';
 import PanelModWShortcutHarness from './mocks/PanelModWShortcutHarness.svelte';
 
 const state = (component: Locator) => component.getByTestId('mod-w-state');
@@ -29,10 +31,12 @@ function measureGeometry(component: Locator) {
   });
 }
 
-for (const { platform, isMac, modifier } of [
-  { platform: 'macOS', isMac: true, modifier: 'Meta' },
-  { platform: 'Windows/Linux', isMac: false, modifier: 'Control' },
+for (const { platform, isMac } of [
+  { platform: 'macOS', isMac: true },
+  { platform: 'Windows/Linux', isMac: false },
 ]) {
+  const closePane = shortcutChord(SHORTCUT_DEFAULTS['navigation.close-tab'], isMac).press;
+  const closeSpace = shortcutChord(SHORTCUT_DEFAULTS['navigation.close-space-tab'], isMac).press;
   for (const zoomFactor of [1, 2]) {
     test(`Mod+W uses live geometry on ${platform} at ${zoomFactor * 100}% zoom`, async ({
       mount,
@@ -48,7 +52,7 @@ for (const { platform, isMac, modifier } of [
       expect(await layoutState.getAttribute('data-root-sizes')).toBe('20,50,30');
       await component.getByTestId('shortcut-input').focus();
 
-      await page.keyboard.press(`${modifier}+w`);
+      await page.keyboard.press(closePane);
       await expect(layoutState).toHaveAttribute('data-empty-panel-ids', '');
       await expect(layoutState).toHaveAttribute('data-column-count', '2');
       await expect(layoutState).toHaveAttribute('data-panel-ids', 'p1,p3');
@@ -72,7 +76,7 @@ for (const { platform, isMac, modifier } of [
       );
       await expect(layoutState).toHaveAttribute('data-navigation-count', '0');
 
-      await page.keyboard.press(`${modifier}+Shift+w`);
+      await page.keyboard.press(closeSpace);
       await expect(layoutState).toHaveAttribute('data-tab-order', 'other-workspace');
       await expect(layoutState).toHaveAttribute('data-current-tab', 'other-workspace');
       await expect(layoutState).toHaveAttribute('data-navigation-count', '1');
@@ -88,9 +92,9 @@ for (const { platform, isMac, modifier } of [
       });
       const finalState = state(finalComponent);
       await finalComponent.locator('[data-panel-id="p1"]').click({ position: { x: 20, y: 80 } });
-      await page.keyboard.press(`${modifier}+w`);
+      await page.keyboard.press(closePane);
       await expect(finalState).toHaveAttribute('data-empty-panel-ids', 'p1');
-      await page.keyboard.press(`${modifier}+w`);
+      await page.keyboard.press(closePane);
       await expect(finalState).toHaveAttribute('data-column-count', '1');
       await expect(finalState).toHaveAttribute('data-panel-ids', 'p1');
       await expect(finalState).toHaveAttribute('data-root-sizes', '100');

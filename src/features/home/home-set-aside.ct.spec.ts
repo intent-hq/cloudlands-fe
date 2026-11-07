@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
 import { expect, test } from '../../test/ct-test';
+import { shortcutChord } from '../../test/shortcut-chords';
 import Harness from './home-set-aside-harness.svelte';
 
 type HookArgs = Parameters<Parameters<typeof test.beforeEach>[1]>;
@@ -14,6 +16,9 @@ const row = (page: Page, id: string) => page.locator(`[data-home-workspace="${id
 const shelf = (page: Page) => page.locator('[data-home-set-aside-toggle]');
 const snapshot = (page: Page) => page.evaluate(() => window.__homeSetAside!.snapshot());
 const errors = new WeakMap<Page, string[]>();
+const isMac = (page: Page) => page.evaluate(() => /Mac/i.test(navigator.platform));
+const setAsideKeys = async (page: Page, binding = SHORTCUT_DEFAULTS['workspace.set-aside']) =>
+  shortcutChord(binding, await isMac(page)).press;
 
 async function aside(page: Page, id: string) {
   await row(page, id).hover();
@@ -127,8 +132,7 @@ test('Board keeps background work running and returns a new question', async ({
   await expect(row(page, 'aside-running')).toBeVisible();
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-running');
   await page.locator('[data-home-set-aside-action="aside-running"]').focus();
-  const mod = await page.evaluate(() => (/Mac/i.test(navigator.platform) ? 'Meta' : 'Control'));
-  await page.keyboard.press(`${mod}+Shift+s`);
+  await page.keyboard.press(await setAsideKeys(page));
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-running');
   const result = await snapshot(page);
   expect(result.actions.filter((type) => /archive|retire|stop|interrupt/i.test(type))).toEqual([]);
@@ -361,17 +365,17 @@ test('Keyboard follows the configured shortcut and leaves text entry alone', asy
 }) => {
   await mount(Harness);
   await row(page, 'aside-idle').locator('xpath=ancestor-or-self::*[@role="option"]').focus();
-  const mod = await page.evaluate(() => (/Mac/i.test(navigator.platform) ? 'Meta' : 'Control'));
-  await page.keyboard.press(`${mod}+Shift+s`);
+  await page.keyboard.press(await setAsideKeys(page));
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-idle');
   await shelf(page).click();
   await row(page, 'aside-idle').locator('xpath=ancestor-or-self::*[@role="option"]').focus();
-  await page.evaluate(() => window.__homeSetAside!.setShortcut('mod+alt+s'));
-  await page.keyboard.press(`${mod}+Alt+s`);
+  const custom = 'mod+alt+s';
+  await page.evaluate((binding) => window.__homeSetAside!.setShortcut(binding), custom);
+  await page.keyboard.press(await setAsideKeys(page, custom));
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-idle');
   const search = page.getByRole('searchbox');
   await search.fill('keyboard');
-  await page.keyboard.press(`${mod}+Alt+s`);
+  await page.keyboard.press(await setAsideKeys(page, custom));
   await expect(search).toHaveValue('keyboard');
   await expect.poll(async () => (await snapshot(page)).asideIds).toEqual([]);
 });
@@ -417,8 +421,7 @@ test('Moving a workspace preserves list scroll and gives keyboard focus a useful
   const scroll = page.locator('.workspace-list .overflow-y-auto').first();
   const before = await scroll.evaluate((element) => element.scrollTop);
   await target.locator('xpath=ancestor-or-self::*[@role="option"]').focus();
-  const mod = await page.evaluate(() => (/Mac/i.test(navigator.platform) ? 'Meta' : 'Control'));
-  await page.keyboard.press(`${mod}+Shift+s`);
+  await page.keyboard.press(await setAsideKeys(page));
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-extra-14');
   await expect
     .poll(() =>
