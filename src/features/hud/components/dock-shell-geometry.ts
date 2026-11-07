@@ -113,6 +113,10 @@ export function getDockShellLayout(
     height: anchorHeight,
   };
   const progress = edge ? 0 : dragging ? 1 : reveal;
+  const cameraCenter =
+    notch && placement.cutout
+      ? placement.cutout.x + placement.cutout.width / 2 - full.x
+      : full.width / 2;
   const openHeight =
     edge || dragging || expandedHeight === null
       ? full.height
@@ -128,7 +132,7 @@ export function getDockShellLayout(
         height: floatingCompact.height + (openHeight - floatingCompact.height) * progress,
       }
     : {
-        x: edge ? (side === 'right' ? full.width - width : 0) : (full.width - width) / 2,
+        x: edge ? (side === 'right' ? full.width - width : 0) : cameraCenter - width / 2,
         y: edge ? (full.height - height) * along : 0,
         width,
         height,

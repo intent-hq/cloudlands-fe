@@ -57,6 +57,8 @@
     faChevronDown,
   } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import { useDockBackHint } from './dock-back-hint.svelte';
   import { Select } from '$lib/components/ui/select';
   import { MessageComposer } from '$lib/components/ui/message-composer';
   import { InputMessage } from '$lib/components/ui/input-message';
@@ -135,6 +137,11 @@
   }: DockConversationPanelProps = $props();
 
   const uid = $props.id();
+  let backButton = $state<HTMLButtonElement | null>(null);
+  const backHint = useDockBackHint(
+    () => backButton,
+    () => conversationKey,
+  );
   const notices = getDockConversationNoticeHost();
   let bodyHeight = $state(0);
   let footerHeight = $state(0);
@@ -280,15 +287,25 @@
     ondblclick={openIntent}
   >
     {#snippet leading()}
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        onclick={onBack}
-        data-dock-conversation-back
-        aria-label={m.ui_contentHeader_goBack_tooltip()}
-        tooltipContentClass="dock-chrome-tooltip"
-        tooltip={m.ui_contentHeader_goBack_tooltip()}><Fa icon={faArrowLeft} /></Button
+      <Tooltip
+        content={m.ui_contentHeader_goBack_tooltip()}
+        open={backHint.open}
+        onOpenChange={backHint.change}
+        disabled={!backHint.allowed}
+        contentClass="dock-chrome-tooltip"
       >
+        <Button
+          bind:ref={backButton}
+          variant="ghost"
+          size="icon-sm"
+          onclick={onBack}
+          data-dock-conversation-back
+          aria-label={m.ui_contentHeader_goBack_tooltip()}
+          onfocus={backHint.focus}
+          onblur={backHint.blur}
+          onpointerleave={backHint.leave}><Fa icon={faArrowLeft} /></Button
+        >
+      </Tooltip>
     {/snippet}
     {#snippet title()}
       <!-- Workspace first, agent below; the workspace avatar leads (the Assistant uses its own). -->
