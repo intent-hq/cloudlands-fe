@@ -28,7 +28,7 @@
     },
     extended: {
       command: 'scripts/palette.sh',
-      output: `${E}[38;5;208morange 208${E}[0m  ${E}[38;2;125;207;255mtruecolor${E}[0m  ${E}[48;5;24;97m on blue ${E}[0m  ${E}[2mdim${E}[22m  ${E}[3mitalic${E}[23m  ${E}[4munderline${E}[24m  ${E}[90mbright black${E}[0m`,
+      output: `${E}[38;5;208morange 208${E}[0m  ${E}[38;2;125;207;255mtruecolor${E}[0m  ${E}[48;5;24;97m on blue ${E}[0m  ${E}[2mdim${E}[22m  ${E}[3mitalic${E}[23m  ${E}[4munderline${E}[24m  ${E}[7minverse${E}[27m  ${E}[90mbright black${E}[0m`,
     },
     plain: {
       command: 'git status --short',

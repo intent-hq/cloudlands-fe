@@ -60,7 +60,7 @@ describe('parseAnsi', () => {
   });
 
   it('ignores unknown SGR codes without losing state', () => {
-    expect(parseAnsi(`${E}[32;5;7mx`)).toEqual([{ text: 'x', fg: 2 }]);
+    expect(parseAnsi(`${E}[32;5;9mx`)).toEqual([{ text: 'x', fg: 2 }]);
   });
 
   it('drops non-SGR control sequences', () => {
@@ -86,6 +86,27 @@ describe('parseAnsi', () => {
     expect(parseAnsi(`tail${E}[38;5`)).toEqual([{ text: 'tail' }]);
     expect(parseAnsi(`tail${E}]8;;https://x`)).toEqual([{ text: 'tail' }]);
     expect(parseAnsi(`tail${E}`)).toEqual([{ text: 'tail' }]);
+  });
+
+  it('ends an unterminated string sequence at the line end and keeps later lines', () => {
+    expect(parseAnsi(`before${E}]0;title\nline2\nline3`)).toEqual([
+      { text: 'before\nline2\nline3' },
+    ]);
+    expect(parseAnsi(`abc${E}Pgarbage\nmore output\n`)).toEqual([{ text: 'abc\nmore output\n' }]);
+  });
+
+  it('does not swallow a newline or escape that cuts a control sequence short', () => {
+    expect(parseAnsi(`a${E}[\nb`)).toEqual([{ text: 'a\nb' }]);
+    expect(parseAnsi(`${E}[${E}[31mred`)).toEqual([{ text: 'red', fg: 1 }]);
+  });
+
+  it('tracks inverse video until 27 or a reset', () => {
+    expect(parseAnsi(`${E}[7;31minv${E}[27mfg${E}[7mx${E}[0my`)).toEqual([
+      { text: 'inv', fg: 1, inverse: true },
+      { text: 'fg', fg: 1 },
+      { text: 'x', fg: 1, inverse: true },
+      { text: 'y' },
+    ]);
   });
 
   it('normalizes CRLF to LF', () => {

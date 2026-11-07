@@ -14,6 +14,7 @@
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
   import AnsiText from './AnsiText.svelte';
+  import { stripAnsi } from '$lib/utils/ansi';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
@@ -315,7 +316,9 @@
           <!-- Copy button - Skip for file-view since CodeBlock has its own copy button -->
           {#if (parsedResult?.content || parsedResult?.newContent) && parsedResult?.type !== 'file-view'}
             <CopyButton
-              text={input.content || parsedResult?.newContent || parsedResult?.content || ''}
+              text={parsedResult?.type === 'terminal'
+                ? stripAnsi(parsedResult.content ?? '')
+                : input.content || parsedResult?.newContent || parsedResult?.content || ''}
               label={m.chat_toolDetails_copyContent_title()}
               class="text-muted-foreground"
             />

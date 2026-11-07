@@ -2,8 +2,9 @@
  * Parse terminal output that carries ANSI escape sequences into styled text
  * segments. SGR color and text attributes become segment styles; every other
  * escape (cursor moves, line erases, OSC titles and hyperlinks, charset
- * selection) is dropped. A bare carriage return overwrites the current line,
- * the way progress bars and spinners redraw in a terminal.
+ * selection) is dropped. A bare carriage return followed by more text replaces
+ * the whole current line, so single-line progress bars show their final
+ * state; partial overwrites and cursor-up redraws are not emulated.
  */
 
 /** A palette index (0-255) or a truecolor `#rrggbb` value. */
@@ -16,6 +17,7 @@ interface AnsiStyle {
   dim?: true;
   italic?: true;
   underline?: true;
+  inverse?: true;
 }
 
 export interface AnsiSegment extends AnsiStyle {
@@ -24,7 +26,7 @@ export interface AnsiSegment extends AnsiStyle {
 
 const ESC = '\x1b';
 const BEL = '\x07';
-const STYLE_KEYS = ['fg', 'bg', 'bold', 'dim', 'italic', 'underline'] as const;
+const STYLE_KEYS = ['fg', 'bg', 'bold', 'dim', 'italic', 'underline', 'inverse'] as const;
 
 const sameStyle = (a: AnsiStyle, b: AnsiStyle) => STYLE_KEYS.every((key) => a[key] === b[key]);
 
@@ -42,11 +44,13 @@ function applySgr(params: string, current: AnsiStyle): AnsiStyle {
     else if (code === 2) style.dim = true;
     else if (code === 3) style.italic = true;
     else if (code === 4) style.underline = true;
+    else if (code === 7) style.inverse = true;
     else if (code === 22) {
       delete style.bold;
       delete style.dim;
     } else if (code === 23) delete style.italic;
     else if (code === 24) delete style.underline;
+    else if (code === 27) delete style.inverse;
     else if (code >= 30 && code <= 37) style.fg = code - 30;
     else if (code === 39) delete style.fg;
     else if (code >= 40 && code <= 47) style.bg = code - 40;
@@ -72,13 +76,18 @@ function applySgr(params: string, current: AnsiStyle): AnsiStyle {
   return style;
 }
 
-/** Index just past the ST/BEL terminator of a string sequence, or -1 if unterminated. */
+/**
+ * Index just past the ST/BEL terminator of a string sequence. An unterminated
+ * sequence (binary output, a cut-off hyperlink) ends at the next newline so
+ * later lines stay visible.
+ */
 function stringSequenceEnd(input: string, from: number): number {
   for (let j = from; j < input.length; j++) {
     if (input[j] === BEL) return j + 1;
     if (input[j] === ESC && input[j + 1] === '\\') return j + 2;
+    if (input[j] === '\n') return j;
   }
-  return -1;
+  return input.length;
 }
 
 export function parseAnsi(input: string): AnsiSegment[] {
@@ -136,12 +145,13 @@ export function parseAnsi(input: string): AnsiSegment[] {
       let j = i + 2;
       while (j < input.length && input.charCodeAt(j) >= 0x20 && input.charCodeAt(j) <= 0x3f) j++;
       if (j >= input.length) break;
+      const final = input.charCodeAt(j);
       const params = input.slice(i + 2, j);
+      // Colon sub-parameters (`38:2::r:g:b`, `4:3`) are rare; they fall through unstyled.
       if (input[j] === 'm' && /^[\d;]*$/.test(params)) style = applySgr(params, style);
-      end = j + 1;
+      end = final >= 0x40 && final <= 0x7e ? j + 1 : j;
     } else if (kind === ']' || kind === 'P' || kind === 'X' || kind === '^' || kind === '_') {
       end = stringSequenceEnd(input, i + 2);
-      if (end < 0) break;
     } else if (kind === '(' || kind === ')' || kind === '*' || kind === '+') {
       end = i + 3;
     } else if (kind === undefined) {
