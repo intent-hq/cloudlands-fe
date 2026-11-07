@@ -132,13 +132,6 @@ export type AgentLineStatsRequestState = {
   lastFinishedAt: string | null;
 };
 
-export type FileLineChange = {
-  path: string;
-  additions: number;
-  deletions: number;
-  action: 'create' | 'modify' | 'delete';
-};
-
 /**
  * Root changes state shape (consolidated file-tracking + line-changes).
  */

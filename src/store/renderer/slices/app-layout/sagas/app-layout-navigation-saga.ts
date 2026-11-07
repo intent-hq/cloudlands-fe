@@ -13,6 +13,7 @@ import {
   restoreHiddenTab,
   setActiveTab,
 } from '../../panel-layout/panel-layout-slice';
+import { panelTabsAreEquivalent } from '../../panel-layout/panel-tab-identity';
 import { ensureAgentSessionLoaded } from '../../workspace-agents/workspace-agents-slice';
 import { selectAgentSession } from '../../agent-session/agent-session-selectors';
 import { dropRevealIfWorkspaceNotDisplayed } from '../../panel-layout/sagas/reveal-suppression';
@@ -37,6 +38,25 @@ function* openAgentTab(action: ReturnType<typeof openAgentTabRequested>): SagaGe
     closable: true,
   };
   const targetWorkspaceId = detail.panelLayoutId ?? workspaceId;
+  const sourcePanelId = detail.sourcePanelId;
+  if (detail.alongsideSource && sourcePanelId && !detail.targetPanelId) {
+    const panels = yield* selectPanels.effect(targetWorkspaceId);
+    const openPanelId = Object.keys(panels).find(
+      (panelId) =>
+        panelId !== sourcePanelId &&
+        panels[panelId].tabs.some((candidate) => panelTabsAreEquivalent(candidate, tab)),
+    );
+    yield* put(
+      openPanelId
+        ? openTab(targetWorkspaceId, tab, openPanelId, undefined, true, undefined, undefined, true)
+        : openTabInAdjacentOrSplit(targetWorkspaceId, tab, sourcePanelId, {
+            force: true,
+            allowDuplicate: true,
+            preserveFocus: true,
+          }),
+    );
+    return;
+  }
   const openAction = detail.targetPanelId
     ? openTab(targetWorkspaceId, tab, detail.targetPanelId, undefined, true)
     : detail.openInAdjacentPanel

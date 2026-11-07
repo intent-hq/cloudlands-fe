@@ -14,7 +14,6 @@ import type {
   TrackedChange,
   MainPanelViewState,
   CommitInfo,
-  FileLineChange,
   LineChangeStats,
   AgentLineStatsRequestState,
 } from './changes-types';
@@ -112,35 +111,6 @@ export const selectCurrentCommits: AppSelector<CommitInfo[], [wsId: string | nul
     if (!wsId) return [];
     return getWs(state, wsId).commits;
   });
-
-// ---------------------------------------------------------------------------
-// Derived line-stats selectors (replaces lineChanges workspace-level state)
-// ---------------------------------------------------------------------------
-
-/** Derive FileLineChange[] from file-tracking changes[] for a workspace */
-export const selectWorkspaceFileChanges: AppSelector<FileLineChange[], [wsId: string]> =
-  store.createSelector((state, wsId: string): FileLineChange[] => {
-    const ws = getWs(state, wsId);
-    return ws.changes.map((c) => ({
-      path: c.relativePath,
-      additions: c.stats.additions,
-      deletions: c.stats.deletions,
-      action: mapStatusToAction(c.status),
-    }));
-  });
-
-function mapStatusToAction(status?: string): 'create' | 'modify' | 'delete' {
-  switch (status) {
-    case 'added':
-      return 'create';
-    case 'deleted':
-      return 'delete';
-    case 'modified':
-    case 'renamed':
-    default:
-      return 'modify';
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Agent stats selectors (absorbed from line-changes)

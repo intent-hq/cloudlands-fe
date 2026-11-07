@@ -2016,6 +2016,91 @@ describe('panelLayoutReducer', () => {
       expect(result.focusedPanelId).toBe('p-new');
       expect(result.pendingFocusTabId).toBe('linked-tab');
     });
+
+    const chatTab = { type: 'agent' as const, title: 'Ada', agentId: 'agent-1', closable: true };
+
+    it('preserveFocus shows a new column beside the source without taking focus', () => {
+      const state = stateWithPanel('p1', [{ id: 'source', type: 'note', title: 'Source' }]);
+      const before = state.byWorkspaceId[WS];
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(
+          WS,
+          chatTab,
+          'p1',
+          { newPanelId: 'p-chat', newTabId: 'chat-tab', allowDuplicate: true, preserveFocus: true },
+          20,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(getPanelOrder(result.root)).toEqual(['p1', 'p-chat']);
+      expect(result.panels['p-chat'].activeTabId).toBe('chat-tab');
+      expect(result.focusedPanelId).toBe(before.focusedPanelId);
+      expect(result.pendingFocusTabId).toBe(before.pendingFocusTabId);
+      expect(result.focusHistory).toEqual(before.focusHistory);
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p-chat',
+        tabId: 'chat-tab',
+        requestId: 'chat-tab',
+        preserveFocus: true,
+      });
+    });
+
+    it('preserveFocus adds the tab to the column on the right without taking focus', () => {
+      const state = emptyState();
+      state.byWorkspaceId[WS] = {
+        ...emptyWorkspaceState,
+        root: {
+          type: 'split',
+          direction: 'horizontal',
+          children: [
+            { type: 'panel', panelId: 'p1' },
+            { type: 'panel', panelId: 'p2' },
+          ],
+          sizes: [50, 50],
+        },
+        panels: {
+          p1: {
+            id: 'p1',
+            tabs: [{ id: 'source', type: 'note', title: 'Source', closable: true }],
+            activeTabId: 'source',
+          },
+          p2: {
+            id: 'p2',
+            tabs: [{ id: 'neighbor', type: 'note', title: 'Neighbor', closable: true }],
+            activeTabId: 'neighbor',
+          },
+        },
+        focusedPanelId: 'p1',
+        columnCount: 2,
+        columnCountInitialized: true,
+      };
+      const before = state.byWorkspaceId[WS];
+
+      const result = panelLayoutReducer(
+        state,
+        openTabInAdjacentOrSplit(
+          WS,
+          chatTab,
+          'p1',
+          { newTabId: 'chat-tab', allowDuplicate: true, preserveFocus: true },
+          20,
+        ),
+      ).byWorkspaceId[WS];
+
+      expect(result.panels.p2.tabs.map((tab) => tab.id)).toEqual(['neighbor', 'chat-tab']);
+      expect(result.panels.p2.activeTabId).toBe('chat-tab');
+      expect(result.focusedPanelId).toBe('p1');
+      expect(result.pendingFocusTabId).toBe(before.pendingFocusTabId);
+      expect(result.focusHistory).toEqual(before.focusHistory);
+      expect(result.pendingPanelReveal).toEqual({
+        panelId: 'p2',
+        tabId: 'chat-tab',
+        requestId: 'chat-tab',
+        preserveFocus: true,
+      });
+    });
   });
 
   describe('openTabInNewRootColumn', () => {

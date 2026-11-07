@@ -35,7 +35,7 @@ export const ENFORCED_DIRS = [
   'src/features/terminal',
   'src/features/file-tracking',
   'src/lib/components/code-review',
-  'src/lib/components/agent-overview',
+  'src/features/agent-trace',
   'src/lib/components/diagrams',
   'src/lib/components/code-walkthrough',
   'src/lib/components/notes',
