@@ -41,24 +41,27 @@ describe('Add machine', () => {
     expect(view.container.querySelector('[data-cloud-machine-row]')).toBeNull();
   });
 
-  it('stays a plain button when the backend has no cloud machines', () => {
+  it('has no E2B item when the backend has no cloud machines', async () => {
     seed('unsupported');
-    const view = render(DevicesSettings);
-    expect(view.queryByTestId('add-machine-menu')).toBeNull();
+    const view = render(DevicesSettings, { initialAddMenuOpen: true });
+    await view.findByTestId('add-machine-paste-link');
+    expect(view.queryByTestId('add-cloud-machine')).toBeNull();
   });
 
-  it('hides E2B setup, the E2B row and its sandboxes while the Labs flag is off', () => {
+  it('hides E2B setup, the E2B row and its sandboxes while the Labs flag is off', async () => {
     seed('labs-off');
-    const view = render(DevicesSettings);
-    expect(view.queryByTestId('add-machine-menu')).toBeNull();
+    const view = render(DevicesSettings, { initialAddMenuOpen: true });
+    await view.findByTestId('add-machine-paste-link');
+    expect(view.queryByTestId('add-cloud-machine')).toBeNull();
     expect(view.container.querySelector('[data-cloud-machine-row]')).toBeNull();
     expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
   });
 
-  it('stays a plain button once E2B is set up, and the E2B row shows', () => {
+  it('has no E2B item once E2B is set up, and the E2B row shows', async () => {
     seed('connected');
-    const view = render(DevicesSettings);
-    expect(view.queryByTestId('add-machine-menu')).toBeNull();
+    const view = render(DevicesSettings, { initialAddMenuOpen: true });
+    await view.findByTestId('add-machine-paste-link');
+    expect(view.queryByTestId('add-cloud-machine')).toBeNull();
     expect(view.container.querySelector('[data-cloud-machine-row]')).not.toBeNull();
   });
 });

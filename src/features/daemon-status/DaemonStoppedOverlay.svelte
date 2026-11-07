@@ -54,7 +54,7 @@
     fetchSidecarRunLogRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
-    selectConnections,
+    selectBackendConnections,
     selectCurrentConnectionId,
     selectIsConnecting,
     selectActiveAuthRejected,
@@ -108,7 +108,7 @@
   const runLog$ = selectSidecarRunLog();
   const runLogPending$ = selectSidecarRunLogPending();
   const runLogError$ = selectSidecarRunLogError();
-  const connections$ = selectConnections();
+  const connections$ = selectBackendConnections();
   const activeConnectionId$ = selectCurrentConnectionId();
   const isConnecting$ = selectIsConnecting();
   const authRejected$ = selectActiveAuthRejected();
