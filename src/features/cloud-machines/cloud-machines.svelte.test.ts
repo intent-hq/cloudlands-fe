@@ -89,9 +89,7 @@ describe('setup form', () => {
     seed('setup-tested');
     const view = render(CloudMachineRow, { editing: true, onEdit: () => {}, onClose: () => {} });
     store.dispatch(cloudMachineValidated(null));
-    await vi.waitFor(() =>
-      expect(view.container.querySelector('[data-cloud-key-ok]')).toBeNull(),
-    );
+    await vi.waitFor(() => expect(view.container.querySelector('[data-cloud-key-ok]')).toBeNull());
     expect(view.container.querySelector('[data-cloud-sizes-unknown]')).toBeNull();
   });
 
