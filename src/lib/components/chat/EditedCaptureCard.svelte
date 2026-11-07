@@ -10,6 +10,7 @@
 
   let {
     capture,
+    compact = false,
     workspaceId,
     readOnly = false,
     videoMimeType = 'video/mp4',
@@ -20,6 +21,7 @@
     onOpenFile,
   }: {
     capture: EditedCapture;
+    compact?: boolean;
     videoMimeType?: 'video/mp4' | 'video/webm';
     workspaceId: string | null | undefined;
     readOnly?: boolean;
@@ -74,35 +76,42 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (event barrier; descendants own their accessible controls) -->
-<article class="capture-card" aria-label={title} ondblclick={(event) => event.stopPropagation()}>
-  <header>
-    <div class="identity">
-      {#if capture.kind === 'recording'}<VideoCameraIcon size={16} />{:else}<ImageIcon
-          size={16}
-        />{/if}
-      <span class="type-caption font-medium">{title}</span>
-      {#if duration}<span class="type-caption duration">{duration}</span>{/if}
-    </div>
-    <span class="type-caption secondary">{count}</span>
-  </header>
+<article
+  class="capture-card"
+  class:compact
+  aria-label={title}
+  ondblclick={(event) => event.stopPropagation()}
+>
+  {#if !compact}<header>
+      <div class="identity">
+        {#if capture.kind === 'recording'}<VideoCameraIcon size={16} />{:else}<ImageIcon
+            size={16}
+          />{/if}
+        <span class="type-caption font-medium">{title}</span>
+        {#if duration}<span class="type-caption duration">{duration}</span>{/if}
+      </div>
+      <span class="type-caption secondary">{count}</span>
+    </header>{/if}
   {#if capture.kind === 'recording'}
-    <div class="choices type-caption">
-      <span
-        >{capture.video === 'highlights'
-          ? m.dock_captureEditor_videoHighlights_label()
-          : m.dock_captureEditor_videoFull_label()}</span
-      >
-      <span
-        >{m.dock_captureEditor_voice_label()}: {capture.voice === 'audio'
-          ? m.dock_captureEditor_voiceAudio_label()
-          : capture.voice === 'transcript'
-            ? m.dock_captureEditor_voiceTranscript_label()
-            : m.dock_captureEditor_voiceOff_label()}</span
-      >
-    </div>
+    {#if !compact}<div class="choices type-caption">
+        <span
+          >{capture.video === 'highlights'
+            ? m.dock_captureEditor_videoHighlights_label()
+            : m.dock_captureEditor_videoFull_label()}</span
+        >
+        <span
+          >{m.dock_captureEditor_voice_label()}: {capture.voice === 'audio'
+            ? m.dock_captureEditor_voiceAudio_label()
+            : capture.voice === 'transcript'
+              ? m.dock_captureEditor_voiceTranscript_label()
+              : m.dock_captureEditor_voiceOff_label()}</span
+        >
+      </div>
+    {/if}
     {#if videoUrl}
       <ChatVideoBlock
         fluid
+        {compact}
         source={{ kind: 'workspace', url: videoUrl, mimeType: videoMimeType }}
         name={title}
         poster={capture.frames?.[0]
@@ -121,7 +130,7 @@
         <VideoCameraIcon size={20} />{m.chat_chatMessage_openAttachment_title({ name: title })}
       </Button>
     {/if}
-    {#if capture.voice === 'transcript' && capture.transcript}
+    {#if !compact && capture.voice === 'transcript' && capture.transcript}
       <details class="transcript">
         <summary class="type-caption">{m.dock_captureEditor_voiceTranscript_label()}</summary>
         <p class="type-caption">{capture.transcript}</p>
@@ -153,7 +162,7 @@
         <ImageIcon size={24} />
       </div>{/if}
   {/if}
-  {#if capture.frames?.length}
+  {#if !compact && capture.frames?.length}
     <details class="frames">
       <summary class="type-caption">{count}</summary>
       <div class="frame-strip">
@@ -188,6 +197,36 @@
 </article>
 
 <style>
+  .capture-card.compact {
+    width: 96px;
+    height: 64px;
+    flex: none;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-small);
+    background: hsl(var(--muted));
+  }
+  .compact :global(.image-preview),
+  .compact .image-loading {
+    width: 96px;
+    height: 64px;
+    aspect-ratio: auto;
+    margin: 0;
+  }
+  .compact :global(.image-preview img) {
+    object-fit: cover;
+  }
+  .compact :global([data-chat-video]) {
+    margin: 0;
+    width: 96px;
+  }
+  .compact :global(.open-recording) {
+    margin: 0;
+    width: 96px;
+    min-height: 64px;
+    font-size: 0;
+  }
+
   .capture-card {
     width: 100%;
     max-width: 32rem;

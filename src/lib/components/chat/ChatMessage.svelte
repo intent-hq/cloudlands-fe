@@ -1766,7 +1766,7 @@
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : parsedMessage.editedCaptures
-                ? 'relative overflow-hidden rounded-xl border border-border bg-background px-4 py-3'
+                ? 'relative overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-3 text-card-foreground'
                 : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
           !automatedWakePresentation
@@ -1881,12 +1881,10 @@
             >
               {#snippet messageImagePreviews()}
                 {#if captureCards.length && !isSticky}
-                  <div
-                    class="mb-3 grid min-w-0 gap-2"
-                    style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));"
-                  >
+                  <div class="mb-3 flex min-w-0 flex-wrap gap-2">
                     {#each captureCards as capture (capture.id)}
                       <EditedCaptureCard
+                        compact
                         {capture}
                         workspaceId={getOwningWorkspaceId()}
                         {readOnly}

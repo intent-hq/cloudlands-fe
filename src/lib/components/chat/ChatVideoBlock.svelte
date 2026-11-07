@@ -15,6 +15,7 @@
     allowFileMedia?: boolean;
     canOpenFile?: () => boolean;
     fluid?: boolean;
+    compact?: boolean;
   }
 
   let {
@@ -24,6 +25,7 @@
     allowFileMedia = true,
     canOpenFile,
     fluid = false,
+    compact = false,
   }: Props = $props();
   let lightboxOpen = $state(false);
   let frameReady = $state(false);
@@ -124,9 +126,15 @@
           aria-hidden="true"
         >
           <span
-            class="flex size-11 shrink-0 aspect-square items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
+            class="flex {compact
+              ? 'size-6'
+              : 'size-11'} shrink-0 aspect-square items-center justify-center rounded-full border border-white/70 bg-black/60 text-white shadow-(--elevation-raised) forced-colors:border forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]"
           >
-            <svg viewBox="0 0 20 20" class="ml-0.5 size-5" fill="currentColor">
+            <svg
+              viewBox="0 0 20 20"
+              class="ml-0.5 {compact ? 'size-3' : 'size-5'}"
+              fill="currentColor"
+            >
               <path d="m7 5 7 5-7 5V5Z" />
             </svg>
           </span>
