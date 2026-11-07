@@ -13,6 +13,8 @@
     onSubmit?: () => void;
   } = $props();
   let composing = false;
+  let rejected = $state(false);
+  const limitMessageId = $props.id();
   const text = $derived(transcriptText(words, wordEdits));
 
   // Let the browser own selection, caret and native text Undo. Parent echoes of an
@@ -28,8 +30,13 @@
     if (locked || composing) return;
     const node = event.currentTarget as HTMLElement;
     const changes = transcriptTextChange(words, wordEdits, node.innerText);
-    if (Object.keys(changes).length) onChange(changes);
-    else if (node.innerText !== text) node.textContent = text;
+    if (Object.keys(changes).length) {
+      rejected = false;
+      onChange(changes);
+    } else if (node.innerText !== text) {
+      node.textContent = text;
+      rejected = true;
+    }
   }
   function beforeInput(event: InputEvent): void {
     const node = event.currentTarget as HTMLElement;
@@ -50,6 +57,7 @@
   aria-label={m.dock_captureEditor_voiceTranscript_label()}
   aria-multiline="true"
   aria-readonly={locked}
+  aria-describedby={rejected ? limitMessageId : undefined}
   tabindex="0"
   use:syncText={text}
   onbeforeinput={beforeInput}
@@ -67,9 +75,15 @@
     } else if (event.key === 'Delete' || event.key === 'Backspace') event.stopPropagation();
   }}
 ></span>
+{#if rejected}
+  <span id={limitMessageId} class="text-limit" role="alert">
+    {m.home_workspaceLabel_error_tooLong({ max: 20_000 })}
+  </span>
+{/if}
 
 <style>
   .transcript-text { white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; outline: none; }
   .transcript-text:focus-visible { text-decoration-color: hsl(var(--primary)); }
   .transcript-text:empty::after { content: '\200b'; }
+  .text-limit { color: hsl(var(--danger)); }
 </style>
