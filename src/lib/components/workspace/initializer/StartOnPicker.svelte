@@ -115,8 +115,8 @@
       strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
       preventScroll={false}
       class="flex min-h-0 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 {hasCloud
-        ? 'w-[440px]'
-        : 'w-[360px]'}"
+        ? 'w-110'
+        : 'w-90'}"
       style="max-height: min(440px, var(--bits-popover-content-available-height, calc(100dvh - 1rem)))"
       onOpenAutoFocus={(event) => {
         event.preventDefault();

@@ -59,12 +59,18 @@ export type AgentPlacementRequest = z.infer<typeof AgentPlacementRequestSchema>;
  */
 const AgentResolvedPlacementSchema = AgentPlacementRequestShape.refine(
   (value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated',
-).and(
-  z.object({
-    target: z.enum(['local', 'remote', 'e2b']),
-    checkout: z.enum(['shared', 'worktree', 'isolated']),
-  }),
-);
+)
+  .refine(
+    (value) =>
+      !value.exclusive ||
+      (value.target !== 'local' && (value.checkout ?? 'isolated') === 'isolated'),
+  )
+  .and(
+    z.object({
+      target: z.enum(['local', 'remote', 'e2b']),
+      checkout: z.enum(['shared', 'worktree', 'isolated']),
+    }),
+  );
 
 export const AgentCheckpointSchema = z.object({
   id: z.string().min(1),

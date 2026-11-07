@@ -80,7 +80,7 @@
 </script>
 
 <div
-  class="min-h-[560px] w-full min-w-0 bg-background p-6 text-foreground"
+  class="min-h-140 w-full min-w-0 bg-background p-6 text-foreground"
   data-cloud-machines-scene={scene}
   data-ready={ready ? '' : undefined}
 >
