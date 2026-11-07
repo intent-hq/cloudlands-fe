@@ -409,7 +409,7 @@ jobs:
       - name: Fetch PR base commit
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: bash scripts/git-network-retry.sh run fetch --no-tags --depth=1 origin "$BASE_SHA"
+        run: bash "$GITHUB_WORKSPACE/scripts/git-network-retry.sh" run fetch --no-tags --depth=1 origin "$BASE_SHA"
       - name: Scan changed files for conflict markers
         run: |
           set -euo pipefail
@@ -521,7 +521,7 @@ jobs:
             fi
           else
             echo "diff base: the event base ($base)"
-            bash scripts/git-network-retry.sh run fetch --no-tags --depth=1 origin "$base"
+            bash "$GITHUB_WORKSPACE/scripts/git-network-retry.sh" run fetch --no-tags --depth=1 origin "$base"
           fi
           echo "BASE_SHA=$base" >> "$GITHUB_ENV"
       - name: Evaluate diff shape
@@ -960,7 +960,7 @@ jobs:
       - name: Fetch baseline comparison commit
         run: |
           if [ -n "$LINT_BASELINE_BASE_REF" ]; then
-            bash scripts/git-network-retry.sh run fetch --no-tags --depth=1 origin "$LINT_BASELINE_BASE_REF"
+            bash "$GITHUB_WORKSPACE/scripts/git-network-retry.sh" run fetch --no-tags --depth=1 origin "$LINT_BASELINE_BASE_REF"
           fi
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
