@@ -11,6 +11,7 @@
     faTriangleExclamation,
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
+  import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -41,21 +42,22 @@
 
 {#if agentName !== undefined}
   <div class="shrink-0 border-b border-border bg-muted/30" data-browser-tab-agent-control>
-    <button
+    <Button
+      variant="plain"
       type="button"
-      class="group flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring active:bg-active"
+      class="group flex h-auto w-full justify-start rounded-none items-center gap-2 px-3 py-1.5 text-left text-sm text-muted-foreground outline-none hover:bg-hover hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring active:bg-active"
       onclick={(event) => onOpenAgent?.(event)}
       title={m.browser_embedded_ownerChip_tooltip({ name: agentName })}
     >
       <Fa icon={faRobot} class="shrink-0" size="sm" />
-      <span class="min-w-0 flex-1 truncate">
+      <span class="min-w-0 flex-1 truncate text-sm">
         {m.browser_tabNotice_agentControl_label({ name: agentName })}
       </span>
       <Fa
         icon={faChevronRight}
-        class="shrink-0 opacity-60 transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none"
+        class="shrink-0 opacity-60 transition-transform duration-spring-fast ease-spring-fast group-hover:translate-x-0.5 motion-reduce:transition-none"
         size="xs"
       />
-    </button>
+    </Button>
   </div>
 {/if}
