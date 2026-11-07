@@ -26,6 +26,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type {
+  NodeRefusal,
   PairLinkCommitResult,
   PairLinkInspectResult,
   PairLinkInspected,
@@ -34,7 +35,6 @@ import { isPairingUri, maskPairingUri } from '$shared/utils/pairing-uri';
 import { confirm } from '$lib/components/patterns/confirm';
 import { notify } from '$lib/components/patterns/notify';
 import { store } from '$store/renderer/store';
-import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   remoteMachineExposeRequested,
   remoteMachinesLoaded,
@@ -65,6 +65,7 @@ import {
   rowHighlighted,
 } from './nodes-slice';
 import type { NodeAddError } from './nodes-types';
+import { selectNodeRefusal } from './nodes-selectors';
 import { takePastedLink } from './pasted-link';
 
 const HIGHLIGHT_MS = 2_500;
@@ -121,13 +122,37 @@ function commitReply(reply: unknown): PairLinkCommitResult {
   return { ok: false, code: value.code === 'expired' ? 'expired' : 'failed' };
 }
 
+/**
+ * The refusal message: Labs off points to Settings → Labs; an unsupported
+ * backend is named; an unknown mode asks to try again.
+ */
+export function nodeRefusalMessage(
+  refusal: NodeRefusal | 'unknown',
+  node: string,
+  backend: string,
+): string {
+  if (refusal === 'unknown') return m.nodes_error_failed();
+  return refusal === 'labs-off'
+    ? m.nodes_error_labsOff({ node })
+    : m.nodes_error_backendUnsupported({ node, backend });
+}
+
 /** Labs Remote agents is on and the current backend advertises `remoteMachines: 1`. */
-function* nodeSupport(): SagaGenerator<'ok' | 'labs-off' | 'backend-unsupported'> {
-  if (!selectLabsRemoteAgentsEnabled.select(store.state)) return 'labs-off';
-  if (store.state.remoteMachines.supported) return 'ok';
+function* nodeSupport(): SagaGenerator<'ok' | NodeRefusal> {
+  return (yield* call(nodeRefusal)) ?? 'ok';
+}
+
+/**
+ * Why the current backend can't use a node, or null when it can. A snapshot
+ * that does not show support yet (just connected, or never loaded) is read
+ * again before refusing, so every route decides the same way.
+ */
+export function* nodeRefusal(): SagaGenerator<NodeRefusal | null> {
+  const refusal = yield* selectNodeRefusal.effect();
+  if (refusal !== 'backend-unsupported') return refusal;
   yield* put(remoteMachinesRefreshRequested());
   yield* race({ loaded: take(remoteMachinesLoaded), timeout: delay(SNAPSHOT_WAIT_MS) });
-  return store.state.remoteMachines.supported ? 'ok' : 'backend-unsupported';
+  return yield* selectNodeRefusal.effect();
 }
 
 function* highlight(connectionId: string): SagaGenerator<void> {

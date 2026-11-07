@@ -43,6 +43,7 @@ import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import type { DeepLinkActionPayload } from '../deep-links-types';
 import { deepLinksSaga, drainPendingDeepLinks, handleDeepLinkAction } from './deep-links-saga';
+import { nodeConnectionOpened, nodeLinkReceived } from '$features/nodes/nodes-slice';
 
 function workspace(overrides: Partial<Workspace>): Workspace {
   return {
@@ -263,6 +264,26 @@ describe('intent://settings', () => {
   it('opens Settings for a settings link without a channel', async () => {
     await run({ type: 'settings', params: { section: 'general' } });
     expect(mocks.navigateToRoute).toHaveBeenCalledWith('/settings');
+  });
+});
+
+describe('node links', () => {
+  it('hands a held node link (pending id only) to the node flow', async () => {
+    const dispatched = await run({
+      type: 'node-link',
+      params: { pendingId: 'p1', label: 'GPU rig', existingId: '' },
+    });
+    expect(dispatched).toEqual([
+      nodeLinkReceived({ pendingId: 'p1', label: 'GPU rig', existingId: null }),
+    ]);
+  });
+
+  it('hands a just-saved node found at window time to the node flow as added', async () => {
+    const dispatched = await run({
+      type: 'node-link',
+      params: { connectionId: 'gpu-rig', added: 'true' },
+    });
+    expect(dispatched).toEqual([nodeConnectionOpened('gpu-rig', true)]);
   });
 });
 

@@ -28,9 +28,15 @@ vi.mock('../invite-attempt', () => ({
   captureInviteAttempt: () => ({ current: () => lifetime, allowed: () => lifetime, release() {} }),
 }));
 const inspectCredential = vi.hoisted(() => vi.fn());
+const tested = vi.hoisted(() => ({ daemonMode: 'regular' as 'regular' | 'node' | null }));
 vi.mock('../../../backend/main/invited-principal', async (actual) => ({
   ...(await actual<typeof import('../../../backend/main/invited-principal')>()),
   inspectPersonalCredential: inspectCredential,
+  inspectPairCredential: async (candidate: unknown) => ({
+    snapshot: await inspectCredential(candidate),
+    daemonMode: tested.daemonMode,
+    name: 'GPU rig',
+  }),
 }));
 const { invitedAdd, invitedFind } = vi.hoisted(() => ({
   invitedAdd: vi.fn(),
@@ -74,6 +80,7 @@ vi.mock('../../../../main/state', () => ({
 
 const pairLinks = vi.hoisted(() => ({
   inspect: vi.fn(),
+  hold: vi.fn(),
   commit: vi.fn(),
   discard: vi.fn(),
 }));
@@ -123,11 +130,12 @@ beforeEach(() => {
   add.mockResolvedValue({ id: 'new-id' });
   findMatching.mockResolvedValue(null);
   showMessageBox.mockResolvedValue({ response: 0 });
-  pairLinks.inspect.mockResolvedValue({
+  tested.daemonMode = 'regular';
+  pairLinks.hold.mockResolvedValue({
     ok: true,
-    pendingId: 'pending-machine',
-    kind: 'machine',
-    label: 'Build box',
+    pendingId: 'pending-node',
+    kind: 'node',
+    label: 'GPU rig',
     existingId: null,
   });
 });
@@ -144,22 +152,19 @@ function fakeWindow() {
 
 describe('a node pairing link', () => {
   beforeEach(() => {
-    pairLinks.inspect.mockResolvedValue({
-      ok: true,
-      pendingId: 'pending-node',
-      kind: 'node',
-      label: 'GPU rig',
-      existingId: null,
-    });
+    tested.daemonMode = 'node';
   });
 
-  it('never opens a backend window: the app window asks, with the pending id only', async () => {
+  it('never opens a backend window or saves: the app window asks, with the pending id only', async () => {
     const window = fakeWindow();
     mainWindow = window;
     await handlePairDeepLink(LINK);
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(showMessageBox).not.toHaveBeenCalled();
     expect(add).not.toHaveBeenCalled();
+    expect(pairLinks.hold).toHaveBeenCalledWith(
+      expect.objectContaining({ port: 8443, daemonMode: 'node', name: 'GPU rig' }),
+    );
     expect(queueDeepLinkForWindow).toHaveBeenCalledWith(window, {
       type: 'node-link',
       params: { pendingId: 'pending-node', label: 'GPU rig', existingId: '' },
@@ -167,6 +172,15 @@ describe('a node pairing link', () => {
     expect(JSON.stringify(queueDeepLinkForWindow.mock.calls)).not.toContain(TOKEN);
     expect(window.focus).toHaveBeenCalled();
     expect(logLines.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('a link to an already saved node is held too, so a refusal leaves it unchanged', async () => {
+    mainWindow = fakeWindow();
+    findMatching.mockResolvedValue({ id: 'gpu-rig', fingerprint: PIN });
+    await handlePairDeepLink(LINK);
+    expect(add).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(queueDeepLinkForWindow).toHaveBeenCalledTimes(1);
   });
 
   it('opens the local window first when the app has none, never the node', async () => {
@@ -181,36 +195,54 @@ describe('a node pairing link', () => {
     expect(queueDeepLinkForWindow).toHaveBeenCalledTimes(1);
   });
 
-  it('a link marked mode=node whose test fails shows the failure and never opens a window', async () => {
-    pairLinks.inspect.mockResolvedValue({ ok: false, code: 'unreachable', routes: [] });
+  it('an unknown mode with a mode=node hint is handled as a node', async () => {
+    tested.daemonMode = null;
+    mainWindow = fakeWindow();
     await handlePairDeepLink(`${LINK}&mode=node`);
+    expect(queueDeepLinkForWindow).toHaveBeenCalledTimes(1);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('an unknown mode without a hint saves nothing and shows the failure', async () => {
+    tested.daemonMode = null;
+    await handlePairDeepLink(LINK);
     expect(add).not.toHaveBeenCalled();
     expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
     expect(showMessageBox).toHaveBeenCalledTimes(1);
   });
+});
 
-  it('a node found only when its window opens is not reported as a pairing failure', async () => {
-    pairLinks.inspect.mockResolvedValue({ ok: false, code: 'unreachable', routes: [] });
-    openBackendWindow.mockRejectedValue(new NodeWindowRefusedError('new-id'));
+describe('a full daemon pairing link', () => {
+  it('keeps the owner pairing flow and stores the detected mode', async () => {
     await handlePairDeepLink(LINK);
-    expect(add).toHaveBeenCalled();
-    // Only the "connect to this backend?" confirmation, no failure dialog.
-    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(pairLinks.hold).not.toHaveBeenCalled();
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ daemonMode: 'regular' }));
+    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
   });
 
-  it('a full daemon keeps the owner pairing flow and drops its pending credential', async () => {
-    pairLinks.inspect.mockResolvedValue({
-      ok: true,
-      pendingId: 'pending-machine',
-      kind: 'machine',
-      label: 'Build box',
-      existingId: null,
+  it('a new record found to be a node at window time goes to the app window to be refused or asked about', async () => {
+    const window = fakeWindow();
+    openBackendWindow.mockImplementation(async (id: string) => {
+      if (id === 'new-id') throw new NodeWindowRefusedError('new-id');
+      mainWindow = window;
+      return { id };
     });
     await handlePairDeepLink(LINK);
-    expect(pairLinks.discard).toHaveBeenCalledWith('pending-machine');
+    // Only the "connect to this backend?" confirmation, no failure dialog.
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(queueDeepLinkForWindow).toHaveBeenCalledWith(window, {
+      type: 'node-link',
+      params: { connectionId: 'new-id', added: 'true' },
+    });
+  });
+
+  it('a re-paired record found to be a node is not handed off for removal', async () => {
+    findMatching.mockResolvedValue({ id: 'new-id', fingerprint: 'cd'.repeat(32) });
+    openBackendWindow.mockRejectedValue(new NodeWindowRefusedError('new-id'));
+    await handlePairDeepLink(LINK);
     expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
-    expect(add).toHaveBeenCalled();
-    expect(openBackendWindow).toHaveBeenCalledWith('new-id');
   });
 });
 
@@ -307,6 +339,7 @@ describe('handlePairDeepLink', () => {
       fingerprint: PIN,
       token: TOKEN,
       tcAddress: 'ts.example:443',
+      daemonMode: 'regular',
     });
     expect(openBackendWindow).toHaveBeenCalledWith('new-id');
   });

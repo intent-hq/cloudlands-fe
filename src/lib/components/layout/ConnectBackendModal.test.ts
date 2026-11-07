@@ -190,6 +190,7 @@ describe('ConnectBackendModal', () => {
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
       detectHosts: true,
+      refuseNode: 'labs-off',
     });
     await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
   });
@@ -216,6 +217,7 @@ describe('ConnectBackendModal', () => {
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
       detectHosts: false,
+      refuseNode: 'labs-off',
     });
   });
 
@@ -576,6 +578,7 @@ describe('ConnectBackendModal', () => {
         token: 'secret-token',
         detectHosts: true,
         syncExcluded: true,
+        refuseNode: 'labs-off',
       });
       expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
     });

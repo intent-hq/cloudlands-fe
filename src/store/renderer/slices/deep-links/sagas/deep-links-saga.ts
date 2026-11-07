@@ -42,7 +42,7 @@ import { selectUpdateChannel } from '../../user-preferences/user-preferences-sel
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import type { DeepLinkActionPayload } from '../deep-links-types';
-import { nodeLinkReceived } from '$features/nodes/nodes-slice';
+import { nodeConnectionOpened, nodeLinkReceived } from '$features/nodes/nodes-slice';
 import {
   WORKSPACE_PREFILL_KEY,
   buildCreatePrefill,
@@ -168,6 +168,10 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
       if (params.beta !== undefined) return yield* call(switchUpdateChannel, params.beta);
       return yield* call(navigateToRoute, '/settings');
     case 'node-link':
+      if (params.connectionId) {
+        yield* put(nodeConnectionOpened(params.connectionId, params.added === 'true'));
+        return;
+      }
       if (params.pendingId) {
         yield* put(
           nodeLinkReceived({

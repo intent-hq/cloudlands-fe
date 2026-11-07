@@ -1179,6 +1179,8 @@ export const ConnectionsAddSchema = z.object({
   detectHosts: z.boolean().optional(),
   /** Per-backend keychain-sync opt-out (spec Phase 2); absent = synced. */
   syncExcluded: z.boolean().optional(),
+  /** The current backend can't use nodes: refuse a node before saving. */
+  refuseNode: z.enum(['labs-off', 'backend-unsupported']).optional(),
 });
 
 export const ConnectionsUpdateSchema = z

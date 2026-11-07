@@ -178,6 +178,32 @@ describe('pair links', () => {
     });
   });
 
+  it('holds an already tested link: a mode=node hint counts when the mode is unknown', async () => {
+    d = deps({
+      findMatching: vi
+        .fn()
+        .mockResolvedValue({ id: 'c-old', label: 'My rig', fingerprint: 'AA:BB' }),
+    });
+    const links = createPairLinks(d);
+    const held = await links.hold({
+      hosts: ['192.0.2.20'],
+      port: 7443,
+      fingerprint: 'AA:BB',
+      token: TOKEN,
+      tcAddress: null,
+      modeHint: 'node',
+      daemonMode: null,
+      name: 'GPU rig',
+    });
+    expect(held).toMatchObject({ ok: true, kind: 'node', label: 'My rig', existingId: 'c-old' });
+    expect(JSON.stringify(held)).not.toContain(TOKEN);
+    expect(d.inspect).not.toHaveBeenCalled();
+    await links.commit(held.pendingId);
+    expect(d.add).toHaveBeenCalledWith(
+      expect.objectContaining({ token: TOKEN, daemonMode: 'node' }),
+    );
+  });
+
   it('does not save a discarded or expired link', async () => {
     let now = 1_000;
     d = deps({ now: () => now });

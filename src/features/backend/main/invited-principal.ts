@@ -34,10 +34,18 @@ export async function inspectPairCredential(
   return withCredentialClient(candidate, async (client, snapshot, hello) => {
     const request = (method: string, params?: unknown, options?: { timeoutMs?: number }) =>
       client.request(method, params, options);
-    const daemonMode = await detectDaemonMode(hello, request);
+    // One retry: an unknown mode can refuse a link, and a daemon that is still
+    // starting or briefly busy usually answers a moment later.
+    const daemonMode =
+      (await detectDaemonMode(hello, request)) ??
+      (await new Promise((resolve) => setTimeout(resolve, MODE_RETRY_MS)).then(() =>
+        detectDaemonMode(hello, request),
+      ));
     return { snapshot, daemonMode, name: await readMachineName(request) };
   });
 }
+
+const MODE_RETRY_MS = 1_500;
 
 async function readMachineName(
   request: (method: string, params?: unknown, options?: { timeoutMs?: number }) => Promise<unknown>,
