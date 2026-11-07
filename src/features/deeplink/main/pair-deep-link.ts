@@ -54,6 +54,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     return;
   }
   pairLinkInFlight = true;
+  let addedId: string | null = null;
   const attempt = captureInviteAttempt();
   try {
     const parsed = parsePairingUri(url);
@@ -160,13 +161,16 @@ export async function handlePairDeepLink(url: string): Promise<void> {
       ...(tcAddress !== null ? { tcAddress } : {}),
       daemonMode,
     });
+    if (!existing) addedId = record.id;
     logger.info('Added backend from pairing link; opening its window', { id: record.id });
     await openBackendWindow(record.id);
   } catch (error) {
     if (error instanceof NodeWindowRefusedError) {
-      // A saved node reached through a full-daemon link (the daemon changed
-      // mode): it stays under Nodes and no window opens.
+      // Detected as a node only when its window was about to open. A record
+      // this link just added goes to the app window, which removes it when the
+      // backend can't use nodes, or asks to make it available.
       logger.info('Pairing link is for a node; no backend window opened');
+      if (addedId === error.connectionId) await handOffSavedNode(addedId);
       return;
     }
     logger.warn('Pair deep link handling failed', { kind: 'pairing-failed' });
@@ -198,15 +202,35 @@ export async function handlePairDeepLink(url: string): Promise<void> {
  * The renderer then saves it, or refuses it (nothing saved) when the current
  * backend can't run agents on other machines.
  */
-async function routeNodeLink(link: TestedPairLink): Promise<void> {
-  const links = getPairLinks();
-  const held = await links.hold(link);
+/** The app window, opening the local one when the app has none. */
+async function appWindow() {
   let window = getMainWindow();
   if (!window || window.isDestroyed()) {
     await openBackendWindow(LOCAL_CONNECTION_ID);
     window = getMainWindow();
   }
-  if (!window || window.isDestroyed()) {
+  return window && !window.isDestroyed() ? window : null;
+}
+
+function bringToFront(window: NonNullable<ReturnType<typeof getMainWindow>>) {
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+}
+
+/** A just-saved record turned out to be a node: the app window decides (refuse or ask). */
+async function handOffSavedNode(connectionId: string): Promise<void> {
+  const window = await appWindow();
+  if (!window) return;
+  queueDeepLinkForWindow(window, { type: 'node-link', params: { connectionId, added: 'true' } });
+  bringToFront(window);
+}
+
+async function routeNodeLink(link: TestedPairLink): Promise<void> {
+  const links = getPairLinks();
+  const held = await links.hold(link);
+  const window = await appWindow();
+  if (!window) {
     links.discard(held.pendingId);
     throw new Error('No app window to ask in');
   }
@@ -219,9 +243,7 @@ async function routeNodeLink(link: TestedPairLink): Promise<void> {
       existingId: held.existingId ?? '',
     },
   });
-  if (window.isMinimized()) window.restore();
-  window.show();
-  window.focus();
+  bringToFront(window);
 }
 
 /**

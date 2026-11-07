@@ -17,7 +17,11 @@ vi.mock('../json-rpc-client', () => ({
     on() {}
   },
 }));
-import { authenticateInvitedCredential, inspectPersonalCredential } from '../invited-principal';
+import {
+  authenticateInvitedCredential,
+  inspectPairCredential,
+  inspectPersonalCredential,
+} from '../invited-principal';
 import { JsonRpcError } from '../json-rpc-errors';
 const candidate = {
   host: 'host.example',
@@ -245,5 +249,46 @@ describe('pinned remote personal identity (wire-shaped fixtures)', () => {
   it('never dials an unpinned legacy candidate', async () => {
     await expect(inspectPersonalCredential({ ...candidate, fingerprint: '' })).rejects.toThrow();
     expect(rpc.request).not.toHaveBeenCalled();
+  });
+});
+
+describe('inspectPairCredential mode detection', () => {
+  const hello = {
+    server: { version: '0.11.100', capabilities: { collaborationIdentity: 1 } },
+  };
+  const owner = { ...principal, isAdministrator: true };
+
+  it('retries the probe once when the first one gets no daemon answer', async () => {
+    vi.useFakeTimers();
+    let probes = 0;
+    rpc.request.mockImplementation(async (method: string) => {
+      if (method === 'client.hello') return hello;
+      if (method === 'principal.me') return owner;
+      if (method === 'workspace.get') {
+        probes += 1;
+        if (probes === 1) throw new Error('socket closed');
+        throw new JsonRpcError({ code: -32003, message: 'node', data: { code: 'node-mode' } });
+      }
+      return {};
+    });
+    const pending = inspectPairCredential(candidate);
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ daemonMode: 'node' });
+    expect(probes).toBe(2);
+    vi.useRealTimers();
+  });
+
+  it('stays unknown when the retry gets no answer either', async () => {
+    vi.useFakeTimers();
+    rpc.request.mockImplementation(async (method: string) => {
+      if (method === 'client.hello') return hello;
+      if (method === 'principal.me') return owner;
+      if (method === 'workspace.get') throw new Error('socket closed');
+      return {};
+    });
+    const pending = inspectPairCredential(candidate);
+    await vi.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ daemonMode: null });
+    vi.useRealTimers();
   });
 });

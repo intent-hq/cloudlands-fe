@@ -222,11 +222,27 @@ describe('a full daemon pairing link', () => {
     expect(openBackendWindow).toHaveBeenCalledWith('new-id');
   });
 
-  it('a saved node reached through it opens no window and reports no failure', async () => {
-    openBackendWindow.mockRejectedValue(new NodeWindowRefusedError('new-id'));
+  it('a new record found to be a node at window time goes to the app window to be refused or asked about', async () => {
+    const window = fakeWindow();
+    openBackendWindow.mockImplementation(async (id: string) => {
+      if (id === 'new-id') throw new NodeWindowRefusedError('new-id');
+      mainWindow = window;
+      return { id };
+    });
     await handlePairDeepLink(LINK);
     // Only the "connect to this backend?" confirmation, no failure dialog.
     expect(showMessageBox).toHaveBeenCalledTimes(1);
+    expect(queueDeepLinkForWindow).toHaveBeenCalledWith(window, {
+      type: 'node-link',
+      params: { connectionId: 'new-id', added: 'true' },
+    });
+  });
+
+  it('a re-paired record found to be a node is not handed off for removal', async () => {
+    findMatching.mockResolvedValue({ id: 'new-id', fingerprint: 'cd'.repeat(32) });
+    openBackendWindow.mockRejectedValue(new NodeWindowRefusedError('new-id'));
+    await handlePairDeepLink(LINK);
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
   });
 });
 

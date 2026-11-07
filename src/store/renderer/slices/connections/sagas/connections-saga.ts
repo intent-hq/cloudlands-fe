@@ -97,8 +97,7 @@ import type {
   UnpublishSelfResult,
 } from '$shared/types/connections';
 import { nodeConnectionOpened } from '$features/nodes/nodes-slice';
-import { nodeRefusalMessage } from '$features/nodes/nodes-saga';
-import { selectNodeRefusal } from '$features/nodes/nodes-selectors';
+import { nodeRefusal, nodeRefusalMessage } from '$features/nodes/nodes-saga';
 import { selectCurrentBackendLabel } from '$features/remote-machines/remote-machines-selectors';
 import { NODE_REFUSED_MARKER, type NodeRefusal } from '$shared/types/pair-link';
 import {
@@ -973,7 +972,7 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
       // A re-pair upserts an existing record; only a brand-new node may be removed when refused.
       const savedIds = new Set((yield* selectConnections.effect()).map((c) => c.id));
       // The current backend can't use nodes: main then refuses a node before saving it.
-      const refuseNode = yield* selectNodeRefusal.effect();
+      const refuseNode = yield* call(nodeRefusal);
       const add = addConnectionRequested({
         ...intent.params,
         ...(refuseNode ? { refuseNode } : {}),

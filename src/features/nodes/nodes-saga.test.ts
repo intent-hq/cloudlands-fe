@@ -26,7 +26,7 @@ import {
 } from '$features/remote-machines/remote-machines-slice';
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { PairLinkInspectResult } from '$shared/types/pair-link';
-import { nodesSaga } from './nodes-saga';
+import { nodeRefusal, nodesSaga } from './nodes-saga';
 import {
   nodeConnectionOpened,
   nodeLinkReceived,
@@ -383,6 +383,39 @@ describe('a node link opened from outside the app', () => {
     dispatch(nodeLinkReceived({ pendingId: 'p9', label: 'GPU rig', existingId: null }));
     await vi.waitFor(() => expect(ui.error).toHaveBeenCalled());
     expect(ui.confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe('the refusal check shared by every route', () => {
+  it('reads support again before refusing when the snapshot does not show it yet', async () => {
+    setSupport({ labs: true, supported: false });
+    const result = runSaga(
+      {
+        channel,
+        getState: () => store.state,
+        dispatch: (action: { type: string }) => dispatch(action),
+      },
+      nodeRefusal,
+    ).toPromise();
+    await vi.waitFor(() => expect(store.state.remoteMachines.supported).toBe(false));
+    dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        machines: [],
+        localFingerprint: null,
+        executorBackends: [],
+      }),
+    );
+    await expect(result).resolves.toBeNull();
+  });
+
+  it('refuses at once while Labs Remote agents is off', async () => {
+    setSupport({ labs: false, supported: false });
+    const result = runSaga(
+      { channel, getState: () => store.state, dispatch: () => {} },
+      nodeRefusal,
+    );
+    await expect(result.toPromise()).resolves.toBe('labs-off');
   });
 });
 
