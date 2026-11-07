@@ -127,7 +127,7 @@
     stopUnslothRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
-    selectConnections,
+    selectBackendConnections,
     selectCurrentConnectionId,
     selectCurrentConnection,
     selectConnectionCertMismatch,
@@ -166,7 +166,7 @@
   const versionComparison$ = selectDaemonVersionComparison();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
-  const connections$ = selectConnections();
+  const connections$ = selectBackendConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
   const windowGuestSession$ = selectWindowGuestSession();

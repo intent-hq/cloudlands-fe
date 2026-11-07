@@ -286,6 +286,11 @@ describe('DevicesSettings', () => {
     await openAction('Connect');
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
     await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
+    await fireEvent.click(
+      await screen.findByRole('menuitem', {
+        name: new RegExp(m.cloudMachines_addMenu_connect_label()),
+      }),
+    );
     expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
@@ -497,6 +502,11 @@ describe('DevicesSettings', () => {
     render(DevicesSettings);
 
     await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
+    await fireEvent.click(
+      await screen.findByRole('menuitem', {
+        name: new RegExp(m.cloudMachines_addMenu_connect_label()),
+      }),
+    );
 
     expect(
       screen.getByRole('button', { name: 'Use Teal accent' }).getAttribute('aria-pressed'),

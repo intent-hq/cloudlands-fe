@@ -95,6 +95,7 @@ import type {
   SelfPublishedStateResult,
   UnpublishSelfResult,
 } from '$shared/types/connections';
+import { nodeConnectionOpened } from '$features/nodes/nodes-slice';
 import {
   addConnectionRequested,
   authRejectedReceived,
@@ -958,6 +959,7 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') outcome = { kind: 'secretUnavailable' };
+      else if (result.status === 'node') yield* put(nodeConnectionOpened(connection.id, true));
     } else if (intent.kind === 'save' || intent.kind === 'localIcon') {
       if (intent.kind === 'save' && intent.secret) {
         yield* put(connectionWorkflowProgress(consumerId, requestId, 'secret'));
@@ -1004,7 +1006,7 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
         outcome = { kind: 'secretUnavailable' };
         if (intent.recovery === 'settings' && (yield* workflowIsCurrent(action)))
           yield* recoverOpenInSettings(action, intent.id);
-      }
+      } else if (result.status === 'node') yield* put(nodeConnectionOpened(intent.id, false));
     } else if (intent.kind === 'forget') {
       yield* call(invokeForgetConnection, { id: intent.id });
     } else {

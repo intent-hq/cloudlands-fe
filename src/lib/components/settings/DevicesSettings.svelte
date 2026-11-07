@@ -31,7 +31,10 @@
     selectE2bProvider,
   } from '$features/cloud-machines/cloud-machines-selectors';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
-  import { faCloud, faDesktop } from '$lib/icons/phosphor-icons';
+  import { faCloud, faDesktop, faLink } from '$lib/icons/phosphor-icons';
+  import PairLinkPaste from '$features/nodes/PairLinkPaste.svelte';
+  import { selectHighlightedConnectionId } from '$features/nodes/nodes-selectors';
+  import { pasteLinkRequested } from '$features/nodes/nodes-slice';
 
   let {
     initialEditedMachine,
@@ -53,6 +56,16 @@
   const currentConnectionId$ = selectCurrentConnectionId();
   // The backend this window uses sits right after the local row.
   const rows = $derived(orderMachineRows($connections$, $currentConnectionId$));
+  // Nodes only run agents for other backends: listed apart, never a backend.
+  const machineRows = $derived(rows.filter((device) => device.daemonMode !== 'node'));
+  // One row kind today; other node kinds (for example E2B entries) add a variant here.
+  type NodeListRow = { kind: 'device'; device: ConnectionRecord };
+  const nodeRows = $derived<NodeListRow[]>(
+    rows
+      .filter((device) => device.daemonMode === 'node')
+      .map((device) => ({ kind: 'device', device })),
+  );
+  const highlightId$ = selectHighlightedConnectionId();
   // Cloud machines (E2B): one row after the saved machines, while set up or being set up.
   const cloudVisible$ = selectCloudMachinesVisible();
   const e2bProvider$ = selectE2bProvider();
@@ -62,7 +75,7 @@
   const showCloudRow = $derived($cloudVisible$ && (!!$e2bProvider$ || cloudSetupOpen));
   type MachineListRow = { kind: 'device'; device: ConnectionRecord } | { kind: 'cloud' };
   const listRows = $derived<MachineListRow[]>([
-    ...rows.map((device): MachineListRow => ({ kind: 'device', device })),
+    ...machineRows.map((device): MachineListRow => ({ kind: 'device', device })),
     ...(showCloudRow ? [{ kind: 'cloud' } as const] : []),
   ]);
 
@@ -143,11 +156,13 @@
     ariaLabel={m.settings_devices_title()}
     class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
   >
-    {#snippet row({ item })}
+    {#snippet row({ item, index })}
       {#if item.kind === 'device'}
         {@const device = item.device}
         <DeviceRow
           {device}
+          last={index === listRows.length - 1}
+          highlighted={$highlightId$ === device.id}
           panelMode={activeDeviceId === device.id ? activePanel : null}
           onOpenPanel={(panel) => openPanel(device.id, panel)}
           onClosePanel={closePanel}
@@ -179,27 +194,75 @@
     {/snippet}
   </ListView>
 
+  {#if nodeRows.length > 0}
+    <section class="space-y-3" aria-labelledby="nodes-title" data-nodes-section>
+      <div>
+        <h3 id="nodes-title" class="type-title text-foreground">{m.nodes_section_title()}</h3>
+        <p class="max-w-2xl type-body text-muted-foreground">
+          {m.nodes_section_description()}
+        </p>
+      </div>
+      <ListView
+        virtualize={false}
+        items={nodeRows}
+        getKey={(row) => row.device.id}
+        getText={(row) => row.device.label}
+        status="ready"
+        ariaLabel={m.nodes_section_title()}
+        class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
+      >
+        {#snippet row({ item, index })}
+          {@const device = item.device}
+          <DeviceRow
+            {device}
+            first={index === 0}
+            last={index === nodeRows.length - 1}
+            highlighted={$highlightId$ === device.id}
+            panelMode={activeDeviceId === device.id ? activePanel : null}
+            onOpenPanel={(panel) => openPanel(device.id, panel)}
+            onClosePanel={closePanel}
+            onRequestRemove={requestRemove}
+          />
+        {/snippet}
+      </ListView>
+    </section>
+  {/if}
+
+  <PairLinkPaste />
+
   <div class="flex justify-end">
-    {#if $cloudVisible$ && !$e2bProvider$ && !cloudSetupOpen}
-      <Menu.Root bind:open={addMenuOpen}>
-        <Menu.Trigger>
-          {#snippet child({ props })}
-            <Button {...props} variant="ghost" size="sm" data-testid="add-machine-menu">
-              <Fa icon={faPlus} class="mr-1.5" size="xs" />
-              {m.settings_devices_add_label()}
-            </Button>
-          {/snippet}
-        </Menu.Trigger>
-        <Menu.Content align="end" class="w-80">
-          <Menu.Item onSelect={() => (connectModalOpen = true)}>
-            {#snippet leading()}<Fa icon={faDesktop} />{/snippet}
-            <span class="flex min-w-0 flex-col">
-              <span>{m.cloudMachines_addMenu_connect_label()}</span>
-              <span class="type-caption text-muted-foreground"
-                >{m.cloudMachines_addMenu_connect_description()}</span
-              >
-            </span>
-          </Menu.Item>
+    <Menu.Root bind:open={addMenuOpen}>
+      <Menu.Trigger>
+        {#snippet child({ props })}
+          <Button {...props} variant="ghost" size="sm" data-testid="add-machine-menu">
+            <Fa icon={faPlus} class="mr-1.5" size="xs" />
+            {m.settings_devices_add_label()}
+          </Button>
+        {/snippet}
+      </Menu.Trigger>
+      <Menu.Content align="end" class="w-80">
+        <Menu.Item onSelect={() => (connectModalOpen = true)}>
+          {#snippet leading()}<Fa icon={faDesktop} />{/snippet}
+          <span class="flex min-w-0 flex-col">
+            <span>{m.cloudMachines_addMenu_connect_label()}</span>
+            <span class="type-caption text-muted-foreground"
+              >{m.cloudMachines_addMenu_connect_description()}</span
+            >
+          </span>
+        </Menu.Item>
+        <Menu.Item
+          onSelect={() => appStore.dispatch(pasteLinkRequested())}
+          data-testid="add-machine-paste-link"
+        >
+          {#snippet leading()}<Fa icon={faLink} />{/snippet}
+          <span class="flex min-w-0 flex-col">
+            <span>{m.nodes_addMenu_paste_label()}</span>
+            <span class="type-caption text-muted-foreground"
+              >{m.nodes_addMenu_paste_description()}</span
+            >
+          </span>
+        </Menu.Item>
+        {#if $cloudVisible$ && !$e2bProvider$ && !cloudSetupOpen}
           <Menu.Item onSelect={openCloudSetup} data-testid="add-cloud-machine">
             {#snippet leading()}<Fa icon={faCloud} />{/snippet}
             <span class="flex min-w-0 flex-col">
@@ -209,14 +272,9 @@
               >
             </span>
           </Menu.Item>
-        </Menu.Content>
-      </Menu.Root>
-    {:else}
-      <Button variant="ghost" size="sm" onclick={() => (connectModalOpen = true)}>
-        <Fa icon={faPlus} class="mr-1.5" size="xs" />
-        {m.settings_devices_add_label()}
-      </Button>
-    {/if}
+        {/if}
+      </Menu.Content>
+    </Menu.Root>
   </div>
 
   {#if removeError}
