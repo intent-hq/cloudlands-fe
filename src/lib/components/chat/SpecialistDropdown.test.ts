@@ -3,7 +3,8 @@
  *
  * SpecialistDropdown (the proposal card's initial-agent picker) orders its
  * options like the New workspace picker: specialists used to create
- * workspaces first, most recent first, then the rest in catalog order.
+ * workspaces first, most recent first, then the rest in catalog order, and
+ * None last.
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -62,8 +63,8 @@ const catalog = [
 ];
 
 async function openOptionIds(): Promise<string[]> {
-  await fireEvent.click(screen.getByRole('button', { name: /General/ }));
-  await screen.findByRole('menuitemradio', { name: /General/ });
+  await fireEvent.click(screen.getByRole('button', { name: /^None/ }));
+  await screen.findByRole('menuitemradio', { name: /^None/ });
   return screen
     .getAllByRole('menuitemradio')
     .map((item) => item.getAttribute('data-specialist-option') ?? '');
@@ -83,11 +84,11 @@ describe('SpecialistDropdown ordering', () => {
     render(SpecialistDropdown, { props: { value: null } });
 
     expect(await openOptionIds()).toEqual([
-      'general',
       'developer',
       'reviewer',
       'researcher',
       'writer',
+      'general',
     ]);
   });
 
@@ -96,11 +97,11 @@ describe('SpecialistDropdown ordering', () => {
     render(SpecialistDropdown, { props: { value: null } });
 
     expect(await openOptionIds()).toEqual([
-      'general',
       'writer',
       'reviewer',
       'developer',
       'researcher',
+      'general',
     ]);
   });
 });

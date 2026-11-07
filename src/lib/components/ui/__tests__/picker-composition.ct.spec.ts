@@ -154,20 +154,18 @@ for (const state of ['populated', 'empty', 'compact'] as const) {
       state === 'compact'
         ? menu.getByRole('menuitemradio', { checked: true })
         : menu.getByRole('option', { selected: true });
-    const general = menu.getByRole(role, { name: /General/ });
+    const general = menu.getByRole(role, { name: /^None/ });
     await expect(general).toHaveAttribute(selectedAttribute, 'true');
     await expect(selected()).toHaveCount(1);
     const choice =
       state === 'empty' ? general : menu.getByRole(role, { name: /A specialist with/ });
     if (state === 'compact') {
-      await expect(general).toBeFocused();
-      await page.keyboard.press('ArrowDown');
       await expect(choice).toBeFocused();
       await page.keyboard.press('Enter');
     } else {
       const search = menu.getByRole('combobox', { name: 'Initial agent', exact: true });
       await expect(search).toBeFocused();
-      await search.fill(state === 'empty' ? 'General' : 'A specialist with');
+      await search.fill(state === 'empty' ? 'None' : 'A specialist with');
       await expect(choice).toBeVisible();
       await search.press('ArrowDown');
       await search.press('Enter');
@@ -225,8 +223,6 @@ test('welcome specialist prompt expands and rich controls contain their content'
   await expect(longChoice).toHaveAttribute('aria-checked', 'false');
   await expectContentsInside(longChoice);
   await page.screenshot({ path: info.outputPath('welcome-specialist-open.png') });
-  await expect(menu.getByRole('menuitemradio', { name: /General/ })).toBeFocused();
-  await page.keyboard.press('ArrowDown');
   await expect(longChoice).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('specialist-selection')).toHaveText('fixture-long');
