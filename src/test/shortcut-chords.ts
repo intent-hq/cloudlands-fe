@@ -93,8 +93,7 @@ function notSingleChord(binding: string, why: string): Error {
 export function shortcutChord(binding: string, mac: boolean): ShortcutChord {
   if (/\s\+\s/.test(binding)) throw notSingleChord(binding, 'key sequence');
   if (/[1-8]-9$/.test(binding)) throw notSingleChord(binding, 'key range');
-  if (binding.length > 1 && binding.includes('/'))
-    throw notSingleChord(binding, 'alternatives');
+  if (binding.length > 1 && binding.includes('/')) throw notSingleChord(binding, 'alternatives');
 
   const parts = binding.split('+');
   const token = parts.pop() ?? '';
