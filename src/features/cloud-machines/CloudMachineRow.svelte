@@ -62,7 +62,6 @@
   const operations$ = selectCloudOperations();
   const failures$ = selectCloudFailures();
 
-  const rowId = $props.id();
   const name = $derived(entry?.name ?? 'E2B'); // i18n-ignore (product name)
   const sandboxes = $derived(
     entry ? $sandboxes$.filter((machine) => machine.cloud?.cloudMachineId === entry.id) : [],
@@ -138,7 +137,7 @@
 
 <article
   class={cn(!first && 'border-t border-border')}
-  aria-labelledby="{rowId}-name"
+  aria-label={name}
   aria-busy={removing}
   data-cloud-machine-row={entry?.id ?? NEW_CLOUD_ENTRY}
 >
@@ -156,11 +155,12 @@
       </span>
     {/snippet}
     {#snippet title()}
-      <span id="{rowId}-name">
+      <span>
         {#if entry && $named$}
           <EditableName
             value={entry.name}
             onSave={rename}
+            disabled={editing}
             class="min-w-16"
             textClass="[font:inherit]"
             maxWidth={320}
