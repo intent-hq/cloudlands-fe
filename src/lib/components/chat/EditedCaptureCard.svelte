@@ -76,127 +76,151 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (event barrier; descendants own their accessible controls) -->
-<article
-  class="capture-card"
-  class:compact
-  aria-label={title}
-  ondblclick={(event) => event.stopPropagation()}
->
-  {#if !compact}<header>
-      <div class="identity">
-        {#if capture.kind === 'recording'}<VideoCameraIcon size={16} />{:else}<ImageIcon
-            size={16}
-          />{/if}
-        <span class="type-caption font-medium">{title}</span>
-        {#if duration}<span class="type-caption duration">{duration}</span>{/if}
-      </div>
-      <span class="type-caption secondary">{count}</span>
-    </header>{/if}
-  {#if capture.kind === 'recording'}
-    {#if !compact}<div class="choices type-caption">
-        <span
-          >{capture.video === 'highlights'
-            ? m.dock_captureEditor_videoHighlights_label()
-            : m.dock_captureEditor_videoFull_label()}</span
+{#if !compact || capture.primaryId}
+  <article
+    class="capture-card"
+    class:compact
+    aria-label={title}
+    ondblclick={(event) => event.stopPropagation()}
+  >
+    {#if !compact}<header>
+        <div class="identity">
+          {#if capture.kind === 'recording'}<VideoCameraIcon size={16} />{:else}<ImageIcon
+              size={16}
+            />{/if}
+          <span class="type-caption font-medium">{title}</span>
+          {#if duration}<span class="type-caption duration">{duration}</span>{/if}
+        </div>
+        <span class="type-caption secondary">{count}</span>
+      </header>{/if}
+    {#if capture.kind === 'recording'}
+      {#if !compact}<div class="choices type-caption">
+          <span
+            >{capture.video === 'highlights'
+              ? m.dock_captureEditor_videoHighlights_label()
+              : m.dock_captureEditor_videoFull_label()}</span
+          >
+          <span
+            >{m.dock_captureEditor_voice_label()}: {capture.voice === 'audio'
+              ? m.dock_captureEditor_voiceAudio_label()
+              : capture.voice === 'transcript'
+                ? m.dock_captureEditor_voiceTranscript_label()
+                : m.dock_captureEditor_voiceOff_label()}</span
+          >
+        </div>
+      {/if}
+      {#if videoUrl}
+        <ChatVideoBlock
+          fluid
+          {compact}
+          source={{ kind: 'workspace', url: videoUrl, mimeType: videoMimeType }}
+          name={title}
+          poster={capture.frames?.[0]
+            ? (images[capture.frames[0].attachment_id] ?? undefined)
+            : undefined}
+          allowFileMedia={!readOnly}
+          canOpenFile={() => !readOnly}
+        />
+      {:else if capture.primaryId}
+        <Button
+          variant="ghost"
+          class="open-recording"
+          disabled={readOnly}
+          onclick={() => capture.primaryId && onOpenFile(capture.primaryId)}
         >
-        <span
-          >{m.dock_captureEditor_voice_label()}: {capture.voice === 'audio'
-            ? m.dock_captureEditor_voiceAudio_label()
-            : capture.voice === 'transcript'
-              ? m.dock_captureEditor_voiceTranscript_label()
-              : m.dock_captureEditor_voiceOff_label()}</span
-        >
-      </div>
-    {/if}
-    {#if videoUrl}
-      <ChatVideoBlock
-        fluid
-        {compact}
-        source={{ kind: 'workspace', url: videoUrl, mimeType: videoMimeType }}
-        name={title}
-        poster={capture.frames?.[0]
-          ? (images[capture.frames[0].attachment_id] ?? undefined)
-          : undefined}
-        allowFileMedia={!readOnly}
-        canOpenFile={() => !readOnly}
-      />
+          <VideoCameraIcon size={20} />{m.chat_chatMessage_openAttachment_title({ name: title })}
+        </Button>
+      {/if}
+      {#if !compact && capture.voice === 'transcript' && capture.transcript}
+        <details class="transcript">
+          <summary class="type-caption">{m.dock_captureEditor_voiceTranscript_label()}</summary>
+          <p class="type-caption">{capture.transcript}</p>
+        </details>
+      {/if}
     {:else if capture.primaryId}
-      <Button
-        variant="ghost"
-        class="open-recording"
-        disabled={readOnly}
-        onclick={() => capture.primaryId && onOpenFile(capture.primaryId)}
-      >
-        <VideoCameraIcon size={20} />{m.chat_chatMessage_openAttachment_title({ name: title })}
-      </Button>
+      {@const src = images[capture.primaryId]}
+      {#if src}
+        <Button
+          variant="plain"
+          wrapContent={false}
+          class="image-preview"
+          disabled={readOnly}
+          aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name: title })}
+          onclick={(event) => capture.primaryId && onImage(capture.primaryId, event.currentTarget)}
+        >
+          <img
+            {src}
+            alt={title}
+            loading="lazy"
+            onerror={() => capture.primaryId && onImageError(capture.primaryId, src)}
+          />
+        </Button>
+      {:else if imageFailures[capture.primaryId]}<MediaUnavailable
+          name={title}
+          reason="load-failed"
+        />
+      {:else}<div class="image-loading" role="img" aria-label={title} aria-busy="true">
+          <ImageIcon size={24} />
+        </div>{/if}
     {/if}
-    {#if !compact && capture.voice === 'transcript' && capture.transcript}
-      <details class="transcript">
-        <summary class="type-caption">{m.dock_captureEditor_voiceTranscript_label()}</summary>
-        <p class="type-caption">{capture.transcript}</p>
+    {#if !compact && capture.frames?.length}
+      <details class="frames">
+        <summary class="type-caption">{count}</summary>
+        <div class="frame-strip">
+          {#each capture.frames as frame (frame.attachment_id)}
+            {@const mark = capture.marks.find((mark) => mark.id === frame.mark_id)}
+            {@const src = images[frame.attachment_id]}
+            {@const label = m.dock_screenshotEditor_mark({
+              n: mark?.n ?? 0,
+              kind: mark?.label.trim() ? mark.label : toolLabel(mark?.kind),
+            })}
+            <Button
+              variant="plain"
+              wrapContent={false}
+              class="frame"
+              aria-label={label}
+              tooltip={label}
+              disabled={readOnly || !src}
+              onclick={(event) => onImage(frame.attachment_id, event.currentTarget)}
+            >
+              {#if src}<img
+                  {src}
+                  alt={label}
+                  loading="lazy"
+                  onerror={() => onImageError(frame.attachment_id, src)}
+                />{/if}
+              <span class="type-caption">{mark?.n}</span>
+            </Button>
+          {/each}
+        </div>
       </details>
     {/if}
-  {:else if capture.primaryId}
-    {@const src = images[capture.primaryId]}
-    {#if src}
-      <Button
-        variant="plain"
-        wrapContent={false}
-        class="image-preview"
-        disabled={readOnly}
-        aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name: title })}
-        onclick={(event) => capture.primaryId && onImage(capture.primaryId, event.currentTarget)}
-      >
-        <img
-          {src}
-          alt={title}
-          loading="lazy"
-          onerror={() => capture.primaryId && onImageError(capture.primaryId, src)}
-        />
-      </Button>
-    {:else if imageFailures[capture.primaryId]}<MediaUnavailable
-        name={title}
-        reason="load-failed"
-      />
-    {:else}<div class="image-loading" role="img" aria-label={title} aria-busy="true">
-        <ImageIcon size={24} />
-      </div>{/if}
-  {/if}
-  {#if !compact && capture.frames?.length}
-    <details class="frames">
-      <summary class="type-caption">{count}</summary>
-      <div class="frame-strip">
-        {#each capture.frames as frame (frame.attachment_id)}
-          {@const mark = capture.marks.find((mark) => mark.id === frame.mark_id)}
-          {@const src = images[frame.attachment_id]}
-          {@const label = m.dock_screenshotEditor_mark({
-            n: mark?.n ?? 0,
-            kind: mark?.label.trim() ? mark.label : toolLabel(mark?.kind),
-          })}
-          <Button
-            variant="plain"
-            wrapContent={false}
-            class="frame"
-            aria-label={label}
-            tooltip={label}
-            disabled={readOnly || !src}
-            onclick={(event) => onImage(frame.attachment_id, event.currentTarget)}
-          >
-            {#if src}<img
-                {src}
-                alt={label}
-                loading="lazy"
-                onerror={() => onImageError(frame.attachment_id, src)}
-              />{/if}
-            <span class="type-caption">{mark?.n}</span>
-          </Button>
-        {/each}
-      </div>
-    </details>
-  {/if}
-</article>
+  </article>
+{/if}
+{#if compact && capture.voice === 'transcript' && capture.transcript}
+  <details class="compact-transcript">
+    <summary class="type-caption">{m.dock_captureEditor_voiceTranscript_label()}</summary>
+    <p class="type-body whitespace-pre-wrap">{capture.transcript}</p>
+  </details>
+{/if}
 
 <style>
+  .compact-transcript {
+    max-width: 100%;
+    min-width: 0;
+    padding: 8px;
+    border-radius: var(--radius-small);
+    background: hsl(var(--muted));
+    color: hsl(var(--foreground));
+  }
+  .compact-transcript summary {
+    cursor: pointer;
+  }
+  .compact-transcript p {
+    margin: 8px 0 0;
+    overflow-wrap: anywhere;
+  }
+
   .capture-card.compact {
     width: 96px;
     height: 64px;
