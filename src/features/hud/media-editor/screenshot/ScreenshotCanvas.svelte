@@ -14,7 +14,8 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, onMount, untrack } from 'svelte';
+  import { ensureDockAnnotationFont } from '$features/hud/composer/dock-annotation-font';
   import { DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
   import { layoutDockMediaText } from '$shared/dock-media-edit';
   import {
@@ -102,6 +103,18 @@
     onCropChange: (crop: DockImageRect) => void;
     onText: (id: string, value: string) => void;
   } = $props();
+  let fontsReady = $state(false);
+  onMount(() => {
+    let active = true;
+    void ensureDockAnnotationFont()
+      .then(() => {
+        if (active) fontsReady = true;
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  });
   let loadedUrl = $state<string | null>(null);
   let cursor = $state<DockImagePoint | null>(null);
   let surface = $state<SVGSVGElement | null>(null);
@@ -143,6 +156,7 @@
   });
   const textLeading = $derived.by(() => {
     const fontSize = textShape?.text?.fontSize ?? 1;
+    if (!fontsReady) return -fontSize * 0.2;
     if (typeof document === 'undefined') return -fontSize * 0.2;
     const context = document.createElement('canvas').getContext('2d');
     if (!context) return -fontSize * 0.2;
@@ -159,6 +173,7 @@
   const textWidth = $derived.by(() => {
     const text = textShape?.text;
     if (!text || !textLayout) return 0;
+    if (!fontsReady) return textLayout.width + 2 * unit;
     if (text.wrapped || typeof document === 'undefined') return textLayout.width + 2 * unit;
     const context = document.createElement('canvas').getContext('2d');
     if (!context) return textLayout.width + 2 * unit;
@@ -292,7 +307,7 @@
     if (surface?.hasPointerCapture(pointer)) surface.releasePointerCapture(pointer);
   }
   function down(event: PointerEvent) {
-    if (disabled || event.button !== 0 || !surface) return;
+    if (disabled || !fontsReady || event.button !== 0 || !surface) return;
     const start = point(event, false);
     if (
       start.x < frame.x ||
@@ -579,6 +594,7 @@
   <svg
     bind:this={surface}
     class="canvas"
+    style:--annotation-ink={DOCK_MEDIA_PAINT.accent}
     class:hidden
     data-tool={tool}
     viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`}
@@ -742,7 +758,7 @@
         />
       {/each}
     {/if}
-    {#if textShape?.text && textLayout && textSession && editingRasterReady}
+    {#if fontsReady && textShape?.text && textLayout && textSession && editingRasterReady}
       {@const b = dockGeometryRect(textShape.geometry)}
       <foreignObject
         x={b.x}
@@ -757,7 +773,7 @@
           style:font-family={DOCK_MEDIA_PAINT.fontFamily}
           style:--capture-text-accent={DOCK_MEDIA_PAINT.accent}
           style:--capture-text-halo={DOCK_MEDIA_PAINT.halo}
-          style:--capture-text-stroke={`${2 * Math.max(1, Math.max(width, height) / 1440)}px`}
+          style:--capture-text-stroke={`${DOCK_MEDIA_PAINT.haloWidth * Math.max(1, Math.max(width, height) / 1440)}px`}
           style:--capture-text-outline={`${unit}px`}
           style:--capture-text-leading={`${textLeading}px`}
           style:padding={`${textShape.text.padding}px`}
@@ -825,7 +841,7 @@
     outline: none;
   }
   .canvas:focus-visible .selection-handle {
-    fill: hsl(var(--primary-ink));
+    fill: var(--annotation-ink);
   }
   .pending-redactions {
     fill: currentColor;
@@ -842,7 +858,7 @@
   }
   .mark {
     fill: transparent;
-    stroke: hsl(var(--primary));
+    stroke: var(--annotation-ink);
     stroke-width: 2;
     vector-effect: non-scaling-stroke;
     stroke-linecap: round;
@@ -884,7 +900,7 @@
   }
   .selection-handle {
     fill: hsl(var(--background));
-    stroke: hsl(var(--primary-ink));
+    stroke: var(--annotation-ink);
     stroke-width: 1;
     vector-effect: non-scaling-stroke;
     pointer-events: none;
@@ -905,7 +921,7 @@
   }
   .crop-boundary {
     fill: transparent;
-    stroke: hsl(var(--primary));
+    stroke: var(--annotation-ink);
     stroke-width: 1;
     vector-effect: non-scaling-stroke;
     cursor: move;

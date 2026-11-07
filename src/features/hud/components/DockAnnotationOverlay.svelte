@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import { DOCK_ANNOTATION_STYLE as INK } from '$features/hud/composer/dock-annotation-style';
   import { fade, scale } from '$lib/motion';
   import {
     dockAnnotationViewport,
@@ -166,9 +167,21 @@
     gesture = { ...current };
     // Main stamps the recording clock. Never send renderer wall-clock timing.
     const end = current.points.at(-1) ?? current.origin;
-    void current.down.then((ok) => ok && transport.pointer({ sessionId: current.sessionId,
-      sequence: current.sequence, phase: 'move', tool: current.tool,
-      x: end.x, y: end.y, pointCount: current.points.length })).catch(() => {});
+    void current.down
+      .then(
+        (ok) =>
+          ok &&
+          transport.pointer({
+            sessionId: current.sessionId,
+            sequence: current.sequence,
+            phase: 'move',
+            tool: current.tool,
+            x: end.x,
+            y: end.y,
+            pointCount: current.points.length,
+          }),
+      )
+      .catch(() => {});
   }
 
   function onPointerUp(event: PointerEvent) {
@@ -286,7 +299,7 @@
   // Drawing helpers
   // ---------------------------------------------------------------------------
 
-  const BADGE = 18;
+  const BADGE = INK.badgeRadius * 2;
 
   function badgeCenter(geometry: DockMarkGeometry): DockImagePoint {
     const rect = dockGeometryRect(geometry);
@@ -307,8 +320,8 @@
 
   function arrowHead(from: DockImagePoint, to: DockImagePoint): string {
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
-    const size = 11;
-    const spread = Math.PI / 7;
+    const size = INK.arrowHead;
+    const spread = INK.arrowSpread;
     const a = {
       x: to.x - size * Math.cos(angle - spread),
       y: to.y - size * Math.sin(angle - spread),
@@ -322,16 +335,16 @@
 
   const CURSORS: Record<DockMarkTool, string> = {
     pick: cursor(
-      '<circle cx="12" cy="12" r="6.5" fill="none" stroke="#080808" stroke-width="3.5"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="#DDEC61" stroke-width="1.5"/><circle cx="12" cy="12" r="1.6" fill="#DDEC61" stroke="#080808" stroke-width="0.8"/>',
+      `<circle cx="12" cy="12" r="6.5" fill="none" stroke="${INK.halo}" stroke-width="${INK.stroke + INK.haloWidth}"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="${INK.accent}" stroke-width="${INK.stroke}"/><circle cx="12" cy="12" r="1.6" fill="${INK.accent}" stroke="${INK.halo}" stroke-width="0.8"/>`,
     ),
     box: cursor(
-      '<path d="M12 4v16M4 12h16" stroke="#080808" stroke-width="3.5"/><path d="M12 4v16M4 12h16" stroke="#DDEC61" stroke-width="1.5"/><rect x="15" y="15" width="6" height="6" rx="1" fill="none" stroke="#DDEC61" stroke-width="1.5"/>',
+      `<path d="M12 4v16M4 12h16" stroke="${INK.halo}" stroke-width="${INK.stroke + INK.haloWidth}"/><path d="M12 4v16M4 12h16" stroke="${INK.accent}" stroke-width="${INK.stroke}"/><rect x="15" y="15" width="6" height="6" rx="1" fill="none" stroke="${INK.accent}" stroke-width="${INK.stroke}"/>`,
     ),
     pen: cursor(
-      '<circle cx="12" cy="12" r="3.2" fill="#DDEC61" stroke="#080808" stroke-width="1.4"/>',
+      `<circle cx="12" cy="12" r="3.2" fill="${INK.accent}" stroke="${INK.halo}" stroke-width="1.4"/>`,
     ),
     arrow: cursor(
-      '<path d="M12 4v16M4 12h16" stroke="#080808" stroke-width="3.5"/><path d="M12 4v16M4 12h16" stroke="#DDEC61" stroke-width="1.5"/><path d="M15 21l6-6M17 15h4v4" fill="none" stroke="#DDEC61" stroke-width="1.5" stroke-linecap="round"/>',
+      `<path d="M12 4v16M4 12h16" stroke="${INK.halo}" stroke-width="${INK.stroke + INK.haloWidth}"/><path d="M12 4v16M4 12h16" stroke="${INK.accent}" stroke-width="${INK.stroke}"/><path d="M15 21l6-6M17 15h4v4" fill="none" stroke="${INK.accent}" stroke-width="${INK.stroke}" stroke-linecap="round"/>`,
     ),
   };
 
@@ -350,16 +363,16 @@
       height={geometry.h}
       rx={tool === 'pick' ? 3 : 2}
       class="dock-annotation-stroke"
-      stroke-width="2"
+      stroke-width={INK.stroke}
     />
   {:else if geometry.kind === 'arrow'}
     <path
       d={`M${geometry.from.x} ${geometry.from.y} L${geometry.to.x} ${geometry.to.y} ${arrowHead(geometry.from, geometry.to)}`}
       class="dock-annotation-stroke"
-      stroke-width="2.5"
+      stroke-width={INK.stroke}
     />
   {:else}
-    <path d={pathData(geometry.points)} class="dock-annotation-stroke" stroke-width="2.5" />
+    <path d={pathData(geometry.points)} class="dock-annotation-stroke" stroke-width={INK.pen} />
   {/if}
 {/snippet}
 
@@ -370,6 +383,12 @@
   data-testid="dock-annotation-overlay"
   data-mode={overlay?.mode ?? 'idle'}
   data-tool={overlay?.tool ?? ''}
+  style:--annotation-ink={INK.accent}
+  style:--annotation-paper={INK.paper}
+  style:--annotation-halo={INK.halo}
+  style:--annotation-badge-font={INK.badgeFontFamily}
+  style:--annotation-badge-size={`${INK.badgeRadius * INK.badgeTextScale}px`}
+  style:--annotation-badge-outline={`${INK.badgeOutline}px`}
   style:cursor={overlay && !overlay.mouse ? CURSORS[overlay.tool] : 'default'}
   role="presentation"
   onpointerdown={onPointerDown}
@@ -433,7 +452,7 @@
               cy={row.origin.y}
               r="9"
               class="dock-annotation-stroke"
-              stroke-width="2"
+              stroke-width={INK.stroke}
             />
           {/if}
         </g>
@@ -502,10 +521,10 @@
 
   .dock-annotation-stroke {
     fill: none;
-    stroke: hsl(var(--primary));
+    stroke: var(--annotation-ink);
     stroke-linecap: round;
     stroke-linejoin: round;
-    filter: drop-shadow(0 0 1px hsl(var(--background) / 0.65));
+    filter: drop-shadow(0 0 0.6px var(--annotation-halo));
   }
 
   .dock-annotation-mark {
@@ -514,14 +533,15 @@
   }
 
   .dock-annotation-badge {
-    fill: hsl(var(--primary));
-    stroke: hsl(var(--primary-foreground));
-    stroke-width: 1;
+    fill: var(--annotation-paper);
+    stroke: var(--annotation-ink);
+    stroke-width: var(--annotation-badge-outline);
   }
 
   .dock-annotation-badge-text {
-    fill: hsl(var(--primary-foreground));
-    font-size: 11px;
+    fill: var(--annotation-ink);
+    font-size: var(--annotation-badge-size);
+    font-family: var(--annotation-badge-font);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     text-anchor: middle;

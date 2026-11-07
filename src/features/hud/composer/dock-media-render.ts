@@ -1,3 +1,5 @@
+import { DOCK_ANNOTATION_STYLE } from './dock-annotation-style';
+import { ensureDockAnnotationFont } from './dock-annotation-font';
 import { recordedMarkProgress } from '$shared/dock-media-animation';
 import { gestureGeometryAt } from '$shared/dock-gesture-progress';
 /** One raster display list for capture-editor preview, screenshot output and video overlays. */
@@ -15,15 +17,7 @@ import {
 import { arrayBufferToBase64 } from '$features/voice/utils/wav-encoder';
 
 export const DOCK_MEDIA_PAINT = {
-  accent: '#DDEC61',
-  ink: '#080808',
-  stroke: 3,
-  pen: 3.5,
-  badgeRadius: 11,
-  arrowHead: 16,
-  halo: 'rgba(8, 8, 8, 0.55)',
-  textLineHeight: 1.4,
-  fontFamily: 'system-ui, sans-serif',
+  ...DOCK_ANNOTATION_STYLE,
   blurRadius: DOCK_MEDIA_BLUR_RADIUS,
 } as const;
 export type DockMediaPaintOp =
@@ -40,11 +34,13 @@ export function layoutDockMediaMarks(
   const r = Math.min(DOCK_MEDIA_PAINT.badgeRadius * unit, crop.w / 2, crop.h / 2);
   return numberDockMediaMarks(edit, source)
     .filter(
-      (row) =>
-        source.kind === 'screenshot' || (atMs >= row.mark.atMs && atMs < row.visibleUntilMs),
+      (row) => source.kind === 'screenshot' || (atMs >= row.mark.atMs && atMs < row.visibleUntilMs),
     )
     .flatMap(({ n, mark }): DockMediaPaintOp[] => {
-      const geometry = source.kind === 'recording' ? gestureGeometryAt(mark.geometry, recordedMarkProgress(source, mark), atMs) : mark.geometry;
+      const geometry =
+        source.kind === 'recording'
+          ? gestureGeometryAt(mark.geometry, recordedMarkProgress(source, mark), atMs)
+          : mark.geometry;
       if (!geometry) return [];
       const box = dockMediaGeometryRect(geometry);
       return [
@@ -73,17 +69,23 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
   for (const op of ops) {
     const unit = op.unit ?? 1;
     const visibleStroke = (width: number) => {
-      context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = width + 2 * unit; context.stroke();
-      context.strokeStyle = DOCK_MEDIA_PAINT.accent; context.lineWidth = width; context.stroke();
+      context.strokeStyle = DOCK_MEDIA_PAINT.halo;
+      context.lineWidth = width + DOCK_MEDIA_PAINT.haloWidth * unit;
+      context.stroke();
+      context.strokeStyle = DOCK_MEDIA_PAINT.accent;
+      context.lineWidth = width;
+      context.stroke();
     };
     if (op.kind === 'badge') {
-      context.fillStyle = DOCK_MEDIA_PAINT.accent;
+      context.fillStyle = DOCK_MEDIA_PAINT.paper;
       context.beginPath();
       context.arc(op.x, op.y, op.radius, 0, Math.PI * 2);
-      context.strokeStyle = DOCK_MEDIA_PAINT.halo; context.lineWidth = 2 * unit; context.stroke();
       context.fill();
+      context.strokeStyle = DOCK_MEDIA_PAINT.accent;
+      context.lineWidth = DOCK_MEDIA_PAINT.badgeOutline * unit;
+      context.stroke();
       context.fillStyle = DOCK_MEDIA_PAINT.ink;
-      context.font = `600 ${op.radius * 1.2}px ${DOCK_MEDIA_PAINT.fontFamily}`;
+      context.font = `600 ${op.radius * DOCK_MEDIA_PAINT.badgeTextScale}px ${DOCK_MEDIA_PAINT.badgeFontFamily}`;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
       context.fillText(op.label, op.x, op.y);
@@ -93,9 +95,10 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
     context.fillStyle = DOCK_MEDIA_PAINT.accent;
     const width = (g.kind === 'path' ? DOCK_MEDIA_PAINT.pen : DOCK_MEDIA_PAINT.stroke) * unit;
     if (g.kind === 'rect') {
-      context.beginPath(); context.rect(g.x, g.y, g.w, g.h); visibleStroke(width);
-    }
-    else if (g.kind === 'text') {
+      context.beginPath();
+      context.rect(g.x, g.y, g.w, g.h);
+      visibleStroke(width);
+    } else if (g.kind === 'text') {
       const text = layoutDockMediaText(g);
       // Legacy sticky metadata still controls wrapping and bounds, never a filled label.
       context.fillStyle = DOCK_MEDIA_PAINT.accent;
@@ -106,7 +109,7 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
         const x = g.x + text.padding,
           y = g.y + text.padding + index * text.lineHeight;
         context.strokeStyle = DOCK_MEDIA_PAINT.halo;
-        context.lineWidth = 2 * unit;
+        context.lineWidth = DOCK_MEDIA_PAINT.haloWidth * unit;
         const maxWidth = g.style === 'sticky' ? text.width - 2 * text.padding : undefined;
         context.strokeText(line, x, y, maxWidth);
         context.fillText(line, x, y, maxWidth);
@@ -118,20 +121,18 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
     } else {
       const points = g.kind === 'path' ? g.points : [g.from, g.to];
       context.beginPath();
-      points.forEach((p, index) =>
-        index ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y),
-      );
+      points.forEach((p, index) => (index ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y)));
       if (g.kind === 'arrow') {
         const angle = Math.atan2(g.to.y - g.from.y, g.to.x - g.from.x),
           head = DOCK_MEDIA_PAINT.arrowHead * unit;
         context.moveTo(
-          g.to.x - head * Math.cos(angle - Math.PI / 6),
-          g.to.y - head * Math.sin(angle - Math.PI / 6),
+          g.to.x - head * Math.cos(angle - DOCK_MEDIA_PAINT.arrowSpread),
+          g.to.y - head * Math.sin(angle - DOCK_MEDIA_PAINT.arrowSpread),
         );
         context.lineTo(g.to.x, g.to.y);
         context.lineTo(
-          g.to.x - head * Math.cos(angle + Math.PI / 6),
-          g.to.y - head * Math.sin(angle + Math.PI / 6),
+          g.to.x - head * Math.cos(angle + DOCK_MEDIA_PAINT.arrowSpread),
+          g.to.y - head * Math.sin(angle + DOCK_MEDIA_PAINT.arrowSpread),
         );
       }
       visibleStroke(width);
@@ -155,6 +156,7 @@ export async function renderDockMediaOverlay(
   atMs: number,
 ): Promise<string> {
   if (source.visuals !== 'clean') throw new Error('legacy-baked-marks');
+  await ensureDockAnnotationFont();
   const { image, context } = canvas(source.width, source.height);
   paintDockMediaMarks(context, layoutDockMediaMarks(edit, source, atMs));
   return arrayBufferToBase64(
@@ -172,6 +174,7 @@ export async function renderDockMediaImage(
   if (source.kind !== 'screenshot' || plan.errors.length)
     throw new Error(plan.errors[0] ?? 'not-a-screenshot');
   if (source.visuals !== 'clean') throw new Error('legacy-baked-marks');
+  await ensureDockAnnotationFont();
   const bytes = Uint8Array.from(atob(pixels.base64), (c) => c.charCodeAt(0));
   const bitmap = await createImageBitmap(new Blob([bytes], { type: pixels.mimeType }));
   try {
@@ -189,15 +192,22 @@ export async function renderDockMediaImage(
       if (blurred.context.filter !== filter) throw new Error('capture-blur-unavailable');
       blurred.context.drawImage(bitmap, 0, 0);
       const mask = canvas(source.width, source.height);
-      mask.context.fillStyle = '#ffffff'; mask.context.strokeStyle = '#ffffff';
-      mask.context.lineCap = 'round'; mask.context.lineJoin = 'round';
-      for (const region of edit.blurRegions) mask.context.fillRect(region.x, region.y, region.w, region.h);
+      mask.context.fillStyle = '#ffffff';
+      mask.context.strokeStyle = '#ffffff';
+      mask.context.lineCap = 'round';
+      mask.context.lineJoin = 'round';
+      for (const region of edit.blurRegions)
+        mask.context.fillRect(region.x, region.y, region.w, region.h);
       for (const stroke of edit.blurStrokes ?? []) {
-        const points = stroke.points.filter((p, index) => index === 0 || p.x !== stroke.points[index - 1].x || p.y !== stroke.points[index - 1].y);
+        const points = stroke.points.filter(
+          (p, index) =>
+            index === 0 || p.x !== stroke.points[index - 1].x || p.y !== stroke.points[index - 1].y,
+        );
         mask.context.beginPath();
         if (points.length === 1) {
           const p = points[0];
-          mask.context.arc(p.x, p.y, stroke.radius, 0, Math.PI * 2); mask.context.fill();
+          mask.context.arc(p.x, p.y, stroke.radius, 0, Math.PI * 2);
+          mask.context.fill();
         } else {
           mask.context.lineWidth = stroke.radius * 2;
           mask.context.moveTo(points[0].x, points[0].y);
@@ -228,7 +238,10 @@ export async function renderDockMediaImage(
     );
     output.context.scale(output.image.width / crop.w, output.image.height / crop.h);
     output.context.translate(-crop.x, -crop.y);
-    paintDockMediaMarks(output.context, layoutDockMediaMarks(edit, source, 0, preview?.hiddenTextMarkId));
+    paintDockMediaMarks(
+      output.context,
+      layoutDockMediaMarks(edit, source, 0, preview?.hiddenTextMarkId),
+    );
     const png = await output.image.convertToBlob({ type: 'image/png' });
     return {
       data: arrayBufferToBase64(await png.arrayBuffer()),

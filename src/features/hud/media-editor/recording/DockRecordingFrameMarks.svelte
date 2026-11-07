@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { tick, onDestroy, untrack } from 'svelte';
+  import { tick, onDestroy, onMount, untrack } from 'svelte';
+  import { DOCK_ANNOTATION_STYLE } from '$features/hud/composer/dock-annotation-style';
+  import { ensureDockAnnotationFont } from '$features/hud/composer/dock-annotation-font';
   import { dockMediaMarkEditableAt } from '$shared/dock-media-animation';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -72,6 +74,21 @@
     onInteractionPending?: (pending: boolean) => void;
   } = $props();
 
+  let fontsReady = $state(false);
+  let fontFailed = $state(false);
+  onMount(() => {
+    let active = true;
+    void ensureDockAnnotationFont()
+      .then(() => {
+        if (active) fontsReady = true;
+      })
+      .catch(() => {
+        if (active) fontFailed = true;
+      });
+    return () => {
+      active = false;
+    };
+  });
   let width = $state(0);
   let height = $state(0);
   const box = $derived(frameBox(width, height, source.width, source.height));
@@ -142,7 +159,7 @@
     const node = canvas;
     const fitted = box;
     const list = ops;
-    if (!node || !fitted) return;
+    if (!node || !fitted || !fontsReady) return;
     const ratio = window.devicePixelRatio || 1;
     const w = Math.max(1, Math.round(fitted.width * ratio));
     const h = Math.max(1, Math.round(fitted.height * ratio));
@@ -167,7 +184,7 @@
   }
 
   function onPointerDown(event: PointerEvent): void {
-    if (!editable || event.button !== 0 || !surface) return;
+    if (!editable || !fontsReady || event.button !== 0 || !surface) return;
     const point = at(event);
     if (!point) return;
     event.preventDefault();
@@ -308,7 +325,16 @@
   }}
 />
 
-<div class="frame-marks" bind:clientWidth={width} bind:clientHeight={height}>
+<div
+  class="frame-marks"
+  bind:clientWidth={width}
+  bind:clientHeight={height}
+  style:--annotation-ink={DOCK_ANNOTATION_STYLE.accent}
+  style:--annotation-font={DOCK_ANNOTATION_STYLE.fontFamily}
+>
+  {#if fontFailed}<span role="alert" class="font-error"
+      >{m.dock_screenshotEditor_previewError()}</span
+    >{/if}
   {#if box}
     <canvas
       bind:this={canvas}
@@ -324,7 +350,7 @@
       bind:this={surface}
       class="surface"
       data-tool={tool ?? 'pointer'}
-      data-editable={editable || undefined}
+      data-editable={(editable && fontsReady) || undefined}
       style:left={`${box.x}px`}
       style:top={`${box.y}px`}
       style:width={`${box.width}px`}
@@ -405,6 +431,7 @@
       >
         <Input
           size="sm"
+          class="annotation-text-input"
           aria-label={m.dock_captureEditor_frameText_label()}
           bind:value={typing.value}
           onblur={commitText}
@@ -475,13 +502,31 @@
   }
   .selection-handle {
     fill: hsl(var(--background));
-    stroke: hsl(var(--primary-ink));
+    stroke: var(--annotation-ink);
     stroke-width: 1;
     vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
   .hit:focus-visible .selection-handle {
-    fill: hsl(var(--primary-ink));
+    fill: var(--annotation-ink);
+  }
+  .text-entry :global(.annotation-text-input) {
+    font-family: var(--annotation-font);
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: normal;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    outline: 1px solid hsl(var(--ring));
+    color: var(--annotation-ink);
+    caret-color: var(--annotation-ink);
+    background: transparent;
+  }
+  .font-error {
+    position: absolute;
+    inset: 12px;
   }
   .text-entry {
     position: absolute;

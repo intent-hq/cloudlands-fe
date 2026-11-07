@@ -1,3 +1,5 @@
+import { DOCK_ANNOTATION_STYLE } from './dock-annotation-style';
+import { ensureDockAnnotationFont } from './dock-annotation-font';
 /**
  * Burns numbered marks into a screenshot so a vision model sees the numbers the
  * text references. Layout is a pure display list (testable); painting is a thin
@@ -7,18 +9,9 @@ import type { DockEvidenceImage, DockMark } from '$shared/dock-evidence';
 import { resizeImageForAgent } from '$lib/utils/image-resize';
 import { arrayBufferToBase64 } from '$features/voice/utils/wav-encoder';
 
-/**
- * Raster burn colors mirror the dock mark specification (citrus mark, near-black
- * numeral). They are pixels in the sent image, not UI tokens.
- */
 const DOCK_MARK_BURN_STYLE = {
-  accent: '#DDEC61',
-  ink: '#080808',
-  /** Badge diameter and stroke widths in display points; scaled by displayScale. */
-  badge: 18,
-  stroke: 2,
-  pen: 2.5,
-  arrowHead: 14,
+  ...DOCK_ANNOTATION_STYLE,
+  badge: DOCK_ANNOTATION_STYLE.badgeRadius * 2,
 } as const;
 
 export type DockBurnOp =
@@ -86,7 +79,7 @@ export function layoutDockBurn(
       y: Math.min(at(image.height) - radius, Math.max(radius, top)),
       radius,
       label: String(n),
-      font: radius * 1.2,
+      font: radius * DOCK_MARK_BURN_STYLE.badgeTextScale,
     });
   }
   return ops;
@@ -113,13 +106,22 @@ interface Painter {
 }
 
 function paintDockBurn(context: Painter, ops: readonly DockBurnOp[]): void {
+  const stroke = (width: number, unit: number, draw: () => void) => {
+    context.strokeStyle = DOCK_MARK_BURN_STYLE.halo;
+    context.lineWidth = width + DOCK_MARK_BURN_STYLE.haloWidth * unit;
+    draw();
+    context.strokeStyle = DOCK_MARK_BURN_STYLE.accent;
+    context.lineWidth = width;
+    draw();
+  };
   context.strokeStyle = DOCK_MARK_BURN_STYLE.accent;
   context.lineCap = 'round';
   context.lineJoin = 'round';
   for (const op of ops) {
     if (op.kind === 'rect') {
-      context.lineWidth = op.width;
-      context.strokeRect(op.x, op.y, op.w, op.h);
+      stroke(op.width, op.width / DOCK_MARK_BURN_STYLE.stroke, () =>
+        context.strokeRect(op.x, op.y, op.w, op.h),
+      );
     } else if (op.kind === 'path' || op.kind === 'arrow') {
       context.lineWidth = op.width;
       context.beginPath();
@@ -130,15 +132,23 @@ function paintDockBurn(context: Painter, ops: readonly DockBurnOp[]): void {
         context.lineTo(op.to.x, op.to.y);
         context.lineTo(op.head.right.x, op.head.right.y);
       }
-      context.stroke();
+      stroke(
+        op.width,
+        op.width / (op.kind === 'path' ? DOCK_MARK_BURN_STYLE.pen : DOCK_MARK_BURN_STYLE.stroke),
+        () => context.stroke(),
+      );
     } else {
-      context.fillStyle = DOCK_MARK_BURN_STYLE.accent;
+      context.fillStyle = DOCK_MARK_BURN_STYLE.paper;
       context.beginPath();
       context.arc(op.x, op.y, op.radius, 0, Math.PI * 2);
       context.closePath();
       context.fill();
+      context.strokeStyle = DOCK_MARK_BURN_STYLE.accent;
+      context.lineWidth =
+        (DOCK_MARK_BURN_STYLE.badgeOutline * op.radius) / DOCK_MARK_BURN_STYLE.badgeRadius;
+      context.stroke();
       context.fillStyle = DOCK_MARK_BURN_STYLE.ink;
-      context.font = `600 ${op.font}px system-ui, sans-serif`;
+      context.font = `600 ${op.font}px ${DOCK_MARK_BURN_STYLE.badgeFontFamily}`;
       context.textAlign = 'center';
       context.textBaseline = 'middle';
       context.fillText(op.label, op.x, op.y);
@@ -163,6 +173,7 @@ async function burn(
   longEdge: number,
   minBadgeRadius = 0,
 ): Promise<OffscreenCanvas> {
+  await ensureDockAnnotationFont();
   const bitmap = await decode(source.base64, source.mimeType);
   try {
     const scale = Math.min(1, longEdge / Math.max(image.width, image.height));
@@ -209,10 +220,10 @@ export async function createDockEvidencePreviewUrl(
 function arrowHeadPoints(
   origin: { x: number; y: number },
   end: { x: number; y: number },
-  headLength = 14,
+  headLength = DOCK_MARK_BURN_STYLE.arrowHead,
 ) {
   const angle = Math.atan2(end.y - origin.y, end.x - origin.x);
-  const spread = Math.PI / 6;
+  const spread = DOCK_MARK_BURN_STYLE.arrowSpread;
   return {
     left: {
       x: end.x - headLength * Math.cos(angle - spread),
