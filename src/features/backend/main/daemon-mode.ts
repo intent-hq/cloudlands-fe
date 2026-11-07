@@ -7,6 +7,7 @@
  * means regular, and a transport failure leaves the mode unknown.
  */
 
+import { classifyStartupReply } from '$shared/daemon-startup';
 import { isDaemonMode, type DaemonMode } from '$shared/types/connections';
 
 // A cheap read outside the node-mode allowlist: a regular daemon answers it
@@ -44,7 +45,8 @@ export async function detectDaemonMode(
   } catch (error) {
     if (!record(error) && !(error instanceof Error)) return null;
     const rpcCode = (error as { rpcCode?: unknown }).rpcCode;
-    if (typeof rpcCode !== 'number') return null;
+    // No daemon answer yet: a transport failure, or a daemon still starting.
+    if (typeof rpcCode !== 'number' || classifyStartupReply(error)) return null;
     const data = (error as { data?: unknown }).data;
     return rpcCode === -32003 && record(data) && data.code === 'node-mode' ? 'node' : 'regular';
   }

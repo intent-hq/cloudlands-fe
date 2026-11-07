@@ -25,7 +25,7 @@ import {
 } from '../../backend/main/invited-principal';
 import { canonicalFingerprint } from '../../backend/main/invited-session-key';
 import { captureInviteAttempt } from './invite-attempt';
-import { openBackendWindow } from '../../backend/main/backend.ipc';
+import { NodeWindowRefusedError, openBackendWindow } from '../../backend/main/backend.ipc';
 import { getPairLinks } from '../../backend/main/pair-link.ipc';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { queueDeepLinkForWindow } from './pending-deep-links';
@@ -114,7 +114,10 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     }
     // Legacy isAdministrator remains sufficient for the established owner-only pairing path.
     if (!remote.principal.isAdministrator) return;
-    if (await routeNodeLink(url)) return;
+    const routed = await routeNodeLink(url, parsed.modeHint === 'node');
+    if (routed === 'routed') return;
+    // A node's link must never fall through to the backend-window flow.
+    if (routed === 'failed') throw new Error('Node pairing link test failed');
     const existing = await connectionsStore.findMatching({ hosts, port, fingerprint });
     if (
       existing?.fingerprint &&
@@ -144,6 +147,12 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     logger.info('Added backend from pairing link; opening its window', { id: record.id });
     await openBackendWindow(record.id);
   } catch (error) {
+    if (error instanceof NodeWindowRefusedError) {
+      // Detected as a node only when its window was about to open: it is saved
+      // and listed under Nodes, so there is nothing to report.
+      logger.info('Pairing link is for a node; no backend window opened');
+      return;
+    }
     logger.warn('Pair deep link handling failed', { kind: 'pairing-failed' });
     const options: MessageBoxOptions = {
       type: error instanceof BackendCompatibilityError ? 'warning' : 'error',
@@ -170,16 +179,19 @@ export async function handlePairDeepLink(url: string): Promise<void> {
  * A node's link never opens a backend window: the app comes to the front and
  * its window asks whether to make the node available (Settings → Machines).
  * Only the pending id crosses to the renderer; the credential stays in main.
- * Returns false for a full daemon (or when the test fails) so the owner
- * pairing flow continues.
+ * `machine` lets the owner pairing flow continue. A failed test continues it
+ * too, unless the link says it is for a node.
  */
-async function routeNodeLink(url: string): Promise<boolean> {
+async function routeNodeLink(
+  url: string,
+  nodeHint: boolean,
+): Promise<'routed' | 'machine' | 'failed'> {
   const links = getPairLinks();
   const inspected = await links.inspect(url);
-  if (!inspected.ok) return false;
+  if (!inspected.ok) return nodeHint ? 'failed' : 'machine';
   if (inspected.kind !== 'node') {
     links.discard(inspected.pendingId);
-    return false;
+    return 'machine';
   }
   let window = getMainWindow();
   if (!window || window.isDestroyed()) {
@@ -188,7 +200,7 @@ async function routeNodeLink(url: string): Promise<boolean> {
   }
   if (!window || window.isDestroyed()) {
     links.discard(inspected.pendingId);
-    return false;
+    return 'failed';
   }
   logger.info('Pairing link is for a node; asking in the app window');
   queueDeepLinkForWindow(window, {
@@ -202,7 +214,7 @@ async function routeNodeLink(url: string): Promise<boolean> {
   if (window.isMinimized()) window.restore();
   window.show();
   window.focus();
-  return true;
+  return 'routed';
 }
 
 /**

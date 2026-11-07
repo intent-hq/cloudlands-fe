@@ -13,6 +13,7 @@
   import { selectNodePaste } from './nodes-selectors';
   import { pasteClosed, pasteLinkRetried, pasteLinkSubmitted } from './nodes-slice';
   import type { NodeAddError } from './nodes-types';
+  import { stashPastedLink } from './pasted-link';
 
   const paste$ = selectNodePaste();
   const backend$ = selectCurrentBackendLabel();
@@ -62,7 +63,8 @@
   function submit(event: SubmitEvent) {
     event.preventDefault();
     if (!text.trim()) return;
-    appStore.dispatch(pasteLinkSubmitted(text));
+    stashPastedLink(text);
+    appStore.dispatch(pasteLinkSubmitted());
   }
 
   function cancel() {

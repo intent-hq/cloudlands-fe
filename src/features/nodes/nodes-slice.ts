@@ -10,8 +10,8 @@ const initialState: NodesState = {
 /** "Paste an intent:// link": read the clipboard, else open the field. */
 export const pasteLinkRequested = createAction('nodes/pasteLinkRequested');
 export const pasteFieldOpened = createAction('nodes/pasteFieldOpened');
-/** Test and add the link typed or pasted in the field. */
-export const pasteLinkSubmitted = createAction<[text: string]>('nodes/pasteLinkSubmitted');
+/** Test and add the link typed in the field (stashed with `stashPastedLink`, never in the action). */
+export const pasteLinkSubmitted = createAction('nodes/pasteLinkSubmitted');
 /** Test the last submitted link again (kept in the saga, never in state). */
 export const pasteLinkRetried = createAction('nodes/pasteLinkRetried');
 export const pasteTestingStarted = createAction<[masked: string]>('nodes/pasteTestingStarted');

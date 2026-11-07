@@ -10,7 +10,18 @@
  * outside the app.
  */
 
-import { call, delay, put, race, take, takeLatest, type SagaGenerator } from 'typed-redux-saga';
+import {
+  actionChannel,
+  call,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  takeLatest,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
@@ -54,6 +65,7 @@ import {
   rowHighlighted,
 } from './nodes-slice';
 import type { NodeAddError } from './nodes-types';
+import { takePastedLink } from './pasted-link';
 
 const HIGHLIGHT_MS = 2_500;
 
@@ -145,16 +157,22 @@ function* promptForNode(connection: ConnectionRecord, label: string): SagaGenera
 
 /**
  * Save an inspected link, or refuse a node the current backend can't use.
- * Returns the error to show, or null once saved (and prompted).
+ * From the paste row, Cancel still applies while support is checked; once
+ * the save starts it runs to the end. Returns the error to show, null once
+ * saved (and prompted), or 'cancelled'.
  */
 function* addInspected(
   inspected: PairLinkInspected,
   fromPaste = false,
-): SagaGenerator<NodeAddError | null> {
+): SagaGenerator<NodeAddError | null | 'cancelled'> {
   if (inspected.kind === 'node') {
-    const support = yield* call(nodeSupport);
+    const checked = fromPaste
+      ? yield* race({ support: call(nodeSupport), cancelled: take(pasteClosed) })
+      : { support: yield* call(nodeSupport), cancelled: undefined };
+    const support = checked.cancelled ? 'cancelled' : (checked.support ?? 'cancelled');
     if (support !== 'ok') {
       yield* call(invokeDiscard, inspected.pendingId);
+      if (support === 'cancelled') return 'cancelled';
       return { code: support, node: inspected.label };
     }
   }
@@ -174,6 +192,17 @@ function* addInspected(
   return null;
 }
 
+/** Drop a credential main tested for a paste the user already cancelled. */
+function discardLate(request: Promise<unknown>) {
+  request
+    .then((reply) => {
+      const inspected = inspectReply(reply);
+      if (inspected.ok) void invokeDiscard(inspected.pendingId);
+    })
+    .catch(() => {});
+}
+
+/** One paste attempt. Cancel stops it before anything is saved. */
 function* testPasted(text: string): SagaGenerator<void> {
   lastPasted = text;
   if (!isPairingUri(text)) {
@@ -182,12 +211,22 @@ function* testPasted(text: string): SagaGenerator<void> {
     return;
   }
   yield* put(pasteTestingStarted(maskPairingUri(text)));
-  let inspected: PairLinkInspectResult;
+  let request: Promise<unknown>;
   try {
-    inspected = inspectReply(yield* call(invokeInspect, text));
+    request = invokeInspect(text);
   } catch {
-    inspected = { ok: false, code: 'failed' };
+    request = Promise.resolve({ ok: false, code: 'failed' });
   }
+  const tested = yield* race({
+    reply: call(() => request.catch(() => ({ ok: false, code: 'failed' }))),
+    cancelled: take(pasteClosed),
+  });
+  if (tested.cancelled) {
+    lastPasted = null;
+    discardLate(request);
+    return;
+  }
+  const inspected = inspectReply(tested.reply);
   if (!inspected.ok) {
     yield* put(
       pasteFailed({
@@ -199,27 +238,23 @@ function* testPasted(text: string): SagaGenerator<void> {
     return;
   }
   const error = yield* call(addInspected, inspected, true);
-  if (error) yield* put(pasteFailed(error));
-}
-
-/** Run one paste attempt; Cancel stops it (a credential tested meanwhile expires in main). */
-function* runPaste(text: string): SagaGenerator<void> {
-  const result = yield* race({ done: call(testPasted, text), cancelled: take(pasteClosed) });
-  if (result.cancelled) lastPasted = null;
+  if (error === 'cancelled') lastPasted = null;
+  else if (error) yield* put(pasteFailed(error));
 }
 
 function* requestPaste(): SagaGenerator<void> {
   const clipboard = (yield* call(readClipboard)).trim();
-  if (isPairingUri(clipboard)) yield* call(runPaste, clipboard);
+  if (isPairingUri(clipboard)) yield* call(testPasted, clipboard);
   else yield* put(pasteFieldOpened());
 }
 
-function* submitPaste(action: ReturnType<typeof pasteLinkSubmitted>): SagaGenerator<void> {
-  yield* call(runPaste, action.payload[0].trim());
+function* submitPaste(): SagaGenerator<void> {
+  const text = takePastedLink();
+  if (text !== null) yield* call(testPasted, text);
 }
 
 function* retryPaste(): SagaGenerator<void> {
-  if (lastPasted) yield* call(runPaste, lastPasted);
+  if (lastPasted) yield* call(testPasted, lastPasted);
 }
 
 function nodeLinkErrorMessage(error: NodeAddError): string {
@@ -250,7 +285,8 @@ function* receiveNodeLink(action: ReturnType<typeof nodeLinkReceived>): SagaGene
     existingId: link.existingId,
   };
   const error = yield* call(addInspected, inspected);
-  if (error) yield* call(notify.error, nodeLinkErrorMessage({ ...error, node: link.label }));
+  if (error && error !== 'cancelled')
+    yield* call(notify.error, nodeLinkErrorMessage({ ...error, node: link.label }));
 }
 
 /** The Add machine dialog (or Connect on an undetected row) reached a node instead of a backend. */
@@ -271,17 +307,31 @@ function* openedNode(action: ReturnType<typeof nodeConnectionOpened>): SagaGener
   if (connection) yield* call(promptForNode, connection, label);
 }
 
+/** Outside links and dialog hand-offs run one at a time, so each one gets its prompt. */
+function* queueNodeHandoffs(): SagaGenerator<void> {
+  const handoffs = yield* actionChannel([nodeLinkReceived, nodeConnectionOpened]);
+  while (true) {
+    const action = yield* take(handoffs);
+    try {
+      if (action.type === nodeLinkReceived.toString())
+        yield* call(receiveNodeLink, action as ReturnType<typeof nodeLinkReceived>);
+      else yield* call(openedNode, action as ReturnType<typeof nodeConnectionOpened>);
+    } catch {
+      // One failed hand-off must not stop the queue.
+    }
+  }
+}
+
 export function* nodesSaga(): SagaGenerator<void> {
-  yield* takeLatest(
+  // Leading: a new paste request is ignored while one is being tested or saved.
+  yield* takeLeading(
     [pasteLinkRequested, pasteLinkSubmitted, pasteLinkRetried],
     function* (action): SagaGenerator<void> {
       if (action.type === pasteLinkRequested.toString()) yield* call(requestPaste);
-      else if (action.type === pasteLinkSubmitted.toString())
-        yield* call(submitPaste, action as ReturnType<typeof pasteLinkSubmitted>);
+      else if (action.type === pasteLinkSubmitted.toString()) yield* call(submitPaste);
       else yield* call(retryPaste);
     },
   );
-  yield* takeLatest(nodeLinkReceived, receiveNodeLink);
-  yield* takeLatest(nodeConnectionOpened, openedNode);
+  yield* fork(queueNodeHandoffs);
   yield* takeLatest(rowHighlighted, clearHighlight);
 }

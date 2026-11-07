@@ -193,6 +193,7 @@ const store = vi.hoisted(() => ({
   setHostname: vi.fn(),
   setDetectedDeviceKind: vi.fn(),
   setDaemonVersion: vi.fn(),
+  setDaemonMode: vi.fn(),
   setUpdateSupported: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -211,6 +212,7 @@ vi.mock('../desktop-connections-store', () => ({
   setHostname: store.setHostname,
   setDetectedDeviceKind: store.setDetectedDeviceKind,
   setDaemonVersion: store.setDaemonVersion,
+  setDaemonMode: store.setDaemonMode,
   setUpdateSupported: store.setUpdateSupported,
   setTcAddress: store.setTcAddress,
   setHosts: store.setHosts,
@@ -3125,6 +3127,39 @@ describe('connections:* IPC handlers', () => {
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
     expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('connections:open never opens a window for a node (refusal probe on an older daemon)', async () => {
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'workspace.get')
+        throw new JsonRpcError({ code: -32003, message: 'node', data: { code: 'node-mode' } });
+      return {};
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'node',
+      id: 'remote-1',
+    });
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(store.setDaemonMode).toHaveBeenCalledWith('remote-1', 'node');
+  });
+
+  it('connections:open trusts a stored node mode without probing', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, daemonMode: 'node' }]);
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'node',
+      id: 'remote-1',
+    });
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(rpc.calls).not.toContain('workspace.get');
   });
 
   it('connections:open opens the window and retains the client when the remote rejects requests', async () => {

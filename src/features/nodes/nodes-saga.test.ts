@@ -35,6 +35,7 @@ import {
   pasteLinkRetried,
   pasteLinkSubmitted,
 } from './nodes-slice';
+import { stashPastedLink } from './pasted-link';
 
 const TOKEN = 'owner-secret-token';
 const LINK = `intent://pair?v=1&host=192.0.2.20&port=7443&fp=AA%3A20&token=${TOKEN}`;
@@ -76,6 +77,11 @@ function start() {
     },
     nodesSaga,
   );
+}
+
+function submit(text: string) {
+  stashPastedLink(text);
+  dispatch(pasteLinkSubmitted());
 }
 
 const calls = (name: string) => invoke.mock.calls.filter(([channelName]) => channelName === name);
@@ -150,7 +156,7 @@ describe('paste an intent:// link', () => {
         ? inspectReply
         : { ok: true, connection: { ...NODE, id: 'lab-pc', daemonMode: 'regular' } },
     );
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(store.state.nodes.highlightId).toBe('lab-pc'));
     expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toEqual([
       [CHANNELS.PAIR_LINK_COMMIT, { pendingId: 'p1' }],
@@ -160,7 +166,7 @@ describe('paste an intent:// link', () => {
   });
 
   it('adds a node, then asks before making it available', async () => {
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(types()).toContain(remoteMachineExposeRequested.toString()));
     expect(ui.confirm).toHaveBeenCalledWith(
       expect.objectContaining({ confirmLabel: 'Make available', cancelLabel: 'Not now' }),
@@ -172,7 +178,7 @@ describe('paste an intent:// link', () => {
 
   it('Not now keeps the node saved and makes nothing available', async () => {
     ui.confirm.mockResolvedValue(false);
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(ui.confirm).toHaveBeenCalled());
     await Promise.resolve();
     expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(1);
@@ -200,14 +206,14 @@ describe('paste an intent:// link', () => {
         executorBackends: [],
       }),
     );
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(store.state.nodes.highlightId).toBe('gpu-rig'));
     expect(ui.confirm).not.toHaveBeenCalled();
   });
 
   it('refuses a node while Labs Remote agents is off: nothing saved', async () => {
     setSupport({ labs: false, supported: false });
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(store.state.nodes.paste.error?.code).toBe('labs-off'));
     expect(calls(CHANNELS.PAIR_LINK_DISCARD)).toEqual([
       [CHANNELS.PAIR_LINK_DISCARD, { pendingId: 'p1' }],
@@ -218,7 +224,7 @@ describe('paste an intent:// link', () => {
 
   it('refuses a node when the backend cannot run agents elsewhere: nothing saved', async () => {
     setSupport({ labs: true, supported: false });
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(types()).toContain(remoteMachinesRefreshRequested.toString()));
     dispatch(
       remoteMachinesLoaded({
@@ -234,14 +240,14 @@ describe('paste an intent:// link', () => {
   });
 
   it('rejects text that is not a link without asking main', async () => {
-    dispatch(pasteLinkSubmitted('build box please'));
+    submit('build box please');
     await vi.waitFor(() => expect(store.state.nodes.paste.error?.code).toBe('not-a-link'));
     expect(invoke).not.toHaveBeenCalled();
   });
 
   it('shows the routes tried, and Try again tests the same link again', async () => {
     inspectReply = { ok: false, code: 'unreachable', routes: ['192.0.2.20:7443'] };
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() =>
       expect(store.state.nodes.paste.error?.routes).toEqual(['192.0.2.20:7443']),
     );
@@ -257,7 +263,7 @@ describe('paste an intent:// link', () => {
   it('keeps the token out of state: only a masked link is shown while testing', async () => {
     let resolve!: (value: PairLinkInspectResult) => void;
     inspectReply = new Promise((r) => (resolve = r));
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(store.state.nodes.paste.phase).toBe('testing'));
     expect(store.state.nodes.paste.masked).toContain('token=••••');
     expect(JSON.stringify(store.state)).not.toContain(TOKEN);
@@ -266,14 +272,48 @@ describe('paste an intent:// link', () => {
     expect(JSON.stringify(store.state)).not.toContain(TOKEN);
   });
 
+  it('never puts the link in an action', async () => {
+    submit(LINK);
+    await vi.waitFor(() => expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(1));
+    expect(JSON.stringify(seen)).not.toContain(TOKEN);
+  });
+
+  it('Cancel while the backend is checked drops the tested credential: nothing saved', async () => {
+    setSupport({ labs: true, supported: false });
+    submit(LINK);
+    await vi.waitFor(() => expect(types()).toContain(remoteMachinesRefreshRequested.toString()));
+    dispatch(pasteClosed());
+    await vi.waitFor(() =>
+      expect(calls(CHANNELS.PAIR_LINK_DISCARD)).toEqual([
+        [CHANNELS.PAIR_LINK_DISCARD, { pendingId: 'p1' }],
+      ]),
+    );
+    expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(0);
+  });
+
+  it('ignores a second paste while one is being tested', async () => {
+    let resolve!: (value: PairLinkInspectResult) => void;
+    inspectReply = new Promise((r) => (resolve = r));
+    submit(LINK);
+    await vi.waitFor(() => expect(store.state.nodes.paste.phase).toBe('testing'));
+    submit(LINK);
+    resolve(nodeInspected());
+    await vi.waitFor(() => expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(1));
+    expect(calls(CHANNELS.PAIR_LINK_INSPECT)).toHaveLength(1);
+  });
+
   it('Cancel while testing stops: nothing is saved', async () => {
     let resolve!: (value: PairLinkInspectResult) => void;
     inspectReply = new Promise((r) => (resolve = r));
-    dispatch(pasteLinkSubmitted(LINK));
+    submit(LINK);
     await vi.waitFor(() => expect(store.state.nodes.paste.phase).toBe('testing'));
     dispatch(pasteClosed());
     resolve(nodeInspected());
-    await new Promise((r) => setTimeout(r, 10));
+    await vi.waitFor(() =>
+      expect(calls(CHANNELS.PAIR_LINK_DISCARD)).toEqual([
+        [CHANNELS.PAIR_LINK_DISCARD, { pendingId: 'p1' }],
+      ]),
+    );
     expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(0);
     expect(store.state.nodes.paste.phase).toBe('closed');
   });
@@ -299,6 +339,22 @@ describe('a node link opened from outside the app', () => {
     expect(ui.navigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
     expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toEqual([
       [CHANNELS.PAIR_LINK_COMMIT, { pendingId: 'p9' }],
+    ]);
+  });
+
+  it('handles two links one after the other, each with its prompt', async () => {
+    let answer!: (value: boolean) => void;
+    ui.confirm.mockImplementationOnce(() => new Promise<boolean>((r) => (answer = r)));
+    dispatch(nodeLinkReceived({ pendingId: 'p1', label: 'GPU rig', existingId: null }));
+    await vi.waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(1));
+    dispatch(nodeLinkReceived({ pendingId: 'p2', label: 'Garage Pi', existingId: null }));
+    await Promise.resolve();
+    expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(1);
+    answer(false);
+    await vi.waitFor(() => expect(ui.confirm).toHaveBeenCalledTimes(2));
+    expect(calls(CHANNELS.PAIR_LINK_COMMIT).map(([, params]) => params)).toEqual([
+      { pendingId: 'p1' },
+      { pendingId: 'p2' },
     ]);
   });
 

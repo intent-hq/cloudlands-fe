@@ -71,6 +71,17 @@ describe('detectDaemonMode', () => {
     ).resolves.toBeNull();
   });
 
+  it('a daemon that is still starting leaves the mode unknown', async () => {
+    const starting = new JsonRpcError({
+      code: -32012,
+      message: 'Daemon is starting',
+      data: { code: 'daemon-not-ready', retryable: true },
+    });
+    await expect(
+      detectDaemonMode(hello(), vi.fn().mockRejectedValue(starting)),
+    ).resolves.toBeNull();
+  });
+
   it('a serialized node-mode refusal (rpcCode on a plain object) still means node', async () => {
     const payload = { rpcCode: -32003, data: { code: 'node-mode' } };
     await expect(detectDaemonMode(hello(), vi.fn().mockRejectedValue(payload))).resolves.toBe(

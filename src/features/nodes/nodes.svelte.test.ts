@@ -10,6 +10,7 @@ import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import { NODE_LINK, setupNodesFixture, type NodesPreviewState } from '../../test/nodes-preview';
 import PairLinkPaste from './PairLinkPaste.svelte';
+import { takePastedLink } from './pasted-link';
 
 let restore: (() => void) | null = null;
 function seed(state: NodesPreviewState) {
@@ -112,9 +113,8 @@ describe('paste row', () => {
     expect(view.getByText(/Run intentd pair on the computer or node/)).toBeTruthy();
     await fireEvent.input(view.getByLabelText('intent:// link'), { target: { value: NODE_LINK } });
     await fireEvent.click(add);
-    expect(dispatched().find((a) => a.type === 'nodes/pasteLinkSubmitted')?.payload).toEqual([
-      NODE_LINK,
-    ]);
+    expect(dispatched().find((a) => a.type === 'nodes/pasteLinkSubmitted')?.payload).toEqual([]);
+    expect(takePastedLink()).toBe(NODE_LINK);
     await fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
     expect(dispatched().map((a) => a.type)).toContain('nodes/pasteClosed');
   });

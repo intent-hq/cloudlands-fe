@@ -4126,9 +4126,9 @@ export class NodeWindowRefusedError extends Error {
 }
 
 /**
- * Whether a just-connected remote is a node: its reported `daemonMode`, else
- * the stored mode (older daemons are probed in the background on every
- * connect, see {@link captureRemoteDaemonModeOwned}).
+ * Whether a just-connected remote is a node, before any window opens: the
+ * reported `daemonMode`, else the stored mode, else the refusal probe (older
+ * daemons). Unknown after all three opens the window, as before.
  */
 async function remoteIsNodeOwned(
   id: string,
@@ -4136,13 +4136,19 @@ async function remoteIsNodeOwned(
   owner?: PoolOwner,
 ): Promise<boolean> {
   try {
-    const reported = reportedDaemonMode(client.getAcknowledgedHello?.() ?? null);
-    if (reported) {
-      if (await connectionsStore.setDaemonMode(id, reported))
-        await broadcastConnectionsChangedOwned(owner);
-      return reported === 'node';
+    const hello = client.getAcknowledgedHello?.() ?? null;
+    let mode = reportedDaemonMode(hello);
+    if (!mode) {
+      const stored = (await connectionsStore.list()).find((c) => c.id === id)?.daemonMode;
+      if (stored) return stored === 'node';
+      mode = await detectDaemonMode(hello, (method, params, options) =>
+        poolRequest(owner, client, method, params, options),
+      );
     }
-    return (await connectionsStore.list()).find((c) => c.id === id)?.daemonMode === 'node';
+    if (!mode) return false;
+    if (await connectionsStore.setDaemonMode(id, mode))
+      await broadcastConnectionsChangedOwned(owner);
+    return mode === 'node';
   } catch {
     return false;
   }

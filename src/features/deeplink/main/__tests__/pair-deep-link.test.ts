@@ -52,10 +52,19 @@ vi.mock('../../../backend/main/desktop-connections-store', () => ({
 }));
 
 const openBackendWindow = vi.fn();
+const NodeWindowRefusedError = vi.hoisted(
+  () =>
+    class NodeWindowRefusedError extends Error {
+      constructor(readonly connectionId: string) {
+        super('node');
+      }
+    },
+);
 vi.mock('../../../backend/main/backend.ipc', () => ({
   get openBackendWindow() {
     return openBackendWindow;
   },
+  NodeWindowRefusedError,
 }));
 
 let mainWindow: unknown = null;
@@ -170,6 +179,23 @@ describe('a node pairing link', () => {
     expect(openBackendWindow).toHaveBeenCalledTimes(1);
     expect(openBackendWindow).toHaveBeenCalledWith('local');
     expect(queueDeepLinkForWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it('a link marked mode=node whose test fails shows the failure and never opens a window', async () => {
+    pairLinks.inspect.mockResolvedValue({ ok: false, code: 'unreachable', routes: [] });
+    await handlePairDeepLink(`${LINK}&mode=node`);
+    expect(add).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
+  });
+
+  it('a node found only when its window opens is not reported as a pairing failure', async () => {
+    pairLinks.inspect.mockResolvedValue({ ok: false, code: 'unreachable', routes: [] });
+    openBackendWindow.mockRejectedValue(new NodeWindowRefusedError('new-id'));
+    await handlePairDeepLink(LINK);
+    expect(add).toHaveBeenCalled();
+    // Only the "connect to this backend?" confirmation, no failure dialog.
+    expect(showMessageBox).toHaveBeenCalledTimes(1);
   });
 
   it('a full daemon keeps the owner pairing flow and drops its pending credential', async () => {

@@ -48,6 +48,7 @@ import {
 import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
+  selectConnections,
   selectConnectionWorkflow,
   selectKeychainSyncState,
   selectSelfPublication,
@@ -949,6 +950,8 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
         ? { kind: 'captured', fingerprint: result.fingerprint }
         : { kind: 'captureRejected', statusCode: result.statusCode };
     } else if (intent.kind === 'connect') {
+      // A re-pair upserts an existing record; only a brand-new node may be removed when refused.
+      const savedIds = new Set((yield* selectConnections.effect()).map((c) => c.id));
       const add = addConnectionRequested(intent.params);
       yield* call(addConnection, add);
       const { connection } = yield* call(() => add.promise);
@@ -959,7 +962,8 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') outcome = { kind: 'secretUnavailable' };
-      else if (result.status === 'node') yield* put(nodeConnectionOpened(connection.id, true));
+      else if (result.status === 'node')
+        yield* put(nodeConnectionOpened(connection.id, !savedIds.has(connection.id)));
     } else if (intent.kind === 'save' || intent.kind === 'localIcon') {
       if (intent.kind === 'save' && intent.secret) {
         yield* put(connectionWorkflowProgress(consumerId, requestId, 'secret'));
