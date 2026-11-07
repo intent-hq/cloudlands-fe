@@ -10,7 +10,8 @@ import { queueDeepLinkForWindow } from './main/pending-deep-links';
 const mainLogger = new Logger('DeepLinkHandler');
 
 export interface DeepLinkAction {
-  type: 'open' | 'create' | 'clone' | 'settings';
+  /** `node-link` is queued by the pair-link flow only, never parsed from a URL. */
+  type: 'open' | 'create' | 'clone' | 'settings' | 'node-link';
   params: Record<string, string>;
 }
 

@@ -26,6 +26,9 @@ import {
 import { canonicalFingerprint } from '../../backend/main/invited-session-key';
 import { captureInviteAttempt } from './invite-attempt';
 import { openBackendWindow } from '../../backend/main/backend.ipc';
+import { getPairLinks } from '../../backend/main/pair-link.ipc';
+import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
+import { queueDeepLinkForWindow } from './pending-deep-links';
 
 const logger = new Logger('PairDeepLink');
 
@@ -111,6 +114,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     }
     // Legacy isAdministrator remains sufficient for the established owner-only pairing path.
     if (!remote.principal.isAdministrator) return;
+    if (await routeNodeLink(url)) return;
     const existing = await connectionsStore.findMatching({ hosts, port, fingerprint });
     if (
       existing?.fingerprint &&
@@ -160,6 +164,45 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     attempt.release();
     pairLinkInFlight = false;
   }
+}
+
+/**
+ * A node's link never opens a backend window: the app comes to the front and
+ * its window asks whether to make the node available (Settings → Machines).
+ * Only the pending id crosses to the renderer; the credential stays in main.
+ * Returns false for a full daemon (or when the test fails) so the owner
+ * pairing flow continues.
+ */
+async function routeNodeLink(url: string): Promise<boolean> {
+  const links = getPairLinks();
+  const inspected = await links.inspect(url);
+  if (!inspected.ok) return false;
+  if (inspected.kind !== 'node') {
+    links.discard(inspected.pendingId);
+    return false;
+  }
+  let window = getMainWindow();
+  if (!window || window.isDestroyed()) {
+    await openBackendWindow(LOCAL_CONNECTION_ID);
+    window = getMainWindow();
+  }
+  if (!window || window.isDestroyed()) {
+    links.discard(inspected.pendingId);
+    return false;
+  }
+  logger.info('Pairing link is for a node; asking in the app window');
+  queueDeepLinkForWindow(window, {
+    type: 'node-link',
+    params: {
+      pendingId: inspected.pendingId,
+      label: inspected.label,
+      existingId: inspected.existingId ?? '',
+    },
+  });
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  return true;
 }
 
 /**
