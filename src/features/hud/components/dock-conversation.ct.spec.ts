@@ -1,6 +1,8 @@
 import { writeFile } from 'node:fs/promises';
 import type { Locator } from '@playwright/test';
+import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
 import { expect, test, wheelUntilScrolled } from '../../../test/ct-test';
+import { shortcutChord } from '../../../test/shortcut-chords';
 import DockRailPreview from './dock-rail.preview.svelte';
 import ConversationPreview from './dock-conversation.preview.svelte';
 import ConversationWireHarness from './DockConversationWireHarness.svelte';
@@ -12,6 +14,11 @@ import {
   resolveDockSurface,
   type DockDisplayGeometry,
 } from '$shared/dock-placement';
+
+const newLineKeys = shortcutChord(
+  SHORTCUT_DEFAULTS['chat.new-line'],
+  process.platform === 'darwin',
+).press;
 
 const clipboardPng =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=';
@@ -315,7 +322,7 @@ test('conversation stays dark with light or system app preferences and keeps nar
   await expect(page.locator('.mention-popup')).toHaveCount(0);
   await expect(editor).toBeFocused();
   await editor.fill('A multiline draft');
-  await editor.press('Shift+Enter');
+  await editor.press(newLineKeys);
   await editor.pressSequentially('Second line');
   await editor.dispatchEvent('keydown', {
     key: 'Enter',
@@ -922,6 +929,7 @@ for (const side of ['left', 'right'] as const) {
     await chooser.click();
     await page.getByRole('option', { name: 'Workspace coordinator', exact: true }).click();
     await expect(composer).toHaveValue('Keep the coordinator draft');
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- MessageComposer sends only on Enter without Shift; it does not read chat.new-line
     await composer.press('Shift+Enter');
     await expect(component).toHaveAttribute('data-preview-submissions', '[]');
     await composer.dispatchEvent('compositionstart');

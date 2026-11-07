@@ -223,6 +223,7 @@ for (const activation of [
     );
     const component = await mount(Harness);
     const link = component.getByRole('link', { name: 'Review destination', exact: true });
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Control+Enter activates the link like a Control+click on Linux, not chat.force-send
     if (activation.keyboard) await link.press('Control+Enter');
     else await link.click({ modifiers: [nativeModifier] });
     await expect.poll(async () => (await snapshot(page)).selectedWorkspaceId).toBe('preview-owner');

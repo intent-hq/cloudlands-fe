@@ -757,6 +757,13 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   Do not use clock stepping to check animation choreography. Lint
   (`intent/no-unpaused-clock-in-ct`) rejects an install whose test never pauses; keep
   one, disabled on the line with the reason, only to skip a delay and check settled state.
+- Press a registered shortcut with `shortcutChord(SHORTCUT_DEFAULTS[id], isMac)`
+  (`src/test/shortcut-chords.ts`; `.press` or the `KeyboardEvent` init `.event`), never its
+  keys typed out: a moved shortcut leaves the spec pressing the old keys (cloudlands-fe#4205;
+  nightly intent-hq/intent#8681, #8682). Import `SHORTCUT_DEFAULTS` in the spec itself, since
+  changed-test selection follows direct imports only. Lint
+  (`intent/no-hand-typed-shortcut-in-ct`) flags a literal chord equal to a binding; disable
+  it on the line, with the reason, when a hard-coded handler only shares the keys.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser
