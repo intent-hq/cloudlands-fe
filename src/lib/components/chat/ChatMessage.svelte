@@ -93,7 +93,7 @@
   import { getQueueInfo } from '$lib/utils/queue-info';
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import {
-    consumeEditedCapturePrefix,
+    consumeEditedCaptureEnvelope,
     editedCaptureCards,
     dockEvidenceMarks,
     dockEvidenceRecordingNumbers,
@@ -606,9 +606,7 @@
     let foundMatch = true;
     while (foundMatch) {
       foundMatch = false;
-      const edited =
-        !editedCaptures &&
-        consumeEditedCapturePrefix(cleanText, message?.metadata, message?.contentBlocks ?? []);
+      const edited = !editedCaptures && consumeEditedCaptureEnvelope(cleanText, message?.metadata);
       if (edited) {
         editedCaptures = true;
         cleanText = edited.remaining;
@@ -1767,7 +1765,9 @@
             ? `relative ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
-              : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
+              : parsedMessage.editedCaptures
+                ? 'relative overflow-hidden rounded-xl border border-border bg-background px-4 py-3'
+                : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
           !automatedWakePresentation
             ? 'cursor-pointer'
@@ -1879,6 +1879,139 @@
                   : undefined}
               transition:safeSubscriptionSlide
             >
+              {#snippet messageImagePreviews()}
+                {#if captureCards.length && !isSticky}
+                  <div
+                    class="mb-3 grid min-w-0 gap-2"
+                    style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));"
+                  >
+                    {#each captureCards as capture (capture.id)}
+                      <EditedCaptureCard
+                        {capture}
+                        workspaceId={getOwningWorkspaceId()}
+                        {readOnly}
+                        videoMimeType={fileBlocks.find(
+                          (block) => block.attachmentId === capture.primaryId,
+                        )?.mimeType === 'video/webm'
+                          ? 'video/webm'
+                          : 'video/mp4'}
+                        images={captureImageSources}
+                        imageFailures={failedReferenceImages}
+                        onImage={openCaptureImage}
+                        onImageError={(id, src) => {
+                          const block = imageBlocks.find((block) => block.attachmentId === id);
+                          if (block) handleReferenceImageError(block, src);
+                        }}
+                        onOpenFile={(id) => {
+                          const block = fileBlocks.find((block) => block.attachmentId === id);
+                          if (block) openAttachmentReference(block);
+                        }}
+                      />
+                    {/each}
+                  </div>
+                {/if}
+                <!-- Attached images -->
+                {#if ordinaryImageBlocks.length > 0 && !isSticky}
+                  <div
+                    class="flex flex-wrap gap-1.5 {parsedMessage.editedCaptures ? 'mb-3' : 'mt-2'}"
+                  >
+                    {#each ordinaryImageBlocks as imageBlock, i (i)}
+                      {@const src = imageBlockSrc(imageBlock)}
+                      <Button
+                        type="button"
+                        variant="plain"
+                        wrapContent={false}
+                        class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden {parsedMessage.editedCaptures
+                          ? 'w-24 h-16 rounded-lg'
+                          : 'w-10 h-10 rounded'} shrink-0 {isAttachmentHydrationLoading(
+                          imageBlock.id,
+                        )
+                          ? 'animate-pulse'
+                          : ''}"
+                        aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
+                        onclick={(e) => {
+                          openImageLightbox(
+                            imageBlock,
+                            e.currentTarget as HTMLButtonElement,
+                            imageBlocks.indexOf(imageBlock),
+                          );
+                        }}
+                        onkeydown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            e.currentTarget.click();
+                          }
+                        }}
+                        aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
+                          number: formatInteger(i + 1),
+                          total: formatInteger(imageBlocks.length),
+                        })}
+                      >
+                        {#if src}
+                          <img
+                            {src}
+                            alt={m.chat_chatMessage_attachedImage_alt({
+                              number: formatInteger(i + 1),
+                            })}
+                            class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
+                            onerror={() => handleReferenceImageError(imageBlock, src)}
+                          />
+                        {:else}
+                          <!-- Reference still resolving, failed to load, or its
+                         file is gone: neutral placeholder tile instead of a
+                         broken img. -->
+                          <div
+                            class="w-full h-full rounded border border-border bg-muted/50"
+                            data-testid="chat-message-image-placeholder"
+                          ></div>
+                        {/if}
+                      </Button>
+                    {/each}
+                  </div>
+                {/if}
+                <!-- Attached files: attachment-reference chips open the file in a
+               tab (resolved by attachmentId). -->
+                {#if ordinaryFileBlocks.length > 0 && !isSticky}
+                  <div
+                    class="flex flex-wrap gap-1.5 {parsedMessage.editedCaptures ? 'mb-3' : 'mt-2'}"
+                  >
+                    {#each ordinaryFileBlocks as fileBlock, i (i)}
+                      {@const secondary = fileChipSecondaryText(fileBlock)}
+                      <Button
+                        type="button"
+                        variant="plain"
+                        data-testid="chat-message-file-chip"
+                        class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        href={!fileBlock.attachmentId && fileBlock.data && !fileBlock.dataTruncated
+                          ? `data:application/octet-stream;base64,${fileBlock.data}`
+                          : undefined}
+                        download={!fileBlock.attachmentId ? fileBlock.fileName : undefined}
+                        disabled={isAttachmentHydrationLoading(fileBlock.id) ||
+                          (pendingFileHydration !== null && canHydrateFile(fileBlock)) ||
+                          (!fileBlock.attachmentId &&
+                            !fileBlock.data &&
+                            !canHydrateFile(fileBlock))}
+                        onclick={() => {
+                          if (fileBlock.attachmentId) openAttachmentReference(fileBlock);
+                          else if (fileBlock.dataTruncated) hydrateFileAttachment(fileBlock);
+                        }}
+                        title={m.chat_chatMessage_openAttachment_title({
+                          name: fileChipName(fileBlock),
+                        })}
+                      >
+                        <Fa icon={faFile} class="w-3 h-3" />
+                        <span class="truncate" style="max-width: 150px;"
+                          >{fileChipName(fileBlock)}</span
+                        >
+                        {#if secondary}
+                          <span class="shrink-0">{secondary}</span>
+                        {/if}
+                      </Button>
+                    {/each}
+                  </div>
+                {/if}
+              {/snippet}
+              {#if parsedMessage.editedCaptures}{@render messageImagePreviews()}{/if}
               <div
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation
@@ -2044,127 +2177,7 @@
                   {/each}
                 {/if}
               </div>
-              {#if captureCards.length && !isSticky}
-                <div class="mt-3 flex min-w-0 flex-col gap-2">
-                  {#each captureCards as capture (capture.id)}
-                    <EditedCaptureCard
-                      {capture}
-                      workspaceId={getOwningWorkspaceId()}
-                      {readOnly}
-                      videoMimeType={fileBlocks.find(
-                        (block) => block.attachmentId === capture.primaryId,
-                      )?.mimeType === 'video/webm'
-                        ? 'video/webm'
-                        : 'video/mp4'}
-                      images={captureImageSources}
-                      imageFailures={failedReferenceImages}
-                      onImage={openCaptureImage}
-                      onImageError={(id, src) => {
-                        const block = imageBlocks.find((block) => block.attachmentId === id);
-                        if (block) handleReferenceImageError(block, src);
-                      }}
-                      onOpenFile={(id) => {
-                        const block = fileBlocks.find((block) => block.attachmentId === id);
-                        if (block) openAttachmentReference(block);
-                      }}
-                    />
-                  {/each}
-                </div>
-              {/if}
-              <!-- Attached images -->
-              {#if ordinaryImageBlocks.length > 0 && !isSticky}
-                <div class="flex flex-wrap gap-1.5 mt-2">
-                  {#each ordinaryImageBlocks as imageBlock, i (i)}
-                    {@const src = imageBlockSrc(imageBlock)}
-                    <Button
-                      type="button"
-                      variant="plain"
-                      wrapContent={false}
-                      class="relative group/image p-0 border-0 bg-transparent cursor-pointer overflow-hidden w-10 h-10 shrink-0 rounded {isAttachmentHydrationLoading(
-                        imageBlock.id,
-                      )
-                        ? 'animate-pulse'
-                        : ''}"
-                      aria-busy={isAttachmentHydrationLoading(imageBlock.id)}
-                      onclick={(e) => {
-                        openImageLightbox(
-                          imageBlock,
-                          e.currentTarget as HTMLButtonElement,
-                          imageBlocks.indexOf(imageBlock),
-                        );
-                      }}
-                      onkeydown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          e.currentTarget.click();
-                        }
-                      }}
-                      aria-label={m.chat_chatMessage_viewAttachedImage_ariaLabel({
-                        number: formatInteger(i + 1),
-                        total: formatInteger(imageBlocks.length),
-                      })}
-                    >
-                      {#if src}
-                        <img
-                          {src}
-                          alt={m.chat_chatMessage_attachedImage_alt({
-                            number: formatInteger(i + 1),
-                          })}
-                          class="w-full h-full rounded border border-border object-cover hover:opacity-90 transition-opacity"
-                          onerror={() => handleReferenceImageError(imageBlock, src)}
-                        />
-                      {:else}
-                        <!-- Reference still resolving, failed to load, or its
-                         file is gone: neutral placeholder tile instead of a
-                         broken img. -->
-                        <div
-                          class="w-full h-full rounded border border-border bg-muted/50"
-                          data-testid="chat-message-image-placeholder"
-                        ></div>
-                      {/if}
-                    </Button>
-                  {/each}
-                </div>
-              {/if}
-
-              <!-- Attached files: attachment-reference chips open the file in a
-               tab (resolved by attachmentId). -->
-              {#if ordinaryFileBlocks.length > 0 && !isSticky}
-                <div class="flex flex-wrap gap-1.5 mt-2">
-                  {#each ordinaryFileBlocks as fileBlock, i (i)}
-                    {@const secondary = fileChipSecondaryText(fileBlock)}
-                    <Button
-                      type="button"
-                      variant="plain"
-                      data-testid="chat-message-file-chip"
-                      class="type-caption flex cursor-pointer items-center gap-1.5 rounded border border-border bg-muted/50 px-2 py-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      href={!fileBlock.attachmentId && fileBlock.data && !fileBlock.dataTruncated
-                        ? `data:application/octet-stream;base64,${fileBlock.data}`
-                        : undefined}
-                      download={!fileBlock.attachmentId ? fileBlock.fileName : undefined}
-                      disabled={isAttachmentHydrationLoading(fileBlock.id) ||
-                        (pendingFileHydration !== null && canHydrateFile(fileBlock)) ||
-                        (!fileBlock.attachmentId && !fileBlock.data && !canHydrateFile(fileBlock))}
-                      onclick={() => {
-                        if (fileBlock.attachmentId) openAttachmentReference(fileBlock);
-                        else if (fileBlock.dataTruncated) hydrateFileAttachment(fileBlock);
-                      }}
-                      title={m.chat_chatMessage_openAttachment_title({
-                        name: fileChipName(fileBlock),
-                      })}
-                    >
-                      <Fa icon={faFile} class="w-3 h-3" />
-                      <span class="truncate" style="max-width: 150px;"
-                        >{fileChipName(fileBlock)}</span
-                      >
-                      {#if secondary}
-                        <span class="shrink-0">{secondary}</span>
-                      {/if}
-                    </Button>
-                  {/each}
-                </div>
-              {/if}
-
+              {#if !parsedMessage.editedCaptures}{@render messageImagePreviews()}{/if}
               <!-- Send failure indicator for optimistic user messages -->
               {#if message?.error}
                 <div

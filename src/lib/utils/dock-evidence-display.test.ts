@@ -12,7 +12,11 @@ import {
   queuedCaptureGroup,
 } from '$lib/components/chat/queued-capture-presentation';
 import { describe, expect, it } from 'vitest';
-import { consumeEditedCapturePrefix, editedCaptureCards } from './dock-evidence-display';
+import {
+  consumeEditedCapturePrefix,
+  consumeEditedCaptureEnvelope,
+  editedCaptureCards,
+} from './dock-evidence-display';
 import { parseStoredMessage, restoreDockEvidenceForEdit } from './parseStoredMessage';
 import { DOCK_EVIDENCE_CONTEXT_HEADER } from '$shared/dock-evidence';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
@@ -360,5 +364,25 @@ describe('six-mark recording confirmation and delivery-group pipeline', () => {
       ).captureSummary,
     ).toEqual(['recording']);
     expect(confirmed.content).toBe(content);
+  });
+});
+
+describe('visible edited envelope independent of preview availability', () => {
+  it('hides a known exact envelope without reference resources, preserving strict edit recognition', () => {
+    const text = `[Edited capture outputs]\n${JSON.stringify(metadata.edited_captures)}\n\nUser prompt`;
+    expect(consumeEditedCaptureEnvelope(text, metadata)?.remaining).toBe('User prompt');
+    expect(consumeEditedCapturePrefix(text, metadata, [])).toBeNull();
+    expect(consumeEditedCaptureEnvelope(text, undefined)).toBeNull();
+    expect(
+      consumeEditedCaptureEnvelope(text, {
+        ...metadata,
+        edited_captures: [{ ...row, unknown: true }],
+      }),
+    ).toBeNull();
+    expect(consumeEditedCaptureEnvelope('User prose\n\n' + text, metadata)).toBeNull();
+    const repeated = text + '\n\n' + text;
+    expect(consumeEditedCaptureEnvelope(repeated, metadata)?.remaining).toBe(
+      'User prompt\n\n' + text,
+    );
   });
 });

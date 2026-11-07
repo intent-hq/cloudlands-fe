@@ -208,14 +208,40 @@ const canonical = (value: unknown): string =>
       ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a.localeCompare(b)))
       : item,
   ) ?? '';
-/** Consume only the exact known producer block at a context boundary, backed by metadata AND resource joins. */
-export function consumeEditedCapturePrefix(
+/** Visible-text projection: exact known producer envelope at a leading boundary, backed by persisted metadata. Preview availability is independent. */
+export function consumeEditedCaptureEnvelope(
   text: string,
   metadata: Metadata,
-  blocks: readonly CaptureResource[],
-): { prefix: string; remaining: string; attachmentIds: string[] } | null {
+): { prefix: string; remaining: string } | null {
   const opening = '[Edited capture outputs]\n'; // i18n-ignore (persisted producer marker)
-  if (!text.startsWith(opening)) return null;
+  if (!text.startsWith(opening) || !isDockEvidenceMessage(metadata)) return null;
+  try {
+    if ((JSON.stringify(metadata?.edited_captures)?.length ?? 0) > 262144) return null;
+  } catch {
+    return null;
+  }
+  const known = z.array(editedCapture).min(1).max(12).safeParse(metadata?.edited_captures);
+  if (!known.success || new Set(known.data.map((row) => row.id)).size !== known.data.length)
+    return null;
+  for (const row of known.data) {
+    if (
+      new Set(row.marks.map((mark) => mark.id)).size !== row.marks.length ||
+      new Set(row.marks.map((mark) => mark.n)).size !== row.marks.length
+    )
+      return null;
+    if (
+      row.kind === 'screenshot' &&
+      (row.video_attachment_id !== undefined ||
+        row.frames !== undefined ||
+        row.kept_ms !== undefined)
+    )
+      return null;
+    if (
+      row.kind === 'recording' &&
+      (row.video_attachment_id === undefined || !row.frames || !row.kept_ms)
+    )
+      return null;
+  }
   const end = text.indexOf('\n', opening.length),
     boundary = end < 0 ? text.length : end;
   if (boundary - opening.length > 262144 || (end >= 0 && !text.startsWith('\n\n', end)))
@@ -226,11 +252,20 @@ export function consumeEditedCapturePrefix(
   } catch {
     return null;
   }
-  const rows = editedCaptureCards(metadata, blocks);
-  if (!rows.length) return null;
+  return { prefix: text.slice(0, boundary), remaining: text.slice(boundary).replace(/^\n\n/, '') };
+}
+
+/** Edit/regenerate additionally requires every retained capture resource to exist. */
+export function consumeEditedCapturePrefix(
+  text: string,
+  metadata: Metadata,
+  blocks: readonly CaptureResource[],
+): { prefix: string; remaining: string; attachmentIds: string[] } | null {
+  const envelope = consumeEditedCaptureEnvelope(text, metadata);
+  const rows = envelope ? editedCaptureCards(metadata, blocks) : [];
+  if (!envelope || !rows.length) return null;
   return {
-    prefix: text.slice(0, boundary),
-    remaining: text.slice(boundary).replace(/^\n\n/, ''),
+    ...envelope,
     attachmentIds: rows.flatMap((row) => [
       ...(row.primaryId ? [row.primaryId] : []),
       ...(row.frames ?? []).map((frame) => frame.attachment_id),
