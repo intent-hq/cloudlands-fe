@@ -28,6 +28,22 @@ describe('createProgressLabel', () => {
     expect(createProgressLabel(entry(phase))).toBe(label);
   });
 
+  it('names the base and remote for the base-refresh phase (PROTOCOL §5.1)', () => {
+    expect(createProgressLabel(entry('base-refresh', 'Updating main from origin...'))).toBe(
+      'Updating main from origin…',
+    );
+    expect(createProgressLabel(entry('base-refresh', 'Updating release/2.0 from upstream…'))).toBe(
+      'Updating release/2.0 from upstream…',
+    );
+  });
+
+  it('falls back to a generic base-refresh label when the message names no base', () => {
+    expect(createProgressLabel(entry('base-refresh'))).toBe('Updating the base branch…');
+    expect(createProgressLabel(entry('base-refresh', 'Fetching'))).toBe(
+      'Updating the base branch…',
+    );
+  });
+
   it('falls back to the generic preparing label for unknown phases', () => {
     expect(createProgressLabel(entry('future-phase'))).toBe('Preparing workspace…');
   });

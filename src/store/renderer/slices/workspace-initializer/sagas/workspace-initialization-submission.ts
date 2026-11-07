@@ -48,6 +48,7 @@ import type {
   WorkspaceInitializationResumeInput,
   WorkspaceInitializationSetupScriptRecord,
   WorkspaceInitializationStagedItem,
+  WorkspaceInitializationStaleBase,
 } from '../workspace-initializer-types';
 
 type Json = NonNullable<WorkspaceInitializationRequest['heldMessage']>['contextReferences'][number];
@@ -626,5 +627,24 @@ export function* prepareOnboardingWorkspaceInitialization(
   return {
     request,
     prepared: { pull: Boolean(request.pull), specialistId, specialistName },
+  };
+}
+
+/**
+ * Continue from last-fetched (PROTOCOL §9.2): the same create, sent with
+ * `skipBaseRefresh: true`, which also arms the may-be-out-of-date toast.
+ */
+export function withContinueFromLastFetched(
+  prepared: PreparedWorkspaceInitialization,
+  staleBase: WorkspaceInitializationStaleBase | undefined,
+): PreparedWorkspaceInitialization {
+  if (!staleBase || !prepared.request.createRequest) return prepared;
+  return {
+    ...prepared,
+    request: {
+      ...prepared.request,
+      createRequest: { ...prepared.request.createRequest, skipBaseRefresh: true },
+      staleBase,
+    },
   };
 }

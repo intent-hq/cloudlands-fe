@@ -1240,6 +1240,23 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('toasts the readable base-refresh cause when an applied create fails, never "Internal error"', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: false,
+      error: "Couldn't update main from origin: Permission denied (publickey)",
+      errorCode: 'base-refresh-failed',
+    });
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-base-refresh') }));
+    await settle();
+    expect(mocks.notify.error).toHaveBeenCalledWith(
+      "Couldn't update main from origin: Permission denied (publickey)",
+    );
+    expect(mocks.notify.error).not.toHaveBeenCalledWith('Internal error');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('creates for a second id-less card whose payload matches an applied one', async () => {
     mocks.create
       .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-first') } })

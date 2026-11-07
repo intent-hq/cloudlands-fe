@@ -1756,6 +1756,12 @@ export interface CreateWorkspaceRequest {
    */
   plainFolder?: true;
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
+  /**
+   * Skip the daemon's base fetch and start the checkout at the existing
+   * `refs/remotes/<remote>/<baseRef>` (PROTOCOL §5.1). Sent only by Continue
+   * after a `base-refresh-failed` error (§9.2); older daemons ignore it.
+   */
+  skipBaseRefresh?: boolean;
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
   /**

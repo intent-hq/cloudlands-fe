@@ -45,7 +45,7 @@ const mockedRequest = vi.mocked(backendRequest);
 describe('LiveWorkspacesClient mutations (fake transport)', () => {
   afterEach(() => vi.clearAllMocks());
 
-  it('create forwards workspace.create with the request + an idempotencyKey and 120s timeout override', async () => {
+  it('create forwards workspace.create with the request + an idempotencyKey and 300s timeout override', async () => {
     mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
     const client = new LiveWorkspacesClient();
 
@@ -55,9 +55,9 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     } as CreateWorkspaceRequest);
 
     expect(result).toEqual({ success: true });
-    // The 120s override keeps cold Claude Code ACP session opens (daemon's
-    // 70s NPX budget + first-turn overhead) from tripping the flat 30s
-    // transport default.
+    // The 300s override outlasts the daemon's 100s base fetch bound plus the
+    // per-repo lock wait, provisioning and a cold ACP session open, so a slow
+    // but successful create never shows a client timeout (brief M5).
     expect(mockedRequest).toHaveBeenCalledWith(
       'workspace.create',
       expect.objectContaining({
@@ -65,8 +65,102 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
         scope: 'apps/web',
         idempotencyKey: expect.any(String),
       }),
-      { timeoutMs: 120_000 },
+      { timeoutMs: 300_000 },
     );
+  });
+
+  it('create forwards skipBaseRefresh on the wire (PROTOCOL §5.1, Continue from last-fetched)', async () => {
+    mockedRequest.mockResolvedValueOnce({ id: 'ws-1' });
+    const client = new LiveWorkspacesClient();
+
+    await client.create({ title: 'Continue', skipBaseRefresh: true } as CreateWorkspaceRequest);
+
+    expect(mockedRequest).toHaveBeenCalledWith(
+      'workspace.create',
+      expect.objectContaining({ skipBaseRefresh: true }),
+      { timeoutMs: 300_000 },
+    );
+  });
+
+  it('create surfaces a base-refresh-failed error with its code, readable message and data (PROTOCOL §9.2)', async () => {
+    const error = Object.assign(
+      new Error("Couldn't update main from origin: Permission denied (publickey)"),
+      {
+        rpcCode: -32603,
+        data: {
+          code: 'base-refresh-failed',
+          category: 'auth-required',
+          detail: 'git@github.com: Permission denied (publickey).',
+          baseRef: 'main',
+          remote: 'origin',
+        },
+      },
+    );
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: 'Worktree' } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({
+      success: false,
+      error: "Couldn't update main from origin: Permission denied (publickey)",
+      errorCode: 'base-refresh-failed',
+      baseRefreshFailure: {
+        category: 'auth-required',
+        detail: 'git@github.com: Permission denied (publickey).',
+        baseRef: 'main',
+        remote: 'origin',
+      },
+    });
+  });
+
+  it('create reads an unknown base-refresh category as other (PROTOCOL §9.2)', async () => {
+    const error = Object.assign(new Error("Couldn't update main from origin: boom"), {
+      data: {
+        code: 'base-refresh-failed',
+        category: 'brand-new',
+        detail: 'boom',
+        baseRef: 'main',
+        remote: 'origin',
+      },
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: 'Worktree' } as CreateWorkspaceRequest);
+
+    if (result.success) throw new Error('unreachable');
+    expect(result.baseRefreshFailure?.category).toBe('other');
+  });
+
+  it('create folds a generic -32603 string data cause into the message (brief S1)', async () => {
+    const error = Object.assign(new Error('Internal error'), {
+      rpcCode: -32603,
+      data: 'git worktree add failed: fatal: invalid reference: main',
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: 'Generic' } as CreateWorkspaceRequest);
+
+    expect(result).toEqual({
+      success: false,
+      error: 'Internal error: git worktree add failed: fatal: invalid reference: main',
+    });
+  });
+
+  it('create folds a normalized data.detail cause into the message (brief S1)', async () => {
+    const error = Object.assign(new Error('Internal error'), {
+      rpcCode: -32603,
+      data: { detail: 'git fetch failed: Permission denied (publickey)' },
+    });
+    mockedRequest.mockRejectedValueOnce(error);
+    const client = new LiveWorkspacesClient();
+
+    const result = await client.create({ title: 'Generic' } as CreateWorkspaceRequest);
+
+    if (result.success) throw new Error('unreachable');
+    expect(result.error).toBe('Internal error: git fetch failed: Permission denied (publickey)');
   });
 
   it('create forwards the FE-minted progressId on the wire (PROTOCOL §5.1 clone-progress correlation)', async () => {
@@ -83,7 +177,7 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith(
       'workspace.create',
       expect.objectContaining({ progressId }),
-      { timeoutMs: 120_000 },
+      { timeoutMs: 300_000 },
     );
     // The wire params (minus the per-call idempotencyKey) must satisfy the
     // shared request schema, which now admits progressId.
@@ -123,7 +217,7 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     expect(mockedRequest).toHaveBeenCalledWith(
       'workspace.create',
       expect.objectContaining({ contextLinks, branch: 'feature/pr-head', baseRef: 'main' }),
-      { timeoutMs: 120_000 },
+      { timeoutMs: 300_000 },
     );
     // The wire params (minus the per-call idempotencyKey) must satisfy the
     // shared request schema, which now admits contextLinks.
@@ -237,7 +331,7 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
       expect(mockedRequest).toHaveBeenCalledExactlyOnceWith(
         'workspace.create',
         { idempotencyKey: 'effort-create', repositoryPath: '/repo', initialAgent },
-        { timeoutMs: 120_000 },
+        { timeoutMs: 300_000 },
       );
       expect(result).toMatchObject({
         success: true,
@@ -270,7 +364,7 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
       const request = { idempotencyKey: 'general-create', repositoryPath: '/repo', initialAgent };
       const result = await new LiveWorkspacesClient().create(request);
       expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
-        timeoutMs: 120_000,
+        timeoutMs: 300_000,
       });
       expect(result).toMatchObject({ success: true, initialAgent: agent });
     },
@@ -489,7 +583,7 @@ describe('LiveWorkspacesClient mutations (fake transport)', () => {
     const result = await client.create(request);
 
     expect(mockedRequest).toHaveBeenCalledExactlyOnceWith('workspace.create', request, {
-      timeoutMs: 120_000,
+      timeoutMs: 300_000,
     });
     expect(result).toMatchObject({
       success: true,

@@ -26,6 +26,7 @@ import { WORKSPACE_CHANNELS } from '$shared/ipc/channels';
 import { invoke as invokeIpc } from '$shared/generated/ipc-client';
 import { appClient } from '$lib/client';
 import type { WorkspaceCreateLaunchFailure } from '$lib/client/app-client';
+import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import { m } from '$shared/paraglide/messages.js';
 
 import { store } from '../../../store';
@@ -360,6 +361,8 @@ export class WorkspaceClient {
         errorCode?: string;
         /** A `launch-failed` create: the workspace exists, its remote agent didn't start. */
         launchFailure?: WorkspaceCreateLaunchFailure;
+        /** A `base-refresh-failed` create (PROTOCOL §9.2): the base fetch failed. */
+        baseRefreshFailure?: BaseRefreshFailure;
       }
   > {
     // Daemon-backed mutation (`workspace.create`, PROTOCOL §5.1) through the
@@ -404,6 +407,7 @@ export class WorkspaceClient {
           error: createError,
           errorCode: result.errorCode,
           ...(result.launchFailure ? { launchFailure: result.launchFailure } : {}),
+          ...(result.baseRefreshFailure ? { baseRefreshFailure: result.baseRefreshFailure } : {}),
         }
       : { ok: false, error: createError };
   }

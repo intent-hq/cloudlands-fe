@@ -6,7 +6,7 @@
  * settles — nothing here is canonical or persisted.
  */
 export interface WorkspaceCreateProgressEntry {
-  /** Daemon-owned phase label (e.g. `receiving`, `cache`, `submodules`, `cow-copy`, `worktree`, `finalizing`). */
+  /** Daemon-owned phase label (e.g. `receiving`, `cache`, `base-refresh`, `submodules`, `cow-copy`, `worktree`, `finalizing`). */
   phase: string;
   /** Daemon-normalized 0–100 percent across the whole provisioning pipeline. */
   percent: number;

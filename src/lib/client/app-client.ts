@@ -3,6 +3,7 @@ import type { MessageBlockImageReference } from '$shared/types/wire-image-block'
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
+import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import type { SecretAnswerResult, SecretListing } from '$shared/types/secret-request-resource';
 import type {
   ScriptArchiveFilter,
@@ -417,6 +418,8 @@ export interface WorkspaceCreateResult extends MutationResult {
   errorCode?: string;
   /** Set with `errorCode: "launch-failed"`: the workspace was created anyway. */
   launchFailure?: WorkspaceCreateLaunchFailure;
+  /** Set with `errorCode: "base-refresh-failed"` (PROTOCOL §9.2): the base fetch failed. */
+  baseRefreshFailure?: BaseRefreshFailure;
 }
 
 /**

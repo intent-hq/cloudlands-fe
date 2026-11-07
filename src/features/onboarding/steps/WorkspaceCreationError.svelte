@@ -20,6 +20,8 @@
     diagnoseCloneError,
     type CloneErrorKind,
   } from '$features/onboarding/utils/diagnose-clone-error';
+  import { diagnoseBaseRefreshError } from '$features/onboarding/utils/diagnose-base-refresh-error';
+  import type { BaseRefreshCategory, BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 
   interface Props {
     message: string;
@@ -38,11 +40,52 @@
      *   `onRetry` is hidden in this variant since there's nothing to retry yet.
      */
     variant?: 'error' | 'warning';
+    /**
+     * `error.data` of a `base-refresh-failed` create (PROTOCOL §9.2): picks
+     * the category guidance and the cause shown to the user.
+     */
+    baseRefreshFailure?: BaseRefreshFailure | null;
+    /**
+     * Continue from last-fetched: re-send the same create with
+     * `skipBaseRefresh: true`. Offered only for `base-refresh-failed`, the
+     * code older daemons (which ignore the parameter) never send.
+     */
+    onContinue?: () => void;
   }
 
-  let { message, onRetry, errorCode = null, variant = 'error' }: Props = $props();
+  let {
+    message,
+    onRetry,
+    errorCode = null,
+    variant = 'error',
+    baseRefreshFailure = null,
+    onContinue,
+  }: Props = $props();
 
   const diagnosis = $derived(diagnoseCloneError(message, errorCode));
+  const baseRefresh = $derived(diagnoseBaseRefreshError(message, errorCode, baseRefreshFailure));
+  const remoteName = $derived(
+    baseRefresh?.remote || m.onboarding_creationError_baseRefresh_remoteFallback_label(),
+  );
+  const baseName = $derived(
+    baseRefresh?.baseRef || m.onboarding_creationError_baseRefresh_baseFallback_label(),
+  );
+  // i18n-ignore (shell command)
+  const sshCommand = $derived(`ssh -T ${baseRefresh?.sshHost ?? '<host>'}`);
+
+  const baseRefreshTitles: Record<BaseRefreshCategory, string> = $derived({
+    'auth-required': m.onboarding_creationError_baseRefresh_authRequired_title({
+      remote: remoteName,
+    }),
+    'ssh-host-key': m.onboarding_creationError_baseRefresh_sshHostKey_title({ remote: remoteName }),
+    network: m.onboarding_creationError_baseRefresh_network_title({ remote: remoteName }),
+    timeout: m.onboarding_creationError_baseRefresh_timeout_title({ base: baseName }),
+    'repo-not-found': m.onboarding_creationError_baseRefresh_repoNotFound_title(),
+    'access-denied': m.onboarding_creationError_baseRefresh_accessDenied_title({
+      remote: remoteName,
+    }),
+    other: m.onboarding_creationError_baseRefresh_other_title({ base: baseName }),
+  });
 
   const titles: Record<CloneErrorKind, string> = $derived({
     'auth-required': m.onboarding_creationError_authRequired_title(),
@@ -94,11 +137,78 @@
       class="mt-0.5 shrink-0 {variant === 'warning' ? 'text-warning-ink' : 'text-danger'}"
     />
     <p class="font-medium {variant === 'warning' ? 'text-warning-ink' : 'text-danger'}">
-      {titles[diagnosis.kind]}
+      {baseRefresh ? baseRefreshTitles[baseRefresh.category] : titles[diagnosis.kind]}
     </p>
   </div>
 
-  {#if diagnosis.kind === 'auth-required'}
+  {#if baseRefresh}
+    <div class="space-y-2 text-foreground">
+      {#if baseRefresh.category === 'auth-required'}
+        {#if baseRefresh.transport === 'unknown'}
+          <p>
+            <strong>{m.onboarding_creationError_baseRefresh_sshRemote_label()}</strong>
+            {m.onboarding_creationError_baseRefresh_authRequiredSsh_description({
+              remote: remoteName,
+            })}
+          </p>
+          <p>
+            <strong>{m.onboarding_creationError_baseRefresh_httpsRemote_label()}</strong>
+            {m.onboarding_creationError_baseRefresh_authRequiredHttps_description()}
+          </p>
+        {:else if baseRefresh.transport === 'ssh'}
+          <p>
+            {m.onboarding_creationError_baseRefresh_authRequiredSsh_description({
+              remote: remoteName,
+            })}
+          </p>
+        {:else}
+          <p>{m.onboarding_creationError_baseRefresh_authRequiredHttps_description()}</p>
+        {/if}
+      {:else if baseRefresh.category === 'ssh-host-key'}
+        <p>{m.onboarding_creationError_baseRefresh_sshHostKey_description()}</p>
+        <div class="flex items-center gap-2">
+          <code
+            class="flex-1 rounded bg-background/70 border border-border px-2 py-1.5 font-mono text-xs"
+            >{sshCommand}</code
+          >
+          <Button
+            variant="ghost"
+            type="button"
+            size="icon-compact"
+            iconOnly
+            class="shrink-0 rounded text-muted-foreground hover:text-foreground hover:bg-background/70 cursor-pointer"
+            aria-label={m.onboarding_creationError_copyCommand_ariaLabel()}
+            onclick={() => copyCommand(sshCommand)}
+          >
+            <Fa icon={copiedCommand === sshCommand ? faCheck : faClipboard} size="sm" />
+          </Button>
+        </div>
+      {:else if baseRefresh.category === 'network'}
+        <p>{m.onboarding_creationError_baseRefresh_network_description()}</p>
+      {:else if baseRefresh.category === 'timeout'}
+        <p>{m.onboarding_creationError_baseRefresh_timeout_description()}</p>
+      {:else if baseRefresh.category === 'repo-not-found'}
+        <p>{m.onboarding_creationError_baseRefresh_repoNotFound_description()}</p>
+      {:else if baseRefresh.category === 'access-denied'}
+        <p>{m.onboarding_creationError_baseRefresh_accessDenied_description()}</p>
+      {:else}
+        <p>{m.onboarding_creationError_baseRefresh_other_description()}</p>
+      {/if}
+      {#if baseRefresh.cause.trim()}
+        <pre
+          class="rounded bg-background/70 border border-border px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-40 overflow-auto">
+{baseRefresh.cause}</pre>
+      {/if}
+      {#if onContinue}
+        <p class="text-xs text-muted-foreground">
+          {m.onboarding_creationError_baseRefresh_continue_description({
+            base: baseName,
+            remote: remoteName,
+          })}
+        </p>
+      {/if}
+    </div>
+  {:else if diagnosis.kind === 'auth-required'}
     <div class="space-y-2.5 text-foreground">
       <p>
         {m.onboarding_creationError_authRequired_description()}
@@ -207,7 +317,12 @@
         >{m.onboarding_creationError_tryAgain_label()}</Button
       >
     {/if}
-    {#if diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
+    {#if baseRefresh && onContinue}
+      <Button variant="outline" size="sm" onclick={onContinue}
+        >{m.onboarding_creationError_baseRefresh_continue_label({ base: baseName })}</Button
+      >
+    {/if}
+    {#if !baseRefresh && diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
       <Button
         variant="ghost"
         type="button"
@@ -227,7 +342,7 @@
 
   <!-- The unknown branch already renders rawMessage as the body, so the
        details block only applies to classified kinds. -->
-  {#if showDetails && diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
+  {#if !baseRefresh && showDetails && diagnosis.kind !== 'unknown' && diagnosis.rawMessage.trim()}
     <pre
       class="mt-2 rounded bg-background/70 border border-border px-2 py-1.5 text-xs font-mono text-muted-foreground whitespace-pre-wrap break-all max-h-40 overflow-auto">
 {diagnosis.rawMessage}</pre>
