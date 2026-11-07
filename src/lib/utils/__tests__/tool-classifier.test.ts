@@ -754,6 +754,69 @@ describe('tool-classifier', () => {
     });
   });
 
+  describe('Codex read-file titles', () => {
+    it.each([
+      ['/work/artifacts/attach-proof.json', 'attach-proof.json'],
+      ['src/tests/dock-dismiss.ct.spec.ts', 'dock-dismiss.ct.spec.ts'],
+      ['src/tests/DockDismissBrowserHarness.svelte', 'DockDismissBrowserHarness.svelte'],
+      ['Makefile', 'Makefile'],
+      ['docs/My Notes.md', 'My Notes.md'],
+      ["docs/author's notes.md", "author's notes.md"],
+      ["docs/literal.md'", "literal.md'"],
+      ["'literal.md'", "'literal.md'"],
+      ['docs/file notes.md', 'file notes.md'],
+    ])('keeps the actual filename and target from Read file %s', (path, subject) => {
+      for (const quote of ["'", '"', '`']) {
+        const title = `Read file ${quote}${path}${quote}`;
+        for (const [name, input] of [
+          [title, {}],
+          ['read', { _acpTitle: title }],
+        ] as const) {
+          const result = classifyTool(name, input);
+
+          expect(result.category).toBe('file-read');
+          expect(result.verb).toBe('Read');
+          expect(result.filePath).toBe(path);
+          expect(result.subject).toBe(subject);
+          expect(result.path).toBe(
+            path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null,
+          );
+          expect(result.isDirectory).toBeFalsy();
+        }
+      }
+    });
+
+    it.each(['path', 'file_path'])('keeps structured %s authoritative', (key) => {
+      const result = classifyTool('read', {
+        [key]: "'literal.md'",
+        _acpTitle: "Read file '/work/other.md'",
+        view_range: [10, 20],
+      });
+
+      expect(result.filePath).toBe("'literal.md'");
+      expect(result.subject).toBe("'literal.md':10-20");
+      expect(result.fileLine).toBe(10);
+    });
+
+    it('preserves file as part of an unquoted filename', () => {
+      const result = classifyTool('read', { _acpTitle: 'Read file notes.md' });
+
+      expect(result.filePath).toBe('file notes.md');
+      expect(result.subject).toBe('file notes.md');
+    });
+
+    it('preserves an explicitly marked directory', () => {
+      const result = classifyTool('read', {
+        _acpTitle: "Read file '/work/notes'",
+        type: 'directory',
+      });
+
+      expect(result.filePath).toBe('/work/notes');
+      expect(result.verb).toBe('List Contents');
+      expect(result.isDirectory).toBe(true);
+    });
+  });
+
   describe('backtick-wrapped ACP names', () => {
     it('should extract file path from "read `src/lib/App.svelte`" name', () => {
       const result = classifyTool('Read `src/lib/App.svelte`', {});
