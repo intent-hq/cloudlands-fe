@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.292.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.291.1...v2.292.0) (2026-11-07)
+
+
+### 🚀 Features
+
+* manage app-wide Agent Plugins in Settings ([#4232](https://github.com/intent-hq/cloudlands-fe/issues/4232)) ([c14efb0](https://github.com/intent-hq/cloudlands-fe/commit/c14efb08abc82047820682c15232aca7eda061d2))
+* refine dropdown menus and pickers ([#4233](https://github.com/intent-hq/cloudlands-fe/issues/4233)) ([09e98bd](https://github.com/intent-hq/cloudlands-fe/commit/09e98bde715d305ef186c920ec8bb30cd08604a0))
+
+
+### 🐛 Bug Fixes
+
+* align thinking indicator with chat activity icons ([#4241](https://github.com/intent-hq/cloudlands-fe/issues/4241)) ([aa2daa5](https://github.com/intent-hq/cloudlands-fe/commit/aa2daa539cb474d7408b643f23031ecc48cad0bb))
+* bump intentd sidecar to v0.11.143 ([#4249](https://github.com/intent-hq/cloudlands-fe/issues/4249)) ([d67417f](https://github.com/intent-hq/cloudlands-fe/commit/d67417fb6b589c2eae28e78bb64eddd39af05bcd))
+* **ci:** retry transient failures of the sccache release download ([#4239](https://github.com/intent-hq/cloudlands-fe/issues/4239)) ([eb60d67](https://github.com/intent-hq/cloudlands-fe/commit/eb60d67e53b07be4ce2420f0edcfd5839ddb505b))
+* hide the empty Set aside board column ([#4245](https://github.com/intent-hq/cloudlands-fe/issues/4245)) ([c1f1df2](https://github.com/intent-hq/cloudlands-fe/commit/c1f1df25ebbe8c939334a03ac3f5a2227ca31898))
+* preserve workspace branch readiness on repository reselection ([#4235](https://github.com/intent-hq/cloudlands-fe/issues/4235)) ([8efbb0f](https://github.com/intent-hq/cloudlands-fe/commit/8efbb0fbff6054819eb407e5a150ed1fce1bb151))
+* prioritize active work over PR readiness in Home ([#4243](https://github.com/intent-hq/cloudlands-fe/issues/4243)) ([eb25a21](https://github.com/intent-hq/cloudlands-fe/commit/eb25a2135e249b741fc19f0ff59418f8dbbabb64))
+
 ## [2.291.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.291.0...v2.291.1) (2026-11-06)
 
 
