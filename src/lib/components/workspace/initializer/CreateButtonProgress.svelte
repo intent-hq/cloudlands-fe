@@ -2,6 +2,7 @@
      the Button content slot so it stays at the button’s bottom edge. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { toStore } from 'svelte/store';
   import { cn } from '$lib/utils';
   import { selectWorkspaceCreateProgress } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-selectors';
   import { createProgressLabel } from './create-progress-label';
@@ -12,23 +13,23 @@
     children,
     class: className,
   }: {
-    progressId: string;
+    progressId: string | null;
     fallbackLabel: string;
     children: Snippet<[label: string]>;
     class?: string;
   } = $props();
 
-  // Selector readables bind at component init only (STATE_MANAGEMENT.md);
-  // the caller keys this component's lifetime to one create, so the initial
-  // progressId is the only one it ever renders.
-  // svelte-ignore state_referenced_locally
-  const entry$ = selectWorkspaceCreateProgress(progressId);
+  const entry$ = selectWorkspaceCreateProgress(toStore(() => progressId));
 
   // Keep the bar monotonic and clamp its width and accessible value together.
   let maxPercent = $state(0);
+  let lastProgressId: string | null = null;
   $effect(() => {
     const percent = Math.min($entry$?.percent ?? 0, 100);
-    if (percent > maxPercent) maxPercent = percent;
+    if (progressId !== lastProgressId) {
+      lastProgressId = progressId;
+      maxPercent = percent;
+    } else if (percent > maxPercent) maxPercent = percent;
   });
 
   const live = $derived($entry$?.sawFrame === true);
