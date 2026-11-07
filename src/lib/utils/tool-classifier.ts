@@ -487,6 +487,10 @@ function unquoteTitlePath(path: string): string {
   return path.trim().replace(/^([\x60'"])(.*)\1$/, '$2');
 }
 
+function quotedReadTitlePath(title: string): string | null {
+  return title.match(/^read\s+(?:file\s+)?([\x60'"])(.+)\1\s*$/i)?.[2] ?? null;
+}
+
 /**
  * Context Engine tool names - tools that use Augment's proprietary context engine.
  * These get special treatment with Augment branding.
@@ -917,9 +921,8 @@ function classifyToolInner(
     !input.file_content
   ) {
     // Match paired title quotes before shortening the path to its filename.
-    const nameQuotedMatch = cleanedName.match(/^read\s+([\x60'"])(.+)\1\s*$/i);
-    if (nameQuotedMatch) {
-      const extracted = nameQuotedMatch[2];
+    const extracted = quotedReadTitlePath(cleanedName);
+    if (extracted) {
       const extractedIsDir = input.type === 'directory';
       return {
         category: 'file-read',
@@ -948,8 +951,9 @@ function classifyToolInner(
     if (typeof input._acpTitle === 'string') {
       const titleMatch = input._acpTitle.match(/^(?:Read|View|List\s+Contents?)\s+(.+)/i);
       if (titleMatch) {
-        const candidate = unquoteTitlePath(titleMatch[1]);
-        if (candidate.includes('.') || candidate.includes('/')) {
+        const quotedPath = quotedReadTitlePath(input._acpTitle);
+        const candidate = quotedPath ?? unquoteTitlePath(titleMatch[1]);
+        if (quotedPath || candidate.includes('.') || candidate.includes('/')) {
           const titleIsDir =
             input.type === 'directory' || /^List\s+Contents?/i.test(input._acpTitle);
           return {
