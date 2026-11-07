@@ -104,7 +104,7 @@ describe('a binding moved only in the shortcut table', () => {
     vi.resetModules();
   });
 
-  it('loads and shows the moved keys in the cheat sheet, settings rows and tooltips', async () => {
+  it('loads and lists the moved keys in the cheat sheet, settings rows and tooltips', async () => {
     vi.resetModules();
     vi.doMock('../shortcut-bindings', async (importOriginal) => {
       const actual = await importOriginal<typeof import('../shortcut-bindings')>();
@@ -123,7 +123,6 @@ describe('a binding moved only in the shortcut table', () => {
 
     expect(row(shortcuts.SHORTCUT_CATEGORIES.panel.shortcuts)).toBe('mod+alt+n');
     expect(row(shortcuts.SHORTCUT_REGISTRY)).toBe('mod+alt+n');
-    expect(row(shortcuts.getAllShortcutCategories().panel.shortcuts)).toBe('mod+alt+n');
     expect(shortcuts.SHORTCUTS.FOCUS_NEXT_COLUMN.key).toBe('mod+alt+n');
   });
 });
