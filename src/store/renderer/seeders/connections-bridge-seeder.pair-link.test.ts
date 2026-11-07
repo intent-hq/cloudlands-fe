@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mockInvoke } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import './pair-link-bridge-seeder';
+import './connections-bridge-seeder';
 
 const { CONNECTIONS } = IPC_CHANNELS;
 type BridgeWindow = { electronAPI?: unknown };
