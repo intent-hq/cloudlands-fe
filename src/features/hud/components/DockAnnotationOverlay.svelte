@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { DOCK_ANNOTATION_STYLE as INK } from '$features/hud/composer/dock-annotation-style';
+  import {
+    DOCK_ANNOTATION_STYLE as INK,
+    dockAnnotationBadgeCenter,
+  } from '$features/hud/composer/dock-annotation-style';
   import { fade, scale } from '$lib/motion';
   import {
     dockAnnotationViewport,
@@ -306,10 +309,7 @@
     const width = overlay?.display.width ?? Infinity;
     const height = overlay?.display.height ?? Infinity;
     const half = BADGE / 2;
-    return {
-      x: Math.min(width - half, Math.max(half, rect.x + rect.w)),
-      y: Math.min(height - half, Math.max(half, rect.y)),
-    };
+    return dockAnnotationBadgeCenter(rect, { x: 0, y: 0, w: width, h: height }, 1, half);
   }
 
   function pathData(points: readonly DockImagePoint[]): string {

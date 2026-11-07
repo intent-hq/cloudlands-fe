@@ -116,6 +116,7 @@
   let textEntry = $state<HTMLDivElement | null>(null);
   let surface = $state<SVGSVGElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
+  let backing: OffscreenCanvas | null = null;
   $effect(() => {
     const currentTool = tool;
     untrack(() => {
@@ -164,12 +165,20 @@
     const h = Math.max(1, Math.round(fitted.height * ratio));
     if (node.width !== w) node.width = w;
     if (node.height !== h) node.height = h;
-    const context = node.getContext('2d');
+    if (!backing || backing.width !== w || backing.height !== h)
+      backing = new OffscreenCanvas(w, h);
+    const context = backing.getContext('2d');
     if (!context) return;
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, w, h);
     context.setTransform(w / source.width, 0, 0, h / source.height, 0, 0);
     paintDockMediaMarks(context, list);
+    const display = node.getContext('2d');
+    if (display) {
+      display.setTransform(1, 0, 0, 1, 0, 0);
+      display.clearRect(0, 0, w, h);
+      display.drawImage(backing, 0, 0);
+    }
   });
 
   /** A pointer position in source pixels, inside the picture. */

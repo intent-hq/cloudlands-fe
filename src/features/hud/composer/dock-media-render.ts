@@ -1,4 +1,4 @@
-import { DOCK_ANNOTATION_STYLE } from './dock-annotation-style';
+import { DOCK_ANNOTATION_STYLE, dockAnnotationBadgeCenter } from './dock-annotation-style';
 import { ensureDockAnnotationFont, dockAnnotationFontFamily } from './dock-annotation-font';
 import { dockAnnotationDisplayBounds } from './dock-annotation-display';
 import { recordedMarkProgress } from '$shared/dock-media-animation';
@@ -46,6 +46,7 @@ export function layoutDockMediaMarks(
           : mark.geometry;
       if (!geometry) return [];
       const box = dockAnnotationDisplayBounds(geometry);
+      const badge = dockAnnotationBadgeCenter(box, crop, unit, r);
       return [
         // Editing suppresses glyphs only; badges and canonical numbering stay unchanged.
         ...(mark.id === hiddenTextMarkId && geometry.kind === 'text'
@@ -53,8 +54,7 @@ export function layoutDockMediaMarks(
           : [{ kind: 'geometry' as const, geometry, unit }]),
         {
           kind: 'badge',
-          x: Math.min(crop.x + crop.w - r, Math.max(crop.x + r, box.x + box.w)),
-          y: Math.min(crop.y + crop.h - r, Math.max(crop.y + r, box.y)),
+          ...badge,
           radius: r,
           label: String(n),
           unit,

@@ -1,4 +1,4 @@
-import { DOCK_ANNOTATION_STYLE } from './dock-annotation-style';
+import { DOCK_ANNOTATION_STYLE, dockAnnotationBadgeCenter } from './dock-annotation-style';
 import { ensureDockAnnotationFont } from './dock-annotation-font';
 /**
  * Burns numbered marks into a screenshot so a vision model sees the numbers the
@@ -73,10 +73,15 @@ export function layoutDockBurn(
     const radius = Math.max(minBadgeRadius, (DOCK_MARK_BURN_STYLE.badge / 2) * unit);
     const right = at(mark.bounds.x + mark.bounds.w);
     const top = at(mark.bounds.y);
+    const badge = dockAnnotationBadgeCenter(
+      { x: at(mark.bounds.x), y: top, w: right - at(mark.bounds.x), h: at(mark.bounds.h) },
+      { x: 0, y: 0, w: at(image.width), h: at(image.height) },
+      unit,
+      radius,
+    );
     ops.push({
       kind: 'badge',
-      x: Math.min(at(image.width) - radius, Math.max(radius, right)),
-      y: Math.min(at(image.height) - radius, Math.max(radius, top)),
+      ...badge,
       radius,
       label: String(n),
       font: radius * DOCK_MARK_BURN_STYLE.badgeTextScale,

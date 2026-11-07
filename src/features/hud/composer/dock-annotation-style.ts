@@ -16,3 +16,20 @@ export const DOCK_ANNOTATION_STYLE = {
   fontFamily: '"Intent Annotation Hand", system-ui, sans-serif',
   badgeFontFamily: 'system-ui, sans-serif',
 } as const;
+
+/** Number placement only; never changes the annotation's stored geometry. */
+export function dockAnnotationBadgeCenter(
+  bounds: { x: number; y: number; w: number; h: number },
+  viewport: { x: number; y: number; w: number; h: number },
+  unit: number,
+  radius: number,
+) {
+  const gap = radius + 3 * unit;
+  return {
+    x: Math.min(
+      viewport.x + viewport.w - radius,
+      Math.max(viewport.x + radius, bounds.x + bounds.w + gap),
+    ),
+    y: Math.min(viewport.y + viewport.h - radius, Math.max(viewport.y + radius, bounds.y - gap)),
+  };
+}
