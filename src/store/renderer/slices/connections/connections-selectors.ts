@@ -37,6 +37,14 @@ export const selectConnections = store.createSelector((state) =>
   getItems(state.connections.connections),
 );
 
+/**
+ * Connections that can be a backend: every saved connection except nodes,
+ * which only run agents for other backends and never open a window.
+ */
+export const selectBackendConnections = store.createSelector((state) =>
+  getItems(state.connections.connections).filter((connection) => connection.daemonMode !== 'node'),
+);
+
 /** Saved remote machines only (the synthetic local record is excluded). */
 export const selectRemoteConnections = store.createSelector((state) =>
   getItems(state.connections.connections).filter((connection) => !connection.isLocal),

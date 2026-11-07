@@ -16,7 +16,9 @@ import type {
   RemoteMachineExposeParams,
   RemoteMachineUnexposeParams,
 } from '$shared/types/remote-machines';
+import * as connectionsStore from './desktop-connections-store';
 import {
+  connectBackendClient,
   getBackendClientForConnection,
   getBackendClientForIpcEvent,
   getLocalBackendClient,
@@ -60,6 +62,25 @@ function currentBackend(event: Electron.IpcMainInvokeEvent): RemoteMachineBacken
 
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 
+/**
+ * A node never opens a window, so nothing else keeps its pooled client up:
+ * connect it before the relay needs it. A failure leaves the relay to report
+ * `machine-not-connected`.
+ */
+async function ensureNodeClient(connectionId: string): Promise<void> {
+  if (connectionId === LOCAL_CONNECTION_ID || getBackendClientForConnection(connectionId)) return;
+  const saved = (await connectionsStore.list()).find((c) => c.id === connectionId);
+  if (saved?.daemonMode !== 'node') return;
+  try {
+    await connectBackendClient(connectionId);
+  } catch (error) {
+    logger.warn('Could not connect the node to make it available', {
+      connectionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** Register the remote-machine IPC handlers (idempotent). */
 export function registerRemoteMachinesHandlers(): void {
   if (handlersRegistered) return;
@@ -72,6 +93,7 @@ export function registerRemoteMachinesHandlers(): void {
       params.enableListener === 'wss' || params.enableListener === 'tailcat'
         ? params.enableListener
         : undefined;
+    await ensureNodeClient(params.machineConnectionId);
     return getRelay().expose(
       {
         machineConnectionId: params.machineConnectionId,
