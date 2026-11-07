@@ -81,15 +81,18 @@ test('an unchanged legacy recording is sent as its own original attachment', asy
   await component.getByRole('button', { name: /^Send/ }).click();
   await expect.poll(async () => (await sends(page)).length).toBe(1);
   const [send] = await sends(page);
-  const wire = JSON.stringify(send.params);
+  // The clip's own placed attachment rides as a canonical FILE block (not only metadata).
+  const fileBlocks = (send.params.fileBlocks ?? []) as { type?: string; attachmentId?: string }[];
+  const fileBlock = fileBlocks.find((block) => block.attachmentId === legacy.attachmentId);
+  expect(fileBlock).toBeTruthy();
+  expect(fileBlock!.type ?? 'file').toBe('file');
   const exported = await page.evaluate(() =>
     JSON.stringify((window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.native.log),
   );
-  expect(wire).toContain(legacy.attachmentId);
   expect(exported).not.toContain('exportMedia');
   await writeFile(
     info.outputPath('legacy-original-receipt.json'),
-    JSON.stringify({ attachmentIdInWire: wire.includes(legacy.attachmentId), sends: 1, exportCalled: exported.includes('exportMedia') }, null, 2),
+    JSON.stringify({ fileBlock: { type: fileBlock!.type ?? 'file', attachmentIdMatches: true }, fileBlocks: fileBlocks.length, sends: 1, exportCalled: exported.includes('exportMedia') }, null, 2),
   );
 });
 
@@ -101,14 +104,17 @@ test('a legacy recording whose raw attachment does not match is not sent and the
   const legacy = await makeLegacy(page, true);
   expect(legacy.applied).toBe(true);
   await component.getByRole('button', { name: /^Send/ }).click();
-  await page.waitForTimeout(1500);
+  // Settled on the observed failure (logged stage/code and the send error), not a timer.
+  await expect.poll(() => logged.join('\n')).toContain('legacy-original-unavailable');
+  await expect
+    .poll(() => page.evaluate(() => !!(window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError))
+    .toBe(true);
   expect(await sends(page)).toHaveLength(0);
   await expect(component.locator('[data-dock-media-attachments] .tile')).toHaveCount(1);
   const sendError = await page.evaluate(
     () => (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError,
   );
   expect(sendError).toBeTruthy();
-  await expect.poll(() => logged.join('\n')).toContain('legacy-original-unavailable');
   await writeFile(
     info.outputPath('legacy-mismatch-receipt.json'),
     JSON.stringify({ sends: 0, tileKept: true, sendErrorShown: !!sendError, logged }, null, 2),
