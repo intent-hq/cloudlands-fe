@@ -9,7 +9,6 @@ import {
   selectLabsRemoteAgentsEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
-import { startOnCloudId } from '$features/remote-machines/start-on';
 
 type State = typeof store.state;
 
@@ -82,13 +81,6 @@ export function startOnCloud(state: State): StartOnCloud | null {
   }));
 }
 
-/** The entry a Start On choice names, else the entry "e2b". */
-export function startOnCloudEntry(state: State, startOnId?: string): CloudMachineProvider | null {
-  const providers = state.cloudMachines?.providers ?? {};
-  const named = savedEntries(state).find((entry) => startOnCloudId(entry.id) === startOnId);
-  return named ?? providers[DEFAULT_CLOUD_MACHINE_ID] ?? null;
-}
-
 /**
  * Why `providerRef` can't run on E2B, or null when it can or the app can't
  * tell (the daemon then decides). A sandbox has no login: the configuration
@@ -99,7 +91,8 @@ export function startOnCloudEntry(state: State, startOnId?: string): CloudMachin
 export function cloudProfileBlockReason(
   state: State,
   providerRef: string,
-  entry: CloudMachineProvider | null = startOnCloudEntry(state),
+  entry: CloudMachineProvider | null = state.cloudMachines?.providers[DEFAULT_CLOUD_MACHINE_ID] ??
+    null,
 ): string | null {
   if (!providerRef) return null;
   const provider = entry;
