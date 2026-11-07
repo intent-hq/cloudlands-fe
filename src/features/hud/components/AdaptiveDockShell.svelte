@@ -960,6 +960,12 @@
 <div
   bind:this={rootElement}
   class="adaptive-dock"
+  class:notch-coordinate-frame={notch &&
+    !!placement.cutout &&
+    placement.phase === 'idle' &&
+    !dragging}
+  style:--dock-window-width={`${placement.windowBounds.width}px`}
+  style:--dock-camera-center={`${placement.cutout ? placement.cutout.x + placement.cutout.width / 2 : placement.windowBounds.width / 2}px`}
   data-testid="dock-shell"
   data-placement={placement.shape}
   data-side={side}
@@ -1285,6 +1291,12 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+  }
+  .notch-coordinate-frame {
+    left: calc((100% - var(--dock-window-width)) / 2);
+    left: calc(0px - round(nearest, calc(var(--dock-camera-center) - 50%), 1px));
+    right: auto;
+    width: var(--dock-window-width);
   }
   .companion {
     position: absolute;

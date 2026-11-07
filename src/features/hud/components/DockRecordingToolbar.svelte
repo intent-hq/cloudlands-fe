@@ -182,6 +182,7 @@
     act({ sessionId, action: 'mouse' });
   }
   const marked = $derived(overlay.marks.length > 0);
+  const clearNoteId = $props.id();
 
   const toolLabels: Record<DockMarkTool | 'pointer', string> = {
     pointer: m.dock_recordingToolbar_pointer_label(),
@@ -301,10 +302,12 @@
             size="sm"
             class="rt-text"
             data-clear
-            tooltipContentClass="dock-chrome-tooltip"
-            tooltip={m.dock_annotationToolbar_clear_label()}
+            aria-describedby={recording ? clearNoteId : undefined}
             onclick={clear}><BroomIcon size={16} />{m.dock_annotationToolbar_clear_label()}</Button
           >
+          {#if recording}<span class="clear-note" id={clearNoteId}
+              >{m.dock_recordingToolbar_kept_label()}</span
+            >{/if}
         </div>
       {/if}
     </section>
@@ -564,7 +567,20 @@
   }
   .clear-slot {
     display: flex;
+    flex-direction: column;
+    align-items: flex-start;
     overflow: hidden;
+  }
+  .clear-note {
+    padding: 0 12px;
+    color: var(--rt-muted);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+  }
+  .clear-slot:has(.clear-note) :global(.rt-text) {
+    height: 24px;
+    min-height: 24px;
   }
   /* Time chip: status and pause toggle in one. */
   .recording-toolbar :global(.rt-chip) {
