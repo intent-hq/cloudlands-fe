@@ -4,8 +4,8 @@ description: >-
   bounded retries on transient network errors (intent-hq/intent#8783).
   actions/checkout retries its fetch but not the blob:none file download that
   a sparse checkout does inside `git checkout`, so one dropped github.com
-  connection failed the job. A missing ref still fails at once. Run it after
-  the repository's own checkout: it calls scripts/git-network-retry.sh.
+  connection failed the job. A missing ref still fails at once. It runs this
+  repository's scripts/git-network-retry.sh, so check the repository out first.
 inputs:
   repository:
     description: owner/name on github.com (public; no credentials are used)
@@ -31,4 +31,4 @@ runs:
         PATTERNS: ${{ inputs.sparse-checkout }}
       run: >-
         printf '%s\n' "$PATTERNS" |
-        bash scripts/git-network-retry.sh sparse-checkout "https://github.com/$REPOSITORY" "$REF" "$DEST"
+        bash "$GITHUB_ACTION_PATH/../../../scripts/git-network-retry.sh" sparse-checkout "https://github.com/$REPOSITORY" "$REF" "$DEST"

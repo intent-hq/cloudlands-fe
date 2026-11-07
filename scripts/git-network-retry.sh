@@ -9,6 +9,11 @@
 #   git-network-retry.sh sparse-checkout <repository-url> <ref> <path>
 #       Non-cone patterns on stdin. Replaces <path> with a detached, depth-1,
 #       blob:none checkout of <ref> (a branch, tag or full commit SHA).
+#   git-network-retry.sh classify
+#       Prints "transient" or "permanent" for git error output on stdin.
+#
+# A connection that stalls (under 1000 bytes/s for 60s) is aborted so that it
+# can be retried instead of hanging until the job times out.
 #
 # GIT_RETRY_ATTEMPTS (default 4) caps the attempts; GIT_RETRY_DELAYS lists the
 # seconds to wait before each retry (default "15 30 60"; the last value
@@ -17,19 +22,28 @@ set -euo pipefail
 
 attempts=${GIT_RETRY_ATTEMPTS:-4}
 read -r -a delays <<< "${GIT_RETRY_DELAYS:-15 30 60}"
+[ "${#delays[@]}" -gt 0 ] || delays=(0)
 git_bin=${GIT_RETRY_GIT:-git}
 
 # Errors from git, curl and TLS that mean the remote could not be reached or
 # dropped the connection; none of them can come from a bad ref or bad auth.
-transient='Failed to connect to|Could not resolve host|Connection timed out|Operation timed out|Connection reset|Connection refused|Empty reply from server|Recv failure|The remote end hung up unexpectedly|early EOF|RPC failed|unexpected disconnect|HTTP/2 stream|returned error: (429|5[0-9][0-9])|gnutls_handshake|TLS connection was non-properly terminated|SSL_ERROR_SYSCALL|SSL connection timeout'
+transient='Failed to connect to|Could not resolve host|Connection timed out|Operation timed out|Connection reset|Connection refused|Empty reply from server|Recv failure|The remote end hung up unexpectedly|early EOF|RPC failed|unexpected disconnect|HTTP/2 stream|returned error: (408|429|5[0-9][0-9])|gnutls_handshake|TLS connection was non-properly terminated|SSL_ERROR_SYSCALL|SSL connection timeout|GnuTLS recv error|Error in the pull function|Operation too slow'
 
 # Errors that name a real problem; they win over the transient list because
 # git can follow them with a generic "remote end hung up".
-permanent="not our ref|couldn't find remote ref|unadvertised object|Repository not found|Authentication failed|returned error: 40[0-9]|could not read Username|invalid refspec"
+permanent="not our ref|couldn't find remote ref|unadvertised object|Repository not found|Authentication failed|returned error: 40[0-7]|could not read Username|invalid refspec"
 
 usage() {
-  echo "usage: $0 run <git args...> | sparse-checkout <repository-url> <ref> <path>" >&2
+  echo "usage: $0 run <git args...> | sparse-checkout <repository-url> <ref> <path> | classify" >&2
   exit 2
+}
+
+classify() {
+  if grep -Eqi "$permanent" "$1" || ! grep -Eqi "$transient" "$1"; then
+    echo permanent
+  else
+    echo transient
+  fi
 }
 
 retry_git() {
@@ -38,13 +52,13 @@ retry_git() {
   while :; do
     echo "git $* (attempt $attempt/$attempts)" >&2
     rc=0
-    "$git_bin" "$@" 2>"$err" || rc=$?
+    "$git_bin" -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 "$@" 2>"$err" || rc=$?
     cat "$err" >&2
     if [ "$rc" -eq 0 ]; then
       rm -f "$err"
       return 0
     fi
-    if grep -Eqi "$permanent" "$err" || ! grep -Eqi "$transient" "$err"; then
+    if [ "$(classify "$err")" = permanent ]; then
       rm -f "$err"
       echo "::error::git $* failed (exit $rc): not a transient network error, so not retried." >&2
       return "$rc"
@@ -88,5 +102,11 @@ case "$command" in
     retry_git "$@"
     ;;
   sparse-checkout) sparse_checkout "$@" ;;
+  classify)
+    input=$(mktemp)
+    cat > "$input"
+    classify "$input"
+    rm -f "$input"
+    ;;
   *) usage ;;
 esac

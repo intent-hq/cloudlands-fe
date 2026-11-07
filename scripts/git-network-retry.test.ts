@@ -171,6 +171,44 @@ describe.skipIf(process.platform === 'win32')('git-network-retry.sh', () => {
     });
   });
 
+  describe('classify', () => {
+    // Real git/curl/GnuTLS output; the first entry is from run 42396708869.
+    const transient = [
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': Failed to connect to github.com port 443 after 141331 ms: Couldn't connect to server\nfatal: could not fetch c675bc2eccb320638212c1dcb650acdf216c4c47 from promisor remote",
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': GnuTLS recv error (-54): Error in the pull function.\nfatal: could not fetch c675bc2e from promisor remote",
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': GnuTLS recv error (-9): A TLS packet with unexpected length was received.",
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': Could not resolve host: github.com",
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': Operation too slow. Less than 1000 bytes/sec transferred the last 60 seconds",
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': The requested URL returned error: 502",
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': The requested URL returned error: 408",
+      'error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly: CANCEL (err 8)\nfatal: early EOF',
+    ];
+    const permanent = [
+      'fatal: remote error: upload-pack: not our ref ffffffffffffffffffffffffffffffffffffffff\nfatal: the remote end hung up unexpectedly',
+      "fatal: couldn't find remote ref refs/heads/no-such-branch",
+      "remote: Repository not found.\nfatal: repository 'https://github.com/intent-hq/nope/' not found",
+      "fatal: could not read Username for 'https://github.com': terminal prompts disabled",
+      "fatal: unable to access 'https://github.com/intent-hq/intent/': The requested URL returned error: 403",
+      'fatal: could not fetch c675bc2eccb320638212c1dcb650acdf216c4c47 from promisor remote',
+    ];
+    it.each(transient.map((line) => [line]))('retries %s', (line) => {
+      expect(runScript(['classify'], { input: line }).output.trim()).toBe('transient');
+    });
+    it.each(permanent.map((line) => [line]))('does not retry %s', (line) => {
+      expect(runScript(['classify'], { input: line }).output.trim()).toBe('permanent');
+    });
+  });
+
+  it('treats a blank delay list as no wait', () => {
+    const dest = join(tmp, 'run-no-delays');
+    git(tmp, 'init', '-q', dest);
+    const { status, output } = runScript(['run', '-C', dest, 'fetch', UNREACHABLE, 'main'], {
+      env: { GIT_RETRY_ATTEMPTS: '2', GIT_RETRY_DELAYS: ' ' },
+    });
+    expect(status).toBe(128);
+    expect(output).toContain('after 2 attempts');
+  });
+
   describe('sparse-checkout', () => {
     const patterns = '/docs/protocol/fixtures/turn-start/\n\n/scripts/turn-start-contract.mjs\n';
 
