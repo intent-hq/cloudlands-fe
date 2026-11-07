@@ -8,6 +8,7 @@ import { arrayBufferToBase64 } from '$features/voice/utils/wav-encoder';
 import { placeAttachmentViaTransport, mintPlacementIdempotencyKey } from '$lib/components/chat/input/attachment-placement';
 import { intentFileMediaUrlToWorkspaceFile } from '$lib/utils/workspace-file-image';
 import { isDockBindingCurrent, type DockPlacementBinding } from './dock-evidence-placement';
+import { DockSendError, dockSendCode, type DockSendStage } from './dock-send-diagnostics';
 export interface DockMediaSendResult {
   images: Record<string, { data: string; mimeType: string; width: number; height: number }>;
   files: Array<{ type: 'file'; attachmentId: string; fileName: string; mimeType: string; size: number }>;
@@ -18,8 +19,12 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
   binding: DockPlacementBinding, service: DockEvidenceNativeService | null,
   current: () => boolean): Promise<DockMediaSendResult> {
   const output: DockMediaSendResult = { images: {}, files: [], frames: [], metadata: [] };
+  // The step in progress, so a failure reports where it happened (never what it carried).
+  let stage: DockSendStage = 'validate';
+  try {
   const check = () => { if (!current() || !isDockBindingCurrent(binding)) throw new Error('media-send-retired'); };
   for (const row of [...evidence.images, ...evidence.clips]) {
+    stage = 'validate';
     if (row.mediaError) throw new Error('invalid-saved-edit');
     if (!row.media) continue;
     check();
@@ -28,6 +33,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
     const jobId = crypto.randomUUID();
     try {
       if (source.kind === 'recording' && edit.voice === 'transcript' && media.transcript?.status !== 'ready') {
+        stage = 'transcribe';
         if (!service?.transcribeMedia) throw new Error('transcript-unavailable');
         const recognized = await service.transcribeMedia({ jobId, media });
         check();
@@ -35,6 +41,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
         media.transcript = recognized.value;
         if (!media.saved) edit = defaultDockMediaEdit(source, source.capturedMarks ?? [], media.transcript);
       }
+      stage = 'plan';
       const plan = planDockMediaOutput(edit, source, media.transcript);
       if (plan.errors.length) throw new Error(plan.errors[0]);
       const meta: Record<string, unknown> = { id: row.id, kind: source.kind, video: edit.video, voice: edit.voice,
@@ -42,6 +49,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
         marks: plan.marks.map(({ n, mark, frameAtMs }) => ({ n, id: mark.id, at_ms: frameAtMs, kind: mark.kind,
           label: mark.label, note: mark.note, context: mark.context, geometry: mark.geometry })) };
       if (source.kind === 'screenshot') {
+        stage = 'screenshot-source';
         const encoded = source.path.split('/').map(encodeURIComponent).join('/');
         const resolved = intentFileMediaUrlToWorkspaceFile(`intent://local/file/${encoded}`, workspaceId);
         if (!resolved || resolved.kind !== 'image') throw new Error('media-source-unavailable');
@@ -49,6 +57,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
         check();
         const pixels = { base64: arrayBufferToBase64(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer),
           mimeType: /\.jpe?g$/i.test(source.path) ? 'image/jpeg' : /\.webp$/i.test(source.path) ? 'image/webp' : 'image/png' };
+        stage = 'screenshot-render';
         output.images[row.id] = await renderDockMediaImage(source, edit, pixels);
         check();
       } else {
@@ -57,14 +66,18 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
           output.metadata.push(meta);
           continue;
         }
+        stage = 'overlay-render';
         if (!service?.exportMedia) throw new Error('media-export-unavailable');
         const spans = dockMediaOverlaySpans(source, edit);
         if (spans.length > 10000) throw new Error('media-animation-layer-limit');
         const layers = [];
         for (const span of spans) { check(); layers.push({ ...span, png: await renderDockMediaOverlay(source, edit, span.atMs) }); }
+        stage = 'export';
         const exported = await service.exportMedia({ outputVersion: DOCK_MEDIA_OUTPUT_VERSION, jobId, media: { ...media, saved: edit }, layers });
         check();
-        if (!exported.ok) throw new Error('media-export-failed');
+        if (!exported.ok)
+          throw new Error(['media-export-failed', exported.error, exported.detail].filter(Boolean).join(':'));
+        stage = 'placement';
         const files = [exported.value.video, ...exported.value.frames];
         const references = [];
         for (let index = 0; index < files.length; index++) {
@@ -88,4 +101,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
     }
   }
   return output;
+  } catch (error) {
+    throw error instanceof DockSendError ? error : new DockSendError(stage, dockSendCode(error));
+  }
 }

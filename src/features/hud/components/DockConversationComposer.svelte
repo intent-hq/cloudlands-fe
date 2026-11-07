@@ -1,5 +1,7 @@
 <script lang="ts" module>
   import type { Workspace } from '$shared/types';
+  import { dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
+  import { createLogger } from '$lib/utils/client-logger';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import type { FileAttachmentPolicy } from '$lib/components/chat/input/file-attachment-policy';
   import type {
@@ -67,6 +69,8 @@
   import { COMPOSER_INSET_CLASS } from '$lib/components/chat/composer-inset';
   import { selectChatAuroraEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { m } from '$shared/paraglide/messages.js';
+
+  const sendLogger = createLogger('DockSend');
 
   let {
     workspace,
@@ -319,7 +323,9 @@
       // acknowledged text as the editor holds it now (the `value` prop can lag a
       // store notification), never the pre-barrier string from the original click.
       commitSubmission(input?.getValue() ?? value, forceSubmit);
-    } catch {
+    } catch (error) {
+      // Stage and bounded code only: never the prompt, file names or ids.
+      sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'barrier'));
       if (isCurrent()) notify.error(m.dock_conversation_sendFailed_error());
     } finally {
       preparingSubmission = false;

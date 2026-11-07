@@ -1,4 +1,6 @@
 import { prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
+import { DockSendError, dockSendCode, dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
+import { createLogger } from '$lib/utils/client-logger';
 import { dockMediaEditSaga } from './dock-media-edit-saga';
 import { dockContextLinksSaga } from './dock-context-links-saga';
 import { dockShortcutSaga } from './dock-shortcut-saga';
@@ -131,6 +133,8 @@ import {
   dockEvidenceInsertionCommitted,
   dockEvidencePlacementRecorded,
 } from '../dock-conversation-slice';
+
+const sendLogger = createLogger('DockSend');
 
 function current(generation: number, authority: string): boolean {
   return (
@@ -505,7 +509,12 @@ function* sendReply(
     // Composites come only from the click's snapshot (items + evidence).
     const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
       dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], metadata: [] };
-    const burned = evidence ? yield* call(burnEvidence, evidence, clickedItems, materialized.images) : [];
+    let burned: Awaited<ReturnType<typeof burnEvidence>> = [];
+    try {
+      burned = evidence ? yield* call(burnEvidence, evidence, clickedItems, materialized.images) : [];
+    } catch (error) {
+      throw new DockSendError('burn', dockSendCode(error));
+    }
     const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
     const wireEvidence = evidence ? { ...evidence,
       images: evidence.images.map((image) => materialized.images[image.id]
@@ -633,7 +642,9 @@ function* sendReply(
       }),
     );
     yield* reconcileDeliveries();
-  } catch {
+  } catch (error) {
+    // Stage and bounded code only: never the prompt, file names or ids.
+    sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'admission'));
     if (current(generation, authority))
       yield* put(
         dockConversationSendState(generation, false, m.dock_conversation_sendFailed_error()),
