@@ -544,6 +544,7 @@
     font-family: var(--annotation-badge-font);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
+    letter-spacing: normal;
     text-anchor: middle;
     dominant-baseline: central;
   }

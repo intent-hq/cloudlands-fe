@@ -86,6 +86,8 @@ export function layoutDockBurn(
 }
 
 interface Painter {
+  letterSpacing?: string;
+  wordSpacing?: string;
   fillStyle: string | CanvasGradient | CanvasPattern;
   strokeStyle: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
@@ -106,6 +108,8 @@ interface Painter {
 }
 
 function paintDockBurn(context: Painter, ops: readonly DockBurnOp[]): void {
+  if ('letterSpacing' in context) context.letterSpacing = '0px';
+  if ('wordSpacing' in context) context.wordSpacing = '0px';
   const stroke = (width: number, unit: number, draw: () => void) => {
     context.strokeStyle = DOCK_MARK_BURN_STYLE.halo;
     context.lineWidth = width + DOCK_MARK_BURN_STYLE.haloWidth * unit;

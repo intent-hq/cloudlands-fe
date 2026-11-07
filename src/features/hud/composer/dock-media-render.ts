@@ -65,6 +65,9 @@ export function layoutDockMediaMarks(
 type Painter = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPaintOp[]): void {
   context.save();
+  // A mounted canvas can inherit app caption tracking; offscreen export cannot.
+  context.letterSpacing = '0px';
+  context.wordSpacing = '0px';
   context.strokeStyle = DOCK_MEDIA_PAINT.accent;
   context.fillStyle = DOCK_MEDIA_PAINT.accent;
   context.lineCap = 'round';
