@@ -87,6 +87,7 @@
   let anchorKey: string | null = null;
   let showArchived = $state(false);
   let contextMenu = $state<(SidebarContextPosition & { agentId: string }) | null>(null);
+  let archivingOpen = $state<{ agentId: string; archived: string[] } | null>(null);
 
   const liveIds = $derived(new Set($threads$.map((thread) => thread.agentId)));
   const selection = $derived(multiKeys.filter((key) => liveIds.has(key)));
@@ -152,13 +153,27 @@
     closeMenu();
     if (!canArchive(agentIds)) return;
     multiKeys = [];
-    // Archiving the open chat moves to the next live one instead of a read-only transcript.
-    if ($activeAgentId$ && agentIds.includes($activeAgentId$)) {
-      const next = $threads$.find((thread) => !agentIds.includes(thread.agentId));
-      if (next) chooseThread(next.agentId);
-    }
+    archivingOpen =
+      $activeAgentId$ && agentIds.includes($activeAgentId$)
+        ? { agentId: $activeAgentId$, archived: agentIds }
+        : null;
     appStore.dispatch(retireAgentsRequested(CHIEF_WORKSPACE_ID, agentIds));
   }
+
+  // Once the open chat is actually archived, move to the next live chat instead of
+  // leaving a read-only transcript open; a refused archive leaves the chat in place.
+  $effect(() => {
+    const pending = archivingOpen;
+    if (!pending) return;
+    if ($activeAgentId$ !== pending.agentId) {
+      archivingOpen = null;
+      return;
+    }
+    if (!$retiredThreads$.some((thread) => thread.agentId === pending.agentId)) return;
+    archivingOpen = null;
+    const next = $threads$.find((thread) => !pending.archived.includes(thread.agentId));
+    if (next) chooseThread(next.agentId);
+  });
 
   function remove(threads: ChiefThreadSummary[]) {
     closeMenu();
@@ -435,7 +450,9 @@
       <SidebarGroupHeader
         title={m.home_assistantThread_archived_label()}
         meta={formatInteger(archivedCount)}
-        label={m.home_assistantThread_archivedCount_label({ count: formatInteger(archivedCount) })}
+        label={archivedCount === 1
+          ? m.home_assistantThread_archivedCount_one({ count: formatInteger(archivedCount) })
+          : m.home_assistantThread_archivedCount_many({ count: formatInteger(archivedCount) })}
         expanded={showArchived}
         onclick={toggleArchived}
         data-assistant-archived-toggle=""

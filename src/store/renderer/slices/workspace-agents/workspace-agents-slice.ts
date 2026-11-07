@@ -612,6 +612,10 @@ export const undoAgentDeletionRequested = createAsyncAction<
   [wsId: string, agentId: string],
   boolean
 >('workspaceAgents/undoAgentDeletion', 'workspaceAgents/undoAgentDeletionRequested');
+/** Undo several pending deletions; one error toast reports any that could not be undone. */
+export const undoAgentDeletionsRequested = createAction<[wsId: string, agentIds: string[]]>(
+  'workspaceAgents/undoAgentDeletionsRequested',
+);
 
 // Stream lifecycle actions
 

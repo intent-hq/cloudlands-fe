@@ -52,8 +52,8 @@ test('right-click menu pins, archives, restores and deletes one Assistant chat',
   await expect(page.getByRole('menu').getByRole('menuitem').first()).toHaveText('Unpin');
   await page.keyboard.press('Escape');
 
-  const archived = sidebar.getByRole('button', { name: /archived chats/ });
-  await expect(archived).toHaveAccessibleName('1 archived chats');
+  const archived = sidebar.getByRole('button', { name: /archived chat/ });
+  await expect(archived).toHaveAccessibleName('1 archived chat');
   await options.nth(2).click({ button: 'right' });
   await page.getByRole('menuitem', { name: 'Archive', exact: true }).click();
   await expect(options).toHaveCount(3);

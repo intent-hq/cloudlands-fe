@@ -70,6 +70,7 @@ import {
   addAgent,
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
+  undoAgentDeletionsRequested,
 } from '../../workspace-agents/workspace-agents-slice';
 import {
   bulkUpsertSessions,
@@ -147,10 +148,7 @@ async function showBulkUndoToast(wsId: string, agentIds: string[]): Promise<void
           duration: UNDO_DURATION_MS,
           action: {
             label: m.agent_mutation_undo_label(),
-            onClick: () =>
-              agentIds.forEach((agentId) =>
-                store.dispatch(undoAgentDeletionRequested(wsId, agentId)),
-              ),
+            onClick: () => store.dispatch(undoAgentDeletionsRequested(wsId, agentIds)),
           },
         },
         { pauseOnHover: false },
@@ -995,50 +993,51 @@ function* deleteAgentsWithUndo(
   }
 }
 
+/**
+ * Race-safe `agent.cancelDelete` for one pending deletion. Returns `null` when
+ * nothing is pending, `true` once restored, and `false` when the deletion
+ * already committed or the cancel failed (the caller reports it).
+ */
+function* performUndo(wsId: string, agentId: string): SagaGenerator<boolean | null> {
+  const pending = getPendingAgentDeletion(agentId);
+  if (!pending || pending.wsId !== wsId) return null;
+  let cancel;
+  try {
+    cancel = yield* call([appClient.agents, appClient.agents.cancelDelete], agentId, pending.wsId);
+  } catch (error) {
+    logger.error('agent.cancelDelete failed', { agentId, error });
+    cancel = { success: false as const };
+  }
+  const currentPending = getPendingAgentDeletion(agentId);
+  if (!cancel.success || !cancel.cancelled || (currentPending && currentPending !== pending)) {
+    // Already committed, a failed cancel RPC, or a newer deletion — never
+    // resurrect the agent locally from this request's old snapshot.
+    return false;
+  }
+  // The cancellation event may already have restored/refetched the row.
+  // Acknowledge success without replaying the old snapshot in that case.
+  if (currentPending === pending) {
+    removePendingAgentDeletion(agentId);
+    // Events-bridge entries may not have a snapshot.
+    const current = yield* selectAgentSession.effect(agentId);
+    if (
+      pending.snapshot &&
+      pending.snapshot.workspaceId === wsId &&
+      (!current || current === pending.snapshot)
+    ) {
+      yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+    }
+  }
+  return true;
+}
+
 function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
   let settled = false;
   try {
-    const pending = getPendingAgentDeletion(agentId);
-    if (!pending || pending.wsId !== wsId) {
-      yield* put(action.success(false));
-      settled = true;
-      return;
-    }
-    let cancel;
-    try {
-      cancel = yield* call(
-        [appClient.agents, appClient.agents.cancelDelete],
-        agentId,
-        pending.wsId,
-      );
-    } catch (error) {
-      logger.error('agent.cancelDelete failed', { agentId, error });
-      cancel = { success: false as const };
-    }
-    const currentPending = getPendingAgentDeletion(agentId);
-    if (cancel.success && cancel.cancelled && (!currentPending || currentPending === pending)) {
-      // The cancellation event may already have restored/refetched the row.
-      // Acknowledge success without replaying the old snapshot in that case.
-      if (currentPending === pending) {
-        removePendingAgentDeletion(agentId);
-        // Events-bridge entries may not have a snapshot.
-        const current = yield* selectAgentSession.effect(agentId);
-        if (
-          pending.snapshot &&
-          pending.snapshot.workspaceId === wsId &&
-          (!current || current === pending.snapshot)
-        ) {
-          yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
-        }
-      }
-      yield* put(action.success(true));
-    } else {
-      // Already committed, a failed cancel RPC, or a newer deletion — never
-      // resurrect the agent locally from this request's old snapshot.
-      yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
-      yield* put(action.success(false));
-    }
+    const undone = yield* call(performUndo, wsId, agentId);
+    if (undone === false) yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
+    yield* put(action.success(undone === true));
     settled = true;
   } catch (error) {
     yield* put(action.failure(mutationError(error, m.agent_mutation_undoDeleteFailed_error())));
@@ -1048,6 +1047,25 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
       yield* put(action.failure(new Error(m.agent_mutation_undoDeleteFailed_error())));
     }
   }
+}
+
+function* undoDeletions(
+  action: ReturnType<typeof undoAgentDeletionsRequested>,
+): SagaGenerator<void> {
+  const [wsId, agentIds] = action.payload;
+  const results = yield* all(
+    agentIds.map((agentId) =>
+      call(function* () {
+        try {
+          return yield* call(performUndo, wsId, agentId);
+        } catch (error) {
+          logger.error('Bulk agent undo failed', { agentId, error });
+          return false;
+        }
+      }),
+    ),
+  );
+  if (results.includes(false)) yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
 }
 
 function* deleteImmediately(
@@ -1190,6 +1208,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(deleteAgentWithUndoRequested, deleteWithUndo),
     takeEvery(deleteAgentsWithUndoRequested, deleteAgentsWithUndo),
     takeEvery(undoAgentDeletionRequested, undoDeletion),
+    takeEvery(undoAgentDeletionsRequested, undoDeletions),
     takeEvery(deleteAgentSessionRequested, deleteImmediately),
   ]);
 }
