@@ -31,6 +31,7 @@ vi.mock('$store/renderer/slices/panel-layout/panel-layout-selectors', () => ({
 }));
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
   selectChiefThreads: { select: () => [] },
+  selectAllChiefThreads: { select: () => [] },
   selectChiefActiveAgentId: { select: () => null },
 }));
 

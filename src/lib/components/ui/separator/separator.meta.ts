@@ -11,6 +11,7 @@ export const separatorMetadata = parseUiComponentMetadata({
   owner: 'design-system',
   callers: [
     'src/features/discussions/components/DiscussionMentionPicker.svelte',
+    'src/features/home/HomeAssistantThreads.svelte',
     'src/features/workspace-sharing/components/WorkspaceSharingSetup.svelte',
     'src/lib/component-catalog/renderers/ContentFieldCatalogPreview.svelte',
     'src/lib/components/file-explorer/file-explorer-layout.svelte',

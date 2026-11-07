@@ -26,6 +26,7 @@ import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-
 export const ASSISTANT_CONTENT_PANEL_ID = 'assistant-content';
 import { assistantPanelLayoutId } from '$shared/assistant-panel-layout';
 import {
+  selectAllChiefThreads,
   selectChiefActiveAgentId,
   selectChiefThreads,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -34,7 +35,7 @@ export const selectAssistantPanelLayoutId = store.createSelector((state) => {
   const threads = selectChiefThreads.select(state);
   const selectedId = selectChiefActiveAgentId.select(state);
   const thread =
-    threads.find((item) => item.agentId === selectedId) ??
+    selectAllChiefThreads.select(state).find((item) => item.agentId === selectedId) ??
     threads.find((item) => item.isActive) ??
     threads.find((item) => item.messageCount > 0) ??
     threads[0];

@@ -53,6 +53,7 @@
       | 'board-repository-labels'
       | 'empty'
       | 'assistant'
+      | 'assistant-actions'
       | 'assistant-streaming'
       | 'assistant-activity'
       | 'assistant-activity-many'
@@ -89,6 +90,7 @@
       'board-repository-labels': { props: { scenario: 'board-repository-labels' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
+      'assistant-actions': { props: { scenario: 'assistant-actions' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
       'assistant-activity': { props: { scenario: 'assistant-activity' } },
       'assistant-activity-many': { props: { scenario: 'assistant-activity-many' } },
@@ -555,14 +557,20 @@
       }),
     );
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
-    const threads =
+    const threads: AgentSession[] =
       scenario === 'assistant-many' || scenario === 'assistant-activity-many'
         ? assistantFixtures
         : scenario === 'assistant-activity'
           ? assistantFixtures.slice(0, 9)
           : scenario === 'assistant' || scenario === 'assistant-streaming'
             ? assistantFixtures.slice(0, 3)
-            : [];
+            : scenario === 'assistant-actions'
+              ? assistantFixtures.slice(0, 5).map((thread, index) => ({
+                  ...thread,
+                  pinned: false,
+                  ...(index === 4 ? { retiredAt: String(thread.updatedAt) } : {}),
+                }))
+              : [];
     store.dispatch(setAgents(CHIEF_WORKSPACE_ID, threads));
     store.dispatch(
       bulkUpsertSessions(
