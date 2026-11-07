@@ -266,8 +266,8 @@
     {#if status === 'loading' || status === 'idle'}
       <div class="flex flex-col gap-5" role="status" aria-label={m.agentTrace_loading_label()}>
         <div class="flex flex-col gap-2.5 py-1">
-          <Skeleton class="h-3.5 w-56 max-w-[70%]" />
-          <Skeleton class="h-3 w-80 max-w-[90%]" />
+          <Skeleton class="h-3.5 w-56 max-w-7/10" />
+          <Skeleton class="h-3 w-80 max-w-9/10" />
         </div>
         <div class="flex flex-col pt-6">
           {#each LOADING_ROWS as row, index (index)}
