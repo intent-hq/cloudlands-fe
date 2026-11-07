@@ -13,6 +13,7 @@
   import MarkdownRenderer from '$lib/components/editor/MarkdownRenderer.svelte';
   import CodeBlock from '$lib/components/editor/CodeBlock.svelte';
   import AgentCard from './AgentCard.svelte';
+  import AnsiText from './AnsiText.svelte';
 
   import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 
@@ -529,7 +530,9 @@
               {/if}
               {#if parsedResult.content}
                 <pre
-                  class="m-0 p-2 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-[#a9b1d6]">{parsedResult.content}</pre>
+                  class="m-0 p-2 font-mono text-sm leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto text-[#a9b1d6]"><AnsiText
+                    text={parsedResult.content}
+                  /></pre>
               {:else}
                 <pre
                   class="m-0 p-2 font-mono text-sm leading-relaxed text-[#a9b1d6]/50">{m.chat_toolDetails_noOutput_label()}</pre>
