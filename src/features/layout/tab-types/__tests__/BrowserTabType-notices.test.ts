@@ -120,6 +120,40 @@ describe('browser tab notices above the address bar', () => {
     expect(agentBar()).toBeNull();
   });
 
+  it('keeps the same live browser element when the notices appear or disappear', async () => {
+    const props = (owned: boolean) => ({
+      tab: tab('cli-desk', owned),
+      workspaceId: 'workspace-1',
+      layoutId: 'workspace-1',
+      isActive: true,
+      isPanelFocused: false,
+    });
+    const { rerender } = render(BrowserTabType, { props: props(true) });
+    const browser = screen.getByTestId('embedded-browser');
+    expect(agentBar()).not.toBeNull();
+
+    await rerender(props(false));
+    expect(agentBar()).toBeNull();
+    expect(screen.getByTestId('embedded-browser')).toBe(browser);
+
+    await rerender(props(true));
+    expect(agentBar()).not.toBeNull();
+    expect(screen.getByTestId('embedded-browser')).toBe(browser);
+  });
+
+  it('names an unknown agent without a saved name by its shortened id', () => {
+    render(BrowserTabType, {
+      props: {
+        tab: { ...tab('cli-desk', true), ownerAgentName: undefined },
+        workspaceId: 'workspace-1',
+        layoutId: 'workspace-1',
+        isActive: true,
+        isPanelFocused: false,
+      },
+    });
+    expect(agentBar()?.textContent).toMatch(/agent-7/);
+  });
+
   it('leaves the warning to the offline banner while the host is disconnected', () => {
     seedClients([client('cli-desk', 'dev-box')]);
     renderTab('cli-laptop', true);

@@ -29,7 +29,7 @@
   <div
     class="flex shrink-0 items-start gap-2 border-b border-warning/20 bg-warning/10 px-3 py-2 text-sm text-warning-ink"
     data-browser-tab-not-primary
-    role="status"
+    role="note"
   >
     <Fa icon={faTriangleExclamation} class="mt-0.5 shrink-0" />
     <span class="min-w-0 flex-1">
