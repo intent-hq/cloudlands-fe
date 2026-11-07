@@ -91,7 +91,8 @@
     machineModelFallback,
     resolveStartOn,
     START_ON_BACKEND,
-    START_ON_E2B,
+    startOnCloudId,
+    startOnCloudMachineId,
   } from '$features/remote-machines/start-on';
 
   const logger = createLogger('InitialAgentPicker');
@@ -216,11 +217,13 @@
   });
   const startOnCloud$ = selectStartOnCloud(startOnProviderRef);
   const startOnChoices = $derived(
-    $startOnOptions$.map((option) =>
-      option.kind === 'cloud' && $startOnCloud$?.unavailableReason
-        ? { ...option, disabled: true, reason: $startOnCloud$.unavailableReason, hint: undefined }
-        : option,
-    ),
+    $startOnOptions$.map((option) => {
+      if (option.kind !== 'cloud') return option;
+      const reason = $startOnCloud$?.find(
+        (entry) => startOnCloudId(entry.cloudMachineId) === option.id,
+      )?.unavailableReason;
+      return reason ? { ...option, disabled: true, reason, hint: undefined } : option;
+    }),
   );
   const effectiveStartOn = $derived(
     $startOnVisible$ && !startOnBackendOnly
@@ -1114,7 +1117,7 @@
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
-      machineId={effectiveStartOn && effectiveStartOn !== START_ON_E2B
+      machineId={effectiveStartOn && !startOnCloudMachineId(effectiveStartOn)
         ? effectiveStartOn
         : undefined}
       showMachine={false}

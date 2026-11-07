@@ -34,6 +34,9 @@
     title?: string;
     /** Maximum width in pixels */
     maxWidth?: number;
+    /** Accessible names of the name button and the edit field. */
+    buttonAriaLabel?: string;
+    inputAriaLabel?: string;
   }
 
   let {
@@ -45,6 +48,8 @@
     textClass = 'text-sm font-medium',
     title = m.ui_editableName_rename_tooltip(),
     maxWidth = 200,
+    buttonAriaLabel,
+    inputAriaLabel,
   }: Props = $props();
 
   let isEditing = $state(false);
@@ -140,6 +145,7 @@
         'min-w-[60px]',
       )}
       noFocusStyle
+      aria-label={inputAriaLabel}
       {placeholder}
       style="width: {getInputWidth(editedValue)}px; max-width: {maxWidth}px"
     />
@@ -156,6 +162,7 @@
       onclick={startEditing}
       {disabled}
       {title}
+      aria-label={buttonAriaLabel}
     >
       {value || placeholder}
     </Button>

@@ -1,56 +1,86 @@
 <!--
-  Settings → Machines: the E2B row. Before setup it holds the inline setup
-  form; after, it names the template and size, and lists the live sandboxes
-  under it. Editing reopens the form; Remove deletes the key and every sandbox.
+  Settings → one E2B entry. Before setup it holds the inline setup form; after,
+  it names the template and size, and lists the entry's live sandboxes under
+  it. With named entries (Nodes), the name renames in place. Editing reopens
+  the form; Remove deletes the entry's key and every sandbox it started.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { ListRow, RowActions, type ActionDefinition } from '$lib/components/patterns/collection';
   import { Badge, type BadgeColor } from '$lib/components/ui/badge';
+  import EditableName from '$lib/components/ui/EditableName.svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
   import { faCloud, faPen, faTrash } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
+  import type { CloudMachineProvider } from '$shared/types/cloud-machines';
   import { store as appStore } from '$store/renderer/store';
   import { selectCurrentBackendLabel } from '$features/remote-machines/remote-machines-selectors';
   import {
+    selectCloudEntries,
+    selectCloudEntriesSupported,
     selectCloudFailures,
     selectCloudOperations,
     selectCloudSandboxes,
-    selectE2bProvider,
   } from './cloud-machines-selectors';
-  import { CLOUD_REMOVE_KEY, cloudMachinesRemoveRequested } from './cloud-machines-slice';
-  import { cloudErrorText, cloudSizeLabel, templateVersionLabel } from './cloud-machines-format';
+  import {
+    NEW_CLOUD_ENTRY,
+    cloudConfigureKey,
+    cloudMachineFailureDismissed,
+    cloudMachinesConfigureRequested,
+    cloudMachinesRemoveRequested,
+    cloudRemoveKey,
+  } from './cloud-machines-slice';
+  import {
+    cloudEntryNameError,
+    cloudErrorText,
+    cloudSizeLabel,
+    templateVersionLabel,
+  } from './cloud-machines-format';
   import CloudMachineSetupForm from './CloudMachineSetupForm.svelte';
   import CloudSandboxList from './CloudSandboxList.svelte';
 
   interface Props {
+    /** The saved entry; null while a new one is set up. */
+    entry: CloudMachineProvider | null;
     /** The setup/edit form is open. */
     editing: boolean;
     onEdit: () => void;
     onClose: () => void;
+    /** First row of its list: no top border. */
+    first?: boolean;
     /** Fixed clock for previews and tests. */
     now?: number;
   }
 
-  let { editing, onEdit, onClose, now }: Props = $props();
+  let { entry, editing, onEdit, onClose, first = false, now }: Props = $props();
 
-  const provider$ = selectE2bProvider();
+  const named$ = selectCloudEntriesSupported();
+  const entries$ = selectCloudEntries();
   const sandboxes$ = selectCloudSandboxes();
   const backendLabel$ = selectCurrentBackendLabel();
   const operations$ = selectCloudOperations();
   const failures$ = selectCloudFailures();
 
-  const provider = $derived($provider$);
-  const removing = $derived($operations$[CLOUD_REMOVE_KEY] === 'removing');
-  const removeFailure = $derived($failures$[CLOUD_REMOVE_KEY] ?? null);
+  const rowId = $props.id();
+  const name = $derived(entry?.name ?? 'E2B'); // i18n-ignore (product name)
+  const sandboxes = $derived(
+    entry ? $sandboxes$.filter((machine) => machine.cloud?.cloudMachineId === entry.id) : [],
+  );
+  const removing = $derived(!!entry && $operations$[cloudRemoveKey(entry.id)] === 'removing');
+  const removeFailure = $derived(entry ? ($failures$[cloudRemoveKey(entry.id)] ?? null) : null);
+  // A rename's failure; the edit form shows its own.
+  const renameFailure = $derived(
+    entry && !editing ? ($failures$[cloudConfigureKey(entry.id)] ?? null) : null,
+  );
+  let renameError = $state<string | null>(null);
 
   /** "intent-node 0.212.0" from "<project>/intent-node-4x8:0.212.0". */
-  const templateLabel = $derived(provider ? templateVersionLabel(provider.template) : null);
+  const templateLabel = $derived(entry ? templateVersionLabel(entry.template) : null);
 
-  const state = $derived.by((): { label: string; color: BadgeColor; dot: string } | null => {
-    if (!provider) return null;
-    switch (provider.state) {
+  const status = $derived.by((): { label: string; color: BadgeColor; dot: string } | null => {
+    if (!entry) return null;
+    switch (entry.state) {
       case 'ready':
         return {
           label: m.remoteMachines_state_available_label({ backend: $backendLabel$ }),
@@ -73,7 +103,7 @@
   });
 
   const actions = $derived<ActionDefinition[]>(
-    provider
+    entry
       ? [
           { id: 'edit', label: m.cloudMachines_edit_label(), icon: faPen },
           {
@@ -88,16 +118,29 @@
   );
 
   function onAction(id: string) {
+    if (!entry) return;
     if (id === 'edit') onEdit();
-    else if (id === 'remove') appStore.dispatch(cloudMachinesRemoveRequested());
+    else if (id === 'remove') appStore.dispatch(cloudMachinesRemoveRequested(entry.id));
+  }
+
+  function rename(next: string) {
+    if (!entry) return;
+    renameError = cloudEntryNameError(next, $entries$, entry.id);
+    if (renameError) return;
+    appStore.dispatch(cloudMachinesConfigureRequested({ cloudMachineId: entry.id, name: next }));
+  }
+
+  function failureText(failure: NonNullable<typeof removeFailure>) {
+    if (failure.forbidden) return m.cloudMachines_error_ownerOnly();
+    return failure.cloud ? cloudErrorText(failure.cloud).description : failure.message;
   }
 </script>
 
 <article
-  class="border-t border-border"
-  aria-labelledby="cloud-machine-e2b-name"
+  class={cn(!first && 'border-t border-border')}
+  aria-labelledby="{rowId}-name"
   aria-busy={removing}
-  data-cloud-machine-row
+  data-cloud-machine-row={entry?.id ?? NEW_CLOUD_ENTRY}
 >
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet leading()}
@@ -105,21 +148,37 @@
         <span
           class={cn(
             'size-2.5 rounded-full ring-2 ring-background outline outline-1 outline-border',
-            state?.dot ?? 'bg-transparent',
+            status?.dot ?? 'bg-transparent',
           )}
           aria-hidden="true"
         ></span>
         <Fa icon={faCloud} class="size-5! text-foreground" />
       </span>
     {/snippet}
-    {#snippet title()}<span id="cloud-machine-e2b-name">{provider?.name ?? 'E2B'}</span>{/snippet}
+    {#snippet title()}
+      <span id="{rowId}-name">
+        {#if entry && $named$}
+          <EditableName
+            value={entry.name}
+            onSave={rename}
+            class="min-w-16"
+            textClass="[font:inherit]"
+            maxWidth={320}
+            buttonAriaLabel={m.cloudMachines_rename_ariaLabel({ name: entry.name })}
+            inputAriaLabel={m.cloudMachines_form_name_label()}
+          />
+        {:else}
+          {name}
+        {/if}
+      </span>
+    {/snippet}
     {#snippet meta()}
       <span class="inline-flex h-[1lh] items-center gap-1.5 align-top">
-        {#if state}
-          <Badge variant="dot" color={state.color}>{state.label}</Badge>
+        {#if status}
+          <Badge variant="dot" color={status.color}>{status.label}</Badge>
           {#if templateLabel}<span>{templateLabel}</span>{/if}
           <span aria-hidden="true">·</span>
-          <span>{cloudSizeLabel(provider?.size ?? '')}</span>
+          <span>{cloudSizeLabel(entry?.size ?? '')}</span>
         {:else}
           <span>{m.cloudMachines_row_notSaved()}</span>
         {/if}
@@ -132,35 +191,45 @@
           {actions}
           {onAction}
           visibleCount={0}
-          overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name: provider?.name ?? 'E2B' })}
+          overflowLabel={m.settings_devices_actionsFor_ariaLabel({ name })}
         />
       {/if}
     {/snippet}
   </ListRow>
 
-  {#if removeFailure}
+  {#if renameError || renameFailure}
     <div class="flex items-center justify-between gap-3 px-4 pb-3 sm:px-5" role="alert">
       <p class="type-body text-danger">
-        {removeFailure.forbidden
-          ? m.cloudMachines_error_ownerOnly()
-          : removeFailure.cloud
-            ? cloudErrorText(removeFailure.cloud).description
-            : removeFailure.message}
+        {renameError ?? (renameFailure ? failureText(renameFailure) : '')}
       </p>
-      {#if removeFailure.inUse}
+      <Button
+        variant="ghost"
+        size="sm"
+        onclick={() => {
+          renameError = null;
+          if (entry) appStore.dispatch(cloudMachineFailureDismissed(cloudConfigureKey(entry.id)));
+        }}>{m.cloudMachines_dismiss_label()}</Button
+      >
+    </div>
+  {/if}
+
+  {#if removeFailure}
+    <div class="flex items-center justify-between gap-3 px-4 pb-3 sm:px-5" role="alert">
+      <p class="type-body text-danger">{failureText(removeFailure)}</p>
+      {#if removeFailure.inUse && entry}
         <Button
           variant="outline"
           size="sm"
-          onclick={() => appStore.dispatch(cloudMachinesRemoveRequested(true))}
+          onclick={() => appStore.dispatch(cloudMachinesRemoveRequested(entry.id, true))}
           >{m.cloudMachines_remove_stopAgents_label()}</Button
         >
       {/if}
     </div>
   {/if}
 
-  {#if editing || !provider}
-    <CloudMachineSetupForm {provider} backendLabel={$backendLabel$} {onClose} />
-  {:else if $sandboxes$.length > 0}
-    <CloudSandboxList sandboxes={$sandboxes$} {now} />
+  {#if editing || !entry}
+    <CloudMachineSetupForm {entry} backendLabel={$backendLabel$} {onClose} />
+  {:else if sandboxes.length > 0}
+    <CloudSandboxList {sandboxes} entryName={entry.name} {now} />
   {/if}
 </article>

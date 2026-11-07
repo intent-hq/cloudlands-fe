@@ -12,8 +12,17 @@ import { machinePlatformLabel } from './agent-location';
 
 /** The current backend: no placement. */
 export const START_ON_BACKEND = '';
-/** A new E2B sandbox (`target: "e2b"`); never a daemon id. */
-export const START_ON_E2B = 'cloud:e2b';
+const CLOUD_PREFIX = 'cloud:';
+/** The Start On id of a new sandbox from an E2B entry (`target: "e2b"`); never a daemon id. */
+export function startOnCloudId(cloudMachineId: string): string {
+  return `${CLOUD_PREFIX}${cloudMachineId}`;
+}
+/** The entry a Start On id names, or null for the backend or a machine. */
+export function startOnCloudMachineId(id: string | undefined): string | null {
+  return id?.startsWith(CLOUD_PREFIX) ? id.slice(CLOUD_PREFIX.length) || null : null;
+}
+/** The entry "e2b" (the only one an older backend keeps). */
+export const START_ON_E2B = startOnCloudId('e2b');
 
 export interface StartOnOption {
   /** Machine id, or `START_ON_BACKEND`. */
@@ -24,14 +33,29 @@ export interface StartOnOption {
   reason?: string;
   /** Secondary text for a usable row (the E2B profile hint). */
   hint?: string;
-  /** `cloud` for the E2B row. */
+  /** `cloud` for an E2B entry row. */
   kind?: 'machine' | 'cloud';
 }
 
-/** The E2B row's availability: absent when cloud machines are not configured. */
-export interface StartOnCloud {
+/** One E2B entry row of Start On. */
+export interface StartOnCloudEntry {
+  cloudMachineId: string;
+  /** "E2B · <name>", or the single-provider label from an older backend. */
+  label: string;
   /** Null when usable, else why not. */
   unavailableReason: string | null;
+}
+
+/** The E2B rows; null or empty when cloud machines are not configured. */
+export type StartOnCloud = readonly StartOnCloudEntry[];
+
+function usableCloudEntry(
+  cloud: StartOnCloud | null | undefined,
+  id: string,
+): StartOnCloudEntry | undefined {
+  return cloud?.find(
+    (entry) => startOnCloudId(entry.cloudMachineId) === id && entry.unavailableReason === null,
+  );
 }
 
 /** Disconnected machines connect on demand; the other states can't start an agent. */
@@ -87,15 +111,15 @@ export function startOnOptions({
       };
     }),
   ];
-  if (cloud)
+  for (const entry of cloud ?? [])
     options.push({
-      id: START_ON_E2B,
-      label: m.cloudMachines_startOn_label(),
+      id: startOnCloudId(entry.cloudMachineId),
+      label: entry.label,
       platform: null,
       kind: 'cloud',
-      disabled: cloud.unavailableReason !== null,
-      ...(cloud.unavailableReason
-        ? { reason: cloud.unavailableReason }
+      disabled: entry.unavailableReason !== null,
+      ...(entry.unavailableReason
+        ? { reason: entry.unavailableReason }
         : { hint: m.cloudMachines_startOn_hint() }),
     });
   return options;
@@ -120,7 +144,8 @@ export function startOnVisible({
   return (
     remoteMachinesVisible &&
     supported &&
-    (machines.some(isStartOnMachineUsable) || (!!cloud && cloud.unavailableReason === null))
+    (machines.some(isStartOnMachineUsable) ||
+      (cloud ?? []).some((entry) => entry.unavailableReason === null))
   );
 }
 
@@ -131,20 +156,28 @@ export function resolveStartOn(
   cloud?: StartOnCloud | null,
 ): string {
   if (!remembered) return START_ON_BACKEND;
-  if (remembered === START_ON_E2B)
-    return cloud && cloud.unavailableReason === null ? START_ON_E2B : START_ON_BACKEND;
+  if (startOnCloudMachineId(remembered))
+    return usableCloudEntry(cloud, remembered) ? remembered : START_ON_BACKEND;
   const machine = machines.find((row) => row.id === remembered);
   return machine && isStartOnMachineUsable(machine) ? machine.id : START_ON_BACKEND;
 }
 
-/** `workspace.create.initialAgent.placement` for a choice; absent for the backend. */
+/**
+ * `workspace.create.initialAgent.placement` for a choice; absent for the
+ * backend. The entry is named only to a backend that keeps entries.
+ */
 export function initialAgentPlacement(
   machineId: string | undefined,
+  { cloudEntries = false }: { cloudEntries?: boolean } = {},
 ):
   | { target: 'remote'; checkout: 'isolated'; nodeId: string }
-  | { target: 'e2b'; checkout: 'isolated' }
+  | { target: 'e2b'; checkout: 'isolated'; cloudMachineId?: string }
   | undefined {
-  if (machineId === START_ON_E2B) return { target: 'e2b', checkout: 'isolated' };
+  const cloudMachineId = startOnCloudMachineId(machineId);
+  if (cloudMachineId)
+    return cloudEntries
+      ? { target: 'e2b', checkout: 'isolated', cloudMachineId }
+      : { target: 'e2b', checkout: 'isolated' };
   return machineId ? { target: 'remote', checkout: 'isolated', nodeId: machineId } : undefined;
 }
 

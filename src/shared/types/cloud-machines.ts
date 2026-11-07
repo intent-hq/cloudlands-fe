@@ -1,11 +1,18 @@
 /**
  * Cloud machines on E2B (PROTOCOL `methods/nodes.md` → "Cloud machines (E2B)").
  *
- * The backend owner saves an E2B API key on the backend; the backend then
- * starts one sandbox per agent placed with `target: "e2b"`. The key is a
- * write-only `cloudMachines.configure` param: no type below carries it, so it
- * never lands in Redux.
+ * The backend owner saves one or more named E2B entries, each with its own API
+ * key; the backend then starts one sandbox per agent placed with
+ * `target: "e2b"`. The key is a write-only `cloudMachines.configure` param: no
+ * type below carries it, so it never lands in Redux.
  */
+
+/** The entry an older backend keeps, and the one every migrated setup becomes. */
+export const DEFAULT_CLOUD_MACHINE_ID = 'e2b';
+/** Entry names: 1-64 UTF-8 bytes after trimming. */
+export const CLOUD_ENTRY_NAME_MAX_BYTES = 64;
+/** At most this many entries per backend. */
+export const CLOUD_ENTRY_LIMIT = 16;
 
 export type CloudMachineSize = '2x4' | '4x8' | '8x16' | '16x32';
 const CLOUD_MACHINE_SIZES: readonly CloudMachineSize[] = ['2x4', '4x8', '8x16', '16x32'];
@@ -23,8 +30,11 @@ export interface CloudMachineSizeInfo {
 
 type CloudProviderState = 'ready' | 'key-rejected' | 'unreachable';
 
+/** One named E2B entry (`CloudMachineProvider` on the wire). */
 export interface CloudMachineProvider {
-  id: 'e2b';
+  /** The `cloudMachineId`: "e2b" or "e2b-<12 hex>"; "" on a `validateOnly` create. */
+  id: string;
+  provider: 'e2b';
   name: string;
   state: CloudProviderState | string;
   template: string;
@@ -44,6 +54,8 @@ type CloudSandboxState = 'running' | 'pausing' | 'paused' | 'resuming' | 'stoppi
 /** `RemoteMachine.cloud`: only on cloud machine rows. */
 export interface CloudMachineState {
   provider: 'e2b';
+  /** The entry the sandbox started from; "e2b" from an older backend. */
+  cloudMachineId: string;
   sandboxId: string;
   state: CloudSandboxState | string;
   template: string;
@@ -57,6 +69,12 @@ export interface CloudMachineState {
 
 /** `cloudMachines.configure` params, minus the provider. */
 export interface CloudMachineConfigureInput {
+  /** The entry to update; omit to create one. Sent only with `cloudMachineEntries: 1`. */
+  cloudMachineId?: string;
+  /** Required to create an entry; renames on update. Sent only with `cloudMachineEntries: 1`. */
+  name?: string;
+  /** Copy another entry's saved key instead of sending one. */
+  apiKeyFrom?: string;
   /** Secret: sent once, never stored in state. */
   apiKey?: string;
   size?: CloudMachineSize;
@@ -98,12 +116,26 @@ function parseSize(value: unknown): CloudMachineSizeInfo | null {
   return { id: value.id, vcpu, memoryMiB, plan: text(value.plan) ? value.plan : 'hobby' };
 }
 
-/** Narrow one wire `CloudMachineProvider`; null for an unknown provider or shape. */
+/**
+ * Narrow one wire `CloudMachineProvider`; null for an unknown provider or
+ * shape. A row without `provider` comes from a backend without entries and
+ * is read only as the entry "e2b".
+ */
 export function parseCloudMachineProvider(value: unknown): CloudMachineProvider | null {
-  if (!record(value) || value.id !== 'e2b' || !text(value.state) || !text(value.configuredAt))
+  if (
+    !record(value) ||
+    typeof value.id !== 'string' ||
+    !text(value.state) ||
+    !text(value.configuredAt)
+  )
+    return null;
+  if (
+    value.provider === undefined ? value.id !== DEFAULT_CLOUD_MACHINE_ID : value.provider !== 'e2b'
+  )
     return null;
   return {
-    id: 'e2b',
+    id: value.id,
+    provider: 'e2b',
     name: text(value.name) ? value.name : 'E2B', // i18n-ignore (product name)
     state: value.state,
     template: text(value.template) ? value.template : '',
@@ -136,6 +168,7 @@ export function parseCloudMachineState(value: unknown): CloudMachineState | null
   const seconds = value.runningSeconds;
   return {
     provider: 'e2b',
+    cloudMachineId: text(value.cloudMachineId) ? value.cloudMachineId : DEFAULT_CLOUD_MACHINE_ID,
     sandboxId: value.sandboxId,
     state: value.state,
     template: text(value.template) ? value.template : '',
@@ -182,6 +215,19 @@ export function parseCloudMachineError(data: unknown): CloudMachineErrorData | n
     default:
       return null;
   }
+}
+
+/** UTF-8 byte length, for the entry name limit. */
+export function utf8Length(value: string): number {
+  return new TextEncoder().encode(value).length;
+}
+
+/** The first free default name: "E2B", then "E2B 2", "E2B 3", … (case-insensitive). */
+export function nextCloudEntryName(taken: readonly string[]): string {
+  const used = new Set(taken.map((name) => name.trim().toLowerCase()));
+  const base = 'E2B'; // i18n-ignore (product name)
+  if (!used.has(base.toLowerCase())) return base;
+  for (let n = 2; ; n++) if (!used.has(`${base.toLowerCase()} ${n}`)) return `${base} ${n}`;
 }
 
 /** E2B's published per-second rates (USD), billed only while a sandbox runs. */

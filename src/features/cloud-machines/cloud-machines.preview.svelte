@@ -5,7 +5,8 @@
     type CloudMachinesPreviewState,
   } from '../../test/cloud-machines-preview';
 
-  type Scene = CloudMachinesPreviewState | 'start-on' | 'start-on-needs-profile';
+  type Scene =
+    CloudMachinesPreviewState | 'start-on' | 'start-on-needs-profile' | 'start-on-entries';
   interface Props {
     scene?: Scene;
   }
@@ -16,7 +17,7 @@
   });
   export const preview = definePreview<Props>({
     id: 'cloud-machines',
-    title: 'E2B cloud machines in Settings → Machines',
+    title: 'E2B cloud machines in Settings (Machines, or Nodes with named entries)',
     defaultState: 'connected',
     states: {
       'add-menu': sceneState('add-menu'),
@@ -29,6 +30,14 @@
       'remove-in-use': sceneState('remove-in-use'),
       unsupported: sceneState('unsupported'),
       'labs-off': sceneState('labs-off'),
+      entries: sceneState('entries'),
+      'entries-add': sceneState('entries-add'),
+      'entries-key-rejected': sceneState('entries-key-rejected'),
+      'entries-rename-taken': sceneState('entries-rename-taken'),
+      'start-on-entries': {
+        props: { scene: 'start-on-entries' },
+        setup: () => setup('entries'),
+      },
       'start-on': { props: { scene: 'start-on' }, setup: () => setup('connected') },
       'start-on-needs-profile': {
         props: { scene: 'start-on-needs-profile' },
@@ -46,7 +55,7 @@
   import StartOnPicker from '$lib/components/workspace/initializer/StartOnPicker.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { startOnOptions } from '$features/remote-machines/start-on';
-  import { E2B_SANDBOXES } from '../../test/cloud-machines-preview';
+  import { E2B_SANDBOXES, TEAM_ENTRY } from '../../test/cloud-machines-preview';
 
   let { scene = 'connected' }: Props = $props();
   const connectionId$ = selectCurrentConnectionId();
@@ -66,16 +75,40 @@
           cloud: undefined,
         },
       ],
-      cloud: {
-        unavailableReason:
-          scene === 'start-on-needs-profile' ? m.cloudMachines_startOn_needsProfile() : null,
-      },
+      cloud:
+        scene === 'start-on-entries'
+          ? [
+              {
+                cloudMachineId: 'e2b',
+                label: m.cloudMachines_startOn_entry_label({ name: 'E2B' }),
+                unavailableReason: null,
+              },
+              {
+                cloudMachineId: TEAM_ENTRY.id,
+                label: m.cloudMachines_startOn_entry_label({ name: TEAM_ENTRY.name }),
+                unavailableReason: null,
+              },
+              {
+                cloudMachineId: 'e2b-0c1d2e3f4a5b',
+                label: m.cloudMachines_startOn_entry_label({ name: 'Old project' }),
+                unavailableReason: m.cloudMachines_state_keyRejected_label(),
+              },
+            ]
+          : [
+              {
+                cloudMachineId: 'e2b',
+                label: m.cloudMachines_startOn_label(),
+                unavailableReason:
+                  scene === 'start-on-needs-profile'
+                    ? m.cloudMachines_startOn_needsProfile()
+                    : null,
+              },
+            ],
     }),
   );
 
   onMount(async () => {
     await tick();
-
     ready = true;
   });
 </script>
@@ -96,7 +129,7 @@
     </div>
   {:else if $connectionId$ === 'build-box'}
     <DevicesSettings
-      initialCloudSetup={scene.startsWith('setup')}
+      initialCloudSetup={scene.startsWith('setup') || scene === 'entries-add'}
       initialAddMenuOpen={scene === 'add-menu'}
     />
   {/if}
