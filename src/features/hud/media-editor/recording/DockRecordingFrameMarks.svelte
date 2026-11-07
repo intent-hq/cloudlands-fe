@@ -1,7 +1,11 @@
 <script lang="ts">
   import { tick, onDestroy, onMount, untrack } from 'svelte';
   import { DOCK_ANNOTATION_STYLE } from '$features/hud/composer/dock-annotation-style';
-  import { ensureDockAnnotationFont } from '$features/hud/composer/dock-annotation-font';
+  import { dockAnnotationDisplayBounds } from '$features/hud/composer/dock-annotation-display';
+  import {
+    dockAnnotationFontFamily,
+    ensureDockAnnotationFont,
+  } from '$features/hud/composer/dock-annotation-font';
   import { dockMediaMarkEditableAt } from '$shared/dock-media-animation';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -11,7 +15,6 @@
   } from '../annotation-selection';
   import { Input } from '$lib/components/ui/input';
   import {
-    dockMediaGeometryRect,
     numberDockMediaMarks,
     type DockMediaEdit,
     type DockMediaGeometry,
@@ -75,16 +78,11 @@
   } = $props();
 
   let fontsReady = $state(false);
-  let fontFailed = $state(false);
   onMount(() => {
     let active = true;
-    void ensureDockAnnotationFont()
-      .then(() => {
-        if (active) fontsReady = true;
-      })
-      .catch(() => {
-        if (active) fontFailed = true;
-      });
+    void ensureDockAnnotationFont().then(() => {
+      if (active) fontsReady = true;
+    });
     return () => {
       active = false;
     };
@@ -151,6 +149,7 @@
     ),
   );
   const ops = $derived.by((): DockMediaPaintOp[] => {
+    if (!fontsReady) return [];
     const marks = layoutDockMediaMarks(shownEdit, source, atMs);
     return drawPreview ? [...marks, { kind: 'geometry', geometry: drawPreview }] : marks;
   });
@@ -330,11 +329,10 @@
   bind:clientWidth={width}
   bind:clientHeight={height}
   style:--annotation-ink={DOCK_ANNOTATION_STYLE.accent}
-  style:--annotation-font={DOCK_ANNOTATION_STYLE.fontFamily}
+  style:--annotation-font={fontsReady
+    ? dockAnnotationFontFamily()
+    : DOCK_ANNOTATION_STYLE.badgeFontFamily}
 >
-  {#if fontFailed}<span role="alert" class="font-error"
-      >{m.dock_screenshotEditor_previewError()}</span
-    >{/if}
   {#if box}
     <canvas
       bind:this={canvas}
@@ -362,10 +360,10 @@
       onpointercancel={(event) => onPointerUp(event, false)}
       onlostpointercapture={(event) => onPointerUp(event, false)}
     >
-      {#if editable && tool === null}
+      {#if editable && fontsReady && tool === null}
         {#each visible as row (row.mark.id)}
           {@const g = row.mark.geometry}
-          {@const b = dockMediaGeometryRect(g)}
+          {@const b = dockAnnotationDisplayBounds(g)}
           {@const selected = row.mark.id === selectedId}
           <g
             class="hit"
@@ -523,10 +521,6 @@
     color: var(--annotation-ink);
     caret-color: var(--annotation-ink);
     background: transparent;
-  }
-  .font-error {
-    position: absolute;
-    inset: 12px;
   }
   .text-entry {
     position: absolute;

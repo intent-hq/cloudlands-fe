@@ -66,6 +66,7 @@
     onDelete,
     onCropChange,
     onText,
+    onTextPreview,
   }: {
     sourceUrl: string;
     width: number;
@@ -102,6 +103,7 @@
     onDelete: (id?: string) => void;
     onCropChange: (crop: DockImageRect) => void;
     onText: (id: string, value: string) => void;
+    onTextPreview?: (preview: { id: string; value: string } | null) => void;
   } = $props();
   let fontsReady = $state(false);
   onMount(() => {
@@ -138,7 +140,12 @@
   } | null>(null);
   let textInput = $state<HTMLTextAreaElement | null>(null);
   let textValue = $state('');
-  let textSession = $state<{ id: string; document: string; original: string } | null>(null);
+  let textSession = $state<{
+    id: string;
+    document: string;
+    original: string;
+    rasterReady: boolean;
+  } | null>(null);
   const textShape = $derived(shapes.find((shape) => shape.id === editingTextId && shape.text));
   const textLayout = $derived.by(() => {
     const text = textShape?.text;
@@ -183,6 +190,9 @@
     );
   });
   $effect(() => {
+    onTextPreview?.(textSession ? { id: textSession.id, value: textValue } : null);
+  });
+  $effect(() => {
     onGesturePending(!!gesture || !!cropGesture);
   });
   $effect(() => {
@@ -191,6 +201,7 @@
     );
   });
   onDestroy(() => {
+    onTextPreview?.(null);
     onGesturePending(false);
     onGesturePreview(null);
   });
@@ -274,8 +285,12 @@
     }
     if (!shape?.text) return;
     if (textSession?.id === id && textSession.document === documentKey) return;
-    textSession = { id, document: documentKey, original: shape.text.value };
+    textSession = { id, document: documentKey, original: shape.text.value, rasterReady: false };
     textValue = shape.text.value;
+  });
+  $effect(() => {
+    if (editingRasterReady && textSession && !textSession.rasterReady)
+      textSession = { ...textSession, rasterReady: true };
   });
   $effect(() => {
     if (textInput && textSession) {
@@ -758,7 +773,7 @@
         />
       {/each}
     {/if}
-    {#if fontsReady && textShape?.text && textLayout && textSession && editingRasterReady}
+    {#if fontsReady && textShape?.text && textLayout && textSession?.rasterReady}
       {@const b = dockGeometryRect(textShape.geometry)}
       <foreignObject
         x={b.x}

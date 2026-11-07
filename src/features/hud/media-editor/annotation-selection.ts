@@ -1,3 +1,4 @@
+import { dockAnnotationDisplayBounds } from '$features/hud/composer/dock-annotation-display';
 import {
   dockMediaGeometryRect,
   transformDockMediaText,
@@ -15,7 +16,7 @@ export function annotationHandles(geometry: DockMediaGeometry) {
       { id: 'to' as const, ...geometry.to },
     ];
   if (geometry.kind === 'point') return [{ id: 'move' as const, x: geometry.x, y: geometry.y }];
-  const b = dockMediaGeometryRect(geometry);
+  const b = dockAnnotationDisplayBounds(geometry);
   return [
     { id: 'nw' as const, x: b.x, y: b.y },
     { id: 'ne' as const, x: b.x + b.w, y: b.y },

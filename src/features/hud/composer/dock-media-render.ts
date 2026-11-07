@@ -1,11 +1,11 @@
 import { DOCK_ANNOTATION_STYLE } from './dock-annotation-style';
-import { ensureDockAnnotationFont } from './dock-annotation-font';
+import { ensureDockAnnotationFont, dockAnnotationFontFamily } from './dock-annotation-font';
+import { dockAnnotationDisplayBounds } from './dock-annotation-display';
 import { recordedMarkProgress } from '$shared/dock-media-animation';
 import { gestureGeometryAt } from '$shared/dock-gesture-progress';
 /** One raster display list for capture-editor preview, screenshot output and video overlays. */
 import {
   numberDockMediaMarks,
-  dockMediaGeometryRect,
   DOCK_MEDIA_POINT_RADIUS,
   DOCK_MEDIA_BLUR_RADIUS,
   layoutDockMediaText,
@@ -18,6 +18,9 @@ import { arrayBufferToBase64 } from '$features/voice/utils/wav-encoder';
 
 export const DOCK_MEDIA_PAINT = {
   ...DOCK_ANNOTATION_STYLE,
+  get fontFamily() {
+    return dockAnnotationFontFamily();
+  },
   blurRadius: DOCK_MEDIA_BLUR_RADIUS,
 } as const;
 export type DockMediaPaintOp =
@@ -42,7 +45,7 @@ export function layoutDockMediaMarks(
           ? gestureGeometryAt(mark.geometry, recordedMarkProgress(source, mark), atMs)
           : mark.geometry;
       if (!geometry) return [];
-      const box = dockMediaGeometryRect(geometry);
+      const box = dockAnnotationDisplayBounds(geometry);
       return [
         // Editing suppresses glyphs only; badges and canonical numbering stay unchanged.
         ...(mark.id === hiddenTextMarkId && geometry.kind === 'text'

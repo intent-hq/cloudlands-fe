@@ -2,7 +2,7 @@
   import { Button } from '$lib/components/ui/button';
   import { screenshotKindLabel } from './screenshot-labels';
   import { m } from '$shared/paraglide/messages.js';
-  import { onDestroy, untrack, type Snippet } from 'svelte';
+  import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import { createScreenshotPreviewRenderer } from './screenshot-preview';
   import {
     dockMediaGeometryRect,
@@ -23,6 +23,8 @@
   } from '$shared/dock-media-edit';
   import type { DockMarkGeometry } from '$shared/dock-evidence';
   import { dockGeometryRect } from '$shared/dock-annotation';
+  import { ensureDockAnnotationFont } from '$features/hud/composer/dock-annotation-font';
+  import { dockAnnotationDisplayBounds } from '$features/hud/composer/dock-annotation-display';
   import ScreenshotCanvas, {
     type ScreenshotTool,
     type ScreenshotShape,
@@ -66,6 +68,17 @@
   let selectedIds = $state<string[]>([]);
   let selectionAnchor = $state<string | null>(null);
   let editingTextId = $state<string | null>(null);
+  let textPreview = $state<{ id: string; value: string } | null>(null);
+  let fontSettled = $state(false);
+  onMount(() => {
+    let active = true;
+    void ensureDockAnnotationFont().then(() => {
+      if (active) fontSettled = true;
+    });
+    return () => {
+      active = false;
+    };
+  });
   const sourceIdentity = $derived(`${source.id}:${source.revision}`);
   let gesturePending = $state(false);
   let gesturePreview = $state<{ id: string; geometry: DockMarkGeometry } | null>(null);
@@ -84,9 +97,18 @@
     !!gesturePreview && draft.marks.some((mark) => mark.id === gesturePreview?.id),
   );
   const previewEdit = $derived.by(() => {
-    const edit = gesturePreview
-      ? transformedEdit(gesturePreview.id, gesturePreview.geometry)
-      : draft;
+    let edit = gesturePreview ? transformedEdit(gesturePreview.id, gesturePreview.geometry) : draft;
+    if (textPreview) {
+      const { id, value } = textPreview;
+      edit = {
+        ...edit,
+        marks: edit.marks.map((mark) =>
+          mark.id === id && mark.geometry.kind === 'text'
+            ? { ...mark, geometry: { ...mark.geometry, text: value } }
+            : mark,
+        ),
+      };
+    }
     return cropCandidate ? { ...edit, crop: null } : edit;
   });
   const renderPreview = createScreenshotPreviewRenderer();
@@ -362,7 +384,10 @@
 
   function canvasGeometry(geometry: DockMediaGeometry): DockMarkGeometry {
     if (geometry.kind === 'point' || geometry.kind === 'text')
-      return { kind: 'rect', ...dockMediaGeometryRect(geometry) };
+      return {
+        kind: 'rect',
+        ...(fontSettled ? dockAnnotationDisplayBounds(geometry) : dockMediaGeometryRect(geometry)),
+      };
     return geometry;
   }
   function apply(next: DockMediaEdit) {
@@ -394,7 +419,7 @@
     if (mark) {
       if (!screenshotContains(frame, b)) return draft;
       const old = mark.geometry,
-        oldBounds = dockMediaGeometryRect(old);
+        oldBounds = dockAnnotationDisplayBounds(old);
       const next: DockMediaGeometry =
         old.kind === 'point'
           ? { ...old, x: old.x + b.x - oldBounds.x, y: old.y + b.y - oldBounds.y }
@@ -634,6 +659,7 @@
         bind:editingTextId
         editingRasterReady={displayedPreview?.key === visualKey}
         onText={text}
+        onTextPreview={(preview) => (textPreview = preview)}
         disabled={blocked || !frameReady || previewFailed}
         onSelect={select}
         onSelectAll={selectAll}
