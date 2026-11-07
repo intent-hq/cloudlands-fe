@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.294.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.293.1...v2.294.0) (2026-11-07)
+
+
+### 🚀 Features
+
+* **cloud-machines:** E2B setup, Start On and machine badges ([#4246](https://github.com/intent-hq/cloudlands-fe/issues/4246)) ([1c8b707](https://github.com/intent-hq/cloudlands-fe/commit/1c8b707d52a3c9698b929596f0aebeebc3d53f83))
+* list None last in the specialist pickers ([#4255](https://github.com/intent-hq/cloudlands-fe/issues/4255)) ([1e800ba](https://github.com/intent-hq/cloudlands-fe/commit/1e800ba9a086b3ad0ea2c0810cb16fba5ef1c26d))
+
 ## [2.293.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.293.0...v2.293.1) (2026-11-07)
 
 
