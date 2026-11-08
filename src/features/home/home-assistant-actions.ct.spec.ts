@@ -111,6 +111,55 @@ test('hover delete removes a chat with one undo toast', async ({ mount, page }, 
   ]);
 });
 
+test('Cmd/Ctrl-click keeps the open chat in the selection', async ({ mount }) => {
+  const { sidebar, list } = await openAssistant(mount);
+  const options = list.getByRole('option');
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await options.nth(2).click({ modifiers: ['ControlOrMeta'] });
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+  await expect(options.nth(2)).toHaveAttribute('aria-selected', 'true');
+  await expect(sidebar.getByRole('toolbar', { name: '2 selected', exact: true })).toBeVisible();
+
+  await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'false');
+  await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
+});
+
+test('Cmd/Ctrl-click on the open chat unselects it', async ({ mount, page }) => {
+  const { sidebar, list } = await openAssistant(mount);
+  const options = list.getByRole('option');
+  await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'false');
+  await expect(sidebar.getByRole('toolbar')).toHaveCount(0);
+
+  await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'false');
+  await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
+
+  await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await expect(sidebar.getByRole('toolbar')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+});
+
+test('Cmd/Ctrl-click leaves an open archived chat out of the selection', async ({ mount }) => {
+  const { sidebar, list } = await openAssistant(mount);
+  const archived = sidebar.getByRole('button', { name: '1 archived chat', exact: true });
+  await archived.click();
+  const archivedList = sidebar.getByRole('listbox', { name: 'Archived chats', exact: true });
+  await archivedList.getByRole('option').first().click();
+  await expect(archivedList.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+
+  await list
+    .getByRole('option')
+    .nth(1)
+    .click({ modifiers: ['ControlOrMeta'] });
+  await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
+  await expect(list.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(archivedList.getByRole('option').first()).toHaveAttribute('aria-selected', 'false');
+});
+
 test('Cmd/Ctrl-click selects several chats to archive or delete together', async ({
   mount,
   page,
@@ -118,7 +167,7 @@ test('Cmd/Ctrl-click selects several chats to archive or delete together', async
   const { sidebar, list } = await openAssistant(mount);
   const options = list.getByRole('option');
   await expect(list).toHaveAttribute('aria-multiselectable', 'true');
-  await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await options.nth(1).click();
   await options.nth(2).click({ modifiers: ['ControlOrMeta'] });
   await expect(options.nth(0)).toHaveAttribute('aria-selected', 'false');
   await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
@@ -145,8 +194,9 @@ test('Cmd/Ctrl-click selects several chats to archive or delete together', async
   await expect(options).toHaveCount(4);
   expect(await wireCalls(page, 'agent.cancelDelete')).toHaveLength(2);
 
-  await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
+  await options.nth(0).click();
   await options.nth(3).click({ modifiers: ['ControlOrMeta'] });
+  await expect(toolbar).toBeVisible();
   await options.nth(3).click({ modifiers: ['ControlOrMeta'] });
   await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
   await options.nth(3).click({ modifiers: ['ControlOrMeta'] });
@@ -155,8 +205,9 @@ test('Cmd/Ctrl-click selects several chats to archive or delete together', async
   await expect(sidebar.getByRole('button', { name: '3 archived chats' })).toBeVisible();
   expect(await wireCalls(page, 'agent.retire')).toHaveLength(2);
 
-  await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
   await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await expect(toolbar).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(toolbar).toHaveCount(0);
   await expect(options.nth(1)).toHaveAttribute('aria-selected', 'false');
@@ -165,7 +216,6 @@ test('Cmd/Ctrl-click selects several chats to archive or delete together', async
   await expect(sidebar.getByRole('toolbar')).toHaveCount(0);
 
   await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
-  await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
   await toolbar.getByRole('button', { name: 'Archive', exact: true }).click();
   await expect(options).toHaveCount(0);
   await expect(sidebar.getByRole('button', { name: '5 archived chats' })).toBeVisible();
