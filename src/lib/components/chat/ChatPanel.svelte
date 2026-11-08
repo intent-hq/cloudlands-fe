@@ -315,7 +315,21 @@
     restoreScrollAnchor,
     type FollowBottomState,
   } from '$lib/utils/smartScroll';
-  import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
+  import {
+    getCachedChatScroll,
+    setCachedChatScroll,
+    type CachedChatScroll,
+  } from './chat-scroll-cache';
+  import {
+    classifyChatReturn,
+    decideReturnCorrection,
+    resolveTabReturnRestore,
+    scheduleReturnSafetyNet,
+    shouldRecordReturnBreadcrumb,
+    type ChatReturnKind,
+    type ReturnDividerPosition,
+  } from './chat-return-landing';
+  import { LogCategory, logger as persistedLogger } from '$lib/logging/logger.svelte';
   import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
@@ -3843,7 +3857,10 @@
       },
     );
   }
+  // Bumped when a same-instance workspace return re-arms the latch below.
+  let dividerRelatchEpoch = $state(0);
   $effect(() => {
+    void dividerRelatchEpoch;
     if (!agentId || latchedDividerSessionAgentId === agentId) return;
     // While progressive initial history is still streaming (hydration only
     // settles at completion), latch as soon as the seen-marker row has
@@ -3882,6 +3899,7 @@
   // (first transcript availability), never again on later marker convergence.
   let hasAppliedNewMessagesEntryScroll = false;
   $effect(() => {
+    void dividerRelatchEpoch;
     if ($initialHistory$?.complete !== true) return;
     const anchor = newMessagesDividerAnchorId;
     if (
@@ -4080,7 +4098,9 @@
     if (maxScrollTop < cachedScrollRestoreTop) {
       const rendered = scrollContainer.clientHeight > 0;
       if (!rendered || cachedScrollRestoreAttempts < CACHED_SCROLL_RESTORE_MAX_ATTEMPTS) {
-        if (rendered) cachedScrollRestoreAttempts += 1;
+        // The switch-back skeleton is not the transcript: wait it out
+        // without spending the budget.
+        if (rendered && !deferTranscriptReveal) cachedScrollRestoreAttempts += 1;
         scheduleCachedScrollRestoreRetry();
         return false;
       }
@@ -4114,6 +4134,7 @@
     const container = scrollContainer;
     if (!isActive || !container) return;
     const cancel = () => {
+      returnLandingUserInput = true;
       if ($initialHistoryPending$) hasAppliedNewMessagesEntryScroll = true;
       unreadEntryHold = null;
       cancelPendingCachedScrollRestore();
@@ -4123,15 +4144,297 @@
         cancel();
       }
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (RETURN_LANDING_SCROLL_KEYS.has(event.key)) returnLandingUserInput = true;
+    };
     container.addEventListener('wheel', cancel, { passive: true });
     container.addEventListener('touchstart', cancel, { passive: true });
     container.addEventListener('pointerdown', onPointerDown);
+    container.addEventListener('keydown', onKeyDown);
     return () => {
       container.removeEventListener('wheel', cancel);
       container.removeEventListener('touchstart', cancel);
       container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('keydown', onKeyDown);
     };
   });
+
+  // ── Return landing (workspace or agent-tab switch back) ──
+  // A return must show conversation rows at the landing target: the bottom,
+  // the New messages divider (workspace returns), or the cached reading
+  // position (agent-tab returns). The switch-back skeleton collapses the
+  // scroll extent while it is up, so a non-following viewport would otherwise
+  // stay clamped at ~0 inside the unloaded-history spacer once rows return.
+  // From the reveal until the first user scroll input, a safety net moves a
+  // blank viewport to the landing target and records a persisted breadcrumb.
+  const RETURN_LANDING_SCROLL_KEYS = new Set([
+    'ArrowUp',
+    'ArrowDown',
+    'PageUp',
+    'PageDown',
+    'Home',
+    'End',
+    ' ',
+  ]);
+  const TAB_RETURN_RESTORE_MAX_ATTEMPTS = 30;
+  type ReturnLanding = {
+    kind: ChatReturnKind;
+    path: 'same-instance' | 'remount';
+    restoreTop: number | null;
+    awayMs: number | null;
+  };
+  let pendingReturnLanding: ReturnLanding | null = null;
+  let returnLandingRevealed = false;
+  let returnLandingUserInput = false;
+  let returnLandingBreadcrumbs = 0;
+  let returnLandingTimers: ReturnType<typeof setTimeout>[] = [];
+  let returnLandingRestoreFrame: number | null = null;
+  let returnLandingEpoch = $state(0);
+  let wasActiveForReturn = untrack(() => isActive);
+  let deactivatedAt: number | null = null;
+  let deactivatedScroll: CachedChatScroll | undefined;
+
+  function cancelReturnLanding() {
+    for (const timer of returnLandingTimers) clearTimeout(timer);
+    returnLandingTimers = [];
+    if (returnLandingRestoreFrame !== null) cancelAnimationFrame(returnLandingRestoreFrame);
+    returnLandingRestoreFrame = null;
+    pendingReturnLanding = null;
+    returnLandingRevealed = false;
+  }
+
+  function armReturnLanding(landing: ReturnLanding) {
+    cancelReturnLanding();
+    pendingReturnLanding = landing;
+    returnLandingUserInput = false;
+    returnLandingBreadcrumbs = 0;
+    returnLandingEpoch += 1;
+  }
+
+  // Remount over a conversation that hydrated before (tab content expired,
+  // workspace surface dropped, layout recreation): never a first open.
+  if (untrack(() => isActive && $transcriptHydratedOnce$)) {
+    armReturnLanding({
+      kind: classifyChatReturn({
+        sameInstance: false,
+        dividerSessionEnded: false,
+        hasCachedScroll: cachedScroll !== undefined,
+      }),
+      path: 'remount',
+      restoreTop: null,
+      awayMs: null,
+    });
+  }
+
+  // Same-instance return: the hidden panel is re-activated.
+  $effect(() => {
+    const active = isActive;
+    untrack(() => {
+      if (active === wasActiveForReturn) return;
+      wasActiveForReturn = active;
+      if (!active) {
+        deactivatedAt = performance.now();
+        // Kept current by handleBottomStateChange while the user scrolled;
+        // the hidden container itself no longer reports its position.
+        deactivatedScroll =
+          workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined;
+        cancelReturnLanding();
+        return;
+      }
+      if (!agentId || $agentMessages$.length === 0) return;
+      const dividerSessionEnded =
+        latchedDividerSessionAgentId === agentId &&
+        selectDividerSession.select(appStore.state, agentId) === null;
+      const kind = classifyChatReturn({
+        sameInstance: true,
+        dividerSessionEnded,
+        hasCachedScroll: deactivatedScroll !== undefined,
+      });
+      let restoreTop: number | null = null;
+      if (kind === 'workspace') {
+        // Landing rule on every workspace return, divider included: re-arm
+        // the entry latch and the one-shot divider entry scroll.
+        latchedDividerSessionAgentId = null;
+        hasAppliedNewMessagesEntryScroll = false;
+        dividerRelatchEpoch += 1;
+        shouldFollowBottom = true;
+      } else if (deactivatedScroll) {
+        // Also restores follow when a navigation that dropped it bailed out
+        // because the panel went inactive.
+        shouldFollowBottom = deactivatedScroll.shouldFollowBottom;
+        restoreTop = deactivatedScroll.shouldFollowBottom ? null : deactivatedScroll.scrollTop;
+      }
+      armReturnLanding({
+        kind,
+        path: 'same-instance',
+        restoreTop,
+        awayMs: deactivatedAt === null ? null : Math.round(performance.now() - deactivatedAt),
+      });
+    });
+  });
+
+  // Reveal: the transcript (not the skeleton) is rendered again.
+  $effect(() => {
+    void returnLandingEpoch;
+    const container = scrollContainer;
+    if (
+      !isActive ||
+      deferTranscriptReveal ||
+      !container ||
+      $agentMessages$.length === 0 ||
+      returnLandingRevealed
+    )
+      return;
+    untrack(() => {
+      const landing = pendingReturnLanding;
+      if (!landing) return;
+      returnLandingRevealed = true;
+      void tick().then(() => applyReturnLanding(landing, 0));
+      scheduleReturnSafetyNet({
+        now: () => performance.now(),
+        schedule: (fn, ms) => {
+          returnLandingTimers.push(setTimeout(fn, ms));
+        },
+        check: (settling) => {
+          if (pendingReturnLanding !== landing || returnLandingUserInput) return 'stop';
+          runReturnSafetyNet(landing, settling);
+          return 'continue';
+        },
+        onEnd: () => {
+          if (pendingReturnLanding === landing) cancelReturnLanding();
+        },
+      });
+    });
+  });
+
+  function isReturnLandingCurrent(landing: ReturnLanding): HTMLElement | null {
+    const container = scrollContainer;
+    return container &&
+      isActive &&
+      !isComponentDestroyed &&
+      pendingReturnLanding === landing &&
+      !returnLandingUserInput
+      ? container
+      : null;
+  }
+
+  function applyReturnLanding(landing: ReturnLanding, attempts: number) {
+    const container = isReturnLandingCurrent(landing);
+    if (!container) return;
+    if (landing.restoreTop !== null) {
+      const decision = resolveTabReturnRestore({
+        restoreTop: landing.restoreTop,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        attempts,
+        maxAttempts: TAB_RETURN_RESTORE_MAX_ATTEMPTS,
+      });
+      if (decision === 'wait') {
+        returnLandingRestoreFrame = requestAnimationFrame(() => {
+          returnLandingRestoreFrame = null;
+          applyReturnLanding(landing, attempts + 1);
+        });
+        return;
+      }
+      if (decision === 'restore') {
+        container.scrollTop = landing.restoreTop;
+        return;
+      }
+      shouldFollowBottom = true;
+    }
+    // A latched divider is landed by the one-shot entry scroll.
+    if (newMessagesDividerAnchorId && !hasAppliedNewMessagesEntryScroll) return;
+    if (shouldFollowBottom && !showSearch) followToBottom(container);
+  }
+
+  function viewportHasMessageRow(container: HTMLElement): boolean {
+    const box = container.getBoundingClientRect();
+    for (const row of container.querySelectorAll<HTMLElement>('[data-message-id]')) {
+      const rect = row.getBoundingClientRect();
+      if (rect.height > 0 && rect.bottom > box.top + 1 && rect.top < box.bottom - 1) return true;
+    }
+    return false;
+  }
+
+  function returnDividerPosition(container: HTMLElement): ReturnDividerPosition {
+    const divider = container.querySelector<HTMLElement>('[data-new-messages-divider]');
+    if (!divider) return 'none';
+    const box = container.getBoundingClientRect();
+    const rect = divider.getBoundingClientRect();
+    if (rect.bottom <= box.top) return 'above';
+    if (rect.top >= box.bottom) return 'below';
+    return 'visible';
+  }
+
+  function runReturnSafetyNet(landing: ReturnLanding, settling: boolean) {
+    const container = scrollContainer;
+    if (!container || !isActive || isComponentDestroyed || pendingReturnLanding !== landing) return;
+    const cacheRestorePending = cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore;
+    const fetching = {
+      older: $fetchingOlderHistory$,
+      gap: $fetchingGapFill$,
+      seek: $fetchingHistorySeek$ || seekLandingPending,
+    };
+    const busy =
+      deferTranscriptReveal ||
+      fetching.older ||
+      fetching.gap ||
+      fetching.seek ||
+      showSearch ||
+      cacheRestorePending ||
+      returnLandingRestoreFrame !== null;
+    const divider = returnDividerPosition(container);
+    const hasVisibleRow = viewportHasMessageRow(container);
+    const correction = decideReturnCorrection({
+      kind: landing.kind,
+      settling,
+      userScrolled: returnLandingUserInput,
+      busy,
+      following: shouldFollowBottom,
+      hasVisibleRow,
+      divider,
+    });
+    if (correction === 'none') return;
+    if (shouldRecordReturnBreadcrumb(returnLandingBreadcrumbs)) {
+      returnLandingBreadcrumbs += 1;
+      // i18n-ignore (internal diagnostic event name)
+      persistedLogger.warn(LogCategory.AGENT, 'chat-return-landing-correction', {
+        correction,
+        returnKind: landing.kind,
+        returnPath: landing.path,
+        awayMs: landing.awayMs,
+        following: shouldFollowBottom,
+        hasVisibleRow,
+        divider,
+        skeleton: deferTranscriptReveal,
+        cacheRestorePending,
+        tabRestoreTop: landing.restoreTop,
+        unreadEntryHold: unreadEntryHold !== null,
+        scrollTop: Math.round(container.scrollTop),
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        spacerAbove: Math.round(virtualSpacerHeight),
+        spacerBelow: Math.round(virtualSpacerBelowHeight),
+        fetching,
+      });
+    }
+    if (unreadEntryHold) releaseUnreadEntryHold();
+    const dividerElement = container.querySelector<HTMLElement>('[data-new-messages-divider]');
+    if (correction === 'divider' && dividerElement) {
+      beginScrollNavigation();
+      const box = container.getBoundingClientRect();
+      const targetOffsetTop =
+        container.scrollTop + (dividerElement.getBoundingClientRect().top - box.top);
+      container.scrollTop = dividerEntryScrollTop(
+        targetOffsetTop,
+        container.clientHeight,
+        container.scrollHeight,
+      );
+      return;
+    }
+    shouldFollowBottom = true;
+    followToBottom(container);
+  }
   // A cache write must record a real, user-held reading position: never
   // while this instance's own cached restore is still pending (until it is
   // consumed the current scrollTop is not user-chosen), and — away from the
@@ -5682,6 +5985,7 @@
       cancelAnimationFrame(cachedScrollRestoreRetryFrame);
       cachedScrollRestoreRetryFrame = null;
     }
+    cancelReturnLanding();
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
     cancelActiveFrames();
@@ -6340,11 +6644,15 @@
 
   export function scrollToTop() {
     if (!isActive) return;
+    // Explicit navigation (controls outside the scroll container) ends the
+    // return landing so its safety net never pulls the viewport back.
+    cancelReturnLanding();
     smoothScrollToPosition(0);
   }
 
   export function scrollToBottom() {
     if (!isActive) return;
+    cancelReturnLanding();
     const container = scrollContainer;
     if (!container) return;
     const getContainer = beginScrollNavigation();
@@ -6368,6 +6676,7 @@
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!isActive) return false;
+    cancelReturnLanding();
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
     const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
