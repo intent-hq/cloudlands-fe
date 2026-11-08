@@ -31,7 +31,6 @@
     selectBulkPreflightReady,
     selectGuestsForArchive,
     selectGuestsForDelete,
-    selectLocalChangesForArchive,
     selectLocalChangesForDelete,
     selectOpenPrsForArchive,
     selectOpenPrsForDelete,
@@ -78,9 +77,6 @@
   );
   const openPrsForArchive$ = untrack(() =>
     staticData ? readable(undefined) : selectOpenPrsForArchive(),
-  );
-  const localChangesForArchive$ = untrack(() =>
-    staticData ? readable(undefined) : selectLocalChangesForArchive(),
   );
   const showBulkArchiveConfirm$ = untrack(() =>
     staticData ? readable(undefined) : selectShowBulkArchiveConfirm(),
@@ -142,7 +138,6 @@
     agents={$runningAgentsForArchive$}
     hookNames={$activeHookNamesForArchive$}
     openPrs={$openPrsForArchive$}
-    localChanges={$localChangesForArchive$}
     guests={$guestsForArchive$}
     onDeleteAnyway={() => appStore.dispatch(confirmArchiveWorkspace())}
     onCancel={() => appStore.dispatch(closeArchiveWarning())}

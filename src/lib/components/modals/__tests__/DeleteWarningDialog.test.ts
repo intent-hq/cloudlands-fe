@@ -387,7 +387,7 @@ describe('DeleteWarningDialog', () => {
       expect(screen.queryByText(/not a git repository/)).toBeNull();
     });
 
-    it('uses the archive copy in archive mode and the delete copy otherwise', async () => {
+    it('lists local changes only in delete mode', async () => {
       const DeleteWarningDialog = (await import('../DeleteWarningDialog.svelte')).default;
 
       const { unmount } = render(DeleteWarningDialog, {
@@ -407,7 +407,6 @@ describe('DeleteWarningDialog', () => {
       });
 
       expect(screen.getByText(/feat\/x.*will be lost/)).toBeTruthy();
-      expect(screen.queryByText(/feat\/x.*remain on disk/)).toBeNull();
     });
   });
 

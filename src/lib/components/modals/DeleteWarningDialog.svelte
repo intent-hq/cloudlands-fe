@@ -36,7 +36,7 @@
     agents?: WarningAgent[];
     hookNames?: string[];
     openPrs?: OpenPrWarningItem[];
-    /** `workspace.localChanges` result; null when unavailable (fail-open). */
+    /** Delete only: `workspace.localChanges` result; null when unavailable (fail-open). */
     localChanges?: LocalChangesWarning | null;
     /** Collaborators and open invites the operation removes; null when unknown. */
     guests?: GuestsWarning | null;
@@ -59,8 +59,11 @@
 
   const isArchive = $derived(mode === 'archive');
   const hasRunningWork = $derived(agents.length > 0 || hookNames.length > 0);
+  // Archive keeps local changes on disk, so only delete warns about them.
   const hasLocalChanges = $derived(
-    localChanges != null && (localChanges.hasUnpushedCommits || localChanges.hasUncommittedChanges),
+    !isArchive &&
+      localChanges != null &&
+      (localChanges.hasUnpushedCommits || localChanges.hasUncommittedChanges),
   );
   const collaboratorCount = $derived(guests?.collaboratorCount ?? 0);
   const openInviteCount = $derived(guests?.openInviteCount ?? 0);
@@ -111,10 +114,7 @@
           ? m.modals_deleteWarning_combinedChanges_label({ commits })
           : commits
         : m.modals_deleteWarning_localChanges_uncommitted_label();
-    const params = { changes, branch: rootLabel(root) };
-    return isArchive
-      ? m.modals_archiveWarning_branchChanges_description(params)
-      : m.modals_deleteWarning_branchChanges_description(params);
+    return m.modals_deleteWarning_branchChanges_description({ changes, branch: rootLabel(root) });
   }
 
   function handleDeleteAnyway() {
@@ -283,7 +283,7 @@
               {/each}
             </ul>
           {/if}
-          {#if hasLocalChanges && !isArchive}
+          {#if hasLocalChanges}
             <div
               class="space-y-2 type-body text-foreground"
               class:mt-4={agents.length > 0 || hookNames.length > 0 || openPrs.length > 0}
@@ -291,11 +291,7 @@
               {#each localChangeRoots as root (root.gitRootId ?? root.path)}
                 <p class="break-words">{localChangesSentence(root)}</p>
               {:else}
-                <p>
-                  {isArchive
-                    ? m.modals_archiveWarning_localChanges_description()
-                    : m.modals_deleteWarning_localChanges_description()}
-                </p>
+                <p>{m.modals_deleteWarning_localChanges_description()}</p>
               {/each}
             </div>
           {/if}

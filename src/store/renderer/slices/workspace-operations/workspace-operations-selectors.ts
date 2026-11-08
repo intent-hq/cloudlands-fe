@@ -49,10 +49,6 @@ export const selectOpenPrsForArchive = store.createSelector((state): OpenPrWarni
   );
 });
 
-export const selectLocalChangesForArchive = store.createSelector((state) => {
-  return state.workspaceOperations.localChangesForArchive;
-});
-
 export const selectGuestsForArchive = store.createSelector((state) => {
   return state.workspaceOperations.guestsForArchive;
 });

@@ -26,7 +26,6 @@ export type WorkspaceOperationsState = {
   runningAgentNamesForArchive: string[];
   activeHookNamesForArchive: string[];
   openPrsForArchive: Collection<OpenPrWarningItem, 'number'>;
-  localChangesForArchive: LocalChangesWarning | null;
   guestsForArchive: GuestsWarning | null;
   showBulkArchiveConfirm: boolean;
   showBulkDeleteConfirm: boolean;
@@ -64,7 +63,6 @@ export const initialState: WorkspaceOperationsState = {
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
-  localChangesForArchive: null,
   guestsForArchive: null,
   showBulkArchiveConfirm: false,
   showBulkDeleteConfirm: false,
@@ -143,7 +141,6 @@ export const openArchiveWarning = createAction<
       agentNames: string[];
       hookNames: string[];
       openPrs: OpenPrWarningItem[];
-      localChanges?: LocalChangesWarning | null;
       guests?: GuestsWarning | null;
     },
   ]
@@ -225,17 +222,13 @@ workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
 }));
 workspaceOperationsReducer.with(
   openArchiveWarning,
-  (
-    state,
-    { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges, guests }] },
-  ) => ({
+  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs, guests }] }) => ({
     ...state,
     showArchiveWarning: true,
     pendingArchiveWorkspaceId: workspaceId,
     runningAgentNamesForArchive: agentNames,
     activeHookNamesForArchive: hookNames,
     openPrsForArchive: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
-    localChangesForArchive: localChanges ?? null,
     guestsForArchive: guests ?? null,
   }),
 );
@@ -246,7 +239,6 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
-  localChangesForArchive: null,
   guestsForArchive: null,
 }));
 workspaceOperationsReducer.with(

@@ -142,6 +142,7 @@ const noActiveWork = {
   localChanges: null,
   guests: noGuests,
 };
+const noArchiveWork = { agentNames: [], hookNames: [], openPrs: [], guests: noGuests };
 
 const localChanges = {
   roots: [
@@ -631,7 +632,6 @@ describe('workspaceOperationsSaga', () => {
           agentNames: [],
           hookNames: ['pr-watch'],
           openPrs: [],
-          localChanges: null,
           guests: noGuests,
         },
       ],
@@ -670,7 +670,7 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-2', ...noActiveWork, openPrs }],
+      payload: [{ workspaceId: 'ws-2', ...noArchiveWork, openPrs }],
     });
 
     run.task.cancel();
@@ -739,7 +739,7 @@ describe('workspaceOperationsSaga', () => {
       expect(run.state().workspaceOperations.guestsForArchive).toEqual(guests);
       expect(run.dispatch.mock.calls.flat()).toContainEqual({
         type: 'workspaceOperations/openArchiveWarning',
-        payload: [{ workspaceId: 'ws-2', ...noActiveWork, guests }],
+        payload: [{ workspaceId: 'ws-2', ...noArchiveWork, guests }],
       });
 
       run.task.cancel();
