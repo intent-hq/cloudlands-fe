@@ -14,6 +14,7 @@ import {
   type WorkspaceObject,
   type WorkspaceObjectType,
 } from './command-palette-utils';
+import type { PalettePick } from '../palette/palette-pick-memory';
 import { m } from '$shared/paraglide/messages.js';
 
 interface PaletteCommand {
@@ -56,12 +57,7 @@ export interface PaletteRepoItem {
   [extra: string]: unknown;
 }
 
-/** One remembered pick: the user chose `itemKey` (a row `_key`) for `query`. */
-export interface PalettePick {
-  query: string;
-  itemKey: string;
-  timestamp: number;
-}
+export type { PalettePick };
 
 /** Results that arrive from the server after typing. */
 export type PaletteLateSource = 'file' | 'note' | 'message';
@@ -100,7 +96,7 @@ export interface ComputeResultsInput {
   /** Known repos; omit (or pass []) when New Workspace is hidden. */
   repos?: PaletteRepoItem[];
   /** Remembered query → item picks (any order). */
-  pickMemory?: PalettePick[];
+  pickMemory?: readonly PalettePick[];
   /** Order in which late sources returned results for the current query. */
   lateArrivalOrder?: PaletteLateSource[];
   /** Clock for pick fading (ms); defaults to `Date.now()`. */
@@ -294,7 +290,7 @@ function compareCandidates(a: Candidate, b: Candidate): number {
   );
 }
 
-function pickWeights(picks: PalettePick[], normalizedQuery: string, now: number) {
+function pickWeights(picks: readonly PalettePick[], normalizedQuery: string, now: number) {
   const exact = new Map<string, number>();
   const related = new Map<string, number>();
   for (const pick of picks) {
