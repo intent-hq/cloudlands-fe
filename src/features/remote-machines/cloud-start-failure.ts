@@ -39,7 +39,7 @@ function copy(failure: PlacementFailure, cloud: CloudMachineErrorData): Copy {
         tone: 'warning',
         title: m.cloudMachines_error_profileRequired_title(),
         cause: m.cloudMachines_error_profileRequired_description(),
-        actions: [],
+        actions: ['settings'],
         dashboard: false,
       };
     case 'cloud-quota':
@@ -113,9 +113,10 @@ function details(
   ]
     .filter(Boolean)
     .join(' · ');
-  const lines = [head, failure.message.trim()];
+  const message = failure.message.trim();
+  const lines = [head, message];
   const extra = turnError?.trim();
-  if (extra && !failure.message.includes(extra) && !extra.includes(failure.message.trim()))
+  if (extra && (!message || (!message.includes(extra) && !extra.includes(message))))
     lines.push(extra);
   return lines.filter(Boolean).join('\n');
 }

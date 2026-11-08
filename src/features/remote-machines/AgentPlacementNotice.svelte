@@ -18,6 +18,7 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
+    agentCloudStartFailure,
     agentMachineLocation,
     agentPlacementNoticeKind,
     placementFailure,
@@ -37,6 +38,8 @@
     failedAt = null,
     queued = false,
     onRetry,
+    retrying = false,
+    turnError = null,
   }: {
     agentId: string;
     /** When the agent's start failed, for the failure card. */
@@ -45,6 +48,13 @@
     queued?: boolean;
     /** Retries the failed start; absent when it can't be retried now. */
     onRetry?: () => void;
+    /** A retry is in flight. */
+    retrying?: boolean;
+    /**
+     * A later turn error (a failed retry, a refused send). The caller shows it
+     * in the generic failure card, so the start failure card steps aside.
+     */
+    turnError?: string | null;
   } = $props();
 
   const agentIdStore = writable<string | undefined>(undefined);
@@ -76,9 +86,13 @@
         : m.remoteAgent_notice_starting_description(),
   );
   const cloudStep = $derived($agent$?.cloudStart?.step);
+  const cloudStart = $derived(turnError ? null : agentCloudStartFailure($agent$));
   const cloudFailure = $derived(
-    failure
-      ? cloudStartFailureView(failure, { canRetry: !!onRetry, turnError: $agent$?.stopReason })
+    cloudStart
+      ? cloudStartFailureView(cloudStart, {
+          canRetry: !!onRetry,
+          turnError: $agent$?.stopReason,
+        })
       : null,
   );
   const startingStep = $derived(
@@ -187,14 +201,17 @@
       />
     {/if}
   </div>
-{:else if kind === 'failed' && cloudFailure}
-  <CloudStartFailureCard
-    view={cloudFailure}
-    {failedAt}
-    {queued}
-    {onRetry}
-    onOpenSettings={openMachinesSettings}
-  />
+{:else if kind === 'failed' && failure?.cloud}
+  {#if cloudFailure}
+    <CloudStartFailureCard
+      view={cloudFailure}
+      {failedAt}
+      {queued}
+      {onRetry}
+      {retrying}
+      onOpenSettings={openMachinesSettings}
+    />
+  {/if}
 {:else if location && kind}
   {@const danger = kind === 'failed' || kind === 'revoked'}
   <div

@@ -20,12 +20,15 @@
     failedAt = null,
     queued = false,
     onRetry,
+    retrying = false,
     onOpenSettings,
   }: {
     view: CloudStartFailureView;
     failedAt?: string | null;
     queued?: boolean;
     onRetry?: () => void;
+    /** A retry is in flight: Retry shows it and ignores clicks. */
+    retrying?: boolean;
     onOpenSettings: () => void;
   } = $props();
 
@@ -75,6 +78,8 @@
         size="sm"
         class={index === 0 ? 'type-caption h-7 gap-1.5 px-2' : 'shrink-0'}
         data-primary-action={index === 0 ? '' : undefined}
+        data-action={action}
+        loading={action === 'retry' && retrying}
         onclick={() => run(action)}
       >
         {#if action === 'retry'}<Fa icon={faRotateRight} class="size-3" />{/if}

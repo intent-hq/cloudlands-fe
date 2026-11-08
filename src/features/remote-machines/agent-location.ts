@@ -11,7 +11,7 @@
  * revoked": the agent's `nodeState` only says `offline`.
  */
 import { m } from '$shared/paraglide/messages.js';
-import type { AgentSession } from '$shared/types';
+import { AgentStatus, type AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { parseCloudMachineError, type CloudMachineErrorData } from '$shared/types/cloud-machines';
 
@@ -258,13 +258,20 @@ export function placementFailure(
 }
 
 /**
- * The start failure of an agent on E2B with a cloud error, or null. The chat
- * shows it as the turn's failure card in place of the generic one.
+ * The start failure of an agent on E2B with a cloud error while the agent is
+ * parked in Error, or null. The chat shows it as the turn's failure card in
+ * place of the generic one. A kept `placementError` after a retry started
+ * (status no longer Error) is stale and yields null.
  */
 export function agentCloudStartFailure(
   agent: AgentSession | null | undefined,
 ): PlacementFailure | null {
-  if (agent?.placement?.target !== 'e2b' || !agent.placementError) return null;
+  if (
+    agent?.placement?.target !== 'e2b' ||
+    !agent.placementError ||
+    agent.status !== AgentStatus.Error
+  )
+    return null;
   const failure = placementFailure(agent.placementError, '');
   return failure.cloud ? failure : null;
 }

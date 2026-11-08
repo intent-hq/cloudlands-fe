@@ -747,7 +747,7 @@
 
   // An agent on E2B that couldn't start shows one failure card (the placement
   // notice) in place of the generic one; the error still blocks the queue.
-  const cloudStartFailed = $derived(!!agentCloudStartFailure($agentSession$));
+  const cloudStartFailed = $derived(!$chatError$ && !!agentCloudStartFailure($agentSession$));
   const turnFailureError = $derived(cloudStartFailed ? null : effectiveError);
 
   const latestAssistantForTelemetry = $derived.by(() => {
@@ -907,6 +907,7 @@
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
+  const retryAgentUi$ = selectRetryAgentUi(workspaceIdStore, instanceId);
   const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
   const inlineVisualDrafts$ = selectInlineVisualDrafts(instanceId);
   const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
@@ -7710,6 +7711,8 @@
             failedAt={effectiveFailedAt}
             queued={visibleQueuedMessages.length > 0}
             onRetry={failureTranscript.current.state === 'attempting' ? undefined : gatedRetry}
+            retrying={$retryAgentUi$?.status === 'pending'}
+            turnError={$chatError$}
           />
           <AttentionRequestBanner {agentId} />
         {/if}
