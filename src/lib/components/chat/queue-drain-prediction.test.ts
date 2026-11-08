@@ -3,6 +3,7 @@ import type { QueuedMessage } from '$shared/types';
 import {
   advanceQueueDrainPrediction,
   initialQueueDrainPredictorState,
+  hasPendingDirectSend,
   predictDrainedQueueIds,
   QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
   type QueueDrainPredictorInput,
@@ -23,6 +24,7 @@ function step(
     busy: false,
     blocked: false,
     interrupted: false,
+    directSendPending: false,
     delivered: none,
     now: 1_000,
     ...input,
@@ -107,6 +109,27 @@ describe('advanceQueueDrainPrediction', () => {
     expect(state.prediction).toBeNull();
   });
 
+  it('does not predict when a force-sent message preempts the turn', () => {
+    const state = step(busyWith([queued('a')]), {
+      queue: [queued('a')],
+      directSendPending: true,
+    });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('predicts on the next idle edge once the force-sent turn ends on its own', () => {
+    let state = step(busyWith([queued('a')]), { queue: [queued('a')], directSendPending: true });
+    state = step(state, { queue: [queued('a')], busy: true, now: 2_000 });
+    state = step(state, { queue: [queued('a')], now: 3_000 });
+    expect(state.prediction).toEqual({ ids: ['a'], startedAt: 3_000 });
+  });
+
+  it('keeps a running prediction when a later message is sent directly', () => {
+    let state = step(busyWith([queued('a')]), { queue: [queued('a')] });
+    state = step(state, { queue: [queued('a')], directSendPending: true, now: 1_200 });
+    expect(state.prediction?.ids).toEqual(['a']);
+  });
+
   it('ends an idle prediction when the interruption is reported after the turn ends', () => {
     let state = step(busyWith([queued('a')]), { queue: [queued('a')] });
     expect(state.prediction?.ids).toEqual(['a']);
@@ -160,5 +183,26 @@ describe('advanceQueueDrainPrediction', () => {
   it('returns the same state object when nothing changed', () => {
     const state = step(busyWith([queued('a')]), { queue: [queued('a')] });
     expect(step(state, { queue: [queued('a')], now: 1_200 })).toBe(state);
+  });
+});
+
+describe('hasPendingDirectSend', () => {
+  const send = (
+    id: string,
+    status: 'preparing' | 'sending' | 'accepted' | 'uncertain' = 'sending',
+  ) => ({ id, appMessageId: `app-${id}`, status });
+
+  it('reports a direct send that has not reached the transcript', () => {
+    expect(hasPendingDirectSend([send('f', 'preparing')], [])).toBe(true);
+    expect(hasPendingDirectSend([send('f', 'accepted')], [{ id: 'other' }])).toBe(true);
+  });
+
+  it('ignores a send the transcript already shows', () => {
+    expect(hasPendingDirectSend([send('f')], [{ id: 'row', appMessageId: 'app-f' }])).toBe(false);
+    expect(hasPendingDirectSend([send('f')], [{ id: 'f' }])).toBe(false);
+  });
+
+  it('ignores a failed send, which starts no turn', () => {
+    expect(hasPendingDirectSend([send('f', 'uncertain')], [])).toBe(false);
   });
 });

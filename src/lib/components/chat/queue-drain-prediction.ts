@@ -33,6 +33,12 @@ export interface QueueDrainPredictorInput {
    * message starts its own turn.
    */
   interrupted: boolean;
+  /**
+   * A message sent straight to the conversation (a ⌘Enter force-send) has not
+   * reached the transcript yet. The daemon runs it as the next turn and keeps
+   * the queue for after it, so the turn it preempted ends without a drain.
+   */
+  directSendPending: boolean;
   /** The full confirmed queue in daemon order, every origin included. */
   queue: readonly QueuedMessage[];
   /** Entries already shown by authoritative evidence (processing rows or transcript). */
@@ -62,6 +68,22 @@ export function predictDrainedQueueIds(queue: readonly QueuedMessage[], now: num
     return head && !isScriptMonitorWake(head) && isPredictable(head, now) ? [head.id] : [];
   }
   return queue.filter((message) => isPredictable(message, now)).map((message) => message.id);
+}
+
+/** A failed (`uncertain`) send starts no turn, so it never holds back a drain. */
+export function hasPendingDirectSend(
+  sends: readonly { id: string; appMessageId?: string; status: string }[],
+  transcript: readonly { id: string; appMessageId?: string }[],
+): boolean {
+  return sends.some(
+    (send) =>
+      send.status !== 'uncertain' &&
+      !transcript.some(
+        (message) =>
+          message.id === send.id ||
+          (!!send.appMessageId && message.appMessageId === send.appMessageId),
+      ),
+  );
 }
 
 function isPredictable(message: QueuedMessage, now: number): boolean {
@@ -97,7 +119,7 @@ export function advanceQueueDrainPrediction(
     else if (ids.length !== prediction.ids.length) prediction = { ...prediction, ids };
   }
 
-  if (!prediction && state.wasBusy && !busy && !blocked) {
+  if (!prediction && state.wasBusy && !busy && !blocked && !input.directSendPending) {
     const ids = predictDrainedQueueIds(queue, now).filter((id) => !delivered.has(id));
     if (ids.length) prediction = { ids, startedAt: now };
   }

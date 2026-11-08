@@ -140,3 +140,34 @@ test('keeps queued messages in the queue when another client stops the turn duri
     component.locator('[data-message-role="user"]').filter({ hasText: QUEUED_TEXT }),
   ).toHaveCount(0);
 });
+
+test('keeps queued messages in the queue when a force-sent message preempts the turn', async ({
+  mount,
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  // ⌘Enter interrupts the turn with the composer text only. The daemon runs
+  // that message next and keeps the queue for after it (PROTOCOL §5.5).
+  const forced = { ...props, submissionSupport: true };
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { ...forced, streaming: true },
+  });
+  const queue = component.getByTestId('queued-messages-container');
+  const queuedRow = component
+    .locator('[data-message-role="user"]')
+    .filter({ hasText: QUEUED_TEXT });
+  await expect(queue).toContainText(QUEUED_TEXT);
+
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await editor.click();
+  await editor.pressSequentially('Stop and do this instead');
+  await editor.press('ControlOrMeta+Enter');
+  await expect(component.getByText('Stop and do this instead', { exact: true })).toHaveCount(1);
+
+  // The preempted turn ends before the forced message reaches the transcript.
+  await component.update({ props: { ...forced, streaming: false } });
+
+  await expect(queue).toContainText(QUEUED_TEXT);
+  await expect(queuedRow).toHaveCount(0);
+  await page.screenshot({ path: info.outputPath('force-send-keeps-queue.png') });
+});
