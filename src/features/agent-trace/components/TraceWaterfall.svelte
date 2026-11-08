@@ -681,8 +681,11 @@
 
 <style>
   .trace-waterfall {
-    --trace-turn-ink: hsl(var(--info));
-    --trace-tool-ink: color-mix(in oklab, hsl(var(--success)) 80%, hsl(var(--info)));
+    --trace-turn-ink: light-dark(hsl(var(--muted-foreground)), hsl(var(--info)));
+    --trace-tool-ink: light-dark(
+      hsl(var(--muted-foreground)),
+      color-mix(in oklab, hsl(var(--success)) 80%, hsl(var(--info)))
+    );
   }
   .trace-row-icon {
     color: var(--trace-turn-ink);
@@ -723,20 +726,29 @@
     opacity: 0;
   }
   /*
-   * Violet denotes model turns and teal denotes tool calls. These chart colors
-   * follow the app theme; citrus and danger retain their live/error meanings.
+   * Light-mode spans use quiet neutral fills; dark mode keeps violet/teal tones.
+   * Citrus and danger retain their live/error meanings in both themes.
    * Fills are opaque so overlapping tool calls do not stack darker.
    */
   .trace-bar--track {
-    background: color-mix(in oklab, var(--trace-turn-ink) 10%, hsl(var(--background)));
+    background: light-dark(
+      color-mix(in srgb, hsl(var(--foreground)) 4%, hsl(var(--background))),
+      color-mix(in oklab, var(--trace-turn-ink) 10%, hsl(var(--background)))
+    );
   }
   .trace-bar--turn,
   .trace-segment--turn {
-    background: color-mix(in oklab, var(--trace-turn-ink) 65%, hsl(var(--background)));
+    background: light-dark(
+      color-mix(in srgb, hsl(var(--foreground)) 18%, hsl(var(--background))),
+      color-mix(in oklab, var(--trace-turn-ink) 65%, hsl(var(--background)))
+    );
   }
   .trace-bar--tool,
   .trace-segment--tool {
-    background: color-mix(in oklab, var(--trace-tool-ink) 78%, hsl(var(--background)));
+    background: light-dark(
+      color-mix(in srgb, hsl(var(--foreground)) 26%, hsl(var(--background))),
+      color-mix(in oklab, var(--trace-tool-ink) 78%, hsl(var(--background)))
+    );
   }
   .trace-bar--failed,
   .trace-segment--failed {
