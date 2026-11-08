@@ -146,14 +146,17 @@ function hasActiveWork({
   );
 }
 
-// Single-workspace gating: the only path that fetches `workspace.localChanges`.
+// Single-workspace gating: the only path that fetches `workspace.localChanges` (delete only).
 function* getSingleWorkspaceActiveWork(
   workspaceId: string,
   kind: 'archive' | 'delete',
 ): SagaGenerator<ActiveWorkNames | null> {
   const context = yield* selectPrincipalActionContext.effect();
   if (!context) return null;
-  const result = yield* call(getActiveWorkNames, workspaceId, { includeLocalChanges: true });
+  // Archive keeps local changes on disk, so only delete checks for them.
+  const result = yield* call(getActiveWorkNames, workspaceId, {
+    includeLocalChanges: kind === 'delete',
+  });
   if ((yield* selectPrincipalActionContext.effect()) !== context) return null;
   if (!result) {
     const notify = yield* call(getToast);
@@ -364,7 +367,8 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
   const activeWork = yield* getSingleWorkspaceActiveWork(workspaceId, 'archive');
   if (!activeWork) return;
   if (hasActiveWork(activeWork)) {
-    yield* put(openArchiveWarning({ workspaceId, ...activeWork }));
+    const { agentNames, hookNames, openPrs, guests } = activeWork;
+    yield* put(openArchiveWarning({ workspaceId, agentNames, hookNames, openPrs, guests }));
     return;
   }
   yield* call(archiveWorkspaceById, workspaceId);
