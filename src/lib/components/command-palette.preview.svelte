@@ -16,15 +16,13 @@
   import { PREVIEW_FIXTURE_TIMESTAMPS } from '$lib/component-catalog/preview-fixtures';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
+  import { trackKnownRepoLoads } from '../../test/fixtures/command-palette-repos-fixture';
   import type { MockBackendMethodHandler } from '../../test/ct-mock-electron-bridge';
   import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import { takeEvery } from 'typed-redux-saga';
   import {
     setWorkspaceInitializerRecentRepos,
     workspaceInitializerRecentReposRefreshFinished,
-    workspaceInitializerRecentReposRefreshRequested,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-  import { knownReposLoadSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga';
   import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 
   const workspaceId = WorkspaceId('preview-command-palette');
@@ -273,14 +271,7 @@
       }),
     );
     appStore.dispatch(setWorkspaceInitializerRecentRepos(savedRepos));
-    const loads: Array<{ id: string; requestId: string }> = [];
-    const stopLoads = appStore.runSaga(function* () {
-      yield* takeEvery(workspaceInitializerRecentReposRefreshRequested, function* (action) {
-        const [id, requestId] = action.payload;
-        loads.push({ id, requestId });
-      });
-    });
-    const stopKnownRepos = appStore.runSaga(knownReposLoadSaga);
+    const { loads, stop: stopLoads } = trackKnownRepoLoads();
     const fixture: CommandPaletteFixture = {
       repoLoads: () => loads.length,
       landRepos: () => {
@@ -303,7 +294,6 @@
       window as unknown as { __commandPaletteFixture?: CommandPaletteFixture }
     ).__commandPaletteFixture = fixture;
     return () => {
-      stopKnownRepos();
       stopLoads();
       stopSearch();
       appStore.dispatch(setWorkspaceInitializerRecentRepos([]));

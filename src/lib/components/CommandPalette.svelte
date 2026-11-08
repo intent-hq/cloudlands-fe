@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { openDevConsole } from '$features/dev-console/dev-console-client';
   import { getSettingsPaletteCommands } from '$features/settings/settings-palette-commands';
   import {
     selectPrincipalConnectionContext,
@@ -13,13 +12,10 @@
   /** App-wide palette for commands, files, workspace search, notes and headings. */
   import { flushSync, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import { goto } from '$app/navigation';
   import { fly } from '$lib/motion';
-  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
     faSearch,
-    faFile,
     faFolderOpen,
     faTerminal,
     faCommentDots,
@@ -27,7 +23,6 @@
     faCodeBranch,
     faGlobe,
   } from '@fortawesome/free-solid-svg-icons';
-  import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
   import { openAndShowWorkspace } from '$lib/utils/show-workspace';
@@ -44,7 +39,6 @@
     selectLabsCloudMachinesEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentCreationActions,
@@ -52,31 +46,16 @@
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
-  import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { invoke } from '$lib/electron-bridge';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
+
   import { openWorkspaceBrowser } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import {
-    commandPaletteNewFileRequested,
-    openAgentTabRequested,
-  } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import {
-    resetOnboarding,
-    setOnboardingFullFlowRequested,
-  } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
-  import {
-    setShowCreateModal,
-    setStatsOverlayOpen,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     type WorkspaceObject,
     FILTER_PREFIXES,
-    fuzzyScore,
     formatRelativeTime,
     parseQueryFilter,
     buildNoteBreadcrumbs,
@@ -99,7 +78,6 @@
   import type { PaletteMruEntryType } from '$store/renderer/slices/palette/palette-types';
   import {
     computeResults,
-    type PaletteCategory,
     type PaletteLateSource,
     type PaletteRepoItem,
   } from '$store/renderer/slices/command-palette/command-palette-results';
@@ -108,24 +86,28 @@
     selectPaletteKnownRepos,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
   import { ensureKnownReposLoaded } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
-  import {
-    knownRepoLastUsedMs,
-    prefillForRepo,
-  } from '$store/renderer/slices/workspace-initializer/utils/known-repos';
   import { recentRepoKey } from '$store/renderer/slices/workspace-initializer/utils/recent-repo-key';
-  import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
-  import { WORKSPACE_PREFILL_KEY } from '$store/renderer/slices/deep-links/utils/deep-link-workspace';
+
+  import { paletteCategoryLabel, paletteMoreLabel, toPaletteRepo } from './command-palette-rows';
   import {
-    getRecentRepoIdentity,
-    getRecentRepoSource,
-    getRepoFolderName,
-  } from './workspace/initializer/recent-repo-display';
+    openRepoInNewWorkspace,
+    queryPaletteFiles,
+    runPaletteCommand,
+  } from './command-palette-actions';
+  import {
+    createLateArrivalTracker,
+    findSelectableIndex,
+    isSelectableResult,
+    keepRowOne,
+    resolveSelection,
+    rowKey,
+  } from './command-palette-selection';
   import RepositoryPickerIcon from './workspace/initializer/RepositoryPickerIcon.svelte';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
+  import { isLabCommandHidden } from './command-palette-labs';
   import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -365,89 +347,13 @@
     untrack(() => appStore.dispatch(ensureKnownReposLoaded()));
   });
   const repos: PaletteRepoItem[] = $derived(
-    $knownRepos$.map((repo) => toPaletteRepo(repo, $gitlabInstance$)),
+    $knownRepos$.map((repo) =>
+      toPaletteRepo(repo, $gitlabInstance$, paletteMruTimes.get(`repo:${recentRepoKey(repo)}`)),
+    ),
   );
 
-  function toPaletteRepo(
-    repo: WorkspaceInitializerRecentRepo,
-    gitlabInstance: string | undefined,
-  ): PaletteRepoItem {
-    const source = getRecentRepoSource(repo, gitlabInstance);
-    const identity = getRecentRepoIdentity(repo, gitlabInstance);
-    const local = repo.type === 'local';
-    const folder = local ? getRepoFolderName(repo.path) : undefined;
-    const fullName =
-      identity?.projectPath ?? (repo.owner ? `${repo.owner}/${repo.name}` : undefined);
-    const id = recentRepoKey(repo);
-    const lastUsedAt = Math.max(knownRepoLastUsedMs(repo), paletteMruTimes.get(`repo:${id}`) ?? 0);
-    return {
-      id,
-      label: fullName ?? folder ?? repo.name,
-      aliases: [repo.name, folder].filter((name): name is string => !!name),
-      description: local ? repo.path : undefined,
-      sourceLabel:
-        source === 'gitlab'
-          ? 'GitLab' // i18n-ignore (brand name)
-          : source === 'github'
-            ? 'GitHub' // i18n-ignore (brand name)
-            : undefined,
-      kind: source === 'folder' ? 'folder' : 'repo',
-      lastUsedAt,
-      _time: lastUsedAt > 0 ? formatRelativeTime(new Date(lastUsedAt)) : '',
-      _repo: repo,
-      _repoOwner: identity ? identity.projectPath.split('/').slice(0, -1).join('/') : repo.owner,
-      _repoProvider: identity?.provider,
-    };
-  }
-
-  function categoryLabel(category: PaletteCategory | undefined): string | undefined {
-    switch (category) {
-      case 'command':
-        return m.lib_commandPalette_categoryCommand_label();
-      case 'agent':
-        return m.lib_commandPalette_categoryAgent_label();
-      case 'note':
-        return m.lib_commandPalette_categoryNote_label();
-      case 'change':
-        return m.lib_commandPalette_categoryChange_label();
-      case 'terminal':
-        return m.lib_commandPalette_categoryTerminal_label();
-      case 'browser':
-        return m.lib_commandPalette_categoryBrowser_label();
-      case 'file':
-        return m.lib_commandPalette_categoryFile_label();
-      case 'workspace':
-        return m.lib_commandPalette_categoryWorkspace_label();
-      case 'repo':
-        return m.lib_commandPalette_categoryRepo_label();
-      case 'folder':
-        return m.lib_commandPalette_categoryFolder_label();
-      case 'message':
-        return m.lib_commandPalette_categoryMessage_label();
-      default:
-        return undefined;
-    }
-  }
   // While searching without a filter the list is blended: each row names its category.
   const showCategoryLabels = $derived(!!parsedQuery.searchTerm && !activeFilter);
-
-  // Localized "Show N more …" labels per palette item type.
-  function showMoreLabel(count: number, itemType: string): string {
-    switch (itemType) {
-      case 'agent':
-        return m.lib_commandPalette_showMoreAgents_label({ count });
-      case 'note':
-        return m.lib_commandPalette_showMoreNotes_label({ count });
-      case 'change':
-        return m.lib_commandPalette_showMoreChanges_label({ count });
-      case 'terminal':
-        return m.lib_commandPalette_showMoreTerminals_label({ count });
-      case 'browser':
-        return m.lib_commandPalette_showMoreBrowsers_label({ count });
-      default:
-        return m.lib_commandPalette_showMoreFiles_label({ count });
-    }
-  }
 
   // Load workspace objects when the workspace changes. Terminal metadata
   // titles are localized at read time; a runtime language switch remounts the
@@ -499,48 +405,6 @@
   let groupFiles: any[] = $state([]);
 
   // Daemon helper to query files (search.fileNames, PROTOCOL §5.15) and map to palette items (with fuzzy/MRU)
-  async function queryFiles(pattern: string, wsId: string): Promise<any[]> {
-    try {
-      const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
-        workspaceId: wsId,
-        pattern: (pattern || '').trim(),
-        limit: 50,
-      });
-      const files = Array.isArray(resp?.files) ? resp.files : [];
-      const mapped = files.map((path: string) => ({
-        id: path,
-        label: path.split('/').pop() ?? path,
-        path,
-        icon: faFile,
-        description: path,
-      }));
-      const q = (pattern || '').trim();
-      if (q) {
-        const mru = getMRUMap();
-        return (mapped as any[])
-          .map((m: any) => ({
-            ...m,
-            _score: fuzzyScore(`${m.label} ${m.description || m.path}`, q),
-            _mru: m.path ? mru.get(m.path) || 0 : 0,
-          }))
-          .filter((m: any) => m._score !== -Infinity)
-          .sort(
-            (a: any, b: any) =>
-              (b._score as number) - (a._score as number) ||
-              (b._mru as number) - (a._mru as number),
-          )
-
-          .map(({ _score, _mru, ...rest }: any) => rest)
-          .slice(0, 8);
-      } else {
-        return rankByMRU(mapped).slice(0, 8);
-      }
-    } catch (error) {
-      logger.error('Failed to list workspace files:', error);
-      return [];
-    }
-  }
-
   const FILE_QUERY_DEBOUNCE_MS = 150;
 
   // Keep file group in sync with current query/workspace (debounced)
@@ -572,7 +436,7 @@
     // Debounce the actual IPC call
     fileQueryTimeout = setTimeout(async () => {
       try {
-        const files = await queryFiles(q, wsId);
+        const files = await queryPaletteFiles(q, wsId, $paletteFileMru$);
         // Only update if this is still the current request (untracked to avoid effect loop)
         if (requestId === currentFileRequestId) {
           untrack(() => {
@@ -722,17 +586,8 @@
   let builtRepos: PaletteRepoItem[] | null = null;
   // The scheduled rebuild; Enter runs it at once so it acts on the current text.
   let pendingRebuild: (() => void) | null = null;
-  // Order in which late sources answered the current text (first one leads when
-  // nothing instant matches).
-  let lateArrival: { query: string; order: PaletteLateSource[] } = { query: '', order: [] };
-
-  function noteLateArrivals(query: string, arrived: Record<PaletteLateSource, boolean>) {
-    if (lateArrival.query !== query) lateArrival = { query, order: [] };
-    for (const source of ['file', 'note', 'message'] as const) {
-      if (arrived[source] && !lateArrival.order.includes(source)) lateArrival.order.push(source);
-    }
-    return [...lateArrival.order];
-  }
+  // Order in which late sources answered the current text (first leads when nothing instant matches).
+  const noteLateArrivals = createLateArrivalTracker();
 
   $effect(() => {
     searchQuery;
@@ -741,52 +596,24 @@
     });
   });
 
-  function rowKey(item: any): string | null {
-    return isSelectableResult(item) ? (item._key ?? null) : null;
-  }
-
   function selectRow(index: number, moved: boolean) {
     selectedIndex = index;
     selectedKey = rowKey(searchResults[index]);
     if (moved) highlightMoved = true;
   }
 
-  /** The row index holding `key` nearest to `near` (an item can be listed twice). */
-  function indexOfKey(items: any[], key: string, near: number): number {
-    let best = -1;
-    items.forEach((item, index) => {
-      if (rowKey(item) === key && (best === -1 || Math.abs(index - near) < Math.abs(best - near)))
-        best = index;
-    });
-    return best;
-  }
-
-  /** A repo list that lands mid-typing must not replace row 1 before the next keystroke. */
-  function keepRowOne(previous: any[], next: any[]) {
-    const previousFirst = rowKey(previous[findSelectableIndex(previous, 0, 1)]);
-    const nextFirst = findSelectableIndex(next, 0, 1);
-    if (!previousFirst || nextFirst === -1 || rowKey(next[nextFirst]) === previousFirst) return;
-    const from = indexOfKey(next, previousFirst, nextFirst);
-    if (from <= nextFirst) return;
-    const [row] = next.splice(from, 1);
-    next.splice(nextFirst, 0, row);
-  }
-
   function applyResults(flat: any[], query: string, repoItems: PaletteRepoItem[]) {
     if (query === builtQuery && repoItems !== builtRepos) keepRowOne(searchResults, flat);
     builtQuery = query;
     builtRepos = repoItems;
-    let index = -1;
-    if (highlightMoved && selectedKey) index = indexOfKey(flat, selectedKey, selectedIndex);
-    if (index === -1 && highlightMoved) {
-      const clamped = Math.max(0, Math.min(selectedIndex, flat.length - 1));
-      index = findSelectableIndex(flat, clamped, 1);
-      if (index === -1) index = findSelectableIndex(flat, clamped, -1);
-    }
-    if (index === -1) index = findSelectableIndex(flat, 0, 1);
+    const index = resolveSelection(flat, {
+      index: selectedIndex,
+      key: selectedKey,
+      moved: highlightMoved,
+    });
     searchResults = flat;
-    selectedIndex = Math.max(index, 0);
-    selectedKey = rowKey(flat[selectedIndex]);
+    selectedIndex = index;
+    selectedKey = rowKey(flat[index]);
   }
 
   function cancelPendingRebuild() {
@@ -869,41 +696,8 @@
     };
   });
 
-  function getMRUMap(): Map<string, number> {
-    return new Map(Object.entries($paletteFileMru$));
-  }
-
   function recordMRUFile(path: string) {
     appStore.dispatch(recordPaletteFileMru(path, Date.now()));
-  }
-
-  function rankByMRU<T extends { path?: string }>(items: T[]): T[] {
-    const map = getMRUMap();
-    return items.slice().sort((a, b) => {
-      const ta = a.path ? map.get(a.path) || 0 : 0;
-      const tb = b.path ? map.get(b.path) || 0 : 0;
-      return tb - ta;
-    });
-  }
-
-  function isSelectableResult(item: any): boolean {
-    return (
-      Boolean(item) &&
-      !item._groupLabel &&
-      !item._newActionsRow &&
-      !item._borderAbove &&
-      !item._showMore
-    );
-  }
-
-  function findSelectableIndex(items: any[], startIndex: number, direction: 1 | -1): number {
-    for (let index = startIndex; index >= 0 && index < items.length; index += direction) {
-      if (isSelectableResult(items[index])) {
-        return index;
-      }
-    }
-
-    return -1;
   }
 
   function scrollToSelection() {
@@ -996,7 +790,7 @@
     let shouldClose = true;
     if (item._repo) {
       recordMru('repo', item.id);
-      openRepo(item._repo);
+      openRepoInNewWorkspace(item._repo, $gitlabInstance$);
     } else if (item.type) {
       // Transcript rows are not MRU-tracked ('message' is not a PaletteMruEntryType)
       if (item.type !== 'message' && item.type !== 'note') {
@@ -1081,97 +875,13 @@
     appStore.dispatch(recordPaletteMruItem(type, id, Date.now()));
   }
 
-  /** Open New Workspace with `repo` selected; nothing is created until the user submits. */
-  function openRepo(repo: WorkspaceInitializerRecentRepo) {
-    if (!selectWorkspaceCreationVisible.select(appStore.state)) return;
-    try {
-      sessionStorage.setItem(
-        WORKSPACE_PREFILL_KEY,
-        JSON.stringify(prefillForRepo(repo, $gitlabInstance$)),
-      );
-    } catch (error) {
-      logger.warn('Failed to store the New Workspace repo prefill', { error });
-    }
-    appStore.dispatch(setShowCreateModal(true));
-  }
   function handleCommand(commandId: string): boolean {
-    const settingsCommand = commands.find((command) => command.id === commandId);
-    if (settingsCommand && 'settingsTab' in settingsCommand) {
-      appStore.dispatch(setShowCreateModal(false));
-      navigateToSettings({ tab: settingsCommand.settingsTab });
-      return true;
-    }
-    if (runLabCommand(commandId)) return true;
-    switch (commandId) {
-      case 'new-workspace':
-        if (selectWorkspaceCreationVisible.select(appStore.state)) {
-          appStore.dispatch(setShowCreateModal(true));
-        }
-        return true;
-      case 'settings':
-        appStore.dispatch(setShowCreateModal(false));
-        navigateToSettings();
-        return true;
-      case 'enable-experimental-remote-agents':
-        appStore.dispatch(setLabsRemoteAgentsEnabled(true));
-        return true;
-      case 'disable-experimental-remote-agents':
-        appStore.dispatch(setLabsRemoteAgentsEnabled(false));
-        return true;
-      case 'new-agent':
-        if (workspaceId && !$hidesAgentLifecycleActions$) {
-          appStore.dispatch(createAgentRequested(workspaceId));
-        }
-        return true;
-      case 'new-terminal':
-        if (workspaceId && !$isCollaborator$) {
-          appStore.dispatch(createTerminalRequested(workspaceId));
-        }
-        return true;
-      case 'new-note':
-        if (workspaceId) {
-          appStore.dispatch(createNoteRequested(workspaceId));
-        }
-        return true;
-      case 'new-file':
-        if (workspaceId) {
-          appStore.dispatch(commandPaletteNewFileRequested(workspaceId));
-        }
-        return true;
-      case 'open-url':
-        // Open a browser panel with default URL
-        if (workspaceId && !$isCollaborator$) {
-          appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
-        }
-        return true;
-      case 'show-onboarding':
-        // Explicit restart: request the full flow so OnboardingPage's
-        // initial-step decision never skips ahead on setup state.
-        appStore.dispatch(setOnboardingFullFlowRequested(true));
-        appStore.dispatch(resetOnboarding(admissionSelector.select(appStore.state) ?? undefined));
-        goto('/workspace/new');
-        return true;
-      case 'enhance-prompt':
-        dispatchWindowEvent('chat:enhance-prompt');
-        return true;
-      case 'attach-context':
-        dispatchWindowEvent('chat:attach-context');
-        return true;
-      case 'attach-files':
-        dispatchWindowEvent('chat:attach-files');
-        return true;
-      case 'open-dev-console':
-        void openDevConsole();
-        return true;
-      case 'open-hud':
-        void invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/hud' });
-        return true;
-      case 'open-usage-stats':
-        appStore.dispatch(setStatsOverlayOpen(true));
-        return true;
-      default:
-        return true;
-    }
+    return runPaletteCommand(commandId, {
+      commands,
+      workspaceId,
+      hidesAgentLifecycleActions: $hidesAgentLifecycleActions$,
+      isCollaborator: $isCollaborator$,
+    });
   }
 
   onMount(() => {
@@ -1351,39 +1061,21 @@
                   {/if}
                 </div>
               </div>
-            {:else if item._showMore}
-              <ActionRow
-                data-palette-index={index}
-                selected={selectedIndex === index}
-                class="px-3 py-2"
-                onpointerdown={(event) => event.preventDefault()}
-                onclick={() => selectItem(item)}
-              >
-                {#snippet title()}
-                  <span class="text-muted-foreground"
-                    >{showMoreLabel(item._count, item._itemType)}</span
-                  >
-                {/snippet}
-              </ActionRow>
-            {:else if item._seeAll}
+            {:else if item._showMore || item._seeAll}
               <ActionRow
                 data-palette-index={index}
                 data-palette-see-all={item._filter}
-                class="rounded-md px-3 py-2 type-body"
+                class="rounded-md px-3 py-2"
                 selected={selectedIndex === index}
-                aria-current={selectedIndex === index ? 'true' : undefined}
+                aria-current={item._seeAll && selectedIndex === index ? 'true' : undefined}
                 onpointerdown={(event) => event.preventDefault()}
                 onpointermove={() => {
-                  if (selectedIndex !== index) selectRow(index, true);
+                  if (item._seeAll && selectedIndex !== index) selectRow(index, true);
                 }}
                 onclick={() => selectItem(item)}
               >
                 {#snippet title()}
-                  <span class="text-muted-foreground"
-                    >{item._filter === 'note'
-                      ? m.lib_commandPalette_seeAllNotes_label()
-                      : m.lib_commandPalette_seeAllMessages_label()}</span
-                  >
+                  <span class="text-muted-foreground">{paletteMoreLabel(item)}</span>
                 {/snippet}
               </ActionRow>
             {:else}
@@ -1426,9 +1118,9 @@
 
                 {#snippet trailing()}
                   <span class="flex items-center justify-end gap-2">
-                    {#if showCategoryLabels && categoryLabel(item._category)}
+                    {#if showCategoryLabels && paletteCategoryLabel(item._category)}
                       <span class="type-caption text-muted-foreground" data-palette-category
-                        >{categoryLabel(item._category)}</span
+                        >{paletteCategoryLabel(item._category)}</span
                       >
                     {/if}
                     <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">
