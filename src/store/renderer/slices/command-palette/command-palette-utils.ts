@@ -5,11 +5,11 @@
 
 import { WorkspaceStatus, type Note } from '$shared/types';
 import { formatRelativeTime as formatRelative, formatShortDate } from '$lib/i18n/format';
-import type { PaletteMruEntry, PaletteMruEntryType } from '../palette/palette-types';
+import type { PaletteMruEntry, PaletteObjectType } from '../palette/palette-types';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type WorkspaceObjectType = PaletteMruEntryType;
+export type WorkspaceObjectType = PaletteObjectType;
 
 export interface WorkspaceObject {
   id: string;
