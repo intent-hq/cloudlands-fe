@@ -125,6 +125,20 @@ test('Cmd/Ctrl-click keeps the open chat in the selection', async ({ mount }) =>
   await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
 });
 
+test('Cmd/Ctrl-click leaves an open archived chat out of the selection', async ({ mount }) => {
+  const { sidebar, list } = await openAssistant(mount);
+  const archived = sidebar.getByRole('button', { name: '1 archived chat', exact: true });
+  await archived.click();
+  const archivedList = sidebar.getByRole('listbox', { name: 'Archived chats', exact: true });
+  await archivedList.getByRole('option').first().click();
+  await expect(archivedList.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
+
+  await list.getByRole('option').nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
+  await expect(list.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(archivedList.getByRole('option').first()).toHaveAttribute('aria-selected', 'false');
+});
+
 test('Cmd/Ctrl-click selects several chats to archive or delete together', async ({
   mount,
   page,
