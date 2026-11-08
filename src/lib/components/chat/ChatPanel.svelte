@@ -325,6 +325,7 @@
     decideReturnCorrection,
     resolveTabReturnRestore,
     scheduleReturnSafetyNet,
+    shouldRecordReturnBreadcrumb,
     type ChatReturnKind,
     type ReturnDividerPosition,
   } from './chat-return-landing';
@@ -4178,6 +4179,7 @@
   let pendingReturnLanding: ReturnLanding | null = null;
   let returnLandingRevealed = false;
   let returnLandingUserInput = false;
+  let returnLandingBreadcrumbs = 0;
   let returnLandingTimers: ReturnType<typeof setTimeout>[] = [];
   let returnLandingRestoreFrame: number | null = null;
   let returnLandingEpoch = $state(0);
@@ -4198,6 +4200,7 @@
     cancelReturnLanding();
     pendingReturnLanding = landing;
     returnLandingUserInput = false;
+    returnLandingBreadcrumbs = 0;
     returnLandingEpoch += 1;
   }
 
@@ -4385,26 +4388,29 @@
       divider,
     });
     if (correction === 'none') return;
-    // i18n-ignore (internal diagnostic event name)
-    persistedLogger.warn(LogCategory.AGENT, 'chat-return-landing-correction', {
-      correction,
-      returnKind: landing.kind,
-      returnPath: landing.path,
-      awayMs: landing.awayMs,
-      following: shouldFollowBottom,
-      hasVisibleRow,
-      divider,
-      skeleton: deferTranscriptReveal,
-      cacheRestorePending,
-      tabRestoreTop: landing.restoreTop,
-      unreadEntryHold: unreadEntryHold !== null,
-      scrollTop: Math.round(container.scrollTop),
-      scrollHeight: container.scrollHeight,
-      clientHeight: container.clientHeight,
-      spacerAbove: Math.round(virtualSpacerHeight),
-      spacerBelow: Math.round(virtualSpacerBelowHeight),
-      fetching,
-    });
+    if (shouldRecordReturnBreadcrumb(returnLandingBreadcrumbs)) {
+      returnLandingBreadcrumbs += 1;
+      // i18n-ignore (internal diagnostic event name)
+      persistedLogger.warn(LogCategory.AGENT, 'chat-return-landing-correction', {
+        correction,
+        returnKind: landing.kind,
+        returnPath: landing.path,
+        awayMs: landing.awayMs,
+        following: shouldFollowBottom,
+        hasVisibleRow,
+        divider,
+        skeleton: deferTranscriptReveal,
+        cacheRestorePending,
+        tabRestoreTop: landing.restoreTop,
+        unreadEntryHold: unreadEntryHold !== null,
+        scrollTop: Math.round(container.scrollTop),
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        spacerAbove: Math.round(virtualSpacerHeight),
+        spacerBelow: Math.round(virtualSpacerBelowHeight),
+        fetching,
+      });
+    }
     if (unreadEntryHold) releaseUnreadEntryHold();
     const dividerElement = container.querySelector<HTMLElement>('[data-new-messages-divider]');
     if (correction === 'divider' && dividerElement) {

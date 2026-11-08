@@ -512,6 +512,7 @@ import {
   decideReturnCorrection,
   resolveTabReturnRestore,
   scheduleReturnSafetyNet,
+  shouldRecordReturnBreadcrumb,
   type ReturnViewportProbe,
 } from '../chat-return-landing';
 import {
@@ -6036,6 +6037,15 @@ describe('chat return landing decisions', () => {
       expect(calls.at(-1)!.elapsed).toBeLessThan(1000);
       expect(ended).toBe(true);
     });
+  });
+
+  it('records at most two breadcrumbs per return landing', () => {
+    // A correction that does not take would otherwise re-log every check.
+    const recorded = Array.from({ length: 19 }).reduce<number>(
+      (count) => (shouldRecordReturnBreadcrumb(count) ? count + 1 : count),
+      0,
+    );
+    expect(recorded).toBe(2);
   });
 
   it('restores a cached tab position only once the transcript can hold it', () => {

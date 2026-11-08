@@ -114,3 +114,10 @@ export function scheduleReturnSafetyNet(input: {
   };
   input.schedule(run, timing.firstCheckMs);
 }
+
+/** Persisted breadcrumbs per return landing; later checks still correct. */
+export const RETURN_BREADCRUMB_LIMIT = 2;
+
+export function shouldRecordReturnBreadcrumb(recordedForLanding: number): boolean {
+  return recordedForLanding < RETURN_BREADCRUMB_LIMIT;
+}

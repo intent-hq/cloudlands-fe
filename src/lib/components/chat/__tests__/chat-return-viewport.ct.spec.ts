@@ -1,6 +1,10 @@
 import type { Locator, Page } from '@playwright/experimental-ct-svelte';
 import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
 import ChatReturnHost, { type ReturnPath } from './ChatReturnHost.svelte';
+import { RETURN_SAFETY_NET_TIMING } from '../chat-return-landing';
+
+/** Outlasts every safety-net check after the reveal. */
+const SAFETY_NET_QUIET_MS = RETURN_SAFETY_NET_TIMING.windowMs + 500;
 
 // Returning to a chat (workspace switch or agent-tab switch) must never leave
 // the transcript viewport parked in blank space — the switch-back skeleton
@@ -220,6 +224,10 @@ test('safety net moves a blank revealed viewport within 1 s and records a breadc
         .some((entry) => entry.t >= parked && entry.event.endsWith(':start')),
     parkedAt,
   );
+  // Which oracle ran: a busy-path pass is not safety-net coverage.
+  const oracle = busyAfterPark ? 'busy-path: rows after the last busy period' : 'safety-net';
+  test.info().annotations.push({ type: 'oracle', description: oracle });
+  console.log(`safety-net probe oracle: ${oracle}`);
   if (!busyAfterPark) {
     // Nothing else could have recovered the viewport: the safety net did,
     // landing on the divider and recording the breadcrumb.
@@ -234,8 +242,8 @@ test('safety net never moves the viewport after user scroll input', async ({ mou
   await returnTo(page, viewport, 'workspace-quick');
   await wheelUntilScrolled(viewport, { deltaY: -200 });
   const parkedTop = await parkInSpacer(viewport);
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the safety net must not move.
-  await page.waitForTimeout(1600);
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the whole safety-net window must not move.
+  await page.waitForTimeout(SAFETY_NET_QUIET_MS);
   expect(Math.abs((await viewport.evaluate((node) => node.scrollTop)) - parkedTop)).toBeLessThan(3);
 });
 
@@ -256,7 +264,7 @@ test('agent-tab quick return following the bottom with the divider above stays a
   await expect.poll(() => distanceFromBottom(viewport), { timeout: 1500 }).toBeLessThan(3);
   await expect(divider).not.toBeInViewport();
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the whole safety-net window must not move.
-  await page.waitForTimeout(1600);
+  await page.waitForTimeout(SAFETY_NET_QUIET_MS);
   expect(await distanceFromBottom(viewport)).toBeLessThan(3);
   await expect(divider).not.toBeInViewport();
 });
@@ -273,6 +281,6 @@ test('scroll-to-end after a divider landing is not pulled back to the divider', 
   await component.getByTestId('chat-floating-scroll-to-bottom-button').click();
   await expect.poll(() => distanceFromBottom(viewport), { timeout: 1500 }).toBeLessThan(3);
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the whole safety-net window must not move.
-  await page.waitForTimeout(1600);
+  await page.waitForTimeout(SAFETY_NET_QUIET_MS);
   expect(await distanceFromBottom(viewport)).toBeLessThan(3);
 });
