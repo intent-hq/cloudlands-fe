@@ -16,11 +16,20 @@
   import { PREVIEW_FIXTURE_TIMESTAMPS } from '$lib/component-catalog/preview-fixtures';
   import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
   import { setupPaletteNoteSearch } from '../../test/fixtures/command-palette-note-search-fixture';
+  import type { MockBackendMethodHandler } from '../../test/ct-mock-electron-bridge';
   import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { takeEvery } from 'typed-redux-saga';
+  import {
+    setWorkspaceInitializerRecentRepos,
+    workspaceInitializerRecentReposRefreshFinished,
+    workspaceInitializerRecentReposRefreshRequested,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import { knownReposLoadSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga';
+  import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
 
   const workspaceId = WorkspaceId('preview-command-palette');
   const timestamp = '2026-09-15T12:00:00.000Z';
-  function setup(longNames = false) {
+  function setup(longNames = false, methods: Record<string, MockBackendMethodHandler> = {}) {
     const notes: Note[] = Array.from({ length: 16 }, (_, index) => ({
       id: NoteId(`preview-palette-note-${index}`),
       workspaceId,
@@ -39,7 +48,7 @@
       createdAt: timestamp,
       updatedAt: timestamp,
     }));
-    const stopSearch = setupPaletteNoteSearch(notes);
+    const stopSearch = setupPaletteNoteSearch(notes, methods);
     appStore.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: notes }));
     appStore.dispatch(
       setChangesData(
@@ -141,6 +150,167 @@
     };
   }
 
+  const cloudlandsUrl = 'https://github.com/intent-hq/cloudlands-fe';
+  /** Saved repos: a local clone and the GitHub entry of one repo, a GitLab repo, another clone. */
+  const savedRepos: WorkspaceInitializerRecentRepo[] = [
+    {
+      path: '/Users/dev/code/cloudlands-fe',
+      type: 'local',
+      name: 'cloudlands-fe',
+      owner: 'intent-hq',
+      githubUrl: cloudlandsUrl,
+      lastUsedAt: '2026-09-15T10:00:00.000Z',
+    },
+    {
+      path: 'intent-hq/cloudlands-fe',
+      type: 'github',
+      name: 'cloudlands-fe',
+      owner: 'intent-hq',
+      githubUrl: cloudlandsUrl,
+      lastUsedAt: '2026-09-12T10:00:00.000Z',
+    },
+    {
+      path: 'https://gitlab.com/acme/platform/billing',
+      type: 'github',
+      name: 'billing',
+      owner: 'acme/platform',
+      githubUrl: 'https://gitlab.com/acme/platform/billing',
+      repositoryIdentity: {
+        provider: 'gitlab',
+        instanceBaseUrl: 'https://gitlab.com',
+        projectPath: 'acme/platform/billing',
+      },
+      lastUsedAt: '2026-09-14T10:00:00.000Z',
+    },
+    {
+      path: '/Users/dev/code/intentd',
+      type: 'local',
+      name: 'intentd',
+      owner: 'intent-hq',
+      githubUrl: 'https://github.com/intent-hq/intentd',
+      lastUsedAt: '2026-09-10T10:00:00.000Z',
+    },
+  ];
+  /** Only the full load knows this older repo, whose name is exactly "cloud". */
+  const loadedRepo: WorkspaceInitializerRecentRepo = {
+    path: '/Users/dev/code/cloud',
+    type: 'local',
+    name: 'cloud',
+    lastUsedAt: '2026-08-01T10:00:00.000Z',
+  };
+
+  /** Test hooks for the repo and late-result scenes (CT specs only). */
+  export interface CommandPaletteFixture {
+    /** Full repo loads started (the palette asks once per open). */
+    repoLoads: () => number;
+    /** Finish the running full repo load. */
+    landRepos: () => void;
+    /** Answer the held file-name searches with a file named exactly like the query. */
+    releaseFiles: () => void;
+  }
+
+  /** Workspace owner with known repos; files wait for `releaseFiles` and the repo load for `landRepos`. */
+  function setupRepos(role: 'owner' | 'guest' = 'owner') {
+    const heldFiles: Array<(value: unknown) => void> = [];
+    const stopSearch = setup(false, {
+      // Five body hits from another workspace (never local rows) for "roadmap".
+      'search.notes': (raw) => {
+        const { query } = raw as { query: string };
+        return {
+          requestId: 'preview-palette-search',
+          indexed: true,
+          matches: query.toLowerCase().includes('roadmap')
+            ? Array.from({ length: 5 }, (_, index) => ({
+                noteId: `preview-roadmap-note-${index}`,
+                workspaceId: 'preview-other-workspace',
+                title: `Planning ${index + 1}`,
+                preview: 'Quarterly roadmap',
+                score: 1 - index / 10,
+                updatedAt: timestamp,
+                isArchived: false,
+                workspaceArchived: false,
+              }))
+            : [],
+        };
+      },
+      // Only a chat message matches "zebra".
+      'search.messages': (raw) => {
+        const { query } = raw as { query: string };
+        return {
+          matches: query.toLowerCase().includes('zebra')
+            ? [
+                {
+                  agentId: 'preview-zebra-agent',
+                  messageId: 'preview-zebra-message',
+                  workspaceId,
+                  agentName: 'Release agent',
+                  snippet: 'The zebra build is green',
+                },
+              ]
+            : [],
+        };
+      },
+      // A file named exactly like the query, held until `releaseFiles`.
+      'search.fileNames': (raw) =>
+        new Promise((resolve) => {
+          const { pattern } = raw as { pattern: string };
+          heldFiles.push(() => resolve({ files: pattern ? [pattern] : [] }));
+        }),
+    });
+    admitLegacyPrincipal(role);
+    appStore.dispatch(
+      setWorkspaceEntity({
+        id: workspaceId,
+        title: 'Command palette preview',
+        repositoryName: 'intent',
+        branch: 'preview/command-palette',
+        status: WorkspaceStatus.Active,
+        myRole: 'owner',
+        changesets: [],
+        timeline: [],
+        conversationInfo: [],
+        ...PREVIEW_FIXTURE_TIMESTAMPS,
+      }),
+    );
+    appStore.dispatch(setWorkspaceInitializerRecentRepos(savedRepos));
+    const loads: Array<{ id: string; requestId: string }> = [];
+    const stopLoads = appStore.runSaga(function* () {
+      yield* takeEvery(workspaceInitializerRecentReposRefreshRequested, function* (action) {
+        const [id, requestId] = action.payload;
+        loads.push({ id, requestId });
+      });
+    });
+    const stopKnownRepos = appStore.runSaga(knownReposLoadSaga);
+    const fixture: CommandPaletteFixture = {
+      repoLoads: () => loads.length,
+      landRepos: () => {
+        const load = loads.at(-1);
+        if (!load) throw new Error('no repo load is running');
+        appStore.dispatch(
+          workspaceInitializerRecentReposRefreshFinished(
+            load.id,
+            load.requestId,
+            'ready',
+            [...savedRepos, loadedRepo],
+            [],
+            [],
+          ),
+        );
+      },
+      releaseFiles: () => heldFiles.splice(0).forEach((release) => release(undefined)),
+    };
+    (
+      window as unknown as { __commandPaletteFixture?: CommandPaletteFixture }
+    ).__commandPaletteFixture = fixture;
+    return () => {
+      stopKnownRepos();
+      stopLoads();
+      stopSearch();
+      appStore.dispatch(setWorkspaceInitializerRecentRepos([]));
+      appStore.dispatch(removeWorkspaceEntity(workspaceId));
+    };
+  }
+
   export const preview = definePreview<{ initialQuery: string; withoutWorkspace?: boolean }>({
     id: 'command-palette',
     title: 'Command palette',
@@ -169,6 +339,10 @@
         props: { initialQuery: 'E2B', withoutWorkspace: true },
         setup: () => setupCloudLab(true),
       },
+      blended: { props: { initialQuery: 'in' }, setup: () => setupRepos() },
+      repos: { props: { initialQuery: 'cloudl' }, setup: () => setupRepos() },
+      'repo-filter': { props: { initialQuery: '+' }, setup: () => setupRepos() },
+      'repos-hidden': { props: { initialQuery: 'cloudl' }, setup: () => setupRepos('guest') },
       'provider-profiles': {
         props: { initialQuery: 'provider profiles', withoutWorkspace: true },
         setup: setupPaletteNoteSearch,
@@ -180,14 +354,20 @@
 <script lang="ts">
   import CommandPalette from './CommandPalette.svelte';
   import { Button } from '$lib/components/ui/button';
+  import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   let {
     initialQuery = '',
     withoutWorkspace = false,
   }: { initialQuery?: string; withoutWorkspace?: boolean } = $props();
   let isOpen = $state(true);
+  const showCreateModal$ = selectShowCreateModal();
 </script>
 
-<div class="min-h-[700px]" data-command-palette-preview>
+<div
+  class="min-h-[700px]"
+  data-command-palette-preview
+  data-new-workspace-open={$showCreateModal$ ? 'true' : 'false'}
+>
   <Button onclick={() => (isOpen = true)}>Open palette</Button>
   <CommandPalette
     bind:isOpen
