@@ -269,7 +269,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       stub(
         dir,
         'pnpm',
-        'printf "%s\\n" "$@" > "$RUNNER_TEMP/args"\nprintf "%s" "${CSC_LINK-unset}" > "$RUNNER_TEMP/cert"\nprintf "%s" "${INTENT_NOTARIZE_STARTED_FILE-unset}" > "$RUNNER_TEMP/marker"',
+        'printf "%s\\n" "$@" > "$RUNNER_TEMP/args"\nprintf "%s" "${CSC_KEYCHAIN-unset}" > "$RUNNER_TEMP/keychain"\nprintf "%s" "${INTENT_NOTARIZE_STARTED_FILE-unset}" > "$RUNNER_TEMP/marker"',
       );
       const run = step(name, 'build-macos', 'Build and package macOS app');
       const result = shell(
@@ -280,7 +280,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
           'inputs.isolated_test': 'false',
           'steps.intentd_sha.outputs.sha': 'a'.repeat(40),
         }),
-        { CSC_LINK: 'test-certificate' },
+        { CSC_KEYCHAIN: '/tmp/test.keychain-db' },
       );
       expect(result.status, result.stderr).toBe(0);
       expect(readFileSync(join(dir, 'args'), 'utf8').trim().split('\n')).toEqual([
@@ -290,7 +290,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
         '--publish',
         'never',
       ]);
-      expect(readFileSync(join(dir, 'cert'), 'utf8')).toBe('test-certificate');
+      expect(readFileSync(join(dir, 'keychain'), 'utf8')).toBe('/tmp/test.keychain-db');
       // Packaging runs under the pre-notarization stall deadline, which hands
       // notarize.js a fresh marker path.
       expect(readFileSync(join(dir, 'marker'), 'utf8')).toMatch(
@@ -360,6 +360,62 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       expect(readFileSync(join(dir, 'marker'), 'utf8')).toBe('unset');
     },
   );
+  // electron-builder's own `security import` (driven by CSC_LINK) hung until the
+  // pre-notarization deadline (release-alpha job 127729821081); it must sign from the
+  // keychain the import step already created and unlocked instead.
+  it('signs from the imported keychain instead of a second electron-builder import', () => {
+    const build = step(name, 'build-macos', 'Build and package macOS app');
+    expect(build.env).not.toHaveProperty('CSC_LINK');
+    expect(build.env).not.toHaveProperty('CSC_KEY_PASSWORD');
+    expect(build.env?.CSC_KEYCHAIN).toBe(
+      name === 'release-alpha'
+        ? '${{ runner.temp }}/app-signing.keychain-db'
+        : "${{ inputs.sign && format('{0}/app-signing.keychain-db', runner.temp) || '' }}",
+    );
+    // Without CSC_LINK or CSC_NAME, identity discovery is the only way electron-builder
+    // finds the certificate; disabling it would silently ship an unsigned build.
+    expect(build.env?.CSC_IDENTITY_AUTO_DISCOVERY).toBe(
+      name === 'release-alpha' ? undefined : "${{ inputs.sign && 'true' || 'false' }}",
+    );
+    expect(build.env).not.toHaveProperty('CSC_NAME');
+    expect(step(name, 'build-macos', 'Import code signing certificate').run).toContain(
+      'KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"',
+    );
+  });
+
+  it.each([
+    [
+      'accepts',
+      '  1) ABC "Developer ID Application: Example (TEAM)"\n     1 valid identities found',
+      0,
+    ],
+    ['rejects', '     0 valid identities found', 1],
+    ['rejects a failing lookup of', '', 1],
+  ])('%s the signing keychain by its valid Developer ID identity', (_, identities, status) => {
+    const dir = temp();
+    writeFileSync(join(dir, 'identities'), identities.replace(/\\n/g, '\n'));
+    stub(
+      dir,
+      'security',
+      [
+        'printf "%s\\n" "$*" >> "$RUNNER_TEMP/security-log"',
+        'case "$1" in',
+        '  list-keychains) if [ "$3" = user ] && [ -z "$4" ]; then echo \'    "/login.keychain-db"\'; fi ;;',
+        '  find-identity) cat "$RUNNER_TEMP/identities"; [ -s "$RUNNER_TEMP/identities" ] ;;',
+        'esac',
+      ].join('\n'),
+    );
+    const result = shell(dir, step(name, 'build-macos', 'Import code signing certificate').run!, {
+      MACOS_CERTIFICATE: Buffer.from('p12').toString('base64'),
+      MACOS_CERTIFICATE_PWD: 'pwd',
+      KEYCHAIN_PASSWORD: 'kc',
+    });
+    expect(result.status, result.stderr).toBe(status);
+    const log = readFileSync(join(dir, 'security-log'), 'utf8');
+    expect(log).toContain(`find-identity -v -p codesigning ${dir}/app-signing.keychain-db`);
+    if (status) expect(result.stdout).toMatch(/^::error title=Signing identity missing::/m);
+  });
+
   it('always removes signing material and restores the original keychain list', () => {
     const dir = temp();
     for (const file of [
@@ -669,7 +725,7 @@ it.each(['arm64'])('keeps unsigned %s manual packaging free of signing and publi
   stub(
     dir,
     'pnpm',
-    'test -z "${CSC_LINK+x}" && test -z "${CSC_KEY_PASSWORD+x}" || exit 1\nprintf "%s\\n" "$@" > "$RUNNER_TEMP/unsigned-args"',
+    'test -z "${CSC_LINK+x}" && test -z "${CSC_KEY_PASSWORD+x}" && test -z "${CSC_KEYCHAIN+x}" || exit 1\nprintf "%s\\n" "$@" > "$RUNNER_TEMP/unsigned-args"',
   );
   const code = render(
     step('manual-signed-build', 'build-macos', 'Build and package macOS app').run!,
@@ -680,7 +736,13 @@ it.each(['arm64'])('keeps unsigned %s manual packaging free of signing and publi
       'steps.intentd_sha.outputs.sha': 'a'.repeat(40),
     },
   );
-  expect(shell(dir, code, { CSC_LINK: 'secret', CSC_KEY_PASSWORD: 'secret' }).status).toBe(0);
+  expect(
+    shell(dir, code, {
+      CSC_LINK: 'secret',
+      CSC_KEY_PASSWORD: 'secret',
+      CSC_KEYCHAIN: '/tmp/signing.keychain-db',
+    }).status,
+  ).toBe(0);
   expect(readFileSync(join(dir, 'unsigned-args'), 'utf8').trim().split('\n')).toEqual([
     'run',
     'dist:mac',

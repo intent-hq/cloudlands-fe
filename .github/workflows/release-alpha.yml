@@ -292,6 +292,15 @@ jobs:
           KEYCHAINS=()
           while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
           security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
+          # electron-builder signs from this keychain (CSC_KEYCHAIN on the build
+          # step) and accepts only a valid identity, so fail here, within seconds,
+          # rather than minutes into packaging if the import did not produce one.
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" 2>&1)" || true
+          if [[ "$IDENTITIES" != *'"Developer ID Application:'* ]]; then
+            echo "::error title=Signing identity missing::No valid Developer ID Application identity in the signing keychain."
+            echo "$IDENTITIES"
+            exit 1
+          fi
 
       # Stage the Developer ID provisioning profile for the keychain-sync
       # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
@@ -374,15 +383,15 @@ jobs:
           # Points at the sidecar staged by fetch-sidecar.cjs; copy-sidecar.cjs
           # detects the pre-staged binary and leaves it in place.
           INTENTD_BIN: ${{ github.workspace }}/resources/sidecar/intentd
-          # CSC_LINK/CSC_KEY_PASSWORD make electron-builder import the cert
-          # into its own temporary keychain, independent of the one imported
-          # above (which is still load-bearing: scripts/sign-sidecar.js
-          # resolves the identity via the search list). electron-builder's
-          # keychain is not covered by this job's always() cleanup — a crash
-          # mid-build can leave it behind. Consolidating both onto the manual
-          # keychain via CSC_KEYCHAIN is a tracked follow-up.
-          CSC_LINK: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD }}
+          # electron-builder signs from the keychain created and unlocked by
+          # "Import code signing certificate" (CSC_KEYCHAIN), the same one
+          # scripts/sign-sidecar.js resolves its identity from. Do not give it
+          # CSC_LINK/CSC_KEY_PASSWORD: it would then import the certificate into
+          # a second temporary keychain of its own, and that `security import`
+          # hung until the pre-notarization deadline on WarpBuild runners
+          # (release-alpha job 127729821081); its keychain also escaped the
+          # always() cleanup below.
+          CSC_KEYCHAIN: ${{ runner.temp }}/app-signing.keychain-db
           CLOUDLANDS_APPLE_ID: ${{ secrets.CLOUDLANDS_APPLE_ID }}
           CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD }}
           CLOUDLANDS_APPLE_TEAM_ID: ${{ secrets.CLOUDLANDS_APPLE_TEAM_ID }}
