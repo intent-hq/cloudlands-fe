@@ -104,7 +104,6 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import AgentPlacementNotice from './AgentPlacementNotice.svelte';
   import QueuedMessageList from '$lib/components/chat/QueuedMessageList.svelte';
-  import { catalogNow } from '$lib/component-catalog/catalog-clock';
   import { remoteMachinesLoaded } from './remote-machines-slice';
   import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
