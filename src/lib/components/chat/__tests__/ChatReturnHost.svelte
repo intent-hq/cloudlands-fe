@@ -64,6 +64,23 @@
     updatedAt: timestamp,
   } as Workspace;
 
+  // Every busy-state transition the safety net gates on, for test oracles.
+  const busyLog: { t: number; event: string; detail?: unknown }[] = [];
+  const busyFlags = { older: false, gap: false, seek: false };
+  function sampleBusyFlags() {
+    const chat = store.state.chatState?.byAgentId[agentId];
+    const next = {
+      older: chat?.fetchingOlderHistory === true,
+      gap: chat?.fetchingGapFill === true,
+      seek: chat?.fetchingHistorySeek === true,
+    };
+    for (const key of ['older', 'gap', 'seek'] as const) {
+      if (next[key] !== busyFlags[key]) {
+        busyFlags[key] = next[key];
+        busyLog.push({ t: performance.now(), event: `${key}:${next[key] ? 'start' : 'end'}` });
+      }
+    }
+  }
   let mounted = $state(true);
   let visible = $state(true);
   let active = $state(true);
@@ -93,9 +110,12 @@
     'chat.unsubscribe': () => ({}),
     'agent.getQueue': () => ({ success: true, queue: [] }),
     'agent.getConversation': async (input) => {
-      const params = input as { limit: number; nextToken?: string };
+      const params = input as { limit: number; nextToken?: string; aroundMessageId?: string };
       requests++;
+      const id = requests;
+      busyLog.push({ t: performance.now(), event: `request-start#${id}`, detail: params });
       await new Promise((resolve) => setTimeout(resolve, 100));
+      busyLog.push({ t: performance.now(), event: `request-end#${id}` });
       const end = Number(params.nextToken?.replace('before-', '') ?? total - initialCount);
       const start = Math.max(0, end - params.limit);
       return {
@@ -206,9 +226,21 @@
     awaitingSkeleton: () =>
       store.state.chatState.byAgentId[agentId]?.awaitingSwitchBackSnapshot === true,
     requests: () => requests,
+    busyLog: () => busyLog,
+    busyNow: () => busyFlags.older || busyFlags.gap || busyFlags.seek,
   };
+  let sampling = true;
+  const sample = () => {
+    if (!sampling) return;
+    sampleBusyFlags();
+    requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
 
-  onDestroy(dispose);
+  onDestroy(() => {
+    sampling = false;
+    dispose();
+  });
 </script>
 
 <div style:height="900px" style:width="640px" style:display={visible ? 'block' : 'none'}>

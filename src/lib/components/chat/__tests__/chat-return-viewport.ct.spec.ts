@@ -180,10 +180,52 @@ test('safety net moves a blank revealed viewport within 1 s and records a breadc
   await returnTo(page, viewport, 'workspace-quick', 4);
   const divider = component.locator('[data-new-messages-divider]');
   await expect(divider).toBeInViewport({ timeout: 1000 });
+  const parkedAt = await page.evaluate(() => performance.now());
   await parkInSpacer(viewport);
-  await expect(divider).toBeInViewport({ timeout: 1000 });
-  expect(await visibleRows(viewport)).not.toEqual([]);
-  await expect.poll(() => breadcrumbs.length).toBeGreaterThan(0);
+  // A parked viewport may legitimately start a seek or history fetch, which
+  // gates the safety net. Never vacuous: rows must be visible within 1 s of
+  // the park, or of the end of the last busy period that followed it.
+  const lateBy: number[] = [];
+  await expect
+    .poll(
+      async () => {
+        const state = await page.evaluate(() => {
+          const harness = (
+            window as unknown as {
+              chatReturn: { busyNow(): boolean; busyLog(): { t: number; event: string }[] };
+            }
+          ).chatReturn;
+          const ends = harness
+            .busyLog()
+            .filter((entry) => entry.event.endsWith(':end'))
+            .map((entry) => entry.t);
+          return { busy: harness.busyNow(), lastEnd: Math.max(0, ...ends), now: performance.now() };
+        });
+        if ((await visibleRows(viewport)).length > 0) return 'visible';
+        if (state.busy) return 'busy';
+        const since = state.now - Math.max(parkedAt, state.lastEnd);
+        if (since > 1000) lateBy.push(Math.round(since));
+        return 'waiting';
+      },
+      { timeout: 6000, intervals: [50] },
+    )
+    .toBe('visible');
+  expect(lateBy).toEqual([]);
+  const busyAfterPark = await page.evaluate(
+    (parked) =>
+      (
+        window as unknown as { chatReturn: { busyLog(): { t: number; event: string }[] } }
+      ).chatReturn
+        .busyLog()
+        .some((entry) => entry.t >= parked && entry.event.endsWith(':start')),
+    parkedAt,
+  );
+  if (!busyAfterPark) {
+    // Nothing else could have recovered the viewport: the safety net did,
+    // landing on the divider and recording the breadcrumb.
+    await expect(divider).toBeInViewport();
+    await expect.poll(() => breadcrumbs.length).toBeGreaterThan(0);
+  }
 });
 
 test('safety net never moves the viewport after user scroll input', async ({ mount, page }) => {
