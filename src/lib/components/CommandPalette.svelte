@@ -11,7 +11,7 @@
   import { EmptyState } from '$lib/components/patterns/screen';
   import { ShortcutChip } from '$lib/components/ui/kbd';
   /** App-wide palette for commands, files, workspace search, notes and headings. */
-  import { onMount, tick, untrack } from 'svelte';
+  import { flushSync, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
   import { goto } from '$app/navigation';
   import { fly } from '$lib/motion';
@@ -86,6 +86,7 @@
   import {
     recordPaletteFileMru,
     recordPaletteMruItem,
+    recordPalettePick,
     paletteNoteSearchReleased,
     paletteNoteSearchRequested,
   } from '$store/renderer/slices/palette/palette-slice';
@@ -93,8 +94,33 @@
     selectPaletteFileMru,
     selectPaletteMruEntries,
     selectPaletteNoteSearch,
+    selectPalettePicks,
   } from '$store/renderer/slices/palette/palette-selectors';
-  import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
+  import type { PaletteMruEntryType } from '$store/renderer/slices/palette/palette-types';
+  import {
+    computeResults,
+    type PaletteCategory,
+    type PaletteLateSource,
+    type PaletteRepoItem,
+  } from '$store/renderer/slices/command-palette/command-palette-results';
+  import {
+    selectKnownReposGitLabInstance,
+    selectPaletteKnownRepos,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { ensureKnownReposLoaded } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import {
+    knownRepoLastUsedMs,
+    prefillForRepo,
+  } from '$store/renderer/slices/workspace-initializer/utils/known-repos';
+  import { recentRepoKey } from '$store/renderer/slices/workspace-initializer/utils/recent-repo-key';
+  import type { WorkspaceInitializerRecentRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import { WORKSPACE_PREFILL_KEY } from '$store/renderer/slices/deep-links/utils/deep-link-workspace';
+  import {
+    getRecentRepoIdentity,
+    getRecentRepoSource,
+    getRepoFolderName,
+  } from './workspace/initializer/recent-repo-display';
+  import RepositoryPickerIcon from './workspace/initializer/RepositoryPickerIcon.svelte';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
@@ -315,6 +341,95 @@
         )
       : [],
   );
+
+  const paletteMruTimes = $derived.by(() => {
+    const times = new Map<string, number>();
+    for (const entry of $paletteMruEntries$)
+      times.set(`${entry.type}:${entry.id}`, entry.timestamp);
+    return times;
+  });
+  // Commands carry their last pick time so equal matches rank the recent one first.
+  const searchCommands = $derived(
+    commands.map((command) => {
+      const timestamp = paletteMruTimes.get(`command:${command.id}`);
+      return timestamp ? { ...command, timestamp } : command;
+    }),
+  );
+
+  // Known repos (empty whenever New Workspace is hidden); one load per palette open.
+  const knownRepos$ = selectPaletteKnownRepos();
+  const gitlabInstance$ = selectKnownReposGitLabInstance();
+  const palettePicks$ = selectPalettePicks();
+  $effect(() => {
+    if (!isOpen) return;
+    untrack(() => appStore.dispatch(ensureKnownReposLoaded()));
+  });
+  const repos: PaletteRepoItem[] = $derived(
+    $knownRepos$.map((repo) => toPaletteRepo(repo, $gitlabInstance$)),
+  );
+
+  function toPaletteRepo(
+    repo: WorkspaceInitializerRecentRepo,
+    gitlabInstance: string | undefined,
+  ): PaletteRepoItem {
+    const source = getRecentRepoSource(repo, gitlabInstance);
+    const identity = getRecentRepoIdentity(repo, gitlabInstance);
+    const local = repo.type === 'local';
+    const folder = local ? getRepoFolderName(repo.path) : undefined;
+    const fullName =
+      identity?.projectPath ?? (repo.owner ? `${repo.owner}/${repo.name}` : undefined);
+    const id = recentRepoKey(repo);
+    const lastUsedAt = Math.max(knownRepoLastUsedMs(repo), paletteMruTimes.get(`repo:${id}`) ?? 0);
+    return {
+      id,
+      label: fullName ?? folder ?? repo.name,
+      aliases: [repo.name, folder].filter((name): name is string => !!name),
+      description: local ? repo.path : undefined,
+      sourceLabel:
+        source === 'gitlab'
+          ? 'GitLab' // i18n-ignore (brand name)
+          : source === 'github'
+            ? 'GitHub' // i18n-ignore (brand name)
+            : undefined,
+      kind: source === 'folder' ? 'folder' : 'repo',
+      lastUsedAt,
+      _time: lastUsedAt > 0 ? formatRelativeTime(new Date(lastUsedAt)) : '',
+      _repo: repo,
+      _repoOwner: identity ? identity.projectPath.split('/').slice(0, -1).join('/') : repo.owner,
+      _repoProvider: identity?.provider,
+    };
+  }
+
+  function categoryLabel(category: PaletteCategory | undefined): string | undefined {
+    switch (category) {
+      case 'command':
+        return m.lib_commandPalette_categoryCommand_label();
+      case 'agent':
+        return m.lib_commandPalette_categoryAgent_label();
+      case 'note':
+        return m.lib_commandPalette_categoryNote_label();
+      case 'change':
+        return m.lib_commandPalette_categoryChange_label();
+      case 'terminal':
+        return m.lib_commandPalette_categoryTerminal_label();
+      case 'browser':
+        return m.lib_commandPalette_categoryBrowser_label();
+      case 'file':
+        return m.lib_commandPalette_categoryFile_label();
+      case 'workspace':
+        return m.lib_commandPalette_categoryWorkspace_label();
+      case 'repo':
+        return m.lib_commandPalette_categoryRepo_label();
+      case 'folder':
+        return m.lib_commandPalette_categoryFolder_label();
+      case 'message':
+        return m.lib_commandPalette_categoryMessage_label();
+      default:
+        return undefined;
+    }
+  }
+  // While searching without a filter the list is blended: each row names its category.
+  const showCategoryLabels = $derived(!!parsedQuery.searchTerm && !activeFilter);
 
   // Localized "Show N more …" labels per palette item type.
   function showMoreLabel(count: number, itemType: string): string {
@@ -548,7 +663,14 @@
   });
   onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
   paletteRetiredWorkspaces(() => isOpen, workspaceItems, admissionSelector());
-  function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
+  function buildResults(
+    q: string,
+    files: any[],
+    messages: any[],
+    remoteNotes: WorkspaceObject[],
+    repoItems: PaletteRepoItem[],
+    lateArrivalOrder: PaletteLateSource[],
+  ) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
       .sort(compareWorkspaceActivityDisplayTimeDesc)
@@ -579,49 +701,95 @@
       browserUrls,
       recentItems,
       files,
-      commands,
+      commands: searchCommands,
       workspaceItems: wsItems,
       messages,
+      repos: repoItems,
+      pickMemory: $palettePicks$,
+      lateArrivalOrder,
     });
   }
   // PERF: Debounce timer for rapid typing
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   const SEARCH_DEBOUNCE_MS = 16; // ~1 frame, prevents excessive RAF calls during fast typing
 
-  // Recompute flat results - debounced and deferred via RAF to not block typing
-  $effect(() => {
-    const q = parsedQuery.searchTerm;
-    // Skip result computation in Go to Line mode
-    if ((searchQuery || '').trimStart().startsWith(':')) {
-      // Cancel any pending debounce/RAF from a previous non-GoToLine query
-      if (resultComputeRaf !== null) {
-        cancelAnimationFrame(resultComputeRaf);
-        resultComputeRaf = null;
-      }
-      if (searchDebounceTimer !== null) {
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = null;
-      }
-      untrack(() => {
-        searchResults = [];
-      });
-      return;
-    }
-    // Read before the deferred callback so live Labs changes refresh command results.
-    commands;
-    $workspaceItems; // Metadata updates presentation without restarting remote queries.
-    const files = groupFiles;
-    const messages = groupMessages.map((item) => ({
-      ...item,
-      ...buildMessageTitleSegments(($workspaceItems || []).find((w) => w.id === item.workspaceId)),
-    }));
-    const remoteNotes = indexedNotes;
-    // Local-note updates and workspace switches must refresh local fallback/browsing too.
-    notes;
-    workspaceId;
-    recentItems;
-    activeFilter;
+  // The highlight follows an item, not a row number. Each keystroke puts it on
+  // row 1; after an arrow key or hover it stays on that item while results land.
+  let selectedKey: string | null = null;
+  let highlightMoved = false;
+  // Inputs of the last rebuild, to tell a repo-list arrival from a keystroke.
+  let builtQuery: string | null = null;
+  let builtRepos: PaletteRepoItem[] | null = null;
+  // The scheduled rebuild; Enter runs it at once so it acts on the current text.
+  let pendingRebuild: (() => void) | null = null;
+  // Order in which late sources answered the current text (first one leads when
+  // nothing instant matches).
+  let lateArrival: { query: string; order: PaletteLateSource[] } = { query: '', order: [] };
 
+  function noteLateArrivals(query: string, arrived: Record<PaletteLateSource, boolean>) {
+    if (lateArrival.query !== query) lateArrival = { query, order: [] };
+    for (const source of ['file', 'note', 'message'] as const) {
+      if (arrived[source] && !lateArrival.order.includes(source)) lateArrival.order.push(source);
+    }
+    return [...lateArrival.order];
+  }
+
+  $effect(() => {
+    searchQuery;
+    untrack(() => {
+      highlightMoved = false;
+    });
+  });
+
+  function rowKey(item: any): string | null {
+    return isSelectableResult(item) ? (item._key ?? null) : null;
+  }
+
+  function selectRow(index: number, moved: boolean) {
+    selectedIndex = index;
+    selectedKey = rowKey(searchResults[index]);
+    if (moved) highlightMoved = true;
+  }
+
+  /** The row index holding `key` nearest to `near` (an item can be listed twice). */
+  function indexOfKey(items: any[], key: string, near: number): number {
+    let best = -1;
+    items.forEach((item, index) => {
+      if (rowKey(item) === key && (best === -1 || Math.abs(index - near) < Math.abs(best - near)))
+        best = index;
+    });
+    return best;
+  }
+
+  /** A repo list that lands mid-typing must not replace row 1 before the next keystroke. */
+  function keepRowOne(previous: any[], next: any[]) {
+    const previousFirst = rowKey(previous[findSelectableIndex(previous, 0, 1)]);
+    const nextFirst = findSelectableIndex(next, 0, 1);
+    if (!previousFirst || nextFirst === -1 || rowKey(next[nextFirst]) === previousFirst) return;
+    const from = indexOfKey(next, previousFirst, nextFirst);
+    if (from <= nextFirst) return;
+    const [row] = next.splice(from, 1);
+    next.splice(nextFirst, 0, row);
+  }
+
+  function applyResults(flat: any[], query: string, repoItems: PaletteRepoItem[]) {
+    if (query === builtQuery && repoItems !== builtRepos) keepRowOne(searchResults, flat);
+    builtQuery = query;
+    builtRepos = repoItems;
+    let index = -1;
+    if (highlightMoved && selectedKey) index = indexOfKey(flat, selectedKey, selectedIndex);
+    if (index === -1 && highlightMoved) {
+      const clamped = Math.max(0, Math.min(selectedIndex, flat.length - 1));
+      index = findSelectableIndex(flat, clamped, 1);
+      if (index === -1) index = findSelectableIndex(flat, clamped, -1);
+    }
+    if (index === -1) index = findSelectableIndex(flat, 0, 1);
+    searchResults = flat;
+    selectedIndex = Math.max(index, 0);
+    selectedKey = rowKey(flat[selectedIndex]);
+  }
+
+  function cancelPendingRebuild() {
     if (resultComputeRaf !== null) {
       cancelAnimationFrame(resultComputeRaf);
       resultComputeRaf = null;
@@ -630,38 +798,74 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingRebuild = null;
+  }
+
+  /** Finish any scheduled rebuild now, so Enter acts on results for the current text. */
+  function flushPendingRebuild() {
+    flushSync();
+    pendingRebuild?.();
+  }
+
+  // Recompute flat results - debounced and deferred via RAF to not block typing
+  $effect(() => {
+    const q = parsedQuery.searchTerm;
+    const query = searchQuery;
+    // Skip result computation in Go to Line mode
+    if ((searchQuery || '').trimStart().startsWith(':')) {
+      // Cancel any pending debounce/RAF from a previous non-GoToLine query
+      cancelPendingRebuild();
+      untrack(() => {
+        searchResults = [];
+      });
+      return;
+    }
+    // Read before the deferred callback so live Labs changes refresh command results.
+    searchCommands;
+    $workspaceItems; // Metadata updates presentation without restarting remote queries.
+    const files = groupFiles;
+    const messages = groupMessages.map((item) => ({
+      ...item,
+      ...buildMessageTitleSegments(($workspaceItems || []).find((w) => w.id === item.workspaceId)),
+    }));
+    const remoteNotes = indexedNotes;
+    const repoItems = repos;
+    const arrivalOrder = untrack(() =>
+      noteLateArrivals(query, {
+        file: !isLoadingFiles && files.length > 0,
+        note: !$noteResults.loading && remoteNotes.length > 0,
+        message: !isLoadingMessages && messages.length > 0,
+      }),
+    );
+    isLoadingFiles;
+    isLoadingMessages;
+    $noteResults.loading;
+    // Local-note updates and workspace switches must refresh local fallback/browsing too.
+    notes;
+    workspaceId;
+    recentItems;
+    activeFilter;
+
+    cancelPendingRebuild();
+    const rebuild = () => {
+      cancelPendingRebuild();
+      const flat = buildResults(q, files, messages, remoteNotes, repoItems, arrivalOrder);
+      // Use untrack for all state updates to avoid effect loops
+      untrack(() => applyResults(flat, query, repoItems));
+    };
+    pendingRebuild = rebuild;
 
     // PERF: Debounce rapid typing, then defer to RAF
     searchDebounceTimer = setTimeout(() => {
       searchDebounceTimer = null;
       resultComputeRaf = requestAnimationFrame(() => {
         resultComputeRaf = null;
-        const flat = buildResults(q, files, messages, remoteNotes);
-        // Use untrack for all state updates to avoid effect loops
-        untrack(() => {
-          searchResults = flat;
-          // Keep selection on an actionable item.
-          const currentIdx = Math.max(0, Math.min(selectedIndex, flat.length - 1));
-          const nextSelectableIdx = findSelectableIndex(flat, currentIdx, 1);
-          const prevSelectableIdx = findSelectableIndex(flat, currentIdx, -1);
-          const resolvedIdx = nextSelectableIdx !== -1 ? nextSelectableIdx : prevSelectableIdx;
-
-          if (resolvedIdx !== -1 && resolvedIdx !== selectedIndex) {
-            selectedIndex = resolvedIdx;
-          }
-        });
+        rebuild();
       });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
-      if (resultComputeRaf !== null) {
-        cancelAnimationFrame(resultComputeRaf);
-        resultComputeRaf = null;
-      }
-      if (searchDebounceTimer !== null) {
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = null;
-      }
+      if (pendingRebuild === rebuild) cancelPendingRebuild();
     };
   });
 
@@ -724,7 +928,7 @@
       if (isGoToLineMode) return;
       const nextIndex = findSelectableIndex(searchResults, selectedIndex + 1, 1);
       if (nextIndex !== -1) {
-        selectedIndex = nextIndex;
+        selectRow(nextIndex, true);
         scrollToSelection();
       }
     } else if (e.key === 'ArrowUp') {
@@ -732,7 +936,7 @@
       if (isGoToLineMode) return;
       const prevIndex = findSelectableIndex(searchResults, selectedIndex - 1, -1);
       if (prevIndex !== -1) {
-        selectedIndex = prevIndex;
+        selectRow(prevIndex, true);
         scrollToSelection();
       }
     } else if (e.key === 'Enter') {
@@ -744,6 +948,7 @@
         }
         return;
       }
+      flushPendingRebuild();
       // Cmd+Enter opens in adjacent panel
       const openInAdjacentPanel = isCmdClickModifier({ event: e });
       const selectedItem = searchResults[selectedIndex];
@@ -768,6 +973,14 @@
     if (!item) return;
     if (item._groupLabel) return;
     const openInAdjacentPanel = options?.openInAdjacentPanel ?? false;
+    const pickQuery = parsedQuery.searchTerm;
+    if (item._seeAll) {
+      const prefix = Object.keys(FILTER_PREFIXES).find(
+        (key) => FILTER_PREFIXES[key] === item._filter,
+      );
+      if (prefix) applyFilter(prefix);
+      return;
+    }
     // Handle "show more" button - insert the appropriate prefix
     if (item._showMore) {
       const prefix = Object.keys(FILTER_PREFIXES).find(
@@ -781,7 +994,10 @@
       return;
     }
     let shouldClose = true;
-    if (item.type) {
+    if (item._repo) {
+      recordMru('repo', item.id);
+      openRepo(item._repo);
+    } else if (item.type) {
       // Transcript rows are not MRU-tracked ('message' is not a PaletteMruEntryType)
       if (item.type !== 'message' && item.type !== 'note') {
         appStore.dispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
@@ -842,6 +1058,7 @@
           break;
       }
     } else if ('_workspace' in item) {
+      recordMru('workspace', item.id);
       void openAndShowWorkspace(item.id).catch((error) =>
         logger.warn('Failed to open workspace from palette', { workspaceId: item.id, error }),
       );
@@ -849,10 +1066,33 @@
       onSelectFile?.({ path: item.path, line: item.line, openInAdjacentPanel });
       if (item.path) recordMRUFile(item.path);
     } else {
+      recordMru('command', item.id);
       const close = handleCommand(item.id);
       if (close === false) shouldClose = false;
     }
+    // Pick memory: this item was chosen for this query (the row key, whole).
+    if (pickQuery && item._key) {
+      appStore.dispatch(recordPalettePick(pickQuery, item._key, Date.now()));
+    }
     if (shouldClose) onClose?.();
+  }
+
+  function recordMru(type: PaletteMruEntryType, id: string) {
+    appStore.dispatch(recordPaletteMruItem(type, id, Date.now()));
+  }
+
+  /** Open New Workspace with `repo` selected; nothing is created until the user submits. */
+  function openRepo(repo: WorkspaceInitializerRecentRepo) {
+    if (!selectWorkspaceCreationVisible.select(appStore.state)) return;
+    try {
+      sessionStorage.setItem(
+        WORKSPACE_PREFILL_KEY,
+        JSON.stringify(prefillForRepo(repo, $gitlabInstance$)),
+      );
+    } catch (error) {
+      logger.warn('Failed to store the New Workspace repo prefill', { error });
+    }
+    appStore.dispatch(setShowCreateModal(true));
   }
   function handleCommand(commandId: string): boolean {
     const settingsCommand = commands.find((command) => command.id === commandId);
@@ -1059,6 +1299,7 @@
           {workspaceId}
           {activeFilter}
           isCollaborator={$isCollaborator$}
+          showRepos={$canCreate$}
           onFilter={applyFilter}
         />
       </div>
@@ -1102,7 +1343,7 @@
                 {m.layout_commandPalette_commands_group()}
               </div>
             {:else if item._groupLabel}
-              <div class="px-3 pb-2 pt-3 {index > 0 ? 'mt-2' : ''}">
+              <div class="px-3 pb-2 pt-3 {index > 0 ? 'mt-2' : ''}" data-palette-group>
                 <div class="flex items-center justify-between type-caption text-muted-foreground">
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}
@@ -1124,6 +1365,27 @@
                   >
                 {/snippet}
               </ActionRow>
+            {:else if item._seeAll}
+              <ActionRow
+                data-palette-index={index}
+                data-palette-see-all={item._filter}
+                class="rounded-md px-3 py-2 type-body"
+                selected={selectedIndex === index}
+                aria-current={selectedIndex === index ? 'true' : undefined}
+                onpointerdown={(event) => event.preventDefault()}
+                onpointermove={() => {
+                  if (selectedIndex !== index) selectRow(index, true);
+                }}
+                onclick={() => selectItem(item)}
+              >
+                {#snippet title()}
+                  <span class="text-muted-foreground"
+                    >{item._filter === 'note'
+                      ? m.lib_commandPalette_seeAllNotes_label()
+                      : m.lib_commandPalette_seeAllMessages_label()}</span
+                  >
+                {/snippet}
+              </ActionRow>
             {:else}
               <ActionRow
                 data-palette-index={index}
@@ -1132,11 +1394,20 @@
                 selected={selectedIndex === index}
                 aria-current={selectedIndex === index ? 'true' : undefined}
                 onclick={() => selectItem(item)}
-                onpointermove={() => (selectedIndex = index)}
+                onpointermove={() => {
+                  if (selectedIndex !== index) selectRow(index, true);
+                }}
                 onpointerdown={(event) => event.preventDefault()}
               >
                 {#snippet leading()}
-                  {#if item.type === 'agent'}
+                  {#if item._repo}
+                    <RepositoryPickerIcon
+                      owner={item._repoOwner}
+                      provider={item._repoProvider}
+                      local={item._repo.type === 'local'}
+                      size={16}
+                    />
+                  {:else if item.type === 'agent'}
                     <AgentAvatar agentId={item.id} variant="compact" />
                   {:else if item.navigationIcon}
                     <IntentNavigationIcon
@@ -1154,13 +1425,20 @@
                 {/snippet}
 
                 {#snippet trailing()}
-                  <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">
-                    {#if item.shortcut}
-                      <ShortcutChip>{item.shortcut}</ShortcutChip>
+                  <span class="flex items-center justify-end gap-2">
+                    {#if showCategoryLabels && categoryLabel(item._category)}
+                      <span class="type-caption text-muted-foreground" data-palette-category
+                        >{categoryLabel(item._category)}</span
+                      >
                     {/if}
-                    {#if selectedIndex === index}
-                      <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
-                    {/if}
+                    <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">
+                      {#if item.shortcut}
+                        <ShortcutChip>{item.shortcut}</ShortcutChip>
+                      {/if}
+                      {#if selectedIndex === index}
+                        <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
+                      {/if}
+                    </span>
                   </span>
                 {/snippet}
               </ActionRow>

@@ -218,6 +218,12 @@ vi.mock('$store/renderer/slices/palette/palette-selectors', () => ({
       return () => paletteNoteSearch.subscribers.delete(fn);
     },
   }),
+  selectPalettePicks: () => ({
+    subscribe: (fn: (value: any[]) => void) => {
+      fn([]);
+      return () => {};
+    },
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({

@@ -8596,5 +8596,19 @@
   "nodes_prompt_title": "{node} を {backend} で使えるようにしますか？",
   "nodes_prompt_description": "{backend} が {node} でエージェントを実行できるようになります。あとでノードのメニューから変更できます。",
   "nodes_prompt_confirm_label": "使えるようにする",
-  "nodes_prompt_cancel_label": "今はしない"
+  "nodes_prompt_cancel_label": "今はしない",
+  "lib_commandPalette_repos_label": "リポジトリ",
+  "lib_commandPalette_seeAllNotes_label": "すべてのノートを表示",
+  "lib_commandPalette_seeAllMessages_label": "すべてのメッセージを表示",
+  "lib_commandPalette_categoryCommand_label": "コマンド",
+  "lib_commandPalette_categoryAgent_label": "エージェント",
+  "lib_commandPalette_categoryNote_label": "ノート",
+  "lib_commandPalette_categoryChange_label": "変更",
+  "lib_commandPalette_categoryTerminal_label": "ターミナル",
+  "lib_commandPalette_categoryBrowser_label": "ブラウザ",
+  "lib_commandPalette_categoryFile_label": "ファイル",
+  "lib_commandPalette_categoryWorkspace_label": "ワークスペース",
+  "lib_commandPalette_categoryRepo_label": "リポジトリ",
+  "lib_commandPalette_categoryFolder_label": "フォルダー",
+  "lib_commandPalette_categoryMessage_label": "メッセージ"
 }

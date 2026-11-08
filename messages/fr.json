@@ -8596,5 +8596,19 @@
   "nodes_prompt_title": "Rendre {node} disponible pour {backend} ?",
   "nodes_prompt_description": "{backend} pourra alors exécuter des agents sur {node}. Vous pourrez changer cela plus tard depuis le menu du nœud.",
   "nodes_prompt_confirm_label": "Rendre disponible",
-  "nodes_prompt_cancel_label": "Pas maintenant"
+  "nodes_prompt_cancel_label": "Pas maintenant",
+  "lib_commandPalette_repos_label": "Dépôts",
+  "lib_commandPalette_seeAllNotes_label": "Voir toutes les notes",
+  "lib_commandPalette_seeAllMessages_label": "Voir tous les messages",
+  "lib_commandPalette_categoryCommand_label": "Commande",
+  "lib_commandPalette_categoryAgent_label": "Agent",
+  "lib_commandPalette_categoryNote_label": "Note",
+  "lib_commandPalette_categoryChange_label": "Modification",
+  "lib_commandPalette_categoryTerminal_label": "Terminal",
+  "lib_commandPalette_categoryBrowser_label": "Navigateur",
+  "lib_commandPalette_categoryFile_label": "Fichier",
+  "lib_commandPalette_categoryWorkspace_label": "Espace de travail",
+  "lib_commandPalette_categoryRepo_label": "Dépôt",
+  "lib_commandPalette_categoryFolder_label": "Dossier",
+  "lib_commandPalette_categoryMessage_label": "Message"
 }
