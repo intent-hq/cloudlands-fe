@@ -4373,6 +4373,7 @@
     const divider = returnDividerPosition(container);
     const hasVisibleRow = viewportHasMessageRow(container);
     const correction = decideReturnCorrection({
+      kind: landing.kind,
       userScrolled: returnLandingUserInput,
       busy,
       following: shouldFollowBottom,
@@ -6626,11 +6627,15 @@
 
   export function scrollToTop() {
     if (!isActive) return;
+    // Explicit navigation (controls outside the scroll container) ends the
+    // return landing so its safety net never pulls the viewport back.
+    cancelReturnLanding();
     smoothScrollToPosition(0);
   }
 
   export function scrollToBottom() {
     if (!isActive) return;
+    cancelReturnLanding();
     const container = scrollContainer;
     if (!container) return;
     const getContainer = beginScrollNavigation();
@@ -6654,6 +6659,7 @@
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!isActive) return false;
+    cancelReturnLanding();
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
     const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither

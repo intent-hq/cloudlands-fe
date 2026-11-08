@@ -31,6 +31,7 @@ export function classifyChatReturn(input: {
 export type ReturnDividerPosition = 'none' | 'above' | 'visible' | 'below';
 
 export interface ReturnViewportProbe {
+  kind: ChatReturnKind;
   /** The user scrolled (wheel, touch, scrollbar, keyboard) since the reveal. */
   userScrolled: boolean;
   /** A fetch, seek, search navigation or skeleton legitimately owns the viewport. */
@@ -51,9 +52,11 @@ export type ReturnCorrection = 'none' | 'divider' | 'bottom';
 export function decideReturnCorrection(probe: ReturnViewportProbe): ReturnCorrection {
   if (probe.userScrolled || probe.busy) return 'none';
   if (!probe.hasVisibleRow) return probe.divider === 'none' ? 'bottom' : 'divider';
-  // The entry chose "unseen tail fits, follow the bottom" from placeholder
-  // heights; once the rows hydrated, following pushed the divider away.
-  if (probe.following && probe.divider === 'above') return 'divider';
+  // Workspace returns only: the entry chose "unseen tail fits, follow the
+  // bottom" from placeholder heights, and once the rows hydrated following
+  // pushed the divider away. Agent-tab returns keep today's behavior (the
+  // divider session survives the switch; a following reader stays put).
+  if (probe.kind === 'workspace' && probe.following && probe.divider === 'above') return 'divider';
   return 'none';
 }
 
