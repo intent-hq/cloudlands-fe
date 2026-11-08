@@ -257,6 +257,18 @@ export function placementFailure(
   return { updateRequired, message: split?.message || detail };
 }
 
+/**
+ * The start failure of an agent on E2B with a cloud error, or null. The chat
+ * shows it as the turn's failure card in place of the generic one.
+ */
+export function agentCloudStartFailure(
+  agent: AgentSession | null | undefined,
+): PlacementFailure | null {
+  if (agent?.placement?.target !== 'e2b' || !agent.placementError) return null;
+  const failure = placementFailure(agent.placementError, '');
+  return failure.cloud ? failure : null;
+}
+
 const ATTACHMENTS_TOO_LARGE_PREFIXES = [
   'attachments-too-large-for-machine:',
   'node-prompt-too-large:',
