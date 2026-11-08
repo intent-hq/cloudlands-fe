@@ -359,7 +359,11 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import AgentPlacementNotice from '$features/remote-machines/AgentPlacementNotice.svelte';
-  import { agentCloudStartFailure } from '$features/remote-machines/agent-location';
+  import {
+    agentCloudStartFailure,
+    agentCloudStarting,
+  } from '$features/remote-machines/agent-location';
+  import { StartLineHosts } from '$features/remote-machines/start-line-hosts.svelte';
   import {
     getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
@@ -763,6 +767,10 @@
   // notice) in place of the generic one; the error still blocks the queue.
   const cloudStartFailed = $derived(!$chatError$ && !!agentCloudStartFailure($agentSession$));
   const turnFailureError = $derived(cloudStartFailed ? null : effectiveError);
+  // While the agent's cloud machine starts, the working row shows its start
+  // line in place of the phase line; the notice below leaves it out then.
+  const cloudStarting = $derived(agentCloudStarting($agentSession$));
+  const startLineHosts = new StartLineHosts();
 
   const latestAssistantForTelemetry = $derived.by(() => {
     for (let index = $agentMessages$.length - 1; index >= 0; index -= 1) {
@@ -6800,6 +6808,12 @@
   });
 </script>
 
+{#snippet cloudStartLine()}
+  {#if agentId}
+    <AgentPlacementNotice {agentId} phaseLine onPhaseLine={startLineHosts.register} />
+  {/if}
+{/snippet}
+
 <svelte:window
   onkeydown={(e) => {
     if (!isActive) return;
@@ -7205,6 +7219,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
+                          startLine={cloudStarting ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7236,6 +7251,7 @@
                         {quotaExceeded}
                         {quotaRetryProviders}
                         {hasPendingPermission}
+                        startLine={cloudStarting ? cloudStartLine : null}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
                         onRetryWithProvider={gatedRetryWithProvider}
@@ -7329,6 +7345,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
+                          startLine={cloudStarting ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7360,6 +7377,7 @@
                         {quotaExceeded}
                         {quotaRetryProviders}
                         {hasPendingPermission}
+                        startLine={cloudStarting ? cloudStartLine : null}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
                         onRetryWithProvider={gatedRetryWithProvider}
@@ -7396,6 +7414,7 @@
                   {quotaExceeded}
                   {quotaRetryProviders}
                   {hasPendingPermission}
+                  startLine={cloudStarting ? cloudStartLine : null}
                   onRetry={gatedRetry}
                   onRetryWithModel={gatedRetryWithModel}
                   onRetryWithProvider={gatedRetryWithProvider}
@@ -7777,6 +7796,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
+                          startLine={cloudStarting ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7882,6 +7902,7 @@
                                   {quotaExceeded}
                                   {quotaRetryProviders}
                                   {hasPendingPermission}
+                                  startLine={cloudStarting ? cloudStartLine : null}
                                   onRetry={gatedRetry}
                                   onRetryWithModel={gatedRetryWithModel}
                                   onRetryWithProvider={gatedRetryWithProvider}
@@ -7974,6 +7995,7 @@
                     {quotaExceeded}
                     {quotaRetryProviders}
                     {hasPendingPermission}
+                    startLine={cloudStarting ? cloudStartLine : null}
                     onRetry={gatedRetry}
                     onRetryWithModel={gatedRetryWithModel}
                     onRetryWithProvider={gatedRetryWithProvider}
@@ -8017,6 +8039,7 @@
         {#if workspace?.id && agentId}
           <AgentPlacementNotice
             {agentId}
+            phaseLineShown={startLineHosts.shown}
             failedAt={effectiveFailedAt}
             queued={visibleQueuedMessages.length > 0}
             onRetry={failureTranscript.current.state === 'attempting' ? undefined : gatedRetry}
@@ -8130,6 +8153,7 @@
                       {quotaExceeded}
                       {quotaRetryProviders}
                       {hasPendingPermission}
+                      startLine={cloudStarting ? cloudStartLine : null}
                       onRetry={gatedRetry}
                       onRetryWithModel={gatedRetryWithModel}
                       onRetryWithProvider={gatedRetryWithProvider}

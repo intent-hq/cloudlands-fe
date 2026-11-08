@@ -317,3 +317,14 @@ export function remoteAttachmentFailure(text: string): string | null {
     return m.remoteAgent_attachmentsUnsupported_error();
   return null;
 }
+
+/**
+ * The agent's cloud machine (E2B) is still starting. The chat then shows the
+ * start line in the working row, in place of the turn's phase line.
+ */
+export function agentCloudStarting(agent: AgentSession | null | undefined): boolean {
+  return (
+    agent?.placement?.target === 'e2b' &&
+    agentPlacementNoticeKind(agent, agentMachineLocation(agent)) === 'starting'
+  );
+}
