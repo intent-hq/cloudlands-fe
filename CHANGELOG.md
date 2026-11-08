@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.302.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.301.1...v2.302.0) (2026-11-08)
+
+
+### 🚀 Features
+
+* **palette:** repos in Cmd+K and best-match blended ranking ([#4300](https://github.com/intent-hq/cloudlands-fe/issues/4300)) ([50af182](https://github.com/intent-hq/cloudlands-fe/commit/50af1825cd28394097614f7a4ae1c000f8f28ba5))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.156 ([#4307](https://github.com/intent-hq/cloudlands-fe/issues/4307)) ([7f5232f](https://github.com/intent-hq/cloudlands-fe/commit/7f5232ffdbbe7e7d38290f2e90708d9246257732))
+* **scripts:** stop the workflow lint when actionlint deadlocks ([#4302](https://github.com/intent-hq/cloudlands-fe/issues/4302)) ([a75edb4](https://github.com/intent-hq/cloudlands-fe/commit/a75edb4dc165187bab47dc2154324e8cf11b16bf))
+
 ## [2.301.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.301.0...v2.301.1) (2026-11-08)
 
 
