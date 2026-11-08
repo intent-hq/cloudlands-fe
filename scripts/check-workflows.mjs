@@ -255,14 +255,44 @@ export function resolveShellcheck(command = process.env.ACTIONLINT_SHELLCHECK ||
   return command;
 }
 
+// actionlint <= 1.7.12 writes each run: script to shellcheck's stdin before it
+// starts shellcheck, so a script larger than the pipe buffer blocks forever at
+// 0% CPU. Linux shrinks new pipes to one page once a user holds more than
+// fs.pipe-user-pages-soft pages, so a busy host hangs this gate silently
+// (rhysd/actionlint#702, fixed on main by #651 but not yet released). The lint
+// takes about a second, so a deadline turns that hang into a readable failure.
+export const ACTIONLINT_TIMEOUT_MS = 60_000;
+
+export class ActionlintTimeoutError extends Error {
+  constructor(timeoutMs) {
+    super(
+      `actionlint did not finish within ${Math.ceil(timeoutMs / 1000)} s and was stopped. ` +
+        `This is most likely the actionlint ${ACTIONLINT_VERSION} shellcheck deadlock ` +
+        '(https://github.com/rhysd/actionlint/issues/702): when your user holds many pipes, new ' +
+        'pipes shrink and actionlint blocks writing a large run: script to shellcheck. Stop idle ' +
+        'long-running processes (dev servers, test watchers) and rerun: pnpm run lint:workflows',
+    );
+    this.name = 'ActionlintTimeoutError';
+  }
+}
+
 // Exit status 0 is clean, 1 is findings; other statuses or a signal are errors. pyflakes is
 // disabled so results do not depend on whether a host has it.
-export function runActionlint({ actionlint, shellcheck, cwd = REPO_ROOT, stdio = 'inherit' }) {
+export function runActionlint({
+  actionlint,
+  shellcheck,
+  cwd = REPO_ROOT,
+  stdio = 'inherit',
+  timeoutMs = ACTIONLINT_TIMEOUT_MS,
+}) {
   const result = spawnSync(actionlint, ['-shellcheck', shellcheck, '-pyflakes=', '-no-color'], {
     cwd,
     stdio,
     encoding: 'utf8',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
   });
+  if (result.error?.code === 'ETIMEDOUT') throw new ActionlintTimeoutError(timeoutMs);
   if (result.error) throw result.error;
   return { status: result.status, signal: result.signal, stdout: result.stdout ?? '' };
 }
@@ -277,7 +307,14 @@ export async function main({ cwd = REPO_ROOT, cacheDir } = {}) {
     console.error(`workflow lint: ${error.message}`);
     return 2;
   }
-  const { status, signal } = runActionlint({ actionlint, shellcheck, cwd });
+  let status;
+  let signal;
+  try {
+    ({ status, signal } = runActionlint({ actionlint, shellcheck, cwd }));
+  } catch (error) {
+    console.error(`workflow lint: ${error.message}`);
+    return 2;
+  }
   if (signal || (status !== 0 && status !== 1)) {
     console.error(`workflow lint: actionlint exited abnormally (${signal ?? `status ${status}`}).`);
     return 2;
