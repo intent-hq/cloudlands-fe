@@ -125,6 +125,24 @@ test('Cmd/Ctrl-click keeps the open chat in the selection', async ({ mount }) =>
   await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
 });
 
+test('Cmd/Ctrl-click on the open chat unselects it', async ({ mount, page }) => {
+  const { sidebar, list } = await openAssistant(mount);
+  const options = list.getByRole('option');
+  await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'false');
+  await expect(sidebar.getByRole('toolbar')).toHaveCount(0);
+
+  await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'false');
+  await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
+
+  await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await expect(sidebar.getByRole('toolbar')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(options.nth(0)).toHaveAttribute('aria-selected', 'true');
+});
+
 test('Cmd/Ctrl-click leaves an open archived chat out of the selection', async ({ mount }) => {
   const { sidebar, list } = await openAssistant(mount);
   const archived = sidebar.getByRole('button', { name: '1 archived chat', exact: true });

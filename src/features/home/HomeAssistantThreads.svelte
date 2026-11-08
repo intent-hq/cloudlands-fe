@@ -82,15 +82,15 @@
     selectAgentCreationOutcome(threadConsumerId, CHIEF_WORKSPACE_ID, CHIEF_THREAD_RESOURCE_ID),
   );
 
-  // Cmd/Ctrl-click builds a selection for bulk actions; without one, the open chat is selected.
-  let multiKeys = $state<string[]>([]);
+  // Cmd/Ctrl-click builds a selection for bulk actions; while it is null, the open chat is selected.
+  let multiKeys = $state<string[] | null>(null);
   let anchorKey: string | null = null;
   let showArchived = $state(false);
   let contextMenu = $state<(SidebarContextPosition & { agentId: string }) | null>(null);
   let archivingOpen = $state<{ agentId: string; archived: string[] } | null>(null);
 
   const liveIds = $derived(new Set($threads$.map((thread) => thread.agentId)));
-  const selection = $derived(multiKeys.filter((key) => liveIds.has(key)));
+  const selection = $derived((multiKeys ?? []).filter((key) => liveIds.has(key)));
   const openKeys = $derived($activeAgentId$ ? [$activeAgentId$] : []);
   // The daemon count stands in until the archived rows load; loaded rows then win.
   const archivedCount = $derived(
@@ -110,7 +110,7 @@
   });
 
   function chooseThread(agentId: string) {
-    multiKeys = [];
+    multiKeys = null;
     appStore.dispatch(setChiefActiveAgentId(agentId));
     appStore.dispatch(setActiveAgentId(CHIEF_WORKSPACE_ID, agentId));
   }
@@ -126,8 +126,8 @@
   ) {
     if ($hidesThreadActions$) return chooseThread(thread.agentId);
     if (isCmdClickModifier({ event })) {
-      // The first Cmd/Ctrl-click extends the open chat, which shows as selected.
-      const base = selection.length > 0 ? selection : openKeys.filter((key) => liveIds.has(key));
+      // The first Cmd/Ctrl-click starts from the open chat, which shows as selected.
+      const base = multiKeys ? selection : openKeys.filter((key) => liveIds.has(key));
       multiKeys = base.includes(thread.agentId)
         ? base.filter((key) => key !== thread.agentId)
         : [...base, thread.agentId];
@@ -151,7 +151,7 @@
   function archive(agentIds: string[]) {
     closeMenu();
     if (!$retirementSupported$) return;
-    multiKeys = [];
+    multiKeys = null;
     archivingOpen =
       $activeAgentId$ && agentIds.includes($activeAgentId$)
         ? { agentId: $activeAgentId$, archived: agentIds }
@@ -176,7 +176,7 @@
 
   function remove(threads: ChiefThreadSummary[]) {
     closeMenu();
-    multiKeys = [];
+    multiKeys = null;
     if (threads.length === 1) {
       const [thread] = threads;
       appStore.dispatch(
@@ -206,7 +206,7 @@
     if (!position) return;
     const bounds = option.getBoundingClientRect();
     const keyboard = event instanceof KeyboardEvent;
-    if (!selection.includes(agentId)) multiKeys = [];
+    if (!selection.includes(agentId)) multiKeys = null;
     contextMenu = {
       x: keyboard ? bounds.left : position.x,
       y: keyboard ? bounds.bottom : position.y,
@@ -217,10 +217,10 @@
   }
 
   function handleListKeydown(event: KeyboardEvent) {
-    if (event.key === 'Escape' && selection.length > 0) {
+    if (event.key === 'Escape' && multiKeys) {
       event.preventDefault();
       event.stopPropagation();
-      multiKeys = [];
+      multiKeys = null;
       return;
     }
     openMenu(event);
@@ -310,7 +310,7 @@
       size="icon-compact"
       aria-label={m.home_assistantThread_clearSelection_label()}
       title={m.home_assistantThread_clearSelection_label()}
-      onclick={() => (multiKeys = [])}
+      onclick={() => (multiKeys = null)}
     >
       <Fa icon={faXmark} size="xs" />
     </Button>
@@ -413,7 +413,7 @@
     getKey={(thread) => thread.agentId}
     getText={(thread) => thread.title}
     selectable="multi"
-    selectedKeys={selection.length > 0 ? selection : openKeys}
+    selectedKeys={multiKeys ? selection : openKeys}
     onActivate={activateLive}
     ariaLabel={m.layout_chiefCard_threadPicker_ariaLabel()}
     virtualize
@@ -452,7 +452,7 @@
         getKey={(thread) => thread.agentId}
         getText={(thread) => thread.title}
         selectable="single"
-        selectedKeys={selection.length > 0 ? [] : openKeys}
+        selectedKeys={multiKeys ? [] : openKeys}
         onActivate={(thread) => chooseThread(thread.agentId)}
         status={$retiredThreads$.length === 0 && !$retiredLoaded$ ? 'loading' : 'ready'}
         ariaLabel={m.home_assistantThread_archivedList_label()}
