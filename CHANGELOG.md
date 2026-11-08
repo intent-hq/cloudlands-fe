@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.301.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.301.0...v2.301.1) (2026-11-08)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.155 ([#4304](https://github.com/intent-hq/cloudlands-fe/issues/4304)) ([4e1a0e1](https://github.com/intent-hq/cloudlands-fe/commit/4e1a0e19f649ea3944fabf722ead302074bf74b8))
+* **ci:** retry actionlint download and fall back to the API asset endpoint ([#4301](https://github.com/intent-hq/cloudlands-fe/issues/4301)) ([f875630](https://github.com/intent-hq/cloudlands-fe/commit/f87563077f6cbb2b9f6bb2c0f34943df376f6308))
+* **ci:** sign macOS builds from the job's keychain instead of re-importing ([#4292](https://github.com/intent-hq/cloudlands-fe/issues/4292)) ([33d1e89](https://github.com/intent-hq/cloudlands-fe/commit/33d1e89ed0e1ab472db76a992dfb5f7be79fb20b))
+
 ## [2.301.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.300.1...v2.301.0) (2026-11-08)
 
 
