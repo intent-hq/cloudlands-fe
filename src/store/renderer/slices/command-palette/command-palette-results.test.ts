@@ -300,6 +300,25 @@ describe('indexed note result merge', () => {
     expect(rows({ query: 'needle', activeFilter: 'note', indexedNotes })).toHaveLength(10);
   });
 
+  it('shows See all when a server hit merged into a local note row is cut by the row cap', () => {
+    // Twenty local title matches, newest first; the server also returns the oldest one.
+    const notes = Array.from({ length: 20 }, (_, i) => ({
+      ...note('ws-1', `local-${i}`, `needle ${i}`),
+      timestamp: 1000 - i,
+    }));
+    const indexedNotes = [note('ws-1', 'local-19')];
+    const results = computeResults(makeInput({ query: 'needle', notes, indexedNotes }));
+    expect(results.some((r) => r.noteId === 'local-19')).toBe(false);
+    expect(results.at(-1)).toMatchObject({ _seeAll: true, _filter: 'note' });
+  });
+
+  it('shows no See all row when a merged server hit is listed', () => {
+    const notes = [note('ws-1', 'spec', 'needle')];
+    const indexedNotes = [note('ws-1', 'spec')];
+    const results = computeResults(makeInput({ query: 'needle', notes, indexedNotes }));
+    expect(results.some((r) => r._seeAll)).toBe(false);
+  });
+
   it('shows no See all row when every server note fits', () => {
     const indexedNotes = Array.from({ length: 3 }, (_, i) => note('other', String(i)));
     const results = computeResults(makeInput({ query: 'needle', indexedNotes }));

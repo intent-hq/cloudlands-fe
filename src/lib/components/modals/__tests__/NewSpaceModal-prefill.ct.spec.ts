@@ -19,11 +19,12 @@ const providers = Object.fromEntries(
 async function mountOpenForm(
   mount: Parameters<Parameters<typeof test>[2]>[0]['mount'],
   page: Parameters<Parameters<typeof test>[2]>[0]['page'],
+  options: { plainFolders?: boolean } = {},
 ) {
   await page.setViewportSize({ width: 1100, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(Harness, {
-    props: { prefillRequest: 0 },
+    props: { prefillRequest: 0, plainFolders: options.plainFolders === true },
     hooksConfig: {
       mockBackend: {
         'drafts.get': null,
@@ -32,6 +33,11 @@ async function mountOpenForm(
       },
       mockIpc: {
         'system:check-git': { success: true, data: { available: true, version: '2.50.0' } },
+        // Every probed folder is a plain (non-git) directory.
+        'file:getDirectoryStatus': {
+          success: true,
+          data: { exists: true, isDirectory: true, isGitRepo: false },
+        },
         'providers:get-availability': { success: true, data: { hasAnyProvider: true, providers } },
       },
     },
@@ -43,7 +49,9 @@ async function mountOpenForm(
       (value) => sessionStorage.setItem('workspace-prefill', JSON.stringify(value)),
       prefill,
     );
-    await component.update({ props: { prefillRequest: 1 } });
+    await component.update({
+      props: { prefillRequest: 1, plainFolders: options.plainFolders === true },
+    });
   };
   const prefillLeft = () => page.evaluate(() => sessionStorage.getItem('workspace-prefill'));
   return { dialog, request, prefillLeft };
@@ -77,4 +85,18 @@ test('a plain GitHub prefill (deep links, Home) still prefers a known local clon
   await request({ githubUrl: 'https://github.com/octo/app' });
   await expect.poll(prefillLeft).toBeNull();
   await expect(dialog.getByText('my-checkout', { exact: true }).first()).toBeVisible();
+});
+
+test('a Folder prefill opens the folder as a plain folder, not a git repo', async ({
+  mount,
+  page,
+}) => {
+  const { dialog, request, prefillLeft } = await mountOpenForm(mount, page, {
+    plainFolders: true,
+  });
+  await expect(dialog.getByRole('button', { name: /^Select a branch/ })).toBeVisible();
+  await request({ repoPath: '/fixture/notes', plainFolder: true });
+  await expect.poll(prefillLeft).toBeNull();
+  await expect(dialog.getByText('notes', { exact: true }).first()).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /^Select a branch/ })).toHaveCount(0);
 });

@@ -987,6 +987,33 @@ describe('CommandPalette workspace activity recency', () => {
     expect(old.textContent).not.toContain('just now');
   });
 
+  it('ranks a workspace picked from the palette recently above one only active earlier', async () => {
+    workspaceItemsState.value = [
+      { id: 'current', title: 'Current Space', createdAt: '2025-01-01T00:00:00.000Z' },
+      {
+        id: 'active',
+        title: 'Semantic Active',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        lastActivity: '2025-06-01T00:00:00.000Z',
+      },
+      {
+        id: 'picked',
+        title: 'Semantic Picked',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        lastActivity: '2025-01-02T00:00:00.000Z',
+      },
+    ];
+    paletteMruEntries.value = [
+      { type: 'workspace', id: 'picked', timestamp: Date.parse('2025-07-01T00:00:00.000Z') },
+    ];
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'semantic', workspaceId: 'current', onClose: vi.fn() },
+    });
+    const picked = await screen.findByRole('button', { name: /Semantic Picked/i });
+    const active = screen.getByRole('button', { name: /Semantic Active/i });
+    expect(picked.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('shows a selected workspace and opens its tab', async () => {
     workspaceItemsState.value = [
       { id: 'current', title: 'Current Space', createdAt: '2025-01-01T00:00:00.000Z' },

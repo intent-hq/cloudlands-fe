@@ -211,6 +211,7 @@ describe('prefillForRepo', () => {
     expect(prefillForRepo(local('/code/app'))).toEqual({ repoPath: '/code/app' });
     expect(prefillForRepo({ ...local('/notes'), plainFolder: true })).toEqual({
       repoPath: '/notes',
+      plainFolder: true,
     });
   });
 
