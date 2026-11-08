@@ -937,6 +937,7 @@ const CAPTURED_OUTPUT_LIMIT = 256 * 1024;
 const CAPTURE_DRAIN_MS = 2_000;
 const EXCERPT_LINES = 15;
 const EXCERPT_LINE_WIDTH = 240;
+const PENDING_LINE_LIMIT = 64 * 1024;
 
 /** Terminal text as it reads on screen: no escape codes, and only the last redraw of a `\r` line. */
 function plainLines(text) {
@@ -966,7 +967,13 @@ function openCheckLog(path, header) {
     write(stream, chunk) {
       if (fd === null) return;
       const lines = `${pending.get(stream) ?? ''}${chunk}`.split('\n');
-      pending.set(stream, lines.pop());
+      let rest = lines.pop();
+      // A redraw-only stream never ends a line; do not hold it in memory unbounded.
+      if (rest.length > PENDING_LINE_LIMIT) {
+        lines.push(rest.split('\r').pop());
+        rest = '';
+      }
+      pending.set(stream, rest);
       if (lines.length) put(lines.join('\n'));
     },
     close() {
