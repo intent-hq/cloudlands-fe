@@ -66,6 +66,21 @@ it('takes over a lock left by a crashed process, but waits for a live one', asyn
   expect(await codesIn(dir).consume(code)).toBe('ok');
 });
 
+it('keeps waiting past the lock timeout while the lock changes hands', async () => {
+  const dir = dataDir();
+  const lock = path.join(dir, `${SIGN_IN_FILE}.lock`);
+  const { code } = await codesIn(dir).create();
+  // Other holders take turns for 3x the timeout; no single one holds it longer than the timeout.
+  fs.writeFileSync(lock, 'holder-0');
+  const consumed = codesIn(dir, { lockTimeoutMs: 200 }).consume(code);
+  for (let holder = 1; holder <= 6; holder++) {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    fs.writeFileSync(lock, `holder-${holder}`);
+  }
+  fs.rmSync(lock);
+  expect(await consumed).toBe('ok');
+});
+
 it('treats a damaged file as empty', async () => {
   const dir = dataDir();
   fs.writeFileSync(path.join(dir, SIGN_IN_FILE), '{not json');
