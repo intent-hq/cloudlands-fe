@@ -36,15 +36,18 @@ function indexOfKey(items: any[], key: string, near: number): number {
   return best;
 }
 
-/** Move the previous row 1 back to the top of `next` when it is still listed (mutates `next`). */
-export function keepRowOne(previous: any[], next: any[]): void {
-  const previousFirst = rowKey(previous[findSelectableIndex(previous, 0, 1)]);
-  const nextFirst = findSelectableIndex(next, 0, 1);
-  if (!previousFirst || nextFirst === -1 || rowKey(next[nextFirst]) === previousFirst) return;
-  const from = indexOfKey(next, previousFirst, nextFirst);
-  if (from <= nextFirst) return;
-  const [row] = next.splice(from, 1);
-  next.splice(nextFirst, 0, row);
+export function firstRowKey(rows: any[]): string | null {
+  return rowKey(rows[findSelectableIndex(rows, 0, 1)]);
+}
+
+/** Move the row with `key` to the first selectable position when it is listed (mutates `rows`). */
+export function keepRowOne(key: string, rows: any[]): void {
+  const first = findSelectableIndex(rows, 0, 1);
+  if (first === -1 || rowKey(rows[first]) === key) return;
+  const from = indexOfKey(rows, key, first);
+  if (from <= first) return;
+  const [row] = rows.splice(from, 1);
+  rows.splice(first, 0, row);
 }
 
 /**

@@ -98,6 +98,7 @@
     createLateArrivalTracker,
     findSelectableIndex,
     isSelectableResult,
+    firstRowKey,
     keepRowOne,
     resolveSelection,
     rowKey,
@@ -584,6 +585,7 @@
   // Inputs of the last rebuild, to tell a repo-list arrival from a keystroke.
   let builtQuery: string | null = null;
   let builtRepos: PaletteRepoItem[] | null = null;
+  let heldRowOne: string | null = null;
   // The scheduled rebuild; Enter runs it at once so it acts on the current text.
   let pendingRebuild: (() => void) | null = null;
   // Order in which late sources answered the current text (first leads when nothing instant matches).
@@ -603,7 +605,10 @@
   }
 
   function applyResults(flat: any[], query: string, repoItems: PaletteRepoItem[]) {
-    if (query === builtQuery && repoItems !== builtRepos) keepRowOne(searchResults, flat);
+    // A repo list that lands mid-typing keeps row 1 until the next keystroke.
+    if (query !== builtQuery) heldRowOne = null;
+    else if (repoItems !== builtRepos && !heldRowOne) heldRowOne = firstRowKey(searchResults);
+    if (heldRowOne) keepRowOne(heldRowOne, flat);
     builtQuery = query;
     builtRepos = repoItems;
     const index = resolveSelection(flat, {

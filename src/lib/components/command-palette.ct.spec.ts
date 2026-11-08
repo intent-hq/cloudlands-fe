@@ -510,21 +510,30 @@ test('one repo load per open; a load landing mid-typing waits for the next keyst
   mount,
   page,
 }) => {
-  const { input, rows, repoRows, current } = await mountRepoScene(mount, page, 'repos');
+  const { input, rows, repoRows, current } = await installPausedClock(page, () =>
+    mountRepoScene(mount, page, 'repos'),
+  );
+  // Step time so each rebuild runs before the next event.
+  const settle = () => page.clock.runFor(100);
   await input.fill('clou');
+  await settle();
   await input.press('d');
+  await settle();
   await expect(input).toHaveValue('cloud');
   await expect(repoRows).toHaveCount(2);
   await expect(current).toContainText('/Users/dev/code/cloudlands-fe');
   expect(await paletteFixture(page, 'repoLoads')).toBe(1);
 
   await paletteFixture(page, 'landRepos');
+  await settle();
   await expect(repoRows).toHaveCount(3);
   await expect(rows.first()).toContainText('/Users/dev/code/cloudlands-fe');
   await expect(rows.first()).toHaveAttribute('aria-current', 'true');
 
   await input.press('Backspace');
+  await settle();
   await input.press('d');
+  await settle();
   await expect(rows.first()).not.toContainText('cloudlands-fe');
   await expect(rows.first()).toContainText('/Users/dev/code/cloud');
   expect(await paletteFixture(page, 'repoLoads')).toBe(1);
