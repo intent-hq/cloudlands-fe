@@ -240,7 +240,6 @@ describe('encoder (two windows, one owner)', () => {
 
     manager.keyDown('ENC_CLK');
     expect(navigateA).toHaveBeenCalledWith('/');
-    expect(dispatchA.mock.calls.length).toBeGreaterThan(0);
     expect(dispatchB).not.toHaveBeenCalled();
     expect(navigateB).not.toHaveBeenCalled();
 

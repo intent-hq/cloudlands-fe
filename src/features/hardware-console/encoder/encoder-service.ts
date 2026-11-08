@@ -3,11 +3,11 @@
  *
  * Subscribes an input decoder to the shared manager's raw channel-2 stream
  * (`onRawMessage`) and wires the rotary encoder:
- * - rotate: adjusts the current agent's effort by default; optionally cycles
- *   workspaces ordered by activity. Both modes clamp at the ends and show a
- *   small HUD naming the choice;
- * - click (`ENC_CLK` keydown): opens Home; clicks while its workspace list
- *   is open cycle grouping by activity, repository, and status.
+ * - rotate: adjusts the current agent's effort by default, or on Home's
+ *   Workspaces list moves the selection (and its side preview) down or up;
+ *   optionally cycles workspaces ordered by activity. All modes clamp at the
+ *   ends;
+ * - click (`ENC_CLK` keydown): opens Home, like the titlebar Home button.
  *
  * The HUD timer is action-driven in the device saga.
  *
@@ -17,7 +17,6 @@ import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { openAndShowWorkspace } from '$lib/utils/show-workspace';
-import { currentRoutePath } from '$lib/utils/workspace-route-path';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
@@ -31,10 +30,10 @@ import { HardwareInputDecoder } from '../input/input-decoder';
 import type { EncoderDirection } from '../input/types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import { isConsoleOwner } from '../owner-gate';
-import { closePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { updateHomeWorkspaceView } from '$features/home/home-workspaces-slice';
 import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
 import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
+import { currentRoutePath } from '$lib/utils/workspace-route-path';
+import { getHomeEncoderTarget, stepHomeSelection } from '$features/home/home-encoder-target';
 
 const logger = createLogger('HardwareConsoleEncoder');
 
@@ -109,26 +108,23 @@ function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}
 }
 
 /**
- * Open the homepage workspace list, or cycle its grouping when already open.
+ * Move Home's workspace selection one row. Returns false when Home's
+ * Workspaces list is not on screen, leaving the detent to the effort path.
+ */
+function handleHomeRotate(direction: EncoderDirection): boolean {
+  const target = getHomeEncoderTarget();
+  const ids = currentRoutePath() === '/' ? target?.ids() : null;
+  if (!target || !ids) return false;
+  const next = stepHomeSelection(ids, target.selectedId(), direction);
+  if (next !== null) target.select(next);
+  return true;
+}
+
+/**
+ * Open Home, matching the titlebar Home button and its shortcut.
  */
 function handleEncoderClick(deps: EncoderDeps = {}): void {
-  const { dispatch, navigate } = resolveDeps(deps);
-  const { sidebarNav, homeWorkspaces } = appStore.state;
-  const isHome = currentRoutePath() === '/';
-  if (isHome && sidebarNav.panelItem === null && homeWorkspaces.tab === 'workspaces') {
-    dispatch(
-      updateHomeWorkspaceView({
-        groupBy:
-          homeWorkspaces.groupBy === 'none'
-            ? 'repository'
-            : homeWorkspaces.groupBy === 'repository'
-              ? 'status'
-              : 'none',
-      }),
-    );
-  }
-  dispatch(closePanel());
-  dispatch(updateHomeWorkspaceView({ tab: 'workspaces' }));
+  const { navigate } = resolveDeps(deps);
   void navigate('/').catch((error: unknown) => {
     logger.warn('Failed to open Home from encoder', { error });
   });
@@ -163,11 +159,13 @@ export function installHardwareConsoleEncoder(
       if (!encoderBehaviorHydrated) return;
       if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
       else {
-        // Calibrate effort rotation to the physical Creator Micro 2 report
+        // Calibrate rotation to the physical Creator Micro 2 report
         // (intent-hq/intent#5947), shared with Codex Micro. Keep workspace
         // navigation's existing wire direction and catalog effort order intact.
-        const effortDirection = direction === 'cw' ? 'ccw' : 'cw';
-        dispatch(encoderEffortRotated(effortDirection, resolveDeps(deps).getCurrentWorkspaceId()));
+        const physical = direction === 'cw' ? 'ccw' : 'cw';
+        const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
+        if (workspaceId === null && handleHomeRotate(physical)) return;
+        dispatch(encoderEffortRotated(physical, workspaceId));
       }
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {

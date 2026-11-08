@@ -101,6 +101,7 @@
     setHomeWorkspaceAsideWithUndo,
   } from './home-set-aside';
   import { handleHomeSetAsideShortcut } from './home-set-aside-shortcut';
+  import { homeListOrder, registerHomeEncoderTarget } from './home-encoder-target';
   import { updateHomeWorkspaceView } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
@@ -584,6 +585,37 @@
     ],
     () => tab,
   );
+  // The hardware knob steps through the rows shown on screen. The board has no
+  // virtualization, so its card order is read from the page.
+  $effect(() => {
+    if (preview) return;
+    return registerHomeEncoderTarget({
+      ids: () => {
+        if (destination !== 'workspaces' || tab !== 'workspaces') return null;
+        if ($view$.view === 'board')
+          return [
+            ...(homeElement?.querySelectorAll<HTMLElement>(
+              '[data-home-destination="workspaces"] [data-home-workspace]',
+            ) ?? []),
+          ].flatMap((node) => node.dataset.homeWorkspace ?? []);
+        return homeListOrder({
+          groups: listGroups,
+          workspaces: filteredWorkspaces,
+          aside: asideWorkspaces,
+          asideExpanded,
+        });
+      },
+      selectedId: () => selectedWorkspace?.id ?? null,
+      select: (id) => {
+        updateView({ selectedId: id });
+        void tick().then(() =>
+          homeElement
+            ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(id)}"]`)
+            ?.scrollIntoView({ block: 'nearest' }),
+        );
+      },
+    });
+  });
   // New space resolves the selected Home repository itself
   // (`defaultToSidebarRepository`), so Home only opens it.
   function createWorkspace() {
