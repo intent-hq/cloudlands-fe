@@ -37,11 +37,7 @@
    * - `tab-quick` / `tab-rebuilt`: agent-tab switch inside the workspace (no boundary).
    */
   export type ReturnPath =
-    | 'workspace-quick'
-    | 'workspace-rebuilt'
-    | 'workspace-dropped'
-    | 'tab-quick'
-    | 'tab-rebuilt';
+    'workspace-quick' | 'workspace-rebuilt' | 'workspace-dropped' | 'tab-quick' | 'tab-rebuilt';
 
   const agentId = 'primary';
   const total = 1000;
@@ -111,7 +107,9 @@
   store.dispatch(setWorkspaceEntity(workspace));
   store.dispatch(backgroundHooksUpdated(workspace.id, []));
   store.dispatch(prMonitorsUpdated(workspace.id, []));
-  store.dispatch(scriptMonitorsUpdated(workspace.id, { monitors: [], scripts: [], status: 'ready' }));
+  store.dispatch(
+    scriptMonitorsUpdated(workspace.id, { monitors: [], scripts: [], status: 'ready' }),
+  );
   store.dispatch(
     setSubscriptionSnapshot(workspace.id, agentId, {
       subscriptions: [],

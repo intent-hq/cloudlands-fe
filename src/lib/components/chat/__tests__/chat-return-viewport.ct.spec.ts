@@ -42,9 +42,13 @@ async function openChat(page: Page, mount: (c: typeof ChatReturnHost) => Promise
   return { component, viewport };
 }
 
-async function scrollUp(viewport: Locator) {
-  // Let the unloaded-history spacer reconcile (quiet window) first.
+/** Let the unloaded-history spacer reconcile (quiet window). */
+async function waitForSpacer(viewport: Locator) {
   await expect.poll(() => viewport.evaluate((node) => node.scrollHeight)).toBeGreaterThan(4000);
+}
+
+async function scrollUp(viewport: Locator) {
+  await waitForSpacer(viewport);
   await wheelUntilScrolled(viewport, { deltaY: -600 });
   await expect.poll(() => distanceFromBottom(viewport)).toBeGreaterThan(300);
 }
@@ -55,12 +59,12 @@ async function returnTo(page: Page, viewport: Locator, path: ReturnPath, unread 
       (window as unknown as { chatReturn: Harness }).chatReturn.leave(p as ReturnPath, u as number),
     [path, unread] as const,
   );
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- the time away from the chat.
   await page.waitForTimeout(150);
-  await page.evaluate(() =>
-    (window as unknown as { chatReturn: Harness }).chatReturn.reactivate(),
-  );
+  await page.evaluate(() => (window as unknown as { chatReturn: Harness }).chatReturn.reactivate());
   // The switch-back skeleton is up (armed by the panel's own activation).
   await expect(page.getByTestId('chat-transcript-skeleton')).toBeVisible();
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- the skeleton window before the snapshot lands.
   await page.waitForTimeout(250);
   await page.evaluate(() =>
     (window as unknown as { chatReturn: Harness }).chatReturn.deliverSnapshot(),
@@ -88,9 +92,7 @@ for (const path of PATHS) {
       }
       await returnTo(page, viewport, path);
       const reading = component.locator(`[data-message-id="${readingRow}"]`).first();
-      await expect
-        .poll(() => visibleRows(viewport), { timeout: 1500 })
-        .not.toEqual([]);
+      await expect.poll(() => visibleRows(viewport), { timeout: 1500 }).not.toEqual([]);
       if (path.startsWith('workspace-') || start === 'bottom') {
         // Workspace returns (and any return from the bottom) land on the newest row.
         await expect.poll(() => distanceFromBottom(viewport), { timeout: 1500 }).toBeLessThan(3);
@@ -107,6 +109,7 @@ for (const path of PATHS) {
           )
           .toBe(true);
       }
+      // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- observes the landing staying put.
       await page.waitForTimeout(500);
       expect(await visibleRows(viewport)).not.toEqual([]);
     });
@@ -125,9 +128,47 @@ for (const path of ['workspace-quick', 'workspace-rebuilt', 'workspace-dropped']
       const divider = component.locator('[data-new-messages-divider]');
       await expect(divider).toHaveCount(1, { timeout: 1500 });
       await expect(divider).toBeInViewport({ timeout: 1500 });
+      // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- observes the landing staying put.
       await page.waitForTimeout(500);
       await expect(divider).toBeInViewport();
       expect(await visibleRows(viewport)).not.toEqual([]);
     });
   }
 }
+
+async function parkInSpacer(viewport: Locator) {
+  // A stray clamp with no user input: the top of the transcript is the
+  // unloaded-history spacer.
+  await viewport.evaluate((node) => {
+    node.scrollTop = 0;
+  });
+  expect(await visibleRows(viewport)).toEqual([]);
+}
+
+test('safety net moves a blank revealed viewport within 1 s and records a breadcrumb', async ({
+  mount,
+  page,
+}) => {
+  const breadcrumbs: string[] = [];
+  page.on('console', (message) => {
+    if (message.text().includes('chat-return-landing-correction')) breadcrumbs.push(message.text());
+  });
+  const { component, viewport } = await openChat(page, mount);
+  await waitForSpacer(viewport);
+  await returnTo(page, viewport, 'workspace-quick');
+  await parkInSpacer(viewport);
+  await expect.poll(() => visibleRows(viewport), { timeout: 1000 }).not.toEqual([]);
+  await expect(component.locator('[data-message-id="m-999"]').first()).toBeInViewport();
+  await expect.poll(() => breadcrumbs.length).toBeGreaterThan(0);
+});
+
+test('safety net never moves the viewport after user scroll input', async ({ mount, page }) => {
+  const { viewport } = await openChat(page, mount);
+  await waitForSpacer(viewport);
+  await returnTo(page, viewport, 'workspace-quick');
+  await wheelUntilScrolled(viewport, { deltaY: -200 });
+  await parkInSpacer(viewport);
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- observes the whole safety-net window staying quiet.
+  await page.waitForTimeout(1600);
+  expect(await viewport.evaluate((node) => node.scrollTop)).toBeLessThan(3);
+});

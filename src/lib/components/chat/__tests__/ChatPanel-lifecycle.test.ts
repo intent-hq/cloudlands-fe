@@ -508,6 +508,12 @@ import {
 } from '../chat-scroll-cache';
 import { SCROLL_BUTTON_SHOW_SETTLE_MS } from '../scroll-bottom-button-visibility';
 import {
+  classifyChatReturn,
+  decideReturnCorrection,
+  resolveTabReturnRestore,
+  type ReturnViewportProbe,
+} from '../chat-return-landing';
+import {
   chatInterestLeaseCount,
   clearAllChatInterestLeases,
 } from '$features/agent/utils/chat-interest-leases';
@@ -5879,3 +5885,83 @@ describe.each(['workspace-a', 'workspace-b'])(
     });
   },
 );
+
+describe('chat return landing decisions', () => {
+  it('classifies a same-instance return by whether the stop-looking boundary ran while away', () => {
+    expect(
+      classifyChatReturn({ sameInstance: true, dividerSessionEnded: true, hasCachedScroll: true }),
+    ).toBe('workspace');
+    expect(
+      classifyChatReturn({
+        sameInstance: true,
+        dividerSessionEnded: false,
+        hasCachedScroll: false,
+      }),
+    ).toBe('tab');
+  });
+
+  it('classifies a remount by whether the scroll cache survived the boundary', () => {
+    expect(
+      classifyChatReturn({
+        sameInstance: false,
+        dividerSessionEnded: false,
+        hasCachedScroll: true,
+      }),
+    ).toBe('tab');
+    expect(
+      classifyChatReturn({
+        sameInstance: false,
+        dividerSessionEnded: false,
+        hasCachedScroll: false,
+      }),
+    ).toBe('workspace');
+  });
+
+  const probe = (overrides: Partial<ReturnViewportProbe>): ReturnViewportProbe => ({
+    userScrolled: false,
+    busy: false,
+    following: false,
+    hasVisibleRow: true,
+    divider: 'none',
+    ...overrides,
+  });
+
+  it('moves a blank viewport to the bottom, or to the divider when one is rendered', () => {
+    expect(decideReturnCorrection(probe({ hasVisibleRow: false }))).toBe('bottom');
+    expect(decideReturnCorrection(probe({ hasVisibleRow: false, divider: 'above' }))).toBe(
+      'divider',
+    );
+    expect(decideReturnCorrection(probe({ hasVisibleRow: false, divider: 'below' }))).toBe(
+      'divider',
+    );
+  });
+
+  it('re-lands on the divider when following the bottom pushed it above the viewport', () => {
+    expect(decideReturnCorrection(probe({ following: true, divider: 'above' }))).toBe('divider');
+    expect(decideReturnCorrection(probe({ following: true, divider: 'visible' }))).toBe('none');
+    // A reader who is not following chose this position.
+    expect(decideReturnCorrection(probe({ following: false, divider: 'above' }))).toBe('none');
+  });
+
+  it('never moves after user scroll input or while a fetch, seek, search or skeleton is active', () => {
+    expect(decideReturnCorrection(probe({ hasVisibleRow: false, userScrolled: true }))).toBe(
+      'none',
+    );
+    expect(decideReturnCorrection(probe({ hasVisibleRow: false, busy: true }))).toBe('none');
+    expect(decideReturnCorrection(probe({ following: true, divider: 'above', busy: true }))).toBe(
+      'none',
+    );
+  });
+
+  it('leaves a viewport with visible rows alone', () => {
+    expect(decideReturnCorrection(probe({}))).toBe('none');
+    expect(decideReturnCorrection(probe({ following: true }))).toBe('none');
+  });
+
+  it('restores a cached tab position only once the transcript can hold it', () => {
+    const base = { restoreTop: 3000, clientHeight: 800, attempts: 0, maxAttempts: 10 };
+    expect(resolveTabReturnRestore({ ...base, scrollHeight: 3800 })).toBe('restore');
+    expect(resolveTabReturnRestore({ ...base, scrollHeight: 1200 })).toBe('wait');
+    expect(resolveTabReturnRestore({ ...base, scrollHeight: 1200, attempts: 10 })).toBe('landing');
+  });
+});
