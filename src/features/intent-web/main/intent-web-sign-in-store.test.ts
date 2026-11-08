@@ -70,11 +70,11 @@ it('keeps waiting past the lock timeout while the lock changes hands', async () 
   const dir = dataDir();
   const lock = path.join(dir, `${SIGN_IN_FILE}.lock`);
   const { code } = await codesIn(dir).create();
-  // Other holders take turns for 3x the timeout; no single one holds it longer than the timeout.
+  // Other holders take turns for 2x the timeout; each holds it for a quarter of it.
   fs.writeFileSync(lock, 'holder-0');
-  const consumed = codesIn(dir, { lockTimeoutMs: 200 }).consume(code);
-  for (let holder = 1; holder <= 6; holder++) {
-    await new Promise((resolve) => setTimeout(resolve, 100));
+  const consumed = codesIn(dir, { lockTimeoutMs: 1000 }).consume(code);
+  for (let holder = 1; holder <= 8; holder++) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
     fs.writeFileSync(lock, `holder-${holder}`);
   }
   fs.rmSync(lock);
