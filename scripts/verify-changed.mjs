@@ -1,8 +1,19 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeSync,
+} from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 import { escape as escapeGlob, globSync } from 'glob';
 import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
@@ -924,6 +935,48 @@ export function checkEnvironment(check, { heldLock = null, baseEnv = process.env
 /** Retained tail of a captured check's output, enough to explain a failure. */
 const CAPTURED_OUTPUT_LIMIT = 256 * 1024;
 const CAPTURE_DRAIN_MS = 2_000;
+const EXCERPT_LINES = 15;
+const EXCERPT_LINE_WIDTH = 240;
+
+/** Terminal text as it reads on screen: no escape codes, and only the last redraw of a `\r` line. */
+function plainLines(text) {
+  return text
+    .split('\n')
+    .map((line) => stripVTControlCharacters(line.replace(/\r$/, '')).split('\r').pop());
+}
+
+/** The last non-blank lines of a failed check's output, for the failure summary. */
+export function failureExcerpt(output, limit = EXCERPT_LINES) {
+  return plainLines(output ?? '')
+    .filter((line) => line.trim() && !/\bELIFECYCLE\b/.test(line))
+    .slice(-limit)
+    .map((line) =>
+      line.length > EXCERPT_LINE_WIDTH ? `${line.slice(0, EXCERPT_LINE_WIDTH - 1)}…` : line,
+    );
+}
+
+/** Appends a check's output to its log as plain text, one complete line at a time per stream. */
+function openCheckLog(path, header) {
+  mkdirSync(dirname(path), { recursive: true });
+  let fd = openSync(path, 'a');
+  writeSync(fd, header);
+  const pending = new Map();
+  const put = (text) => writeSync(fd, `${plainLines(text).join('\n')}\n`);
+  return {
+    write(stream, chunk) {
+      if (fd === null) return;
+      const lines = `${pending.get(stream) ?? ''}${chunk}`.split('\n');
+      pending.set(stream, lines.pop());
+      if (lines.length) put(lines.join('\n'));
+    },
+    close() {
+      if (fd === null) return;
+      for (const rest of pending.values()) if (rest) put(rest);
+      closeSync(fd);
+      fd = null;
+    },
+  };
+}
 
 /**
  * How a check's child process writes its output. Real runs stream it to the
@@ -936,8 +989,17 @@ export function checkOutputMode(env = process.env) {
   return env.VITEST ? 'capture' : 'inherit';
 }
 
-async function runCheck(check, root, { heldLock = null, output = checkOutputMode() } = {}) {
+/**
+ * Runs one check. With `logPath`, its stdout and stderr are also written to that
+ * file, so a failure can be read later without rerunning the check.
+ */
+async function runCheck(
+  check,
+  root,
+  { heldLock = null, output = checkOutputMode(), logPath = null } = {},
+) {
   const capture = output === 'capture';
+  const piped = capture || !!logPath;
   if (!capture) console.log(`\n[verify:changed] ${check.label}`);
   const launcher =
     check.executable === 'pnpm'
@@ -947,29 +1009,44 @@ async function runCheck(check, root, { heldLock = null, output = checkOutputMode
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
   const env = checkEnvironment(check, { heldLock });
+  // A piped child no longer sees a terminal; keep the colors the terminal showed.
+  if (piped && !capture && process.stdout.isTTY && env.NO_COLOR === undefined)
+    env.FORCE_COLOR ??= '1';
+  const checkLog = logPath
+    ? openCheckLog(logPath, `$ ${[check.executable, ...check.args].map(shellQuote).join(' ')}\n\n`)
+    : null;
   await new Promise((resolveRun, reject) => {
     const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
-      stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+      stdio: capture ? ['ignore', 'pipe', 'pipe'] : piped ? ['inherit', 'pipe', 'pipe'] : 'inherit',
       shell: launcher.shell,
       env,
     });
     let captured = '';
-    const collect = (chunk) => {
-      captured = (captured + chunk).slice(-CAPTURED_OUTPUT_LIMIT);
-    };
-    for (const stream of [child.stdout, child.stderr]) {
+    for (const [stream, terminal] of [
+      [child.stdout, process.stdout],
+      [child.stderr, process.stderr],
+    ]) {
       // Decode per stream so a multibyte character split across chunks survives.
       stream?.setEncoding('utf8');
-      stream?.on('data', collect);
+      stream?.on('data', (chunk) => {
+        captured = (captured + chunk).slice(-CAPTURED_OUTPUT_LIMIT);
+        checkLog?.write(stream, chunk);
+        if (!capture) terminal.write(chunk);
+      });
     }
     activeChildren.add(child);
     child.on('error', (error) => {
       activeChildren.delete(child);
+      checkLog?.close();
       reject(error);
     });
+    let settled = false;
     const settle = (code, signal) => {
+      if (settled) return;
+      settled = true;
       activeChildren.delete(child);
+      checkLog?.close();
       if (code === 0) resolveRun();
       else {
         const reason = `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`;
@@ -980,13 +1057,14 @@ async function runCheck(check, root, { heldLock = null, output = checkOutputMode
           Object.assign(new Error(reason + details), {
             exitCode: code,
             signal,
-            ...(capture ? { output: captured } : {}),
+            ...(piped ? { output: captured } : {}),
+            ...(logPath ? { logPath } : {}),
           }),
         );
       }
     };
     child.on('exit', (code, signal) => {
-      if (!capture) return settle(code, signal);
+      if (!piped) return settle(code, signal);
       // Let the pipes drain, but never wait on a grandchild (a CT server, a
       // Playwright worker) that inherited them and outlives the check.
       const drained = setTimeout(() => {
@@ -1170,6 +1248,15 @@ function describeCoverage(coverage) {
   return `checks ${part(coverage.counts.checks)}; unit files ${part(coverage.counts.unitFiles)}`;
 }
 
+/** A failed check's log path and the last lines of its output, as indented summary lines. */
+function failureDetails(error, root) {
+  if (!error?.logPath) return [];
+  return [
+    `  log: ${slash(relative(root, error.logPath))}`,
+    ...failureExcerpt(error.output).map((line) => `    | ${line}`),
+  ];
+}
+
 /** Whether a check ended because it was interrupted (Ctrl+C or SIGTERM), not because it failed. */
 function isInterruption(error) {
   return (
@@ -1304,9 +1391,10 @@ export async function runVerificationPlan(plan, root, options = {}) {
         command,
         executed: { executable: execution.check.executable, args: execution.check.args },
       });
+      const logPath = attempt ? join(attempt.directory, 'logs', `${check.id}.log`) : null;
       try {
         const lockKey = verificationLockKey(check, env);
-        if (!lockKey) await run(execution.check, root);
+        if (!lockKey) await run(execution.check, root, { logPath });
         else {
           const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
           log(`\n[verify:changed] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
@@ -1316,7 +1404,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
             cwd: root,
           });
           try {
-            await run(execution.check, root, { heldLock: lockKey });
+            await run(execution.check, root, { heldLock: lockKey, logPath });
           } finally {
             releaseLock();
           }
@@ -1335,7 +1423,13 @@ export async function runVerificationPlan(plan, root, options = {}) {
           exitCode: error?.exitCode ?? null,
           signal: error?.signal ?? null,
         });
-        if (!options.keepGoing || interrupted) throw error;
+        if (interrupted) throw error;
+        if (!options.keepGoing) {
+          const where = failureDetails(error, root);
+          if (where.length && error instanceof Error)
+            error.message = `${error.message}\n${where.join('\n')}`;
+          throw error;
+        }
         failures.push({ check, error });
         log(
           `[verify:changed] ${error instanceof Error ? error.message : error}\n[verify:changed] --keep-going: continuing with the remaining checks`,
@@ -1358,7 +1452,10 @@ export async function runVerificationPlan(plan, root, options = {}) {
     const lines = failures.map(({ check, error }) => {
       const reason = String(error instanceof Error ? error.message : error).split('\n')[0];
       // A lock timeout, for one, does not name the check it was waiting for.
-      return `  - ${reason.startsWith(check.label) ? reason : `${check.label}: ${reason}`}`;
+      return [
+        `  - ${reason.startsWith(check.label) ? reason : `${check.label}: ${reason}`}`,
+        ...failureDetails(error, root).map((line) => `  ${line}`),
+      ].join('\n');
     });
     const next = attempt
       ? `See ${attempt.path}/coverage.json; rerun with --resume to run only what did not pass.`
@@ -1394,6 +1491,9 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     );
     log(
       '  --keep-going: after a failed check, still run (and record) every remaining check, then fail listing all failed checks; prerequisites still stop the run.',
+    );
+    log(
+      "  Each check's output is saved to <record>/logs/<check id>.log; a failure prints its log path and last lines.",
     );
     log(
       `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
