@@ -13,6 +13,7 @@ import {
   ACTIONLINT_VERSION,
   archiveName,
   binaryVersion,
+  DOWNLOAD_WORST_CASE_MS,
   DownloadError,
   fetchReleaseAsset,
   fetchWithRetry,
@@ -119,6 +120,7 @@ describe('check-workflows pinned download', () => {
 type Route = (req: { url: string; headers: Record<string, unknown> }) => {
   status: number;
   body?: string | Buffer;
+  location?: string;
 };
 
 // A local stand-in for github.com and api.github.com that records every request.
@@ -127,8 +129,8 @@ const stubGitHub = async (route: Route) => {
   const server = createServer((req, res) => {
     const request = { url: req.url ?? '', headers: req.headers };
     requests.push(request);
-    const { status, body = '' } = route(request);
-    res.writeHead(status);
+    const { status, body = '', location } = route(request);
+    res.writeHead(status, location ? { location } : {});
     res.end(body);
   });
   servers.push(server);
@@ -211,6 +213,21 @@ describe('check-workflows release download', () => {
     );
   });
 
+  it('drops the token when the API redirects the asset to another origin', async () => {
+    const storage = await stubGitHub(() => ({ status: 200, body: 'archive via storage' }));
+    const { base } = await stubGitHub(({ url }) => {
+      if (url === RELEASE) {
+        return { status: 200, body: JSON.stringify({ assets: [{ id: 42, name: NAME }] }) };
+      }
+      if (url === ASSET) return { status: 302, location: `${storage.base}/signed-asset` };
+      return { status: 504 };
+    });
+    const buffer = await fetchReleaseAsset(NAME, fromStub(base, 'secret-token'));
+    expect(buffer.toString()).toBe('archive via storage');
+    expect(storage.requests.map((r) => r.url)).toEqual(['/signed-asset']);
+    expect(storage.requests[0].headers.authorization).toBeUndefined();
+  });
+
   it('reports a transient failure only when both sources failed transiently', async () => {
     const { base } = await stubGitHub(() => ({ status: 503 }));
     const outage = await fetchReleaseAsset(NAME, fromStub(base)).catch((e: unknown) => e);
@@ -224,6 +241,11 @@ describe('check-workflows release download', () => {
     const missing = await fetchReleaseAsset(NAME, fromStub(noAsset)).catch((e: unknown) => e);
     expect((missing as DownloadError).transient).toBe(false);
     expect((missing as Error).message).toMatch(/has no asset/);
+  });
+
+  it('budgets the worst-case stall from the timeout and backoff constants', () => {
+    // 3 retried fetches x (4 attempts x 30 s + 2 s + 5 s + 15 s backoff).
+    expect(DOWNLOAD_WORST_CASE_MS).toBe(3 * (4 * 30_000 + 22_000));
   });
 
   it('keeps the checksum pin fail-closed for an archive from either source', async () => {
@@ -261,9 +283,12 @@ describe('check-workflows shellcheck requirement', () => {
 // test is skipped with the reason; any other failure (a 4xx, a checksum or
 // version mismatch) still fails. The `lint:workflows` gate itself never
 // skips, so a real workflow finding cannot pass because of this.
+// Resolved once for both tests, so a stalled download costs one worst case,
+// and the second test reuses the outcome instead of waiting again.
+let resolution: ReturnType<typeof resolveActionlint> | undefined;
 const actionlintOrSkip = async (ctx: TestContext) => {
   try {
-    return await resolveActionlint();
+    return await (resolution ??= resolveActionlint());
   } catch (error) {
     if (error instanceof DownloadError && error.transient) {
       ctx.skip(`actionlint ${ACTIONLINT_VERSION} is unavailable from GitHub: ${error.message}`);
@@ -271,28 +296,40 @@ const actionlintOrSkip = async (ctx: TestContext) => {
     throw error;
   }
 };
+// The worst-case download (every attempt on both sources stalling to its
+// timeout) plus a minute for extraction and the actionlint run itself, so an
+// outage ends in the documented skip rather than a vitest timeout.
+const ACTIONLINT_RUN_TIMEOUT_MS = DOWNLOAD_WORST_CASE_MS + 60_000;
 
 describe('check-workflows actionlint run', () => {
-  it('fails on a broken workflow and reports shellcheck and expression findings', async (ctx) => {
-    const actionlint = await actionlintOrSkip(ctx);
-    const shellcheck = resolveShellcheck();
-    const root = repoWithWorkflow('broken.yml', BROKEN_WORKFLOW);
-    const result = runActionlint({ actionlint, shellcheck, cwd: root, stdio: 'pipe' });
-    expect(result.status).toBe(1);
-    expect(result.stdout).toContain('SC2086');
-    expect(result.stdout).toContain('property "nonexistent_property" is not defined');
-  }, 300_000);
+  it(
+    'fails on a broken workflow and reports shellcheck and expression findings',
+    async (ctx) => {
+      const actionlint = await actionlintOrSkip(ctx);
+      const shellcheck = resolveShellcheck();
+      const root = repoWithWorkflow('broken.yml', BROKEN_WORKFLOW);
+      const result = runActionlint({ actionlint, shellcheck, cwd: root, stdio: 'pipe' });
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain('SC2086');
+      expect(result.stdout).toContain('property "nonexistent_property" is not defined');
+    },
+    ACTIONLINT_RUN_TIMEOUT_MS,
+  );
 
-  it('passes a clean workflow', async (ctx) => {
-    const actionlint = await actionlintOrSkip(ctx);
-    const root = repoWithWorkflow('clean.yml', CLEAN_WORKFLOW);
-    const result = runActionlint({
-      actionlint,
-      shellcheck: resolveShellcheck(),
-      cwd: root,
-      stdio: 'pipe',
-    });
-    expect(result.stdout).toBe('');
-    expect(result.status).toBe(0);
-  }, 300_000);
+  it(
+    'passes a clean workflow',
+    async (ctx) => {
+      const actionlint = await actionlintOrSkip(ctx);
+      const root = repoWithWorkflow('clean.yml', CLEAN_WORKFLOW);
+      const result = runActionlint({
+        actionlint,
+        shellcheck: resolveShellcheck(),
+        cwd: root,
+        stdio: 'pipe',
+      });
+      expect(result.stdout).toBe('');
+      expect(result.status).toBe(0);
+    },
+    ACTIONLINT_RUN_TIMEOUT_MS,
+  );
 });

@@ -90,6 +90,13 @@ const DOWNLOAD_TIMEOUT_MS = 30_000;
 // matching scripts/download_retry.py.
 export const RETRY_DELAYS_MS = Object.freeze([2_000, 5_000, 15_000]);
 const RELEASE_REPO = 'rhysd/actionlint';
+const ATTEMPTS = RETRY_DELAYS_MS.length + 1;
+// Upper bound on fetchReleaseAsset when every attempt stalls to its timeout:
+// three retried fetches (direct download, release lookup, API asset), each
+// ATTEMPTS timeouts plus the backoff between them. Callers that wrap the
+// download in their own deadline (the unit tests) derive it from this.
+export const DOWNLOAD_WORST_CASE_MS =
+  3 * (ATTEMPTS * DOWNLOAD_TIMEOUT_MS + RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0));
 
 // A failed download. `transient` is true when every attempt failed with a 5xx,
 // a network error or a timeout, i.e. when GitHub (not the pin) is at fault.
