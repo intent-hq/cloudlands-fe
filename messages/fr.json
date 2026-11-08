@@ -2620,7 +2620,6 @@
   "home_assistantThread_clearSelection_label": "Effacer la sélection",
   "home_assistantThread_deleteMany_label": "Supprimer {count} discussions",
   "home_assistantThread_hooks_label": "Hooks actifs : {count}",
-  "home_assistantThread_keepOne_reason": "Conservez au moins une discussion",
   "home_assistantThread_monitors_label": "Surveillances actives : {count}",
   "home_assistantThread_selected_label": "{count} sélectionnées",
   "home_assistantThread_subscriptions_label": "Abonnements actifs : {count}",

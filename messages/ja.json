@@ -2620,7 +2620,6 @@
   "home_assistantThread_clearSelection_label": "選択を解除",
   "home_assistantThread_deleteMany_label": "{count} 件のチャットを削除",
   "home_assistantThread_hooks_label": "有効なフック: {count}",
-  "home_assistantThread_keepOne_reason": "チャットを少なくとも 1 件残してください",
   "home_assistantThread_monitors_label": "有効な監視: {count}",
   "home_assistantThread_selected_label": "{count} 件を選択中",
   "home_assistantThread_subscriptions_label": "有効なサブスクリプション: {count}",

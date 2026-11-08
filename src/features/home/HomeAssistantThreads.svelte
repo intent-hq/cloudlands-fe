@@ -96,9 +96,6 @@
   const archivedCount = $derived(
     $retiredLoaded$ ? $retiredThreads$.length : Math.max($retiredCount$, $retiredThreads$.length),
   );
-  // The daemon refuses to retire the last live chat, so keep one out of every archive.
-  const canArchive = (agentIds: readonly string[]) =>
-    $retirementSupported$ && $threads$.some((thread) => !agentIds.includes(thread.agentId));
 
   onMount(() => {
     appStore.dispatch(backgroundHooksSubscribeRequested(CHIEF_WORKSPACE_ID));
@@ -151,7 +148,7 @@
 
   function archive(agentIds: string[]) {
     closeMenu();
-    if (!canArchive(agentIds)) return;
+    if (!$retirementSupported$) return;
     multiKeys = [];
     archivingOpen =
       $activeAgentId$ && agentIds.includes($activeAgentId$)
@@ -239,10 +236,6 @@
                 id: 'archive',
                 label: m.home_assistantThread_archiveMany_label({ count }),
                 icon: faBoxArchive,
-                disabled: !canArchive(selection),
-                disabledReason: canArchive(selection)
-                  ? undefined
-                  : m.home_assistantThread_keepOne_reason(),
                 onClick: () => archive(threads.map((thread) => thread.agentId)),
               },
             ]
@@ -283,10 +276,6 @@
           id: 'archive',
           label: m.home_assistantThread_archive_label(),
           icon: faBoxArchive,
-          disabled: !canArchive([agentId]),
-          disabledReason: canArchive([agentId])
-            ? undefined
-            : m.home_assistantThread_keepOne_reason(),
           onClick: () => archive([agentId]),
         });
       }
@@ -331,10 +320,7 @@
         variant="ghost"
         size="icon-compact"
         aria-label={m.home_assistantThread_archive_label()}
-        title={canArchive(selection)
-          ? m.home_assistantThread_archive_label()
-          : m.home_assistantThread_keepOne_reason()}
-        disabled={!canArchive(selection)}
+        title={m.home_assistantThread_archive_label()}
         onclick={() => archive(selection)}
       >
         <Fa icon={faBoxArchive} size="xs" />

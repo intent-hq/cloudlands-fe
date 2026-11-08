@@ -2620,7 +2620,6 @@
   "home_assistantThread_clearSelection_label": "Auswahl aufheben",
   "home_assistantThread_deleteMany_label": "{count} Chats löschen",
   "home_assistantThread_hooks_label": "Aktive Hooks: {count}",
-  "home_assistantThread_keepOne_reason": "Mindestens ein Chat muss bleiben",
   "home_assistantThread_monitors_label": "Aktive Überwachungen: {count}",
   "home_assistantThread_selected_label": "{count} ausgewählt",
   "home_assistantThread_subscriptions_label": "Aktive Abonnements: {count}",

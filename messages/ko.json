@@ -2620,7 +2620,6 @@
   "home_assistantThread_clearSelection_label": "선택 해제",
   "home_assistantThread_deleteMany_label": "채팅 {count}개 삭제",
   "home_assistantThread_hooks_label": "활성 후크: {count}",
-  "home_assistantThread_keepOne_reason": "채팅을 하나 이상 남겨 두세요",
   "home_assistantThread_monitors_label": "활성 모니터: {count}",
   "home_assistantThread_selected_label": "{count}개 선택됨",
   "home_assistantThread_subscriptions_label": "활성 구독: {count}",
