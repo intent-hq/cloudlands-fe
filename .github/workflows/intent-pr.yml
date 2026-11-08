@@ -783,6 +783,17 @@ jobs:
         run: bash scripts/check-accessibility.sh
       # Architecture gates are added to `lint:architecture` in package.json (run
       # by both this step and `verify:changed`), never as separate workflow steps.
+      - name: Cache actionlint
+        # lint:workflows (inside validate:architecture) otherwise downloads the
+        # pinned actionlint release on every run; a GitHub release-download
+        # outage ejected merge-queue PRs on it (runs 42464028655, 42464205010).
+        # The binary is re-verified by version on use, and a miss falls back
+        # to the retrying, checksum-pinned download. Keep the version in the
+        # key equal to ACTIONLINT_VERSION (check-workflows.test.ts enforces it).
+        uses: actions/cache@v6
+        with:
+          path: node_modules/.cache/actionlint
+          key: actionlint-1.7.12-${{ runner.os }}-${{ runner.arch }}
       - name: Architecture validation
         run: pnpm run validate:architecture
       - name: Build main process

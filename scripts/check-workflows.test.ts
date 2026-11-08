@@ -2,15 +2,28 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, type TestContext } from 'vitest';
 import {
   ACTIONLINT_SHA256,
   ACTIONLINT_VERSION,
   archiveName,
   binaryVersion,
+  DownloadError,
+  fetchReleaseAsset,
+  fetchWithRetry,
   installFromArchive,
   main,
   platformKey,
@@ -27,8 +40,13 @@ const tempDir = (prefix: string) => {
   return dir;
 };
 
-afterEach(() => {
+const servers: Server[] = [];
+
+afterEach(async () => {
   delete process.env.ACTIONLINT_SHELLCHECK;
+  await Promise.all(
+    servers.splice(0).map((server) => new Promise((resolve) => server.close(resolve))),
+  );
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -105,6 +123,133 @@ describe('check-workflows pinned download', () => {
   });
 });
 
+type Route = (req: { url: string; headers: Record<string, unknown> }) => {
+  status: number;
+  body?: string | Buffer;
+};
+
+// A local stand-in for github.com and api.github.com that records every request.
+const stubGitHub = async (route: Route) => {
+  const requests: { url: string; headers: Record<string, unknown> }[] = [];
+  const server = createServer((req, res) => {
+    const request = { url: req.url ?? '', headers: req.headers };
+    requests.push(request);
+    const { status, body = '' } = route(request);
+    res.writeHead(status);
+    res.end(body);
+  });
+  servers.push(server);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  return { base, requests };
+};
+
+const NAME = 'actionlint_test.tar.gz';
+const DIRECT = `/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${NAME}`;
+const RELEASE = `/repos/rhysd/actionlint/releases/tags/v${ACTIONLINT_VERSION}`;
+const ASSET = '/repos/rhysd/actionlint/releases/assets/42';
+const noWait = { delays: [1, 1, 1], sleep: async () => {}, log: () => {} };
+const fromStub = (base: string, token?: string) => ({
+  downloadBase: base,
+  apiBase: base,
+  token,
+  ...noWait,
+});
+
+describe('check-workflows release download', () => {
+  it('retries a transient 5xx and returns the archive', async () => {
+    let calls = 0;
+    const { base, requests } = await stubGitHub(() =>
+      ++calls < 3 ? { status: 504 } : { status: 200, body: 'archive' },
+    );
+    const buffer = await fetchReleaseAsset(NAME, fromStub(base));
+    expect(buffer.toString()).toBe('archive');
+    expect(requests.map((r) => r.url)).toEqual([DIRECT, DIRECT, DIRECT]);
+  });
+
+  it('fails a 4xx at once without retrying the same URL', async () => {
+    const { base } = await stubGitHub(() => ({ status: 404 }));
+    const error = await fetchWithRetry(`${base}/missing`, noWait).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DownloadError);
+    expect((error as DownloadError).transient).toBe(false);
+    expect((error as Error).message).toMatch(/HTTP 404/);
+  });
+
+  it('retries network errors', async () => {
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls += 1;
+      if (calls === 1) throw new TypeError('fetch failed');
+      return new Response('ok');
+    };
+    const buffer = await fetchWithRetry('https://example.invalid/x', { ...noWait, fetchImpl });
+    expect(buffer.toString()).toBe('ok');
+    expect(calls).toBe(2);
+  });
+
+  it('falls back to the API asset endpoint when the release download keeps failing', async () => {
+    const { base, requests } = await stubGitHub(({ url }) => {
+      if (url === RELEASE) {
+        return { status: 200, body: JSON.stringify({ assets: [{ id: 42, name: NAME }] }) };
+      }
+      if (url === ASSET) return { status: 200, body: 'archive via api' };
+      return { status: 504 };
+    });
+    const buffer = await fetchReleaseAsset(NAME, fromStub(base, 'secret-token'));
+    expect(buffer.toString()).toBe('archive via api');
+    expect(requests.map((r) => r.url)).toEqual([DIRECT, DIRECT, DIRECT, DIRECT, RELEASE, ASSET]);
+    const asset = requests.at(-1)!;
+    expect(asset.headers.accept).toBe('application/octet-stream');
+    expect(asset.headers.authorization).toBe('Bearer secret-token');
+    // The token goes only to the API, never to the release download host.
+    expect(requests.filter((r) => r.url === DIRECT).every((r) => !r.headers.authorization)).toBe(
+      true,
+    );
+  });
+
+  it('reports a transient failure only when both sources failed transiently', async () => {
+    const { base } = await stubGitHub(() => ({ status: 503 }));
+    const outage = await fetchReleaseAsset(NAME, fromStub(base)).catch((e: unknown) => e);
+    expect(outage).toBeInstanceOf(DownloadError);
+    expect((outage as DownloadError).transient).toBe(true);
+    expect((outage as Error).message).toMatch(/HTTP 503.*API fallback: .*HTTP 503/);
+
+    const { base: noAsset } = await stubGitHub(({ url }) =>
+      url === RELEASE ? { status: 200, body: JSON.stringify({ assets: [] }) } : { status: 504 },
+    );
+    const missing = await fetchReleaseAsset(NAME, fromStub(noAsset)).catch((e: unknown) => e);
+    expect((missing as DownloadError).transient).toBe(false);
+    expect((missing as Error).message).toMatch(/has no asset/);
+  });
+
+  it('keeps the checksum pin fail-closed for an archive from either source', async () => {
+    const cacheDir = tempDir('check-workflows-cache-');
+    const { base } = await stubGitHub(({ url }) => {
+      if (url === RELEASE) {
+        return { status: 200, body: JSON.stringify({ assets: [{ id: 42, name: NAME }] }) };
+      }
+      if (url === ASSET) return { status: 200, body: 'tampered archive' };
+      return { status: 504 };
+    });
+    const buffer = await fetchReleaseAsset(NAME, fromStub(base));
+    expect(() => installFromArchive(buffer, { key: 'linux-amd64', cacheDir })).toThrow(
+      /SHA-256 mismatch/,
+    );
+    expect(existsSync(join(cacheDir, ACTIONLINT_VERSION, 'actionlint'))).toBe(false);
+  });
+});
+
+describe('check-workflows CI cache', () => {
+  it('keys the intent-pr actionlint cache on the pinned version', () => {
+    const workflow = readFileSync(
+      join(import.meta.dirname, '..', '.github', 'workflows', 'intent-pr.yml'),
+      'utf8',
+    );
+    const keys = [...workflow.matchAll(/^\s+key: actionlint-([^-]+)-/gm)].map((m) => m[1]);
+    expect(keys).toEqual([ACTIONLINT_VERSION]);
+  });
+});
+
 describe('check-workflows shellcheck requirement', () => {
   it('fails instead of letting actionlint skip the shell pass', async () => {
     expect(() => resolveShellcheck('/nonexistent/shellcheck')).toThrow(/would skip every run/);
@@ -118,9 +263,25 @@ describe('check-workflows shellcheck requirement', () => {
   });
 });
 
+// These run the real pinned binary, which a cold cache downloads from GitHub.
+// When every attempt on both sources failed transiently (a GitHub outage) the
+// test is skipped with the reason; any other failure (a 4xx, a checksum or
+// version mismatch) still fails. The `lint:workflows` gate itself never
+// skips, so a real workflow finding cannot pass because of this.
+const actionlintOrSkip = async (ctx: TestContext) => {
+  try {
+    return await resolveActionlint();
+  } catch (error) {
+    if (error instanceof DownloadError && error.transient) {
+      ctx.skip(`actionlint ${ACTIONLINT_VERSION} is unavailable from GitHub: ${error.message}`);
+    }
+    throw error;
+  }
+};
+
 describe('check-workflows actionlint run', () => {
-  it('fails on a broken workflow and reports shellcheck and expression findings', async () => {
-    const actionlint = await resolveActionlint();
+  it('fails on a broken workflow and reports shellcheck and expression findings', async (ctx) => {
+    const actionlint = await actionlintOrSkip(ctx);
     const shellcheck = resolveShellcheck();
     const root = repoWithWorkflow('broken.yml', BROKEN_WORKFLOW);
     const result = runActionlint({ actionlint, shellcheck, cwd: root, stdio: 'pipe' });
@@ -129,8 +290,8 @@ describe('check-workflows actionlint run', () => {
     expect(result.stdout).toContain('property "nonexistent_property" is not defined');
   }, 120_000);
 
-  it('passes a clean workflow', async () => {
-    const actionlint = await resolveActionlint();
+  it('passes a clean workflow', async (ctx) => {
+    const actionlint = await actionlintOrSkip(ctx);
     const root = repoWithWorkflow('clean.yml', CLEAN_WORKFLOW);
     const result = runActionlint({
       actionlint,
