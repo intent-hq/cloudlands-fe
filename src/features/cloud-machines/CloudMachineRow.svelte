@@ -156,12 +156,11 @@
     {/snippet}
     {#snippet title()}
       <span>
-        {#if entry && $named$}
+        {#if entry && $named$ && !editing}
           <EditableName
             value={entry.name}
             onSave={rename}
-            disabled={editing}
-            class="min-w-16"
+            class="shrink-0"
             textClass="[font:inherit]"
             maxWidth={320}
             buttonAriaLabel={m.cloudMachines_rename_ariaLabel({ name: entry.name })}

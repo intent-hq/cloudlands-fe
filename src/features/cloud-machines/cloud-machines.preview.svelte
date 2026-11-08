@@ -34,6 +34,8 @@
       'entries-add': sceneState('entries-add'),
       'entries-key-rejected': sceneState('entries-key-rejected'),
       'entries-rename-taken': sceneState('entries-rename-taken'),
+      'entries-single': sceneState('entries-single'),
+      'entries-edit': sceneState('entries-edit'),
       'start-on-entries': {
         props: { scene: 'start-on-entries' },
         setup: () => setup('entries'),
@@ -130,6 +132,7 @@
   {:else if $connectionId$ === 'build-box'}
     <DevicesSettings
       initialCloudSetup={scene.startsWith('setup') || scene === 'entries-add'}
+      initialCloudEdit={scene === 'entries-edit' ? 'e2b' : undefined}
       initialAddMenuOpen={scene === 'add-menu'}
     />
   {/if}

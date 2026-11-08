@@ -241,6 +241,72 @@ describe('named E2B entries under Nodes', () => {
     expect(configure?.payload[0]).not.toHaveProperty('apiKey');
   });
 
+  it('shows the saved name in the edit form and renames through Save', async () => {
+    seed('entries');
+    const view = render(CloudMachineRow, {
+      entry: TEAM_ENTRY,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    const name = within(form).getByLabelText('Name') as HTMLInputElement;
+    expect(name.value).toBe('Team project');
+    await fireEvent.input(name, { target: { value: 'e2b' } });
+    expect(form.querySelector('[data-cloud-name-error]')).not.toBeNull();
+    await fireEvent.input(name, { target: { value: ' Big boxes ' } });
+    await fireEvent.submit(form);
+    const configure = dispatched().find(
+      (action) => action.type === 'cloudMachines/configureRequested',
+    );
+    expect(configure?.payload[0]).toMatchObject({
+      cloudMachineId: TEAM_ENTRY.id,
+      name: 'Big boxes',
+    });
+    expect(configure?.payload[0]).not.toHaveProperty('apiKey');
+  });
+
+  it('sends no name from the edit form when it is unchanged', async () => {
+    seed('entries-single');
+    const view = render(CloudMachineRow, {
+      entry: E2B_PROVIDER,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    expect((within(form).getByLabelText('Name') as HTMLInputElement).value).toBe('E2B');
+    await fireEvent.submit(form);
+    const configure = dispatched().find(
+      (action) => action.type === 'cloudMachines/configureRequested',
+    );
+    expect(configure?.payload[0]).toMatchObject({ cloudMachineId: 'e2b' });
+    expect(configure?.payload[0]).not.toHaveProperty('name');
+  });
+
+  it('adds a second entry from Add machine next to the only one, without its id', async () => {
+    seed('entries-single');
+    const view = render(DevicesSettings, { initialAddMenuOpen: true });
+    await fireEvent.click(await view.findByTestId('add-cloud-machine'));
+    const form = await vi.waitFor(() => {
+      const found = view.container.querySelector(
+        '[data-cloud-machine-row="new"] form[data-cloud-machine-form]',
+      );
+      expect(found).not.toBeNull();
+      return found as HTMLFormElement;
+    });
+    expect(view.container.querySelector('[data-cloud-machine-row="e2b"] form')).toBeNull();
+    expect((within(form).getByLabelText('Name') as HTMLInputElement).value).toBe('E2B 2');
+    const key = form.querySelector('input[type="password"]') as HTMLInputElement;
+    await fireEvent.input(key, { target: { value: 'e2b_sk_second' } });
+    await fireEvent.submit(form);
+    const configure = dispatched().find(
+      (action) => action.type === 'cloudMachines/configureRequested',
+    );
+    expect(configure?.payload[0]).toMatchObject({ name: 'E2B 2', apiKey: 'e2b_sk_second' });
+    expect(configure?.payload[0]).not.toHaveProperty('cloudMachineId');
+  });
+
   it('renames an entry in place', async () => {
     seed('entries');
     const view = render(CloudMachineRow, {
