@@ -6,7 +6,9 @@ import {
   type ViewerNavigationEvent,
 } from './browser-viewer-navigation';
 
-const isValidBrowserUrl = (url: string) => url.startsWith('https://');
+/** Mirrors the real split: `about:blank` loads in the mirror but the host never accepts it. */
+const isForwardableUrl = (url: string) => url.startsWith('https://');
+const isValidBrowserUrl = (url: string) => url === 'about:blank' || isForwardableUrl(url);
 
 /** One scenario step: an event and the commands it must produce. */
 type Step = [event: ViewerNavigationEvent, commands: ViewerNavigationCommand[]];
@@ -312,6 +314,27 @@ const scenarios: Array<{ name: string; steps: Step[] }> = [
     steps: [...opened('https://a/'), [address('http://b/'), []], [address(''), []]],
   },
   {
+    name: 'a mirror without a host URL keeps about:blank local: never forwarded, refreshed here only',
+    steps: [
+      ...opened('about:blank'),
+      [guest('about:blank'), []],
+      [refresh, [load(2, 'about:blank')]],
+      [guest('about:blank'), []],
+      [followSettled(2), []],
+      [address('about:blank'), []],
+    ],
+  },
+  {
+    name: 'a guest navigation the host cannot take is not forwarded; the mirror returns to the canonical URL',
+    steps: [
+      ...opened('https://a/'),
+      [guest('about:blank'), [load(2, 'https://a/')]],
+      [guest('https://a/'), []],
+      [followSettled(2), []],
+      [guest('https://b/'), [forward(1, 'https://b/')]],
+    ],
+  },
+  {
     name: 'in-page navigation after the follow committed is forwarded while slow resources keep the load open',
     steps: [
       ...opened('https://a/'),
@@ -338,7 +361,7 @@ const scenarios: Array<{ name: string; steps: Step[] }> = [
 
 describe('viewer (mirror) navigation reconciler — REV-2 Model 3', () => {
   it.each(scenarios)('$name', ({ steps }) => {
-    const state = createViewerNavigationState({ isValidBrowserUrl });
+    const state = createViewerNavigationState({ isValidBrowserUrl, isForwardableUrl });
     steps.forEach(([event, expected], index) => {
       expect(applyViewerNavigationEvent(state, event), `step ${index}: ${event.type}`).toEqual(
         expected,
