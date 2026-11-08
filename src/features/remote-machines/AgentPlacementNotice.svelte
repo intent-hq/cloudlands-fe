@@ -75,7 +75,9 @@
     phaseLineShown?: boolean;
   } = $props();
 
-  const agentIdStore = writable<string | undefined>(undefined);
+  // Seeded with the first id so the first render already has the agent.
+  // svelte-ignore state_referenced_locally
+  const agentIdStore = writable<string | undefined>(agentId);
   const machineIdStore = writable<string | undefined>(undefined);
   $effect(() => {
     agentIdStore.set(agentId);
@@ -169,6 +171,18 @@
   {/if}
 {/snippet}
 
+{#snippet startingText()}
+  {startingTitle}
+  {#if startingStep}
+    <span class="text-foreground">{startingStep}</span>
+  {/if}
+  <span class="text-subtle">{startingDescription}</span>
+{/snippet}
+
+{#snippet setupLog(machineName: string)}
+  <RemoteSetupLog machine={machineName} output={setup?.output} truncated={setup?.outputTruncated} />
+{/snippet}
+
 {#if phaseLine}
   {#if location && cloudStarting}
     <div
@@ -180,22 +194,19 @@
         <div class={CHAT_OPERATIONAL_LEADING_CLASS} aria-hidden="true">
           <IntentMarkLoader size={16} />
         </div>
-        <span class={CHAT_OPERATIONAL_SUMMARY_CLASS} role="status" aria-live="polite">
-          {startingTitle}
-          {#if startingStep}
-            <span class="text-foreground">{startingStep}</span>
-          {/if}
-          <span class="text-subtle">{startingDescription}</span>
+        <span
+          class={CHAT_OPERATIONAL_SUMMARY_CLASS}
+          role="status"
+          aria-live="polite"
+          title={[startingTitle, startingStep, startingDescription].filter(Boolean).join(' ')}
+        >
+          {@render startingText()}
         </span>
         {@render outputToggle()}
       </div>
       {#if outputOpen && canShowOutput}
         <div class={OPERATIONAL_EXPANDED_CONTENT_CLASS}>
-          <RemoteSetupLog
-            machine={location.name}
-            output={setup?.output}
-            truncated={setup?.outputTruncated}
-          />
+          {@render setupLog(location.name)}
         </div>
       {/if}
     </div>
@@ -216,20 +227,12 @@
           <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
             <IntentMarkLoader size={14} />
           </span>
-          <span>{startingTitle}</span>
-          {#if startingStep}
-            <span class="text-foreground">{startingStep}</span>
-          {/if}
-          <span class="text-subtle">{startingDescription}</span>
+          {@render startingText()}
         </span>
         {@render outputToggle()}
       </div>
       {#if outputOpen && canShowOutput}
-        <RemoteSetupLog
-          machine={location.name}
-          output={setup?.output}
-          truncated={setup?.outputTruncated}
-        />
+        {@render setupLog(location.name)}
       {/if}
     </div>
   {/if}
@@ -251,11 +254,7 @@
       {@render outputToggle()}
     </div>
     {#if outputOpen && canShowOutput}
-      <RemoteSetupLog
-        machine={location.name}
-        output={setup?.output}
-        truncated={setup?.outputTruncated}
-      />
+      {@render setupLog(location.name)}
     {/if}
   </div>
 {:else if kind === 'failed' && failure?.cloud}

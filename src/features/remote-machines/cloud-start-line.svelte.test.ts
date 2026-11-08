@@ -14,6 +14,7 @@ import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import CloudStartPhaseLineHost from './__tests__/CloudStartPhaseLineHost.svelte';
+import { StartLineHosts } from './start-line-hosts.svelte';
 
 const navigation = vi.hoisted(() => ({ navigateToSettings: vi.fn(async () => {}) }));
 vi.mock('$lib/utils/workspace-navigation', () => navigation);
@@ -154,5 +155,80 @@ describe('cloud machine start line in the working row', () => {
     expect(startLines(row)).toHaveLength(0);
     expect(startLines(notice)).toHaveLength(1);
     expect(notice.textContent).toContain('Starting on Mac Studio…');
+  });
+});
+
+describe('cloud machine start line as the turn changes', () => {
+  const starting = () =>
+    base({ effectiveIsolation: 'pending', cloudStart: { step: 'creating-sandbox' } });
+
+  it('moves the start line back to the conversation when the turn stops mid-start', async () => {
+    const { row, notice, rerender } = mount(starting());
+    await waitFor(() => expect(startLines(notice)).toHaveLength(0));
+    await rerender({ isProcessing: false });
+    await waitFor(() => expect(startLines(notice)).toHaveLength(1));
+    expect(startLines(row)).toHaveLength(0);
+  });
+
+  it('swaps the start line for the failure card when the start fails during the turn', async () => {
+    const { container, row, rerender } = mount(starting());
+    await waitFor(() => expect(startLines(row)).toHaveLength(1));
+    seed(
+      base({
+        status: AgentStatus.Error,
+        stopReason: 'E2B failed',
+        effectiveIsolation: 'pending',
+        cloudStart: undefined,
+        placementError: {
+          code: 'cloud-machine-unavailable',
+          detail: `E2B failed ${JSON.stringify({
+            code: 'cloud-machine-unavailable',
+            reason: 'api-error',
+            retryable: true,
+          })}`,
+        },
+      }),
+    );
+    await rerender({ isProcessing: false });
+    await waitFor(() =>
+      expect(container.querySelector('[data-cloud-start-failure]')).not.toBeNull(),
+    );
+    expect(startLines(container)).toHaveLength(0);
+    expect(container.querySelector('[data-testid="failure-recovery-card"]')).toBeNull();
+    expect(container.textContent).not.toContain('Sent prompt…');
+  });
+
+  it('still offers Stop when the start stalls', async () => {
+    seed(starting());
+    const view = render(CloudStartPhaseLineHost, {
+      agentId: AGENT,
+      onStop: vi.fn(),
+      statusEvents: [
+        ...SENT_PROMPT,
+        {
+          phase: 'stalled',
+          message: 'No model activity',
+          level: 'warn' as const,
+          timestamp: Date.now() + 1,
+        },
+      ],
+    });
+    const row = view.getByTestId('working-row');
+    await waitFor(() => expect(startLines(row)).toHaveLength(1));
+    expect(row.querySelector('[data-stream-stalled]')).not.toBeNull();
+    expect(within(row).getByTestId('stalled-cancel')).toBeTruthy();
+  });
+});
+
+describe('start line hosts', () => {
+  it('counts each shown start line once, however often it is released', () => {
+    const hosts = new StartLineHosts();
+    const first = hosts.register();
+    const second = hosts.register();
+    first();
+    first();
+    expect(hosts.shown).toBe(true);
+    second();
+    expect(hosts.shown).toBe(false);
   });
 });

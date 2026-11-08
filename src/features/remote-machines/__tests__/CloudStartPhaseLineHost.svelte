@@ -12,6 +12,7 @@
     agentId,
     isProcessing = true,
     statusEvents = [],
+    onStop,
   }: {
     agentId: string;
     isProcessing?: boolean;
@@ -21,6 +22,7 @@
       level: 'info' | 'warn' | 'error';
       timestamp: number;
     }>;
+    onStop?: () => void;
   } = $props();
 
   // svelte-ignore state_referenced_locally
@@ -45,6 +47,7 @@
     {isProcessing}
     {error}
     {statusEvents}
+    {onStop}
     startLine={cloudStarting ? cloudStartLine : null}
   />
 </div>

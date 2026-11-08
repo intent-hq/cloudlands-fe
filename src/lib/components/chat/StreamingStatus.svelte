@@ -110,7 +110,8 @@
     onStalledRetry?: () => void;
     /**
      * Shown in place of the phase line while the turn works, e.g. the cloud
-     * machine start line before the agent's machine is up.
+     * machine start line before the agent's machine is up. A stall row (with
+     * Stop and Retry) still shows below it.
      */
     startLine?: Snippet | null;
     /** Additional class names */
@@ -190,9 +191,7 @@
   // status away from 'normal', so the stalled row can never outlive the turn.
   let startLineVisible = $derived(turnActive && !!startLine);
   let stalledEvent = $derived(
-    turnActive && !queueWait && !startLine
-      ? getActiveStalledEvent(statusEvents, lastChunkTime)
-      : null,
+    turnActive && !queueWait ? getActiveStalledEvent(statusEvents, lastChunkTime) : null,
   );
   let thinkingVisible = $derived(turnActive && !stalledEvent && !startLine);
   let queueWaitMessage = $derived(
