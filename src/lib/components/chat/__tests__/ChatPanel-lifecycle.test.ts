@@ -511,6 +511,7 @@ import {
   classifyChatReturn,
   decideReturnCorrection,
   resolveTabReturnRestore,
+  scheduleReturnSafetyNet,
   type ReturnViewportProbe,
 } from '../chat-return-landing';
 import {
@@ -5919,6 +5920,7 @@ describe('chat return landing decisions', () => {
 
   const probe = (overrides: Partial<ReturnViewportProbe>): ReturnViewportProbe => ({
     kind: 'workspace',
+    settling: true,
     userScrolled: false,
     busy: false,
     following: false,
@@ -5944,6 +5946,14 @@ describe('chat return landing decisions', () => {
     expect(decideReturnCorrection(probe({ following: false, divider: 'above' }))).toBe('none');
   });
 
+  it('re-lands on the divider only while the entry is settling; later growth is streaming', () => {
+    expect(
+      decideReturnCorrection(probe({ settling: false, following: true, divider: 'above' })),
+    ).toBe('none');
+    // A blank viewport is corrected for the whole window.
+    expect(decideReturnCorrection(probe({ settling: false, hasVisibleRow: false }))).toBe('bottom');
+  });
+
   it('keeps an agent-tab return following the bottom even with the divider above', () => {
     // Agent-tab returns keep today's behavior: the divider session survives
     // the switch, so a following reader must not be pulled up to it.
@@ -5967,6 +5977,65 @@ describe('chat return landing decisions', () => {
   it('leaves a viewport with visible rows alone', () => {
     expect(decideReturnCorrection(probe({}))).toBe('none');
     expect(decideReturnCorrection(probe({ following: true }))).toBe('none');
+  });
+
+  describe('safety-net schedule', () => {
+    function drive(check: (elapsed: number, settling: boolean) => 'continue' | 'stop') {
+      let now = 0;
+      const queue: { at: number; fn: () => void }[] = [];
+      const calls: { elapsed: number; settling: boolean }[] = [];
+      let ended = false;
+      scheduleReturnSafetyNet({
+        now: () => now,
+        schedule: (fn, ms) => queue.push({ at: now + ms, fn }),
+        check: (settling) => {
+          calls.push({ elapsed: now, settling });
+          return check(now, settling);
+        },
+        onEnd: () => {
+          ended = true;
+        },
+      });
+      while (queue.length > 0) {
+        queue.sort((a, b) => a.at - b.at);
+        const next = queue.shift()!;
+        now = next.at;
+        next.fn();
+      }
+      return { calls, ended };
+    }
+
+    it('re-checks after a gated history fetch ends, so a still-blank viewport is corrected', () => {
+      // The fetch gates the net for 2 s; the viewport is still blank after.
+      const corrected: number[] = [];
+      const { calls } = drive((elapsed) => {
+        const busy = elapsed < 2000;
+        const correction = decideReturnCorrection(
+          probe({ busy, hasVisibleRow: corrected.length > 0 }),
+        );
+        if (correction !== 'none') corrected.push(elapsed);
+        return 'continue';
+      });
+      expect(corrected).toHaveLength(1);
+      // Corrected on the first check after the gate lifted, within one interval.
+      expect(corrected[0]).toBeGreaterThanOrEqual(2000);
+      expect(corrected[0]).toBeLessThan(2000 + 250 + 1);
+      expect(calls.at(-1)!.elapsed).toBeLessThanOrEqual(5000);
+    });
+
+    it('checks within 1 s of the reveal and limits the divider re-landing to the settle window', () => {
+      const { calls, ended } = drive(() => 'continue');
+      expect(calls[0].elapsed).toBeLessThan(1000);
+      expect(calls.filter((c) => c.settling).every((c) => c.elapsed <= 1500)).toBe(true);
+      expect(calls.some((c) => !c.settling)).toBe(true);
+      expect(ended).toBe(true);
+    });
+
+    it('stops at the first stop signal (user scroll input or cancelled landing)', () => {
+      const { calls, ended } = drive((elapsed) => (elapsed >= 400 ? 'stop' : 'continue'));
+      expect(calls.at(-1)!.elapsed).toBeLessThan(1000);
+      expect(ended).toBe(true);
+    });
   });
 
   it('restores a cached tab position only once the transcript can hold it', () => {

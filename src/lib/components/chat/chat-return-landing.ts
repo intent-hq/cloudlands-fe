@@ -32,6 +32,8 @@ export type ReturnDividerPosition = 'none' | 'above' | 'visible' | 'below';
 
 export interface ReturnViewportProbe {
   kind: ChatReturnKind;
+  /** Still inside the entry settle window (rows hydrating after the landing). */
+  settling: boolean;
   /** The user scrolled (wheel, touch, scrollbar, keyboard) since the reveal. */
   userScrolled: boolean;
   /** A fetch, seek, search navigation or skeleton legitimately owns the viewport. */
@@ -56,7 +58,8 @@ export function decideReturnCorrection(probe: ReturnViewportProbe): ReturnCorrec
   // bottom" from placeholder heights, and once the rows hydrated following
   // pushed the divider away. Agent-tab returns keep today's behavior (the
   // divider session survives the switch; a following reader stays put).
-  if (probe.kind === 'workspace' && probe.following && probe.divider === 'above') return 'divider';
+  if (probe.kind === 'workspace' && probe.settling && probe.following && probe.divider === 'above')
+    return 'divider';
   return 'none';
 }
 
@@ -74,4 +77,40 @@ export function resolveTabReturnRestore(input: {
 }): 'restore' | 'wait' | 'landing' {
   if (input.scrollHeight - input.clientHeight >= input.restoreTop) return 'restore';
   return input.attempts < input.maxAttempts ? 'wait' : 'landing';
+}
+
+export const RETURN_SAFETY_NET_TIMING = {
+  firstCheckMs: 150,
+  intervalMs: 250,
+  /** Divider re-landing only applies while the entry settles. */
+  settleMs: 1500,
+  windowMs: 5000,
+} as const;
+
+/**
+ * Runs the safety-net checks from the reveal: first soon after it, then on a
+ * fixed cadence until the window ends or `check` returns `stop` (user scroll
+ * input, cancelled landing). Re-checking matters: a check gated by a fetch,
+ * seek or search must be retried once that work ends with the viewport still
+ * blank.
+ */
+export function scheduleReturnSafetyNet(input: {
+  now: () => number;
+  schedule: (fn: () => void, ms: number) => void;
+  check: (settling: boolean) => 'continue' | 'stop';
+  onEnd: () => void;
+  timing?: typeof RETURN_SAFETY_NET_TIMING;
+}): void {
+  const timing = input.timing ?? RETURN_SAFETY_NET_TIMING;
+  const startedAt = input.now();
+  const run = () => {
+    const elapsed = input.now() - startedAt;
+    if (input.check(elapsed <= timing.settleMs) === 'stop') {
+      input.onEnd();
+      return;
+    }
+    if (elapsed + timing.intervalMs <= timing.windowMs) input.schedule(run, timing.intervalMs);
+    else input.onEnd();
+  };
+  input.schedule(run, timing.firstCheckMs);
 }

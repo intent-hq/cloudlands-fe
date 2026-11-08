@@ -324,6 +324,7 @@
     classifyChatReturn,
     decideReturnCorrection,
     resolveTabReturnRestore,
+    scheduleReturnSafetyNet,
     type ChatReturnKind,
     type ReturnDividerPosition,
   } from './chat-return-landing';
@@ -4167,7 +4168,6 @@
     'End',
     ' ',
   ]);
-  const RETURN_SAFETY_NET_CHECKS_MS = [150, 400, 700, 1000, 1500];
   const TAB_RETURN_RESTORE_MAX_ATTEMPTS = 30;
   type ReturnLanding = {
     kind: ChatReturnKind;
@@ -4280,17 +4280,20 @@
       if (!landing) return;
       returnLandingRevealed = true;
       void tick().then(() => applyReturnLanding(landing, 0));
-      for (const delay of RETURN_SAFETY_NET_CHECKS_MS) {
-        returnLandingTimers.push(setTimeout(() => runReturnSafetyNet(landing), delay));
-      }
-      returnLandingTimers.push(
-        setTimeout(
-          () => {
-            if (pendingReturnLanding === landing) cancelReturnLanding();
-          },
-          RETURN_SAFETY_NET_CHECKS_MS[RETURN_SAFETY_NET_CHECKS_MS.length - 1] + 1,
-        ),
-      );
+      scheduleReturnSafetyNet({
+        now: () => performance.now(),
+        schedule: (fn, ms) => {
+          returnLandingTimers.push(setTimeout(fn, ms));
+        },
+        check: (settling) => {
+          if (pendingReturnLanding !== landing || returnLandingUserInput) return 'stop';
+          runReturnSafetyNet(landing, settling);
+          return 'continue';
+        },
+        onEnd: () => {
+          if (pendingReturnLanding === landing) cancelReturnLanding();
+        },
+      });
     });
   });
 
@@ -4353,7 +4356,7 @@
     return 'visible';
   }
 
-  function runReturnSafetyNet(landing: ReturnLanding) {
+  function runReturnSafetyNet(landing: ReturnLanding, settling: boolean) {
     const container = scrollContainer;
     if (!container || !isActive || isComponentDestroyed || pendingReturnLanding !== landing) return;
     const cacheRestorePending = cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore;
@@ -4374,6 +4377,7 @@
     const hasVisibleRow = viewportHasMessageRow(container);
     const correction = decideReturnCorrection({
       kind: landing.kind,
+      settling,
       userScrolled: returnLandingUserInput,
       busy,
       following: shouldFollowBottom,

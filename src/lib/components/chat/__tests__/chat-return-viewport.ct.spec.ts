@@ -136,13 +136,34 @@ for (const path of ['workspace-quick', 'workspace-rebuilt', 'workspace-dropped']
   }
 }
 
-async function parkInSpacer(viewport: Locator) {
-  // A stray clamp with no user input: the top of the transcript is the
-  // unloaded-history spacer.
-  await viewport.evaluate((node) => {
-    node.scrollTop = 0;
+async function parkInSpacer(viewport: Locator): Promise<number> {
+  // The bug's state: the viewport sits in the unloaded-history spacer and
+  // nothing reacts to it. Swallow the resulting scroll event so the
+  // scroll-driven paging does not fill the spacer and mask the safety net.
+  const parked = await viewport.evaluate(async (node) => {
+    const swallow = (event: Event) => {
+      if (event.target === node) event.stopImmediatePropagation();
+    };
+    window.addEventListener('scroll', swallow, true);
+    // Mid-spacer: away from the loaded rows and the top paging edge.
+    const firstRow = node.querySelector<HTMLElement>('[data-message-id]');
+    const firstRowTop = firstRow
+      ? node.scrollTop + firstRow.getBoundingClientRect().top - node.getBoundingClientRect().top
+      : 0;
+    node.scrollTop = Math.max(0, Math.round(firstRowTop / 2 - node.clientHeight / 2));
+    // Measured synchronously: the safety net may correct on its next check.
+    const box = node.getBoundingClientRect();
+    const blank = ![...node.querySelectorAll<HTMLElement>('[data-message-id]')].some((row) => {
+      const rect = row.getBoundingClientRect();
+      return rect.height > 0 && rect.bottom > box.top + 1 && rect.top < box.bottom - 1;
+    });
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    window.removeEventListener('scroll', swallow, true);
+    return { blank, top: node.scrollTop };
   });
-  expect(await visibleRows(viewport)).toEqual([]);
+  expect(parked.blank).toBe(true);
+  return parked.top;
 }
 
 test('safety net moves a blank revealed viewport within 1 s and records a breadcrumb', async ({
@@ -155,12 +176,13 @@ test('safety net moves a blank revealed viewport within 1 s and records a breadc
   });
   const { component, viewport } = await openChat(page, mount(ChatReturnHost));
   await waitForSpacer(viewport);
-  await returnTo(page, viewport, 'workspace-quick');
-  // The spacer is re-sized from the fresh snapshot after its quiet window.
-  await waitForSpacer(viewport);
+  // A divider landing turns follow off, so only the safety net can recover.
+  await returnTo(page, viewport, 'workspace-quick', 4);
+  const divider = component.locator('[data-new-messages-divider]');
+  await expect(divider).toBeInViewport({ timeout: 1000 });
   await parkInSpacer(viewport);
-  await expect.poll(() => visibleRows(viewport), { timeout: 1000 }).not.toEqual([]);
-  await expect(component.locator('[data-message-id="m-999"]').first()).toBeInViewport();
+  await expect(divider).toBeInViewport({ timeout: 1000 });
+  expect(await visibleRows(viewport)).not.toEqual([]);
   await expect.poll(() => breadcrumbs.length).toBeGreaterThan(0);
 });
 
@@ -169,10 +191,10 @@ test('safety net never moves the viewport after user scroll input', async ({ mou
   await waitForSpacer(viewport);
   await returnTo(page, viewport, 'workspace-quick');
   await wheelUntilScrolled(viewport, { deltaY: -200 });
-  await parkInSpacer(viewport);
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the whole safety-net window must not move.
+  const parkedTop = await parkInSpacer(viewport);
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the safety net must not move.
   await page.waitForTimeout(1600);
-  expect(await viewport.evaluate((node) => node.scrollTop)).toBeLessThan(3);
+  expect(Math.abs((await viewport.evaluate((node) => node.scrollTop)) - parkedTop)).toBeLessThan(3);
 });
 
 test('agent-tab quick return following the bottom with the divider above stays at the bottom', async ({
