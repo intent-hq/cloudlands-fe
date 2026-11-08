@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.303.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.302.0...v2.303.0) (2026-11-08)
+
+
+### 🚀 Features
+
+* **hardware-console:** open Home on knob press and step Home's list by rotation ([#4308](https://github.com/intent-hq/cloudlands-fe/issues/4308)) ([71e26d2](https://github.com/intent-hq/cloudlands-fe/commit/71e26d27a5645fd01d14b30444b4e26ca6eebeec))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.157 ([#4313](https://github.com/intent-hq/cloudlands-fe/issues/4313)) ([45d1db3](https://github.com/intent-hq/cloudlands-fe/commit/45d1db347788b2039318e39d3aef976d9c44e4ef))
+* **chat:** keep queued messages queued when force-send preempts the turn ([#4312](https://github.com/intent-hq/cloudlands-fe/issues/4312)) ([e41f138](https://github.com/intent-hq/cloudlands-fe/commit/e41f1382cc8e6e06edf775a5606aacc49d6ee09f))
+* **chat:** show the cloud machine start line in place of "Sent prompt…" ([#4306](https://github.com/intent-hq/cloudlands-fe/issues/4306)) ([4665ab2](https://github.com/intent-hq/cloudlands-fe/commit/4665ab2d3b2c9541aa2ad6340bce8409e3a413b8))
+* **chat:** show the cloud machine wake line in place of "Sent prompt…" ([#4309](https://github.com/intent-hq/cloudlands-fe/issues/4309)) ([6830ba9](https://github.com/intent-hq/cloudlands-fe/commit/6830ba9d49a8763b458d9063bc04cd8ae2186495))
+
 ## [2.302.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.301.1...v2.302.0) (2026-11-08)
 
 
