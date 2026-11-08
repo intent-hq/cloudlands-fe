@@ -904,6 +904,14 @@
   // workspace diffs/merges against the PR's merge target (PROTOCOL §5.1)
   let selectedPRTargetBranch = $state<string>('');
 
+  function usePrBranch() {
+    if (!selectedPRBranch) return;
+    branch = selectedPRBranch;
+    document.dispatchEvent(
+      new CustomEvent('initializer-branch-updated', { detail: { branch: selectedPRBranch } }),
+    );
+  }
+
   let didApplyHydratedCompactState = $state(false);
   let didApplyHydratedLastSelectedRepo = $state(false);
   let hasInitialPrefillData = $state(hasWorkspacePrefillData());
@@ -3604,6 +3612,25 @@
                   </Button>
                 {/if}
               </div>
+              {#if repoType !== 'gitlab' && selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
+                <div class="pr-branch-slot" transition:fade={{ tier: 'moderate' }}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="compact"
+                    class="max-w-full shrink rounded-full text-primary-ink"
+                    tooltip={selectedPRBranch}
+                    tooltipSide="top"
+                    tooltipClass="min-w-0 max-w-full"
+                    data-testid="initializer-use-pr-branch"
+                    onclick={usePrBranch}
+                  >
+                    <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
+                    <span class="shrink-0">{m.workspace_branchSelector_usePrBranch_label()}</span>
+                    <strong class="min-w-0 truncate font-semibold">{selectedPRBranch}</strong>
+                  </Button>
+                </div>
+              {/if}
             </div>
           </div>
         {/if}
@@ -3825,31 +3852,6 @@
             {/if}
           </div>
         {/if}
-        <!-- Use PR branch suggestion - show when a PR is selected but branch doesn't match -->
-        {#if repoType !== 'gitlab' && selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
-          <div class="mt-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-            <Button
-              variant="plain"
-              class="flex items-center gap-2 mt-2 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
-              onclick={() => {
-                branch = selectedPRBranch;
-                // Dispatch branch change event to update the UI
-                document.dispatchEvent(
-                  new CustomEvent('initializer-branch-updated', {
-                    detail: { branch: selectedPRBranch },
-                  }),
-                );
-              }}
-            >
-              <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-              <span
-                >{m.workspace_branchSelector_usePrBranch_label()}
-                <strong>{selectedPRBranch}</strong></span
-              >
-            </Button>
-          </div>
-        {/if}
-
         <div class="settings-footer mt-auto pt-6">
           <!-- Create button -->
           <div class="w-full">
@@ -4036,6 +4038,13 @@
 
   .prompt-context {
     display: contents;
+  }
+
+  .pr-branch-slot {
+    display: flex;
+    flex: 1 1 0;
+    justify-content: flex-end;
+    min-width: 9rem;
   }
 
   .prompt-footer :global(.context-picker-trigger) {
