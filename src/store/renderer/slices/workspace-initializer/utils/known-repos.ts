@@ -15,7 +15,7 @@ export const KNOWN_REPOS_RELOAD_AFTER_MS = 60_000;
  * `all`: every known repo, in the full load's recency order (form picker, palette).
  * `recent`: the saved list updated by the load, first 9 (legacy tabbed picker).
  */
-export type KnownReposMode = 'all' | 'recent';
+type KnownReposMode = 'all' | 'recent';
 
 export interface KnownReposInput {
   saved: readonly WorkspaceInitializerRecentRepo[];

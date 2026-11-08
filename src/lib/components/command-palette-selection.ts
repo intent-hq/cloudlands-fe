@@ -27,7 +27,7 @@ export function rowKey(item: any): string | null {
 }
 
 /** The row index holding `key` nearest to `near` (an item can be listed twice). */
-export function indexOfKey(items: any[], key: string, near: number): number {
+function indexOfKey(items: any[], key: string, near: number): number {
   let best = -1;
   items.forEach((item, index) => {
     if (rowKey(item) === key && (best === -1 || Math.abs(index - near) < Math.abs(best - near)))

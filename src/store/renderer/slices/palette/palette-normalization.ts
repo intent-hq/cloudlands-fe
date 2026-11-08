@@ -6,7 +6,7 @@ import type {
   PaletteState,
 } from './palette-types';
 
-export const PALETTE_MEMORY_VERSION = 1;
+const PALETTE_MEMORY_VERSION = 1;
 
 /** Stored form of `PaletteMemorySnapshot`. */
 export type StoredPaletteMemory = {

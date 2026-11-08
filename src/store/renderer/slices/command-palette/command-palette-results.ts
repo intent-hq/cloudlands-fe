@@ -57,7 +57,6 @@ export interface PaletteRepoItem {
   [extra: string]: unknown;
 }
 
-export type { PalettePick };
 
 /** Results that arrive from the server after typing. */
 export type PaletteLateSource = 'file' | 'note' | 'message';
@@ -120,7 +119,7 @@ function repoCategory(repo: PaletteRepoItem): PaletteCategory {
  * Stable identity of a palette row, used for pick memory and for keeping the
  * highlight on the same item while results change.
  */
-export function paletteItemKey(
+function paletteItemKey(
   category: PaletteCategory,
   item: any,
   workspaceId: string | undefined,
