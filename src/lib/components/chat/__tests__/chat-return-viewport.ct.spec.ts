@@ -59,12 +59,10 @@ async function returnTo(page: Page, viewport: Locator, path: ReturnPath, unread 
       (window as unknown as { chatReturn: Harness }).chatReturn.leave(p as ReturnPath, u as number),
     [path, unread] as const,
   );
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- the time away from the chat.
   await page.waitForTimeout(150);
   await page.evaluate(() => (window as unknown as { chatReturn: Harness }).chatReturn.reactivate());
   // The switch-back skeleton is up (armed by the panel's own activation).
   await expect(page.getByTestId('chat-transcript-skeleton')).toBeVisible();
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- the skeleton window before the snapshot lands.
   await page.waitForTimeout(250);
   await page.evaluate(() =>
     (window as unknown as { chatReturn: Harness }).chatReturn.deliverSnapshot(),
@@ -109,7 +107,6 @@ for (const path of PATHS) {
           )
           .toBe(true);
       }
-      // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- observes the landing staying put.
       await page.waitForTimeout(500);
       expect(await visibleRows(viewport)).not.toEqual([]);
     });
@@ -128,7 +125,6 @@ for (const path of ['workspace-quick', 'workspace-rebuilt', 'workspace-dropped']
       const divider = component.locator('[data-new-messages-divider]');
       await expect(divider).toHaveCount(1, { timeout: 1500 });
       await expect(divider).toBeInViewport({ timeout: 1500 });
-      // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- observes the landing staying put.
       await page.waitForTimeout(500);
       await expect(divider).toBeInViewport();
       expect(await visibleRows(viewport)).not.toEqual([]);
@@ -168,7 +164,6 @@ test('safety net never moves the viewport after user scroll input', async ({ mou
   await returnTo(page, viewport, 'workspace-quick');
   await wheelUntilScrolled(viewport, { deltaY: -200 });
   await parkInSpacer(viewport);
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- observes the whole safety-net window staying quiet.
   await page.waitForTimeout(1600);
   expect(await viewport.evaluate((node) => node.scrollTop)).toBeLessThan(3);
 });

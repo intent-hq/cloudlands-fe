@@ -1,3 +1,15 @@
+<script module lang="ts">
+  /**
+   * Drives one agent chat through the app's return paths:
+   * - `workspace-quick`: workspace switch and back within the tab TTL (same instance);
+   * - `workspace-rebuilt`: workspace switch, tab content expired (remount);
+   * - `workspace-dropped`: workspace surface dropped (remount over a re-hydrated tail);
+   * - `tab-quick` / `tab-rebuilt`: agent-tab switch inside the workspace (no boundary).
+   */
+  export type ReturnPath =
+    'workspace-quick' | 'workspace-rebuilt' | 'workspace-dropped' | 'tab-quick' | 'tab-rebuilt';
+</script>
+
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import ChatPanel from '../ChatPanel.svelte';
@@ -28,16 +40,6 @@
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
-
-  /**
-   * Drives one agent chat through the app's return paths:
-   * - `workspace-quick`: workspace switch and back within the tab TTL (same instance);
-   * - `workspace-rebuilt`: workspace switch, tab content expired (remount);
-   * - `workspace-dropped`: workspace surface dropped (remount over a re-hydrated tail);
-   * - `tab-quick` / `tab-rebuilt`: agent-tab switch inside the workspace (no boundary).
-   */
-  export type ReturnPath =
-    'workspace-quick' | 'workspace-rebuilt' | 'workspace-dropped' | 'tab-quick' | 'tab-rebuilt';
 
   const agentId = 'primary';
   const total = 1000;
