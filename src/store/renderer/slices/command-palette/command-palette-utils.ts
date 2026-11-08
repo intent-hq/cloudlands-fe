@@ -30,8 +30,8 @@ export interface WorkspaceObject {
 export type MRUEntry = PaletteMruEntry;
 
 /** All palette filter targets: workspace object types plus the palette-only
- * `workspace` and `message` (chat transcript) sections. */
-export type PaletteFilter = WorkspaceObjectType | 'workspace' | 'message';
+ * `workspace`, `message` (chat transcript) and `repo` (known repos) sections. */
+export type PaletteFilter = WorkspaceObjectType | 'workspace' | 'message' | 'repo';
 
 // ── Filter prefix mapping ──────────────────────────────────────────────────
 
@@ -44,6 +44,7 @@ export const FILTER_PREFIXES: Record<string, PaletteFilter> = {
   '*': 'workspace',
   '^': 'browser',
   '?': 'message',
+  '+': 'repo',
 };
 
 // ── Pure functions ─────────────────────────────────────────────────────────
@@ -145,6 +146,100 @@ export function scoreItemFields(
     total += tokenScore;
   }
   return total;
+}
+
+// ── Match tiers (blended ranking) ─────────────────────────────────────────
+
+/**
+ * Match strength of a query against an item, compared as a tier (never summed
+ * with other signals). A secondary-field match ranks one tier below the same
+ * match on a name; a loose match on a secondary field ranks lowest.
+ */
+export const MATCH_TIER = {
+  none: 0,
+  secondaryLoose: 0.5,
+  loose: 1,
+  substring: 2,
+  wordStart: 3,
+  startsWith: 4,
+} as const;
+
+const WORD_BOUNDARY = new Set([' ', '/', '-', '_', '.', ':', '~', '@', '#']);
+
+/** Normalize a typed query for exact and pick-memory comparison. */
+export function normalizeQuery(query: string): string {
+  return (query || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isSubsequence(haystack: string, needle: string): boolean {
+  let i = 0;
+  for (const ch of needle) {
+    const idx = haystack.indexOf(ch, i);
+    if (idx === -1) return false;
+    i = idx + 1;
+  }
+  return true;
+}
+
+/** Tier of one lowercase needle against one field (name tiers). */
+function fieldTier(fieldRaw: string | undefined, needle: string): number {
+  if (!fieldRaw) return MATCH_TIER.none;
+  const field = fieldRaw.toLowerCase();
+  if (field.startsWith(needle)) return MATCH_TIER.startsWith;
+  let idx = field.indexOf(needle);
+  if (idx !== -1) {
+    for (; idx !== -1; idx = field.indexOf(needle, idx + 1)) {
+      if (WORD_BOUNDARY.has(field[idx - 1])) return MATCH_TIER.wordStart;
+    }
+    return MATCH_TIER.substring;
+  }
+  return isSubsequence(field, needle) ? MATCH_TIER.loose : MATCH_TIER.none;
+}
+
+function secondary(tier: number): number {
+  if (tier === MATCH_TIER.none) return MATCH_TIER.none;
+  return tier === MATCH_TIER.loose ? MATCH_TIER.secondaryLoose : tier - 1;
+}
+
+export interface MatchFields {
+  /** Primary names: the label plus aliases (e.g. repo name, folder name). */
+  names: string[];
+  /** Secondary fields: description, path, searchText. */
+  secondary: Array<string | undefined>;
+}
+
+function needleTier(fields: MatchFields, needle: string): number {
+  let best: number = MATCH_TIER.none;
+  for (const name of fields.names) {
+    best = Math.max(best, fieldTier(name, needle));
+    if (best === MATCH_TIER.startsWith) return best;
+  }
+  for (const field of fields.secondary) {
+    best = Math.max(best, secondary(fieldTier(field, needle)));
+  }
+  return best;
+}
+
+/**
+ * Match tier of a normalized query against an item. For a multi-word query
+ * the tier is the weakest word's tier, unless the whole phrase matches better
+ * (e.g. "new work" starts "New Workspace"). Returns 0 when any word misses.
+ */
+export function matchTier(fields: MatchFields, normalizedQuery: string): number {
+  if (!normalizedQuery) return MATCH_TIER.none;
+  const words = [...new Set(normalizedQuery.split(' '))];
+  if (words.length === 1) return needleTier(fields, normalizedQuery);
+  let weakest: number = MATCH_TIER.startsWith;
+  for (const word of words) {
+    weakest = Math.min(weakest, needleTier(fields, word));
+    if (weakest === MATCH_TIER.none) return MATCH_TIER.none;
+  }
+  return Math.max(weakest, needleTier(fields, normalizedQuery));
+}
+
+/** True when any primary name equals the normalized query. */
+export function isExactNameMatch(names: string[], normalizedQuery: string): boolean {
+  return names.some((name) => (name || '').toLowerCase() === normalizedQuery);
 }
 
 /**

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { computeResults, type ComputeResultsInput } from './command-palette-results';
+import {
+  computeResults,
+  MAX_BLENDED_ROWS,
+  MAX_BLENDED_SERVER_ROWS,
+  type ComputeResultsInput,
+  type PaletteRepoItem,
+} from './command-palette-results';
 import type { WorkspaceObject } from './command-palette-utils';
 
 const icon = { iconName: 'test' };
@@ -90,36 +96,35 @@ describe('computeResults', () => {
     expect(wsItem).toBeDefined();
   });
 
-  it('emits labeled per-class groups in order while searching, omitting empty ones', () => {
+  it('blends rows without group headers while searching; every row has a category and key', () => {
     const agents = [makeAgent('a1', 'Match Agent')];
     const notes: WorkspaceObject[] = [{ id: 'n1', type: 'note', label: 'Match Note', icon }];
-    const files = [{ id: 'f1', type: 'file', label: 'match.ts', icon }];
+    const files = [{ id: 'f1', path: 'src/match.ts', label: 'match.ts', icon }];
     const workspaceItems = [{ id: 'ws-2', label: 'Match Space', icon, _workspace: true as const }];
     const results = computeResults(
       makeInput({ agents, notes, files, workspaceItems, query: 'match' }),
     );
-    const groupLabels = results.filter((r: any) => r._groupLabel).map((r: any) => r._groupLabel);
-    expect(groupLabels).toEqual(['Agents', 'Context', 'Files', 'Other workspaces']);
-    // Each item lands after its own group label.
-    const agentIdx = results.findIndex((r: any) => r.type === 'agent');
-    const noteIdx = results.findIndex((r: any) => r.type === 'note');
-    const agentsLabelIdx = results.findIndex((r: any) => r._groupLabel === 'Agents');
-    const notesLabelIdx = results.findIndex((r: any) => r._groupLabel === 'Context');
-    expect(agentIdx).toBe(agentsLabelIdx + 1);
-    expect(noteIdx).toBe(notesLabelIdx + 1);
+    expect(results.some((r: any) => r._groupLabel)).toBe(false);
+    expect(results.map((r: any) => [r._category, r._key])).toEqual(
+      expect.arrayContaining([
+        ['agent', 'agent:a1'],
+        ['note', 'note:ws-1:n1'],
+        ['file', 'file:src/match.ts'],
+        ['workspace', 'workspace:ws-2'],
+      ]),
+    );
+    expect(results.map((r: any) => r._idx)).toEqual(results.map((_, i) => i));
   });
 
-  it('labels matching commands as their own group while searching', () => {
+  it('labels a matching command row with the command category', () => {
     const results = computeResults(makeInput({ query: 'settings' }));
-    const commandsLabelIdx = results.findIndex((r: any) => r._groupLabel === 'Commands');
-    expect(commandsLabelIdx).toBeGreaterThanOrEqual(0);
-    expect(results[commandsLabelIdx + 1].id).toBe('settings');
+    expect(results[0]).toMatchObject({ id: 'settings', _category: 'command' });
   });
 
-  it('caps each group at 5 items while searching without a filter', () => {
-    const agents = Array.from({ length: 8 }, (_, i) => makeAgent(`a${i}`, `Agent ${i}`));
+  it('caps the blended list at about 15 rows', () => {
+    const agents = Array.from({ length: 20 }, (_, i) => makeAgent(`a${i}`, `Agent ${i}`));
     const results = computeResults(makeInput({ agents, query: 'agent' }));
-    expect(results.filter((r: any) => r.type === 'agent').length).toBe(5);
+    expect(results.length).toBe(MAX_BLENDED_ROWS);
   });
 
   it('shows only the filtered class, uncapped, when activeFilter is set with a query', () => {
@@ -130,8 +135,7 @@ describe('computeResults', () => {
     );
     expect(results.filter((r: any) => r.type === 'agent').length).toBe(8);
     expect(results.filter((r: any) => r.type === 'note').length).toBe(0);
-    const groupLabels = results.filter((r: any) => r._groupLabel).map((r: any) => r._groupLabel);
-    expect(groupLabels).toEqual(['Agents']);
+    expect(results.some((r: any) => r._groupLabel)).toBe(false);
   });
 
   it('matches workspace titles order-independently', () => {
@@ -155,7 +159,7 @@ describe('computeResults', () => {
     expect(wsItems.map((r: any) => r.id)).toEqual(['ws-new', 'ws-old']);
   });
 
-  it('preserves incoming file order while searching', () => {
+  it('orders files by match tier while searching', () => {
     const files = [
       { id: 'f1', type: 'file', label: 'zzz-report.ts', icon },
       { id: 'f2', type: 'file', label: 'report.ts', icon },
@@ -163,10 +167,10 @@ describe('computeResults', () => {
     ];
     const results = computeResults(makeInput({ files, query: 'report' }));
     const fileItems = results.filter((r: any) => r.type === 'file');
-    expect(fileItems.map((r: any) => r.id)).toEqual(['f1', 'f2', 'f3']);
+    expect(fileItems.map((r: any) => r.id)).toEqual(['f2', 'f3', 'f1']);
   });
 
-  it('drops stale file entries that no longer match the query, keeping order', () => {
+  it('drops stale file entries that no longer match the query', () => {
     // Files load asynchronously, so the incoming list can belong to a previous
     // query; non-matching entries must be dropped without reordering the rest.
     const files = [
@@ -209,13 +213,21 @@ describe('computeResults', () => {
     expect(new Set(indices).size).toBe(indices.length);
   });
 
-  it('appends transcript matches as their own group when searching', () => {
+  it('keeps transcript matches the client letter matcher would reject', () => {
+    const messages = [
+      { id: 'ag-1:msg-1', type: 'message', label: 'Agent 1', description: 'hello world', icon },
+    ];
+    const results = computeResults(makeInput({ query: 'greetings', messages }));
+    expect(results.map((r: any) => r._key)).toEqual(['message:ag-1:msg-1']);
+  });
+
+  it('lists transcript matches as message rows when searching', () => {
     const messages = [
       { id: 'ag-1:msg-1', type: 'message', label: 'Agent 1', description: 'hello world', icon },
     ];
     const results = computeResults(makeInput({ query: 'hello', messages }));
-    const groupLabel = results.find((r: any) => r._groupLabel === 'Chat messages');
-    expect(groupLabel).toBeDefined();
+    expect(results.find((r: any) => r._groupLabel)).toBeUndefined();
+    expect(results.find((r: any) => r.type === 'message')._category).toBe('message');
     const messageItems = results.filter((r: any) => r.type === 'message');
     expect(messageItems.length).toBe(1);
     expect(messageItems[0].description).toBe('hello world');
@@ -263,7 +275,7 @@ describe('indexed note result merge', () => {
     },
   );
 
-  it('deduplicates by workspace and note, keeping the first remote hit before fuzzy local matches', () => {
+  it('deduplicates by workspace and note: a matched local note shows the first remote hit, server-only hits follow', () => {
     const remote = note('ws-1', 'spec');
     const indexedNotes = [remote, { ...remote, description: 'duplicate' }, note('other', 'spec')];
     const notes = [
@@ -274,15 +286,24 @@ describe('indexed note result merge', () => {
       { ...note('ws-1', 'miss', 'XYZ'), description: '' },
     ];
     const result = rows({ query: 'needle', activeFilter: 'note', indexedNotes, notes });
-    expect(result.map((r) => r.noteId)).toEqual(['spec', 'spec', 'title', 'tag', 'fuzzy']);
+    expect(result.map((r) => r.noteId)).toEqual(['spec', 'title', 'tag', 'fuzzy', 'spec']);
     expect(result[0].description).toBe(remote.description);
-    expect(result[1].workspaceId).toBe('other');
+    expect(result[4].workspaceId).toBe('other');
   });
 
-  it('keeps the normal five-row cap and allows ten ranked hits under the notes filter', () => {
+  it('caps server-only notes at 3 blended rows plus a See all row; the notes filter shows all 10', () => {
     const indexedNotes = Array.from({ length: 10 }, (_, i) => note('other', String(i)));
-    expect(rows({ query: 'needle', indexedNotes })).toHaveLength(5);
+    const results = computeResults(makeInput({ query: 'needle', indexedNotes }));
+    expect(results.filter((r) => r.type === 'note')).toHaveLength(MAX_BLENDED_SERVER_ROWS);
+    expect(results.at(-1)).toMatchObject({ _seeAll: true, _filter: 'note' });
+    expect(results.at(-1)._count).toBeUndefined();
     expect(rows({ query: 'needle', activeFilter: 'note', indexedNotes })).toHaveLength(10);
+  });
+
+  it('shows no See all row when every server note fits', () => {
+    const indexedNotes = Array.from({ length: 3 }, (_, i) => note('other', String(i)));
+    const results = computeResults(makeInput({ query: 'needle', indexedNotes }));
+    expect(results.some((r) => r._seeAll)).toBe(false);
   });
 
   it('browses local notes for an empty query, ignoring stale remote results', () => {
@@ -292,5 +313,93 @@ describe('indexed note result merge', () => {
     expect(rows({ notes, indexedNotes, activeFilter: 'note' }).map((r) => r.id)).toEqual(
       notes.map((r) => r.id),
     );
+  });
+});
+
+describe('blended ranking', () => {
+  const NOW = 1_000_000_000_000;
+  const DAY = 86_400_000;
+  const repo = (id: string, label: string, overrides: Partial<PaletteRepoItem> = {}) => ({
+    id,
+    label,
+    kind: 'repo' as const,
+    icon,
+    ...overrides,
+  });
+  const keys = (input: Partial<ComputeResultsInput>) =>
+    computeResults(makeInput({ now: NOW, ...input })).map((r: any) => r._key);
+
+  it('lists New Workspace below matching repo rows', () => {
+    const repos = [repo('r1', 'me/new-workspace-kit', { lastUsedAt: NOW - DAY })];
+    expect(keys({ query: 'new work', repos })).toEqual(['repo:r1', 'command:new-workspace']);
+  });
+
+  it('labels plain folders as folders, keyed like repos', () => {
+    const results = computeResults(
+      makeInput({ query: 'notes', repos: [repo('f1', 'notes', { kind: 'folder' })] }),
+    );
+    expect(results[0]).toMatchObject({ _category: 'folder', _key: 'repo:f1' });
+  });
+
+  it('lists every repo, most recent first, for + alone', () => {
+    const repos = [
+      repo('old', 'a/old', { lastUsedAt: NOW - 9 * DAY }),
+      repo('new', 'a/new', { lastUsedAt: NOW - DAY }),
+      repo('never', 'a/never'),
+    ];
+    expect(keys({ query: '', activeFilter: 'repo', repos })).toEqual([
+      'repo:new',
+      'repo:old',
+      'repo:never',
+    ]);
+  });
+
+  it('keeps row 1 on the instant result when a better file arrives later', () => {
+    const agents = [makeAgent('a1', 'Report review')];
+    const files = [{ id: 'report', path: 'report', label: 'report', icon }];
+    expect(keys({ query: 'report', agents, files })).toEqual(['agent:a1', 'file:report']);
+  });
+
+  it('puts server notes and messages below every matching instant row', () => {
+    const agents = [makeAgent('a1', 'xyz loose match')];
+    const indexedNotes = [
+      { id: 'n', noteId: 'n', workspaceId: 'w', type: 'note' as const, label: 'xyz', icon },
+    ];
+    const messages = [{ id: 'm', type: 'message', label: 'xyz', icon }];
+    expect(keys({ query: 'xyz', agents, indexedNotes, messages })).toEqual([
+      'agent:a1',
+      'note:w:n',
+      'message:m',
+    ]);
+  });
+
+  it('applies a pick only while it is under 30 days old', () => {
+    const agents = [makeAgent('a1', 'Build docs'), makeAgent('a2', 'Build server')];
+    agents[0].timestamp = NOW;
+    agents[1].timestamp = NOW - DAY;
+    const pick = (age: number) => [{ query: 'Build ', itemKey: 'agent:a2', timestamp: NOW - age }];
+    expect(keys({ query: 'build', agents, pickMemory: pick(29 * DAY) })[0]).toBe('agent:a2');
+    expect(keys({ query: 'build', agents, pickMemory: pick(31 * DAY) })[0]).toBe('agent:a1');
+  });
+
+  it('boosts an item picked for a related query only within its match tier', () => {
+    const agents = [makeAgent('a1', 'Build docs'), makeAgent('a2', 'Rebuild cache')];
+    const pickMemory = [{ query: 'bu', itemKey: 'agent:a2', timestamp: NOW }];
+    expect(keys({ query: 'build', agents, pickMemory })).toEqual(['agent:a1', 'agent:a2']);
+  });
+
+  it('caps chat messages at 3 blended rows plus a See all row', () => {
+    const messages = Array.from({ length: 5 }, (_, i) => ({
+      id: `m${i}`,
+      type: 'message',
+      label: 'x',
+      icon,
+    }));
+    expect(keys({ query: 'q', messages })).toEqual([
+      'message:m0',
+      'message:m1',
+      'message:m2',
+      'see-all:message',
+    ]);
   });
 });
