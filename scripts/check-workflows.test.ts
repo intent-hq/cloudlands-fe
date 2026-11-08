@@ -11,6 +11,7 @@ import { afterEach, describe, expect, it, type TestContext } from 'vitest';
 import {
   ACTIONLINT_SHA256,
   ACTIONLINT_VERSION,
+  ActionlintTimeoutError,
   archiveName,
   binaryVersion,
   DOWNLOAD_WORST_CASE_MS,
@@ -300,6 +301,31 @@ const actionlintOrSkip = async (ctx: TestContext) => {
 // timeout) plus a minute for extraction and the actionlint run itself, so an
 // outage ends in the documented skip rather than a vitest timeout.
 const ACTIONLINT_RUN_TIMEOUT_MS = DOWNLOAD_WORST_CASE_MS + 60_000;
+
+describe('check-workflows actionlint deadline', () => {
+  it('stops an actionlint that stalls and names the hang and the rerun command', () => {
+    const dir = tempDir('check-workflows-stall-');
+    const stalled = join(dir, 'actionlint');
+    writeFileSync(stalled, '#!/bin/sh\nexec sleep 60\n');
+    chmodSync(stalled, 0o755);
+    let error: unknown;
+    try {
+      runActionlint({
+        actionlint: stalled,
+        shellcheck: 'shellcheck',
+        cwd: dir,
+        stdio: 'pipe',
+        timeoutMs: 500,
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ActionlintTimeoutError);
+    expect((error as Error).message).toMatch(
+      /actionlint\/issues\/702[\s\S]*pnpm run lint:workflows/,
+    );
+  });
+});
 
 describe('check-workflows actionlint run', () => {
   it(
