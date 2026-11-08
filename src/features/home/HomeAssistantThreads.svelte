@@ -126,9 +126,11 @@
   ) {
     if ($hidesThreadActions$) return chooseThread(thread.agentId);
     if (isCmdClickModifier({ event })) {
-      multiKeys = selection.includes(thread.agentId)
-        ? selection.filter((key) => key !== thread.agentId)
-        : [...selection, thread.agentId];
+      // The first Cmd/Ctrl-click extends the open chat, which shows as selected.
+      const base = selection.length > 0 ? selection : openKeys.filter((key) => liveIds.has(key));
+      multiKeys = base.includes(thread.agentId)
+        ? base.filter((key) => key !== thread.agentId)
+        : [...base, thread.agentId];
       anchorKey = thread.agentId;
       return;
     }
