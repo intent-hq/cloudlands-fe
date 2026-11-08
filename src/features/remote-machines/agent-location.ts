@@ -338,8 +338,9 @@ export function agentCloudWaking(
   agent: AgentSession | null | undefined,
   machine: RemoteMachine | null | undefined,
 ): boolean {
+  if (agent?.placement?.target !== 'e2b') return false;
+  const location = agentMachineLocation(agent, machine);
   return (
-    agent?.placement?.target === 'e2b' &&
-    agentMachineLocation(agent, machine)?.cloud?.state === 'resuming'
+    location?.cloud?.state === 'resuming' && agentPlacementNoticeKind(agent, location) === null
   );
 }

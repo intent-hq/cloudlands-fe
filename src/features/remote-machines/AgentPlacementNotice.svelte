@@ -28,6 +28,7 @@
   import { store as appStore } from '$store/renderer/store';
   import {
     agentCloudStartFailure,
+    agentCloudWaking,
     agentMachineLocation,
     agentPlacementNoticeKind,
     placementFailure,
@@ -147,7 +148,8 @@
   let outputOpen = $state(false);
 
   const cloudStarting = $derived(!!location?.cloud && kind === 'starting');
-  const cloudWaking = $derived(!kind && location?.cloud?.state === 'resuming');
+  // No `onPhaseLine` for it: the conversation notice has nothing to hide then.
+  const cloudWaking = $derived(agentCloudWaking($agent$, $machine$));
   $effect(() => {
     if (!phaseLine || !cloudStarting || !onPhaseLine) return;
     return untrack(onPhaseLine);

@@ -259,9 +259,22 @@ describe('cloud machine wake line in the working row', () => {
     const line = wakeLines(row)[0] as HTMLElement;
     expect(line.textContent).toContain('Waking cloud machine…');
     expect(within(line).getByRole('status').textContent).toContain('Waking cloud machine…');
-    expect(wakeLines(notice)).toHaveLength(0);
+    expect(notice.textContent?.trim()).toBe('');
     expect(startLines(container)).toHaveLength(0);
     expect(container.textContent).not.toContain('Sent prompt…');
+  });
+
+  it('shows the start line, not the wake line, while the machine still starts', async () => {
+    setSandbox('resuming');
+    const { container, row } = mount(placed({ cloudStart: { step: 'connecting' } }));
+    await waitFor(() => expect(startLines(row)).toHaveLength(1));
+    expect(wakeLines(container)).toHaveLength(0);
+  });
+
+  it('keeps the phase line when the sandbox row is unknown', async () => {
+    const { container, row } = mount(placed());
+    expect(phaseLine(row)).toBe('Sent prompt…');
+    expect(wakeLines(container)).toHaveLength(0);
   });
 
   it('brings back the phase line once the machine runs', async () => {

@@ -776,8 +776,7 @@
     agentMachineIdStore.set($agentSession$?.nodeId);
   });
   const agentMachine$ = selectRemoteMachine(agentMachineIdStore);
-  // A paused cloud machine that wakes for the turn shows its wake line there too.
-  const cloudStarting = $derived(
+  const cloudPhaseLine = $derived(
     agentCloudStarting($agentSession$) || agentCloudWaking($agentSession$, $agentMachine$),
   );
   const startLineHosts = new StartLineHosts();
@@ -7229,7 +7228,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
-                          startLine={cloudStarting ? cloudStartLine : null}
+                          startLine={cloudPhaseLine ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7261,7 +7260,7 @@
                         {quotaExceeded}
                         {quotaRetryProviders}
                         {hasPendingPermission}
-                        startLine={cloudStarting ? cloudStartLine : null}
+                        startLine={cloudPhaseLine ? cloudStartLine : null}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
                         onRetryWithProvider={gatedRetryWithProvider}
@@ -7355,7 +7354,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
-                          startLine={cloudStarting ? cloudStartLine : null}
+                          startLine={cloudPhaseLine ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7387,7 +7386,7 @@
                         {quotaExceeded}
                         {quotaRetryProviders}
                         {hasPendingPermission}
-                        startLine={cloudStarting ? cloudStartLine : null}
+                        startLine={cloudPhaseLine ? cloudStartLine : null}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
                         onRetryWithProvider={gatedRetryWithProvider}
@@ -7424,7 +7423,7 @@
                   {quotaExceeded}
                   {quotaRetryProviders}
                   {hasPendingPermission}
-                  startLine={cloudStarting ? cloudStartLine : null}
+                  startLine={cloudPhaseLine ? cloudStartLine : null}
                   onRetry={gatedRetry}
                   onRetryWithModel={gatedRetryWithModel}
                   onRetryWithProvider={gatedRetryWithProvider}
@@ -7806,7 +7805,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
-                          startLine={cloudStarting ? cloudStartLine : null}
+                          startLine={cloudPhaseLine ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7912,7 +7911,7 @@
                                   {quotaExceeded}
                                   {quotaRetryProviders}
                                   {hasPendingPermission}
-                                  startLine={cloudStarting ? cloudStartLine : null}
+                                  startLine={cloudPhaseLine ? cloudStartLine : null}
                                   onRetry={gatedRetry}
                                   onRetryWithModel={gatedRetryWithModel}
                                   onRetryWithProvider={gatedRetryWithProvider}
@@ -8005,7 +8004,7 @@
                     {quotaExceeded}
                     {quotaRetryProviders}
                     {hasPendingPermission}
-                    startLine={cloudStarting ? cloudStartLine : null}
+                    startLine={cloudPhaseLine ? cloudStartLine : null}
                     onRetry={gatedRetry}
                     onRetryWithModel={gatedRetryWithModel}
                     onRetryWithProvider={gatedRetryWithProvider}
@@ -8163,7 +8162,7 @@
                       {quotaExceeded}
                       {quotaRetryProviders}
                       {hasPendingPermission}
-                      startLine={cloudStarting ? cloudStartLine : null}
+                      startLine={cloudPhaseLine ? cloudStartLine : null}
                       onRetry={gatedRetry}
                       onRetryWithModel={gatedRetryWithModel}
                       onRetryWithProvider={gatedRetryWithProvider}
