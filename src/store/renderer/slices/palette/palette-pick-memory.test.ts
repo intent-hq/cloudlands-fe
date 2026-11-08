@@ -7,7 +7,6 @@ import {
   normalizePalettePicks,
   PALETTE_PICK_FADE_MS,
   palettePickFade,
-  palettePickItemKey,
   type PalettePick,
 } from './palette-pick-memory';
 import { getPaletteMruEntries, getPalettePicks } from './palette-normalization';
@@ -98,15 +97,11 @@ describe('palette pick memory', () => {
       ),
     ).toEqual([pick('ok', 'note:a', NOW)]);
   });
-
-  it('builds item keys from type and id', () => {
-    expect(palettePickItemKey('repo', 'local:/src/app')).toBe('repo:local:/src/app');
-  });
 });
 
 describe('palette memory reducer', () => {
   it('records a pick with its item key', () => {
-    const state = paletteReducer(initialState, recordPalettePick('Cloudl', 'repo', 'r1', NOW));
+    const state = paletteReducer(initialState, recordPalettePick('Cloudl', 'repo:r1', NOW));
     expect(getPalettePicks(state)).toEqual([pick('cloudl', 'repo:r1', NOW)]);
   });
 

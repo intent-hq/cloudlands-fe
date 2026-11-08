@@ -6,7 +6,7 @@
 export type PalettePick = {
   /** Normalized query (see `normalizePalettePickQuery`). */
   query: string;
-  /** `palettePickItemKey(type, id)` of the chosen item. */
+  /** `paletteItemKey(row)` from command-palette-results of the chosen item. */
   itemKey: string;
   timestamp: number;
 };
@@ -20,10 +20,6 @@ export type PalettePickWeights = {
 
 export const MAX_PALETTE_PICKS = 200;
 export const PALETTE_PICK_FADE_MS = 30 * 24 * 60 * 60 * 1000;
-
-export function palettePickItemKey(type: string, id: string): string {
-  return `${type}:${id}`;
-}
 
 export function normalizePalettePickQuery(query: string): string {
   return query.trim().toLowerCase().replace(/\s+/g, ' ');

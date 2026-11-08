@@ -14,11 +14,7 @@ import {
   toPalettePickState,
   normalizePaletteMruState,
 } from './palette-normalization';
-import {
-  addPalettePick,
-  normalizePalettePickQuery,
-  palettePickItemKey,
-} from './palette-pick-memory';
+import { addPalettePick, normalizePalettePickQuery } from './palette-pick-memory';
 import type {
   PaletteMemorySnapshot,
   PaletteMruEntryType,
@@ -45,9 +41,9 @@ export const recordPaletteMruItem =
   createAction<[type: PaletteMruEntryType, id: string, timestamp: number]>('palette/recordMruItem');
 export const recordPaletteFileMru =
   createAction<[path: string, timestamp: number]>('palette/recordFileMru');
-/** Remember that `type:id` was opened for `query`. Any row type is allowed (repo, file, message, ...). */
+/** Remember that the row with `itemKey` (the ranker's `paletteItemKey(row)`) was opened for `query`. */
 export const recordPalettePick =
-  createAction<[query: string, type: string, id: string, timestamp: number]>('palette/recordPick');
+  createAction<[query: string, itemKey: string, timestamp: number]>('palette/recordPick');
 /** Stored memory loaded: `merge` at startup, `replace` when the window switches daemon. */
 export const paletteMemoryLoaded =
   createAction<[memory: PaletteMemorySnapshot, mode: 'merge' | 'replace']>('palette/memoryLoaded');
@@ -95,15 +91,15 @@ paletteReducer.with(recordPaletteFileMru, (state, { payload: [path, timestamp] }
   ...state,
   fileMru: normalizePaletteFileMru({ ...state.fileMru, [path]: timestamp }),
 }));
-paletteReducer.with(recordPalettePick, (state, { payload: [query, type, id, timestamp] }) => {
+paletteReducer.with(recordPalettePick, (state, { payload: [query, itemKey, timestamp] }) => {
   const normalized = normalizePalettePickQuery(query);
-  if (!normalized || !id) return state;
+  if (!normalized || !itemKey) return state;
   return {
     ...state,
     ...toPalettePickState(
       addPalettePick(getPalettePicks(state), {
         query: normalized,
-        itemKey: palettePickItemKey(type, id),
+        itemKey,
         timestamp,
       }),
     ),

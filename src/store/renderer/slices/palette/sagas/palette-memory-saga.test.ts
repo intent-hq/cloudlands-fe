@@ -90,7 +90,7 @@ afterEach(async () => {
 describe('paletteMemorySaga', () => {
   it('keeps picks, recent items and recent files across an app restart', async () => {
     const first = startApp();
-    first.dispatch(recordPalettePick('  AG ', 'agent', 'agent-avatar', NOW - 1_000));
+    first.dispatch(recordPalettePick('  AG ', 'agent:agent-avatar', NOW - 1_000));
     first.dispatch(recordPaletteMruItem('command', 'new-workspace', NOW - 500));
     first.dispatch(recordPaletteFileMru('src/app.ts', NOW - 200));
     await first.stop();
@@ -109,12 +109,12 @@ describe('paletteMemorySaga', () => {
 
   it('keeps a separate memory for each daemon connection', async () => {
     const local = startApp(LOCAL_CONNECTION_ID);
-    local.dispatch(recordPalettePick('ag', 'agent', 'local-agent', NOW));
+    local.dispatch(recordPalettePick('ag', 'agent:local-agent', NOW));
     await local.stop();
 
     const remote = startApp(REMOTE_ID);
     expect(getPalettePicks(remote.palette())).toEqual([]);
-    remote.dispatch(recordPalettePick('ag', 'agent', 'remote-agent', NOW));
+    remote.dispatch(recordPalettePick('ag', 'agent:remote-agent', NOW));
     await remote.stop();
 
     expect(storage.saved.has(PALETTE_MEMORY_STORAGE_KEY)).toBe(true);
@@ -132,7 +132,7 @@ describe('paletteMemorySaga', () => {
       JSON.stringify({ version: 1, picks: [{ query: 'x', itemKey: 'note:n', timestamp: NOW }] }),
     );
     const app = startApp(LOCAL_CONNECTION_ID);
-    app.dispatch(recordPalettePick('ag', 'agent', 'local-agent', NOW));
+    app.dispatch(recordPalettePick('ag', 'agent:local-agent', NOW));
 
     app.setBackend(REMOTE_ID);
     app.dispatch(connectionsListReceived({} as never));
@@ -150,7 +150,7 @@ describe('paletteMemorySaga', () => {
       }),
     );
     const app = startApp();
-    app.dispatch(recordPalettePick('new', 'note', 'b', NOW));
+    app.dispatch(recordPalettePick('new', 'note:b', NOW));
     expect(getPalettePicks(app.palette()).map((pick) => pick.query)).toEqual(['new', 'old']);
   });
 
@@ -172,7 +172,7 @@ describe('paletteMemorySaga', () => {
     const app = startApp();
     expect(app.palette()).toEqual(initialState);
 
-    app.dispatch(recordPalettePick('ag', 'agent', 'a1', NOW));
+    app.dispatch(recordPalettePick('ag', 'agent:a1', NOW));
     await app.stop();
     expect(getPalettePicks(startApp().palette())).toHaveLength(1);
   });
@@ -181,7 +181,7 @@ describe('paletteMemorySaga', () => {
     storage.failReads = true;
     const app = startApp();
     expect(app.palette()).toEqual(initialState);
-    app.dispatch(recordPalettePick('ag', 'agent', 'a1', NOW));
+    app.dispatch(recordPalettePick('ag', 'agent:a1', NOW));
     storage.failReads = false;
     await app.stop();
     expect(getPalettePicks(startApp().palette())).toHaveLength(1);
