@@ -58,7 +58,7 @@ import {
   setWorkspaceBrowserClientRequested,
   workspaceBrowserClientReceived,
 } from '../browser-clients-slice';
-import { browserClientsSaga } from './browser-clients-saga';
+import { browserClientsSaga, PRESENCE_ROUTE_REREAD_MS } from './browser-clients-saga';
 
 const mountBrowserConsumer = (id: string) => browserClientsConsumerMounted(id, 'test-browser');
 
@@ -195,6 +195,81 @@ describe('browserClientsSaga', () => {
     expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 3);
     run.task.cancel();
     await run.task.toPromise();
+  });
+
+  it('re-reads an unpinned route after presence focus changes, throttled, unless a pin or tab drives it', async () => {
+    // intent-hq/intent#7855: the daemon routes an unpinned workspace with no
+    // claimed tab to the client that last focused it, with no route event.
+    vi.useFakeTimers();
+    try {
+      mocks.getBrowserClient.mockResolvedValue({
+        source: 'default',
+        resolved: { clientId: 'cli-laptop' },
+      });
+      const run = startWithReducer();
+      run.dispatch(mountBrowserConsumer('ws-1'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(run.sidebar('ws-1').hostName).toBe('cli-laptop');
+      const reads = mocks.getBrowserClient.mock.calls.length;
+
+      mocks.getBrowserClient.mockResolvedValue({
+        source: 'default',
+        resolved: { clientId: 'cli-desk' },
+        target: { clientId: 'cli-desk', via: 'focus' },
+      });
+      for (let i = 0; i < 5; i++) {
+        run.dispatch(browserRouteInputChanged('ws-1', { kind: 'presence' }));
+      }
+      await vi.advanceTimersByTimeAsync(PRESENCE_ROUTE_REREAD_MS - 1);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
+      expect(run.sidebar('ws-1').hostName).toBe(desk.name);
+
+      // Unmounted workspaces are never read.
+      run.dispatch(browserRouteInputChanged('ws-other', { kind: 'presence' }));
+      await vi.advanceTimersByTimeAsync(PRESENCE_ROUTE_REREAD_MS);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 1);
+
+      // A claimed tab's host drives the route: focus cannot move it.
+      mocks.getBrowserClient.mockResolvedValue({
+        source: 'default',
+        resolved: { clientId: 'cli-desk' },
+        target: { clientId: 'cli-desk', via: 'tabs' },
+      });
+      const tab = {
+        tabId: 't-1',
+        workspaceId: 'ws-1',
+        hostClientId: 'cli-desk',
+        ownerAgentId: 'a-1',
+        url: 'https://example.com/',
+        visibility: 'visible' as const,
+        createdAt: '2026-09-07T00:00:00.000Z',
+        updatedAt: '2026-09-07T00:00:00.000Z',
+      };
+      run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab, change: 'rehomed' }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+      run.dispatch(browserRouteInputChanged('ws-1', { kind: 'presence' }));
+      await vi.advanceTimersByTimeAsync(PRESENCE_ROUTE_REREAD_MS);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 2);
+
+      // A pin drives the route: focus cannot move it either.
+      mocks.getBrowserClient.mockResolvedValue({
+        clientId: 'cli-desk',
+        source: 'workspace',
+        resolved: { clientId: 'cli-desk' },
+      });
+      run.dispatch(browserRouteInputChanged('ws-1', { kind: 'tab', tab, change: 'rehomed' }));
+      await vi.advanceTimersByTimeAsync(0);
+      run.dispatch(browserRouteInputChanged('ws-1', { kind: 'presence' }));
+      await vi.advanceTimersByTimeAsync(PRESENCE_ROUTE_REREAD_MS);
+      expect(mocks.getBrowserClient).toHaveBeenCalledTimes(reads + 3);
+      run.task.cancel();
+      await run.task.toPromise();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('queues a re-read for a route input that arrives while a refresh is in flight', async () => {

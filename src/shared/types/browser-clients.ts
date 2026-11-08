@@ -55,7 +55,7 @@ interface ResolvedBrowserClient {
  */
 export interface BrowserClientRouteTarget {
   clientId: string;
-  via: 'desktop' | 'tabs' | (string & {});
+  via: 'desktop' | 'tabs' | 'focus' | (string & {});
 }
 
 /**

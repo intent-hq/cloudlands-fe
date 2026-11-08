@@ -1948,12 +1948,14 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
 /**
  * `presence:changed` (§5.46) carries the workspace's whole online roster —
  * a full replacement, never a diff — so it is mirrored straight into the
- * presence slice; a payload off the documented shape is dropped.
+ * presence slice; a payload off the documented shape is dropped. A focus
+ * change can also move the workspace's unpinned browser route.
  */
 function handlePresenceChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: unknown }).data;
   if (!isPresenceRoster(data)) return;
   appStore.dispatch(presenceRosterReceived(data));
+  appStore.dispatch(browserRouteInputChanged(data.workspaceId, { kind: 'presence' }));
 }
 
 /**

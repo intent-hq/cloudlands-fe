@@ -28,7 +28,7 @@ export interface ResolvedBrowserClients {
   driving: BrowserClientSummary | null;
   /** Explicit workspace pin; a resolved default is not an explicit selection. */
   pinnedClientId?: string | null;
-  /** Rule that routed an unpinned workspace to `driving` (`desktop` / `tabs`), if any. */
+  /** Rule that routed an unpinned workspace to `driving` (`desktop` / `tabs` / `focus`), if any. */
   routedVia?: string;
 }
 

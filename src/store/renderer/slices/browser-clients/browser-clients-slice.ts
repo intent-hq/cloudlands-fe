@@ -142,13 +142,16 @@ export const browserTabClosed = createAction<[wsId: string, tabId: string]>(
  * A daemon event that can move an unpinned workspace's routed browser client
  * (`workspace.getBrowserClient` `target`): a claimed tab opened or closed, a
  * tab claimed, released or re-homed (`browser:tab-updated` changing
- * `ownerAgentId` / `hostClientId`), or a desktop-control session start/end.
+ * `ownerAgentId` / `hostClientId`), a desktop-control session start/end, or
+ * a `presence:changed` roster (the daemon prefers the client that last
+ * focused an unpinned workspace with no claimed tab, intent-hq/intent#7855).
  * Navigation-only tab updates are not inputs. The browser-clients saga
  * decides whether to re-read; the reducer ignores it.
  */
 export type BrowserRouteInput =
   | { kind: 'tab'; tab: BrowserTab; change: 'opened' | 'closed' | 'rehomed' }
-  | { kind: 'desktop-session' };
+  | { kind: 'desktop-session' }
+  | { kind: 'presence' };
 export const browserRouteInputChanged = createAction<[wsId: string, input: BrowserRouteInput]>(
   'browserClients/browserRouteInputChanged',
 );
