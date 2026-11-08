@@ -3,9 +3,10 @@
  *
  * Subscribes an input decoder to the shared manager's raw channel-2 stream
  * (`onRawMessage`) and wires the rotary encoder:
- * - rotate: adjusts the current agent's effort by default; optionally cycles
- *   workspaces ordered by activity. Both modes clamp at the ends and show a
- *   small HUD naming the choice;
+ * - rotate: adjusts the current agent's effort by default, or on Home's
+ *   Workspaces list moves the selection (and its side preview) down or up;
+ *   optionally cycles workspaces ordered by activity. All modes clamp at the
+ *   ends;
  * - click (`ENC_CLK` keydown): opens Home, like the titlebar Home button.
  *
  * The HUD timer is action-driven in the device saga.
@@ -31,6 +32,8 @@ import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import { isConsoleOwner } from '../owner-gate';
 import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
 import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
+import { currentRoutePath } from '$lib/utils/workspace-route-path';
+import { getHomeEncoderTarget, stepHomeSelection } from '$features/home/home-encoder-target';
 
 const logger = createLogger('HardwareConsoleEncoder');
 
@@ -104,7 +107,22 @@ function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}
   return target;
 }
 
-/** Open Home, matching the titlebar Home button and its shortcut. */
+/**
+ * Move Home's workspace selection one row. Returns false when Home's
+ * Workspaces list is not on screen, leaving the detent to the effort path.
+ */
+function handleHomeRotate(direction: EncoderDirection): boolean {
+  const target = getHomeEncoderTarget();
+  const ids = currentRoutePath() === '/' ? target?.ids() : null;
+  if (!target || !ids) return false;
+  const next = stepHomeSelection(ids, target.selectedId(), direction);
+  if (next !== null) target.select(next);
+  return true;
+}
+
+/**
+ * Open Home, matching the titlebar Home button and its shortcut.
+ */
 function handleEncoderClick(deps: EncoderDeps = {}): void {
   const { navigate } = resolveDeps(deps);
   void navigate('/').catch((error: unknown) => {
@@ -141,11 +159,13 @@ export function installHardwareConsoleEncoder(
       if (!encoderBehaviorHydrated) return;
       if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
       else {
-        // Calibrate effort rotation to the physical Creator Micro 2 report
+        // Calibrate rotation to the physical Creator Micro 2 report
         // (intent-hq/intent#5947), shared with Codex Micro. Keep workspace
         // navigation's existing wire direction and catalog effort order intact.
-        const effortDirection = direction === 'cw' ? 'ccw' : 'cw';
-        dispatch(encoderEffortRotated(effortDirection, resolveDeps(deps).getCurrentWorkspaceId()));
+        const physical = direction === 'cw' ? 'ccw' : 'cw';
+        const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
+        if (workspaceId === null && handleHomeRotate(physical)) return;
+        dispatch(encoderEffortRotated(physical, workspaceId));
       }
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {

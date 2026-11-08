@@ -5217,6 +5217,7 @@
   "settings_hardware_knobExplainer_click_description": "点击打开主页。",
   "settings_hardware_knobExplainer_configurable_description": "可通过“{setting}”设置更改旋转行为。",
   "settings_hardware_knobExplainer_effort_description": "旋转可调整当前智能体的推理强度：顺时针提高，逆时针降低，并在支持的上限和下限处停止。",
+  "settings_hardware_knobExplainer_home_description": "在主页上，旋转可在工作区列表中移动并预览每一项。",
   "settings_hardware_knobExplainer_label": "旋钮",
   "settings_hardware_knobExplainer_rotate_description": "旋转可循环切换工作区：顺时针切换到最近活跃的工作区，逆时针切换到较早的工作区，到列表两端即停止。",
   "settings_hardware_knob_ariaLabel": "旋钮 — 查看功能",
