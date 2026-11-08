@@ -218,6 +218,12 @@ vi.mock('$store/renderer/slices/palette/palette-selectors', () => ({
       return () => paletteNoteSearch.subscribers.delete(fn);
     },
   }),
+  selectPalettePicks: () => ({
+    subscribe: (fn: (value: any[]) => void) => {
+      fn([]);
+      return () => {};
+    },
+  }),
 }));
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectWorkspaceItems: () => ({
@@ -570,10 +576,11 @@ describe('CommandPalette new actions', () => {
       if (enabled) await fireEvent.click(command);
       else await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
 
-      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
-        type: 'userPreferences/setLabsRemoteAgentsEnabled',
-        payload: [!enabled],
-      });
+      expect(
+        reduxDispatchMock.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('userPreferences/')),
+      ).toEqual([{ type: 'userPreferences/setLabsRemoteAgentsEnabled', payload: [!enabled] }]);
       expect(invokeMock).not.toHaveBeenCalled();
       expect(backendRequestMock).not.toHaveBeenCalled();
       expect(onClose).toHaveBeenCalledOnce();
@@ -602,10 +609,13 @@ describe('CommandPalette new actions', () => {
       reduxDispatchMock.mockClear();
       await fireEvent.click(command);
 
-      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
-        type: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
-        payload: [!enabled],
-      });
+      expect(
+        reduxDispatchMock.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('userPreferences/')),
+      ).toEqual([
+        { type: 'userPreferences/setLabsPlainFolderWorkspacesEnabled', payload: [!enabled] },
+      ]);
       expect(onClose).toHaveBeenCalledOnce();
     },
   );
@@ -975,6 +985,33 @@ describe('CommandPalette workspace activity recency', () => {
     expect(newer.compareDocumentPosition(old) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(old.textContent).toContain('Jan 15');
     expect(old.textContent).not.toContain('just now');
+  });
+
+  it('ranks a workspace picked from the palette recently above one only active earlier', async () => {
+    workspaceItemsState.value = [
+      { id: 'current', title: 'Current Space', createdAt: '2025-01-01T00:00:00.000Z' },
+      {
+        id: 'active',
+        title: 'Semantic Active',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        lastActivity: '2025-06-01T00:00:00.000Z',
+      },
+      {
+        id: 'picked',
+        title: 'Semantic Picked',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        lastActivity: '2025-01-02T00:00:00.000Z',
+      },
+    ];
+    paletteMruEntries.value = [
+      { type: 'workspace', id: 'picked', timestamp: Date.parse('2025-07-01T00:00:00.000Z') },
+    ];
+    render(CommandPalette, {
+      props: { isOpen: true, initialQuery: 'semantic', workspaceId: 'current', onClose: vi.fn() },
+    });
+    const picked = await screen.findByRole('button', { name: /Semantic Picked/i });
+    const active = screen.getByRole('button', { name: /Semantic Active/i });
+    expect(picked.compareDocumentPosition(active) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('shows a selected workspace and opens its tab', async () => {

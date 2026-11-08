@@ -434,7 +434,13 @@
             );
           if (match) {
             try {
-              await preselectGitHubPrefillRepo({ owner: match[1], repo: match[2] });
+              // The command palette's GitHub rows ask for the remote itself
+              // (`exactRemote`); other links may resolve to a local clone.
+              await preselectGitHubPrefillRepo(
+                { owner: match[1], repo: match[2] },
+                undefined,
+                data.exactRemote === true,
+              );
             } catch (e) {
               logger.warn('Failed to select the GitHub repo from prefill', { error: e });
             }
@@ -444,6 +450,12 @@
         // A link for a folder with no workspace (the `intent` CLI) asks for
         // no worktree: the workspace works in the folder itself.
         if (!hasCheckoutDraft && data.repoPath && data.skipIsolation === true) skipIsolation = true;
+        // A plain-folder prefill (the palette's Folder rows) runs the picker's
+        // folder check, so a non-git folder opens as a plain folder (Labs).
+        if (!hasCheckoutDraft && data.repoPath && data.plainFolder === true) {
+          folderSelectionRevision++;
+          void restoreRememberedPlainFolder(data.repoPath, true);
+        }
 
         // Apply remote environment settings
         if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
@@ -986,10 +998,12 @@
    * existing plain folder with the git switch off. The folder is checked
    * first: one that has become a git repository opens as a git repo, and a
    * missing or unreadable one, or Labs off, preselects nothing.
+   * With `prefilled`, `path` is already selected as a local repo (a palette
+   * Folder row): the same check then only upgrades it to a plain folder.
    */
   let folderSelectionRevision = 0;
 
-  async function restoreRememberedPlainFolder(path: string) {
+  async function restoreRememberedPlainFolder(path: string, prefilled = false) {
     const revision = folderSelectionRevision;
     let status: {
       exists: boolean;
@@ -1005,7 +1019,8 @@
       logger.warn('Failed to check the remembered plain folder', err);
     }
     // Anything picked while the folder was checked wins.
-    if (!mounted || revision !== folderSelectionRevision || repoPath || repoType === 'gitlab')
+    const selectionTaken = prefilled ? repoPath !== path || repoType !== 'local' : !!repoPath;
+    if (!mounted || revision !== folderSelectionRevision || selectionTaken || repoType === 'gitlab')
       return;
     if (!status?.exists || !status.isDirectory) return;
     if (status.isGitRepo || status.isSubdirectoryOfGitRepo) {
@@ -1483,6 +1498,7 @@
   async function preselectGitHubPrefillRepo(
     target: { owner: string; repo: string },
     isStale?: () => boolean,
+    exactRemote = false,
   ) {
     const candidates: GitHubPrefillRepoCandidate[] = [];
     if (repoPath && repoType !== 'remote' && repoType !== 'gitlab') {
@@ -1500,6 +1516,7 @@
     const selection = await matchGitHubPrefillRepo({
       owner: target.owner,
       repo: target.repo,
+      exactRemote,
       candidates,
       probeRemote: async (path) => {
         if (typeof window === 'undefined' || !window.electronAPI) return null;

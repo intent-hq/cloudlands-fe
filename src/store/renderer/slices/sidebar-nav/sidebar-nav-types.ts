@@ -17,6 +17,8 @@ export type SidebarNavState = {
   panelItem: 'chief' | null;
   onboardingActive: boolean;
   showCreateModal: boolean;
+  /** Bumped to make an open New Workspace dialog re-read its `workspace-prefill` entry. */
+  createModalPrefillRequest: number;
   pinnedWorkspaceIds: string[];
   multiSelectTabOrder: string[];
   multiSelectSelectedTabIdsByWorkspaceId: Record<string, string[]>;

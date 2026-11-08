@@ -8594,5 +8594,19 @@
   "nodes_prompt_title": "让 {backend} 可以使用 {node}？",
   "nodes_prompt_description": "之后 {backend} 可以在 {node} 上运行代理。你可以稍后在节点菜单中更改。",
   "nodes_prompt_confirm_label": "设为可用",
-  "nodes_prompt_cancel_label": "暂不"
+  "nodes_prompt_cancel_label": "暂不",
+  "lib_commandPalette_repos_label": "仓库",
+  "lib_commandPalette_seeAllNotes_label": "查看全部笔记",
+  "lib_commandPalette_seeAllMessages_label": "查看全部消息",
+  "lib_commandPalette_categoryCommand_label": "命令",
+  "lib_commandPalette_categoryAgent_label": "智能体",
+  "lib_commandPalette_categoryNote_label": "笔记",
+  "lib_commandPalette_categoryChange_label": "更改",
+  "lib_commandPalette_categoryTerminal_label": "终端",
+  "lib_commandPalette_categoryBrowser_label": "浏览器",
+  "lib_commandPalette_categoryFile_label": "文件",
+  "lib_commandPalette_categoryWorkspace_label": "工作区",
+  "lib_commandPalette_categoryRepo_label": "仓库",
+  "lib_commandPalette_categoryFolder_label": "文件夹",
+  "lib_commandPalette_categoryMessage_label": "消息"
 }

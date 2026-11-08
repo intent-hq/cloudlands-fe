@@ -8594,5 +8594,19 @@
   "nodes_prompt_title": "{node} für {backend} verfügbar machen?",
   "nodes_prompt_description": "{backend} kann dann Agenten auf {node} ausführen. Du kannst das später im Menü des Knotens ändern.",
   "nodes_prompt_confirm_label": "Verfügbar machen",
-  "nodes_prompt_cancel_label": "Nicht jetzt"
+  "nodes_prompt_cancel_label": "Nicht jetzt",
+  "lib_commandPalette_repos_label": "Repos",
+  "lib_commandPalette_seeAllNotes_label": "Alle Notizen anzeigen",
+  "lib_commandPalette_seeAllMessages_label": "Alle Nachrichten anzeigen",
+  "lib_commandPalette_categoryCommand_label": "Befehl",
+  "lib_commandPalette_categoryAgent_label": "Agent",
+  "lib_commandPalette_categoryNote_label": "Notiz",
+  "lib_commandPalette_categoryChange_label": "Änderung",
+  "lib_commandPalette_categoryTerminal_label": "Terminal",
+  "lib_commandPalette_categoryBrowser_label": "Browser",
+  "lib_commandPalette_categoryFile_label": "Datei",
+  "lib_commandPalette_categoryWorkspace_label": "Workspace",
+  "lib_commandPalette_categoryRepo_label": "Repo",
+  "lib_commandPalette_categoryFolder_label": "Ordner",
+  "lib_commandPalette_categoryMessage_label": "Nachricht"
 }

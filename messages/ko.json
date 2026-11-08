@@ -8594,5 +8594,19 @@
   "nodes_prompt_title": "{node}을(를) {backend}에서 사용할 수 있게 할까요?",
   "nodes_prompt_description": "그러면 {backend}이(가) {node}에서 에이전트를 실행할 수 있습니다. 나중에 노드 메뉴에서 변경할 수 있습니다.",
   "nodes_prompt_confirm_label": "사용 가능하게 하기",
-  "nodes_prompt_cancel_label": "나중에"
+  "nodes_prompt_cancel_label": "나중에",
+  "lib_commandPalette_repos_label": "저장소",
+  "lib_commandPalette_seeAllNotes_label": "모든 노트 보기",
+  "lib_commandPalette_seeAllMessages_label": "모든 메시지 보기",
+  "lib_commandPalette_categoryCommand_label": "명령",
+  "lib_commandPalette_categoryAgent_label": "에이전트",
+  "lib_commandPalette_categoryNote_label": "노트",
+  "lib_commandPalette_categoryChange_label": "변경",
+  "lib_commandPalette_categoryTerminal_label": "터미널",
+  "lib_commandPalette_categoryBrowser_label": "브라우저",
+  "lib_commandPalette_categoryFile_label": "파일",
+  "lib_commandPalette_categoryWorkspace_label": "워크스페이스",
+  "lib_commandPalette_categoryRepo_label": "저장소",
+  "lib_commandPalette_categoryFolder_label": "폴더",
+  "lib_commandPalette_categoryMessage_label": "메시지"
 }

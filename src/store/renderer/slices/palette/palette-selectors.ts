@@ -1,6 +1,6 @@
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { store } from '../../store';
-import { getPaletteMruEntries } from './palette-normalization';
+import { getPaletteMruEntries, getPalettePicks } from './palette-normalization';
 import type { PaletteNoteSearchUpdate } from './palette-types';
 
 const emptyNoteSearch: PaletteNoteSearchUpdate = {
@@ -24,6 +24,15 @@ export const selectPaletteMruEntries = store.createSelector((state) => {
 
 export const selectPaletteFileMru = store.createSelector((state) => {
   return state.palette.fileMru;
+});
+
+export const selectPalettePicks = store.createSelector((state) => {
+  return getPalettePicks(state.palette);
+});
+
+/** Everything persisted per daemon: recent items, recent files and picks. */
+export const selectPaletteMemorySnapshot = store.createSelector((state) => {
+  return state.palette;
 });
 
 export const selectPaletteNoteSearch = store.createSelector((state, consumerId: string) => {

@@ -8594,5 +8594,19 @@
   "nodes_prompt_title": "¿Poner {node} a disposición de {backend}?",
   "nodes_prompt_description": "Así {backend} podrá ejecutar agentes en {node}. Puedes cambiarlo después desde el menú del nodo.",
   "nodes_prompt_confirm_label": "Poner a disposición",
-  "nodes_prompt_cancel_label": "Ahora no"
+  "nodes_prompt_cancel_label": "Ahora no",
+  "lib_commandPalette_repos_label": "Repos",
+  "lib_commandPalette_seeAllNotes_label": "Ver todas las notas",
+  "lib_commandPalette_seeAllMessages_label": "Ver todos los mensajes",
+  "lib_commandPalette_categoryCommand_label": "Comando",
+  "lib_commandPalette_categoryAgent_label": "Agente",
+  "lib_commandPalette_categoryNote_label": "Nota",
+  "lib_commandPalette_categoryChange_label": "Cambio",
+  "lib_commandPalette_categoryTerminal_label": "Terminal",
+  "lib_commandPalette_categoryBrowser_label": "Navegador",
+  "lib_commandPalette_categoryFile_label": "Archivo",
+  "lib_commandPalette_categoryWorkspace_label": "Espacio de trabajo",
+  "lib_commandPalette_categoryRepo_label": "Repo",
+  "lib_commandPalette_categoryFolder_label": "Carpeta",
+  "lib_commandPalette_categoryMessage_label": "Mensaje"
 }

@@ -55,6 +55,8 @@ export interface WorkspaceInitializerRecentRepo {
    * the entry still probes the folder; the hint applies when the probe cannot run.
    */
   plainFolder?: true;
+  /** ISO time the repo was last used (registry or newest workspace), when known. */
+  lastUsedAt?: string;
 }
 
 export interface WorkspaceInitializerRecentRepoRefresh {

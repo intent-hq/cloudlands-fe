@@ -54,7 +54,9 @@ export function aggregateRecentRepositories(
 
   for (const repo of saved) {
     if (!isDaemonManagedRepoPath(repo.path) && !ownedCheckouts.has(repo.path)) {
-      entries.set(keyFor(repo), repo);
+      const key = keyFor(repo);
+      entries.set(key, repo);
+      noteRecency(key, repo.lastUsedAt);
     }
   }
   for (const repo of registryRepos) {
@@ -133,7 +135,11 @@ export function aggregateRecentRepositories(
   );
   return [...entries.entries()]
     .sort(([a], [b]) => (recency.get(b) ?? 0) - (recency.get(a) ?? 0))
-    .map(([, repo]) => {
+    .map(([key, entry]) => {
+      const time = recency.get(key);
+      const repo: WorkspaceInitializerRecentRepo = time
+        ? { ...entry, lastUsedAt: new Date(time).toISOString() }
+        : entry;
       if (repo.type === 'local' && plainFolderPaths.has(repo.path))
         return repo.plainFolder ? repo : { ...repo, plainFolder: true as const };
       if (!repo.plainFolder) return repo;

@@ -1,7 +1,10 @@
 import {
   selectCanCreateWorkspace,
   selectPrincipalActionContext,
+  selectWorkspaceCreationVisible,
 } from '../principal/principal-selectors';
+import { selectGitLabAuthInstanceBaseUrl } from '../gitlab-auth/gitlab-auth-selectors';
+import { KNOWN_REPOS_REFRESH_ID, mergeKnownRepos } from './utils/known-repos';
 import { store } from '../../store';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
@@ -129,3 +132,29 @@ export const selectWorkspaceInitializerGitAvailability = store.createSelector((s
   const result = state.workspaceInitializer.gitCheck;
   return context && result?.context === context ? result.available : null;
 });
+
+/**
+ * Every known repo, merged exactly like the New Workspace form picker: the
+ * saved list at once, then the full list once the shared load lands.
+ * Dismissed repos are removed; entries keep `lastUsedAt` when known.
+ */
+export const selectKnownRepos = store.createSelector((state) => {
+  const refresh = getItem(state.workspaceInitializer.recentRepoRefreshes, KNOWN_REPOS_REFRESH_ID);
+  const admission = selectPrincipalActionContext.select(state);
+  return mergeKnownRepos({
+    saved: getItems(state.workspaceInitializer.recentRepos),
+    source: refresh && admission && refresh.admission === admission ? refresh : null,
+    dismissed: state.workspaceInitializer.dismissedRecentRepoKeys,
+    mode: 'all',
+  });
+});
+
+/** Repos for the command palette: empty whenever the New Workspace command is hidden. */
+export const selectPaletteKnownRepos = store.createSelector((state) =>
+  selectWorkspaceCreationVisible.select(state) ? selectKnownRepos.select(state) : [],
+);
+
+/** Configured GitLab instance used to label and prefill GitLab entries (undefined when none). */
+export const selectKnownReposGitLabInstance = store.createSelector(
+  (state) => selectGitLabAuthInstanceBaseUrl.select(state) || undefined,
+);

@@ -143,7 +143,10 @@
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+    selectCreateModalPrefillRequest,
+    selectShowCreateModal,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
@@ -197,6 +200,7 @@
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
+  const createModalPrefillRequest$ = selectCreateModalPrefillRequest();
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
   const panelLayouts = selectPanelLayoutWorkspaces();
@@ -1086,6 +1090,7 @@
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
     open={$showCreateModal$ && $canCreateWorkspace$}
+    prefillRequest={$createModalPrefillRequest$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 

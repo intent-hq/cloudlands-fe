@@ -41,6 +41,7 @@
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerRemoteSetups,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { mergeKnownRepos } from '$store/renderer/slices/workspace-initializer/utils/known-repos';
   import { recentRepoKey } from '$store/renderer/slices/workspace-initializer/utils/recent-repo-key';
   import type {
     WorkspaceInitializerRecentRepo,
@@ -331,22 +332,13 @@
       appStore.dispatch !== mountedDispatch
     )
       return saved;
-    const merged = new Map<string, WorkspaceInitializerRecentRepo>();
-    if (rowLabel) {
-      // The admitted source already includes saved entries in usage order.
-      // Keep that order and show every known repository in the form picker.
-      for (const repo of [...sourceView.repos, ...saved]) {
-        const key = recentRepoKey(repo);
-        if (!merged.has(key)) merged.set(key, repo);
-      }
-    } else {
-      for (const repo of saved) merged.set(recentRepoKey(repo), repo);
-      for (const repo of sourceView.repos) merged.set(recentRepoKey(repo), repo);
-    }
-    const visible = [...merged.values()].filter(
-      (repo) => !$dismissedRecentRepoKeys$[recentRepoKey(repo)],
-    );
-    return rowLabel ? visible : visible.slice(0, 9);
+    // Shared with the command palette (`selectKnownRepos`): the form picker lists every known repo.
+    return mergeKnownRepos({
+      saved,
+      source: sourceView,
+      dismissed: $dismissedRecentRepoKeys$,
+      mode: rowLabel ? 'all' : 'recent',
+    });
   });
 
   async function handleDismissRecentRepo(event: MouseEvent, repo: WorkspaceInitializerRecentRepo) {

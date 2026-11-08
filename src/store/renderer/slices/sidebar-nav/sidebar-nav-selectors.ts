@@ -97,6 +97,10 @@ export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
+export const selectCreateModalPrefillRequest = store.createSelector(
+  (state) => state.sidebarNav.createModalPrefillRequest,
+);
+
 /**
  * Whether the connected daemon supports workspace labels (exact-integer
  * `workspaceLabels: 1` capability, PROTOCOL §5.1). Older daemons keep the

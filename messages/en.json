@@ -8594,5 +8594,19 @@
   "nodes_prompt_title": "Make {node} available to {backend}?",
   "nodes_prompt_description": "{backend} can then run agents on {node}. You can change this later from the node's menu.",
   "nodes_prompt_confirm_label": "Make available",
-  "nodes_prompt_cancel_label": "Not now"
+  "nodes_prompt_cancel_label": "Not now",
+  "lib_commandPalette_repos_label": "Repos",
+  "lib_commandPalette_seeAllNotes_label": "See all notes",
+  "lib_commandPalette_seeAllMessages_label": "See all messages",
+  "lib_commandPalette_categoryCommand_label": "Command",
+  "lib_commandPalette_categoryAgent_label": "Agent",
+  "lib_commandPalette_categoryNote_label": "Note",
+  "lib_commandPalette_categoryChange_label": "Change",
+  "lib_commandPalette_categoryTerminal_label": "Terminal",
+  "lib_commandPalette_categoryBrowser_label": "Browser",
+  "lib_commandPalette_categoryFile_label": "File",
+  "lib_commandPalette_categoryWorkspace_label": "Workspace",
+  "lib_commandPalette_categoryRepo_label": "Repo",
+  "lib_commandPalette_categoryFolder_label": "Folder",
+  "lib_commandPalette_categoryMessage_label": "Message"
 }
