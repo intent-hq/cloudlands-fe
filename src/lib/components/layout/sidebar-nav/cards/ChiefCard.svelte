@@ -95,8 +95,9 @@
 
   $effect(() => {
     const hasThreads = $chiefThreads$.length > 0;
-    // Removing the last thread should return Assistant to its first-start flow.
-    // Reset only on that transition so a failed creation cannot retry forever.
+    // Removing the last live thread (deleting or archiving it) returns Assistant to
+    // its first-start flow, so a blank chat is ready again. Reset only on that
+    // transition so a failed creation cannot retry forever.
     if (hadThreads && !hasThreads) hasAutoStartedRef = false;
     hadThreads = hasThreads;
   });

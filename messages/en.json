@@ -2620,7 +2620,6 @@
   "home_assistantThread_clearSelection_label": "Clear selection",
   "home_assistantThread_deleteMany_label": "Delete {count} chats",
   "home_assistantThread_hooks_label": "Active hooks: {count}",
-  "home_assistantThread_keepOne_reason": "Keep at least one chat",
   "home_assistantThread_monitors_label": "Active monitors: {count}",
   "home_assistantThread_selected_label": "{count} selected",
   "home_assistantThread_subscriptions_label": "Active subscriptions: {count}",

@@ -2620,7 +2620,6 @@
   "home_assistantThread_clearSelection_label": "清除選取",
   "home_assistantThread_deleteMany_label": "刪除 {count} 個聊天",
   "home_assistantThread_hooks_label": "作用中的掛鉤：{count}",
-  "home_assistantThread_keepOne_reason": "請至少保留一個聊天",
   "home_assistantThread_monitors_label": "作用中的監控：{count}",
   "home_assistantThread_selected_label": "已選取 {count} 個",
   "home_assistantThread_subscriptions_label": "作用中的訂閱：{count}",

@@ -157,11 +157,17 @@ test('Cmd/Ctrl-click selects several chats to archive or delete together', async
 
   await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
   await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
-  await expect(toolbar.getByRole('button', { name: 'Archive', exact: true })).toBeDisabled();
   await page.keyboard.press('Escape');
   await expect(toolbar).toHaveCount(0);
   await expect(options.nth(1)).toHaveAttribute('aria-selected', 'false');
   await options.nth(1).click();
   await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
   await expect(sidebar.getByRole('toolbar')).toHaveCount(0);
+
+  await options.nth(0).click({ modifiers: ['ControlOrMeta'] });
+  await options.nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await toolbar.getByRole('button', { name: 'Archive', exact: true }).click();
+  await expect(options).toHaveCount(0);
+  await expect(sidebar.getByRole('button', { name: '5 archived chats' })).toBeVisible();
+  expect(await wireCalls(page, 'agent.retire')).toHaveLength(4);
 });
