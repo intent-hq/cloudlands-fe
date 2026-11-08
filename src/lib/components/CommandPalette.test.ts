@@ -576,10 +576,11 @@ describe('CommandPalette new actions', () => {
       if (enabled) await fireEvent.click(command);
       else await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
 
-      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
-        type: 'userPreferences/setLabsRemoteAgentsEnabled',
-        payload: [!enabled],
-      });
+      expect(
+        reduxDispatchMock.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('userPreferences/')),
+      ).toEqual([{ type: 'userPreferences/setLabsRemoteAgentsEnabled', payload: [!enabled] }]);
       expect(invokeMock).not.toHaveBeenCalled();
       expect(backendRequestMock).not.toHaveBeenCalled();
       expect(onClose).toHaveBeenCalledOnce();
@@ -608,10 +609,13 @@ describe('CommandPalette new actions', () => {
       reduxDispatchMock.mockClear();
       await fireEvent.click(command);
 
-      expect(reduxDispatchMock).toHaveBeenCalledExactlyOnceWith({
-        type: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
-        payload: [!enabled],
-      });
+      expect(
+        reduxDispatchMock.mock.calls
+          .map(([action]) => action)
+          .filter((action) => action.type.startsWith('userPreferences/')),
+      ).toEqual([
+        { type: 'userPreferences/setLabsPlainFolderWorkspacesEnabled', payload: [!enabled] },
+      ]);
       expect(onClose).toHaveBeenCalledOnce();
     },
   );

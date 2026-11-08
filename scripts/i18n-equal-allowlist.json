@@ -195,6 +195,7 @@
   "lib_commandPalette_categoryWorkspace_label": ["de"],
   "lib_commandPalette_categoryRepo_label": ["de", "es"],
   "lib_commandPalette_categoryMessage_label": ["fr"],
+  "lib_commandPalette_categoryNote_label": ["fr"],
   "lib_errorDisplay_error_title": ["es"],
   "lib_errorDisplay_info_title": ["de", "fr"],
   "lib_gitCredentials_gcmOption_title": ["de"],
