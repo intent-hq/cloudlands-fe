@@ -22,6 +22,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import { openExternalUrl } from '$lib/utils/open-external';
   import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
+  import { outstandingWork } from '$store/renderer/slices/workspace-operations/outstanding-work';
   import type {
     GuestsWarning,
     LocalChangesRoot,
@@ -58,21 +59,24 @@
   }: Props = $props();
 
   const isArchive = $derived(mode === 'archive');
-  const hasRunningWork = $derived(agents.length > 0 || hookNames.length > 0);
-  // Archive keeps local changes on disk, so only delete warns about them.
-  const hasLocalChanges = $derived(
-    !isArchive &&
-      localChanges != null &&
-      (localChanges.hasUnpushedCommits || localChanges.hasUncommittedChanges),
+  // Same rule the saga gates on, so every reason to open has a section below.
+  const outstanding = $derived(
+    outstandingWork(mode, {
+      agentCount: agents.length,
+      hookCount: hookNames.length,
+      openPrCount: openPrs.length,
+      localChanges,
+      guests,
+    }),
   );
+  const hasRunningWork = $derived(outstanding.running);
+  const hasLocalChanges = $derived(outstanding.localChanges);
   const collaboratorCount = $derived(guests?.collaboratorCount ?? 0);
   const openInviteCount = $derived(guests?.openInviteCount ?? 0);
-  const hasGuests = $derived(collaboratorCount + openInviteCount > 0);
-  const hasActiveWork = $derived(
-    agents.length > 0 || hookNames.length > 0 || openPrs.length > 0 || hasLocalChanges,
-  );
+  const hasGuests = $derived(outstanding.guests);
+  const hasActiveWork = $derived(outstanding.work);
   // Guests are the only reason for the dialog: no work is stopped, so the copy must not claim it.
-  const guestsOnly = $derived(hasGuests && !hasActiveWork);
+  const guestsOnly = $derived(outstanding.guestsOnly);
   // Roots with local work; rows the daemon could not read carry `error` and are skipped.
   const localChangeRoots = $derived(
     hasLocalChanges

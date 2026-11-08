@@ -96,6 +96,7 @@ import {
   selectPendingRetireWorkspaceId,
 } from '../workspace-operations-selectors';
 import { buildCreateWorkspaceRequestFromProposal } from '../utils/workspace-create-proposal';
+import { outstandingWork, type WorkspaceRemovalKind } from '../outstanding-work';
 
 const logger = createLogger('WorkspaceOperationsSaga');
 export const WORKSPACE_OPERATION_UNDO_DURATION_MS = 15_000;
@@ -128,28 +129,21 @@ function workspacesForIds(workspaceIds: string[], workspaces: Workspace[]): Work
   });
 }
 
-// Single-workspace gating: guests alone (collaborators or open invites) open
-// the warning too, since archive/delete removes them from the workspace.
-function hasActiveWork({
-  agentNames,
-  hookNames,
-  openPrs,
-  localChanges,
-  guests,
-}: ActiveWorkNames): boolean {
-  return (
-    agentNames.length > 0 ||
-    hookNames.length > 0 ||
-    openPrs.length > 0 ||
-    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges) ||
-    guests.collaboratorCount + guests.openInviteCount > 0
-  );
+// Single-workspace gating shares the dialog's rule, so the warning never opens empty.
+function needsConfirmation(kind: WorkspaceRemovalKind, work: ActiveWorkNames): boolean {
+  return outstandingWork(kind, {
+    agentCount: work.agentNames.length,
+    hookCount: work.hookNames.length,
+    openPrCount: work.openPrs.length,
+    localChanges: work.localChanges,
+    guests: work.guests,
+  }).needsConfirmation;
 }
 
 // Single-workspace gating: the only path that fetches `workspace.localChanges` (delete only).
 function* getSingleWorkspaceActiveWork(
   workspaceId: string,
-  kind: 'archive' | 'delete',
+  kind: WorkspaceRemovalKind,
 ): SagaGenerator<ActiveWorkNames | null> {
   const context = yield* selectPrincipalActionContext.effect();
   if (!context) return null;
@@ -305,7 +299,7 @@ function* requestDelete(action: ReturnType<typeof requestDeleteWorkspace>): Saga
   if (!operation) return;
   const activeWork = yield* getSingleWorkspaceActiveWork(workspaceId, 'delete');
   if (!activeWork || !operation.current()) return;
-  if (hasActiveWork(activeWork)) {
+  if (needsConfirmation('delete', activeWork)) {
     yield* put(openDeleteWarning({ workspaceId, ...activeWork }));
     return;
   }
@@ -366,7 +360,7 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
   if (!workspace) return;
   const activeWork = yield* getSingleWorkspaceActiveWork(workspaceId, 'archive');
   if (!activeWork) return;
-  if (hasActiveWork(activeWork)) {
+  if (needsConfirmation('archive', activeWork)) {
     const { agentNames, hookNames, openPrs, guests } = activeWork;
     yield* put(openArchiveWarning({ workspaceId, agentNames, hookNames, openPrs, guests }));
     return;
