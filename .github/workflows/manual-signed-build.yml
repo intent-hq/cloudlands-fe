@@ -416,7 +416,7 @@ jobs:
           # electron-builder signs from this keychain (CSC_KEYCHAIN on the build
           # step) and accepts only a valid identity, so fail here, within seconds,
           # rather than minutes into packaging if the import did not produce one.
-          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH")"
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" 2>&1)" || true
           if [[ "$IDENTITIES" != *'"Developer ID Application:'* ]]; then
             echo "::error title=Signing identity missing::No valid Developer ID Application identity in the signing keychain."
             echo "$IDENTITIES"

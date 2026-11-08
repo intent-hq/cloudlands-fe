@@ -371,6 +371,12 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
         ? '${{ runner.temp }}/app-signing.keychain-db'
         : "${{ inputs.sign && format('{0}/app-signing.keychain-db', runner.temp) || '' }}",
     );
+    // Without CSC_LINK or CSC_NAME, identity discovery is the only way electron-builder
+    // finds the certificate; disabling it would silently ship an unsigned build.
+    expect(build.env?.CSC_IDENTITY_AUTO_DISCOVERY).toBe(
+      name === 'release-alpha' ? undefined : "${{ inputs.sign && 'true' || 'false' }}",
+    );
+    expect(build.env).not.toHaveProperty('CSC_NAME');
     expect(step(name, 'build-macos', 'Import code signing certificate').run).toContain(
       'KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"',
     );
@@ -383,6 +389,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
       0,
     ],
     ['rejects', '     0 valid identities found', 1],
+    ['rejects a failing lookup of', '', 1],
   ])('%s the signing keychain by its valid Developer ID identity', (_, identities, status) => {
     const dir = temp();
     writeFileSync(join(dir, 'identities'), identities.replace(/\\n/g, '\n'));
@@ -393,7 +400,7 @@ describe.each(['release-alpha', 'manual-signed-build'])('%s native Mac jobs', (n
         'printf "%s\\n" "$*" >> "$RUNNER_TEMP/security-log"',
         'case "$1" in',
         '  list-keychains) if [ "$3" = user ] && [ -z "$4" ]; then echo \'    "/login.keychain-db"\'; fi ;;',
-        '  find-identity) cat "$RUNNER_TEMP/identities" ;;',
+        '  find-identity) cat "$RUNNER_TEMP/identities"; [ -s "$RUNNER_TEMP/identities" ] ;;',
         'esac',
       ].join('\n'),
     );
