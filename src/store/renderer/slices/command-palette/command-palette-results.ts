@@ -397,12 +397,17 @@ function rankResults(input: ComputeResultsInput): any[] {
   const localNotes = rank(notes, 'note');
   const localNoteByKey = new Map(localNotes.map((c) => [c.key, c]));
   const seenServerNotes = new Set<string>();
+  /** Local note rows that carry a server hit. */
+  const mergedServerNotes = new Set<Candidate>();
   const serverNotes = indexedNotes.filter((note) => {
     const key = paletteItemKey('note', note, workspaceId);
     if (seenServerNotes.has(key)) return false;
     seenServerNotes.add(key);
     const local = localNoteByKey.get(key);
-    if (local) local.item = note;
+    if (local) {
+      local.item = note;
+      mergedServerNotes.add(local);
+    }
     return !local;
   });
 
@@ -477,10 +482,15 @@ function rankResults(input: ComputeResultsInput): any[] {
     local = fileCandidates;
   }
   local = local.slice(0, Math.max(instant.length > 0 ? 1 : 0, MAX_BLENDED_ROWS - serverRows));
+  // A server hit merged into a local note row can be cut by the row cap too.
+  const shownLocal = new Set(local);
+  const notesCut =
+    serverNotes.length > MAX_BLENDED_SERVER_ROWS ||
+    [...mergedServerNotes].some((candidate) => !shownLocal.has(candidate));
 
   const pushServerNotes = () => {
     shownNotes.forEach((note) => push(note, 'note'));
-    if (serverNotes.length > MAX_BLENDED_SERVER_ROWS) pushSeeAll('note');
+    if (notesCut) pushSeeAll('note');
   };
   const pushMessages = () => {
     shownMessages.forEach((msg) => push(msg, 'message'));

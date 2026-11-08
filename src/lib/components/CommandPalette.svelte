@@ -551,7 +551,8 @@
           _workspace: true as const,
           isRetiredWorkspace: w.retiredAt ? true : undefined, // retiredAt ⇔ Retired (§5.1)
           _time: activityTime > 0 ? formatRelativeTime(new Date(activityTime)) : '',
-          _activityTime: activityTime,
+          // Ranking recency: last activity or last palette pick, whichever is newer.
+          _activityTime: Math.max(activityTime, paletteMruTimes.get(`workspace:${w.id}`) ?? 0),
         };
       });
     return computeResults({

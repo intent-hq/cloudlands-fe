@@ -92,7 +92,8 @@ export function decideKnownReposLoad({
 
 /** The `workspace-prefill` entry that opens New Workspace with `repo` selected. */
 export type KnownRepoPrefill =
-  | { repoPath: string }
+  /** `plainFolder`: a Labs plain folder; the form checks it and opens it as one. */
+  | { repoPath: string; plainFolder?: true }
   /** `exactRemote`: select this GitHub repo itself, never a local clone of it. */
   | { githubUrl: string; exactRemote: true }
   | { repositoryCheckoutDraft: { instanceBaseUrl: string; projectPath: string } };
@@ -101,7 +102,9 @@ export function prefillForRepo(
   repo: WorkspaceInitializerRecentRepo,
   gitlabInstance?: string,
 ): KnownRepoPrefill {
-  if (repo.type === 'local') return { repoPath: repo.path };
+  if (repo.type === 'local') {
+    return repo.plainFolder ? { repoPath: repo.path, plainFolder: true } : { repoPath: repo.path };
+  }
   const identity = getRecentRepoIdentity(repo, gitlabInstance);
   if (identity?.provider === 'gitlab') {
     return {
