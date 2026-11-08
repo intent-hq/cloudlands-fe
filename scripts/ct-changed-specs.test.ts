@@ -25,6 +25,7 @@ import {
   listedCtTests,
   playwrightFilter,
 } from './ct-changed-specs.mjs';
+import { spawnWorkflowBash } from './workflow-shell-fixture';
 
 const temps: string[] = [];
 afterEach(() => {
@@ -303,8 +304,7 @@ describe('release-fast-path diff base', () => {
   function resolveBase(cwd: string, env: Record<string, string>) {
     const githubEnv = join(tempDir(), 'env');
     writeFileSync(githubEnv, '');
-    const result = spawnSync(
-      'bash',
+    const result = spawnWorkflowBash(
       ['-e', '-o', 'pipefail', '-c', stepRun(jobLines('release-fast-path'), 'Resolve diff base')],
       {
         cwd,

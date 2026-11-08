@@ -21,6 +21,7 @@ import { runInNewContext } from 'node:vm';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { spawnWorkflowBash } from './workflow-shell-fixture';
 
 const updaterRequire = createRequire(createRequire(import.meta.url).resolve('electron-updater'));
 const { load, dump } = updaterRequire('js-yaml');
@@ -95,7 +96,7 @@ function stub(dir: string, name: string, shell: string) {
   writeFileSync(join(dir, 'bin', name), `#!/bin/bash\n${shell}\n`, { mode: 0o755 });
 }
 function shell(dir: string, code: string, env: Record<string, string> = {}) {
-  return spawnSync('bash', ['-e', '-o', 'pipefail', '-c', code], {
+  return spawnWorkflowBash(['-e', '-o', 'pipefail', '-c', code], {
     cwd: dir,
     encoding: 'utf8',
     env: {
