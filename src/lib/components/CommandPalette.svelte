@@ -1119,8 +1119,9 @@
                 {#snippet trailing()}
                   <span class="flex items-center justify-end gap-2">
                     {#if showCategoryLabels && paletteCategoryLabel(item._category)}
-                      <span class="type-caption text-muted-foreground" data-palette-category
-                        >{paletteCategoryLabel(item._category)}</span
+                      <span
+                        class="min-w-16 text-right type-caption text-muted-foreground"
+                        data-palette-category>{paletteCategoryLabel(item._category)}</span
                       >
                     {/if}
                     <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">

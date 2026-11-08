@@ -208,7 +208,7 @@
   }
 
   /** Workspace owner with known repos; files wait for `releaseFiles` and the repo load for `landRepos`. */
-  function setupRepos(role: 'owner' | 'guest' = 'owner') {
+  function setupRepos(role: 'owner' | 'guest' = 'owner', holdFiles = true) {
     const heldFiles: Array<(value: unknown) => void> = [];
     const stopSearch = setup(false, {
       // Five body hits from another workspace (never local rows) for "roadmap".
@@ -250,10 +250,12 @@
       },
       // A file named exactly like the query, held until `releaseFiles`.
       'search.fileNames': (raw) =>
-        new Promise((resolve) => {
-          const { pattern } = raw as { pattern: string };
-          heldFiles.push(() => resolve({ files: pattern ? [pattern] : [] }));
-        }),
+        holdFiles
+          ? new Promise((resolve) => {
+              const { pattern } = raw as { pattern: string };
+              heldFiles.push(() => resolve({ files: pattern ? [pattern] : [] }));
+            })
+          : { files: [] },
     });
     admitLegacyPrincipal(role);
     appStore.dispatch(
@@ -331,6 +333,7 @@
       },
       blended: { props: { initialQuery: 'in' }, setup: () => setupRepos() },
       repos: { props: { initialQuery: 'cloudl' }, setup: () => setupRepos() },
+      'repo-rows': { props: { initialQuery: 'cloudl' }, setup: () => setupRepos('owner', false) },
       'repo-filter': { props: { initialQuery: '+' }, setup: () => setupRepos() },
       'repos-hidden': { props: { initialQuery: 'cloudl' }, setup: () => setupRepos('guest') },
       'provider-profiles': {
