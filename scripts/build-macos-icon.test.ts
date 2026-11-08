@@ -110,7 +110,9 @@ describe('modern macOS icon compiler', () => {
       expect(args).toEqual(
         expect.arrayContaining(['--app-icon', 'Intent', '--platform', 'macosx']),
       );
-      writeFileSync(join(outputDirectory, 'Assets.car'), 'compiled icon');
+      const compileDirectory = args[args.indexOf('--compile') + 1];
+      expect(compileDirectory).not.toBe(outputDirectory);
+      writeFileSync(join(compileDirectory, 'Assets.car'), 'compiled icon');
     };
 
     await expect(compileModernMacOSIcon({ execute, runActool, outputDirectory })).resolves.toBe(
@@ -178,6 +180,7 @@ describe('modern macOS icon compiler', () => {
     await expect(
       compileModernMacOSIcon({ outputDirectory, actoolTimeoutMs: 2_000, actoolAttempts: 3 }),
     ).resolves.toBe(join(outputDirectory, 'Assets.car'));
+    expect(readFileSync(join(outputDirectory, 'Assets.car'), 'utf8')).toBe('compiled\n');
     expect(xcrun.attempts()).toBe(2);
     // The hung attempt was stopped at its deadline rather than left to finish.
     expect(xcrun.finished(1)).toBe(false);

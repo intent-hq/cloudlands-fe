@@ -63,26 +63,34 @@ export function descendantsOf(rootPid, processes) {
   return out;
 }
 
-// Flags whose next argument is a secret (security import -P, create-keychain -p,
-// notarytool --password, codesign helpers). GitHub masks registered secrets, but
-// derived values (an electron-builder temp-keychain password) are not registered.
-const SECRET_FLAGS = new Set(['-P', '-p', '--password', '--key-password', '--keychain-password']);
-const SECRET_ASSIGNMENT = /\b([A-Za-z_]*(?:PASSWORD|PWD|SECRET|TOKEN|CERTIFICATE)[A-Za-z_]*)=\S+/gi;
+// Secrets on command lines: the value after a password flag (security import -P,
+// create-keychain -p, notarytool --password, set-key-partition-list -k) or a
+// NAME_PASSWORD=value assignment. `ps` joins argv with spaces, so a value's extent
+// cannot be recovered (it may itself contain spaces, quotes or leading blanks):
+// everything from the first secret marker to the end of the line is redacted.
+// GitHub masks only whole registered secret values, so a fragment would leak.
+const SECRET_FLAG = String.raw`-P|-p|--password|--key-password|--keychain-password`;
+const SECRET_NAME = String.raw`[A-Za-z_]*(?:PASSWORD|PWD|SECRET|TOKEN|CERTIFICATE)[A-Za-z_]*`;
+const SECRET_MARKERS = new RegExp(
+  String.raw`(?:^|\s)(?:${SECRET_FLAG})(?:\s|=|$)|\b${SECRET_NAME}=`,
+  'i',
+);
+// `-k` takes the keychain password only for set-key-partition-list (electron-builder
+// passes CSC_KEY_PASSWORD there); elsewhere it is a keychain path.
+const PARTITION_LIST_K = /\sset-key-partition-list\s.*?\s-k(?:\s|=|$)/;
 
 export function redactCommand(command) {
-  const words = command.split(' ');
-  // `security set-key-partition-list ... -k <keychain password>`: there `-k` takes the
-  // password (electron-builder passes CSC_KEY_PASSWORD), elsewhere a keychain path.
-  const passwordK = words.includes('set-key-partition-list');
-  for (let i = 0; i < words.length - 1; i++) {
-    if (SECRET_FLAGS.has(words[i]) || (passwordK && words[i] === '-k')) {
-      words[i + 1] = '<redacted>';
-    }
-  }
-  return words
-    .join(' ')
-    .replace(/(--password=)\S+/g, '$1<redacted>')
-    .replace(SECRET_ASSIGNMENT, '$1=<redacted>');
+  const cuts = [SECRET_MARKERS, PARTITION_LIST_K]
+    .map((pattern) => {
+      const match = pattern.exec(command);
+      return match ? match.index + match[0].length : -1;
+    })
+    .filter((index) => index >= 0);
+  if (!cuts.length) return command;
+  const cut = Math.min(...cuts);
+  // Keep the marker itself (and the separator after it) so the dump still says
+  // which flag was redacted.
+  return `${command.slice(0, cut).trimEnd()}${/[=]$/.test(command.slice(0, cut)) ? '' : ' '}<redacted>`;
 }
 
 /**

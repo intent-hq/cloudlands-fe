@@ -58,6 +58,7 @@ export function execBounded(
     let timedOut = false;
     let doomed = [];
     let poll;
+    let killed = false;
 
     const cancelDeadline = armDeadline(() => {
       if (exited) return;
@@ -73,6 +74,16 @@ export function execBounded(
       poll = setInterval(() => {
         const survivors = doomed.filter((pid) => (pid === child.pid ? !exited : isAlive(pid)));
         if (survivors.length && Date.now() < killAt) return;
+        if (!killed) {
+          killed = true;
+          // A second look catches anything the tree started after the first snapshot.
+          for (const proc of exited ? [] : descendantsOf(child.pid, snapshot())) {
+            if (!doomed.includes(proc.pid)) {
+              doomed.push(proc.pid);
+              survivors.push(proc.pid);
+            }
+          }
+        }
         for (const pid of survivors) sendSignal(pid, 'SIGKILL');
         if (!exited && Date.now() < killAt + abandonMs) return;
         clearInterval(poll);

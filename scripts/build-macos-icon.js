@@ -106,7 +106,6 @@ export async function compileModernMacOSIcon({
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'intent-macos-icon-'));
   const iconPackage = path.join(temporaryDirectory, `${ICON_NAME}.icon`);
   const assetsDirectory = path.join(iconPackage, 'Assets');
-  const partialInfoPath = path.join(temporaryDirectory, 'partial-info.plist');
 
   try {
     fs.mkdirSync(assetsDirectory, { recursive: true });
@@ -119,18 +118,18 @@ export async function compileModernMacOSIcon({
       `${JSON.stringify(ICON_DOCUMENT, null, 2)}\n`,
     );
 
-    const actoolArgs = [
+    const actoolArgs = (attemptDirectory) => [
       'actool',
       iconPackage,
       '--compile',
-      outputDirectory,
+      path.join(attemptDirectory, 'compiled'),
       '--output-format',
       'human-readable-text',
       '--notices',
       '--warnings',
       '--errors',
       '--output-partial-info-plist',
-      partialInfoPath,
+      path.join(attemptDirectory, 'partial-info.plist'),
       '--app-icon',
       ICON_NAME,
       '--include-all-app-icons',
@@ -147,15 +146,18 @@ export async function compileModernMacOSIcon({
     ];
     try {
       await retryTimeouts(
-        () => {
-          // A retry starts from an empty output directory, not a half-written one.
-          fs.rmSync(outputDirectory, { recursive: true, force: true });
-          fs.mkdirSync(outputDirectory, { recursive: true });
-          return runActool('xcrun', actoolArgs, {
+        async (attempt) => {
+          // Each attempt compiles into its own fresh directory, so an abandoned
+          // (unkillable) earlier attempt can never write into the result.
+          const attemptDirectory = path.join(temporaryDirectory, `attempt-${attempt}`);
+          fs.mkdirSync(path.join(attemptDirectory, 'compiled'), { recursive: true });
+          await runActool('xcrun', actoolArgs(attemptDirectory), {
             timeoutMs: actoolTimeoutMs,
             stdio: 'inherit',
             label: 'xcrun actool',
           });
+          fs.rmSync(outputDirectory, { recursive: true, force: true });
+          fs.cpSync(path.join(attemptDirectory, 'compiled'), outputDirectory, { recursive: true });
         },
         {
           attempts: actoolAttempts,

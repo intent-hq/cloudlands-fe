@@ -49,33 +49,43 @@ describe('process tree', () => {
     ]);
   });
 
-  it('redacts passwords from command lines', () => {
-    expect(
-      redactCommand(
-        '/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain -T /usr/bin/codesign -P hunter2',
-      ),
-    ).toBe(
+  it.each([
+    [
+      '/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain -T /usr/bin/codesign -P hunter2',
       '/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain -T /usr/bin/codesign -P <redacted>',
-    );
-    expect(
-      redactCommand(
-        '/usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k hunter2 /tmp/x.keychain',
-      ),
-    ).toBe(
-      '/usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k <redacted> /tmp/x.keychain',
-    );
-    expect(redactCommand('/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain')).toBe(
+    ],
+    // ps joins argv with spaces, so a value's own spaces are indistinguishable from
+    // argument boundaries: everything after the flag goes.
+    ['security import c.p12 -P my pass phrase -k kc', 'security import c.p12 -P <redacted>'],
+    ['security import c.p12 -P  leading space', 'security import c.p12 -P <redacted>'],
+    ['security import c.p12 -P "quoted pass" -A', 'security import c.p12 -P <redacted>'],
+    ["security import c.p12 -P 'single quoted' -A", 'security import c.p12 -P <redacted>'],
+    ['security unlock-keychain -p s3cret kc', 'security unlock-keychain -p <redacted>'],
+    [
+      'xcrun notarytool submit --password=abc def x.zip',
+      'xcrun notarytool submit --password=<redacted>',
+    ],
+    [
+      'xcrun notarytool submit --password abc x.zip',
+      'xcrun notarytool submit --password <redacted>',
+    ],
+    ['env CSC_KEY_PASSWORD=two words node x', 'env CSC_KEY_PASSWORD=<redacted>'],
+    [
+      '/usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k pass with space /tmp/x.keychain',
+      '/usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k <redacted>',
+    ],
+    ['security import c.p12 -P', 'security import c.p12 -P <redacted>'],
+  ])('redacts the secret in %j', (command, redacted) => {
+    expect(redactCommand(command)).toBe(redacted);
+  });
+
+  it('leaves command lines without secrets intact', () => {
+    for (const command of [
       '/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain',
-    );
-    expect(redactCommand('security unlock-keychain -p s3cret kc')).toBe(
-      'security unlock-keychain -p <redacted> kc',
-    );
-    expect(redactCommand('xcrun notarytool submit --password=abc x.zip')).toBe(
-      'xcrun notarytool submit --password=<redacted> x.zip',
-    );
-    expect(redactCommand('env CSC_KEY_PASSWORD=abc node x')).toBe(
-      'env CSC_KEY_PASSWORD=<redacted> node x',
-    );
+      'xcrun actool /tmp/Intent.icon --compile build/macos-icon --platform macosx',
+      'node electron-builder --mac --arm64 --publish never',
+    ])
+      expect(redactCommand(command)).toBe(command);
   });
 
   it('lists the real host processes with untruncated command lines', () => {
