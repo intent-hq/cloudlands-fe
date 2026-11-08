@@ -1,4 +1,6 @@
 import { expect, installPausedClock, test } from '../../../../test/ct-test';
+import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
+import { shortcutChord } from '../../../../test/shortcut-chords';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
 import { QUEUE_DRAIN_PREDICTION_TIMEOUT_MS } from '../queue-drain-prediction';
 
@@ -161,7 +163,8 @@ test('keeps queued messages in the queue when a force-sent message preempts the 
   const editor = component.getByTestId('message-input').locator('.tiptap-editor');
   await editor.click();
   await editor.pressSequentially('Stop and do this instead');
-  await editor.press('ControlOrMeta+Enter');
+  const isMac = await page.evaluate(() => /Mac/i.test(navigator.platform));
+  await editor.press(shortcutChord(SHORTCUT_DEFAULTS['chat.force-send'], isMac).press);
   await expect(component.getByText('Stop and do this instead', { exact: true })).toHaveCount(1);
 
   // The preempted turn ends before the forced message reaches the transcript.
