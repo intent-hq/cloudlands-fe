@@ -16,6 +16,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
+    selectAllChiefThreads,
     selectChiefActiveAgentId,
     selectCurrentChiefThread,
     selectChiefThreads,
@@ -45,6 +46,8 @@
   import { resolveChiefThreadOnExpansion } from './chief-thread-selection';
 
   const chiefThreads$ = selectChiefThreads();
+  // Archived chats stay openable read-only, so selection resolves against them too.
+  const allChiefThreads$ = selectAllChiefThreads();
   const currentChiefThread$ = selectCurrentChiefThread();
   const chiefActiveAgentId$ = selectChiefActiveAgentId();
   const chiefAgentsLoaded$ = selectAgentsLoaded(CHIEF_WORKSPACE_ID);
@@ -100,7 +103,7 @@
 
   const activeChiefThread = $derived(
     $chiefActiveAgentId$
-      ? $chiefThreads$.find((thread) => thread.agentId === $chiefActiveAgentId$)
+      ? $allChiefThreads$.find((thread) => thread.agentId === $chiefActiveAgentId$)
       : null,
   );
   const defaultThread = $derived(
@@ -112,12 +115,15 @@
   );
   const activeThread = $derived(
     activeChiefThread ??
-      $chiefThreads$.find((thread) => thread.agentId === selectedAgentId) ??
+      $allChiefThreads$.find((thread) => thread.agentId === selectedAgentId) ??
       defaultThread,
   );
   // ChatPanel prop/key expressions re-evaluate lazily, so they must never
   // dereference a possibly-null activeThread (it can empty while mounted).
   const activeAgentId = $derived(activeThread?.agentId ?? null);
+  const canRename = $derived(
+    !!activeThread && !activeThread.retired && !$hidesAgentLifecycleActions$,
+  );
   function ensureChiefWorkspaceRegistered() {
     if (isWorkspaceRegistered) return;
     appStore.dispatch(setWorkspaceEntity(chiefWorkspace));
@@ -143,7 +149,7 @@
       selectedAgentId = activeChiefThread.agentId;
       return;
     }
-    if (selectedAgentId && $chiefThreads$.some((thread) => thread.agentId === selectedAgentId))
+    if (selectedAgentId && $allChiefThreads$.some((thread) => thread.agentId === selectedAgentId))
       return;
     selectedAgentId = defaultThread?.agentId ?? null;
     if ($chiefActiveAgentId$ && selectedAgentId !== $chiefActiveAgentId$) {
@@ -234,7 +240,7 @@
     data-chief-header-row
   >
     <div class="flex min-w-0 flex-1 items-center gap-1.5">
-      {#if activeThread && !$hidesAgentLifecycleActions$}
+      {#if activeThread && canRename}
         <h2
           class="min-w-0 truncate type-body font-medium"
           class:flex-1={rename.agentId === activeThread.agentId}
@@ -250,7 +256,7 @@
             aria-label={m.layout_chiefCard_threadPicker_ariaLabel()}
             class="h-7! max-w-full min-w-0 justify-start gap-1.5 px-1.5! text-foreground hover:bg-muted/50"
           >
-            {#if !activeThread || $hidesAgentLifecycleActions$}
+            {#if !canRename}
               <span class="type-body min-w-0 flex-1 truncate text-left font-medium">
                 {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
               </span>
@@ -277,7 +283,7 @@
             {/each}
           </Select.Content>
         </Select.Root>
-      {:else if !activeThread || $hidesAgentLifecycleActions$}
+      {:else if !canRename}
         <h2 class="min-w-0 truncate type-body font-medium" title={activeThread?.title}>
           {activeThread?.title ?? m.layout_chiefCard_startThread_label()}
         </h2>

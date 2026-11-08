@@ -73,7 +73,17 @@ function toChiefThreadSummary(session: AgentSession): ChiefThreadSummary {
       session.isProcessing === true ||
       session.isResponding === true,
     messageCount: getChiefSessionMessageCount(session),
+    pinned: session.pinned === true,
+    retired: !!session.retiredAt,
   };
+}
+
+function getLiveChiefSessions(state: StoreState): AgentSession[] {
+  return getChiefSessions(state).filter((session) => !session.retiredAt);
+}
+
+function byRecency(a: AgentSession, b: AgentSession): number {
+  return agentActivityTimestamp(b) - agentActivityTimestamp(a);
 }
 
 // ── Direct state selectors ──
@@ -257,19 +267,30 @@ export const selectStatsOverlayOpen = store.createSelector(
 
 // ── Derived selectors ──
 
-/** Chief thread history sorted by latest activity. */
+/** Live (not archived) Chief threads: pinned first, then by latest activity. */
 export const selectChiefThreads = store.createSelector((state): ChiefThreadSummary[] =>
-  getChiefSessions(state)
-    .slice()
-    .sort((a, b) => agentActivityTimestamp(b) - agentActivityTimestamp(a))
+  getLiveChiefSessions(state)
+    .sort((a, b) => Number(b.pinned === true) - Number(a.pinned === true) || byRecency(a, b))
     .map(toChiefThreadSummary),
 );
 
+/** Archived (soft-retired, §5.5) Chief threads by latest activity. */
+export const selectRetiredChiefThreads = store.createSelector((state): ChiefThreadSummary[] =>
+  getChiefSessions(state)
+    .filter((session) => !!session.retiredAt)
+    .sort(byRecency)
+    .map(toChiefThreadSummary),
+);
+
+/** Live then archived Chief threads, for resolving a selection that may be archived. */
+export const selectAllChiefThreads = store.createSelector((state): ChiefThreadSummary[] => [
+  ...selectChiefThreads.select(state),
+  ...selectRetiredChiefThreads.select(state),
+]);
+
 /** Latest Chief thread created with the current runtime identity contract. */
 export const selectCurrentChiefThread = store.createSelector((state): ChiefThreadSummary | null => {
-  const current = getChiefSessions(state)
-    .filter(hasCurrentChiefIdentity)
-    .sort((a, b) => agentActivityTimestamp(b) - agentActivityTimestamp(a))[0];
+  const current = getLiveChiefSessions(state).filter(hasCurrentChiefIdentity).sort(byRecency)[0];
 
   return current ? toChiefThreadSummary(current) : null;
 });
@@ -277,14 +298,14 @@ export const selectCurrentChiefThread = store.createSelector((state): ChiefThrea
 /** Latest blank Chief thread created with the current prompt identity contract. */
 export const selectReusableChiefThread = store.createSelector(
   (state): ChiefThreadSummary | null => {
-    const reusable = getChiefSessions(state)
+    const reusable = getLiveChiefSessions(state)
       .filter(
         (session) =>
           getChiefSessionMessageCount(session) === 0 &&
           !session.lastMessageId &&
           hasCurrentChiefIdentity(session),
       )
-      .sort((a, b) => agentActivityTimestamp(b) - agentActivityTimestamp(a))[0];
+      .sort(byRecency)[0];
 
     return reusable ? toChiefThreadSummary(reusable) : null;
   },

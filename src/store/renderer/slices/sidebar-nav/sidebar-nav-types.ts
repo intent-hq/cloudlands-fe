@@ -7,6 +7,10 @@ export type ChiefThreadSummary = {
   title: string;
   isActive: boolean;
   messageCount: number;
+  /** Daemon-owned `pinned` (§5.5); pinned chats sort first. */
+  pinned: boolean;
+  /** Soft-retired (`retiredAt`, §5.5): shown as an archived, read-only chat. */
+  retired: boolean;
 };
 
 export type SidebarNavState = {
