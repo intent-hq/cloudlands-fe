@@ -135,6 +135,8 @@ export const workspaceInitializerRecentReposRefreshFinished = createAction<
 export const workspaceInitializerRecentReposRefreshReleased = createAction<
   [id: string, requestId: string]
 >('workspaceInitializer/recentReposRefreshReleased');
+/** Start the shared full repo load (`selectKnownRepos`) unless one is running or fresh. */
+export const ensureKnownReposLoaded = createAction('workspaceInitializer/ensureKnownReposLoaded');
 
 export const workspaceInitializerDirectoryStatusRequested = createAction<
   [id: string, requestId: string, admission: string, path: string]
