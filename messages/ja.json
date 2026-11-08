@@ -5214,7 +5214,7 @@
   "settings_hardware_joystickExplainer_hold_description": "長押しでラジアルプロンプトピッカーが開き、セクター上で離すとそのプロンプトがカーソル位置に挿入されます。",
   "settings_hardware_joystickExplainer_label": "ジョイスティック",
   "settings_hardware_joystick_ariaLabel": "ジョイスティック — 機能を表示",
-  "settings_hardware_knobExplainer_click_description": "クリックすると「すべてのワークスペース」サイドバーが開き、さらにクリックすると「最近」「リポジトリ」「ステータス」ビューが切り替わります。",
+  "settings_hardware_knobExplainer_click_description": "クリックするとホームが開きます。",
   "settings_hardware_knobExplainer_configurable_description": "回転時の動作は「{setting}」設定で変更できます。",
   "settings_hardware_knobExplainer_effort_description": "回すと現在のエージェントの推論の深さを調整します。時計回りで上がり、反時計回りで下がり、対応する上限・下限で止まります。",
   "settings_hardware_knobExplainer_label": "回転ノブ",

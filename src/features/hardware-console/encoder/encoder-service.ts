@@ -6,8 +6,7 @@
  * - rotate: adjusts the current agent's effort by default; optionally cycles
  *   workspaces ordered by activity. Both modes clamp at the ends and show a
  *   small HUD naming the choice;
- * - click (`ENC_CLK` keydown): opens Home; clicks while its workspace list
- *   is open cycle grouping by activity, repository, and status.
+ * - click (`ENC_CLK` keydown): opens Home, like the titlebar Home button.
  *
  * The HUD timer is action-driven in the device saga.
  *
@@ -17,7 +16,6 @@ import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { openAndShowWorkspace } from '$lib/utils/show-workspace';
-import { currentRoutePath } from '$lib/utils/workspace-route-path';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
@@ -31,8 +29,6 @@ import { HardwareInputDecoder } from '../input/input-decoder';
 import type { EncoderDirection } from '../input/types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import { isConsoleOwner } from '../owner-gate';
-import { closePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { updateHomeWorkspaceView } from '$features/home/home-workspaces-slice';
 import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
 import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 
@@ -108,27 +104,9 @@ function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}
   return target;
 }
 
-/**
- * Open the homepage workspace list, or cycle its grouping when already open.
- */
+/** Open Home, matching the titlebar Home button and its shortcut. */
 function handleEncoderClick(deps: EncoderDeps = {}): void {
-  const { dispatch, navigate } = resolveDeps(deps);
-  const { sidebarNav, homeWorkspaces } = appStore.state;
-  const isHome = currentRoutePath() === '/';
-  if (isHome && sidebarNav.panelItem === null && homeWorkspaces.tab === 'workspaces') {
-    dispatch(
-      updateHomeWorkspaceView({
-        groupBy:
-          homeWorkspaces.groupBy === 'none'
-            ? 'repository'
-            : homeWorkspaces.groupBy === 'repository'
-              ? 'status'
-              : 'none',
-      }),
-    );
-  }
-  dispatch(closePanel());
-  dispatch(updateHomeWorkspaceView({ tab: 'workspaces' }));
+  const { navigate } = resolveDeps(deps);
   void navigate('/').catch((error: unknown) => {
     logger.warn('Failed to open Home from encoder', { error });
   });

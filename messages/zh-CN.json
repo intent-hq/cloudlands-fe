@@ -5214,7 +5214,7 @@
   "settings_hardware_joystickExplainer_hold_description": "按住可打开径向提示词选择器；在某个扇区上松开即可将该提示词插入光标处。",
   "settings_hardware_joystickExplainer_label": "摇杆",
   "settings_hardware_joystick_ariaLabel": "摇杆 — 查看功能",
-  "settings_hardware_knobExplainer_click_description": "点击打开“所有工作区”侧边栏；继续点击可在“最近”、“仓库”和“状态”视图间切换。",
+  "settings_hardware_knobExplainer_click_description": "点击打开主页。",
   "settings_hardware_knobExplainer_configurable_description": "可通过“{setting}”设置更改旋转行为。",
   "settings_hardware_knobExplainer_effort_description": "旋转可调整当前智能体的推理强度：顺时针提高，逆时针降低，并在支持的上限和下限处停止。",
   "settings_hardware_knobExplainer_label": "旋钮",

@@ -101,12 +101,12 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
     expect(device.showWorkspace).toHaveBeenCalledTimes(1);
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
     expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-1');
+    const homeView = state.homeWorkspaces;
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(device.navigate).toHaveBeenLastCalledWith('/');
-    expect(state.sidebarNav.panelItem).toBeNull();
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 0 } });
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(state.homeWorkspaces.tab).toBe('workspaces');
+    expect(device.navigate.mock.calls).toEqual([['/'], ['/']]);
+    expect(state.homeWorkspaces).toBe(homeView);
     device.navigate.mockClear();
     device.showWorkspace.mockClear();
     await flush();

@@ -5214,7 +5214,7 @@
   "settings_hardware_joystickExplainer_hold_description": "Mantén pulsado para abrir el selector radial de prompts; suelta sobre un sector para insertar ese prompt en el cursor.",
   "settings_hardware_joystickExplainer_label": "Joystick",
   "settings_hardware_joystick_ariaLabel": "Joystick — ver qué hace",
-  "settings_hardware_knobExplainer_click_description": "Haz clic para abrir la barra lateral de todos los espacios de trabajo; más clics alternan las vistas Recientes, Repo y Estado.",
+  "settings_hardware_knobExplainer_click_description": "Haz clic para abrir Inicio.",
   "settings_hardware_knobExplainer_configurable_description": "Cambia el comportamiento de giro con el ajuste {setting}.",
   "settings_hardware_knobExplainer_effort_description": "Gira para ajustar el esfuerzo del agente actual: en sentido horario aumenta y en sentido antihorario disminuye, sin superar los límites admitidos.",
   "settings_hardware_knobExplainer_label": "Rueda giratoria",
