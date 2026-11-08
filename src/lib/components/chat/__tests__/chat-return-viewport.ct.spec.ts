@@ -156,6 +156,8 @@ test('safety net moves a blank revealed viewport within 1 s and records a breadc
   const { component, viewport } = await openChat(page, mount);
   await waitForSpacer(viewport);
   await returnTo(page, viewport, 'workspace-quick');
+  // The spacer is re-sized from the fresh snapshot after its quiet window.
+  await waitForSpacer(viewport);
   await parkInSpacer(viewport);
   await expect.poll(() => visibleRows(viewport), { timeout: 1000 }).not.toEqual([]);
   await expect(component.locator('[data-message-id="m-999"]').first()).toBeInViewport();
