@@ -43,7 +43,7 @@ export function homeListOrder(input: {
 
 /**
  * One detent: clockwise selects the next row down, counter-clockwise the one
- * above. With no visible selection it enters at the top (clockwise) or bottom.
+ * above. With no visible selection either direction enters at the top.
  * Returns null at either end; the list does not wrap.
  */
 export function stepHomeSelection(
@@ -53,6 +53,6 @@ export function stepHomeSelection(
 ): string | null {
   if (ids.length === 0) return null;
   const index = selectedId === null ? -1 : ids.indexOf(selectedId);
-  if (index === -1) return direction === 'cw' ? ids[0] : ids[ids.length - 1];
+  if (index === -1) return ids[0];
   return ids[index + (direction === 'cw' ? 1 : -1)] ?? null;
 }

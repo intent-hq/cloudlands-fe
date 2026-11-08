@@ -29,9 +29,9 @@ describe('homeListOrder', () => {
 describe('stepHomeSelection', () => {
   const ids = ['a', 'b', 'c'];
 
-  it('enters at the top turning right and at the bottom turning left', () => {
+  it('enters at the top in either direction', () => {
     expect(stepHomeSelection(ids, null, 'cw')).toBe('a');
-    expect(stepHomeSelection(ids, null, 'ccw')).toBe('c');
+    expect(stepHomeSelection(ids, null, 'ccw')).toBe('a');
     expect(stepHomeSelection(ids, 'gone', 'cw')).toBe('a');
   });
 
