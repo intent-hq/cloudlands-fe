@@ -345,6 +345,7 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import AgentPlacementNotice from '$features/remote-machines/AgentPlacementNotice.svelte';
+  import { agentCloudStartFailure } from '$features/remote-machines/agent-location';
   import {
     getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
@@ -744,6 +745,11 @@
     return null;
   });
 
+  // An agent on E2B that couldn't start shows one failure card (the placement
+  // notice) in place of the generic one; the error still blocks the queue.
+  const cloudStartFailed = $derived(!$chatError$ && !!agentCloudStartFailure($agentSession$));
+  const turnFailureError = $derived(cloudStartFailed ? null : effectiveError);
+
   const latestAssistantForTelemetry = $derived.by(() => {
     for (let index = $agentMessages$.length - 1; index >= 0; index -= 1) {
       const message = $agentMessages$[index];
@@ -901,6 +907,7 @@
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
+  const retryAgentUi$ = selectRetryAgentUi(workspaceIdStore, instanceId);
   const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
   const inlineVisualDrafts$ = selectInlineVisualDrafts(instanceId);
   const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
@@ -2830,7 +2837,7 @@
   const recoveryAtEnd = $derived(
     failureTranscript.history.length > 0 &&
       Boolean(
-        effectiveError ||
+        turnFailureError ||
         $chatModelUnavailable$ ||
         failureTranscript.current.state === 'attempting',
       ),
@@ -6871,7 +6878,7 @@
                         backendSessionId={auggieSessionId}
                       />
                     </div>
-                    {#if !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
+                    {#if !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (turnFailureError || $chatModelUnavailable$)))}
                       <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
@@ -6880,7 +6887,7 @@
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                          error={effectiveError}
+                          error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
@@ -6911,7 +6918,7 @@
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                        error={effectiveError}
+                        error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
@@ -7004,7 +7011,7 @@
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                          error={effectiveError}
+                          error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
@@ -7035,7 +7042,7 @@
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                        error={effectiveError}
+                        error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
@@ -7071,7 +7078,7 @@
                   lastChunkTime={$chatLastChunkTime$}
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                  error={effectiveError}
+                  error={turnFailureError}
                   recoveryState={failureTranscript.current.state}
                   authGuidance={chatAuthGuidance}
                   sessionCorrupted={effectiveSessionCorrupted}
@@ -7087,7 +7094,7 @@
                   onStalledRetry={gatedStalledRetry}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
-                  class={effectiveError ? 'mt-0' : undefined}
+                  class={turnFailureError ? 'mt-0' : undefined}
                 />
               </div>
             </div>
@@ -7255,7 +7262,7 @@
                     shouldShowPendingAssistantStatus({
                       isStreaming: $agentSessionIsStreaming$,
                       isProcessing: $agentIsResponding$,
-                      error: effectiveError,
+                      error: turnFailureError,
                       modelUnavailable: $chatModelUnavailable$,
                     })}
                   {@const hasTurnBody = hasVisibleTurnBody({
@@ -7269,7 +7276,7 @@
                         turnIndex === turns.length - 1 &&
                         turn.assistantMessages.length > 0 &&
                         Boolean(
-                          $agentSessionIsStreaming$ || effectiveError || $chatModelUnavailable$,
+                          $agentSessionIsStreaming$ || turnFailureError || $chatModelUnavailable$,
                         )),
                     suppressCoordinationStoppedIndicator: turn.userMessage
                       ? isAutomatedMessage(turn.userMessage)
@@ -7452,7 +7459,7 @@
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                          error={effectiveError}
+                          error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
@@ -7548,7 +7555,7 @@
                               {/if}
                             </div>
                             <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                            {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
+                            {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (turnFailureError || $chatModelUnavailable$)))}
                               <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
                                 <StreamingStatus
                                   isStreaming={$agentSessionIsStreaming$}
@@ -7557,7 +7564,7 @@
                                   lastChunkTime={$chatLastChunkTime$}
                                   receivedFirstChunk={$chatReceivedFirstChunk$}
                                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                                  error={effectiveError}
+                                  error={turnFailureError}
                                   recoveryState={failureTranscript.current.state}
                                   authGuidance={chatAuthGuidance}
                                   sessionCorrupted={effectiveSessionCorrupted}
@@ -7649,7 +7656,7 @@
                     lastChunkTime={$chatLastChunkTime$}
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                    error={effectiveError}
+                    error={turnFailureError}
                     recoveryState={failureTranscript.current.state}
                     authGuidance={chatAuthGuidance}
                     sessionCorrupted={effectiveSessionCorrupted}
@@ -7699,7 +7706,14 @@
         {/if}
 
         {#if workspace?.id && agentId}
-          <AgentPlacementNotice {agentId} />
+          <AgentPlacementNotice
+            {agentId}
+            failedAt={effectiveFailedAt}
+            queued={visibleQueuedMessages.length > 0}
+            onRetry={failureTranscript.current.state === 'attempting' ? undefined : gatedRetry}
+            retrying={$retryAgentUi$?.status === 'pending'}
+            turnError={$chatError$}
+          />
           <AttentionRequestBanner {agentId} />
         {/if}
 
@@ -7728,7 +7742,7 @@
                 shouldShowPendingAssistantStatus({
                   isStreaming: $agentSessionIsStreaming$,
                   isProcessing: pendingRowsProcessing,
-                  error: effectiveError,
+                  error: turnFailureError,
                   modelUnavailable: $chatModelUnavailable$,
                 })}
               {#if index > 0 || lastConversationTurn}
@@ -7757,7 +7771,7 @@
                               shouldShowPendingAssistantStatus({
                                 isStreaming: $agentSessionIsStreaming$,
                                 isProcessing: $agentIsResponding$,
-                                error: effectiveError,
+                                error: turnFailureError,
                                 modelUnavailable: $chatModelUnavailable$,
                               }),
                           }),
@@ -7798,7 +7812,7 @@
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                      error={effectiveError}
+                      error={turnFailureError}
                       recoveryState={failureTranscript.current.state}
                       authGuidance={chatAuthGuidance}
                       sessionCorrupted={effectiveSessionCorrupted}

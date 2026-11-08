@@ -23,7 +23,12 @@
     | 'e2b-paused'
     | 'e2b-quota'
     | 'e2b-profile-required'
-    | 'e2b-unavailable';
+    | 'e2b-unavailable'
+    | 'e2b-bootstrap-failed'
+    | 'e2b-bootstrap-not-queued'
+    | 'e2b-sandbox-lost'
+    | 'e2b-template-missing'
+    | 'e2b-key-rejected';
 
   interface Props {
     scene?: Scene;
@@ -57,6 +62,11 @@
       'e2b-quota': sceneState('e2b-quota'),
       'e2b-profile-required': sceneState('e2b-profile-required'),
       'e2b-unavailable': sceneState('e2b-unavailable'),
+      'e2b-bootstrap-failed': sceneState('e2b-bootstrap-failed'),
+      'e2b-bootstrap-not-queued': sceneState('e2b-bootstrap-not-queued'),
+      'e2b-sandbox-lost': sceneState('e2b-sandbox-lost'),
+      'e2b-template-missing': sceneState('e2b-template-missing'),
+      'e2b-key-rejected': sceneState('e2b-key-rejected'),
     },
     captureReadiness: { selector: '[data-remote-agent-location-scene][data-ready]' },
   });
@@ -93,6 +103,7 @@
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import AgentPlacementNotice from './AgentPlacementNotice.svelte';
+  import QueuedMessageList from '$lib/components/chat/QueuedMessageList.svelte';
   import { remoteMachinesLoaded } from './remote-machines-slice';
   import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
@@ -240,6 +251,26 @@
   // Agents on E2B: a sandbox row while it runs or is paused; start fields and errors otherwise.
   const E2B_NODE = 'd-e2b-sandbox-1';
   const isE2bScene = (s: Scene) => s.startsWith('e2b-');
+  const E2B_BOOTSTRAP_DETAIL =
+    [
+      "the sandbox's intentd did not mint a credential (exit 3): intentd or its tunnel did not start in the sandbox.",
+      'Sandbox isx1k2v9 (intent/intent-node-4x8:0.240.0). The sandbox was deleted; no machine was added.',
+      'Last intentd lines:',
+      '02:21:04 INFO intentd 0.240.0 starting (node mode)',
+      '02:21:34 ERROR tailcat: relay handshake timed out after 30s',
+      '02:21:34 ERROR node: tunnel not ready; exiting with code 3',
+    ].join('\n') +
+    ' {"code":"cloud-machine-unavailable","provider":"e2b","reason":"bootstrap-failed","retryable":true}';
+  const E2B_FAILED_AT = new Date(catalogNow() - 60_000).toISOString();
+  const E2B_QUEUE = [
+    {
+      id: 'ral-q1',
+      content: 'Sweep the docs folder for broken links and fix the ones you can.',
+      messageMetadata: { fromPrincipalId: 'preview-author' },
+      queuedAt: '2026-11-08T02:20:00.000Z',
+      position: 0,
+    },
+  ];
   const E2B_ERRORS: Partial<Record<Scene, { code: string; detail: string }>> = {
     'e2b-quota': {
       code: 'cloud-quota',
@@ -255,6 +286,23 @@
       code: 'cloud-machine-unavailable',
       detail:
         'E2B failed (503). No sandbox was left behind. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"api-error","retryable":true,"status":503}',
+    },
+    'e2b-bootstrap-failed': { code: 'remote-launch-failed', detail: E2B_BOOTSTRAP_DETAIL },
+    'e2b-bootstrap-not-queued': { code: 'remote-launch-failed', detail: E2B_BOOTSTRAP_DETAIL },
+    'e2b-sandbox-lost': {
+      code: 'remote-launch-failed',
+      detail:
+        'sandbox isx1k2v9 not found (404) while resuming. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"sandbox-lost","retryable":true,"status":404}',
+    },
+    'e2b-template-missing': {
+      code: 'remote-launch-failed',
+      detail:
+        'template intent/intent-node-4x8:0.240.0 not found in project intent. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"template-missing","retryable":false}',
+    },
+    'e2b-key-rejected': {
+      code: 'remote-launch-failed',
+      detail:
+        'E2B answered 401 Unauthorized for GET /sandboxes. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"key-rejected","retryable":false,"status":401}',
     },
   };
   const e2bAgent = (s: Scene): AgentSession =>
@@ -346,6 +394,7 @@
           : 'ral-mac',
   );
   const agents = $derived(agentsFor(scene));
+  const e2bQueued = $derived(!!E2B_ERRORS[scene] && scene !== 'e2b-bootstrap-not-queued');
   const selected = $derived(agents.find((a) => a.id === selectedAgentId) ?? agents[0]!);
   const tab = $derived<PanelTab>({
     id: 'ral-tab',
@@ -482,11 +531,21 @@
       <div class="flex w-full max-w-[760px] flex-1 flex-col justify-end px-6 pb-4">
         {#if ready}
           {#key selectedAgentId}
-            <AgentPlacementNotice agentId={selectedAgentId} />
+            <AgentPlacementNotice
+              agentId={selectedAgentId}
+              failedAt={E2B_ERRORS[scene] ? E2B_FAILED_AT : null}
+              queued={e2bQueued}
+              onRetry={() => {}}
+            />
           {/key}
         {/if}
       </div>
       <div class="w-full max-w-[760px] px-6 pb-6" id="ral-composer">
+        {#if e2bQueued}
+          <div class="pb-2">
+            <QueuedMessageList ownPrincipalId="preview-author" messages={E2B_QUEUE} />
+          </div>
+        {/if}
         {#if ready}
           {#key selectedAgentId}
             <SimpleRichInput

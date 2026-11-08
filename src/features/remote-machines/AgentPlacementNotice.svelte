@@ -2,8 +2,9 @@
   Conversation notice for a remote agent that is starting (preparing its
   checkout or running setup), couldn't start, whose setup script failed, or
   whose machine can't be reached or revoked access. The checkout and setup
-  output opens here as a read-only log. Nothing for a local agent or a remote
-  agent that runs normally.
+  output opens here as a read-only log. An agent on E2B that couldn't start
+  gets the chat's failure card instead (the caller then hides the generic
+  one). Nothing for a local agent or a remote agent that runs normally.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
@@ -17,15 +18,14 @@
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
+    agentCloudStartFailure,
     agentMachineLocation,
     agentPlacementNoticeKind,
     placementFailure,
   } from './agent-location';
   import RemoteSetupLog from './RemoteSetupLog.svelte';
-  import {
-    cloudErrorText,
-    E2B_DASHBOARD_URL,
-  } from '$features/cloud-machines/cloud-machines-format';
+  import CloudStartFailureCard from './CloudStartFailureCard.svelte';
+  import { cloudStartFailureView } from './cloud-start-failure';
   import {
     selectCurrentBackendLabel,
     selectRemoteMachine,
@@ -33,7 +33,29 @@
   } from './remote-machines-selectors';
   import { remoteMachinesRefreshRequested } from './remote-machines-slice';
 
-  let { agentId }: { agentId: string } = $props();
+  let {
+    agentId,
+    failedAt = null,
+    queued = false,
+    onRetry,
+    retrying = false,
+    turnError = null,
+  }: {
+    agentId: string;
+    /** When the agent's start failed, for the failure card. */
+    failedAt?: string | null;
+    /** A message waits in the queue strip below. */
+    queued?: boolean;
+    /** Retries the failed start; absent when it can't be retried now. */
+    onRetry?: () => void;
+    /** A retry is in flight. */
+    retrying?: boolean;
+    /**
+     * A later turn error (a failed retry, a refused send). The caller shows it
+     * in the generic failure card, so the start failure card steps aside.
+     */
+    turnError?: string | null;
+  } = $props();
 
   const agentIdStore = writable<string | undefined>(undefined);
   const machineIdStore = writable<string | undefined>(undefined);
@@ -64,14 +86,15 @@
         : m.remoteAgent_notice_starting_description(),
   );
   const cloudStep = $derived($agent$?.cloudStart?.step);
-  // Without typed data only the backend's detail says why; keep it over a generic reason.
-  const cloudFailure = $derived.by(() => {
-    if (!failure?.cloud) return null;
-    const text = cloudErrorText(failure.cloud);
-    return failure.cloudDetailKnown || !failure.message
-      ? text
-      : { title: text.title, description: failure.message };
-  });
+  const cloudStart = $derived(turnError ? null : agentCloudStartFailure($agent$));
+  const cloudFailure = $derived(
+    cloudStart
+      ? cloudStartFailureView(cloudStart, {
+          canRetry: !!onRetry,
+          turnError: $agent$?.stopReason,
+        })
+      : null,
+  );
   const startingStep = $derived(
     cloudStep === 'creating-sandbox'
       ? m.cloudMachines_start_creating()
@@ -178,6 +201,17 @@
       />
     {/if}
   </div>
+{:else if kind === 'failed' && failure?.cloud}
+  {#if cloudFailure}
+    <CloudStartFailureCard
+      view={cloudFailure}
+      {failedAt}
+      {queued}
+      {onRetry}
+      {retrying}
+      onOpenSettings={openMachinesSettings}
+    />
+  {/if}
 {:else if location && kind}
   {@const danger = kind === 'failed' || kind === 'revoked'}
   <div
@@ -194,9 +228,7 @@
       />
       <div class="min-w-0 space-y-1">
         <p class="type-body font-medium {danger ? 'text-danger' : 'text-warning-ink'}">
-          {#if kind === 'failed' && cloudFailure}
-            {cloudFailure.title}
-          {:else if kind === 'failed'}
+          {#if kind === 'failed'}
             {m.remoteAgent_notice_failed_title({ machine: location.name })}
           {:else if kind === 'unreachable'}
             {m.remoteAgent_notice_unreachable_title({ machine: location.name })}
@@ -204,11 +236,7 @@
             {m.remoteAgent_notice_revoked_title({ machine: location.name })}
           {/if}
         </p>
-        {#if kind === 'failed' && cloudFailure}
-          <p class="type-body text-muted-foreground" data-agent-placement-detail>
-            {cloudFailure.description}
-          </p>
-        {:else if kind === 'failed'}
+        {#if kind === 'failed'}
           {#if failure?.message}
             <p class="type-body break-words text-muted-foreground" data-agent-placement-detail>
               {failure.message}
@@ -250,15 +278,6 @@
           <Button variant="secondary" size="sm" onclick={openMachinesSettings}>
             {m.remoteAgent_notice_openMachines_label()}
           </Button>
-          {#if failure?.cloud && failure.cloud.code !== 'cloud-profile-required'}
-            <Button
-              variant="ghost"
-              size="sm"
-              href={E2B_DASHBOARD_URL}
-              target="_blank"
-              rel="noopener noreferrer">{m.cloudMachines_dashboardOpen_label()}</Button
-            >
-          {/if}
         {/if}
       </div>
     {/if}
