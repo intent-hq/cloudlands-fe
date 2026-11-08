@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import sharp from 'sharp';
+import { execBounded, retryTimeouts } from './bounded-exec.mjs';
 import native from './macos-native.cjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -14,6 +15,13 @@ const ICON_NAME = 'Intent';
 const SOURCE_PATH = path.join(__dirname, '../src/assets/icons/app-icon/Icon-1024.png');
 const OUTPUT_DIRECTORY = path.join(__dirname, '../build/macos-icon');
 const REQUIRED_XCODE_MAJOR = 26;
+// actool compiles this one icon in ~2 s, yet it has hung silently on WarpBuild macOS
+// runners until the 30-min pre-notarization deadline killed the release (release-alpha
+// runs 42434129706, 42410996247, 42246111547). Stop an attempt after 3 min and retry;
+// three attempts keep the worst case (9 min, reached ~13 min into packaging) inside
+// that 30-min deadline with room for signing to start.
+export const ACTOOL_TIMEOUT_MS = 3 * 60_000;
+export const ACTOOL_ATTEMPTS = 3;
 
 export const ICON_DOCUMENT = {
   fill: { solid: 'extended-srgb:0.03137,0.03137,0.03137,1.00000' },
@@ -58,6 +66,9 @@ export async function createReleaseMark(sourcePath = SOURCE_PATH) {
 
 export async function compileModernMacOSIcon({
   execute = execFileSync,
+  runActool = execBounded,
+  actoolTimeoutMs = ACTOOL_TIMEOUT_MS,
+  actoolAttempts = ACTOOL_ATTEMPTS,
   outputDirectory = OUTPUT_DIRECTORY,
   sourcePath = SOURCE_PATH,
 } = {}) {
@@ -107,42 +118,60 @@ export async function compileModernMacOSIcon({
       path.join(iconPackage, 'icon.json'),
       `${JSON.stringify(ICON_DOCUMENT, null, 2)}\n`,
     );
-    fs.rmSync(outputDirectory, { recursive: true, force: true });
-    fs.mkdirSync(outputDirectory, { recursive: true });
 
+    const actoolArgs = [
+      'actool',
+      iconPackage,
+      '--compile',
+      outputDirectory,
+      '--output-format',
+      'human-readable-text',
+      '--notices',
+      '--warnings',
+      '--errors',
+      '--output-partial-info-plist',
+      partialInfoPath,
+      '--app-icon',
+      ICON_NAME,
+      '--include-all-app-icons',
+      '--enable-on-demand-resources',
+      'NO',
+      '--development-region',
+      'en',
+      '--target-device',
+      'mac',
+      '--minimum-deployment-target',
+      '26.0',
+      '--platform',
+      'macosx',
+    ];
     try {
-      execute(
-        'xcrun',
-        [
-          'actool',
-          iconPackage,
-          '--compile',
-          outputDirectory,
-          '--output-format',
-          'human-readable-text',
-          '--notices',
-          '--warnings',
-          '--errors',
-          '--output-partial-info-plist',
-          partialInfoPath,
-          '--app-icon',
-          ICON_NAME,
-          '--include-all-app-icons',
-          '--enable-on-demand-resources',
-          'NO',
-          '--development-region',
-          'en',
-          '--target-device',
-          'mac',
-          '--minimum-deployment-target',
-          '26.0',
-          '--platform',
-          'macosx',
-        ],
-        { stdio: 'inherit' },
+      await retryTimeouts(
+        () => {
+          // A retry starts from an empty output directory, not a half-written one.
+          fs.rmSync(outputDirectory, { recursive: true, force: true });
+          fs.mkdirSync(outputDirectory, { recursive: true });
+          return runActool('xcrun', actoolArgs, {
+            timeoutMs: actoolTimeoutMs,
+            stdio: 'inherit',
+            label: 'xcrun actool',
+          });
+        },
+        {
+          attempts: actoolAttempts,
+          onRetry: (error, attempt) =>
+            console.log(
+              `::warning title=Xcode actool hung::${error.message} ` +
+                `(attempt ${attempt} of ${actoolAttempts}); retrying.`,
+            ),
+        },
       );
     } catch (error) {
-      throw new Error(`Xcode actool failed to compile the modern macOS icon: ${error.message}`, {
+      const detail =
+        error.name === 'CommandTimeoutError'
+          ? `${error.message} after ${actoolAttempts} attempts`
+          : error.message;
+      throw new Error(`Xcode actool failed to compile the modern macOS icon: ${detail}`, {
         cause: error,
       });
     }
