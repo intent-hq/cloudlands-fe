@@ -308,7 +308,8 @@ describe('check-workflows actionlint deadline', () => {
     const stalled = join(dir, 'actionlint');
     writeFileSync(stalled, '#!/bin/sh\nexec sleep 60\n');
     chmodSync(stalled, 0o755);
-    const run = () =>
+    let error: unknown;
+    try {
       runActionlint({
         actionlint: stalled,
         shellcheck: 'shellcheck',
@@ -316,8 +317,13 @@ describe('check-workflows actionlint deadline', () => {
         stdio: 'pipe',
         timeoutMs: 500,
       });
-    expect(run).toThrow(ActionlintTimeoutError);
-    expect(run).toThrow(/actionlint\/issues\/702[\s\S]*pnpm run lint:workflows/);
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ActionlintTimeoutError);
+    expect((error as Error).message).toMatch(
+      /actionlint\/issues\/702[\s\S]*pnpm run lint:workflows/,
+    );
   });
 });
 
