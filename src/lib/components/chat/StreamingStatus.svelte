@@ -190,6 +190,7 @@
   // turn is still active — turn end/failure clears statusEvents or flips
   // status away from 'normal', so the stalled row can never outlive the turn.
   let startLineVisible = $derived(turnActive && !!startLine);
+  const rowOffsetClass = 'mt-[var(--space-3)]';
   let stalledEvent = $derived(
     turnActive && !queueWait ? getActiveStalledEvent(statusEvents, lastChunkTime) : null,
   );
@@ -261,7 +262,7 @@
 </script>
 
 {#if startLineVisible && startLine}
-  <div class="mt-[var(--space-3)] {className}" data-stream-start-line>
+  <div class="{rowOffsetClass} {className}" data-stream-start-line>
     {@render startLine()}
   </div>
 {/if}
@@ -274,7 +275,7 @@
   elapsed={elapsedTime}
   onHoverChange={(hovered) => (thinkingHovered = hovered)}
   variant={markVariant}
-  class="mt-[var(--space-3)] {className}"
+  class="{rowOffsetClass} {className}"
 />
 
 {#if queueWait && queueWaitMessage}

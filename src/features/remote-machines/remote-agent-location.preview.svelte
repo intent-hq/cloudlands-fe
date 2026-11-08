@@ -566,7 +566,7 @@
     <div class="flex min-h-0 flex-1 flex-col items-center">
       <div class="flex w-full max-w-[760px] flex-1 flex-col justify-end px-6 pb-4">
         {#if ready && isTurnScene(scene)}
-          <div class="mb-8 ml-auto max-w-[80%] rounded-lg bg-muted px-3 py-2 type-body">
+          <div class="mb-8 ml-auto max-w-md rounded-lg bg-muted px-3 py-2 type-body">
             Sweep the docs folder for broken links and fix the ones you can.
           </div>
           <StreamingStatus
