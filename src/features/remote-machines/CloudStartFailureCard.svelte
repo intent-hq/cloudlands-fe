@@ -29,13 +29,8 @@
     onOpenSettings: () => void;
   } = $props();
 
-  const queuedNote = $derived(
-    !queued
-      ? null
-      : view.actions.includes('retry')
-        ? m.cloudMachines_startFailure_retrySendsQueued()
-        : m.cloudMachines_startFailure_staysQueued(),
-  );
+  // Retry sends the queued message; without Retry it just waits in the queue.
+  const queuedNote = $derived(!queued ? null : view.actions.includes('retry') ? 'retry' : 'stays');
   const warning = $derived(view.tone === 'warning');
 
   function run(action: CloudStartFailureAction) {
@@ -65,7 +60,11 @@
       >
       <span class="text-muted-foreground">{view.cause}</span>
       {#if queuedNote}
-        <span class="text-muted-foreground">{queuedNote}</span>
+        <span class="text-muted-foreground" data-queued-note={queuedNote}
+          >{queuedNote === 'retry'
+            ? m.cloudMachines_startFailure_retrySendsQueued()
+            : m.cloudMachines_startFailure_staysQueued()}</span
+        >
       {/if}
     </div>
   </div>

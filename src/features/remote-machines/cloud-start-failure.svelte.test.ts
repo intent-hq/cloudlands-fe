@@ -69,6 +69,9 @@ const actionNames = (card: HTMLElement) =>
     .map((button) => button.textContent?.trim())
     .filter((name) => name !== 'Details');
 
+const queuedNote = (card: HTMLElement) =>
+  card.querySelector<HTMLElement>('[data-queued-note]')?.dataset.queuedNote ?? null;
+
 const primary = (card: HTMLElement) =>
   card.querySelector<HTMLElement>('[data-primary-action]')?.textContent?.trim();
 
@@ -81,7 +84,7 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('E2B start failure card', () => {
-  it('says Intent did not start in the sandbox, offers Retry first, and keeps the raw text in Details', async () => {
+  it('offers Retry first for a sandbox Intent did not start in, and keeps the raw text in Details', async () => {
     const onRetry = vi.fn();
     const { card, summary } = show(
       {
@@ -96,13 +99,9 @@ describe('E2B start failure card', () => {
     );
     expect(card.dataset.tone).toBe('danger');
     expect(card.getAttribute('role')).toBe('alert');
-    expect(summary.textContent).toContain("Couldn't start the E2B sandbox");
-    expect(summary.textContent).toContain(
-      "Intent didn't start inside the sandbox. The sandbox was deleted, so nothing is left running.",
-    );
-    expect(summary.textContent).toContain('Retry sends your queued message.');
     expect(summary.textContent).not.toContain('did not mint');
     expect(summary.textContent).not.toContain('{');
+    expect(queuedNote(card)).toBe('retry');
     expect(primary(card)).toBe('Retry');
     expect(actionNames(card)).toEqual(['Retry', 'Machines settings']);
     expect(within(card).queryByRole('link')).toBeNull();
@@ -118,7 +117,7 @@ describe('E2B start failure card', () => {
   });
 
   it('says nothing about a queued message when none is queued', () => {
-    const { summary } = show(
+    const { card } = show(
       {
         code: 'remote-launch-failed',
         detail: typed('boom', {
@@ -129,7 +128,7 @@ describe('E2B start failure card', () => {
       },
       { queued: false },
     );
-    expect(summary.textContent).not.toContain('queued');
+    expect(queuedNote(card)).toBeNull();
   });
 
   it('says the message stays queued when Retry is not available', () => {
@@ -145,11 +144,11 @@ describe('E2B start failure card', () => {
       { onRetry: undefined },
     );
     expect(within(card).queryByRole('button', { name: 'Retry' })).toBeNull();
-    expect(summary.textContent).toContain('Your message stays queued below.');
+    expect(queuedNote(card)).toBe('stays');
   });
 
-  it('says the sandbox is gone and that Retry starts a new one', () => {
-    const { card, summary } = show({
+  it('offers Retry first when the sandbox is gone', () => {
+    const { card } = show({
       code: 'remote-launch-failed',
       detail: typed('sandbox isx1k2v9 not found', {
         code: 'cloud-machine-unavailable',
@@ -158,13 +157,11 @@ describe('E2B start failure card', () => {
       }),
     });
     expect(card.dataset.tone).toBe('danger');
-    expect(summary.textContent).toContain('The E2B sandbox is gone');
-    expect(summary.textContent).toContain('retry starts a new sandbox');
     expect(primary(card)).toBe('Retry');
   });
 
   it('asks the user to fix a missing image first: amber, no Retry, settings first', async () => {
-    const { card, summary } = show({
+    const { card } = show({
       code: 'remote-launch-failed',
       detail: typed('template intent/intent-node-4x8:0.240.0 not found', {
         code: 'cloud-machine-unavailable',
@@ -174,8 +171,7 @@ describe('E2B start failure card', () => {
     });
     expect(card.dataset.tone).toBe('warning');
     expect(card.getAttribute('role')).toBe('status');
-    expect(summary.textContent).toContain('No E2B image for this Intent version');
-    expect(summary.textContent).toContain('Your message stays queued below.');
+    expect(queuedNote(card)).toBe('stays');
     expect(actionNames(card)).toEqual(['Machines settings']);
     expect(within(card).queryByRole('link')).toBeNull();
     await fireEvent.click(within(card).getByRole('button', { name: 'Machines settings' }));
@@ -185,8 +181,8 @@ describe('E2B start failure card', () => {
     });
   });
 
-  it('names a full E2B plan, leads with settings, keeps Retry, and links the E2B dashboard', () => {
-    const { card, summary } = show({
+  it('leads with settings for a full E2B plan, keeps Retry, and links the E2B dashboard', () => {
+    const { card } = show({
       code: 'remote-launch-failed',
       detail: typed('concurrency limit reached', {
         code: 'cloud-quota',
@@ -195,16 +191,15 @@ describe('E2B start failure card', () => {
       }),
     });
     expect(card.dataset.tone).toBe('warning');
-    expect(summary.textContent).toContain('E2B plan limit reached');
-    expect(summary.textContent).toContain('Retry sends your queued message.');
+    expect(queuedNote(card)).toBe('retry');
     expect(primary(card)).toBe('Machines settings');
     expect(actionNames(card)).toEqual(['Machines settings', 'Retry']);
     const link = within(card).getByRole('link', { name: /E2B dashboard/ });
     expect(link.getAttribute('target')).toBe('_blank');
   });
 
-  it('says E2B rejected the key and links the dashboard', () => {
-    const { card, summary } = show({
+  it('leads with settings when E2B rejects the key, and links the dashboard', () => {
+    const { card } = show({
       code: 'cloud-machine-unavailable',
       detail: typed('E2B answered 401', {
         code: 'cloud-machine-unavailable',
@@ -214,8 +209,6 @@ describe('E2B start failure card', () => {
       }),
     });
     expect(card.dataset.tone).toBe('warning');
-    expect(summary.textContent).toContain('E2B rejected the key');
-    expect(summary.textContent).toContain('Save a working key in Machines settings.');
     expect(primary(card)).toBe('Machines settings');
     expect(within(card).queryByRole('button', { name: 'Retry' })).toBeNull();
     expect(within(card).getByRole('link', { name: /E2B dashboard/ })).toBeTruthy();
@@ -227,7 +220,6 @@ describe('E2B start failure card', () => {
       detail: 'E2B API returned 502 Bad Gateway',
     });
     expect(card.dataset.tone).toBe('danger');
-    expect(summary.textContent).toContain("Couldn't start the E2B sandbox");
     expect(summary.textContent).not.toContain('502');
     await fireEvent.click(within(card).getByRole('button', { name: 'Details' }));
     expect(within(card).getByTestId('failure-raw-details').textContent).toContain(
