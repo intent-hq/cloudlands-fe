@@ -34,7 +34,9 @@ export type CloudMachinesPreviewState =
   | 'entries'
   | 'entries-add'
   | 'entries-key-rejected'
-  | 'entries-rename-taken';
+  | 'entries-rename-taken'
+  | 'entries-single'
+  | 'entries-edit';
 
 /** Scenes where the backend keeps named entries (`cloudMachineEntries: 1`). */
 const ENTRY_SCENES: readonly CloudMachinesPreviewState[] = [
@@ -42,6 +44,8 @@ const ENTRY_SCENES: readonly CloudMachinesPreviewState[] = [
   'entries-add',
   'entries-key-rejected',
   'entries-rename-taken',
+  'entries-single',
+  'entries-edit',
 ];
 
 export const E2B_PROVIDER: CloudMachineProvider = {
@@ -163,12 +167,16 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
       supported: state !== 'unsupported',
       entries,
       providers: entries
-        ? [E2B_PROVIDER, team]
+        ? state === 'entries-single' || state === 'entries-edit'
+          ? [E2B_PROVIDER]
+          : [E2B_PROVIDER, team]
         : configured
           ? [state === 'key-rejected' ? { ...E2B_PROVIDER, state: 'key-rejected' } : E2B_PROVIDER]
           : [],
       machines: entries
-        ? [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
+        ? state === 'entries-single' || state === 'entries-edit'
+          ? E2B_SANDBOXES
+          : [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
         : configured && state !== 'connected-no-sandboxes'
           ? E2B_SANDBOXES
           : [],

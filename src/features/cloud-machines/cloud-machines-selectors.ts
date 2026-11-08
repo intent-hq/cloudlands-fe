@@ -73,9 +73,11 @@ export function startOnCloud(state: State): StartOnCloud | null {
   const named = state.cloudMachines?.entries === true;
   return entries.map((entry) => ({
     cloudMachineId: entry.id,
-    label: named
-      ? m.cloudMachines_startOn_entry_label({ name: entry.name })
-      : m.cloudMachines_startOn_label(),
+    // One entry still called "E2B" needs no name; otherwise "E2B · <name>".
+    label:
+      named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
+        ? m.cloudMachines_startOn_entry_label({ name: entry.name })
+        : m.cloudMachines_startOn_label(),
     unavailableReason:
       entry.state === 'key-rejected' ? m.cloudMachines_state_keyRejected_label() : null,
   }));

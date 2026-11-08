@@ -346,6 +346,16 @@ describe('Labs flag', () => {
     expect(selectEffectiveStartOn.select(store.state, START_ON_E2B)).toBe(START_ON_BACKEND);
   });
 
+  it('names a single entry called "E2B" just E2B in Start On', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('entries-single');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    const cloud = selectStartOnOptions.select(store.state).filter((o) => o.kind === 'cloud');
+    expect(cloud.map((o) => [o.id, o.label])).toEqual([
+      [START_ON_E2B, m.cloudMachines_startOn_label()],
+    ]);
+  });
+
   it('lists each entry as "E2B · <name>" in Start On', () => {
     store.init();
     restore = setupCloudMachinesFixture('entries');

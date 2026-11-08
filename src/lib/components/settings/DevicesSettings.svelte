@@ -42,10 +42,13 @@
   let {
     initialEditedMachine,
     initialCloudSetup = false,
+    initialCloudEdit,
     initialAddMenuOpen = false,
   }: {
     initialEditedMachine?: string;
     initialCloudSetup?: boolean;
+    /** Previews: open the edit form of this E2B entry on mount. */
+    initialCloudEdit?: string;
     /** Previews: open the Add machine menu on mount. */
     initialAddMenuOpen?: boolean;
   } = $props();
@@ -67,7 +70,7 @@
   const cloudEntries$ = selectCloudEntries();
   /** The entry whose form is open, or `NEW_CLOUD_ENTRY` while one is added. */
   let cloudEditing = $state<string | null>(
-    untrack(() => (initialCloudSetup ? NEW_CLOUD_ENTRY : null)),
+    untrack(() => (initialCloudSetup ? NEW_CLOUD_ENTRY : (initialCloudEdit ?? null))),
   );
   let addMenuOpen = $state(untrack(() => initialAddMenuOpen));
   type CloudRow = { kind: 'cloud'; entry: CloudMachineProvider | null };

@@ -74,14 +74,17 @@
   const keySources = $derived(
     $named$ ? $entries$.filter((other) => other.id !== provider?.id) : [],
   );
-  const askName = $derived($named$ && !provider);
+  // With named entries every entry has a name: required to create, editable after.
+  const askName = $derived($named$);
 
-  let name = $state(untrack(() => nextCloudEntryName($entries$.map((other) => other.name))));
+  let name = $state(
+    untrack(() => entry?.name ?? nextCloudEntryName($entries$.map((other) => other.name))),
+  );
   let apiKeyFrom = $state<string | null>(null);
   const apiKeyFromName = $derived(
     keySources.find((other) => other.id === apiKeyFrom)?.name ?? null,
   );
-  const nameError = $derived(askName ? cloudEntryNameError(name, $entries$) : null);
+  const nameError = $derived(askName ? cloudEntryNameError(name, $entries$, provider?.id) : null);
   let apiKey = $state('');
   let size = $state<string>(untrack(() => provider?.size ?? DEFAULT_CLOUD_MACHINE_SIZE));
   let idlePause = $state(
@@ -154,7 +157,7 @@
   function entryParams() {
     return {
       ...(provider ? { cloudMachineId: provider.id } : {}),
-      ...(askName ? { name: name.trim() } : {}),
+      ...(askName && (!provider || name.trim() !== provider.name) ? { name: name.trim() } : {}),
       ...(apiKey.trim() ? { apiKey: apiKey.trim() } : apiKeyFrom ? { apiKeyFrom } : {}),
     };
   }
