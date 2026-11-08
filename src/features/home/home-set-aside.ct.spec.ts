@@ -135,7 +135,12 @@ test('Board keeps background work running and returns a new question', async ({
   await page.keyboard.press(await setAsideKeys(page));
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-running');
   const result = await snapshot(page);
-  expect(result.actions.filter((type) => /archive|retire|stop|interrupt/i.test(type))).toEqual([]);
+  // The Assistant list's read-only retirement capability probe is not a lifecycle change.
+  const changesLifecycle = (type: string) =>
+    /archive|retire|stop|interrupt/i.test(type) &&
+    !type.startsWith('workspaceAgents/agentRetirementSupport');
+  expect(changesLifecycle('workspaceAgents/retireAgentRequested')).toBe(true);
+  expect(result.actions.filter(changesLifecycle)).toEqual([]);
   expect(
     result.requests.filter(({ method }) => /archive|retire|stop|interrupt/i.test(method)),
   ).toEqual([]);
