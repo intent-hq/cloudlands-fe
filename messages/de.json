@@ -8386,7 +8386,7 @@
   "remoteMachines_state_unreachable_description": "{backend} konnte {machine} beim letzten Versuch nicht erreichen. Es versucht es erneut, wenn es den Rechner braucht.",
   "remoteMachines_state_unreachable_label": "Nicht erreichbar",
   "remoteMachines_state_updateRequired_label": "Aktualisierung erforderlich",
-  "remoteMachines_unexposeAction_label": "{backend} nicht mehr erlauben, hier Agenten auszuführen",
+  "remoteMachines_unexposeAction_label": "{backend} nicht mehr erlauben, Agenten auf diesem Computer auszuführen",
   "remoteMachines_unexpose_confirmTitle": "{backend} nicht mehr erlauben, Agenten auf {machine} auszuführen?",
   "remoteMachines_unexpose_confirm_description": "{backend} führt dann keine Agenten mehr auf {machine} aus, und der erteilte Zugriff wird widerrufen.",
   "remoteMachines_unexpose_label": "Beenden",

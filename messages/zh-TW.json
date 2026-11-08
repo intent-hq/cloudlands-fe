@@ -8386,7 +8386,7 @@
   "remoteMachines_state_unreachable_description": "{backend} 上次未能連線到 {machine}。需要該機器時會再次嘗試。",
   "remoteMachines_state_unreachable_label": "無法連線",
   "remoteMachines_state_updateRequired_label": "需要更新",
-  "remoteMachines_unexposeAction_label": "停止允許 {backend} 在此執行代理程式",
+  "remoteMachines_unexposeAction_label": "停止允許 {backend} 在這台機器上執行代理程式",
   "remoteMachines_unexpose_confirmTitle": "要停止允許 {backend} 在 {machine} 上執行代理程式嗎？",
   "remoteMachines_unexpose_confirm_description": "{backend} 將不再在 {machine} 上執行代理程式，並會撤銷已授予的存取權限。",
   "remoteMachines_unexpose_label": "停止",

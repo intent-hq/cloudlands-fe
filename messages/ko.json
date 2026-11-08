@@ -8386,7 +8386,7 @@
   "remoteMachines_state_unreachable_description": "{backend}이(가) 마지막 시도에서 {machine}에 연결하지 못했습니다. 머신이 필요할 때 다시 시도합니다.",
   "remoteMachines_state_unreachable_label": "연결할 수 없음",
   "remoteMachines_state_updateRequired_label": "업데이트 필요",
-  "remoteMachines_unexposeAction_label": "{backend}의 여기서 에이전트 실행 허용 중지",
+  "remoteMachines_unexposeAction_label": "{backend}의 이 컴퓨터에서 에이전트 실행 허용 중지",
   "remoteMachines_unexpose_confirmTitle": "{backend}이(가) {machine}에서 에이전트를 실행하도록 허용하는 것을 중지할까요?",
   "remoteMachines_unexpose_confirm_description": "{backend}은(는) 더 이상 {machine}에서 에이전트를 실행하지 않으며, 부여된 접근 권한이 취소됩니다.",
   "remoteMachines_unexpose_label": "중지",

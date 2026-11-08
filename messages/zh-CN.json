@@ -8386,7 +8386,7 @@
   "remoteMachines_state_unreachable_description": "{backend} 上次未能连接到 {machine}。需要该机器时会再次尝试。",
   "remoteMachines_state_unreachable_label": "无法连接",
   "remoteMachines_state_updateRequired_label": "需要更新",
-  "remoteMachines_unexposeAction_label": "停止允许 {backend} 在此运行智能体",
+  "remoteMachines_unexposeAction_label": "停止允许 {backend} 在这台机器上运行智能体",
   "remoteMachines_unexpose_confirmTitle": "要停止允许 {backend} 在 {machine} 上运行智能体吗？",
   "remoteMachines_unexpose_confirm_description": "{backend} 将不再在 {machine} 上运行智能体，并会撤销已授予的访问权限。",
   "remoteMachines_unexpose_label": "停止",
