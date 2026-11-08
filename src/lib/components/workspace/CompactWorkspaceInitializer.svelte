@@ -3621,6 +3621,7 @@
                     class="max-w-full shrink rounded-full text-primary-ink"
                     tooltip={selectedPRBranch}
                     tooltipSide="top"
+                    tooltipClass="min-w-0 max-w-full"
                     data-testid="initializer-use-pr-branch"
                     onclick={usePrBranch}
                   >
