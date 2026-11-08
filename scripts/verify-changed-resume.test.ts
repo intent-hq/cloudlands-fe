@@ -2,7 +2,7 @@
 // @verify-changed-triggers: scripts/verify-changed.mjs, scripts/verify-unit-selection.mjs
 // @verify-changed-triggers: scripts/verify-changed-receipts.mjs, scripts/verify-changed-coverage.mjs
 // @verify-changed-triggers: scripts/verify-changed-receipt-reporter.mjs, scripts/verify-changed-run-files.mjs
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -15,6 +15,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { stripVTControlCharacters } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createVerificationPlan, runVerificationPlan } from './verify-changed.mjs';
@@ -318,6 +319,22 @@ describe('verify:changed continuation with real fixture graphs', { timeout: 180_
       /1 of \d+ check\(s\) failed:\n {2}- Vitest \(tests related to changed sources\) failed/,
     );
     expect(failed.error).toMatch(/--resume/);
+    // The summary names the failed check's own log and quotes its last lines.
+    const logs = join(root, '.dev/verify-changed/attempts', failed.attempt!, 'logs');
+    expect(failed.error).toContain(
+      `log: .dev/verify-changed/attempts/${failed.attempt}/logs/vitest-related.log`,
+    );
+    expect(failed.error).toMatch(/\| .*Test Files .*1 failed/);
+    expect(readFileSync(join(logs, 'vitest-related.log'), 'utf8')).toMatch(
+      /FAIL[\s\S]*src\/b\.test\.ts[\s\S]*AssertionError/,
+    );
+    // Every executed check keeps its output, passed or failed.
+    expect(readdirSync(logs).sort()).toEqual([
+      'fixture-check.log',
+      'vitest-declared.log',
+      'vitest-related.log',
+      'vitest-ui-invariants.log',
+    ]);
     // The lanes after the failed one still ran, and so did the marker check.
     expect(bodies()).toEqual([
       'fixture-check',
@@ -354,6 +371,49 @@ describe('verify:changed continuation with real fixture graphs', { timeout: 180_
       status: 'resumed-passed',
       source_attempt: failed.attempt,
     });
+  });
+
+  // Outside Vitest a check streams to the terminal; the log must not take that away.
+  it('streams a real run to the terminal and saves the same output as plain text in its log', () => {
+    const { root, failFlag } = fixture();
+    writeFileSync(failFlag, '');
+    const driver = join(root, 'real-run.mjs');
+    writeFileSync(
+      driver,
+      `import { writeFileSync } from 'node:fs';
+import { runVerificationPlan } from ${JSON.stringify(plannerUrl)};
+let error = null;
+try { await runVerificationPlan(${JSON.stringify(plan(root, ['src/b.ts']))}, process.cwd(), { record: true, log() {} }); }
+catch (cause) { error = cause.message; }
+writeFileSync('real-result.json', JSON.stringify(error));`,
+    );
+    const env = { ...process.env, FORCE_COLOR: '1' };
+    delete env.VITEST;
+    delete env.TEST;
+    delete env.NODE_ENV;
+    const child = spawnSync(process.execPath, [driver], {
+      cwd: root,
+      env,
+      encoding: 'utf8',
+      timeout: 60_000,
+    });
+    expect(child.error, child.stdout + child.stderr).toBeUndefined();
+    // Vitest prints failure details on stderr.
+    expect(stripVTControlCharacters(child.stdout + child.stderr)).toMatch(
+      /FAIL[\s\S]*src\/b\.test\.ts/,
+    );
+    const error = JSON.parse(readFileSync(join(root, 'real-result.json'), 'utf8')) as string;
+    const [attempt] = attempts(root);
+    expect(error).toMatch(/^Vitest \(tests related to changed sources\) failed with exit code 1\n/);
+    expect(error).toContain(`log: .dev/verify-changed/attempts/${attempt}/logs/vitest-related.log`);
+    expect(error).toMatch(/\| .*Test Files .*1 failed/);
+    const log = readFileSync(
+      join(root, '.dev/verify-changed/attempts', attempt, 'logs/vitest-related.log'),
+      'utf8',
+    );
+    expect(log).toMatch(/^\$ pnpm exec vitest related/);
+    expect(log).toMatch(/FAIL[\s\S]*src\/b\.test\.ts[\s\S]*AssertionError/);
+    expect(log).not.toContain('\u001b[');
   });
 
   it('reruns everything when earlier evidence is missing, corrupt or from another schema', async () => {
