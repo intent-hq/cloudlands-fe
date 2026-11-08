@@ -151,7 +151,10 @@ test('Cmd/Ctrl-click leaves an open archived chat out of the selection', async (
   await archivedList.getByRole('option').first().click();
   await expect(archivedList.getByRole('option').first()).toHaveAttribute('aria-selected', 'true');
 
-  await list.getByRole('option').nth(1).click({ modifiers: ['ControlOrMeta'] });
+  await list
+    .getByRole('option')
+    .nth(1)
+    .click({ modifiers: ['ControlOrMeta'] });
   await expect(sidebar.getByRole('toolbar', { name: '1 selected', exact: true })).toBeVisible();
   await expect(list.getByRole('option').nth(1)).toHaveAttribute('aria-selected', 'true');
   await expect(archivedList.getByRole('option').first()).toHaveAttribute('aria-selected', 'false');
