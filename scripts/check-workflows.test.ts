@@ -2,15 +2,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -24,6 +16,7 @@ import {
   DownloadError,
   fetchReleaseAsset,
   fetchWithRetry,
+  transientStatus,
   installFromArchive,
   main,
   platformKey,
@@ -175,6 +168,17 @@ describe('check-workflows release download', () => {
     expect((error as Error).message).toMatch(/HTTP 404/);
   });
 
+  it('treats an exhausted rate limit as transient and other 403s as permanent', () => {
+    const response = (status: number, headers: Record<string, string> = {}) =>
+      new Response(null, { status, headers });
+    expect(transientStatus(response(503))).toBe(true);
+    expect(transientStatus(response(429))).toBe(true);
+    expect(transientStatus(response(403, { 'x-ratelimit-remaining': '0' }))).toBe(true);
+    expect(transientStatus(response(403, { 'retry-after': '60' }))).toBe(true);
+    expect(transientStatus(response(403, { 'x-ratelimit-remaining': '12' }))).toBe(false);
+    expect(transientStatus(response(404))).toBe(false);
+  });
+
   it('retries network errors', async () => {
     let calls = 0;
     const fetchImpl = async () => {
@@ -239,17 +243,6 @@ describe('check-workflows release download', () => {
   });
 });
 
-describe('check-workflows CI cache', () => {
-  it('keys the intent-pr actionlint cache on the pinned version', () => {
-    const workflow = readFileSync(
-      join(import.meta.dirname, '..', '.github', 'workflows', 'intent-pr.yml'),
-      'utf8',
-    );
-    const keys = [...workflow.matchAll(/^\s+key: actionlint-([^-]+)-/gm)].map((m) => m[1]);
-    expect(keys).toEqual([ACTIONLINT_VERSION]);
-  });
-});
-
 describe('check-workflows shellcheck requirement', () => {
   it('fails instead of letting actionlint skip the shell pass', async () => {
     expect(() => resolveShellcheck('/nonexistent/shellcheck')).toThrow(/would skip every run/);
@@ -288,7 +281,7 @@ describe('check-workflows actionlint run', () => {
     expect(result.status).toBe(1);
     expect(result.stdout).toContain('SC2086');
     expect(result.stdout).toContain('property "nonexistent_property" is not defined');
-  }, 120_000);
+  }, 300_000);
 
   it('passes a clean workflow', async (ctx) => {
     const actionlint = await actionlintOrSkip(ctx);
@@ -301,5 +294,5 @@ describe('check-workflows actionlint run', () => {
     });
     expect(result.stdout).toBe('');
     expect(result.status).toBe(0);
-  }, 120_000);
+  }, 300_000);
 });

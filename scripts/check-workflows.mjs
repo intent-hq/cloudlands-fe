@@ -83,7 +83,9 @@ export function installFromArchive(buffer, { key, cacheDir }) {
   return target;
 }
 
-const DOWNLOAD_TIMEOUT_MS = 120_000;
+// Per attempt; the archive is about 2.3 MB. Short enough that a stalled host
+// reaches the API fallback within a few minutes.
+const DOWNLOAD_TIMEOUT_MS = 30_000;
 // Delays between attempts, in milliseconds: four attempts per source in all,
 // matching scripts/download_retry.py.
 export const RETRY_DELAYS_MS = Object.freeze([2_000, 5_000, 15_000]);
@@ -97,6 +99,18 @@ export class DownloadError extends Error {
     this.name = 'DownloadError';
     this.transient = transient;
   }
+}
+
+// 5xx, 408 and 429 are transient. GitHub also answers an exhausted rate limit
+// with 403 plus `x-ratelimit-remaining: 0` or `retry-after`; any other 4xx
+// (a wrong version, asset name or token) is permanent.
+export function transientStatus(response) {
+  const { status, headers } = response;
+  if (status >= 500 || status === 408 || status === 429) return true;
+  return (
+    status === 403 &&
+    (headers.get('x-ratelimit-remaining') === '0' || headers.get('retry-after') !== null)
+  );
 }
 
 async function fetchOnce(url, { headers, fetchImpl }) {
@@ -113,7 +127,7 @@ async function fetchOnce(url, { headers, fetchImpl }) {
   }
   if (!response.ok) {
     throw new DownloadError(`downloading ${url} failed: HTTP ${response.status}`, {
-      transient: response.status >= 500 || response.status === 408 || response.status === 429,
+      transient: transientStatus(response),
     });
   }
   try {
