@@ -4,6 +4,7 @@
   import { hydrateWorkspaceInitializer } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
   import { setLabsPlainFolderWorkspacesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { systemStatusSuccess } from '$store/renderer/slices/daemon-health/daemon-health-slice';
+  import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
   import NewSpaceModal from '../NewSpaceModal.svelte';
 
   /** Bump to ask the open dialog to re-read the `workspace-prefill` entry. */
@@ -22,7 +23,7 @@
           {
             running: true,
             listenMode: 'local',
-            protocolVersion: '15.3',
+            protocolVersion: CURRENT_PROTOCOL_VERSION,
             host: { os: 'linux', arch: 'x86_64', locality: 'local' },
           },
           new Date().toISOString(),
