@@ -3,7 +3,7 @@ import type { QueuedMessage } from '$shared/types';
 import {
   advanceQueueDrainPrediction,
   initialQueueDrainPredictorState,
-  hasPendingDirectSend,
+  latestDirectSendAt,
   predictDrainedQueueIds,
   QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
   type QueueDrainPredictorInput,
@@ -24,7 +24,7 @@ function step(
     busy: false,
     blocked: false,
     interrupted: false,
-    directSendPending: false,
+    directSendAt: null,
     delivered: none,
     now: 1_000,
     ...input,
@@ -110,23 +110,58 @@ describe('advanceQueueDrainPrediction', () => {
   });
 
   it('does not predict when a force-sent message preempts the turn', () => {
-    const state = step(busyWith([queued('a')]), {
-      queue: [queued('a')],
-      directSendPending: true,
-    });
+    // busyWith starts the turn at 0; the force-send is admitted at 500.
+    const state = step(busyWith([queued('a')]), { queue: [queued('a')], directSendAt: 500 });
     expect(state.prediction).toBeNull();
   });
 
-  it('predicts on the next idle edge once the force-sent turn ends on its own', () => {
-    let state = step(busyWith([queued('a')]), { queue: [queued('a')], directSendPending: true });
-    state = step(state, { queue: [queued('a')], busy: true, now: 2_000 });
+  it('does not predict when the forced message is acknowledged before the turn ends', () => {
+    let state = step(busyWith([queued('a')]), {
+      queue: [queued('a')],
+      busy: true,
+      directSendAt: 500,
+      now: 600,
+    });
+    state = step(state, { queue: [queued('a')], now: 1_000 });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('predicts when the forced turn ends on its own', () => {
+    let state = step(busyWith([queued('a')]), { queue: [queued('a')], directSendAt: 500 });
+    state = step(state, { queue: [queued('a')], busy: true, directSendAt: 500, now: 2_000 });
+    state = step(state, { queue: [queued('a')], busy: true, now: 2_500 });
     state = step(state, { queue: [queued('a')], now: 3_000 });
     expect(state.prediction).toEqual({ ids: ['a'], startedAt: 3_000 });
   });
 
+  it('predicts after a send made while the agent was idle', () => {
+    // Admitted at 900, before this view saw the turn start at 1_000.
+    let state = step(initialQueueDrainPredictorState, {
+      queue: [],
+      busy: true,
+      directSendAt: 900,
+      now: 1_000,
+    });
+    state = step(state, { queue: [queued('a')], busy: true, directSendAt: 900, now: 1_500 });
+    state = step(state, { queue: [queued('a')], now: 2_000 });
+    expect(state.prediction).toEqual({ ids: ['a'], startedAt: 2_000 });
+  });
+
+  it('does not predict the forced turn when no idle edge separates it from the preempted one', () => {
+    let state = step(busyWith([queued('a')]), {
+      queue: [queued('a')],
+      busy: true,
+      directSendAt: 500,
+      now: 600,
+    });
+    state = step(state, { queue: [queued('a')], busy: true, now: 2_000 });
+    state = step(state, { queue: [queued('a')], now: 3_000 });
+    expect(state.prediction).toBeNull();
+  });
+
   it('keeps a running prediction when a later message is sent directly', () => {
     let state = step(busyWith([queued('a')]), { queue: [queued('a')] });
-    state = step(state, { queue: [queued('a')], directSendPending: true, now: 1_200 });
+    state = step(state, { queue: [queued('a')], directSendAt: 1_100, now: 1_200 });
     expect(state.prediction?.ids).toEqual(['a']);
   });
 
@@ -186,23 +221,16 @@ describe('advanceQueueDrainPrediction', () => {
   });
 });
 
-describe('hasPendingDirectSend', () => {
-  const send = (
-    id: string,
-    status: 'preparing' | 'sending' | 'accepted' | 'uncertain' = 'sending',
-  ) => ({ id, appMessageId: `app-${id}`, status });
-
-  it('reports a direct send that has not reached the transcript', () => {
-    expect(hasPendingDirectSend([send('f', 'preparing')], [])).toBe(true);
-    expect(hasPendingDirectSend([send('f', 'accepted')], [{ id: 'other' }])).toBe(true);
-  });
-
-  it('ignores a send the transcript already shows', () => {
-    expect(hasPendingDirectSend([send('f')], [{ id: 'row', appMessageId: 'app-f' }])).toBe(false);
-    expect(hasPendingDirectSend([send('f')], [{ id: 'f' }])).toBe(false);
-  });
-
-  it('ignores a failed send, which starts no turn', () => {
-    expect(hasPendingDirectSend([send('f', 'uncertain')], [])).toBe(false);
+describe('latestDirectSendAt', () => {
+  it('returns the newest send still in flight', () => {
+    expect(
+      latestDirectSendAt([
+        { createdAt: 1, status: 'preparing' },
+        { createdAt: 3, status: 'sending' },
+        { createdAt: 5, status: 'accepted' },
+        { createdAt: 7, status: 'uncertain' },
+      ]),
+    ).toBe(3);
+    expect(latestDirectSendAt([{ createdAt: 5, status: 'accepted' }])).toBeNull();
   });
 });

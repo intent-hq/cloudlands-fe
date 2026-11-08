@@ -1,4 +1,5 @@
 import { expect, installPausedClock, test } from '../../../../test/ct-test';
+import type { Locator, Page } from '@playwright/test';
 import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
 import { shortcutChord } from '../../../../test/shortcut-chords';
 import ChatPanelComposerGeometryHost from './ChatPanelComposerGeometryHost.svelte';
@@ -143,34 +144,65 @@ test('keeps queued messages in the queue when another client stops the turn duri
   ).toHaveCount(0);
 });
 
+const FORCED_TEXT = 'Stop and do this instead';
+const forced = { ...props, submissionSupport: true };
+
+async function forceSend(component: Locator, page: Page) {
+  await expect(component.getByTestId('queued-messages-container')).toContainText(QUEUED_TEXT);
+  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
+  await editor.click();
+  await editor.pressSequentially(FORCED_TEXT);
+  const isMac = await page.evaluate(() => /Mac/i.test(navigator.platform));
+  await editor.press(shortcutChord(SHORTCUT_DEFAULTS['chat.force-send'], isMac).press);
+  await expect(component.getByText(FORCED_TEXT, { exact: true })).toHaveCount(1);
+}
+
+// ⌘Enter interrupts the turn with the composer text only. The daemon runs that
+// message next and keeps the queue for after it (PROTOCOL §5.5).
 test('keeps queued messages in the queue when a force-sent message preempts the turn', async ({
   mount,
   page,
 }, info) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  // ⌘Enter interrupts the turn with the composer text only. The daemon runs
-  // that message next and keeps the queue for after it (PROTOCOL §5.5).
-  const forced = { ...props, submissionSupport: true };
   const component = await mount(ChatPanelComposerGeometryHost, {
     props: { ...forced, streaming: true },
   });
+  await forceSend(component, page);
   const queue = component.getByTestId('queued-messages-container');
   const queuedRow = component
     .locator('[data-message-role="user"]')
     .filter({ hasText: QUEUED_TEXT });
-  await expect(queue).toContainText(QUEUED_TEXT);
-
-  const editor = component.getByTestId('message-input').locator('.tiptap-editor');
-  await editor.click();
-  await editor.pressSequentially('Stop and do this instead');
-  const isMac = await page.evaluate(() => /Mac/i.test(navigator.platform));
-  await editor.press(shortcutChord(SHORTCUT_DEFAULTS['chat.force-send'], isMac).press);
-  await expect(component.getByText('Stop and do this instead', { exact: true })).toHaveCount(1);
 
   // The preempted turn ends before the forced message reaches the transcript.
   await component.update({ props: { ...forced, streaming: false } });
-
   await expect(queue).toContainText(QUEUED_TEXT);
   await expect(queuedRow).toHaveCount(0);
   await page.screenshot({ path: info.outputPath('force-send-keeps-queue.png') });
+
+  // The forced turn runs and ends on its own: now the daemon drains the queue.
+  await component.update({ props: { ...forced, streaming: true } });
+  await component.update({ props: { ...forced, streaming: false } });
+  await expect(queuedRow).toBeVisible();
+  await expect(queue).toHaveCount(0);
+});
+
+test('keeps queued messages in the queue when the forced message lands before the turn ends', async ({
+  mount,
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(ChatPanelComposerGeometryHost, {
+    props: { ...forced, streaming: true },
+  });
+  await forceSend(component, page);
+  await component.update({ props: { ...forced, streaming: true, settleSubmission: 'history' } });
+  await expect(
+    component.locator('[data-message-role="user"]').filter({ hasText: FORCED_TEXT }),
+  ).toHaveCount(1);
+
+  await component.update({ props: { ...forced, streaming: false, settleSubmission: 'history' } });
+  await expect(component.getByTestId('queued-messages-container')).toContainText(QUEUED_TEXT);
+  await expect(
+    component.locator('[data-message-role="user"]').filter({ hasText: QUEUED_TEXT }),
+  ).toHaveCount(0);
 });

@@ -24,8 +24,8 @@
   } from './pending-submission-message';
   import {
     advanceQueueDrainPrediction,
-    hasPendingDirectSend,
     initialQueueDrainPredictorState,
+    latestDirectSendAt,
     QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
     type QueueDrainPredictorState,
   } from './queue-drain-prediction';
@@ -898,7 +898,7 @@
         $chatIsInterrupting$ ||
         $chatLastTurnInterrupted$ ||
         latestAssistantForTelemetry?.metadata?.stopReason === 'interrupted',
-      directSendPending: hasPendingDirectSend($submissionDisplay$.conversation, $agentMessages$),
+      directSendAt: latestDirectSendAt($submissionDisplay$.conversation),
       queue,
       delivered,
       now: Date.now(),
