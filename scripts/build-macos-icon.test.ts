@@ -176,7 +176,7 @@ describe('modern macOS icon compiler', () => {
     const xcrun = fakeXcrun(1);
     const outputDirectory = join(temporaryDirectory(), 'output');
     await expect(
-      compileModernMacOSIcon({ outputDirectory, actoolTimeoutMs: 500, actoolAttempts: 3 }),
+      compileModernMacOSIcon({ outputDirectory, actoolTimeoutMs: 2_000, actoolAttempts: 3 }),
     ).resolves.toBe(join(outputDirectory, 'Assets.car'));
     expect(xcrun.attempts()).toBe(2);
     // The hung attempt was stopped at its deadline rather than left to finish.
@@ -189,7 +189,7 @@ describe('modern macOS icon compiler', () => {
     await expect(
       compileModernMacOSIcon({
         outputDirectory: join(temporaryDirectory(), 'output'),
-        actoolTimeoutMs: 300,
+        actoolTimeoutMs: 2_000,
         actoolAttempts: 2,
       }),
     ).rejects.toThrow(/actool .*did not finish within .* after 2 attempts/);

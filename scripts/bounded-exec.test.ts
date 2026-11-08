@@ -3,10 +3,42 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+
+const leftovers: number[] = [];
+
+// Liveness wait for an external process event; not a timing assertion.
+async function waitFor(check: () => boolean) {
+  for (let i = 0; i < 1_500; i++) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('condition not met');
+}
+
+/** A deadline the test fires by hand, once the command is known to be running. */
+function manualDeadline() {
+  let fire: (() => void) | null = null;
+  return {
+    armDeadline: (callback: () => void) => {
+      fire = callback;
+      return () => {
+        fire = null;
+      };
+    },
+    fire: () => fire?.(),
+  };
+}
 import { CommandTimeoutError, execBounded, retryTimeouts } from './bounded-exec.mjs';
 
 const dirs: string[] = [];
 afterEach(() => {
+  for (const pid of leftovers.splice(0)) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      // Already gone.
+    }
+  }
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -26,7 +58,9 @@ function hangingCommand({ ignoreTerm = false } = {}) {
   const pidFile = path.join(dir, 'grandchild');
   const grandchild =
     (ignoreTerm ? "process.on('SIGTERM', () => {});" : '') + 'setInterval(() => {}, 1000)';
+  const leaderFile = path.join(dir, 'leader');
   const source = `
+    require('node:fs').writeFileSync(${JSON.stringify(leaderFile)}, String(process.pid));
     const { spawn } = require('node:child_process');
     ${ignoreTerm ? "process.on('SIGTERM', () => {});" : ''}
     const child = spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], { stdio: 'ignore' });
@@ -36,6 +70,7 @@ function hangingCommand({ ignoreTerm = false } = {}) {
   return {
     args: ['-e', source],
     grandchild: () => Number(readFileSync(pidFile, 'utf8')),
+    leader: () => Number(readFileSync(leaderFile, 'utf8')),
     started: () => existsSync(pidFile),
   };
 }
@@ -59,12 +94,16 @@ describe('execBounded', () => {
 
   it('stops a hung command and its whole process tree at the deadline', async () => {
     const cmd = hangingCommand();
+    const deadline = manualDeadline();
     const run = execBounded(process.execPath, cmd.args, {
       timeoutMs: 500,
       graceMs: 2_000,
       stdio: 'ignore',
       label: 'fake tool',
+      armDeadline: deadline.armDeadline,
     });
+    await waitFor(cmd.started);
+    deadline.fire();
     await expect(run).rejects.toBeInstanceOf(CommandTimeoutError);
     await expect(run).rejects.toThrow('fake tool did not finish within 1 s and was stopped');
     expect(alive(cmd.grandchild())).toBe(false);
@@ -72,13 +111,35 @@ describe('execBounded', () => {
 
   it('SIGKILLs a tree that ignores SIGTERM once the grace period ends', async () => {
     const cmd = hangingCommand({ ignoreTerm: true });
+    const deadline = manualDeadline();
     const run = execBounded(process.execPath, cmd.args, {
       timeoutMs: 500,
       graceMs: 300,
       stdio: 'ignore',
+      armDeadline: deadline.armDeadline,
     });
+    await waitFor(cmd.started);
+    deadline.fire();
     await expect(run).rejects.toBeInstanceOf(CommandTimeoutError);
     expect(alive(cmd.grandchild())).toBe(false);
+  });
+
+  it('gives up on a command that outlives SIGKILL so the caller can retry', async () => {
+    const cmd = hangingCommand();
+    const deadline = manualDeadline();
+    const run = execBounded(process.execPath, cmd.args, {
+      timeoutMs: 500,
+      graceMs: 0,
+      abandonMs: 0,
+      stdio: 'ignore',
+      armDeadline: deadline.armDeadline,
+      // Stands in for a process stuck in an uninterruptible wait: no signal lands.
+      sendSignal: () => {},
+    });
+    await waitFor(cmd.started);
+    leftovers.push(cmd.leader(), cmd.grandchild());
+    deadline.fire();
+    await expect(run).rejects.toBeInstanceOf(CommandTimeoutError);
   });
 
   it('rejects a command that cannot be started', async () => {

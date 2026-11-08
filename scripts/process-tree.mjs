@@ -8,7 +8,9 @@
  */
 import { spawnSync } from 'node:child_process';
 
-const PS_ARGS = ['-A', '-o', 'pid=,ppid=,pgid=,etime=,stat=,command='];
+// -ww: never truncate command lines (BSD ps cuts them to a terminal width that a
+// pipe does not have).
+const PS_ARGS = ['-ww', '-A', '-o', 'pid=,ppid=,pgid=,etime=,stat=,command='];
 
 /** @returns {{pid:number, ppid:number, pgid:number, etime:string, stat:string, command:string}[]} */
 export function parseProcessList(text) {
@@ -69,8 +71,13 @@ const SECRET_ASSIGNMENT = /\b([A-Za-z_]*(?:PASSWORD|PWD|SECRET|TOKEN|CERTIFICATE
 
 export function redactCommand(command) {
   const words = command.split(' ');
+  // `security set-key-partition-list ... -k <keychain password>`: there `-k` takes the
+  // password (electron-builder passes CSC_KEY_PASSWORD), elsewhere a keychain path.
+  const passwordK = words.includes('set-key-partition-list');
   for (let i = 0; i < words.length - 1; i++) {
-    if (SECRET_FLAGS.has(words[i])) words[i + 1] = '<redacted>';
+    if (SECRET_FLAGS.has(words[i]) || (passwordK && words[i] === '-k')) {
+      words[i + 1] = '<redacted>';
+    }
   }
   return words
     .join(' ')

@@ -57,6 +57,16 @@ describe('process tree', () => {
     ).toBe(
       '/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain -T /usr/bin/codesign -P <redacted>',
     );
+    expect(
+      redactCommand(
+        '/usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k hunter2 /tmp/x.keychain',
+      ),
+    ).toBe(
+      '/usr/bin/security set-key-partition-list -S apple-tool:,apple: -s -k <redacted> /tmp/x.keychain',
+    );
+    expect(redactCommand('/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain')).toBe(
+      '/usr/bin/security import /tmp/4.p12 -k /tmp/x.keychain',
+    );
     expect(redactCommand('security unlock-keychain -p s3cret kc')).toBe(
       'security unlock-keychain -p <redacted> kc',
     );
@@ -68,7 +78,8 @@ describe('process tree', () => {
     );
   });
 
-  it('lists the real host processes, including this one', () => {
-    expect(listProcesses().some((p) => p.pid === process.pid)).toBe(true);
+  it('lists the real host processes with untruncated command lines', () => {
+    const self = listProcesses().find((p) => p.pid === process.pid);
+    expect(self?.command).toContain(process.argv[1] ?? process.execPath);
   });
 });

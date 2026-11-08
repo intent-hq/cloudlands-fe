@@ -33,6 +33,16 @@ export function execBounded(
     env = process.env,
     label = `${command} ${args[0] ?? ''}`.trim(),
     snapshot = listProcesses,
+    // Test seam: schedules the deadline; returns a cancel function.
+    armDeadline = (callback, ms) => {
+      const timer = setTimeout(callback, ms);
+      return () => clearTimeout(timer);
+    },
+    // How long to wait for the command to exit after SIGKILL before giving up on it
+    // (a process in an uninterruptible kernel wait ignores SIGKILL until it returns).
+    abandonMs = 5_000,
+    // Test seam: sends a signal to one pid.
+    sendSignal = signal,
   },
 ) {
   return new Promise((resolve, reject) => {
@@ -49,7 +59,8 @@ export function execBounded(
     let doomed = [];
     let poll;
 
-    const timer = setTimeout(() => {
+    const cancelDeadline = armDeadline(() => {
+      if (exited) return;
       timedOut = true;
       // Snapshot before signalling so grandchildren are still attributed to the
       // tree (they are reparented once their parent dies).
@@ -57,20 +68,22 @@ export function execBounded(
         .map((proc) => proc.pid)
         .reverse();
       if (!doomed.includes(child.pid)) doomed.push(child.pid);
-      for (const pid of doomed) signal(pid, 'SIGTERM');
+      for (const pid of doomed) sendSignal(pid, 'SIGTERM');
       const killAt = Date.now() + graceMs;
       poll = setInterval(() => {
         const survivors = doomed.filter((pid) => (pid === child.pid ? !exited : isAlive(pid)));
         if (survivors.length && Date.now() < killAt) return;
-        for (const pid of survivors) signal(pid, 'SIGKILL');
-        if (!exited) return;
+        for (const pid of survivors) sendSignal(pid, 'SIGKILL');
+        if (!exited && Date.now() < killAt + abandonMs) return;
         clearInterval(poll);
+        // Still not gone after SIGKILL: stop waiting so the caller can retry or fail.
+        if (!exited) child.unref();
         reject(new CommandTimeoutError(label, timeoutMs));
       }, 50);
     }, timeoutMs);
 
     child.on('error', (error) => {
-      clearTimeout(timer);
+      cancelDeadline();
       clearInterval(poll);
       reject(error);
     });
@@ -78,7 +91,7 @@ export function execBounded(
     child.on('exit', (code, sig) => {
       exited = true;
       if (timedOut) return; // the poll above settles the promise
-      clearTimeout(timer);
+      cancelDeadline();
       if (code === 0) resolve();
       else reject(new Error(`${label} exited with ${sig ? `signal ${sig}` : `code ${code}`}`));
     });
