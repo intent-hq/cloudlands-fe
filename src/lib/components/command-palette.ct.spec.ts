@@ -364,7 +364,7 @@ const repoSources = [
     source: 'GitHub',
     query: 'cloudl',
     arrows: 1,
-    prefill: { githubUrl: 'https://github.com/intent-hq/cloudlands-fe' },
+    prefill: { githubUrl: 'https://github.com/intent-hq/cloudlands-fe', exactRemote: true },
   },
   {
     source: 'GitLab',

@@ -214,13 +214,14 @@ describe('prefillForRepo', () => {
     });
   });
 
-  it('selects a GitHub repo by its github.com URL', () => {
+  it('selects the GitHub repo itself, never a local clone of it', () => {
     expect(prefillForRepo(github('Octo/App'))).toEqual({
       githubUrl: 'https://github.com/Octo/App',
+      exactRemote: true,
     });
     expect(
       prefillForRepo({ path: 'octo/app', type: 'github', name: 'app', owner: 'octo' }),
-    ).toEqual({ githubUrl: 'https://github.com/octo/app' });
+    ).toEqual({ githubUrl: 'https://github.com/octo/app', exactRemote: true });
   });
 
   it('selects a GitLab project through a checkout draft', () => {

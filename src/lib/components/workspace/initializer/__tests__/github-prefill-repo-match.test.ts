@@ -128,4 +128,42 @@ describe('matchGitHubPrefillRepo', () => {
     expect(result.kind).toBe('github');
     expect(probeRemote).toHaveBeenCalledTimes(10);
   });
+
+  it('selects the GitHub repo itself when the prefill asks for the exact remote', async () => {
+    const probeRemote = vi.fn(async () => ({ owner: 'octo', repo: 'app' }));
+    const result = await matchGitHubPrefillRepo({
+      owner: 'octo',
+      repo: 'app',
+      candidates: [
+        local('/code/my-checkout', { owner: 'octo', name: 'app' }),
+        local('/code/unknown'),
+      ],
+      probeRemote,
+      exactRemote: true,
+    });
+    expect(result).toEqual({
+      kind: 'github',
+      githubUrl: 'https://github.com/octo/app',
+      path: 'octo/app',
+    });
+    expect(probeRemote).not.toHaveBeenCalled();
+  });
+
+  it('keeps a saved GitHub entry when the prefill asks for the exact remote', async () => {
+    const result = await matchGitHubPrefillRepo({
+      owner: 'octo',
+      repo: 'app',
+      candidates: [
+        local('/code/my-checkout', { githubUrl: 'https://github.com/octo/app' }),
+        { path: 'Octo/App', type: 'github', githubUrl: 'https://github.com/Octo/App' },
+      ],
+      probeRemote: noRemote,
+      exactRemote: true,
+    });
+    expect(result).toEqual({
+      kind: 'github',
+      githubUrl: 'https://github.com/Octo/App',
+      path: 'Octo/App',
+    });
+  });
 });
