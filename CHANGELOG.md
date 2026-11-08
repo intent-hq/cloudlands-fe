@@ -4,6 +4,24 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.300.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.299.0...v2.300.0) (2026-11-08)
+
+
+### 🚀 Features
+
+* **home:** allow archiving the last Assistant chat ([#4276](https://github.com/intent-hq/cloudlands-fe/issues/4276)) ([efeff55](https://github.com/intent-hq/cloudlands-fe/commit/efeff552abeda88dc906266d7c87458a9eee7630))
+* **workspace:** move Use PR branch chip into the prompt toolbar ([#4281](https://github.com/intent-hq/cloudlands-fe/issues/4281)) ([0f91bce](https://github.com/intent-hq/cloudlands-fe/commit/0f91bce06d6b684b3ac532d49adca5f2630985d0))
+
+
+### 🐛 Bug Fixes
+
+* archive without confirmation when only local changes remain ([#4285](https://github.com/intent-hq/cloudlands-fe/issues/4285)) ([3fe2e03](https://github.com/intent-hq/cloudlands-fe/commit/3fe2e03fbd30ad5eab8ad4ecfb071344bbd71444))
+* bump intentd sidecar to v0.11.152 ([#4293](https://github.com/intent-hq/cloudlands-fe/issues/4293)) ([bc6b628](https://github.com/intent-hq/cloudlands-fe/commit/bc6b628d58cab21b015afde2c3e59ee5af3dd3f4))
+* **cloud-machines:** name field in the E2B entry edit form ([#4280](https://github.com/intent-hq/cloudlands-fe/issues/4280)) ([f589412](https://github.com/intent-hq/cloudlands-fe/commit/f589412fe7c6ada2cab980ff22295ff29470d4bc))
+* **cloud-machines:** one failure card for an E2B agent that couldn't start ([#4284](https://github.com/intent-hq/cloudlands-fe/issues/4284)) ([2c81d86](https://github.com/intent-hq/cloudlands-fe/commit/2c81d864421c436f22a6107c87099a9fe4cc8fc0))
+* **machines:** one destructive item in the machine row menu ([#4287](https://github.com/intent-hq/cloudlands-fe/issues/4287)) ([7ce3b94](https://github.com/intent-hq/cloudlands-fe/commit/7ce3b94b9ae11144324ad1a575eb866ced895b62))
+* **test:** fix sign-in lock and headless-electron cancel races behind flaky tests ([#4279](https://github.com/intent-hq/cloudlands-fe/issues/4279)) ([dee0220](https://github.com/intent-hq/cloudlands-fe/commit/dee02201b92dc1597948be8ccd3180db24a26913))
+
 ## [2.299.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.298.0...v2.299.0) (2026-11-08)
 
 
