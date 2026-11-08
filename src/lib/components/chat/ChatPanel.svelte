@@ -25,6 +25,7 @@
   import {
     advanceQueueDrainPrediction,
     initialQueueDrainPredictorState,
+    latestDirectSendAt,
     QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
     type QueueDrainPredictorState,
   } from './queue-drain-prediction';
@@ -906,6 +907,7 @@
         $chatIsInterrupting$ ||
         $chatLastTurnInterrupted$ ||
         latestAssistantForTelemetry?.metadata?.stopReason === 'interrupted',
+      directSendAt: latestDirectSendAt($submissionDisplay$.conversation),
       queue,
       delivered,
       now: Date.now(),
