@@ -34,8 +34,8 @@ const visibleRows = (viewport: Locator) =>
       .map((row) => row.dataset.messageId!);
   });
 
-async function openChat(page: Page, mount: (c: typeof ChatReturnHost) => Promise<Locator>) {
-  const component = await mount(ChatReturnHost);
+async function openChat(page: Page, mounted: Promise<Locator>) {
+  const component = await mounted;
   const viewport = component.getByTestId('chat-transcript-scroll-viewport');
   await expect(component.locator('[data-message-id="m-999"]').first()).toBeVisible();
   await expect.poll(() => distanceFromBottom(viewport)).toBeLessThan(3);
@@ -84,7 +84,7 @@ const PATHS: ReturnPath[] = [
 for (const path of PATHS) {
   for (const start of ['bottom', 'scrolled'] as const) {
     test(`${path} return from ${start} shows hydrated rows`, async ({ mount, page }) => {
-      const { component, viewport } = await openChat(page, mount);
+      const { component, viewport } = await openChat(page, mount(ChatReturnHost));
       let readingRow: string | undefined;
       if (start === 'scrolled') {
         await scrollUp(viewport);
@@ -122,7 +122,7 @@ for (const path of ['workspace-quick', 'workspace-rebuilt', 'workspace-dropped']
       mount,
       page,
     }) => {
-      const { component, viewport } = await openChat(page, mount);
+      const { component, viewport } = await openChat(page, mount(ChatReturnHost));
       if (start === 'scrolled') await scrollUp(viewport);
       await returnTo(page, viewport, path, 4);
       const divider = component.locator('[data-new-messages-divider]');
@@ -153,7 +153,7 @@ test('safety net moves a blank revealed viewport within 1 s and records a breadc
   page.on('console', (message) => {
     if (message.text().includes('chat-return-landing-correction')) breadcrumbs.push(message.text());
   });
-  const { component, viewport } = await openChat(page, mount);
+  const { component, viewport } = await openChat(page, mount(ChatReturnHost));
   await waitForSpacer(viewport);
   await returnTo(page, viewport, 'workspace-quick');
   // The spacer is re-sized from the fresh snapshot after its quiet window.
@@ -165,7 +165,7 @@ test('safety net moves a blank revealed viewport within 1 s and records a breadc
 });
 
 test('safety net never moves the viewport after user scroll input', async ({ mount, page }) => {
-  const { viewport } = await openChat(page, mount);
+  const { viewport } = await openChat(page, mount(ChatReturnHost));
   await waitForSpacer(viewport);
   await returnTo(page, viewport, 'workspace-quick');
   await wheelUntilScrolled(viewport, { deltaY: -200 });
@@ -173,4 +173,42 @@ test('safety net never moves the viewport after user scroll input', async ({ mou
   // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the whole safety-net window must not move.
   await page.waitForTimeout(1600);
   expect(await viewport.evaluate((node) => node.scrollTop)).toBeLessThan(3);
+});
+
+test('agent-tab quick return following the bottom with the divider above stays at the bottom', async ({
+  mount,
+  page,
+}) => {
+  // Entry with a short unseen tail latches a divider and follows the bottom;
+  // the divider session survives agent-tab switches.
+  const { component, viewport } = await openChat(
+    page,
+    mount(ChatReturnHost, { props: { lastSeen: 'm-995' } }),
+  );
+  const divider = component.locator('[data-new-messages-divider]');
+  await expect(divider).toHaveCount(1);
+  // Tall rows arriving while away push the divider above the viewport.
+  await returnTo(page, viewport, 'tab-quick', 4);
+  await expect.poll(() => distanceFromBottom(viewport), { timeout: 1500 }).toBeLessThan(3);
+  await expect(divider).not.toBeInViewport();
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the whole safety-net window must not move.
+  await page.waitForTimeout(1600);
+  expect(await distanceFromBottom(viewport)).toBeLessThan(3);
+  await expect(divider).not.toBeInViewport();
+});
+
+test('scroll-to-end after a divider landing is not pulled back to the divider', async ({
+  mount,
+  page,
+}) => {
+  const { component, viewport } = await openChat(page, mount(ChatReturnHost));
+  await returnTo(page, viewport, 'workspace-quick', 4);
+  await expect(component.locator('[data-new-messages-divider]')).toBeInViewport({
+    timeout: 1500,
+  });
+  await component.getByTestId('chat-floating-scroll-to-bottom-button').click();
+  await expect.poll(() => distanceFromBottom(viewport), { timeout: 1500 }).toBeLessThan(3);
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the whole safety-net window must not move.
+  await page.waitForTimeout(1600);
+  expect(await distanceFromBottom(viewport)).toBeLessThan(3);
 });

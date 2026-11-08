@@ -11,7 +11,7 @@
 </script>
 
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import ChatPanel from '../ChatPanel.svelte';
   import { clearCachedChatScroll } from '../chat-scroll-cache';
   import type { AgentMessage, AgentSession, Workspace } from '$shared/types';
@@ -41,6 +41,12 @@
   import { installMockElectronBridge } from '../../../../test/ct-mock-electron-bridge';
   import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 
+  let {
+    lastSeen,
+  }: {
+    /** Daemon seen marker at first open; defaults to the newest row (no unread). */
+    lastSeen?: string;
+  } = $props();
   const agentId = 'primary';
   const total = 1000;
   const initialCount = 40;
@@ -131,7 +137,7 @@
         messages: Array.from({ length: initialCount }, (_, i) => message(total - initialCount + i)),
         createdAt: timestamp,
         updatedAt: timestamp,
-        metadata: { lastSeenMessageId: `m-${total - 1}` },
+        metadata: { lastSeenMessageId: untrack(() => lastSeen) ?? `m-${total - 1}` },
       } as AgentSession,
     ]),
   );

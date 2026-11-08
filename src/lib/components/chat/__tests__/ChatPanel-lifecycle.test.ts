@@ -5918,6 +5918,7 @@ describe('chat return landing decisions', () => {
   });
 
   const probe = (overrides: Partial<ReturnViewportProbe>): ReturnViewportProbe => ({
+    kind: 'workspace',
     userScrolled: false,
     busy: false,
     following: false,
@@ -5941,6 +5942,16 @@ describe('chat return landing decisions', () => {
     expect(decideReturnCorrection(probe({ following: true, divider: 'visible' }))).toBe('none');
     // A reader who is not following chose this position.
     expect(decideReturnCorrection(probe({ following: false, divider: 'above' }))).toBe('none');
+  });
+
+  it('keeps an agent-tab return following the bottom even with the divider above', () => {
+    // Agent-tab returns keep today's behavior: the divider session survives
+    // the switch, so a following reader must not be pulled up to it.
+    expect(decideReturnCorrection(probe({ kind: 'tab', following: true, divider: 'above' }))).toBe(
+      'none',
+    );
+    // A blank agent-tab viewport is still corrected.
+    expect(decideReturnCorrection(probe({ kind: 'tab', hasVisibleRow: false }))).toBe('bottom');
   });
 
   it('never moves after user scroll input or while a fetch, seek, search or skeleton is active', () => {
