@@ -46,9 +46,8 @@
     return [
       {
         id: 'unexpose',
-        label: m.remoteMachines_unexpose_label(),
+        label: m.remoteMachines_unexposeAction_label({ backend: $backendLabel$ }),
         icon: faLinkSlash,
-        destructive: true,
         disabled: $operations$[machine.id] === 'removing',
       },
     ];

@@ -8387,7 +8387,7 @@
   "remoteMachines_state_unreachable_description": "{backend} no pudo conectar con {machine} la última vez. Lo intentará de nuevo cuando necesite la máquina.",
   "remoteMachines_state_unreachable_label": "Inaccesible",
   "remoteMachines_state_updateRequired_label": "Actualización necesaria",
-  "remoteMachines_unexposeAction_label": "Dejar de permitir que {backend} ejecute agentes aquí",
+  "remoteMachines_unexposeAction_label": "Dejar de permitir que {backend} ejecute agentes en este equipo",
   "remoteMachines_unexpose_confirmTitle": "¿Dejar de permitir que {backend} ejecute agentes en {machine}?",
   "remoteMachines_unexpose_confirm_description": "{backend} dejará de ejecutar agentes en {machine} y se revocará el acceso concedido.",
   "remoteMachines_unexpose_label": "Detener",

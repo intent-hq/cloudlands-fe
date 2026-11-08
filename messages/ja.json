@@ -8387,7 +8387,7 @@
   "remoteMachines_state_unreachable_description": "{backend} は前回 {machine} に接続できませんでした。マシンが必要になったときに再試行します。",
   "remoteMachines_state_unreachable_label": "接続できません",
   "remoteMachines_state_updateRequired_label": "アップデートが必要",
-  "remoteMachines_unexposeAction_label": "{backend} によるここでのエージェント実行の許可をやめる",
+  "remoteMachines_unexposeAction_label": "{backend} によるこのマシンでのエージェント実行の許可をやめる",
   "remoteMachines_unexpose_confirmTitle": "{backend} による {machine} でのエージェント実行の許可をやめますか？",
   "remoteMachines_unexpose_confirm_description": "{backend} は {machine} でエージェントを実行しなくなり、付与したアクセス権は取り消されます。",
   "remoteMachines_unexpose_label": "停止",

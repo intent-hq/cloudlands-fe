@@ -347,7 +347,6 @@
             id: 'unexpose',
             label: m.remoteMachines_unexposeAction_label({ backend: $backendLabel$ }),
             icon: faLinkSlash,
-            destructive: true,
             disabled: unexposing,
           },
         ]

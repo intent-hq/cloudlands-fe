@@ -8387,7 +8387,7 @@
   "remoteMachines_state_unreachable_description": "{backend} could not reach {machine} the last time it tried. It tries again when it needs the machine.",
   "remoteMachines_state_unreachable_label": "Unreachable",
   "remoteMachines_state_updateRequired_label": "Update required",
-  "remoteMachines_unexposeAction_label": "Stop letting {backend} run agents here",
+  "remoteMachines_unexposeAction_label": "Stop letting {backend} run agents on this machine",
   "remoteMachines_unexpose_confirmTitle": "Stop letting {backend} run agents on {machine}?",
   "remoteMachines_unexpose_confirm_description": "{backend} will no longer run agents on {machine}, and the access it was given is revoked.",
   "remoteMachines_unexpose_label": "Stop",

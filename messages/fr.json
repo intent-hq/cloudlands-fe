@@ -8387,7 +8387,7 @@
   "remoteMachines_state_unreachable_description": "{backend} n'a pas pu joindre {machine} lors de sa dernière tentative. Il réessaiera quand il aura besoin de la machine.",
   "remoteMachines_state_unreachable_label": "Injoignable",
   "remoteMachines_state_updateRequired_label": "Mise à jour requise",
-  "remoteMachines_unexposeAction_label": "Ne plus permettre à {backend} d'exécuter des agents ici",
+  "remoteMachines_unexposeAction_label": "Ne plus permettre à {backend} d'exécuter des agents sur cet ordinateur",
   "remoteMachines_unexpose_confirmTitle": "Ne plus permettre à {backend} d'exécuter des agents sur {machine} ?",
   "remoteMachines_unexpose_confirm_description": "{backend} n'exécutera plus d'agents sur {machine}, et l'accès accordé est révoqué.",
   "remoteMachines_unexpose_label": "Arrêter",
