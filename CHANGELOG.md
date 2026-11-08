@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.301.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.300.1...v2.301.0) (2026-11-08)
+
+
+### 🚀 Features
+
+* **verify-changed:** save each check's output to its own log ([#4295](https://github.com/intent-hq/cloudlands-fe/issues/4295)) ([f3b97f1](https://github.com/intent-hq/cloudlands-fe/commit/f3b97f15af225c4b6c4bfbd9212f771105acb8d7))
+
+
+### 🐛 Bug Fixes
+
+* **browser:** never forward about:blank from a mirror tab to its host ([#4290](https://github.com/intent-hq/cloudlands-fe/issues/4290)) ([e4207ed](https://github.com/intent-hq/cloudlands-fe/commit/e4207ed75f0d7e3d59ed051455e524763527be23))
+* **browser:** refresh the primary client when presence focus moves the route ([#4294](https://github.com/intent-hq/cloudlands-fe/issues/4294)) ([2bfaa56](https://github.com/intent-hq/cloudlands-fe/commit/2bfaa56d59173c91f44d9aa77f67cd7b8d088051))
+* bump intentd sidecar to v0.11.153 ([#4299](https://github.com/intent-hq/cloudlands-fe/issues/4299)) ([4dca151](https://github.com/intent-hq/cloudlands-fe/commit/4dca151196be22ebcdb203f81d527d30c989b2b0))
+* **chat:** never land on a blank viewport when returning to a chat ([#4289](https://github.com/intent-hq/cloudlands-fe/issues/4289)) ([c868c15](https://github.com/intent-hq/cloudlands-fe/commit/c868c15c1104baf98d1eff593fc8f62e762258de))
+* **ci:** compile uncached when the sccache server cannot start ([#4288](https://github.com/intent-hq/cloudlands-fe/issues/4288)) ([4ffa2d5](https://github.com/intent-hq/cloudlands-fe/commit/4ffa2d5a729f2c74c6e7d3cfc48a2bb85cd6440a))
+
 ## [2.300.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.300.0...v2.300.1) (2026-11-08)
 
 
