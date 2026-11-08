@@ -57,7 +57,6 @@ export interface PaletteRepoItem {
   [extra: string]: unknown;
 }
 
-
 /** Results that arrive from the server after typing. */
 export type PaletteLateSource = 'file' | 'note' | 'message';
 
