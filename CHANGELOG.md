@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.300.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.300.0...v2.300.1) (2026-11-08)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** bound actool in macOS packaging and log the tree of a stalled build ([#4291](https://github.com/intent-hq/cloudlands-fe/issues/4291)) ([8b8013e](https://github.com/intent-hq/cloudlands-fe/commit/8b8013eb62d6746a4823a4070b6c4a17b5777b59))
+
 ## [2.300.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.299.0...v2.300.0) (2026-11-08)
 
 
