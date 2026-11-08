@@ -309,7 +309,13 @@ describe('release-fast-path diff base', () => {
       {
         cwd,
         encoding: 'utf8',
-        env: { ...process.env, PR_HEAD_SHA: '', ...env, GITHUB_ENV: githubEnv },
+        env: {
+          ...process.env,
+          PR_HEAD_SHA: '',
+          ...env,
+          GITHUB_ENV: githubEnv,
+          GITHUB_WORKSPACE: process.cwd(),
+        },
       },
     );
     expect(result.status, result.stderr).toBe(0);
