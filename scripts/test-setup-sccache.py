@@ -245,7 +245,6 @@ class ServerStartup(unittest.TestCase):
                 self.assertEqual(calls, [])
 
 
-
 class SelfHostedCache(unittest.TestCase):
     def test_endpoint_and_token_select_self_hosted(self):
         value = cache.configuration(SELF_HOSTED)
