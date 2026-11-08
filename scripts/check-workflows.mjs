@@ -83,24 +83,158 @@ export function installFromArchive(buffer, { key, cacheDir }) {
   return target;
 }
 
-const DOWNLOAD_TIMEOUT_MS = 120_000;
+// Per attempt; the archive is about 2.3 MB. Short enough that a stalled host
+// reaches the API fallback within a few minutes.
+const DOWNLOAD_TIMEOUT_MS = 30_000;
+// Delays between attempts, in milliseconds: four attempts per source in all,
+// matching scripts/download_retry.py.
+export const RETRY_DELAYS_MS = Object.freeze([2_000, 5_000, 15_000]);
+const RELEASE_REPO = 'rhysd/actionlint';
+const ATTEMPTS = RETRY_DELAYS_MS.length + 1;
+// Upper bound on fetchReleaseAsset when every attempt stalls to its timeout:
+// three retried fetches (direct download, release lookup, API asset), each
+// ATTEMPTS timeouts plus the backoff between them. Callers that wrap the
+// download in their own deadline (the unit tests) derive it from this.
+export const DOWNLOAD_WORST_CASE_MS =
+  3 * (ATTEMPTS * DOWNLOAD_TIMEOUT_MS + RETRY_DELAYS_MS.reduce((sum, ms) => sum + ms, 0));
 
-async function download(url) {
-  const response = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
-  if (!response.ok) throw new Error(`downloading ${url} failed: HTTP ${response.status}`);
-  return Buffer.from(await response.arrayBuffer());
+// A failed download. `transient` is true when every attempt failed with a 5xx,
+// a network error or a timeout, i.e. when GitHub (not the pin) is at fault.
+export class DownloadError extends Error {
+  constructor(message, { transient }) {
+    super(message);
+    this.name = 'DownloadError';
+    this.transient = transient;
+  }
+}
+
+// 5xx, 408 and 429 are transient. GitHub also answers an exhausted rate limit
+// with 403 plus `x-ratelimit-remaining: 0` or `retry-after`; any other 4xx
+// (a wrong version, asset name or token) is permanent.
+export function transientStatus(response) {
+  const { status, headers } = response;
+  if (status >= 500 || status === 408 || status === 429) return true;
+  return (
+    status === 403 &&
+    (headers.get('x-ratelimit-remaining') === '0' || headers.get('retry-after') !== null)
+  );
+}
+
+async function fetchOnce(url, { headers, fetchImpl }) {
+  let response;
+  try {
+    response = await fetchImpl(url, { headers, signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
+  } catch (error) {
+    throw new DownloadError(
+      `downloading ${url} failed: ${error.cause?.code ?? error.cause?.message ?? error.message}`,
+      {
+        transient: true,
+      },
+    );
+  }
+  if (!response.ok) {
+    throw new DownloadError(`downloading ${url} failed: HTTP ${response.status}`, {
+      transient: transientStatus(response),
+    });
+  }
+  try {
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    throw new DownloadError(`reading ${url} failed: ${error.message}`, { transient: true });
+  }
+}
+
+// One fetch with bounded retries on transient failures only: a 4xx (a wrong
+// version or asset name) fails at once. A single GitHub 504 on a release
+// download ejected merge-queue PRs (cloudlands-fe runs 42464028655, 42464205010).
+export async function fetchWithRetry(
+  url,
+  {
+    headers = {},
+    delays = RETRY_DELAYS_MS,
+    sleep = defaultSleep,
+    fetchImpl = fetch,
+    log = console.warn,
+  } = {},
+) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await fetchOnce(url, { headers, fetchImpl });
+    } catch (error) {
+      const delay = delays[attempt - 1];
+      if (!error.transient || delay === undefined) throw error;
+      log(`workflow lint: ${error.message} (attempt ${attempt}); retrying in ${delay / 1000}s`);
+      await sleep(delay);
+    }
+  }
+}
+
+function defaultSleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Downloads a release asset from its browser_download_url and, when that keeps
+// failing, from the REST API asset endpoint. GitHub has served 504 for single
+// release assets for over half an hour while the API endpoint for the same
+// asset returned 200 (2026-11-08). The archive is still checksum-verified by
+// installFromArchive, so the fallback source cannot weaken the pin. A token
+// (GITHUB_TOKEN or GH_TOKEN) is sent only to the API, and only for its rate
+// limit: the release is public.
+export async function fetchReleaseAsset(
+  name,
+  {
+    tag = `v${ACTIONLINT_VERSION}`,
+    repo = RELEASE_REPO,
+    downloadBase = 'https://github.com',
+    apiBase = 'https://api.github.com',
+    token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN,
+    ...retry
+  } = {},
+) {
+  const direct = `${downloadBase}/${repo}/releases/download/${tag}/${name}`;
+  let primaryError;
+  try {
+    return await fetchWithRetry(direct, retry);
+  } catch (error) {
+    primaryError = error;
+  }
+  (retry.log ?? console.warn)(
+    `workflow lint: ${primaryError.message}; falling back to the GitHub API asset endpoint`,
+  );
+  const auth = token ? { Authorization: `Bearer ${token}` } : {};
+  try {
+    const release = JSON.parse(
+      (
+        await fetchWithRetry(`${apiBase}/repos/${repo}/releases/tags/${tag}`, {
+          ...retry,
+          headers: { Accept: 'application/vnd.github+json', ...auth },
+        })
+      ).toString('utf8'),
+    );
+    const asset = release.assets?.find((candidate) => candidate.name === name);
+    if (!asset) {
+      throw new DownloadError(`release ${repo}@${tag} has no asset ${name}`, { transient: false });
+    }
+    return await fetchWithRetry(`${apiBase}/repos/${repo}/releases/assets/${asset.id}`, {
+      ...retry,
+      headers: { Accept: 'application/octet-stream', ...auth },
+    });
+  } catch (error) {
+    throw new DownloadError(`${primaryError.message}; API fallback: ${error.message}`, {
+      transient: Boolean(primaryError.transient && error.transient),
+    });
+  }
 }
 
 export async function resolveActionlint({
   cacheDir = DEFAULT_CACHE_DIR,
-  fetchArchive = download,
+  fetchArchive = fetchReleaseAsset,
 } = {}) {
   if (binaryVersion('actionlint') === ACTIONLINT_VERSION) return 'actionlint';
   const cached = path.join(cacheDir, ACTIONLINT_VERSION, 'actionlint');
   if (binaryVersion(cached) === ACTIONLINT_VERSION) return cached;
   const key = platformKey();
-  const url = `https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archiveName(key)}`;
-  const installed = installFromArchive(await fetchArchive(url), { key, cacheDir });
+  const installed = installFromArchive(await fetchArchive(archiveName(key)), { key, cacheDir });
   if (binaryVersion(installed) !== ACTIONLINT_VERSION) {
     throw new Error(`${installed} does not report version ${ACTIONLINT_VERSION}`);
   }
