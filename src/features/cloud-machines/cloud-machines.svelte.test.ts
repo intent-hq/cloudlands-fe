@@ -252,6 +252,7 @@ describe('named E2B entries under Nodes', () => {
     const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
     const name = within(form).getByLabelText('Name') as HTMLInputElement;
     expect(name.value).toBe('Team project');
+    expect(view.queryByRole('button', { name: 'Rename Team project' })).toBeNull();
     await fireEvent.input(name, { target: { value: 'e2b' } });
     expect(form.querySelector('[data-cloud-name-error]')).not.toBeNull();
     await fireEvent.input(name, { target: { value: ' Big boxes ' } });
@@ -264,6 +265,18 @@ describe('named E2B entries under Nodes', () => {
       name: 'Big boxes',
     });
     expect(configure?.payload[0]).not.toHaveProperty('apiKey');
+  });
+
+  it('has no Name field on a backend without entries', () => {
+    seed('connected');
+    const view = render(CloudMachineRow, {
+      entry: E2B_PROVIDER,
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    expect(within(form).queryByLabelText('Name')).toBeNull();
   });
 
   it('sends no name from the edit form when it is unchanged', async () => {
