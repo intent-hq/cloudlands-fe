@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/release-alpha.yml, scripts/test-fixtures/release-oldest-tag.json, .github/workflows/manual-signed-build.yml, scripts/run-until-notarizing.mjs, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
+// @verify-changed-triggers: .github/workflows/release-alpha.yml, scripts/test-fixtures/release-oldest-tag.json, .github/workflows/manual-signed-build.yml, scripts/run-until-notarizing.mjs, scripts/process-tree.mjs, .github/workflows/promote-beta.yml, .github/workflows/release-stable.yml, scripts/assemble-release-assets.mjs, scripts/verify-macos-build.sh, scripts/apple-ticket-retry.mjs, scripts/mac-update-feed.mjs, scripts/run-packaged-macos-smoke.py, scripts/test_packaged_macos_smoke.py, src/features/auto-update/main/mac-update-compatibility.ts
 // @vitest-environment node
 
 import { spawnSync } from 'node:child_process';
@@ -79,6 +79,7 @@ function temp() {
     'fetch-sidecar-lib.mjs',
     'mac-channel-feeds.mjs',
     'run-until-notarizing.mjs',
+    'process-tree.mjs',
   ]) {
     copyFileSync(resolve('scripts', file), join(dir, 'scripts', file));
     copyFileSync(resolve('scripts', file), join(dir, '.release-tools/scripts', file));

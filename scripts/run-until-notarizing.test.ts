@@ -211,6 +211,38 @@ describe('runUntilNotarizing', () => {
     await waitFor(() => !alive(pidOf(build.ready)));
   });
 
+  it('logs the hung process tree before stopping a stalled build', async () => {
+    const build = fakeBuild(scratch(), {});
+    const { result, lines, deadline } = start(build);
+    await waitFor(() => hasPid(build.ready) && hasPid(build.leader));
+    deadline.fire();
+    await expect(result).resolves.toBe(STALL_EXIT_CODE);
+    const out = lines.join('\n');
+    const group = out.slice(out.indexOf('::group::Process tree'), out.indexOf('::endgroup::'));
+    expect(out.indexOf('::error title=macOS packaging stalled::')).toBeLessThan(
+      out.indexOf('::group::Process tree'),
+    );
+    // Both the leader and the hung grandchild were alive (so listed) at the dump.
+    expect(group).toMatch(new RegExp(`^${pidOf(build.leader)} \\(ppid`, 'm'));
+    expect(group).toMatch(
+      new RegExp(`^  ${pidOf(build.ready)} \\(ppid ${pidOf(build.leader)},`, 'm'),
+    );
+  });
+
+  it('still stops a stalled build when listing its processes fails', async () => {
+    const build = fakeBuild(scratch(), {});
+    const { result, lines, deadline } = start(build, manualDeadline(), {
+      describeProcessTree: () => {
+        throw new Error('ps unavailable');
+      },
+    });
+    await waitFor(() => hasPid(build.ready));
+    deadline.fire();
+    await expect(result).resolves.toBe(STALL_EXIT_CODE);
+    expect(lines.join('\n')).toMatch(/could not list processes: ps unavailable/);
+    await waitFor(() => !alive(pidOf(build.ready)));
+  });
+
   it('escalates to SIGKILL when the command ignores SIGTERM', async () => {
     const build = fakeBuild(scratch(), { ignoreTerm: true });
     const { result, deadline } = start(build);

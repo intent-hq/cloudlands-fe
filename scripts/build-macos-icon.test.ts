@@ -1,13 +1,76 @@
 // @verify-changed-triggers: src/assets/icons/app-icon/*.png, electron-builder.yml,
 //   .github/workflows/release-alpha.yml, .github/workflows/manual-signed-build.yml
 
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import buildModernMacOSIcon, { compileModernMacOSIcon, ICON_DOCUMENT } from './build-macos-icon.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import buildModernMacOSIcon, {
+  ACTOOL_TIMEOUT_MS,
+  compileModernMacOSIcon,
+  ICON_DOCUMENT,
+} from './build-macos-icon.js';
 
 const temporaryDirectories: string[] = [];
+
+function alive(pid: number) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Puts a fake `xcrun` first on PATH. `--find` and `xcodebuild -version` answer
+ * like Xcode 26; the first `hangAttempts` `actool` runs start a grandchild that
+ * sleeps for 8 s (recording its pid) and wait on it, like the hung actool on
+ * WarpBuild runners; later runs write Assets.car to the --compile directory.
+ */
+function fakeXcrun(hangAttempts: number) {
+  const state = temporaryDirectory();
+  const bin = join(state, 'bin');
+  const script = join(bin, 'xcrun');
+  mkdirSync(bin);
+  writeFileSync(
+    script,
+    `#!/bin/sh
+case "$1" in
+  --find) echo /fake/actool ;;
+  xcodebuild) echo 'Xcode 26.0.1' ;;
+  actool)
+    n=$(( $(cat "${state}/count" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "${state}/count"
+    if [ "$n" -le ${hangAttempts} ]; then
+      sleep 8 &
+      echo "$!" > "${state}/grandchild-$n"
+      wait
+      echo done > "${state}/finished-$n"
+      exit 1
+    fi
+    while [ "$1" != --compile ]; do shift; done
+    echo compiled > "$2/Assets.car"
+    ;;
+esac
+`,
+  );
+  chmodSync(script, 0o755);
+  vi.stubEnv('PATH', `${bin}:${process.env.PATH}`);
+  return {
+    attempts: () => Number(readFileSync(join(state, 'count'), 'utf8')),
+    grandchild: (n: number) => Number(readFileSync(join(state, `grandchild-${n}`), 'utf8')),
+    finished: (n: number) => existsSync(join(state, `finished-${n}`)),
+  };
+}
 
 function temporaryDirectory() {
   const directory = mkdtempSync(join(tmpdir(), 'intent-macos-icon-test-'));
@@ -16,6 +79,7 @@ function temporaryDirectory() {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -32,7 +96,12 @@ describe('modern macOS icon compiler', () => {
       expect(command).toBe('xcrun');
       if (args[0] === '--find') return '/Applications/Xcode.app/usr/bin/actool';
       if (args[0] === 'xcodebuild') return 'Xcode 26.0.1\nBuild version 17A400';
-
+      throw new Error(`unexpected synchronous xcrun ${args[0]}`);
+    };
+    const runActool = async (command: string, args: string[], options: { timeoutMs: number }) => {
+      expect(command).toBe('xcrun');
+      expect(args[0]).toBe('actool');
+      expect(options.timeoutMs).toBe(ACTOOL_TIMEOUT_MS);
       const iconPackage = args[1];
       expect(readFileSync(join(iconPackage, 'icon.json'), 'utf8')).toBe(
         `${JSON.stringify(ICON_DOCUMENT, null, 2)}\n`,
@@ -41,11 +110,12 @@ describe('modern macOS icon compiler', () => {
       expect(args).toEqual(
         expect.arrayContaining(['--app-icon', 'Intent', '--platform', 'macosx']),
       );
-      writeFileSync(join(outputDirectory, 'Assets.car'), 'compiled icon');
-      return undefined;
+      const compileDirectory = args[args.indexOf('--compile') + 1];
+      expect(compileDirectory).not.toBe(outputDirectory);
+      writeFileSync(join(compileDirectory, 'Assets.car'), 'compiled icon');
     };
 
-    await expect(compileModernMacOSIcon({ execute, outputDirectory })).resolves.toBe(
+    await expect(compileModernMacOSIcon({ execute, runActool, outputDirectory })).resolves.toBe(
       join(outputDirectory, 'Assets.car'),
     );
     expect(ICON_DOCUMENT.fill).toEqual({
@@ -102,5 +172,32 @@ describe('modern macOS icon compiler', () => {
     expect(config).toContain('    CFBundleIconName: Intent');
     expect(config).toContain('    CFBundleIconFile: icon.icns');
     expect(config).toContain('  icon: src/assets/icons/icon.icns');
+  });
+
+  it('stops a hung actool, kills its process tree, and retries', async () => {
+    const xcrun = fakeXcrun(1);
+    const outputDirectory = join(temporaryDirectory(), 'output');
+    await expect(
+      compileModernMacOSIcon({ outputDirectory, actoolTimeoutMs: 2_000, actoolAttempts: 3 }),
+    ).resolves.toBe(join(outputDirectory, 'Assets.car'));
+    expect(readFileSync(join(outputDirectory, 'Assets.car'), 'utf8')).toBe('compiled\n');
+    expect(xcrun.attempts()).toBe(2);
+    // The hung attempt was stopped at its deadline rather than left to finish.
+    expect(xcrun.finished(1)).toBe(false);
+    expect(alive(xcrun.grandchild(1))).toBe(false);
+  });
+
+  it('fails clearly once every actool attempt has hung', async () => {
+    const xcrun = fakeXcrun(2);
+    await expect(
+      compileModernMacOSIcon({
+        outputDirectory: join(temporaryDirectory(), 'output'),
+        actoolTimeoutMs: 2_000,
+        actoolAttempts: 2,
+      }),
+    ).rejects.toThrow(/actool .*did not finish within .* after 2 attempts/);
+    expect(xcrun.attempts()).toBe(2);
+    expect(alive(xcrun.grandchild(1))).toBe(false);
+    expect(alive(xcrun.grandchild(2))).toBe(false);
   });
 });
