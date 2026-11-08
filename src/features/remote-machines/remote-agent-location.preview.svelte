@@ -28,7 +28,11 @@
     | 'e2b-bootstrap-not-queued'
     | 'e2b-sandbox-lost'
     | 'e2b-template-missing'
-    | 'e2b-key-rejected';
+    | 'e2b-key-rejected'
+    | 'e2b-starting-turn'
+    | 'e2b-setup-turn'
+    | 'e2b-started-turn'
+    | 'remote-starting-turn';
 
   interface Props {
     scene?: Scene;
@@ -67,6 +71,10 @@
       'e2b-sandbox-lost': sceneState('e2b-sandbox-lost'),
       'e2b-template-missing': sceneState('e2b-template-missing'),
       'e2b-key-rejected': sceneState('e2b-key-rejected'),
+      'e2b-starting-turn': sceneState('e2b-starting-turn'),
+      'e2b-setup-turn': sceneState('e2b-setup-turn'),
+      'e2b-started-turn': sceneState('e2b-started-turn'),
+      'remote-starting-turn': sceneState('remote-starting-turn'),
     },
     captureReadiness: { selector: '[data-remote-agent-location-scene][data-ready]' },
   });
@@ -103,6 +111,9 @@
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import AgentPlacementNotice from './AgentPlacementNotice.svelte';
+  import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
+  import { agentCloudStarting } from './agent-location';
+  import { StartLineHosts } from './start-line-hosts.svelte';
   import QueuedMessageList from '$lib/components/chat/QueuedMessageList.svelte';
   import { remoteMachinesLoaded } from './remote-machines-slice';
   import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
@@ -210,7 +221,15 @@
       ...extra,
     }) as AgentSession;
 
+  // A turn in progress: the working row under the sent message.
+  const isTurnScene = (s: Scene) => s.endsWith('-turn');
+  const SENT_PROMPT = [
+    { phase: 'prompt', message: 'Sent prompt…', level: 'info' as const, timestamp: Date.parse(T) },
+  ];
+  const startLineHosts = new StartLineHosts();
+
   const STARTING_SCENES: Scene[] = [
+    'remote-starting-turn',
     'remote-starting',
     'remote-preparing-checkout',
     'remote-running-setup',
@@ -309,10 +328,22 @@
     agent('ral-e2b', 'Docs sweeper', {
       nodeName: 'E2B',
       placement: { target: 'e2b', checkout: 'isolated' },
-      ...(s === 'e2b-running' || s === 'e2b-paused'
+      ...(s === 'e2b-running' || s === 'e2b-paused' || s === 'e2b-started-turn'
         ? { nodeId: E2B_NODE, leaseId: 'lease-e2b', effectiveIsolation: 'isolated' as const }
         : { effectiveIsolation: 'pending' as const }),
-      ...(s === 'e2b-starting' ? { cloudStart: { step: 'starting-daemon' } } : {}),
+      ...(s === 'e2b-starting' || s === 'e2b-starting-turn'
+        ? { cloudStart: { step: 'starting-daemon' } }
+        : {}),
+      ...(s === 'e2b-setup-turn'
+        ? {
+            setup: {
+              state: 'running' as const,
+              startedAt: '2026-11-02T08:24:10.000Z',
+              output: SETUP_OUTPUT,
+            },
+          }
+        : {}),
+      ...(isTurnScene(s) ? { status: AgentStatus.Processing } : {}),
       ...(E2B_ERRORS[s] ? { status: AgentStatus.Error, placementError: E2B_ERRORS[s] } : {}),
       updatedAt: '2026-11-02T08:20:00.000Z',
     });
@@ -396,6 +427,7 @@
   const agents = $derived(agentsFor(scene));
   const e2bQueued = $derived(!!E2B_ERRORS[scene] && scene !== 'e2b-bootstrap-not-queued');
   const selected = $derived(agents.find((a) => a.id === selectedAgentId) ?? agents[0]!);
+  const turnStartLine = $derived(isTurnScene(scene) && agentCloudStarting(selected));
   const tab = $derived<PanelTab>({
     id: 'ral-tab',
     type: 'agent',
@@ -501,6 +533,10 @@
   });
 </script>
 
+{#snippet cloudStartLine()}
+  <AgentPlacementNotice agentId={selectedAgentId} phaseLine onPhaseLine={startLineHosts.register} />
+{/snippet}
+
 <div
   class="flex h-[720px] w-full min-w-0 bg-background text-foreground"
   data-remote-agent-location-scene={scene}
@@ -529,10 +565,21 @@
     {/if}
     <div class="flex min-h-0 flex-1 flex-col items-center">
       <div class="flex w-full max-w-[760px] flex-1 flex-col justify-end px-6 pb-4">
+        {#if ready && isTurnScene(scene)}
+          <div class="mb-8 ml-auto max-w-[80%] rounded-lg bg-muted px-3 py-2 type-body">
+            Sweep the docs folder for broken links and fix the ones you can.
+          </div>
+          <StreamingStatus
+            isProcessing
+            statusEvents={SENT_PROMPT}
+            startLine={turnStartLine ? cloudStartLine : null}
+          />
+        {/if}
         {#if ready}
           {#key selectedAgentId}
             <AgentPlacementNotice
               agentId={selectedAgentId}
+              phaseLineShown={startLineHosts.shown}
               failedAt={E2B_ERRORS[scene] ? E2B_FAILED_AT : null}
               queued={e2bQueued}
               onRetry={() => {}}

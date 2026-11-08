@@ -7,7 +7,7 @@
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { crispOut, fade } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faRotateRight, faExclamationTriangle, faStop } from '@fortawesome/free-solid-svg-icons';
@@ -108,6 +108,11 @@
     onStop?: () => void;
     /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
     onStalledRetry?: () => void;
+    /**
+     * Shown in place of the phase line while the turn works, e.g. the cloud
+     * machine start line before the agent's machine is up.
+     */
+    startLine?: Snippet | null;
     /** Additional class names */
     class?: string;
   }
@@ -138,6 +143,7 @@
     onRetryWithProvider,
     onStop,
     onStalledRetry,
+    startLine = null,
     class: className = '',
   }: Props = $props();
 
@@ -182,10 +188,13 @@
   // Daemon-reported mid-turn stall (monorepo#3402): only meaningful while the
   // turn is still active — turn end/failure clears statusEvents or flips
   // status away from 'normal', so the stalled row can never outlive the turn.
+  let startLineVisible = $derived(turnActive && !!startLine);
   let stalledEvent = $derived(
-    turnActive && !queueWait ? getActiveStalledEvent(statusEvents, lastChunkTime) : null,
+    turnActive && !queueWait && !startLine
+      ? getActiveStalledEvent(statusEvents, lastChunkTime)
+      : null,
   );
-  let thinkingVisible = $derived(turnActive && !stalledEvent);
+  let thinkingVisible = $derived(turnActive && !stalledEvent && !startLine);
   let queueWaitMessage = $derived(
     queueWait
       ? queueWait.reason === 'memory-budget'
@@ -251,6 +260,12 @@
   // corrupted (monorepo#940), otherwise identical to the raw-error rendering.
   let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
 </script>
+
+{#if startLineVisible && startLine}
+  <div class="mt-[var(--space-3)] {className}" data-stream-start-line>
+    {@render startLine()}
+  </div>
+{/if}
 
 <StreamingTypingIndicator
   visible={thinkingVisible}

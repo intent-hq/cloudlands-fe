@@ -5,14 +5,23 @@
   output opens here as a read-only log. An agent on E2B that couldn't start
   gets the chat's failure card instead (the caller then hides the generic
   one). Nothing for a local agent or a remote agent that runs normally.
+  With `phaseLine`, it renders only a starting cloud machine's line, shaped as
+  the chat's working row that it stands in for.
 -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { faCircleExclamation, faTriangleExclamation } from '$lib/icons/phosphor-icons';
-  import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from '$lib/components/chat/operational-disclosure-row';
+  import {
+    CHAT_OPERATIONAL_LEADING_CLASS,
+    CHAT_OPERATIONAL_ROW_CLASS,
+    CHAT_OPERATIONAL_SUMMARY_CLASS,
+    OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
+    OPERATIONAL_EXPANDED_CONTENT_CLASS,
+  } from '$lib/components/chat/operational-disclosure-row';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
@@ -40,6 +49,9 @@
     onRetry,
     retrying = false,
     turnError = null,
+    phaseLine = false,
+    onPhaseLine,
+    phaseLineShown = false,
   }: {
     agentId: string;
     /** When the agent's start failed, for the failure card. */
@@ -55,6 +67,12 @@
      * in the generic failure card, so the start failure card steps aside.
      */
     turnError?: string | null;
+    /** Render only a starting cloud machine's line, in the chat's working row. */
+    phaseLine?: boolean;
+    /** Called while the working row shows the start line; returns its release. */
+    onPhaseLine?: () => () => void;
+    /** The working row shows the start line, so this notice leaves it out. */
+    phaseLineShown?: boolean;
   } = $props();
 
   const agentIdStore = writable<string | undefined>(undefined);
@@ -126,6 +144,12 @@
   );
   let outputOpen = $state(false);
 
+  const cloudStarting = $derived(!!location?.cloud && kind === 'starting');
+  $effect(() => {
+    if (!phaseLine || !cloudStarting || !onPhaseLine) return;
+    return untrack(onPhaseLine);
+  });
+
   function openMachinesSettings() {
     void navigateToSettings({ tab: 'devices', hash: 'devices' });
   }
@@ -145,37 +169,70 @@
   {/if}
 {/snippet}
 
-{#if location && kind === 'starting'}
-  <div
-    class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
-    data-agent-placement-notice="starting"
-    data-agent-setup-state={setup?.state}
-  >
-    <div class="flex items-center gap-2 type-body font-family-child text-muted-foreground">
-      <span
-        class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
-        role="status"
-        aria-live="polite"
-      >
-        <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
-          <IntentMarkLoader size={14} />
+{#if phaseLine}
+  {#if location && cloudStarting}
+    <div
+      data-agent-placement-notice="starting"
+      data-placement-phase-line
+      data-agent-setup-state={setup?.state}
+    >
+      <div class="{CHAT_OPERATIONAL_ROW_CLASS} font-family-child font-normal text-muted-foreground">
+        <div class={CHAT_OPERATIONAL_LEADING_CLASS} aria-hidden="true">
+          <IntentMarkLoader size={16} />
+        </div>
+        <span class={CHAT_OPERATIONAL_SUMMARY_CLASS} role="status" aria-live="polite">
+          {startingTitle}
+          {#if startingStep}
+            <span class="text-foreground">{startingStep}</span>
+          {/if}
+          <span class="text-subtle">{startingDescription}</span>
         </span>
-        <span>{startingTitle}</span>
-        {#if startingStep}
-          <span class="text-foreground">{startingStep}</span>
-        {/if}
-        <span class="text-subtle">{startingDescription}</span>
-      </span>
-      {@render outputToggle()}
+        {@render outputToggle()}
+      </div>
+      {#if outputOpen && canShowOutput}
+        <div class={OPERATIONAL_EXPANDED_CONTENT_CLASS}>
+          <RemoteSetupLog
+            machine={location.name}
+            output={setup?.output}
+            truncated={setup?.outputTruncated}
+          />
+        </div>
+      {/if}
     </div>
-    {#if outputOpen && canShowOutput}
-      <RemoteSetupLog
-        machine={location.name}
-        output={setup?.output}
-        truncated={setup?.outputTruncated}
-      />
-    {/if}
-  </div>
+  {/if}
+{:else if location && kind === 'starting'}
+  {#if !(location.cloud && phaseLineShown)}
+    <div
+      class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+      data-agent-placement-notice="starting"
+      data-agent-setup-state={setup?.state}
+    >
+      <div class="flex items-center gap-2 type-body font-family-child text-muted-foreground">
+        <span
+          class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
+            <IntentMarkLoader size={14} />
+          </span>
+          <span>{startingTitle}</span>
+          {#if startingStep}
+            <span class="text-foreground">{startingStep}</span>
+          {/if}
+          <span class="text-subtle">{startingDescription}</span>
+        </span>
+        {@render outputToggle()}
+      </div>
+      {#if outputOpen && canShowOutput}
+        <RemoteSetupLog
+          machine={location.name}
+          output={setup?.output}
+          truncated={setup?.outputTruncated}
+        />
+      {/if}
+    </div>
+  {/if}
 {:else if location && kind === 'setup-failed'}
   <div
     class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
