@@ -8558,6 +8558,7 @@
   "cloudMachines_startOn_needsProfile": "このモデルはサインインを使用します。API キーまたはトークンのプロファイルを選んでください",
   "cloudMachines_startOn_providerMissing": "E2B サンドボックスにはこのモデルのツールが含まれていません",
   "cloudMachines_start_title": "クラウドマシンを起動しています…",
+  "cloudMachines_wake_title": "クラウドマシンを再開しています…",
   "cloudMachines_start_creating": "E2B サンドボックスを作成しています",
   "cloudMachines_start_daemon": "サンドボックスで Intent を起動しています",
   "cloudMachines_start_connecting": "接続しています",

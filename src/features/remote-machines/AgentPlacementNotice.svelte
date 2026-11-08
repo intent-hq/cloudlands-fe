@@ -5,8 +5,8 @@
   output opens here as a read-only log. An agent on E2B that couldn't start
   gets the chat's failure card instead (the caller then hides the generic
   one). Nothing for a local agent or a remote agent that runs normally.
-  With `phaseLine`, it renders only a starting cloud machine's line, shaped as
-  the chat's working row that it stands in for.
+  With `phaseLine`, it renders only a starting or waking cloud machine's line,
+  shaped as the chat's working row that it stands in for.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -67,7 +67,7 @@
      * in the generic failure card, so the start failure card steps aside.
      */
     turnError?: string | null;
-    /** Render only a starting cloud machine's line, in the chat's working row. */
+    /** Render only a starting or waking cloud machine's line, in the chat's working row. */
     phaseLine?: boolean;
     /** Called while the working row shows the start line; returns its release. */
     onPhaseLine?: () => () => void;
@@ -147,6 +147,7 @@
   let outputOpen = $state(false);
 
   const cloudStarting = $derived(!!location?.cloud && kind === 'starting');
+  const cloudWaking = $derived(!kind && location?.cloud?.state === 'resuming');
   $effect(() => {
     if (!phaseLine || !cloudStarting || !onPhaseLine) return;
     return untrack(onPhaseLine);
@@ -209,6 +210,17 @@
           {@render setupLog(location.name)}
         </div>
       {/if}
+    </div>
+  {:else if cloudWaking}
+    <div data-cloud-wake-line data-placement-phase-line>
+      <div class="{CHAT_OPERATIONAL_ROW_CLASS} font-family-child font-normal text-muted-foreground">
+        <div class={CHAT_OPERATIONAL_LEADING_CLASS} aria-hidden="true">
+          <IntentMarkLoader size={16} />
+        </div>
+        <span class={CHAT_OPERATIONAL_SUMMARY_CLASS} role="status" aria-live="polite">
+          {m.cloudMachines_wake_title()}
+        </span>
+      </div>
     </div>
   {/if}
 {:else if location && kind === 'starting'}

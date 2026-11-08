@@ -8558,6 +8558,7 @@
   "cloudMachines_startOn_needsProfile": "This model uses a sign-in; pick an API-key or token profile",
   "cloudMachines_startOn_providerMissing": "E2B sandboxes don't include this model's tool",
   "cloudMachines_start_title": "Starting cloud machine…",
+  "cloudMachines_wake_title": "Waking cloud machine…",
   "cloudMachines_start_creating": "Creating E2B sandbox",
   "cloudMachines_start_daemon": "Starting Intent in the sandbox",
   "cloudMachines_start_connecting": "Connecting",

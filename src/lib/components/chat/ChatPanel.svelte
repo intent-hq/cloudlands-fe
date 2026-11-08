@@ -362,7 +362,9 @@
   import {
     agentCloudStartFailure,
     agentCloudStarting,
+    agentCloudWaking,
   } from '$features/remote-machines/agent-location';
+  import { selectRemoteMachine } from '$features/remote-machines/remote-machines-selectors';
   import { StartLineHosts } from '$features/remote-machines/start-line-hosts.svelte';
   import {
     getMessageNavigationStartScrollTop,
@@ -767,9 +769,17 @@
   // notice) in place of the generic one; the error still blocks the queue.
   const cloudStartFailed = $derived(!$chatError$ && !!agentCloudStartFailure($agentSession$));
   const turnFailureError = $derived(cloudStartFailed ? null : effectiveError);
-  // While the agent's cloud machine starts, the working row shows its start
-  // line in place of the phase line; the notice below leaves it out then.
-  const cloudStarting = $derived(agentCloudStarting($agentSession$));
+  // While the agent's cloud machine starts or wakes, the working row shows its
+  // line in place of the phase line; the notice below leaves the start out then.
+  const agentMachineIdStore = writable<string | undefined>(undefined);
+  $effect(() => {
+    agentMachineIdStore.set($agentSession$?.nodeId);
+  });
+  const agentMachine$ = selectRemoteMachine(agentMachineIdStore);
+  // A paused cloud machine that wakes for the turn shows its wake line there too.
+  const cloudStarting = $derived(
+    agentCloudStarting($agentSession$) || agentCloudWaking($agentSession$, $agentMachine$),
+  );
   const startLineHosts = new StartLineHosts();
 
   const latestAssistantForTelemetry = $derived.by(() => {

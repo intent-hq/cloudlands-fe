@@ -8558,6 +8558,7 @@
   "cloudMachines_startOn_needsProfile": "Dieses Modell nutzt eine Anmeldung; wähle ein Profil mit API-Schlüssel oder Token",
   "cloudMachines_startOn_providerMissing": "E2B-Sandboxes enthalten das Tool dieses Modells nicht",
   "cloudMachines_start_title": "Cloud-Maschine wird gestartet…",
+  "cloudMachines_wake_title": "Cloud-Maschine wird aufgeweckt…",
   "cloudMachines_start_creating": "E2B-Sandbox wird erstellt",
   "cloudMachines_start_daemon": "Intent wird in der Sandbox gestartet",
   "cloudMachines_start_connecting": "Verbindung wird hergestellt",

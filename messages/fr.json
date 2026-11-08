@@ -8558,6 +8558,7 @@
   "cloudMachines_startOn_needsProfile": "Ce modèle utilise une connexion ; choisissez un profil avec clé d'API ou jeton",
   "cloudMachines_startOn_providerMissing": "Les sandboxes E2B n'incluent pas l'outil de ce modèle",
   "cloudMachines_start_title": "Démarrage de la machine cloud…",
+  "cloudMachines_wake_title": "Réveil de la machine cloud…",
   "cloudMachines_start_creating": "Création du sandbox E2B",
   "cloudMachines_start_daemon": "Démarrage d'Intent dans le sandbox",
   "cloudMachines_start_connecting": "Connexion",
