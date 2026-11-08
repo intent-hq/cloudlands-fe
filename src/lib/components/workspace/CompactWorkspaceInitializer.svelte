@@ -434,7 +434,13 @@
             );
           if (match) {
             try {
-              await preselectGitHubPrefillRepo({ owner: match[1], repo: match[2] });
+              // The command palette's GitHub rows ask for the remote itself
+              // (`exactRemote`); other links may resolve to a local clone.
+              await preselectGitHubPrefillRepo(
+                { owner: match[1], repo: match[2] },
+                undefined,
+                data.exactRemote === true,
+              );
             } catch (e) {
               logger.warn('Failed to select the GitHub repo from prefill', { error: e });
             }
@@ -1483,6 +1489,7 @@
   async function preselectGitHubPrefillRepo(
     target: { owner: string; repo: string },
     isStale?: () => boolean,
+    exactRemote = false,
   ) {
     const candidates: GitHubPrefillRepoCandidate[] = [];
     if (repoPath && repoType !== 'remote' && repoType !== 'gitlab') {
@@ -1500,6 +1507,7 @@
     const selection = await matchGitHubPrefillRepo({
       owner: target.owner,
       repo: target.repo,
+      exactRemote,
       candidates,
       probeRemote: async (path) => {
         if (typeof window === 'undefined' || !window.electronAPI) return null;

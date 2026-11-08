@@ -22,6 +22,7 @@ import {
   selectWorkspaceCreationVisible,
 } from '$store/renderer/slices/principal/principal-selectors';
 import {
+  createModalPrefillRequested,
   setShowCreateModal,
   setStatsOverlayOpen,
 } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
@@ -137,6 +138,8 @@ export function openRepoInNewWorkspace(
     logger.warn('Failed to store the New Workspace repo prefill', { error });
   }
   appStore.dispatch(setShowCreateModal(true));
+  // An already-open dialog does not re-run its open step; ask it to re-read.
+  appStore.dispatch(createModalPrefillRequested());
 }
 
 /** Daemon file-name search (search.fileNames, PROTOCOL §5.15) mapped to palette rows, top 8. */

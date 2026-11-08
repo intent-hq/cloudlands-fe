@@ -93,7 +93,8 @@ export function decideKnownReposLoad({
 /** The `workspace-prefill` entry that opens New Workspace with `repo` selected. */
 export type KnownRepoPrefill =
   | { repoPath: string }
-  | { githubUrl: string }
+  /** `exactRemote`: select this GitHub repo itself, never a local clone of it. */
+  | { githubUrl: string; exactRemote: true }
   | { repositoryCheckoutDraft: { instanceBaseUrl: string; projectPath: string } };
 
 export function prefillForRepo(
@@ -110,6 +111,8 @@ export function prefillForRepo(
       },
     };
   }
-  if (identity) return { githubUrl: `https://github.com/${identity.projectPath}` };
-  return { githubUrl: repo.githubUrl || `https://github.com/${repo.path}` };
+  if (identity) {
+    return { githubUrl: `https://github.com/${identity.projectPath}`, exactRemote: true };
+  }
+  return { githubUrl: repo.githubUrl || `https://github.com/${repo.path}`, exactRemote: true };
 }
