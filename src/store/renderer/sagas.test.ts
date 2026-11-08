@@ -123,6 +123,7 @@ describe('renderer app saga registry', () => {
       'gitRootsSaga',
       'uiLayoutPersistenceSaga',
       'tabStateSaga',
+      'paletteMemorySaga',
       'workspaceTabReconciliationSaga',
       'proposalWorkspaceTabSaga',
       'workspaceTabCleanupSaga',

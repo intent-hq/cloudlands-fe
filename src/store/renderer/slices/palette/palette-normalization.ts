@@ -1,6 +1,22 @@
-import type { PaletteMruEntry, PaletteMruEntryType, PaletteState } from './palette-types';
+import { normalizePalettePicks, type PalettePick } from './palette-pick-memory';
+import type {
+  PaletteMemorySnapshot,
+  PaletteMruEntry,
+  PaletteMruEntryType,
+  PaletteState,
+} from './palette-types';
 
-const MAX_PALETTE_MRU_ENTRIES = 50;
+export const PALETTE_MEMORY_VERSION = 1;
+
+/** Stored form of `PaletteMemorySnapshot`. */
+export type StoredPaletteMemory = {
+  version: typeof PALETTE_MEMORY_VERSION;
+  mru: PaletteMruEntry[];
+  fileMru: Record<string, number>;
+  picks: PalettePick[];
+};
+
+const MAX_PALETTE_MRU_ENTRIES = 200;
 const MAX_PALETTE_FILE_MRU_ENTRIES = 200;
 
 const VALID_MRU_TYPES: Record<PaletteMruEntryType, true> = {
@@ -10,6 +26,9 @@ const VALID_MRU_TYPES: Record<PaletteMruEntryType, true> = {
   terminal: true,
   file: true,
   browser: true,
+  command: true,
+  workspace: true,
+  repo: true,
 };
 
 function isPaletteMruEntry(value: unknown): value is PaletteMruEntry {
@@ -18,7 +37,7 @@ function isPaletteMruEntry(value: unknown): value is PaletteMruEntry {
     !!entry &&
     typeof entry === 'object' &&
     typeof entry.type === 'string' &&
-    entry.type in VALID_MRU_TYPES &&
+    Object.hasOwn(VALID_MRU_TYPES, entry.type) &&
     typeof entry.id === 'string' &&
     entry.id.length > 0 &&
     typeof entry.timestamp === 'number' &&
@@ -81,4 +100,68 @@ export function normalizePaletteFileMru(value: unknown): Record<string, number> 
       .sort(([, left], [, right]) => right - left)
       .slice(0, MAX_PALETTE_FILE_MRU_ENTRIES),
   );
+}
+
+export function serializePaletteMemory(state: PaletteMemorySnapshot): StoredPaletteMemory {
+  return {
+    version: PALETTE_MEMORY_VERSION,
+    mru: getPaletteMruEntries(state),
+    fileMru: state.fileMru,
+    picks: getPalettePicks(state),
+  };
+}
+
+/** Parse untrusted stored memory; anything unreadable becomes empty memory. */
+export function deserializePaletteMemory(value: unknown, now: number): PaletteMemorySnapshot {
+  const stored =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Partial<StoredPaletteMemory>)
+      : undefined;
+  const usable = stored?.version === PALETTE_MEMORY_VERSION ? stored : undefined;
+  return {
+    ...normalizePaletteMruState(usable?.mru),
+    fileMru: normalizePaletteFileMru(usable?.fileMru),
+    ...toPalettePickState(normalizePalettePicks(usable?.picks, now)),
+  };
+}
+
+/** Union of two memories; the newest timestamp wins for each entry. */
+export function mergePaletteMemory(
+  current: PaletteMemorySnapshot,
+  loaded: PaletteMemorySnapshot,
+): PaletteMemorySnapshot {
+  return {
+    ...normalizePaletteMruState([
+      ...getPaletteMruEntries(current),
+      ...getPaletteMruEntries(loaded),
+    ]),
+    fileMru: normalizePaletteFileMru(
+      Object.fromEntries(
+        [...Object.entries(loaded.fileMru), ...Object.entries(current.fileMru)].sort(
+          ([, left], [, right]) => left - right,
+        ),
+      ),
+    ),
+    ...toPalettePickState(
+      normalizePalettePicks([...getPalettePicks(current), ...getPalettePicks(loaded)]),
+    ),
+  };
+}
+
+/** State shape for an already-normalized pick list. */
+export function toPalettePickState(
+  picks: readonly PalettePick[],
+): Pick<PaletteState, 'pickQueries' | 'picksByQuery'> {
+  return {
+    pickQueries: picks.map((pick) => pick.query),
+    picksByQuery: Object.fromEntries(picks.map((pick) => [pick.query, pick])),
+  };
+}
+
+export function getPalettePicks(
+  state: Pick<PaletteState, 'pickQueries' | 'picksByQuery'>,
+): PalettePick[] {
+  return state.pickQueries
+    .map((query) => state.picksByQuery[query])
+    .filter((pick): pick is PalettePick => pick !== undefined);
 }
