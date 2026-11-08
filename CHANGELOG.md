@@ -4,6 +4,15 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.303.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.303.0...v2.303.1) (2026-11-08)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.158 ([#4315](https://github.com/intent-hq/cloudlands-fe/issues/4315)) ([3ad4c28](https://github.com/intent-hq/cloudlands-fe/commit/3ad4c281705e84d86f3ecd579a2f0ee4d420e970))
+* **home:** keep the open Assistant chat when Cmd/Ctrl-click starts a multi-select ([#4311](https://github.com/intent-hq/cloudlands-fe/issues/4311)) ([0bad9c2](https://github.com/intent-hq/cloudlands-fe/commit/0bad9c2614a7421ab958df255de5ee4539f40971))
+* isolate workflow fixture shells from personal startup files ([#4244](https://github.com/intent-hq/cloudlands-fe/issues/4244)) ([d4967a2](https://github.com/intent-hq/cloudlands-fe/commit/d4967a2d72d9d9c3c2d93680fa73031cb63e69ba))
+
 ## [2.303.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.302.0...v2.303.0) (2026-11-08)
 
 
