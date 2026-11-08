@@ -48,31 +48,16 @@ function groupAlive(pgid) {
 
 function reexecUnderXvfb(argv) {
   const { command, args } = xvfbCommand(process.execPath, scriptPath, argv);
-  // Own process group: xvfb-run is a shell that dies on a signal without
-  // passing it on, so cancellation is delivered to the whole group (xvfb-run,
-  // Xvfb and the inner runner, which closes Electron and removes its profile).
-  const child = spawn(command, args, {
-    stdio: 'inherit',
-    detached: true,
-    env: { ...process.env, [XVFB_MARKER]: '1' },
-  });
+  let child = null;
   let cancelledBy = null;
-  child.on('error', (error) => {
-    if (error.code === 'ENOENT') {
-      fail(
-        'no display and xvfb-run is not installed. Install it (Debian/Ubuntu: ' +
-          '`sudo apt-get install -y xvfb`) or set DISPLAY.',
-      );
-    }
-    fail(`xvfb-run failed to start: ${error.message}`);
-  });
-  child.on('exit', (code, signal) => {
-    if (!cancelledBy) process.exit(signal ? 1 : (code ?? 1));
-  });
+  // Handlers go in before the spawn: a signal that arrived after the child
+  // started but before they existed would kill this process and orphan the
+  // group. Node delivers it on a later tick, once `child` is set.
   for (const signal of SIGNALS) {
     process.on(signal, async () => {
-      if (cancelledBy || !child.pid) return;
+      if (cancelledBy) return;
       cancelledBy = signal;
+      if (!child?.pid) process.exit(exitCodeFor(signal));
       try {
         process.kill(-child.pid, signal);
       } catch {
@@ -87,6 +72,26 @@ function reexecUnderXvfb(argv) {
       process.exit(exitCodeFor(signal));
     });
   }
+  // Own process group: xvfb-run is a shell that dies on a signal without
+  // passing it on, so cancellation is delivered to the whole group (xvfb-run,
+  // Xvfb and the inner runner, which closes Electron and removes its profile).
+  child = spawn(command, args, {
+    stdio: 'inherit',
+    detached: true,
+    env: { ...process.env, [XVFB_MARKER]: '1' },
+  });
+  child.on('error', (error) => {
+    if (error.code === 'ENOENT') {
+      fail(
+        'no display and xvfb-run is not installed. Install it (Debian/Ubuntu: ' +
+          '`sudo apt-get install -y xvfb`) or set DISPLAY.',
+      );
+    }
+    fail(`xvfb-run failed to start: ${error.message}`);
+  });
+  child.on('exit', (code, signal) => {
+    if (!cancelledBy) process.exit(signal ? 1 : (code ?? 1));
+  });
 }
 
 function assertBuilt() {
