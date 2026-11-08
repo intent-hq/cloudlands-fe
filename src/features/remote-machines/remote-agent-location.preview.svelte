@@ -32,6 +32,7 @@
     | 'e2b-starting-turn'
     | 'e2b-setup-turn'
     | 'e2b-started-turn'
+    | 'e2b-waking-turn'
     | 'remote-starting-turn';
 
   interface Props {
@@ -74,6 +75,7 @@
       'e2b-starting-turn': sceneState('e2b-starting-turn'),
       'e2b-setup-turn': sceneState('e2b-setup-turn'),
       'e2b-started-turn': sceneState('e2b-started-turn'),
+      'e2b-waking-turn': sceneState('e2b-waking-turn'),
       'remote-starting-turn': sceneState('remote-starting-turn'),
     },
     captureReadiness: { selector: '[data-remote-agent-location-scene][data-ready]' },
@@ -112,7 +114,7 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import AgentPlacementNotice from './AgentPlacementNotice.svelte';
   import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
-  import { agentCloudStarting } from './agent-location';
+  import { agentCloudStarting, agentCloudWaking } from './agent-location';
   import { StartLineHosts } from './start-line-hosts.svelte';
   import QueuedMessageList from '$lib/components/chat/QueuedMessageList.svelte';
   import { remoteMachinesLoaded } from './remote-machines-slice';
@@ -328,7 +330,10 @@
     agent('ral-e2b', 'Docs sweeper', {
       nodeName: 'E2B',
       placement: { target: 'e2b', checkout: 'isolated' },
-      ...(s === 'e2b-running' || s === 'e2b-paused' || s === 'e2b-started-turn'
+      ...(s === 'e2b-running' ||
+      s === 'e2b-paused' ||
+      s === 'e2b-started-turn' ||
+      s === 'e2b-waking-turn'
         ? { nodeId: E2B_NODE, leaseId: 'lease-e2b', effectiveIsolation: 'isolated' as const }
         : { effectiveIsolation: 'pending' as const }),
       ...(s === 'e2b-starting' || s === 'e2b-starting-turn'
@@ -354,7 +359,7 @@
       provider: 'e2b',
       cloudMachineId: 'e2b',
       sandboxId: 'isx1k2v9',
-      state: s === 'e2b-paused' ? 'paused' : 'running',
+      state: s === 'e2b-paused' ? 'paused' : s === 'e2b-waking-turn' ? 'resuming' : 'running',
       template: 'intent/intent-node-4x8:0.240.0',
       size: '4x8',
       startedBy: { principalId: 'p-sam', displayName: 'Sam' },
@@ -427,7 +432,11 @@
   const agents = $derived(agentsFor(scene));
   const e2bQueued = $derived(!!E2B_ERRORS[scene] && scene !== 'e2b-bootstrap-not-queued');
   const selected = $derived(agents.find((a) => a.id === selectedAgentId) ?? agents[0]!);
-  const turnStartLine = $derived(isTurnScene(scene) && agentCloudStarting(selected));
+  const turnStartLine = $derived(
+    isTurnScene(scene) &&
+      (agentCloudStarting(selected) ||
+        (scene === 'e2b-waking-turn' && agentCloudWaking(selected, e2bSandbox(scene)))),
+  );
   const tab = $derived<PanelTab>({
     id: 'ral-tab',
     type: 'agent',
@@ -525,7 +534,10 @@
       cloudMachinesLoaded({
         supported: true,
         providers: [],
-        machines: s === 'e2b-running' || s === 'e2b-paused' ? [e2bSandbox(s)] : [],
+        machines:
+          s === 'e2b-running' || s === 'e2b-paused' || s === 'e2b-waking-turn'
+            ? [e2bSandbox(s)]
+            : [],
         readAt: 0,
       }),
     );

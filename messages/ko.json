@@ -8558,6 +8558,7 @@
   "cloudMachines_startOn_needsProfile": "이 모델은 로그인을 사용합니다. API 키 또는 토큰 프로필을 선택하세요",
   "cloudMachines_startOn_providerMissing": "E2B 샌드박스에는 이 모델의 도구가 없습니다",
   "cloudMachines_start_title": "클라우드 머신 시작 중…",
+  "cloudMachines_wake_title": "클라우드 머신 깨우는 중…",
   "cloudMachines_start_creating": "E2B 샌드박스 만드는 중",
   "cloudMachines_start_daemon": "샌드박스에서 Intent 시작 중",
   "cloudMachines_start_connecting": "연결 중",

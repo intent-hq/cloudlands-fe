@@ -8558,6 +8558,7 @@
   "cloudMachines_startOn_needsProfile": "此模型使用登录；请选择带 API 密钥或令牌的配置",
   "cloudMachines_startOn_providerMissing": "E2B 沙盒不包含此模型的工具",
   "cloudMachines_start_title": "正在启动云端机器…",
+  "cloudMachines_wake_title": "正在唤醒云端机器…",
   "cloudMachines_start_creating": "正在创建 E2B 沙盒",
   "cloudMachines_start_daemon": "正在沙盒中启动 Intent",
   "cloudMachines_start_connecting": "正在连接",

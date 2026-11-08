@@ -1,11 +1,12 @@
 <!-- The chat's working row and conversation notice, wired as ChatPanel wires them. -->
 <script lang="ts">
-  import { readable } from 'svelte/store';
+  import { derived, readable } from 'svelte/store';
   import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
   import { AgentStatus } from '$shared/types';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import AgentPlacementNotice from '../AgentPlacementNotice.svelte';
-  import { agentCloudStartFailure, agentCloudStarting } from '../agent-location';
+  import { agentCloudStartFailure, agentCloudStarting, agentCloudWaking } from '../agent-location';
+  import { selectRemoteMachine } from '../remote-machines-selectors';
   import { StartLineHosts } from '../start-line-hosts.svelte';
 
   let {
@@ -27,7 +28,10 @@
 
   // svelte-ignore state_referenced_locally
   const agent$ = selectAgentSession(readable(agentId));
-  const cloudStarting = $derived(agentCloudStarting($agent$));
+  const machine$ = selectRemoteMachine(derived(agent$, (agent) => agent?.nodeId));
+  const cloudStarting = $derived(
+    agentCloudStarting($agent$) || agentCloudWaking($agent$, $machine$),
+  );
   const error = $derived(
     agentCloudStartFailure($agent$)
       ? null

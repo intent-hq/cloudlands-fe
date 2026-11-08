@@ -328,3 +328,19 @@ export function agentCloudStarting(agent: AgentSession | null | undefined): bool
     agentPlacementNoticeKind(agent, agentMachineLocation(agent)) === 'starting'
   );
 }
+
+/**
+ * The agent's paused cloud machine (E2B) is resuming. The chat then shows the
+ * wake line in the working row, in place of the turn's phase line.
+ * `machine` is the agent's sandbox row (`cloudMachine:changed`).
+ */
+export function agentCloudWaking(
+  agent: AgentSession | null | undefined,
+  machine: RemoteMachine | null | undefined,
+): boolean {
+  if (agent?.placement?.target !== 'e2b') return false;
+  const location = agentMachineLocation(agent, machine);
+  return (
+    location?.cloud?.state === 'resuming' && agentPlacementNoticeKind(agent, location) === null
+  );
+}
