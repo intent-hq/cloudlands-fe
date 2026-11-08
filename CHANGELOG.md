@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.299.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.298.0...v2.299.0) (2026-11-08)
+
+
+### 🚀 Features
+
+* **home:** manage Assistant chats from the chat list ([#4273](https://github.com/intent-hq/cloudlands-fe/issues/4273)) ([80cd096](https://github.com/intent-hq/cloudlands-fe/commit/80cd0964d1f736c62b13241ed6ae4bf33c485464))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.151 ([#4278](https://github.com/intent-hq/cloudlands-fe/issues/4278)) ([f77dbed](https://github.com/intent-hq/cloudlands-fe/commit/f77dbed61194dcaf272093e954c5f70b65195063))
+* **ci:** retry pinned fixture checkouts and base fetches on network errors ([#4274](https://github.com/intent-hq/cloudlands-fe/issues/4274)) ([010c1bb](https://github.com/intent-hq/cloudlands-fe/commit/010c1bb38ff6d24cac47d21a4e83c35f2d0638d7))
+
 ## [2.298.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.297.0...v2.298.0) (2026-11-07)
 
 
