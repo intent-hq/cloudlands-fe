@@ -261,9 +261,11 @@ describe('sandboxes grouped by workspace', () => {
   it('keeps the link for an agent the read agent list left out', () => {
     seed('sandboxes-grouped');
     store.dispatch(setAgentsLoaded('ws-docs', true));
-    const view = list();
-    expect(isLinked(view.container, 'sb-2')).toBe(true);
-    store.dispatch(setAgentsLoaded('ws-docs', false));
+    try {
+      expect(isLinked(list().container, 'sb-2')).toBe(true);
+    } finally {
+      store.dispatch(setAgentsLoaded('ws-docs', false));
+    }
   });
 
   it('puts every sandbox under Other when no workspace is known', () => {

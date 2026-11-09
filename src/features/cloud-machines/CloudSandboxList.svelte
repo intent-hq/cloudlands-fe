@@ -19,7 +19,9 @@
     selectCloudOperations,
     selectCloudSandboxReadAt,
     selectSandboxListContext,
+    type SandboxAgentLink,
   } from './cloud-machines-selectors';
+  import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
   import { navigateToDesktopAgent } from '$features/desktop/desktop-agent-navigation';
   import { cloudMachineDeleteRequested, cloudMachinePauseRequested } from './cloud-machines-slice';
   import {
@@ -75,6 +77,11 @@
   const groups = $derived(
     groupSandboxesByWorkspace(sandboxes, (id) => $context$.workspaceNames[id] ?? null),
   );
+
+  // Pending deletions live outside the store; the 30 s clock re-reads them.
+  function activeLink(link: SandboxAgentLink | null | undefined, _now: number) {
+    return link && !isAgentDeletionPending(link.agentId) ? link : null;
+  }
 
   function toggleGroup(id: string) {
     if (collapsedSandboxGroups.has(id)) collapsedSandboxGroups.delete(id);
@@ -163,7 +170,7 @@
             {@const pending = $operations$[machine.id]}
             {@const failure = failureText(machine.id)}
             {@const label = sandboxLabel(machine, entryName)}
-            {@const link = $context$.agentLinks[machine.id]}
+            {@const link = activeLink($context$.agentLinks[machine.id], now)}
             <div
               class="py-1"
               data-cloud-sandbox={machine.id}
