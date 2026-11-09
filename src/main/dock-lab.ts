@@ -29,6 +29,8 @@ export type DockLabEffects = {
   hide(): void;
   /** Either direction: rebuild the menu. */
   onChange(): void;
+  /** Launch with the lab on: show the dock unless a hide was saved; true when shown. */
+  restore(): Promise<boolean>;
   /** Whether a request came from the dock itself (its intro's "Turn off"). */
   isDock(sender: WebContents): boolean;
 };
@@ -65,7 +67,30 @@ function setDockLabEnabled(
   return change.then(() => enabled);
 }
 
+let registeredEffects: DockLabEffects | null = null;
+
+/**
+ * Main's own change (the dock's Hide, the Window menu): hiding the dock is the same
+ * setting as Notch dock. Like a turn-off from Settings, the dock closes at once even
+ * if the save fails.
+ */
+export function changeDockLabEnabled(next: boolean): Promise<boolean> {
+  if (!registeredEffects) return Promise.reject(new Error('Dock lab handlers are not registered'));
+  return setDockLabEnabled(next, registeredEffects);
+}
+
+/**
+ * Launch: with the lab on, restore the dock. A hide saved by an older build (lab on,
+ * dock hidden) turns the lab off, so Settings never shows Notch dock on with no dock.
+ */
+export async function startDockLab(): Promise<void> {
+  if (!registeredEffects || !enabled) return;
+  // A failed save leaves the lab on (truthful); the launch continues.
+  if (!(await registeredEffects.restore())) await changeDockLabEnabled(false).catch(() => {});
+}
+
 export function registerDockLabHandlers(effects: DockLabEffects): void {
+  registeredEffects = effects;
   ipcMain.handle(
     WINDOW_CHANNELS.GET_DOCK_LAB,
     createSafeValidatedHandler(

@@ -346,7 +346,13 @@ import {
 import { createDockMenuController } from './dock-menu-controller';
 import { registerDockActivateAppHandler } from './dock-placement-ipc';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
-import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
+import {
+  changeDockLabEnabled,
+  isDockLabEnabled,
+  loadDockLabEnabled,
+  registerDockLabHandlers,
+  startDockLab,
+} from './dock-lab';
 import { registerDockMediaClipboardIPC } from '../features/hud/main/dock-media-clipboard';
 import {
   setupBrowserAccess,
@@ -1046,13 +1052,11 @@ const bootFlow = app.whenReady().then(async () => {
       app.emit('dock-window-state-changed');
     },
   });
-  // The dock's own Hide is a user hide: remember it like the menu toggle. A failed
-  // preference write still closes the dock it was asked for, never a replacement.
+  // The dock's own Hide turns Notch dock off: hiding the dock and the Settings switch
+  // are one setting. The dock closes at once, even if the save fails.
   setDockHideHandler(() => {
-    const window = getDockWindow();
-    void dockMenuController.setEnabled(false).catch((error: unknown) => {
+    void changeDockLabEnabled(false).catch((error: unknown) => {
       logger.warn('Failed to remember dock hide', { error });
-      if (window && getDockWindow() === window) closeDockWindow();
     });
   });
 
@@ -1075,7 +1079,13 @@ const bootFlow = app.whenReady().then(async () => {
               label: m.menu_show_intent_dock(),
               type: 'checkbox',
               checked: dockMenuController.isEnabled(),
-              click: (menuItem) => void dockMenuController.setEnabled(menuItem.checked),
+              // Unchecking turns Notch dock off (one setting); checking brings back a
+              // dock that closed without a hide (a crash, a failed load).
+              click: (menuItem) =>
+                void (menuItem.checked
+                  ? dockMenuController.setEnabled(true)
+                  : changeDockLabEnabled(false)
+                ).catch((error: unknown) => logger.warn('Failed to change the dock', { error })),
             },
             {
               label: m.menu_focus_intent_dock(),
@@ -1723,10 +1733,11 @@ const bootFlow = app.whenReady().then(async () => {
       syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
       void rebuildMenu();
     },
+    restore: () => dockMenuController.restore(),
     isDock: (sender) => getDockWindow()?.webContents === sender,
   });
   markRendererWindowsAllowed();
-  if (isDockLabEnabled()) await dockMenuController.restore();
+  await startDockLab();
   syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
   void rebuildMenu();
 
