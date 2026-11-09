@@ -1,5 +1,7 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import '$lib/styles/dock-tokens.css';
   import * as ToggleGroup from '$lib/components/ui/toggle-group';
   import { keepToggleSelected } from '$lib/components/settings/utils/keep-toggle-selected';
   import {
@@ -53,7 +55,7 @@
 </script>
 
 <section class="options" data-send-options>
-  <div class="group video-options">
+  <div class="group">
     <span class="label" id="send-video-label">{m.dock_captureEditor_video_label()}</span>
     <ToggleGroup.Root
       type="single"
@@ -61,7 +63,6 @@
       size="sm"
       class="shrink-0"
       aria-labelledby="send-video-label"
-      aria-describedby="send-video-help"
       disabled={!enabled}
       value={video}
       onValueChange={(value: string) => {
@@ -69,22 +70,25 @@
           onChange({ video: value, voice: voiceChoice });
       }}
     >
-      <ToggleGroup.Item {...keepToggleSelected} value="full"
-        >{m.dock_captureEditor_videoFull_label()}</ToggleGroup.Item
+      <Tooltip content={m.dock_captureEditor_videoFull_help()} contentClass="dock-chrome-tooltip">
+        <ToggleGroup.Item {...keepToggleSelected} value="full"
+          >{m.dock_captureEditor_videoFull_label()}</ToggleGroup.Item
+        >
+      </Tooltip>
+      <Tooltip
+        content={highlights
+          ? m.dock_captureEditor_videoHighlights_help()
+          : m.dock_captureEditor_videoHighlights_disabled()}
+        contentClass="dock-chrome-tooltip"
       >
-      <ToggleGroup.Item
-        {...keepToggleSelected}
-        value="highlights"
-        disabled={!enabled || !highlights}
-        tooltip={highlights ? undefined : m.dock_captureEditor_videoHighlights_disabled()}
-        >{m.dock_captureEditor_videoHighlights_label()}</ToggleGroup.Item
-      >
+        <ToggleGroup.Item
+          {...keepToggleSelected}
+          value="highlights"
+          disabled={!enabled || !highlights}
+          >{m.dock_captureEditor_videoHighlights_label()}</ToggleGroup.Item
+        >
+      </Tooltip>
     </ToggleGroup.Root>
-    <p id="send-video-help" class="video-help type-caption">
-      {video === 'highlights'
-        ? m.dock_captureEditor_videoHighlights_help()
-        : m.dock_captureEditor_videoFull_help()}
-    </p>
   </div>
   <div class="group">
     <span class="label" id="send-voice-label">{m.dock_captureEditor_voice_label()}</span>
@@ -135,15 +139,6 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
-  }
-  .video-options {
-    flex-wrap: wrap;
-    row-gap: 4px;
-  }
-  .video-help {
-    flex-basis: 100%;
-    margin: 0;
-    color: hsl(var(--muted-foreground));
   }
   .label {
     font-size: 12px;
