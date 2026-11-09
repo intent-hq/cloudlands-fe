@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** @internal Test host for animated-height.ct.spec.ts. */
   import { Button } from '$lib/components/ui/button';
   import { animatedHeight } from './animated-height.svelte';
   import { SidebarGroupContent } from '$lib/components/ui/sidebar';

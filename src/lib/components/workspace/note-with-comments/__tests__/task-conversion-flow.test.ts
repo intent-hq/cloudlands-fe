@@ -327,13 +327,6 @@ vi.mock('$lib/components/tiptap/TaskAgentStatus.svelte', async () => {
   return { default: MockSimple };
 });
 
-vi.mock('$lib/components/tiptap/TaskNotePreview.svelte', async () => {
-  const MockSimple = (
-    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
-  ).default;
-  return { default: MockSimple };
-});
-
 vi.mock('$lib/components/tiptap/TaskStatusIcon.svelte', async () => {
   const MockSimple = (
     await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')

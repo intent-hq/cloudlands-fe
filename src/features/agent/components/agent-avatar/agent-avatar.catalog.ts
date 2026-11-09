@@ -1,3 +1,4 @@
+/** @internal Test fixture: avatar identities and states shared by the avatar unit and Playwright suites. */
 import type { AvatarState } from './avatar-state';
 import {
   builtinAgentAvatarDesigns,

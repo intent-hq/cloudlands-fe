@@ -3,13 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { afterEach, describe, expect, it } from 'vitest';
 import DialogHarness from './DialogHarness.svelte';
 import { dialogMetadata } from './dialog.meta';
-import { legacyOverlayDeprecations } from './legacy-overlays.meta';
 import { overlayMotion } from './overlay-motion.svelte';
 
 afterEach(cleanup);
 
 describe('Dialog', () => {
-  it('publishes validated fixtures and measurable legacy replacement gates', () => {
+  it('publishes validated fixtures', () => {
     expect(dialogMetadata.fixtures[0]?.states).toContain('open');
     expect(dialogMetadata.fixtures).toEqual(
       expect.arrayContaining([
@@ -19,13 +18,6 @@ describe('Dialog', () => {
         }),
       ]),
     );
-    expect(legacyOverlayDeprecations).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ replacement: '$lib/components/ui/sheet' }),
-      ]),
-    );
-    expect(legacyOverlayDeprecations.every((record) => record.removalGate.length > 0)).toBe(true);
-    expect(legacyOverlayDeprecations.every((record) => record.callers.length === 0)).toBe(true);
   });
 
   it('shares token-driven entrance and tween-exit recipes with Sheet', () => {

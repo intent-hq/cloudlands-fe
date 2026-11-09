@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** @internal Test host for the composer component specs. */
   import { onDestroy, untrack } from 'svelte';
   import { store } from '$store/renderer/store';
   import { createChiefVirtualWorkspace } from '$store/renderer/slices/workspace-agents/chief-virtual-workspace';

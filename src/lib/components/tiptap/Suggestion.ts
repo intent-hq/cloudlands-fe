@@ -1,3 +1,7 @@
+/**
+ * @internal Not registered in any editor, but its `@tiptap/core` command augmentation
+ * types the accept/reject calls in note-with-comments/suggestion-actions.ts.
+ */
 import { Mark, mergeAttributes } from '@tiptap/core';
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model';
 

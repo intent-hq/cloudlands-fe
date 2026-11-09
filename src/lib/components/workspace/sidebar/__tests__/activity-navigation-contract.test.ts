@@ -1,4 +1,4 @@
-// @verify-changed-triggers: ../ActivityLogPreview.svelte, ../../MultiSelectTabbedSidebar.svelte,
+// @verify-changed-triggers: ../../MultiSelectTabbedSidebar.svelte,
 //   ../../../chat/ChatPanel.svelte, ../../../chat/ToolCall.svelte, src/app.css
 
 import { readFileSync } from 'node:fs';
@@ -10,9 +10,8 @@ function source(path: string): string {
 }
 
 describe('activity navigation contract', () => {
-  it('provides a semantic keyboard-focus fallback while retaining component-owned styles', () => {
+  it('provides a semantic keyboard-focus fallback', () => {
     const appCss = source('src/app.css');
-    const preview = source('src/lib/components/workspace/sidebar/ActivityLogPreview.svelte');
 
     // The global focus rules live inside `@layer base` (indented one level) so
     // Tailwind utilities can override them; see input.test.ts for the layering test.
@@ -20,15 +19,12 @@ describe('activity navigation contract', () => {
     expect(appCss).toContain(':focus-visible {\n    outline: 1px solid hsl(var(--focus-ring));');
     expect(appCss).toContain('outline-offset: 2px;');
     expect(appCss).not.toMatch(/(^|\n)\s*:focus\s*\{[^}]*outline:\s*none;/);
-    expect(preview).toContain('rounded-md outline-none');
   });
 
-  it('passes the activity event through and targets its exact chat content', () => {
-    const preview = source('src/lib/components/workspace/sidebar/ActivityLogPreview.svelte');
+  it('targets the exact chat content of an activity event', () => {
     const chat = source('src/lib/components/chat/ChatPanel.svelte');
     const toolCall = source('src/lib/components/chat/ToolCall.svelte');
 
-    expect(preview).toContain('onShowAgent?.(agentId, event)');
     expect(chat).toContain("addEventListener('agent:scroll-to-activity'");
     expect(chat).toContain('[data-tool-call-id=');
     expect(toolCall).toContain('toolCallId={toolUse.toolCallId || undefined}');
