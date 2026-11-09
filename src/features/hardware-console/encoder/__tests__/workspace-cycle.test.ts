@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { stepWorkspaceTab } from '../workspace-cycle';
+import { stepWorkspaceTab, visibleWorkspaceTabs } from '../workspace-cycle';
 
 describe('stepWorkspaceTab', () => {
   const tabs = ['left', 'middle', 'right'];
@@ -26,5 +26,22 @@ describe('stepWorkspaceTab', () => {
     expect(stepWorkspaceTab([], null, 'clockwise')).toBeNull();
     expect(stepWorkspaceTab(['only'], 'only', 'clockwise')).toBeNull();
     expect(stepWorkspaceTab(['only'], 'only', 'counterclockwise')).toBeNull();
+  });
+});
+
+describe('visibleWorkspaceTabs', () => {
+  const order = ['a', 'b1', 'b2', 'c', 'd1'];
+  const groups = [
+    { id: 'b', name: '', color: 'blue' as const, workspaceIds: ['b1', 'b2'] },
+    { id: 'd', name: '', color: 'red' as const, workspaceIds: ['d1'] },
+  ];
+
+  it('drops the members of collapsed groups and keeps the open group', () => {
+    expect(visibleWorkspaceTabs(order, groups, 'b')).toEqual(['a', 'b1', 'b2', 'c']);
+    expect(visibleWorkspaceTabs(order, groups, null)).toEqual(['a', 'c']);
+  });
+
+  it('keeps every tab without groups', () => {
+    expect(visibleWorkspaceTabs(order, [], null)).toEqual(order);
   });
 });

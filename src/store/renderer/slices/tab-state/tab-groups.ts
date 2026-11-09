@@ -53,6 +53,20 @@ export function findWorkspaceTabGroup(
   return groups.find((group) => group.workspaceIds.includes(workspaceId));
 }
 
+/**
+ * The expanded group: the group of the current tab when it has one (a selected
+ * tab is never hidden), otherwise the group the user last opened.
+ */
+export function resolveOpenWorkspaceTabGroupId(
+  groups: readonly WorkspaceTabGroup[],
+  currentTabId: string | null,
+  openTabGroupId: string | null | undefined,
+): string | null {
+  const currentGroup = findWorkspaceTabGroup(groups, currentTabId);
+  if (currentGroup) return currentGroup.id;
+  return groups.some((group) => group.id === openTabGroupId) ? (openTabGroupId ?? null) : null;
+}
+
 /** The first color not used by an existing group, cycling once all are taken. */
 export function nextWorkspaceTabGroupColor(
   groups: readonly WorkspaceTabGroup[],

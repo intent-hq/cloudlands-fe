@@ -72,14 +72,15 @@ describe('encoder rotation on Home', () => {
     ]);
   });
 
-  it('keeps workspace switching when that rotation setting is chosen', () => {
+  it('moves the Home list in Switch tabs mode too', () => {
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
     window.history.replaceState(null, '', '/');
     const list = homeList(['a', 'b']);
     const device = manager();
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    expect(list.picks).toEqual([]);
-    expect(device.showWorkspace).toHaveBeenCalledTimes(1);
+    device.turn('clockwise');
+    device.turn('clockwise');
+    expect(list.picks).toEqual(['a', 'b']);
+    expect(device.showWorkspace).not.toHaveBeenCalled();
   });
 });
 

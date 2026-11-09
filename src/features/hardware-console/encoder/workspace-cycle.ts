@@ -1,11 +1,27 @@
 /**
  * Pure stepping logic for the encoder's Switch tabs mode: move across
- * the open workspace tabs in their on-screen order, clamping at the ends.
+ * the visible workspace tabs in their on-screen order, clamping at the ends.
  *
  * Pure web code — no Electron imports, no store imports.
  */
 
 import type { PhysicalKnobDirection } from '../input/types';
+import type { WorkspaceTabGroup } from '$store/renderer/slices/tab-state/tab-groups';
+
+/**
+ * The tabs the strip shows: members of a collapsed group are hidden behind
+ * its chip, so only ungrouped tabs and the open group's members remain.
+ */
+export function visibleWorkspaceTabs(
+  tabOrder: readonly string[],
+  groups: readonly WorkspaceTabGroup[],
+  openGroupId: string | null,
+): string[] {
+  const hidden = new Set(
+    groups.filter((group) => group.id !== openGroupId).flatMap((group) => group.workspaceIds),
+  );
+  return tabOrder.filter((id) => !hidden.has(id));
+}
 
 /**
  * One detent across the tab strip. Clockwise moves one tab right,

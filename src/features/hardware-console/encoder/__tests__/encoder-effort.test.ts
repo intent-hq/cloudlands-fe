@@ -21,7 +21,11 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { getItem, updateItem } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  updateItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareDeviceModel } from '../../input/types';
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
@@ -1136,5 +1140,24 @@ describe('encoder rotation from Home or Settings', () => {
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
     device.turn('counterclockwise');
     expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
+  });
+
+  it.each([
+    { labs: true, expected: [['ws-3'], ['ws-1']] },
+    { labs: false, expected: [['ws-2'], ['ws-3'], ['ws-2'], ['ws-1']] },
+  ])('skips tabs hidden in a collapsed group (tab groups on: $labs)', ({ labs, expected }) => {
+    Object.assign(state, { userPreferences: { labsTabGroupsEnabled: labs } });
+    Object.assign(state.tabState, {
+      workspaceStacks: [['ws-1', 'ws-2', 'ws-3']],
+      tabGroups: createCollection('id', [
+        { id: 'group', name: '', color: 'blue', workspaceIds: ['ws-2'] },
+      ]),
+      openTabGroupId: null,
+    });
+    const device = manager();
+    mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
+    for (let i = 0; i < 3; i += 1) device.turn('clockwise');
+    for (let i = 0; i < 3; i += 1) device.turn('counterclockwise');
+    expect(device.showWorkspace.mock.calls).toEqual(expected);
   });
 });

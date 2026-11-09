@@ -3,10 +3,10 @@
  *
  * Subscribes an input decoder to the shared manager's raw channel-2 stream
  * (`onRawMessage`) and wires the rotary encoder:
- * - rotate: adjusts the current agent's effort by default, or on Home's
- *   Workspaces list moves the selection (and its side preview) down or up;
- *   optionally steps across the open workspace tabs, left to right. All modes
- *   clamp at the ends;
+ * - rotate: on Home's Workspaces list moves the selection (and its side
+ *   preview) down or up in every mode; elsewhere adjusts the current agent's
+ *   effort by default, or optionally steps across the open workspace tabs,
+ *   left to right. All modes clamp at the ends;
  * - click (`ENC_CLK` keydown): opens the workspace selected on Home's
  *   Workspaces list, otherwise opens Home like the titlebar Home button.
  *
@@ -28,7 +28,9 @@ import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { PhysicalKnobDirection } from '../input/types';
 import { isConsoleOwner } from '../owner-gate';
-import { stepWorkspaceTab } from './workspace-cycle';
+import { stepWorkspaceTab, visibleWorkspaceTabs } from './workspace-cycle';
+import { getWorkspaceTabGroupList } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { resolveOpenWorkspaceTabGroupId } from '$store/renderer/slices/tab-state/tab-groups';
 import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 import { currentRoutePath } from '$lib/utils/workspace-route-path';
 import { getHomeEncoderTarget, stepHomeSelection } from '$features/home/home-encoder-target';
@@ -66,11 +68,22 @@ function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
 }
 
 /**
- * Open workspace tabs in strip order. Same as `selectWorkspaceTabOrder`, read
- * straight from state: device services load before selectors can be created.
+ * The tabs the strip shows, in order, with `cursor` treated as current so a
+ * detent landing in a group opens it. Mirrors `selectWorkspaceTabOrder` and
+ * `selectOpenWorkspaceTabGroupId`, read straight from state: device services
+ * load before selectors can be created.
  */
-function workspaceTabOrder(): string[] {
-  return appStore.state.tabState.workspaceStacks.flat();
+function visibleTabOrder(cursor: string | null): string[] {
+  const { tabState, userPreferences } = appStore.state;
+  const order = tabState.workspaceStacks.flat();
+  if (userPreferences?.labsTabGroupsEnabled !== true) return order;
+  const groups = getWorkspaceTabGroupList(tabState);
+  const openGroupId = resolveOpenWorkspaceTabGroupId(
+    groups,
+    cursor ?? tabState.currentTabId,
+    tabState.openTabGroupId,
+  );
+  return visibleWorkspaceTabs(order, groups, openGroupId);
 }
 
 function navigateToWorkspace(
@@ -96,23 +109,29 @@ function handleEncoderRotate(
   const state = appStore.state;
 
   const cursor = state.hardwareConsole.encoderHudWorkspaceId ?? getCurrentWorkspaceId();
-  const target = stepWorkspaceTab(workspaceTabOrder(), cursor, direction);
+  const target = stepWorkspaceTab(visibleTabOrder(cursor), cursor, direction);
   if (target === null) return null;
   dispatch(encoderHudShown(target));
   navigateToWorkspace(target, showWorkspace);
   return target;
 }
 
-/**
- * Move Home's workspace selection one row. Returns false when Home's
- * Workspaces list is not on screen, leaving the detent to the effort path.
- */
-function handleHomeRotate(direction: PhysicalKnobDirection): boolean {
+/** Home's Workspaces list while it is on screen, with its row ids. */
+function visibleHomeList() {
   const target = getHomeEncoderTarget();
   const ids = currentRoutePath() === '/' ? target?.ids() : null;
-  if (!target || !ids) return false;
-  const next = stepHomeSelection(ids, target.selectedId(), direction);
-  if (next !== null) target.select(next);
+  return target && ids ? { target, ids } : null;
+}
+
+/**
+ * Move Home's workspace selection one row. Returns false when Home's
+ * Workspaces list is not on screen, leaving the detent to the mode's path.
+ */
+function handleHomeRotate(direction: PhysicalKnobDirection): boolean {
+  const home = visibleHomeList();
+  if (!home) return false;
+  const next = stepHomeSelection(home.ids, home.target.selectedId(), direction);
+  if (next !== null) home.target.select(next);
   return true;
 }
 
@@ -121,9 +140,7 @@ function handleHomeRotate(direction: PhysicalKnobDirection): boolean {
  * in a collapsed group; the preview still shows it.
  */
 function selectedHomeWorkspaceId(): string | null {
-  const target = getHomeEncoderTarget();
-  if (!target || currentRoutePath() !== '/' || target.ids() === null) return null;
-  return target.selectedId();
+  return visibleHomeList()?.target.selectedId() ?? null;
 }
 
 /**
@@ -169,12 +186,10 @@ export function installHardwareConsoleEncoder(
       if (!isOwner()) return;
       const { encoderBehavior, encoderBehaviorHydrated } = appStore.state.hardwareConsole;
       if (!encoderBehaviorHydrated) return;
+      const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
+      if (workspaceId === null && handleHomeRotate(direction)) return;
       if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
-      else {
-        const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
-        if (workspaceId === null && handleHomeRotate(direction)) return;
-        dispatch(encoderEffortRotated(direction, workspaceId));
-      }
+      else dispatch(encoderEffortRotated(direction, workspaceId));
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {
       if (key === 'ENC_CLK' && isOwner()) handleEncoderClick(deps);
