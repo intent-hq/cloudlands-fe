@@ -506,6 +506,7 @@ describe('self-hosted compiler cache', () => {
     uses?: string;
     run?: string;
     shell?: string;
+    'working-directory'?: string;
     with?: Record<string, string>;
     env?: Record<string, string>;
   };
@@ -549,6 +550,11 @@ describe('self-hosted compiler cache', () => {
       );
       expect(checkout, step.name).toBeGreaterThanOrEqual(0);
       expect(checkout, step.name).toBeLessThan(index);
+      expect(index, step.name).toBeLessThan(
+        steps.findIndex((s) => s.name === 'Build intentd from source'),
+      );
+      // The script path is relative to the job root.
+      expect(step['working-directory'], step.name).toBeUndefined();
       expect(steps[checkout].if).toBe(gated);
       expect(step.if).toBe(gated);
       expect(step.shell).toBe('bash');
