@@ -250,6 +250,7 @@
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
+  import { publishFocusedChatSuggestions } from '$features/hardware-console/prompt-picker/chat-suggestions';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import SecretRequestCards from './secrets/SecretRequestCards.svelte';
   import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
@@ -2758,6 +2759,17 @@
       hasPendingInitialPrompt: Boolean(pendingInitialPrompt),
     }),
   );
+
+  // Share the focused chat's visible suggestions with the hardware joystick
+  // ring, which sends them exactly like a click (same gating as Ctrl/Alt+1-3).
+  $effect(() => {
+    if (!isActive || !isChatFocused || isRetiredSession || deferTranscriptReveal) return;
+    if (suggestedPrompts.length === 0) return;
+    return publishFocusedChatSuggestions({
+      prompts: suggestedPrompts,
+      send: (prompt) => handleSelectSuggestedPrompt(prompt),
+    });
+  });
 
   // The utility stack never precedes the transcript. Once transcript hydration
   // settles, each footer source owns its loading/failure/empty presentation.

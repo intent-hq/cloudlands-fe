@@ -361,10 +361,10 @@ describe('prompt-picker joystick (two windows, one owner)', () => {
     manager.emitRaw({ a: 0, d: 0 });
     expect(insertA).not.toHaveBeenCalled();
 
-    // Regaining ownership restores normal release insertion.
+    // Regaining ownership restores normal release insertion (up = first prompt).
     owner = 'A';
-    manager.emitRaw({ a: 0, d: 1 });
-    manager.emitRaw({ a: 0, d: 0 });
+    manager.emitRaw({ a: 0.75, d: 1 });
+    manager.emitRaw({ a: 0.75, d: 0 });
     expect(insertA).toHaveBeenCalledTimes(1);
   });
 });

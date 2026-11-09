@@ -60,13 +60,8 @@ import {
   persistHardwareConsolePromptUsage,
 } from '../prompt-picker-service';
 import { promptPickerSaga } from '$store/renderer/slices/hardware-console/sagas/prompt-picker-saga';
-import {
-  radialCancelSector,
-  radialPromptTurn,
-  radialSectorCount,
-  radialSectorForAngle,
-  radialSectorOffset,
-} from '../radial-layout';
+import { RADIAL_CANCEL_SLOT, buildRadialSlots } from '../radial-layout';
+import type { ChatSuggestionSource } from '../chat-suggestions';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   radialPromptPickerClosed,
@@ -99,7 +94,11 @@ function makeFakeManager(initialStatus: HardwareConsoleStatus = 'connected') {
   return fake;
 }
 
-function install(prompts: string[], manager = makeFakeManager()) {
+function install(
+  prompts: string[],
+  manager = makeFakeManager(),
+  suggestions: { current: ChatSuggestionSource | null } = { current: null },
+) {
   const dispatched: { type: string; payload?: unknown }[] = [];
   const insertText = vi.fn(() => true);
   let time = 0;
@@ -107,15 +106,29 @@ function install(prompts: string[], manager = makeFakeManager()) {
     manager as unknown as HardwareConsoleManager,
     {
       getTopPrompts: () => prompts,
+      getSuggestions: () => suggestions.current,
       dispatch: (action) => dispatched.push(action as { type: string }),
       insertText,
       now: () => time,
+      keyboardTarget: window,
     },
   );
+  installed.push(teardown);
   return { manager, dispatched, insertText, teardown, tick: (ms: number) => (time += ms) };
 }
 
-const PROMPTS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7'];
+const installed: (() => void)[] = [];
+afterEach(() => {
+  for (const teardown of installed.splice(0)) teardown();
+});
+
+const PROMPTS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
+const SLOTS = buildRadialSlots([], PROMPTS);
+// Device angles (a=0 is 3 o'clock, clockwise).
+const UP = 0.75;
+const RIGHT = 0;
+const DOWN = 0.25;
+const LEFT = 0.5;
 
 describe('active radial keyboard alternative', () => {
   it('cancels the service session without letting a later release insert', () => {
@@ -132,11 +145,11 @@ describe('active radial keyboard alternative', () => {
 
   it('arrows through prompt and Cancel sectors without moving editor focus', () => {
     const run = install(PROMPTS);
-    run.manager.joystick(0, 1);
+    run.manager.joystick(RIGHT, 1);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
-    expect(run.dispatched.at(-1)).toEqual(radialPromptPickerSectorChanged(7));
+    expect(run.dispatched.at(-1)).toEqual(radialPromptPickerSectorChanged(3));
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    expect(run.insertText).toHaveBeenCalledExactlyOnceWith('p7');
+    expect(run.insertText).toHaveBeenCalledExactlyOnceWith('p3');
     run.manager.joystick(0, 0);
     expect(run.insertText).toHaveBeenCalledTimes(1);
     run.teardown();
@@ -188,75 +201,56 @@ function invokePromptPickerSaga(manager = makeFakeManager('unavailable')) {
   };
 }
 
-describe('radial layout', () => {
-  it('adds one Cancel sector after the prompt sectors', () => {
-    expect(radialSectorCount(8)).toBe(9);
-    expect(radialCancelSector(8)).toBe(8);
-  });
-
-  it('centers the Cancel sector at 6 o’clock and prompts around the remaining arc', () => {
-    // 8 prompts → 9 sectors. Cancel spans screen turns (0.5 ± 1/18).
-    expect(radialSectorOffset(8)).toBeCloseTo(-4 / 9);
-    expect(radialPromptTurn(0, 8)).toBeCloseTo(-3.5 / 9);
-    expect(radialPromptTurn(7, 8)).toBeCloseTo(3.5 / 9);
-  });
-
-  // Live-hardware fixtures: the CM2 vendor-mode stream's a=0 points right
-  // (3 o'clock) and increases clockwise on screen. With 8 prompts (9
-  // sectors), physical down must land on the Cancel sector.
-  it.each([
-    { device: 0.75, direction: 'up', sector: 4 },
-    { device: 0, direction: 'right', sector: 6 },
-    { device: 0.25, direction: 'down (Cancel)', sector: 8 },
-    { device: 0.5, direction: 'left', sector: 1 },
-  ])('maps device angle $device ($direction) to sector $sector', ({ device, sector }) => {
-    expect(radialSectorForAngle(device, 8)).toBe(sector);
-  });
-});
-
 describe('installHardwareConsolePromptPickerJoystick', () => {
-  it('opens on deflection past the dead-zone with the pointed sector', () => {
+  it('opens on deflection past the dead-zone with the pointed direction', () => {
     const { manager, dispatched } = install(PROMPTS);
-    manager.joystick(0, 0.1); // inside dead-zone — ignored
+    manager.joystick(RIGHT, 0.1); // inside dead-zone — ignored
     expect(dispatched).toEqual([]);
-    manager.joystick(0, 0.9); // device 0 = right
-    expect(dispatched).toEqual([radialPromptPickerOpened(PROMPTS, 6)]);
+    manager.joystick(RIGHT, 0.9);
+    expect(dispatched).toEqual([radialPromptPickerOpened(SLOTS, 2)]);
   });
 
-  it('tracks sector changes while deflected', () => {
+  it('tracks direction changes while deflected', () => {
     const { manager, dispatched } = install(PROMPTS);
-    manager.joystick(0, 0.9); // right
-    manager.joystick(0.5, 0.9); // left
+    manager.joystick(RIGHT, 0.9);
+    manager.joystick(LEFT, 0.9);
     expect(dispatched).toEqual([
-      radialPromptPickerOpened(PROMPTS, 6),
-      radialPromptPickerSectorChanged(1),
+      radialPromptPickerOpened(SLOTS, 2),
+      radialPromptPickerSectorChanged(6),
     ]);
   });
 
-  it('release on a sector inserts that prompt and closes', () => {
+  it('release on a used prompt inserts it and closes', () => {
     const { manager, dispatched, insertText } = install(PROMPTS);
-    manager.joystick(0, 0.9); // right = sector 6
-    manager.joystick(0, 0); // snap back to center = release
-    expect(insertText).toHaveBeenCalledExactlyOnceWith('p6');
+    manager.joystick(LEFT, 0.9); // slot 6 = p5
+    manager.joystick(LEFT, 0);
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('p5');
     expect(dispatched.at(-1)).toEqual(radialPromptPickerClosed());
   });
 
-  it('release on the Cancel sector inserts nothing', () => {
+  it('release on the Cancel direction inserts nothing', () => {
     const { manager, dispatched, insertText } = install(PROMPTS);
-    manager.joystick(0.25, 0.9); // device 0.25 = down = Cancel
-    expect(dispatched).toEqual([radialPromptPickerOpened(PROMPTS, radialCancelSector(8))]);
-    manager.joystick(0.25, 0);
+    manager.joystick(DOWN, 0.9);
+    expect(dispatched).toEqual([radialPromptPickerOpened(SLOTS, RADIAL_CANCEL_SLOT)]);
+    manager.joystick(DOWN, 0);
     expect(insertText).not.toHaveBeenCalled();
     expect(dispatched.at(-1)).toEqual(radialPromptPickerClosed());
   });
 
+  it('release on an empty direction does nothing', () => {
+    const { manager, insertText } = install(['only']);
+    manager.joystick(LEFT, 0.9);
+    manager.joystick(LEFT, 0);
+    expect(insertText).not.toHaveBeenCalled();
+  });
+
   it('release after dwelling centered cancels without inserting', () => {
     const { manager, dispatched, insertText, tick } = install(PROMPTS);
-    manager.joystick(0, 0.9);
-    manager.joystick(0, 0.25); // below select distance, above release hysteresis
+    manager.joystick(RIGHT, 0.9);
+    manager.joystick(RIGHT, 0.25); // below select distance, above release hysteresis
     tick(DEFAULT_CENTER_DWELL_MS + 1);
-    manager.joystick(0, 0.25); // dwell elapsed — selection clears
-    manager.joystick(0, 0);
+    manager.joystick(RIGHT, 0.25); // dwell elapsed — selection clears
+    manager.joystick(RIGHT, 0);
     expect(insertText).not.toHaveBeenCalled();
     expect(dispatched.at(-2)).toEqual(radialPromptPickerSectorChanged(null));
     expect(dispatched.at(-1)).toEqual(radialPromptPickerClosed());
@@ -264,29 +258,82 @@ describe('installHardwareConsolePromptPickerJoystick', () => {
 
   it('a fast snap-back through the hysteresis band still commits', () => {
     const { manager, insertText } = install(PROMPTS);
-    manager.joystick(0.5, 0.9); // left = sector 1
-    manager.joystick(0.5, 0.25); // passing through — no dwell
-    manager.joystick(0.5, 0);
-    expect(insertText).toHaveBeenCalledExactlyOnceWith('p1');
+    manager.joystick(UP, 0.9);
+    manager.joystick(UP, 0.25); // passing through — no dwell
+    manager.joystick(UP, 0);
+    expect(insertText).toHaveBeenCalledExactlyOnceWith('p0');
   });
 
-  it('does not open when there are no tracked prompts', () => {
+  it('does not open with no tracked prompts and no chat suggestions', () => {
     const { manager, dispatched } = install([]);
-    manager.joystick(0, 0.9);
+    manager.joystick(RIGHT, 0.9);
     expect(dispatched).toEqual([]);
   });
 
   it('disconnect closes an open session; teardown detaches', () => {
     const { manager, dispatched, teardown } = install(PROMPTS);
-    manager.joystick(0, 0.9);
+    manager.joystick(RIGHT, 0.9);
     manager.setStatus('disconnected');
     expect(dispatched.at(-1)).toEqual(radialPromptPickerClosed());
 
     manager.setStatus('connected');
     teardown();
     const before = dispatched.length;
-    manager.joystick(0, 0.9);
+    manager.joystick(RIGHT, 0.9);
     expect(dispatched).toHaveLength(before);
+  });
+});
+
+describe('chat suggestions on the ring', () => {
+  function withSuggestions(prompts: string[], used = ['p0', 'p1']) {
+    const source = { prompts, send: vi.fn() };
+    const suggestions = { current: source as ChatSuggestionSource | null };
+    return { source, suggestions, run: install(used, makeFakeManager(), suggestions) };
+  }
+
+  it('opens with the focused chat suggestions at top, top-right and right', () => {
+    const { run } = withSuggestions(['s1', 's2', 's3']);
+    run.manager.joystick(UP, 0.9);
+    expect(run.dispatched).toEqual([
+      radialPromptPickerOpened(buildRadialSlots(['s1', 's2', 's3'], ['p0', 'p1']), 0),
+    ]);
+  });
+
+  it('release on a suggestion sends it right away instead of inserting', () => {
+    const { source, run } = withSuggestions(['s1', 's2', 's3']);
+    run.manager.joystick(RIGHT, 0.9); // slot 2 = suggestion 3
+    run.manager.joystick(RIGHT, 0);
+    expect(source.send).toHaveBeenCalledExactlyOnceWith('s3');
+    expect(run.insertText).not.toHaveBeenCalled();
+  });
+
+  it('Enter on a highlighted suggestion sends it', () => {
+    const { source, run } = withSuggestions(['s1']);
+    run.manager.joystick(UP, 0.9);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(source.send).toHaveBeenCalledExactlyOnceWith('s1');
+  });
+
+  it('does not send when the chat that offered it lost focus mid-gesture', () => {
+    const { source, suggestions, run } = withSuggestions(['s1']);
+    run.manager.joystick(UP, 0.9);
+    suggestions.current = null;
+    run.manager.joystick(UP, 0);
+    expect(source.send).not.toHaveBeenCalled();
+  });
+
+  it('opens with suggestions even when no prompts are tracked', () => {
+    const { run } = withSuggestions(['s1'], []);
+    run.manager.joystick(UP, 0.9);
+    expect(run.dispatched).toEqual([radialPromptPickerOpened(buildRadialSlots(['s1'], []), 0)]);
+  });
+
+  it('still inserts used prompts that sit next to suggestions', () => {
+    const { source, run } = withSuggestions(['s1', 's2']);
+    run.manager.joystick(RIGHT, 0.9); // slot 2 = p0
+    run.manager.joystick(RIGHT, 0);
+    expect(run.insertText).toHaveBeenCalledExactlyOnceWith('p0');
+    expect(source.send).not.toHaveBeenCalled();
   });
 });
 
@@ -318,8 +365,8 @@ describe('promptPickerSaga limit persistence', () => {
       );
     });
 
-    mockState.hardwareConsole.promptPickerLimit = 11;
-    invoke({ type: 'hardwareConsole/setPromptPickerLimit', payload: [11] });
+    mockState.hardwareConsole.promptPickerLimit = 5;
+    invoke({ type: 'hardwareConsole/setPromptPickerLimit', payload: [5] });
     await vi.waitFor(() => {
       expect(appClient.settings.update).toHaveBeenCalledWith([
         {
@@ -328,7 +375,7 @@ describe('promptPickerSaga limit persistence', () => {
             keyPins: ['ws-1'],
             promptUsage: [],
             actionMapping: [],
-            promptPickerLimit: 11,
+            promptPickerLimit: 5,
           }),
         },
       ]);
