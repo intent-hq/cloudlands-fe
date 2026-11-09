@@ -232,6 +232,7 @@ export interface AgentHistorySegment {
    * BELOW the dropped rows, so the next prepend that does not overlap the
    * tail opens the gap (the refill restores the dropped rows), and
    * `oldestReached` cannot latch until rows land. Cleared once rows land.
+   * Meanwhile `holeRowsEstimate` carries the dropped-row count for that gap.
    */
   tailBoundaryUnknown?: boolean;
 }

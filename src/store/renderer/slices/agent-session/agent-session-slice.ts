@@ -487,10 +487,16 @@ function accountLostOlderTailRows(
         : {}),
     });
   }
-  if (segment?.tailBoundaryUnknown === true && !segment.oldestReached) return next;
+  // The dropped-row count rides `holeRowsEstimate` (ignored while no gap is
+  // open) so a gap opened by the next non-overlapping page sizes its hole.
+  const priorLost =
+    segment?.tailBoundaryUnknown === true && !segment.oldestReached
+      ? (segment.holeRowsEstimate ?? 0)
+      : 0;
   return setHistorySegment(next, agentId, {
     ...EMPTY_HISTORY_SEGMENT,
     tailBoundaryUnknown: true,
+    holeRowsEstimate: priorLost + lost,
   });
 }
 
@@ -2263,12 +2269,14 @@ agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, me
   // Unknown boundary (the tail lost older rows while history was empty): a
   // page overlapping the tail was anchored at it and is contiguous; any
   // other page continued a cursor minted before the loss and lands BELOW
-  // the dropped rows — open the gap so the refill restores them.
+  // the dropped rows — open the gap so the refill restores them; the
+  // dropped-row count carried in `holeRowsEstimate` sizes that hole.
   const { tailBoundaryUnknown, ...known } = segment;
-  const resolvesBoundary = tailBoundaryUnknown === true && merged.length > 0;
-  const existing = resolvesBoundary
-    ? { ...known, gapToTail: known.gapToTail || merged.length === sorted.length }
-    : segment;
+  let existing: AgentHistorySegment = segment;
+  if (tailBoundaryUnknown === true && merged.length > 0) {
+    const { holeRowsEstimate: _contiguous, ...contiguous } = known;
+    existing = merged.length === sorted.length ? { ...known, gapToTail: true } : contiguous;
+  }
   // Seek-seeded segments track the estimated ordinal of the first row: rows
   // landing BEFORE the previous first row shift the estimate down by their
   // count (floor 0). An estimate only — oldestReached pins it to exactly 0.

@@ -7539,6 +7539,8 @@ describe('tail writes that drop older resident rows never hide them', () => {
       expect(ids(segment?.messages)).toEqual(ids(rows(5, 9)));
       expect(segment?.gapToTail).toBe(true);
       expect(segment?.tailBoundaryUnknown).toBeUndefined();
+      // The dropped rows (10..14) are attributed to the hole, not above history.
+      expect(segment?.holeRowsEstimate).toBe(5);
 
       // The gap refill restores the dropped rows and closes on tail overlap.
       state = agentSessionReducer(state, appendHistoryMessages('a1', rows(10, 16)));
@@ -7557,6 +7559,7 @@ describe('tail writes that drop older resident rows never hide them', () => {
       expect(ids(segment?.messages)).toEqual(ids(rows(12, 14)));
       expect(segment?.gapToTail).toBe(false);
       expect(segment?.tailBoundaryUnknown).toBeUndefined();
+      expect(segment?.holeRowsEstimate).toBeUndefined();
     });
 
     it('an empty page keeps the boundary unknown and cannot mark the start reached', () => {
@@ -7567,10 +7570,15 @@ describe('tail writes that drop older resident rows never hide them', () => {
       expect(segment?.oldestReached).toBe(false);
     });
 
-    it('a repeated loss keeps the same segment record', () => {
-      const before = withUnknownBoundary();
-      const state = agentSessionReducer(before, replaceMessages('a1', rows(17, 20)));
-      expect(state.historySegmentsByAgentId).toBe(before.historySegmentsByAgentId);
+    it('a repeated loss adds to the dropped-row count the gap will open with', () => {
+      let state = agentSessionReducer(withUnknownBoundary(), replaceMessages('a1', rows(17, 20)));
+      expect(state.historySegmentsByAgentId?.['a1']?.tailBoundaryUnknown).toBe(true);
+
+      // Rows 10..16 are now all in the hole below a pre-loss cursor page.
+      state = agentSessionReducer(state, prependHistoryMessages('a1', rows(5, 9)));
+      const segment = state.historySegmentsByAgentId?.['a1'];
+      expect(segment?.gapToTail).toBe(true);
+      expect(segment?.holeRowsEstimate).toBe(7);
     });
   });
 });
