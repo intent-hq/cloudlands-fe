@@ -1,3 +1,4 @@
+/** @internal Test seam: called by src/test-setup.ts. */
 import { delimiter } from 'node:path';
 
 // Datadog's injected library loads sitecustomize.py at Python startup, then

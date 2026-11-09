@@ -4,7 +4,7 @@
  * Provides mock implementations of streaming services for testing.
  */
 
-import { EventEmitter } from '$lib/utils/browser-event-emitter';
+import { EventEmitter } from '$shared/utils/event-emitter';
 import type { ContentBlock, AgentMessage } from '$shared/types';
 import { v4 as uuidv4 } from 'uuid';
 

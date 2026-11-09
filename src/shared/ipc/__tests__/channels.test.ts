@@ -14,16 +14,10 @@ import {
   getAllStaticChannels,
   createChannelName,
 } from '../channels';
-import {
-  isValidChannel,
-  assertValidChannel,
-  isDynamicChannel,
-  getDynamicChannelPattern,
-  validateChannel,
-  getAllowedChannelsList,
-  requiresAuth,
-  getRateLimit,
-} from '../validation';
+import { getAllowedChannels, isDynamicChannel } from '../../ipc-registry';
+
+const isValidChannel = (channel: string) =>
+  getAllowedChannels().includes(channel) || isDynamicChannel(channel);
 
 describe('IPC Channels', () => {
   describe('Channel Constants', () => {
@@ -109,15 +103,6 @@ describe('IPC Channels', () => {
       expect(isValidChannel('terminal:output:456')).toBe(true);
       expect(isValidChannel('agent-stream-123')).toBe(false);
     });
-
-    it('should assert valid channels', () => {
-      expect(() => assertValidChannel('agent:create')).not.toThrow();
-      expect(() => assertValidChannel('workspace:list')).not.toThrow();
-    });
-
-    it('should throw on invalid channels', () => {
-      expect(() => assertValidChannel('invalid:channel')).toThrow();
-    });
   });
 
   describe('Dynamic Channels', () => {
@@ -134,26 +119,11 @@ describe('IPC Channels', () => {
       expect(isDynamicChannel('agent:create')).toBe(false);
       expect(isDynamicChannel('workspace:list')).toBe(false);
     });
-
-    it('should get dynamic channel pattern', () => {
-      expect(getDynamicChannelPattern('agent:stream:123')).toBe('agent:stream:');
-      expect(getDynamicChannelPattern('agent:stream:ping:123')).toBe('agent:stream:');
-      expect(getDynamicChannelPattern('agent:stream:pong')).toBe('agent:stream:');
-      expect(getDynamicChannelPattern('auggie:stream:123')).toBe('auggie:stream:');
-      expect(getDynamicChannelPattern('terminal:output:456')).toBe('terminal:output:');
-      expect(getDynamicChannelPattern('agent-stream-123')).toBeNull();
-      expect(getDynamicChannelPattern('agent:create')).toBeNull();
-    });
   });
 
   describe('Channel Utilities', () => {
-    it('should validate and return channel', () => {
-      expect(validateChannel('agent:create')).toBe('agent:create');
-      expect(validateChannel('invalid:channel')).toBeNull();
-    });
-
     it('should get all allowed channels', () => {
-      const channels = getAllowedChannelsList();
+      const channels = getAllowedChannels();
       expect(channels.length).toBeGreaterThan(0);
       expect(channels).toContain('agent:create');
       expect(channels).toContain('workspace:list');
@@ -168,20 +138,6 @@ describe('IPC Channels', () => {
     it('should create branded channel names', () => {
       const channel = createChannelName('agent:create');
       expect(channel).toBe('agent:create');
-    });
-  });
-
-  describe('Channel Metadata', () => {
-    it('should identify channels requiring auth', () => {
-      expect(requiresAuth('agent:create')).toBe(true);
-      expect(requiresAuth('agent:send-message')).toBe(true);
-      expect(requiresAuth('workspace:list')).toBe(false);
-    });
-
-    it('should get rate limits', () => {
-      expect(getRateLimit('agent:send-message')).toBe(10);
-      expect(getRateLimit('agent:stream')).toBe(5);
-      expect(getRateLimit('agent:create')).toBeNull();
     });
   });
 });

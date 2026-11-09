@@ -19,8 +19,6 @@ export const ALLOWLIST = Object.freeze({
     'the AppClient `agents.list` / `agents.listWithMeta` wrapper — the one renderer wire caller; its callers carry the scope',
   'src/features/debug/main/debug.ipc.ts':
     'dev-only (`NODE_ENV === development`) human-triggered debug dump that lists every bin',
-  'src/store/renderer/seeders/agents-seeder.ts':
-    'test-harness seeder — `mock-bootstrap` seeders run only in focused tests, never in production',
 });
 
 export const REMEDIATION_HINT = [

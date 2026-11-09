@@ -1,8 +1,11 @@
 /**
  * IPC Request Validation
  *
- * Provides Zod schemas for validating IPC requests at runtime.
- * Ensures all IPC payloads conform to their contracts before processing.
+ * Zod schemas for IPC request contracts. Contract tests use them to assert that
+ * renderer requests match the documented wire shape (see AGENTS.md); no
+ * production code validates through this module.
+ *
+ * @internal
  *
  * Usage:
  *   const validated = validateIpcRequest('agent:create', request);

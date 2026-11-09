@@ -56,8 +56,7 @@ function readWorkspaceOpenId(arg: unknown): string {
 
 // Registered at import time (not inside the async seeder) so the route loader's
 // `workspaceClient.open()` call resolves through the mock router before any
-// component mounts, mirroring the same idiom agents-seeder uses for the
-// AuggieSetupGate bootstrap probes.
+// component mounts.
 registerMockIpcHandler(WORKSPACE_CHANNELS.OPEN, async (arg) => {
   const id = readWorkspaceOpenId(arg);
   if (!id) {

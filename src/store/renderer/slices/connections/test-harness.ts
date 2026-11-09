@@ -1,3 +1,4 @@
+/** @internal Test harness for the connections saga and settings suites. */
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { select } from 'typed-redux-saga';
 import { createAppStoreMock } from '../../utils/test-helpers/store-mock';

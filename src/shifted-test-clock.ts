@@ -12,6 +12,8 @@
  * arguments, `Date.UTC` and `Date.parse` are unchanged. It is installed before vitest's
  * fake timers first read `Date.now()`, so `vi.useFakeTimers()` and `vi.clearAllTimers()`
  * fall back to the shifted time, exactly the fallback that broke #3574.
+ *
+ * @internal Test seam: installed by src/test-setup.ts.
  */
 
 export const SHIFTED_NOW_ENV = 'VITEST_SHIFTED_NOW';
