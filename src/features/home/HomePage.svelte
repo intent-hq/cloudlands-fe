@@ -37,7 +37,17 @@
   import {
     buildRepoPathLookup,
     groupWorkspacesByRepository,
+    type RepositoryGroup,
   } from '$lib/components/workspace/utils/workspace-grouping';
+  import {
+    HOME_HIDDEN_REPOS_GROUP,
+    hiddenHomeRepositories,
+    hideHomeRepository,
+    isHomeRepositoryHidden,
+    unhideHomeRepository,
+    withoutRevivedHomeRepositories,
+  } from './home-hidden-repos';
+  import { createHomeRepositoryMenu } from './home-repository-menu';
   import {
     selectWorkspaceItems,
     selectWorkspaceById,
@@ -81,6 +91,7 @@
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
   import HomeWorkspaceList from './HomeWorkspaceList.svelte';
+  import HomeHiddenRepositories from './HomeHiddenRepositories.svelte';
   import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
@@ -120,7 +131,11 @@
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const labelsInUse$ = selectWorkspaceLabelsInUse();
   const labelsSupported$ = selectLabelsSupported();
-  let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
+  let contextMenu = $state<
+    | (SidebarContextPosition &
+        ({ workspace: Workspace; repo?: never } | { repo: RepositoryGroup; workspace?: never }))
+    | null
+  >(null);
   function openWorkspace(id: string) {
     contextMenu = null;
     void openAndShowWorkspace(id);
@@ -171,6 +186,34 @@
         updateView({ expandedGroups: { ...$view$.expandedGroups, [key]: true } }),
       getHomeElement: () => homeElement,
       aside: { setAside: asideSet.has(workspace.id), onToggle: () => toggleAside(workspace) },
+    });
+  }
+  function showRepositoryMenu(event: MouseEvent | KeyboardEvent, repo: RepositoryGroup) {
+    const position = getSidebarContextPosition(event);
+    if (position) contextMenu = { ...position, repo };
+  }
+  function repositoryMenu(repo: RepositoryGroup): SidebarMenuEntry[] {
+    const then = (action: () => void) => () => {
+      contextMenu = null;
+      action();
+    };
+    return createHomeRepositoryMenu({
+      canCreate: !$collaborator$,
+      hidden: isHomeRepositoryHidden(hiddenRepos, repo),
+      loaded: $hasLoaded$,
+      onNewWorkspace: then(() => {
+        chooseRepo(repo.key);
+        createWorkspace();
+      }),
+      onHide: then(() =>
+        updateView({
+          hiddenRepos: hideHomeRepository(hiddenRepos, repo.key, repo.workspaces),
+          ...(repoKey === repo.key ? { repoKey: null, selectedId: null } : {}),
+        }),
+      ),
+      onUnhide: then(() =>
+        updateView({ hiddenRepos: unhideHomeRepository(hiddenRepos, repo.key) }),
+      ),
     });
   }
   const asideIds$ = selectHomeSetAsideWorkspaceIds();
@@ -263,6 +306,12 @@
     ),
   );
   const selectedRepository = $derived(repositoryGroups.find((repo) => repo.key === repoKey));
+  // Hidden repositories leave the sidebar only; their workspaces stay in All repos.
+  const hiddenRepos = $derived($view$.hiddenRepos ?? {});
+  $effect(() => {
+    const next = withoutRevivedHomeRepositories(hiddenRepos, repositoryGroups);
+    if (next) untrack(() => updateView({ hiddenRepos: next }));
+  });
   // Counts and triage describe active work.
   function isActive(workspace: Workspace): boolean {
     return matchesHomeFilter(workspace, 'all') && !asideSet.has(workspace.id);
@@ -276,6 +325,7 @@
       [];
     const unassigned: typeof repositoryGroups = [];
     for (const repo of repositoryGroups) {
+      if (isHomeRepositoryHidden(hiddenRepos, repo)) continue;
       if (repo.key === m.workspace_grouping_unknownRepository_label()) {
         unassigned.push(repo);
         continue;
@@ -301,6 +351,8 @@
     }
     return { groups, unassigned };
   });
+  const hiddenSidebarRepos = $derived(hiddenHomeRepositories(hiddenRepos, repositoryGroups));
+  const hiddenReposExpanded = $derived($view$.expandedGroups[HOME_HIDDEN_REPOS_GROUP] === true);
   const selectedOrg = $derived(sidebar.groups.find((group) => `sidebar:${group.key}` === repoKey));
   const scopedWorkspaces = $derived(
     selectedRepository?.workspaces ??
@@ -651,7 +703,9 @@
     x={contextMenu.x}
     y={contextMenu.y}
     returnFocus={contextMenu.returnFocus}
-    items={workspaceMenu(contextMenu.workspace)}
+    items={contextMenu.workspace
+      ? workspaceMenu(contextMenu.workspace)
+      : repositoryMenu(contextMenu.repo)}
     onClickOutside={() => (contextMenu = null)}
   />
 {/if}
@@ -703,21 +757,24 @@
           >{formatInteger(items.filter(isActive).length)}</span
         >
       {/snippet}
-      {#snippet repoButton(repo: (typeof repositoryGroups)[number])}
+      {#snippet repoButton(repo: (typeof repositoryGroups)[number], hidden = false)}
+        {@const unassigned = repo.key === m.workspace_grouping_unknownRepository_label()}
         <Tooltip.Tooltip content={repo.label} class="flex w-full">
           <Button
-            variant="ghost"
+            variant={hidden ? 'ghost-light' : 'ghost'}
             active={repoKey === repo.key && destination === 'workspaces'}
             class="w-full justify-start px-2"
-            aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
-              ? m.fileTracking_startNew_noRepository_label()
-              : repo.label}
+            aria-label={unassigned ? m.fileTracking_startNew_noRepository_label() : repo.label}
             onclick={() => chooseRepo(repo.key)}
+            oncontextmenu={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+            onkeydown={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
           >
             <span class="flex-1 truncate text-left font-normal"
-              >{repo.key === m.workspace_grouping_unknownRepository_label()
+              >{unassigned
                 ? m.fileTracking_startNew_noRepository_label()
-                : repo.name || repo.label}</span
+                : hidden
+                  ? repo.label
+                  : repo.name || repo.label}</span
             >
             {@render sidebarCounts(repo.workspaces)}
           </Button>
@@ -831,6 +888,21 @@
                   {@render repoButton(repo)}
                 {/each}
               </div>
+            {/if}
+            {#if hiddenSidebarRepos.length}
+              <HomeHiddenRepositories
+                repos={hiddenSidebarRepos}
+                expanded={hiddenReposExpanded}
+                ontoggle={() =>
+                  updateView({
+                    expandedGroups: {
+                      ...$view$.expandedGroups,
+                      [HOME_HIDDEN_REPOS_GROUP]: !hiddenReposExpanded,
+                    },
+                  })}
+              >
+                {#snippet row(repo)}{@render repoButton(repo, true)}{/snippet}
+              </HomeHiddenRepositories>
             {/if}
             {#if repositoryGroups.length === 0 && $hasLoaded$}<p
                 class="px-2 py-3 type-caption text-muted-foreground"

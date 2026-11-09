@@ -107,3 +107,16 @@ it('normalizes separate integration scopes', () => {
     linear: { query: 'bugs', filter: 'assigned', closed: false },
   });
 });
+
+// Hidden repositories survive reload; malformed or unsafe entries do not.
+it('keeps hidden sidebar repositories across reloads', () => {
+  const config = normalizeHomeConfiguration({
+    hiddenRepos: JSON.parse(
+      '{"acme/app":1700000000000,"/home/me/plain":0,"__proto__":1,"bad":-1,"nan":"1","":2}',
+    ),
+  });
+  expect(config.hiddenRepos).toEqual({ 'acme/app': 1700000000000, '/home/me/plain': 0 });
+  expect(readHomePersistence(persistedHomeState(config)).configuration.hiddenRepos).toEqual(
+    config.hiddenRepos,
+  );
+});

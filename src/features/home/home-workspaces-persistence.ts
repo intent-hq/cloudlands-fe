@@ -19,6 +19,12 @@ export interface HomeConfiguration {
   groupBy: 'status' | 'workspace-status' | 'repository' | 'none';
   expandedGroups: Record<string, boolean>;
   moreReposExpanded: boolean;
+  /**
+   * Repositories hidden from the Home sidebar, by repository key. The value is the
+   * newest workspace creation time (daemon clock, ms) when hidden; a newer
+   * workspace brings the repository back.
+   */
+  hiddenRepos: Record<string, number>;
 }
 /**
  * A workspace the user set aside on Home. `known` is the attention the user
@@ -53,6 +59,7 @@ export function defaultHomeConfiguration(): HomeConfiguration {
     groupBy: 'status',
     expandedGroups: {},
     moreReposExpanded: false,
+    hiddenRepos: {},
   };
 }
 function object(value: unknown): Record<string, unknown> {
@@ -86,6 +93,10 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
   const expandedGroups: Record<string, boolean> = {};
   for (const [key, flag] of Object.entries(object(raw.expandedGroups)).slice(0, 500))
     if (safeKey(key) && typeof flag === 'boolean') expandedGroups[key] = flag;
+  const hiddenRepos: Record<string, number> = {};
+  for (const [key, newest] of Object.entries(object(raw.hiddenRepos)).slice(0, 500))
+    if (safeKey(key) && typeof newest === 'number' && Number.isFinite(newest) && newest >= 0)
+      hiddenRepos[key] = Math.floor(newest);
   return {
     integrationViews: {
       prs: integrationView(object(raw.integrationViews).prs, 'prs'),
@@ -113,6 +124,7 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
     ),
     expandedGroups,
     moreReposExpanded: raw.moreReposExpanded === true,
+    hiddenRepos,
   };
 }
 function timestamp(value: unknown): number | null {

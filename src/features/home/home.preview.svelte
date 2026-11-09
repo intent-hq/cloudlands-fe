@@ -13,6 +13,7 @@
   } from '$shared/types';
   import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
   import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+  import { HOME_HIDDEN_REPOS_GROUP } from './home-hidden-repos';
 
   declare global {
     interface Window {
@@ -42,6 +43,8 @@
       | 'status-icons'
       | 'status-grouping'
       | 'labels'
+      | 'hidden-repos'
+      | 'hidden-repos-collapsed'
       | 'purged'
       | 'pr-status-list'
       | 'board-pr-status'
@@ -79,6 +82,8 @@
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
       labels: { props: { scenario: 'labels' } },
+      'hidden-repos': { props: { scenario: 'hidden-repos' } },
+      'hidden-repos-collapsed': { props: { scenario: 'hidden-repos-collapsed' } },
       purged: { props: { scenario: 'purged' } },
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
@@ -735,6 +740,15 @@
       store.dispatch(setHomeWorkspaceAside('home-complete'));
     }
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
+    if (scenario.startsWith('hidden-repos')) {
+      const later = Date.parse('2100-01-01T00:00:00Z');
+      store.dispatch(
+        updateHomeWorkspaceView({
+          hiddenRepos: { 'acme/platform': later, '/repos/local-tools': later },
+          expandedGroups: { [HOME_HIDDEN_REPOS_GROUP]: scenario === 'hidden-repos' },
+        }),
+      );
+    }
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
       store.dispatch(updateHomeWorkspaceView({ tab: 'linear' }));
   });
