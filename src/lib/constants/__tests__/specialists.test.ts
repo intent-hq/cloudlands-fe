@@ -51,6 +51,28 @@ describe('SPECIALISTS', () => {
     );
   });
 
+  it('keeps the Product Manager fallback identical to the bundled definition', () => {
+    const specialist = getSpecialistById('product-manager');
+    const bundled = readFileSync(
+      resolve(__dirname, '../../../../resources/specialists/product-manager.md'),
+      'utf8',
+    );
+    const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
+
+    expect(specialist).toMatchObject({
+      id: 'product-manager',
+      name: 'Product Manager',
+      icon: 'coordinator',
+    });
+    expect(specialist).not.toHaveProperty('defaultModel');
+    expect(specialist?.hidden).toBeUndefined();
+    expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
+    expect(bundled).toContain(`roleReminder: "${specialist?.roleReminder}"`);
+    expect(createHash('sha256').update(bundled).digest('hex')).toBe(
+      '9b07977dcae665abfe636e9cf863eef280666dcb7b709874a34f140d22aa6cec',
+    );
+  });
+
   it('keeps chief workspace creation extraction guidance', () => {
     const chief = getSpecialistById('chief-of-staff');
     expect(chief?.defaultBehaviorPrompt).toContain('When the user names a branch');

@@ -1,5 +1,6 @@
 import type { QueuedMessage } from '$shared/types';
 import { isUserQueuedMessage } from './queued-message-visibility';
+import { isDurableScriptMonitorWake } from './script-monitor-wake-attribution';
 
 /** Visibility never grants mutation rights. Unknown authors cannot be edited. */
 export function queuedMessagePermissions(
@@ -38,8 +39,8 @@ export function findQueuedMessageForEdit(
 /** Monitor wake delivery belongs to the daemon's monitor lifecycle. */
 function isProtectedMonitorWake(message: QueuedMessage): boolean {
   return (
-    message.messageMetadata?.type === 'script_monitor_wake' &&
-    typeof message.messageMetadata.monitorId === 'string'
+    isDurableScriptMonitorWake(message.messageMetadata) &&
+    typeof message.messageMetadata?.monitorId === 'string'
   );
 }
 

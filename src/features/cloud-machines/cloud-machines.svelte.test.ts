@@ -10,12 +10,18 @@ import { store } from '$store/renderer/store';
 import DevicesSettings from '$lib/components/settings/DevicesSettings.svelte';
 import {
   E2B_PROVIDER,
+  GROUPED_SANDBOXES,
   TEAM_ENTRY,
   setupCloudMachinesFixture,
   type CloudMachinesPreviewState,
 } from '../../test/cloud-machines-preview';
 import CloudMachineRow from './CloudMachineRow.svelte';
+import CloudSandboxList from './CloudSandboxList.svelte';
+import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { NEW_CLOUD_ENTRY, cloudMachineValidated } from './cloud-machines-slice';
+
+const navigateToDesktopAgent = vi.hoisted(() => vi.fn(async () => {}));
+vi.mock('$features/desktop/desktop-agent-navigation', () => ({ navigateToDesktopAgent }));
 
 let restore: (() => void) | null = null;
 function seed(state: CloudMachinesPreviewState) {
@@ -148,7 +154,7 @@ describe('E2B row', () => {
     expect(rows).toHaveLength(3);
     const running = view.container.querySelector('[data-cloud-sandbox="sb-1"]') as HTMLElement;
     const paused = view.container.querySelector('[data-cloud-sandbox="sb-3"]') as HTMLElement;
-    expect(running.textContent).toContain('Fix flaky CI');
+    expect(running.textContent).toContain('iOS build fixer');
     expect(running.textContent).toContain('Clément');
     const pauseRunning = within(running).getByRole('button', { name: /Pause the sandbox/ });
     const pausePaused = within(paused).getByRole('button', { name: /Pause the sandbox/ });
@@ -171,6 +177,112 @@ describe('E2B row', () => {
     await fireEvent.click(view.getByRole('button', { name: 'Stop agents and remove' }));
     const remove = dispatched().find((action) => action.type === 'cloudMachines/removeRequested');
     expect(remove?.payload).toEqual(['e2b', true]);
+  });
+});
+
+describe('sandboxes grouped by workspace', () => {
+  const groups = (root: HTMLElement) =>
+    [...root.querySelectorAll('[data-cloud-sandbox-group]')] as HTMLElement[];
+  const toggle = (group: HTMLElement) =>
+    group.querySelector('[data-cloud-sandbox-group-toggle]') as HTMLButtonElement;
+  const header = (group: HTMLElement) => toggle(group).textContent!.replace(/\s+/g, ' ').trim();
+  const isLinked = (root: HTMLElement, id: string) =>
+    root.querySelector(`[data-cloud-sandbox="${id}"] [data-cloud-sandbox-agent-link]`) !== null;
+  const rowIds = (group: HTMLElement) =>
+    [...group.querySelectorAll('[data-cloud-sandbox]')].map((row) =>
+      row.getAttribute('data-cloud-sandbox'),
+    );
+  const list = (sandboxes = GROUPED_SANDBOXES) =>
+    render(CloudSandboxList, { sandboxes, entryName: E2B_PROVIDER.name });
+
+  it('puts groups with running sandboxes first, then running rows, newest first', () => {
+    seed('sandboxes-grouped');
+    const view = list();
+    const all = groups(view.container);
+    expect(all.map(header)).toEqual([
+      'Fix flaky CI · 3',
+      'Protocol docs · 1',
+      'Other · 1',
+      'Startup time · 1',
+    ]);
+    expect(all.map(rowIds)).toEqual([['sb-6', 'sb-1', 'sb-4'], ['sb-2'], ['sb-5'], ['sb-3']]);
+    expect(all.every((group) => toggle(group).getAttribute('aria-expanded') === 'true')).toBe(true);
+  });
+
+  it('keeps the summary, and rows show agent, state, starter and uptime only', () => {
+    seed('sandboxes-grouped');
+    const view = list();
+    const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
+    expect(section.textContent).toContain('4 running, 2 paused');
+    const row = view.container.querySelector('[data-cloud-sandbox="sb-2"]') as HTMLElement;
+    expect(row.textContent!.replace(/\s+/g, ' ').trim()).toBe(
+      'Docs sweeper · Sam · 1 h 12 min Running',
+    );
+    expect(section.textContent).not.toMatch(/\$|≈/u);
+  });
+
+  it('collapses and expands a group, and remembers it for the session', async () => {
+    seed('sandboxes-grouped');
+    const view = list();
+    const ci = groups(view.container)[0]!;
+    await fireEvent.click(toggle(ci));
+    expect(toggle(ci).getAttribute('aria-expanded')).toBe('false');
+    expect(rowIds(ci)).toEqual([]);
+    expect(header(ci)).toBe('Fix flaky CI · 3');
+    expect(rowIds(groups(view.container)[1]!)).toEqual(['sb-2']);
+
+    view.unmount();
+    const again = list();
+    const ciAgain = groups(again.container)[0]!;
+    expect(toggle(ciAgain).getAttribute('aria-expanded')).toBe('false');
+    await fireEvent.click(toggle(ciAgain));
+    expect(rowIds(ciAgain)).toEqual(['sb-6', 'sb-1', 'sb-4']);
+  });
+
+  it("links the agent name to the sandbox's agent in its workspace", async () => {
+    seed('sandboxes-grouped');
+    const view = list();
+    const row = view.container.querySelector('[data-cloud-sandbox="sb-1"]') as HTMLElement;
+    const link = within(row).getByRole('button', { name: 'iOS build fixer' });
+    await fireEvent.click(link);
+    expect(navigateToDesktopAgent).toHaveBeenCalledWith('ws-ci', 'agent-sb-1');
+  });
+
+  it('shows plain text for an agent being deleted, or a workspace the app does not know', () => {
+    seed('sandboxes-grouped');
+    const view = list();
+    expect(isLinked(view.container, 'sb-3')).toBe(false);
+    expect(isLinked(view.container, 'sb-5')).toBe(false);
+    expect(view.container.querySelector('[data-cloud-sandbox="sb-3"]')!.textContent).toContain(
+      'Perf profiler',
+    );
+  });
+
+  it('keeps the link for an agent the read agent list left out', () => {
+    seed('sandboxes-grouped');
+    store.dispatch(setAgentsLoaded('ws-docs', true));
+    try {
+      expect(isLinked(list().container, 'sb-2')).toBe(true);
+    } finally {
+      store.dispatch(setAgentsLoaded('ws-docs', false));
+    }
+  });
+
+  it('puts every sandbox under Other when no workspace is known', () => {
+    seed('sandboxes-grouped');
+    const view = list(GROUPED_SANDBOXES.filter((row) => row.cloud?.workspaceId === 'ws-elsewhere'));
+    expect(groups(view.container).map(header)).toEqual(['Other · 1']);
+  });
+
+  it('shows no list without sandboxes', () => {
+    seed('connected-no-sandboxes');
+    const view = render(CloudMachineRow, {
+      entry: E2B_PROVIDER,
+      editing: false,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
   });
 });
 

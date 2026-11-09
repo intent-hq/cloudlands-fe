@@ -107,6 +107,7 @@
   import { Tooltip } from '$lib/components/ui/tooltip';
   import BulkActionConfirmDialog from '$lib/components/modals/BulkActionConfirmDialog.svelte';
   import Portal from '$lib/components/ui/Portal.svelte';
+  import { selectPausedCloudSandboxCount } from '$features/cloud-machines/cloud-machines-selectors';
   import AgentMemoryBreakdownDialog from './AgentMemoryBreakdownDialog.svelte';
   import CertMismatchModal from './CertMismatchModal.svelte';
   import ProtocolMismatchModal from './ProtocolMismatchModal.svelte';
@@ -161,6 +162,7 @@
 
   const health$ = selectDaemonHealth();
   const stats$ = selectDaemonHealthStats();
+  const pausedSandboxes$ = selectPausedCloudSandboxCount();
   const lastUpdated$ = selectDaemonHealthLastUpdated();
   const statusCheckFailure$ = selectDaemonStatusCheckFailure();
   const versionComparison$ = selectDaemonVersionComparison();
@@ -420,22 +422,33 @@
   // its first process-tree sample.
   const agentMemoryBytes = $derived($stats$?.agentMemoryBytes ?? null);
 
-  // --- Connected daemons ---------------------------------------------------
+  // --- Remote links --------------------------------------------------------
 
   // Live daemon-to-daemon links. Older daemons omit them; a daemon with no
-  // links reports zeros. Either hides the row.
-  const connectedDaemons = $derived.by(() => {
-    const links = $stats$?.remoteLinks;
-    if (!links || (links.backends === 0 && links.machines === 0)) return null;
-    const backends =
-      links.backends === 1
-        ? m.layout_daemonStatus_connectedBackends_one({ count: formatNumber(links.backends) })
-        : m.layout_daemonStatus_connectedBackends_many({ count: formatNumber(links.backends) });
+  // links reports zeros. A zero count hides its row.
+  const backendLinks = $derived.by(() => {
+    const count = $stats$?.remoteLinks?.backends ?? 0;
+    if (count <= 0) return null;
+    const args = { count: formatNumber(count) };
+    return count === 1
+      ? m.layout_daemonStatus_connectedBackends_one(args)
+      : m.layout_daemonStatus_connectedBackends_many(args);
+  });
+  // Paused sandboxes are not live links, so they come from the cloud-machine
+  // rows. They keep the row visible and trail the live count. Only settled
+  // 'paused' counts; pausing and resuming sandboxes are briefly in neither.
+  const machineLinks = $derived.by(() => {
+    const live = $stats$?.remoteLinks?.machines ?? 0;
+    const paused = $pausedSandboxes$;
+    if (live <= 0 && paused <= 0) return null;
+    const args = { count: formatNumber(live) };
     const machines =
-      links.machines === 1
-        ? m.layout_daemonStatus_connectedMachines_one({ count: formatNumber(links.machines) })
-        : m.layout_daemonStatus_connectedMachines_many({ count: formatNumber(links.machines) });
-    return m.layout_daemonStatus_connectedDaemons_value({ backends, machines });
+      live === 1
+        ? m.layout_daemonStatus_connectedMachines_one(args)
+        : m.layout_daemonStatus_connectedMachines_many(args);
+    return paused > 0
+      ? m.layout_daemonStatus_machinesWithPaused({ machines, paused: formatNumber(paused) })
+      : machines;
   });
 
   function openAgentMemoryBreakdown() {
@@ -644,13 +657,21 @@
                     </div>
                   {/if}
 
-                  <!-- Connected daemons (remote-machine links; absent on older daemons) -->
-                  {#if connectedDaemons}
+                  <!-- Remote links (absent on older daemons) -->
+                  {#if backendLinks}
                     <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
                       <span class="text-subtle shrink-0"
-                        >{m.layout_daemonStatus_connectedDaemons_label()}</span
+                        >{m.layout_daemonStatus_runningAgentsFor_label()}</span
                       >
-                      <span class="tabular-nums min-w-0 truncate">{connectedDaemons}</span>
+                      <span class="tabular-nums min-w-0 truncate">{backendLinks}</span>
+                    </div>
+                  {/if}
+                  {#if machineLinks}
+                    <div class="flex justify-between gap-2 text-xs whitespace-nowrap">
+                      <span class="text-subtle shrink-0"
+                        >{m.layout_daemonStatus_runningAgentsOn_label()}</span
+                      >
+                      <span class="tabular-nums min-w-0 truncate">{machineLinks}</span>
                     </div>
                   {/if}
 

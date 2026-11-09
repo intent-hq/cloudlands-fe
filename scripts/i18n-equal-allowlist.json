@@ -391,14 +391,12 @@
   "layout_daemonStatus_connectedBackends_many": ["es", "fr"],
   "layout_daemonStatus_connectedMachines_one": ["fr"],
   "layout_daemonStatus_connectedMachines_many": ["fr"],
-  "layout_daemonStatus_connectedDaemons_value": "*",
   "settings_section_plugins": ["de", "fr", "es"],
   "settings_plugins_details": ["de"],
   "settings_plugins_skills": ["de", "fr", "es"],
   "settings_plugins_skillCount_one": ["fr", "es"],
   "settings_plugins_skillCount_many": ["fr", "es"],
   "cloudMachines_agent_chip": "*",
-  "cloudMachines_cost_estimate": "*",
   "cloudMachines_startOn_entry_label": "*",
   "cloudMachines_form_name_label": ["de"],
   "cloudMachines_row_template": "*",
@@ -407,5 +405,7 @@
   "cloudMachines_form_hours": ["fr", "es"],
   "cloudMachines_uptime_minutes": ["fr", "es"],
   "cloudMachines_uptime_hours": ["fr", "es"],
-  "cloudMachines_uptime_hoursMinutes": ["fr", "es"]
+  "cloudMachines_uptime_hoursMinutes": ["fr", "es"],
+  "cloudMachines_sandboxes_group_ariaLabel_one": ["fr", "es"],
+  "cloudMachines_sandboxes_group_ariaLabel_many": ["fr", "es"]
 }

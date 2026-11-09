@@ -160,6 +160,7 @@ describe('Specialist Configuration', () => {
         'vulnerability-scanner',
         'ui-designer',
         'developer',
+        'product-manager',
         'chief-of-staff',
       ];
 
