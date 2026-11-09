@@ -94,8 +94,8 @@ describe('encoder press on Home', () => {
     window.history.replaceState(null, '', '/');
     homeList(['a', 'b', 'c']);
     const device = manager();
-    device.turn('cw');
-    device.turn('cw');
+    device.turn('clockwise');
+    device.turn('clockwise');
     press(device);
     expect(device.showWorkspace.mock.calls).toEqual([['b']]);
     expect(device.navigate).not.toHaveBeenCalled();
