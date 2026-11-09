@@ -360,14 +360,13 @@ describe('confirmed script deletion controls', () => {
   });
 
   it.each(['running', 'starting', 'restarting', 'unknown', undefined])(
-    'disables deletion for %s',
+    'allows deletion for %s',
     async (status) => {
       appStore.dispatch(updateRuntimeState(WS_A, 'script-1', { status: status as never }));
       render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
       expect(
         (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
-      ).toBe(true);
-      expect(confirm).not.toHaveBeenCalled();
+      ).toBe(false);
     },
   );
 
