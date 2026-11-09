@@ -353,7 +353,14 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script; a ref that predates it builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -810,7 +817,14 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script; a ref that predates it builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -1129,7 +1143,14 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script; a ref that predates it builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
