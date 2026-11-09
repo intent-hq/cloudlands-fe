@@ -43,12 +43,6 @@ export function createChiefThreadStarter(
   const consumer = { id: consumerId, resourceId: CHIEF_THREAD_RESOURCE_ID };
   const outcome = fromStore(creationOutcome);
   const pending = $derived(outcome.current?.status === 'pending');
-  const specialists = fromStore(selectSpecialists());
-  // False while the Chief entry is a placeholder from before the daemon catalog loads.
-  const ready = $derived(
-    !specialists.current.find((specialist) => specialist.id === CHIEF_SPECIALIST_ID)
-      ?.promptUnavailable,
-  );
   onDestroy(() => appStore.dispatch(clearAgentCreationOutcome(consumer.id)));
 
   /** Selects the latest blank thread, or requests a new one. Returns the reused thread id. */
@@ -109,9 +103,6 @@ export function createChiefThreadStarter(
   return {
     get pending() {
       return pending;
-    },
-    get ready() {
-      return ready;
     },
     start,
   };

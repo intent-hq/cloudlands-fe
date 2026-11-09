@@ -38,6 +38,8 @@
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectAgentMutationUi } from '$store/renderer/slices/agent-mutation-ui/agent-mutation-ui-selectors';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+  import { CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+  import { selectSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import { WorkspaceStatus, type Workspace } from '$shared/types';
   import {
     CHIEF_THREAD_RESOURCE_ID,
@@ -57,6 +59,11 @@
     selectAgentCreationOutcome(threadConsumerId, CHIEF_WORKSPACE_ID, CHIEF_THREAD_RESOURCE_ID),
   );
   const hasResolvableProvider$ = selectHasResolvableProvider();
+  const specialists$ = selectSpecialists();
+  // True while the Chief entry is a placeholder from before the daemon catalog loads.
+  const chiefPromptPending = $derived(
+    !!$specialists$.find((specialist) => specialist.id === CHIEF_SPECIALIST_ID)?.promptUnavailable,
+  );
   // Chief threads are agents: creating / deleting one is refused (-32003) for
   // a collaborator connection, so the affordances (and the auto-start) are
   // withheld in a guest window.
@@ -189,7 +196,7 @@
     // this effect retry once a provider is configured. Likewise for a
     // collaborator connection, whose agent.create is refused (-32003), and
     // until the daemon catalog supplies the Chief prompt.
-    if (!$hasResolvableProvider$ || $hidesAgentLifecycleActions$ || !threadStarter.ready) return;
+    if (!$hasResolvableProvider$ || $hidesAgentLifecycleActions$ || chiefPromptPending) return;
     hasAutoStartedRef = true;
     void createNewThread();
   });
