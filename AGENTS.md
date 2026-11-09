@@ -422,7 +422,9 @@ Rules that follow from it:
   `// protocol-version-ok-file: <reason>` in a file's first 10 lines.
 - Never hand-edit `src/preload/index.ts`; `pnpm run generate:ipc-channels` generates it.
 - Workflow edits: `pnpm run lint:workflows` (part of `lint:architecture`) runs the pinned
-  actionlint with shellcheck; add path-scoped ignores with a reason there.
+  actionlint with shellcheck; add path-scoped ignores with a reason there. `verify:changed`
+  runs it only when `.github/workflows/**`, local action metadata, the actionlint config or
+  `scripts/check-workflows.mjs` change (actionlint can hang on a loaded host; #4332).
 
 Playwright CT holds a host-wide `ct-<port>` lock (per-worktree port by default; see above) and the full Vitest
 fallback holds `vitest-full`. A second run waits (240 s / 120 s by default,

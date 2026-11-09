@@ -224,16 +224,6 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function useMemoryLocalStorage() {
-  const values = new Map<string, string>();
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
-  vi.mocked(localStorage.getItem).mockImplementation((key) => values.get(key) ?? null);
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
-  vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-    values.set(key, String(value));
-  });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   recorded = [];
@@ -272,10 +262,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const stop of stops) stop();
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
-  vi.mocked(localStorage.getItem).mockImplementation(() => null);
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
-  vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
   vi.restoreAllMocks();
 });
 
@@ -357,7 +343,6 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
   ])(
     'does not persist an untouched $provider repo-config script for a later branch',
     async ({ submission }) => {
-      useMemoryLocalStorage();
       const { value, repoPath, githubUrl } = submission();
       const action = workspaceInitializationSubmitted(value, consumer);
       appStore.dispatch(action);
@@ -377,7 +362,6 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
   );
 
   it('keeps onboarding repo-config comparison keyed to the project path', async () => {
-    useMemoryLocalStorage();
     const action = workspaceInitializationSubmitted(
       onboardingSubmission({
         setupScript: 'echo from project config',
@@ -396,7 +380,6 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
   });
 
   it('persists an intentional compact setup-script override under the repository key', async () => {
-    useMemoryLocalStorage();
     const repoPath = '/clones/app';
     const githubUrl = 'https://github.com/acme/app';
     const setupScriptProbeKey = probeIdentityKey({

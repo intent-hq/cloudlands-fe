@@ -4,16 +4,15 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { terminalHistoryTracker } from '../terminal-history-tracker';
-import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
+import { sharedLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
-const localStorageMock = installLocalStorageMock();
+const localStorageMock = sharedLocalStorageMock();
 
 describe('TerminalHistoryTracker', () => {
   const terminalId = 'test-terminal-123';
   const workspaceId = 'test-workspace-456';
 
   beforeEach(() => {
-    localStorageMock.clear();
     // Clear the tracker's internal state
     terminalHistoryTracker.clearHistory(terminalId);
   });

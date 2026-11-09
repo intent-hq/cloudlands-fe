@@ -1,32 +1,66 @@
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
 
 export interface LocalStorageMock extends Storage {
+  getItem: Mock<Storage['getItem']>;
+  setItem: Mock<Storage['setItem']>;
+  removeItem: Mock<Storage['removeItem']>;
+  clear: Mock<Storage['clear']>;
+  key: Mock<Storage['key']>;
   /** Clears the backing store AND resets all mock call history. */
   reset(): void;
+  /** Clears the backing store without recording a call or touching call history. */
+  clearValues(): void;
+  /** Puts back the Map-backed implementations, undoing test overrides; keeps call history. */
+  restoreImplementations(): void;
 }
 
 /**
  * Creates a functional in-memory localStorage mock backed by a Map.
  * All methods are `vi.fn()` wrappers with real implementations,
  * so tests can both spy on calls AND get real storage behavior.
+ * Like Web Storage, stored keys are enumerable own properties
+ * (`Object.keys(localStorage)`) and the methods are not.
  */
-function createLocalStorageMock(): LocalStorageMock {
+export function createLocalStorageMock(): LocalStorageMock {
   const store = new Map<string, string>();
+  const mock = {} as LocalStorageMock;
+
+  const sync = (key: string): void => {
+    if (Object.prototype.hasOwnProperty.call(methods, key) || key === 'length') return;
+    if (store.has(key)) {
+      Object.defineProperty(mock, key, {
+        value: store.get(key),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    } else {
+      delete (mock as unknown as Record<string, unknown>)[key];
+    }
+  };
+
+  const clearValues = (): void => {
+    const keys = Array.from(store.keys());
+    store.clear();
+    keys.forEach(sync);
+  };
 
   const getItem = vi.fn((key: string): string | null => {
-    return store.get(key) ?? null;
+    return store.get(String(key)) ?? null;
   });
 
   const setItem = vi.fn((key: string, value: string): void => {
-    store.set(key, String(value));
+    store.set(String(key), String(value));
+    sync(String(key));
   });
 
   const removeItem = vi.fn((key: string): void => {
-    store.delete(key);
+    store.delete(String(key));
+    sync(String(key));
   });
 
   const clear = vi.fn((): void => {
-    store.clear();
+    clearValues();
   });
 
   const key = vi.fn((index: number): string | null => {
@@ -34,17 +68,28 @@ function createLocalStorageMock(): LocalStorageMock {
     return keys[index] ?? null;
   });
 
-  const mock: LocalStorageMock = {
+  const implementations = [
+    [getItem, getItem.getMockImplementation()],
+    [setItem, setItem.getMockImplementation()],
+    [removeItem, removeItem.getMockImplementation()],
+    [clear, clear.getMockImplementation()],
+    [key, key.getMockImplementation()],
+  ] as const;
+
+  const methods = {
     getItem,
     setItem,
     removeItem,
     clear,
     key,
-    get length() {
-      return store.size;
+    clearValues,
+    restoreImplementations() {
+      for (const [spy, impl] of implementations) {
+        (spy as Mock).mockImplementation(impl as (...args: unknown[]) => unknown);
+      }
     },
     reset() {
-      store.clear();
+      clearValues();
       getItem.mockClear();
       setItem.mockClear();
       removeItem.mockClear();
@@ -53,23 +98,27 @@ function createLocalStorageMock(): LocalStorageMock {
     },
   };
 
+  for (const [name, value] of Object.entries(methods)) {
+    Object.defineProperty(mock, name, {
+      value,
+      enumerable: false,
+      configurable: true,
+      writable: true,
+    });
+  }
+  Object.defineProperty(mock, 'length', {
+    get: () => store.size,
+    enumerable: false,
+    configurable: true,
+  });
+
   return mock;
 }
 
 /**
- * Creates a localStorage mock and installs it on `window.localStorage`
- * via `Object.defineProperty`. Returns the mock for direct access.
- *
- * Works for both `window.localStorage` and `global.localStorage`
- * (they reference the same object in jsdom).
+ * The in-memory localStorage that src/test-setup.ts installs on `window` for every test file.
+ * Values are cleared before each test; use it to reach the spies and `reset()` with types.
  */
-export function installLocalStorageMock(): LocalStorageMock {
-  const mock = createLocalStorageMock();
-
-  Object.defineProperty(window, 'localStorage', {
-    configurable: true,
-    value: mock,
-  });
-
-  return mock;
+export function sharedLocalStorageMock(): LocalStorageMock {
+  return window.localStorage as LocalStorageMock;
 }

@@ -17,39 +17,12 @@ import {
   RECENT_SETUP_SCRIPTS_STORAGE_KEY,
 } from './last-used';
 
-// The global test-setup stubs localStorage with no-op vi.fn()s; this suite
-// needs a functional backing store, so install a real in-memory one.
-function createMemoryLocalStorage(): Storage {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => (key in store ? store[key] : null),
-    setItem: (key: string, value: string) => {
-      store[key] = String(value);
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-    key: (index: number) => Object.keys(store)[index] ?? null,
-    get length() {
-      return Object.keys(store).length;
-    },
-  } as Storage;
-}
-
 beforeEach(() => {
-  Object.defineProperty(window, 'localStorage', {
-    value: createMemoryLocalStorage(),
-    configurable: true,
-  });
   vi.useFakeTimers();
 });
 
 afterEach(() => {
   vi.useRealTimers();
-  localStorage.clear();
 });
 
 describe('recordLastUsedSetupScript / getLastUsedSetupScript', () => {
@@ -314,21 +287,19 @@ describe('getRecentSetupScripts', () => {
     expect(names('/repo/a')).toEqual(['Fresh']);
 
     // Throwing storage never reaches the caller.
-    const failing = {
-      getItem: () => {
-        throw new Error('unavailable');
-      },
-      setItem: () => {
-        throw new Error('full');
-      },
-    } as unknown as Storage;
-    Object.defineProperty(window, 'localStorage', { value: failing, configurable: true });
-    expect(() => record('/repo/a', { name: 'S', content: 'echo s' })).not.toThrow();
-    expect(getRecentSetupScripts('/repo/a')).toEqual([]);
-    expect(getLastUsedSetupScript('/repo/a')).toBeUndefined();
-    Object.defineProperty(window, 'localStorage', {
-      value: createMemoryLocalStorage(),
-      configurable: true,
+    const getItem = vi.mocked(localStorage.getItem).mockImplementation(() => {
+      throw new Error('unavailable');
     });
+    const setItem = vi.mocked(localStorage.setItem).mockImplementation(() => {
+      throw new Error('full');
+    });
+    try {
+      expect(() => record('/repo/a', { name: 'S', content: 'echo s' })).not.toThrow();
+      expect(getRecentSetupScripts('/repo/a')).toEqual([]);
+      expect(getLastUsedSetupScript('/repo/a')).toBeUndefined();
+    } finally {
+      getItem.mockReset();
+      setItem.mockReset();
+    }
   });
 });

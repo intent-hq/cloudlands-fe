@@ -3,37 +3,16 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { sharedLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 import { WorkspaceStorageManager } from '../workspace-storage-manager';
 
-// Mock localStorage
-const mockLocalStorage = (() => {
-  let store: Record<string, string> = {};
-  return {
-    getItem: vi.fn((key: string) => store[key] || null),
-    setItem: vi.fn((key: string, value: string) => {
-      store[key] = value;
-    }),
-    removeItem: vi.fn((key: string) => {
-      delete store[key];
-    }),
-    clear: vi.fn(() => {
-      store = {};
-    }),
-    get length() {
-      return Object.keys(store).length;
-    },
-    key: vi.fn((index: number) => Object.keys(store)[index] || null),
-  };
-})();
-
-Object.defineProperty(global, 'localStorage', { value: mockLocalStorage });
+const mockLocalStorage = sharedLocalStorageMock();
 
 describe('WorkspaceStorageManager', () => {
   let manager: WorkspaceStorageManager;
 
   beforeEach(() => {
     vi.useFakeTimers();
-    mockLocalStorage.clear();
     vi.clearAllMocks();
     manager = new WorkspaceStorageManager();
   });

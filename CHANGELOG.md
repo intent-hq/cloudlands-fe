@@ -4,6 +4,36 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.306.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.305.0...v2.306.0) (2026-11-09)
+
+
+### 🚀 Features
+
+* **settings:** stack specialist model options with multi-line hints ([#4342](https://github.com/intent-hq/cloudlands-fe/issues/4342)) ([d798428](https://github.com/intent-hq/cloudlands-fe/commit/d798428ac0f954f9883dc5120d267408a05e9db1))
+* **token-usage:** leave cached tokens out of usage totals ([#4340](https://github.com/intent-hq/cloudlands-fe/issues/4340)) ([43e81d3](https://github.com/intent-hq/cloudlands-fe/commit/43e81d31e567d454db8717f38cec74431319f846))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.164 ([#4354](https://github.com/intent-hq/cloudlands-fe/issues/4354)) ([d7bab84](https://github.com/intent-hq/cloudlands-fe/commit/d7bab84f21d6ddde81b5416c572c4aa13b5bc78c))
+* **chat:** keep known monitors in the footer while they refresh ([#4352](https://github.com/intent-hq/cloudlands-fe/issues/4352)) ([78dc301](https://github.com/intent-hq/cloudlands-fe/commit/78dc301804e9875b9808239cbbc4d85c863c2517))
+* check installed deps before verify:changed loads npm packages ([#4347](https://github.com/intent-hq/cloudlands-fe/issues/4347)) ([76877e9](https://github.com/intent-hq/cloudlands-fe/commit/76877e96a0b7ae684404e34ff75c20ec831b5283))
+* **ci:** restart a Release PR's CI when GitHub started none ([#4345](https://github.com/intent-hq/cloudlands-fe/issues/4345)) ([5bfad23](https://github.com/intent-hq/cloudlands-fe/commit/5bfad23c8de70ede79d2387eb3f5efc059ad6b55))
+* **ci:** run intentd's setup-sccache.py in the signed build ([#4351](https://github.com/intent-hq/cloudlands-fe/issues/4351)) ([7df1b40](https://github.com/intent-hq/cloudlands-fe/commit/7df1b401093e2ef89f1576e42902587d5bcb1e41))
+* never hide older chat rows dropped from the saved tail ([#4348](https://github.com/intent-hq/cloudlands-fe/issues/4348)) ([751d287](https://github.com/intent-hq/cloudlands-fe/commit/751d287134b0a905154070993cdd72566de02740))
+
+## [2.305.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.304.0...v2.305.0) (2026-11-09)
+
+
+### 🚀 Features
+
+* **home:** hide repositories from the sidebar ([#4338](https://github.com/intent-hq/cloudlands-fe/issues/4338)) ([22c80ca](https://github.com/intent-hq/cloudlands-fe/commit/22c80ca6907fc885082c0eaf80b7a792112b3009))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.163 ([#4344](https://github.com/intent-hq/cloudlands-fe/issues/4344)) ([4c3cc4d](https://github.com/intent-hq/cloudlands-fe/commit/4c3cc4da6774f944fb062ad7115f3da507caeb4a))
+
 ## [2.304.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.303.2...v2.304.0) (2026-11-09)
 
 

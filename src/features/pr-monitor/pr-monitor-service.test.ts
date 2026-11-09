@@ -664,6 +664,34 @@ describe('subscribePrMonitors (prMonitor:* events.subscribe + fold)', () => {
     dispose();
   });
 
+  it('publishes nothing for an event that lands before the first list, so retained rows stay put', async () => {
+    let resolveSeed: ((value: unknown) => void) | undefined;
+    mockedRequest
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSeed = resolve)))
+      .mockResolvedValue({ monitors: [makeMonitor()] });
+    const seen: ReviewMonitorRow[][] = [];
+    const { dispose } = subscribePrMonitors('ws-1', (monitors) => seen.push(monitors));
+    await flush();
+
+    // The subscription is live but the seed has not landed: a fold here would
+    // start from an empty list and publish it over the retained stale rows.
+    notify?.({
+      method: 'events.event',
+      params: {
+        subscriptionId: 'ws-sub-7',
+        event: { type: 'prMonitor:refreshed', workspaceId: 'ws-1', data: { monitorId: 'mon-1' } },
+      },
+    });
+    await flush();
+    expect(seen).toEqual([]);
+
+    resolveSeed?.({ monitors: [makeMonitor({ hasPendingChanges: true })] });
+    await flush();
+    await flush();
+    expect(seen).toEqual([[makeMonitor()]]);
+    dispose();
+  });
+
   it('refetch() re-runs prMonitor.list and emits the fresh list (lastSnapshot arrives on list only)', async () => {
     const refreshed = makeMonitor({
       lastSnapshot: { ...makeMonitor().lastSnapshot!, state: 'merged' },

@@ -8,7 +8,12 @@
  */
 import { selectProviderCatalogEntry } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { store as appStore } from '$store/renderer/store';
-import type { UsageModelStats, UsageProviderStats, UsageTokenTotals } from '$lib/client/app-client';
+import type {
+  UsageModelStats,
+  UsageProviderStats,
+  UsageStatsResult,
+  UsageTokenTotals,
+} from '$lib/client/app-client';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { m } from '$shared/paraglide/messages.js';
 
@@ -31,6 +36,30 @@ export function totalTokens(t: UsageTokenTotals): number {
     t.cacheCreationTokens +
     (t.thoughtTokens ?? 0)
   );
+}
+
+function withoutCache<T extends UsageTokenTotals>(cell: T): T {
+  return { ...cell, cacheReadTokens: 0, cacheCreationTokens: 0 };
+}
+
+function byTotalDesc(a: UsageTokenTotals, b: UsageTokenTotals): number {
+  return totalTokens(b) - totalTokens(a);
+}
+
+/**
+ * The same result with both cache counters zeroed in every cell, so each card
+ * shows uncached usage only. Models and providers are re-ranked because the
+ * daemon sorts them by the cache-inclusive total.
+ */
+export function withoutCachedTokens(data: UsageStatsResult): UsageStatsResult {
+  return {
+    ...data,
+    totals: withoutCache(data.totals),
+    byModel: data.byModel.map(withoutCache).sort(byTotalDesc),
+    byProvider: data.byProvider.map(withoutCache).sort(byTotalDesc),
+    byHourOfDay: data.byHourOfDay.map(withoutCache),
+    byMonth: data.byMonth.map(withoutCache),
+  };
 }
 
 /** Abbreviate a raw token count like the design's fmt(): 12.3B / 2.41B / 241M / 12K. */
