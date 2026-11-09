@@ -101,10 +101,14 @@ describe('settings collapsed built-in override chrome', () => {
       name: designer.name,
       description: designer.description,
       model: '',
-      behaviorPrompt: `${designer.defaultBehaviorPrompt}\nModified`,
-      roleReminder: designer.roleReminder,
+      behaviorPrompt: 'Bundled designer prompt.\nModified',
       filePath: '/Users/test/.intent/specialists/ui-designer.md',
       source: 'user' as const,
+      bundled: {
+        name: designer.name,
+        description: designer.description,
+        behaviorPrompt: 'Bundled designer prompt.',
+      },
     };
     appStore.dispatch(setBundledSpecialists([specWriter, developer]));
     appStore.dispatch(setFileSpecialists([override, custom]));

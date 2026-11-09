@@ -28,7 +28,6 @@
     selectEffectiveCodingAgent,
     selectExplicitReasoningEffort,
     selectFileSpecialists,
-    selectBundledSpecialists,
   } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
     deleteFileSpecialist as deleteFileSpecialistAction,
@@ -388,7 +387,6 @@
       // would keep the built-in reading as "Modified" (monorepo#1450).
       const redundant = isRedundantBuiltInOverride(
         { ...base, ...next },
-        selectBundledSpecialists.select(appStore.state),
         { ignoreModelPin: true },
       );
       writeModelSelection(base, redundant ? { ...next, deleted: true } : next);
@@ -430,10 +428,7 @@
       !effort &&
       !next.model &&
       !next.codingAgent &&
-      isRedundantBuiltInOverride(
-        { ...base, reasoningEffort: undefined },
-        selectBundledSpecialists.select(appStore.state),
-      );
+      isRedundantBuiltInOverride({ ...base, reasoningEffort: undefined });
     writeModelSelection(base, redundant ? { ...next, deleted: true } : next);
   }
 
@@ -539,10 +534,7 @@
       const workspacePath = fileSpec.source === 'project' ? getCurrentWorkspacePath() : undefined;
       const modelFields = currentModelIntent(currentSpecialist);
       if (!next && !modelFields.model && !modelFields.codingAgent) {
-        const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
-        if (
-          isRedundantBuiltInOverride({ ...fileSpec, modelOptions: undefined }, bundledSpecialists)
-        ) {
+        if (isRedundantBuiltInOverride({ ...fileSpec, modelOptions: undefined })) {
           appStore.dispatch(
             deleteFileSpecialistAction({
               id: fileSpec.id,

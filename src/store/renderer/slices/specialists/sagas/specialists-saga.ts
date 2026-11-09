@@ -191,6 +191,7 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     roleReminder: def.roleReminder,
     filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
+    bundled: def.bundled,
     importedFrom: def.importedFrom,
     unsupportedFields: def.unsupportedFields,
     requiredSkills: def.requiredSkills,

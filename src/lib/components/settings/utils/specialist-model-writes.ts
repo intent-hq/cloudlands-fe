@@ -77,6 +77,18 @@ export function builtInExport(specialist: Specialist, behaviorPrompt: string): F
     behaviorPrompt: behaviorPrompt || specialist.defaultBehaviorPrompt,
     source: 'user',
     filePath: '',
+    ...(specialist.source === 'bundled'
+      ? {
+          bundled: {
+            name: specialist.name,
+            description: specialist.description,
+            behaviorPrompt: behaviorPrompt || specialist.defaultBehaviorPrompt,
+            roleReminder: specialist.roleReminder,
+            reasoningEffort: specialist.reasoningEffort,
+            modelOptions: specialist.modelOptions,
+          },
+        }
+      : {}),
   };
 }
 

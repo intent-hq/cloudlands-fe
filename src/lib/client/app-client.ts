@@ -2161,6 +2161,16 @@ export interface SkillsClient {
  * `behaviorPrompt` mirrors `prompt` (the markdown body). `hidden: true`
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
+/** PROTOCOL §5.11 `SpecialistBaseline`: a built-in's content, never its model pin. */
+export interface SpecialistBaseline {
+  name: string;
+  description: string;
+  behaviorPrompt: string;
+  roleReminder?: string;
+  reasoningEffort?: string;
+  modelOptions?: { provider?: string; model: string; hint: string; reasoningEffort?: string }[];
+}
+
 export interface SpecialistDef {
   runsOn?: AgentPlacement;
   /** Original Claude definition; read-only in Intent. */
@@ -2218,6 +2228,13 @@ export interface SpecialistDef {
   source: 'project' | 'user' | 'bundled';
   isCustomized?: boolean;
   path?: string;
+  /**
+   * The base-tier (`bundled`) definition of the same id, on a user/project
+   * override of a built-in (additive, PROTOCOL §5.11 `bundled` baseline).
+   */
+  bundled?: SpecialistBaseline;
+  /** Set when a paged `specialist.list` dropped an oversized row's `bundled`. */
+  bundledOmitted?: boolean;
   /**
    * Daemon-computed default-model preview (additive, PROTOCOL §5.11): the
    * model a no-model `agent.create` with this specialist would pin, resolved
