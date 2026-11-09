@@ -2044,7 +2044,7 @@
                 automatedWakePresentation
                   ? 'font-medium text-foreground'
                   : parsedMessage.editedCaptures
-                    ? 'type-body font-normal text-card-foreground selection:bg-primary selection:text-primary-foreground'
+                    ? 'px-2 type-body font-normal text-card-foreground selection:bg-primary selection:text-primary-foreground'
                     : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky

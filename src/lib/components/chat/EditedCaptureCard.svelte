@@ -68,12 +68,23 @@
         return m.dock_screenshotEditor_click();
     }
   }
+  const sendSummary = $derived(
+    `${capture.video === 'highlights' ? m.dock_captureEditor_videoHighlights_label() : m.dock_captureEditor_videoFull_label()} · ${capture.voice === 'audio' ? m.dock_captureEditor_voiceAudio_label() : capture.voice === 'transcript' ? m.dock_captureEditor_voiceTranscript_label() : m.dock_captureEditor_voiceOff_summary()}`,
+  );
   const count = $derived(
     capture.marks.length === 1
       ? m.dock_captureEditor_markCount_one()
       : m.dock_captureEditor_markCount_other({ count: capture.marks.length }),
   );
 </script>
+
+{#snippet recordingPreview()}
+  <span class="recording-preview"
+    ><span class="recording-dot" aria-hidden="true"></span><span class="recording-duration"
+      >{duration ?? title}</span
+    ><span class="recording-summary">{sendSummary}</span></span
+  >
+{/snippet}
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions (event barrier; descendants own their accessible controls) -->
 {#if !compact || capture.primaryId}
@@ -120,6 +131,7 @@
             : undefined}
           allowFileMedia={!readOnly}
           canOpenFile={() => !readOnly}
+          compactPreview={compact ? recordingPreview : undefined}
         />
       {:else if capture.primaryId}
         <Button
@@ -206,6 +218,39 @@
 {/if}
 
 <style>
+  .recording-preview {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: center;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    gap: 2px 6px;
+    padding: 0 4px;
+    text-align: center;
+  }
+  .recording-dot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: hsl(var(--capture-active, var(--primary)));
+  }
+  .recording-duration {
+    font-size: var(--text-caption-size);
+    font-variant-numeric: tabular-nums;
+  }
+  .recording-summary {
+    display: block;
+    flex-basis: 100%;
+    overflow: hidden;
+    font-size: 10px;
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .compact-transcript {
     max-width: 100%;
     min-width: 0;
