@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.307.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.3...v2.307.0) (2026-11-09)
+
+
+### 🚀 Features
+
+* **menus:** use switches for on/off settings and tidy menu rows ([#4365](https://github.com/intent-hq/cloudlands-fe/issues/4365)) ([cb2c37c](https://github.com/intent-hq/cloudlands-fe/commit/cb2c37ccd6c90ffd9c69bdfe686d41ea2be4e1cb))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.167 ([#4373](https://github.com/intent-hq/cloudlands-fe/issues/4373)) ([940b88b](https://github.com/intent-hq/cloudlands-fe/commit/940b88b91f390d82c64891dd3a6ebc2dcd686914))
+
 ## [2.306.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.2...v2.306.3) (2026-11-09)
 
 
