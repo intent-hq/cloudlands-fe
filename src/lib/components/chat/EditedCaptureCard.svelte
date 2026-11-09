@@ -224,17 +224,17 @@
 
   .capture-card.compact {
     width: 96px;
-    height: 64px;
+    height: 62px;
     flex: none;
     padding: 0;
-    border: 0;
-    border-radius: var(--radius-small);
-    background: hsl(var(--muted));
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-medium);
+    background: hsl(var(--secondary));
   }
   .compact :global(.image-preview),
   .compact .image-loading {
-    width: 96px;
-    height: 64px;
+    width: 100%;
+    height: 100%;
     aspect-ratio: auto;
     margin: 0;
   }
@@ -243,7 +243,7 @@
   }
   .compact :global([data-chat-video]) {
     margin: 0;
-    width: 96px;
+    width: 100%;
   }
   .compact :global(.open-recording) {
     margin: 0;

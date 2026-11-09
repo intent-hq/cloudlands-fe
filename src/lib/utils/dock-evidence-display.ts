@@ -272,6 +272,23 @@ export function consumeEditedCaptureEnvelope(
   return { prefix: text.slice(0, boundary), remaining: text.slice(boundary).replace(/^\n\n/, '') };
 }
 
+/** Ordered provenance from the daemon's bounded, flat batch metadata wrapper. */
+export function dockCaptureDisplayCandidates(metadata: Metadata): Record<string, unknown>[] {
+  if (metadata && isDockEvidenceMessage(metadata)) return [metadata];
+  if (!metadata || !Array.isArray(metadata.mergedMessageMetadata)) return [];
+  const parts = metadata.mergedMessageMetadata;
+  if (!parts.length || parts.length > 32) return [];
+  try {
+    if (JSON.stringify(parts).length > 262144) return [];
+  } catch {
+    return [];
+  }
+  return parts.filter(
+    (part): part is Record<string, unknown> =>
+      !!part && typeof part === 'object' && !Array.isArray(part) && isDockEvidenceMessage(part),
+  );
+}
+
 /** Edit/regenerate additionally requires every retained capture resource to exist. */
 export function consumeEditedCapturePrefix(
   text: string,

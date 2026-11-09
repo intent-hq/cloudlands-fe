@@ -94,6 +94,7 @@
   import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
   import {
     consumeEditedCaptureEnvelope,
+    dockCaptureDisplayCandidates,
     editedCaptureCards,
     dockEvidenceMarks,
     dockEvidenceRecordingNumbers,
@@ -547,11 +548,14 @@
     cleanText: string;
     evidence: boolean;
     editedCaptures: boolean;
+    captureMetadata: Record<string, unknown> | null;
   } {
     const pills: ContextPill[] = [];
     let cleanText = text;
     let evidence = false;
     let editedCaptures = false;
+    let captureMetadata: Record<string, unknown> | null = null;
+    const candidates = dockCaptureDisplayCandidates(message?.metadata);
 
     // Match context patterns at the start of the message
     // Each pattern can optionally be followed by a code block containing the content
@@ -606,12 +610,35 @@
     let foundMatch = true;
     while (foundMatch) {
       foundMatch = false;
-      const edited = !editedCaptures && consumeEditedCaptureEnvelope(cleanText, message?.metadata);
+      const matching = !editedCaptures
+        ? candidates.filter((candidate) => consumeEditedCaptureEnvelope(cleanText, candidate))
+        : [];
+      const edited = matching.length === 1 && consumeEditedCaptureEnvelope(cleanText, matching[0]);
       if (edited) {
         editedCaptures = true;
+        captureMetadata = matching[0];
         cleanText = edited.remaining;
         foundMatch = true;
         continue;
+      }
+      // A batch contribution owns both adjacent producer blocks only after its
+      // exact Edited envelope matches. Never trust a batch's unrelated Screen block.
+      if (!editedCaptures && !isDockEvidenceMessage(message?.metadata)) {
+        const screen = consumeDockEvidencePrefix(cleanText, { trusted: true });
+        const matches = screen
+          ? candidates.flatMap((candidate) => {
+              const envelope = consumeEditedCaptureEnvelope(screen.remaining, candidate);
+              return envelope ? [{ candidate, envelope }] : [];
+            })
+          : [];
+        if (matches.length === 1) {
+          captureMetadata = matches[0].candidate;
+          editedCaptures = true;
+          evidence = true;
+          cleanText = matches[0].envelope.remaining;
+          foundMatch = true;
+          continue;
+        }
       }
       // Keep display and edit recognition identical. The message's own metadata
       // trusts the exact header + fence; without it only a valid body is accepted.
@@ -679,7 +706,7 @@
       }
     }
 
-    return { pills, cleanText: cleanText.trim(), evidence, editedCaptures };
+    return { pills, cleanText: cleanText.trim(), evidence, editedCaptures, captureMetadata };
   }
 
   // Parse text into segments with inline mentions rendered as chips
@@ -1258,7 +1285,7 @@
       );
       // Evidence messages show their reference tokens as the composer's chips.
       const segments: MessageSegment[] =
-        parsed.evidence || isDockEvidenceMessage(message?.metadata)
+        parsed.evidence || parsed.editedCaptures || isDockEvidenceMessage(message?.metadata)
           ? mentionSegments.flatMap((segment): MessageSegment[] =>
               segment.type === 'text' ? splitScreenTokens(segment.content) : [segment],
             )
@@ -1291,19 +1318,21 @@
       cleanText: rawText,
       evidence: false,
       editedCaptures: false,
+      captureMetadata: null,
       segments: [{ type: 'text' as const, content: rawText }] as MessageSegment[],
     };
   });
 
   // Evidence chips and attachment labels come from the message's own metadata.
   const evidenceMetadata = $derived(
-    isDockEvidenceMessage(message?.metadata)
-      ? (message?.metadata as unknown as Record<string, unknown>)
-      : null,
+    parsedMessage.captureMetadata ??
+      (isDockEvidenceMessage(message?.metadata)
+        ? (message?.metadata as unknown as Record<string, unknown>)
+        : null),
   );
   const captureCards = $derived(
     parsedMessage.editedCaptures
-      ? editedCaptureCards(message?.metadata, message?.contentBlocks ?? [])
+      ? editedCaptureCards(parsedMessage.captureMetadata, message?.contentBlocks ?? [])
       : [],
   );
   const captureResourceIds = $derived(
@@ -1766,7 +1795,7 @@
             : automatedWakePresentation
               ? `relative ${suppressAutomatedWakeTopSpacing ? 'mt-0' : SUBSCRIPTION_IN_THREAD_CARD_SPACING_CLASS} ${SUBSCRIPTION_CARD_CONTAINMENT_CLASS} ${SUBSCRIPTION_CARD_SURFACE_CLASS}`
               : parsedMessage.editedCaptures
-                ? 'relative overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-3 text-card-foreground'
+                ? 'relative overflow-hidden rounded-(--radius-large) border border-border bg-surface-2 shadow-none p-2 text-card-foreground'
                 : USER_MESSAGE_SURFACE_CLASS} {onEditSubmit &&
           !agentAttribution &&
           !automatedWakePresentation
@@ -2014,7 +2043,9 @@
                 class="type-body select-text text-pretty {agentAttribution ||
                 automatedWakePresentation
                   ? 'font-medium text-foreground'
-                  : USER_MESSAGE_TEXT_CLASS} {agentAttribution
+                  : parsedMessage.editedCaptures
+                    ? 'type-body font-normal text-card-foreground selection:bg-primary selection:text-primary-foreground'
+                    : USER_MESSAGE_TEXT_CLASS} {agentAttribution
                   ? ''
                   : isSticky
                     ? 'line-clamp-2'

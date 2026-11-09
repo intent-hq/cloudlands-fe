@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   consumeEditedCapturePrefix,
   consumeEditedCaptureEnvelope,
+  dockCaptureDisplayCandidates,
   editedCaptureCards,
 } from './dock-evidence-display';
 import { parseStoredMessage, restoreDockEvidenceForEdit } from './parseStoredMessage';
@@ -384,5 +385,24 @@ describe('visible edited envelope independent of preview availability', () => {
     expect(consumeEditedCaptureEnvelope(repeated, metadata)?.remaining).toBe(
       'User prompt\n\n' + text,
     );
+  });
+});
+
+describe('batched capture display provenance', () => {
+  it('keeps ordered candidates separate and never guesses missing provenance', () => {
+    const other = { ...metadata, edited_captures: [{ ...row, id: 'other' }] };
+    expect(
+      dockCaptureDisplayCandidates({ mergedMessageMetadata: [null, metadata, other] }),
+    ).toEqual([metadata, other]);
+    expect(dockCaptureDisplayCandidates(undefined)).toEqual([]);
+    expect(
+      dockCaptureDisplayCandidates({
+        mergedMessageMetadata: [{ mergedMessageMetadata: [metadata] }],
+      }),
+    ).toEqual([]);
+    expect(
+      dockCaptureDisplayCandidates({ mergedMessageMetadata: Array(33).fill(metadata) }),
+    ).toEqual([]);
+    expect(dockCaptureDisplayCandidates(metadata)).toEqual([metadata]);
   });
 });
