@@ -166,11 +166,6 @@
     "src/features/agent/interrupted-agents-service.ts": [
       "INTERRUPTED_RECONCILE_DEBOUNCE_MS"
     ],
-    "src/features/agent/main/specialists.service.ts": [
-      "formatSpecialistsForPrompt",
-      "getAllEffectiveSpecialists",
-      "getEffectiveSpecialist"
-    ],
     "src/features/agent/mark-agent-seen.ts": [
       "MARK_AGENT_SEEN_DEDUPE_LIMIT",
       "cancelPendingMarkAgentSeen"
@@ -780,15 +775,6 @@
     ],
     "src/features/setup-scripts/repo-config.ts": [
       "parseRepoConfigSetupScript"
-    ],
-    "src/features/specialists/main/specialist-file-loader.ts": [
-      "ensureSpecialistsDirectory",
-      "getProjectSpecialistsDirectory",
-      "parseModelOptionsScalar",
-      "parseRoleScalar",
-      "parseSpecialistFile",
-      "parseTeamAgentsScalar",
-      "splitCompoundModelScalar"
     ],
     "src/features/stats/stats-charts.ts": [
       "gridLines",
@@ -1666,9 +1652,6 @@
       "SWEEP_INTERVAL_MS",
       "clearAllCaches"
     ],
-    "src/main/utils/github-auth-status.ts": [
-      "__resetGitHubAuthStatusForTests"
-    ],
     "src/main/utils/resolve-dev-instance.ts": [
       "DEV_INTENTD_DIR_NAME",
       "MACOS_SUN_PATH_MAX_BYTES",
@@ -1715,7 +1698,6 @@
       "isValidModelId"
     ],
     "src/shared/constants/agent-services.ts": [
-      "MODEL_IDS",
       "isValidModelId"
     ],
     "src/shared/constants/agent-streaming.ts": [
@@ -1835,9 +1817,6 @@
       "clearWorkspaceSlugRegistry",
       "formatWorkspaceIdForDisplay",
       "isLegacyWorkspaceId"
-    ],
-    "src/shared/specialist-file-types.ts": [
-      "sanitizeSpecialistId"
     ],
     "src/shared/streaming-config.ts": [
       "STREAMING_PROFILES",
@@ -2868,9 +2847,6 @@
     "src/features/agent/components/agent-avatar/avatar-design.ts": [
       "BuiltinAgentAvatarDesign",
       "FallbackAgentAvatarDesign"
-    ],
-    "src/features/agent/main/specialists.service.ts": [
-      "EffectiveSpecialist"
     ],
     "src/features/agent/services/active-streams-tracker.ts": [
       "ActiveStream"
