@@ -248,10 +248,6 @@
     ];
     void (async () => {
       const down = await current.down;
-      if (current.tool === 'pick' && !ownsPickFeedback(current)) {
-        settle(key, false);
-        return;
-      }
       const ack = down.ok
         ? await current.transport.gesture({
             sessionId: current.sessionId,
