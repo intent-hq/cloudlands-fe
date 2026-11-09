@@ -204,6 +204,8 @@
   let captureElement: HTMLElement | null = null;
   let sidePreviewOpen = $state(false);
   let sideCloseRequest = $state(0);
+  /** Local open requests from the open shortcut on a collapsed dock (see closeRequest). */
+  let shortcutOpenRequest = $state(0);
   let sideRegions: DockPointerRect[] = [];
   const expanded = $derived(
     !edge &&
@@ -507,7 +509,7 @@
       return conversationWorkspaceId;
     },
     get request() {
-      return focusRequest;
+      return focusRequest + shortcutOpenRequest;
     },
     get contentVisible() {
       return contentVisible;
@@ -879,12 +881,19 @@
       return;
     dismiss();
   }
+  // The open shortcut again while the dock has the keyboard: close what is open as Escape
+  // would; a collapsed dock opens and focuses its prompt instead, as the shortcut does.
   let closeRequestSeen = untrack(() => closeRequest);
   $effect(() => {
     const request = closeRequest;
     if (request === closeRequestSeen) return;
     closeRequestSeen = request;
-    untrack(closeLikeEscape);
+    untrack(() => {
+      // Live input, a recording, a native menu or capture hiding: the press changes nothing.
+      if (placement.captureHidden || nativeMenuOpen || inputLive || recording) return;
+      if (expanded || (edge && sidePreviewOpen) || (pinned && conversationVisible)) closeLikeEscape();
+      else shortcutOpenRequest += 1;
+    });
   });
   onMount(() => {
     reducedMotion = prefersReducedMotion();
@@ -1184,7 +1193,7 @@
             clip={inlineClip}
             {conversation}
             {conversationWorkspaceId}
-            focusRequest={focusRequest + composerAsk.request}
+            focusRequest={focusRequest + shortcutOpenRequest + composerAsk.request}
             focusComposerOnMount={conversationPresence.keyboardOpen ||
               (notch && composerAsk.open === conversationWorkspaceId)}
             onOpen={openWorkspace}
@@ -1210,7 +1219,7 @@
       windowHeight={placement.windowBounds.height}
       {reducedMotion}
       {staticData}
-      focusRequest={pinned ? 0 : focusRequest}
+      focusRequest={pinned ? 0 : focusRequest + shortcutOpenRequest}
       pinnedWorkspaceId={conversationWorkspaceId === CHIEF_WORKSPACE_ID
         ? assistantId
         : conversationWorkspaceId}
@@ -1248,7 +1257,7 @@
       {placement}
       {shown}
       origin={edgeCardOrigin}
-      focusRequest={focusRequest + composerAsk.request}
+      focusRequest={focusRequest + shortcutOpenRequest + composerAsk.request}
       focusComposerOnMount={conversationPresence.keyboardOpen ||
         composerAsk.open === conversationWorkspaceId}
       onRegionsChange={conversationRegionsChanged}

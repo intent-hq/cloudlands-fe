@@ -73,6 +73,8 @@
     placement?: DockPlacementSnapshot;
     onPlacementCommand?: (command: DockPlacementCommand) => void;
     focusRequest?: number;
+    /** Increments when the open shortcut is pressed again while the dock has the keyboard. */
+    closeRequest?: number;
     placementError?: DockPlacementFailure | boolean | null;
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
@@ -99,6 +101,7 @@
     placement,
     onPlacementCommand,
     focusRequest,
+    closeRequest,
     placementError,
     dragStartResult,
     resizeStartResult,
@@ -637,6 +640,7 @@
     {placement}
     {onPlacementCommand}
     {focusRequest}
+    {closeRequest}
     {placementError}
     {dragStartResult}
     {resizeStartResult}
