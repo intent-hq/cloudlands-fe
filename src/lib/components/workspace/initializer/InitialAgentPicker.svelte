@@ -46,7 +46,10 @@
     isProviderReadyInResult,
     isProviderAuthenticationReady,
   } from '$shared/types/provider-availability';
-  import { isProviderDisabledInSettings } from '$lib/components/chat/input/model-picker-utils';
+  import {
+    isProviderDisabledInSettings,
+    toDropdownOptions,
+  } from '$lib/components/chat/input/model-picker-utils';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
@@ -262,7 +265,13 @@
         $providerProfiles$,
       ).filter((ref) => !isProviderDisabledInSettings($enabledProviders$, ref)),
       groupLabel: (ref) => ref,
-      catalogModels: {},
+      // A machine that lists no models for a profile offers the backend's list.
+      catalogModels: Object.fromEntries(
+        Object.entries($providerModelsCacheMap$).map(([ref, entry]) => [
+          ref,
+          toDropdownOptions(entry.models),
+        ]),
+      ),
       catalogProfiles: $providerProfiles$,
       defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
       defaultHasOverrides: $defaultHasOverrides$,

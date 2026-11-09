@@ -289,6 +289,11 @@ describe('buildMachineModelGroups', () => {
       ]);
     });
 
+    it("never lists the Default's models for a profile whose own list hasn't loaded", () => {
+      // A Bedrock or Vertex profile can serve different models than its Default.
+      expect(build(['claude-code@p-unloaded'])).toEqual({ 'claude-code@p-unloaded': [] });
+    });
+
     it("lists the backend's models for a Default whose overrides bring credentials", () => {
       expect(build(['claude-code', 'codex'], { 'claude-code': true, codex: true })).toEqual({
         'claude-code': [{ value: 'opus', label: 'Opus 5.5' }],

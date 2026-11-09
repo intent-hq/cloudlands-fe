@@ -287,16 +287,19 @@ export function buildMachineModelGroups({
     // otherwise the picker names the sign-in state and the daemon decides.
     const signedOut =
       isRemoteRefSignedOut(machine, ref) && defaultHasOverrides?.[providerRefBaseId(ref)] === false;
-    const catalog = catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? [];
     const labelled = new Map(
-      catalog.map((option) => [splitLegacyCompoundId(option.value).modelId, option]),
+      (catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? []).map((option) => [
+        splitLegacyCompoundId(option.value).modelId,
+        option,
+      ]),
     );
     const bringsCredentials =
       isProviderProfileRef(ref) || defaultHasOverrides?.[providerRefBaseId(ref)] === true;
+    // Only the configuration's own list: a profile can serve other models than its Default.
     const modelIds =
       provider.models.length > 0 || !bringsCredentials
         ? provider.models
-        : catalog
+        : (catalogModels[ref] ?? [])
             .filter((option) => !isDefaultPseudoModelId(option.value))
             .map((option) => splitLegacyCompoundId(option.value).modelId);
     const options = modelIds.map((modelId): DropdownOption => {
