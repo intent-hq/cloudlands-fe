@@ -308,13 +308,17 @@ export const panelLayoutScopeUnmounted = createAction<[layoutId: string]>(
  * Main owns URL/owner dedupe; a redelivered id is a no-op, even if hidden.
  * Populated panels do not navigate or reveal; an empty panel displays its
  * first tab with autofocus suppressed. Neither truncates layout history.
+ * When the owner agent's chat is displayed, the tab is shown beside it
+ * instead (see `showBesideOwnerAgent`).
  */
 export const openTabBehindActive = createAction(
   'panelLayout/openTabBehindActive',
-  (wsId: string, tab: Omit<PanelTab, 'id'>, newTabId?: string) => ({
+  (wsId: string, tab: Omit<PanelTab, 'id'>, newTabId?: string, newPanelId?: string) => ({
     wsId,
     tab,
     newTabId: newTabId ?? generateTabId(),
+    newPanelId: newPanelId ?? generatePanelId(),
+    timestamp: Date.now(),
   }),
 );
 
@@ -1003,6 +1007,47 @@ function activateTabPreservingFocus(
       },
     },
     pendingPanelReveal: createPanelRevealRequest(panelId, tabId, tabId, true),
+  };
+}
+
+/**
+ * Show an agent-owned tab beside its owner's displayed chat, without moving
+ * focus: in the next column to the right, else to the left, else in a new
+ * column split off to the right. Returns null when the owner's chat is not
+ * the active tab of any column, so the caller keeps its own placement.
+ */
+function showBesideOwnerAgent(
+  ws: WorkspacePanelLayoutState,
+  tab: Omit<PanelTab, 'id'>,
+  tabId: string,
+  newPanelId: string,
+  timestamp: number,
+): WorkspacePanelLayoutState | null {
+  const ownerAgentId = tab.ownerAgentId;
+  if (!ownerAgentId) return null;
+  const order = getPanelOrder(ws.root).filter((panelId) => ws.panels[panelId]);
+  const agentIndex = order.findIndex((panelId) => {
+    const panel = ws.panels[panelId];
+    const active = panel.tabs.find((entry) => entry.id === panel.activeTabId);
+    return active?.type === 'agent' && active.agentId === ownerAgentId;
+  });
+  if (agentIndex < 0) return null;
+  const neighborPanelId = order[agentIndex + 1] ?? order[agentIndex - 1];
+  if (neighborPanelId) {
+    return activateTabPreservingFocus(ws, neighborPanelId, tab, tabId, timestamp);
+  }
+  const inserted = insertFixedColumn(
+    saveToHistory(ws, timestamp),
+    order[agentIndex],
+    { id: newPanelId, tabs: [{ ...tab, id: tabId }], activeTabId: tabId },
+    'after',
+    getPanelCreationWidthForType(tab.type),
+  );
+  if (!inserted) return null;
+  return {
+    ...inserted,
+    focusedPanelId: ws.focusedPanelId,
+    pendingPanelReveal: createPanelRevealRequest(newPanelId, tabId, tabId, true),
   };
 }
 
@@ -1977,14 +2022,17 @@ export const openHiddenTab = createAction(
  * `focus: false` (agent showTab without focus, monorepo#3045) adds the pane
  * to another stack when available and activates it there via a
  * focus-preserving reveal, so it is displayed without moving panel focus.
+ * When the owner agent's chat is displayed, it goes beside that chat
+ * (see `showBesideOwnerAgent`).
  */
 export const restoreHiddenTab = createAction(
   'panelLayout/restoreHiddenTab',
-  (wsId: string, tabId: string, timestamp?: number, focus?: boolean) => ({
+  (wsId: string, tabId: string, timestamp?: number, focus?: boolean, newPanelId?: string) => ({
     wsId,
     tabId,
     timestamp: timestamp ?? Date.now(),
     focus: focus ?? true,
+    newPanelId: newPanelId ?? generatePanelId(),
   }),
 );
 
@@ -2342,12 +2390,14 @@ panelLayoutReducer.with(loadLayoutHistory, (state, { payload }) => {
 });
 // --- Open Tab ---
 panelLayoutReducer.with(openTabBehindActive, (state, { payload }) => {
-  const { wsId, tab, newTabId } = payload;
+  const { wsId, tab, newTabId, newPanelId, timestamp } = payload;
   if (!panelTabBelongsToLayout(wsId, tab)) return state;
   const ws = getWorkspaceState(state, wsId);
   if (getItem(ws.hiddenTabs, newTabId)) return state;
   if (Object.values(ws.panels).some((panel) => panel.tabs.some((entry) => entry.id === newTabId)))
     return state;
+  const beside = showBesideOwnerAgent(ws, tab, newTabId, newPanelId, timestamp);
+  if (beside) return setWorkspaceState(state, wsId, beside);
 
   const panelId = ws.focusedPanelId ?? getPanelOrder(ws.root)[0];
   const panel = panelId ? ws.panels[panelId] : undefined;
@@ -3000,7 +3050,7 @@ panelLayoutReducer.with(openHiddenTab, (state, { payload }) => {
 });
 // --- Restore Hidden Tab (monorepo#2857) ---
 panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
-  const { wsId, tabId, timestamp, focus } = payload;
+  const { wsId, tabId, timestamp, focus, newPanelId } = payload;
   let ws = getWorkspaceState(state, wsId);
   const hiddenTab = getItem(ws.hiddenTabs, tabId);
   if (!hiddenTab) return state;
@@ -3036,6 +3086,14 @@ panelLayoutReducer.with(restoreHiddenTab, (state, { payload }) => {
   // focus: false (agent showTab without focus): add the pane to another stack
   // when available and activate it there without moving panel focus, so the
   // tab is displayed (monorepo#3045) while the user's focused content stays.
+  const beside = showBesideOwnerAgent(
+    { ...ws, hiddenTabs: removeItem(ws.hiddenTabs, tabId) },
+    hiddenTab,
+    hiddenTab.id,
+    newPanelId,
+    timestamp,
+  );
+  if (beside) return setWorkspaceState(state, wsId, beside);
   const previousFocusedPanelId = ws.focusedPanelId;
   const order = getPanelOrder(ws.root);
   const targetPanelId =
