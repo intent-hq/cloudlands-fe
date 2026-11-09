@@ -302,11 +302,6 @@ describe('catalog ownership across the real selection, provider, boot and reload
 it.each([providerModelsCacheCleared(), hostExecutionInvalidated()])(
   'does not learn or persist an active catalog reply held across $type',
   async (invalidate) => {
-    const storage = new Map<string, string>();
-    vi.mocked(window.localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-    vi.mocked(window.localStorage.setItem).mockImplementation((key, value) => {
-      storage.set(key, value);
-    });
     cancellations.push(store.runSaga(modelNameCacheSaga));
     await start();
     const name = (id: string) => selectLearnedModelDisplayName.select(store.state, 'codex', id);
@@ -334,7 +329,7 @@ it.each([providerModelsCacheCleared(), hostExecutionInvalidated()])(
     expect(name('obsolete')).toBeUndefined();
     expect(name('initial')).toBe('Fresh label');
     expect(window.localStorage.setItem).toHaveBeenCalledTimes(writes);
-    expect(JSON.parse(storage.get(MODEL_NAMES_STORAGE_KEY)!).names.codex).toEqual({
+    expect(JSON.parse(window.localStorage.getItem(MODEL_NAMES_STORAGE_KEY)!).names.codex).toEqual({
       initial: 'Fresh label',
     });
     store.dispatch(reloadModelsForProvider());

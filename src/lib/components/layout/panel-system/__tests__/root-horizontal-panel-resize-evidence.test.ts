@@ -29,7 +29,6 @@ const STORAGE_KEY = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WORKSPACE_ID}`;
 let storeContext: ReduxStoreContext | undefined;
 let sagaTask: Task | undefined;
 let sagaChannel: ReturnType<typeof stdChannel> | undefined;
-let storage = new Map<string, string>();
 
 function storageWriteCount(): number {
   // eslint-disable-next-line themis/direct-local-storage-usage -- Test inspects the mocked boundary.
@@ -224,14 +223,7 @@ async function stopSaga() {
 }
 
 beforeEach(() => {
-  storage = new Map();
   vi.stubGlobal('ResizeObserver', TestResizeObserver);
-  /* eslint-disable themis/direct-local-storage-usage -- This integration test controls the
-     browser storage boundary while the production saga uses the safe storage helpers. */
-  vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-  vi.mocked(localStorage.setItem).mockImplementation((key, value) => storage.set(key, value));
-  vi.mocked(localStorage.removeItem).mockImplementation((key) => storage.delete(key));
-  /* eslint-enable themis/direct-local-storage-usage */
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () {
     if (this.classList.contains('panel-split-handle-wrapper')) return GUTTER_WIDTH;
     return Number.parseFloat(this.style.width) || 0;
@@ -322,7 +314,8 @@ describe('root horizontal resize release evidence', () => {
     await settleSaga();
     expect(storageWriteCount()).toBe(writesBeforePersist + 1);
 
-    const serialized = JSON.parse(storage.get(STORAGE_KEY) ?? 'null');
+    // eslint-disable-next-line themis/direct-local-storage-usage -- Test inspects the mocked boundary.
+    const serialized = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? 'null');
     const persistedCanvasWidth = canvasWidth();
     expect(serialized).toMatchObject({
       canvasWidth: persistedCanvasWidth,
@@ -374,7 +367,8 @@ describe('root horizontal resize release evidence', () => {
     await settleSaga();
     await stopSaga();
     storeContext?.dispose();
-    storage.set(
+    // eslint-disable-next-line themis/direct-local-storage-usage -- Seeds a legacy layout at the storage boundary.
+    localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
         root: { type: 'panel', panelId: 'legacy' },

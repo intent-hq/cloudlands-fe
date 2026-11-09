@@ -5,14 +5,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventPersistenceService, importEventsFromFile } from '../event-persistence';
 import type { WorkspaceEvent } from '$features/events/types';
-import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
+import { sharedLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
 // Mock browser environment
 vi.mock('$app/environment', () => ({
   browser: true,
 }));
 
-const mockLocalStorage = installLocalStorageMock();
+const mockLocalStorage = sharedLocalStorageMock();
 
 // Mock Blob
 global.Blob = class MockBlob {
@@ -27,7 +27,6 @@ global.Blob = class MockBlob {
 
 describe('EventPersistenceService', () => {
   beforeEach(() => {
-    mockLocalStorage.clear();
     vi.clearAllMocks();
   });
 

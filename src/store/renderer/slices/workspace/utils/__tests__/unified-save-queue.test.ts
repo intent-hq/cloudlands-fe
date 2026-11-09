@@ -3,15 +3,14 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { sharedLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 import { UnifiedSaveQueue } from '../unified-save-queue';
-import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
-const mockLocalStorage = installLocalStorageMock();
+const mockLocalStorage = sharedLocalStorageMock();
 
 describe('UnifiedSaveQueue', () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    mockLocalStorage.clear();
     vi.clearAllMocks();
   });
 

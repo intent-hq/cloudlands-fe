@@ -19,7 +19,6 @@ const STORAGE_KEY = `${PANEL_LAYOUT_STORAGE_KEY_PREFIX}${WORKSPACE_ID}`;
 let storeContext: ReduxStoreContext | undefined;
 let sagaTask: Task | undefined;
 let sagaChannel: ReturnType<typeof stdChannel> | undefined;
-let storage: Map<string, string>;
 
 async function settleSaga() {
   await Promise.resolve();
@@ -29,26 +28,19 @@ async function settleSaga() {
 }
 
 beforeEach(async () => {
-  storage = new Map([
-    [
-      STORAGE_KEY,
-      JSON.stringify({
-        version: PANEL_LAYOUT_PERSISTENCE_VERSION,
-        root: { type: 'panel', panelId: 'restored' },
-        panels: { restored: { id: 'restored', tabs: [], activeTabId: null } },
-        focusedPanelId: 'restored',
-        columnCount: 2,
-        canvasWidth: null,
-        canvasWidthSource: null,
-      }),
-    ],
-  ]);
-  /* eslint-disable themis/direct-local-storage-usage -- This integration test controls the
-     browser storage boundary while the production saga uses the safe storage helpers. */
-  vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-  vi.mocked(localStorage.setItem).mockImplementation((key, value) => storage.set(key, value));
-  vi.mocked(localStorage.removeItem).mockImplementation((key) => storage.delete(key));
-  /* eslint-enable themis/direct-local-storage-usage */
+  // eslint-disable-next-line themis/direct-local-storage-usage -- Seeds the browser storage boundary the production saga restores from.
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify({
+      version: PANEL_LAYOUT_PERSISTENCE_VERSION,
+      root: { type: 'panel', panelId: 'restored' },
+      panels: { restored: { id: 'restored', tabs: [], activeTabId: null } },
+      focusedPanelId: 'restored',
+      columnCount: 2,
+      canvasWidth: null,
+      canvasWidthSource: null,
+    }),
+  );
   vi.stubGlobal(
     'ResizeObserver',
     class {

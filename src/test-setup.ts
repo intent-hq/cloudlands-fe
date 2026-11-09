@@ -3,13 +3,14 @@
  * Mocks Electron and other dependencies for testing
  */
 
-import { vi, afterEach } from 'vitest';
+import { vi, afterEach, beforeEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
 import { scrubHostNodeInjection } from './scrub-host-node-injection';
 import { scrubHostPythonInjection } from './scrub-host-python-injection';
 import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
 import { installShiftedTestClock } from './shifted-test-clock';
+import { createLocalStorageMock } from './store/renderer/utils/test-helpers/local-storage-mock';
 // Configure @testing-library/dom (the instance @testing-library/svelte re-exports) directly:
 // importing the Svelte binding here would load Svelte into every test file, UI or not.
 import { configure as configureTestingLibrary } from '@testing-library/dom';
@@ -196,15 +197,14 @@ if (typeof window !== 'undefined') {
     })),
   });
 
-  // Mock localStorage (getItem must return null for missing keys per Web Storage API spec)
-  const localStorageMock = {
-    getItem: vi.fn(() => null),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-    clear: vi.fn(),
-  };
+  // In-memory localStorage: values round-trip within a test and are cleared before each
+  // test; every method is a vi.fn spy. A no-op stub hid save-and-reload bugs (cloudlands-fe#4332).
+  const localStorageMock = createLocalStorageMock();
   Object.defineProperty(window, 'localStorage', {
     value: localStorageMock,
+  });
+  beforeEach(() => {
+    localStorageMock.clearValues();
   });
 
   // Persistent handler tracking (survives across beforeEach calls) so tests can

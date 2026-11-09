@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import type { Question } from '$shared/types/question-resource';
 import { wizardDraftKey } from '$lib/components/chat/questions/wizard-draft-key';
@@ -33,29 +33,6 @@ const settle = async () => {
   for (let i = 0; i < 8; i += 1) await Promise.resolve();
 };
 
-function installStorage(): void {
-  const values: Record<string, string> = {};
-  const storage = {
-    getItem: (key: string) => values[key] ?? null,
-    setItem: (key: string, value: string) => {
-      values[key] = String(value);
-      Object.defineProperty(storage, key, {
-        value: values[key],
-        enumerable: true,
-        configurable: true,
-      });
-    },
-    removeItem: (key: string) => {
-      delete values[key];
-      delete (storage as Record<string, unknown>)[key];
-    },
-    clear: () => {
-      for (const key of Object.keys(values)) storage.removeItem(key);
-    },
-  };
-  Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
-}
-
 function harness() {
   const channel = stdChannel();
   let questionUi: QuestionUiState = questionUiReducer.initialState;
@@ -76,7 +53,6 @@ function harness() {
 }
 
 let tasks: Task[] = [];
-beforeEach(() => installStorage());
 afterEach(async () => {
   vi.useRealTimers();
   for (const task of tasks.splice(0)) {
