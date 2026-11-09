@@ -1467,7 +1467,7 @@ function applyStoredSessionRestore(
 
   let next = setSession(state, agentId, finalSession);
   next = registerInWorkspaceIndex(next, agentId, wsId);
-  return next;
+  return existing ? accountLostOlderTailRows(next, agentId, existing.messages) : next;
 }
 
 function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
@@ -1900,7 +1900,11 @@ agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] 
   if (!session) return state;
   const nextMessages = session.messages.filter((message) => message.id !== messageId);
   if (nextMessages.length === session.messages.length) return state;
-  return setSession(state, agentId, { ...session, messages: nextMessages });
+  return accountLostOlderTailRows(
+    setSession(state, agentId, { ...session, messages: nextMessages }),
+    agentId,
+    session.messages,
+  );
 });
 agentSessionReducer.with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) =>
   replaceSessionMessageById(state, agentId, oldId, newMessage),
