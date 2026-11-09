@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "驗證者",
   "specialists_builtin_vulnerabilityScanner_description": "找出程式碼中真實且可利用的安全弱點",
   "specialists_builtin_vulnerabilityScanner_name": "弱點掃描器",
+  "specialists_catalogLoading_error": "專家尚未載入。請稍後再試。",
   "specialists_mutation_deleteFailed_error": "刪除專家失敗",
   "specialists_mutation_promptUnavailable_error": "此專家的提示詞過大，無法載入，因此無法在此儲存。請直接編輯其檔案。",
   "specialists_mutation_refreshFailed_error": "寫入後重新整理專家列表失敗",

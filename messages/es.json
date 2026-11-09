@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "Verificador",
   "specialists_builtin_vulnerabilityScanner_description": "Encuentra vulnerabilidades de seguridad reales y explotables en el código",
   "specialists_builtin_vulnerabilityScanner_name": "Escáner de vulnerabilidades",
+  "specialists_catalogLoading_error": "Los especialistas aún no se han cargado. Inténtalo de nuevo en un momento.",
   "specialists_mutation_deleteFailed_error": "Error al eliminar el especialista",
   "specialists_mutation_promptUnavailable_error": "La instrucción de este especialista es demasiado grande para cargarla, así que no se puede guardar aquí. Edita su archivo directamente.",
   "specialists_mutation_refreshFailed_error": "Error al actualizar la lista de especialistas tras la escritura",

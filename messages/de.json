@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "Prüfer",
   "specialists_builtin_vulnerabilityScanner_description": "Findet echte, ausnutzbare Sicherheitslücken im Code",
   "specialists_builtin_vulnerabilityScanner_name": "Schwachstellen-Scanner",
+  "specialists_catalogLoading_error": "Die Spezialisten sind noch nicht geladen. Versuche es gleich noch einmal.",
   "specialists_mutation_deleteFailed_error": "Spezialist konnte nicht gelöscht werden",
   "specialists_mutation_promptUnavailable_error": "Der Prompt dieses Spezialisten ist zu groß zum Laden und kann hier nicht gespeichert werden. Bearbeite die Datei direkt.",
   "specialists_mutation_refreshFailed_error": "Spezialisten-Liste konnte nach dem Schreiben nicht aktualisiert werden",

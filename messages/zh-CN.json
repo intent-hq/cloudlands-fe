@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "验证者",
   "specialists_builtin_vulnerabilityScanner_description": "查找代码中真实且可利用的安全漏洞",
   "specialists_builtin_vulnerabilityScanner_name": "漏洞扫描器",
+  "specialists_catalogLoading_error": "专家尚未加载。请稍后重试。",
   "specialists_mutation_deleteFailed_error": "删除专家失败",
   "specialists_mutation_promptUnavailable_error": "此专家的提示词过大，无法加载，因此无法在此保存。请直接编辑其文件。",
   "specialists_mutation_refreshFailed_error": "写入后刷新专家列表失败",

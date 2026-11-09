@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "検証担当",
   "specialists_builtin_vulnerabilityScanner_description": "コード内の現実に悪用可能なセキュリティ脆弱性を検出します",
   "specialists_builtin_vulnerabilityScanner_name": "脆弱性スキャナー",
+  "specialists_catalogLoading_error": "スペシャリストをまだ読み込んでいます。しばらくしてからもう一度お試しください。",
   "specialists_mutation_deleteFailed_error": "スペシャリストを削除できませんでした",
   "specialists_mutation_promptUnavailable_error": "このスペシャリストのプロンプトは大きすぎて読み込めないため、ここでは保存できません。ファイルを直接編集してください。",
   "specialists_mutation_refreshFailed_error": "書き込み後にスペシャリスト一覧を更新できませんでした",

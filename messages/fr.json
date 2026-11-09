@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "Vérificateur",
   "specialists_builtin_vulnerabilityScanner_description": "Détecte les vulnérabilités de sécurité réelles et exploitables dans le code",
   "specialists_builtin_vulnerabilityScanner_name": "Analyseur de vulnérabilités",
+  "specialists_catalogLoading_error": "Les spécialistes ne sont pas encore chargés. Réessayez dans un instant.",
   "specialists_mutation_deleteFailed_error": "Impossible de supprimer le spécialiste",
   "specialists_mutation_promptUnavailable_error": "Le prompt de ce spécialiste est trop volumineux pour être chargé : il ne peut pas être enregistré ici. Modifiez directement son fichier.",
   "specialists_mutation_refreshFailed_error": "Impossible d'actualiser la liste des spécialistes après l'écriture",

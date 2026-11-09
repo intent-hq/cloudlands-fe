@@ -94,6 +94,12 @@ export interface Specialist {
    * Unknown/absent values degrade to the id-map + seeded fallback.
    */
   icon?: string;
+  /**
+   * Display-only placeholder from `SPECIALISTS`: the daemon catalog has not
+   * been read, so the prompt and role reminder are unknown, not empty. Never
+   * write it back or start an agent from it.
+   */
+  promptUnavailable?: true;
 }
 
 /**
@@ -113,6 +119,7 @@ export const SPECIALISTS: Specialist[] = [
       return m.specialists_builtin_prReviewer_description();
     },
     defaultBehaviorPrompt: '',
+    promptUnavailable: true,
   },
   {
     id: 'ui-designer',
@@ -124,6 +131,7 @@ export const SPECIALISTS: Specialist[] = [
       return m.specialists_builtin_uiDesigner_description();
     },
     defaultBehaviorPrompt: '',
+    promptUnavailable: true,
   },
   {
     id: 'vulnerability-scanner',
@@ -135,6 +143,7 @@ export const SPECIALISTS: Specialist[] = [
       return m.specialists_builtin_vulnerabilityScanner_description();
     },
     defaultBehaviorPrompt: '',
+    promptUnavailable: true,
   },
   {
     id: 'developer',
@@ -146,6 +155,7 @@ export const SPECIALISTS: Specialist[] = [
       return m.specialists_builtin_developer_description();
     },
     defaultBehaviorPrompt: '',
+    promptUnavailable: true,
   },
   {
     id: 'product-manager',
@@ -157,6 +167,7 @@ export const SPECIALISTS: Specialist[] = [
       return m.specialists_builtin_productManager_description();
     },
     defaultBehaviorPrompt: '',
+    promptUnavailable: true,
   },
   {
     id: 'chief-of-staff',
@@ -169,6 +180,7 @@ export const SPECIALISTS: Specialist[] = [
     },
     hidden: true,
     defaultBehaviorPrompt: '',
+    promptUnavailable: true,
   },
 ];
 

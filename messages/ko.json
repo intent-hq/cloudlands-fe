@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "검증 담당",
   "specialists_builtin_vulnerabilityScanner_description": "코드에서 실제로 악용 가능한 보안 취약점을 찾습니다",
   "specialists_builtin_vulnerabilityScanner_name": "취약점 스캐너",
+  "specialists_catalogLoading_error": "스페셜리스트를 아직 불러오지 못했습니다. 잠시 후 다시 시도하세요.",
   "specialists_mutation_deleteFailed_error": "스페셜리스트를 삭제하지 못했습니다",
   "specialists_mutation_promptUnavailable_error": "이 스페셜리스트의 프롬프트가 너무 커서 불러올 수 없으므로 여기서 저장할 수 없습니다. 파일을 직접 편집하세요.",
   "specialists_mutation_refreshFailed_error": "쓰기 후 스페셜리스트 목록을 새로 고치지 못했습니다",

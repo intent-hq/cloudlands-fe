@@ -5911,6 +5911,7 @@
   "specialists_builtin_verifier_name": "Verifier",
   "specialists_builtin_vulnerabilityScanner_description": "Finds real, exploitable security vulnerabilities in code",
   "specialists_builtin_vulnerabilityScanner_name": "Vulnerability Scanner",
+  "specialists_catalogLoading_error": "Specialists haven't loaded yet. Try again in a moment.",
   "specialists_mutation_deleteFailed_error": "Failed to delete specialist",
   "specialists_mutation_promptUnavailable_error": "This specialist's prompt is too large to load, so it can't be saved here. Edit its file directly.",
   "specialists_mutation_refreshFailed_error": "Failed to refresh specialists list after write",
