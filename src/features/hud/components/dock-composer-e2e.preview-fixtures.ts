@@ -34,6 +34,8 @@ interface SyntheticNativeLog {
   clips: { started: string[]; stopped: string[]; released: string[] };
   speech: { started: string[]; stopped: string[]; marks: string[] };
   markAnswers: { markId: string; accepted: boolean }[];
+  /** Media export jobs (no video is rendered: synthetic output paths only). */
+  exports: string[];
 }
 
 /** A fake app window, drawn once: deterministic pixels for tiles, composites and hashes. */
@@ -103,6 +105,7 @@ function createSyntheticNative() {
     clips: { started: [], stopped: [], released: [] },
     speech: { started: [], stopped: [], marks: [] },
     markAnswers: [],
+    exports: [],
   };
   const evidenceListeners = new Set<(event: DockEvidenceNativeEvent) => void>();
   const speechListeners = new Set<
@@ -208,6 +211,25 @@ function createSyntheticNative() {
       log.clips.released.push(clipId);
       return { ok: true, value: undefined };
     },
+    // An edited recording's export: one video plus a frame per included edit mark.
+    exportMedia: async (request) => {
+      log.exports.push(request.jobId);
+      const marks = request.media.saved?.marks.filter((mark) => mark.included) ?? [];
+      return {
+        ok: true as const,
+        value: {
+          jobId: request.jobId,
+          video: { sourcePath: `/synthetic/exports/${request.jobId}.mp4`, mimeType: 'video/mp4', size: 48_000 },
+          frames: marks.map((mark) => ({
+            markId: mark.id,
+            sourcePath: `/synthetic/exports/${request.jobId}-${mark.id}.png`,
+            mimeType: 'image/png',
+            size: 4_000,
+          })),
+        },
+      };
+    },
+    releaseMediaJob: async () => ({ ok: true as const, value: undefined }),
     reportMarkAcceptance: async (_annotationId, markId, accepted) => {
       log.markAnswers.push({ markId, accepted });
       return { ok: true, value: undefined };
