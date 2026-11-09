@@ -187,8 +187,9 @@
     // No resolvable provider/model (fresh backend, providers.active unset):
     // agent.create would be rejected by the daemon, so skip silently and let
     // this effect retry once a provider is configured. Likewise for a
-    // collaborator connection, whose agent.create is refused (-32003).
-    if (!$hasResolvableProvider$ || $hidesAgentLifecycleActions$) return;
+    // collaborator connection, whose agent.create is refused (-32003), and
+    // until the daemon catalog supplies the Chief prompt.
+    if (!$hasResolvableProvider$ || $hidesAgentLifecycleActions$ || !threadStarter.ready) return;
     hasAutoStartedRef = true;
     void createNewThread();
   });

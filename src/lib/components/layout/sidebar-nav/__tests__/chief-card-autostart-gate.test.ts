@@ -21,6 +21,11 @@ import { hydrateDefaultProvider } from '$store/renderer/slices/model/model-slice
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+import {
+  setBundledSpecialists,
+  setBundledSpecialistsLoaded,
+} from '$store/renderer/slices/specialists/specialists-slice';
 import type { AgentSession } from '$shared/types';
 import type { GuestSessionRecord } from '$shared/types/guest-sessions';
 import ChiefCard from '../cards/ChiefCard.svelte';
@@ -35,6 +40,19 @@ describe('ChiefCard auto-start provider gate', () => {
 
   beforeEach(() => {
     appStore.init();
+    appStore.dispatch(
+      setBundledSpecialists([
+        {
+          id: CHIEF_SPECIALIST_ID,
+          name: 'Chief of Staff',
+          description: 'Chief',
+          defaultBehaviorPrompt: 'Daemon Chief prompt',
+          source: 'bundled',
+          hidden: true,
+        },
+      ]),
+    );
+    appStore.dispatch(setBundledSpecialistsLoaded(true));
     admitLegacyPrincipal();
     appStore.dispatch(hydrateDefaultProvider(''));
     // A settled owner window: the guest session list hydrated with no joined
