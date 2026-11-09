@@ -103,7 +103,8 @@ async function sendAndRead(page: Page, component: { getByRole: Function }) {
       metadataImageIds: (meta.images ?? []).map((image: any) => image.id),
       metadataMarks: (meta.images ?? []).flatMap((image: any) => image.marks.map((mark: any) => mark.n)),
       editedCaptures: (meta.edited_captures ?? []).map((entry: any) => ({ kind: entry.kind, frames: entry.frames?.length ?? 0 })),
-      context: String(send.params.workspaceContextStr ?? ''),
+      // The agent-readable evidence leads the message body.
+      context: String(send.params.content ?? send.params.message ?? send.params.text ?? ''),
       exports: harness.native.log.exports.length,
     };
   });
@@ -127,6 +128,7 @@ test('an exported recording does not resend its markup screenshot; an explicit c
   expect(sent.imageBlocks).toHaveLength(2);
   expect(sent.fileBlocks).toBe(1);
   expect(sent.editedCaptures).toEqual([{ kind: 'recording', frames: 1 }]);
+  expect(sent.context).toContain('[Screen evidence');
   expect(sent.context).not.toContain(carrier.id);
   // Exact wire references: the explicit composite, then the exported frame; the video as a file.
   expect(sent.imageBlocks).toEqual([sent.metadataAttachmentIds[0], sent.editedOutputs[0].frames[0]]);
@@ -149,4 +151,36 @@ test('a recording without an export keeps its markup screenshot, the only pictur
   expect(sent.imageBlocks).toEqual([sent.metadataAttachmentIds[0]]);
   expect(sent.screenshotUploads.some((name: string) => name.startsWith(`screenshot-${images[0].id.slice(0, 8)}`))).toBe(true);
   await writeFile(info.outputPath('carrier-fallback-receipt.json'), JSON.stringify({ images, sent: { ...sent, context: undefined } }, null, 2));
+});
+
+test('mark numbers on the wire stay the composer numbers when an exported recording drops its marks', async ({ mount, page }, info) => {
+  const component = await mount(ComposerE2EHarness);
+  await recordWithMark(page, component); // mark 1, carried by the recording
+  await (component.getByRole('button', { name: /^Capture the screen/ }) as any).click();
+  await expect.poll(async () => (await evidenceImages(page)).length).toBe(2);
+  await page.evaluate(() => {
+    const { store } = (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E;
+    const { workspaceId, agentId } = store.state.dockConversation;
+    store.dispatch({ type: 'dockConversation/evidenceToolSelectRequested', payload: [workspaceId, agentId, 'box'] });
+  });
+  await expect(component.getByText('Annotating', { exact: true }) as any).toBeVisible();
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.native.gesture('box', { kind: 'rect', x: 600, y: 300, w: 200, h: 120 }, null));
+  const composer = await page.evaluate(() => {
+    const d = (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation;
+    const evidence = Object.values(d.evidence.map)[0] as any;
+    return evidence.marks.map((mark: any, index: number) => ({ n: index + 1, id: mark.id, clip: !!mark.clipId }));
+  });
+  await expect.poll(async () => composer.length).toBe(2);
+  expect(composer.map((row: any) => row.clip)).toEqual([true, false]);
+  expect(await editRecording(page)).toBe(true);
+  const sent = await sendAndRead(page, component);
+  // The standalone mark is 2 in the composer, in its burned pixels and on the wire.
+  expect(sent.metadataMarks).toEqual([2]);
+  // The agent-readable screen evidence (not the export's own outputs) says 2 as well.
+  const block = /\[Screen evidence[^\n]*\n```json\n(.*?)\n```/s.exec(sent.context);
+  expect(block).not.toBeNull();
+  const screen = JSON.parse(block![1]) as { images: { marks: { n: number }[] }[] };
+  expect(screen.images.flatMap((image) => image.marks.map((mark) => mark.n))).toEqual([2]);
+  await writeFile(info.outputPath('carrier-numbering-receipt.json'), JSON.stringify({ composer, sent: { ...sent, context: undefined } }, null, 2));
 });
