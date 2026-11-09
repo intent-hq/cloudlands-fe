@@ -580,7 +580,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     { value: '0', share: '0%' },
     { value: '0', share: '0%' },
     { value: '0', share: '0%' },
-    { value: '0', share: '0%' },
+    { value: '0', share: undefined },
   ]);
   await expect(messageRows.locator('.animated-number-value')).toHaveText(
     '0 human and 0 agent messages',
@@ -610,10 +610,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(finalModel).toHaveAttribute('aria-checked', 'false');
   await expect(finalModel).toHaveAttribute('data-preview-active', 'true');
   expect(await compositionValues()).toEqual([
-    { value: '0', share: '0%' },
     { value: '10', share: '100%' },
     { value: '0', share: '0%' },
     { value: '0', share: '0%' },
+    { value: '0', share: undefined },
   ]);
   await expect(details.locator('.composition-strip-segment')).toHaveCount(1);
   await expect(details.locator('.composition-strip')).toHaveAccessibleName(
