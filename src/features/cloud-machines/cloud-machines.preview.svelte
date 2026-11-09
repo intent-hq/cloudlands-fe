@@ -26,6 +26,8 @@
       'setup-key-rejected': sceneState('setup-key-rejected'),
       connected: sceneState('connected'),
       'connected-no-sandboxes': sceneState('connected-no-sandboxes'),
+      'sandboxes-grouped': sceneState('sandboxes-grouped'),
+      'sandboxes-collapsed': sceneState('sandboxes-collapsed'),
       'key-rejected': sceneState('key-rejected'),
       'remove-in-use': sceneState('remove-in-use'),
       unsupported: sceneState('unsupported'),

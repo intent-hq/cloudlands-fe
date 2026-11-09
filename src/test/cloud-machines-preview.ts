@@ -15,10 +15,18 @@ import {
   setWorkspaceEntity,
   removeWorkspaceEntity,
 } from '$store/renderer/slices/workspace/workspace-slice';
+import {
+  removePendingAgentDeletion,
+  setPendingAgentDeletion,
+} from '$features/agent/utils/pending-agent-deletions';
 import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import type { CloudMachineProvider } from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
+import {
+  collapsedSandboxGroups,
+  sandboxGroupId,
+} from '$features/cloud-machines/sandbox-groups.svelte';
 
 export type CloudMachinesPreviewState =
   | 'add-menu'
@@ -36,7 +44,9 @@ export type CloudMachinesPreviewState =
   | 'entries-key-rejected'
   | 'entries-rename-taken'
   | 'entries-single'
-  | 'entries-edit';
+  | 'entries-edit'
+  | 'sandboxes-grouped'
+  | 'sandboxes-collapsed';
 
 /** Scenes where the backend keeps named entries (`cloudMachineEntries: 1`). */
 const ENTRY_SCENES: readonly CloudMachinesPreviewState[] = [
@@ -94,6 +104,7 @@ function sandbox(
   state: 'running' | 'paused',
   runningSeconds: number,
   entry: CloudMachineProvider = E2B_PROVIDER,
+  startedAt = '2026-11-06T10:00:00.000Z',
 ): RemoteMachine {
   return {
     id,
@@ -116,7 +127,7 @@ function sandbox(
       startedBy: { principalId: `p-${by}`, displayName: by },
       agentId: `agent-${id}`,
       workspaceId,
-      startedAt: '2026-11-06T10:00:00.000Z',
+      startedAt,
       runningSeconds,
     },
   };
@@ -130,6 +141,43 @@ export const E2B_SANDBOXES: RemoteMachine[] = [
 
 export const TEAM_SANDBOXES: RemoteMachine[] = [
   sandbox('sb-t1', 'Release notes', 'ws-docs', 'Sam', 'running', 8 * 60, TEAM_ENTRY),
+];
+
+/**
+ * Several workspaces: "Fix flaky CI" has two running sandboxes (the newer
+ * one first) and a newer paused one; "Startup time" is only paused; one
+ * sandbox's workspace is unknown here, under "Other".
+ */
+export const GROUPED_SANDBOXES: RemoteMachine[] = [
+  ...E2B_SANDBOXES,
+  sandbox(
+    'sb-4',
+    'Test retrier',
+    'ws-ci',
+    'Sam',
+    'paused',
+    5 * 60,
+    E2B_PROVIDER,
+    '2026-11-06T11:30:00.000Z',
+  ),
+  sandbox(
+    'sb-6',
+    'Lint fixer',
+    'ws-ci',
+    'Alex',
+    'running',
+    20 * 60,
+    E2B_PROVIDER,
+    '2026-11-06T11:00:00.000Z',
+  ),
+  sandbox(
+    'sb-5',
+    'Dependency bump across every workspace package and its lockfile',
+    'ws-elsewhere',
+    'Alex',
+    'running',
+    3 * 60,
+  ),
 ];
 
 /** Seed Settings → Machines with E2B in a named state on top of the remote-machines fixture. */
@@ -177,10 +225,12 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
         ? state === 'entries-single' || state === 'entries-edit'
           ? E2B_SANDBOXES
           : [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
-        : configured && state !== 'connected-no-sandboxes'
-          ? E2B_SANDBOXES
-          : [],
-      // Read now: uptime and cost then match the fixture until the next 30 s tick.
+        : state === 'sandboxes-grouped' || state === 'sandboxes-collapsed'
+          ? GROUPED_SANDBOXES
+          : configured && state !== 'connected-no-sandboxes'
+            ? E2B_SANDBOXES
+            : [],
+      // Read now: uptime then matches the fixture until the next 30 s tick.
       readAt: Date.now(),
     }),
   );
@@ -212,7 +262,14 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
       }),
     );
   }
+  // The profiler's agent is being deleted; its sandbox still lists until the backend removes it.
+  const grouped = state === 'sandboxes-grouped' || state === 'sandboxes-collapsed';
+  if (grouped) setPendingAgentDeletion({ wsId: 'ws-perf', agentId: 'agent-sb-3' });
+  if (state === 'sandboxes-collapsed')
+    collapsedSandboxGroups.add(sandboxGroupId(E2B_PROVIDER.name, 'ws-ci'));
   return () => {
+    collapsedSandboxGroups.clear();
+    if (grouped) removePendingAgentDeletion('agent-sb-3');
     for (const workspace of WORKSPACES) store.dispatch(removeWorkspaceEntity(workspace.id));
     store.dispatch(setLabsCloudMachinesEnabled(previousCloudLabs));
     restoreRemote();

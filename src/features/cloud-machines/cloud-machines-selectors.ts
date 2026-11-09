@@ -8,6 +8,7 @@ import {
   selectLabsCloudMachinesEnabled,
   selectLabsRemoteAgentsEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
 
 type State = typeof store.state;
@@ -52,6 +53,48 @@ export const selectPausedCloudSandboxCount = store.createSelector(
     Object.values(state.cloudMachines?.machines ?? {}).filter(
       (machine) => machine.cloud?.state === 'paused',
     ).length,
+);
+
+export interface SandboxAgentLink {
+  workspaceId: string;
+  agentId: string;
+}
+
+/**
+ * The agent a sandbox runs, to open from its row; null when its workspace is
+ * unknown here. A session missing from the store keeps the link: list reads
+ * skip delegated and background agents. The row drops it while a deletion is
+ * pending (see `CloudSandboxList`); the app can't tell an agent deleted
+ * earlier, since a deletion removes its session.
+ */
+function sandboxAgentLink(state: State, machine: RemoteMachine): SandboxAgentLink | null {
+  const cloud = machine.cloud;
+  if (!cloud?.agentId || !cloud.workspaceId) return null;
+  if (!selectWorkspaceById.select(state, cloud.workspaceId)) return null;
+  return { workspaceId: cloud.workspaceId, agentId: cloud.agentId };
+}
+
+/** Per sandbox list: each workspace's name (null when unknown) and each row's agent link. */
+export const selectSandboxListContext = store.createSelector(
+  (
+    state,
+    sandboxes: readonly RemoteMachine[],
+  ): {
+    workspaceNames: Record<string, string | null>;
+    agentLinks: Record<string, SandboxAgentLink | null>;
+  } => {
+    const workspaceNames: Record<string, string | null> = {};
+    const agentLinks: Record<string, SandboxAgentLink | null> = {};
+    for (const machine of sandboxes) {
+      const id = machine.cloud?.workspaceId;
+      if (id && !(id in workspaceNames)) {
+        const workspace = selectWorkspaceById.select(state, id);
+        workspaceNames[id] = workspace?.title || workspace?.name || null;
+      }
+      agentLinks[machine.id] = sandboxAgentLink(state, machine);
+    }
+    return { workspaceNames, agentLinks };
+  },
 );
 
 export const selectCloudSandboxReadAt = store.createSelector(
