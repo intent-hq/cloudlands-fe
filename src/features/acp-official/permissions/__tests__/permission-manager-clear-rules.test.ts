@@ -33,20 +33,13 @@ describe('PermissionManager.clearRules (AUDIT-P0-2)', () => {
 
   it('rejects when the underlying persistence (localStorage) throws (AUDIT-P0-2)', async () => {
     const manager = new PermissionManager();
-    const original = window.localStorage.setItem.bind(window.localStorage);
-    const spy = vi.spyOn(window.localStorage, 'setItem').mockImplementation((key, value) => {
-      if (key === 'acp_permission_rules') throw new Error('quota exceeded');
-      original(key, value);
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockImplementationOnce(() => {
+      throw new Error('quota exceeded');
     });
 
-    try {
-      await expect(manager.clearRules()).rejects.toThrow('quota exceeded');
-    } finally {
-      // Restore explicitly: vi.restoreAllMocks() in beforeEach has been
-      // observed to leave jsdom localStorage spies in place, which leaks
-      // the throwing setItem into subsequent tests.
-      spy.mockRestore();
-    }
+    await expect(manager.clearRules()).rejects.toThrow('quota exceeded');
+    expect(setItem).toHaveBeenLastCalledWith('acp_permission_rules', expect.any(String));
   });
 
   it('clears in-memory rules even when scope filter is provided', async () => {

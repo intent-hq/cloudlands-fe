@@ -405,7 +405,8 @@ describe('settings-proposal-actions', () => {
   // model.providerDefaults) and unknown paths used to no-op silently, letting
   // the proposal lifecycle record a fake "Applied" without writing anything.
   it('rejects a read-only setting instead of reporting success', async () => {
-    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockClear();
     const proposal = makeProposal('model.providerDefaults', { codex: 'gpt-5' });
 
     await expect(applySettingsProposalWork(makeDetail(proposal))).rejects.toThrow(
@@ -414,7 +415,6 @@ describe('settings-proposal-actions', () => {
 
     expect(setItem).not.toHaveBeenCalled();
     expect(mocks.settingsUpdate).not.toHaveBeenCalled();
-    setItem.mockRestore();
   });
 
   it('rejects an unknown setting path instead of reporting success', async () => {
@@ -428,7 +428,8 @@ describe('settings-proposal-actions', () => {
   });
 
   it('rejects a read-only setting even when the payload supplies its own apply plan', async () => {
-    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockClear();
     const proposal: Proposal = {
       kind: 'settings-change',
       applyToolCallId: 'tool-settings',
@@ -449,11 +450,11 @@ describe('settings-proposal-actions', () => {
     );
 
     expect(setItem).not.toHaveBeenCalledWith('smuggled-key', expect.anything());
-    setItem.mockRestore();
   });
 
   it('rejects an unknown setting path even when the payload supplies its own apply plan', async () => {
-    const setItem = vi.spyOn(Storage.prototype, 'setItem');
+    const setItem = vi.mocked(window.localStorage.setItem);
+    setItem.mockClear();
     const proposal: Proposal = {
       kind: 'settings-change',
       applyToolCallId: 'tool-settings',
@@ -475,7 +476,6 @@ describe('settings-proposal-actions', () => {
 
     expect(setItem).not.toHaveBeenCalledWith('smuggled-key', expect.anything());
     expect(mocks.settingsUpdate).not.toHaveBeenCalled();
-    setItem.mockRestore();
   });
 
   it('rejects a setting whose apply plan has no proposal writer', async () => {
@@ -926,7 +926,8 @@ describe('settings-proposal-actions', () => {
       mocks.settingsGet.mockResolvedValue(
         daemonEntry('prMonitor.pollSeconds', 60, { type: 'number' }),
       );
-      const setItem = vi.spyOn(Storage.prototype, 'setItem');
+      const setItem = vi.mocked(window.localStorage.setItem);
+      setItem.mockClear();
       const proposal: Proposal = {
         kind: 'settings-change',
         applyToolCallId: 'tool-settings',
@@ -948,7 +949,6 @@ describe('settings-proposal-actions', () => {
         { path: 'prMonitor.pollSeconds', value: 30 },
       ]);
       expect(setItem).not.toHaveBeenCalled();
-      setItem.mockRestore();
     });
 
     it.each([
