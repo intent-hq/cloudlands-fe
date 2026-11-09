@@ -1,9 +1,8 @@
 /**
  * Cached single-flight read of the BE-owned `workspace.cowIsolation` setting
- * (PROTOCOL §5.12). The setting is machine-global, so every consumer (each
- * visible CheckoutModePill, RepoSelector, BranchSelector) shares ONE
- * `settings.get` RPC instead of fanning one out per instance on every
- * workspace-list refetch (AGENTS.md single-flight rule; precedent
+ * (PROTOCOL §5.12). The setting is machine-global, so every consumer
+ * (RepoSelector, BranchSelector) shares ONE `settings.get` RPC instead of
+ * fanning one out per instance on every workspace-list refetch (AGENTS.md single-flight rule; precedent
  * intent-hq/monorepo#1395). The settings-hydration service invalidates the
  * cache when a `settings:changed` delta touches the path, so toggles still
  * propagate. Dependency-light on purpose — imports only the AppClient seam —
