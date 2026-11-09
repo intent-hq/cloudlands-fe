@@ -1,14 +1,15 @@
 <script lang="ts">
-  import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
+  import { Button, Textarea } from '$lib/components/patterns/settings/custom-controls';
   import { SettingsFieldRow } from '$lib/components/patterns/settings';
   /**
    * "+ Add model option" rows for the specialist editor (PROTOCOL §5.11
-   * `modelOptions`): each row is a ModelPicker + free-text
-   * hint + remove button. Rows without a picked model are local drafts — they
-   * are never committed; a commit fires when a row gains a model, a hint blurs
-   * or the effort changes on a committed row, or a committed row is removed.
-   * The parent persists the committed list via `saveFileSpecialist` (empty
-   * list ⇒ key omitted on the wire so inheritance is preserved).
+   * `modelOptions`): each row is a stacked ModelPicker, multi-line
+   * free-text hint and "× Remove" button. Rows without a picked model are
+   * local drafts — they are never committed; a commit fires when a row gains
+   * a model, a hint blurs or the effort changes on a committed row, or a
+   * committed row is removed. The parent persists the committed list via
+   * `saveFileSpecialist` (empty list ⇒ key omitted on the wire so
+   * inheritance is preserved).
    *
    * Rows carry the triple shape `{ provider?, model, hint, reasoningEffort? }`
    * with a BARE `model` id (PROTOCOL §5.11); the ModelPicker boundary still
@@ -17,7 +18,7 @@
    * chosen inside the picker dropdown (mirroring the main Model row) — there
    * is no separate per-row effort control.
    */
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { faPlus, faXmark } from '@fortawesome/free-solid-svg-icons';
 
@@ -40,8 +41,9 @@
   let { savedOptions, onCommit, workspaceId, readonly = false }: Props = $props();
 
   // Local rows: saved options plus any draft rows (model === ''). Hints are
-  // committed on blur (the input is not two-way bound), so typing never
-  // mutates `rows` and the sync effect below stays quiescent mid-edit. Each
+  // committed on blur (the textarea is not two-way bound; Enter inserts a
+  // newline), so typing never mutates `rows` and the sync effect below stays
+  // quiescent mid-edit. Each
   // row carries a stable local key so the {#each} block never re-associates
   // DOM (in-flight input text, pickers) with a different row after a removal.
   interface Row extends SpecialistModelOption {
@@ -116,8 +118,18 @@
     }
   });
 
-  function addRow() {
+  let listEl = $state<HTMLDivElement | null>(null);
+
+  /**
+   * Append a draft row and move keyboard focus to its model picker so the
+   * next step (choosing a model) is one keypress away. The shared ModelPicker
+   * exposes no focus API, so the new row's first button is found after render.
+   */
+  async function addRow() {
     rows = [...rows, { key: nextKey++, model: '', hint: '' }];
+    await tick();
+    const pickers = listEl?.querySelectorAll<HTMLElement>('[data-model-option-picker]');
+    pickers?.[pickers.length - 1]?.querySelector<HTMLElement>('button')?.focus();
   }
 
   function handleModelChange(
@@ -182,7 +194,12 @@
         ? ` · ${option.reasoningEffort}`
         : ''}
     </p>
-    {#if option.hint}<p class="type-body text-muted-foreground break-words">{option.hint}</p>{/if}
+    {#if option.hint}
+      <!-- Keep the text flush with the tags: `whitespace-pre-line` would show
+           formatter indentation as an extra blank line. -->
+      <!-- prettier-ignore -->
+      <p class="type-body text-muted-foreground break-words whitespace-pre-line">{option.hint}</p>
+    {/if}
   {/each}
 {:else}
   <SettingsFieldRow
@@ -191,10 +208,13 @@
     description={m.settings_aiBehavior_modelOptions_description()}
     compact
   >
-    <div class="flex min-w-0 flex-col gap-2">
+    <!-- Each option is a stacked block (picker / hint / Remove). The gap
+         between blocks (and before Add) is larger than any gap inside one, so
+         each Remove reads as belonging to its own option. -->
+    <div class="flex min-w-0 flex-col gap-6" bind:this={listEl}>
       {#each rows as row, index (row.key)}
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <div class="min-w-0 max-w-full">
+        <div class="flex min-w-0 flex-col items-start gap-2" data-model-option-row>
+          <div class="min-w-0 max-w-full" data-model-option-picker>
             <ModelPicker
               {workspaceId}
               selectedModel={pickerModelId(row) || undefined}
@@ -208,28 +228,28 @@
               onReasoningChange={(effort) => handleEffortChange(index, effort ?? undefined)}
             />
           </div>
-          <Input
-            type="text"
+          <!-- `field-sizing: content` sizes the box from its text whenever it
+               is laid out — including the moment the hidden Advanced section
+               is revealed and on width changes — clamped to ≈3–8 lines. The
+               shared autoResize measures only on mount/input, which reads 0
+               inside the hidden disclosure and clips saved hints. -->
+          <Textarea
             value={row.hint}
+            rows={3}
             onblur={(e) => handleHintBlur(index, e.currentTarget.value.trim())}
-            onkeydown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                e.currentTarget.blur();
-              }
-            }}
             placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
-            class="min-w-0 flex-1 basis-32"
+            class="max-h-[162px] min-h-[72px] w-full resize-none overflow-y-auto py-2 field-sizing-content"
           />
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="xs"
             type="button"
             onclick={() => removeRow(index)}
             aria-label={m.settings_aiBehavior_modelOptions_remove_ariaLabel()}
             class="shrink-0"
           >
-            <Fa icon={faXmark} class="size-3.5" />
+            {#snippet leadingIcon()}<Fa icon={faXmark} class="size-3" />{/snippet}
+            {m.settings_aiBehavior_modelOptions_remove_label()}
           </Button>
         </div>
       {/each}

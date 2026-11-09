@@ -214,3 +214,100 @@ describe('SpecialistModelOptions named profiles (§5.54)', () => {
     ]);
   });
 });
+
+describe('SpecialistModelOptions stacked hint and remove', () => {
+  afterEach(() => cleanup());
+
+  const saved = [
+    { model: 'first-model', hint: 'first hint' },
+    { model: 'second-model', hint: 'second hint' },
+  ];
+
+  it('renders the hint as a textarea where Enter inserts a newline without saving', async () => {
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, { savedOptions: saved, onCommit });
+
+    const [hint] = screen.getAllByRole('textbox');
+    expect(hint.tagName).toBe('TEXTAREA');
+    hint.focus();
+    const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    hint.dispatchEvent(enter);
+
+    // The default action (newline insertion) is not suppressed, the box
+    // keeps focus, and nothing saves.
+    expect(enter.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(hint);
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('saves a changed multi-line hint exactly once on blur, trimmed with line breaks kept', async () => {
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, { savedOptions: saved, onCommit });
+
+    const [hint] = screen.getAllByRole('textbox') as HTMLTextAreaElement[];
+    await fireEvent.input(hint, { target: { value: '  line one\nline two\n\n' } });
+    expect(onCommit).not.toHaveBeenCalled();
+    await fireEvent.blur(hint);
+
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith([
+      { model: 'first-model', hint: 'line one\nline two' },
+      { model: 'second-model', hint: 'second hint' },
+    ]);
+
+    // Leaving again without a change does not save a second time.
+    await fireEvent.blur(hint);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not save when a hint on a draft option (no model) loses focus', async () => {
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, { savedOptions: [], onCommit });
+
+    await fireEvent.click(screen.getByText('Add model option'));
+    const hint = screen.getByRole('textbox');
+    await fireEvent.input(hint, { target: { value: 'draft hint' } });
+    await fireEvent.blur(hint);
+
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('removes only its own option and saves; removing a draft option does not save', async () => {
+    const onCommit = vi.fn();
+    render(SpecialistModelOptions, { savedOptions: saved, onCommit });
+
+    await fireEvent.click(screen.getByText('Add model option'));
+    let removes = screen.getAllByRole('button', { name: 'Remove model option' });
+    expect(removes).toHaveLength(3);
+
+    // Draft (third) option: local only.
+    await fireEvent.click(removes[2]);
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(screen.getAllByRole('textbox')).toHaveLength(2);
+
+    removes = screen.getAllByRole('button', { name: 'Remove model option' });
+    await fireEvent.click(removes[0]);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith([{ model: 'second-model', hint: 'second hint' }]);
+    const remaining = screen.getAllByRole('textbox') as HTMLTextAreaElement[];
+    expect(remaining.map((el) => el.value)).toEqual(['second hint']);
+  });
+
+  it('moves keyboard focus to the new option model picker after Add', async () => {
+    render(SpecialistModelOptions, { savedOptions: saved, onCommit: vi.fn() });
+
+    await fireEvent.click(screen.getByText('Add model option'));
+    await vi.waitFor(() => {
+      const pickers = screen.getAllByTestId('mock-model-picker');
+      expect(pickers).toHaveLength(3);
+      expect(pickers[2].contains(document.activeElement)).toBe(true);
+    });
+  });
+
+  it('shows the visible text "Remove" with the accessible name "Remove model option"', () => {
+    render(SpecialistModelOptions, { savedOptions: saved.slice(0, 1), onCommit: vi.fn() });
+
+    const remove = screen.getByRole('button', { name: 'Remove model option' });
+    expect(remove.textContent?.trim()).toBe('Remove');
+  });
+});
