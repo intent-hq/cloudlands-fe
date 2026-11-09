@@ -821,26 +821,6 @@ describe('agent-session-slice reducer', () => {
       expect(next).not.toBe(state);
       expect(next.byAgentId['a1'].metadata?.taskNoteId).toBe('note-42');
     });
-
-    it('applies an upsert when only the sandbox metadata fields settle (async CoW provisioning)', () => {
-      const state = agentSessionReducer(initialState, upsertSession(makeSession('a1', 'ws-1')));
-
-      const next = agentSessionReducer(
-        state,
-        upsertSession(
-          makeSession('a1', 'ws-1', {
-            metadata: {
-              sandboxId: 'sbx-1',
-              sandboxPath: '/sandboxes/sbx-1',
-              sandboxBranch: 'agent/sbx-1',
-            } as any,
-          }),
-        ),
-      );
-
-      expect(next).not.toBe(state);
-      expect(next.byAgentId['a1'].metadata?.sandboxPath).toBe('/sandboxes/sbx-1');
-    });
   });
 
   describe('removeSession', () => {

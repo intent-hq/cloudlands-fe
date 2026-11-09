@@ -3,11 +3,10 @@
   /**
    * CheckoutModePill - Tiny, quiet metadata pill showing how the workspace
    * checkout was provisioned (PROTOCOL §5.1). Renders nothing when
-   * `checkoutMode` is absent (non-daemon-provisioned checkouts). A `cow`
-   * checkout is labeled "CoW" only while effective CoW agent isolation is
-   * active (the `workspace.cowIsolation` setting is on and the machine
-   * supports CoW); otherwise agents work directly in the checkout, so the
-   * pill says "Direct".
+   * `checkoutMode` is absent (non-daemon-provisioned checkouts). The label
+   * is the real `checkoutMode`: a `cow` checkout always says "CoW", whatever
+   * the `workspace.cowIsolation` setting says (per-agent CoW sandboxes are
+   * retired, so the setting no longer changes how agents use the checkout).
    *
    * When a workspace is provided, hovering the pill opens the disk-usage
    * tooltip and fetches the footprint on demand via the `workspace.diskUsage`
@@ -31,7 +30,6 @@
   import { selectHidesAgentLifecycleActions } from '$store/renderer/slices/workspace/workspace-selectors';
   import { runShrinkWorkspaceAction } from './shrink-workspace-action';
   import { pollWorkspaceDiskUsage } from './disk-usage-poll';
-  import { resolveEffectiveIsolationMode } from './initializer/isolation-mode';
   import Fa from 'svelte-fa';
   import { faArrowRight, faCodeFork, faLayerGroup } from '@fortawesome/free-solid-svg-icons';
 
@@ -61,54 +59,17 @@
   $effect(() => workspaceIdStore.set(workspace?.id ?? ''));
   const hidesAgentLifecycleActions$ = selectHidesAgentLifecycleActions(workspaceIdStore);
 
-  // A `cow` checkoutMode records that the clone was provisioned with CoW
-  // primitives, not that agents are isolated from it: cache-hydrated
-  // GitHub-pick workspaces persist `cow` while agents work directly in the
-  // checkout (isolation follows the BE-owned `workspace.cowIsolation`
-  // setting, PROTOCOL §5.1/§5.12). Show "CoW" only when effective CoW agent
-  // isolation is active; default to "Direct" until the async settings read
-  // resolves so the label never flashes "CoW"→"Direct". The setting is
-  // machine-global, so the resolver reads it through a module-level cached
-  // single-flight promise (cow-isolation-setting.ts) — every pill instance
-  // and every list-refetch re-run share one RPC, invalidated on
-  // `settings:changed`.
-  let cowIsolationActive = $state(false);
-  // Bumped on every effect re-run and on teardown so a resolver settling for a
-  // previous workspace/mode never applies its stale result out of order.
-  let isolationGeneration = 0;
-  $effect(() => {
-    // Reset to the Direct default before resolving so a prior workspace's
-    // "CoW" never lingers across a prop change while the read is in flight.
-    cowIsolationActive = false;
-    if (mode !== 'cow') return;
-    const ws = workspace;
-    const gen = ++isolationGeneration;
-    void resolveEffectiveIsolationMode(ws?.cowSupported === true ? [ws] : undefined).then(
-      (resolved) => {
-        if (gen === isolationGeneration) cowIsolationActive = resolved === 'cow';
-      },
-    );
-    return () => {
-      isolationGeneration += 1;
-    };
-  });
-
-  const effectiveMode = $derived(mode === 'cow' ? (cowIsolationActive ? 'cow' : 'direct') : mode);
   const label = $derived(
-    effectiveMode === 'cow'
+    mode === 'cow'
       ? m.workspace_checkoutModePill_cow_label()
-      : effectiveMode === 'worktree'
+      : mode === 'worktree'
         ? m.workspace_checkoutModePill_worktree_label()
-        : effectiveMode === 'direct'
+        : mode === 'direct'
           ? m.workspace_checkoutModePill_direct_label()
           : null,
   );
   const modeIcon = $derived(
-    effectiveMode === 'cow'
-      ? faLayerGroup
-      : effectiveMode === 'worktree'
-        ? faCodeFork
-        : faArrowRight,
+    mode === 'cow' ? faLayerGroup : mode === 'worktree' ? faCodeFork : faArrowRight,
   );
 
   /** Poll cadence while the tooltip is open and a daemon walk is in flight. */
@@ -235,11 +196,11 @@
     <div
       class="flex items-center gap-1.5 text-xs text-subtle"
       aria-label={m.workspace_checkoutModePill_tooltip({ label: label ?? '' })}
-      data-effective-checkout-mode={effectiveMode}
+      data-checkout-mode-label={mode}
     >
       <span
         class="grid size-4 shrink-0 place-items-center"
-        data-checkout-mode-icon={effectiveMode}
+        data-checkout-mode-icon={mode}
         aria-hidden="true"
       >
         <Fa icon={modeIcon} size="xs" />

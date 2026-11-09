@@ -237,11 +237,6 @@ vi.mock('$lib/components/workspace/shrink-workspace-action', () => ({
   SHRINK_WORKSPACE_PROMPT: '',
 }));
 
-vi.mock('$lib/components/workspace/initializer/isolation-mode', () => ({
-  isolationNoun: vi.fn(() => ''),
-  resolveEffectiveIsolationMode: vi.fn().mockResolvedValue('cow'),
-}));
-
 vi.mock('$lib/components/workspace/disk-usage-poll', () => ({
   pollWorkspaceDiskUsage: mocks.pollDiskUsage,
 }));

@@ -224,15 +224,6 @@ vi.mock('$lib/components/workspace/shrink-workspace-action', () => ({
   SHRINK_WORKSPACE_PROMPT: '',
 }));
 
-// The pill labels `cow` checkouts "CoW" only while effective CoW agent
-// isolation is active (an async settings read). These tests cover pill
-// placement, not label semantics (CheckoutModePill.test.ts does), so pin
-// the resolver to the active-isolation outcome.
-vi.mock('$lib/components/workspace/initializer/isolation-mode', () => ({
-  isolationNoun: vi.fn(() => ''),
-  resolveEffectiveIsolationMode: vi.fn().mockResolvedValue('cow'),
-}));
-
 async function renderProgressCard(
   overrides: Partial<Workspace> = {},
   props: { compact?: boolean } = {},
@@ -248,7 +239,7 @@ async function renderProgressCard(
   const result = render(WorkspaceProgressCard, {
     props: { workspaceId: mocks.workspaceEntity.id, ...props },
   });
-  // Flush the pill's async isolation-mode label resolution + re-render.
+  // Flush pending effects + re-render.
   await tick();
   await new Promise((resolve) => setTimeout(resolve, 0));
   await tick();
