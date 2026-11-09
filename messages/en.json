@@ -8197,6 +8197,8 @@
   "inlineHtml_preview_export_error": "Could not export this configuration.",
   "workspace_repoSelector_search_placeholder": "Search codebases",
   "workspace_repoSelector_addRepository_label": "Add codebase",
+  "workspace_repoSelector_searchWithFolders_placeholder": "Search codebases or folders",
+  "workspace_repoSelector_addRepositoryOrFolder_label": "Add codebase or folder",
   "workspace_repoSelector_linkRepo_tab": "Link repo",
   "workspace_repoSelector_localFolder_tab": "Local folder",
   "daemonStartup_preparing_label": "Starting intentd",

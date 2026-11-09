@@ -8197,6 +8197,8 @@
   "inlineHtml_preview_export_error": "Impossible d’exporter cette configuration.",
   "workspace_repoSelector_search_placeholder": "Rechercher une base de code",
   "workspace_repoSelector_addRepository_label": "Ajouter une base de code",
+  "workspace_repoSelector_searchWithFolders_placeholder": "Rechercher des bases de code ou des dossiers",
+  "workspace_repoSelector_addRepositoryOrFolder_label": "Ajouter une base de code ou un dossier",
   "workspace_repoSelector_linkRepo_tab": "Lier un dépôt",
   "workspace_repoSelector_localFolder_tab": "Dossier local",
   "daemonStartup_preparing_label": "Démarrage d’intentd",

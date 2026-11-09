@@ -8197,6 +8197,8 @@
   "inlineHtml_preview_export_error": "無法匯出此設定。",
   "workspace_repoSelector_search_placeholder": "搜尋程式碼庫",
   "workspace_repoSelector_addRepository_label": "新增程式碼庫",
+  "workspace_repoSelector_searchWithFolders_placeholder": "搜尋程式碼庫或資料夾",
+  "workspace_repoSelector_addRepositoryOrFolder_label": "新增程式碼庫或資料夾",
   "workspace_repoSelector_linkRepo_tab": "連結儲存庫",
   "workspace_repoSelector_localFolder_tab": "本機資料夾",
   "daemonStartup_preparing_label": "正在啟動 intentd",

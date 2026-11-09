@@ -8197,6 +8197,8 @@
   "inlineHtml_preview_export_error": "이 구성을 내보내지 못했습니다.",
   "workspace_repoSelector_search_placeholder": "코드베이스 검색",
   "workspace_repoSelector_addRepository_label": "코드베이스 추가",
+  "workspace_repoSelector_searchWithFolders_placeholder": "코드베이스 또는 폴더 검색",
+  "workspace_repoSelector_addRepositoryOrFolder_label": "코드베이스 또는 폴더 추가",
   "workspace_repoSelector_linkRepo_tab": "저장소 연결",
   "workspace_repoSelector_localFolder_tab": "로컬 폴더",
   "daemonStartup_preparing_label": "intentd 시작 중",

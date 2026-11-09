@@ -8197,6 +8197,8 @@
   "inlineHtml_preview_export_error": "Diese Konfiguration konnte nicht exportiert werden.",
   "workspace_repoSelector_search_placeholder": "Codebasen suchen",
   "workspace_repoSelector_addRepository_label": "Codebasis hinzufügen",
+  "workspace_repoSelector_searchWithFolders_placeholder": "Codebasen oder Ordner suchen",
+  "workspace_repoSelector_addRepositoryOrFolder_label": "Codebasis oder Ordner hinzufügen",
   "workspace_repoSelector_linkRepo_tab": "Verknüpfen",
   "workspace_repoSelector_localFolder_tab": "Lokaler Ordner",
   "daemonStartup_preparing_label": "intentd wird gestartet",

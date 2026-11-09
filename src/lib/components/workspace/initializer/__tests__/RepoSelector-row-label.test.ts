@@ -2,13 +2,14 @@
  * @vitest-environment jsdom
  *
  * The New Workspace form picker's row label follows what the list can hold:
- * "Codebase" whenever a git repository is listed; otherwise "Folder" with no
+ * the selection when there is one ("Folder" for a plain folder, "Codebase" for a
+ * git repository); with nothing selected, "Codebase" whenever a git repository is listed; otherwise "Folder" with no
  * forge connected or a plain folder listed; otherwise (forge connected, empty
  * list) "Codebase". Plain folders not offered (Labs off) keep "Codebase". The
  * label never reads "Codebase/Project" or "Codebase/Folder" and updates live.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -308,6 +309,58 @@ describe('RepoSelector form row label', () => {
     expect(rowLabel(container)).toBe('Folder');
   });
 
+  it('reads Folder for a selected plain folder in a mixed list', () => {
+    for (const forgeState of ['none', 'connected', 'unknown'] as const) {
+      mocks.forgeState = forgeState;
+      mocks.state.recentRepos = [gitRepo, forgeRepo, plainFolder];
+      const { container } = render(RepoSelector, {
+        props: { rowLabel: 'Codebase', value: plainFolder.path, plainFolderSelected: true },
+      });
+      expect(rowLabel(container)).toBe('Folder');
+      cleanup();
+    }
+  });
+
+  it('reads Folder for a selected recent plain-folder row', () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo, plainFolder];
+    const { container } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: plainFolder.path },
+    });
+    expect(rowLabel(container)).toBe('Folder');
+  });
+
+  it('reads Codebase for a selected git repository in a plain-folder list', () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [plainFolder, gitRepo];
+    const { container } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: gitRepo.path },
+    });
+    expect(rowLabel(container)).toBe('Codebase');
+  });
+
+  it('keeps Codebase for a selected plain folder with plain folders not offered', () => {
+    mocks.plainFoldersOffered = false;
+    mocks.state.recentRepos = [gitRepo, plainFolder];
+    const { container } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: plainFolder.path, plainFolderSelected: true },
+    });
+    expect(rowLabel(container)).toBe('Codebase');
+  });
+
+  it('switches live between Folder and Codebase as the selection changes', async () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo, plainFolder];
+    const { container, rerender } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: gitRepo.path },
+    });
+    expect(rowLabel(container)).toBe('Codebase');
+    await rerender({ rowLabel: 'Codebase', value: plainFolder.path, plainFolderSelected: true });
+    await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
+    await rerender({ rowLabel: 'Codebase', value: gitRepo.path, plainFolderSelected: false });
+    await waitFor(() => expect(rowLabel(container)).toBe('Codebase'));
+  });
+
   it('keeps Codebase for a selected git folder not in recents yet', () => {
     mocks.forgeState = 'none';
     mocks.state.recentRepos = [plainFolder];
@@ -355,5 +408,54 @@ describe('RepoSelector form row label', () => {
     await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
     expect(container.textContent).not.toContain('Codebase/Project');
     expect(container.textContent).not.toContain('Codebase/Folder');
+  });
+});
+
+describe('RepoSelector form search and add labels', () => {
+  afterEach(() => cleanup());
+
+  async function openPicker() {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo];
+    const { container } = renderForm();
+    await fireEvent.click(container.querySelector('button')!);
+    return await screen.findByRole('dialog', { name: 'Codebase' });
+  }
+
+  it('names folders when plain folders are offered (Labs on)', async () => {
+    const dialog = await openPicker();
+    expect(within(dialog).getByRole('searchbox').getAttribute('placeholder')).toBe(
+      'Search codebases or folders',
+    );
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Add codebase or folder' }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('heading', { name: 'Add codebase or folder' })).toBeTruthy(),
+    );
+  });
+
+  it('labels an empty form field by the add action', () => {
+    for (const [offered, label] of [
+      [true, 'Add codebase or folder'],
+      [false, 'Add codebase'],
+    ] as const) {
+      mocks.plainFoldersOffered = offered;
+      const { container } = render(RepoSelector, { props: { rowLabel: 'Codebase', value: '' } });
+      expect(container.querySelector('button')?.textContent).toContain(label);
+      if (offered) expect(container.querySelector('button')?.textContent).toContain('folder');
+      else expect(container.querySelector('button')?.textContent).not.toContain('folder');
+      cleanup();
+    }
+  });
+
+  it('keeps codebase-only labels with plain folders not offered (Labs off)', async () => {
+    mocks.plainFoldersOffered = false;
+    const dialog = await openPicker();
+    expect(within(dialog).getByRole('searchbox').getAttribute('placeholder')).toBe(
+      'Search codebases',
+    );
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Add codebase' }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('heading', { name: 'Add codebase' })).toBeTruthy(),
+    );
   });
 });
