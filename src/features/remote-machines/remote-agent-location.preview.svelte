@@ -553,8 +553,7 @@
           isPickerScene(s) && s !== 'picker-missing'
             ? {
                 ...mac,
-                capabilities:
-                  s === 'picker-machine-without-models' ? NO_MODELS_REPORT : MAC_REPORT,
+                capabilities: s === 'picker-machine-without-models' ? NO_MODELS_REPORT : MAC_REPORT,
                 observedAt: reportedAt(s),
               }
             : mac,
