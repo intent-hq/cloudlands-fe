@@ -118,6 +118,14 @@ describe('fitRadialLabels', () => {
     expect(fit.lines).toEqual([['Continue'], ['Cancel'], []]);
   });
 
+  it('grows the ring to keep labels on one line when one line can fit', () => {
+    const fit = fitRadialLabels(['Commit and push', 'Cancel'], options);
+    expect(fit.radius).toBeGreaterThan(150);
+    expect(fit.lines[0]).toEqual(['Commit and push']);
+    expect(measure('Commit and push')).toBeLessThanOrEqual(radialArcWidth(fit.radius));
+    expect(measure('Commit and push')).toBeGreaterThan(radialArcWidth(fit.radius - 2));
+  });
+
   it('grows the ring just enough for a long label to fit on two lines', () => {
     const label = 'Address every unresolved review comment';
     const fit = fitRadialLabels([label, 'Cancel'], options);

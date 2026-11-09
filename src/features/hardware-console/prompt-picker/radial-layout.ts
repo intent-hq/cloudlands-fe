@@ -134,24 +134,31 @@ function ellipsize(text: string, width: number, measure: (text: string) => numbe
 
 /**
  * Pick the smallest ring radius (from `minRadius`, growing by `step`) at
- * which every label wraps into at most two lines that fit its slot's arc, so
- * no label overlaps a neighbour. When even `maxRadius` is too small, labels
+ * which every label fits its slot's arc on one line — or, when no radius up
+ * to `maxRadius` allows that, on at most two lines — so no label overlaps a
+ * neighbour. When even `maxRadius` is too small, labels
  * are clamped to two lines and the overflow ends with an ellipsis.
  */
 export function fitRadialLabels(
   labels: readonly string[],
   { measure, minRadius, maxRadius, step = 2 }: RadialLabelFitOptions,
 ): RadialLabelFit {
-  const fits = (radius: number): boolean => {
+  const fits = (radius: number, maxLines: number): boolean => {
     const width = radialArcWidth(radius);
     return labels.every((label) => {
       const lines = wrapWords(label, width, measure);
-      return lines.length <= MAX_LABEL_LINES && lines.every((line) => measure(line) <= width);
+      return lines.length <= maxLines && lines.every((line) => measure(line) <= width);
     });
   };
+  const smallestFit = (maxLines: number): number | null => {
+    for (let radius = minRadius; ; radius = Math.min(radius + step, maxRadius)) {
+      if (fits(radius, maxLines)) return radius;
+      if (radius >= maxRadius) return null;
+    }
+  };
 
-  let radius = minRadius;
-  while (radius < maxRadius && !fits(radius)) radius = Math.min(radius + step, maxRadius);
+  // Prefer a larger ring with single-line labels; wrap only when needed.
+  const radius = smallestFit(1) ?? smallestFit(MAX_LABEL_LINES) ?? maxRadius;
 
   const width = radialArcWidth(radius);
   const lines = labels.map((label) => {
