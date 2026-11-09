@@ -46,6 +46,14 @@ export const selectCloudSandboxes = store.createSelector((state): RemoteMachine[
   ),
 );
 
+/** Paused sandboxes, which no live link counts. */
+export const selectPausedCloudSandboxCount = store.createSelector(
+  (state) =>
+    Object.values(state.cloudMachines?.machines ?? {}).filter(
+      (machine) => machine.cloud?.state === 'paused',
+    ).length,
+);
+
 export const selectCloudSandboxReadAt = store.createSelector(
   (state) => state.cloudMachines?.readAt ?? {},
 );
