@@ -19,6 +19,7 @@ import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pa
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
 import { isElectronTestPathInput } from './check-electron-test-paths.mjs';
+import { SKIP_WORKFLOW_LINT_ENV } from './check-workflows.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
 import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
 import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
@@ -459,9 +460,15 @@ function isKnownNonCode(file) {
   );
 }
 
-// `lint:workflows` (actionlint) inputs: the workflows and their lint config.
+// `lint:workflows` (actionlint) inputs: the workflows, the local actions they
+// use, the lint config and the gate itself. Only these select its lane.
 function isWorkflowLintInput(file) {
-  return /^\.github\/(?:workflows\/[^/]+|actionlint)\.ya?ml$/.test(file);
+  return (
+    file.startsWith('.github/workflows/') ||
+    /^\.github\/actions\/.+\/action\.ya?ml$/.test(file) ||
+    /^\.github\/actionlint\.ya?ml$/.test(file) ||
+    file === 'scripts/check-workflows.mjs'
+  );
 }
 
 function isArchitectureSource(file) {
@@ -471,7 +478,6 @@ function isArchitectureSource(file) {
     file === 'scripts/type-check.ts' ||
     // Electron helpers run only in the merge queue; lint:electron-test-paths checks them.
     isElectronTestPathInput(file) ||
-    isWorkflowLintInput(file) ||
     basename(file) === 'AGENTS.md'
   );
 }
@@ -562,6 +568,7 @@ export function createVerificationPlan(files, options = {}) {
     (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
   );
   let architecture = files.some(isArchitectureSource);
+  const workflowLint = files.some(isWorkflowLintInput);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
   const deadCode = files.some(
     (file) =>
@@ -621,13 +628,18 @@ export function createVerificationPlan(files, options = {}) {
     );
   if (lintFiles.length)
     checks.push(command('eslint', 'ESLint (changed files)', ['exec', 'eslint', ...lintFiles]));
+  // actionlint can hang on a loaded host (rhysd/actionlint#702; cloudlands-fe#4332),
+  // so the architecture lane skips it and it runs only for its own inputs.
   if (architecture)
-    checks.push(
-      command('architecture', 'Architecture gates (repo-wide static scans)', [
+    checks.push({
+      ...command('architecture', 'Architecture gates (repo-wide static scans)', [
         'run',
         'lint:architecture',
       ]),
-    );
+      env: { [SKIP_WORKFLOW_LINT_ENV]: '1' },
+    });
+  if (workflowLint)
+    checks.push(command('workflows', 'Workflow lint (actionlint)', ['run', 'lint:workflows']));
   if (typeCheckWrapper)
     checks.push(
       command('type-check-validate', 'Type check (validate wrapper)', [

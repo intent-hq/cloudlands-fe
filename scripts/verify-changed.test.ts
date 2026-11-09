@@ -33,6 +33,7 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
+import { SKIP_WORKFLOW_LINT_ENV } from './check-workflows.mjs';
 import { HELD_LOCK_ENV, lockOwner, worktreeCtPort } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
@@ -1351,12 +1352,43 @@ describe('verification planning', () => {
     expect(spec.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
-  it('runs the architecture gates (actionlint) when a workflow or its lint config changes', () => {
+  // actionlint can hang on a loaded host (rhysd/actionlint#702) and failed the
+  // architecture lane of a change with no workflow edits (cloudlands-fe#4332).
+  const dryRun = (files: string[], root: string) => {
+    const lines: string[] = [];
+    printPlan(createVerificationPlan(files, { root, ctTests: [] }), true, (line: string) =>
+      lines.push(line),
+    );
+    return lines.join('\n');
+  };
+
+  it('runs actionlint in its own lane only when a workflow lint input changes', () => {
     const changed = [
       '.github/workflows/promote-beta.yml',
       '.github/workflows/example.yaml',
       '.github/actionlint.yaml',
       '.github/actionlint.yml',
+      '.github/actions/checkout-pinned/action.yml',
+      'scripts/check-workflows.mjs',
+    ];
+    const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, ''])));
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      const workflows = plan.checks.find((check) => check.id === 'workflows');
+      expect(workflows?.args, file).toEqual(['run', 'lint:workflows']);
+      expect(workflows?.env, file).toBeUndefined();
+      expect(dryRun([file], root), file).toContain('pnpm run lint:workflows');
+    }
+  });
+
+  it('skips actionlint for changes that touch no workflow lint input', () => {
+    const changed = [
+      'src/main/index.ts',
+      'AGENTS.md',
+      'scripts/check-saga-watcher-ownership.mjs',
+      'package.json',
+      'unknown.toml',
+      '.github/dependabot.yml',
     ];
     const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, ''])));
     for (const file of changed) {
@@ -1364,7 +1396,13 @@ describe('verification planning', () => {
       expect(
         plan.checks.map((check) => check.id),
         file,
-      ).toContain('architecture');
+      ).not.toContain('workflows');
+      const architecture = plan.checks.find((check) => check.id === 'architecture');
+      if (architecture) {
+        expect(architecture.args, file).toEqual(['run', 'lint:architecture']);
+        expect(architecture.env, file).toEqual({ [SKIP_WORKFLOW_LINT_ENV]: '1' });
+      }
+      expect(dryRun([file], root), file).not.toContain('lint:workflows');
     }
   });
 
@@ -1749,9 +1787,9 @@ describe('verification planning', () => {
 
     const lines: string[] = [];
     printPlan(plan, true, (line: string) => lines.push(line));
-    const commandLines = lines.filter((line) => /: pnpm (?:exec|run) /.test(line));
+    const commandLines = lines.filter((line) => /: (?:[A-Z_]+=\S+ )*pnpm (?:exec|run) /.test(line));
     expect(commandLines).toHaveLength(plan.checks.length);
-    for (const line of commandLines) expect(line).toMatch(/: pnpm (?:exec|run) /);
+    for (const line of commandLines) expect(line).toMatch(/: (?:[A-Z_]+=\S+ )*pnpm (?:exec|run) /);
   });
 
   it('selects a component test that directly imports a changed Svelte component', () => {

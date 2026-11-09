@@ -25,6 +25,7 @@ import {
   resolveActionlint,
   resolveShellcheck,
   runActionlint,
+  SKIP_WORKFLOW_LINT_ENV,
   verifyChecksum,
 } from './check-workflows.mjs';
 
@@ -276,6 +277,27 @@ describe('check-workflows shellcheck requirement', () => {
         cacheDir: tempDir('check-workflows-cache-'),
       }),
     ).resolves.toBe(2);
+  });
+});
+
+describe('check-workflows skip for verify:changed', () => {
+  const run = (env: NodeJS.ProcessEnv) => {
+    process.env.ACTIONLINT_SHELLCHECK = '/nonexistent/shellcheck';
+    return main({
+      cwd: repoWithWorkflow('ok.yml', CLEAN_WORKFLOW),
+      cacheDir: tempDir('check-workflows-cache-'),
+      env,
+    });
+  };
+
+  it('skips actionlint when verify:changed runs it in its own lane', async () => {
+    await expect(run({ [SKIP_WORKFLOW_LINT_ENV]: '1' })).resolves.toBe(0);
+  });
+
+  it('never skips on GitHub Actions or for another value', async () => {
+    await expect(run({ [SKIP_WORKFLOW_LINT_ENV]: '1', GITHUB_ACTIONS: 'true' })).resolves.toBe(2);
+    await expect(run({ [SKIP_WORKFLOW_LINT_ENV]: '0' })).resolves.toBe(2);
+    await expect(run({})).resolves.toBe(2);
   });
 });
 
