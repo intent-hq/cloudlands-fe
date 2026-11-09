@@ -59,7 +59,11 @@ describe('SPECIALISTS', () => {
     );
     const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
 
-    expect(specialist).toMatchObject({ id: 'product-manager', name: 'Product Manager', icon: 'coordinator' });
+    expect(specialist).toMatchObject({
+      id: 'product-manager',
+      name: 'Product Manager',
+      icon: 'coordinator',
+    });
     expect(specialist).not.toHaveProperty('defaultModel');
     expect(specialist?.hidden).toBeUndefined();
     expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
