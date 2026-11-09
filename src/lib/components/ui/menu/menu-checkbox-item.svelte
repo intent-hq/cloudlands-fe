@@ -8,7 +8,6 @@
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
   import Indicator from './menu-indicator.svelte';
-  import MenuSwitch from './menu-switch.svelte';
   import { useMenuIconColumn } from './menu-layout-context.svelte';
 
   let {
@@ -58,9 +57,15 @@
     </span>
   {/if}
   {@render children?.()}
-  {#if indicator === 'switch' && !indeterminate}
-    <MenuSwitch {checked} />
-  {:else}
-    <Indicator state={indeterminate ? 'mixed' : checked ? 'checked' : 'empty'} />
-  {/if}
+  <Indicator
+    state={indicator === 'switch' && !indeterminate
+      ? checked
+        ? 'on'
+        : 'off'
+      : indeterminate
+        ? 'mixed'
+        : checked
+          ? 'checked'
+          : 'empty'}
+  />
 </MenuPrimitive.CheckboxItem>

@@ -21,7 +21,7 @@
 <script lang="ts">
   import Fa from 'svelte-fa';
   import { faArrowsRotate, faPen } from '@fortawesome/free-solid-svg-icons';
-  import * as Menu from '$lib/components/ui/menu';
+  import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { store } from '$store/renderer/store';
   import {

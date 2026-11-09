@@ -7,9 +7,8 @@
   import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
-  import { getPageTargetIndex } from '$lib/components/ui/menu';
+  import { getPageTargetIndex, Indicator } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
-  import MenuSwitch from '../menu/menu-switch.svelte';
   import {
     menuItem,
     menuOverlay,
@@ -1069,7 +1068,7 @@
 
           <!-- Trailing switch, submenu arrow, or single-select check -->
           {#if option.type === 'toggle'}
-            <MenuSwitch checked={!!option.checked} />
+            <Indicator state={option.checked ? 'on' : 'off'} />
           {:else if option.type === 'submenu'}
             <Fa icon={faChevronRight} class="h-3 w-3 shrink-0 text-ghost" />
           {:else if !multiple && !option.type && isSelected(option.value)}

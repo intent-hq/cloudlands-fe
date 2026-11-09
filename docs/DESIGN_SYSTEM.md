@@ -436,7 +436,7 @@ hints. Prefer the semantic components in feature code. Recipes provide styling, 
 checked-state, or dismissal behavior.
 
 `Menu.Indicator` owns the trailing glyph, slot, and decorative `aria-hidden` contract for
-menus and value pickers. Its `state` is `checked`, `mixed`, `submenu`, or `empty`; keep the
+menus and value pickers. Its `state` is `checked`, `mixed`, `submenu`, `empty`, or `on` / `off` (a switch); keep the
 empty state rendered to reserve the same trailing space. It accepts optional `data-slot`,
 `class`, and span attributes. It is decoration only: the host still owns `aria-checked`
 or `aria-selected`. Do not recreate check/minus/chevron glyphs in feature rows.
