@@ -21,7 +21,7 @@ import { connectionsListReceived } from '$store/renderer/slices/connections/conn
 import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
 import type { ConnectionRecord } from '$shared/types/connections';
 import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
-import { E2B_SANDBOXES } from '../../test/cloud-machines-preview';
+import { E2B_SANDBOXES } from '../../../test/cloud-machines-preview';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
 import { catalogNow } from '$lib/component-catalog/catalog-clock';
 
