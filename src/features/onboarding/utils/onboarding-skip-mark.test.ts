@@ -23,6 +23,7 @@ describe('onboarding skip mark', () => {
 
   it('is scoped to the backend that recorded it', () => {
     recordOnboardingSkipMark('remote-a');
+    expect(stored.get('backend:remote-a:intent:onboarding-skip:v1')).toBe('1');
     expect(hasOnboardingSkipMark('remote-a')).toBe(true);
     expect(hasOnboardingSkipMark('remote-b')).toBe(false);
     expect(hasOnboardingSkipMark(LOCAL_CONNECTION_ID)).toBe(false);

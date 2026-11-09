@@ -99,6 +99,7 @@
     selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
+    selectWindowBackendListedWorkspaces,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -192,6 +193,7 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  const windowBackendListedWorkspaces$ = selectWindowBackendListedWorkspaces();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const noBackendBound$ = selectNoBackendBound();
@@ -311,12 +313,14 @@
   // Once this backend lists any workspace, permanently skip the full-page
   // onboarding for it: later boots and empty windows fall back to Home.
   $effect(() => {
-    if (!$connectionsLoaded$ || $workspaceItems.length === 0) return;
+    if (!$windowBackendListedWorkspaces$) return;
     untrack(() => recordOnboardingSkipMark(getActiveBackendId(appStore.state)));
   });
   $effect(() => {
-    const onboardingSkipped =
-      $connectionsLoaded$ && untrack(() => isOnboardingSkippedForWindow(appStore.state));
+    // Unknown (null) until the window is bound to its backend.
+    const onboardingSkipped = $connectionsLoaded$
+      ? untrack(() => isOnboardingSkippedForWindow(appStore.state))
+      : null;
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,

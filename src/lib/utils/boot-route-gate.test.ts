@@ -340,6 +340,16 @@ describe('decideBootRoute', () => {
       ).toEqual({ kind: 'resolve', target: '/workspace/ws-1', openTabWorkspaceId: 'ws-1' });
     });
 
+    it('holds until the mark is readable, then resolves best-effort on timeout', () => {
+      const unknown = { onboardingSkipped: null, setupGate: 'redirect' as const };
+      expect(decideBootRoute(input(unknown))).toEqual({ kind: 'hold' });
+      expect(decideBootRoute(input({ ...unknown, holdTimedOut: true }))).toEqual({
+        kind: 'resolve',
+        target: null,
+        openTabWorkspaceId: null,
+      });
+    });
+
     it('still holds for the workspace list before the timeout', () => {
       expect(decideBootRoute(returning({ setupGate: 'pending' }))).toEqual({ kind: 'hold' });
     });

@@ -192,7 +192,7 @@ describe('(app)/+layout.svelte boot-route setup gate (regression)', () => {
         } as unknown as Workspace,
       ]),
     );
-    appStore.dispatch(setWorkspaceHasLoaded(true));
+    appStore.dispatch(setWorkspaceHasLoaded(true, LOCAL_CONNECTION_ID));
     // A persisted tab whose workspace is absent from this (partial) list
     // snapshot: the layout must neither land on it nor prune it.
     appStore.dispatch(

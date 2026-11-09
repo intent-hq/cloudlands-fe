@@ -80,9 +80,10 @@ export interface BootRouteDecisionInput {
   /**
    * This window's backend has had workspaces before (`hasOnboardingSkipMark`).
    * The first-run gate no longer applies and every fallback lands on Home
-   * ('/') instead of the full-page onboarding.
+   * ('/') instead of the full-page onboarding. Null while the window is not
+   * yet bound to its backend: hold (bounded) until the mark is readable.
    */
-  onboardingSkipped: boolean;
+  onboardingSkipped: boolean | null;
 }
 
 /**
@@ -126,7 +127,6 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
     tabsHydrated,
     currentTabId,
     holdTimedOut,
-    onboardingSkipped,
   } = input;
   if (bootPathname === null || !BOOT_GATE_ROUTES.has(bootPathname) || gateResolved) {
     return { kind: 'inapplicable' };
@@ -136,6 +136,10 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
   if (currentPathname !== bootPathname) {
     return { kind: 'resolve', target: null, openTabWorkspaceId: null };
   }
+  if (input.onboardingSkipped === null && !holdTimedOut) {
+    return { kind: 'hold' };
+  }
+  const onboardingSkipped = input.onboardingSkipped === true;
   if (setupGate === 'pending' && !holdTimedOut && !onboardingSkipped) {
     return { kind: 'hold' };
   }
