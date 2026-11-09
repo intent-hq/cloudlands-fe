@@ -8196,7 +8196,7 @@
   "inlineHtml_preview_exporting_label": "Wird exportiert…",
   "inlineHtml_preview_exported_description": "Unter {path} gespeichert",
   "inlineHtml_preview_export_error": "Diese Konfiguration konnte nicht exportiert werden.",
-  "workspace_repoSelector_search_placeholder": "Codebasis oder Ordner suchen",
+  "workspace_repoSelector_search_placeholder": "Codebasen oder Ordner suchen",
   "workspace_repoSelector_addRepository_label": "Codebasis oder Ordner hinzufügen",
   "workspace_repoSelector_linkRepo_tab": "Verknüpfen",
   "workspace_repoSelector_localFolder_tab": "Lokaler Ordner",
