@@ -13,7 +13,7 @@ import type { DockGestureProgress } from '../../../shared/dock-gesture-progress'
  * before any await. The first mark captures the dock display without the dock,
  * its owned popups or this overlay; later marks reuse that image unless the
  * screen's 16×16 difference hash moved by more than 12 bits or a navigation was
- * reported. Still marks use the frozen pixels they were started with and never
+ * reported. Recording draws keep the batch's coordinate image until Clear. Still marks use the frozen pixels they were started with and never
  * capture the desktop.
  */
 import { randomUUID } from 'node:crypto';
@@ -199,6 +199,7 @@ interface Hold {
 }
 
 interface SessionImage {
+  clipId?: string;
   width: number;
   height: number;
   hash: string | null;
@@ -1089,16 +1090,21 @@ export class DockAnnotationController implements AnnotationService {
     const previous = session.image;
     // Without two comparable hashes a change cannot be shown, so the image is kept.
     const comparable = !!previous?.hash && !!hash;
+    if (frozen.clipId && frozen.clipId !== host.clipIdentity?.()) return reject('stale');
+    const recordingImage =
+      !pick && !!frozen.clipId && previous?.clipId === frozen.clipId;
     const reuse =
       !!previous &&
-      !session.navigation &&
       previous.width === shot.width &&
       previous.height === shot.height &&
-      (!comparable ||
-        dockHashDistance(previous.hash, hash) <= DOCK_ANNOTATION_LIMITS.hashThreshold);
+      (recordingImage ||
+        ((pick || !frozen.clipId) &&
+          !session.navigation &&
+          (!comparable ||
+            dockHashDistance(previous.hash, hash) <= DOCK_ANNOTATION_LIMITS.hashThreshold)));
     const image: SessionImage = reuse
       ? previous!
-      : { width: shot.width, height: shot.height, hash };
+      : { width: shot.width, height: shot.height, hash, ...(frozen.clipId ? { clipId: frozen.clipId } : {}) };
     const view = dockAnnotationViewport(display.bounds, image, session.mode);
     if (!view) return reject('failed');
 
