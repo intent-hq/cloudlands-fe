@@ -8541,6 +8541,8 @@
   "cloudMachines_sandboxes_title": "E2B 沙盒",
   "cloudMachines_sandboxes_summary": "沙盒 · {running} 个运行中，{paused} 个已暂停",
   "cloudMachines_sandboxes_otherWorkspace": "其他",
+  "cloudMachines_sandboxes_group_ariaLabel_one": "{workspace}，{count} 个沙盒",
+  "cloudMachines_sandboxes_group_ariaLabel_many": "{workspace}，{count} 个沙盒",
   "cloudMachines_saved_toast": "E2B 设置已保存。",
   "cloudMachines_size_label": "{vcpu} vCPU · {memory} GiB",
   "cloudMachines_size_hourly": "每运行一小时约 {amount}。已暂停的沙盒不产生运行费用。",

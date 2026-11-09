@@ -8541,6 +8541,8 @@
   "cloudMachines_sandboxes_title": "E2B 샌드박스",
   "cloudMachines_sandboxes_summary": "샌드박스 · 실행 중 {running}개, 일시 중지 {paused}개",
   "cloudMachines_sandboxes_otherWorkspace": "기타",
+  "cloudMachines_sandboxes_group_ariaLabel_one": "{workspace}, 샌드박스 {count}개",
+  "cloudMachines_sandboxes_group_ariaLabel_many": "{workspace}, 샌드박스 {count}개",
   "cloudMachines_saved_toast": "E2B 설정을 저장했습니다.",
   "cloudMachines_size_label": "{vcpu} vCPU · {memory} GiB",
   "cloudMachines_size_hourly": "실행 1시간당 약 {amount}. 일시 중지된 샌드박스는 실행 비용이 들지 않습니다.",

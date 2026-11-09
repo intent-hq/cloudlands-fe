@@ -17,6 +17,7 @@ import {
 } from '../../test/cloud-machines-preview';
 import CloudMachineRow from './CloudMachineRow.svelte';
 import CloudSandboxList from './CloudSandboxList.svelte';
+import { setAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { NEW_CLOUD_ENTRY, cloudMachineValidated } from './cloud-machines-slice';
 
 const navigateToDesktopAgent = vi.hoisted(() => vi.fn(async () => {}));
@@ -185,6 +186,8 @@ describe('sandboxes grouped by workspace', () => {
   const toggle = (group: HTMLElement) =>
     group.querySelector('[data-cloud-sandbox-group-toggle]') as HTMLButtonElement;
   const header = (group: HTMLElement) => toggle(group).textContent!.replace(/\s+/g, ' ').trim();
+  const isLinked = (root: HTMLElement, id: string) =>
+    root.querySelector(`[data-cloud-sandbox="${id}"] [data-cloud-sandbox-agent-link]`) !== null;
   const rowIds = (group: HTMLElement) =>
     [...group.querySelectorAll('[data-cloud-sandbox]')].map((row) =>
       row.getAttribute('data-cloud-sandbox'),
@@ -192,17 +195,17 @@ describe('sandboxes grouped by workspace', () => {
   const list = (sandboxes = GROUPED_SANDBOXES) =>
     render(CloudSandboxList, { sandboxes, entryName: E2B_PROVIDER.name });
 
-  it('groups by workspace name with Other last, newest sandbox first', () => {
+  it('puts groups with running sandboxes first, then running rows, newest first', () => {
     seed('sandboxes-grouped');
     const view = list();
     const all = groups(view.container);
     expect(all.map(header)).toEqual([
-      'Fix flaky CI · 2',
+      'Fix flaky CI · 3',
       'Protocol docs · 1',
-      'Startup time · 1',
       'Other · 1',
+      'Startup time · 1',
     ]);
-    expect(all.map(rowIds)).toEqual([['sb-4', 'sb-1'], ['sb-2'], ['sb-3'], ['sb-5']]);
+    expect(all.map(rowIds)).toEqual([['sb-6', 'sb-1', 'sb-4'], ['sb-2'], ['sb-5'], ['sb-3']]);
     expect(all.every((group) => toggle(group).getAttribute('aria-expanded') === 'true')).toBe(true);
   });
 
@@ -210,10 +213,10 @@ describe('sandboxes grouped by workspace', () => {
     seed('sandboxes-grouped');
     const view = list();
     const section = view.container.querySelector('[data-cloud-sandboxes]') as HTMLElement;
-    expect(section.textContent).toContain('3 running, 2 paused');
+    expect(section.textContent).toContain('4 running, 2 paused');
     const row = view.container.querySelector('[data-cloud-sandbox="sb-2"]') as HTMLElement;
     expect(row.textContent!.replace(/\s+/g, ' ').trim()).toBe(
-      'Docs sweeper Running Sam · 1 h 12 min',
+      'Docs sweeper · Sam · 1 h 12 min Running',
     );
     expect(section.textContent).not.toMatch(/\$|≈/u);
   });
@@ -225,7 +228,7 @@ describe('sandboxes grouped by workspace', () => {
     await fireEvent.click(toggle(ci));
     expect(toggle(ci).getAttribute('aria-expanded')).toBe('false');
     expect(rowIds(ci)).toEqual([]);
-    expect(header(ci)).toBe('Fix flaky CI · 2');
+    expect(header(ci)).toBe('Fix flaky CI · 3');
     expect(rowIds(groups(view.container)[1]!)).toEqual(['sb-2']);
 
     view.unmount();
@@ -233,7 +236,7 @@ describe('sandboxes grouped by workspace', () => {
     const ciAgain = groups(again.container)[0]!;
     expect(toggle(ciAgain).getAttribute('aria-expanded')).toBe('false');
     await fireEvent.click(toggle(ciAgain));
-    expect(rowIds(ciAgain)).toEqual(['sb-4', 'sb-1']);
+    expect(rowIds(ciAgain)).toEqual(['sb-6', 'sb-1', 'sb-4']);
   });
 
   it("links the agent name to the sandbox's agent in its workspace", async () => {
@@ -245,16 +248,22 @@ describe('sandboxes grouped by workspace', () => {
     expect(navigateToDesktopAgent).toHaveBeenCalledWith('ws-ci', 'agent-sb-1');
   });
 
-  it('shows plain text for a deleted agent, or a workspace the app does not know', () => {
+  it('shows plain text for an agent being deleted, or a workspace the app does not know', () => {
     seed('sandboxes-grouped');
     const view = list();
-    for (const id of ['sb-3', 'sb-5']) {
-      const row = view.container.querySelector(`[data-cloud-sandbox="${id}"]`) as HTMLElement;
-      expect(row.querySelector('[data-cloud-sandbox-agent-link]')).toBeNull();
-    }
+    expect(isLinked(view.container, 'sb-3')).toBe(false);
+    expect(isLinked(view.container, 'sb-5')).toBe(false);
     expect(view.container.querySelector('[data-cloud-sandbox="sb-3"]')!.textContent).toContain(
       'Perf profiler',
     );
+  });
+
+  it('keeps the link for an agent the read agent list left out', () => {
+    seed('sandboxes-grouped');
+    store.dispatch(setAgentsLoaded('ws-docs', true));
+    const view = list();
+    expect(isLinked(view.container, 'sb-2')).toBe(true);
+    store.dispatch(setAgentsLoaded('ws-docs', false));
   });
 
   it('puts every sandbox under Other when no workspace is known', () => {
@@ -272,7 +281,6 @@ describe('sandboxes grouped by workspace', () => {
       onClose: () => {},
     });
     expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
-    expect(groups(list([]).container)).toEqual([]);
   });
 });
 

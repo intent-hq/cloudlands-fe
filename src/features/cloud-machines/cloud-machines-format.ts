@@ -85,8 +85,9 @@ export interface SandboxGroup {
 }
 
 /**
- * Sandboxes by workspace, groups by name with Other last, newest start first
- * in each. A sandbox goes to Other when this app has no name for its workspace.
+ * Sandboxes by workspace. Groups with a sandbox not paused come first, then by
+ * name with Other last; in each group, sandboxes not paused come first, then
+ * newest start. A sandbox goes to Other when this app has no name for its workspace.
  */
 export function groupSandboxesByWorkspace(
   sandboxes: readonly RemoteMachine[],
@@ -104,14 +105,18 @@ export function groupSandboxesByWorkspace(
     }
     group.sandboxes.push(machine);
   }
+  const paused = (machine: RemoteMachine) => Number(machine.cloud?.state === 'paused');
+  const onlyPaused = (group: SandboxGroup) => Number(group.sandboxes.every((row) => paused(row)));
   for (const group of groups.values())
     group.sandboxes.sort(
       (a, b) =>
+        paused(a) - paused(b) ||
         (b.cloud?.startedAt ?? '').localeCompare(a.cloud?.startedAt ?? '') ||
         a.id.localeCompare(b.id),
     );
   return [...groups.values()].sort(
     (a, b) =>
+      onlyPaused(a) - onlyPaused(b) ||
       Number(a.key === '') - Number(b.key === '') ||
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
       a.key.localeCompare(b.key),

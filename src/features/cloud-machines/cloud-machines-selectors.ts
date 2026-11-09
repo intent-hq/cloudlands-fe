@@ -9,7 +9,7 @@ import {
   selectLabsRemoteAgentsEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
-import { selectAgentsLoaded } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
+import { isAgentDeletionPending } from '$features/agent/utils/pending-agent-deletions';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
 
 type State = typeof store.state;
@@ -63,15 +63,16 @@ export interface SandboxAgentLink {
 
 /**
  * The agent a sandbox runs, to open from its row; null when its workspace is
- * unknown here or the agent is gone (deleted, or missing from a read list).
+ * unknown here or the agent is being deleted (the delete grace window and its
+ * tombstone). A session missing from the store keeps the link: list reads skip
+ * delegated and background agents.
  */
 function sandboxAgentLink(state: State, machine: RemoteMachine): SandboxAgentLink | null {
   const cloud = machine.cloud;
   if (!cloud?.agentId || !cloud.workspaceId) return null;
   if (!selectWorkspaceById.select(state, cloud.workspaceId)) return null;
-  const session = state.agentSessions?.byAgentId?.[cloud.agentId];
-  if (session?.status === 'deleted') return null;
-  if (!session && selectAgentsLoaded.select(state, cloud.workspaceId)) return null;
+  if (isAgentDeletionPending(cloud.agentId)) return null;
+  if (state.agentSessions?.byAgentId?.[cloud.agentId]?.status === 'deleted') return null;
   return { workspaceId: cloud.workspaceId, agentId: cloud.agentId };
 }
 

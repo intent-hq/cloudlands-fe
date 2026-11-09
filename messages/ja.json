@@ -8541,6 +8541,8 @@
   "cloudMachines_sandboxes_title": "E2B サンドボックス",
   "cloudMachines_sandboxes_summary": "サンドボックス · 実行中 {running}、一時停止中 {paused}",
   "cloudMachines_sandboxes_otherWorkspace": "その他",
+  "cloudMachines_sandboxes_group_ariaLabel_one": "{workspace}、サンドボックス {count} 個",
+  "cloudMachines_sandboxes_group_ariaLabel_many": "{workspace}、サンドボックス {count} 個",
   "cloudMachines_saved_toast": "E2B の設定を保存しました。",
   "cloudMachines_size_label": "{vcpu} vCPU · {memory} GiB",
   "cloudMachines_size_hourly": "実行 1 時間あたり約 {amount}。一時停止中のサンドボックスには実行費用がかかりません。",

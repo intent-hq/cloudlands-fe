@@ -405,5 +405,7 @@
   "cloudMachines_form_hours": ["fr", "es"],
   "cloudMachines_uptime_minutes": ["fr", "es"],
   "cloudMachines_uptime_hours": ["fr", "es"],
-  "cloudMachines_uptime_hoursMinutes": ["fr", "es"]
+  "cloudMachines_uptime_hoursMinutes": ["fr", "es"],
+  "cloudMachines_sandboxes_group_ariaLabel_one": ["fr", "es"],
+  "cloudMachines_sandboxes_group_ariaLabel_many": ["fr", "es"]
 }

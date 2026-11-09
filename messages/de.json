@@ -8541,6 +8541,8 @@
   "cloudMachines_sandboxes_title": "E2B-Sandboxes",
   "cloudMachines_sandboxes_summary": "Sandboxes · {running} laufen, {paused} pausiert",
   "cloudMachines_sandboxes_otherWorkspace": "Andere",
+  "cloudMachines_sandboxes_group_ariaLabel_one": "{workspace}, {count} Sandbox",
+  "cloudMachines_sandboxes_group_ariaLabel_many": "{workspace}, {count} Sandboxes",
   "cloudMachines_saved_toast": "E2B-Einstellungen gespeichert.",
   "cloudMachines_size_label": "{vcpu} vCPU · {memory} GiB",
   "cloudMachines_size_hourly": "Etwa {amount} pro Laufstunde. Pausierte Sandboxes kosten keine Laufzeit.",

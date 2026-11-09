@@ -1,7 +1,7 @@
 <!--
   Settings → an E2B entry: its live sandboxes, of everyone who runs agents on
-  this backend, grouped by workspace, with who started each, uptime, Pause and
-  Delete. Uptime advances locally between reads while a sandbox runs.
+  this backend, grouped by workspace (running first), with who started each,
+  uptime, Pause and Delete. Uptime advances locally between reads while a sandbox runs.
 -->
 <script lang="ts">
   import Fa from 'svelte-fa';
@@ -120,21 +120,32 @@
       <Button
         variant="plain"
         size="xs"
-        class="-mx-1 h-7 gap-1.5 px-1 type-body text-muted-foreground hover:text-foreground"
+        class="-mx-1 h-7 max-w-full shrink gap-1.5 px-1 type-body text-muted-foreground hover:text-foreground"
+        labelClass="text-foreground"
         aria-expanded={open}
+        aria-label={(group.sandboxes.length === 1
+          ? m.cloudMachines_sandboxes_group_ariaLabel_one
+          : m.cloudMachines_sandboxes_group_ariaLabel_many)({
+          workspace: group.name,
+          count: String(group.sandboxes.length),
+        })}
         onclick={() => toggleGroup(groupId)}
         data-cloud-sandbox-group-toggle
       >
-        <span
-          class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {open
-            ? ''
-            : '-rotate-90'}"
-        >
-          <Fa icon={faChevronDown} size="xs" />
-        </span>
-        <span class="truncate text-foreground">{group.name}</span>
-        <span aria-hidden="true">·</span>
-        <span>{group.sandboxes.length}</span>
+        {#snippet leadingIcon()}
+          <span
+            class="transition-transform duration-spring-moderate ease-spring-moderate motion-reduce:transition-none {open
+              ? ''
+              : '-rotate-90'}"
+          >
+            <Fa icon={faChevronDown} size="xs" />
+          </span>
+        {/snippet}
+        {group.name}
+        {#snippet trailingIcon()}
+          <span aria-hidden="true">·</span>
+          <span class="ml-1.5">{group.sandboxes.length}</span>
+        {/snippet}
       </Button>
       {#if open}
         <ListView
@@ -159,26 +170,34 @@
               data-cloud-sandbox-state={cloud?.state}
             >
               <div class="flex items-center gap-3">
-                <div class="min-w-0 flex-1 type-body">
-                  <div class="flex min-w-0 items-center gap-2">
-                    {#if link}
-                      <Button
-                        variant="link"
-                        size="sm"
-                        class="h-auto min-w-0 justify-start truncate px-0 type-body text-foreground"
-                        onclick={() => navigateToDesktopAgent(link.workspaceId, link.agentId)}
-                        data-cloud-sandbox-agent-link>{label}</Button
-                      >
-                    {:else}
-                      <span class="truncate text-foreground">{label}</span>
-                    {/if}
-                    <Badge variant="dot" color={badge.color} class="shrink-0">{badge.label}</Badge>
-                  </div>
-                  <div class="flex min-w-0 items-center gap-1.5 text-muted-foreground">
-                    <span class="truncate">{startedBy(machine)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span class="shrink-0">{formatUptime(seconds)}</span>
-                  </div>
+                <!-- Narrow rows drop the starter, then the uptime, so the name and state stay. -->
+                <div class="@container flex min-w-0 flex-1 items-center gap-1.5 type-body">
+                  {#if link}
+                    <Button
+                      variant="link"
+                      size="sm"
+                      class="h-auto min-w-16 shrink justify-start px-0 type-body text-foreground"
+                      onclick={() => navigateToDesktopAgent(link.workspaceId, link.agentId)}
+                      data-cloud-sandbox-agent-link>{label}</Button
+                    >
+                  {:else}
+                    <span class="min-w-16 truncate text-foreground">{label}</span>
+                  {/if}
+                  <span class="shrink-0 text-muted-foreground @max-xs:hidden" aria-hidden="true"
+                    >·</span
+                  >
+                  <span class="min-w-0 max-w-40 truncate text-muted-foreground @max-xs:hidden"
+                    >{startedBy(machine)}</span
+                  >
+                  <span class="shrink-0 text-muted-foreground @max-3xs:hidden" aria-hidden="true"
+                    >·</span
+                  >
+                  <span class="shrink-0 text-muted-foreground @max-3xs:hidden"
+                    >{formatUptime(seconds)}</span
+                  >
+                  <Badge variant="dot" color={badge.color} class="ml-0.5 shrink-0"
+                    >{badge.label}</Badge
+                  >
                 </div>
                 <div class="flex shrink-0 items-center gap-1">
                   <Tooltip content={m.cloudMachines_pause_label()}>
