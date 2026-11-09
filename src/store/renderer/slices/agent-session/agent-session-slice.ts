@@ -1467,7 +1467,7 @@ function applyStoredSessionRestore(
 
   let next = setSession(state, agentId, finalSession);
   next = registerInWorkspaceIndex(next, agentId, wsId);
-  return next;
+  return existing ? accountLostOlderTailRows(next, agentId, existing.messages) : next;
 }
 
 function removeFromWorkspaceIndex(state: AgentSessionState, agentId: string): AgentSessionState {
@@ -1900,6 +1900,7 @@ agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] 
   if (!session) return state;
   const nextMessages = session.messages.filter((message) => message.id !== messageId);
   if (nextMessages.length === session.messages.length) return state;
+  // Removal deletes the row itself; it cannot hide any other resident row, so no gap accounting.
   return setSession(state, agentId, { ...session, messages: nextMessages });
 });
 agentSessionReducer.with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) =>

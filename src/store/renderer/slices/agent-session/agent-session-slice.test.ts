@@ -7471,6 +7471,82 @@ describe('tail writes that drop older resident rows never hide them', () => {
     });
   });
 
+  describe('message removal', () => {
+    // Removal deletes the row itself (an unsent optimistic row); no other row is hidden.
+    it('keeps the reached start when the oldest resident row of a full session is removed', () => {
+      const before = agentSessionReducer(withTail(rows(10, 20)), setHistoryOldestReached('a1'));
+      const state = agentSessionReducer(before, removeMessage('a1', 'm-10'));
+
+      expect(ids(state.byAgentId['a1'].messages)).toEqual(ids(rows(11, 20)));
+      expect(state.historySegmentsByAgentId).toBe(before.historySegmentsByAgentId);
+      expect(state.historySegmentsByAgentId?.['a1']?.oldestReached).toBe(true);
+      expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
+    });
+
+    it('does not open a gap when the oldest resident row is removed under loaded history', () => {
+      const before = withContiguousHistory();
+      const state = agentSessionReducer(before, removeMessage('a1', 'm-10'));
+
+      expect(state.historySegmentsByAgentId).toBe(before.historySegmentsByAgentId);
+      expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
+    });
+  });
+
+  describe('stored session restore', () => {
+    const restoreWith = (state: AgentSessionState, tail: AgentMessage[]) =>
+      restoreStoredSessions([{ ...state.byAgentId['a1'], messages: tail }]);
+
+    it('opens the gap of a loaded history segment when the snapshot drops older rows', () => {
+      const before = withContiguousHistory();
+      const state = agentSessionReducer(before, restoreWith(before, rows(15, 20)));
+
+      expect(ids(state.byAgentId['a1'].messages)).toEqual(ids(rows(15, 20)));
+      const segment = state.historySegmentsByAgentId?.['a1'];
+      expect(segment?.gapToTail).toBe(true);
+      expect(segment?.holeRowsEstimate).toBe(5);
+      expect(state.byAgentId['a1'].tailCapPruned).toBe(true);
+    });
+
+    it('marks the history boundary unknown when no history rows can hold a gap', () => {
+      const before = withTail(rows(10, 20));
+      const state = agentSessionReducer(before, restoreWith(before, rows(15, 20)));
+
+      expect(state.historySegmentsByAgentId?.['a1']?.tailBoundaryUnknown).toBe(true);
+    });
+
+    it('leaves history untouched when the snapshot keeps the resident rows', () => {
+      const before = withContiguousHistory();
+      const state = agentSessionReducer(
+        before,
+        restoreStoredSessions([{ ...before.byAgentId['a1'], retiredAt: undefined, name: 'x' }]),
+      );
+
+      expect(state.byAgentId['a1'].name).toBe('x');
+      expect(state.historySegmentsByAgentId).toBe(before.historySegmentsByAgentId);
+    });
+
+    it('leaves history untouched when the snapshot extends older than the resident rows', () => {
+      const before = withContiguousHistory();
+      const state = agentSessionReducer(before, restoreWith(before, rows(5, 20)));
+
+      expect(state.historySegmentsByAgentId).toBe(before.historySegmentsByAgentId);
+      expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
+    });
+
+    it('leaves history untouched when the snapshot holds the optimistic twin of the oldest row', () => {
+      const canonical = { ...row(10), appMessageId: 'app-10' };
+      const optimistic = { ...canonical, id: 'opt-10' };
+      const before = agentSessionReducer(
+        withTail([canonical, ...rows(11, 20)]),
+        prependHistoryMessages('a1', rows(5, 9)),
+      );
+      const state = agentSessionReducer(before, restoreWith(before, [optimistic, ...rows(11, 20)]));
+
+      expect(state.historySegmentsByAgentId).toBe(before.historySegmentsByAgentId);
+      expect(state.byAgentId['a1'].tailCapPruned).toBeUndefined();
+    });
+  });
+
   it('a session upsert with no rows does not claim older rows were lost', () => {
     const before = withContiguousHistory();
     const state = agentSessionReducer(
