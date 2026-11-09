@@ -1,15 +1,6 @@
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
-
 import { describe, expect, it } from 'vitest';
 
 import { getSpecialistById } from '../specialists';
-
-const bundledChiefPrompt = readFileSync(
-  resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),
-  'utf8',
-);
 
 describe('SPECIALISTS', () => {
   it('defines the Vulnerability Scanner fallback metadata and prompt', () => {
@@ -34,43 +25,6 @@ describe('SPECIALISTS', () => {
     expect(specialist?.defaultBehaviorPrompt).toContain('**Top-level agent**');
     expect(specialist?.defaultBehaviorPrompt).not.toContain('submit_comments');
     expect(specialist?.defaultBehaviorPrompt).not.toContain('create_note_workspace-mcp');
-  });
-
-  it('keeps both scanner prompt copies byte-identical to the canonical intentd body', () => {
-    const specialist = getSpecialistById('vulnerability-scanner');
-    const bundled = readFileSync(
-      resolve(__dirname, '../../../../resources/specialists/vulnerability-scanner.md'),
-      'utf8',
-    );
-    const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
-
-    expect(bundled).not.toMatch(/^(codingAgent|model):/m);
-    expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
-    expect(createHash('sha256').update(bundledBody).digest('hex')).toBe(
-      '0f2c2dc42ec65311e80fb7afd5f899fcf509df09fcfeeb6d343d3163c9c7c9ee',
-    );
-  });
-
-  it('keeps the Product Manager fallback identical to the bundled definition', () => {
-    const specialist = getSpecialistById('product-manager');
-    const bundled = readFileSync(
-      resolve(__dirname, '../../../../resources/specialists/product-manager.md'),
-      'utf8',
-    );
-    const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
-
-    expect(specialist).toMatchObject({
-      id: 'product-manager',
-      name: 'Product Manager',
-      icon: 'coordinator',
-    });
-    expect(specialist).not.toHaveProperty('defaultModel');
-    expect(specialist?.hidden).toBeUndefined();
-    expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
-    expect(bundled).toContain(`roleReminder: "${specialist?.roleReminder}"`);
-    expect(createHash('sha256').update(bundled).digest('hex')).toBe(
-      '9b07977dcae665abfe636e9cf863eef280666dcb7b709874a34f140d22aa6cec',
-    );
   });
 
   it('keeps chief workspace creation extraction guidance', () => {
@@ -113,93 +67,5 @@ describe('SPECIALISTS', () => {
     expect(chief?.defaultBehaviorPrompt).toMatch(/bare path/i);
     expect(chief?.roleReminder).toMatch(/canonical route/i);
     expect(chief?.roleReminder).toMatch(/hash fragment/i);
-  });
-
-  it('teaches Chief to audit agent threads safely and link created notes', () => {
-    expect(bundledChiefPrompt).toMatch(/## Agent Thread Audits/);
-    expect(bundledChiefPrompt).toContain(
-      'ws.app.agents.list({ workspaceId?, includeCompleted?, limit?, cursor? })',
-    );
-    expect(bundledChiefPrompt).toContain(
-      'ws.app.agents.readConversation(workspaceId, agentId, { lastN?, startTurn?, endTurn?, includeToolCalls? })',
-    );
-    expect(bundledChiefPrompt).toMatch(/metadata only; no transcript content/i);
-    expect(bundledChiefPrompt).toMatch(/defaults to the last 20 messages and caps reads at 100/i);
-    expect(bundledChiefPrompt).toMatch(/includeToolCalls: true/);
-    expect(bundledChiefPrompt).toMatch(/returned `markdownLink`/);
-    expect(bundledChiefPrompt).toContain('intent://local/{workspaceId}/note/{noteId}');
-  });
-
-  it('keeps completion-only Chief messaging guidance in the bundled prompt', () => {
-    const bundled = readFileSync(
-      resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),
-      'utf8',
-    );
-    const section = (prompt: string) =>
-      prompt.match(/## Messaging Agents Across Workspaces[\s\S]*?(?=\n## )/)?.[0].trim();
-
-    for (const prompt of [bundled]) {
-      const messaging = section(prompt) ?? '';
-
-      expect(prompt).toContain('ws.app.agents.send(agentId, message, priority?)');
-      expect(prompt).toContain('ws.app.agents.ask(agentId, message, priority?)');
-      expect(prompt).toContain('one wake only when the target completes');
-      expect(prompt).toContain('Direct target messages remain transcript data');
-      expect(prompt).toContain('End your turn after `ask` returns');
-      expect(prompt).toContain(
-        'const conversation = await ws.app.agents.readConversation(asked.send.workspaceId, asked.send.agentId',
-      );
-      expect(messaging.match(/ws\.app\.agents\.readConversation\(/g)).toHaveLength(1);
-      expect(prompt).toContain(
-        'const finalAssistant = [...conversation.messages].reverse().find((message) => message.role === "assistant" && typeof message.id === "string" && message.id.length > 0)',
-      );
-      expect(prompt).toContain(
-        '[${conversation.workspaceTitle}](intent://local/${conversation.workspaceId}/agent/${conversation.agentId}/message/${finalAssistant.id})',
-      );
-      expect(prompt).toContain('Build this URL only from the `readConversation` result');
-      expect(prompt).toContain('Use `conversation.workspaceTitle` as the visible link label');
-      expect(prompt).toContain(
-        'Never use `asked.send.workspaceId`, `asked.send.agentId`, `asked.send.messageId`',
-      );
-      expect(prompt).toContain('a `chief_message` source ID');
-      expect(prompt).toContain('a user-role message ID');
-      expect(prompt).toContain(
-        'Never expose a raw workspace ID or agent ID in relay prose or link text',
-      );
-      expect(messaging).not.toContain('ws.app.workspaces.list({ filter: {}, sort: {} })');
-      expect(prompt).not.toContain('"/agent/" + asked.send.agentId');
-      expect(prompt).toContain('completed-ask exact-message source link');
-      expect(prompt).toContain('canonical message navigation still opens the target chat');
-      expect(prompt).toContain('do not invent or render a broken link');
-      expect(prompt).not.toMatch(/progress[- ]versus[- ]final/i);
-    }
-  });
-
-  it('teaches Chief to wait on cross-workspace agents instead of polling', () => {
-    expect(bundledChiefPrompt).toMatch(/## Waiting on Agents Across Workspaces/);
-    expect(bundledChiefPrompt).toContain('ws.app.agents.waitFor({ agentIds, waitMode? })');
-    expect(bundledChiefPrompt).toContain(
-      "ws.app.agents.waitFor({ agentIds: ['agent-1111-…', 'agent-2222-…'], waitMode: 'after_all' });",
-    );
-    expect(bundledChiefPrompt).toMatch(/do not poll[*\s]+`ws\.app\.agents\.list` in a loop/i);
-    expect(bundledChiefPrompt).toMatch(/one wake per agent as each finishes/i);
-    expect(bundledChiefPrompt).toMatch(/single aggregated wake once all listed agents settle/i);
-  });
-
-  // The concise fallback consults live tool help; the bundled specialist owns
-  // the detailed waitFor recipe used by a normal install.
-  it('keeps the bundled chief-of-staff file in sync on cross-workspace waiting', () => {
-    const bundled = readFileSync(
-      resolve(__dirname, '../../../../resources/specialists/chief-of-staff.md'),
-      'utf8',
-    );
-    expect(bundled).toMatch(/## Waiting on Agents Across Workspaces/);
-    expect(bundled).toContain('ws.app.agents.waitFor({ agentIds, waitMode? })');
-    expect(bundled).toContain(
-      "ws.app.agents.waitFor({ agentIds: ['agent-1111-…', 'agent-2222-…'], waitMode: 'after_all' });",
-    );
-    expect(bundled).toMatch(/do not poll[*\s]+`ws\.app\.agents\.list` in a loop/i);
-    expect(bundled).toMatch(/one wake per agent as each finishes/i);
-    expect(bundled).toMatch(/single aggregated wake once all listed agents settle/i);
   });
 });

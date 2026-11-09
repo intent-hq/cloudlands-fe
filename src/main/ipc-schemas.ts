@@ -1028,59 +1028,6 @@ export const UserRulesGetCombinedPromptSchema = z.object({
 });
 
 // ============================================================================
-// Specialists Schemas
-// ============================================================================
-
-export const SpecialistIdSchema = z.object({
-  id: z.string().min(1, 'Specialist ID is required'),
-  scope: z.enum(['user', 'project']).optional(),
-  workspacePath: z.string().optional(),
-});
-
-export const SpecialistListSchema = z.object({
-  workspacePath: z.string().optional(),
-});
-
-export const SpecialistWriteSchema = z
-  .object({
-    id: z.string().min(1, 'Specialist ID is required'),
-    name: z.string().min(1, 'Specialist name is required'),
-    description: z.string().min(1, 'Description is required'),
-    codingAgent: z.string().optional(),
-    model: z.string().optional(),
-    roleReminder: z.string().optional(),
-    hidden: z.boolean().optional(),
-    modelOptions: z
-      .array(
-        z.object({
-          provider: z
-            .string()
-            .refine((value) => value.trim() !== '', 'Provider must be non-empty when present')
-            .optional(),
-          model: z.string().min(1, 'Model is required'),
-          hint: z.string(),
-          reasoningEffort: z.string().optional(),
-        }),
-      )
-      .optional(),
-    reasoningEffort: z.string().optional(),
-    role: z.enum(['orchestrator', 'internal']).optional(),
-    teamAgents: z.array(z.string().min(1, 'Team agent id must be non-empty')).optional(),
-    icon: z.string().optional(),
-    behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
-    scope: z.enum(['user', 'project']).optional(),
-    workspacePath: z.string().optional(),
-  })
-  .refine((data) => data.scope !== 'project' || !!data.workspacePath, {
-    message: 'workspacePath is required when scope is "project"',
-    path: ['workspacePath'],
-  });
-
-export const SpecialistExportBuiltinSchema = z.object({
-  id: z.string().min(1, 'Built-in specialist ID is required'),
-});
-
-// ============================================================================
 // Voice (local OS transcription) Schemas
 // ============================================================================
 
