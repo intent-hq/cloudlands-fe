@@ -1092,13 +1092,14 @@ export class DockAnnotationController implements AnnotationService {
     const comparable = !!previous?.hash && !!hash;
     if (frozen.clipId && frozen.clipId !== host.clipIdentity?.()) return reject('stale');
     const recordingImage =
-      !pick && !!frozen.clipId && previous?.clipId === frozen.clipId;
+      !!frozen.clipId && previous?.clipId === frozen.clipId;
     const reuse =
       !!previous &&
       previous.width === shot.width &&
       previous.height === shot.height &&
       (recordingImage ||
-        ((pick || !frozen.clipId) &&
+        (!previous.clipId &&
+          !frozen.clipId &&
           !session.navigation &&
           (!comparable ||
             dockHashDistance(previous.hash, hash) <= DOCK_ANNOTATION_LIMITS.hashThreshold)));
