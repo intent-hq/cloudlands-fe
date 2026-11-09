@@ -159,6 +159,7 @@
     onStateChange({ held: false, reveal: 0, shell: null });
   });
   const settled = $derived(reveal >= 1);
+  const shadowMargin = $derived(settled ? DOCK_FLOATING_SHADOW_MARGIN : 0);
   const glide = $derived(frame && lastPanel ? frame.y - lastPanel.y : 0);
   const opacity = $derived(reducedMotion ? reveal : 1);
   const clipRight = $derived(
@@ -208,7 +209,7 @@
     <div
       class="edge-panel"
       aria-hidden="true"
-      style:clip-path={`inset(0 ${Math.max(0, clipRight - DOCK_FLOATING_SHADOW_MARGIN)}px 0 ${Math.max(0, viewport.x - DOCK_FLOATING_SHADOW_MARGIN)}px)`}
+      style:clip-path={`inset(0 ${Math.max(0, clipRight - shadowMargin)}px 0 ${Math.max(0, viewport.x - shadowMargin)}px)`}
     >
       <div
         class="edge-shadow"
