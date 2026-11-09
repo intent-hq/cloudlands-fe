@@ -14,6 +14,7 @@
     message,
     captures = [],
     workspaceId,
+    imageFailures = {},
     queuedImageSrc,
     openImageLightbox,
     handleReferenceImageError,
@@ -22,6 +23,7 @@
     message: Pick<QueuedMessage, 'imageBlocks' | 'fileBlocks'>;
     captures?: EditedCapture[];
     workspaceId?: string;
+    imageFailures?: Record<string, true>;
     queuedImageSrc: (block: ImageBlock) => string | null;
     openImageLightbox: (block: ImageBlock, opener: HTMLButtonElement, index: number) => void;
     handleReferenceImageError: (block: ImageBlock, src: string) => void;
@@ -47,7 +49,6 @@
       ),
     ),
   );
-  const imageFailures: Record<string, true> = {};
   const unsupportedImages = $derived(
     remainingImages.filter((block) => block.mimeType && !isSupportedImageMimeType(block.mimeType)),
   );

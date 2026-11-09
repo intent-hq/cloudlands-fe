@@ -618,8 +618,15 @@
   let lightboxOpenerElement: HTMLButtonElement | null = $state(null);
 
   let referenceImageUrls = $state<Record<string, string | null>>({});
+  let referenceImageFailures = $state<Record<string, true>>({});
+  let imageWorkspaceId: string | undefined;
   const referenceImageObservers = new Map<string, ReturnType<typeof observeAttachmentImageUrl>>();
   $effect(() => {
+    if (imageWorkspaceId !== workspaceId) {
+      referenceImageUrls = {};
+      referenceImageFailures = {};
+      imageWorkspaceId = workspaceId;
+    }
     if (!workspaceId) return;
     for (const message of displayMessages) {
       for (const block of [
@@ -637,6 +644,8 @@
           attachmentId,
           observeAttachmentImageUrl(workspaceId, attachmentId, (url) => {
             referenceImageUrls[attachmentId] = url;
+            if (url) delete referenceImageFailures[attachmentId];
+            else referenceImageFailures[attachmentId] = true;
           }),
         );
       }
@@ -662,7 +671,8 @@
     src: string,
   ) {
     const attachmentId = block.attachmentId;
-    if (!attachmentId) return;
+    if (!attachmentId || referenceImageUrls[attachmentId] !== src) return;
+    referenceImageFailures[attachmentId] = true;
     console.warn('Attachment thumbnail failed to load', { attachmentId, url: src });
     referenceImageObservers.get(attachmentId)?.imageFailed();
   }
@@ -1185,6 +1195,7 @@
                           {queuedImageSrc}
                           {openImageLightbox}
                           {handleReferenceImageError}
+                          imageFailures={referenceImageFailures}
                           {openQueuedFileAttachment}
                         />
                       </div>
@@ -1247,6 +1258,7 @@
                               {queuedImageSrc}
                               {openImageLightbox}
                               {handleReferenceImageError}
+                              imageFailures={referenceImageFailures}
                               {openQueuedFileAttachment}
                             />
                             {#if groupText.trim()}
