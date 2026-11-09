@@ -36,6 +36,7 @@
     planDockMediaOutput,
   } from '$shared/dock-media-edit';
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
+  import { reportCaptureEditorSaveFailure, type CaptureEditorSaveFailureStage } from '../capture-editor-bridge';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import DockScreenshotEditor from './DockScreenshotEditor.svelte';
   import { retakeScreenshotEdit } from './screenshot-edit-geometry';
@@ -387,10 +388,11 @@
     if (dirty) void save(true);
     else void finishAttachment();
   }
-  function saveFailed(stage: 'plan' | 'ack' | 'saved-source' | 'saved-schema' | 'saved-plan' | 'exception', reason: string | readonly string[]) {
+  function saveFailed(stage: CaptureEditorSaveFailureStage, reason: string | readonly string[]) {
     // Deliberately omit pixels, text, paths, ids and the edit itself. These codes
     // distinguish a local validation refusal from an owner/CAS/transport failure.
-    console.warn('Screenshot edit save rejected', { stage, reason });
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- isolated editor has no app store; bridge persists only bounded codes through existing logging IPC
+    reportCaptureEditorSaveFailure(stage, reason);
     error = m.dock_screenshotEditor_saveError();
   }
   async function save(attachAfterSave = false) {

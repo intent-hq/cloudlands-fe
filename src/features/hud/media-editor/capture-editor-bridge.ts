@@ -3,6 +3,7 @@
  * says it changed) and ask to close. The window has no app store; this owns its IPC.
  */
 import { electronAPI, isElectron } from '$lib/electron-bridge';
+import { LOG_CHANNELS } from '$shared/ipc/channels';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   type DockCaptureEditorNoteDictationAck,
@@ -13,6 +14,34 @@ import {
   type DockCaptureEditorSnapshot,
 } from '$shared/dock-capture-editor';
 import { DockMediaEditSchema, type DockMediaEdit } from '$shared/dock-media-edit';
+
+export type CaptureEditorSaveFailureStage =
+  | 'plan' | 'ack' | 'saved-source' | 'saved-schema' | 'saved-plan' | 'exception' | 'serialize' | 'invoke';
+const SAVE_DIAGNOSTIC_REASONS = new Set([
+  'stale-source', 'invalid-edit', 'legacy-baked-marks', 'transcript-pending',
+  'transcript-unavailable', 'timing-unavailable', 'audio-unavailable', 'failed',
+  'revision-conflict', 'invalid-result', 'no-result', 'mismatch',
+  'Error', 'TypeError', 'DataCloneError', 'other',
+]);
+
+/** Existing logging IPC persists bounded codes even in utility windows without console forwarding. */
+export function reportCaptureEditorSaveFailure(stage: CaptureEditorSaveFailureStage, reason: string | readonly string[]): void {
+  const reasons = (typeof reason === 'string' ? [reason] : reason).slice(0, 7)
+    .map((code) => SAVE_DIAGNOSTIC_REASONS.has(code) ? code : 'other');
+  const message = `CaptureEditorSave stage=${stage} reason=${reasons.join(',') || 'other'}`;
+  console.warn(message);
+  if (!isElectron()) return;
+  try {
+    void electronAPI().invoke(LOG_CHANNELS.PERSIST_RENDERER_LOGS, [{
+      timestamp: new Date().toISOString(), level: 'WARN', category: 'CaptureEditorSave', message,
+    }]).then((reply) => {
+      if ((reply as { success?: boolean } | undefined)?.success !== true)
+        console.warn('CaptureEditorSave persistence=unacknowledged');
+    }).catch(() => console.warn('CaptureEditorSave persistence=unavailable'));
+  } catch {
+    console.warn('CaptureEditorSave persistence=unavailable');
+  }
+}
 
 export interface DockCaptureEditorBridge {
   /** Close the session `openId` names (never a newer one main retargeted to). */
@@ -147,7 +176,7 @@ export function connectDockCaptureEditor(
         const reason = stage === 'serialize' ? 'invalid-edit'
           : ['Error', 'TypeError', 'DataCloneError'].includes(name) ? name : 'other';
         // Never include the request, pixels, user text, error message or stack.
-        console.warn('Capture editor save failed', { stage, reason });
+        reportCaptureEditorSaveFailure(stage, reason);
         return null;
       }
     },
