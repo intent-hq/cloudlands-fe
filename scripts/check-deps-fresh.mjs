@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// check-deps-fresh.mjs — the first command of lint, check, format:check,
-// test:unit and verify:changed (it runs before verify-changed.mjs, whose npm
-// imports would otherwise crash a missing install with ERR_MODULE_NOT_FOUND).
-// It refuses to run a gate under a Node outside package.json `engines.node`
-// (see check-node.mjs) or on a stale node_modules install and, once the install
-// is fresh, provisions the gitignored Paraglide bundle (src/shared/paraglide)
-// when it is missing or its recorded input hash no longer matches
-// messages/*.json, so a cold checkout needs no manual generate:i18n.
+// check-deps-fresh.mjs — the first command of lint, check, format:check and
+// test:unit. It refuses to run a gate under a Node outside package.json
+// `engines.node` (see check-node.mjs) or on a stale node_modules install and,
+// once the install is fresh, provisions the gitignored Paraglide bundle
+// (src/shared/paraglide) when it is missing or its recorded input hash no longer
+// matches messages/*.json, so a cold checkout needs no manual generate:i18n.
+// `--installed-only` (verify:changed) refuses only an unsupported Node or a
+// missing install: verify-changed.mjs imports npm packages before its own
+// freshness check, which it skips for --dry-run and --help.
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -78,11 +79,13 @@ if (isDirectRun) {
     console.error(`[node:check] ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
   }
+  const installedOnly = process.argv.includes('--installed-only');
   let deps;
   if (node?.ok) {
     try {
       deps = checkDepsFresh();
-      if (!deps.ok) {
+      if (installedOnly && deps.status !== 'missing') deps = null;
+      else if (!deps.ok) {
         console.error(`[deps:check] ${deps.reason}`);
         process.exitCode = 1;
       }

@@ -2523,10 +2523,10 @@ describe('dependency freshness gate', () => {
     expect(calls).toEqual([`checkNode:${root}`]);
   });
 
-  it('runs the dependency-free Node preflight before this module resolves node_modules', () => {
+  it('runs the dependency-free Node and install-presence preflight before this module resolves node_modules', () => {
     const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).scripts;
     expect(scripts['verify:changed']).toMatch(
-      /^node scripts\/check-node\.mjs && node scripts\/verify-changed\.mjs\b/,
+      /^node scripts\/check-deps-fresh\.mjs --installed-only && node scripts\/verify-changed\.mjs\b/,
     );
   });
 

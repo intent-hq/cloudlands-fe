@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
+  existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
@@ -146,12 +147,12 @@ describe('checkNodeSupport re-export', () => {
 });
 
 describe('check-deps-fresh CLI', () => {
-  function runCli(root: string) {
+  function runCli(root: string, args: string[] = []) {
     mkdirSync(join(root, 'scripts'), { recursive: true });
     for (const file of CLI_SCRIPTS)
       copyFileSync(join(SCRIPTS_DIR, file), join(root, 'scripts', file));
     const script = join(root, 'scripts', 'check-deps-fresh.mjs');
-    const result = spawnSync(process.execPath, [script], { cwd: root, encoding: 'utf8' });
+    const result = spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8' });
     return { status: result.status, stdout: result.stdout, stderr: result.stderr };
   }
 
@@ -242,6 +243,36 @@ describe('check-deps-fresh CLI', () => {
     expect(result.stderr.trimEnd().split('\n')).toEqual([
       `[deps:check] node_modules/.pnpm/lock.yaml could not be read (EISDIR) — run: ${INSTALL_COMMAND}`,
     ]);
+  });
+
+  it('--installed-only accepts a stale install without provisioning i18n', () => {
+    const root = fixtureRoot({
+      'package.json': PACKAGE_JSON,
+      'pnpm-lock.yaml': LOCKFILE.replace('a: 1.0.0', 'a: 1.0.1'),
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    expect(runCli(root, ['--installed-only'])).toEqual({ status: 0, stdout: '', stderr: '' });
+    expect(existsSync(repoParaglidePaths(root).outdir)).toBe(false);
+  });
+
+  it('--installed-only still refuses a missing install with the remediation', () => {
+    const root = fixtureRoot({ 'package.json': PACKAGE_JSON, 'pnpm-lock.yaml': LOCKFILE });
+    const result = runCli(root, ['--installed-only']);
+    expect(result.status).toBe(1);
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      `[deps:check] node_modules is missing (no node_modules/.pnpm/lock.yaml) — run: ${INSTALL_COMMAND}`,
+    ]);
+  });
+
+  it('--installed-only still refuses an unsupported Node', () => {
+    const root = fixtureRoot({
+      'package.json': JSON.stringify({ engines: { node: UNSUPPORTED_NODE } }),
+      'pnpm-lock.yaml': LOCKFILE,
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    const result = runCli(root, ['--installed-only']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`Unsupported Node v${process.versions.node}`);
   });
 });
 
