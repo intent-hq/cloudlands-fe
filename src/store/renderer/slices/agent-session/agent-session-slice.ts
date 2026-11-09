@@ -166,6 +166,12 @@ function repairNearSimultaneousOrphanAssistantOrdering(messages: AgentMessage[])
  * the previous stable timestamp-ascending sort plus the near-simultaneous
  * orphan-assistant repair.
  */
+function messageTimestampKey(message: AgentMessage): string {
+  return typeof message.timestamp === 'string'
+    ? message.timestamp
+    : (message.timestamp?.toISOString?.() ?? '');
+}
+
 function orderMessagesForConversation(messages: AgentMessage[]): AgentMessage[] {
   if (messages.length <= 1) return messages;
   if (messages.some((m) => typeof m.seq === 'number')) {
@@ -176,10 +182,8 @@ function orderMessagesForConversation(messages: AgentMessage[]): AgentMessage[] 
     return [...withSeq, ...withoutSeq];
   }
   const sorted = [...messages].sort((a, b) => {
-    const tsA =
-      typeof a.timestamp === 'string' ? a.timestamp : (a.timestamp?.toISOString?.() ?? '');
-    const tsB =
-      typeof b.timestamp === 'string' ? b.timestamp : (b.timestamp?.toISOString?.() ?? '');
+    const tsA = messageTimestampKey(a);
+    const tsB = messageTimestampKey(b);
     if (tsA < tsB) return -1;
     if (tsA > tsB) return 1;
     return 0;
@@ -399,50 +403,94 @@ function setSession(
   };
 }
 
-/**
- * Count how many of the rows a tail cap prune dropped were resident in the
- * PREVIOUS tail. Distinguishes genuine live growth past the cap (dropped
- * rows were tail-resident and are now lost client-side) from a
- * prepend-shaped replacement whose added older rows are sliced right back
- * off (those were never in the tail and are still hydrated elsewhere).
- */
-function countDroppedResidentTailRows(
-  previous: AgentMessage[],
-  ordered: AgentMessage[],
-  pruned: AgentMessage[],
-): number {
-  const droppedCount = ordered.length - pruned.length;
-  if (droppedCount === 0 || previous.length === 0) return 0;
-  const previousIds = new Set(previous.map((message) => message.id));
-  let count = 0;
-  for (let i = 0; i < droppedCount; i++) {
-    if (previousIds.has(ordered[i].id)) count++;
-  }
-  return count;
+/** `a` sorts before `b` under `orderMessagesForConversation` (seq first, then timestamp). */
+function precedesInConversation(a: AgentMessage, b: AgentMessage): boolean {
+  const aHasSeq = typeof a.seq === 'number';
+  const bHasSeq = typeof b.seq === 'number';
+  if (aHasSeq && bHasSeq) return (a.seq as number) < (b.seq as number);
+  if (aHasSeq !== bHasSeq) return aHasSeq;
+  return messageTimestampKey(a) < messageTimestampKey(b);
+}
+
+function isSameRow(a: AgentMessage, b: AgentMessage): boolean {
+  return (
+    a.id === b.id ||
+    (typeof a.appMessageId === 'string' &&
+      a.appMessageId.length > 0 &&
+      a.appMessageId === b.appMessageId)
+  );
 }
 
 /**
- * History-segment bookkeeping for rows the live tail's
- * `MAX_MESSAGES_PER_AGENT` prune dropped: the dropped rows now sit between
- * history's newest row and the tail's oldest retained row, so a contiguous
- * segment is severed (the gap opens) and serial-walk segments count the
- * dropped rows into the hole estimate so the virtual extent attributes them
- * to the hole. The per-session `tailCapPruned` latch is set by the caller
- * alongside the pruned messages array.
+ * Count rows of the PREVIOUS tail that a write dropped from its older side:
+ * absent from `next` (identity by `id`/`appMessageId`) and ordered before
+ * `next[0]`. Covers the cap prune (live growth past the cap) and any
+ * replacement that rebased the tail onto a newer window (cloudlands-fe#4333).
+ * Rows a prepend-shaped replacement adds and the cap slices back off were
+ * never resident, so they never count.
  */
-function accountTailCapPrune(
+function countLostOlderTailRows(previous: AgentMessage[], next: AgentMessage[]): number {
+  if (previous.length === 0 || next.length === 0 || previous[0].id === next[0].id) return 0;
+  const nextIds = new Set(next.map((message) => message.id));
+  const nextAppMessageIds = new Set(
+    next
+      .map((message) => message.appMessageId)
+      .filter((id): id is string => typeof id === 'string' && id.length > 0),
+  );
+  const firstRetained = previous.findIndex(
+    (message) =>
+      nextIds.has(message.id) ||
+      (typeof message.appMessageId === 'string' && nextAppMessageIds.has(message.appMessageId)),
+  );
+  // Every row before the first retained one is dropped; when that retained
+  // row is still the oldest, all of them were older than the new tail.
+  if (firstRetained !== -1 && isSameRow(previous[firstRetained], next[0])) return firstRetained;
+  const candidates = firstRetained === -1 ? previous.length : firstRetained;
+  let lost = 0;
+  for (let i = 0; i < candidates; i++) {
+    if (precedesInConversation(previous[i], next[0])) lost++;
+  }
+  return lost;
+}
+
+/**
+ * The single guard for tail writes: when the stored tail lost older resident
+ * rows (see `countLostOlderTailRows`), those rows now sit between history and
+ * the tail's oldest retained row, so the history segment must never join
+ * straight onto the tail. Latches `tailCapPruned` (older rows exist above the
+ * tail), then either opens the gap of a segment holding rows — serial-walk
+ * segments count the rows into the hole estimate — or, with no rows to carry
+ * a gap, records that the history→tail boundary is unknown
+ * (`tailBoundaryUnknown`; a held older-page cursor now continues below the
+ * dropped rows). Call after every write that replaces or prunes the tail.
+ */
+function accountLostOlderTailRows(
   state: AgentSessionState,
   agentId: string,
-  dropped: number,
+  previous: AgentMessage[],
 ): AgentSessionState {
-  const segment = getHistorySegment(state, agentId);
-  if (!segment || segment.messages.length === 0) return state;
-  return setHistorySegment(state, agentId, {
-    ...segment,
-    gapToTail: true,
-    ...(segment.startOrdinalEstimate === undefined
-      ? { holeRowsEstimate: (segment.holeRowsEstimate ?? 0) + dropped }
-      : {}),
+  const session = getSession(state, agentId);
+  if (!session) return state;
+  const lost = countLostOlderTailRows(previous, session.messages);
+  if (lost === 0) return state;
+  const next =
+    session.tailCapPruned === true
+      ? state
+      : setSession(state, agentId, { ...session, tailCapPruned: true });
+  const segment = getHistorySegment(next, agentId);
+  if (segment && segment.messages.length > 0) {
+    return setHistorySegment(next, agentId, {
+      ...segment,
+      gapToTail: true,
+      ...(segment.startOrdinalEstimate === undefined
+        ? { holeRowsEstimate: (segment.holeRowsEstimate ?? 0) + lost }
+        : {}),
+    });
+  }
+  if (segment?.tailBoundaryUnknown === true && !segment.oldestReached) return next;
+  return setHistorySegment(next, agentId, {
+    ...EMPTY_HISTORY_SEGMENT,
+    tailBoundaryUnknown: true,
   });
 }
 
@@ -456,16 +504,12 @@ function addMessageToSession(
   const currentList = session.messages;
   const insertedMessages = insertAgentMessageWithDedup(currentList, message);
   if (insertedMessages === currentList) return state;
-  const ordered = orderMessagesForConversation(insertedMessages);
-  const nextMessages = pruneMessages(ordered);
-  const droppedResident = countDroppedResidentTailRows(currentList, ordered, nextMessages);
-  let next = setSession(state, agentId, {
-    ...session,
-    messages: nextMessages,
-    ...(droppedResident > 0 ? { tailCapPruned: true } : {}),
-  });
-  if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
-  return next;
+  const nextMessages = pruneMessages(orderMessagesForConversation(insertedMessages));
+  return accountLostOlderTailRows(
+    setSession(state, agentId, { ...session, messages: nextMessages }),
+    agentId,
+    currentList,
+  );
 }
 
 function replaceSessionMessageById(
@@ -1388,7 +1432,7 @@ function applySessionUpsert(
   const ownedState = prior && !existing ? removeFromWorkspaceIndex(state, agentId) : state;
   let next = setSession(ownedState, agentId, finalSession);
   next = registerInWorkspaceIndex(next, agentId, wsId);
-  return next;
+  return existing ? accountLostOlderTailRows(next, agentId, existing.messages) : next;
 }
 
 /**
@@ -1836,21 +1880,14 @@ agentSessionReducer.with(updateMessage, (state, { payload: [agentId, messageId, 
 agentSessionReducer.with(replaceMessages, (state, { payload: [agentId, messages] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  const ordered = normalizeSortHistoryMessages(messages);
-  const pruned = pruneMessages(ordered);
+  const pruned = pruneMessages(normalizeSortHistoryMessages(messages));
   const nextMessages = reconcileMessageIdentities(session.messages, pruned);
   if (nextMessages === session.messages) return state;
-  // Cap prune dropped rows that were tail-resident: live growth past the cap
-  // (not a prepend-shaped replacement re-slicing rows never in the tail) —
-  // latch it and account the dropped rows into the history-segment gap.
-  const droppedResident = countDroppedResidentTailRows(session.messages, ordered, pruned);
-  let next = setSession(state, agentId, {
-    ...session,
-    messages: nextMessages,
-    ...(droppedResident > 0 ? { tailCapPruned: true } : {}),
-  });
-  if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
-  return next;
+  return accountLostOlderTailRows(
+    setSession(state, agentId, { ...session, messages: nextMessages }),
+    agentId,
+    session.messages,
+  );
 });
 agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] }) => {
   const session = getSession(state, agentId);
@@ -1874,20 +1911,10 @@ agentSessionReducer.with(updateSession, (state, { payload: [agentId, updates] })
       ? applyAgentMetadataPatch(session.metadata, metadataPatch)
       : session.metadata,
   };
-  let droppedResident = 0;
   if (messages && Array.isArray(messages)) {
-    const ordered = normalizeSortHistoryMessages(messages);
-    const pruned = pruneMessages(ordered);
-    droppedResident = countDroppedResidentTailRows(session.messages, ordered, pruned);
-    merged = {
-      ...merged,
-      messages: pruned,
-      ...(droppedResident > 0 ? { tailCapPruned: true } : {}),
-    };
+    merged = { ...merged, messages: pruneMessages(normalizeSortHistoryMessages(messages)) };
   }
-  let next = setSession(state, agentId, merged);
-  if (droppedResident > 0) next = accountTailCapPrune(next, agentId, droppedResident);
-  return next;
+  return accountLostOlderTailRows(setSession(state, agentId, merged), agentId, session.messages);
 });
 agentSessionReducer.with(eventReceived, (state, { payload: [, event] }) => {
   if (['agent:updated', 'agent:status-changed', 'hub:checkpoint'].includes(event.type)) {
@@ -2230,11 +2257,18 @@ agentSessionReducer.with(processEvicted, (state, { payload: [agentId] }) => {
 agentSessionReducer.with(prependHistoryMessages, (state, { payload: [agentId, messages] }) => {
   const session = getSession(state, agentId);
   if (!session) return state;
-  const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
-  const merged = dropRowsPresentInTail(
-    normalizeSortHistoryMessages([...existing.messages, ...messages]),
-    session.messages,
-  );
+  const segment = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
+  const sorted = normalizeSortHistoryMessages([...segment.messages, ...messages]);
+  const merged = dropRowsPresentInTail(sorted, session.messages);
+  // Unknown boundary (the tail lost older rows while history was empty): a
+  // page overlapping the tail was anchored at it and is contiguous; any
+  // other page continued a cursor minted before the loss and lands BELOW
+  // the dropped rows — open the gap so the refill restores them.
+  const { tailBoundaryUnknown, ...known } = segment;
+  const resolvesBoundary = tailBoundaryUnknown === true && merged.length > 0;
+  const existing = resolvesBoundary
+    ? { ...known, gapToTail: known.gapToTail || merged.length === sorted.length }
+    : segment;
   // Seek-seeded segments track the estimated ordinal of the first row: rows
   // landing BEFORE the previous first row shift the estimate down by their
   // count (floor 0). An estimate only — oldestReached pins it to exactly 0.
@@ -2310,6 +2344,9 @@ agentSessionReducer.with(
     const existing = getHistorySegment(state, agentId) ?? EMPTY_HISTORY_SEGMENT;
     const next = oldestReached ?? true;
     if (existing.oldestReached === next && getHistorySegment(state, agentId)) return state;
+    // An empty page past an unknown boundary proves nothing about the rows
+    // the tail dropped: they are still unloaded, so the start is not reached.
+    if (next && existing.tailBoundaryUnknown === true) return state;
     // The true first row is resident — the estimate becomes exact.
     const startOrdinalEstimate =
       next && existing.startOrdinalEstimate !== undefined ? 0 : existing.startOrdinalEstimate;

@@ -116,8 +116,9 @@ export interface FeOwnedSessionState {
    */
   liveTurnOpenedAt?: string;
   /**
-   * FE-owned latch: true once the client-side `MAX_MESSAGES_PER_AGENT` cap
-   * actually dropped rows from the live tail (live growth past the cap).
+   * FE-owned latch: true once a tail write dropped older resident rows — the
+   * client-side `MAX_MESSAGES_PER_AGENT` cap (live growth past the cap) or a
+   * replacement that rebased the tail onto a newer window.
    * The chat-init transcript snapshot meta (`truncated`/`totalMessages`) is
    * captured once per init and goes stale as the conversation grows, so the
    * scrollback triggers OR this latch into their "older rows exist" inputs.
@@ -224,6 +225,15 @@ export interface AgentHistorySegment {
    * counted here — the tail prune opens the gap and adds the dropped count.
    */
   holeRowsEstimate?: number;
+  /**
+   * true when a tail write dropped older resident rows while the segment held
+   * no rows to carry `gapToTail`: where history meets the tail is unknown. A
+   * held older-page cursor was minted against the pre-loss tail and continues
+   * BELOW the dropped rows, so the next prepend that does not overlap the
+   * tail opens the gap (the refill restores the dropped rows), and
+   * `oldestReached` cannot latch until rows land. Cleared once rows land.
+   */
+  tailBoundaryUnknown?: boolean;
 }
 
 /**
