@@ -23,6 +23,8 @@
         props: { diagnosticCode: 'scan-limit', diagnosticIsDirectory: true, emptyCatalog: true },
       },
       'imported-unsupported': { props: { imported: true, unsupported: true, source: 'project' } },
+      'model-options': { props: { modelOptions: 'pair' } },
+      'model-options-heights': { props: { modelOptions: 'heights' } },
     },
   });
 </script>
@@ -37,6 +39,7 @@
     SpecialistImportDiagnostic,
     SpecialistDef,
   } from '$lib/client/app-client';
+  import type { SpecialistModelOption } from '$shared/specialist-file-types';
   import SpecialistImportDiagnostics from './SpecialistImportDiagnostics.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -80,6 +83,7 @@
     emptyCatalog = false,
     catalogFlow = false,
     creationFlow = false,
+    modelOptions,
   }: {
     rules?: boolean;
     role?: 'owner' | 'member' | 'guest';
@@ -94,7 +98,30 @@
     emptyCatalog?: boolean;
     catalogFlow?: boolean;
     creationFlow?: boolean;
+    /** Saved delegation model options: a realistic pair, or hint-height probes. */
+    modelOptions?: 'pair' | 'heights';
   } = $props();
+
+  const lines = (count: number) =>
+    Array.from({ length: count }, (_, i) => `Hint line ${i + 1}`).join('\n');
+  // i18n-ignore (preview-only sample hints)
+  const savedModelOptions: SpecialistModelOption[] | undefined =
+    modelOptions === 'pair'
+      ? [
+          {
+            provider: 'claude-code',
+            model: 'opus',
+            hint: 'Large refactors that span several packages and need a careful plan.\nSecurity-sensitive changes.\nAnything where a wrong answer is expensive to undo.',
+          },
+          { provider: 'codex', model: 'gpt-5.3-codex', hint: 'Small, well-scoped edits.' },
+        ]
+      : modelOptions === 'heights'
+        ? [
+            { model: 'six-line-model', hint: lines(6) },
+            { model: 'twelve-line-model', hint: lines(12) },
+            { model: 'empty-hint-model', hint: '' },
+          ]
+        : undefined;
 
   admitLegacyPrincipal();
   const admitted = withHostPrincipal(appStore.state, role);
@@ -233,6 +260,7 @@
               unsupportedFields: imported && unsupported ? ['tools', 'permissionMode'] : undefined,
               requiredSkills: missingSkills ? ['code-review'] : undefined,
               missingSkills: missingSkills ? ['code-review'] : undefined,
+              modelOptions: savedModelOptions,
             },
           ],
     ),
