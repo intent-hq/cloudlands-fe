@@ -215,7 +215,6 @@ export const selectCanDeleteScript = store.createSelector(
     const script = selectScriptById.select(state, wsId, scriptId);
     return (
       !!script &&
-      !isLiveScriptStatus(script.runtime?.status) &&
       !getWs(state, wsId).detectionOperation?.pending &&
       !getWs(state, wsId).operations[scriptId]?.pending
     );
