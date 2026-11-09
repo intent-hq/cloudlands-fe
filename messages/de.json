@@ -748,7 +748,6 @@
   "chat_modelPicker_legacyModels_ariaLabel": "Legacy-Modelle ein- oder ausblenden",
   "chat_modelPicker_legacyModels_label": "Legacy-Modelle",
   "chat_modelPicker_loadFailed_label": "Modelle konnten nicht geladen werden",
-  "chat_modelPicker_loadingMore_label": "Weitere Modelle werden geladen…",
   "chat_modelPicker_loadingProviderModels_label": "{provider}-Modelle werden geladen…",
   "chat_modelPicker_missingProfile_name": "Entferntes Profil",
   "chat_modelPicker_modelLocked_title": "Modell gesperrt: {model}",

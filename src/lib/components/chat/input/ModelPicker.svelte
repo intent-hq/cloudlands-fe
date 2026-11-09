@@ -2038,22 +2038,28 @@
   // loads and failures say nothing about it.
   const showDropdownFooter = $derived(
     showReasoningFooter ||
-      (!remoteScoped &&
-        (codexFallbackWarning !== null ||
-          (!allProvidersLoaded && Object.keys(allProviderModels).length > 0) ||
-          activeProviderIssue !== null ||
-          refreshingProviders.has(refreshProviderId))),
+      (!remoteScoped && (codexFallbackWarning !== null || activeProviderIssue !== null)),
   );
 
   const railProviderIds = $derived(providerTabIds);
   let pointerInteraction = $state(false);
 
-  function clearModelSearch(event: MouseEvent) {
-    modelSearchValue = '';
-    (event.currentTarget as HTMLElement)
+  function focusModelSearch(from: Element) {
+    from
       .closest('[data-slot="dropdown-content"]')
       ?.querySelector<HTMLInputElement>('[role="searchbox"]')
       ?.focus();
+  }
+
+  function clearModelSearch(event: MouseEvent) {
+    modelSearchValue = '';
+    focusModelSearch(event.currentTarget as Element);
+  }
+
+  function retryActiveProvider(event: MouseEvent) {
+    // A refresh clears the error that renders this button; keep focus in the picker.
+    focusModelSearch(event.currentTarget as Element);
+    handleRefreshProvider(refreshProviderId);
   }
 
   function selectProviderTab(providerId: string) {
@@ -2705,12 +2711,6 @@
           />
         </div>
       {/if}
-      {#if !allProvidersLoaded && Object.keys(allProviderModels).length > 0}
-        <div class="px-3 py-2 flex items-center gap-2 text-xs text-muted-foreground">
-          <IntentMarkLoader size={12} />
-          <span>{m.chat_modelPicker_loadingMore_label()}</span>
-        </div>
-      {/if}
       {#if footerProviderWarnings.length > 0}
         <div class="px-3 py-2 space-y-1.5 text-xs">
           {#each footerProviderWarnings as warning (warning.providerId)}
@@ -2726,30 +2726,25 @@
           {/each}
         </div>
       {/if}
-      {#if activeProviderIssue || refreshingProviders.has(refreshProviderId)}
+      {#if activeProviderIssue}
         <div class="flex flex-wrap items-center gap-2 px-3 py-2">
           <Button
             type="button"
             variant="secondary"
             size="sm"
             disabled={refreshingProviders.has(refreshProviderId)}
-            aria-label={m.chat_modelPicker_retry_label()}
-            aria-busy={refreshingProviders.has(refreshProviderId)}
-            onclick={() => handleRefreshProvider(refreshProviderId)}
+            onclick={retryActiveProvider}
           >
-            {#if refreshingProviders.has(refreshProviderId)}<IntentMarkLoader size={12} />{/if}
             {m.chat_modelPicker_retry_label()}
           </Button>
-          {#if activeProviderIssue}
-            <Button
-              type="button"
-              variant="link"
-              size="sm"
-              onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
-            >
-              {m.chat_modelPicker_errorDetails_label()}
-            </Button>
-          {/if}
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
+          >
+            {m.chat_modelPicker_errorDetails_label()}
+          </Button>
         </div>
       {/if}
     {/if}
@@ -3179,7 +3174,7 @@
         <ModelPickerEmptyState
           {isLoadingModels}
           blockingLoadError={activeProviderIssue ?? blockingLoadError}
-          retryInFooter={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
+          hideRetry={activeProviderIssue !== null || refreshingProviders.has(refreshProviderId)}
           {hasNoAvailableProvider}
           hostManaged={!$canAdministerHost$}
           onOpenProviderSettings={openProviderSettings}

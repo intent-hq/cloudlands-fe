@@ -748,7 +748,6 @@
   "chat_modelPicker_legacyModels_ariaLabel": "Mostrar u ocultar modelos heredados",
   "chat_modelPicker_legacyModels_label": "Modelos heredados",
   "chat_modelPicker_loadFailed_label": "No se pudieron cargar los modelos",
-  "chat_modelPicker_loadingMore_label": "Cargando más modelos…",
   "chat_modelPicker_loadingProviderModels_label": "Cargando modelos de {provider}…",
   "chat_modelPicker_missingProfile_name": "Perfil eliminado",
   "chat_modelPicker_modelLocked_title": "Modelo bloqueado: {model}",

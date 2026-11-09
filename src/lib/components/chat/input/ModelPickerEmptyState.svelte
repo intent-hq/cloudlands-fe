@@ -10,7 +10,7 @@
 
   interface Props {
     isLoadingModels: boolean;
-    retryInFooter?: boolean;
+    hideRetry?: boolean;
     blockingLoadError: ProviderLoadError | null;
     hasNoAvailableProvider?: boolean;
     hostManaged?: boolean;
@@ -20,7 +20,7 @@
 
   let {
     isLoadingModels,
-    retryInFooter = false,
+    hideRetry = false,
     blockingLoadError,
     hasNoAvailableProvider = false,
     hostManaged = false,
@@ -96,7 +96,7 @@
           <div class="mt-1 text-subtle">{blockingLoadError.hint}</div>
         {/if}
       </div>
-      {#if !retryInFooter}
+      {#if !hideRetry}
         <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
           <Fa icon={faArrowsRotate} class="h-3 w-3" />
           {m.chat_modelPicker_retry_label()}
@@ -106,7 +106,7 @@
   {:else}
     <div class="flex flex-col items-start gap-2.5 py-4 px-2 text-left text-muted-foreground">
       <span class="type-body">{m.chat_modelPicker_noModels_label()}</span>
-      {#if !retryInFooter}
+      {#if !hideRetry}
         <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
           <Fa icon={faArrowsRotate} class="h-3 w-3" />
           {m.chat_modelPicker_retry_label()}

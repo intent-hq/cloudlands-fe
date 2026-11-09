@@ -911,8 +911,6 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(header.textContent).toContain('Models on Mac mini');
       expect(header.textContent).toContain('macOS arm64');
       expect(header.textContent).toMatch(/Reported/);
-      // The backend's own catalog loads say nothing about the machine.
-      expect(screen.queryByText(/Loading more models/)).toBeNull();
       const rail = screen.getByTestId('model-provider-tabs');
       expect(rail.getAttribute('aria-label')).toBe('Providers on Mac mini');
       // Auggie runs on the backend but the machine never reported it.
@@ -3065,9 +3063,13 @@ describe('ModelPicker multi-provider mode', () => {
           workspaceId: 'ws-1',
         }),
       );
-      expect(
-        screen.getByRole('button', { name: 'Retry', exact: true }).hasAttribute('disabled'),
-      ).toBe(true);
+      // Only the refresh icon reports the retry; an error clears with it, a warning stays.
+      expect(screen.getByTestId('model-provider-refresh-button').getAttribute('aria-busy')).toBe(
+        'true',
+      );
+      const retrying = screen.queryByRole('button', { name: 'Retry', exact: true });
+      if (failure === 'error') expect(retrying).toBeNull();
+      else expect(retrying?.hasAttribute('disabled')).toBe(true);
       rejectRetry(new Error('Still unavailable'));
       await waitFor(() =>
         expect(
