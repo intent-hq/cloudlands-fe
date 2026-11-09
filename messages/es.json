@@ -8174,7 +8174,7 @@
   "dock_conversation_chooseAgent_description": "Elige un agente para ver su conversación.",
   "dock_conversation_loadFailed_error": "No se pudo cargar esta conversación.",
   "dock_conversation_sendFailed_error": "No se pudo enviar tu respuesta. Tu borrador está guardado.",
-  "dock_conversation_imageBudget_error": "Estas imágenes son demasiado grandes para enviarlas juntas. Quita algunas y vuelve a enviar. Tu borrador está guardado.",
+  "dock_conversation_imageBudget_error": "Estas imágenes son demasiado grandes para enviarlas juntas. Quita algunas y vuelve a enviar. Tu borrador no ha cambiado.",
   "dock_conversation_attention_description": "Abre el espacio de trabajo para responder a la solicitud pendiente.",
   "dock_conversation_attachments_description": "Este borrador tiene archivos adjuntos. Continúa en el espacio de trabajo.",
   "dock_conversation_queued_label": "Respuesta en cola",

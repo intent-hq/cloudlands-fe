@@ -8174,7 +8174,7 @@
   "dock_conversation_chooseAgent_description": "选择智能体以查看其对话。",
   "dock_conversation_loadFailed_error": "无法加载此对话。",
   "dock_conversation_sendFailed_error": "无法发送回复。草稿已保存。",
-  "dock_conversation_imageBudget_error": "这些图片合在一起太大，无法发送。请删除一些后再发送。草稿已保存。",
+  "dock_conversation_imageBudget_error": "这些图片合在一起太大，无法发送。请删除一些后再发送。草稿未作更改。",
   "dock_conversation_attention_description": "打开工作区以回应待处理的请求。",
   "dock_conversation_attachments_description": "此草稿包含附件。请在工作区中继续。",
   "dock_conversation_queued_label": "回复已加入队列",
