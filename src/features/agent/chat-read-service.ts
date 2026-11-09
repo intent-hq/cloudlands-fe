@@ -68,6 +68,33 @@ function readCurrentMessages(agentId: string, workspaceId?: string): AgentMessag
 }
 
 /**
+ * Resident rows older than a newest-page read that form an unbroken `seq`
+ * chain down from the page's oldest row. Daemon seqs are gapless, so a break
+ * means missing rows: stopping there keeps the transcript from joining stale
+ * rows to the page across a hidden gap. A page without older history
+ * (`nextToken === null`) is the whole conversation, so nothing is kept.
+ */
+function connectedOlderRows(
+  resident: AgentMessage[],
+  page: AgentMessage[],
+  nextToken: string | null | undefined,
+): AgentMessage[] {
+  if (!nextToken) return [];
+  let expected = Infinity;
+  for (const message of page) {
+    if (typeof message.seq === 'number') expected = Math.min(expected, message.seq);
+  }
+  if (expected === Infinity) return [];
+  const bySeq = new Map<number, AgentMessage>();
+  for (const message of resident) {
+    if (typeof message.seq === 'number' && message.seq < expected) bySeq.set(message.seq, message);
+  }
+  const kept: AgentMessage[] = [];
+  for (let seq = expected - 1; bySeq.has(seq); seq -= 1) kept.push(bySeq.get(seq)!);
+  return kept.reverse();
+}
+
+/**
  * Recover the newest transcript page, hydrating metadata only for unknown
  * sessions. Older pages stay demand-driven. A failed read preserves the
  * current transcript; concurrent requests share one read and a trailing retry.
@@ -225,10 +252,17 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
             (typeof m.appMessageId === 'string' && baselineIds.has(m.appMessageId))
           ),
       );
+      // The page is only the newest window: resident rows older than it are
+      // not a BE truncation, so keep the ones that still connect to it.
+      const olderRows = connectedOlderRows(
+        readCurrentMessages(agentId, workspaceId),
+        finalMessages,
+        page.nextToken,
+      );
       const mergedMessages =
-        appendedDuringRead.length === 0
+        appendedDuringRead.length === 0 && olderRows.length === 0
           ? finalMessages
-          : deduplicateAgentMessages([...finalMessages, ...appendedDuringRead]);
+          : deduplicateAgentMessages([...olderRows, ...finalMessages, ...appendedDuringRead]);
 
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
