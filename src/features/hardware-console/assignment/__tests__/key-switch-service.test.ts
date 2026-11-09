@@ -511,3 +511,55 @@ describe('handleAgentKeyEvent', () => {
     ]);
   });
 });
+
+describe('focusWorkspaceSlot — chat composer focus', () => {
+  it('focuses the composer of the attention tab it lands on', () => {
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+    mockState.agentSessions.byAgentId = { 'agent-b': { attentionRequestKind: 'discussion' } };
+
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(focusComposer).toHaveBeenCalledTimes(1);
+    expect(focusComposer).toHaveBeenCalledWith('agent-b');
+  });
+
+  it('focuses the composer of the kept current agent tab on first press', () => {
+    seedLayout('panel-2', { 'panel-1': 't1', 'panel-2': 't4' });
+
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(setActiveTabCalls()).toEqual([]);
+    expect(focusComposer).toHaveBeenCalledWith('agent-c');
+  });
+
+  it('focuses the composer of the agent tab it cycles to', () => {
+    mockState.tabState.currentTabId = WS;
+    at('/workspace/ws-1');
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(focusComposer).toHaveBeenCalledWith('agent-a');
+  });
+
+  it('does not focus a composer when it lands on a non-agent tab', () => {
+    mockState.tabState.currentTabId = WS;
+    at('/workspace/ws-1');
+    seedLayout('panel-2', { 'panel-1': 't3', 'panel-2': 't4' });
+
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(setActiveTabCalls()).toEqual([
+      expect.objectContaining({ wsId: WS, tabId: 't1', panelId: 'panel-1' }),
+    ]);
+    expect(focusComposer).not.toHaveBeenCalled();
+  });
+
+  it('does not focus a composer when the kept current tab is not an agent', () => {
+    seedLayout('panel-1', { 'panel-1': 't1', 'panel-2': 't4' });
+
+    focusWorkspaceSlot(WS, { focusComposer });
+
+    expect(focusComposer).not.toHaveBeenCalled();
+  });
+});
