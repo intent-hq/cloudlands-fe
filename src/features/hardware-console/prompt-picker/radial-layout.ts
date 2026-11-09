@@ -15,7 +15,7 @@ import { promptKey } from './curation';
 
 export const RADIAL_SLOT_COUNT = 8;
 export const RADIAL_CANCEL_SLOT = 4;
-export const MAX_RADIAL_SUGGESTIONS = 3;
+const MAX_RADIAL_SUGGESTIONS = 3;
 
 export type RadialSlot =
   | { kind: 'suggestion'; text: string; label: string; number: number }
@@ -89,7 +89,7 @@ export function nextSelectableSlot(
 /** Gap between neighbouring slots, as a fraction of a full turn. */
 export const RADIAL_SLOT_GAP_TURNS = 5 / 360;
 /** Horizontal breathing room inside each slot's arc, in px. */
-export const RADIAL_LABEL_PADDING = 24;
+const RADIAL_LABEL_PADDING = 24;
 const MAX_LABEL_LINES = 2;
 const ELLIPSIS = '…';
 
