@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.306.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.1...v2.306.2) (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+* **remote-machines:** list backend models for profiles on machines that report none ([#4356](https://github.com/intent-hq/cloudlands-fe/issues/4356)) ([e4fdadb](https://github.com/intent-hq/cloudlands-fe/commit/e4fdadba85c90dd2e1d60378d44a766f1a728072))
+
 ## [2.306.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.0...v2.306.1) (2026-11-09)
 
 
