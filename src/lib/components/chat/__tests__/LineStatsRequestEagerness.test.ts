@@ -1,5 +1,4 @@
-// @verify-changed-triggers: ../AgentCard.svelte, ../../agent-overview/AgentOverviewPanel.svelte,
-//   ../../tiptap/comments/AgentPeekCard.svelte
+// @verify-changed-triggers: ../AgentCard.svelte, ../../tiptap/comments/AgentPeekCard.svelte
 
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -14,13 +13,6 @@ describe('line-stat request eagerness checks', () => {
 
     expect(source).toContain('selectAgentLineStats(agentIdStore)');
     expect(source).not.toContain('requestAgentLineStats');
-  });
-
-  it('AgentOverviewPanel does not bulk request line stats for graph nodes', () => {
-    const source = readSource('../../agent-overview/AgentOverviewPanel.svelte');
-
-    expect(source).not.toContain('requestAgentLineStats');
-    expect(source).not.toMatch(/agentNodes[\s\S]*appStore\.dispatch\(/);
   });
 
   it('AgentPeekCard requests only when expanded line stats are visible', () => {
