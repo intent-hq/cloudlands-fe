@@ -5902,7 +5902,7 @@
   "specialists_builtin_developer_name": "開発者",
   "specialists_builtin_prReviewer_description": "確度の高い実用的なフィードバックでプルリクエストをレビューします",
   "specialists_builtin_prReviewer_name": "PR レビュアー",
-  "specialists_builtin_productManager_description": "問題とコードを調査し、レビュー済みの仕様を作成して開発者に引き継ぎます",
+  "specialists_builtin_productManager_description": "ヒアリングを行い、コードを調査して、開発者向けにレビュー済みの仕様を作成します",
   "specialists_builtin_productManager_name": "プロダクトマネージャー",
   "specialists_builtin_uiDesigner_description": "エレガントでアクセシブルな、本番環境に対応したユーザーインターフェースを作成します",
   "specialists_builtin_uiDesigner_name": "UI デザイナー",

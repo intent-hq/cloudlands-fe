@@ -5902,7 +5902,7 @@
   "specialists_builtin_developer_name": "Desarrollador",
   "specialists_builtin_prReviewer_description": "Revisa pull requests con comentarios fiables y accionables",
   "specialists_builtin_prReviewer_name": "Revisor de PR",
-  "specialists_builtin_productManager_description": "Explora el problema y el código, escribe una especificación revisada y la entrega a un Desarrollador",
+  "specialists_builtin_productManager_description": "Le entrevista, explora el código y redacta una especificación revisada para un Desarrollador",
   "specialists_builtin_productManager_name": "Gerente de producto",
   "specialists_builtin_uiDesigner_description": "Crea interfaces de usuario elegantes, accesibles y listas para producción",
   "specialists_builtin_uiDesigner_name": "Diseñador de UI",
