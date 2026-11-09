@@ -3,6 +3,8 @@
   import { screenshotKindLabel } from './screenshot-labels';
   import { m } from '$shared/paraglide/messages.js';
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
+  import { layoutDockMediaMarks } from '$features/hud/composer/dock-media-render';
+  import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { createScreenshotPreviewRenderer } from './screenshot-preview';
   import {
     dockMediaGeometryRect,
@@ -67,6 +69,8 @@
   let cropCandidate = $state<{ x: number; y: number; w: number; h: number } | null>(null);
   let selectedIds = $state<string[]>([]);
   let selectionAnchor = $state<string | null>(null);
+  let pendingTextMark = $state<DockMediaEditMark | null>(null);
+  const displayDraft = $derived(pendingTextMark ? { ...draft, marks: [...draft.marks, pendingTextMark] } : draft);
   let editingTextId = $state<string | null>(null);
   let textPreview = $state<{ id: string; value: string } | null>(null);
   let fontSettled = $state(false);
@@ -93,11 +97,8 @@
     );
   });
   onDestroy(() => onInteractionPending?.(false));
-  const movingMark = $derived(
-    !!gesturePreview && draft.marks.some((mark) => mark.id === gesturePreview?.id),
-  );
   const previewEdit = $derived.by(() => {
-    let edit = gesturePreview ? transformedEdit(gesturePreview.id, gesturePreview.geometry) : draft;
+    let edit = gesturePreview ? transformedEdit(gesturePreview.id, gesturePreview.geometry) : displayDraft;
     if (textPreview) {
       const { id, value } = textPreview;
       edit = {
@@ -111,6 +112,7 @@
     }
     return cropCandidate ? { ...edit, crop: null } : edit;
   });
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- per-editor local pixel painter; no domain request or shared state is loaded here
   const renderPreview = createScreenshotPreviewRenderer();
   let previewUrl = $state<string | null>(null);
   let previewPending = $state(false);
@@ -133,15 +135,9 @@
   }
   const visualKey = $derived(
     JSON.stringify({
-      editingTextId,
       crop: previewEdit.crop,
       blur: previewEdit.blurRegions,
       strokes: previewEdit.blurStrokes,
-      marks: previewEdit.marks.map((mark) => ({
-        id: mark.id,
-        geometry: mark.geometry,
-        included: mark.included,
-      })),
     }),
   );
   type PreviewJob = {
@@ -183,7 +179,7 @@
           if (
             destroyed ||
             !sameFrame ||
-            (job.key !== visualKey && !(movingMark && job.redactionKey === redactionKey))
+            job.key !== visualKey
           ) {
             URL.revokeObjectURL(next);
             continue;
@@ -224,8 +220,9 @@
     previewFailed = false;
     queuedPreview = {
       source: currentSource,
-      edit: untrack(() => previewEdit),
-      hiddenTextMarkId: editingTextId,
+      // Pixels/redactions are asynchronous; marks paint synchronously above them.
+      edit: untrack(() => ({ ...previewEdit, marks: [] })),
+      hiddenTextMarkId: null,
       url,
       key,
       frameKey: currentFrame,
@@ -248,7 +245,8 @@
       ? { x: 0, y: 0, w: source.width, h: source.height }
       : (draft.crop ?? { x: 0, y: 0, w: source.width, h: source.height }),
   );
-  const numbered = $derived(numberDockMediaMarks(draft, source));
+  const numbered = $derived(numberDockMediaMarks(displayDraft, source));
+  const annotationOps = $derived(fontSettled && source.visuals === 'clean' ? layoutDockMediaMarks(previewEdit, source, 0, editingTextId) : []);
   const shapes = $derived<ScreenshotShape[]>([
     ...numbered.map(({ mark }) => ({
       id: mark.id,
@@ -311,6 +309,7 @@
       selectedMarkId = null;
       selectionAnchor = null;
       editingTextId = null;
+      pendingTextMark = null;
       gesturePending = false;
       gesturePreview = null;
     });
@@ -355,6 +354,7 @@
     selectionAnchor ??= selectedIds[0] ?? null;
   }
   function setTool(next: ScreenshotTool) {
+    pendingTextMark = null;
     cropCandidate = null;
     editingTextId = null;
     if (next !== 'pointer') {
@@ -371,6 +371,7 @@
       tool = 'pointer';
       return;
     }
+    pendingTextMark = null;
     editingTextId = null;
     cropCandidate = { ...(draft.crop ?? { x: 0, y: 0, w: source.width, h: source.height }) };
     tool = 'crop';
@@ -483,12 +484,7 @@
     if (event.defaultPrevented) return;
     if (event.key === 'Escape' && gesturePending) return;
     const target = event.target as HTMLElement | null;
-    if (
-      target?.closest(
-        'input, textarea, [contenteditable="true"], [role="menu"], [role="dialog"], [role="alertdialog"]',
-      )
-    )
-      return;
+    if (isTextEntryTarget(target) || target?.closest('[role="menu"], [role="dialog"], [role="alertdialog"]')) return;
     if (event.key === 'Enter' && target?.closest('button')) return;
     if (cropCandidate && (event.key === 'Enter' || event.key === 'Escape')) {
       event.preventDefault();
@@ -548,7 +544,7 @@
             kind: 'text',
             x: bounds.x,
             y: bounds.y,
-            text: m.dock_screenshotEditor_text(),
+            text: '',
             ...(canCreateV2 && !autoWidthText
               ? {
                   style: 'sticky' as const,
@@ -567,24 +563,20 @@
             ),
           }
         : geometry;
-    apply({
-      ...draft,
-      marks: [
-        ...draft.marks,
-        {
-          id,
-          atMs: 0,
-          batchId: 'initial',
-          source: 'editor',
-          kind,
-          included: true,
-          geometry: value,
-          label: screenshotKindLabel(kind),
-          note: '',
-          context: { selector: null, text: null, url: null },
-        },
-      ],
-    });
+    const mark: DockMediaEditMark = {
+      id,
+      atMs: 0,
+      batchId: 'initial',
+      source: 'editor',
+      kind,
+      included: true,
+      geometry: value,
+      label: screenshotKindLabel(kind),
+      note: '',
+      context: { selector: null, text: null, url: null },
+    };
+    if (kind === 'text') pendingTextMark = mark;
+    else apply({ ...draft, marks: [...draft.marks, mark] });
     selectedMarkId = kind === 'text' ? id : null;
     selectedIds = kind === 'text' ? [id] : [];
     selectionAnchor = kind === 'text' ? id : null;
@@ -594,8 +586,10 @@
     }
   }
   function text(id: string, value: string) {
-    const mark = draft.marks.find((item) => item.id === id);
+    const pending = pendingTextMark?.id === id ? pendingTextMark : null;
+    const mark = pending ?? draft.marks.find((item) => item.id === id);
     if (mark?.geometry.kind !== 'text') return;
+    if (pending && !value.trim()) { pendingTextMark = null; return; }
     let geometry = { ...mark.geometry, text: value };
     const layout = layoutDockMediaText(geometry),
       available = frame.y + frame.h - geometry.y;
@@ -607,8 +601,12 @@
         ...(geometry.style === 'sticky' ? { padding: layout.padding * scale } : {}),
       };
     }
-    if (screenshotContains(frame, dockMediaGeometryRect(geometry)))
-      update(id, { geometry, label: value.slice(0, 2048) });
+    if (screenshotContains(frame, dockMediaGeometryRect(geometry))) {
+      if (pending) {
+        apply({ ...draft, marks: [...draft.marks, { ...pending, geometry, label: value.slice(0, 2048) }] });
+        pendingTextMark = null;
+      } else update(id, { geometry, label: value.slice(0, 2048) });
+    }
   }
 </script>
 
@@ -646,6 +644,7 @@
         height={source.height}
         {frame}
         {shapes}
+        {annotationOps}
         {tool}
         documentKey={sourceIdentity}
         selectedId={selectedMarkId}
@@ -657,8 +656,10 @@
         {cropCandidate}
         onCropChange={(candidate) => (cropCandidate = candidate)}
         bind:editingTextId
-        editingRasterReady={displayedPreview?.key === visualKey}
         onText={text}
+        onTextCancel={(id) => {
+          if (pendingTextMark?.id === id) pendingTextMark = null;
+        }}
         onTextPreview={(preview) => (textPreview = preview)}
         disabled={blocked || !frameReady || previewFailed}
         onSelect={select}

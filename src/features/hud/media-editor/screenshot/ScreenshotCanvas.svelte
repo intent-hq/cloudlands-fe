@@ -16,7 +16,7 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
   import { ensureDockAnnotationFont } from '$features/hud/composer/dock-annotation-font';
-  import { DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
+  import { paintDockMediaMarks, type DockMediaPaintOp, DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
   import { layoutDockMediaText } from '$shared/dock-media-edit';
   import {
     annotationHandles,
@@ -41,6 +41,7 @@
     height,
     frame,
     shapes,
+    annotationOps = [],
     tool,
     selectedId,
     selectedIds = [],
@@ -51,7 +52,6 @@
     onGesturePending,
     cropCandidate = null,
     editingTextId = $bindable(null),
-    editingRasterReady = true,
     disabled = false,
     raster = false,
     hidden = false,
@@ -67,12 +67,14 @@
     onCropChange,
     onText,
     onTextPreview,
+    onTextCancel,
   }: {
     sourceUrl: string;
     width: number;
     height: number;
     frame: DockImageRect;
     shapes: readonly ScreenshotShape[];
+    annotationOps?: readonly DockMediaPaintOp[];
     tool: ScreenshotTool;
     selectedId: string | null;
     selectedIds?: readonly string[];
@@ -83,7 +85,6 @@
     onGesturePending: (pending: boolean) => void;
     cropCandidate?: DockImageRect | null;
     editingTextId?: string | null;
-    editingRasterReady?: boolean;
     disabled?: boolean;
     raster?: boolean;
     hidden?: boolean;
@@ -103,6 +104,7 @@
     onDelete: (id?: string) => void;
     onCropChange: (crop: DockImageRect) => void;
     onText: (id: string, value: string) => void;
+    onTextCancel?: (id: string) => void;
     onTextPreview?: (preview: { id: string; value: string } | null) => void;
   } = $props();
   let fontsReady = $state(false);
@@ -144,7 +146,6 @@
     id: string;
     document: string;
     original: string;
-    rasterReady: boolean;
   } | null>(null);
   const textShape = $derived(shapes.find((shape) => shape.id === editingTextId && shape.text));
   const textLayout = $derived.by(() => {
@@ -186,7 +187,7 @@
     if (!context) return textLayout.width + 2 * unit;
     context.font = `${text.fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
     return (
-      Math.max(...textValue.split('\n').map((line) => context.measureText(line).width)) + 2 * unit
+      Math.max(...(textValue || m.dock_screenshotEditor_text()).split('\n').map((line) => context.measureText(line).width)) + 2 * unit
     );
   });
   $effect(() => {
@@ -285,26 +286,46 @@
     }
     if (!shape?.text) return;
     if (textSession?.id === id && textSession.document === documentKey) return;
-    textSession = { id, document: documentKey, original: shape.text.value, rasterReady: false };
+    composing = false;
+    textSession = { id, document: documentKey, original: shape.text.value };
     textValue = shape.text.value;
   });
   $effect(() => {
-    if (editingRasterReady && textSession && !textSession.rasterReady)
-      textSession = { ...textSession, rasterReady: true };
+    const input = textInput;
+    untrack(() => {
+      if (!input || !textSession) return;
+      input.focus({ preventScroll: true });
+      input.setSelectionRange(input.value.length, input.value.length);
+    });
   });
+  let annotationBacking: OffscreenCanvas | null = null;
+  let annotationCanvas = $state<HTMLCanvasElement | null>(null);
   $effect(() => {
-    if (textInput && textSession) {
-      textInput.focus({ preventScroll: true });
-      textInput.select();
-    }
+    const canvas = annotationCanvas, ops = annotationOps, crop = frame;
+    if (!canvas || !fontsReady) return;
+    canvas.width = Math.max(1, Math.round(crop.w));
+    canvas.height = Math.max(1, Math.round(crop.h));
+    annotationBacking ??= new OffscreenCanvas(canvas.width, canvas.height);
+    annotationBacking.width = canvas.width;
+    annotationBacking.height = canvas.height;
+    const context = annotationBacking.getContext('2d');
+    if (!context) return;
+    context.scale(canvas.width / crop.w, canvas.height / crop.h);
+    context.translate(-crop.x, -crop.y);
+    paintDockMediaMarks(context, ops);
+    canvas.getContext('2d')?.drawImage(annotationBacking, 0, 0);
   });
+  let composing = false;
   function finishText(save: boolean) {
     const session = textSession,
       value = textValue;
     textSession = null;
+    composing = false;
     editingTextId = null;
-    if (save && !disabled && session?.document === documentKey && value !== session.original)
-      onText(session.id, value);
+    if (!disabled && session?.document === documentKey) {
+      if (save && (value !== session.original || !session.original)) onText(session.id, value);
+      else if (!save) onTextCancel?.(session.id);
+    }
   }
   function point(event: PointerEvent | MouseEvent, clamped = true): DockImagePoint {
     // Invert the actual SVG transform, including preserveAspectRatio letterboxing.
@@ -682,6 +703,9 @@
         {/each}
       </g>
     {/if}
+    <foreignObject x={frame.x} y={frame.y} width={frame.w} height={frame.h} pointer-events="none">
+      <canvas bind:this={annotationCanvas} data-annotation-layer style:width="100%" style:height="100%" />
+    </foreignObject>
     <g class:cropping={!!cropCandidate}>
       {#if tool === 'pointer' && !cropCandidate}
         {#each visible as shape (shape.id)}
@@ -773,7 +797,7 @@
         />
       {/each}
     {/if}
-    {#if fontsReady && textShape?.text && textLayout && textSession?.rasterReady}
+    {#if fontsReady && textShape?.text && textLayout && textSession}
       {@const b = dockGeometryRect(textShape.geometry)}
       <foreignObject
         x={b.x}
@@ -795,6 +819,7 @@
           onpointerdown={(event) => event.stopPropagation()}
           onkeydown={(event) => {
             event.stopPropagation();
+            if (event.isComposing || composing) return;
             if (event.key === 'Escape') {
               event.preventDefault();
               finishText(false);
@@ -815,6 +840,9 @@
             bind:value={textValue}
             class="text-input"
             maxlength={10000}
+            placeholder={m.dock_screenshotEditor_text()}
+            oncompositionstart={() => (composing = true)}
+            oncompositionend={() => (composing = false)}
             wrap={textShape.text.wrapped ? 'soft' : 'off'}
             aria-label={m.dock_screenshotEditor_text()}
             minHeight={0}
@@ -947,6 +975,11 @@
     line-height: 1.4;
     box-sizing: border-box;
     outline: var(--capture-text-outline) solid hsl(var(--ring));
+  }
+  .inline-text :global(.text-input::placeholder) {
+    color: hsl(var(--muted-foreground));
+    -webkit-text-stroke: 0;
+    opacity: 1;
   }
   .inline-text :global(.text-input) {
     width: 100%;
