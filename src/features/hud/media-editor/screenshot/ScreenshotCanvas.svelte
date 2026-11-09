@@ -187,7 +187,7 @@
     if (!context) return textLayout.width + 2 * unit;
     context.font = `${text.fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
     return (
-      Math.max(...(textValue || m.dock_screenshotEditor_text()).split('\n').map((line) => context.measureText(line).width)) + 2 * unit
+      Math.max(...textValue.split('\n').map((line) => context.measureText(line).width)) + 2 * unit
     );
   });
   $effect(() => {
@@ -840,7 +840,6 @@
             bind:value={textValue}
             class="text-input"
             maxlength={10000}
-            placeholder={m.dock_screenshotEditor_text()}
             oncompositionstart={() => (composing = true)}
             oncompositionend={() => (composing = false)}
             wrap={textShape.text.wrapped ? 'soft' : 'off'}
@@ -975,11 +974,6 @@
     line-height: 1.4;
     box-sizing: border-box;
     outline: var(--capture-text-outline) solid hsl(var(--ring));
-  }
-  .inline-text :global(.text-input::placeholder) {
-    color: hsl(var(--muted-foreground));
-    -webkit-text-stroke: 0;
-    opacity: 1;
   }
   .inline-text :global(.text-input) {
     width: 100%;

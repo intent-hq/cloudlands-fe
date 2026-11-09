@@ -606,6 +606,9 @@
         apply({ ...draft, marks: [...draft.marks, { ...pending, geometry, label: value.slice(0, 2048) }] });
         pendingTextMark = null;
       } else update(id, { geometry, label: value.slice(0, 2048) });
+    } else if (pending) {
+      // An uncommittable provisional field must not survive as unsaved canvas art.
+      pendingTextMark = null;
     }
   }
 </script>
