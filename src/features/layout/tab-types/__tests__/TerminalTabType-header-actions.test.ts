@@ -17,7 +17,6 @@ const dispatch = vi.hoisted(() => vi.fn());
 const mockState = vi.hoisted(() => ({
   authority: 'admitted' as string | null,
   scripts: { byWorkspaceId: {} as Record<string, any> },
-  scriptMonitor: { byWorkspaceId: {} as Record<string, any> },
 }));
 vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn().mockResolvedValue(true) }));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: { error: vi.fn() } }));
@@ -114,7 +113,6 @@ describe('script panel deletion', () => {
         operations: {},
       },
     };
-    mockState.scriptMonitor.byWorkspaceId = {};
   });
   afterEach(cleanup);
 
@@ -226,9 +224,10 @@ describe('script panel deletion', () => {
       await openMenu();
       await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
       expect(confirm).toHaveBeenCalledWith(
-        expect.objectContaining({ description: expect.stringMatching(/stopped first/) }),
+        expect.objectContaining({
+          description: expect.stringMatching(/stopped first.*agents monitoring it will be woken/),
+        }),
       );
-      expect(vi.mocked(confirm).mock.calls[0][0].description).not.toMatch(/agent/i);
       await waitFor(() =>
         expect(dispatch).toHaveBeenCalledWith(
           expect.objectContaining({ type: 'scripts/deleteScriptRequested' }),
@@ -236,37 +235,6 @@ describe('script panel deletion', () => {
       );
     },
   );
-
-  it('warns that monitoring agents wake when a running script is deleted', async () => {
-    mockState.scripts.byWorkspaceId['workspace-1'].scripts.check.runtime.status = 'running';
-    mockState.scriptMonitor.byWorkspaceId['workspace-1'] = {
-      status: 'ready',
-      monitors: [
-        { monitorId: 'm1', scriptId: 'check', agentId: 'a1', state: 'active' },
-        { monitorId: 'm2', scriptId: 'other', agentId: 'a2', state: 'active' },
-        { monitorId: 'm3', scriptId: 'check', agentId: 'a3', state: 'fired' },
-      ],
-      scripts: [],
-      operations: {},
-    };
-    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
-    await openMenu();
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
-    expect(vi.mocked(confirm).mock.calls[0][0].description).toMatch(/stopped first.*agent/is);
-  });
-
-  it('keeps the plain warning for an idle script with an active monitor', async () => {
-    mockState.scriptMonitor.byWorkspaceId['workspace-1'] = {
-      status: 'ready',
-      monitors: [{ monitorId: 'm1', scriptId: 'check', agentId: 'a1', state: 'active' }],
-      scripts: [],
-      operations: {},
-    };
-    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
-    await openMenu();
-    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
-    expect(vi.mocked(confirm).mock.calls[0][0].description).not.toMatch(/stopped|agent/i);
-  });
 
   it('still deletes when a running script exits while the dialog is open', async () => {
     mockState.scripts.byWorkspaceId['workspace-1'].scripts.check.runtime.status = 'running';

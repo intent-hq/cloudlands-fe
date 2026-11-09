@@ -7,23 +7,12 @@ import {
   selectScriptById,
 } from '$store/renderer/slices/scripts/scripts-selectors';
 import { deleteScriptRequested } from '$store/renderer/slices/scripts/scripts-slice';
-import { selectScriptMonitors } from '$store/renderer/slices/script-monitor/script-monitor-selectors';
 import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { m } from '$shared/paraglide/messages.js';
 
-function deletionDescription(workspaceId: string, scriptId: string, live: boolean): string {
-  if (!live) return m.scripts_delete_description();
-  const monitored = selectScriptMonitors
-    .select(store.state, workspaceId)
-    .monitors.some((row) => row.scriptId === scriptId && row.state === 'active');
-  return monitored
-    ? m.scripts_delete_runningMonitored_description()
-    : m.scripts_delete_running_description();
-}
-
 /**
  * Every script surface uses the same confirmation and revalidates after the dialog.
- * The daemon stops a live script before removing it, which settles its monitors.
+ * The daemon stops a live script before removing it, which wakes any monitoring agents.
  */
 export async function confirmScriptDeletion(
   workspaceId: string,
@@ -42,7 +31,7 @@ export async function confirmScriptDeletion(
   if (
     !(await confirm({
       title: m.scripts_delete_title({ name: script.name }),
-      description: deletionDescription(workspaceId, scriptId, live),
+      description: live ? m.scripts_delete_running_description() : m.scripts_delete_description(),
       confirmLabel: m.scripts_delete_label(),
       destructive: true,
     }))

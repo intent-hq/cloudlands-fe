@@ -407,13 +407,15 @@ describe('confirmed script deletion controls', () => {
     },
   );
 
-  it.each(['idle', 'exited'] as const)(
-    'requests deletion for %s from the visible header button',
+  it.each(['idle', 'exited', 'running'] as const)(
+    'requests deletion for %s from the visible header button and clears the selection',
     async (status) => {
       appStore.dispatch(updateRuntimeState(WS_A, 'script-1', { status }));
       render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
       await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
       await waitFor(() => expect(dispatchedTypes()).toContain('scripts/deleteScriptRequested'));
+      appStore.dispatch(removeScript(WS_A, 'script-1'));
+      expect(rawSelectedScriptId(WS_A)).toBeNull();
     },
   );
 });
