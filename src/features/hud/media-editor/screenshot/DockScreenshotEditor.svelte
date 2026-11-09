@@ -254,6 +254,7 @@
       ...(mark.geometry.kind === 'text'
         ? {
             text: {
+              origin: { x: mark.geometry.x, y: mark.geometry.y },
               value: mark.geometry.text,
               fontSize: mark.geometry.fontSize,
               ...layoutDockMediaText(mark.geometry),
@@ -428,8 +429,8 @@
             ? transformDockMediaText(old, {
                 scaleX: b.w / Math.max(0.0001, oldBounds.w),
                 scaleY: b.h / Math.max(0.0001, oldBounds.h),
-                offsetX: b.x - (old.x * b.w) / Math.max(0.0001, oldBounds.w),
-                offsetY: b.y - (old.y * b.h) / Math.max(0.0001, oldBounds.h),
+                offsetX: b.x - (oldBounds.x * b.w) / Math.max(0.0001, oldBounds.w),
+                offsetY: b.y - (oldBounds.y * b.h) / Math.max(0.0001, oldBounds.h),
               })
             : geometry;
       if (!screenshotContains(frame, dockMediaGeometryRect(next))) return draft;

@@ -7,7 +7,7 @@
     geometry: DockMarkGeometry;
     blur?: boolean;
     blurStroke?: DockMediaBlurStroke;
-    text?: { value: string; fontSize: number; padding: number; width: number; wrapped: boolean };
+    text?: { origin?: { x: number; y: number }; value: string; fontSize: number; padding: number; width: number; wrapped: boolean };
   }
   export type ScreenshotTool =
     'pointer' | 'element' | 'box' | 'draw' | 'arrow' | 'text' | 'blur' | 'crop';
@@ -804,12 +804,12 @@
       {/each}
     {/if}
     {#if fontsReady && textShape?.text && textLayout && textSession}
-      {@const b = dockGeometryRect(textShape.geometry)}
+      {@const origin = textShape.text.origin ?? dockGeometryRect(textShape.geometry)}
       <foreignObject
-        x={b.x}
-        y={b.y}
-        width={Math.min(frame.x + frame.w - b.x, Math.max(12 * unit, textWidth))}
-        height={Math.min(frame.y + frame.h - b.y, textLayout.height)}
+        x={origin.x}
+        y={origin.y}
+        width={Math.min(frame.x + frame.w - origin.x, Math.max(12 * unit, textWidth))}
+        height={Math.min(frame.y + frame.h - origin.y, textLayout.height)}
         style:overflow="visible"
       >
         <div
