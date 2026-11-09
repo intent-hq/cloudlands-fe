@@ -105,3 +105,25 @@ test('19 frames that fit the prompt image budget still send, all of them', async
   expect(sent.images).toBe(19);
   await writeFile(info.outputPath('image-budget-fits-receipt.json'), JSON.stringify({ frames: 19, frameBytes: 230_000, sent }, null, 2));
 });
+
+test('a single large pasted image the daemon will prepare smaller is not refused', async ({ mount, page }, info) => {
+  const component = await mount(ComposerE2EHarness);
+  const editor = component.locator('.tiptap-editor');
+  await editor.click();
+  await page.keyboard.type('One big screenshot');
+  // A placed 6 MB PNG: the daemon re-encodes it under its per-image cap, so it fits.
+  await page.evaluate(() => {
+    const { store } = (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E;
+    const { workspaceId, agentId } = store.state.dockConversation;
+    store.dispatch({ type: 'transientUi/setComposerContextItems', payload: [workspaceId, agentId, [{
+      id: 'paste-big', type: 'file', label: 'big.png', imageMimeType: 'image/png',
+      attachmentId: '6b1d0000-0000-4000-8000-000000000001', attachmentSize: 6_000_000, placementStatus: 'placed',
+    }]] });
+  });
+  await (component.getByRole('button', { name: /^Send/ }) as any).click();
+  await expect.poll(async () => (await sends(page)).length).toBe(1);
+  const [sent] = await sends(page);
+  expect(sent.images).toBe(1);
+  expect(await page.evaluate(() => (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError ?? null)).toBeNull();
+  await writeFile(info.outputPath('image-budget-single-large-receipt.json'), JSON.stringify({ pastedBytes: 6_000_000, sent }, null, 2));
+});

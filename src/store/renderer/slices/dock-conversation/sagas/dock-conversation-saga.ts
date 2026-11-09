@@ -1,6 +1,6 @@
 import { dockMediaSendsOriginal, prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
 import { DockSendError, dockSendCode, dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
-import { DOCK_PROMPT_IMAGE_BUDGET, dockBase64Bytes } from '$shared/dock-media-frame-budget';
+import { DOCK_PROMPT_IMAGE_BUDGET, dockPromptImageBytes } from '$shared/dock-media-frame-budget';
 import { createLogger } from '$lib/utils/client-logger';
 import { dockMediaEditSaga } from './dock-media-edit-saga';
 import { dockContextLinksSaga } from './dock-context-links-saga';
@@ -524,7 +524,7 @@ function* sendReply(
     }
     // Composites come only from the click's snapshot (items + evidence).
     const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
-      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], frameBytes: 0, metadata: [] };
+      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], frameSizes: [], metadata: [] };
     // A recording's markup screenshot only anchors marks the recording itself carries once it
     // is exported with them or sent as its marked original: then it is not sent again. An
     // edit of its own, or any mark of its own (or of a recording that does not carry it),
@@ -549,11 +549,18 @@ function* sendReply(
     }
     // The daemon refuses a prompt whose images exceed its budget, before the model and
     // after the message was delivered. Check the whole message while the draft can stay.
+    // Each image counts as the daemon will prepare it, summed per image: the burned
+    // composites, the exported frames, then the click's own images (the evidence ones
+    // are already the composites); a reference of unknown size counts as its largest.
     const promptImageBytes =
-      burned.reduce((sum, block) => sum + (block.data?.length ?? 0), 0) +
-      dockBase64Bytes(materialized.frameBytes) +
-      sendItems.reduce((sum, item) => sum + (!item.imageMimeType ? 0
-        : item.imageData ? item.imageData.length : dockBase64Bytes(item.attachmentSize ?? 0)), 0);
+      burned.reduce((sum, block) => sum + dockPromptImageBytes({ base64Bytes: block.data?.length ?? 0 }), 0) +
+      materialized.frameSizes.reduce((sum, size) => sum + dockPromptImageBytes({ rawBytes: size }), 0) +
+      (clickedPayload.imageBlocks ?? []).reduce((sum, block) => {
+        if ('data' in block && block.data) return sum + dockPromptImageBytes({ base64Bytes: block.data.length });
+        const ref = 'attachmentId' in block ? block.attachmentId : undefined;
+        const size = ref ? sendItems.find((item) => item.attachmentId === ref)?.attachmentSize : undefined;
+        return sum + dockPromptImageBytes(typeof size === 'number' && size > 0 ? { rawBytes: size } : null);
+      }, 0);
     if (promptImageBytes > DOCK_PROMPT_IMAGE_BUDGET) throw new DockSendError('validate', 'image-budget-exceeded');
     const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
     const wireEvidence = evidence ? { ...evidence,

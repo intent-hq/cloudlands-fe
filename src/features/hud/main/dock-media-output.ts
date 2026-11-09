@@ -227,7 +227,7 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
     if (completed.outputVersion !== DOCK_MEDIA_OUTPUT_VERSION) throw new Error('media-output-version-mismatch');
     const videoSize = (await stat(output)).size;
     if (videoSize <= 0 || videoSize > MAX_BYTES) throw new Error('media-output-size');
-    const fitted = frames.length ? await fitDockMediaFrames(frames.map((frame) => frame.path), job.directory) : [];
+    const fitted = frames.length ? await fitDockMediaFrames(frames.map((frame) => frame.path), job.directory, () => check(context, job)) : [];
     check(context, job);
     const frameFiles = await Promise.all(fitted.map(async (file, index) => ({ sourcePath: file, mimeType: 'image/jpeg', size: (await stat(file)).size, markId: plan.marks[index].mark.id })));
     check(context, job);

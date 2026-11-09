@@ -13,8 +13,8 @@ export interface DockMediaSendResult {
   images: Record<string, { data: string; mimeType: string; width: number; height: number }>;
   files: Array<{ type: 'file'; attachmentId: string; fileName: string; mimeType: string; size: number }>;
   frames: Array<{ type: 'image'; attachmentId: string; mimeType: string }>;
-  /** Raw bytes of the exported frames, for the prompt image budget (never sent). */
-  frameBytes: number;
+  /** Raw bytes of each exported frame, for the prompt image budget (never sent). */
+  frameSizes: number[];
   metadata: Array<Record<string, unknown>>;
 }
 /**
@@ -37,7 +37,7 @@ export function dockMediaSendsOriginal(media: DockSavedMedia | undefined): boole
 export async function prepareDockMediaSend(workspaceId: string, evidence: DockComposerEvidence,
   binding: DockPlacementBinding, service: DockEvidenceNativeService | null,
   current: () => boolean): Promise<DockMediaSendResult> {
-  const output: DockMediaSendResult = { images: {}, files: [], frames: [], frameBytes: 0, metadata: [] };
+  const output: DockMediaSendResult = { images: {}, files: [], frames: [], frameSizes: [], metadata: [] };
   // The step in progress, so a failure reports where it happened (never what it carried).
   let stage: DockSendStage = 'validate';
   try {
@@ -108,7 +108,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
           if (index === 0) output.files.push({ type: 'file', attachmentId: placed.attachmentId, fileName, mimeType: placed.mimeType ?? file.mimeType, size: placed.size });
           else {
             output.frames.push({ type: 'image', attachmentId: placed.attachmentId, mimeType: file.mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png' });
-            output.frameBytes += file.size;
+            output.frameSizes.push(file.size);
           }
           references.push(placed.attachmentId);
         }
