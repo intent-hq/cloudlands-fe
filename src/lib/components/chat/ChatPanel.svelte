@@ -2760,12 +2760,14 @@
     }),
   );
 
-  // Share the focused chat's visible suggestions with the hardware joystick
-  // ring, which sends them exactly like a click (same gating as Ctrl/Alt+1-3).
+  // Share the focused chat's suggestions with the hardware joystick ring, which
+  // sends them exactly like a click. Gated like the Ctrl/Alt+1-3 shortcut, minus
+  // its chip-visibility check: the ring shows the suggestion text itself.
   $effect(() => {
     if (!isActive || !isChatFocused || isRetiredSession || deferTranscriptReveal) return;
     if (suggestedPrompts.length === 0) return;
     return publishFocusedChatSuggestions({
+      ownerId: agentId,
       prompts: suggestedPrompts,
       send: (prompt) => handleSelectSuggestedPrompt(prompt),
     });

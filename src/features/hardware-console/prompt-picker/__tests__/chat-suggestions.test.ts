@@ -8,7 +8,7 @@ afterEach(() => {
 
 describe('focused chat suggestions', () => {
   it('exposes the published source until it is released', () => {
-    const source = { prompts: ['a'], send: vi.fn() };
+    const source = { ownerId: 'a', prompts: ['a'], send: vi.fn() };
     const release = publishFocusedChatSuggestions(source);
     expect(getFocusedChatSuggestions()).toBe(source);
     release();
@@ -16,8 +16,8 @@ describe('focused chat suggestions', () => {
   });
 
   it('a stale release does not clear a newer chat', () => {
-    const first = { prompts: ['a'], send: vi.fn() };
-    const second = { prompts: ['b'], send: vi.fn() };
+    const first = { ownerId: 'a', prompts: ['a'], send: vi.fn() };
+    const second = { ownerId: 'b', prompts: ['b'], send: vi.fn() };
     const releaseFirst = publishFocusedChatSuggestions(first);
     releases.push(publishFocusedChatSuggestions(second));
     releaseFirst();

@@ -63,7 +63,11 @@
     return `M${x0} ${y0} A${radius} ${radius} 0 0 ${clockwise ? 1 : 0} ${x1} ${y1}`;
   }
 
-  const slots = $derived(buildRadialSlots($radial$.suggestions, $radial$.prompts));
+  // Split out so a sector change (new store object, same lists) does not
+  // rebuild the slots or rerun label fitting.
+  const suggestions = $derived($radial$.suggestions);
+  const prompts = $derived($radial$.prompts);
+  const slots = $derived(buildRadialSlots(suggestions, prompts));
 
   const ring = $derived.by(() => {
     const viewport = Math.min(innerWidth.current ?? 1200, innerHeight.current ?? 900);

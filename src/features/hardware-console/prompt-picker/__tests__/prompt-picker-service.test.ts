@@ -285,7 +285,7 @@ describe('installHardwareConsolePromptPickerJoystick', () => {
 
 describe('chat suggestions on the ring', () => {
   function withSuggestions(prompts: string[], used = ['p0', 'p1']) {
-    const source = { prompts, send: vi.fn() };
+    const source = { ownerId: 'agent-a', prompts, send: vi.fn() };
     const suggestions = { current: source as ChatSuggestionSource | null };
     return { source, suggestions, run: install(used, makeFakeManager(), suggestions) };
   }
@@ -317,6 +317,35 @@ describe('chat suggestions on the ring', () => {
     suggestions.current = null;
     run.manager.joystick(UP, 0);
     expect(source.send).not.toHaveBeenCalled();
+  });
+
+  it('still sends when the same chat re-published its suggestions mid-gesture', () => {
+    const { source, suggestions, run } = withSuggestions(['s1']);
+    run.manager.joystick(UP, 0.9);
+    const republished = { ownerId: 'agent-a', prompts: ['s1'], send: vi.fn() };
+    suggestions.current = republished;
+    run.manager.joystick(UP, 0);
+    expect(republished.send).toHaveBeenCalledExactlyOnceWith('s1');
+    expect(source.send).not.toHaveBeenCalled();
+  });
+
+  it('does not send when another chat took focus mid-gesture', () => {
+    const { source, suggestions, run } = withSuggestions(['s1']);
+    run.manager.joystick(UP, 0.9);
+    const other = { ownerId: 'agent-b', prompts: ['s1'], send: vi.fn() };
+    suggestions.current = other;
+    run.manager.joystick(UP, 0);
+    expect(other.send).not.toHaveBeenCalled();
+    expect(source.send).not.toHaveBeenCalled();
+  });
+
+  it('does not send a suggestion the chat no longer shows', () => {
+    const { suggestions, run } = withSuggestions(['s1']);
+    run.manager.joystick(UP, 0.9);
+    const updated = { ownerId: 'agent-a', prompts: ['other'], send: vi.fn() };
+    suggestions.current = updated;
+    run.manager.joystick(UP, 0);
+    expect(updated.send).not.toHaveBeenCalled();
   });
 
   it('opens with suggestions even when no prompts are tracked', () => {

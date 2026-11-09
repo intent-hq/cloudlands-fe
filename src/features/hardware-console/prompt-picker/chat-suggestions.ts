@@ -6,6 +6,8 @@
  */
 
 export interface ChatSuggestionSource {
+  /** Stable identity of the publishing chat; re-publishes keep the same id. */
+  ownerId: string;
   prompts: readonly string[];
   /** Send a suggestion exactly like clicking it in the chat. */
   send: (prompt: string) => void;

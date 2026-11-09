@@ -179,10 +179,15 @@ export function installHardwareConsolePromptPickerJoystick(
     if (selection === null || dwelledCentered) return;
     const slot = slots[selection];
     if (slot?.kind === 'suggestion') {
-      // The offering chat must still be the focused one, or the send would
-      // land in a conversation the user is no longer looking at.
-      if (source && getSuggestions() === source) source.send(slot.text);
-      else logger.info('Radial suggestion release after its chat lost focus; send skipped');
+      // The offering chat must still be focused and still show the suggestion,
+      // or the send would land in a conversation the user is no longer looking
+      // at. Match by owner: the chat re-publishes a fresh source on any update.
+      const current = getSuggestions();
+      if (source && current?.ownerId === source.ownerId && current.prompts.includes(slot.text)) {
+        current.send(slot.text);
+      } else {
+        logger.info('Radial suggestion release after its chat lost focus; send skipped');
+      }
       return;
     }
     if (slot?.kind === 'prompt' && !insertText(slot.text)) {
