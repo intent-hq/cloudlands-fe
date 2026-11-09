@@ -369,24 +369,31 @@ async function readProviderStatus<T>(read: () => Promise<T>): Promise<T> {
   return result;
 }
 
-let inFlightDiscovery: Promise<ProviderDiscoverySnapshot> | undefined;
+let inFlightDiscovery:
+  { connection: unknown; request: Promise<ProviderDiscoverySnapshot> } | undefined;
 
 function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
   const request = backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
-  inFlightDiscovery = request;
+  const entry = { connection: selectPrincipalConnectionContext.select(appStore.state), request };
+  inFlightDiscovery = entry;
   const settle = () => {
-    if (inFlightDiscovery === request) inFlightDiscovery = undefined;
+    if (inFlightDiscovery === entry) inFlightDiscovery = undefined;
   };
   request.then(settle, settle);
   return request;
 }
 
 /**
- * Discovery for display versions only: joins an in-flight request so a
- * full sweep's per-provider checks share one probe. Failures yield none.
+ * Discovery for display versions only: joins an in-flight request on the
+ * same connection so a full sweep's per-provider checks share one probe.
+ * Failures yield none.
  */
 function discoveryForVersions(): Promise<ProviderDiscoverySnapshot | undefined> {
-  return (inFlightDiscovery ?? fetchProviderDiscovery()).catch(() => undefined);
+  const joinable =
+    inFlightDiscovery?.connection === selectPrincipalConnectionContext.select(appStore.state)
+      ? inFlightDiscovery.request
+      : undefined;
+  return (joinable ?? fetchProviderDiscovery()).catch(() => undefined);
 }
 
 function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
