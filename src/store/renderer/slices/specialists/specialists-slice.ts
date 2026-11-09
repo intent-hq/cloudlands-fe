@@ -3,7 +3,7 @@ import {
   type SpecialistCreation,
   type SpecialistDraft,
 } from './specialist-creation-types';
-import type { SpecialistImportDiagnostic } from '$lib/client/app-client';
+import type { SpecialistBaseline, SpecialistImportDiagnostic } from '$lib/client/app-client';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -83,6 +83,8 @@ export interface FileSpecialist {
   teamAgents?: string[];
   /** Built-in avatar design id; unknown/absent degrades to the fallback. */
   icon?: string;
+  /** The built-in this file overrides (PROTOCOL §5.11 `bundled` baseline). */
+  bundled?: SpecialistBaseline;
 }
 
 export interface FileSpecialistWritePayload {

@@ -115,7 +115,6 @@ export const ENFORCED_DIRS = [
   'src/features/rules',
   'src/features/scripts',
   'src/features/setup-scripts',
-  'src/features/specialists',
   'src/features/system',
   'src/features/tasks',
   'src/features/token-usage',

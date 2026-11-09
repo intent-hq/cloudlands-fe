@@ -629,6 +629,83 @@ describe('specialistsSaga', () => {
     await task.toPromise();
   });
 
+  // Before the daemon catalog loads, built-ins are display-only placeholders
+  // with no prompt: a first override would ship an empty prompt.
+  it('refuses the first override of a placeholder built-in and refetches', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = {
+      specialists: {
+        fileSpecialists: { map: {} },
+        bundledSpecialists: [
+          {
+            id: 'builtin',
+            name: 'Builtin',
+            description: 'Default',
+            defaultBehaviorPrompt: '',
+            source: 'bundled' as const,
+            promptUnavailable: true as const,
+          },
+        ],
+      },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, specialistsSaga);
+    const action = saveFileSpecialist({
+      id: 'builtin',
+      name: 'Builtin',
+      description: 'Desc',
+      model: 'opus',
+      behaviorPrompt: '',
+      scope: 'user',
+    });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).rejects.toThrow("Specialists haven't loaded yet.");
+    expect(mocks.edit).not.toHaveBeenCalled();
+    expect(mocks.create).not.toHaveBeenCalled();
+    const dispatched = dispatch.mock.calls.map(([d]) => d);
+    expect(dispatched).toContainEqual(refetchSpecialistsRequested());
+    expect(dispatched).toContainEqual(failureAction(action));
+    task.cancel();
+    await task.toPromise();
+  });
+
+  it('writes the first override once the daemon catalog carries the built-in', async () => {
+    const channel = stdChannel();
+    const dispatch = vi.fn();
+    const state = {
+      specialists: {
+        fileSpecialists: { map: {} },
+        bundledSpecialists: [
+          {
+            id: 'builtin',
+            name: 'Builtin',
+            description: 'Desc',
+            defaultBehaviorPrompt: 'Daemon prompt',
+            source: 'bundled' as const,
+          },
+        ],
+      },
+    };
+    const task = runSaga({ channel, dispatch, getState: () => state }, specialistsSaga);
+    const action = saveFileSpecialist({
+      id: 'builtin',
+      name: 'Builtin',
+      description: 'Desc',
+      model: 'opus',
+      behaviorPrompt: 'Daemon prompt',
+      scope: 'user',
+    });
+    channel.put(action);
+    await settle();
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.create).toHaveBeenCalledTimes(1);
+    task.cancel();
+    await task.toPromise();
+  });
+
   it('rejects the save action promise when the daemon write fails (monorepo review PR#1947)', async () => {
     mocks.create.mockRejectedValue(new Error('daemon write failed'));
     const channel = stdChannel();

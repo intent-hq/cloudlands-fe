@@ -423,17 +423,24 @@ describe('specialists selectors', () => {
 
   describe('collapsed built-in overrides', () => {
     const developer = SPECIALISTS.find(({ id }) => id === 'developer')!;
+    const bundled = {
+      name: 'Developer',
+      description: 'Writes code',
+      behaviorPrompt: 'Bundled developer prompt.',
+      roleReminder: 'Bundled reminder.',
+    };
 
-    function userFile(behaviorPrompt = `${developer.defaultBehaviorPrompt}\nModified`) {
+    function userFile(behaviorPrompt = `${bundled.behaviorPrompt}\nModified`) {
       return {
         id: developer.id,
-        name: developer.name,
-        description: developer.description,
+        name: bundled.name,
+        description: bundled.description,
         model: '',
         behaviorPrompt,
-        roleReminder: developer.roleReminder,
+        roleReminder: bundled.roleReminder,
         filePath: '/Users/test/.intent/specialists/developer.md',
         source: 'user' as const,
+        bundled,
       };
     }
 
@@ -447,13 +454,22 @@ describe('specialists selectors', () => {
       expect(selectSpecialists.select(state).map(({ id }) => id)).toEqual(['developer']);
     });
 
-    it('uses shipped defaults to suppress an identical leftover user file', () => {
+    it('uses the daemon baseline to suppress an identical leftover user file', () => {
       const state = mockState({
-        fileSpecialists: createCollection('id', [userFile(developer.defaultBehaviorPrompt)]),
+        fileSpecialists: createCollection('id', [userFile(bundled.behaviorPrompt)]),
       });
 
       expect(selectIsBuiltIn.select(state, 'developer')).toBe(true);
       expect(selectHasOverrides.select(state, 'developer')).toBe(false);
+    });
+
+    it('treats an override as modified when the daemon sends no baseline', () => {
+      const { bundled: _omitted, ...withoutBaseline } = userFile(bundled.behaviorPrompt);
+      const state = mockState({
+        fileSpecialists: createCollection('id', [withoutBaseline]),
+      });
+
+      expect(selectHasOverrides.select(state, 'developer')).toBe(true);
     });
 
     it('does not label project-scope or custom specialists as modified built-ins', () => {

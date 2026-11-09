@@ -748,19 +748,6 @@ export const IPC_CHANNELS = {
     GET_CONTEXT: 'rules:get-context',
   },
 
-  // Specialists (file-based specialist management)
-  SPECIALISTS: {
-    LIST_FILES: 'specialists:list-files',
-    LIST_BUNDLED: 'specialists:list-bundled',
-    LIST_ALL: 'specialists:list-all',
-    READ_FILE: 'specialists:read-file',
-    WRITE_FILE: 'specialists:write-file',
-    DELETE_FILE: 'specialists:delete-file',
-    GET_FOLDER_PATH: 'specialists:get-folder-path',
-    EXPORT_BUILTIN: 'specialists:export-builtin',
-    FILE_EXISTS: 'specialists:file-exists',
-  },
-
   // Config Rules
   CONFIG_RULES: {
     GET_ALL: 'config:getAll',
