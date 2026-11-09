@@ -206,6 +206,19 @@
   let sideCloseRequest = $state(0);
   /** Local open requests from the open shortcut on a collapsed dock (see closeRequest). */
   let shortcutOpenRequest = $state(0);
+  /**
+   * Open requests the side entries take. On a side the open shortcut opens a chat (the
+   * dock routes it to the last or first workspace), so the entries take it only when
+   * there is no workspace to open.
+   */
+  let sideFocusRequest = $state(0);
+  let sideFocusRequestSeen = untrack(() => focusRequest);
+  $effect(() => {
+    const request = focusRequest;
+    if (request === sideFocusRequestSeen) return;
+    sideFocusRequestSeen = request;
+    if (untrack(() => workspaces.length === 0)) sideFocusRequest += 1;
+  });
   let sideRegions: DockPointerRect[] = [];
   const expanded = $derived(
     !edge &&
@@ -1220,7 +1233,7 @@
       windowHeight={placement.windowBounds.height}
       {reducedMotion}
       {staticData}
-      focusRequest={pinned ? 0 : focusRequest + shortcutOpenRequest}
+      focusRequest={pinned ? 0 : sideFocusRequest + shortcutOpenRequest}
       pinnedWorkspaceId={conversationWorkspaceId === CHIEF_WORKSPACE_ID
         ? assistantId
         : conversationWorkspaceId}

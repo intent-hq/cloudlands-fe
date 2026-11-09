@@ -18,6 +18,7 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { resolveDockDestination, type DockShortcutContext } from '$shared/dock-shortcuts';
 import { store as appStore } from '../../../store';
 import { selectDockShortcutWorkspaces } from '../dock-conversation-selectors';
+import { selectDockWorkspaces } from '../../hud/hud-selectors';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   dockShortcutChanged,
@@ -61,6 +62,33 @@ function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void
     yield* put(dockEvidenceAnnotationToggleRequested(workspaceId, agentId));
   else if (context.action === 'dictate')
     yield* put(dockSpeechToggleRequested(workspaceId, agentId));
+}
+
+/**
+ * The open shortcut with the dock on a screen side and nothing chosen by the foreground:
+ * the chat open in the dock, else the last one opened from it (same machine and
+ * authority, still present), else the first workspace the side shows. The side has no
+ * home row to choose from; null (no workspace) keeps that existing flow.
+ */
+function sideDockFallback(
+  context: DockShortcutContext,
+  ids: readonly string[],
+  selectionValid: boolean,
+): string | null {
+  const state = appStore.state;
+  if (context.action !== 'focus' || state.hud.dockPlacement?.shape !== 'edge') return null;
+  const dock = state.dockConversation;
+  const known = (id: string | null | undefined): id is string =>
+    !!id && (id === CHIEF_WORKSPACE_ID || ids.includes(id));
+  if (dock.authority && dock.authority === getPrincipalActionContext(state) && known(dock.workspaceId))
+    return dock.workspaceId;
+  const selected = selectionValid ? dock.shortcutSelection?.workspaceId : null;
+  if (known(selected)) return selected;
+  const shown = selectDockWorkspaces
+    .select(state)
+    .map((view) => String(view.workspace.id))
+    .find((id) => ids.includes(id));
+  return shown ?? ids[0] ?? null;
 }
 
 function* receive(context?: DockShortcutContext): SagaGenerator<void> {
@@ -134,7 +162,11 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     context.workspaceId && ids.includes(context.workspaceId) ? context.workspaceId : null;
   const explicit = yield* call(readDockSavedDestination, context, ids);
   const destination =
-    explicit ?? owned ?? (context.url && retained ? null : (retained ?? resolved));
+    explicit ??
+    owned ??
+    (context.url && retained
+      ? null
+      : (retained ?? resolved ?? sideDockFallback(context, ids, selectionValid)));
   yield* put(
     dockShortcutChanged({
       context,
