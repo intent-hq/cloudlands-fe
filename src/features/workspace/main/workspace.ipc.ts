@@ -38,7 +38,6 @@ import {
   WorkspaceDeleteSchema,
   WorkspaceCloseSchema,
   WorkspaceRenameSchema,
-  WorkspaceDuplicateSchema,
   WorkspaceArchiveSchema,
   WorkspaceUnarchiveSchema,
   WorkspaceCleanupSchema,
@@ -107,7 +106,6 @@ export function setupWorkspaceIPC(): void {
   registerValidationSchema(WORKSPACE_CHANNELS.DELETE, WorkspaceDeleteSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLOSE, WorkspaceCloseSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.RENAME, WorkspaceRenameSchema);
-  registerValidationSchema(WORKSPACE_CHANNELS.DUPLICATE, WorkspaceDuplicateSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.ARCHIVE, WorkspaceArchiveSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.UNARCHIVE, WorkspaceUnarchiveSchema);
   registerValidationSchema(WORKSPACE_CHANNELS.CLEANUP, WorkspaceCleanupSchema);
@@ -327,26 +325,6 @@ export function setupWorkspaceIPC(): void {
         return response;
       },
       WORKSPACE_CHANNELS.DELETE,
-    ),
-  );
-
-  // Duplicate workspace
-  ipcMain.handle(
-    WORKSPACE_CHANNELS.DUPLICATE,
-    createSafeValidatedHandler(
-      WorkspaceDuplicateSchema,
-      async (_, validated) => {
-        logger.info('Duplicating workspace', {
-          workspaceId: validated.id,
-          newTitle: validated.newTitle,
-        });
-        const result = await protocolAdapter.duplicateWorkspace({
-          id: validated.id,
-          newTitle: validated.newTitle,
-        });
-        return resultToCommandResponse(result);
-      },
-      WORKSPACE_CHANNELS.DUPLICATE,
     ),
   );
 

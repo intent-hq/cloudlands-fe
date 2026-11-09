@@ -4,9 +4,8 @@
    * CheckoutModePill - Tiny, quiet metadata pill showing how the workspace
    * checkout was provisioned (PROTOCOL §5.1). Renders nothing when
    * `checkoutMode` is absent (non-daemon-provisioned checkouts). The label
-   * is the real `checkoutMode`: a `cow` checkout always says "CoW", whatever
-   * the `workspace.cowIsolation` setting says (per-agent CoW sandboxes are
-   * retired, so the setting no longer changes how agents use the checkout).
+   * is the real `checkoutMode`: a `cow` checkout (cloned from the local repo
+   * cache) always says "CoW"; no setting changes the label.
    *
    * When a workspace is provided, hovering the pill opens the disk-usage
    * tooltip and fetches the footprint on demand via the `workspace.diskUsage`

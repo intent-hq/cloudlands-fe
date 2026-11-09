@@ -4,6 +4,28 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.306.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.2...v2.306.3) (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.166 ([#4366](https://github.com/intent-hq/cloudlands-fe/issues/4366)) ([f7d1ecc](https://github.com/intent-hq/cloudlands-fe/commit/f7d1eccda52f8d54e9b9bc9f96a52ed3bc2951f6))
+
+## [2.306.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.1...v2.306.2) (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+* **remote-machines:** list backend models for profiles on machines that report none ([#4356](https://github.com/intent-hq/cloudlands-fe/issues/4356)) ([e4fdadb](https://github.com/intent-hq/cloudlands-fe/commit/e4fdadba85c90dd2e1d60378d44a766f1a728072))
+
+## [2.306.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.0...v2.306.1) (2026-11-09)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.165 ([#4361](https://github.com/intent-hq/cloudlands-fe/issues/4361)) ([f3f464b](https://github.com/intent-hq/cloudlands-fe/commit/f3f464b5ccce796c46a8d7d25aee8e9a83b8100a))
+* **chat:** animate tool call collapse by keeping details mounted until closed ([#4355](https://github.com/intent-hq/cloudlands-fe/issues/4355)) ([aa202b3](https://github.com/intent-hq/cloudlands-fe/commit/aa202b30d358ad744b4279b509eb2130c30bb9cb))
+
 ## [2.306.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.305.0...v2.306.0) (2026-11-09)
 
 

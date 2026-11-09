@@ -18,7 +18,6 @@ export async function assertRtkShellGeometry(root: Locator, stacked: boolean) {
     'aria-checked',
     'true',
   );
-  await expect(root.locator('#cow-isolation').getByRole('checkbox')).toBeEnabled();
   const geometry = await root.evaluate((root) => {
     const box = (selector: string) => {
       const r = root.querySelector(selector)!.getBoundingClientRect();
@@ -30,8 +29,6 @@ export async function assertRtkShellGeometry(root: Locator, stacked: boolean) {
       label: box('#rtk-enabled-label'),
       description: box('#rtk-enabled-description'),
       control: box('#rtk-enabled [role=switch]'),
-      cow: box('#cow-isolation'),
-      cowLabel: box('#cow-isolation-label'),
     };
   });
   expect(geometry.control.right).toBeLessThanOrEqual(geometry.rtk.right + 1);

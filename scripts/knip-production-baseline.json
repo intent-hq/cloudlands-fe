@@ -1026,8 +1026,7 @@
       "base64DecodedBytes"
     ],
     "src/lib/components/chat/input/model-picker-utils.ts": [
-      "collapseCodexEffortModels",
-      "isDefaultPseudoModelId"
+      "collapseCodexEffortModels"
     ],
     "src/lib/components/chat/input/slash-skill-command.ts": [
       "applySlashSkillSelection"
@@ -1323,9 +1322,6 @@
     "src/lib/components/workspace/initializer/context-source-preference.ts": [
       "LAST_SOURCE_STORAGE_KEY",
       "orderProviders"
-    ],
-    "src/lib/components/workspace/initializer/cow-isolation-setting.ts": [
-      "invalidateCowIsolationSetting"
     ],
     "src/lib/components/workspace/initializer/issue-paging.ts": [
       "appendPage",

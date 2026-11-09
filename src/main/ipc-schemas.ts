@@ -260,11 +260,6 @@ export const WorkspaceRenameSchema = z.object({
   newName: z.string().min(1, 'New name is required').max(255, 'Name too long'),
 });
 
-export const WorkspaceDuplicateSchema = z.object({
-  id: WorkspaceIdSchema,
-  newTitle: z.string().min(1, 'New title is required').max(255, 'Title too long'),
-});
-
 export const WorkspaceArchiveSchema = z.object({
   id: WorkspaceIdSchema,
 });

@@ -18,6 +18,7 @@
     | 'picker-stale'
     | 'picker-missing'
     | 'picker-older-backend'
+    | 'picker-machine-without-models'
     | 'e2b-starting'
     | 'e2b-running'
     | 'e2b-paused'
@@ -61,6 +62,7 @@
       'picker-stale': sceneState('picker-stale'),
       'picker-missing': sceneState('picker-missing'),
       'picker-older-backend': sceneState('picker-older-backend'),
+      'picker-machine-without-models': sceneState('picker-machine-without-models'),
       'e2b-starting': sceneState('e2b-starting'),
       'e2b-running': sceneState('e2b-running'),
       'e2b-paused': sceneState('e2b-paused'),
@@ -161,6 +163,19 @@
       { id: 'codex', status: 'signed-out', models: ['gpt-6', 'gpt-6-mini'] },
     ],
   };
+  // A machine with no sign-in of its own (an E2B sandbox) lists no models;
+  // profiles that bring their own credentials show this backend's models.
+  const NO_MODELS_REPORT = {
+    intentdVersion: '0.240.0',
+    providers: [{ id: 'claude-code', status: 'unknown', models: [] }],
+  };
+  const PERSONAL_PROFILE = {
+    id: 'p-personal',
+    providerRef: 'claude-code@p-personal',
+    baseProviderId: 'claude-code',
+    name: 'Personal',
+    remoteCompatible: true,
+  };
   const pickerCatalog = (s: Scene): ProviderCatalogResult => ({
     ...MOCK_PROVIDER_CATALOG,
     profiles:
@@ -189,6 +204,7 @@
               name: 'API key',
               remoteCompatible: true,
             },
+            ...(s === 'picker-machine-without-models' ? [PERSONAL_PROFILE] : []),
           ],
   });
   const reportedAt = (s: Scene) =>
@@ -509,6 +525,19 @@
           0,
         ),
       );
+      if (s === 'picker-machine-without-models')
+        store.dispatch(
+          providerModelsLoaded(
+            PERSONAL_PROFILE.providerRef,
+            {
+              models: [
+                { value: 'opus', label: 'Opus 5.5', description: 'Most capable' },
+                { value: 'sonnet', label: 'Sonnet 5', description: 'Fast and capable' },
+              ],
+            },
+            0,
+          ),
+        );
     }
     const mac = machine(
       MAC,
@@ -522,7 +551,11 @@
         supported: true,
         machines: [
           isPickerScene(s) && s !== 'picker-missing'
-            ? { ...mac, capabilities: MAC_REPORT, observedAt: reportedAt(s) }
+            ? {
+                ...mac,
+                capabilities: s === 'picker-machine-without-models' ? NO_MODELS_REPORT : MAC_REPORT,
+                observedAt: reportedAt(s),
+              }
             : mac,
           machine(BOX, 'Build box', 'linux', 'x86_64', 'unreachable'),
         ],

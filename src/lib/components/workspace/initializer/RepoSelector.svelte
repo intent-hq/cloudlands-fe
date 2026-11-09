@@ -98,11 +98,6 @@
   } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
-    isolationNoun,
-    resolveEffectiveIsolationMode,
-    type IsolationMode,
-  } from './isolation-mode';
-  import {
     getGitHubPickOwner,
     getRecentRepoLabel,
     getRecentRepoIdentity,
@@ -114,7 +109,6 @@
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { workspacePickerStyles } from './workspace-picker-styles';
   import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
   const dialogPortalTarget = useDialogPortalTarget();
@@ -122,16 +116,8 @@
   let formTriggerElement = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
   let formMenuBelow = $state(false);
 
-  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
-  // Re-resolves when workspace items hydrate (cowSupported is read off them).
-  const workspaceItemsForIsolation$ = selectWorkspaceItems();
-  let isolationMode = $state<IsolationMode>('worktree');
-  $effect(() => {
-    void resolveEffectiveIsolationMode($workspaceItemsForIsolation$).then(
-      (mode) => (isolationMode = mode),
-    );
-  });
-  const isolationLabel = $derived(isolationNoun(isolationMode));
+  // A local repo is always isolated in a linked git worktree.
+  const isolationLabel = m.workspace_isolationMode_worktree_label();
   const mountedDispatch = appStore.dispatch;
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const dismissedRecentRepoKeys$ = selectWorkspaceInitializerDismissedRecentRepoKeys();
