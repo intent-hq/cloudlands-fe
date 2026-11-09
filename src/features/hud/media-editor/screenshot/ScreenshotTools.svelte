@@ -49,6 +49,9 @@
       onclick={() => onSelect(tool === item.id ? 'pointer' : item.id)}
       ><item.icon size={18} /></Button
     >
+    {#if item.id === 'pointer'}
+      <span class="capture-tool-separator" aria-hidden="true"></span>
+    {/if}
   {/each}
   {#if children}
     <span class="capture-tool-separator" aria-hidden="true"></span>
