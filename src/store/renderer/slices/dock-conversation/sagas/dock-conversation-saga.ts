@@ -524,15 +524,31 @@ function* sendReply(
     // Composites come only from the click's snapshot (items + evidence).
     const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
       dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], metadata: [] };
+    // A recording's markup screenshot only anchors marks the recording itself carries once it
+    // is exported with them or sent as its marked original: then it is not sent again. An
+    // edit of its own, or any mark of its own (or of a recording that does not carry it),
+    // keeps it in the output.
+    const carrying = new Set(evidence?.clips
+      .filter((clip) => exported(clip) || (!!clip.media && dockMediaSendsOriginal(clip.media)))
+      .map((clip) => clip.id));
+    const carriers = new Set(evidence?.clips
+      .filter((clip) => carrying.has(clip.id))
+      .flatMap((clip) => (clip.captureHistory ?? []).map((entry) => entry.image.id)));
+    const outputImages = (evidence?.images ?? []).filter((image) =>
+      image.source !== 'annotate' ||
+      !!image.media ||
+      !carriers.has(image.id) ||
+      evidence!.marks.some((mark) => mark.imageId === image.id && !(mark.clipId && carrying.has(mark.clipId))));
     let burned: Awaited<ReturnType<typeof burnEvidence>> = [];
     try {
-      burned = evidence ? yield* call(burnEvidence, evidence, clickedItems, materialized.images) : [];
+      // Numbering stays the composer's: every mark counts, whichever images are sent.
+      burned = evidence ? yield* call(burnEvidence, { ...evidence, images: outputImages }, clickedItems, materialized.images) : [];
     } catch (error) {
       throw new DockSendError('burn', dockSendCode(error));
     }
     const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
     const wireEvidence = evidence ? { ...evidence,
-      images: evidence.images.map((image) => materialized.images[image.id]
+      images: outputImages.map((image) => materialized.images[image.id]
         ? { ...image, width: materialized.images[image.id].width, height: materialized.images[image.id].height } : image),
       clips: evidence.clips.filter((clip) => !exported(clip)),
       marks: evidence.marks.filter((mark) => !editedImageIds.has(mark.imageId) && !evidence.clips.some((clip) => exported(clip) && clip.id === mark.clipId)),
@@ -569,7 +585,7 @@ function* sendReply(
       const records = yield* call(placeDockEvidenceImages, {
         workspaceId,
         binding,
-        images: evidence.images.map((image, index) => {
+        images: outputImages.map((image, index) => {
           const item = clickedItems.find((row) => row.id === image.contextItemId);
           return {
             image,
