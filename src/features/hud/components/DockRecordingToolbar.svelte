@@ -311,6 +311,7 @@
             size="sm"
             class="rt-text"
             data-clear
+            aria-label={m.dock_annotationToolbar_clear_label()}
             tooltipContentClass="dock-chrome-tooltip"
             tooltip={recording ? m.dock_recordingToolbar_kept_label() : undefined}
             onclick={clear}><BroomIcon size={16} />{m.dock_annotationToolbar_clear_label()}</Button
