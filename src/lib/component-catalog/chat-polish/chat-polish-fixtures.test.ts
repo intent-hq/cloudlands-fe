@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { groupContentBlocks } from '$lib/utils/messageParser';
 import { getCatalogEntry } from '../catalog';
-import { chatPolishCoverage, chatPolishCoverageManifest } from './chat-polish-coverage';
 import { chatPolishFixtureAdapter } from './chat-polish-fixture-adapter';
 import { nestedGroupAttemptMessage, queuedUserMessage } from './chat-polish-messages';
 import { getPresentedUserMessageText } from '$lib/utils/user-message-presentation';
@@ -22,41 +21,7 @@ describe('chat-polish comprehensive conversation', () => {
     expect(comprehensiveChatPolishConversation.items.length).toBeGreaterThan(20);
   });
 
-  it('keeps all required surfaces and states in the coverage manifest', () => {
-    expect(chatPolishCoverage).toHaveLength(70);
-    expect(chatPolishCoverage).toEqual(
-      expect.arrayContaining([
-        'queued',
-        'optimistic',
-        'sticky',
-        'delivered',
-        'streaming-text',
-        'final-text',
-        'before-content',
-        'between-content',
-        'after-content',
-        'grouped',
-        'ungrouped',
-        'pending',
-        'running',
-        'successful',
-        'failed',
-        'cancelled',
-        'hidden-result',
-        'after_all-collapsed',
-        'after_all-expanded',
-        'immediate-expanded',
-        'avatar-overflow',
-        'retired-hook',
-        'active-hook',
-        'newly-unblocked-tasks',
-        'successful-completion',
-      ]),
-    );
-    expect(Object.keys(chatPolishCoverageManifest)).toHaveLength(13);
-  });
-
-  it('contains the production-shaped data behind the manifest', () => {
+  it('contains production-shaped data for every covered surface', () => {
     const items = comprehensiveChatPolishConversation.items;
     const messages = items.flatMap((item) => (item.kind === 'message' ? [item] : []));
     const blocks = messages.flatMap(({ message }) => message.contentBlocks ?? []);

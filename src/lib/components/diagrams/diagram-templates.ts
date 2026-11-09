@@ -1,7 +1,10 @@
 /**
  * Diagram Templates
  *
- * Template generators for each diagram grammar to help agents create diagrams
+ * Builders for one diagram per grammar. The layout-engine and routing suites use
+ * them as fixtures; no production code calls them.
+ *
+ * @internal
  */
 
 import type { DiagramPrimitive, DiagramGrammar } from '$shared/types/notes-primitives';

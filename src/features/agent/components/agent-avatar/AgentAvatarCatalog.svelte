@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** @internal Test host: renders every avatar identity and state for the avatar unit and Playwright suites. */
   import AgentAvatarStack, { type AgentAvatarStackItem } from './AgentAvatarStack.svelte';
   import AgentAvatarWithState from './AgentAvatarWithState.svelte';
   import { agentAvatarCatalogIdentities, agentAvatarCatalogStates } from './agent-avatar.catalog';

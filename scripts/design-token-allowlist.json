@@ -62,10 +62,6 @@
       "palette": 0,
       "arbitrary": 2
     },
-    "src/lib/components/ui/CollapsiblePanel.svelte": {
-      "palette": 0,
-      "arbitrary": 2
-    },
     "src/lib/components/ui/copy-input/copy-input.svelte": {
       "palette": 0,
       "arbitrary": 1
@@ -127,10 +123,6 @@
       "arbitrary": 1
     },
     "src/lib/components/ui/message-composer/suggestion-row.svelte": {
-      "palette": 0,
-      "arbitrary": 1
-    },
-    "src/lib/components/ui/PanelWrapper.svelte": {
       "palette": 0,
       "arbitrary": 1
     },
@@ -437,17 +429,6 @@
       "replacement": "--muted-foreground",
       "removalCondition": "Mention list adopts canonical text role",
       "allowedFiles": ["src/lib/components/chat/input/EnhancedMentionList.svelte"]
-    },
-    {
-      "token": "--bits-floating-available-height",
-      "owner": "notes-preview",
-      "reason": "Runtime tooltip collision measurement",
-      "replacement": "viewport-height fallback",
-      "removalCondition": "Bits UI exposes a semantic tooltip available-height role",
-      "allowedFiles": [
-        "src/lib/components/tiptap/TaskNotePreview.svelte",
-        "src/lib/components/tiptap/__tests__/TaskNotePreview.test.ts"
-      ]
     },
     {
       "token": "--success-bg",

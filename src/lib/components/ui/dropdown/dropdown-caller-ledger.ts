@@ -1,3 +1,4 @@
+/** @internal Migration ledger: Dropdown.test.ts checks callers against it; dropdown.meta.ts and ui-component-inventory.ts point to it. */
 type DropdownReplacement = 'Menu' | 'Select' | 'Combobox';
 
 export interface DropdownCallerLedgerEntry {

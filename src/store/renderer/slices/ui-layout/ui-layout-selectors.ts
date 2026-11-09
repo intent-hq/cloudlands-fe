@@ -63,10 +63,3 @@ export const selectResizablePanelSize = store.createSelector<[key: string], numb
 export const selectResizablePanelSizeHydrated = store.createSelector<[key: string], boolean>(
   (state, key) => state.uiLayout.hydratedResizablePanelSizes[key] === true,
 );
-
-export const selectCollapsiblePanelCollapsed = store.createSelector<
-  [key: string],
-  boolean | undefined
->((state, key) => {
-  return state.uiLayout.collapsiblePanelCollapsed[key];
-});

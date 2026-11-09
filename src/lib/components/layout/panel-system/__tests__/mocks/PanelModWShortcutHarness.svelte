@@ -3,14 +3,12 @@
   import { Terminal } from '@xterm/xterm';
   import '@xterm/xterm/css/xterm.css';
   import PanelLayout from '../../PanelLayout.svelte';
-  import PanelNavigator from '../../PanelNavigator.svelte';
   import { disposeXtermAfterViewportSync } from '$features/terminal/utils/xterm-lifecycle';
   import { KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
   import { registerWorkspaceTabShortcuts } from '$features/workspace/utils/workspace-tab-navigation';
   import { store as appStore } from '$store/renderer/store';
   import {
     clearPanelLayout,
-    focusPanel,
     initializeLayout,
     setRestoreStatus,
   } from '$store/renderer/slices/panel-layout/panel-layout-slice';
@@ -20,7 +18,6 @@
     selectPanelColumnCount,
     selectPanelIds,
     selectPanelLayoutRoot,
-    selectPanelNavigatorItems,
     selectPanels,
   } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
   import { loadWorkspaceTabsState } from '$store/renderer/slices/tab-state/tab-state-slice';
@@ -67,8 +64,6 @@
       setShortcutOverride('panel.create-column-right', initialCreateColumnShortcut),
     );
   }
-  let viewport: HTMLElement | null = $state(null);
-  let panelRoot: HTMLElement | null = $state(null);
   let navigationCount = $state(0);
   let navigationPath = $state('');
   let terminalContainer: HTMLElement | null = $state(null);
@@ -128,7 +123,6 @@
   const count$ = selectPanelColumnCount(workspaceId);
   const focused$ = selectFocusedPanelId(workspaceId);
   const canvasWidth$ = selectPanelCanvasWidth(workspaceId);
-  const navigatorItems$ = selectPanelNavigatorItems(workspaceId);
   const tabOrder$ = selectWorkspaceTabOrder();
   const currentTab$ = selectCurrentWorkspaceTabId();
   const shortcutManager = new KeyboardShortcutManager();
@@ -197,19 +191,9 @@
   <div bind:this={terminalContainer} class="h-40 w-240" data-testid="real-terminal"></div>
 {/if}
 <div class="relative h-96 w-240" style:zoom={initialZoomFactor}>
-  <div bind:this={viewport} class="h-full overflow-x-auto" data-testid="mod-w-viewport">
-    <div bind:this={panelRoot} class="h-full min-w-0">
+  <div class="h-full overflow-x-auto" data-testid="mod-w-viewport">
+    <div class="h-full min-w-0">
       <PanelLayout {workspaceId} layoutId={workspaceId} canvasSizing="viewport" />
     </div>
   </div>
-  {#if $navigatorItems$.length >= 2}
-    <PanelNavigator
-      panels={$navigatorItems$}
-      {viewport}
-      {panelRoot}
-      ariaLabel="Panel layout"
-      activePanelId={$focused$}
-      onActivate={(panelId) => appStore.dispatch(focusPanel(workspaceId, panelId))}
-    />
-  {/if}
 </div>

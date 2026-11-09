@@ -103,55 +103,6 @@ vi.mock('$store/renderers/specialists.store.svelte', () => ({
   },
 }));
 
-const resolveCompatibleModelForProviderMock = vi.hoisted(() => vi.fn());
-
-vi.mock('$lib/utils/provider-model-selection', () => ({
-  buildProviderDropdownOptions: (providerIds: string[]) =>
-    providerIds.map((providerId) => ({
-      value: providerId,
-      label:
-        providerId === 'auggie'
-          ? 'Augment Auggie'
-          : providerId === 'codex'
-            ? 'OpenAI Codex'
-            : providerId,
-    })),
-  getSelectableProviderIds: ({
-    enabledProviderIds,
-    usableProviderIds,
-    selectedProviderId,
-  }: {
-    enabledProviderIds: string[];
-    usableProviderIds: string[];
-    selectedProviderId?: string;
-  }) => {
-    const usableSet = new Set(usableProviderIds);
-    const filtered = enabledProviderIds.filter((providerId) => usableSet.has(providerId));
-    return [...new Set(selectedProviderId ? [selectedProviderId, ...filtered] : filtered)];
-  },
-  shouldShowChatProviderControl: ({
-    defaultProviderId,
-    selectableProviderIds,
-    selectedProviderId,
-  }: {
-    defaultProviderId: string;
-    selectableProviderIds: string[];
-    selectedProviderId?: string;
-  }) => {
-    if (!selectedProviderId) {
-      return false;
-    }
-
-    if (selectedProviderId !== defaultProviderId) {
-      return true;
-    }
-
-    return selectableProviderIds.length > 1;
-  },
-  resolveCompatibleModelForProvider: resolveCompatibleModelForProviderMock,
-  resolveUsableProviderIds: async (providerIds: string[]) => providerIds,
-}));
-
 const setModelMock = vi.hoisted(() => vi.fn());
 const reconcileAgentReasoningEffortMock = vi.hoisted(() => vi.fn(async () => true));
 const modelEffortLevels = vi.hoisted(() => ({}) as Record<string, string[] | undefined>);
@@ -666,7 +617,6 @@ describe('SimpleRichInput provider switch sync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     for (const modelId of Object.keys(modelEffortLevels)) delete modelEffortLevels[modelId];
-    resolveCompatibleModelForProviderMock.mockResolvedValue('codex:gpt-5-codex');
     setModelMock.mockResolvedValue({
       ok: true,
       data: { success: true, modelId: 'codex:gpt-5-codex' },

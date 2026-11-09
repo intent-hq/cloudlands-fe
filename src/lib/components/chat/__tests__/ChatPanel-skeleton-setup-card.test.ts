@@ -240,9 +240,6 @@ vi.mock('../AgentCard.svelte', async () => ({
 vi.mock('../StreamingStatus.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));
-vi.mock('../LiveStreamPhaseIndicator.svelte', async () => ({
-  default: (await import('./mocks/SlotOnly.svelte')).default,
-}));
 vi.mock('../RegularAgentWelcome.svelte', async () => ({
   default: (await import('./mocks/SlotOnly.svelte')).default,
 }));

@@ -1,4 +1,5 @@
 <script lang="ts">
+  /** @internal Test host for skeleton.ct.spec.ts. */
   import { Skeleton } from './index';
 </script>
 

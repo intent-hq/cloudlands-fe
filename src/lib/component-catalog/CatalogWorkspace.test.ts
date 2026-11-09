@@ -6,7 +6,6 @@ import axe from 'axe-core';
 import { createRawSnippet } from 'svelte';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { store as appStore } from '$store/renderer/store';
-import CatalogFoundations from './CatalogFoundations.svelte';
 import CatalogIntroduction from './CatalogIntroduction.svelte';
 import CatalogShell from './CatalogShell.svelte';
 import SandboxLayout from '../../routes/sandbox/+layout.svelte';
@@ -189,47 +188,6 @@ describe('catalog workspace', () => {
         'true',
       );
     });
-  });
-
-  it('renders resolved foundations with token-sized visual specimens', async () => {
-    document.documentElement.style.setProperty('--background', '120 10% 96%');
-    render(CatalogFoundations);
-
-    expect(screen.getByRole('heading', { name: 'Foundations' })).toBeTruthy();
-    expect(screen.getByText('--background')).toBeTruthy();
-    await waitFor(() => expect(screen.getByText('120 10% 96%')).toBeTruthy());
-    expect(screen.getByTestId('foundation-typography')).toBeTruthy();
-    expect(screen.getByTestId('typography-specimens')).toBeTruthy();
-    expect(
-      ['display', 'title', 'body', 'caption', 'code'].map(
-        (style) => document.querySelector(`[data-typography-style="${style}"]`) !== null,
-      ),
-    ).toEqual([true, true, true, true, true]);
-    expect(screen.getByText('Messages, controls, and suggestions')).toBeTruthy();
-    expect(screen.getByTestId('foundation-spacing')).toBeTruthy();
-    expect(screen.getByText('--space-7')).toBeTruthy();
-    expect(
-      document.querySelector('[data-foundation-spacing="--space-7"]')?.getAttribute('style'),
-    ).toContain('width: var(--space-7)');
-    expect(screen.getByTestId('foundation-measures')).toBeTruthy();
-    expect(screen.getByText('--content-measure-wide')).toBeTruthy();
-    expect(screen.queryByText('--content-measure-reading')).toBeNull();
-    expect(screen.getByTestId('foundation-controls')).toBeTruthy();
-    expect(screen.getByText('--control-height-large')).toBeTruthy();
-    expect(
-      document
-        .querySelector('[data-foundation-control="--control-height-large"]')
-        ?.getAttribute('style'),
-    ).toContain('height: var(--control-height-large)');
-    expect(screen.getByText('--radius-large')).toBeTruthy();
-    expect(
-      document.querySelector('[data-foundation-radius="--radius-large"]')?.getAttribute('style'),
-    ).toContain('border-radius: var(--radius-large)');
-    expect(screen.queryByTestId('foundation-surface')).toBeNull();
-    expect(screen.getByTestId('foundation-elevation')).toBeTruthy();
-    const springs = screen.getByTestId('foundation-springs');
-    expect(springs.querySelector('[style*="animation"]')).toBeNull();
-    expect(screen.getByText('--spring-slow-ease')).toBeTruthy();
   });
 
   it('presents the landing and system pages as navigable documentation', async () => {

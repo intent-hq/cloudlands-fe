@@ -24,10 +24,6 @@ test('limits rendered transitions to paint and compositor properties', async ({ 
   ]);
   await expectTransitions(component.getByTestId('tool-call'), ['opacity']);
   await expectTransitions(component.getByTestId('mention-chip'), ['background-color']);
-  await expectTransitions(component.getByTestId('collapsible').locator('.text-subtle'), [
-    'opacity',
-    'transform',
-  ]);
   await expectTransitions(component.getByTestId('paint-only-utility'), [
     'background-color',
     'box-shadow',

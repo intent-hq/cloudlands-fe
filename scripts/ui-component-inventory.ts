@@ -66,7 +66,6 @@ const standalonePatterns = new Map<string, string>([
   ['Header.svelte', 'design-system'],
   ['HoverCard.svelte', 'design-system'],
   ['ImageLightbox.svelte', 'design-system'],
-  ['PanelWrapper.svelte', 'design-system'],
   ['Portal.svelte', 'design-system'],
   ['RelativeTime.svelte', 'design-system'],
   ['RichTextarea.svelte', '007-B2'],
@@ -95,14 +94,6 @@ interface Policy {
 
 function policyFor(publicImport: string): Policy {
   const family = publicImport.slice(UI_IMPORT.length).split('/')[0];
-  if (publicImport === `${UI_IMPORT}CollapsiblePanel.svelte`) {
-    return {
-      category: 'product',
-      owner: 'design-system',
-      replacement: '$lib/components/ui/accordion',
-      removalGate: 'Move persisted collapse state to callers, then adopt Accordion.',
-    };
-  }
   if (publicImport === `${UI_IMPORT}PrincipalAvatar.svelte`) {
     return {
       category: 'primitive',
