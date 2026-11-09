@@ -780,7 +780,7 @@
           width={b.w}
           height={b.h}
         />
-      {:else}<path class="mark preview" d={screenshotPath(gesture.preview)} />{/if}
+      {:else}<path class="mark preview" d={screenshotPath(gesture.preview, true)} />{/if}
     {/if}
     {#if tool === 'blur' && cursor && !disabled && !cropCandidate}
       <circle class="brush-cursor" cx={cursor.x} cy={cursor.y} r={brushRadius} />
