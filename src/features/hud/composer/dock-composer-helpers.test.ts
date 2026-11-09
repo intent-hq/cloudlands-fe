@@ -110,7 +110,7 @@ describe('dock evidence burn layout', () => {
     createdAt: 0,
   });
 
-  it('scales geometry to the output and keeps every badge inside the image', () => {
+  it('scales visible geometry without numbered paint badges', () => {
     const image = { width: 2880, height: 1800, displayScale: 2 };
     const ops = layoutDockBurn(
       image,
@@ -132,15 +132,9 @@ describe('dock evidence burn layout', () => {
       ],
       0.5,
     );
-    expect(ops[0]).toEqual({ kind: 'rect', x: 620, y: 456, w: 112, h: 36, width: 2 });
-    const badges = ops.filter((op) => op.kind === 'badge');
-    expect(badges.map((op) => op.label)).toEqual(['1', '12']);
-    for (const badge of badges) {
-      if (badge.kind !== 'badge') continue;
-      expect(badge.x + badge.radius).toBeLessThanOrEqual(1440);
-      expect(badge.y - badge.radius).toBeGreaterThanOrEqual(0);
-    }
-    // Small previews keep a legible numeral regardless of output scale.
+    expect(ops[0]).toEqual({ kind: 'rect', x: 620, y: 456, w: 112, h: 36, width: 1.8 });
+    expect(ops.map((op) => op.kind)).toEqual(['rect', 'rect']);
+    // Small previews keep the same ink-only presentation.
     const tiny = { x: 0, y: 0, w: 10, h: 10 };
     const preview = layoutDockBurn(
       image,
@@ -148,6 +142,6 @@ describe('dock evidence burn layout', () => {
       0.05,
       6,
     );
-    expect(preview.find((op) => op.kind === 'badge')).toMatchObject({ radius: 6 });
+    expect(preview.map((op) => op.kind)).toEqual(['rect']);
   });
 });

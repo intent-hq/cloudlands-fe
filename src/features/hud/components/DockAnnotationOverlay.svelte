@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { dockFreehandPath } from '$features/hud/composer/dock-freehand-path';
+  import { dockAnnotationCursor } from '$features/hud/composer/dock-annotation-cursor';
   import {
     DOCK_ANNOTATION_STYLE as INK,
     dockAnnotationBadgeCenter,
@@ -341,12 +343,6 @@
     return dockAnnotationBadgeCenter(rect, { x: 0, y: 0, w: width, h: height }, 1, half);
   }
 
-  function pathData(points: readonly DockImagePoint[]): string {
-    return points
-      .map((p, index) => `${index ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
-      .join(' ');
-  }
-
   function arrowHead(from: DockImagePoint, to: DockImagePoint): string {
     const angle = Math.atan2(to.y - from.y, to.x - from.x);
     const size = INK.arrowHead;
@@ -362,25 +358,6 @@
     return `M${a.x} ${a.y} L${to.x} ${to.y} L${b.x} ${b.y}`;
   }
 
-  const CURSORS: Record<DockMarkTool, string> = {
-    pick: cursor(
-      `<circle cx="12" cy="12" r="6.5" fill="none" stroke="${INK.halo}" stroke-width="${INK.stroke + INK.haloWidth}"/><circle cx="12" cy="12" r="6.5" fill="none" stroke="${INK.accent}" stroke-width="${INK.stroke}"/><circle cx="12" cy="12" r="1.6" fill="${INK.accent}" stroke="${INK.halo}" stroke-width="0.8"/>`,
-    ),
-    box: cursor(
-      `<path d="M12 4v16M4 12h16" stroke="${INK.halo}" stroke-width="${INK.stroke + INK.haloWidth}"/><path d="M12 4v16M4 12h16" stroke="${INK.accent}" stroke-width="${INK.stroke}"/><rect x="15" y="15" width="6" height="6" rx="1" fill="none" stroke="${INK.accent}" stroke-width="${INK.stroke}"/>`,
-    ),
-    pen: cursor(
-      `<circle cx="12" cy="12" r="3.2" fill="${INK.accent}" stroke="${INK.halo}" stroke-width="1.4"/>`,
-    ),
-    arrow: cursor(
-      `<path d="M12 4v16M4 12h16" stroke="${INK.halo}" stroke-width="${INK.stroke + INK.haloWidth}"/><path d="M12 4v16M4 12h16" stroke="${INK.accent}" stroke-width="${INK.stroke}"/><path d="M15 21l6-6M17 15h4v4" fill="none" stroke="${INK.accent}" stroke-width="${INK.stroke}" stroke-linecap="round"/>`,
-    ),
-  };
-
-  function cursor(body: string): string {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">${body}</svg>`;
-    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 12 12, crosshair`;
-  }
 </script>
 
 {#snippet shape(geometry: DockMarkGeometry, tool: DockMarkTool)}
@@ -401,7 +378,7 @@
       stroke-width={INK.stroke}
     />
   {:else}
-    <path d={pathData(geometry.points)} class="dock-annotation-stroke" stroke-width={INK.pen} />
+    <path d={dockFreehandPath(geometry.points)} class="dock-annotation-stroke" stroke-width={INK.pen} />
   {/if}
 {/snippet}
 
@@ -418,7 +395,7 @@
   style:--annotation-badge-font={INK.badgeFontFamily}
   style:--annotation-badge-size={`${INK.badgeRadius * INK.badgeTextScale}px`}
   style:--annotation-badge-outline={`${INK.badgeOutline}px`}
-  style:cursor={overlay && !overlay.mouse ? CURSORS[overlay.tool] : 'default'}
+  style:cursor={overlay && !overlay.mouse ? dockAnnotationCursor(overlay.tool) : 'default'}
   role="presentation"
   onpointerdown={onPointerDown}
   onpointermove={onPointerMove}
@@ -462,8 +439,10 @@
           out:fade={{ tier: 'fast' }}
         >
           {@render shape(mark.overlay, mark.tool)}
-          <circle cx={badge.x} cy={badge.y} r={BADGE / 2} class="dock-annotation-badge" />
-          <text x={badge.x} y={badge.y} class="dock-annotation-badge-text">{mark.n}</text>
+          {#if INK.showNumbers}
+            <circle cx={badge.x} cy={badge.y} r={BADGE / 2} class="dock-annotation-badge" />
+            <text x={badge.x} y={badge.y} class="dock-annotation-badge-text">{mark.n}</text>
+          {/if}
         </g>
       {/each}
 

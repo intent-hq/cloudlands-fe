@@ -15,6 +15,7 @@
 
 <script lang="ts">
   import { onDestroy, onMount, untrack } from 'svelte';
+  import { dockAnnotationCursor } from '$features/hud/composer/dock-annotation-cursor';
   import { ensureDockAnnotationFont } from '$features/hud/composer/dock-annotation-font';
   import { paintDockMediaMarks, type DockMediaPaintOp, DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
   import { layoutDockMediaText } from '$shared/dock-media-edit';
@@ -639,6 +640,7 @@
     style:--annotation-ink={DOCK_MEDIA_PAINT.accent}
     class:hidden
     data-tool={tool}
+    style:cursor={disabled ? 'default' : dockAnnotationCursor(tool)}
     viewBox={`${frame.x} ${frame.y} ${frame.w} ${frame.h}`}
     preserveAspectRatio="xMidYMid meet"
     role="application"
@@ -732,7 +734,7 @@
                 width={b.w}
                 height={b.h}
               />
-            {:else}<path class="path-hit" d={screenshotPath(shape.geometry)} />{/if}
+            {:else}<path class="path-hit" d={screenshotPath(shape.geometry, true)} />{/if}
             {#if !cropCandidate && editingTextId !== shape.id && (selectedIds.includes(shape.id) || selectedId === shape.id)}
               {#each annotationHandles(shape.geometry) as handle (handle.id)}
                 <rect

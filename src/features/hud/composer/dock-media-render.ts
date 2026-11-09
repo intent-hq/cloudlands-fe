@@ -1,3 +1,4 @@
+import { dockFreehandPath } from './dock-freehand-path';
 import { DOCK_ANNOTATION_STYLE, dockAnnotationBadgeCenter } from './dock-annotation-style';
 import { ensureDockAnnotationFont, dockAnnotationFontFamily } from './dock-annotation-font';
 import { dockAnnotationDisplayBounds } from './dock-annotation-display';
@@ -48,17 +49,21 @@ export function layoutDockMediaMarks(
       const box = dockAnnotationDisplayBounds(geometry);
       const badge = dockAnnotationBadgeCenter(box, crop, unit, r);
       return [
-        // Editing suppresses glyphs only; badges and canonical numbering stay unchanged.
+        // Canonical numbering remains in metadata; visual badges are optional paint only.
         ...(mark.id === hiddenTextMarkId && geometry.kind === 'text'
           ? []
           : [{ kind: 'geometry' as const, geometry, unit }]),
-        {
-          kind: 'badge',
-          ...badge,
-          radius: r,
-          label: String(n),
-          unit,
-        },
+        ...(DOCK_MEDIA_PAINT.showNumbers
+          ? [
+              {
+                kind: 'badge' as const,
+                ...badge,
+                radius: r,
+                label: String(n),
+                unit,
+              },
+            ]
+          : []),
       ];
     });
 }
@@ -74,13 +79,15 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
   context.lineJoin = 'round';
   for (const op of ops) {
     const unit = op.unit ?? 1;
-    const visibleStroke = (width: number) => {
+    const visibleStroke = (width: number, path?: Path2D) => {
       context.strokeStyle = DOCK_MEDIA_PAINT.halo;
       context.lineWidth = width + DOCK_MEDIA_PAINT.haloWidth * unit;
-      context.stroke();
+      if (path) context.stroke(path);
+      else context.stroke();
       context.strokeStyle = DOCK_MEDIA_PAINT.accent;
       context.lineWidth = width;
-      context.stroke();
+      if (path) context.stroke(path);
+      else context.stroke();
     };
     if (op.kind === 'badge') {
       context.fillStyle = DOCK_MEDIA_PAINT.paper;
@@ -124,8 +131,10 @@ export function paintDockMediaMarks(context: Painter, ops: readonly DockMediaPai
       context.beginPath();
       context.arc(g.x, g.y, DOCK_MEDIA_POINT_RADIUS, 0, Math.PI * 2);
       visibleStroke(width);
+    } else if (g.kind === 'path') {
+      visibleStroke(width, new Path2D(dockFreehandPath(g.points)));
     } else {
-      const points = g.kind === 'path' ? g.points : [g.from, g.to];
+      const points = [g.from, g.to];
       context.beginPath();
       points.forEach((p, index) => (index ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y)));
       if (g.kind === 'arrow') {

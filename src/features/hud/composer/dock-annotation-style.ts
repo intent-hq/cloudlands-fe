@@ -1,5 +1,6 @@
 /** Source-pixel paint; shared by live annotation chrome and both raster outputs. */
 export const DOCK_ANNOTATION_STYLE = {
+  showNumbers: false,
   accent: '#3864D9',
   ink: '#3864D9',
   paper: '#F8FAFF',

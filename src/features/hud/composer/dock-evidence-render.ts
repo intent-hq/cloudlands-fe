@@ -1,8 +1,9 @@
+import { dockFreehandPath } from './dock-freehand-path';
 import { DOCK_ANNOTATION_STYLE, dockAnnotationBadgeCenter } from './dock-annotation-style';
 import { ensureDockAnnotationFont } from './dock-annotation-font';
 /**
- * Burns numbered marks into a screenshot so a vision model sees the numbers the
- * text references. Layout is a pure display list (testable); painting is a thin
+ * Burns the visible annotation ink into a screenshot; stable numbered references
+ * remain in the accompanying metadata. Layout is a pure display list (testable); painting is a thin
  * canvas pass. Output goes through the canonical agent image optimizer.
  */
 import type { DockEvidenceImage, DockMark } from '$shared/dock-evidence';
@@ -69,7 +70,8 @@ export function layoutDockBurn(
         width: DOCK_MARK_BURN_STYLE.stroke * unit,
       });
     }
-    // Badge at the mark's top-right, kept fully inside the image.
+    // Number labels are paint-only; the underlying reference IDs remain stable.
+    if (!DOCK_MARK_BURN_STYLE.showNumbers) continue;
     const radius = Math.max(minBadgeRadius, (DOCK_MARK_BURN_STYLE.badge / 2) * unit);
     const right = at(mark.bounds.x + mark.bounds.w);
     const top = at(mark.bounds.y);
@@ -106,7 +108,7 @@ interface Painter {
   lineTo(x: number, y: number): void;
   closePath(): void;
   arc(x: number, y: number, r: number, start: number, end: number): void;
-  stroke(): void;
+  stroke(path?: Path2D): void;
   fill(): void;
   strokeRect(x: number, y: number, w: number, h: number): void;
   fillText(text: string, x: number, y: number): void;
@@ -135,16 +137,18 @@ function paintDockBurn(context: Painter, ops: readonly DockBurnOp[]): void {
       context.lineWidth = op.width;
       context.beginPath();
       const points = op.kind === 'path' ? op.points : [op.from, op.to];
-      points.forEach((p, i) => (i ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y)));
+      if (op.kind === 'arrow')
+        points.forEach((p, i) => (i ? context.lineTo(p.x, p.y) : context.moveTo(p.x, p.y)));
       if (op.kind === 'arrow') {
         context.moveTo(op.head.left.x, op.head.left.y);
         context.lineTo(op.to.x, op.to.y);
         context.lineTo(op.head.right.x, op.head.right.y);
       }
+      const smoothPath = op.kind === 'path' ? new Path2D(dockFreehandPath(op.points)) : null;
       stroke(
         op.width,
         op.width / (op.kind === 'path' ? DOCK_MARK_BURN_STYLE.pen : DOCK_MARK_BURN_STYLE.stroke),
-        () => context.stroke(),
+        () => (smoothPath ? context.stroke(smoothPath) : context.stroke()),
       );
     } else {
       context.fillStyle = DOCK_MARK_BURN_STYLE.paper;

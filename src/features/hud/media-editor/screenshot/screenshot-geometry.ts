@@ -1,3 +1,4 @@
+import { dockFreehandPath } from '$features/hud/composer/dock-freehand-path';
 import { dockGeometryRect, mapDockGeometry } from '$shared/dock-annotation';
 import type { DockImagePoint, DockImageRect, DockMarkGeometry } from '$shared/dock-evidence';
 
@@ -64,7 +65,8 @@ export function moveScreenshotGeometry(
   return mapDockGeometry(geometry, (point) => ({ x: point.x + dx, y: point.y + dy }));
 }
 
-export function screenshotPath(geometry: DockMarkGeometry): string {
+export function screenshotPath(geometry: DockMarkGeometry, smoothInk = false): string {
+  if (smoothInk && geometry.kind === 'path') return dockFreehandPath(geometry.points);
   const points =
     geometry.kind === 'path'
       ? geometry.points

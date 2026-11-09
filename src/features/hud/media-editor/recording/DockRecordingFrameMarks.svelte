@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick, onDestroy, onMount, untrack } from 'svelte';
+  import { dockAnnotationCursor } from '$features/hud/composer/dock-annotation-cursor';
   import { DOCK_ANNOTATION_STYLE } from '$features/hud/composer/dock-annotation-style';
   import { dockAnnotationDisplayBounds } from '$features/hud/composer/dock-annotation-display';
   import {
@@ -357,6 +358,7 @@
       bind:this={surface}
       class="surface"
       data-tool={tool ?? 'pointer'}
+      style:cursor={editable && fontsReady ? dockAnnotationCursor(tool) : 'default'}
       data-editable={(editable && fontsReady) || undefined}
       style:left={`${box.x}px`}
       style:top={`${box.y}px`}
@@ -391,7 +393,7 @@
             onkeydown={(event) => onMarkKeydown(event, row.mark.id)}
           >
             {#if g.kind === 'path' || g.kind === 'arrow'}
-              <path class="hit-stroke" d={screenshotPath(g)} />
+              <path class="hit-stroke" d={screenshotPath(g, true)} />
             {:else}
               <rect class="hit-area" x={b.x} y={b.y} width={b.w} height={b.h} />
             {/if}
