@@ -125,7 +125,7 @@
           fluid
           {compact}
           source={{ kind: 'workspace', url: videoUrl, mimeType: videoMimeType }}
-          name={title}
+          name={compact ? [title, duration, sendSummary].filter(Boolean).join(' ') : title}
           poster={capture.frames?.[0]
             ? (images[capture.frames[0].attachment_id] ?? undefined)
             : undefined}

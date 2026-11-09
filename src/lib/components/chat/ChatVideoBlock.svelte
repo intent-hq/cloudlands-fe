@@ -150,13 +150,15 @@
           </span>
         {/if}
       </Button>
-      <VideoActionsMenu
-        {videoUrl}
-        videoName={name}
-        sourceKind={source.kind}
-        mimeType={source.mimeType}
-        triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
-      />
+      {#if !compactPreview}
+        <VideoActionsMenu
+          {videoUrl}
+          videoName={name}
+          sourceKind={source.kind}
+          mimeType={source.mimeType}
+          triggerClass="absolute right-1.5 top-1.5 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+        />
+      {/if}
     </div>
   {/if}
 </div>
