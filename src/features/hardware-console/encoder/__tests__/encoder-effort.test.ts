@@ -85,7 +85,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(device.navigate).not.toHaveBeenCalled();
     expect(device.showWorkspace).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    device.turn('clockwise');
     expect(state.hardwareConsole.encoderBehavior).toBe('workspace-switch');
     expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
     expect(mutations()).toHaveLength(0);
@@ -743,10 +743,10 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     device.navigate.mockClear();
     device.showWorkspace.mockClear();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    device.turn('clockwise');
+    device.turn('clockwise');
     expect(device.showWorkspace).toHaveBeenCalledTimes(1);
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    device.turn('counterclockwise');
     expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-1');
     expect(mutations()).toHaveLength(0);
   });
@@ -1122,19 +1122,19 @@ describe('encoder rotation from Home or Settings', () => {
     expect(effort()).toBeNull();
   });
 
-  it('enters the activity list at the most recent workspace on a clockwise turn from Home', () => {
+  it('enters the tab strip at the leftmost tab on a clockwise turn from Home', () => {
     window.history.replaceState(null, '', '/');
     const device = manager();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
     device.turn('clockwise');
-    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
+    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
   });
 
-  it('enters the activity list at the least recent workspace on a counter-clockwise turn from Home', () => {
+  it('enters the tab strip at the rightmost tab on a counter-clockwise turn from Home', () => {
     window.history.replaceState(null, '', '/');
     const device = manager();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
     device.turn('counterclockwise');
-    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
   });
 });

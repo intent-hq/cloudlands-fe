@@ -49,7 +49,7 @@ describe('raw encoder direction per device model', () => {
 
 describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routing', (model) => {
   // Raw packets through the production decoder: a physical clockwise turn
-  // (ENC_CC) raises effort and moves workspace switching to less recent work.
+  // (ENC_CC) raises effort and moves workspace switching one tab right.
   it.each([
     {
       key: 'ENC_CW',
@@ -112,15 +112,15 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
     },
   );
 
-  it('switches workspaces in the physical direction after opting out', async () => {
+  it('steps across the tab strip without wrapping after opting out', async () => {
     ready();
     mocks.dispatch(setHardwareConsoleEncoderBehavior('workspace-switch'));
     const device = manager(model);
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-2');
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    expect(device.showWorkspace).toHaveBeenCalledTimes(1);
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-2');
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    expect(device.showWorkspace).toHaveBeenCalledTimes(1);
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
     expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-1');
     const homeView = state.homeWorkspaces;
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });

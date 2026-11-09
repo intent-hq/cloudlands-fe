@@ -5,8 +5,8 @@
  * (`onRawMessage`) and wires the rotary encoder:
  * - rotate: adjusts the current agent's effort by default, or on Home's
  *   Workspaces list moves the selection (and its side preview) down or up;
- *   optionally cycles workspaces ordered by activity. All modes clamp at the
- *   ends;
+ *   optionally steps across the open workspace tabs, left to right. All modes
+ *   clamp at the ends;
  * - click (`ENC_CLK` keydown): opens the workspace selected on Home's
  *   Workspaces list, otherwise opens Home like the titlebar Home button.
  *
@@ -18,8 +18,6 @@ import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { openAndShowWorkspace } from '$lib/utils/show-workspace';
-import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   encoderHudHidden,
   encoderEffortRotated,
@@ -29,9 +27,8 @@ import {
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
 import type { PhysicalKnobDirection } from '../input/types';
-import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import { isConsoleOwner } from '../owner-gate';
-import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
+import { stepWorkspaceTab } from './workspace-cycle';
 import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 import { currentRoutePath } from '$lib/utils/workspace-route-path';
 import { getHomeEncoderTarget, stepHomeSelection } from '$features/home/home-encoder-target';
@@ -68,11 +65,12 @@ function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
   };
 }
 
-function cyclableWorkspaces() {
-  const state = appStore.state;
-  return getItems(state.workspace.workspaces).filter(
-    (workspace) => workspace.id !== CHIEF_WORKSPACE_ID && isKeyAssignableWorkspace(workspace),
-  );
+/**
+ * Open workspace tabs in strip order. Same as `selectWorkspaceTabOrder`, read
+ * straight from state: device services load before selectors can be created.
+ */
+function workspaceTabOrder(): string[] {
+  return appStore.state.tabState.workspaceStacks.flat();
 }
 
 function navigateToWorkspace(
@@ -87,9 +85,8 @@ function navigateToWorkspace(
 }
 
 /**
- * Handle one encoder detent. Exported for tests. Returns the workspace id
- * the detent navigated to, or null when there was nowhere to go (cycling
- * clamps at the ends of the activity-ordered list).
+ * Handle one Switch tabs detent. Returns the workspace id the detent
+ * navigated to, or null when there was nowhere to go (the tab strip ends).
  */
 function handleEncoderRotate(
   direction: PhysicalKnobDirection,
@@ -98,13 +95,8 @@ function handleEncoderRotate(
   const { showWorkspace, dispatch, getCurrentWorkspaceId } = resolveDeps(deps);
   const state = appStore.state;
 
-  const ordered = orderWorkspacesForCycling(cyclableWorkspaces());
   const cursor = state.hardwareConsole.encoderHudWorkspaceId ?? getCurrentWorkspaceId();
-  const target = cycleWorkspaceId(
-    ordered.map((workspace) => workspace.id),
-    cursor,
-    direction,
-  );
+  const target = stepWorkspaceTab(workspaceTabOrder(), cursor, direction);
   if (target === null) return null;
   dispatch(encoderHudShown(target));
   navigateToWorkspace(target, showWorkspace);

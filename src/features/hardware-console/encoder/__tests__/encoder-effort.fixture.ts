@@ -109,7 +109,7 @@ function makeState() {
   return withLegacyPrincipal({
     agentModel: agentModelReducer(undefined, { type: 'init' }),
     hardwareConsole: { ...hardwareInitial },
-    tabState: { currentTabId: 'ws-1' as string | null },
+    tabState: { currentTabId: 'ws-1' as string | null, workspaceStacks: [['ws-1', 'ws-2']] },
     agentSessions: {
       byAgentId: {
         'agent-1': session('agent-1'),

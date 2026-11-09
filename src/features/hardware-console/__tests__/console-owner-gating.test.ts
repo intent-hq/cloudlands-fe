@@ -14,7 +14,7 @@ import { normalizeActionMappingsByModel } from '../actions/action-mapping';
 import { normalizeCycleScopeByFamily } from '../actions/cycle-scope';
 
 const mockState = {
-  tabState: { currentTabId: 'ws-other' as string | null },
+  tabState: { currentTabId: 'ws-other' as string | null, workspaceStacks: [['ws-1', 'ws-2']] },
   hardwareConsole: {
     isConsoleOwner: true,
     keyPins: [null, null, null, null, null, null] as (string | null)[],
