@@ -5900,6 +5900,8 @@
   "specialists_builtin_developer_name": "Entwickler",
   "specialists_builtin_prReviewer_description": "Überprüft Pull Requests mit fundiertem, umsetzbarem Feedback",
   "specialists_builtin_prReviewer_name": "PR-Reviewer",
+  "specialists_builtin_productManager_description": "Befragt Sie, untersucht den Code und schreibt eine geprüfte Spezifikation für einen Entwickler",
+  "specialists_builtin_productManager_name": "Produktmanager",
   "specialists_builtin_uiDesigner_description": "Erstellt elegante, barrierefreie, produktionsreife Benutzeroberflächen",
   "specialists_builtin_uiDesigner_name": "UI-Designer",
   "specialists_builtin_verifier_description": "Überprüft die Arbeit und verifiziert die Vollständigkeit",

@@ -5900,6 +5900,8 @@
   "specialists_builtin_developer_name": "Développeur",
   "specialists_builtin_prReviewer_description": "Relit les pull requests avec des retours fiables et exploitables",
   "specialists_builtin_prReviewer_name": "Relecteur de PR",
+  "specialists_builtin_productManager_description": "Vous interroge, explore le code et rédige une spécification revue pour un Développeur",
+  "specialists_builtin_productManager_name": "Chef de produit",
   "specialists_builtin_uiDesigner_description": "Crée des interfaces utilisateur élégantes, accessibles et prêtes pour la production",
   "specialists_builtin_uiDesigner_name": "Designer d'interface",
   "specialists_builtin_verifier_description": "Relit le travail et vérifie l'exhaustivité",
