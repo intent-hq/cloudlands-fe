@@ -72,12 +72,13 @@ describe('Specialist Prompts Verification', () => {
 
   describe('Specialist Definitions', () => {
     it('includes the current bundled specialists', () => {
-      expect(SPECIALISTS).toHaveLength(5);
+      expect(SPECIALISTS).toHaveLength(6);
       expect(SPECIALISTS.map((s) => s.id)).toEqual([
         'pr-reviewer',
         'ui-designer',
         'vulnerability-scanner',
         'developer',
+        'planner',
         'chief-of-staff',
       ]);
     });

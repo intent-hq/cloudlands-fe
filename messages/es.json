@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "Implementa directamente, planifica y delega según sea necesario",
   "specialists_builtin_developer_name": "Desarrollador",
+  "specialists_builtin_planner_description": "Explora el problema y el código, escribe una especificación revisada y la entrega a un Desarrollador",
+  "specialists_builtin_planner_name": "Planificador",
   "specialists_builtin_prReviewer_description": "Revisa pull requests con comentarios fiables y accionables",
   "specialists_builtin_prReviewer_name": "Revisor de PR",
   "specialists_builtin_uiDesigner_description": "Crea interfaces de usuario elegantes, accesibles y listas para producción",

@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "직접 구현하며 필요에 따라 계획하고 위임합니다",
   "specialists_builtin_developer_name": "개발자",
+  "specialists_builtin_planner_description": "문제와 코드를 탐색하고 검토된 사양을 작성해 개발자에게 넘깁니다",
+  "specialists_builtin_planner_name": "플래너",
   "specialists_builtin_prReviewer_description": "확신도 높고 실행 가능한 피드백으로 풀 리퀘스트를 검토합니다",
   "specialists_builtin_prReviewer_name": "PR 리뷰어",
   "specialists_builtin_uiDesigner_description": "우아하고 접근성 높으며 프로덕션에 바로 사용할 수 있는 사용자 인터페이스를 만듭니다",

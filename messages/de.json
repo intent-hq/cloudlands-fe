@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "Setzt direkt um, plant und delegiert nach Bedarf",
   "specialists_builtin_developer_name": "Entwickler",
+  "specialists_builtin_planner_description": "Untersucht das Problem und den Code, schreibt eine geprüfte Spezifikation und übergibt sie an einen Entwickler",
+  "specialists_builtin_planner_name": "Planer",
   "specialists_builtin_prReviewer_description": "Überprüft Pull Requests mit fundiertem, umsetzbarem Feedback",
   "specialists_builtin_prReviewer_name": "PR-Reviewer",
   "specialists_builtin_uiDesigner_description": "Erstellt elegante, barrierefreie, produktionsreife Benutzeroberflächen",

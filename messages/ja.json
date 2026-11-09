@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "直接実装し、必要に応じて計画や委任を行います",
   "specialists_builtin_developer_name": "開発者",
+  "specialists_builtin_planner_description": "問題とコードを調査し、レビュー済みの仕様を作成して開発者に引き継ぎます",
+  "specialists_builtin_planner_name": "プランナー",
   "specialists_builtin_prReviewer_description": "確度の高い実用的なフィードバックでプルリクエストをレビューします",
   "specialists_builtin_prReviewer_name": "PR レビュアー",
   "specialists_builtin_uiDesigner_description": "エレガントでアクセシブルな、本番環境に対応したユーザーインターフェースを作成します",

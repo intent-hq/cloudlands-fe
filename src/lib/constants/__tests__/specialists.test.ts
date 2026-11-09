@@ -51,6 +51,24 @@ describe('SPECIALISTS', () => {
     );
   });
 
+  it('keeps the Planner fallback identical to the bundled definition', () => {
+    const specialist = getSpecialistById('planner');
+    const bundled = readFileSync(
+      resolve(__dirname, '../../../../resources/specialists/planner.md'),
+      'utf8',
+    );
+    const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
+
+    expect(specialist).toMatchObject({ id: 'planner', name: 'Planner', icon: 'coordinator' });
+    expect(specialist).not.toHaveProperty('defaultModel');
+    expect(specialist?.hidden).toBeUndefined();
+    expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
+    expect(bundled).toContain(`roleReminder: "${specialist?.roleReminder}"`);
+    expect(createHash('sha256').update(bundled).digest('hex')).toBe(
+      '7af68d36ab2f3e8c1ead2a84e793c70b23c72331f959219195d84cc15ebddb44',
+    );
+  });
+
   it('keeps chief workspace creation extraction guidance', () => {
     const chief = getSpecialistById('chief-of-staff');
     expect(chief?.defaultBehaviorPrompt).toContain('When the user names a branch');

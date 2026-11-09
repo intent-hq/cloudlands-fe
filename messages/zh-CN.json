@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "直接实现，按需规划和委派",
   "specialists_builtin_developer_name": "开发者",
+  "specialists_builtin_planner_description": "探索问题和代码，编写经过评审的规格说明，并交给开发者实现",
+  "specialists_builtin_planner_name": "规划师",
   "specialists_builtin_prReviewer_description": "以高置信度、可操作的反馈审查拉取请求",
   "specialists_builtin_prReviewer_name": "PR 审查员",
   "specialists_builtin_uiDesigner_description": "打造优雅、无障碍、生产就绪的用户界面",
