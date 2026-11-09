@@ -10,11 +10,7 @@
 import type { ReleaseNotes } from '$store/renderer/slices/release-notes/release-notes-types';
 import type { AutoUpdateState } from '$store/renderer/slices/auto-update/auto-update-types';
 import type { SystemStatusState } from '$store/renderer/slices/system-status/system-status-slice';
-import type {
-  SystemClient,
-  SubscriptionHandler,
-  Unsubscribe,
-} from '../app-client';
+import type { SystemClient, SubscriptionHandler, Unsubscribe } from '../app-client';
 import { backendRequest } from './backend-transport';
 import { autoUpdateClient } from '$features/auto-update/auto-update.client';
 

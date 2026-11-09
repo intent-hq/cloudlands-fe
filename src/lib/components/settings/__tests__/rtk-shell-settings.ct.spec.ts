@@ -7,10 +7,7 @@ import {
 } from './rtk-shell-settings.assertions';
 
 for (const width of [420, 1100]) {
-  test(`RTK keeps responsive controls at ${width}px`, async ({
-    mount,
-    page,
-  }) => {
+  test(`RTK keeps responsive controls at ${width}px`, async ({ mount, page }) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const root = await mount(RtkShellSettings, {
