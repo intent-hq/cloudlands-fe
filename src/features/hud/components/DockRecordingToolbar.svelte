@@ -14,6 +14,7 @@
     type DockAnnotationRect,
     type DockAnnotationSignal,
     type DockAnnotationToolbarRequest,
+    type DockAnnotationAck,
   } from '$shared/dock-annotation';
   import type { DockMarkTool } from '$shared/dock-evidence';
   import { Button } from '$lib/components/ui/button';
@@ -41,6 +42,7 @@
     overlay,
     send,
     signal = null,
+    pickFailureReason = null,
     anchor = $bindable(null),
   }: {
     overlay: DockAnnotationOverlayState;
@@ -49,6 +51,7 @@
     anchor?: DockBarAnchor | null;
     /** The recording's live microphone; null until the first report. */
     signal?: DockAnnotationSignal | null;
+    pickFailureReason?: Extract<DockAnnotationAck, { ok: false }>['reason'] | null;
   } = $props();
 
   const record = $derived(overlay.media?.record ?? null);
@@ -264,6 +267,13 @@
   onkeydown={onBarKeyDown}
   transition:fade={{ tier: 'fast' }}
 >
+  {#if pickFailureReason}
+    <p class="pick-feedback type-caption" class:below={visual.y - overlay.workArea.y < 60} role="status" aria-live="polite">
+      {pickFailureReason === 'permission'
+        ? m.dock_composer_accessibilityPermission_tooltip()
+        : m.dock_composer_annotationUnavailable_error()}
+    </p>
+  {/if}
   <!-- Grip: the visible handle for dragging the bar (its whole surface drags too). -->
   <TooltipShortcut
     label={m.dock_annotationToolbar_drag_label()}
@@ -696,6 +706,21 @@
     border-radius: 50%;
     background: var(--rt-rec);
   }
+  .pick-feedback {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 0;
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 6px 10px;
+    border-radius: var(--radius-medium);
+    background: var(--rt-surface);
+    color: var(--rt-ink);
+    text-align: center;
+    pointer-events: none;
+  }
+  .pick-feedback.below { bottom: auto; top: calc(100% + 8px); }
   .sr-only {
     position: absolute;
     width: 1px;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import {
     DOCK_ANNOTATION_STYLE as INK,
     dockAnnotationBadgeCenter,
@@ -17,6 +17,7 @@
     type DockAnnotationOverlayState,
     type DockAnnotationOverlayTransport,
     type DockAnnotationPointerRequest,
+    type DockAnnotationAck,
   } from '$shared/dock-annotation';
   import type { DockImagePoint, DockMarkGeometry, DockMarkTool } from '$shared/dock-evidence';
   import DockRecordingToolbar from './DockRecordingToolbar.svelte';
@@ -43,7 +44,9 @@
     origin: DockImagePoint;
     points: DockImagePoint[];
     capped: boolean;
-    down: Promise<boolean>;
+    down: Promise<DockAnnotationAck>;
+    feedbackEpoch: number;
+    transport: DockAnnotationOverlayTransport;
   }
   interface Pending {
     key: number;
@@ -58,6 +61,30 @@
   // Sequences only ever increase within this document, across sessions.
   let sequence = 0;
   let pendingKey = 0;
+  let feedbackEpoch = 0;
+  let active = true;
+  let pickFailure = $state<{ epoch: number; reason: Extract<DockAnnotationAck, { ok: false }>['reason'] } | null>(null);
+  const feedbackContext = $derived(JSON.stringify([overlay?.sessionId, overlay?.tool, !!overlay?.mouse]));
+  function retirePickFeedback() {
+    feedbackEpoch++;
+    pickFailure = null;
+  }
+  $effect(() => {
+    const context = feedbackContext, owner = transport;
+    untrack(retirePickFeedback);
+    void context; void owner;
+  });
+  function ownsPickFeedback(current: Gesture): boolean {
+    return active && current.feedbackEpoch === feedbackEpoch && current.sequence === sequence &&
+      current.sessionId === overlay?.sessionId && current.tool === overlay?.tool &&
+      !overlay?.mouse && current.transport === transport;
+  }
+  function pickResult(current: Gesture, ack: DockAnnotationAck) {
+    if (current.tool !== 'pick' || !ownsPickFeedback(current)) return;
+    if (ack.ok) pickFailure = null;
+    else if (ack.reason !== 'stale' && ack.reason !== 'excluded')
+      pickFailure = { epoch: current.feedbackEpoch, reason: ack.reason };
+  }
   let gesture = $state.raw<Gesture | null>(null);
   let pending = $state.raw<Pending[]>([]);
   let root = $state<HTMLDivElement | null>(null);
@@ -118,6 +145,7 @@
     if (pointInRects(origin, overlay.excluded)) return;
     event.preventDefault();
     if (gesture) cancel();
+    retirePickFeedback();
     sequence += 1;
     const request: DockAnnotationPointerRequest = {
       sessionId: overlay.sessionId,
@@ -141,14 +169,16 @@
       origin,
       points: [origin],
       capped: false,
-      down: transport.pointer(request).then(
-        (ack) => ack.ok,
-        () => false,
-      ),
+      feedbackEpoch,
+      transport,
+      down: transport.pointer(request).catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' })),
     };
     gesture = current;
-    void current.down.then((ok) => {
-      if (!ok && gesture?.sequence === current.sequence) gesture = null;
+    void current.down.then((ack) => {
+      if (!ack.ok) {
+        pickResult(current, ack);
+        if (gesture?.sequence === current.sequence) gesture = null;
+      }
     });
   }
 
@@ -172,9 +202,9 @@
     const end = current.points.at(-1) ?? current.origin;
     void current.down
       .then(
-        (ok) =>
-          ok &&
-          transport.pointer({
+        (ack) =>
+          ack.ok &&
+          current.transport.pointer({
             sessionId: current.sessionId,
             sequence: current.sequence,
             phase: 'move',
@@ -217,21 +247,22 @@
       },
     ];
     void (async () => {
-      const ok =
-        (await current.down) &&
-        (await transport
-          .gesture({
+      const down = await current.down;
+      if (current.tool === 'pick' && !ownsPickFeedback(current)) {
+        settle(key, false);
+        return;
+      }
+      const ack = down.ok
+        ? await current.transport.gesture({
             sessionId: current.sessionId,
             sequence: current.sequence,
             tool: current.tool,
             origin: current.origin,
             points,
-          })
-          .then(
-            (ack) => ack.ok,
-            () => false,
-          ));
-      settle(key, ok);
+          }).catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' }))
+        : down;
+      pickResult(current, ack);
+      settle(key, ack.ok);
     })();
   }
 
@@ -272,6 +303,7 @@
   }
 
   function cancel() {
+    retirePickFeedback();
     const current = gesture;
     if (!current) return;
     gesture = null;
@@ -292,6 +324,7 @@
     document.addEventListener('visibilitychange', onVisibility);
   }
   onDestroy(() => {
+    active = false;
     cancel();
     if (typeof window === 'undefined') return;
     window.removeEventListener('blur', cancel);
@@ -471,8 +504,12 @@
       <DockRecordingToolbar
         {overlay}
         {signal}
+        pickFailureReason={pickFailure?.reason ?? null}
         bind:anchor={toolbarAnchor}
-        send={(request) => void transport.toolbar?.(request).catch(() => false)}
+        send={(request) => {
+          if (['tool', 'mouse', 'clear', 'end', 'commit', 'done'].includes(request.action)) retirePickFeedback();
+          void transport.toolbar?.(request).catch(() => false);
+        }}
       />
     {/if}
   {/if}
