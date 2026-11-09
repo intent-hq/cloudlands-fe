@@ -263,7 +263,6 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'workspace:clear-recent',
   'workspace:close',
   'workspace:delete',
-  'workspace:duplicate',
   'workspace:export',
   'workspace:find-repositories',
   'workspace:get-by-id',
