@@ -139,7 +139,7 @@ export function layoutWorkspaceTabStrip(
  * Each collapsed chip represents its entire group, so a drop at either edge
  * leaves the hidden members together.
  */
-export function proposeGroupedWorkspaceTabOrder(
+function proposeGroupedWorkspaceTabOrder(
   dragItems: readonly WorkspaceTabStripItem[],
   fullOrder: readonly string[],
   draggedId: string,
@@ -171,7 +171,7 @@ function dropTargetWorkspaceId(
 }
 
 /** Applies a drop slot for a dragged collapsed group chip to the full order. */
-export function proposeWorkspaceTabGroupOrder(
+function proposeWorkspaceTabGroupOrder(
   dragItems: readonly WorkspaceTabStripItem[],
   fullOrder: readonly string[],
   groups: readonly WorkspaceTabGroup[],
