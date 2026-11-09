@@ -309,7 +309,8 @@ export const panelLayoutScopeUnmounted = createAction<[layoutId: string]>(
  * Populated panels do not navigate or reveal; an empty panel displays its
  * first tab with autofocus suppressed. Neither truncates layout history.
  * When the owner agent's chat is displayed, the tab is shown beside it
- * instead (see `showBesideOwnerAgent`).
+ * instead (see `showBesideOwnerAgent`); that visible change is recorded in
+ * layout history.
  */
 export const openTabBehindActive = createAction(
   'panelLayout/openTabBehindActive',
@@ -1013,8 +1014,11 @@ function activateTabPreservingFocus(
 /**
  * Show an agent-owned tab beside its owner's displayed chat, without moving
  * focus: in the next column to the right, else to the left, else in a new
- * column split off to the right. Returns null when the owner's chat is not
- * the active tab of any column, so the caller keeps its own placement.
+ * column split off to the right. A focused neighbour is skipped so the
+ * user's working content is never covered. Returns null when the owner's
+ * chat is not the active tab of any column (or no column can be added), so
+ * the caller keeps its own placement. A visible layout change, so it is
+ * recorded in layout history.
  */
 function showBesideOwnerAgent(
   ws: WorkspacePanelLayoutState,
@@ -1032,7 +1036,9 @@ function showBesideOwnerAgent(
     return active?.type === 'agent' && active.agentId === ownerAgentId;
   });
   if (agentIndex < 0) return null;
-  const neighborPanelId = order[agentIndex + 1] ?? order[agentIndex - 1];
+  const neighborPanelId = [order[agentIndex + 1], order[agentIndex - 1]].find(
+    (panelId) => panelId !== undefined && panelId !== ws.focusedPanelId,
+  );
   if (neighborPanelId) {
     return activateTabPreservingFocus(ws, neighborPanelId, tab, tabId, timestamp);
   }

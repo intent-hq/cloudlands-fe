@@ -120,6 +120,29 @@ describe('agent browser tabs open beside the owner agent chat', () => {
       expect(ws.focusedPanelId).toBe('p1');
     });
 
+    it('splits beside the agent instead of covering the focused right neighbour', () => {
+      const before = layout({ p1: [agentChat('agent-1')], p2: [note('n2')] }, 'p2');
+      const ws = panelLayoutReducer(before, openTabBehindActive(WS, browser, 'browser-1', 'p-new'))
+        .byWorkspaceId[WS];
+
+      expect(getPanelOrder(ws.root)).toEqual(['p1', 'p-new', 'p2']);
+      expect(ws.panels['p-new'].activeTabId).toBe('browser-1');
+      expect(ws.panels.p2.activeTabId).toBe('n2');
+      expect(ws.panels.p1.activeTabId).toBe('chat-agent-1');
+      expect(ws.focusedPanelId).toBe('p2');
+    });
+
+    it('splits beside a rightmost agent instead of covering the focused left neighbour', () => {
+      const before = layout({ p1: [note('n1')], p2: [agentChat('agent-1')] }, 'p1');
+      const ws = panelLayoutReducer(before, openTabBehindActive(WS, browser, 'browser-1', 'p-new'))
+        .byWorkspaceId[WS];
+
+      expect(getPanelOrder(ws.root)).toEqual(['p1', 'p2', 'p-new']);
+      expect(ws.panels['p-new'].activeTabId).toBe('browser-1');
+      expect(ws.panels.p1.activeTabId).toBe('n1');
+      expect(ws.focusedPanelId).toBe('p1');
+    });
+
     it('keeps the background open when the owner chat is behind another tab', () => {
       const before = layout({ p1: [note('n1'), agentChat('agent-1')], p2: [note('n2')] });
       const ws = panelLayoutReducer(before, openTabBehindActive(WS, browser, 'browser-1', 'p-new'))
