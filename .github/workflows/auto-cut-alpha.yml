@@ -29,8 +29,9 @@
 # - An in-flight intentd release build defers the cut: when intent-hq/intentd
 #   has a semver tag newer than the published alpha channel manifest and the
 #   tag is younger than 90 minutes, a release build is running and a pin bump
-#   is imminent — cutting now would ship a stale sidecar. The age bound stops
-#   a failed intentd build from deferring fe alphas forever, and the check
+#   is imminent — cutting now would ship a stale sidecar. A finished,
+#   unsuccessful v-release.yml run for the tag ends the deferral at once;
+#   the age bound covers an unreadable run, and the check
 #   fails OPEN on any lookup error (unreachable manifest, unreadable tags)
 #   so an unreadable intentd never blocks fe releases.
 # - An open pin-bump PR (branch `auto/intentd-pin`) defers the cut: an
@@ -46,14 +47,20 @@
 #   safe — the cut proceeds unrestricted. When intentd main IS ahead of
 #   the pinned tag and this cut would ship fe commits merged after the tag
 #   was cut, those commits may depend on BE work that is in no published
-#   build (the intentd-first rule orders merges, not releases) — defer
-#   with a notice; the next intentd alpha advances the pin and its
-#   pin-bump push chains into a cut that re-evaluates. While intentd
-#   cannot publish (failed build) the deferral persists. An explicit no-op
+#   build (the intentd-first rule orders merges, not releases). Time
+#   overlap alone held most cuts, so scripts/intentd-skew-evidence.mjs
+#   then looks for real dependencies: a fresh fe commit or its PR body
+#   naming an intentd PR that is merged, missing from the pinned tag, and
+#   not docs-only; or the fe diff adding a quoted use of an intentd
+#   method/event (protocol goldens) that the pin lacks. Positive proof of
+#   neither lets the cut proceed; evidence defers with a notice naming it,
+#   and the next intentd alpha's pin-bump push chains into a cut that
+#   re-evaluates. While intentd cannot publish (failed build) a real
+#   dependency keeps deferring. An explicit no-op
 #   from the latest release-plz main-push run exempts only the exact
 #   assessed main SHA. That run must have succeeded, with no open release
 #   PR and its baseline tag and commit already pinned by fe main.
-#   Missing/stale/unreadable proof never exempts skew; workflow_dispatch
+#   Missing/stale/unreadable proof (no-op or evidence) never exempts skew; workflow_dispatch
 #   remains the operator override. Automation
 #   commits (the sidecar pin bump itself, chore(release) squash merges)
 #   are exempt from the freshness test, and the check fails OPEN on any
@@ -175,6 +182,7 @@ jobs:
           sparse-checkout: |
             /scripts/ci-gate-state.mjs
             /scripts/intentd-release-readiness.mjs
+            /scripts/intentd-skew-evidence.mjs
             /scripts/release-pr-fast-path.mjs
             /scripts/rolling-pr.mjs
       # Every automated attempt obeys the hourly floor, including pin pushes.
@@ -237,9 +245,9 @@ jobs:
       # version), cutting an fe alpha now would ship a stale sidecar that the
       # imminent pin bump immediately obsoletes — defer with a notice instead;
       # the pin merge's push-triggered run (or the next cron) cuts the alpha
-      # with the new sidecar. The 90-minute age bound stops a FAILED intentd
-      # build from deferring fe alphas forever (cargo-dist builds take 20-45
-      # min). Strictly fail-open: any lookup problem (unreachable manifest,
+      # with the new sidecar. A finished, unsuccessful release run for the
+      # tag ends the deferral at once; the 90-minute age bound covers an
+      # unreadable run (cargo-dist builds take 20-45 min). Strictly fail-open: any lookup problem (unreachable manifest,
       # unreadable tags) proceeds with the cut — this guardrail must never
       # block fe releases when intentd is unreadable. intent-hq/intentd is
       # public, so the implicit GITHUB_TOKEN covers its reads.
@@ -312,7 +320,20 @@ jobs:
             exit 0
           fi
           age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
+          # A finished, unsuccessful build of the tag publishes nothing, so
+          # nothing is in flight (v0.11.161 died on a transient 504 and held
+          # fe cuts for the rest of the window). A re-run reopens the same
+          # run as in progress. An unreadable run keeps the age bound.
+          build=""
           if (( age_min < 90 )); then
+            build=$(gh api \
+              "repos/intent-hq/intentd/actions/workflows/v-release.yml/runs?event=push&branch=$tag&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.head_branch) \(.status) \(.conclusion)"' 2>/dev/null) || build=""
+          fi
+          read -r build_tag build_status build_conclusion <<<"$build" || true
+          if (( age_min < 90 )) && [[ "${build_tag:-}" == "$tag" && "${build_status:-}" == "completed" && "${build_conclusion:-}" != "success" ]]; then
+            echo "intentd $tag release build finished with '${build_conclusion:-}' and published nothing; proceeding with the cut."
+          elif (( age_min < 90 )); then
             echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the alpha cut so the next alpha ships the new sidecar"
             echo "defer=true" >> "$GITHUB_OUTPUT"
             # This run's decision line (see the merge step's decide()).
@@ -409,7 +430,7 @@ jobs:
           # above).
           be_skew_msg=""
           be_dependency_skew() {
-            local pin cmp ahead tag_date tag_epoch fe_tag fresh baseline_sha
+            local pin cmp ahead tag_date tag_epoch fe_tag fresh baseline_sha evidence evidence_status
 
             # The pin this cut would ship: intentd.version at main HEAD
             # (the squash merge cuts the tag on main's tree).
@@ -484,17 +505,31 @@ jobs:
               return 1
             fi
 
+            # Time overlap alone is not a dependency: both repos merge all
+            # day, so it would hold almost every cut. Positive proof that no
+            # fresh fe commit names a merged, unpublished, non-docs intentd
+            # PR and that the fe diff uses no protocol name the pin lacks
+            # exempts the cut. Like the no-op proof below, these lookups
+            # are fail-CLOSED only for the exemption.
+            baseline_sha=$(jq -r '.base_commit.sha // empty' <<<"$cmp")
+            evidence=$(node scripts/intentd-skew-evidence.mjs \
+              "$pin" "$baseline_sha" "$fe_tag" "$tag_epoch" "$GITHUB_REPOSITORY") \
+              && evidence_status=0 || evidence_status=$?
+            if (( evidence_status == 0 )); then
+              echo "intentd main is ahead of the pinned v$pin, but $evidence; no BE-dependency skew."
+              return 1
+            fi
+
             # A positive release-plz assessment can prove that the extra
             # commits need no new sidecar. This new lookup is fail-CLOSED
             # only for the exemption: errors retain the skew established
             # above, without changing any original fail-open lookup.
-            baseline_sha=$(jq -r '.base_commit.sha // empty' <<<"$cmp")
             if node scripts/intentd-release-readiness.mjs "$pin" "$baseline_sha" "$GITHUB_REPOSITORY"; then
               echo "release-plz confirmed no release needed for current intentd main against pinned v$pin@$baseline_sha; no BE-dependency skew."
               return 1
             fi
 
-            be_skew_msg="intentd main is $ahead commit(s) ahead of the pinned v$pin and this cut would ship $fresh fe commit(s) merged after that tag was cut ($tag_date) — they may depend on intentd work in no published sidecar"
+            be_skew_msg="intentd main is $ahead commit(s) ahead of the pinned v$pin and this cut would ship $fresh fe commit(s) merged after that tag was cut ($tag_date): ${evidence:-dependency evidence is unreadable}"
             return 0
           }
 
@@ -684,11 +719,11 @@ jobs:
           fi
 
           # BE-dependency freshness guardrail (see be_dependency_skew
-          # above): normally the deferral is bounded by the intentd alpha
-          # cadence — the next alpha advances the pin, and the pin-bump
+          # above): it defers only on dependency evidence (or unreadable
+          # evidence); the next alpha advances the pin, and the pin-bump
           # merge push chains straight into a fresh cut run. When intentd
-          # cannot publish (failed build) or no confirmed current no-op
-          # exists, the deferral persists; workflow_dispatch bypasses
+          # cannot publish (failed build) and a real dependency remains,
+          # the deferral persists; workflow_dispatch bypasses
           # this guard (manual means urgent — same convention as the
           # throttle) so an operator can always force the cut.
           if [[ "$EVENT_NAME" != "workflow_dispatch" ]] && be_dependency_skew; then

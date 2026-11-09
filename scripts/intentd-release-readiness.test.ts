@@ -1,4 +1,4 @@
-// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh, scripts/ci-gate-state.mjs, scripts/rolling-pr.mjs
+// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/intentd-skew-evidence.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh, scripts/ci-gate-state.mjs, scripts/rolling-pr.mjs
 
 import { execFileSync } from 'node:child_process';
 import {
@@ -136,6 +136,10 @@ function fixture() {
     missingHelper: false,
     missingGuardHelper: '',
     fetchFail: false,
+    // Exact-endpoint responses for the dependency-evidence helper and the
+    // in-flight build lookup; anything absent is an unexpected call.
+    extra: {} as Record<string, unknown>,
+    files: [] as { filename: string; changes: number; patch?: string }[],
   };
 }
 
@@ -179,6 +183,7 @@ function runCut(
     'ci-gate-state.mjs',
     'rolling-pr.mjs',
     'intentd-release-readiness.mjs',
+    'intentd-skew-evidence.mjs',
     'release-pr-fast-path.mjs',
     'intentd-pin-advance.sh',
   ])
@@ -215,7 +220,8 @@ appendFileSync(process.env.READINESS_CALLS, JSON.stringify(a) + '\\n');
 const endpoint = a[0] === 'api' ? a.slice(1).find(x => !x.startsWith('--')) : '';
 if (f.fail && endpoint.includes(f.fail)) process.exit(1);
 let value;
-if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : f.extraPr ? [f.pr, {...f.pr, number: 100}] : [f.pr];
+if (endpoint && Object.hasOwn(f.extra, endpoint)) value = f.extra[endpoint];
+else if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : f.extraPr ? [f.pr, {...f.pr, number: 100}] : [f.pr];
 else if (a[0] === 'pr' && a[1] === 'view') value = f.detail;
 else if (a[0] === 'pr' && a[1] === 'merge') {
   const expected = a[a.indexOf('--match-head-commit') + 1];
@@ -230,7 +236,7 @@ else if (endpoint.includes('/contents/intentd.version')) value = {content: Buffe
 else if (endpoint === 'repos/${BE}/compare/v${PIN}...main?per_page=1') value = f.compare;
 else if (endpoint === 'repos/${BE}/git/matching-refs/tags/v') value = [{ref: 'refs/tags/' + f.beTag}];
 else if (endpoint.includes('/git/matching-refs/tags/v')) value = [{ref: 'refs/tags/' + f.feTag}];
-else if (endpoint.startsWith('repos/${FE}/compare/')) value = {commits: f.commits};
+else if (endpoint.startsWith('repos/${FE}/compare/')) value = {commits: f.commits, files: f.files};
 else if (endpoint === 'repos/${BE}/git/ref/heads/main') value = {object: {sha: f.proof.head}};
 else if (endpoint === 'repos/${BE}/commits/v${PIN}') value = {sha: '${BASE}'};
 else if (endpoint === 'repos/${BE}/commits/' + f.beTag) value = {commit: {committer: {date: f.beTagDate}}};
@@ -459,6 +465,81 @@ describe('auto-cut intentd dependency guard', () => {
       expect(runCut(data).cut).toBe(true);
     },
   );
+
+  const METHODS = 'crates/intent-transport/tests/goldens/method_catalog.txt';
+  const EVENTS = 'crates/intent-core/tests/goldens/event_types.json';
+  const goldens = (data: ReturnType<typeof fixture>, mainMethods = ['agent.list']) => {
+    const content = (text: string) => ({ content: Buffer.from(text).toString('base64') });
+    for (const [ref, names] of [
+      [BASE, ['agent.list']],
+      ['main', mainMethods],
+    ] as const) {
+      data.extra[`repos/${BE}/contents/${METHODS}?ref=${ref}`] = content(
+        names.map((name) => `method ${name}`).join('\n'),
+      );
+      data.extra[`repos/${BE}/contents/${EVENTS}?ref=${ref}`] = content(
+        JSON.stringify({ version: 1, types: ['agent:completed'] }),
+      );
+    }
+  };
+
+  // 2026-11-09: intentd main and fe main both moved after v0.11.160, so the
+  // time-overlap guard held every cut for hours although nothing depended
+  // on unpublished intentd work.
+  it('cuts overlapping fe and intentd work without dependency evidence', () => {
+    const data = fixture();
+    data.fail = '/actions/';
+    goldens(data);
+    const result = runCut(data, 'schedule', MERGE_STEP, '', false);
+    expect(result.decision, result.output).toEqual(['merge', 'direct-merge']);
+    expect(result.output).toContain('no fresh fe commit names unpublished intentd runtime work');
+  });
+
+  it('defers and names a declared intentd dependency the pin lacks', () => {
+    const data = fixture();
+    data.fail = '/actions/';
+    goldens(data);
+    data.commits[0].commit.message = 'feat(browser): agent tabs (#4331)';
+    const merge = 'f'.repeat(40);
+    Object.assign(data.extra, {
+      [`repos/${FE}/pulls/4331`]: { body: 'Companion: intent-hq/intentd#3184' },
+      [`repos/${BE}/pulls/3184`]: { merged_at: '2026-09-26T05:30:00Z', merge_commit_sha: merge },
+      [`repos/${BE}/compare/${BASE}...${merge}`]: { status: 'ahead' },
+      [`repos/${BE}/pulls/3184/files?per_page=100&page=1`]: [{ filename: 'crates/browser.rs' }],
+    });
+    const result = runCut(data, 'schedule', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'intentd-skew']);
+    expect(result.output).toContain('fe #4331 names intentd#3184');
+  });
+
+  it('defers when the fe diff calls a method only intentd main has', () => {
+    const data = fixture();
+    data.fail = '/actions/';
+    goldens(data, ['agent.list', 'browser.pinTab']);
+    data.files = [{ filename: 'src/lib/tabs.ts', changes: 1, patch: "+rpc('browser.pinTab')" }];
+    const result = runCut(data, 'schedule', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'intentd-skew']);
+    expect(result.output).toContain('"browser.pinTab"');
+  });
+
+  const IN_FLIGHT = 'Check for an in-flight intentd release build';
+  const RUNS = `repos/${BE}/actions/workflows/v-release.yml/runs?event=push&branch=v0.9.111&per_page=1`;
+  it.each([
+    ['failed', { head_branch: 'v0.9.111', status: 'completed', conclusion: 'failure' }, 'false'],
+    [
+      'cancelled',
+      { head_branch: 'v0.9.111', status: 'completed', conclusion: 'cancelled' },
+      'false',
+    ],
+    ['running', { head_branch: 'v0.9.111', status: 'in_progress', conclusion: null }, 'true'],
+    ['re-run', { head_branch: 'v0.9.111', status: 'queued', conclusion: 'failure' }, 'true'],
+    ['other tag', { head_branch: 'v0.9.110', status: 'completed', conclusion: 'failure' }, 'true'],
+  ])('ends the in-flight deferral only for a finished, failed build: %s', (_name, run, defer) => {
+    const data = fixture();
+    data.extra[RUNS] = { workflow_runs: [run] };
+    const result = runCut(data, 'schedule', IN_FLIGHT);
+    expect(result.outputs.trim().split('\n').at(-1)).toBe(`defer=${defer}`);
+  });
 });
 
 describe('auto-cut direct release merge', () => {
