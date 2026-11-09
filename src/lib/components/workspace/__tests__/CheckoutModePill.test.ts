@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  *
  * CheckoutModePill tests. The pill shows the real `checkoutMode`: "CoW" for
- * `'cow'` whatever the `workspace.cowIsolation` setting says (per-agent CoW
- * sandboxes are retired), "Worktree" for `'worktree'`, "Direct" for
+ * `'cow'` (a checkout cloned from the local repo cache) without reading any
+ * setting, "Worktree" for `'worktree'`, "Direct" for
  * `'direct'`, and nothing at all when the field is absent
  * (non-daemon-provisioned checkouts).
  *
@@ -43,8 +43,7 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
 
 // The component reaches the daemon through the appClient seam (via the
 // disk-usage-poll action module); mock it so no request leaves the test.
-// `settings.get` is mocked only to prove the pill never reads
-// `workspace.cowIsolation`.
+// `settings.get` is mocked only to prove the pill never reads a setting.
 vi.mock('$lib/client', () => ({
   appClient: {
     workspaces: { diskUsage: mocks.diskUsage },
@@ -142,15 +141,14 @@ describe('CheckoutModePill', () => {
     mocks.diskUsage.mockReset();
     mocks.diskUsage.mockResolvedValue({ diskUsage, refreshing: false });
     mocks.settingsGet.mockReset();
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
+    mocks.settingsGet.mockResolvedValue(null);
   });
   afterEach(cleanup);
 
-  it('renders "CoW" for a cow checkout whatever workspace.cowIsolation says', async () => {
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
+  it('renders "CoW" for a cow checkout hydrated from the repo cache', async () => {
     const { container } = await renderPill({
       presentation: 'repository',
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: false } as Workspace,
+      workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
     });
     await flushLabel();
     expect(container.textContent).toContain('Checkout mode: CoW');
@@ -160,7 +158,7 @@ describe('CheckoutModePill', () => {
     expect(container.textContent).not.toContain('Checkout mode: Direct');
   });
 
-  it('renders "CoW" for a cow checkout without reading workspace.cowIsolation', async () => {
+  it('renders "CoW" for a cow checkout without reading any setting', async () => {
     await renderPill({ checkoutMode: 'cow' });
     await flushLabel();
     const pill = screen.getByText('CoW');

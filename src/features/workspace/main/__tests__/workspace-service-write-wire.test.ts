@@ -86,27 +86,6 @@ const requestMock = vi.hoisted(() =>
       daemonWorkspaces.set(id, next);
       return { workspace: next };
     }
-    if (method === 'workspace.duplicate') {
-      const id = String(params?.workspaceId ?? '');
-      const existing = daemonWorkspaces.get(id);
-      if (!existing) throw new Error('Workspace not found');
-      const newId = `${id}-copy`;
-      const newTitle =
-        typeof params?.newTitle === 'string' && params.newTitle.trim().length > 0
-          ? String(params.newTitle)
-          : `${existing.title ?? 'Workspace'} (Copy)`;
-      const next = {
-        ...existing,
-        id: newId,
-        title: newTitle,
-        branch: newId,
-        createdAt: '2024-06-01T00:00:00.000Z',
-        updatedAt: '2024-06-01T00:00:00.000Z',
-        lastActivity: '2024-06-01T00:00:00.000Z',
-      };
-      daemonWorkspaces.set(newId, next);
-      return { workspace: next };
-    }
     if (method === 'workspace.cleanup') {
       return { success: true };
     }
@@ -367,34 +346,6 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
     expect(updateCalls).toHaveLength(0);
   });
 
-  it('duplicateWorkspace sends workspace.duplicate with { workspaceId, newTitle? } and normalizes the returned workspace', async () => {
-    const ws = seed();
-    daemonWorkspaces.set(ws.id, { ...ws });
-
-    const result = await service.duplicateWorkspace(ws.id, 'Renamed Copy');
-
-    expect(result.ok).toBe(true);
-    const duplicateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.duplicate');
-    expect(duplicateCalls).toHaveLength(1);
-    expect(duplicateCalls[0]![1]).toEqual({ workspaceId: ws.id, newTitle: 'Renamed Copy' });
-    if (result.ok) {
-      expect(result.data.id).toBe(`${ws.id}-copy`);
-      expect(result.data.title).toBe('Renamed Copy');
-    }
-  });
-
-  it('duplicateWorkspace omits newTitle from the params when not provided', async () => {
-    const ws = seed();
-    daemonWorkspaces.set(ws.id, { ...ws });
-
-    const result = await service.duplicateWorkspace(ws.id);
-
-    expect(result.ok).toBe(true);
-    const duplicateCalls = requestMock.mock.calls.filter(([m]) => m === 'workspace.duplicate');
-    expect(duplicateCalls).toHaveLength(1);
-    expect(duplicateCalls[0]![1]).toEqual({ workspaceId: ws.id });
-  });
-
   it('restoreWorkspace sends workspace.restore with { workspaceId } and returns the daemon workspace', async () => {
     const ws = seed({ status: WorkspaceStatus.Archived, archived: true });
     daemonWorkspaces.set(ws.id, { ...ws });
@@ -612,19 +563,6 @@ describe('workspace.service ↔ daemon workspace.* write path (PROTOCOL.md §5.1
       requestMock.mockClear();
 
       await service.restoreWorkspace(ws.id);
-
-      await service.listWorkspaces();
-      expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);
-    });
-
-    it('clears the cached workspace.list after duplicateWorkspace so a later list refetches', async () => {
-      const ws = seed();
-      daemonWorkspaces.set(ws.id, { ...ws });
-
-      await service.listWorkspaces();
-      requestMock.mockClear();
-
-      await service.duplicateWorkspace(ws.id);
 
       await service.listWorkspaces();
       expect(requestMock.mock.calls.filter(([m]) => m === 'workspace.list')).toHaveLength(1);

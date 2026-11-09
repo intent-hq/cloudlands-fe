@@ -263,7 +263,6 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
   'workspace:clear-recent',
   'workspace:close',
   'workspace:delete',
-  'workspace:duplicate',
   'workspace:export',
   'workspace:find-repositories',
   'workspace:get-by-id',
@@ -296,7 +295,7 @@ const UNREACHABLE_LEGACY: ReadonlySet<string> = new Set([
 ]);
 
 /** Ceiling for UNREACHABLE_LEGACY — lower it as entries leave; never raise it. */
-const UNREACHABLE_LEGACY_CEILING = 143;
+const UNREACHABLE_LEGACY_CEILING = 142;
 
 const mainScan = scanMainInvokeHandlers(path.join(PACKAGE_ROOT, 'src'));
 const bridgeSources = readBridgeCallerSources(PACKAGE_ROOT);

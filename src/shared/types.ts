@@ -465,7 +465,7 @@ export interface Workspace {
   taskStats?: WorkspaceTaskStats;
   /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_GIT_SUMMARY. Excluded from WorkspaceMetadata payloads. */
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
-  /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
+  /** @deprecated Unread. Kept only for protocol field parity while older daemons still emit it; remove once the pinned intentd stops sending it. */
   cowSupported?: boolean;
   /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
   defaultAgentPlacement?: AgentPlacementRequest;

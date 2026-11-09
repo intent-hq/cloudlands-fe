@@ -168,17 +168,6 @@ export class ProtocolAdapter {
     return await this.workspaceService.unarchiveWorkspace(createWorkspaceId(id));
   }
 
-  async duplicateWorkspace(params: {
-    id: string;
-    newTitle?: string;
-  }): Promise<Result<any, string>> {
-    logger.info('Protocol: duplicateWorkspace', { workspaceId: params.id });
-    return await this.workspaceService.duplicateWorkspace(
-      createWorkspaceId(params.id),
-      params.newTitle,
-    );
-  }
-
   async cleanupWorkspace(id: string): Promise<Result<void, string>> {
     logger.info('Protocol: cleanupWorkspace', { workspaceId: id });
     return await this.workspaceService.cleanupWorkspace(createWorkspaceId(id));
@@ -761,7 +750,6 @@ export class ProtocolAdapter {
       deleteWorkspace: (p) => this.deleteWorkspace(p.id || p.workspaceId),
       archiveWorkspace: (p) => this.archiveWorkspace(p.id || p.workspaceId),
       unarchiveWorkspace: (p) => this.unarchiveWorkspace(p.id || p.workspaceId),
-      duplicateWorkspace: (p) => this.duplicateWorkspace(p),
       cleanupWorkspace: (p) => this.cleanupWorkspace(p.id || p.workspaceId),
       updateCurrentContext: (p) => this.updateCurrentContext(p),
 

@@ -20,9 +20,7 @@
     SettingsForm,
     defineSettings,
     defineSettingsCustomControls,
-    type SettingsControlContext,
   } from '$lib/components/patterns/settings';
-  import { Checkbox } from '$lib/components/patterns/settings/custom-controls';
   // eslint-disable-next-line intent/settings-use-schema -- shared inline recipe used inside schema description snippets
   import { InlineCode } from '$lib/components/ui/inline-code';
   import PathSettingField from './PathSettingField.svelte';
@@ -54,10 +52,6 @@
   );
   const autoCommit = $derived(
     ($form$?.drafts['git.autoCommit'] ?? $entries$['git.autoCommit']?.value) !== false,
-  );
-  const cowIsolation = $derived(
-    ($form$?.drafts['workspace.cowIsolation'] ?? $entries$['workspace.cowIsolation']?.value) ===
-      true,
   );
   const exposeGitCredential = $derived(
     ($form$?.drafts['sourceControl.github.exposeGitCredentialToChildren'] ??
@@ -177,19 +171,12 @@
     $entries$['sourceControl.github.exposeGitCredentialToChildren'] !== undefined,
   );
 
-  // CoW toggle is visible only when the machine supports it — a direct probe
-  // of the workspaces root via `system.capabilities` (PROTOCOL §5.7), with no
-  // dependency on an active/hydrated workspace.
-  const cowSupported = $derived($form$?.values.cowSupported === true);
-  const showCowToggle = $derived(cowSupported);
-
   // Daemon setting path per field (PROTOCOL §5.12, BE-owned workspace/git group).
   const SETTING_PATHS = {
     worktreesLocation: 'workspace.worktreesLocation',
     sshKeyPath: 'workspace.sshKeyPath',
     defaultShell: 'workspace.defaultShell',
     autoCommit: 'git.autoCommit',
-    cowIsolation: 'workspace.cowIsolation',
     branchPrefix: 'workspace.branchPrefix',
     exposeGitCredential: 'sourceControl.github.exposeGitCredentialToChildren',
   } as const;
@@ -278,7 +265,6 @@
       [SETTING_PATHS.worktreesLocation]: '',
       [SETTING_PATHS.sshKeyPath]: '',
       [SETTING_PATHS.autoCommit]: true,
-      [SETTING_PATHS.cowIsolation]: false,
       [SETTING_PATHS.defaultShell]: 'auto',
       [SETTING_PATHS.branchPrefix]: '',
       ...(entries[SETTING_PATHS.exposeGitCredential]
@@ -388,14 +374,6 @@
               kind: 'custom',
               id: 'worktrees-location',
               label: m.settings_gitWorkspace_worktreesLocation_label(),
-            },
-            {
-              kind: 'custom',
-              id: 'cow-isolation',
-              label: m.settings_gitWorkspace_cowIsolation_label(),
-              description: m.settings_gitWorkspace_cowIsolation_description(),
-              experimental: true,
-              when: () => Boolean(showCowToggle),
             },
           ],
         },
@@ -509,18 +487,6 @@
   />
 {/snippet}
 
-{#snippet cowControl({ labelId, descriptionId }: SettingsControlContext)}
-  <Checkbox
-    checked={cowIsolation}
-    onCheckedChange={(value) => {
-      appStore.dispatch(settingsFormDraftChanged(identity, SETTING_PATHS.cowIsolation, value));
-      void handleSave();
-    }}
-    ariaLabelledby={labelId}
-    ariaDescribedby={descriptionId}
-  />
-{/snippet}
-
 {#snippet shellAdditionsControl()}
   {@render shellAdditions?.()}
 {/snippet}
@@ -532,7 +498,6 @@
     custom={defineSettingsCustomControls({
       'ssh-key-path': sshKeyControl,
       'worktrees-location': worktreesControl,
-      'cow-isolation': cowControl,
       'cli-optimization': shellAdditionsControl,
     })}
     descriptions={{

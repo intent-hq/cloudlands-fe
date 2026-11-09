@@ -48,7 +48,6 @@ const paths = {
     'workspace.sshKeyPath',
     'workspace.defaultShell',
     'git.autoCommit',
-    'workspace.cowIsolation',
     'workspace.branchPrefix',
     'sourceControl.github.exposeGitCredentialToChildren',
     'workspace.autoArchiveIdleAfterDays',
@@ -184,10 +183,6 @@ function* loadForm(request: SettingsFormRequest): SagaGenerator<void> {
           : typeof idle?.defaultValue === 'number' && idle.defaultValue > 0
             ? idle.defaultValue
             : 1;
-    }
-    if (form.kind === 'git-workspace') {
-      const caps = yield* call([appClient.system, appClient.system.capabilities]);
-      values.cowSupported = caps.cowSupported === true;
     }
     yield* put(settingsFormRequestSettled(request, { status: 'succeeded', entries, values }));
   } catch (error) {

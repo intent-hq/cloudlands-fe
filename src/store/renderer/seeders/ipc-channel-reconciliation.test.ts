@@ -551,8 +551,9 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
  * — the snake_case workspace family, changes:*, mcp:*, and 8 ssh:* channels;
  * features/layout/panel-layout-history.client.ts — panel-layout:*; and the
  * uncalled workspaceClient get/close/duplicate/renameBranch/
- * preflightCloneCheck methods, retiring workspace:close / workspace:duplicate
- * / workspace:preflight-clone-check).
+ * preflightCloneCheck methods, retiring workspace:close and
+ * workspace:preflight-clone-check; the duplicate channel itself went with the
+ * daemon's duplicate method).
  */
 const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([]);
 
