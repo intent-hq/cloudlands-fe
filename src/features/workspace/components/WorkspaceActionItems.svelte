@@ -72,7 +72,7 @@
   {#if action.detail}<span
       class="ml-4 min-w-0 truncate {action.detailTone === 'danger'
         ? 'text-danger'
-        : 'text-muted-foreground'}"
+        : Menu.menuDescription}"
       data-menu-action-detail
       use:truncatedTitle={action.detail}>{action.detail}</span
     >{/if}
@@ -131,7 +131,7 @@
             <Menu.Separator />
             <p
               id={`${uid}-${action.id}-note`}
-              class="type-caption px-2 py-1 text-muted-foreground"
+              class="type-caption px-2 py-1 {Menu.menuDescription}"
               data-menu-action-note
             >
               {action.note}
@@ -208,7 +208,7 @@
       <div class="pl-4">
         <WorkspaceActionItems actions={action.submenu} {menu} {iconWeight} {onClose} />
         {#if action.note}
-          <p class="type-caption px-2 py-1 text-muted-foreground" data-menu-action-note>
+          <p class="type-caption px-2 py-1 {Menu.menuDescription}" data-menu-action-note>
             {action.note}
           </p>
         {/if}

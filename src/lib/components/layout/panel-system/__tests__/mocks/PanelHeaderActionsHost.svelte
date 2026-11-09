@@ -132,7 +132,7 @@
   {:else}
     <Menu.CommandItem
       label={longMenuContent
-        ? 'Content display action with a deliberately long label'
+        ? 'Content display action with a deliberately long label that is wider than any menu may grow'
         : 'Content display action'}
       shortcut={longMenuContent ? 'Ctrl+Shift+Alt+M' : undefined}
       onclick={() => (displayCount += 1)}

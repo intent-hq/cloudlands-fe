@@ -151,11 +151,12 @@ test('Assistant note menus fit a narrow panel and unavailable workspaces stay re
     );
     const rects = labels.map((label) => label.getBoundingClientRect());
     return {
-      separate: rects[0].bottom <= rects[1].top,
+      oneLine: Math.abs(rects[0].top - rects[1].top) < 2,
+      separate: rects[0].right <= rects[1].left,
       contained: rects.every((rect) => rect.left >= 0 && rect.right <= innerWidth),
     };
   });
-  expect(bounds).toEqual({ separate: true, contained: true });
+  expect(bounds).toEqual({ oneLine: true, separate: true, contained: true });
   await testInfo.attach('assistant-note-menu-narrow', {
     body: await page.screenshot(),
     contentType: 'image/png',

@@ -3,6 +3,11 @@
   import Fa from 'svelte-fa';
   import { faSliders, faFont } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
+  import {
+    faArrowsInLineVertical,
+    faArrowsOutLineHorizontal,
+    faSparkle,
+  } from '$lib/icons/phosphor-icons';
   import * as Menu from '$lib/components/ui/menu';
   import {
     selectAgentFontStyle,
@@ -53,6 +58,8 @@
 
 {#snippet chatAppearanceItems()}
   <Menu.CheckboxItem
+    indicator="switch"
+    icon={faArrowsOutLineHorizontal}
     checked={$chatContentWidth === 'full'}
     closeOnSelect={false}
     onCheckedChange={(enabled) => appStore.dispatch(setChatContentWidth(enabled ? 'full' : '800'))}
@@ -60,6 +67,8 @@
     {m.settings_appearance_chatContentWidth_label()}
   </Menu.CheckboxItem>
   <Menu.CheckboxItem
+    indicator="switch"
+    icon={faSparkle}
     checked={$chatAuroraEnabled}
     closeOnSelect={false}
     onCheckedChange={(enabled) => appStore.dispatch(setChatAuroraEnabled(enabled))}
@@ -67,6 +76,8 @@
     {m.settings_appearance_chatAurora_label()}
   </Menu.CheckboxItem>
   <Menu.CheckboxItem
+    indicator="switch"
+    icon={faArrowsInLineVertical}
     checked={$collapseToolRuns}
     closeOnSelect={false}
     onCheckedChange={(enabled) => appStore.dispatch(setCollapseToolRuns(enabled))}
@@ -87,7 +98,7 @@
   <Menu.Sub>
     <Menu.SubTrigger icon={faFont} iconWeight="regular">
       <span class="min-w-0 flex-1">{m.ui_viewSettings_font_label()}</span>
-      <span class="type-caption text-muted-foreground">{fontLabel}</span>
+      <span class="type-caption {Menu.menuDescription}">{fontLabel}</span>
     </Menu.SubTrigger>
     <Menu.SubContent aria-label={m.ui_viewSettings_font_label()}>
       {@render fontItems()}

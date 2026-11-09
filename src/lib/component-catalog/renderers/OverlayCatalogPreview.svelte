@@ -70,7 +70,7 @@
             <Menu.Item>Run command</Menu.Item>
             <Menu.CommandItem icon={faPaperclip} label="Attach files" shortcut="⇧⌘A" />
             <Menu.Item disabled>Disabled command</Menu.Item>
-            <Menu.CheckboxItem bind:checked={menuChecked} closeOnSelect={false}
+            <Menu.CheckboxItem indicator="switch" bind:checked={menuChecked} closeOnSelect={false}
               >Show panel</Menu.CheckboxItem
             >
             <Menu.RadioGroup bind:value={menuDensity}>

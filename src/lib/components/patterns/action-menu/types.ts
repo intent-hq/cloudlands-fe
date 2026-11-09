@@ -25,6 +25,8 @@ interface CheckboxAction extends ActionBase {
   kind: 'checkbox';
   checked: boolean;
   indeterminate?: boolean;
+  /** `switch` for an on/off setting; the default check marks membership in a set. */
+  indicator?: 'check' | 'switch';
   destructive?: never;
   children?: never;
 }

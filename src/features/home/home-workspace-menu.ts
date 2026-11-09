@@ -40,6 +40,7 @@ import {
   faArrowDown,
   faArrowUp,
   faHardDrive,
+  faHourglassHalf,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface HomeWorkspaceMenuOptions {
@@ -187,15 +188,16 @@ export function createHomeWorkspaceMenu(
     items.push({ type: 'separator' });
     // Per-workspace opt-out from the daemon's auto-archive sweep (PROTOCOL
     // §5.1); owner-only, offered on daemons that advertise it, and only while
-    // idle auto-archive is turned on in Settings.
+    // idle auto-archive is turned on in Settings. The switch is on while the
+    // workspace follows that setting, and stays open so the change is visible.
     if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
       items.push({
-        id: 'disable-auto-archive',
-        label: m.home_workspace_disableAutoArchive_label(),
-        checked: selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id),
-        closeOnSelect: true,
+        id: 'auto-archive',
+        label: m.home_workspace_autoArchive_label(),
+        icon: faHourglassHalf,
+        checked: !selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id),
+        indicator: 'switch',
         onClick: () => {
-          onClose();
           // Read at click time: the flag may have changed while the menu was open.
           const disabled = selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id);
           store.dispatch(setWorkspaceAutoArchiveDisabled(workspace.id, !disabled));

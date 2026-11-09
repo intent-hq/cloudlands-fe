@@ -1285,7 +1285,7 @@
     side="bottom"
     contentClass={cn(
       'panel-header-menu panel-actions-menu-content',
-      contentActions?.conversation && 'panel-conversation-menu w-60',
+      contentActions?.conversation && 'panel-conversation-menu',
     )}
     subContentClass="panel-header-menu panel-header-submenu"
   >
@@ -1978,9 +1978,14 @@
   :global(.panel-header-submenu) {
     min-width: min(224px, calc(100vw - 1rem));
   }
-  :global(.panel-actions-menu-content:not(.panel-conversation-menu)) {
-    width: 192px;
+  /* Rows stay on one line: the menu grows to fit them, up to 500px. */
+  :global(.panel-actions-menu-content:not(.panel-header-submenu)) {
+    width: max-content;
     min-width: min(192px, calc(100vw - 1rem));
+    max-width: min(500px, calc(100vw - 1rem));
+  }
+  :global(.panel-actions-menu-content.panel-conversation-menu) {
+    min-width: min(240px, calc(100vw - 1rem));
   }
 
   /* CSS variables for panel tab bar heights */

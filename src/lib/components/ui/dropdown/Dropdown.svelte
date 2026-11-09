@@ -9,6 +9,7 @@
   import { Input } from '$lib/components/ui/input';
   import { getPageTargetIndex } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
+  import MenuSwitch from '../menu/menu-switch.svelte';
   import {
     menuItem,
     menuOverlay,
@@ -1024,20 +1025,7 @@
         {#if item}
           {@render item({ option, selected: isSelected(option.value), highlighted: isHighlighted })}
         {:else}
-          <!-- Toggle checkbox -->
-          {#if option.type === 'toggle'}
-            <div
-              class={cn(
-                'h-4 w-4 shrink-0 rounded border border-muted-foreground/30',
-                'flex items-center justify-center',
-                option.checked ? 'bg-primary border-primary' : 'bg-transparent',
-              )}
-            >
-              {#if option.checked}
-                <Fa icon={faCheck} class="h-2.5 w-2.5 text-primary-foreground" />
-              {/if}
-            </div>
-          {:else if multiple}
+          {#if multiple && option.type !== 'toggle'}
             <!-- Checkbox for multiple select -->
             <div
               class={cn(
@@ -1079,8 +1067,10 @@
             <span class="text-xs text-subtle">{option.shortcut}</span>
           {/if}
 
-          <!-- Submenu arrow -->
-          {#if option.type === 'submenu'}
+          <!-- Trailing switch, submenu arrow, or single-select check -->
+          {#if option.type === 'toggle'}
+            <MenuSwitch checked={!!option.checked} />
+          {:else if option.type === 'submenu'}
             <Fa icon={faChevronRight} class="h-3 w-3 shrink-0 text-ghost" />
           {:else if !multiple && !option.type && isSelected(option.value)}
             <!-- Checkmark for single select -->
