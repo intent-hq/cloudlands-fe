@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// check-deps-fresh.mjs — the first command of lint, check, format:check and
-// test:unit. It refuses to run a gate under a Node outside package.json
-// `engines.node` (see check-node.mjs) or on a stale node_modules install and,
-// once the install is fresh, provisions the gitignored Paraglide bundle
-// (src/shared/paraglide) when it is missing or its recorded input hash no longer
-// matches messages/*.json, so a cold checkout needs no manual generate:i18n.
+// check-deps-fresh.mjs — the first command of lint, check, format:check,
+// test:unit and verify:changed (it runs before verify-changed.mjs, whose npm
+// imports would otherwise crash a missing install with ERR_MODULE_NOT_FOUND).
+// It refuses to run a gate under a Node outside package.json `engines.node`
+// (see check-node.mjs) or on a stale node_modules install and, once the install
+// is fresh, provisions the gitignored Paraglide bundle (src/shared/paraglide)
+// when it is missing or its recorded input hash no longer matches
+// messages/*.json, so a cold checkout needs no manual generate:i18n.
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';

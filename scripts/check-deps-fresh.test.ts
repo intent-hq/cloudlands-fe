@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -234,5 +242,41 @@ describe('check-deps-fresh CLI', () => {
     expect(result.stderr.trimEnd().split('\n')).toEqual([
       `[deps:check] node_modules/.pnpm/lock.yaml could not be read (EISDIR) — run: ${INSTALL_COMMAND}`,
     ]);
+  });
+});
+
+describe('verify:changed entry point', () => {
+  const PACKAGE_ROOT = process.cwd();
+  const verifyChangedScript: string = JSON.parse(
+    readFileSync(join(PACKAGE_ROOT, 'package.json'), 'utf8'),
+  ).scripts['verify:changed'];
+
+  function copyModules(dir: string, root: string) {
+    mkdirSync(join(root, dir), { recursive: true });
+    for (const file of readdirSync(join(PACKAGE_ROOT, dir)))
+      if (/\.[cm]js$/.test(file))
+        copyFileSync(join(PACKAGE_ROOT, dir, file), join(root, dir, file));
+  }
+
+  it('reports the install remediation before any npm package is loaded', () => {
+    const root = fixtureRoot({
+      'package.json': JSON.stringify({
+        engines: { node: SUPPORTED_NODE },
+        scripts: { 'verify:changed': verifyChangedScript },
+      }),
+      'pnpm-lock.yaml': LOCKFILE,
+    });
+    copyModules('scripts', root);
+    copyModules('playwright', root);
+    const result = spawnSync(`${verifyChangedScript} --dry-run`, {
+      cwd: root,
+      encoding: 'utf8',
+      shell: true,
+    });
+    expect(result.stderr).not.toContain('ERR_MODULE_NOT_FOUND');
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      `[deps:check] node_modules is missing (no node_modules/.pnpm/lock.yaml) — run: ${INSTALL_COMMAND}`,
+    ]);
+    expect(result.status).toBe(1);
   });
 });
