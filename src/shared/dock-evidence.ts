@@ -1098,10 +1098,18 @@ export function buildDockEvidenceMetadata(
         { attachmentId: string; raw: { attachmentId: string; expiresAt: string } | null }
       >
     >;
+    /**
+     * The composer's mark numbers, by mark id, when `evidence` leaves some marks out
+     * (they go with an exported recording): the rest keep the numbers shown and burned.
+     */
+    markNumbers?: ReadonlyMap<string, number>;
   },
   maxPenPoints: number = DOCK_WIRE_PEN_POINTS.metadata,
 ): DockScreenEvidenceMetadata {
-  const numbered = numberDockMarks(evidence);
+  const numbered = numberDockMarks(evidence).map(({ n, mark }) => ({
+    n: context.markNumbers?.get(mark.id) ?? n,
+    mark,
+  }));
   const clips = evidence.clips.filter((clip) => clip.status === 'ready');
   return {
     type: 'dock_screen_evidence',

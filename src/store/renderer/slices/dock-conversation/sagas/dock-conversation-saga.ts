@@ -614,10 +614,13 @@ function* sendReply(
         ]),
       );
     }
+    // Marks that go with an exported recording leave the wire evidence; the rest keep the
+    // numbers the composer showed and the composites burned.
+    const markNumbers = new Map(evidence ? numberDockMarks(evidence).map(({ n, mark }) => [mark.id, n]) : []);
     const wireContext =
       evidenceContext && imageAttachments
-        ? { ...evidenceContext, imageAttachments }
-        : evidenceContext;
+        ? { ...evidenceContext, imageAttachments, markNumbers }
+        : evidenceContext && { ...evidenceContext, markNumbers };
     const payload =
       evidence && wireContext
         ? {
