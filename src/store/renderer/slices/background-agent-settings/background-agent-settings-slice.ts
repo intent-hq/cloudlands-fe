@@ -14,6 +14,7 @@ import { m } from '$shared/paraglide/messages.js';
 export const DEFAULT_BACKGROUND_MODEL = '';
 export const BG_MODEL_MIGRATION_MARKER_KEY = 'bg-model-haiku45-migrated';
 
+// `review` and `fast` have no caller or settings row; they stay only so stored override maps keep their shape.
 export type BackgroundAgentType = 'commit' | 'pr' | 'review' | 'fast';
 
 // Localized copy uses getters so it re-evaluates with the active locale.
