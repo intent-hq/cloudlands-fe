@@ -12,6 +12,7 @@
     selectSettingsFormError,
   } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { store as appStore } from '$store/renderer/store';
+  import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { validateBranchPrefix, sanitizeBranchPrefix } from '$lib/utils/workspace-validation';
@@ -38,6 +39,7 @@
   const form$ = selectSettingsForm(identity);
   const entries$ = selectSettingsFormEntries(identity);
   const error$ = selectSettingsFormError(identity);
+  const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
   const worktreesLocation = $derived(
     String(
       $form$?.drafts['workspace.worktreesLocation'] ??
@@ -342,7 +344,9 @@
               kind: 'switch',
               id: 'git-credentials',
               label: m.settings_gitWorkspace_gitCredentials_label(),
-              description: m.settings_gitWorkspace_gitCredentials_description(),
+              description: $labsRemoteAgentsEnabled$
+                ? `${m.settings_gitWorkspace_gitCredentials_description()} ${m.settings_gitWorkspace_gitCredentials_remoteDescription()}`
+                : m.settings_gitWorkspace_gitCredentials_description(),
               when: () => Boolean(gitCredentialSettingSupported),
               get: () => Boolean(exposeGitCredential),
               set: (value: boolean) => {

@@ -8,6 +8,7 @@ import { warmImport } from '../../../test/warm-import';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
 import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 let stop: () => void;
 beforeEach(() => {
@@ -213,6 +214,41 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     const descriptionId = toggle.getAttribute('aria-describedby');
     const description = descriptionId ? document.getElementById(descriptionId) : null;
     expect(description).toBeTruthy();
+  });
+
+  async function renderDescription() {
+    mocks.mockSettingsList.mockResolvedValue([
+      ...baseSettings,
+      { path: GIT_CRED_PATH, value: true },
+    ]);
+    render(GitWorkspaceSettings);
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
+    return () => document.getElementById(toggle.getAttribute('aria-describedby') ?? '');
+  }
+
+  it('describes only local behaviour when remote agents Labs is off', async () => {
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    const description = await renderDescription();
+
+    expect(description()?.textContent).toContain(
+      m.settings_gitWorkspace_gitCredentials_description(),
+    );
+    expect(description()?.textContent).not.toContain('GH_TOKEN');
+  });
+
+  it('adds the remote-machine behaviour when remote agents Labs is on, and follows the flag', async () => {
+    store.dispatch(setLabsRemoteAgentsEnabled(true));
+    const description = await renderDescription();
+
+    expect(description()?.textContent).toContain(
+      m.settings_gitWorkspace_gitCredentials_description(),
+    );
+    expect(description()?.textContent).toContain(
+      m.settings_gitWorkspace_gitCredentials_remoteDescription(),
+    );
+
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    await waitFor(() => expect(description()?.textContent).not.toContain('GH_TOKEN'));
   });
 });
 
