@@ -21,8 +21,13 @@ const methods = (...names: string[]) =>
   `# Golden list\n${names.map((name) => `method ${name}`).join('\n')}\n`;
 const events = (...types: string[]) => JSON.stringify({ version: 1, types });
 
+let shas = 0;
 function commit(subject: string, date = '2026-11-09T06:00:00Z', body = '') {
-  return { commit: { committer: { date }, message: body ? `${subject}\n\n${body}` : subject } };
+  shas += 1;
+  return {
+    sha: shas.toString(16).padStart(40, '0'),
+    commit: { committer: { date }, message: body ? `${subject}\n\n${body}` : subject },
+  };
 }
 
 /** The 2026-11-09 stall: 11 fresh fe commits, intentd ahead, none depends on it. */
@@ -56,10 +61,21 @@ function harness() {
     [BASE]: { methods: methods('agent.list'), events: events('agent:completed') },
     main: { methods: methods('agent.list'), events: events('agent:completed') },
   };
+  // Files of the fresh #4326 commit; other commits change nothing.
   const files: { filename: string; changes: number; patch?: string }[] = [
     { filename: 'src/lib/providers.ts', changes: 2, patch: "@@ -1 +1 @@\n+call('agent.list')" },
   ];
   const calls: string[] = [];
+  const queries: string[] = [];
+  let graphqlError: Error | null = null;
+  const graphql = (query: string) => {
+    queries.push(query);
+    if (graphqlError) throw graphqlError;
+    const repository: Record<string, unknown> = {};
+    for (const [, n] of query.matchAll(/p(\d+): pullRequest\(number: \1\)/g))
+      if (Number(n) in fePrs) repository[`p${n}`] = { number: Number(n), body: fePrs[Number(n)] };
+    return { data: { repository } };
+  };
   const api = (endpoint: string) => {
     calls.push(endpoint);
     if (responses.has(endpoint)) {
@@ -71,9 +87,9 @@ function harness() {
       /^repos\/intent-hq\/cloudlands-fe\/compare\/v2\.303\.2\.\.\.main\?per_page=100&page=(\d+)$/,
     );
     if (match) return { commits: match[1] === '1' ? commits : [] };
-    if (endpoint === `repos/${FE}/compare/${FE_TAG}...main`) return { files };
-    match = endpoint.match(/^repos\/intent-hq\/cloudlands-fe\/pulls\/(\d+)$/);
-    if (match && Number(match[1]) in fePrs) return { body: fePrs[Number(match[1])] };
+    match = endpoint.match(/^repos\/intent-hq\/cloudlands-fe\/commits\/([0-9a-f]{40})$/);
+    const owner = match && commits.find((c) => c.sha === match![1]);
+    if (owner) return { files: owner.commit.message.includes('(#4326)') ? files : [] };
     match = endpoint.match(/^repos\/intent-hq\/intentd\/pulls\/(\d+)$/);
     if (match && Number(match[1]) in bePrs) return bePrs[Number(match[1])];
     match = endpoint.match(
@@ -102,7 +118,9 @@ function harness() {
     catalog,
     files,
     calls,
+    queries,
     logs,
+    failGraphql: (error: Error) => (graphqlError = error),
     check: (overrides = {}) =>
       intentdDependencyEvidence(
         {
@@ -113,7 +131,7 @@ function harness() {
           feRepo: FE,
           ...overrides,
         },
-        { api, log: (line: string) => logs.push(line) },
+        { api, graphql, log: (line: string) => logs.push(line) },
       ),
   };
 }
@@ -123,6 +141,7 @@ describe('declared intentd PR references', () => {
     ['intent-hq/intentd#3184', [3184]],
     ['see intentd#12 and https://github.com/intent-hq/intentd/pull/34.', [12, 34]],
     ['companion intentd PR #56', [56]],
+    ['intentd PR: #57, intentd pull request #58, intent-hq/intentd/pulls/59', [57, 58, 59]],
     ['intentd #7, intentd#7', [7]],
     ['intent-hq/intentd-releases#9, cloudlands-fe#10, myintentd#11, intent-hq/intent#12', []],
   ])('reads %j', (text, expected) => {
@@ -134,10 +153,12 @@ describe('intentd dependency evidence', () => {
   it('cuts when no fresh fe commit depends on unpublished intentd work', () => {
     const h = harness();
     expect(h.check()).toMatchObject({ safe: true });
-    // Old commits and release automation are never inspected.
-    expect(h.calls).not.toContain(`repos/${FE}/pulls/4300`);
-    expect(h.calls).not.toContain(`repos/${FE}/pulls/4329`);
-    expect(h.calls).not.toContain(`repos/${FE}/pulls/4330`);
+    // One batched read of fresh PR bodies; old commits and release
+    // automation are never inspected.
+    expect(h.queries).toHaveLength(1);
+    expect(h.queries[0]).toContain('p4326:');
+    for (const skipped of ['p4300:', 'p4329:', 'p4330:'])
+      expect(h.queries[0]).not.toContain(skipped);
   });
 
   it('defers on a declared runtime intentd PR that the pin lacks', () => {
@@ -244,6 +265,14 @@ describe('intentd dependency evidence', () => {
     expect(result.summary).toMatch(/browser\.pinTab|agent:pinned/);
   });
 
+  it('ignores new protocol used only by fe tests', () => {
+    const h = harness();
+    h.catalog.main.methods = methods('agent.list', 'browser.pinTab');
+    for (const filename of ['src/lib/a.test.ts', 'src/x/__tests__/b.ts', 'src/c.ct.spec.ts'])
+      h.files.push({ filename, changes: 1, patch: "+rpc('browser.pinTab')" });
+    expect(h.check()).toMatchObject({ safe: true });
+  });
+
   it('cuts when intentd adds protocol the fe diff does not use', () => {
     const h = harness();
     h.catalog.main.methods = methods('agent.list', 'browser.pinTab');
@@ -287,7 +316,6 @@ describe('intentd dependency evidence', () => {
 
   it.each([
     `repos/${FE}/compare/${FE_TAG}...main?per_page=100&page=1`,
-    `repos/${FE}/pulls/4326`,
     `repos/${BE}/pulls/3176`,
     `repos/${BE}/pulls/3176/files?per_page=100&page=1`,
     `repos/${BE}/contents/${METHOD_GOLDEN}?ref=${BASE}`,
@@ -295,6 +323,24 @@ describe('intentd dependency evidence', () => {
   ])('keeps the deferral when %s is unreadable', (endpoint) => {
     const h = harness();
     h.responses.set(endpoint, new Error('HTTP 502'));
+    expect(h.check()).toMatchObject({ safe: false });
+  });
+
+  it.each([
+    ['an error', () => new Error('HTTP 502')],
+    ['a missing PR', () => null],
+  ])('keeps the deferral when fe PR bodies return %s', (_name, failure) => {
+    const h = harness();
+    const error = failure();
+    if (error) h.failGraphql(error);
+    else delete h.fePrs[4326];
+    expect(h.check()).toMatchObject({ safe: false });
+  });
+
+  it('keeps the deferral when a fresh commit file list is unreadable', () => {
+    const h = harness();
+    h.catalog.main.methods = methods('agent.list', 'browser.pinTab');
+    h.responses.set(`repos/${FE}/commits/${h.commits[1].sha}`, new Error('HTTP 502'));
     expect(h.check()).toMatchObject({ safe: false });
   });
 

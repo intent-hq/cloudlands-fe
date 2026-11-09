@@ -15,7 +15,11 @@ export const EVENT_GOLDEN = 'crates/intent-core/tests/goldens/event_types.json';
 const SHA = /^[0-9a-f]{40}$/;
 const AUTOMATION = [/^fix: bump intentd sidecar to v/, /^chore\(release\): /];
 const CODE = /\.(?:[cm]?[jt]sx?|svelte)$/;
-// Files that never change the shipped daemon: docs, tests, CI config.
+const FE_TEST = /(^|\/)(__tests__|test|tests|fixtures)\/|\.(test|spec|ct\.spec)\.[cm]?[jt]sx?$/;
+// Files that cannot change the daemon's wire contract with the fe: docs,
+// tests, CI config. Markdown compiled into the daemon (assistant guide,
+// prompts) is help text; shipping it one intentd alpha late does not break
+// the fe, and nearly every fe feature PR names such a guide PR.
 const NON_RUNTIME = [
   /\.md$/i,
   /^docs\//,
@@ -26,12 +30,13 @@ const NON_RUNTIME = [
   /\.(test|spec)\.[cm]?[jt]sx?$/,
 ];
 const nonRuntime = (path) => NON_RUNTIME.some((re) => re.test(path));
-// The compare API lists at most 300 files.
+// The commit API lists at most 300 files per page.
 const FILE_CAP = 300;
+const BODY_BATCH = 50;
 
-function githubApi(endpoint) {
+function gh(args) {
   return JSON.parse(
-    execFileSync('gh', ['api', endpoint], {
+    execFileSync('gh', args, {
       encoding: 'utf8',
       timeout: 15_000,
       maxBuffer: 16 * 1024 * 1024,
@@ -39,10 +44,12 @@ function githubApi(endpoint) {
     }),
   );
 }
+const githubApi = (endpoint) => gh(['api', endpoint]);
+const githubGraphql = (query) => gh(['api', 'graphql', '-f', `query=${query}`]);
 
 /** intentd PR numbers named in free text (PR bodies, commit messages). */
 export function declaredIntentdPrs(text) {
-  const pattern = /(?<![\w-])intentd(?:#|\/pull\/|\s+(?:PR\s*)?#)(\d+)/gi;
+  const pattern = /(?<![\w-])intentd(?:#|\/pulls?\/|(?:\s+(?:PR|pull\s+request))?\s*:?\s*#)(\d+)/gi;
   return [...new Set([...String(text ?? '').matchAll(pattern)].map((m) => Number(m[1])))];
 }
 
@@ -81,9 +88,27 @@ function protocolNames(api, ref) {
 
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+/** fe PR bodies by number, in batched GraphQL reads. */
+function prBodies(graphql, numbers) {
+  const bodies = new Map();
+  for (let i = 0; i < numbers.length; i += BODY_BATCH) {
+    const batch = numbers.slice(i, i + BODY_BATCH);
+    const fields = batch.map((n) => `p${n}: pullRequest(number: ${n}) { number body }`).join(' ');
+    const repository = graphql(
+      `query skewEvidence { repository(owner: "intent-hq", name: "cloudlands-fe") { ${fields} } }`,
+    )?.data?.repository;
+    for (const n of batch) {
+      const pr = repository?.[`p${n}`];
+      if (pr?.number !== n || typeof pr.body !== 'string') throw new Error(`Unreadable fe #${n}`);
+      bodies.set(n, pr.body);
+    }
+  }
+  return bodies;
+}
+
 export function intentdDependencyEvidence(
   { pin, baselineSha, feTag, cutoffEpoch, feRepo },
-  { api = githubApi, log = (line) => console.error(line) } = {},
+  { api = githubApi, graphql = githubGraphql, log = (line) => console.error(line) } = {},
 ) {
   const tag = `v${pin}`;
   try {
@@ -98,22 +123,17 @@ export function intentdDependencyEvidence(
 
     const fresh = pages(api, `repos/${FE}/compare/${feTag}...main`, (data) => data?.commits)
       .filter((c) => Date.parse(c?.commit?.committer?.date) / 1000 > cutoffEpoch)
-      .map((c) => String(c.commit.message ?? ''))
-      .filter((message) => !AUTOMATION.some((re) => re.test(message.split('\n')[0])));
+      .map((c) => ({ sha: c.sha, message: String(c.commit.message ?? '') }))
+      .map((c) => ({ ...c, subject: c.message.split('\n')[0] }))
+      .filter((c) => !AUTOMATION.some((re) => re.test(c.subject)))
+      .map((c) => ({ ...c, feNumber: Number(c.subject.match(/\(#(\d+)\)$/)?.[1]) || 0 }));
 
     // Declared: the fe PR (or commit) names an intentd PR that is merged,
     // missing from the pinned tag, and changes runtime files.
+    const bodies = prBodies(graphql, [...new Set(fresh.map((c) => c.feNumber).filter(Boolean))]);
     const checked = new Map();
-    for (const message of fresh) {
-      const subject = message.split('\n')[0];
-      const feNumber = subject.match(/\(#(\d+)\)$/)?.[1];
-      let text = message;
-      if (feNumber) {
-        const body = api(`repos/${FE}/pulls/${feNumber}`)?.body;
-        if (body !== null && typeof body !== 'string')
-          throw new Error(`Unreadable fe #${feNumber}`);
-        text += `\n${body ?? ''}`;
-      }
+    for (const { message, subject, feNumber } of fresh) {
+      const text = feNumber ? `${message}\n${bodies.get(feNumber)}` : message;
       const label = feNumber ? `fe #${feNumber}` : `fe commit "${subject}"`;
       for (const number of declaredIntentdPrs(text)) {
         if (!checked.has(number)) {
@@ -129,16 +149,18 @@ export function intentdDependencyEvidence(
     }
 
     // Protocol: intentd main adds a method or event that the pin lacks, and
-    // the fe diff since the last alpha adds a quoted use of it.
+    // a fresh fe commit adds a quoted use of it outside tests.
     const pinned = protocolNames(api, baselineSha);
     const added = [...protocolNames(api, 'main')].filter((name) => !pinned.has(name));
-    if (added.length) {
-      const files = api(`repos/${FE}/compare/${feTag}...main`)?.files;
-      if (!Array.isArray(files)) throw new Error('Unreadable fe file list');
-      if (files.length >= FILE_CAP) throw new Error('fe file list is truncated');
-      const uses = added.map((name) => [name, new RegExp(`(['"\`])${escape(name)}\\1`)]);
+    const uses = added.map((name) => [name, new RegExp(`(['"\`])${escape(name)}\\1`)]);
+    for (const { sha } of added.length ? fresh : []) {
+      if (!SHA.test(sha ?? '')) throw new Error('Unreadable fe commit sha');
+      const files = api(`repos/${FE}/commits/${sha}`)?.files;
+      if (!Array.isArray(files)) throw new Error(`Unreadable files of fe ${sha}`);
+      if (files.length >= FILE_CAP) throw new Error(`File list of fe ${sha} is truncated`);
       for (const file of files) {
-        if (!CODE.test(file?.filename ?? '') || file.changes === 0) continue;
+        const path = file?.filename ?? '';
+        if (!CODE.test(path) || FE_TEST.test(path) || file.changes === 0) continue;
         if (typeof file.patch !== 'string') throw new Error(`No patch for ${file.filename}`);
         const lines = file.patch
           .split('\n')

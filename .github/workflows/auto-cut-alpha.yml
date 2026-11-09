@@ -320,7 +320,7 @@ jobs:
             exit 0
           fi
           age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
-          # A finished, unsuccessful build of the tag publishes nothing, so
+          # A finished, unsuccessful build of the tag brings no pin bump, so
           # nothing is in flight (v0.11.161 died on a transient 504 and held
           # fe cuts for the rest of the window). A re-run reopens the same
           # run as in progress. An unreadable run keeps the age bound.
@@ -332,7 +332,7 @@ jobs:
           fi
           read -r build_tag build_status build_conclusion <<<"$build" || true
           if (( age_min < 90 )) && [[ "${build_tag:-}" == "$tag" && "${build_status:-}" == "completed" && "${build_conclusion:-}" != "success" ]]; then
-            echo "intentd $tag release build finished with '${build_conclusion:-}' and published nothing; proceeding with the cut."
+            echo "intentd $tag release build finished with '${build_conclusion:-}', so no new sidecar is coming from it; proceeding with the cut."
           elif (( age_min < 90 )); then
             echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the alpha cut so the next alpha ships the new sidecar"
             echo "defer=true" >> "$GITHUB_OUTPUT"

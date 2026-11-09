@@ -139,7 +139,8 @@ function fixture() {
     // Exact-endpoint responses for the dependency-evidence helper and the
     // in-flight build lookup; anything absent is an unexpected call.
     extra: {} as Record<string, unknown>,
-    files: [] as { filename: string; changes: number; patch?: string }[],
+    // fe PR bodies served to the evidence helper's batched GraphQL read.
+    prBodies: null as Record<number, string> | null,
   };
 }
 
@@ -229,14 +230,22 @@ else if (a[0] === 'pr' && a[1] === 'merge') {
   process.exit(0);
 }
 else if (endpoint === 'graphql') {
-  if (a.some(x => x.includes('viewer'))) value = { data: { viewer: { login: 'releaser' } } };
+  const skew = a.find(x => x.includes('skewEvidence'));
+  if (skew) {
+    if (!f.prBodies) process.exit(1);
+    const repository = {};
+    for (const [, n] of skew.matchAll(/p(\\d+): pullRequest/g))
+      if (n in f.prBodies) repository['p' + n] = { number: Number(n), body: f.prBodies[n] };
+    value = { data: { repository } };
+  }
+  else if (a.some(x => x.includes('viewer'))) value = { data: { viewer: { login: 'releaser' } } };
   else { process.stdout.write(String(f.unresolved)); process.exit(0); }
 }
 else if (endpoint.includes('/contents/intentd.version')) value = {content: Buffer.from((f.pins[endpoint.split('?ref=')[1]] ?? f.pin) + '\\n').toString('base64')};
 else if (endpoint === 'repos/${BE}/compare/v${PIN}...main?per_page=1') value = f.compare;
 else if (endpoint === 'repos/${BE}/git/matching-refs/tags/v') value = [{ref: 'refs/tags/' + f.beTag}];
 else if (endpoint.includes('/git/matching-refs/tags/v')) value = [{ref: 'refs/tags/' + f.feTag}];
-else if (endpoint.startsWith('repos/${FE}/compare/')) value = {commits: f.commits, files: f.files};
+else if (endpoint.startsWith('repos/${FE}/compare/')) value = {commits: f.commits};
 else if (endpoint === 'repos/${BE}/git/ref/heads/main') value = {object: {sha: f.proof.head}};
 else if (endpoint === 'repos/${BE}/commits/v${PIN}') value = {sha: '${BASE}'};
 else if (endpoint === 'repos/${BE}/commits/' + f.beTag) value = {commit: {committer: {date: f.beTagDate}}};
@@ -500,9 +509,9 @@ describe('auto-cut intentd dependency guard', () => {
     data.fail = '/actions/';
     goldens(data);
     data.commits[0].commit.message = 'feat(browser): agent tabs (#4331)';
+    data.prBodies = { 4331: 'Companion: intent-hq/intentd#3184' };
     const merge = 'f'.repeat(40);
     Object.assign(data.extra, {
-      [`repos/${FE}/pulls/4331`]: { body: 'Companion: intent-hq/intentd#3184' },
       [`repos/${BE}/pulls/3184`]: { merged_at: '2026-09-26T05:30:00Z', merge_commit_sha: merge },
       [`repos/${BE}/compare/${BASE}...${merge}`]: { status: 'ahead' },
       [`repos/${BE}/pulls/3184/files?per_page=100&page=1`]: [{ filename: 'crates/browser.rs' }],
@@ -516,7 +525,11 @@ describe('auto-cut intentd dependency guard', () => {
     const data = fixture();
     data.fail = '/actions/';
     goldens(data, ['agent.list', 'browser.pinTab']);
-    data.files = [{ filename: 'src/lib/tabs.ts', changes: 1, patch: "+rpc('browser.pinTab')" }];
+    const sha = 'e'.repeat(40);
+    Object.assign(data.commits[0], { sha });
+    data.extra[`repos/${FE}/commits/${sha}`] = {
+      files: [{ filename: 'src/lib/tabs.ts', changes: 1, patch: "+rpc('browser.pinTab')" }],
+    };
     const result = runCut(data, 'schedule', MERGE_STEP, '', false);
     expect(result.decision).toEqual(['defer', 'intentd-skew']);
     expect(result.output).toContain('"browser.pinTab"');
