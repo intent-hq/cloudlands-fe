@@ -25,7 +25,6 @@ import {
 } from '$features/hardware-console/actions/cycle-scope';
 import type { EncoderDirection, HardwareDeviceModel } from '$features/hardware-console/input/types';
 import type { PttRecordingFinishedPayload } from '$features/hardware-console/voice/ptt-controller';
-import type { RadialSlot } from '$features/hardware-console/prompt-picker/radial-layout';
 import type {
   EncoderEffortFeedback,
   HardwareConsoleEncoderBehavior,
@@ -33,7 +32,12 @@ import type {
   RadialPromptPickerState,
 } from './hardware-console-types';
 
-const closedRadialPrompt: RadialPromptPickerState = { open: false, slots: [], sector: null };
+const closedRadialPrompt: RadialPromptPickerState = {
+  open: false,
+  suggestions: [],
+  prompts: [],
+  sector: null,
+};
 
 export const initialState: HardwareConsoleState = {
   enabled: true,
@@ -136,9 +140,9 @@ export const promptUsageRecorded = createAction(
   }),
 );
 /** Joystick deflected past the dead-zone: open the radial picker overlay. */
-export const radialPromptPickerOpened = createAction<[slots: RadialSlot[], sector: number | null]>(
-  'hardwareConsole/radialPromptPickerOpened',
-);
+export const radialPromptPickerOpened = createAction<
+  [suggestions: string[], prompts: string[], sector: number | null]
+>('hardwareConsole/radialPromptPickerOpened');
 /** Joystick moved to another sector (`null` = centered, release cancels). */
 export const radialPromptPickerSectorChanged = createAction<[sector: number | null]>(
   'hardwareConsole/radialPromptPickerSectorChanged',
@@ -323,9 +327,12 @@ hardwareConsoleReducer.with(promptUsageRecorded, (state, { payload: { text, atIs
   const promptUsage = applyPromptUsage(state.promptUsage, text, atIso);
   return promptUsage === null ? state : { ...state, promptUsage };
 });
-hardwareConsoleReducer.with(radialPromptPickerOpened, (state, { payload: [slots, sector] }) => {
-  return { ...state, radialPrompt: { open: true, slots, sector } };
-});
+hardwareConsoleReducer.with(
+  radialPromptPickerOpened,
+  (state, { payload: [suggestions, prompts, sector] }) => {
+    return { ...state, radialPrompt: { open: true, suggestions, prompts, sector } };
+  },
+);
 hardwareConsoleReducer.with(radialPromptPickerSectorChanged, (state, { payload: [sector] }) => {
   if (!state.radialPrompt.open || state.radialPrompt.sector === sector) return state;
   return { ...state, radialPrompt: { ...state.radialPrompt, sector } };

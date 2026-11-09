@@ -5,7 +5,7 @@
     radialPromptPickerClosed,
     radialPromptPickerOpened,
   } from '$store/renderer/slices/hardware-console/hardware-console-slice';
-  import { RADIAL_CANCEL_SLOT, buildRadialSlots } from './radial-layout';
+  import { RADIAL_CANCEL_SLOT } from './radial-layout';
 
   const USED = [
     'Run the tests and fix any failures before you continue',
@@ -24,7 +24,7 @@
 
   function open(suggestions: string[], used: string[], sector: number | null) {
     return () => {
-      appStore.dispatch(radialPromptPickerOpened(buildRadialSlots(suggestions, used), sector));
+      appStore.dispatch(radialPromptPickerOpened(suggestions, used, sector));
       return () => appStore.dispatch(radialPromptPickerClosed());
     };
   }

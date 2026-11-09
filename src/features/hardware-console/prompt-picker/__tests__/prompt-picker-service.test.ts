@@ -60,7 +60,7 @@ import {
   persistHardwareConsolePromptUsage,
 } from '../prompt-picker-service';
 import { promptPickerSaga } from '$store/renderer/slices/hardware-console/sagas/prompt-picker-saga';
-import { RADIAL_CANCEL_SLOT, buildRadialSlots } from '../radial-layout';
+import { RADIAL_CANCEL_SLOT } from '../radial-layout';
 import type { ChatSuggestionSource } from '../chat-suggestions';
 import { sendMessage } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
@@ -123,7 +123,6 @@ afterEach(() => {
 });
 
 const PROMPTS = ['p0', 'p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
-const SLOTS = buildRadialSlots([], PROMPTS);
 // Device angles (a=0 is 3 o'clock, clockwise).
 const UP = 0.75;
 const RIGHT = 0;
@@ -207,7 +206,7 @@ describe('installHardwareConsolePromptPickerJoystick', () => {
     manager.joystick(RIGHT, 0.1); // inside dead-zone — ignored
     expect(dispatched).toEqual([]);
     manager.joystick(RIGHT, 0.9);
-    expect(dispatched).toEqual([radialPromptPickerOpened(SLOTS, 2)]);
+    expect(dispatched).toEqual([radialPromptPickerOpened([], PROMPTS, 2)]);
   });
 
   it('tracks direction changes while deflected', () => {
@@ -215,7 +214,7 @@ describe('installHardwareConsolePromptPickerJoystick', () => {
     manager.joystick(RIGHT, 0.9);
     manager.joystick(LEFT, 0.9);
     expect(dispatched).toEqual([
-      radialPromptPickerOpened(SLOTS, 2),
+      radialPromptPickerOpened([], PROMPTS, 2),
       radialPromptPickerSectorChanged(6),
     ]);
   });
@@ -231,7 +230,7 @@ describe('installHardwareConsolePromptPickerJoystick', () => {
   it('release on the Cancel direction inserts nothing', () => {
     const { manager, dispatched, insertText } = install(PROMPTS);
     manager.joystick(DOWN, 0.9);
-    expect(dispatched).toEqual([radialPromptPickerOpened(SLOTS, RADIAL_CANCEL_SLOT)]);
+    expect(dispatched).toEqual([radialPromptPickerOpened([], PROMPTS, RADIAL_CANCEL_SLOT)]);
     manager.joystick(DOWN, 0);
     expect(insertText).not.toHaveBeenCalled();
     expect(dispatched.at(-1)).toEqual(radialPromptPickerClosed());
@@ -294,9 +293,7 @@ describe('chat suggestions on the ring', () => {
   it('opens with the focused chat suggestions at top, top-right and right', () => {
     const { run } = withSuggestions(['s1', 's2', 's3']);
     run.manager.joystick(UP, 0.9);
-    expect(run.dispatched).toEqual([
-      radialPromptPickerOpened(buildRadialSlots(['s1', 's2', 's3'], ['p0', 'p1']), 0),
-    ]);
+    expect(run.dispatched).toEqual([radialPromptPickerOpened(['s1', 's2', 's3'], ['p0', 'p1'], 0)]);
   });
 
   it('release on a suggestion sends it right away instead of inserting', () => {
@@ -325,7 +322,7 @@ describe('chat suggestions on the ring', () => {
   it('opens with suggestions even when no prompts are tracked', () => {
     const { run } = withSuggestions(['s1'], []);
     run.manager.joystick(UP, 0.9);
-    expect(run.dispatched).toEqual([radialPromptPickerOpened(buildRadialSlots(['s1'], []), 0)]);
+    expect(run.dispatched).toEqual([radialPromptPickerOpened(['s1'], [], 0)]);
   });
 
   it('still inserts used prompts that sit next to suggestions', () => {

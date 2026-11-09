@@ -16,6 +16,7 @@
   import {
     RADIAL_SLOT_COUNT,
     RADIAL_SLOT_GAP_TURNS,
+    buildRadialSlots,
     fitRadialLabels,
     radialSlotTurn,
     type RadialSlot,
@@ -62,8 +63,9 @@
     return `M${x0} ${y0} A${radius} ${radius} 0 0 ${clockwise ? 1 : 0} ${x1} ${y1}`;
   }
 
+  const slots = $derived(buildRadialSlots($radial$.suggestions, $radial$.prompts));
+
   const ring = $derived.by(() => {
-    const slots = $radial$.slots;
     const viewport = Math.min(innerWidth.current ?? 1200, innerHeight.current ?? 900);
     const maxRadius = Math.max(
       MIN_RADIUS,
@@ -106,9 +108,7 @@
     return { items, size: Math.ceil(outer + 2) * 2 };
   });
 
-  const highlighted = $derived(
-    $radial$.sector === null ? null : ($radial$.slots[$radial$.sector] ?? null),
-  );
+  const highlighted = $derived($radial$.sector === null ? null : (slots[$radial$.sector] ?? null));
   const hubLabel = $derived(
     highlighted?.kind === 'suggestion'
       ? m.hardwareConsole_radialPromptPicker_releaseToSend_label()

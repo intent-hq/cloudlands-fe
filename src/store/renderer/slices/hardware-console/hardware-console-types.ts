@@ -5,7 +5,6 @@ import type {
 } from '$features/hardware-console/actions/cycle-scope';
 import type { HardwareDeviceModel } from '$features/hardware-console/input/types';
 import type { PromptUsageEntry } from '$features/hardware-console/prompt-picker/curation';
-import type { RadialSlot } from '$features/hardware-console/prompt-picker/radial-layout';
 
 /** One left-encoder preference shared by Codex Micro and Creator Micro 2. */
 export type HardwareConsoleEncoderBehavior = 'agent-effort' | 'workspace-switch';
@@ -27,8 +26,10 @@ export interface EncoderEffortFeedback {
 export interface RadialPromptPickerState {
   /** True while the joystick is deflected and the overlay is showing. */
   open: boolean;
-  /** The 8 ring directions, clockwise from 12 o'clock (see `radial-layout.ts`). */
-  slots: RadialSlot[];
+  /** Focused chat suggestions captured at engage (ring slots 0-2). */
+  suggestions: string[];
+  /** Top-N used prompts captured at engage; `buildRadialSlots` places both. */
+  prompts: string[];
   /**
    * Highlighted slot index; `null` = centered. Release on Cancel, an empty
    * slot, or centered does nothing.

@@ -143,7 +143,9 @@ export function installHardwareConsolePromptPickerJoystick(
     // but `onRelease` re-checks ownership before inserting.
     if (!isOwner()) return;
     const source = getSuggestions();
-    const slots = buildRadialSlots(source?.prompts ?? [], getTopPrompts());
+    const suggestions = [...(source?.prompts ?? [])];
+    const prompts = getTopPrompts();
+    const slots = buildRadialSlots(suggestions, prompts);
     if (!slots.some(isActionSlot)) return;
     const sector = radialSlotForAngle(angle);
     session = {
@@ -152,7 +154,7 @@ export function installHardwareConsolePromptPickerJoystick(
       selection: sector,
       belowSince: distance >= selectDistance ? null : now(),
     };
-    dispatch(radialPromptPickerOpened(slots, sector));
+    dispatch(radialPromptPickerOpened(suggestions, prompts, sector));
   };
 
   const onMove = (angle: number, distance: number): void => {

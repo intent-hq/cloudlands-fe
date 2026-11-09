@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { buildRadialSlots } from '$features/hardware-console/prompt-picker/radial-layout';
 import { UNASSIGNED_KEY_PIN } from '$features/hardware-console/assignment/key-assignment';
 import {
   actionHudHidden,
@@ -276,15 +275,27 @@ describe('hardwareConsoleReducer', () => {
   });
 
   it('opens, retargets, and closes the radial picker overlay', () => {
-    const slots = buildRadialSlots(['s1'], ['a']);
-    const opened = hardwareConsoleReducer(initialState, radialPromptPickerOpened(slots, 1));
-    expect(opened.radialPrompt).toEqual({ open: true, slots, sector: 1 });
+    const opened = hardwareConsoleReducer(
+      initialState,
+      radialPromptPickerOpened(['s1'], ['a', 'b'], 1),
+    );
+    expect(opened.radialPrompt).toEqual({
+      open: true,
+      suggestions: ['s1'],
+      prompts: ['a', 'b'],
+      sector: 1,
+    });
 
     const moved = hardwareConsoleReducer(opened, radialPromptPickerSectorChanged(null));
-    expect(moved.radialPrompt).toEqual({ open: true, slots, sector: null });
+    expect(moved.radialPrompt).toEqual({ ...opened.radialPrompt, sector: null });
 
     const closed = hardwareConsoleReducer(moved, radialPromptPickerClosed());
-    expect(closed.radialPrompt).toEqual({ open: false, slots: [], sector: null });
+    expect(closed.radialPrompt).toEqual({
+      open: false,
+      suggestions: [],
+      prompts: [],
+      sector: null,
+    });
   });
 
   it('ignores sector changes and closes while the overlay is closed', () => {
