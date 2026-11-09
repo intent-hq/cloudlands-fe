@@ -2,67 +2,23 @@
   "version": 1,
   "note": "Known code used only by tests. Shrink-only: delete entries as the code is removed or gains a production caller (node scripts/check-dead-code.mjs --prune-baseline). Never add entries.",
   "files": [
-    "src/features/agent/agent-launch-core.ts",
     "src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte",
     "src/features/agent/components/agent-avatar/agent-avatar.catalog.ts",
     "src/features/hud/components/dock-composer-ct-helpers.ts",
     "src/features/hud/components/dock-composer-e2e-geometry.ts",
-    "src/lib/component-catalog/CatalogFoundations.svelte",
-    "src/lib/component-catalog/chat-polish/chat-polish-coverage.ts",
-    "src/lib/component-catalog/preview-context.ts",
-    "src/lib/components/agent-overview/TimeScrubber.svelte",
-    "src/lib/components/agent-overview/tree-layout.ts",
-    "src/lib/components/chat/AgentsList.svelte",
-    "src/lib/components/chat/LiveStreamPhaseIndicator.svelte",
-    "src/lib/components/chat/StreamingRenderer.svelte",
-    "src/lib/components/chat/chat-panel-state-sync.ts",
     "src/lib/components/chat/input/ImageAttachmentFeedbackHost.svelte",
     "src/lib/components/chat/input/SimpleRichInputQueueHost.svelte",
-    "src/lib/components/chat/live-stream-phase.ts",
-    "src/lib/components/chat/provider-overlay.ts",
-    "src/lib/components/chat/questions/wizard-draft-storage.ts",
-    "src/lib/components/chat/sticky-detection.ts",
-    "src/lib/components/code-review/CodeReviewPanel.svelte",
-    "src/lib/components/code-review/ReviewCommentCard.svelte",
     "src/lib/components/diagrams/diagram-templates.ts",
-    "src/lib/components/diagrams/diagram-validator.ts",
-    "src/lib/components/editor/MarkdownFileEditor.svelte",
-    "src/lib/components/layout/Drawer.svelte",
-    "src/lib/components/layout/panel-system/PanelNavigator.svelte",
-    "src/lib/components/layout/panel-system/panel-navigator-geometry.ts",
     "src/lib/components/tiptap/Suggestion.ts",
-    "src/lib/components/tiptap/TaskNotePreview.svelte",
-    "src/lib/components/ui/CollapsiblePanel.meta.ts",
-    "src/lib/components/ui/CollapsiblePanel.svelte",
-    "src/lib/components/ui/PanelWrapper.svelte",
     "src/lib/components/ui/SizeContextConsumer.svelte",
     "src/lib/components/ui/SurfaceContextConsumer.svelte",
-    "src/lib/components/ui/dialog/legacy-overlays.meta.ts",
     "src/lib/components/ui/dropdown/dropdown-caller-ledger.ts",
     "src/lib/components/ui/skeleton/SkeletonMotionHost.svelte",
-    "src/lib/components/ui/smart-corner-tabs/smart-corner-tabs.meta.ts",
-    "src/lib/components/workspace/WorkspaceLinks.svelte",
-    "src/lib/components/workspace/sidebar/ActivityLogPreview.svelte",
-    "src/lib/components/workspace/sidebar/SidebarActivityPanel.svelte",
     "src/lib/motion/AnimatedHeightHost.svelte",
     "src/lib/notes/text-rebase-bench.ts",
     "src/lib/notes/text-rebase-shapes.ts",
-    "src/lib/utils/agent-colors.ts",
-    "src/lib/utils/format-compact-number.ts",
-    "src/lib/utils/message-navigation.ts",
-    "src/lib/utils/model-fallback.ts",
-    "src/lib/utils/performance-utils.ts",
-    "src/lib/utils/provider-model-selection.ts",
-    "src/lib/utils/shortcut-consumers.ts",
-    "src/lib/utils/tiptap/node-attributes.ts",
-    "src/lib/utils/tiptap/unique-id.ts",
-    "src/lib/utils/tiptap/use-node-text-content.svelte.ts",
-    "src/lib/utils/tiptap/use-optimistic-state.svelte.ts",
-    "src/lib/utils/tiptap/use-reactive-node.svelte.ts",
-    "src/lib/utils/workspace-sorting.ts",
     "src/main/isolated-test-inspection.ts",
     "src/main/utils/logger.ts",
-    "src/routes/(app)/workspace/[id]/composables/use-panel-actions.svelte.ts",
     "src/scrub-host-node-injection.ts",
     "src/scrub-host-python-injection.ts",
     "src/shared/ipc/request-validation.ts",
@@ -311,9 +267,6 @@
     ],
     "src/features/discussions/discussion-references.ts": [
       "discussionBodyParts"
-    ],
-    "src/features/events/activity-labels.ts": [
-      "getActivityLabelParts"
     ],
     "src/features/events/daemon-events-bridge.client.ts": [
       "__resetDaemonEventsBridgeForTests"
@@ -1041,10 +994,6 @@
       "deriveWorkspaceTaskFallback",
       "hasNativeExecutionPlan"
     ],
-    "src/lib/components/code-review/types.ts": [
-      "parseAllReviewComments",
-      "parseReviewSummary"
-    ],
     "src/lib/components/diagrams/diagram-export.ts": [
       "prepareDiagramSvgForExport"
     ],
@@ -1304,7 +1253,6 @@
       "getActivityChatTarget",
       "getActivityIcon",
       "getActivityTitle",
-      "getEventAgentId",
       "shouldShowActivityPreviewEvent"
     ],
     "src/lib/components/workspace/utils/workspace-grouping.ts": [
@@ -1462,9 +1410,6 @@
     "src/lib/utils/queue-info.ts": [
       "getBatchId",
       "shouldSuppressQueueDivider"
-    ],
-    "src/lib/utils/reactive-time.svelte.ts": [
-      "calculateCompactTime"
     ],
     "src/lib/utils/reduced-motion.ts": [
       "REDUCED_MOTION_MEDIA_QUERY"
@@ -2384,7 +2329,6 @@
       "validateProposalLifecycleEntries"
     ],
     "src/store/renderer/slices/provider-catalog/provider-catalog-selectors.ts": [
-      "selectIsModelValidForProvider",
       "selectProviderCatalogEntryOrDefault",
       "selectProviderEnabledFromCatalog"
     ],
@@ -2540,9 +2484,6 @@
     "src/store/renderer/slices/ui-highlight/ui-highlight-slice.ts": [
       "initialState"
     ],
-    "src/store/renderer/slices/ui-layout/ui-layout-selectors.ts": [
-      "selectCollapsiblePanelCollapsed"
-    ],
     "src/store/renderer/slices/ui-layout/ui-layout-slice.ts": [
       "DEFAULT_EXPANDED_WIDTH",
       "DEFAULT_WIDTH",
@@ -2634,12 +2575,6 @@
       "SCRIPT_OUTPUT_LEASE_RETRY_MS",
       "SCRIPT_OUTPUT_SUBSCRIBE_TYPES",
       "scriptOutputReplaceGroup"
-    ],
-    "src/store/renderer/slices/workspace-events/workspace-events-selectors.ts": [
-      "selectEventsLoading",
-      "selectOlderEventsEndReached",
-      "selectOlderEventsError",
-      "selectOlderEventsLoading"
     ],
     "src/store/renderer/slices/workspace-events/workspace-events-slice.ts": [
       "initialState",
@@ -2820,9 +2755,6 @@
     "src/features/desktop/main/desktop-windows.ts": [
       "NativeWindow"
     ],
-    "src/features/events/activity-labels.ts": [
-      "StructuredLabel"
-    ],
     "src/features/events/types.ts": [
       "AgentCreatedEvent",
       "AgentMessageEvent",
@@ -2951,11 +2883,6 @@
     ],
     "src/lib/components/chat/streaming-status-utils.ts": [
       "CompletedEvent"
-    ],
-    "src/lib/components/code-review/types.ts": [
-      "CodeReview",
-      "ReviewComment",
-      "ReviewSeverity"
     ],
     "src/lib/components/layout/workspace-tab-context-actions.ts": [
       "WorkspaceTabBulkCloseMode"
