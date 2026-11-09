@@ -4,7 +4,7 @@ import {
   MOCK_PROVIDER_CATALOG,
   seedProviderCatalog,
 } from '../../test/fixtures/provider-catalog.fixture';
-import type { UsageModelStats, UsageProviderStats } from '$lib/client/app-client';
+import type { UsageModelStats, UsageProviderStats, UsageStatsResult } from '$lib/client/app-client';
 import {
   formatDuration,
   formatInt,
@@ -14,6 +14,7 @@ import {
   rankModels,
   rankProviders,
   totalTokens,
+  withoutCachedTokens,
 } from './stats-format';
 
 function model(name: string, tokens: Partial<UsageModelStats> = {}): UsageModelStats {
@@ -62,6 +63,68 @@ describe('totalTokens', () => {
         thoughtTokens: 5,
       }),
     ).toBe(15);
+  });
+});
+
+describe('withoutCachedTokens', () => {
+  const cells = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 300, cacheCreationTokens: 40 };
+  const data: UsageStatsResult = {
+    totals: { ...cells, thoughtTokens: 3 },
+    runs: 7,
+    sessions: 2,
+    longestRunMs: 90,
+    linesAdded: 5,
+    linesDeleted: 6,
+    byModel: [
+      model('cache-heavy', { inputTokens: 1, cacheReadTokens: 1_000 }),
+      model('fresh-heavy', { inputTokens: 10, outputTokens: 5, cacheCreationTokens: 2 }),
+    ],
+    byProvider: [
+      provider('cache-heavy', { outputTokens: 1, cacheReadTokens: 1_000 }),
+      provider('fresh-heavy', { outputTokens: 9 }),
+    ],
+    byHourOfDay: [{ hour: 3, ...cells }],
+    byMonth: [{ month: 2, ...cells, thoughtTokens: 4 }],
+    availablePeriods: { months: ['2026-02'], years: ['2026'] },
+  };
+
+  it('zeroes both cache counters in the totals and every rollup cell', () => {
+    const result = withoutCachedTokens(data);
+    for (const cell of [
+      result.totals,
+      ...result.byModel,
+      ...result.byProvider,
+      ...result.byHourOfDay,
+      ...result.byMonth,
+    ]) {
+      expect(cell.cacheReadTokens).toBe(0);
+      expect(cell.cacheCreationTokens).toBe(0);
+    }
+    expect(totalTokens(result.totals)).toBe(6);
+    expect(result.byMonth[0]).toEqual({
+      month: 2,
+      inputTokens: 1,
+      outputTokens: 2,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+      thoughtTokens: 4,
+    });
+    expect(result.byHourOfDay[0].hour).toBe(3);
+  });
+
+  it('re-ranks models and providers by their uncached totals', () => {
+    const result = withoutCachedTokens(data);
+    expect(result.byModel.map((row) => row.model)).toEqual(['fresh-heavy', 'cache-heavy']);
+    expect(result.byProvider.map((row) => row.provider)).toEqual(['fresh-heavy', 'cache-heavy']);
+  });
+
+  it('keeps non-token fields and leaves the input untouched', () => {
+    const result = withoutCachedTokens(data);
+    expect(result.runs).toBe(7);
+    expect(result.sessions).toBe(2);
+    expect(result.availablePeriods).toEqual(data.availablePeriods);
+    expect(data.totals.cacheReadTokens).toBe(300);
+    expect(data.byModel[0].model).toBe('cache-heavy');
   });
 });
 

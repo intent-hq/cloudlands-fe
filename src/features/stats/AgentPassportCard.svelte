@@ -15,7 +15,11 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatDuration, formatInt, formatTokens, totalTokens } from './stats-format';
 
-  let { data, label }: { data: UsageStatsResult | null; label: string } = $props();
+  let {
+    data,
+    label,
+    showCached = true,
+  }: { data: UsageStatsResult | null; label: string; showCached?: boolean } = $props();
 
   const totals = $derived(
     data?.totals ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
@@ -42,16 +46,18 @@
       <span class="counter-out"
         >{m.stats_passportCard_output_label({ amount: formatTokens(totals.outputTokens) })}</span
       >
-      <span class="counter-cread"
-        >{m.stats_passportCard_cacheRead_label({
-          amount: formatTokens(totals.cacheReadTokens),
-        })}</span
-      >
-      <span class="counter-cwrite"
-        >{m.stats_passportCard_cacheWrite_label({
-          amount: formatTokens(totals.cacheCreationTokens),
-        })}</span
-      >
+      {#if showCached}
+        <span class="counter-cread"
+          >{m.stats_passportCard_cacheRead_label({
+            amount: formatTokens(totals.cacheReadTokens),
+          })}</span
+        >
+        <span class="counter-cwrite"
+          >{m.stats_passportCard_cacheWrite_label({
+            amount: formatTokens(totals.cacheCreationTokens),
+          })}</span
+        >
+      {/if}
       {#if totals.thoughtTokens}
         <span class="counter-thoughts"
           >{m.stats_passportCard_thoughts_label({
