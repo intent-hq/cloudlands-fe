@@ -130,16 +130,24 @@ export function connectDockCaptureEditor(
       send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId, requestId }),
     keep: (openId, requestId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId, requestId }),
     save: async (openId, edit, replacement) => {
+      let stage: 'serialize' | 'invoke' = 'serialize';
       try {
+        const canonical = DockMediaEditSchema.parse(edit);
+        stage = 'invoke';
         return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.SAVE, {
           openId,
           // Gesture geometry may still be a nested Svelte $state proxy even in
           // the raw edit transaction. The canonical schema validates and builds
           // plain objects/arrays before Electron structured-clones this payload.
-          edit: DockMediaEditSchema.parse(edit),
+          edit: canonical,
           ...(replacement ? { replacement: { candidateToken: replacement.candidateToken } } : {}),
         })) ?? null) as DockCaptureEditorSaveResult | null;
-      } catch {
+      } catch (cause) {
+        const name = cause instanceof Error ? cause.name : '';
+        const reason = stage === 'serialize' ? 'invalid-edit'
+          : ['Error', 'TypeError', 'DataCloneError'].includes(name) ? name : 'other';
+        // Never include the request, pixels, user text, error message or stack.
+        console.warn('Capture editor save failed', { stage, reason });
         return null;
       }
     },

@@ -387,6 +387,12 @@
     if (dirty) void save(true);
     else void finishAttachment();
   }
+  function saveFailed(stage: 'plan' | 'ack' | 'saved-source' | 'saved-schema' | 'saved-plan' | 'exception', reason: string | readonly string[]) {
+    // Deliberately omit pixels, text, paths, ids and the edit itself. These codes
+    // distinguish a local validation refusal from an owner/CAS/transport failure.
+    console.warn('Screenshot edit save rejected', { stage, reason });
+    error = m.dock_screenshotEditor_saveError();
+  }
   async function save(attachAfterSave = false) {
     if (
       !edits ||
@@ -400,8 +406,9 @@
     )
       return;
     const bundle = edits.draft;
-    if (planDockMediaOutput(bundle.edit, bundle.source, null).errors.length) {
-      error = m.dock_screenshotEditor_saveError();
+    const planErrors = planDockMediaOutput(bundle.edit, bundle.source, null).errors;
+    if (planErrors.length) {
+      saveFailed('plan', planErrors);
       return;
     }
     saving = true;
@@ -414,22 +421,33 @@
           : {}),
       });
       if (!active || !ownsSnapshot() || edits.draft !== bundle) return;
-      if (
-        result.result !== 'saved' ||
-        !result.saved ||
-        result.saved.sourceId !== bundle.source.id ||
-        result.saved.sourceRevision !== bundle.source.revision ||
-        !DockMediaEditSchema.safeParse(result.saved).success ||
-        planDockMediaOutput(result.saved, bundle.source, null).errors.length
-      ) {
-        error = m.dock_screenshotEditor_saveError();
+      if (result?.result !== 'saved' || !result.saved) {
+        const reason = ['failed', 'stale-source', 'revision-conflict'].includes(result?.result)
+          ? result.result : result ? 'invalid-result' : 'no-result';
+        saveFailed('ack', reason);
+        return;
+      }
+      if (result.saved.sourceId !== bundle.source.id || result.saved.sourceRevision !== bundle.source.revision) {
+        saveFailed('saved-source', 'mismatch');
+        return;
+      }
+      if (!DockMediaEditSchema.safeParse(result.saved).success) {
+        saveFailed('saved-schema', 'invalid-edit');
+        return;
+      }
+      const savedErrors = planDockMediaOutput(result.saved, bundle.source, null).errors;
+      if (savedErrors.length) {
+        saveFailed('saved-plan', savedErrors);
         return;
       }
       edits.commit({ ...bundle, edit: result.saved });
       onDirtyChange?.(false);
       if (attachAfterSave) await finishAttachment();
-    } catch {
-      if (active) error = m.dock_screenshotEditor_saveError();
+    } catch (cause) {
+      if (active && ownsSnapshot()) {
+        const name = cause instanceof Error ? cause.name : '';
+        saveFailed('exception', ['Error', 'TypeError', 'DataCloneError'].includes(name) ? name : 'other');
+      }
     } finally {
       if (active) saving = false;
     }
