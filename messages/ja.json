@@ -8332,6 +8332,8 @@
   "dock_captureEditor_restoreCut_tooltip": "クリックして元に戻す",
   "dock_captureEditor_video_label": "動画",
   "dock_captureEditor_videoFull_label": "全体",
+  "dock_captureEditor_videoFull_help": "トリミング範囲の録画から、カットした部分を除いて残します。",
+  "dock_captureEditor_videoHighlights_help": "注釈を付けた場面と、その前後3秒を残します。トリミングとカットも適用されます。",
   "dock_captureEditor_videoHighlights_label": "ハイライト",
   "dock_captureEditor_videoHighlights_disabled": "ハイライトを使うにはマークを追加してください。",
   "dock_captureEditor_voice_label": "音声",

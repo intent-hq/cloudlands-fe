@@ -8332,6 +8332,8 @@
   "dock_captureEditor_restoreCut_tooltip": "Zum Wiederherstellen klicken",
   "dock_captureEditor_video_label": "Video",
   "dock_captureEditor_videoFull_label": "Ganz",
+  "dock_captureEditor_videoFull_help": "Behält die zugeschnittene Aufnahme ohne herausgeschnittene Teile.",
+  "dock_captureEditor_videoHighlights_help": "Behält kommentierte Momente mit je 3 Sekunden davor und danach. Zuschnitt und Schnitte gelten weiterhin.",
   "dock_captureEditor_videoHighlights_label": "Highlights",
   "dock_captureEditor_videoHighlights_disabled": "Füge eine Markierung hinzu, um Highlights zu nutzen.",
   "dock_captureEditor_voice_label": "Stimme",

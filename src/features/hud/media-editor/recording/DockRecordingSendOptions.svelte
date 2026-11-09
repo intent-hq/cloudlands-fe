@@ -53,7 +53,7 @@
 </script>
 
 <section class="options" data-send-options>
-  <div class="group">
+  <div class="group video-options">
     <span class="label" id="send-video-label">{m.dock_captureEditor_video_label()}</span>
     <ToggleGroup.Root
       type="single"
@@ -61,6 +61,7 @@
       size="sm"
       class="shrink-0"
       aria-labelledby="send-video-label"
+      aria-describedby="send-video-help"
       disabled={!enabled}
       value={video}
       onValueChange={(value: string) => {
@@ -79,6 +80,11 @@
         >{m.dock_captureEditor_videoHighlights_label()}</ToggleGroup.Item
       >
     </ToggleGroup.Root>
+    <p id="send-video-help" class="video-help type-caption">
+      {video === 'highlights'
+        ? m.dock_captureEditor_videoHighlights_help()
+        : m.dock_captureEditor_videoFull_help()}
+    </p>
   </div>
   <div class="group">
     <span class="label" id="send-voice-label">{m.dock_captureEditor_voice_label()}</span>
@@ -129,6 +135,15 @@
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+  }
+  .video-options {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .video-help {
+    flex-basis: 100%;
+    margin: 0;
+    color: hsl(var(--muted-foreground));
   }
   .label {
     font-size: 12px;

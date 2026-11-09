@@ -8332,6 +8332,8 @@
   "dock_captureEditor_restoreCut_tooltip": "按一下以還原",
   "dock_captureEditor_video_label": "影片",
   "dock_captureEditor_videoFull_label": "完整",
+  "dock_captureEditor_videoFull_help": "保留裁剪範圍內的錄影，並移除剪掉的片段。",
+  "dock_captureEditor_videoHighlights_help": "保留加上註解的時刻及其前後各3秒。裁剪與剪切仍然適用。",
   "dock_captureEditor_videoHighlights_label": "精華片段",
   "dock_captureEditor_videoHighlights_disabled": "加入標記以使用精華片段。",
   "dock_captureEditor_voice_label": "語音",
