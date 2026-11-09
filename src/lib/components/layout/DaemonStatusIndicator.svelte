@@ -435,7 +435,8 @@
       : m.layout_daemonStatus_connectedBackends_many(args);
   });
   // Paused sandboxes are not live links, so they come from the cloud-machine
-  // rows. They keep the row visible and trail the live count.
+  // rows. They keep the row visible and trail the live count. Only settled
+  // 'paused' counts; pausing and resuming sandboxes are briefly in neither.
   const machineLinks = $derived.by(() => {
     const live = $stats$?.remoteLinks?.machines ?? 0;
     const paused = $pausedSandboxes$;
