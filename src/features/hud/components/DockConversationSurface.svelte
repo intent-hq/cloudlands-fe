@@ -131,9 +131,12 @@
           setTimeout(() => focus(attempt + 1), 50);
           return;
         }
-        (composer ?? element.querySelector<HTMLElement>('[data-dock-conversation-back]'))?.focus({
-          preventScroll: true,
-        });
+        // Focus parked on Back by the app is not a keyboard move: no focus ring for it.
+        if (composer) composer.focus({ preventScroll: true });
+        else
+          element
+            .querySelector<HTMLElement>('[data-dock-conversation-back]')
+            ?.focus({ preventScroll: true, focusVisible: false });
       };
       void tick().then(() => focus(0));
     });

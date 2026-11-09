@@ -745,6 +745,12 @@
   .attention :global(button) {
     margin-top: var(--space-2);
   }
+  /* Keyboard focus on Back: a quiet ring on the button's own edge, not the app-wide
+     ring floating outside it. */
+  :global([data-dock-conversation-back]:focus-visible) {
+    outline: 1px solid hsl(var(--focus-ring) / 0.6);
+    outline-offset: -1px;
+  }
   /* The side dock's rail already switches conversations: no back. */
   :global([data-placement='edge']) :global([data-dock-conversation-back]) {
     display: none;
