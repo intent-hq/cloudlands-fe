@@ -47,7 +47,7 @@
   import { selectWorkspaceTabStatuses } from '$store/renderer/slices/hud/hud-selectors';
   import type { WorkspaceTabStatus } from '$store/renderer/slices/hud/hud-types';
   import { WorkspaceStatus } from '$shared/types';
-  import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
+  import { resolveWindowEmptyDestination } from '$features/workspace/utils/window-empty-destination';
   import {
     WORKSPACE_TAB_MOVED_EVENT,
     type WorkspaceTabMovedEventDetail,
@@ -602,7 +602,7 @@
     void goto(
       nextWorkspaceId
         ? `/workspace/${nextWorkspaceId}`
-        : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state)),
+        : resolveWindowEmptyDestination(appStore.state),
     );
   }
 
@@ -625,7 +625,7 @@
     void goto(
       nextWorkspaceId
         ? `/workspace/${nextWorkspaceId}`
-        : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state)),
+        : resolveWindowEmptyDestination(appStore.state),
     );
   }
 

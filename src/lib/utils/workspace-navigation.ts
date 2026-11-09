@@ -25,7 +25,7 @@ import { goto } from '$app/navigation';
 import { page } from '$app/stores';
 import { dispatchWindowEvent } from './window-events';
 import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
-import { resolveEmptyWindowDestination } from '$features/workspace/utils/empty-window-destination';
+import { resolveWindowEmptyDestination } from '$features/workspace/utils/window-empty-destination';
 import {
   closeWorkspaceDrawer,
   openWorkspaceDrawer,
@@ -389,9 +389,7 @@ export function getSettingsPreviousPath(): string {
     return previousPath;
   }
   const workspace = getFirstAvailableWorkspace();
-  return workspace
-    ? `/workspace/${workspace.id}`
-    : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
+  return workspace ? `/workspace/${workspace.id}` : resolveWindowEmptyDestination(appStore.state);
 }
 
 /**
@@ -427,7 +425,7 @@ export async function navigateToFirstWorkspace(): Promise<void> {
     await openAndShowWorkspace(workspace.id);
     return;
   }
-  const target = resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state));
+  const target = resolveWindowEmptyDestination(appStore.state);
   logger.info('[navigateToFirstWorkspace] Navigating to:', target);
   await goto(target);
 }
@@ -440,10 +438,7 @@ export async function navigateAfterWorkspaceRemoval(removedWorkspaceId: string):
     await openAndShowWorkspace(workspace.id);
     return;
   }
-  const target = resolveEmptyWindowDestination(
-    selectWorkspaceItems.select(appStore.state),
-    removedWorkspaceId,
-  );
+  const target = resolveWindowEmptyDestination(appStore.state, removedWorkspaceId);
   logger.info('[navigateAfterWorkspaceRemoval] Navigating to:', target);
   await goto(target);
 }

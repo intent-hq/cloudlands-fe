@@ -99,6 +99,7 @@
     selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
+    selectWindowBackendListedWorkspaces,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -114,6 +115,11 @@
   } from '$store/renderer/slices/connections/connections-selectors';
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
+  import {
+    isOnboardingSkippedForWindow,
+    recordOnboardingSkipMark,
+  } from '$features/onboarding/utils/onboarding-skip-mark';
+  import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
   import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
@@ -187,6 +193,7 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  const windowBackendListedWorkspaces$ = selectWindowBackendListedWorkspaces();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const noBackendBound$ = selectNoBackendBound();
@@ -303,7 +310,17 @@
     }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
     return () => clearTimeout(timer);
   });
+  // Once this backend lists any workspace, permanently skip the full-page
+  // onboarding for it: later boots and empty windows fall back to Home.
   $effect(() => {
+    if (!$windowBackendListedWorkspaces$) return;
+    untrack(() => recordOnboardingSkipMark(getActiveBackendId(appStore.state)));
+  });
+  $effect(() => {
+    // Unknown (null) until the window is bound to its backend.
+    const onboardingSkipped = $connectionsLoaded$
+      ? untrack(() => isOnboardingSkippedForWindow(appStore.state))
+      : null;
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
@@ -314,6 +331,7 @@
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
       holdTimedOut: bootHoldTimedOut,
+      onboardingSkipped,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {

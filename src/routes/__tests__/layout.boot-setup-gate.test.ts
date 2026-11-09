@@ -192,7 +192,7 @@ describe('(app)/+layout.svelte boot-route setup gate (regression)', () => {
         } as unknown as Workspace,
       ]),
     );
-    appStore.dispatch(setWorkspaceHasLoaded(true));
+    appStore.dispatch(setWorkspaceHasLoaded(true, LOCAL_CONNECTION_ID));
     // A persisted tab whose workspace is absent from this (partial) list
     // snapshot: the layout must neither land on it nor prune it.
     appStore.dispatch(
@@ -214,6 +214,8 @@ describe('(app)/+layout.svelte boot-route setup gate (regression)', () => {
     expect(goto).toHaveBeenCalledWith('/workspace/ws-1', { replaceState: true });
     expect(goto).toHaveBeenCalledTimes(1);
     expect(selectBootRouteGateResolved.select(appStore.state)).toBe(true);
+    // A non-empty list permanently skips onboarding for this backend.
+    expect(window.localStorage.setItem).toHaveBeenCalledWith('intent:onboarding-skip:v1', '1');
     // The landing workspace is opened as a tab so the strip matches the route,
     // and the persisted tab missing from the partial list survives alongside it.
     expect(selectActiveWorkspaceIds.select(appStore.state)).toEqual(['ws-2', 'ws-1']);
