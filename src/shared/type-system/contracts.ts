@@ -39,8 +39,6 @@ const WorkspaceSchema = z.object({
   prUrl: z.string().optional(),
   prNumber: z.number().optional(),
   prStatus: z.enum(['open', 'closed', 'merged', 'draft']).optional(),
-  /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1). */
-  cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout. `direct` = standalone local clone. */
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
   defaultAgentPlacement: AgentPlacementRequestSchema.optional(),

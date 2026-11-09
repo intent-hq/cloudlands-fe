@@ -176,8 +176,6 @@ export const WorkspaceSchema = z.object({
   agentSummary: z.object({ agentIds: z.array(z.string()) }).optional(),
   taskStats: z.any().optional(), // Task progress rollup; carried on metadata payloads (PROTOCOL §5.1)
   gitSummary: z.any().optional(), // Deprecated aggregate; fetch on demand
-  /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1); gates the cowIsolation toggle. */
-  cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
   defaultAgentPlacement: AgentPlacementRequestSchema.optional(),

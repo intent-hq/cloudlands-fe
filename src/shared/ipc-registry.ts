@@ -39,7 +39,6 @@ export const IPC_CHANNELS = {
     ARCHIVE: 'workspace:archive',
     UNARCHIVE: 'workspace:unarchive',
     CLEANUP: 'workspace:cleanup',
-    DUPLICATE: 'workspace:duplicate',
     RENAME: 'workspace:rename',
     EXPORT: 'workspace:export',
     IMPORT: 'workspace:import',

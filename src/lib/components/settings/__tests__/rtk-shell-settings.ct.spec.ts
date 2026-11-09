@@ -7,7 +7,7 @@ import {
 } from './rtk-shell-settings.assertions';
 
 for (const width of [420, 1100]) {
-  test(`RTK matches CoW spacing and keeps responsive controls at ${width}px`, async ({
+  test(`RTK keeps responsive controls at ${width}px`, async ({
     mount,
     page,
   }) => {
