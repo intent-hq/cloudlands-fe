@@ -7,7 +7,8 @@
  *   Workspaces list moves the selection (and its side preview) down or up;
  *   optionally cycles workspaces ordered by activity. All modes clamp at the
  *   ends;
- * - click (`ENC_CLK` keydown): opens Home, like the titlebar Home button.
+ * - click (`ENC_CLK` keydown): opens the workspace selected on Home's
+ *   Workspaces list, otherwise opens Home like the titlebar Home button.
  *
  * The HUD timer is action-driven in the device saga.
  *
@@ -78,10 +79,10 @@ function navigateToWorkspace(
   workspaceId: string,
   showWorkspace: (workspaceId: string) => Promise<unknown>,
 ): void {
-  // Each detent jumps; the helper only tabs the workspace the rotation lands
-  // on, because a newer jump supersedes the earlier ones.
+  // A newer jump supersedes earlier ones, so rapid detents only tab the
+  // workspace the rotation lands on.
   void showWorkspace(workspaceId).catch((error: unknown) => {
-    logger.warn('Failed to switch workspace from encoder', { workspaceId, error });
+    logger.warn('Failed to open workspace from encoder', { workspaceId, error });
   });
 }
 
@@ -121,10 +122,26 @@ function handleHomeRotate(direction: EncoderDirection): boolean {
 }
 
 /**
- * Open Home, matching the titlebar Home button and its shortcut.
+ * The workspace previewed from Home's Workspaces list, if any. Its row may sit
+ * in a collapsed group; the preview still shows it.
+ */
+function selectedHomeWorkspaceId(): string | null {
+  const target = getHomeEncoderTarget();
+  if (!target || currentRoutePath() !== '/' || target.ids() === null) return null;
+  return target.selectedId();
+}
+
+/**
+ * Open the workspace selected on Home's list; otherwise open Home, matching
+ * the titlebar Home button and its shortcut.
  */
 function handleEncoderClick(deps: EncoderDeps = {}): void {
-  const { navigate } = resolveDeps(deps);
+  const { navigate, showWorkspace } = resolveDeps(deps);
+  const selectedId = selectedHomeWorkspaceId();
+  if (selectedId !== null) {
+    navigateToWorkspace(selectedId, showWorkspace);
+    return;
+  }
   void navigate('/').catch((error: unknown) => {
     logger.warn('Failed to open Home from encoder', { error });
   });

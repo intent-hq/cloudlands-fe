@@ -5214,7 +5214,7 @@
   "settings_hardware_joystickExplainer_hold_description": "Halten öffnet die radiale Prompt-Auswahl; beim Loslassen über einem Sektor wird dieser Prompt an der Cursorposition eingefügt.",
   "settings_hardware_joystickExplainer_label": "Joystick",
   "settings_hardware_joystick_ariaLabel": "Joystick — Funktion anzeigen",
-  "settings_hardware_knobExplainer_click_description": "Klicken öffnet die Startseite.",
+  "settings_hardware_knobExplainer_click_description": "Klicken öffnet die Startseite. Auf der Startseite öffnet Klicken den ausgewählten Arbeitsbereich.",
   "settings_hardware_knobExplainer_configurable_description": "Das Drehverhalten lässt sich mit der Einstellung {setting} ändern.",
   "settings_hardware_knobExplainer_effort_description": "Drehen passt den Denkaufwand des aktuellen Agenten an — im Uhrzeigersinn wird er erhöht, gegen den Uhrzeigersinn verringert, jeweils bis zur unterstützten Grenze.",
   "settings_hardware_knobExplainer_home_description": "Auf der Startseite bewegt Drehen die Auswahl durch die Workspace-Liste und zeigt jeweils die Vorschau.",

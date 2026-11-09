@@ -5214,7 +5214,7 @@
   "settings_hardware_joystickExplainer_hold_description": "按住可開啟徑向提示詞選擇器；在某個扇區上放開即可將該提示詞插入游標處。",
   "settings_hardware_joystickExplainer_label": "搖桿",
   "settings_hardware_joystick_ariaLabel": "搖桿 — 查看功能",
-  "settings_hardware_knobExplainer_click_description": "點擊開啟主頁。",
+  "settings_hardware_knobExplainer_click_description": "點擊開啟主頁。在主頁上，點擊開啟所選工作區。",
   "settings_hardware_knobExplainer_configurable_description": "可透過「{setting}」設定變更旋轉行為。",
   "settings_hardware_knobExplainer_effort_description": "旋轉可調整目前代理程式的推理強度：順時針提高，逆時針降低，並在支援的上限和下限處停止。",
   "settings_hardware_knobExplainer_home_description": "在主頁上，旋轉可在工作區清單中移動並預覽每一項。",

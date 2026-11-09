@@ -5214,7 +5214,7 @@
   "settings_hardware_joystickExplainer_hold_description": "Maintenez pour ouvrir le sélecteur radial de prompts ; relâchez sur un secteur pour insérer ce prompt au curseur.",
   "settings_hardware_joystickExplainer_label": "Joystick",
   "settings_hardware_joystick_ariaLabel": "Joystick — voir son rôle",
-  "settings_hardware_knobExplainer_click_description": "Cliquez pour ouvrir l’Accueil.",
+  "settings_hardware_knobExplainer_click_description": "Cliquez pour ouvrir l’Accueil. Sur l’Accueil, cliquez pour ouvrir l’espace de travail sélectionné.",
   "settings_hardware_knobExplainer_configurable_description": "Modifiez le comportement de rotation avec le réglage {setting}.",
   "settings_hardware_knobExplainer_effort_description": "Tournez pour ajuster l’effort de l’agent actuel : le sens horaire l’augmente et le sens antihoraire le diminue, sans dépasser les limites disponibles.",
   "settings_hardware_knobExplainer_home_description": "Dans l’Accueil, tournez pour parcourir la liste des espaces de travail et afficher l’aperçu de chacun.",

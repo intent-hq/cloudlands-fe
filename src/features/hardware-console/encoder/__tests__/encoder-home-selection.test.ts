@@ -82,3 +82,63 @@ describe('encoder rotation on Home', () => {
     expect(device.showWorkspace).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('encoder press on Home', () => {
+  function press(device: ReturnType<typeof manager>) {
+    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
+  }
+
+  it('opens the selected workspace', () => {
+    ready();
+    window.history.replaceState(null, '', '/');
+    homeList(['a', 'b', 'c']);
+    const device = manager();
+    device.turn('cw');
+    device.turn('cw');
+    press(device);
+    expect(device.showWorkspace.mock.calls).toEqual([['b']]);
+    expect(device.navigate).not.toHaveBeenCalled();
+  });
+
+  it('opens the previewed workspace even when its group is collapsed', () => {
+    ready();
+    window.history.replaceState(null, '', '/');
+    const list = homeList(['a']);
+    list.selected = 'b';
+    const device = manager();
+    press(device);
+    expect(device.showWorkspace.mock.calls).toEqual([['b']]);
+    expect(device.navigate).not.toHaveBeenCalled();
+  });
+
+  it('opens Home when nothing is selected', () => {
+    ready();
+    window.history.replaceState(null, '', '/');
+    homeList(['a', 'b']);
+    const device = manager();
+    press(device);
+    expect(device.showWorkspace).not.toHaveBeenCalled();
+    expect(device.navigate.mock.calls).toEqual([['/']]);
+  });
+
+  it('opens Home when the workspace list is not showing', () => {
+    ready();
+    window.history.replaceState(null, '', '/');
+    const list = homeList(null);
+    list.selected = 'a';
+    const device = manager();
+    press(device);
+    expect(device.showWorkspace).not.toHaveBeenCalled();
+    expect(device.navigate.mock.calls).toEqual([['/']]);
+  });
+
+  it('opens Home from a chat even if Home kept a selection', () => {
+    ready();
+    const list = homeList(['a', 'b']);
+    list.selected = 'a';
+    const device = manager();
+    press(device);
+    expect(device.showWorkspace).not.toHaveBeenCalled();
+    expect(device.navigate.mock.calls).toEqual([['/']]);
+  });
+});
