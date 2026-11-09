@@ -1,6 +1,6 @@
 import { dockMediaSendsOriginal, prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
 import { DockSendError, dockSendCode, dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
-import { DOCK_PROMPT_IMAGE_BUDGET, dockPromptImageBytes } from '$shared/dock-media-frame-budget';
+import { DOCK_PROMPT_IMAGE_BUDGET, dockFittedFramePromptBytes } from '$shared/dock-media-frame-budget';
 import { createLogger } from '$lib/utils/client-logger';
 import { dockMediaEditSaga } from './dock-media-edit-saga';
 import { dockContextLinksSaga } from './dock-context-links-saga';
@@ -548,19 +548,12 @@ function* sendReply(
       throw new DockSendError('burn', dockSendCode(error));
     }
     // The daemon refuses a prompt whose images exceed its budget, before the model and
-    // after the message was delivered. Check the whole message while the draft can stay.
-    // Each image counts as the daemon will prepare it, summed per image: the burned
-    // composites, the exported frames, then the click's own images (the evidence ones
-    // are already the composites); a reference of unknown size counts as its largest.
-    const promptImageBytes =
-      burned.reduce((sum, block) => sum + dockPromptImageBytes({ base64Bytes: block.data?.length ?? 0 }), 0) +
-      materialized.frameSizes.reduce((sum, size) => sum + dockPromptImageBytes({ rawBytes: size }), 0) +
-      (clickedPayload.imageBlocks ?? []).reduce((sum, block) => {
-        if ('data' in block && block.data) return sum + dockPromptImageBytes({ base64Bytes: block.data.length });
-        const ref = 'attachmentId' in block ? block.attachmentId : undefined;
-        const size = ref ? sendItems.find((item) => item.attachmentId === ref)?.attachmentSize : undefined;
-        return sum + dockPromptImageBytes(typeof size === 'number' && size > 0 ? { rawBytes: size } : null);
-      }, 0);
+    // after the message was delivered. Only images whose prompt bytes are certain may
+    // refuse a send here: the recording frames main fitted, which the daemon sends
+    // unchanged. Every other image is prepared by the daemon, so its size is unknown
+    // here and never blocks a valid message (the daemon adapts or reports it).
+    const promptImageBytes = materialized.frames.reduce((sum, frame, index) =>
+      sum + (dockFittedFramePromptBytes({ mimeType: frame.mimeType, size: materialized.frameSizes[index] ?? 0 }) ?? 0), 0);
     if (promptImageBytes > DOCK_PROMPT_IMAGE_BUDGET) throw new DockSendError('validate', 'image-budget-exceeded');
     const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
     const wireEvidence = evidence ? { ...evidence,

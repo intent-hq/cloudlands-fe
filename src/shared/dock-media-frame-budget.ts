@@ -6,8 +6,8 @@
 export const DOCK_PROMPT_IMAGE_BUDGET = 8 * 1024 * 1024;
 
 /**
- * The daemon prepares each image to at most this many raw bytes (re-encoding larger ones)
- * before it sums them, so a single large image never counts for more than this.
+ * The daemon passes an image of at most this many raw bytes (and a bounded edge) through
+ * unchanged; larger ones it re-encodes, so their prepared size is not known beforehand.
  */
 export const DOCK_PREPARED_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
 
@@ -23,14 +23,14 @@ export function dockBase64Bytes(bytes: number): number {
 }
 
 /**
- * One image's share of the prompt budget: its base64 size, capped where the daemon would
- * prepare it smaller. An image whose size is unknown counts as the largest it could be.
+ * Exact prompt bytes of a recording frame main fitted (JPEG, long edge at most 1920, at
+ * most 3 MiB), which the daemon sends unchanged. Any other image is prepared by the daemon
+ * (it may shrink or re-encode, even grow) so its prompt size is unknown here: null.
  */
-export function dockPromptImageBytes(image: { base64Bytes: number } | { rawBytes: number } | null): number {
-  const cap = dockBase64Bytes(DOCK_PREPARED_IMAGE_MAX_BYTES);
-  if (!image) return cap;
-  const bytes = 'base64Bytes' in image ? image.base64Bytes : dockBase64Bytes(image.rawBytes);
-  return Math.min(cap, Math.max(0, bytes));
+export function dockFittedFramePromptBytes(frame: { mimeType: string; size: number }): number | null {
+  return frame.mimeType === 'image/jpeg' && frame.size > 0 && frame.size <= DOCK_PREPARED_IMAGE_MAX_BYTES
+    ? dockBase64Bytes(frame.size)
+    : null;
 }
 
 /**
