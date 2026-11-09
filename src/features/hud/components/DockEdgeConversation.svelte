@@ -156,16 +156,9 @@
     disclosure.cancel();
     fade.cancel();
     mover.cancel();
-    tailFade.cancel();
     onStateChange({ held: false, reveal: 0, shell: null });
   });
   const settled = $derived(reveal >= 1);
-  let tailOpacity = $state(0);
-  const tailFade = createRevealFade(() => tailOpacity, (value) => (tailOpacity = value));
-  $effect(() => {
-    const target = wanted && (settled || reducedMotion) ? 1 : 0;
-    untrack(() => tailFade.animate(target));
-  });
   const glide = $derived(frame && lastPanel ? frame.y - lastPanel.y : 0);
   const opacity = $derived(reducedMotion ? reveal : 1);
   const clipRight = $derived(
@@ -175,6 +168,23 @@
 
 {#if present && frame && lastPanel && lastWorkspace && viewport}
   <div class="edge-panel">
+    <!-- Cast from visible bounds, not the offscreen rectangle: its blur may use native padding. -->
+    {#if shell}
+      <div
+        class="edge-panel"
+        aria-hidden="true"
+        style:clip-path={`inset(0 ${Math.max(0, clipRight - DOCK_FLOATING_SHADOW_MARGIN)}px 0 ${Math.max(0, viewport.x - DOCK_FLOATING_SHADOW_MARGIN)}px)`}
+      >
+        <div
+          class="edge-shadow"
+          style:left={`${shell.x}px`}
+          style:top={`${shell.y}px`}
+          style:width={`${shell.width}px`}
+          style:height={`${shell.height}px`}
+          style:opacity
+        ></div>
+      </div>
+    {/if}
     <div class="edge-panel" style:clip-path={`inset(0 ${clipRight}px 0 ${viewport.x}px)`}>
       <div
         bind:this={shellElement}
@@ -210,40 +220,6 @@
           {@render children()}
         </DockConversationSurface>
       </div>
-    </div>
-    <!-- The moving shadow stays behind the content clip. -->
-    <div
-      class="edge-panel"
-      aria-hidden="true"
-      style:clip-path={`inset(0 ${clipRight}px 0 ${viewport.x}px)`}
-    >
-      <div
-        class="edge-shadow"
-        style:left={`${frame.x}px`}
-        style:top={`${frame.y}px`}
-        style:width={`${frame.width}px`}
-        style:height={`${frame.height}px`}
-        style:transform={`translateX(${offset}px)`}
-        style:opacity
-      ></div>
-    </div>
-    <!-- Only the outer tail fades at the settled anchor; it never slides through the rail. -->
-    <div
-      class="edge-panel"
-      data-shadow-tail
-      aria-hidden="true"
-      style:opacity={tailOpacity * opacity}
-      style:clip-path={side === 'right'
-        ? `inset(0 ${Math.max(0, clipRight - DOCK_FLOATING_SHADOW_MARGIN)}px 0 ${viewport.x + viewport.width}px)`
-        : `inset(0 ${placement.windowBounds.width - viewport.x}px 0 ${Math.max(0, viewport.x - DOCK_FLOATING_SHADOW_MARGIN)}px)`}
-    >
-      <div
-        class="edge-shadow"
-        style:left={`${frame.x}px`}
-        style:top={`${frame.y}px`}
-        style:width={`${frame.width}px`}
-        style:height={`${frame.height}px`}
-      ></div>
     </div>
   </div>
 {/if}
