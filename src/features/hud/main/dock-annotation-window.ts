@@ -13,8 +13,8 @@ import type { DockGestureProgress } from '../../../shared/dock-gesture-progress'
  * before any await. The first mark captures the dock display without the dock,
  * its owned popups or this overlay; later marks reuse that image unless the
  * screen's 16×16 difference hash moved by more than 12 bits or a navigation was
- * reported. Recording draws keep the batch's coordinate image until Clear. Still marks use the frozen pixels they were started with and never
- * capture the desktop.
+ * reported. Recording marks keep the batch's coordinate image until Clear.
+ * Still marks use the frozen pixels they were started with and never capture the desktop.
  */
 import { randomUUID } from 'node:crypto';
 import path, { dirname } from 'path';
@@ -1099,7 +1099,6 @@ export class DockAnnotationController implements AnnotationService {
       previous.height === shot.height &&
       (recordingImage ||
         (!previous.clipId &&
-          !frozen.clipId &&
           !session.navigation &&
           (!comparable ||
             dockHashDistance(previous.hash, hash) <= DOCK_ANNOTATION_LIMITS.hashThreshold)));
@@ -1173,6 +1172,7 @@ export class DockAnnotationController implements AnnotationService {
         this.publish(session);
       }
     }
+    if (reuse && frozen.clipId) session.image = { ...image, clipId: frozen.clipId };
     return this.emitMark(frozen, geometry, element, capture) ? { ok: true } : reject('stale');
   }
 
