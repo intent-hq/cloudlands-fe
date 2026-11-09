@@ -123,10 +123,20 @@ export function serializeProductionBaseline(keys) {
   return `${JSON.stringify(out, null, 2)}\n`;
 }
 
+const fileOf = (key) => key.split('\t')[1];
+
+// A baselined unused file covers every finding inside it: once the file gains a production
+// caller, its leftover unused exports are the same debt, not new debt.
+function coveredByBaselinedFile(key, baseline) {
+  return !key.startsWith('files\t') && baseline.has(`files\t${fileOf(key)}`);
+}
+
 /** New findings fail the gate; baselined findings that disappeared must be pruned. */
 export function compareToBaseline(current, baseline) {
   return {
-    added: [...current].filter((key) => !baseline.has(key)).sort(),
+    added: [...current]
+      .filter((key) => !baseline.has(key) && !coveredByBaselinedFile(key, baseline))
+      .sort(),
     stale: [...baseline].filter((key) => !current.has(key)).sort(),
   };
 }
@@ -174,9 +184,14 @@ export function renderProductionResult({ added, stale }) {
   return lines.join('\n');
 }
 
-/** Baseline after pruning: only entries still reported. Never adds an entry. */
+/**
+ * Baseline after pruning: entries still reported, plus the findings inside a baselined file
+ * that is now used (they replace its file entry). Never admits a finding from another file.
+ */
 export function pruneBaseline(current, baseline) {
-  return new Set([...baseline].filter((key) => current.has(key)));
+  return new Set(
+    [...current].filter((key) => baseline.has(key) || coveredByBaselinedFile(key, baseline)),
+  );
 }
 
 export const MASK_REFERENCE = 'https://github.com/intent-hq/cloudlands-fe/pull/2695';

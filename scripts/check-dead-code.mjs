@@ -186,10 +186,12 @@ function checkProduction(result, { prune }) {
   );
   if (prune) {
     const pruned = pruneBaseline(current, baseline);
-    if (pruned.size < baseline.size) {
-      writeFileSync(baselinePath, serializeProductionBaseline(pruned));
+    const before = serializeProductionBaseline(baseline);
+    const after = serializeProductionBaseline(pruned);
+    if (after !== before) {
+      writeFileSync(baselinePath, after);
       console.log(
-        `Removed ${baseline.size - pruned.size} stale entr(ies) from ${PRODUCTION_BASELINE_PATH}.`,
+        `Pruned ${PRODUCTION_BASELINE_PATH}: ${baseline.size} → ${pruned.size} entr(ies).`,
       );
     }
     baseline = pruned;

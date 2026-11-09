@@ -235,6 +235,22 @@ describe('production pass baseline', () => {
     expect(pruneBaseline(current, baseline)).toEqual(new Set(['files\ta.ts']));
   });
 
+  it('a baselined file that gains a production caller hands its leftover findings to the baseline', () => {
+    const baseline = new Set(['files\tnow-used.ts', 'files\tkept.ts']);
+    const current = new Set([
+      'files\tkept.ts',
+      'exports\tnow-used.ts\tleftover',
+      'exports\tother.ts\tfresh',
+    ]);
+    expect(compareToBaseline(current, baseline)).toEqual({
+      added: ['exports\tother.ts\tfresh'],
+      stale: ['files\tnow-used.ts'],
+    });
+    expect(pruneBaseline(current, baseline)).toEqual(
+      new Set(['files\tkept.ts', 'exports\tnow-used.ts\tleftover']),
+    );
+  });
+
   it('the checked-in baseline is sorted and canonical', () => {
     const text = readFileSync(path.join(REPO_ROOT, PRODUCTION_BASELINE_PATH), 'utf8');
     expect(serializeProductionBaseline(parseProductionBaseline(text))).toBe(text);
