@@ -52,7 +52,7 @@
 
 <!-- i18n-ignore (isolated, static preview of the joystick prompt ring) -->
 <section
-  class="relative h-[720px] w-full transform overflow-hidden rounded-lg border border-border bg-background"
+  class="relative h-180 w-full transform overflow-hidden rounded-lg border border-border bg-background"
   data-testid="radial-prompt-picker-preview"
 >
   <RadialPromptPickerOverlay />
