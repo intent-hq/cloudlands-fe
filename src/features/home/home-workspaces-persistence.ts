@@ -19,12 +19,6 @@ export interface HomeConfiguration {
   groupBy: 'status' | 'workspace-status' | 'repository' | 'none';
   expandedGroups: Record<string, boolean>;
   moreReposExpanded: boolean;
-  /**
-   * Repositories hidden from the Home sidebar, by repository key. The value is the
-   * newest workspace creation time (daemon clock, ms) when hidden; a newer
-   * workspace brings the repository back.
-   */
-  hiddenRepos: Record<string, number>;
 }
 /**
  * A workspace the user set aside on Home. `known` is the attention the user
@@ -40,10 +34,18 @@ export interface HomePersistenceDocument {
   configuration: HomeConfiguration;
   /** Additive and omitted when empty, so older documents and readers are unchanged. */
   setAside?: Record<string, HomeSetAsideRecord>;
+  /**
+   * Repositories hidden from the Home sidebar, by repository key. The value is the
+   * newest workspace creation time (daemon clock, ms) when hidden; a newer
+   * workspace brings the repository back. Additive and omitted when empty.
+   */
+  hiddenRepos?: Record<string, number>;
 }
 /** Bounded personal state; new set-asides are refused (not evicted) at capacity. */
 export const HOME_SET_ASIDE_CAPACITY = 1000;
 export const HOME_SET_ASIDE_KNOWN_CAPACITY = 64;
+/** The most recent hides win at capacity. */
+export const HOME_HIDDEN_REPOS_CAPACITY = 500;
 export function defaultHomeConfiguration(): HomeConfiguration {
   return {
     integrationViews: {
@@ -59,7 +61,6 @@ export function defaultHomeConfiguration(): HomeConfiguration {
     groupBy: 'status',
     expandedGroups: {},
     moreReposExpanded: false,
-    hiddenRepos: {},
   };
 }
 function object(value: unknown): Record<string, unknown> {
@@ -93,10 +94,6 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
   const expandedGroups: Record<string, boolean> = {};
   for (const [key, flag] of Object.entries(object(raw.expandedGroups)).slice(0, 500))
     if (safeKey(key) && typeof flag === 'boolean') expandedGroups[key] = flag;
-  const hiddenRepos: Record<string, number> = {};
-  for (const [key, newest] of Object.entries(object(raw.hiddenRepos)).slice(0, 500))
-    if (safeKey(key) && typeof newest === 'number' && Number.isFinite(newest) && newest >= 0)
-      hiddenRepos[key] = Math.floor(newest);
   return {
     integrationViews: {
       prs: integrationView(object(raw.integrationViews).prs, 'prs'),
@@ -124,7 +121,6 @@ export function normalizeHomeConfiguration(value: unknown): HomeConfiguration {
     ),
     expandedGroups,
     moreReposExpanded: raw.moreReposExpanded === true,
-    hiddenRepos,
   };
 }
 function timestamp(value: unknown): number | null {
@@ -155,6 +151,24 @@ export function normalizeHomeSetAside(value: unknown): Record<string, HomeSetAsi
   }
   return records;
 }
+export function normalizeHomeHiddenRepos(value: unknown): Record<string, number> {
+  const hidden: Record<string, number> = {};
+  for (const [key, newest] of Object.entries(object(value)).slice(-HOME_HIDDEN_REPOS_CAPACITY))
+    if (safeKey(key) && typeof newest === 'number' && Number.isFinite(newest) && newest >= 0)
+      hidden[key] = Math.floor(newest);
+  return hidden;
+}
+function homeDocument(
+  configuration: HomeConfiguration,
+  setAside: Record<string, HomeSetAsideRecord>,
+  hiddenRepos: Record<string, number>,
+): HomePersistenceDocument {
+  return {
+    configuration,
+    ...(Object.keys(setAside).length > 0 ? { setAside } : {}),
+    ...(Object.keys(hiddenRepos).length > 0 ? { hiddenRepos } : {}),
+  };
+}
 export function homePersistenceKey(backendId: string, principalId: string): string {
   return `home-workspaces:${JSON.stringify([backendId, principalId])}`;
 }
@@ -166,16 +180,25 @@ export function readHomePersistence(value: unknown): HomePersistenceDocument {
   // savedViews, activeSavedViewId and workspaceIds fields entirely.
   // Never import an unscoped key into a newly authenticated account.
   const configuration = normalizeHomeConfiguration(raw.configuration ?? raw.settings ?? raw);
-  const setAside = normalizeHomeSetAside(raw.setAside);
-  return Object.keys(setAside).length > 0 ? { configuration, setAside } : { configuration };
+  return homeDocument(
+    configuration,
+    normalizeHomeSetAside(raw.setAside),
+    normalizeHomeHiddenRepos(raw.hiddenRepos),
+  );
 }
-// Version 2 stays: older builds ignore the additive `setAside` field.
+// Version 2 stays: older builds ignore the additive `setAside` and `hiddenRepos` fields.
 export function persistedHomeState<
-  T extends HomeConfiguration & { setAside?: Record<string, HomeSetAsideRecord> },
+  T extends HomeConfiguration & {
+    setAside?: Record<string, HomeSetAsideRecord>;
+    hiddenRepos?: Record<string, number>;
+  },
 >(state: T): HomePersistenceDocument & { version: 2 } {
-  const configuration = normalizeHomeConfiguration(state);
-  const setAside = normalizeHomeSetAside(state.setAside);
-  return Object.keys(setAside).length > 0
-    ? { version: 2, configuration, setAside }
-    : { version: 2, configuration };
+  return {
+    version: 2,
+    ...homeDocument(
+      normalizeHomeConfiguration(state),
+      normalizeHomeSetAside(state.setAside),
+      normalizeHomeHiddenRepos(state.hiddenRepos),
+    ),
+  };
 }

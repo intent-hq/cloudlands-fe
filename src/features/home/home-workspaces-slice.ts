@@ -7,6 +7,7 @@ import {
   type HomeConfiguration,
   type HomePersistenceDocument,
   normalizeHomeSetAside,
+  normalizeHomeHiddenRepos,
   type HomeSetAsideRecord,
 } from './home-workspaces-persistence';
 
@@ -18,6 +19,8 @@ export interface HomeWorkspacesState extends HomeConfiguration {
   previewAgentIds: Record<string, string>;
   /** Personal Home organization, by workspace ID; never sent to the daemon. */
   setAside: Record<string, HomeSetAsideRecord>;
+  /** Repositories hidden from the Home sidebar; see `HomePersistenceDocument.hiddenRepos`. */
+  hiddenRepos: Record<string, number>;
 }
 const initialState: HomeWorkspacesState = {
   ...defaultHomeConfiguration(),
@@ -26,6 +29,7 @@ const initialState: HomeWorkspacesState = {
   persistenceError: false,
   previewAgentIds: {},
   setAside: {},
+  hiddenRepos: {},
 };
 export const updateHomeWorkspaceView = createAction<[changes: Partial<HomeWorkspacesState>]>(
   'homeWorkspaces/updateView',
@@ -45,11 +49,12 @@ homeWorkspacesReducer.with(setHomePreviewAgent, (state, { payload: [workspaceId,
     ? state
     : { ...state, previewAgentIds: { ...state.previewAgentIds, [workspaceId]: agentId } },
 );
-// Resetting view controls keeps personal set-aside state.
+// Resetting view controls keeps personal set-aside and hidden-repository state.
 homeWorkspacesReducer.with(resetHomeWorkspaceView, (state) => ({
   ...initialState,
   persistenceScope: state.persistenceScope,
   setAside: state.setAside,
+  hiddenRepos: state.hiddenRepos,
 }));
 
 export const hydrateHomeWorkspaceSettings = createAction<
@@ -64,6 +69,7 @@ homeWorkspacesReducer.with(
     ...initialState,
     ...settings.configuration,
     setAside: settings.setAside ?? {},
+    hiddenRepos: settings.hiddenRepos ?? {},
     persistenceScope: scope,
   }),
 );
@@ -143,5 +149,38 @@ export const homeSetAsideSynced = createAction<
 homeWorkspacesReducer.with(homeSetAsideSynced, (state, { payload: [scope, setAside] }) =>
   state.persistenceScope === scope
     ? { ...state, setAside: normalizeHomeSetAside(setAside) }
+    : state,
+);
+
+/** Hide a repository from the sidebar until a workspace newer than `newest` appears. */
+export const homeRepositoryHidden = createAction(
+  'homeWorkspaces/repositoryHidden',
+  (key: string, newest: number) => ({ key, newest }),
+);
+/** Unhide repositories: explicitly, or because they gained a newer workspace. */
+export const homeRepositoriesUnhidden = createAction(
+  'homeWorkspaces/repositoriesUnhidden',
+  (keys: string[]) => ({ keys }),
+);
+homeWorkspacesReducer.with(homeRepositoryHidden, (state, { payload: { key, newest } }) => {
+  const hiddenRepos = { ...state.hiddenRepos };
+  // Re-adding keeps the newest hides last, so capacity drops the oldest.
+  delete hiddenRepos[key];
+  hiddenRepos[key] = newest;
+  return { ...state, hiddenRepos };
+});
+homeWorkspacesReducer.with(homeRepositoriesUnhidden, (state, { payload: { keys } }) => {
+  if (!keys.some((key) => key in state.hiddenRepos)) return state;
+  const hiddenRepos = { ...state.hiddenRepos };
+  for (const key of keys) delete hiddenRepos[key];
+  return { ...state, hiddenRepos };
+});
+/** Another app window saved newer hidden repositories for this scope. */
+export const homeHiddenReposSynced = createAction<
+  [scope: string, hiddenRepos: Record<string, number>]
+>('homeWorkspaces/hiddenReposSynced');
+homeWorkspacesReducer.with(homeHiddenReposSynced, (state, { payload: [scope, hiddenRepos] }) =>
+  state.persistenceScope === scope
+    ? { ...state, hiddenRepos: normalizeHomeHiddenRepos(hiddenRepos) }
     : state,
 );

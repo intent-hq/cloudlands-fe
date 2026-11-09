@@ -425,6 +425,8 @@
     hydrateHomeWorkspaceSettings,
     resetHomeWorkspaceView,
     updateHomeWorkspaceView,
+    homeRepositoryHidden,
+    homeRepositoriesUnhidden,
     setHomeWorkspaceAside,
   } from './home-workspaces-slice';
   import { persistedHomeState, readHomePersistence } from './home-workspaces-persistence';
@@ -740,11 +742,13 @@
       store.dispatch(setHomeWorkspaceAside('home-complete'));
     }
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
+    store.dispatch(homeRepositoriesUnhidden(Object.keys(store.state.homeWorkspaces.hiddenRepos)));
     if (scenario.startsWith('hidden-repos')) {
       const later = Date.parse('2100-01-01T00:00:00Z');
+      store.dispatch(homeRepositoryHidden('acme/platform', later));
+      store.dispatch(homeRepositoryHidden('/repos/local-tools', later));
       store.dispatch(
         updateHomeWorkspaceView({
-          hiddenRepos: { 'acme/platform': later, '/repos/local-tools': later },
           expandedGroups: { [HOME_HIDDEN_REPOS_GROUP]: scenario === 'hidden-repos' },
         }),
       );

@@ -11,7 +11,10 @@ interface HiddenRepoCandidate {
   workspaces: readonly Pick<Workspace, 'createdAt'>[];
 }
 
-function newestCreatedAt(workspaces: HiddenRepoCandidate['workspaces']): number {
+/** Newest workspace creation time (daemon clock, ms); `0` for none. */
+export function newestHomeRepositoryWorkspace(
+  workspaces: HiddenRepoCandidate['workspaces'],
+): number {
   let newest = 0;
   for (const workspace of workspaces) {
     const time = Date.parse(workspace.createdAt);
@@ -20,37 +23,19 @@ function newestCreatedAt(workspaces: HiddenRepoCandidate['workspaces']): number 
   return newest;
 }
 
-export function hideHomeRepository(
-  hidden: HiddenRepos,
-  key: string,
-  workspaces: HiddenRepoCandidate['workspaces'],
-): Record<string, number> {
-  return { ...hidden, [key]: newestCreatedAt(workspaces) };
-}
-
 export function isHomeRepositoryHidden(hidden: HiddenRepos, repo: HiddenRepoCandidate): boolean {
   const newest = hidden[repo.key];
-  return newest !== undefined && newestCreatedAt(repo.workspaces) <= newest;
+  return newest !== undefined && newestHomeRepositoryWorkspace(repo.workspaces) <= newest;
 }
 
-/** The hidden map without repositories that gained a workspace; `null` when unchanged. */
-export function withoutRevivedHomeRepositories(
+/** Keys of hidden repositories that gained a newer workspace. */
+export function revivedHomeRepositories(
   hidden: HiddenRepos,
   repos: readonly HiddenRepoCandidate[],
-): Record<string, number> | null {
-  const revived = repos.filter(
-    (repo) => hidden[repo.key] !== undefined && !isHomeRepositoryHidden(hidden, repo),
-  );
-  if (revived.length === 0) return null;
-  const next = { ...hidden };
-  for (const repo of revived) delete next[repo.key];
-  return next;
-}
-
-export function unhideHomeRepository(hidden: HiddenRepos, key: string): Record<string, number> {
-  const next = { ...hidden };
-  delete next[key];
-  return next;
+): string[] {
+  return repos
+    .filter((repo) => hidden[repo.key] !== undefined && !isHomeRepositoryHidden(hidden, repo))
+    .map((repo) => repo.key);
 }
 
 /** Expansion key of the sidebar's collapsed Hidden section. */

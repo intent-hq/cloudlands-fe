@@ -42,10 +42,9 @@
   import {
     HOME_HIDDEN_REPOS_GROUP,
     hiddenHomeRepositories,
-    hideHomeRepository,
     isHomeRepositoryHidden,
-    unhideHomeRepository,
-    withoutRevivedHomeRepositories,
+    newestHomeRepositoryWorkspace,
+    revivedHomeRepositories,
   } from './home-hidden-repos';
   import { createHomeRepositoryMenu } from './home-repository-menu';
   import {
@@ -113,7 +112,11 @@
   } from './home-set-aside';
   import { handleHomeSetAsideShortcut } from './home-set-aside-shortcut';
   import { homeListOrder, registerHomeEncoderTarget } from './home-encoder-target';
-  import { updateHomeWorkspaceView } from './home-workspaces-slice';
+  import {
+    homeRepositoriesUnhidden,
+    homeRepositoryHidden,
+    updateHomeWorkspaceView,
+  } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
   import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
@@ -205,15 +208,15 @@
         chooseRepo(repo.key);
         createWorkspace();
       }),
-      onHide: then(() =>
-        updateView({
-          hiddenRepos: hideHomeRepository(hiddenRepos, repo.key, repo.workspaces),
-          ...(repoKey === repo.key ? { repoKey: null, selectedId: null } : {}),
-        }),
-      ),
-      onUnhide: then(() =>
-        updateView({ hiddenRepos: unhideHomeRepository(hiddenRepos, repo.key) }),
-      ),
+      onHide: then(() => {
+        // Leaving the selected repository, or an org with nothing else, shows All repos.
+        if (repoKey === repo.key || selectedOrg?.items.every((item) => item.key === repo.key))
+          updateView({ repoKey: null, selectedId: null });
+        store.dispatch(
+          homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)),
+        );
+      }),
+      onUnhide: then(() => store.dispatch(homeRepositoriesUnhidden([repo.key]))),
     });
   }
   const asideIds$ = selectHomeSetAsideWorkspaceIds();
@@ -309,8 +312,8 @@
   // Hidden repositories leave the sidebar only; their workspaces stay in All repos.
   const hiddenRepos = $derived($view$.hiddenRepos ?? {});
   $effect(() => {
-    const next = withoutRevivedHomeRepositories(hiddenRepos, repositoryGroups);
-    if (next) untrack(() => updateView({ hiddenRepos: next }));
+    const revived = revivedHomeRepositories(hiddenRepos, repositoryGroups);
+    if (revived.length) untrack(() => store.dispatch(homeRepositoriesUnhidden(revived)));
   });
   // Counts and triage describe active work.
   function isActive(workspace: Workspace): boolean {
