@@ -1338,9 +1338,6 @@
       "LAST_SOURCE_STORAGE_KEY",
       "orderProviders"
     ],
-    "src/lib/components/workspace/initializer/cow-isolation-setting.ts": [
-      "invalidateCowIsolationSetting"
-    ],
     "src/lib/components/workspace/initializer/issue-paging.ts": [
       "appendPage",
       "dedupeById"
