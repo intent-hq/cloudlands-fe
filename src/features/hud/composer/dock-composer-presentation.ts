@@ -178,14 +178,18 @@ export function buildDockComposerMedia(input: {
   const caps = view.capabilities;
   const speechAvailable = view.speech.available;
   const recordingImages = new Set(
-    view.clips.flatMap((clip) => clip.captureHistory?.map((entry) => entry.image.id) ?? []),
+    view.clips
+      .filter((clip) => clip.status === 'recording' || clip.status === 'placing' || !!clip.media)
+      .flatMap((clip) => clip.captureHistory?.map((entry) => entry.image.id) ?? []),
   );
   const attachments: DockComposerAttachment[] = [
     ...view.tiles
-      .filter(({ image, marks }) =>
-        image.source !== 'annotate' ||
-        !recordingImages.has(image.id) ||
-        marks.some(({ mark }) => !mark.clipId),
+      .filter(
+        ({ image, marks }) =>
+          !!image.media ||
+          image.source !== 'annotate' ||
+          !recordingImages.has(image.id) ||
+          marks.some(({ mark }) => !mark.clipId),
       )
       .map(({ image, marks }): DockComposerAttachment => ({
         kind: 'image',
