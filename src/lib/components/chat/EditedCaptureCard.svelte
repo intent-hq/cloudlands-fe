@@ -231,21 +231,21 @@
     border-radius: var(--radius-medium);
     background: hsl(var(--secondary));
   }
-  .compact :global(.image-preview),
-  .compact .image-loading {
+  .capture-card.compact :global(.image-preview),
+  .capture-card.compact .image-loading {
     width: 100%;
     height: 100%;
     aspect-ratio: auto;
     margin: 0;
   }
-  .compact :global(.image-preview img) {
+  .capture-card.compact :global(.image-preview img) {
     object-fit: cover;
   }
-  .compact :global([data-chat-video]) {
+  .capture-card.compact :global([data-chat-video]) {
     margin: 0;
     width: 100%;
   }
-  .compact :global(.open-recording) {
+  .capture-card.compact :global(.open-recording) {
     margin: 0;
     width: 96px;
     min-height: 64px;
