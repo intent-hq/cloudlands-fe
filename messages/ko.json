@@ -8333,7 +8333,7 @@
   "dock_captureEditor_video_label": "동영상",
   "dock_captureEditor_videoFull_label": "전체",
   "dock_captureEditor_videoFull_help": "트리밍한 녹화 전체에서 잘라낸 구간을 제외하고 전송합니다.",
-  "dock_captureEditor_videoHighlights_help": "주석이 있는 장면과 그 앞뒤 3초를 남깁니다. 트리밍과 구간 잘라내기는 그대로 적용됩니다. 동영상은 짧아지지만 주석 이미지는 변경되지 않습니다.",
+  "dock_captureEditor_videoHighlights_help": "주석이 있는 장면과 그 앞뒤 3초를 남깁니다. 트리밍과 구간 잘라내기는 그대로 적용됩니다. 주석 사이에 빈 구간이 있으면 동영상이 짧아지지만 주석 이미지는 변경되지 않습니다.",
   "dock_captureEditor_videoHighlights_label": "하이라이트",
   "dock_captureEditor_videoHighlights_disabled": "하이라이트를 사용하려면 표시를 추가하세요.",
   "dock_captureEditor_voice_label": "음성",

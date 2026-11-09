@@ -8333,7 +8333,7 @@
   "dock_captureEditor_video_label": "视频",
   "dock_captureEditor_videoFull_label": "完整",
   "dock_captureEditor_videoFull_help": "发送完整的裁剪后录制内容，并移除剪切片段。",
-  "dock_captureEditor_videoHighlights_help": "保留标注时刻及其前后各 3 秒的上下文。仍会应用裁剪和剪切。这会缩短视频；标注图像保持不变。",
+  "dock_captureEditor_videoHighlights_help": "保留标注时刻及其前后各 3 秒的上下文。仍会应用裁剪和剪切。仅在标注之间有空隙时缩短视频；标注图像保持不变。",
   "dock_captureEditor_videoHighlights_label": "精彩片段",
   "dock_captureEditor_videoHighlights_disabled": "添加标记以使用精彩片段。",
   "dock_captureEditor_voice_label": "语音",
