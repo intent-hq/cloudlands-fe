@@ -5214,7 +5214,7 @@
   "settings_hardware_joystickExplainer_hold_description": "Hold to open the radial prompt picker; release on a sector to insert that prompt at the cursor.",
   "settings_hardware_joystickExplainer_label": "Joystick",
   "settings_hardware_joystick_ariaLabel": "Joystick — show what it does",
-  "settings_hardware_knobExplainer_click_description": "Click to open Home.",
+  "settings_hardware_knobExplainer_click_description": "Click to open Home. On Home, click to open the selected workspace.",
   "settings_hardware_knobExplainer_configurable_description": "Change rotation behavior in the {setting} setting.",
   "settings_hardware_knobExplainer_effort_description": "Rotate to adjust the current agent’s effort — clockwise increases it, counter-clockwise decreases it, stopping at the supported limits.",
   "settings_hardware_knobExplainer_home_description": "On Home, rotate to move through the workspace list and preview each one.",

@@ -7,7 +7,8 @@
  *   Workspaces list moves the selection (and its side preview) down or up;
  *   optionally cycles workspaces ordered by activity. All modes clamp at the
  *   ends;
- * - click (`ENC_CLK` keydown): opens Home, like the titlebar Home button.
+ * - click (`ENC_CLK` keydown): opens the workspace selected on Home's
+ *   Workspaces list, otherwise opens Home like the titlebar Home button.
  *
  * The HUD timer is action-driven in the device saga.
  *
@@ -120,11 +121,25 @@ function handleHomeRotate(direction: EncoderDirection): boolean {
   return true;
 }
 
+/** The workspace selected on Home's on-screen Workspaces list, if any. */
+function selectedHomeWorkspaceId(): string | null {
+  const target = getHomeEncoderTarget();
+  const ids = currentRoutePath() === '/' ? target?.ids() : null;
+  const selectedId = target?.selectedId() ?? null;
+  return ids && selectedId !== null && ids.includes(selectedId) ? selectedId : null;
+}
+
 /**
- * Open Home, matching the titlebar Home button and its shortcut.
+ * Open the workspace selected on Home's list; otherwise open Home, matching
+ * the titlebar Home button and its shortcut.
  */
 function handleEncoderClick(deps: EncoderDeps = {}): void {
-  const { navigate } = resolveDeps(deps);
+  const { navigate, showWorkspace } = resolveDeps(deps);
+  const selectedId = selectedHomeWorkspaceId();
+  if (selectedId !== null) {
+    navigateToWorkspace(selectedId, showWorkspace);
+    return;
+  }
   void navigate('/').catch((error: unknown) => {
     logger.warn('Failed to open Home from encoder', { error });
   });
