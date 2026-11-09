@@ -25,9 +25,8 @@ import {
   selectFocusedPanelId,
   selectLastPanelClose,
 } from '$store/renderer/slices/panel-layout/panel-layout-selectors';
-import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 import { toggleSidebar } from '$store/renderer/slices/ui-layout/ui-layout-slice';
-import { resolveEmptyWindowDestination } from './empty-window-destination';
+import { resolveWindowEmptyDestination } from './window-empty-destination';
 import type { KeyboardShortcut } from '$lib/utils/keyboardShortcuts';
 import { m } from '$shared/paraglide/messages.js';
 import { SHORTCUTS, getShortcutChord } from '$lib/utils/shortcuts';
@@ -112,7 +111,7 @@ function navigateToSelectedWorkspace(
   const workspaceId = selectReachableWorkspaceTabId(store.state);
   const nextPath = workspaceId
     ? `/workspace/${workspaceId}`
-    : resolveEmptyWindowDestination(selectWorkspaceItems.select(store.state));
+    : resolveWindowEmptyDestination(store.state);
   if (currentPath !== nextPath) navigate(nextPath);
   return workspaceId;
 }

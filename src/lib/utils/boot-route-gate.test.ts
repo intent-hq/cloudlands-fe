@@ -62,6 +62,7 @@ function input(overrides: Partial<BootRouteDecisionInput> = {}): BootRouteDecisi
     tabsHydrated: true,
     currentTabId: undefined,
     holdTimedOut: false,
+    onboardingSkipped: false,
     ...overrides,
   };
 }
@@ -301,6 +302,60 @@ describe('decideBootRoute', () => {
       expect(decideBootRoute(input({ gateResolved: true, holdTimedOut: true }))).toEqual({
         kind: 'inapplicable',
       });
+    });
+  });
+  describe('returning backend (onboardingSkipped)', () => {
+    const returning = (overrides: Partial<BootRouteDecisionInput> = {}) =>
+      input({ onboardingSkipped: true, ...overrides });
+
+    it('lands on Home instead of onboarding when nothing loads before the hold times out', () => {
+      expect(decideBootRoute(returning({ setupGate: 'pending', holdTimedOut: true }))).toEqual({
+        kind: 'resolve',
+        target: '/',
+        openTabWorkspaceId: null,
+      });
+    });
+
+    it('lands on Home when the loaded list has no available workspace', () => {
+      expect(
+        decideBootRoute(
+          returning({
+            setupGate: 'none',
+            workspaceHasLoaded: true,
+            workspaces: [{ id: 'ws-archived', status: 'Archived' }],
+          }),
+        ),
+      ).toEqual({ kind: 'resolve', target: '/', openTabWorkspaceId: null });
+    });
+
+    it('does not wait on a pending setup gate once the workspace list loaded', () => {
+      expect(
+        decideBootRoute(
+          returning({
+            setupGate: 'pending',
+            workspaceHasLoaded: true,
+            workspaces: [{ id: 'ws-1', status: 'Active' }],
+          }),
+        ),
+      ).toEqual({ kind: 'resolve', target: '/workspace/ws-1', openTabWorkspaceId: 'ws-1' });
+    });
+
+    it('still holds for the workspace list before the timeout', () => {
+      expect(decideBootRoute(returning({ setupGate: 'pending' }))).toEqual({ kind: 'hold' });
+    });
+
+    it("ignores a 'redirect' setup gate and keeps a / boot on Home", () => {
+      expect(
+        decideBootRoute(
+          returning({ bootPathname: '/', currentPathname: '/', setupGate: 'redirect' }),
+        ),
+      ).toEqual({ kind: 'resolve', target: null, openTabWorkspaceId: null });
+    });
+
+    it("sends a /workspace/new boot to Home on a 'redirect' gate with no workspaces", () => {
+      expect(
+        decideBootRoute(returning({ setupGate: 'redirect', workspaceHasLoaded: true })),
+      ).toEqual({ kind: 'resolve', target: '/', openTabWorkspaceId: null });
     });
   });
 });

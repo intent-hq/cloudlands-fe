@@ -77,6 +77,12 @@ export interface BootRouteDecisionInput {
    * 'hold' degrades to a best-effort resolve instead of a blank surface.
    */
   holdTimedOut: boolean;
+  /**
+   * This window's backend has had workspaces before (`hasOnboardingSkipMark`).
+   * The first-run gate no longer applies and every fallback lands on Home
+   * ('/') instead of the full-page onboarding.
+   */
+  onboardingSkipped: boolean;
 }
 
 /**
@@ -106,6 +112,8 @@ export type BootRouteDecision =
  * - Active backend (local or remote) genuinely needs first-run setup: stay on
  *   /workspace/new (which renders onboarding / provider setup).
  * - No workspaces but setup not needed: stay on /workspace/new (creation).
+ * - A backend that had workspaces before skips the first-run gate and falls
+ *   back to Home whenever no workspace can be landed on (late, empty, failed).
  */
 export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecision {
   const {
@@ -118,6 +126,7 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
     tabsHydrated,
     currentTabId,
     holdTimedOut,
+    onboardingSkipped,
   } = input;
   if (bootPathname === null || !BOOT_GATE_ROUTES.has(bootPathname) || gateResolved) {
     return { kind: 'inapplicable' };
@@ -127,10 +136,10 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
   if (currentPathname !== bootPathname) {
     return { kind: 'resolve', target: null, openTabWorkspaceId: null };
   }
-  if (setupGate === 'pending' && !holdTimedOut) {
+  if (setupGate === 'pending' && !holdTimedOut && !onboardingSkipped) {
     return { kind: 'hold' };
   }
-  if (setupGate === 'redirect') {
+  if (setupGate === 'redirect' && !onboardingSkipped) {
     // Active backend with no workspaces and no ready providers: first-run
     // setup. /workspace/new renders it; boot windows are already there.
     return {
@@ -157,7 +166,8 @@ export function decideBootRoute(input: BootRouteDecisionInput): BootRouteDecisio
     (workspace) => workspace.status !== 'Archived' && workspace.status !== 'Deleted',
   );
   const targetWorkspace = available.find((w) => w.id === currentTabId) ?? available[0];
-  const target = targetWorkspace ? `/workspace/${targetWorkspace.id}` : '/workspace/new';
+  const fallback = onboardingSkipped ? '/' : '/workspace/new';
+  const target = targetWorkspace ? `/workspace/${targetWorkspace.id}` : fallback;
   return {
     kind: 'resolve',
     target: currentPathname === target ? null : target,

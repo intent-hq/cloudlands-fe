@@ -115,6 +115,11 @@
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
+    isOnboardingSkippedForWindow,
+    recordOnboardingSkipMark,
+  } from '$features/onboarding/utils/onboarding-skip-mark';
+  import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
+  import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
     getBootRoutePathname,
@@ -303,7 +308,15 @@
     }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
     return () => clearTimeout(timer);
   });
+  // Once this backend lists any workspace, permanently skip the full-page
+  // onboarding for it: later boots and empty windows fall back to Home.
   $effect(() => {
+    if (!$connectionsLoaded$ || $workspaceItems.length === 0) return;
+    untrack(() => recordOnboardingSkipMark(getActiveBackendId(appStore.state)));
+  });
+  $effect(() => {
+    const onboardingSkipped =
+      $connectionsLoaded$ && untrack(() => isOnboardingSkippedForWindow(appStore.state));
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
@@ -314,6 +327,7 @@
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
       holdTimedOut: bootHoldTimedOut,
+      onboardingSkipped,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {
