@@ -62,37 +62,38 @@
   const reportedCost = (amount: number) =>
     scopedCosts ? { cost: { amount, currency: 'USD' } } : {};
 
+  // Input includes each cached amount so the uncached totals stay round numbers.
   // svelte-ignore state_referenced_locally -- scenario flags seed one mounted fixture
   store.dispatch(
     tokenUsageReceived(workspaceId, {
       byAgentId: {
         'alpha-01': {
-          inputTokens: 50,
+          inputTokens: 600,
           outputTokens: 150,
           cacheReadTokens: 500,
           cacheCreationTokens: 50,
         },
         'beta-02': {
-          inputTokens: 30,
+          inputTokens: 80,
           outputTokens: 70,
           cacheReadTokens: 40,
           cacheCreationTokens: 10,
         },
         'gamma-03': {
-          inputTokens: 15,
+          inputTokens: 40,
           outputTokens: 35,
           cacheReadTokens: 20,
           cacheCreationTokens: 5,
         },
         'production-final': {
-          inputTokens: 5,
+          inputTokens: 20,
           outputTokens: 5,
           cacheReadTokens: 10,
           cacheCreationTokens: 5,
         },
       },
       totals: {
-        inputTokens: 100,
+        inputTokens: 740,
         outputTokens: 260,
         cacheReadTokens: 570,
         cacheCreationTokens: 70,
@@ -100,25 +101,25 @@
       },
       byModel: {
         'provider/this-is-an-extraordinarily-long-model-name-for-truncation': {
-          inputTokens: 50,
+          inputTokens: 450,
           outputTokens: 150,
           cacheReadTokens: 360,
           cacheCreationTokens: 40,
         },
         'model-beta': {
-          inputTokens: 30,
+          inputTokens: 190,
           outputTokens: 60,
           cacheReadTokens: 140,
           cacheCreationTokens: 20,
         },
         'model-gamma': {
-          inputTokens: 15,
+          inputTokens: 65,
           outputTokens: 35,
           cacheReadTokens: 45,
           cacheCreationTokens: 5,
         },
         'model-production-final': {
-          inputTokens: 5,
+          inputTokens: 35,
           outputTokens: 15,
           cacheReadTokens: 25,
           cacheCreationTokens: 5,
@@ -129,7 +130,7 @@
           agentId: 'alpha-01',
           model: 'model-beta',
           totals: {
-            inputTokens: 0,
+            inputTokens: 150,
             outputTokens: 0,
             cacheReadTokens: 140,
             cacheCreationTokens: 10,
@@ -142,7 +143,7 @@
           agentId: 'alpha-01',
           model: 'provider/this-is-an-extraordinarily-long-model-name-for-truncation',
           totals: {
-            inputTokens: 50,
+            inputTokens: 450,
             outputTokens: 150,
             cacheReadTokens: 360,
             cacheCreationTokens: 40,
@@ -155,7 +156,7 @@
           agentId: 'beta-02',
           model: 'model-beta',
           totals: {
-            inputTokens: 30,
+            inputTokens: 40,
             outputTokens: 60,
             cacheReadTokens: 0,
             cacheCreationTokens: 10,
@@ -168,7 +169,7 @@
           agentId: 'beta-02',
           model: 'model-gamma',
           totals: {
-            inputTokens: 0,
+            inputTokens: 40,
             outputTokens: 0,
             cacheReadTokens: 40,
             cacheCreationTokens: 0,
@@ -194,7 +195,7 @@
           agentId: 'gamma-03',
           model: 'model-gamma',
           totals: {
-            inputTokens: 15,
+            inputTokens: 25,
             outputTokens: 35,
             cacheReadTokens: 5,
             cacheCreationTokens: 5,
@@ -207,7 +208,7 @@
           agentId: 'gamma-03',
           model: 'model-production-final',
           totals: {
-            inputTokens: 0,
+            inputTokens: 15,
             outputTokens: 0,
             cacheReadTokens: 15,
             cacheCreationTokens: 0,
@@ -220,7 +221,7 @@
           agentId: 'production-final',
           model: 'model-production-final',
           totals: {
-            inputTokens: 5,
+            inputTokens: 20,
             outputTokens: 5,
             cacheReadTokens: 10,
             cacheCreationTokens: 5,
