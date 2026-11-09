@@ -1,3 +1,4 @@
+import { dockCertifiedFramePromptBytes } from '$shared/dock-media-frame-budget';
 import { dockMediaOverlaySpans } from '$shared/dock-media-animation';
 /** Materialize the click's immutable media edits before message admission. */
 import type { DockComposerEvidence, DockEvidenceNativeService } from '$shared/dock-evidence';
@@ -13,8 +14,8 @@ export interface DockMediaSendResult {
   images: Record<string, { data: string; mimeType: string; width: number; height: number }>;
   files: Array<{ type: 'file'; attachmentId: string; fileName: string; mimeType: string; size: number }>;
   frames: Array<{ type: 'image'; attachmentId: string; mimeType: string }>;
-  /** Raw bytes of each exported frame, for the prompt image budget (never sent). */
-  frameSizes: number[];
+  /** Each exported frame's certified prompt bytes, or null when unknown (never sent). */
+  framePromptBytes: Array<number | null>;
   metadata: Array<Record<string, unknown>>;
 }
 /**
@@ -37,7 +38,7 @@ export function dockMediaSendsOriginal(media: DockSavedMedia | undefined): boole
 export async function prepareDockMediaSend(workspaceId: string, evidence: DockComposerEvidence,
   binding: DockPlacementBinding, service: DockEvidenceNativeService | null,
   current: () => boolean): Promise<DockMediaSendResult> {
-  const output: DockMediaSendResult = { images: {}, files: [], frames: [], frameSizes: [], metadata: [] };
+  const output: DockMediaSendResult = { images: {}, files: [], frames: [], framePromptBytes: [], metadata: [] };
   // The step in progress, so a failure reports where it happened (never what it carried).
   let stage: DockSendStage = 'validate';
   try {
@@ -108,7 +109,7 @@ export async function prepareDockMediaSend(workspaceId: string, evidence: DockCo
           if (index === 0) output.files.push({ type: 'file', attachmentId: placed.attachmentId, fileName, mimeType: placed.mimeType ?? file.mimeType, size: placed.size });
           else {
             output.frames.push({ type: 'image', attachmentId: placed.attachmentId, mimeType: file.mimeType === 'image/jpeg' ? 'image/jpeg' : 'image/png' });
-            output.frameSizes.push(file.size);
+            output.framePromptBytes.push(dockCertifiedFramePromptBytes(file));
           }
           references.push(placed.attachmentId);
         }

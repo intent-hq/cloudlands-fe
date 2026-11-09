@@ -12,6 +12,7 @@ import {
 } from '../../../shared/dock-media-edit';
 import type { DockMediaExportRequest, DockMediaNativeOutput, DockMediaTranscribeRequest } from '../../../shared/dock-media-output';
 import { fitDockMediaFrames } from './dock-media-frames';
+import { DOCK_PREPARED_IMAGE_MAX_BYTES, dockBase64Bytes } from '../../../shared/dock-media-frame-budget';
 import type { DockNativeResult } from '../../../shared/dock-evidence';
 import type { DockEvidenceContext } from './dock-evidence-session';
 import { requestRouted } from '../../backend/main/transfer-connections';
@@ -229,7 +230,12 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
     if (videoSize <= 0 || videoSize > MAX_BYTES) throw new Error('media-output-size');
     const fitted = frames.length ? await fitDockMediaFrames(frames.map((frame) => frame.path), job.directory, () => check(context, job)) : [];
     check(context, job);
-    const frameFiles = await Promise.all(fitted.map(async (file, index) => ({ sourcePath: file, mimeType: 'image/jpeg', size: (await stat(file)).size, markId: plan.marks[index].mark.id })));
+    const frameFiles = await Promise.all(fitted.map(async (file, index) => {
+      const size = (await stat(file)).size;
+      // A fitted JPEG within the daemon's pass-through size has exactly these prompt bytes.
+      return { sourcePath: file, mimeType: 'image/jpeg', size, markId: plan.marks[index].mark.id,
+        ...(size > 0 && size <= DOCK_PREPARED_IMAGE_MAX_BYTES ? { promptBase64Bytes: dockBase64Bytes(size) } : {}) };
+    }));
     check(context, job);
     return { ok: true, value: { jobId: job.id, video: { sourcePath: output, mimeType: 'video/mp4', size: videoSize }, frames: frameFiles } };
   } catch {

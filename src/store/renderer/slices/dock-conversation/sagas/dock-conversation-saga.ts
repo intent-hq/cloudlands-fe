@@ -1,6 +1,6 @@
 import { dockMediaSendsOriginal, prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
 import { DockSendError, dockSendCode, dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
-import { DOCK_PROMPT_IMAGE_BUDGET, dockFittedFramePromptBytes } from '$shared/dock-media-frame-budget';
+import { DOCK_PROMPT_IMAGE_BUDGET } from '$shared/dock-media-frame-budget';
 import { createLogger } from '$lib/utils/client-logger';
 import { dockMediaEditSaga } from './dock-media-edit-saga';
 import { dockContextLinksSaga } from './dock-context-links-saga';
@@ -524,7 +524,7 @@ function* sendReply(
     }
     // Composites come only from the click's snapshot (items + evidence).
     const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
-      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], frameSizes: [], metadata: [] };
+      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], framePromptBytes: [], metadata: [] };
     // A recording's markup screenshot only anchors marks the recording itself carries once it
     // is exported with them or sent as its marked original: then it is not sent again. An
     // edit of its own, or any mark of its own (or of a recording that does not carry it),
@@ -549,11 +549,10 @@ function* sendReply(
     }
     // The daemon refuses a prompt whose images exceed its budget, before the model and
     // after the message was delivered. Only images whose prompt bytes are certain may
-    // refuse a send here: the recording frames main fitted, which the daemon sends
-    // unchanged. Every other image is prepared by the daemon, so its size is unknown
-    // here and never blocks a valid message (the daemon adapts or reports it).
-    const promptImageBytes = materialized.frames.reduce((sum, frame, index) =>
-      sum + (dockFittedFramePromptBytes({ mimeType: frame.mimeType, size: materialized.frameSizes[index] ?? 0 }) ?? 0), 0);
+    // refuse a send here: the recording frames main fitted and certified, which the daemon
+    // sends unchanged. Every other image is prepared by the daemon, so its size is unknown
+    // here (null) and never blocks a valid message (the daemon adapts or reports it).
+    const promptImageBytes = materialized.framePromptBytes.reduce<number>((sum, bytes) => sum + (bytes ?? 0), 0);
     if (promptImageBytes > DOCK_PROMPT_IMAGE_BUDGET) throw new DockSendError('validate', 'image-budget-exceeded');
     const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
     const wireEvidence = evidence ? { ...evidence,

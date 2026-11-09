@@ -16,7 +16,11 @@ export interface DockMediaNativeFile { sourcePath: string; mimeType: string; siz
 export interface DockMediaNativeOutput {
   jobId: string;
   video: DockMediaNativeFile;
-  frames: Array<DockMediaNativeFile & { markId: string }>;
+  /**
+   * `promptBase64Bytes` certifies a frame main fitted (JPEG, bounded edge, at most 3 MiB),
+   * which the daemon sends unchanged; absent on any other frame, whose prompt size is unknown.
+   */
+  frames: Array<DockMediaNativeFile & { markId: string; promptBase64Bytes?: number }>;
 }
 export const DockMediaTranscribeRequestSchema = z.object({
   jobId: z.string().uuid(), media: DockSavedMediaSchema,

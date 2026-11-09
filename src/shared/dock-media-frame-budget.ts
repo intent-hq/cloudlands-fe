@@ -23,13 +23,15 @@ export function dockBase64Bytes(bytes: number): number {
 }
 
 /**
- * Exact prompt bytes of a recording frame main fitted (JPEG, long edge at most 1920, at
- * most 3 MiB), which the daemon sends unchanged. Any other image is prepared by the daemon
- * (it may shrink or re-encode, even grow) so its prompt size is unknown here: null.
+ * The exact prompt bytes of an exported frame, only when main certified it (a fitted JPEG
+ * of at most 3 MiB, which the daemon sends unchanged) and the certificate matches the file.
+ * Any other frame is prepared by the daemon, so its prompt size is unknown here: null.
  */
-export function dockFittedFramePromptBytes(frame: { mimeType: string; size: number }): number | null {
-  return frame.mimeType === 'image/jpeg' && frame.size > 0 && frame.size <= DOCK_PREPARED_IMAGE_MAX_BYTES
-    ? dockBase64Bytes(frame.size)
+export function dockCertifiedFramePromptBytes(frame: { mimeType: string; size: number; promptBase64Bytes?: number }): number | null {
+  const certified = frame.promptBase64Bytes;
+  return frame.mimeType === 'image/jpeg' && Number.isSafeInteger(frame.size) && frame.size > 0 &&
+    frame.size <= DOCK_PREPARED_IMAGE_MAX_BYTES && typeof certified === 'number' && certified === dockBase64Bytes(frame.size)
+    ? certified
     : null;
 }
 
