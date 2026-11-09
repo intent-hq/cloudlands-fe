@@ -10,6 +10,7 @@ import { store as appStore } from '$store/renderer/store';
 import { m } from '$shared/paraglide/messages.js';
 import {
   expandProviderIdsWithProfiles,
+  isProviderProfileRef,
   providerRefBaseId,
   type ProviderProfileRefInfo,
 } from '$shared/provider-profiles';
@@ -24,7 +25,11 @@ import {
   remoteIncompatibilityFor,
 } from '$features/remote-machines/remote-model-picker';
 import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
-import { filterDefaultPseudoOptions, toDropdownOptions } from './model-picker-utils';
+import {
+  filterDefaultPseudoOptions,
+  isDefaultPseudoModelId,
+  toDropdownOptions,
+} from './model-picker-utils';
 
 type ModelPickerOptions = Parameters<typeof toDropdownOptions>[0];
 
@@ -227,7 +232,11 @@ interface BuildMachineModelGroupsParams {
   /** Provider refs (base ids and profile refs) in display order. */
   providerRefs: readonly string[];
   groupLabel: (providerRef: string) => string;
-  /** Backend catalog rows by provider ref, used only for labels and descriptions. */
+  /**
+   * Backend catalog rows by provider ref: labels and descriptions for the
+   * machine's models, and the list itself when the machine reports none for
+   * a configuration that brings its own credentials.
+   */
   catalogModels: Record<string, DropdownOption[] | undefined>;
   catalogProfiles: readonly ProviderProfileSummary[];
   defaultRemoteIncompatibility?: Record<string, RemoteIncompatibility>;
@@ -248,6 +257,8 @@ interface BuildMachineModelGroupsParams {
  * models greyed out; the picker names the reason above them. Profiles and
  * Defaults with overrides may bring their own credentials (an API key), so
  * a signed-out machine login greys them only when that is known not to be so.
+ * When the machine lists no models for such a configuration (an E2B sandbox
+ * has no sign-in of its own), the backend catalog's models stand in.
  */
 export function buildMachineModelGroups({
   machine,
@@ -276,13 +287,19 @@ export function buildMachineModelGroups({
     // otherwise the picker names the sign-in state and the daemon decides.
     const signedOut =
       isRemoteRefSignedOut(machine, ref) && defaultHasOverrides?.[providerRefBaseId(ref)] === false;
+    const catalog = catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? [];
     const labelled = new Map(
-      (catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? []).map((option) => [
-        splitLegacyCompoundId(option.value).modelId,
-        option,
-      ]),
+      catalog.map((option) => [splitLegacyCompoundId(option.value).modelId, option]),
     );
-    const options = provider.models.map((modelId): DropdownOption => {
+    const bringsCredentials =
+      isProviderProfileRef(ref) || defaultHasOverrides?.[providerRefBaseId(ref)] === true;
+    const modelIds =
+      provider.models.length > 0 || !bringsCredentials
+        ? provider.models
+        : catalog
+            .filter((option) => !isDefaultPseudoModelId(option.value))
+            .map((option) => splitLegacyCompoundId(option.value).modelId);
+    const options = modelIds.map((modelId): DropdownOption => {
       const known = labelled.get(modelId);
       const option: DropdownOption = known
         ? { ...known, value: modelId }
