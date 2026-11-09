@@ -11,7 +11,7 @@
 
 <script lang="ts">
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
-  import type { DockPlacementSnapshot } from '$shared/dock-placement';
+  import { DOCK_FLOATING_SHADOW_MARGIN, type DockPlacementSnapshot } from '$shared/dock-placement';
   import { prefersReducedMotion, onReducedMotionChange } from '$lib/utils/reduced-motion';
   import { createRevealSpring, createRevealFade } from '$features/hud/utils/dock-shell-frames';
   import { DOCK_SHELL_REVEAL } from '$features/hud/utils/dock-motion';
@@ -167,54 +167,79 @@
 </script>
 
 {#if present && frame && lastPanel && lastWorkspace && viewport}
-  <div class="edge-panel" style:clip-path={`inset(0 ${clipRight}px 0 ${viewport.x}px)`}>
-    <div
-      bind:this={shellElement}
-      class="edge-shell"
-      data-testid="dock-edge-shell"
-      data-side={side}
-      data-reveal={reveal}
-      aria-hidden="true"
-      style:left={`${frame.x}px`}
-      style:top={`${frame.y}px`}
-      style:width={`${frame.width}px`}
-      style:height={`${frame.height}px`}
-      style:transform={`translateX(${offset}px)`}
-      style:opacity
-    ></div>
+  <div class="edge-panel">
+    <div class="edge-panel" style:clip-path={`inset(0 ${clipRight}px 0 ${viewport.x}px)`}>
+      <div
+        bind:this={shellElement}
+        class="edge-shell"
+        data-testid="dock-edge-shell"
+        data-side={side}
+        data-reveal={reveal}
+        aria-hidden="true"
+        style:left={`${frame.x}px`}
+        style:top={`${frame.y}px`}
+        style:width={`${frame.width}px`}
+        style:height={`${frame.height}px`}
+        style:transform={`translateX(${offset}px)`}
+        style:opacity
+      ></div>
+      <div
+        class="edge-panel"
+        inert={!wanted}
+        style:opacity
+        style:transform={`translate(${offset}px, ${glide}px)`}
+      >
+        <DockConversationSurface
+          workspaceId={lastWorkspace}
+          active={wanted}
+          resizable={wanted && settled}
+          {focusRequest}
+          {focusComposerOnMount}
+          rect={lastPanel}
+          clip={inlineClip}
+          {onRegionsChange}
+          {onPopupStateChange}
+        >
+          {@render children()}
+        </DockConversationSurface>
+      </div>
+    </div>
+    <!-- Paint may use the existing transparent native margin; content and input keep their clip. -->
     <div
       class="edge-panel"
-      inert={!wanted}
-      style:opacity
-      style:transform={`translate(${offset}px, ${glide}px)`}
+      aria-hidden="true"
+      style:clip-path={`inset(0 ${Math.max(0, clipRight - DOCK_FLOATING_SHADOW_MARGIN)}px 0 ${Math.max(0, viewport.x - DOCK_FLOATING_SHADOW_MARGIN)}px)`}
     >
-      <DockConversationSurface
-        workspaceId={lastWorkspace}
-        active={wanted}
-        resizable={wanted && settled}
-        {focusRequest}
-        {focusComposerOnMount}
-        rect={lastPanel}
-        clip={inlineClip}
-        {onRegionsChange}
-        {onPopupStateChange}
-      >
-        {@render children()}
-      </DockConversationSurface>
+      <div
+        class="edge-shadow"
+        style:left={`${frame.x}px`}
+        style:top={`${frame.y}px`}
+        style:width={`${frame.width}px`}
+        style:height={`${frame.height}px`}
+        style:transform={`translateX(${offset}px)`}
+        style:opacity
+      ></div>
     </div>
   </div>
 {/if}
 
 <style>
-  .edge-shell {
+  .edge-shell,
+  .edge-shadow {
     position: absolute;
     pointer-events: none;
+    border-radius: 32px;
+  }
+  .edge-shell {
     background: hsl(var(--popover));
     border: 1px solid hsl(var(--border));
     /* Concentric with the composer card: its 16px radius plus the 16px lane inset. */
     border-radius: 32px;
   }
-  .edge-shell::after {
+  .edge-shadow {
+    border: 1px solid transparent;
+  }
+  .edge-shadow::after {
     content: '';
     position: absolute;
     inset: -1px;
