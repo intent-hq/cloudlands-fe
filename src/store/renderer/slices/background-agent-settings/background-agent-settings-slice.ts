@@ -18,7 +18,7 @@ export type BackgroundAgentType = 'commit' | 'pr' | 'review' | 'fast';
 
 // Localized copy uses getters so it re-evaluates with the active locale.
 export const BACKGROUND_AGENT_TYPE_INFO: Record<
-  BackgroundAgentType,
+  Exclude<BackgroundAgentType, 'fast'>,
   { label: string; description: string }
 > = {
   commit: {
@@ -43,14 +43,6 @@ export const BACKGROUND_AGENT_TYPE_INFO: Record<
     },
     get description() {
       return m.settings_backgroundAgents_review_description();
-    },
-  },
-  fast: {
-    get label() {
-      return m.settings_backgroundAgents_fast_label();
-    },
-    get description() {
-      return m.settings_backgroundAgents_fast_description();
     },
   },
 };

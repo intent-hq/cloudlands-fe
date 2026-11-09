@@ -607,7 +607,7 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     path: 'quickActions.defaultModel',
     label: 'Default quick action model',
     description:
-      'Default model for single-shot quick actions (commit messages, PR descriptions, quick tasks). Never applied to agent sessions.',
+      'Default model for single-shot quick actions (commit messages and PR descriptions). Never applied to agent sessions.',
     category: 'agents',
     type: 'string',
     source: 'local-storage',

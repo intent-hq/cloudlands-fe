@@ -41,7 +41,7 @@ export interface BackgroundRequestOptions {
    */
   model?: string;
   /** Quick-action settings key; model and effort fallback are resolved by the daemon. */
-  type?: 'commit' | 'pr' | 'review' | 'fast';
+  type?: 'commit' | 'pr' | 'review';
   reasoningEffort?: string | null;
   /** Override the default timeout (ms). Daemon clamps at 120000. */
   timeoutMs?: number;
