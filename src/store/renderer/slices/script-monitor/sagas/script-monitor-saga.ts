@@ -69,9 +69,9 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
   const connection = createScriptMonitorConnection();
   const leases = new Map<string, Lease>();
   let leasedWorkspaceId: string | null = null;
-  // Host each workspace's last ready rows were read from: a reopen on another
-  // backend must not show them, even under a repeated workspace ID.
-  const readyBackends = new Map<string, string>();
+  // Host each workspace's stored rows came from: a reopen on another backend
+  // must not show them, even under a repeated workspace ID.
+  const rowBackends = new Map<string, string>();
   try {
     function* acquire(workspaceId: string): SagaGenerator<void> {
       const previous = leases.get(workspaceId);
@@ -79,12 +79,14 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
         previous.count++;
         return;
       }
-      // Warm reopen: start from the last fresh rows so the footer renders with
-      // the transcript; the service's first page replaces them.
+      // Warm reopen: start from the stored rows so the footer renders with the
+      // transcript; the service's first page replaces them. A reopen released
+      // before that page landed still holds the same rows, now `loading`.
       const backendId = yield* selectActiveBackendId();
       const saved = yield* select(selectScriptMonitors.select, workspaceId);
       const retained =
-        saved.status === 'ready' && readyBackends.get(workspaceId) === backendId
+        (saved.status === 'ready' || saved.status === 'loading') &&
+        rowBackends.get(workspaceId) === backendId
           ? { monitors: saved.monitors }
           : undefined;
       let service!: Lease['service'];
@@ -100,7 +102,9 @@ export function* scriptMonitorSaga(): SagaGenerator<void> {
             const snapshot = yield* take(channel);
             if (leases.get(workspaceId) !== lease) return;
             lease.snapshot = snapshot;
-            if (snapshot.status === 'ready') readyBackends.set(workspaceId, lease.backendId);
+            if (snapshot.status === 'ready' || snapshot.status === 'loading')
+              rowBackends.set(workspaceId, lease.backendId);
+            else rowBackends.delete(workspaceId);
             yield* put(scriptMonitorsUpdated(workspaceId, snapshot));
           }
         } finally {
