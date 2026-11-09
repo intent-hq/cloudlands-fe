@@ -127,6 +127,24 @@ describe('cached tokens toggle', () => {
         cacheReadTokens: 90_000_000,
         cacheCreationTokens: 5_000_000,
       },
+      byModel: [
+        {
+          model: 'cache-heavy',
+          runs: 1,
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          cacheReadTokens: 90_000_000,
+          cacheCreationTokens: 5_000_000,
+        },
+        {
+          model: 'fresh-heavy',
+          runs: 1,
+          inputTokens: 1_000_000,
+          outputTokens: 3_000_000,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+      ],
     };
   });
 
@@ -141,12 +159,14 @@ describe('cached tokens toggle', () => {
     expect(passport().querySelector('.hero-value')?.textContent).toBe('5M');
     expect(passport().querySelector('.counter-cread')).toBeNull();
     expect(passport().querySelector('.counter-cwrite')).toBeNull();
+    expect(passport().querySelector('.stat-clip')?.textContent).toBe('fresh-heavy');
 
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-pressed')).toBe('true');
     expect(passport().querySelector('.hero-value')?.textContent).toBe('100M');
     expect(passport().querySelector('.counter-cread')?.textContent).toContain('90M');
     expect(passport().querySelector('.counter-cwrite')?.textContent).toContain('5M');
+    expect(passport().querySelector('.stat-clip')?.textContent).toBe('cache-heavy');
 
     await fireEvent.click(toggle);
     expect(toggle.getAttribute('aria-pressed')).toBe('false');

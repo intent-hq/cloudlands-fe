@@ -1021,9 +1021,6 @@
   .composition-context {
     grid-column: 4;
   }
-  .composition-context-suffix {
-    grid-column: 5;
-  }
   .message-composition-metric {
     grid-column: 1 / -1;
     padding-inline-start: 0.875rem;
