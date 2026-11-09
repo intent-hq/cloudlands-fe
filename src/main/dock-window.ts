@@ -323,6 +323,12 @@ export async function updateDockPlacement(
     window.webContents.focus();
     return getDockPlacementSnapshot(window);
   }
+  if (command.action === 'release') {
+    // A transient close: the renderer collapsed; only hand the keyboard back.
+    placementController?.cancelInteraction();
+    if (window.isFocused()) window.blur();
+    return getDockPlacementSnapshot(window);
+  }
   if (command.action === 'dismiss') {
     placementController?.cancelInteraction();
     // Let the validated invoke return before destroying its sending webContents.

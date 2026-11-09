@@ -48,7 +48,13 @@ export interface DockPlacementSnapshot {
 type DockLandingSizes = Record<DockPlacement['kind'], { width: number; height: number }>;
 
 export type DockPlacementCommand =
+  /** The dock's own Hide: closes it and turns it off until shown again. */
   | { action: 'dismiss' }
+  /**
+   * A transient close (the open shortcut again, Escape, a click outside): the dock
+   * collapses and gives up the keyboard; the window, its setting and shortcuts stay.
+   */
+  | { action: 'release' }
   | { action: 'focus' }
   | { action: 'move'; target: DockPlacementTarget }
   | {

@@ -691,6 +691,7 @@ const DockSurfaceSizeSchema = z.object({
 
 export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('dismiss') }),
+  z.object({ action: z.literal('release') }),
   z.object({ action: z.literal('focus') }),
   z.object({
     action: z.literal('move'),

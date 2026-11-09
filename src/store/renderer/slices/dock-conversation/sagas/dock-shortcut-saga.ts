@@ -281,7 +281,8 @@ export function* dockShortcutSaga(): SagaGenerator<void> {
     yield* put(dockShortcutChanged(null));
   });
   yield* takeEvery(dockPlacementCommandRequested, function* ({ payload: [command] }) {
-    if (command.action === 'dismiss') yield* put(dockShortcutChanged(null));
+    if (command.action === 'dismiss' || command.action === 'release')
+      yield* put(dockShortcutChanged(null));
   });
   yield* takeLatestFromSelector(selectPrincipalActionContext, function* () {
     const shortcut = appStore.state.dockConversation.shortcut;

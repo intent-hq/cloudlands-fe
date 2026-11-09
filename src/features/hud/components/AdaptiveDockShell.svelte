@@ -687,7 +687,8 @@
     (document.activeElement as HTMLElement | null)?.blur();
     clearTimeout(closeTimer);
     pointerRegion.deactivate([], placement.revision);
-    command({ action: 'dismiss' });
+    // Collapse only: `dismiss` is the dock's own Hide (it closes and turns the dock off).
+    command({ action: 'release' });
   }
   async function runAction(
     action: () => void | Promise<void>,
