@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from 'svelte';
+  import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
@@ -125,6 +126,21 @@
   }
 </script>
 
+{#snippet removeControl(id: string, name: string)}
+  <span class="tile-remove-slot"
+    ><Button
+      variant="secondary"
+      size="icon-sm"
+      class="tile-action tile-remove"
+      {disabled}
+      aria-label={name}
+      tooltipContentClass="dock-chrome-tooltip"
+      tooltip={name}
+      onclick={() => remove(id)}><DockComposerIcon glyph="x" /></Button
+    ></span
+  >
+{/snippet}
+
 {#if ordered.length}
   <div
     bind:this={row}
@@ -137,7 +153,7 @@
       {#if item.kind === 'image' && item.file}
         <!-- svelte-ignore a11y_no_static_element_interactions (keys and the menu act on the focused preview inside) -->
         <div
-          class="file-image"
+          class="file-image tile"
           data-kind="file"
           data-attachment-id={item.id}
           onkeydown={(event) => tileKey(event, item)}
@@ -151,12 +167,44 @@
             type={item.file.imageMimeType}
             imageData={item.file.imageData}
             imageMimeType={item.file.imageMimeType}
-            onRemove={disabled ? undefined : (id) => void remove(id)}
             variant="thumbnail"
+            thumbnailClass="size-full"
+            class="size-full"
+            disabled={disabled || item.status === 'placing'}
             placementStatus={item.status}
             placementError={item.error}
-            {onRetry}
           />
+          {#if item.status}
+            <span
+              class="attachment-status"
+              data-failed={item.status === 'failed' || undefined}
+              role={item.status === 'failed' ? 'alert' : 'status'}
+              title={item.error}
+            >
+              {item.status === 'failed'
+                ? (item.error ?? labels.attachmentFailed)
+                : labels.attachmentPending}
+            </span>
+          {/if}
+          <div class="tile-actions">
+            {#if item.status === 'failed' && onRetry}
+              <Button
+                variant="primary"
+                size="icon-sm"
+                class="tile-action"
+                {disabled}
+                aria-label={labels.retry}
+                tooltipContentClass="dock-chrome-tooltip"
+                tooltip={labels.retry}
+                onclick={() => onRetry?.(item.id)}
+                ><Fa icon={faArrowRotateRight} size={16} /></Button
+              >
+            {/if}
+            {@render removeControl(
+              item.id,
+              m.chat_attachmentPreview_remove_ariaLabel({ name: item.file.name }),
+            )}
+          </div>
         </div>
       {:else}
         {@const previewPending =
@@ -261,18 +309,7 @@
                 <DockComposerIcon glyph={onEdit ? 'pencil' : 'play'} />
               </Button>
             {/if}
-            <Button
-              variant="secondary"
-              size="icon-sm"
-              class="tile-action"
-              {disabled}
-              aria-label={labels.remove}
-              tooltipContentClass="dock-chrome-tooltip"
-              tooltip={labels.remove}
-              onclick={() => remove(item.id)}
-            >
-              <DockComposerIcon glyph="x" />
-            </Button>
+            {@render removeControl(item.id, labels.remove)}
           </div>
         </div>
       {/if}
@@ -373,7 +410,9 @@
   .tile-actions {
     position: absolute;
     inset: 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(2, 28px);
+    align-content: center;
     align-items: center;
     justify-content: center;
     gap: 6px;
@@ -407,6 +446,12 @@
   .tile:hover .tile-actions :global(button),
   .tile:focus-within .tile-actions :global(button) {
     pointer-events: auto;
+  }
+  .tile-remove-slot {
+    grid-column: 2;
+    width: 28px;
+    height: 28px;
+    display: flex;
   }
   .tile-actions :global(.tile-action) {
     width: 28px;
