@@ -43,6 +43,7 @@
       | 'status-icons'
       | 'status-grouping'
       | 'labels'
+      | 'auto-archive'
       | 'hidden-repos'
       | 'hidden-repos-collapsed'
       | 'purged'
@@ -82,6 +83,7 @@
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
       labels: { props: { scenario: 'labels' } },
+      'auto-archive': { props: { scenario: 'auto-archive' } },
       'hidden-repos': { props: { scenario: 'hidden-repos' } },
       'hidden-repos-collapsed': { props: { scenario: 'hidden-repos-collapsed' } },
       purged: { props: { scenario: 'purged' } },
@@ -414,6 +416,8 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
+    autoArchiveIdleAfterDaysCleared,
+    autoArchiveIdleAfterDaysHydrated,
     closePanel,
     hydrateSidebarNav,
     openPanel,
@@ -549,7 +553,16 @@
   $effect.pre(() => {
     admitLegacyPrincipal(
       scenario === 'collaborator' ? 'guest' : 'owner',
-      scenario === 'labels' ? { workspaceLabels: 1 } : {},
+      scenario === 'labels'
+        ? { workspaceLabels: 1 }
+        : scenario === 'auto-archive'
+          ? { workspaceAutoArchiveOptOut: 1 }
+          : {},
+    );
+    store.dispatch(
+      scenario === 'auto-archive'
+        ? autoArchiveIdleAfterDaysHydrated(7)
+        : autoArchiveIdleAfterDaysCleared(),
     );
     store.dispatch(closePanel());
     store.dispatch(resetHomeWorkspaceView());
@@ -615,6 +628,9 @@
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
               ...(scenario === 'labels' ? { label: labelFixtures[workspace.id] } : {}),
+              ...(scenario === 'auto-archive' && workspace.id === 'home-running'
+                ? { autoArchiveDisabled: true }
+                : {}),
               ...(scenario === 'untitled' && workspace.id === 'home-running'
                 ? { title: '' }
                 : scenario === 'untitled' && workspace.id === 'home-review'

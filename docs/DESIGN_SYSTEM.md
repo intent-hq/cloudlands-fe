@@ -431,11 +431,12 @@ a command is unavailable.
 The public `menuOverlay()` recipe from `$lib/components/ui/menu` supplies the same shell
 for adapters that cannot use `Menu.Content`; `menuItem()` supplies row anatomy. Both use
 `type-caption`, so custom content and summaries in nested menus match the option text.
-Prefer the semantic components in feature code. Recipes provide styling, not keyboard, focus,
+Give row values, descriptions and notes `menuDescription`, the same quiet ink as shortcut
+hints. Prefer the semantic components in feature code. Recipes provide styling, not keyboard, focus,
 checked-state, or dismissal behavior.
 
 `Menu.Indicator` owns the trailing glyph, slot, and decorative `aria-hidden` contract for
-menus and value pickers. Its `state` is `checked`, `mixed`, `submenu`, or `empty`; keep the
+menus and value pickers. Its `state` is `checked`, `mixed`, `submenu`, `empty`, or `on` / `off` (a switch); keep the
 empty state rendered to reserve the same trailing space. It accepts optional `data-slot`,
 `class`, and span attributes. It is decoration only: the host still owns `aria-checked`
 or `aria-selected`. Do not recreate check/minus/chevron glyphs in feature rows.
@@ -445,7 +446,8 @@ or `aria-selected`. Do not recreate check/minus/chevron glyphs in feature rows.
 The [ActionMenu renderer](../src/lib/components/patterns/action-menu/ActionMenu.svelte)
 owns both trigger- and pointer-anchored menus. Its action kinds are `action`, `checkbox`,
 `radio-group` (with `radio` children), `submenu`, `section`, and `label`. Use a checkbox for an
-independent setting and a radio group for one choice among alternatives. Commands close
+independent setting and a radio group for one choice among alternatives. Give a checkbox that
+turns a setting on or off `indicator: 'switch'`. Commands close
 by default; checkbox and radio choices remain open unless `closeOnSelect` requests otherwise.
 `when` controls visibility; `disabled` and localized `disabledReason` retain unavailable
 commands without invoking them. Stable IDs and optional `commandId` distinguish action
@@ -457,7 +459,8 @@ and is excluded from ActionBar inline buttons. The sidebar compatibility model a
 
 Existing `SidebarContextMenu` and `SidebarOverflowMenu` adapters translate the same
 `SidebarMenuEntry[]` into that renderer. Checked compatibility entries become checkbox
-items; a submenu with `selection: 'single'` becomes an exclusive radio group. Use
+items and keep their `indicator`; a submenu with `selection: 'single'` becomes an exclusive
+radio group. Use
 `getSidebarContextPosition(event)` from `$lib/components/ui/sidebar-context-menu/types` for
 both `contextmenu` and keyboard events: it recognizes Shift+F10 and the context-menu key
 and records the invoking element. Pass that `returnFocus` through to the context adapter.
@@ -477,9 +480,10 @@ Align leading icons and trailing shortcuts with the first line of the label, not
 center of a multiline label or description. Keep this contract in shared row anatomy so
 composed panel menus and action-model menus behave the same way.
 Destructive leading icons inherit the label's destructive color, including hover and focus.
-Use `Menu.CheckboxItem indicator="switch"` for independent on/off settings. The row remains
+Use `Menu.CheckboxItem indicator="switch"` with an `icon` for independent on/off settings. The row remains
 a menu checkbox with one keyboard target; the switch is a decorative state indicator and does
-not paint the row as a selected choice. `Menu.Footer` provides a flush metadata strip; any
+not paint the row as a selected choice. Keep the default check for marks within a set, such as
+a multi-select filter. `Menu.Footer` provides a flush metadata strip; any
 action it contains still uses a semantic menu item.
 Submenus prefer the right side and align their first row with the parent row; viewport
 collisions may flip or shift them, while preserving the viewport gutter.

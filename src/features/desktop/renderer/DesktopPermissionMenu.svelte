@@ -1,5 +1,4 @@
 <script lang="ts">
-  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { faDesktop } from '@fortawesome/free-solid-svg-icons';
   import { untrack } from 'svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -30,18 +29,23 @@
   {/if}
   <Menu.CheckboxItem
     indicator="switch"
+    icon={faDesktop}
     checked={$entry.permission.allowed}
-    disabled={$entry.saving || $entry.loading}
-    onCheckedChange={(allowed) => {
-      if ($entry?.permission)
+    onSelect={(event) => {
+      // The switch follows the confirmed permission; reads and saves never disable the row.
+      event.preventDefault();
+      const permission = $entry?.permission;
+      if (permission && !$entry?.saving)
         store.dispatch(
-          desktopPermissionRequested(workspaceId, agentId, $entry.permission.computerId, allowed),
+          desktopPermissionRequested(
+            workspaceId,
+            agentId,
+            permission.computerId,
+            !permission.allowed,
+          ),
         );
     }}
   >
-    {#snippet leading()}
-      <Fa icon={faDesktop} weight="regular" class="size-(--menu-icon-size) text-muted-foreground" />
-    {/snippet}
     {m.settings_agentFeatures_desktopControl_label()}
   </Menu.CheckboxItem>
 {/if}

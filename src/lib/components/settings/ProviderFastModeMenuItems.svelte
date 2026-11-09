@@ -8,6 +8,8 @@
   import { m } from '$shared/paraglide/messages.js';
   import { providerRefBaseId } from '$shared/provider-profiles';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
+  import { faBolt } from '$lib/icons/phosphor-icons';
   import { store as appStore } from '$store/renderer/store';
   import { setProviderFastMode } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { selectProviderFastModeValues } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -42,9 +44,19 @@
   }
 </script>
 
+<!-- Provider menus place 16px icons inside each row, so this row does the same to keep labels aligned. -->
+{#snippet boltIcon()}
+  <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+    <Fa icon={faBolt} class="size-3.5 text-muted-foreground" />
+  </span>
+{/snippet}
+
 {#if isCodex}
   <Menu.Sub>
-    <Menu.SubTrigger>{m.settings_providers_serviceTier_label()}</Menu.SubTrigger>
+    <Menu.SubTrigger class="text-foreground">
+      {@render boltIcon()}
+      {m.settings_providers_serviceTier_label()}
+    </Menu.SubTrigger>
     <Menu.SubContent class="w-64">
       <Menu.RadioGroup
         value={enabled ? 'fast' : 'standard'}
@@ -69,19 +81,26 @@
         </Menu.RadioItem>
       </Menu.RadioGroup>
       <Menu.Separator />
-      <p id={descriptionId} class="px-2 py-1.5 type-caption text-muted-foreground">
+      <p id={descriptionId} class="px-2 py-1.5 type-caption {Menu.menuDescription}">
         {m.settings_providers_fastMode_description()}
       </p>
-      <p id={ultraFastDescriptionId} class="px-2 py-1.5 type-caption text-muted-foreground">
+      <p id={ultraFastDescriptionId} class="px-2 py-1.5 type-caption {Menu.menuDescription}">
         {m.settings_providers_serviceTierUltraFast_description()}
       </p>
     </Menu.SubContent>
   </Menu.Sub>
 {:else}
-  <Menu.CheckboxItem checked={enabled} onSelect={handleToggle} aria-describedby={descriptionId}>
+  <Menu.CheckboxItem
+    class="text-foreground"
+    indicator="switch"
+    checked={enabled}
+    onSelect={handleToggle}
+    aria-describedby={descriptionId}
+  >
+    {@render boltIcon()}
     {m.settings_providers_fastMode_label()}
   </Menu.CheckboxItem>
-  <p id={descriptionId} class="px-2 py-1.5 type-caption text-muted-foreground">
+  <p id={descriptionId} class="py-1.5 ps-9 pe-2.5 type-caption {Menu.menuDescription}">
     {m.settings_providers_fastMode_description()}
   </p>
 {/if}

@@ -24,7 +24,7 @@
   import { Combobox } from '$lib/components/ui/combobox';
   import { Select } from '$lib/components/ui/select';
   import * as Menu from '$lib/components/ui/menu';
-  import { faCopy, faPen, faTrash, faBoxArchive } from '$lib/icons/phosphor-icons';
+  import { faCopy, faPen, faTrash, faBoxArchive, faThumbtack } from '$lib/icons/phosphor-icons';
   import ConversationMenu from './dropdown-polish.preview.svelte';
 
   let { section: initialSection = 'all' }: Props = $props();
@@ -145,7 +145,9 @@
                 shortcut="⌘C"
                 onSelect={() => (selected = 'Copy link')}
               />
-              <Menu.CheckboxItem bind:checked={pinned}>Pin workspace</Menu.CheckboxItem>
+              <Menu.CheckboxItem indicator="switch" icon={faThumbtack} bind:checked={pinned}
+                >Pin workspace</Menu.CheckboxItem
+              >
               <Menu.CommandItem
                 label="Share workspace"
                 disabledReason="Connect an account to share"

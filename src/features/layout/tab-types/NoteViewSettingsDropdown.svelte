@@ -4,6 +4,7 @@
   import { faSliders } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
+  import { faEye, faFont, faTextAUnderline } from '$lib/icons/phosphor-icons';
   import { selectNoteViewMode } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
   import {
     setNoteViewMode,
@@ -71,13 +72,9 @@
 
 {#snippet settingsItems()}
   <Menu.Sub>
-    <Menu.SubTrigger>
-      <span class="min-w-0 flex-1">
-        <span class="block" data-note-setting-label>{m.ui_viewSettings_font_label()}</span>
-        <span class="block type-caption text-muted-foreground" data-note-setting-value
-          >{fontLabel}</span
-        >
-      </span>
+    <Menu.SubTrigger icon={faFont}>
+      <span class="min-w-0 flex-1" data-note-setting-label>{m.ui_viewSettings_font_label()}</span>
+      <span class="type-caption {Menu.menuDescription}" data-note-setting-value>{fontLabel}</span>
     </Menu.SubTrigger>
     <Menu.SubContent aria-label={m.ui_viewSettings_font_label()}>
       <Menu.RadioGroup value={$noteFontStyle} onValueChange={setFontStyle}>
@@ -94,13 +91,11 @@
     </Menu.SubContent>
   </Menu.Sub>
   <Menu.Sub>
-    <Menu.SubTrigger>
-      <span class="min-w-0 flex-1">
-        <span class="block" data-note-setting-label>{m.ui_viewSettings_noteViewMode_label()}</span>
-        <span class="block type-caption text-muted-foreground" data-note-setting-value
-          >{viewLabel}</span
-        >
-      </span>
+    <Menu.SubTrigger icon={faEye}>
+      <span class="min-w-0 flex-1" data-note-setting-label
+        >{m.ui_viewSettings_noteViewMode_label()}</span
+      >
+      <span class="type-caption {Menu.menuDescription}" data-note-setting-value>{viewLabel}</span>
     </Menu.SubTrigger>
     <Menu.SubContent aria-label={m.ui_viewSettings_noteViewMode_label()}>
       <Menu.RadioGroup value={effectiveViewMode} onValueChange={selectViewMode}>
@@ -117,6 +112,8 @@
     </Menu.SubContent>
   </Menu.Sub>
   <Menu.CheckboxItem
+    indicator="switch"
+    icon={faTextAUnderline}
     checked={$spellcheckEnabled}
     closeOnSelect={false}
     disabled={effectiveViewMode === 'preview'}

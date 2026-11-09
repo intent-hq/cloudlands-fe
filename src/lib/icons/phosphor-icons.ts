@@ -10,12 +10,14 @@ import ArrowDownIcon from 'phosphor-svelte/lib/ArrowDownIcon';
 import ArrowLeftIcon from 'phosphor-svelte/lib/ArrowLeftIcon';
 import ArrowRightIcon from 'phosphor-svelte/lib/ArrowRightIcon';
 import ArrowSquareOutIcon from 'phosphor-svelte/lib/ArrowSquareOutIcon';
+import ArrowUDownLeftIcon from 'phosphor-svelte/lib/ArrowUDownLeftIcon';
 import ArrowUpIcon from 'phosphor-svelte/lib/ArrowUpIcon';
 import ArrowsClockwiseIcon from 'phosphor-svelte/lib/ArrowsClockwiseIcon';
 import ArrowsInIcon from 'phosphor-svelte/lib/ArrowsInIcon';
 import ArrowsInLineVerticalIcon from 'phosphor-svelte/lib/ArrowsInLineVerticalIcon';
 import ArrowsLeftRightIcon from 'phosphor-svelte/lib/ArrowsLeftRightIcon';
 import ArrowsOutIcon from 'phosphor-svelte/lib/ArrowsOutIcon';
+import ArrowsOutLineHorizontalIcon from 'phosphor-svelte/lib/ArrowsOutLineHorizontalIcon';
 import ArrowsOutLineVerticalIcon from 'phosphor-svelte/lib/ArrowsOutLineVerticalIcon';
 import AsteriskIcon from 'phosphor-svelte/lib/AsteriskIcon';
 import AtIcon from 'phosphor-svelte/lib/AtIcon';
@@ -156,6 +158,7 @@ import RocketIcon from 'phosphor-svelte/lib/RocketIcon';
 import ShieldIcon from 'phosphor-svelte/lib/ShieldIcon';
 import SignOutIcon from 'phosphor-svelte/lib/SignOutIcon';
 import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
+import SparkleIcon from 'phosphor-svelte/lib/SparkleIcon';
 import SpinnerGapIcon from 'phosphor-svelte/lib/SpinnerGapIcon';
 import SquareIcon from 'phosphor-svelte/lib/SquareIcon';
 import StackIcon from 'phosphor-svelte/lib/StackIcon';
@@ -166,6 +169,7 @@ import TagIcon from 'phosphor-svelte/lib/TagIcon';
 import TerminalIcon from './TerminalIcon.svelte';
 import TestTubeIcon from 'phosphor-svelte/lib/TestTubeIcon';
 import TextAaIcon from 'phosphor-svelte/lib/TextAaIcon';
+import TextAUnderlineIcon from 'phosphor-svelte/lib/TextAUnderlineIcon';
 import TextAlignLeftIcon from 'phosphor-svelte/lib/TextAlignLeftIcon';
 import TextBIcon from 'phosphor-svelte/lib/TextBIcon';
 import TextItalicIcon from 'phosphor-svelte/lib/TextItalicIcon';
@@ -223,10 +227,12 @@ const iconComponents: Record<string, Component<any>> = {
   'arrow-right-arrow-left': ArrowsLeftRightIcon,
   'arrow-rotate-left': ArrowCounterClockwiseIcon,
   'arrow-rotate-right': ArrowClockwiseIcon,
+  'arrow-u-down-left': ArrowUDownLeftIcon,
   'arrow-up': ArrowUpIcon,
   'arrow-up-from-bracket': UploadSimpleIcon,
   'arrow-up-right-from-square': ArrowSquareOutIcon,
   'arrows-in-line-vertical': ArrowsInLineVerticalIcon,
+  'arrows-out-line-horizontal': ArrowsOutLineHorizontalIcon,
   'arrows-out-line-vertical': ArrowsOutLineVerticalIcon,
   'arrows-rotate': ArrowsClockwiseIcon,
   asterisk: AsteriskIcon,
@@ -381,6 +387,7 @@ const iconComponents: Record<string, Component<any>> = {
   sitemap: TreeStructureIcon,
   sliders: SlidersHorizontalIcon,
   'spell-check': CheckIcon,
+  sparkle: SparkleIcon,
   spinner: SpinnerGapIcon,
   square: SquareIcon,
   'square-check': CheckSquareIcon,
@@ -399,6 +406,7 @@ const iconComponents: Record<string, Component<any>> = {
   ticket: TicketIcon,
   trash: TrashIcon,
   'triangle-exclamation': WarningIcon,
+  'text-a-underline': TextAUnderlineIcon,
   underline: TextUnderlineIcon,
   'up-right-from-square': ArrowSquareOutIcon,
   user: UserIcon,
@@ -439,10 +447,12 @@ export const faArrowPointer = icon('arrow-pointer');
 export const faArrowRight = icon('arrow-right');
 export const faArrowRightArrowLeft = icon('arrow-right-arrow-left');
 export const faArrowRotateRight = icon('arrow-rotate-right');
+export const faArrowUDownLeft = icon('arrow-u-down-left');
 export const faArrowUp = icon('arrow-up');
 export const faArrowUpFromBracket = icon('arrow-up-from-bracket');
 export const faArrowUpRightFromSquare = icon('arrow-up-right-from-square');
 export const faArrowsInLineVertical = icon('arrows-in-line-vertical');
+export const faArrowsOutLineHorizontal = icon('arrows-out-line-horizontal');
 export const faArrowsOutLineVertical = icon('arrows-out-line-vertical');
 export const faArrowsRotate = icon('arrows-rotate');
 export const faAsterisk = icon('asterisk');
@@ -610,6 +620,7 @@ export const faShield = icon('shield');
 export const faShieldAlt = icon('shield-halved');
 export const faShieldHalved = faShieldAlt;
 export const faSliders = icon('sliders');
+export const faSparkle = icon('sparkle');
 export const faSquare = icon('square');
 export const faSquareCheck = icon('square-check');
 export const faSquarePen = icon('square-pen');
@@ -621,6 +632,7 @@ export const faSync = icon('sync');
 export const faTableColumns = icon('table-columns');
 export const faTag = icon('tag');
 export const faTerminal = icon('terminal');
+export const faTextAUnderline = icon('text-a-underline');
 export const faThumbsDown = icon('thumbs-down');
 export const faThumbsUp = icon('thumbs-up');
 export const faThumbtack = icon('thumbtack');

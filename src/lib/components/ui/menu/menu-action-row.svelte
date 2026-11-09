@@ -2,7 +2,7 @@
   import type { Snippet } from 'svelte';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import { cn } from '$lib/utils.js';
-  import { menuItem } from './menu-recipes';
+  import { menuDescription, menuItem } from './menu-recipes';
 
   type Props = Omit<HTMLButtonAttributes, 'title' | 'children'> & {
     leading?: Snippet;
@@ -45,7 +45,7 @@
   <span data-slot="action-row-content" class="flex min-w-0 flex-1 flex-col gap-0.5">
     <span data-slot="action-row-title" class="min-w-0 break-words">{@render title()}</span>
     {#if description}
-      <span data-slot="action-row-description" class="min-w-0 break-words text-muted-foreground">
+      <span data-slot="action-row-description" class="min-w-0 break-words {menuDescription}">
         {@render description()}
       </span>
     {/if}

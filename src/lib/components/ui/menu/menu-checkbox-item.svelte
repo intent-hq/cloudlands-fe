@@ -1,6 +1,9 @@
 <script lang="ts">
+  import type { IconWeight } from 'phosphor-svelte';
   import { DropdownMenu as MenuPrimitive } from 'bits-ui';
   import type { Snippet } from 'svelte';
+  import type { IconDefinition } from '$lib/icons/phosphor-icons';
+  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import { cn } from '$lib/utils.js';
   import type { WithoutChildrenOrChild } from '$lib/utils.js';
   import { menuItem } from './menu-recipes';
@@ -14,15 +17,19 @@
     closeOnSelect = false,
     indicator = 'check',
     class: className,
+    icon,
+    iconWeight,
     leading,
     children,
     ...restProps
   }: WithoutChildrenOrChild<MenuPrimitive.CheckboxItemProps> & {
     children?: Snippet;
+    icon?: IconDefinition;
+    iconWeight?: IconWeight;
     leading?: Snippet;
     indicator?: 'check' | 'switch';
   } = $props();
-  const reserveIcon = useMenuIconColumn(() => !!leading);
+  const reserveIcon = useMenuIconColumn(() => !!(icon || leading));
 </script>
 
 <MenuPrimitive.CheckboxItem
@@ -36,35 +43,29 @@
   class={cn(menuItem(), className)}
   {...restProps}
 >
-  {#if leading || reserveIcon()}
+  {#if icon || leading || reserveIcon()}
     <span
       data-slot="menu-item-leading"
       class="first-line-icon w-(--menu-icon-size)"
       aria-hidden="true"
     >
-      {@render leading?.()}
+      {#if leading}
+        {@render leading()}
+      {:else if icon}
+        <Fa {icon} weight={iconWeight} size={16} class="size-4 text-muted-foreground" />
+      {/if}
     </span>
   {/if}
   {@render children?.()}
-  {#if indicator === 'switch' && !indeterminate}
-    <span
-      data-slot="menu-switch"
-      class="ml-auto flex h-lh shrink-0 items-center"
-      aria-hidden="true"
-    >
-      <span
-        data-state={checked ? 'checked' : 'unchecked'}
-        class="relative block h-3.5 w-6 rounded-full bg-muted-foreground/25 transition-colors duration-spring-fast ease-spring-fast data-[state=checked]:bg-foreground/80 motion-reduce:transition-none"
-      >
-        <span
-          class={cn(
-            'absolute top-0.5 left-0.5 size-2.5 rounded-full bg-popover transition-transform duration-spring-fast ease-spring-fast motion-reduce:transition-none',
-            checked && 'translate-x-2.5',
-          )}
-        ></span>
-      </span>
-    </span>
-  {:else}
-    <Indicator state={indeterminate ? 'mixed' : checked ? 'checked' : 'empty'} />
-  {/if}
+  <Indicator
+    state={indicator === 'switch' && !indeterminate
+      ? checked
+        ? 'on'
+        : 'off'
+      : indeterminate
+        ? 'mixed'
+        : checked
+          ? 'checked'
+          : 'empty'}
+  />
 </MenuPrimitive.CheckboxItem>

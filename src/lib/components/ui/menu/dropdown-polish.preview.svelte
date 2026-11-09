@@ -107,8 +107,7 @@
         <Menu.Sub>
           <Menu.SubTrigger icon={icons ? faFont : undefined}>
             <span class="min-w-0 flex-1">Font</span>
-            <span class="text-muted-foreground">{font === 'sans' ? 'Sans-serif' : 'Monospace'}</span
-            >
+            <span class={Menu.menuDescription}>{font === 'sans' ? 'Sans-serif' : 'Monospace'}</span>
           </Menu.SubTrigger>
           <Menu.SubContent staticPosition={false}>
             <Menu.RadioGroup bind:value={font} aria-label="Font">

@@ -43,7 +43,7 @@ describe('ViewSettingsDropdown', () => {
       ['Wrap lines', handlers.wrap, 'false'],
       ['Split view', handlers.split, 'true'],
       ['Diff indicators', handlers.diff, 'false'],
-      ['Markdown Preview', handlers.preview, 'true'],
+      ['Markdown preview', handlers.preview, 'true'],
       ['All files expanded', handlers.expand, 'true'],
     ] as const;
 

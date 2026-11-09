@@ -41,7 +41,6 @@
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import type { TaskProgressItem } from '$lib/components/chat/workspace-task-fallback';
   import * as Menu from '$lib/components/ui/menu';
-  import Fa from '$lib/components/shared/icons/FaWrapper.svelte';
   import AgentViewSettingsDropdown from './AgentViewSettingsDropdown.svelte';
 
   import { selectSpecialistName } from '$store/renderer/slices/specialists/specialists-selectors';
@@ -329,12 +328,10 @@
   {#if $agent$}
     <Menu.CheckboxItem
       indicator="switch"
+      icon={faBell}
       checked={!isNotificationsMuted}
       onCheckedChange={handleToggleNotificationsMuted}
     >
-      {#snippet leading()}
-        <Fa icon={faBell} weight="regular" class="size-(--menu-icon-size) text-muted-foreground" />
-      {/snippet}
       {m.settings_section_notifications()}
     </Menu.CheckboxItem>
   {/if}
