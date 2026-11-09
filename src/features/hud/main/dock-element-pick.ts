@@ -30,6 +30,21 @@ interface DockHitWindow {
   bounds: DockAnnotationRect;
 }
 
+/** Why a checked answer has no window: bounded window metadata only, never names or titles. */
+export interface DockHitDiagnostic {
+  /** 'system-layer': a non-app surface was front-most at the point; 'none': no window there. */
+  reason: 'system-layer' | 'none';
+  /** On-screen windows the helper could list (0 when it could list none). */
+  listCount: number;
+  blocker: {
+    pid: number;
+    windowId: number;
+    layer: number;
+    bounds: DockAnnotationRect;
+    alpha: number;
+  } | null;
+}
+
 export interface DockElementHit {
   /** False when the helper could not answer; the window check is then skipped. */
   checked: boolean;
@@ -38,6 +53,8 @@ export interface DockElementHit {
   /** Front-most app window at the point (Intent's main windows included, never the dock or overlay); null over desktop, menus, menu bar or system UI. */
   window: DockHitWindow | null;
   element: DockAxElement | null;
+  /** Present only on a checked answer without a window; null when the helper sent none. */
+  diagnostic?: DockHitDiagnostic | null;
 }
 
 export interface DockElementPickDependencies {
@@ -99,6 +116,32 @@ function parseElement(value: unknown): DockAxElement | null {
   return { role, name, rect };
 }
 
+function parseDiagnostic(value: unknown): DockHitDiagnostic | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  if (row.reason !== 'system-layer' && row.reason !== 'none') return null;
+  if (!Number.isSafeInteger(row.listCount) || (row.listCount as number) < 0) return null;
+  let blocker: DockHitDiagnostic['blocker'] = null;
+  const b = row.blocker && typeof row.blocker === 'object' ? (row.blocker as Record<string, unknown>) : null;
+  const bounds = b ? parseRect(b.bounds) : null;
+  if (
+    b &&
+    bounds &&
+    Number.isSafeInteger(b.pid) &&
+    Number.isSafeInteger(b.windowId) &&
+    Number.isSafeInteger(b.layer) &&
+    finite(b.alpha)
+  )
+    blocker = {
+      pid: b.pid as number,
+      windowId: b.windowId as number,
+      layer: b.layer as number,
+      bounds,
+      alpha: b.alpha as number,
+    };
+  return { reason: row.reason, listCount: row.listCount as number, blocker };
+}
+
 /** Parse one helper reply line; null when it is not a well-formed reply. */
 export function parseDockHitReply(line: string): { id: number; hit: DockElementHit } | null {
   let message: Record<string, unknown>;
@@ -111,13 +154,15 @@ export function parseDockHitReply(line: string): { id: number; hit: DockElementH
   const id = message.id as number;
   if (message.ok !== true) return { id, hit: UNAVAILABLE };
   const trusted = message.trusted === true;
+  const window = parseWindow(message.window);
   return {
     id,
     hit: {
       checked: true,
       access: trusted ? 'granted' : 'permission',
-      window: parseWindow(message.window),
+      window,
       element: trusted ? parseElement(message.element) : null,
+      ...(window ? {} : { diagnostic: parseDiagnostic(message.diagnostic) }),
     },
   };
 }
@@ -214,6 +259,9 @@ export class DockElementPicker {
         const reply = parseDockHitReply(line);
         if (reply) {
           if (reply.hit.checked) this.trusted = reply.hit.access === 'granted';
+          // Names what stopped the lookup (one line per such answer, metadata only).
+          if (reply.hit.checked && !reply.hit.window && this.pending.has(reply.id))
+            logger.info('Dock element picker found no app window', reply.hit.diagnostic ?? { reason: null });
           this.pending.get(reply.id)?.(reply.hit);
           return;
         }
