@@ -65,6 +65,13 @@ describe('predictDrainedQueueIds', () => {
     expect(predictDrainedQueueIds([queued('a'), wake, queued('b')], 0)).toEqual(['a']);
     expect(predictDrainedQueueIds([wake, queued('a')], 0)).toEqual([]);
   });
+
+  it('drains a machine-run wake with the batch: it has no stored notification', () => {
+    const wake = queued('wake', {
+      messageMetadata: { type: 'script_monitor_wake', monitorId: 'm1', remoteAgentId: 'a1' },
+    });
+    expect(predictDrainedQueueIds([queued('a'), wake, queued('b')], 0)).toEqual(['a', 'wake', 'b']);
+  });
 });
 
 describe('advanceQueueDrainPrediction', () => {

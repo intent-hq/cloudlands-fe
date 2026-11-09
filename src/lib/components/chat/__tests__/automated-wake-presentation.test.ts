@@ -13,6 +13,31 @@ function message(text: string, metadata?: Record<string, unknown>): AgentMessage
 }
 
 describe('automated wake presentation', () => {
+  it('renders a remote agent machine-run wake as a script card', () => {
+    const presentation = getAutomatedWakePresentation(
+      message('Script "ios-tests" (machine run on Mac Studio) exited with code 65', {
+        type: 'script_monitor_wake',
+        source: 'system',
+        monitorId: 'monitor-remote',
+        workspaceId: 'ws-1',
+        agentId: 'agent-remote',
+        scriptId: 'ios-tests',
+        runId: 'run-remote',
+        scriptName: 'ios-tests',
+        mode: 'command',
+        reason: 'finished',
+        result: { outcome: 'failed', exitCode: 65 },
+        remoteAgentId: 'agent-remote',
+        nodeId: 'node-mac',
+      }),
+    );
+    expect(presentation).toMatchObject({
+      kind: 'script',
+      attribution: { scriptName: 'ios-tests', reason: 'finished', monitorId: 'monitor-remote' },
+    });
+    expect(presentation?.bodyText).toContain('machine run on Mac Studio');
+  });
+
   it('prefers hook metadata and suppresses raw hook and queue state notes', () => {
     const presentation = getAutomatedWakePresentation(
       message(
