@@ -8,7 +8,7 @@
  * label never reads "Codebase/Project" or "Codebase/Folder" and updates live.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 
 const mocks = vi.hoisted(() => {
   const listeners = new Set<() => void>();
@@ -355,5 +355,54 @@ describe('RepoSelector form row label', () => {
     await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
     expect(container.textContent).not.toContain('Codebase/Project');
     expect(container.textContent).not.toContain('Codebase/Folder');
+  });
+});
+
+describe('RepoSelector form search and add labels', () => {
+  afterEach(() => cleanup());
+
+  async function openPicker() {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo];
+    const { container } = renderForm();
+    await fireEvent.click(container.querySelector('button')!);
+    return await screen.findByRole('dialog', { name: 'Codebase' });
+  }
+
+  it('names folders when plain folders are offered (Labs on)', async () => {
+    const dialog = await openPicker();
+    expect(within(dialog).getByRole('searchbox').getAttribute('placeholder')).toBe(
+      'Search codebases or folders',
+    );
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Add codebase or folder' }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('heading', { name: 'Add codebase or folder' })).toBeTruthy(),
+    );
+  });
+
+  it('labels an empty form field by the add action', () => {
+    for (const [offered, label] of [
+      [true, 'Add codebase or folder'],
+      [false, 'Add codebase'],
+    ] as const) {
+      mocks.plainFoldersOffered = offered;
+      const { container } = render(RepoSelector, { props: { rowLabel: 'Codebase', value: '' } });
+      expect(container.querySelector('button')?.textContent).toContain(label);
+      if (offered) expect(container.querySelector('button')?.textContent).toContain('folder');
+      else expect(container.querySelector('button')?.textContent).not.toContain('folder');
+      cleanup();
+    }
+  });
+
+  it('keeps codebase-only labels with plain folders not offered (Labs off)', async () => {
+    mocks.plainFoldersOffered = false;
+    const dialog = await openPicker();
+    expect(within(dialog).getByRole('searchbox').getAttribute('placeholder')).toBe(
+      'Search codebases',
+    );
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Add codebase' }));
+    await waitFor(() =>
+      expect(within(dialog).getByRole('heading', { name: 'Add codebase' })).toBeTruthy(),
+    );
   });
 });

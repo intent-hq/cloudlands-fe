@@ -298,7 +298,6 @@
       value={repoOnlyValue}
       onchange={handleRepoChange}
       rowLabel={m.workspace_compactInitializer_repository_label()}
-      emptyLabel={m.workspace_repoSelector_addRepository_label()}
       triggerClass={workspacePickerStyles.fieldTrigger}
       displayValue={metadataRepoName || undefined}
       triggerValueClass="text-foreground"
