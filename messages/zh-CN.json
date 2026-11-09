@@ -8450,5 +8450,7 @@
   "dock_logo_open_label": "打开 Intent",
   "dock_logo_menu_hint": "打开 Intent · 右键点击或按 ↓ 切换设备 · 拖动以移动",
   "dock_logo_move_hint": "打开 Intent · 拖动以移动",
-  "dock_recordingIndicator_open": "{status} · {elapsed} — 显示录制控件"
+  "dock_recordingIndicator_open": "{status} · {elapsed} — 显示录制控件",
+  "dock_captureEditor_assistantUnavailable_error": "此连接下无法在助手工作区中编辑。截图或录制内容会保留在草稿中。",
+  "dock_captureEditor_openFailed_error": "无法打开编辑器。截图或录制内容会保留在草稿中。"
 }

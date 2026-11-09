@@ -356,6 +356,8 @@ function* capture({
     !evidence?.annotation &&
     !evidenceOf(workspaceId, agentId)?.annotation &&
     activePair(workspaceId, agentId) &&
+    (workspaceId !== CHIEF_WORKSPACE_ID ||
+      currentDockServerCapabilities(appStore.state)?.chiefAttachments === true) &&
     dockCaptureEditorPreviewEnabled()
   )
     yield* put(dockMediaEditorOpenRequested(workspaceId, agentId, image.id, 'capture'));

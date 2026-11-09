@@ -8450,5 +8450,7 @@
   "dock_logo_open_label": "Intent 열기",
   "dock_logo_menu_hint": "Intent 열기 · 오른쪽 클릭 또는 ↓로 기기 전환 · 드래그하여 이동",
   "dock_logo_move_hint": "Intent 열기 · 드래그하여 이동",
-  "dock_recordingIndicator_open": "{status} · {elapsed} — 녹화 컨트롤 표시"
+  "dock_recordingIndicator_open": "{status} · {elapsed} — 녹화 컨트롤 표시",
+  "dock_captureEditor_assistantUnavailable_error": "이 연결에서는 어시스턴트 작업 공간에서 편집할 수 없습니다. 캡처는 초안에 남아 있습니다.",
+  "dock_captureEditor_openFailed_error": "편집기를 열 수 없습니다. 캡처는 초안에 남아 있습니다."
 }

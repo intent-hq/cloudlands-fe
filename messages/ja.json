@@ -8450,5 +8450,7 @@
   "dock_logo_open_label": "Intent を開く",
   "dock_logo_menu_hint": "Intent を開く · 右クリックまたは ↓ でマシンを切り替え · ドラッグで移動",
   "dock_logo_move_hint": "Intent を開く · ドラッグで移動",
-  "dock_recordingIndicator_open": "{status} · {elapsed} — 録画コントロールを表示"
+  "dock_recordingIndicator_open": "{status} · {elapsed} — 録画コントロールを表示",
+  "dock_captureEditor_assistantUnavailable_error": "この接続ではアシスタントのワークスペースで編集できません。キャプチャは下書きに残ります。",
+  "dock_captureEditor_openFailed_error": "エディターを開けませんでした。キャプチャは下書きに残ります。"
 }

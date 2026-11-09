@@ -8450,5 +8450,7 @@
   "dock_logo_open_label": "開啟 Intent",
   "dock_logo_menu_hint": "開啟 Intent · 按右鍵或 ↓ 切換裝置 · 拖曳以移動",
   "dock_logo_move_hint": "開啟 Intent · 拖曳以移動",
-  "dock_recordingIndicator_open": "{status} · {elapsed} — 顯示錄製控制項"
+  "dock_recordingIndicator_open": "{status} · {elapsed} — 顯示錄製控制項",
+  "dock_captureEditor_assistantUnavailable_error": "此連線無法在助理工作區中編輯。截圖或錄影內容會保留在草稿中。",
+  "dock_captureEditor_openFailed_error": "無法開啟編輯器。截圖或錄影內容會保留在草稿中。"
 }

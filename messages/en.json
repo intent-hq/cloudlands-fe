@@ -8456,5 +8456,7 @@
   "dock_logo_open_label": "Open Intent",
   "dock_logo_menu_hint": "Open Intent · Right-click or press ↓ to switch machine · Drag to move",
   "dock_logo_move_hint": "Open Intent · Drag to move",
-  "dock_recordingIndicator_open": "{status} · {elapsed} — Show recording controls"
+  "dock_recordingIndicator_open": "{status} · {elapsed} — Show recording controls",
+  "dock_captureEditor_assistantUnavailable_error": "Editing isn't available in the Assistant workspace on this connection. Your capture stays in the draft.",
+  "dock_captureEditor_openFailed_error": "The editor couldn't open. Your capture stays in the draft."
 }

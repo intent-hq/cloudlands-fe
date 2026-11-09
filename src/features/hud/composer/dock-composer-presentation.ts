@@ -288,6 +288,9 @@ export function buildDockComposerMedia(input: {
       ...(Object.keys(alerts).length ? { alerts } : {}),
     },
     ...input.actions,
+    // Where capture sources cannot be kept (the Assistant workspace without the
+    // connection's support), screenshots offer Mark up, not an editor that cannot open.
+    ...(view.fileAttachmentsEnabled === false ? { onEdit: undefined } : {}),
     onAlert,
     beforeSubmit: input.beforeSubmit,
   };

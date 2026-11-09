@@ -14,6 +14,10 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { z } from 'zod';
+import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { notify } from '$lib/components/patterns/notify';
+import { m } from '$shared/paraglide/messages.js';
+import { currentDockServerCapabilities } from '../dock-conversation-selectors';
 import { store } from '$store/renderer/store';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { serializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
@@ -310,6 +314,12 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId, origin] }: Ret
   preparation: Channel<MediaPreparation>): SagaGenerator<void> {
   const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
   if (!authority) return;
+  // The Assistant workspace keeps capture sources only where the connection advertises
+  // it (as for its other attachments): say so instead of trying and failing silently.
+  if (workspaceId === CHIEF_WORKSPACE_ID && currentDockServerCapabilities(store.state)?.chiefAttachments !== true) {
+    notify.warning(m.dock_captureEditor_assistantUnavailable_error());
+    return;
+  }
   const current = () => getPrincipalActionContext(store.state) === authority && isDockBindingCurrent(binding);
   let evidence = evidenceOf(workspaceId, agentId);
   let row = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])].find((item) => item.id === logicalId);
@@ -403,6 +413,7 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId, origin] }: Ret
     };
     const opened = (yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request))) as
       DockCaptureEditorOpenResult | undefined;
+    if (!opened?.ok && current()) notify.warning(m.dock_captureEditor_openFailed_error());
     // A new capture's editor takes over: the dock closes behind it, as Escape would,
     // once the editor is open and only for the conversation still shown. Live input
     // (dictation, a recording, an annotate session, the mic) keeps it open.
@@ -492,7 +503,13 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
   const completed = yield* actionChannel(dockMediaEditSaveSettled, buffers.expanding());
   yield* takeEveryByContextFIFO(dockMediaEditorOpenRequested,
     ({ payload: [workspaceId, agentId] }: ReturnType<typeof dockMediaEditorOpenRequested>) => JSON.stringify([workspaceId, agentId]),
-    function* (action) { try { yield* openEditor(action, preparation); } catch { /* Source/placement errors keep the current draft. */ } }, {});
+    function* (action) {
+      try { yield* openEditor(action, preparation); }
+      catch {
+        // Source/placement errors keep the current draft; the person is told the editor did not open.
+        notify.warning(m.dock_captureEditor_openFailed_error());
+      }
+    }, {});
   yield* takeEveryByContextFIFO(
     dockMediaEditSaveRequested,
     ({ payload: [, request, authority] }: SaveAction) =>

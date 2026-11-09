@@ -8450,5 +8450,7 @@
   "dock_logo_open_label": "Abrir Intent",
   "dock_logo_menu_hint": "Abrir Intent · Clic derecho o ↓ para cambiar de equipo · Arrastra para mover",
   "dock_logo_move_hint": "Abrir Intent · Arrastra para mover",
-  "dock_recordingIndicator_open": "{status} · {elapsed} — Mostrar controles de grabación"
+  "dock_recordingIndicator_open": "{status} · {elapsed} — Mostrar controles de grabación",
+  "dock_captureEditor_assistantUnavailable_error": "La edición no está disponible en el espacio de trabajo del Asistente con esta conexión. Tu captura se queda en el borrador.",
+  "dock_captureEditor_openFailed_error": "No se pudo abrir el editor. Tu captura se queda en el borrador."
 }
