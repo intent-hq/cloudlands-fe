@@ -397,7 +397,6 @@
   "settings_plugins_skillCount_one": ["fr", "es"],
   "settings_plugins_skillCount_many": ["fr", "es"],
   "cloudMachines_agent_chip": "*",
-  "cloudMachines_cost_estimate": "*",
   "cloudMachines_startOn_entry_label": "*",
   "cloudMachines_form_name_label": ["de"],
   "cloudMachines_row_template": "*",

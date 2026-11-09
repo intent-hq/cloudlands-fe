@@ -1,6 +1,6 @@
 /**
- * Display helpers for cloud machines: sandbox names, sizes, uptime, cost
- * estimates and the three cloud error codes in the app's words.
+ * Display helpers for cloud machines: sandbox names and groups, sizes,
+ * uptime, hourly cost and the three cloud error codes in the app's words.
  */
 import { m } from '$shared/paraglide/messages.js';
 import {
@@ -71,21 +71,51 @@ const usd = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 2,
 });
 
-/** "≈ $0.19"; "< $0.01" for tiny amounts. */
-export function formatCost(amount: number): string {
-  if (amount > 0 && amount < 0.005) return m.cloudMachines_cost_tiny();
-  return m.cloudMachines_cost_estimate({ amount: usd.format(amount) });
-}
-
 /** "About $0.33 per running hour" for a size; null for an unknown size. */
 export function hourlyCostLabel(size: string): string | null {
   const hourly = estimateCloudCost(size, 3600);
   return hourly === null ? null : m.cloudMachines_size_hourly({ amount: usd.format(hourly) });
 }
 
-/** The sandbox's estimated cost so far; null for an unknown size. */
-export function sandboxCost(machine: RemoteMachine, seconds: number): number | null {
-  return machine.cloud ? estimateCloudCost(String(machine.cloud.size), seconds) : null;
+/** Sandboxes of one workspace; `key` is the workspace id, or "" for Other. */
+export interface SandboxGroup {
+  key: string;
+  name: string;
+  sandboxes: RemoteMachine[];
+}
+
+/**
+ * Sandboxes by workspace, groups by name with Other last, newest start first
+ * in each. A sandbox goes to Other when this app has no name for its workspace.
+ */
+export function groupSandboxesByWorkspace(
+  sandboxes: readonly RemoteMachine[],
+  workspaceName: (workspaceId: string) => string | null,
+): SandboxGroup[] {
+  const groups = new Map<string, SandboxGroup>();
+  for (const machine of sandboxes) {
+    const id = machine.cloud?.workspaceId;
+    const name = id ? workspaceName(id) : null;
+    const key = id && name ? id : '';
+    let group = groups.get(key);
+    if (!group) {
+      group = { key, name: name ?? m.cloudMachines_sandboxes_otherWorkspace(), sandboxes: [] };
+      groups.set(key, group);
+    }
+    group.sandboxes.push(machine);
+  }
+  for (const group of groups.values())
+    group.sandboxes.sort(
+      (a, b) =>
+        (b.cloud?.startedAt ?? '').localeCompare(a.cloud?.startedAt ?? '') ||
+        a.id.localeCompare(b.id),
+    );
+  return [...groups.values()].sort(
+    (a, b) =>
+      Number(a.key === '') - Number(b.key === '') ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) ||
+      a.key.localeCompare(b.key),
+  );
 }
 
 /** Title and description of a cloud error, for notices and form errors. */
