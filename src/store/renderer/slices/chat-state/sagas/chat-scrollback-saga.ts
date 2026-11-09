@@ -265,7 +265,10 @@ function* fetchOlderPageWorker(
   // the removeWorkspaceSessions / clearAllSessions bulk removals,
   // clearHistorySegment, the §7.1 `resumed: false` snapshot discard) nulls
   // it via scrollbackContinuationReset / the snapshot reducer's atomic
-  // reset. And it can be the walk's only way to make progress: a page whose
+  // reset. A tail write that drops older rows under an empty segment leaves
+  // the cursor below those rows; the reducer marks that boundary unknown and
+  // opens the gap when this page lands (`tailBoundaryUnknown`).
+  // And it can be the walk's only way to make progress: a page whose
   // rows are all already tail-resident merges to an EMPTY segment, so
   // re-anchoring at the tail's oldest row would refetch the identical page
   // forever. The anchored seek is only the no-cursor fallback.
