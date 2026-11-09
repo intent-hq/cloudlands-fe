@@ -1,5 +1,6 @@
 import type { QueuedMessage } from '$shared/types';
 import { isQueuedMessageReadyForBatch } from '$lib/utils/queued-message-permissions';
+import { isDurableScriptMonitorWake } from '$lib/utils/script-monitor-wake-attribution';
 
 /**
  * How long a predicted drain may show queued rows as sent. The daemon normally
@@ -59,7 +60,7 @@ export const initialQueueDrainPredictorState: QueueDrainPredictorState = {
 };
 
 function isScriptMonitorWake(message: QueuedMessage): boolean {
-  return message.messageMetadata?.type === 'script_monitor_wake';
+  return isDurableScriptMonitorWake(message.messageMetadata);
 }
 
 /**
