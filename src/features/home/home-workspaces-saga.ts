@@ -17,6 +17,9 @@ import {
   homeWorkspaceReturned,
   homeSetAsideKnownAttentionRecorded,
   homeSetAsideSynced,
+  homeRepositoryHidden,
+  homeRepositoriesUnhidden,
+  homeHiddenReposSynced,
 } from './home-workspaces-slice';
 import { homeSetAsideSaga } from './home-set-aside-saga';
 
@@ -29,6 +32,7 @@ import {
   readHomePersistence,
   persistedHomeState,
   normalizeHomeSetAside,
+  normalizeHomeHiddenRepos,
 } from './home-workspaces-persistence';
 
 export function* homeWorkspacesSaga(): SagaGenerator<void> {
@@ -39,7 +43,7 @@ export function* homeWorkspacesSaga(): SagaGenerator<void> {
   ]);
 }
 
-/** View-only writes; they must not replace set-aside records another window saved. */
+/** View-only writes; they must not replace personal records another window saved. */
 const viewActions = new Set<string>([updateHomeWorkspaceView.type, resetHomeWorkspaceView.type]);
 
 const persistedActions = new Set<string>([
@@ -50,6 +54,8 @@ const persistedActions = new Set<string>([
   homeWorkspaceReturned.type,
   homeSetAsideKnownAttentionRecorded.type,
   workspaceDeleted.type,
+  homeRepositoryHidden.type,
+  homeRepositoriesUnhidden.type,
 ]);
 
 /** Serial storage work keeps identity changes and rapid configuration edits ordered. */
@@ -81,22 +87,36 @@ export function* homeWorkspacePersistenceSaga(): SagaGenerator<void> {
       } else if (scope && action) {
         const state = yield* select(selectHomeWorkspaceView.select);
         if (state.persistenceScope === scope && persistedActions.has(action.type)) {
-          let setAside = state.setAside;
+          let { setAside, hiddenRepos } = state;
           if (viewActions.has(action.type)) {
-            // Another window may have saved newer set-aside records since our last sync.
+            // Another window may have saved newer personal records since our last sync.
             const stored = yield* call(getLocalStorageJSON<unknown>, scope);
             if (stored !== undefined && stored !== null) {
-              const fresh = readHomePersistence(stored).setAside ?? {};
+              const fresh = readHomePersistence(stored);
+              const freshSetAside = fresh.setAside ?? {};
+              const freshHidden = fresh.hiddenRepos ?? {};
+              const sameScope = (yield* select(selectHomePersistenceScope.select)) === scope;
               if (
-                JSON.stringify(fresh) !== JSON.stringify(normalizeHomeSetAside(state.setAside)) &&
-                (yield* select(selectHomePersistenceScope.select)) === scope
+                sameScope &&
+                JSON.stringify(freshSetAside) !==
+                  JSON.stringify(normalizeHomeSetAside(state.setAside))
               ) {
-                yield* put(homeSetAsideSynced(scope, fresh));
+                yield* put(homeSetAsideSynced(scope, freshSetAside));
               }
-              setAside = fresh;
+              if (
+                sameScope &&
+                JSON.stringify(freshHidden) !==
+                  JSON.stringify(normalizeHomeHiddenRepos(state.hiddenRepos))
+              ) {
+                yield* put(homeHiddenReposSynced(scope, freshHidden));
+              }
+              setAside = freshSetAside;
+              hiddenRepos = freshHidden;
             }
           }
-          const serialized = JSON.stringify(persistedHomeState({ ...state, setAside }));
+          const serialized = JSON.stringify(
+            persistedHomeState({ ...state, setAside, hiddenRepos }),
+          );
           if (serialized !== (yield* call(getLocalStorageItem, scope))) {
             yield* call(setLocalStorageItem, scope, serialized);
             const observed = yield* call(getLocalStorageItem, scope);
@@ -113,7 +133,7 @@ export function* homeWorkspacePersistenceSaga(): SagaGenerator<void> {
   }
 }
 
-/** Keeps set-aside records in step across app windows sharing this account/backend. */
+/** Keeps set-aside and hidden-repository records in step across app windows. */
 function* homeSetAsideStorageSyncSaga(): SagaGenerator<void> {
   if (typeof window === 'undefined') return;
   const changes = eventChannel<string>((emit) => {
@@ -129,7 +149,9 @@ function* homeSetAsideStorageSyncSaga(): SagaGenerator<void> {
       if (!scope || (key !== scope && key !== '')) continue;
       const stored = yield* call(getLocalStorageJSON<unknown>, scope);
       if ((yield* select(selectHomePersistenceScope.select)) !== scope) continue;
-      yield* put(homeSetAsideSynced(scope, readHomePersistence(stored).setAside ?? {}));
+      const fresh = readHomePersistence(stored);
+      yield* put(homeSetAsideSynced(scope, fresh.setAside ?? {}));
+      yield* put(homeHiddenReposSynced(scope, fresh.hiddenRepos ?? {}));
     }
   } finally {
     changes.close();

@@ -22,7 +22,12 @@ vi.mock('./home-workspaces-selectors', () => ({
   selectHomePersistenceScope: { select: (state: any) => state.scope },
 }));
 import { homeWorkspacePersistenceSaga } from './home-workspaces-saga';
-import { homeWorkspacesReducer, updateHomeWorkspaceView } from './home-workspaces-slice';
+import {
+  homeRepositoriesUnhidden,
+  homeRepositoryHidden,
+  homeWorkspacesReducer,
+  updateHomeWorkspaceView,
+} from './home-workspaces-slice';
 import { homePersistenceKey } from './home-workspaces-persistence';
 
 // Failure cases: update before identity known; first hydration overwriting storage;
@@ -116,5 +121,24 @@ describe('Home persistence behavior', () => {
     expect(run.state().homeWorkspaces.persistenceError).toBe(false);
     expect(JSON.parse(mocks.values.get(key)!).configuration.query).toBe('recovered');
     run.task.cancel();
+  });
+  it('keeps a repository another window hid when this window saves its view', async () => {
+    const key = homePersistenceKey('one', 'alice');
+    const a = harness(key);
+    const b = harness(key);
+    await settle();
+    a.dispatch(homeRepositoryHidden('acme/app', 1700000000000));
+    await settle();
+    b.dispatch(updateHomeWorkspaceView({ query: 'stale window' }));
+    await settle();
+    const stored = JSON.parse(mocks.values.get(key)!);
+    expect(stored.configuration.query).toBe('stale window');
+    expect(stored.hiddenRepos).toEqual({ 'acme/app': 1700000000000 });
+    expect(b.state().homeWorkspaces.hiddenRepos).toEqual({ 'acme/app': 1700000000000 });
+    b.dispatch(homeRepositoriesUnhidden(['acme/app']));
+    await settle();
+    expect(JSON.parse(mocks.values.get(key)!)).not.toHaveProperty('hiddenRepos');
+    a.task.cancel();
+    b.task.cancel();
   });
 });
