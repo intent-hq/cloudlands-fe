@@ -8425,6 +8425,7 @@
   "layout_daemonStatus_connectedBackends_many": "백엔드 {count}개",
   "layout_daemonStatus_connectedMachines_one": "머신 {count}대",
   "layout_daemonStatus_connectedMachines_many": "머신 {count}대",
+  "layout_daemonStatus_machinesWithPaused": "{machines} (일시 중지 {paused})",
   "settings_section_plugins": "플러그인",
   "settings_plugins_description": "플러그인은 제공자와 관계없이 모든 에이전트에 스킬과 MCP 서버를 추가합니다. 변경 사항은 새 에이전트에 적용됩니다.",
   "settings_plugins_source_placeholder": "폴더 경로 또는 Git URL",

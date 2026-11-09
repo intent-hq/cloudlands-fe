@@ -20,6 +20,8 @@ import type {
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
 import type { ConnectionRecord } from '$shared/types/connections';
+import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
+import { E2B_SANDBOXES } from '../../test/cloud-machines-preview';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
 import { catalogNow } from '$lib/component-catalog/catalog-clock';
 
@@ -191,6 +193,8 @@ interface Scenario {
   remoteLinks?: { backends: number; machines: number };
   /** Seed saved machines so the menu shows its Machines list. */
   machines?: boolean;
+  /** Paused E2B sandboxes seeded into the cloud-machine rows. */
+  pausedSandboxes?: number;
   failures?:
     | { kind: DaemonStatusCheckFailureKind; count: number }
     | DaemonStatusCheckFailureKind[]
@@ -249,6 +253,7 @@ function setup({
   remoteLinks,
   failures,
   machines = false,
+  pausedSandboxes = 0,
 }: Scenario) {
   return () => {
     if (liveScenes > 0) {
@@ -281,6 +286,19 @@ function setup({
         ),
       );
     }
+    if (pausedSandboxes > 0) {
+      store.dispatch(
+        cloudMachinesLoaded({
+          supported: true,
+          providers: [],
+          machines: Array.from({ length: pausedSandboxes }, (_, i) => ({
+            ...E2B_SANDBOXES[2],
+            id: `paused-${i}`,
+          })),
+          readAt: 0,
+        }),
+      );
+    }
     if (agentMemory) {
       // No saga runs in the preview, so the breakdown's first open shows this
       // seeded sample instead of waiting on agent.memoryUsage.
@@ -303,6 +321,11 @@ function setup({
     }
     return () => {
       liveScenes -= 1;
+      if (pausedSandboxes > 0) {
+        store.dispatch(
+          cloudMachinesLoaded({ supported: false, providers: [], machines: [], readAt: 0 }),
+        );
+      }
       if (agentMemory) store.dispatch(agentMemoryBreakdownClosed());
       store.dispatch(connectionStatusChanged('disconnected'));
       if (machines) {
@@ -369,6 +392,22 @@ export const preview = definePreview<Record<string, never>>({
     'links-both': {
       props: {},
       setup: setup({ agentMemory: true, remoteLinks: { backends: 2, machines: 3 } }),
+    },
+    'links-paused-only': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteLinks: { backends: 0, machines: 0 },
+        pausedSandboxes: 1,
+      }),
+    },
+    'links-live-and-paused': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteLinks: { backends: 2, machines: 2 },
+        pausedSandboxes: 1,
+      }),
     },
     'degraded-timeout': {
       props: {},

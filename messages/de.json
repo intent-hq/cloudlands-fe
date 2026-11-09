@@ -8425,6 +8425,7 @@
   "layout_daemonStatus_connectedBackends_many": "{count} Backends",
   "layout_daemonStatus_connectedMachines_one": "{count} Rechner",
   "layout_daemonStatus_connectedMachines_many": "{count} Rechner",
+  "layout_daemonStatus_machinesWithPaused": "{machines} ({paused} pausiert)",
   "settings_section_plugins": "Plugins",
   "settings_plugins_description": "Plugins fügen jedem Agenten Skills und MCP-Server hinzu, unabhängig vom Anbieter. Änderungen gelten für neue Agenten.",
   "settings_plugins_source_placeholder": "Ordnerpfad oder Git-URL",

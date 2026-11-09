@@ -8425,6 +8425,7 @@
   "layout_daemonStatus_connectedBackends_many": "{count} backends",
   "layout_daemonStatus_connectedMachines_one": "{count} machine",
   "layout_daemonStatus_connectedMachines_many": "{count} machines",
+  "layout_daemonStatus_machinesWithPaused": "{machines} ({paused} en pause)",
   "settings_section_plugins": "Plugins",
   "settings_plugins_description": "Les plugins ajoutent des skills et des serveurs MCP à chaque agent, quel que soit son fournisseur. Les changements s'appliquent aux nouveaux agents.",
   "settings_plugins_source_placeholder": "Chemin de dossier ou URL git",

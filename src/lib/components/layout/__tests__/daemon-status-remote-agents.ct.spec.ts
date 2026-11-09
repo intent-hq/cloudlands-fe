@@ -121,3 +121,22 @@ test('Both rows show plural counts', async ({ mount, page }, testInfo) => {
   await expect(rowFor(panel, 'Running agents on')).toContainText('3 machines');
   await attach(testInfo, 'status-panel-links-both.png', await panel.screenshot());
 });
+
+test('Paused sandboxes keep the machines row and trail the live count', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(DaemonStatusIndicator, scene('links-live-and-paused'));
+  const panel = await openStatusPanel(page);
+  await expect(rowFor(panel, 'Running agents on')).toContainText('2 machines (1 paused)');
+  await attach(testInfo, 'status-panel-live-and-paused.png', await panel.screenshot());
+});
+
+test('Only paused sandboxes still show the machines row', async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(DaemonStatusIndicator, scene('links-paused-only'));
+  const panel = await openStatusPanel(page);
+  await expect(rowFor(panel, 'Running agents on')).toContainText('0 machines (1 paused)');
+  await expect(panel.getByText('Running agents for', { exact: true })).toHaveCount(0);
+});

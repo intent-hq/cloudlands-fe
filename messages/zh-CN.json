@@ -8425,6 +8425,7 @@
   "layout_daemonStatus_connectedBackends_many": "{count} 个后端",
   "layout_daemonStatus_connectedMachines_one": "{count} 台机器",
   "layout_daemonStatus_connectedMachines_many": "{count} 台机器",
+  "layout_daemonStatus_machinesWithPaused": "{machines}（{paused} 个已暂停）",
   "settings_section_plugins": "插件",
   "settings_plugins_description": "插件会为每个代理添加技能和 MCP 服务器，无论其使用哪个提供商。更改将应用于新代理。",
   "settings_plugins_source_placeholder": "文件夹路径或 Git URL",

@@ -8425,6 +8425,7 @@
   "layout_daemonStatus_connectedBackends_many": "{count} 個後端",
   "layout_daemonStatus_connectedMachines_one": "{count} 台機器",
   "layout_daemonStatus_connectedMachines_many": "{count} 台機器",
+  "layout_daemonStatus_machinesWithPaused": "{machines}（{paused} 個已暫停）",
   "settings_section_plugins": "外掛程式",
   "settings_plugins_description": "外掛程式會為每個代理程式新增技能和 MCP 伺服器，無論其使用哪個提供者。變更會套用到新的代理程式。",
   "settings_plugins_source_placeholder": "資料夾路徑或 Git URL",

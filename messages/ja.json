@@ -8425,6 +8425,7 @@
   "layout_daemonStatus_connectedBackends_many": "{count} 個のバックエンド",
   "layout_daemonStatus_connectedMachines_one": "{count} 台のマシン",
   "layout_daemonStatus_connectedMachines_many": "{count} 台のマシン",
+  "layout_daemonStatus_machinesWithPaused": "{machines}（一時停止中 {paused}）",
   "settings_section_plugins": "プラグイン",
   "settings_plugins_description": "プラグインは、プロバイダーに関係なくすべてのエージェントにスキルと MCP サーバーを追加します。変更は新しいエージェントに適用されます。",
   "settings_plugins_source_placeholder": "フォルダーのパスまたは Git URL",
