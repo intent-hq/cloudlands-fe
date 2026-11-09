@@ -224,9 +224,13 @@ function createSyntheticNative() {
           frames: marks.map((mark) => ({
             markId: mark.id,
             sourcePath: `/synthetic/exports/${request.jobId}-${mark.id}.jpg`,
-            // Main fits exported frames to bounded JPEGs before they reach the renderer.
+            // Main fits exported frames to bounded JPEGs and certifies their exact prompt
+            // bytes; tests may drop the certificate (an older or unfitted export).
             mimeType: 'image/jpeg',
             size: (globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ?? 4_000,
+            ...((globalThis as { __syntheticFrameUncertified?: boolean }).__syntheticFrameUncertified ? {} : {
+              promptBase64Bytes: Math.ceil(((globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ?? 4_000) / 3) * 4,
+            }),
           })),
         },
       };

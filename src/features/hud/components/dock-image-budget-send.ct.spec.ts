@@ -150,3 +150,19 @@ test('three referenced images of unknown size are not refused locally', async ({
   expect(await page.evaluate(() => (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError ?? null)).toBeNull();
   await writeFile(info.outputPath('image-budget-unknown-refs-receipt.json'), JSON.stringify({ refs: 3, sizes: 'unknown', sent }, null, 2));
 });
+
+test('frames without an exact-size certificate are unknown and not refused locally', async ({ mount, page }, info) => {
+  const component = await mount(ComposerE2EHarness);
+  await recordWithMark(page, component);
+  // Same bytes as the refused case, but the export did not certify them (older or unfitted).
+  await page.evaluate(() => {
+    (globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes = 600_000;
+    (globalThis as { __syntheticFrameUncertified?: boolean }).__syntheticFrameUncertified = true;
+  });
+  expect(await editRecording(page, 19)).toBe(true);
+  await (component.getByRole('button', { name: /^Send/ }) as any).click();
+  await expect.poll(async () => (await sends(page)).length).toBe(1);
+  const [sent] = await sends(page);
+  expect(sent.images).toBe(19);
+  await writeFile(info.outputPath('image-budget-uncertified-receipt.json'), JSON.stringify({ frames: 19, frameBytes: 600_000, certified: false, sent }, null, 2));
+});
