@@ -1109,9 +1109,6 @@ type SessionComparisonSnapshot = Pick<
   dismissedQuestionsMessageId: string | undefined;
   pendingQuestionsMessageId: string | undefined;
   lastSeenMessageId: string | undefined;
-  sandboxId: string | undefined;
-  sandboxPath: string | undefined;
-  sandboxBranch: string | undefined;
   waitingForAgentIdsKey: string | undefined;
   turnInFlight: boolean | undefined;
   feOwnedFieldsKey: string;
@@ -1176,9 +1173,6 @@ function toSessionComparisonSnapshot(session: StoredAgentSession): SessionCompar
         : undefined,
     lastSeenMessageId:
       typeof metadata?.lastSeenMessageId === 'string' ? metadata.lastSeenMessageId : undefined,
-    sandboxId: typeof metadata?.sandboxId === 'string' ? metadata.sandboxId : undefined,
-    sandboxPath: typeof metadata?.sandboxPath === 'string' ? metadata.sandboxPath : undefined,
-    sandboxBranch: typeof metadata?.sandboxBranch === 'string' ? metadata.sandboxBranch : undefined,
     waitingForAgentIdsKey: Array.isArray(session.waitingForAgentIds)
       ? session.waitingForAgentIds.join(',')
       : undefined,
