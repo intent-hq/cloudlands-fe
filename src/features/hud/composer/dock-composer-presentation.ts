@@ -182,7 +182,11 @@ export function buildDockComposerMedia(input: {
   );
   const attachments: DockComposerAttachment[] = [
     ...view.tiles
-      .filter(({ image }) => image.source !== 'annotate' || !recordingImages.has(image.id))
+      .filter(({ image, marks }) =>
+        image.source !== 'annotate' ||
+        !recordingImages.has(image.id) ||
+        marks.some(({ mark }) => !mark.clipId),
+      )
       .map(({ image, marks }): DockComposerAttachment => ({
         kind: 'image',
         id: image.contextItemId,
