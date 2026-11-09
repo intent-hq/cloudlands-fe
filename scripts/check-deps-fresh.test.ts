@@ -1,3 +1,4 @@
+// @verify-changed-triggers: package.json, scripts/*.mjs, scripts/*.cjs, playwright/*.mjs
 import { spawnSync } from 'node:child_process';
 import {
   copyFileSync,
