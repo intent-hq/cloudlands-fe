@@ -305,9 +305,9 @@ describe('HudHeader sound-effects toggle', () => {
   /**
    * The speaker button drives the shared localStorage-backed enable state
    * (features/hud/sound/hud-sound-state.ts) the HUD sound service gates on.
-   * The state is module-global (read from localStorage once at import; the
-   * test-setup localStorage mock is a no-op vi.fn), so each test resets it
-   * to the OFF default and persistence is asserted via setItem calls.
+   * The state is module-global (read from localStorage once at import), so
+   * each test resets it to the OFF default and persistence is asserted via
+   * setItem calls.
    */
   beforeEach(() => {
     setHudSoundEnabled(false);

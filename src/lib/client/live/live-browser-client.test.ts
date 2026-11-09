@@ -3,7 +3,7 @@
  *
  * Covers read/write round-trip, MAX_RECENT_URLS cap, and corrupt/missing data handling.
  */
-import { describe, it, expect, expectTypeOf, beforeAll, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, expectTypeOf, beforeEach, afterEach, vi } from 'vitest';
 
 // FAKE transport for the REV-2 tab-registry RPCs — no request reaches a daemon.
 vi.mock('./backend-transport', () => ({
@@ -17,41 +17,11 @@ import type { RecentUrl } from '$store/renderer/slices/browser/browser-types';
 import { storageKey } from '$store/renderer/slices/browser/browser-storage-utils';
 import { safeLocalStorage } from '$lib/utils/safe-storage';
 
-/** Wire an in-memory Map to window.localStorage for tests. */
-function installMemoryLocalStorage(): Map<string, string> {
-  const mem = new Map<string, string>();
-  vi.mocked(window.localStorage.getItem).mockImplementation((key: string) => mem.get(key) ?? null);
-  vi.mocked(window.localStorage.setItem).mockImplementation((key: string, value: string) => {
-    mem.set(key, String(value));
-  });
-  vi.mocked(window.localStorage.removeItem).mockImplementation((key: string) => {
-    mem.delete(key);
-  });
-  vi.mocked(window.localStorage.clear).mockImplementation(() => {
-    mem.clear();
-  });
-  Object.defineProperty(window.localStorage, 'length', {
-    get: () => mem.size,
-    configurable: true,
-  });
-  return mem;
-}
-
 describe('LiveBrowserClient', () => {
   let client: LiveBrowserClient;
-  let mem: Map<string, string>;
-
-  beforeAll(() => {
-    mem = installMemoryLocalStorage();
-  });
 
   beforeEach(() => {
     client = new LiveBrowserClient();
-    mem.clear();
-  });
-
-  afterEach(() => {
-    mem.clear();
   });
 
   describe('recentUrls', () => {

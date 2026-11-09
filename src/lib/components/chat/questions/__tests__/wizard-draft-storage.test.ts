@@ -18,34 +18,6 @@ import {
 } from '../wizard-draft-storage';
 import type { Question } from '$shared/types/question-resource';
 
-// The global test-setup localStorage stub is a no-op, and the shared
-// `installLocalStorageMock` helper hides entries in a private Map — invisible
-// to `safeLocalStorage.keysWithPrefix` (`Object.keys(window.localStorage)`),
-// which pruning depends on. Install a functional mock whose entries are real
-// enumerable own properties, matching Web Storage enumeration semantics.
-function installEnumerableLocalStorage(): void {
-  const storage: Record<string, string> = {};
-  const methods: Record<string, unknown> = {
-    getItem: (key: string) =>
-      Object.prototype.hasOwnProperty.call(storage, key) ? storage[key] : null,
-    setItem: (key: string, value: string) => {
-      storage[key] = String(value);
-    },
-    removeItem: (key: string) => {
-      delete storage[key];
-    },
-    clear: () => {
-      for (const key of Object.keys(storage)) delete storage[key];
-    },
-  };
-  for (const [name, fn] of Object.entries(methods)) {
-    Object.defineProperty(storage, name, { value: fn, enumerable: false, configurable: true });
-  }
-  Object.defineProperty(window, 'localStorage', { configurable: true, value: storage });
-}
-
-installEnumerableLocalStorage();
-
 const SINGLE: Question = {
   attachmentId: 'tar-aaa111bbb222',
   header: 'Token storage',
@@ -78,7 +50,6 @@ const DRAFT: WizardDraft = {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  window.localStorage.clear();
   vi.useRealTimers();
 });
 
@@ -186,17 +157,22 @@ describe('pruning on save', () => {
     saveWizardDraft(staleKey, DRAFT);
     vi.setSystemTime(now);
 
-    const realSetItem = window.localStorage.setItem.bind(window.localStorage);
-    vi.spyOn(window.localStorage, 'setItem').mockImplementation((key, value) => {
+    const setItem = vi.mocked(window.localStorage.setItem);
+    const realSetItem = setItem.getMockImplementation()!;
+    setItem.mockImplementation((key, value) => {
       if (window.localStorage.getItem(staleKey) !== null) {
         throw new DOMException('quota exceeded', 'QuotaExceededError');
       }
       realSetItem(key, value);
     });
 
-    saveWizardDraft(KEY, DRAFT);
-    expect(window.localStorage.getItem(staleKey)).toBeNull();
-    expect(loadWizardDraft(KEY, QUESTIONS)).toEqual(DRAFT);
+    try {
+      saveWizardDraft(KEY, DRAFT);
+      expect(window.localStorage.getItem(staleKey)).toBeNull();
+      expect(loadWizardDraft(KEY, QUESTIONS)).toEqual(DRAFT);
+    } finally {
+      setItem.mockReset();
+    }
   });
 });
 

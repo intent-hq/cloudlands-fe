@@ -8,7 +8,7 @@
  * into the reference `{ success: false, error }` envelope. Also asserts the
  * feature-codes gate rejects (never a fake "Feature activated!").
  */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport only: the daemon bridge is mocked so no IPC ever fires.
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -26,32 +26,15 @@ const mockedRequest = vi.mocked(backendRequest);
 
 type Envelope = { success: boolean; data?: unknown; error?: string };
 
-// test-setup replaces window.localStorage with bare vi.fn() mocks; back them
-// with an in-memory map so the FE-only persistence path is observable.
-const localStore = new Map<string, string>();
-
 describe('settings-legacy-bridge-seeder', () => {
   beforeAll(async () => {
     // Importing the seeder runs its `registerMockIpcHandler` side effects.
     await import('./settings-legacy-bridge-seeder');
   });
 
-  beforeEach(() => {
-    vi.mocked(window.localStorage.getItem).mockImplementation(
-      (key: string) => localStore.get(key) ?? null,
-    );
-    vi.mocked(window.localStorage.setItem).mockImplementation((key: string, value: string) => {
-      localStore.set(key, String(value));
-    });
-    vi.mocked(window.localStorage.removeItem).mockImplementation((key: string) => {
-      localStore.delete(key);
-    });
-  });
-
   afterEach(() => {
     __resetSettingsReadCacheForTests();
     vi.clearAllMocks();
-    localStore.clear();
   });
 
   describe('settings:get', () => {

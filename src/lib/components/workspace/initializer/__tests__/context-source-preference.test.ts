@@ -4,7 +4,7 @@
  * Unit tests for the Add-context picker's last-used-source persistence and
  * provider ordering helpers.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   LAST_SOURCE_STORAGE_KEY,
   loadLastUsedSource,
@@ -68,21 +68,9 @@ describe('orderSources', () => {
 });
 
 describe('persistence', () => {
-  // The global test setup replaces window.localStorage with a non-storing
-  // vi.fn mock; back it with an in-memory store for round-trip tests.
-  let store: Map<string, string>;
-
-  beforeEach(() => {
-    store = new Map();
-    vi.mocked(localStorage.getItem).mockImplementation((key) => store.get(key) ?? null);
-    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-      store.set(key, String(value));
-    });
-  });
-
   afterEach(() => {
-    vi.mocked(localStorage.getItem).mockImplementation(() => null);
-    vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
+    vi.mocked(localStorage.getItem).mockReset();
+    vi.mocked(localStorage.setItem).mockReset();
   });
 
   it('round-trips the saved source', () => {
