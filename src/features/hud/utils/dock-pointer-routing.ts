@@ -52,7 +52,8 @@ export function createDockPointerRegionController(
     const element = surface();
     if (destroyed || !element || typeof inside !== 'boolean') return;
     if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x + y)) return;
-    const hovered = element.matches(':hover');
+    const hoverScope = element.closest('[data-dock-hover-scope]') ?? element;
+    const hovered = hoverScope.matches(':hover');
     // Enter only when Chromium has not; leave only what was replayed and is not hovered.
     if (inside ? hovered : !replayedInside || hovered) {
       if (inside) replayedInside = false;

@@ -960,6 +960,7 @@
 <div
   bind:this={rootElement}
   class="adaptive-dock"
+  data-dock-hover-scope
   class:notch-coordinate-frame={notch &&
     !!placement.cutout &&
     placement.phase === 'idle' &&
