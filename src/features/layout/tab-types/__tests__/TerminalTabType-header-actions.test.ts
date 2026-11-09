@@ -33,7 +33,7 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ dispatch, state: mockState });
 });
 
-import { scriptsClient } from '$features/scripts/scripts.client';
+import { scriptsClient } from '$features/scripts/scripts.test-helpers';
 import {
   scriptOperationSucceeded,
   scriptsReducer,

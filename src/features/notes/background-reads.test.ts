@@ -1,4 +1,5 @@
 import {
+  ensureNoteContentLoadedRequested,
   noteContentViewRequested,
   noteContentViewReleased,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
@@ -14,7 +15,6 @@ import {
 } from '../../test/mocks/backend-transport.mock';
 import { store } from '$store/renderer/store';
 import { normalizeNote } from '$lib/client/live/live-notes-client';
-import { ensureNoteContentLoaded, __resetNotesReadServiceForTests } from './notes-read-service';
 import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import {
   acquireWorkspaceTasksDemand,
@@ -121,7 +121,6 @@ describe('background reads through the real store, sagas, clients and event brid
   beforeEach(() => {
     vi.useFakeTimers();
     resetMockBackend();
-    __resetNotesReadServiceForTests();
     __resetDaemonEventsBridgeForTests();
     backend = installMockBackend();
     backend.onRequest('agent.getSubscriptions', empty);
@@ -146,7 +145,6 @@ describe('background reads through the real store, sagas, clients and event brid
       .reverse()
       .forEach((stop) => stop());
     __resetDaemonEventsBridgeForTests();
-    __resetNotesReadServiceForTests();
     dispose();
     resetMockBackend();
     vi.useRealTimers();
@@ -411,8 +409,8 @@ describe('background reads through the real store, sagas, clients and event brid
   it('settles concurrent note content demand through one shared transport read', async () => {
     const pending = deferred<{ note: ReturnType<typeof note> }>();
     backend.onRequest('note.get', () => pending.promise);
-    const first = ensureNoteContentLoaded(WS, 'task-note');
-    const second = ensureNoteContentLoaded(WS, 'task-note');
+    const first = store.dispatch(ensureNoteContentLoadedRequested(WS, 'task-note'));
+    const second = store.dispatch(ensureNoteContentLoadedRequested(WS, 'task-note'));
     await settle();
     expect(reads('note.get')).toEqual([
       { method: 'note.get', params: { workspaceId: WS, noteId: 'task-note' } },
@@ -599,7 +597,7 @@ describe('background reads through the real store, sagas, clients and event brid
       ++calls === 1 ? pending.promise : { note: note('newer') },
     );
     store.dispatch(noteContentViewRequested('mounted-note', '1', WS, 'task-note'));
-    const loaded = ensureNoteContentLoaded(WS, 'task-note');
+    const loaded = store.dispatch(ensureNoteContentLoadedRequested(WS, 'task-note'));
     await settle();
     event('note:updated', { noteId: 'task-note' });
     event('note:updated', { noteId: 'task-note' });

@@ -19,7 +19,7 @@ export interface HomeAttentionRequest {
   canRetry: boolean;
 }
 
-export function isHomeAttentionAgent(workspaceId: string, agent: AgentSession): boolean {
+function isHomeAttentionAgent(workspaceId: string, agent: AgentSession): boolean {
   return (
     agent.workspaceId === workspaceId &&
     !agent.retiredAt &&
@@ -30,7 +30,7 @@ export function isHomeAttentionAgent(workspaceId: string, agent: AgentSession): 
   );
 }
 
-export function currentHomeQuestion(agent: AgentSession): string | null {
+function currentHomeQuestion(agent: AgentSession): string | null {
   const pending = agent.metadata?.pendingQuestionsMessageId;
   return typeof pending === 'string' &&
     pending.length > 0 &&
@@ -39,7 +39,7 @@ export function currentHomeQuestion(agent: AgentSession): string | null {
     : null;
 }
 
-export function canRetryHomeAgent(agent: AgentSession): boolean {
+function canRetryHomeAgent(agent: AgentSession): boolean {
   return (
     agent.status === AgentStatus.Error &&
     !hasAgentActiveTurnEvidence(toAgentRuntimeStateInput(agent))

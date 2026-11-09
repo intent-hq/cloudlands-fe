@@ -110,16 +110,6 @@ vi.mock('$features/workspace/navigate-away-if-viewing', async (importOriginal) =
   navigateAwayIfViewing: navigateAwayIfViewingSpy,
 }));
 
-// Fake the mark-workspace-seen helper so the attention suite can assert the
-// bridge never auto-clears an unread raise (unread persists until each agent
-// conversation is read — the bridge must not call `workspace.markSeen`).
-const { markWorkspaceSeenSpy } = vi.hoisted(() => ({
-  markWorkspaceSeenSpy: vi.fn(),
-}));
-vi.mock('$features/workspace/mark-workspace-seen', () => ({
-  markWorkspaceSeen: markWorkspaceSeenSpy,
-}));
-
 // The bridge now dispatches refreshWorkspaceSubscriptionEntriesRequested instead
 // of calling the service directly — the saga handles the actual fetch. No mock needed.
 
@@ -8998,7 +8988,7 @@ describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', 
   });
 });
 
-describe('daemonEventsBridge (comment:added / comment:resolved → applyCommentFromEvent)', () => {
+describe('daemonEventsBridge (comment:added / comment:resolved → commentEventReceived)', () => {
   const COMMENT_WS = 'ws-comment-1';
 
   beforeAll(() => appStore.init());
@@ -10943,7 +10933,6 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
   beforeEach(async () => {
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
-    markWorkspaceSeenSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
   });
@@ -11110,7 +11099,9 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
 
       const ws = await readWorkspace();
       expect(ws.attention).toBe('unread');
-      expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
+      expect(backendRequestSpy.mock.calls.map(([method]) => method)).not.toContain(
+        'workspace.markSeen',
+      );
     } finally {
       window.history.pushState({}, '', '/');
     }
@@ -11124,7 +11115,9 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     handler(attentionChangedNotification('none'));
     handler(attentionChangedNotification('review_required'));
 
-    expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
+    expect(backendRequestSpy.mock.calls.map(([method]) => method)).not.toContain(
+      'workspace.markSeen',
+    );
   });
 
   it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {

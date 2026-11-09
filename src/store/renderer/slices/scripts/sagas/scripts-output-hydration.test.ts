@@ -8,7 +8,6 @@ vi.mock('$lib/client', async () => {
   const { LiveScriptsClient } = await import('$lib/client/live/live-scripts-client');
   return { appClient: { scripts: new LiveScriptsClient() } };
 });
-vi.mock('$features/scripts/scripts.client', () => ({ scriptsClient: {} }));
 import { store } from '../../../store';
 import { scriptsOperationSaga } from './scripts-operation-saga';
 import { lifecycleReadSaga } from '../../workspace-lifecycle/sagas/lifecycle-read-saga';

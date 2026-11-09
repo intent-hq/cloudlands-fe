@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { appClient } from '$lib/client';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { AcceptChangesClient } from '$features/accept-changes/accept-changes.client';
-import { stageFiles } from '$features/git/git-write-service';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { registerMockIpcHandler, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { createMockWorkspace } from '../../test/factories/workspace.factory';
@@ -23,6 +22,9 @@ import { setWorkspaceEntity } from './slices/workspace/workspace-slice';
 import { prepareContext } from './slices/background-agent-executor/utils/context-preparation';
 import { selectGitStatus } from './slices/git/git-selectors';
 import { selectHostRole } from './slices/principal/principal-selectors';
+
+const stageFiles = (workspaceId: string, paths: string[]) =>
+  appStore.dispatch(gitWriteRequested(workspaceId, crypto.randomUUID(), { kind: 'stage', paths }));
 
 // Mock only I/O. Production Store, complete startup registry, reducers,
 // compatibility facades and every participating saga execute unchanged.
