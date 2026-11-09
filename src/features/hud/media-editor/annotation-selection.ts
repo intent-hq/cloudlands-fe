@@ -33,6 +33,7 @@ export function resizeAnnotationGeometry<G extends DockMediaGeometry>(
   dy: number,
   frame: DockMediaRect,
 ): G {
+  if (dx === 0 && dy === 0) return geometry;
   const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
   if (geometry.kind === 'arrow' && (handle === 'from' || handle === 'to')) {
     const p = geometry[handle],
@@ -54,8 +55,11 @@ export function resizeAnnotationGeometry<G extends DockMediaGeometry>(
     };
   }
   if (geometry.kind === 'point' || handle === 'move') return geometry;
-  const b = dockMediaGeometryRect(geometry),
-    right = b.x + b.w,
+  const b =
+    geometry.kind === 'text'
+      ? dockAnnotationDisplayBounds(geometry)
+      : dockMediaGeometryRect(geometry);
+  const right = b.x + b.w,
     bottom = b.y + b.h;
   const left = handle.includes('w') ? clamp(b.x + dx, frame.x, right - Math.min(2, frame.w)) : b.x;
   const top = handle.includes('n') ? clamp(b.y + dy, frame.y, bottom - Math.min(2, frame.h)) : b.y;
