@@ -1,28 +1,43 @@
 #!/usr/bin/env node
-// check-dead-code.mjs — the knip dead-code gate (`pnpm run lint:dead-code`) with a canary.
+// check-dead-code.mjs — the knip dead-code gate (`pnpm run lint:dead-code`) with canaries.
 //
-// Materialises two known-unused canary files under src/lib/components/__knip-canary__/,
-// runs knip once with the JSON reporter, and fails when either canary is NOT reported:
-// that means the gate has gone blind to unused files (cloudlands-fe#2695 found three such
-// masks that passed silently for months). Otherwise the canary rows are dropped and the
-// remaining issues are reported with knip's own exit semantics (error-level rules only).
+// Materialises canary files under src/lib/components/__knip-canary__/ and runs knip twice
+// with the JSON reporter:
+//   1. Default pass (tests are entries): fails when either known-unused canary is NOT
+//      reported — the gate has gone blind to unused files (cloudlands-fe#2695 found three
+//      such masks that passed silently for months). Otherwise the remaining issues are
+//      reported with knip's own exit semantics (error-level rules only).
+//   2. Production pass (`--production`, tests are not entries): reports files and exports
+//      that only tests use. A canary imported only by a test must be reported; findings
+//      outside scripts/knip-production-baseline.json fail, and stale baseline entries fail
+//      until `--prune-baseline` removes them (the baseline only shrinks).
 // A per-worktree lock owns the canaries from creation through scan completion and cleanup.
 // They are excluded in tsconfig.json so a concurrent type-check never sees them (TS6053).
 import { execFile } from 'node:child_process';
-import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  ALL_CANARY_FILES,
   CANARY_DIR,
-  CANARY_FILES,
   CANARY_PATHS,
+  PRODUCTION_BASELINE_PATH,
+  PRODUCTION_CANARY_PATHS,
+  PRODUCTION_ISSUE_TYPES,
+  compareToBaseline,
   decideExitCode,
   findMissingCanaries,
   formatCanaryFailure,
+  formatProductionCanaryFailure,
   parseKnipJson,
   parseKnipRules,
+  parseProductionBaseline,
+  productionIssueKeys,
+  pruneBaseline,
   renderIssues,
+  renderProductionResult,
+  serializeProductionBaseline,
   stripCanaryIssues,
 } from './check-dead-code-lib.mjs';
 import { acquireVerificationLock, defaultLockPath, lockTimeout } from './verification-lock.mjs';
@@ -56,7 +71,7 @@ function removeCanary() {
 function writeCanary() {
   removeCanary();
   mkdirSync(canaryDir, { recursive: true });
-  for (const file of CANARY_FILES) {
+  for (const file of ALL_CANARY_FILES) {
     writeFileSync(path.join(REPO_ROOT, file.path), file.content);
   }
 }
@@ -100,7 +115,7 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
 }
 process.on('exit', cleanup);
 
-function runKnip() {
+function runKnip(extraArgs = []) {
   return new Promise((resolve, reject) => {
     knipChild = execFile(
       process.execPath,
@@ -110,6 +125,7 @@ function runKnip() {
         fileURLToPath(new URL('./knip.config.js', import.meta.url)),
         '--reporter',
         'json',
+        ...extraArgs,
       ],
       {
         cwd: REPO_ROOT,
@@ -129,7 +145,70 @@ function runKnip() {
   });
 }
 
+function parseResult(result) {
+  if (result.signal) {
+    console.error(`knip was killed by ${result.signal}`);
+    return { code: 1 };
+  }
+  try {
+    return { issues: parseKnipJson(result.stdout) };
+  } catch (error) {
+    console.error(error.message);
+    return { code: result.status || 1 };
+  }
+}
+
+function checkDefault(result, rules) {
+  const { issues, code } = parseResult(result);
+  if (!issues) return code;
+  const missing = findMissingCanaries(issues, CANARY_PATHS);
+  if (missing.length > 0) {
+    console.error(formatCanaryFailure(missing));
+    return 1;
+  }
+  const remaining = stripCanaryIssues(issues, CANARY_DIR);
+  console.log(renderIssues(remaining, rules));
+  return decideExitCode(remaining, rules);
+}
+
+function checkProduction(result, { prune }) {
+  const { issues, code } = parseResult(result);
+  if (!issues) return code;
+  const missing = findMissingCanaries(issues, PRODUCTION_CANARY_PATHS);
+  if (missing.length > 0) {
+    console.error(formatProductionCanaryFailure(missing));
+    return 1;
+  }
+  const current = productionIssueKeys(stripCanaryIssues(issues, CANARY_DIR));
+  const baselinePath = path.join(REPO_ROOT, PRODUCTION_BASELINE_PATH);
+  let baseline = parseProductionBaseline(
+    existsSync(baselinePath) ? readFileSync(baselinePath, 'utf8') : null,
+  );
+  if (prune) {
+    const pruned = pruneBaseline(current, baseline);
+    const before = serializeProductionBaseline(baseline);
+    const after = serializeProductionBaseline(pruned);
+    if (after !== before) {
+      writeFileSync(baselinePath, after);
+      console.log(
+        `Pruned ${PRODUCTION_BASELINE_PATH}: ${baseline.size} → ${pruned.size} entr(ies).`,
+      );
+    }
+    baseline = pruned;
+  }
+  const report = renderProductionResult(compareToBaseline(current, baseline));
+  if (report) {
+    console.log(report);
+    return 1;
+  }
+  console.log(
+    `knip --production: no new code used only by tests (${baseline.size} baselined finding(s)).`,
+  );
+  return 0;
+}
+
 async function main() {
+  const prune = process.argv.includes('--prune-baseline');
   const rules = parseKnipRules(readFileSync(path.join(REPO_ROOT, 'knip.jsonc'), 'utf8'));
   releaseLock = await acquireVerificationLock({
     lockPath: defaultLockPath(lockKey),
@@ -137,35 +216,21 @@ async function main() {
     cwd: REPO_ROOT,
   });
   let result;
+  let production;
   try {
     writeCanary();
     result = await runKnip();
+    if (!interruptedExitCode && !result.signal) {
+      production = await runKnip(['--production', '--include', PRODUCTION_ISSUE_TYPES.join(',')]);
+    }
   } finally {
     cleanup();
   }
 
   if (interruptedExitCode) return interruptedExitCode;
-  if (result.signal) {
-    console.error(`knip was killed by ${result.signal}`);
-    return 1;
-  }
-  let issues;
-  try {
-    issues = parseKnipJson(result.stdout);
-  } catch (error) {
-    console.error(error.message);
-    return result.status || 1;
-  }
-
-  const missing = findMissingCanaries(issues, CANARY_PATHS);
-  if (missing.length > 0) {
-    console.error(formatCanaryFailure(missing));
-    return 1;
-  }
-
-  const remaining = stripCanaryIssues(issues, CANARY_DIR);
-  console.log(renderIssues(remaining, rules));
-  return decideExitCode(remaining, rules);
+  const defaultCode = checkDefault(result, rules);
+  if (!production) return defaultCode || 1;
+  return Math.max(defaultCode, checkProduction(production, { prune }));
 }
 
 process.exitCode = await main();

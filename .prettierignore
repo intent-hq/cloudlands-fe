@@ -18,6 +18,8 @@ logs/
 messages/en-XA.json
 CHANGELOG.md
 src/shared/paraglide/
+# Written by scripts/check-dead-code.mjs --prune-baseline in its own canonical form
+scripts/knip-production-baseline.json
 project.inlang/*
 !project.inlang/settings.json
 

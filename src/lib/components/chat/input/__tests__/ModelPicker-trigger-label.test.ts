@@ -1052,11 +1052,6 @@ describe('learned picker labels after restart', () => {
     'default-known-prefix-explicit',
   ] as const)('renders a persisted name immediately with %s discovery', async (outcome) => {
     const modelId = outcome.includes('known-prefix') ? 'auggie:custom' : 'org/model:variant';
-    const storage = new Map<string, string>();
-    vi.mocked(window.localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-    vi.mocked(window.localStorage.setItem).mockImplementation((key, value) => {
-      storage.set(key, value);
-    });
     startCatalogOwner();
     let cancelNames = appStore.runSaga(modelNameCacheSaga);
     appStore.dispatch(

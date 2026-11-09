@@ -87,7 +87,7 @@ export function installFromArchive(buffer, { key, cacheDir }) {
 // reaches the API fallback within a few minutes.
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 // Delays between attempts, in milliseconds: four attempts per source in all,
-// matching scripts/download_retry.py.
+// matching intent-hq/intentd scripts/download_retry.py.
 export const RETRY_DELAYS_MS = Object.freeze([2_000, 5_000, 15_000]);
 const RELEASE_REPO = 'rhysd/actionlint';
 const ATTEMPTS = RETRY_DELAYS_MS.length + 1;
@@ -297,7 +297,19 @@ export function runActionlint({
   return { status: result.status, signal: result.signal, stdout: result.stdout ?? '' };
 }
 
-export async function main({ cwd = REPO_ROOT, cacheDir } = {}) {
+// verify:changed sets this on its architecture lane and runs `lint:workflows`
+// as its own lane only when a workflow lint input changed, so a known actionlint
+// hang (rhysd/actionlint#702) cannot fail unrelated changes (cloudlands-fe#4332).
+// GitHub Actions ignores it: CI lints every workflow on every PR.
+export const SKIP_WORKFLOW_LINT_ENV = 'VERIFY_CHANGED_SKIP_WORKFLOW_LINT';
+
+export async function main({ cwd = REPO_ROOT, cacheDir, env = process.env } = {}) {
+  if (env[SKIP_WORKFLOW_LINT_ENV] === '1' && env.GITHUB_ACTIONS !== 'true') {
+    console.log(
+      `workflow lint skipped (${SKIP_WORKFLOW_LINT_ENV}=1): verify:changed runs it as its own lane.`,
+    );
+    return 0;
+  }
   let shellcheck;
   let actionlint;
   try {

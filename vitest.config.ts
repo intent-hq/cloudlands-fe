@@ -126,6 +126,8 @@ export default defineConfig(async () => {
         'tests/integration/**',
         // node:test suite shared with intent and intentd; scripts/test_runner_policy.py runs it.
         'scripts/runner-policy.test.cjs',
+        // Transient lint:dead-code canaries; the stub test there exists only for knip.
+        '**/__knip-canary__/**',
         '**/*.ct.spec.ts', // Exclude Playwright component tests
         '**/*.visual.spec.ts', // Exclude Playwright visual harnesses (browser-owned environment)
         // Remote-environment suites need a real daemon/host; not part of the unit gate.

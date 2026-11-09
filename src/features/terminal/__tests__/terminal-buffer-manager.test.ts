@@ -2,9 +2,9 @@
  * Tests for Terminal Buffer Manager
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TerminalBufferManager } from '../terminal-buffer-manager';
-import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
+import { sharedLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
 // Mock the Logger
 vi.mock('../../../shared/logger', () => ({
@@ -16,7 +16,7 @@ vi.mock('../../../shared/logger', () => ({
   },
 }));
 
-const localStorageMock = installLocalStorageMock();
+const localStorageMock = sharedLocalStorageMock();
 
 // Mock navigator.storage
 Object.defineProperty(global, 'navigator', {
@@ -31,13 +31,8 @@ describe('TerminalBufferManager', () => {
   let manager: TerminalBufferManager;
 
   beforeEach(() => {
-    localStorageMock.clear();
     vi.clearAllMocks();
     manager = new TerminalBufferManager('workspace-1', 'terminal-1');
-  });
-
-  afterEach(() => {
-    localStorageMock.clear();
   });
 
   describe('saveBuffer', () => {

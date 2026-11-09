@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { safeLocalStorage } from '../safe-storage';
-import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
+import { sharedLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 
-const localStorageMock = installLocalStorageMock();
+const localStorageMock = sharedLocalStorageMock();
 
 describe('safeLocalStorage JSON helpers', () => {
   beforeEach(() => {
