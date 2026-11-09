@@ -156,10 +156,16 @@
     disclosure.cancel();
     fade.cancel();
     mover.cancel();
+    tailFade.cancel();
     onStateChange({ held: false, reveal: 0, shell: null });
   });
   const settled = $derived(reveal >= 1);
-  const shadowMargin = $derived(settled ? DOCK_FLOATING_SHADOW_MARGIN : 0);
+  let tailOpacity = $state(0);
+  const tailFade = createRevealFade(() => tailOpacity, (value) => (tailOpacity = value));
+  $effect(() => {
+    const target = wanted && (settled || reducedMotion) ? 1 : 0;
+    untrack(() => tailFade.animate(target));
+  });
   const glide = $derived(frame && lastPanel ? frame.y - lastPanel.y : 0);
   const opacity = $derived(reducedMotion ? reveal : 1);
   const clipRight = $derived(
@@ -205,11 +211,11 @@
         </DockConversationSurface>
       </div>
     </div>
-    <!-- Paint may use the existing transparent native margin; content and input keep their clip. -->
+    <!-- The moving shadow stays behind the content clip. -->
     <div
       class="edge-panel"
       aria-hidden="true"
-      style:clip-path={`inset(0 ${Math.max(0, clipRight - shadowMargin)}px 0 ${Math.max(0, viewport.x - shadowMargin)}px)`}
+      style:clip-path={`inset(0 ${clipRight}px 0 ${viewport.x}px)`}
     >
       <div
         class="edge-shadow"
@@ -219,6 +225,24 @@
         style:height={`${frame.height}px`}
         style:transform={`translateX(${offset}px)`}
         style:opacity
+      ></div>
+    </div>
+    <!-- Only the outer tail fades at the settled anchor; it never slides through the rail. -->
+    <div
+      class="edge-panel"
+      data-shadow-tail
+      aria-hidden="true"
+      style:opacity={tailOpacity * opacity}
+      style:clip-path={side === 'right'
+        ? `inset(0 ${Math.max(0, clipRight - DOCK_FLOATING_SHADOW_MARGIN)}px 0 ${viewport.x + viewport.width}px)`
+        : `inset(0 ${placement.windowBounds.width - viewport.x}px 0 ${Math.max(0, viewport.x - DOCK_FLOATING_SHADOW_MARGIN)}px)`}
+    >
+      <div
+        class="edge-shadow"
+        style:left={`${frame.x}px`}
+        style:top={`${frame.y}px`}
+        style:width={`${frame.width}px`}
+        style:height={`${frame.height}px`}
       ></div>
     </div>
   </div>
