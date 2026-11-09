@@ -2,7 +2,7 @@
 // Model Defaults
 // ============================================================================
 
-export const MODEL_IDS = {
+const MODEL_IDS = {
   // Claude models
   CLAUDE_OPUS_4_7: 'opus4.7' as const,
   CLAUDE_OPUS_4_6: 'opus4.6' as const,

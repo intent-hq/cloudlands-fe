@@ -385,10 +385,7 @@
       // If clearing the pin leaves the override identical to the bundled
       // defaults, delete the file instead of rewriting it — a redundant file
       // would keep the built-in reading as "Modified" (monorepo#1450).
-      const redundant = isRedundantBuiltInOverride(
-        { ...base, ...next },
-        { ignoreModelPin: true },
-      );
+      const redundant = isRedundantBuiltInOverride({ ...base, ...next }, { ignoreModelPin: true });
       writeModelSelection(base, redundant ? { ...next, deleted: true } : next);
       return;
     }

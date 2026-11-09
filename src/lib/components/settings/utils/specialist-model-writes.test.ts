@@ -141,9 +141,9 @@ describe('builtInExport', () => {
     expect(isRedundantBuiltInOverride(exported)).toBe(true);
     expect(isRedundantBuiltInOverride({ ...exported, behaviorPrompt: 'Edited' })).toBe(false);
     expect(isRedundantBuiltInOverride({ ...exported, model: 'opus' })).toBe(false);
-    expect(isRedundantBuiltInOverride({ ...exported, model: 'opus' }, { ignoreModelPin: true })).toBe(
-      true,
-    );
+    expect(
+      isRedundantBuiltInOverride({ ...exported, model: 'opus' }, { ignoreModelPin: true }),
+    ).toBe(true);
   });
 });
 
