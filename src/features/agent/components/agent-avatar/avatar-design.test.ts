@@ -17,6 +17,7 @@ describe('agent avatar design selection', () => {
       implementor: 'implementor',
       verifier: 'verifier',
       developer: 'verifier',
+      planner: 'coordinator',
       'pr-reviewer': 'pr-reviewer',
       'ui-designer': 'ui-designer',
       'chief-of-staff': 'chief-of-staff',
