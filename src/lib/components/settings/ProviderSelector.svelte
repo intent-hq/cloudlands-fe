@@ -43,6 +43,7 @@
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
+  import { displayCliVersion } from '$features/providers/utils/cli-version';
   import {
     faArrowsRotate,
     faBan,
@@ -172,7 +173,7 @@
         loginCommandHint: provider.loginCommandHint,
         hasNpxFallback: status?.hasNpxFallback ?? false,
         warning: status?.warning,
-        version: status?.version,
+        version: displayCliVersion(status?.version),
         unavailableReason: status?.unavailableReason,
       };
     }),
