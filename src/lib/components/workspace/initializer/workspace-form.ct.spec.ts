@@ -38,7 +38,7 @@ test('first workspace keeps adding a codebase discoverable with no repository hi
   const codebase = dialog.getByRole('button', { name: /^Codebase\b/ });
   await codebase.click();
   const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
-  const add = picker.getByRole('button', { name: 'Add codebase', exact: true });
+  const add = picker.getByRole('button', { name: 'Add codebase or folder', exact: true });
   await expect(add).toBeInViewport();
   await picker.getByRole('searchbox').fill('no-such-codebase');
   await expect(add).toBeVisible();
@@ -433,7 +433,7 @@ for (const theme of ['light', 'dark'] as const) {
 }
 
 // These regressions exercise the real modal and picker, including their keyboard boundaries.
-for (const acceptance of ['Add codebase', 'history'] as const) {
+for (const acceptance of ['Add codebase or folder', 'history'] as const) {
   test(`workspace selection recovery retains branch and draft through ${acceptance}`, async ({
     mount,
     page,
@@ -464,8 +464,8 @@ for (const acceptance of ['Add codebase', 'history'] as const) {
     const codebase = dialog.getByRole('button', { name: /^Codebase\b/ });
     await codebase.click();
     const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
-    if (acceptance === 'Add codebase') {
-      await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+    if (acceptance === 'Add codebase or folder') {
+      await picker.getByRole('button', { name: 'Add codebase or folder', exact: true }).click();
       const input = picker.getByRole('combobox');
       await expect(input).toHaveValue('intent-hq/intent');
       await input.press('Enter');
@@ -527,7 +527,7 @@ test('workspace selection recovery carries a pasted URL into Add and waits for i
   await dialog.getByRole('button', { name: /^Codebase\b/ }).click();
   const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
   await picker.getByRole('searchbox').fill('https://github.com/fixture-owner/new-app');
-  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  await picker.getByRole('button', { name: 'Add codebase or folder', exact: true }).click();
   const input = picker.getByRole('combobox');
   await expect(input).toHaveValue('fixture-owner/new-app');
   await input.press('Enter');
@@ -574,7 +574,7 @@ for (const invalid of ['', 'not a repository']) {
     await expect(dialog.getByRole('button', { name: /Create workspace/ })).toBeEnabled();
     await dialog.getByRole('button', { name: /^Codebase\b/ }).click();
     const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
-    await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+    await picker.getByRole('button', { name: 'Add codebase or folder', exact: true }).click();
     const input = picker.getByRole('combobox');
     await input.fill('https://github.com/fixture-owner/new-app');
     await expect(picker.getByRole('button', { name: 'Select', exact: true })).toBeVisible();
@@ -607,7 +607,7 @@ test('workspace selection recovery keeps the same repository access error blocki
   await page.keyboard.press('Escape');
   await dialog.getByRole('button', { name: /^Codebase\b/ }).click();
   const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
-  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  await picker.getByRole('button', { name: 'Add codebase or folder', exact: true }).click();
   await picker.getByRole('combobox').press('Enter');
   await expect(picker).toBeHidden();
   await expect(dialog).toBeVisible();
@@ -632,7 +632,7 @@ test('workspace selection recovery ignores a late branch response after switchin
   const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
   await expect(create).toBeEnabled();
   await codebase.click();
-  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  await picker.getByRole('button', { name: 'Add codebase or folder', exact: true }).click();
   await picker.getByRole('combobox').fill('fixture-owner/new-app');
   await picker.getByRole('combobox').press('Enter');
   await expect(page.getByTestId('workspace-branch-requests')).toContainText(
@@ -640,7 +640,7 @@ test('workspace selection recovery ignores a late branch response after switchin
   );
   await expect(create).toBeDisabled();
   await codebase.click();
-  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  await picker.getByRole('button', { name: 'Add codebase or folder', exact: true }).click();
   await picker.getByRole('combobox').fill('intent-hq/intent');
   await picker.getByRole('combobox').press('Enter');
   await expect(codebase).toContainText('intent');

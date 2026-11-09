@@ -735,7 +735,7 @@ for (const plainFolder of ['existing', 'new'] as const) {
     await expect(page.getByRole('button', { name: /^Select a branch:/ })).toHaveCount(0);
     await page.getByRole('button', { name: /^Codebase\b/ }).click();
     const menu = page.getByRole('dialog', { name: 'Codebase', exact: true });
-    await menu.getByRole('button', { name: 'Add codebase', exact: true }).click();
+    await menu.getByRole('button', { name: 'Add codebase or folder', exact: true }).click();
     await menu
       .getByRole('tab', {
         name: plainFolder === 'existing' ? 'Existing folder' : 'New',
