@@ -220,11 +220,12 @@ function createSyntheticNative() {
         value: {
           jobId: request.jobId,
           video: { sourcePath: `/synthetic/exports/${request.jobId}.mp4`, mimeType: 'video/mp4', size: 48_000 },
+          // Tests may set the exported frames' byte size (as measured on real exports).
           frames: marks.map((mark) => ({
             markId: mark.id,
             sourcePath: `/synthetic/exports/${request.jobId}-${mark.id}.png`,
             mimeType: 'image/png',
-            size: 4_000,
+            size: (globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes ?? 4_000,
           })),
         },
       };
