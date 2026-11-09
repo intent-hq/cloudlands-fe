@@ -3,7 +3,7 @@
    * Quick Actions Settings Component
    *
    * Allows users to configure default models for quick actions
-   * (commit message, PR description, quick tasks) with a general default
+   * (commit message, PR description) with a general default
    * and per-type overrides.
    */
 
@@ -27,7 +27,6 @@
     selectProviderCatalogLoaded,
   } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { selectIsActiveProviderAvailable } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
-  import { isEnhancePromptAvailable } from '$lib/client/live/live-prompt-enhancement';
 
   import ModelPicker from '$lib/components/chat/input/ModelPicker.svelte';
   import {
@@ -46,7 +45,6 @@
   const typeOverrides$ = selectBgTypeOverrides();
   const hasCommitOverride$ = selectHasOverride('commit');
   const hasPrOverride$ = selectHasOverride('pr');
-  const hasFastOverride$ = selectHasOverride('fast');
   const effectiveProviderId$ = selectEffectiveDefaultProviderId();
   const catalogLoaded$ = selectProviderCatalogLoaded();
   const providerAvailable$ = selectIsActiveProviderAvailable();
@@ -56,16 +54,6 @@
   const supportsQuickActionEffort = $derived(
     // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure string helper, not a data fetch; rule misfires on the '/provider-profiles' import source
     ['codex', 'claude-code', 'pi'].includes(providerRefBaseId($effectiveProviderId$)),
-  );
-
-  // §5.31 gate mirror: prompt enhancement and layout suggestions stays auggie-only even though
-  // `agent.completeOnce` (§5.32) is provider-neutral. Gated on catalog
-  // hydration so auggie users don't see a flash of the note before the
-  // effective provider resolves; once hydrated, shown iff genuinely
-  // unavailable.
-  const fastEnhanceUnavailable = $derived(
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure predicate (string equality), not a data fetch; rule misfires on the '/client/' import source
-    $catalogLoaded$ && !isEnhancePromptAvailable($effectiveProviderId$),
   );
 
   function usesActiveProvider(model: string) {
@@ -150,14 +138,6 @@
               description: BACKGROUND_AGENT_TYPE_INFO.pr.description,
               status: () =>
                 $hasPrOverride$ ? m.settings_backgroundAgent_customBadge() : undefined,
-              statusTone: 'subtle',
-            },
-            {
-              kind: 'custom',
-              id: 'background-agent-fast',
-              label: BACKGROUND_AGENT_TYPE_INFO.fast.label,
-              status: () =>
-                $hasFastOverride$ ? m.settings_backgroundAgent_customBadge() : undefined,
               statusTone: 'subtle',
             },
           ],
@@ -259,33 +239,6 @@
   </div>
 {/snippet}
 
-{#snippet fastControl()}
-  <div class="flex w-full min-w-0 flex-col items-end">
-    <ModelPicker
-      allowProviderSwitch={false}
-      showReasoning={effortAvailable($typeOverrides$.fast || $defaultModel)}
-      fallbackToCatalogDefault
-      defaultModelId={$defaultModel || undefined}
-      defaultReasoningEffort={effortAvailable($typeOverrides$.fast || $defaultModel)
-        ? $defaultEffort$ || null
-        : null}
-      reasoningEffort={effortAvailable($typeOverrides$.fast || $defaultModel)
-        ? $effortOverrides$.fast || null
-        : null}
-      onReasoningChange={(effort) => changeActionEffort('fast', effort)}
-      selectedModel={$typeOverrides$.fast || undefined}
-      onModelChange={(model, pick) => changeModel(model, pick, 'fast')}
-      showManageLink={false}
-      showDefaultOption={true}
-      defaultModelLabel={m.settings_backgroundAgent_useDefaultOption()}
-      defaultOptionLabel={m.settings_backgroundAgent_useDefaultOption()}
-      defaultOptionDescription={m.settings_backgroundAgent_useDefault_description()}
-      variant="outline"
-    />
-    {@render effortNotice($typeOverrides$.fast || $defaultModel)}
-  </div>
-{/snippet}
-
 <SettingsForm
   schema={defaultSchema}
   embedded
@@ -302,14 +255,6 @@
   <h4 id="background-agent-overrides-title" class="type-title mb-4 text-foreground">
     {m.settings_backgroundAgent_overrides_title()}
   </h4>
-  {#snippet fastDescription()}
-    <span class="block">{BACKGROUND_AGENT_TYPE_INFO.fast.description}</span>
-    {#if fastEnhanceUnavailable}
-      <span class="block" data-testid="fast-auggie-only-note">
-        {m.settings_backgroundAgent_fastAuggieOnlyNote()}
-      </span>
-    {/if}
-  {/snippet}
   <SettingsForm
     schema={overridesSchema}
     embedded
@@ -317,8 +262,6 @@
     custom={defineSettingsCustomControls({
       'background-agent-commit': commitControl,
       'background-agent-pr': prControl,
-      'background-agent-fast': fastControl,
     })}
-    descriptions={{ 'background-agent-fast': fastDescription }}
   />
 </section>
