@@ -4,6 +4,35 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.304.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.303.2...v2.304.0) (2026-11-09)
+
+
+### 🚀 Features
+
+* **browser:** show agent browser tabs beside the agent's chat ([#4331](https://github.com/intent-hq/cloudlands-fe/issues/4331)) ([4a8d448](https://github.com/intent-hq/cloudlands-fe/commit/4a8d44812d5dce1e0c10008471d55cf6eb680fd5))
+* **cloud-machines:** group E2B sandboxes by workspace and link agents ([#4335](https://github.com/intent-hq/cloudlands-fe/issues/4335)) ([58e798f](https://github.com/intent-hq/cloudlands-fe/commit/58e798f50671de055998106a2bde78b9a9782215))
+* **hardware-console:** chat focus on workspace keys and 8-way prompt ring with chat suggestions ([#4323](https://github.com/intent-hq/cloudlands-fe/issues/4323)) ([0f42447](https://github.com/intent-hq/cloudlands-fe/commit/0f424475d266476bf207756234b6579a304e7dd7))
+* **hardware-console:** decode knob direction once and step Switch tabs across the tab strip ([#4320](https://github.com/intent-hq/cloudlands-fe/issues/4320)) ([748cbb4](https://github.com/intent-hq/cloudlands-fe/commit/748cbb4d4aa4ccb313d32474bc2214495ab44541))
+* **hardware-console:** open Home's selected workspace on knob press ([#4319](https://github.com/intent-hq/cloudlands-fe/issues/4319)) ([041410b](https://github.com/intent-hq/cloudlands-fe/commit/041410bd5905bdc2f11f94766fdd0a75e72ad322))
+* **providers:** show CLI versions for every provider ([#4326](https://github.com/intent-hq/cloudlands-fe/issues/4326)) ([8a0307e](https://github.com/intent-hq/cloudlands-fe/commit/8a0307ecc27fed1e9188881500cf04acb6c19794))
+* **scripts:** delete scripts from the sidebar menu, stopping running ones ([#4322](https://github.com/intent-hq/cloudlands-fe/issues/4322)) ([06c15ea](https://github.com/intent-hq/cloudlands-fe/commit/06c15eafa6eaad004dcf99669ec53e2199ed81c2))
+* **specialists:** add Product Manager built-in specialist ([#4334](https://github.com/intent-hq/cloudlands-fe/issues/4334)) ([1042bf8](https://github.com/intent-hq/cloudlands-fe/commit/1042bf80c60ced3a3913ecbd4be4f4cdfa633e59))
+* **workspace:** name folders in the codebase picker with plain folders on ([#4325](https://github.com/intent-hq/cloudlands-fe/issues/4325)) ([d7aa831](https://github.com/intent-hq/cloudlands-fe/commit/d7aa83145e182c07777760940cfc496d3d731828))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.160 ([#4324](https://github.com/intent-hq/cloudlands-fe/issues/4324)) ([dc0c734](https://github.com/intent-hq/cloudlands-fe/commit/dc0c7340b8e892cd92d599d67f7c7da1f989495b))
+* bump intentd sidecar to v0.11.162 ([#4341](https://github.com/intent-hq/cloudlands-fe/issues/4341)) ([8c7f10c](https://github.com/intent-hq/cloudlands-fe/commit/8c7f10c6ddc168bc62d603468c518e589448b749))
+* **chat:** keep older rows when the post-send transcript read returns only the newest page ([#4333](https://github.com/intent-hq/cloudlands-fe/issues/4333)) ([8035338](https://github.com/intent-hq/cloudlands-fe/commit/8035338f722abd76825a6b02950eed5a2625352c))
+* **chat:** treat remote agents' script wakes as ordinary queued messages ([#4330](https://github.com/intent-hq/cloudlands-fe/issues/4330)) ([a398e6c](https://github.com/intent-hq/cloudlands-fe/commit/a398e6cc3024751aa5262e0404c02641203599ae))
+* drop per-agent CoW sandbox UI and copy ([#4328](https://github.com/intent-hq/cloudlands-fe/issues/4328)) ([3058a0c](https://github.com/intent-hq/cloudlands-fe/commit/3058a0cfa5db597d916defe8af4704aa0d0248cc))
+* **onboarding:** land returning backends on Home instead of the welcome wizard ([#4332](https://github.com/intent-hq/cloudlands-fe/issues/4332)) ([2bdf759](https://github.com/intent-hq/cloudlands-fe/commit/2bdf759c49deba1d9cbc4c1b8ae6545f150462a7))
+* **release:** defer fe alphas only on real intentd dependencies ([#4336](https://github.com/intent-hq/cloudlands-fe/issues/4336)) ([3357231](https://github.com/intent-hq/cloudlands-fe/commit/3357231c60eb7818d4a101efb7e6e4fc5483571a))
+* **settings:** describe remote-agent git credentials when Labs is on ([#4327](https://github.com/intent-hq/cloudlands-fe/issues/4327)) ([a5b228d](https://github.com/intent-hq/cloudlands-fe/commit/a5b228d920a842db3d4dd59b84847e4228d321a8))
+* **settings:** remove the unused Quick tasks quick-action row ([#4329](https://github.com/intent-hq/cloudlands-fe/issues/4329)) ([eb25dbb](https://github.com/intent-hq/cloudlands-fe/commit/eb25dbb981d0c6636bd719ecfdaf3e3f8bddfe38))
+* **status:** show remote links as two rows in the status menu ([#4337](https://github.com/intent-hq/cloudlands-fe/issues/4337)) ([0727013](https://github.com/intent-hq/cloudlands-fe/commit/0727013b7733c24dc27bf9cafd5166f3707a2b6a))
+
 ## [2.303.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.303.1...v2.303.2) (2026-11-08)
 
 
