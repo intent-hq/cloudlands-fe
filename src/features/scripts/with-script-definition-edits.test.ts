@@ -17,7 +17,7 @@ import {
 } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { selectCanDeleteScript } from '$store/renderer/slices/scripts/scripts-selectors';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
-import { scriptsClient } from './scripts.client';
+import { scriptsClient } from './scripts.test-helpers';
 import type { ScriptWithState } from './types';
 
 const removeRequest = vi.hoisted(() => vi.fn());

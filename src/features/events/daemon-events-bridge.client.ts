@@ -2267,9 +2267,9 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
 /**
  * `comment:added` (§6.5, `{ noteId, commentId }`) and `comment:resolved`
  * (`{ noteId, threadId, resolved }`) are wire pings — the payload only carries
- * identifiers, so the actual comment/thread is refetched via
- * `applyCommentFromEvent`. That helper diffs the affected note's fresh comment
- * list against the global slice and dispatches per-comment
+ * identifiers, so the actual comment/thread is refetched by the
+ * workspace-notes saga on `commentEventReceived`. It diffs the affected note's
+ * fresh comment list against the global slice and dispatches per-comment
  * add/update/remove actions so other notes' comments stay untouched.
  */
 function handleCommentEvent(

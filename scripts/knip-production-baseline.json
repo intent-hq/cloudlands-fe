@@ -5,27 +5,8 @@
     "src/features/agent/agent-launch-core.ts",
     "src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte",
     "src/features/agent/components/agent-avatar/agent-avatar.catalog.ts",
-    "src/features/agent/focus-first-unread-agent.ts",
-    "src/features/comments/comments-read-service.ts",
-    "src/features/comments/comments-write-service.ts",
-    "src/features/comments/comments.client.ts",
-    "src/features/comments/main/markdown-anchor-recovery.ts",
-    "src/features/external-editors/components/FileActionsDropdown.svelte",
-    "src/features/git/git-write-service.ts",
-    "src/features/home/home-attention-actions.ts",
     "src/features/hud/components/dock-composer-ct-helpers.ts",
     "src/features/hud/components/dock-composer-e2e-geometry.ts",
-    "src/features/hud/composer/dock-dictation-segments.ts",
-    "src/features/hud/composer/dock-evidence-hash.ts",
-    "src/features/notes/agent-anchor-preservation.ts",
-    "src/features/notes/notes-read-service.ts",
-    "src/features/notes/notes-write-service.ts",
-    "src/features/notes/utils/agent-name-utils.ts",
-    "src/features/notes/utils/note-icon-utils.ts",
-    "src/features/notes/utils/task-link-validator.ts",
-    "src/features/notes/utils/task-tree-utils.ts",
-    "src/features/scripts/scripts.client.ts",
-    "src/features/workspace/mark-workspace-seen.ts",
     "src/lib/component-catalog/CatalogFoundations.svelte",
     "src/lib/component-catalog/chat-polish/chat-polish-coverage.ts",
     "src/lib/component-catalog/preview-context.ts",
@@ -507,11 +488,6 @@
     "src/features/home/assistant-note-diagrams-fixtures.ts": [
       "ASSISTANT_MERMAID_SOURCE",
       "ASSISTANT_NATIVE_DIAGRAM"
-    ],
-    "src/features/home/home-attention.ts": [
-      "canRetryHomeAgent",
-      "currentHomeQuestion",
-      "isHomeAttentionAgent"
     ],
     "src/features/home/home-model.ts": [
       "hasRetiredWorkspaces",
@@ -1655,10 +1631,6 @@
     ],
     "src/shared/constants/agent-services.ts": [
       "isValidModelId"
-    ],
-    "src/shared/constants/intent-links.ts": [
-      "RESERVED_NOTE_IDS",
-      "UUID_REGEX"
     ],
     "src/shared/daemon-startup.ts": [
       "clampStartupRetryMs",

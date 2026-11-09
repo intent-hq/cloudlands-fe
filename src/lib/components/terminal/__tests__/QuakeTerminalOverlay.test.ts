@@ -272,16 +272,6 @@ vi.mock('$store/renderer/slices/scripts/scripts-slice', async (importOriginal) =
   removeScript: (...payload: any[]) => ({ type: 'scripts/remove', payload }),
 }));
 
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn().mockResolvedValue({ success: true }),
-    remove: vi.fn().mockResolvedValue({ success: true }),
-    start: vi.fn().mockResolvedValue({ success: true }),
-    stop: vi.fn().mockResolvedValue({ success: true }),
-    restart: vi.fn().mockResolvedValue({ success: true }),
-  },
-}));
-
 vi.mock('$lib/components/patterns/notify', () => ({ notify }));
 vi.mock('$features/terminal/terminal-manager.svelte', () => ({
   terminalManager: { clearTerminal: vi.fn(), disposeTerminal: vi.fn() },

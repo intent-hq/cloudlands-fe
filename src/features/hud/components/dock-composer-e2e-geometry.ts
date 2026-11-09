@@ -1,3 +1,4 @@
+/** @internal Test fixture: synthetic screen geometry for the dock composer component spec and preview fixtures. */
 /** Element rects inside the synthetic screen (pixels of the capture). No runtime deps: the CT spec imports it. */
 export const SYNTHETIC_ELEMENTS = {
   card: { x: 360, y: 220, w: 720, h: 420 },

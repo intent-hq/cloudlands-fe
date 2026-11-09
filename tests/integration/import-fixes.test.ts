@@ -71,34 +71,6 @@ describe('Import Fixes Verification', () => {
 
   // Note: ContextualMenu.svelte tests removed - component was deleted as unused
 
-  describe('FileActionsDropdown.svelte', () => {
-    it('should have all required imports', () => {
-      const filePath = join(
-        projectRoot,
-        'src/features/external-editors/components/FileActionsDropdown.svelte',
-      );
-      const content = readFileSync(filePath, 'utf-8');
-
-      // Check for logger import
-      expect(content).toContain("import { createLogger } from '$lib/utils/client-logger'");
-
-      // Check for UI component imports
-      expect(content).toContain(
-        "import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte'",
-      );
-      expect(content).toContain("import { Button } from '$lib/components/ui/button'");
-      expect(content).toContain(
-        "import WorkspaceActionsMenu from '$features/workspace/components/WorkspaceActionsMenu.svelte'",
-      );
-
-      // Check for icon imports
-      expect(content).toContain("import Fa from 'svelte-fa'");
-      expect(content).toContain(
-        "import { faArrowUpRightFromSquare, faChevronDown } from '@fortawesome/free-solid-svg-icons'",
-      );
-    });
-  });
-
   describe('All fixed files compile without errors', () => {
     it('should not have syntax errors in TypeScript files', () => {
       const tsFiles = ['src/features/comments/comment-manager-v2.ts'];

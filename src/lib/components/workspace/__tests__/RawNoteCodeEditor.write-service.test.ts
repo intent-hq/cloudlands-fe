@@ -36,9 +36,11 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
 
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import {
+  flushNoteContentRequested,
+  loadWorkspaceNotesSucceeded,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-import { flushNoteContent } from '$features/notes/notes-write-service';
 import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
 import RawNoteCodeEditor from '../RawNoteCodeEditor.svelte';
 
@@ -118,7 +120,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   await fireEvent.input(input, { target: { value: 'body first' } });
   await vi.advanceTimersByTimeAsync(1000);
   await syncStore();
-  const first = flushNoteContent(WS, NOTE);
+  const first = appStore.dispatch(flushNoteContentRequested(WS, NOTE));
   await vi.waitFor(() => expect(wire).toHaveBeenLastCalledWith(NOTE, 'body first', 4, WS));
 
   await fireEvent.input(input, { target: { value: 'body first second' } });
@@ -140,7 +142,7 @@ it('replays a draft typed before a superseded echo onto the rebased pending draf
   expect(wire).toHaveBeenLastCalledWith(NOTE, 'AGENT body first second', 6, WS);
 
   resolveSecond({ success: true, newContent: 'AGENT body first second LATER', noteRev: 9 });
-  await flushNoteContent(WS, NOTE);
+  await appStore.dispatch(flushNoteContentRequested(WS, NOTE));
   await syncStore();
 
   expect(wire).toHaveBeenCalledTimes(3);

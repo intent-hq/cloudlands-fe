@@ -1,7 +1,7 @@
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { backendRequest } from '$lib/client/live/backend-transport';
-import { scriptsClient } from './scripts.client';
+import { scriptsClient } from './scripts.test-helpers';
 import { store } from '$store/renderer/store';
 import {
   setScriptsData,

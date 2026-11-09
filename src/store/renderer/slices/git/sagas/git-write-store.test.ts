@@ -3,7 +3,7 @@ import { GitFileStatus } from '$shared/types';
 import type { GitStatus } from '$shared/types';
 
 // FAKE seam: appClient.git.* are stubbed so no mutation reaches the daemon. The
-// service runs against the REAL configured store so optimistic dispatch, reconcile
+// write saga runs against the REAL configured store so optimistic dispatch, reconcile
 // (status refetch), and rollback are exercised end to end.
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -19,8 +19,8 @@ vi.mock('$lib/client', () => ({
 
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { setGitStatus } from '$store/renderer/slices/git/git-slice';
-import { selectGitStatus } from '$store/renderer/slices/git/git-selectors';
+import { setGitStatus } from '../git-slice';
+import { selectGitStatus } from '../git-selectors';
 import { setChanges, setChangesData } from '$store/renderer/slices/changes/changes-slice';
 import {
   selectFileTrackingChanges,
@@ -29,8 +29,20 @@ import {
 } from '$store/renderer/slices/changes/changes-selectors';
 import { ChangeStage } from '$features/file-tracking/types';
 import type { TrackedChange } from '$features/file-tracking/types';
-import { commit, discardFiles, stageFiles, unstageFiles } from './git-write-service';
-import { gitWriteSaga } from '$store/renderer/slices/git/sagas/git-write-saga';
+import type { GitCommitParams } from '$lib/client';
+import { gitWriteRequested } from '../git-write-slice';
+import { gitWriteSaga } from './git-write-saga';
+
+const write = (workspaceId: string, operation: Parameters<typeof gitWriteRequested>[2]) =>
+  appStore.dispatch(gitWriteRequested(workspaceId, crypto.randomUUID(), operation));
+const stageFiles = (workspaceId: string, paths: string[]) =>
+  write(workspaceId, { kind: 'stage', paths });
+const unstageFiles = (workspaceId: string, paths: string[]) =>
+  write(workspaceId, { kind: 'unstage', paths });
+const discardFiles = (workspaceId: string, paths: string[]) =>
+  write(workspaceId, { kind: 'discard', paths });
+const commit = (workspaceId: string, params: GitCommitParams) =>
+  write(workspaceId, { kind: 'commit', params });
 
 const gitApi = appClient.git as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const WS = 'ws-git-1';
@@ -59,7 +71,7 @@ function makeTracked(path: string, stage: ChangeStage): TrackedChange {
   };
 }
 
-describe('gitWriteService (fake seam, real store)', () => {
+describe('git write saga (fake seam, real store)', () => {
   beforeAll(() => {
     const dispose = appStore.init();
     const cancel = appStore.runSaga(gitWriteSaga);

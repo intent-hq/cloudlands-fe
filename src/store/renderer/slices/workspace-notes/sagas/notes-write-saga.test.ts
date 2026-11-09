@@ -1416,7 +1416,7 @@ describe('notesWriteSaga', () => {
     });
   }
 
-  // Mirrors notes-write-service: a refetch that landed a rev NEWER than the
+  // A refetch that landed a rev NEWER than the
   // superseded echo keeps its content in the store; the draft is still
   // rebased onto the echo and sent against the echo rev.
   it('keeps a newer refetch in the store when a superseded echo lands, and still rebases the draft onto the echo', async () => {

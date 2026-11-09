@@ -332,7 +332,6 @@ const componentAsyncDataFetchBaselineFiles = [
   'src/lib/components/tiptap/TaskItemNodeView.svelte',
   'src/lib/components/tiptap/TaskMenu.svelte',
   'src/lib/components/ui/CopyButton.svelte',
-  'src/features/external-editors/components/FileActionsDropdown.svelte',
   'src/features/external-editors/components/OpenComboButton.svelte',
   'src/lib/components/ui/VirtualList.svelte',
   'src/features/workspace/components/WorkspaceActionsMenu.svelte',

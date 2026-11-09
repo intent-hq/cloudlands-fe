@@ -69,7 +69,7 @@ vi.mock('$lib/client/live/backend-transport', () => ({
   backendRequest: backendRequestMock,
 }));
 
-import { scriptsClient } from './scripts.client';
+import { scriptsClient } from './scripts.test-helpers';
 import { store } from '$store/renderer/store';
 import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
 import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
@@ -128,7 +128,7 @@ function liveScript(overrides: Partial<ScriptWithState> = {}): ScriptWithState {
   } as ScriptWithState;
 }
 
-describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', () => {
+describe('scripts operation saga: saveToRepo (repoConfig.save partial-update semantics)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('persists only the scripts field via repoConfig.save', async () => {
@@ -227,7 +227,7 @@ describe('scriptsClient.saveToRepo (repoConfig.save partial-update semantics)', 
   });
 });
 
-describe('scriptsClient.create purpose forwarding', () => {
+describe('scripts operation saga: create purpose forwarding', () => {
   afterEach(() => vi.clearAllMocks());
 
   it.each(['saved', 'oneOff', undefined] as const)(
@@ -252,7 +252,7 @@ describe('scriptsClient.create purpose forwarding', () => {
   );
 });
 
-describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
+describe('scripts operation saga: update (script.create scriptId upsert, §5.8)', () => {
   beforeEach(() =>
     store.dispatch(setScriptsData('ws-1', [liveScript(), liveScript({ id: 'script-auto-dev' })])),
   );
@@ -332,7 +332,7 @@ describe('scriptsClient.update (script.create scriptId upsert, §5.8)', () => {
   });
 });
 
-describe('scriptsClient.detect (fake files + daemon script.* seams)', () => {
+describe('scripts operation saga: detect (fake files + daemon script.* seams)', () => {
   afterEach(() => vi.clearAllMocks());
 
   it('reads manifests from the daemon and creates new auto-detected scripts', async () => {
