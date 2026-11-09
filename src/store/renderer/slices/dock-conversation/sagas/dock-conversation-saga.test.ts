@@ -1833,7 +1833,7 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
   });
 
   /** Edit on an Assistant screenshot: a stand-in editor channel records OPEN requests. */
-  async function editChiefScreenshot(attachmentsAdvertised: unknown) {
+  async function editChiefScreenshot(attachmentsAdvertised: unknown, refuseOpen = false) {
     advertised = attachmentsAdvertised;
     const opens: unknown[] = [];
     const placements: unknown[] = [];
@@ -1843,7 +1843,9 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
       invoke: async (channel, request) => {
         if (channel === DOCK_CAPTURE_EDITOR_CHANNELS.OPEN) {
           opens.push(request);
-          return { ok: true, openId: '00000000-0000-4000-8000-000000000001' };
+          return refuseOpen
+            ? { ok: false, error: 'unavailable' }
+            : { ok: true, openId: '00000000-0000-4000-8000-000000000001' };
         }
         return previous?.invoke(channel, request);
       },
@@ -1874,6 +1876,18 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
       expect(run.opens).toEqual([]);
       expect(JSON.stringify(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images)).toBe(run.before);
       expect(appStore.state.dockConversation.workspaceId).toBe(CHIEF_WORKSPACE_ID);
+      expect(appStore.state.dockConversation.agentId).toBe(chiefAgent);
+    } finally {
+      run.restore();
+    }
+  });
+
+  it('Edit on an Assistant screenshot whose editor refuses to open says so once and keeps the capture', async () => {
+    const run = await editChiefScreenshot(1, true);
+    try {
+      await vi.waitFor(() => expect(run.opens).toHaveLength(1));
+      await vi.waitFor(() => expect(notifications.warning).toHaveBeenCalledTimes(1));
+      expect(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images).toHaveLength(1);
       expect(appStore.state.dockConversation.agentId).toBe(chiefAgent);
     } finally {
       run.restore();

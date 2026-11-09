@@ -317,10 +317,15 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId, origin] }: Ret
   // The Assistant workspace keeps capture sources only where the connection advertises
   // it (as for its other attachments): say so instead of trying and failing silently.
   if (workspaceId === CHIEF_WORKSPACE_ID && currentDockServerCapabilities(store.state)?.chiefAttachments !== true) {
-    notify.warning(m.dock_captureEditor_assistantUnavailable_error());
+    const dock = store.state.dockConversation;
+    if (dock.workspaceId === workspaceId && dock.agentId === agentId)
+      notify.warning(m.dock_captureEditor_assistantUnavailable_error());
     return;
   }
   const current = () => getPrincipalActionContext(store.state) === authority && isDockBindingCurrent(binding);
+  /** Same principal and backend, and the conversation that asked is still the one shown. */
+  const shownHere = () => current() &&
+    store.state.dockConversation.workspaceId === workspaceId && store.state.dockConversation.agentId === agentId;
   let evidence = evidenceOf(workspaceId, agentId);
   let row = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])].find((item) => item.id === logicalId);
   if (!evidence || !row || row.mediaError) return;
@@ -411,16 +416,22 @@ function* openEditor({ payload: [workspaceId, agentId, logicalId, origin] }: Ret
       marks: [], source, saved: media.saved, transcript: media.transcript,
       ...(media.originalSource ? { originalSource: media.originalSource } : {}),
     };
+    // The capability may have been withdrawn while the draft was saved: never open then.
+    if (workspaceId === CHIEF_WORKSPACE_ID && currentDockServerCapabilities(store.state)?.chiefAttachments !== true) {
+      if (shownHere()) notify.warning(m.dock_captureEditor_assistantUnavailable_error());
+      return;
+    }
     const opened = (yield* call(() => window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request))) as
       DockCaptureEditorOpenResult | undefined;
-    if (!opened?.ok && current()) notify.warning(m.dock_captureEditor_openFailed_error());
+    // Refused: say so where it was asked, and start no follow-up recognition for it.
+    if (!opened?.ok) {
+      if (shownHere()) notify.warning(m.dock_captureEditor_openFailed_error());
+      return;
+    }
     // A new capture's editor takes over: the dock closes behind it, as Escape would,
     // once the editor is open and only for the conversation still shown. Live input
     // (dictation, a recording, an annotate session, the mic) keeps it open.
-    const dock = store.state.dockConversation;
-    if (origin === 'capture' && opened?.ok && current() &&
-        dock.workspaceId === workspaceId && dock.agentId === agentId && !dockInputLive())
-      yield* put(dockCloseRequested());
+    if (origin === 'capture' && shownHere() && !dockInputLive()) yield* put(dockCloseRequested());
     // Root-owned background work is outside the per-pair Edit FIFO. Attached
     // forks here would still keep that FIFO call blocked until recognition ends.
     yield* put(preparation, { workspaceId, agentId, logicalId, authority, binding });
@@ -504,10 +515,16 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
   yield* takeEveryByContextFIFO(dockMediaEditorOpenRequested,
     ({ payload: [workspaceId, agentId] }: ReturnType<typeof dockMediaEditorOpenRequested>) => JSON.stringify([workspaceId, agentId]),
     function* (action) {
+      const [workspaceId, agentId] = action.payload;
+      const authority = getPrincipalActionContext(store.state), binding = captureDockPlacementBinding();
       try { yield* openEditor(action, preparation); }
       catch {
-        // Source/placement errors keep the current draft; the person is told the editor did not open.
-        notify.warning(m.dock_captureEditor_openFailed_error());
+        // Source/placement errors keep the current draft. Only the conversation that asked,
+        // still shown under the same principal and backend, is told; a stale request is not.
+        const dock = store.state.dockConversation;
+        if (getPrincipalActionContext(store.state) === authority && isDockBindingCurrent(binding) &&
+            dock.workspaceId === workspaceId && dock.agentId === agentId)
+          notify.warning(m.dock_captureEditor_openFailed_error());
       }
     }, {});
   yield* takeEveryByContextFIFO(
