@@ -15,6 +15,16 @@ async function openStatusPanel(page: Page) {
   return panel;
 }
 
+type Panel = Awaited<ReturnType<typeof openStatusPanel>>;
+
+const rowFor = (panel: Panel, label: string) =>
+  panel.getByText(label, { exact: true }).locator('..');
+
+async function expectNoLinkRows(panel: Panel) {
+  await expect(panel.getByText('Running agents for', { exact: true })).toHaveCount(0);
+  await expect(panel.getByText('Running agents on', { exact: true })).toHaveCount(0);
+}
+
 async function openBreakdown(page: Page) {
   await page.getByRole('menuitem', { name: /^Agent memory/ }).click();
   const dialog = page.getByRole('dialog', { name: 'Agent memory' });
@@ -34,8 +44,8 @@ test('Remote agents are tagged with their backend and links are counted', async 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(DaemonStatusIndicator, scene('remote-agents'));
   const panel = await openStatusPanel(page);
-  const linksRow = panel.getByText('Connected daemons', { exact: true }).locator('..');
-  await expect(linksRow).toContainText('2 backends · 1 machine');
+  await expect(rowFor(panel, 'Running agents for')).toContainText('2 backends');
+  await expect(rowFor(panel, 'Running agents on')).toContainText('1 machine');
   await attach(testInfo, 'status-panel-remote-agents.png', await panel.screenshot());
 
   const dialog = await openBreakdown(page);
@@ -58,7 +68,7 @@ test('The links row hides when both counts are zero', async ({ mount, page }, te
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(DaemonStatusIndicator, scene('remote-agents-no-links'));
   const panel = await openStatusPanel(page);
-  await expect(panel.getByText('Connected daemons', { exact: true })).toHaveCount(0);
+  await expectNoLinkRows(panel);
   await attach(testInfo, 'status-panel-no-links.png', await panel.screenshot());
 });
 
@@ -66,8 +76,9 @@ test('Links without remote agents show singular counts', async ({ mount, page },
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(DaemonStatusIndicator, scene('connected-daemons'));
   const panel = await openStatusPanel(page);
-  const linksRow = panel.getByText('Connected daemons', { exact: true }).locator('..');
-  await expect(linksRow).toContainText('0 backends · 1 machine');
+  await expect(panel.getByText('Running agents for', { exact: true })).toHaveCount(0);
+  await expect(rowFor(panel, 'Running agents on')).toContainText('1 machine');
+  await expect(rowFor(panel, 'Running agents on')).not.toContainText('machines');
   await attach(testInfo, 'status-panel-links-only.png', await panel.screenshot());
   const dialog = await openBreakdown(page);
   await expect(dialog.getByText(/^for /)).toHaveCount(0);
@@ -80,11 +91,33 @@ test('An older daemon renders as before: no links row, no tags', async ({
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(DaemonStatusIndicator, scene('agent-memory'));
   const panel = await openStatusPanel(page);
-  await expect(panel.getByText('Connected daemons', { exact: true })).toHaveCount(0);
+  await expectNoLinkRows(panel);
   await attach(testInfo, 'status-panel-old-daemon.png', await panel.screenshot());
   const dialog = await openBreakdown(page);
   await expect(dialog.getByText('Implement dark mode', { exact: true })).toBeVisible();
   await expect(dialog.getByText('Fix flaky CT spec', { exact: true })).toBeVisible();
   await expect(dialog.getByText(/^for /)).toHaveCount(0);
   await attach(testInfo, 'agent-memory-old-daemon.png', await dialog.screenshot());
+});
+
+test('Only the backends row shows when there are no machine links', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(DaemonStatusIndicator, scene('links-backends-only'));
+  const panel = await openStatusPanel(page);
+  await expect(rowFor(panel, 'Running agents for')).toContainText('1 backend');
+  await expect(rowFor(panel, 'Running agents for')).not.toContainText('backends');
+  await expect(panel.getByText('Running agents on', { exact: true })).toHaveCount(0);
+  await attach(testInfo, 'status-panel-backends-only.png', await panel.screenshot());
+});
+
+test('Both rows show plural counts', async ({ mount, page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(DaemonStatusIndicator, scene('links-both'));
+  const panel = await openStatusPanel(page);
+  await expect(rowFor(panel, 'Running agents for')).toContainText('2 backends');
+  await expect(rowFor(panel, 'Running agents on')).toContainText('3 machines');
+  await attach(testInfo, 'status-panel-links-both.png', await panel.screenshot());
 });

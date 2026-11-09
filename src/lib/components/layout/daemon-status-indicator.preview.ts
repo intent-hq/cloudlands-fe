@@ -362,6 +362,14 @@ export const preview = definePreview<Record<string, never>>({
       props: {},
       setup: setup({ agentMemory: true, remoteLinks: { backends: 0, machines: 1 } }),
     },
+    'links-backends-only': {
+      props: {},
+      setup: setup({ agentMemory: true, remoteLinks: { backends: 1, machines: 0 } }),
+    },
+    'links-both': {
+      props: {},
+      setup: setup({ agentMemory: true, remoteLinks: { backends: 2, machines: 3 } }),
+    },
     'degraded-timeout': {
       props: {},
       setup: setup({ failures: { kind: 'timeout', count: 1 } }),
