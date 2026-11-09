@@ -136,9 +136,7 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
 
   it('ignores a legacy sandboxPath from an older daemon (no reveal)', async () => {
     seedLocality('local');
-    appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]),
-    );
+    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]));
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -183,9 +181,7 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
 
   it('hides the reveal item when the daemon is remote', async () => {
     seedLocality('remote');
-    appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]),
-    );
+    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]));
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -197,9 +193,7 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
   it('hides the reveal item for a remote (SSH) workspace even when the daemon is local (monorepo#2171)', async () => {
     seedLocality('local');
     seedRemoteWorkspace();
-    appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]),
-    );
+    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]));
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();

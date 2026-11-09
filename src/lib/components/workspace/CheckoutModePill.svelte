@@ -69,11 +69,7 @@
           : null,
   );
   const modeIcon = $derived(
-    mode === 'cow'
-      ? faLayerGroup
-      : mode === 'worktree'
-        ? faCodeFork
-        : faArrowRight,
+    mode === 'cow' ? faLayerGroup : mode === 'worktree' ? faCodeFork : faArrowRight,
   );
 
   /** Poll cadence while the tooltip is open and a daemon walk is in flight. */
