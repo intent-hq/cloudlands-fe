@@ -185,7 +185,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
         withAuth(
           id === 'cursor'
             ? cursorStatusFromDiscovery(discovery)
-            : providerStatusFromDiscovery(discovery, id),
+            : withVersion(providerStatusFromDiscovery(discovery, id), discovery, id),
           auth[id],
         ),
       ]),
@@ -263,6 +263,24 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   withAuth(antigravity, authVerdicts['antigravity']);
   withAuth(cursor, authVerdicts['cursor']);
 
+  const providers = {
+    auggie,
+    claudeCode,
+    codex,
+    cortex,
+    mock,
+    opencode,
+    pi,
+    droid,
+    grok,
+    unsloth,
+    antigravity,
+    cursor,
+  };
+  for (const [key, id] of Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
+    withVersion(providers[key as keyof typeof providers], discovery, id);
+  }
+
   return {
     hasAnyProvider:
       auggie.available ||
@@ -277,20 +295,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       unsloth.available ||
       antigravity.available ||
       cursor.available,
-    providers: {
-      auggie,
-      claudeCode,
-      codex,
-      cortex,
-      mock,
-      opencode,
-      pi,
-      droid,
-      grok,
-      unsloth,
-      antigravity,
-      cursor,
-    },
+    providers,
     hiddenProviders,
   };
 }
@@ -303,6 +308,17 @@ function providerStatusFromDiscovery(
 ): ProviderStatus {
   const row = discovery.providers.find((provider) => provider.id === providerId);
   return { available: row?.installed === true && !row.gatedOff };
+}
+
+/** Attach the discovered CLI version (display-only) to an available provider. */
+function withVersion(
+  status: ProviderStatus,
+  discovery: ProviderDiscoverySnapshot | undefined,
+  providerId: string,
+): ProviderStatus {
+  const version = discovery?.providers.find((row) => row.id === providerId)?.cliVersion;
+  if (status.available && version && status.version === undefined) status.version = version;
+  return status;
 }
 
 /**
@@ -325,7 +341,11 @@ function cursorStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): Provid
 /** Preserve missing-runner guidance only when discovery confirms the cause. */
 function claudeCodeStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
   const row = discovery.providers.find((provider) => provider.id === 'claude-code');
-  const status = providerStatusFromDiscovery(discovery, 'claude-code');
+  const status = withVersion(
+    providerStatusFromDiscovery(discovery, 'claude-code'),
+    discovery,
+    'claude-code',
+  );
   if (row && !row.installed && !row.gatedOff && discovery.npx?.resolvedPath === null) {
     status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
@@ -349,15 +369,35 @@ async function readProviderStatus<T>(read: () => Promise<T>): Promise<T> {
   return result;
 }
 
+let inFlightDiscovery: Promise<ProviderDiscoverySnapshot> | undefined;
+
 function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
-  return backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
+  const request = backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
+  inFlightDiscovery = request;
+  const settle = () => {
+    if (inFlightDiscovery === request) inFlightDiscovery = undefined;
+  };
+  request.then(settle, settle);
+  return request;
+}
+
+/**
+ * Discovery for display versions only: joins an in-flight request so a
+ * full sweep's per-provider checks share one probe. Failures yield none.
+ */
+function discoveryForVersions(): Promise<ProviderDiscoverySnapshot | undefined> {
+  return (inFlightDiscovery ?? fetchProviderDiscovery()).catch(() => undefined);
 }
 
 function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
-  return {
-    available: discovery.providers.some((row) => row.id === 'antigravity' && row.installed),
-    hasNpxFallback: false,
-  };
+  return withVersion(
+    {
+      available: discovery.providers.some((row) => row.id === 'antigravity' && row.installed),
+      hasNpxFallback: false,
+    },
+    discovery,
+    'antigravity',
+  );
 }
 
 async function checkAntigravityAvailability(): Promise<ProviderStatus> {
@@ -401,11 +441,36 @@ async function checkMockProvider(): Promise<ProviderStatus> {
  * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
  * the daemon's cache instead. */
 async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
+  if (
+    selectHostRole.select(appStore.state) === 'member' ||
+    DISCOVERY_STATUS_PROVIDERS.has(providerId)
+  ) {
+    return checkSingleProviderStatus(providerId, force);
+  }
+  const [status, discovery] = await Promise.all([
+    checkSingleProviderStatus(providerId, force),
+    discoveryForVersions(),
+  ]);
+  return withVersion(status, discovery, providerId);
+}
+
+/** Providers whose single check already reads discovery (and its version). */
+const DISCOVERY_STATUS_PROVIDERS = new Set(['claude-code', 'antigravity', 'cursor', 'mock']);
+
+async function checkSingleProviderStatus(
+  providerId: string,
+  force: boolean,
+): Promise<ProviderStatus> {
   const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
     (await getAuthVerdicts({ providerId, force }))[providerId];
 
   if (selectHostRole.select(appStore.state) === 'member') {
-    const status = providerStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
+    const discovery = await fetchProviderDiscovery();
+    const status = withVersion(
+      providerStatusFromDiscovery(discovery, providerId),
+      discovery,
+      providerId,
+    );
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
@@ -506,7 +571,7 @@ interface ProviderDiscoveryEntry {
   secondaryCommand?: string;
   secondaryResolved?: boolean;
   secondaryResolvedPath?: string;
-  /** Version of the resolved CLI (Cursor). */
+  /** Raw `--version` line of the resolved CLI, when the daemon probed it. */
   cliVersion?: string;
   /** Why a resolved CLI is refused; the daemon then reports `installed: false` (Cursor). */
   unavailableReason?: string;

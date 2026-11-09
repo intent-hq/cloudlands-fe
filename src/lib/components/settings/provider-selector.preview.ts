@@ -62,6 +62,13 @@ export const previewProviders = [
   },
 ];
 
+/** Raw daemon `--version` lines; the row shows only the version number. */
+const PREVIEW_CLI_VERSIONS: Record<string, string> = {
+  codex: 'codex-cli 0.165.0',
+  'claude-code': '2.1.303 (Claude Code)',
+  opencode: '1.18.18',
+};
+
 export function setupPreviewProviders() {
   const defaultProvider = selectEffectiveDefaultProviderId.select(appStore.state);
   const catalog = selectProviderCatalogEntries.select(appStore.state);
@@ -78,6 +85,7 @@ export function setupPreviewProviders() {
       checkSingleProviderSuccess(id, {
         available: id !== 'opencode',
         authenticated: id !== 'opencode',
+        version: PREVIEW_CLI_VERSIONS[id],
       }),
     );
   }
