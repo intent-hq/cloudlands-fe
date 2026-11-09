@@ -38,6 +38,8 @@ import {
 } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
   bulkUpsertSessions,
+  clearHistorySegment,
+  MAX_MESSAGES_PER_AGENT,
   upsertSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { deduplicateAgentMessages } from '$shared/utils/message-dedup';
@@ -69,29 +71,47 @@ function readCurrentMessages(agentId: string, workspaceId?: string): AgentMessag
 
 /**
  * Resident rows older than a newest-page read that form an unbroken `seq`
- * chain down from the page's oldest row. Daemon seqs are gapless, so a break
- * means missing rows: stopping there keeps the transcript from joining stale
- * rows to the page across a hidden gap. A page without older history
+ * chain down from the page's oldest row, capped at `limit` rows. Daemon seqs
+ * are gapless, so a break means missing rows: stopping there keeps the
+ * transcript from joining stale rows to the page across a hidden gap.
+ *
+ * The daemon reuses seqs after a truncation (edit/regenerate), so seq alone
+ * cannot tell an old row from its replacement. The resident rows must share
+ * at least one page row (same id at the same seq) and must not hold a
+ * different id at any page seq. A page without older history
  * (`nextToken === null`) is the whole conversation, so nothing is kept.
+ * `dropped` reports resident rows older than the page that were not kept.
  */
 function connectedOlderRows(
   resident: AgentMessage[],
   page: AgentMessage[],
   nextToken: string | null | undefined,
-): AgentMessage[] {
-  if (!nextToken) return [];
-  let expected = Infinity;
-  for (const message of page) {
-    if (typeof message.seq === 'number') expected = Math.min(expected, message.seq);
-  }
-  if (expected === Infinity) return [];
+  limit: number,
+): { kept: AgentMessage[]; dropped: boolean } {
   const bySeq = new Map<number, AgentMessage>();
   for (const message of resident) {
-    if (typeof message.seq === 'number' && message.seq < expected) bySeq.set(message.seq, message);
+    if (typeof message.seq === 'number') bySeq.set(message.seq, message);
   }
+  let oldest = Infinity;
+  let anchored = false;
+  let conflicting = false;
+  for (const message of page) {
+    if (typeof message.seq !== 'number') continue;
+    oldest = Math.min(oldest, message.seq);
+    const match = bySeq.get(message.seq);
+    if (match?.id === message.id) anchored = true;
+    else if (match) conflicting = true;
+  }
+  if (oldest === Infinity) return { kept: [], dropped: false };
+  let olderCount = 0;
+  for (const seq of bySeq.keys()) if (seq < oldest) olderCount += 1;
   const kept: AgentMessage[] = [];
-  for (let seq = expected - 1; bySeq.has(seq); seq -= 1) kept.push(bySeq.get(seq)!);
-  return kept.reverse();
+  if (nextToken && anchored && !conflicting) {
+    for (let seq = oldest - 1; bySeq.has(seq) && kept.length < limit; seq -= 1) {
+      kept.push(bySeq.get(seq)!);
+    }
+  }
+  return { kept: kept.reverse(), dropped: kept.length < olderCount };
 }
 
 /**
@@ -254,15 +274,16 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       );
       // The page is only the newest window: resident rows older than it are
       // not a BE truncation, so keep the ones that still connect to it.
-      const olderRows = connectedOlderRows(
+      const older = connectedOlderRows(
         readCurrentMessages(agentId, workspaceId),
         finalMessages,
         page.nextToken,
+        MAX_MESSAGES_PER_AGENT - finalMessages.length - appendedDuringRead.length,
       );
       const mergedMessages =
-        appendedDuringRead.length === 0 && olderRows.length === 0
+        appendedDuringRead.length === 0 && older.kept.length === 0
           ? finalMessages
-          : deduplicateAgentMessages([...olderRows, ...finalMessages, ...appendedDuringRead]);
+          : deduplicateAgentMessages([...older.kept, ...finalMessages, ...appendedDuringRead]);
 
       // Render BE state as-is: the daemon is the single source of truth for
       // streaming/responding flags. If a chat opens with "Thinking", that is
@@ -276,6 +297,9 @@ export async function loadChatTranscript(agentId: string, workspaceId?: string):
       submissionRead.complete(submissionHistoryEvidence(allMessages));
       appStore.dispatch(bulkUpsertSessions([sessionWithMessages]));
       appStore.dispatch(upsertSession(sessionWithMessages));
+      // The tail no longer reaches the older history segment, which would
+      // otherwise join it with no gap marker. Scroll-back refetches it.
+      if (older.dropped) appStore.dispatch(clearHistorySegment(agentId));
     } catch (error) {
       logger.error('Failed to load agent conversation transcript', error);
       // Errors are swallowed (don't reject the promise)
