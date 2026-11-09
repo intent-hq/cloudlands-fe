@@ -238,7 +238,7 @@
             rows={3}
             onblur={(e) => handleHintBlur(index, e.currentTarget.value.trim())}
             placeholder={m.settings_aiBehavior_modelOptions_hint_placeholder()}
-            class="max-h-[162px] min-h-[72px] w-full resize-none overflow-y-auto py-2 field-sizing-content"
+            class="max-h-40.5 min-h-18 w-full resize-none overflow-y-auto py-2 field-sizing-content"
           />
           <Button
             variant="ghost"
