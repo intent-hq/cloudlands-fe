@@ -39,7 +39,7 @@ for (const width of [420, 1440]) {
   test(`specialist detail controls remain usable at ${width}px`, async ({ mount, page }) => {
     await page.setViewportSize({ width, height: 1100 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const component = await mount(SpecialistDetailPreview);
+    const component = await mount(SpecialistDetailPreview, { props: { modelOptions: 'pair' } });
     await page.evaluate(() => document.fonts.ready);
     const group = component.locator('[data-open-combo-control]');
     const buttons = group.getByRole('button');
@@ -57,15 +57,86 @@ for (const width of [420, 1440]) {
     await advanced.click();
     const add = details.getByRole('button', { name: 'Add model option' });
     await expect(add).toBeVisible();
+    await expect(details.getByRole('textbox')).toHaveCount(2);
+
+    // Each option is a stacked block: picker / full-width hint / Remove,
+    // with Remove left-aligned to the hint, and blocks separated by a gap
+    // larger than any gap inside a block.
+    const column = (await details.boundingBox())!;
+    const options = details.locator('[data-model-option-row]');
+    await expect(options).toHaveCount(2);
+    const blocks = [];
+    for (let i = 0; i < 2; i += 1) {
+      const option = options.nth(i);
+      const [picker, hint, remove] = await Promise.all([
+        option.locator('[data-model-option-picker]').boundingBox(),
+        option.getByRole('textbox').boundingBox(),
+        option.getByRole('button', { name: 'Remove model option' }).boundingBox(),
+      ]);
+      expect(picker!.y + picker!.height).toBeLessThanOrEqual(hint!.y + 0.5);
+      expect(hint!.y + hint!.height).toBeLessThanOrEqual(remove!.y + 0.5);
+      expect(Math.abs(remove!.x - hint!.x)).toBeLessThanOrEqual(1);
+      expect(hint!.width).toBeGreaterThanOrEqual(column.width * 0.95);
+      expect(hint!.x + hint!.width).toBeLessThanOrEqual(column.x + column.width + 1);
+      blocks.push({ picker: picker!, hint: hint!, remove: remove! });
+    }
+    const addBox = (await add.boundingBox())!;
+    const inner = blocks.flatMap(({ picker, hint, remove }) => [
+      hint.y - (picker.y + picker.height),
+      remove.y - (hint.y + hint.height),
+    ]);
+    const between = [
+      blocks[1].picker.y - (blocks[0].remove.y + blocks[0].remove.height),
+      addBox.y - (blocks[1].remove.y + blocks[1].remove.height),
+    ];
+    for (const gap of between) expect(gap).toBeGreaterThan(Math.max(...inner));
+
     await add.click();
-    await expect(details.getByRole('textbox')).toHaveCount(1);
+    await expect(details.getByRole('textbox')).toHaveCount(3);
     const overflow = await details.evaluate((element) => element.scrollWidth - element.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
-    const hint = (await details.getByRole('textbox').boundingBox())!;
-    const column = (await details.boundingBox())!;
-    expect(hint.x + hint.width).toBeLessThanOrEqual(column.x + column.width + 1);
   });
 }
+
+test('saved hints are sized to their text the moment Advanced expands at 420px', async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 420, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  const component = await mount(SpecialistDetailPreview, { props: { modelOptions: 'heights' } });
+  await page.evaluate(() => document.fonts.ready);
+  const details = component.getByTestId('specialist-details-column');
+  const advanced = details.getByRole('button', { name: 'Advanced', exact: true });
+  await advanced.click();
+  await expect(advanced).toHaveAttribute('aria-expanded', 'true');
+  const hints = details.getByRole('textbox');
+  await expect(hints).toHaveCount(3);
+  // Measure immediately — no typing, no extra layout trigger.
+  const [six, twelve, empty] = await hints.evaluateAll((elements) =>
+    elements.map((element) => {
+      const style = getComputedStyle(element);
+      return {
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        lineHeight: parseFloat(style.lineHeight),
+      };
+    }),
+  );
+  // Sizes are judged in lines of the hint's own live line height, so the
+  // check follows the text rather than a pixel baseline.
+  const line = six.lineHeight;
+  // Six lines: fully visible right away, no clipping and no scrollbar.
+  expect(six.scrollHeight).toBeLessThanOrEqual(six.clientHeight + 1);
+  expect(six.clientHeight).toBeGreaterThanOrEqual(6 * line);
+  // Twelve lines: capped at about eight lines, and the rest scrolls.
+  expect(twelve.clientHeight).toBeGreaterThanOrEqual(7 * line);
+  expect(twelve.clientHeight).toBeLessThanOrEqual(9.5 * line);
+  expect(twelve.scrollHeight).toBeGreaterThan(twelve.clientHeight + line);
+  // Empty: about three lines, enough room to start a short hint.
+  expect(empty.clientHeight).toBeGreaterThanOrEqual(2.5 * line);
+  expect(empty.clientHeight).toBeLessThanOrEqual(4.5 * line);
+});
 
 test('keyboard activates separate launch, menu and advanced model-option controls safely', async ({
   mount,
