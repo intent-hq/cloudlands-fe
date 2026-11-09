@@ -126,7 +126,10 @@
     isHostOwner = false,
   }: Props = $props();
 
-  const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  const routeWorkspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
+  // The Dock has no workspace-route context; its queue already supplies the
+  // authoritative workspace used by the existing attachment resolver/viewer.
+  const workspaceId = $derived(queueWorkspaceId ?? routeWorkspaceId);
 
   const rows = $derived(displayRows ?? projectPendingSubmissions(undefined, messages).queue);
   const displayMessages = $derived(queuePresentationMessages(rows));
