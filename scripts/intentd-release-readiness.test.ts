@@ -141,6 +141,13 @@ function fixture() {
     extra: {} as Record<string, unknown>,
     // fe PR bodies served to the evidence helper's batched GraphQL read.
     prBodies: null as Record<number, string> | null,
+    // The Release PR head for the missing-CI restart: its workflow-run
+    // count, commit date, last reopen, and close/reopen failures.
+    headRuns: 1,
+    headCommitted: '2026-09-26T05:00:00Z',
+    reopened: '',
+    closeFail: false,
+    reopenFail: false,
   };
 }
 
@@ -224,6 +231,7 @@ let value;
 if (endpoint && Object.hasOwn(f.extra, endpoint)) value = f.extra[endpoint];
 else if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : f.extraPr ? [f.pr, {...f.pr, number: 100}] : [f.pr];
 else if (a[0] === 'pr' && a[1] === 'view') value = f.detail;
+else if (a[0] === 'pr' && (a[1] === 'close' || a[1] === 'reopen')) process.exit(f[a[1] + 'Fail'] ? 1 : 0);
 else if (a[0] === 'pr' && a[1] === 'merge') {
   const expected = a[a.indexOf('--match-head-commit') + 1];
   if (expected !== (f.liveHead || f.detail.headRefOid)) process.exit(1);
@@ -238,6 +246,9 @@ else if (endpoint === 'graphql') {
       if (n in f.prBodies) repository['p' + n] = { number: Number(n), body: f.prBodies[n] };
     value = { data: { repository } };
   }
+  else if (a.some(x => x.includes('ReopenedEvent'))) value = { data: { repository: { pullRequest: {
+    commits: { nodes: [{ commit: { oid: f.detail.headRefOid, committedDate: f.headCommitted } }] },
+    timelineItems: { nodes: f.reopened ? [{ createdAt: f.reopened }] : [] } } } } };
   else if (a.some(x => x.includes('viewer'))) value = { data: { viewer: { login: 'releaser' } } };
   else { process.stdout.write(String(f.unresolved)); process.exit(0); }
 }
@@ -256,6 +267,7 @@ else if (endpoint.includes('/actions/workflows/release-plz.yml/runs?')) value = 
 else if (endpoint === 'repos/${BE}/actions/runs/100') value = f.proof.run;
 else if (endpoint.includes('/actions/runs/100/attempts/1/jobs?')) value = {total_count: f.proof.jobs.length, jobs: f.proof.jobs};
 else if (endpoint.includes('/pulls?')) value = f.proof.prs;
+else if (endpoint.includes('/actions/runs?head_sha=')) value = {total_count: f.headRuns, workflow_runs: []};
 else { process.stderr.write('Unexpected gh: ' + JSON.stringify(a)); process.exit(2); }
 let payload = JSON.stringify(value);
 if (endpoint.startsWith('repos/${FE}/compare/') && f.paginateCommits) {
@@ -1448,5 +1460,78 @@ describe('auto-cut decision line', () => {
       .filter((line) => /(?<![-\w])exit\b/.test(line))
       .map((line) => line.trim());
     expect(exits).toEqual(['exit "${4:-0}"']);
+  });
+});
+
+describe('auto-cut missing-CI restart', () => {
+  // GitHub sometimes starts no workflow for a Release PR push: the head has
+  // no run at all and CI Gate never reports (cloudlands-fe#4336 head
+  // c5118d91, intentd#3185 head 3276c2c, both on 2026-11-09).
+  type Data = ReturnType<typeof pinFixture>;
+  function noCiRuns() {
+    const data = pinFixture();
+    data.detail.statusCheckRollup = [];
+    data.headRuns = 0;
+    return data;
+  }
+  const restarts = (calls: string[][]) =>
+    calls
+      .filter((args) => args[0] === 'pr' && (args[1] === 'close' || args[1] === 'reopen'))
+      .map((args) => args.slice(0, 3));
+
+  it('closes and reopens a head that has had no workflow run for ten minutes', () => {
+    const result = runCut(noCiRuns(), 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-restarted']);
+    expect(restarts(result.calls)).toEqual([
+      ['pr', 'close', '99'],
+      ['pr', 'reopen', '99'],
+    ]);
+    expect(result.output).toContain('no workflow runs for 60 min');
+  });
+
+  it('counts only a reopen after the head commit as an earlier restart', () => {
+    const data = noCiRuns();
+    data.reopened = '2026-09-26T04:00:00Z';
+    expect(runCut(data, 'workflow_dispatch', MERGE_STEP, '', false).decision).toEqual([
+      'defer',
+      'ci-restarted',
+    ]);
+  });
+
+  it.each<[string, (data: Data) => void]>([
+    ['a head under ten minutes old', (d) => (d.headCommitted = '2026-09-26T05:55:00Z')],
+    ['a head that has runs', (d) => (d.headRuns = 1)],
+    ['a PR already reopened for this head', (d) => (d.reopened = '2026-09-26T05:30:00Z')],
+    ['an unreadable run count', (d) => (d.fail = '/actions/runs?')],
+  ])('leaves the PR alone for %s', (name, setup) => {
+    const data = noCiRuns();
+    setup(data);
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls)).toEqual([]);
+    if (name.includes('already reopened')) expect(result.output).toContain('already restarted');
+  });
+
+  it('only describes the restart on a dry run', () => {
+    const result = runCut(noCiRuns(), 'workflow_dispatch', MERGE_STEP);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls)).toEqual([]);
+    expect(result.output).toContain('would close and reopen');
+  });
+
+  it('keeps the PR open and the missing-gate deferral when the close fails', () => {
+    const data = noCiRuns();
+    data.closeFail = true;
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls).at(-1)).toEqual(['pr', 'reopen', '99']);
+  });
+
+  it('fails loudly when the closed PR cannot be reopened', () => {
+    const data = noCiRuns();
+    data.reopenFail = true;
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1);
+    expect(result.decision).toEqual(['error', 'ci-restart-failed']);
+    expect(restarts(result.calls).map((args) => args[1])).toEqual(['close', 'reopen', 'reopen']);
   });
 });
