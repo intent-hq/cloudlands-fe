@@ -1,14 +1,17 @@
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, test } from '../../../../test/ct-test';
 import ToolCallCollapseHost from './ToolCallCollapseHost.svelte';
 
 const WRAPPER = '[data-response-group-motion="animated-height"]';
 
-async function sampleHeights(host: import('@playwright/experimental-ct-svelte').Locator) {
+// Clicks and samples in one evaluate so no animation frames pass before sampling starts.
+async function toggleAndSample(host: Locator) {
   return host.evaluate(
     (node, selector) =>
       new Promise<{ height: number; content: number }[]>((resolve) => {
         const wrapper = node.querySelector<HTMLElement>(selector)!;
         const samples: { height: number; content: number }[] = [];
+        node.querySelector<HTMLElement>('[data-testid="tool-call-disclosure"]')!.click();
         const started = performance.now();
         const frame = () => {
           samples.push({
@@ -29,18 +32,15 @@ test('slides a tool call closed with its details still visible', async ({ mount,
   const host = await mount(ToolCallCollapseHost);
   const toggle = host.getByTestId('tool-call-disclosure');
 
-  await toggle.click();
+  const opening = await toggleAndSample(host);
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  const opening = await sampleHeights(host);
   const openHeight = opening.at(-1)!.height;
   expect(openHeight).toBeGreaterThan(40);
   const growing = opening.filter((sample) => sample.height > 2 && sample.height < openHeight - 2);
   expect(growing.length, JSON.stringify(opening)).toBeGreaterThanOrEqual(3);
 
-  await toggle.click();
+  const closing = await toggleAndSample(host);
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  const closing = await sampleHeights(host);
-
   const midway = closing.filter(
     (sample) => sample.height > 2 && sample.height < openHeight - 2 && sample.content > 0,
   );
