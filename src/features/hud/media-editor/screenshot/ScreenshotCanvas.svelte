@@ -477,11 +477,17 @@
         );
     } else if (g.tool === 'draw' || g.tool === 'blur') {
       const previous = g.points.at(-1)!;
-      const points =
-        g.points.length < (g.tool === 'blur' ? 4096 : 256) &&
-        Math.hypot(current.x - previous.x, current.y - previous.y) > 0.1
-          ? [...g.points, current]
-          : g.points;
+      let points = g.points;
+      if (Math.hypot(current.x - previous.x, current.y - previous.y) > 0.1) {
+        if (g.tool === 'draw') {
+          // Keep observing the whole stroke. A full buffer is sampled down before
+          // accepting the next point, rather than silently discarding its tail.
+          const retained = points.length < 4096
+            ? points
+            : points.filter((_, index) => index % 2 === 0 || index === points.length - 1);
+          points = [...retained, current];
+        } else if (points.length < 4096) points = [...points, current];
+      }
       gesture = { ...g, points, preview: { kind: 'path', points } };
       return;
     } else if (g.tool === 'arrow') preview = { kind: 'arrow', from: g.start, to: current };
