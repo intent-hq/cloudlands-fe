@@ -431,7 +431,7 @@ describe.each<EffortProtocol>(['modern', 'legacy'])('%s effort lifecycle', (prot
       const editing = applyReasoningEffort('agent-1', 'ws-1', scenario.picked, 'medium');
       expect(state.hardwareConsole.encoderEffortFeedback).toBeNull();
       if (scenario.turns !== 'none') device.turn();
-      if (scenario.turns === 'return') device.turn('ccw');
+      if (scenario.turns === 'return') device.turn('counterclockwise');
       if (scenario.stop === 'before-old') device.statusChanged('disconnected');
       wire.expectWrites(['low']);
 

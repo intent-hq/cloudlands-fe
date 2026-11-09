@@ -1,52 +1,42 @@
 /**
- * Pure ordering/cycling logic for the hardware encoder rotate behavior:
- * cycle the app's active workspace across workspaces ordered by activity
- * (lastActivity → createdAt → updatedAt), clamping at the list ends.
+ * Pure stepping logic for the encoder's Switch tabs mode: move across
+ * the visible workspace tabs in their on-screen order, clamping at the ends.
  *
  * Pure web code — no Electron imports, no store imports.
  */
 
-import type { EncoderDirection } from '../input/types';
-import {
-  compareWorkspaceActivityDisplayTimeDesc,
-  type WorkspaceActivityTimeFields,
-} from '$shared/utils/workspace-activity-time';
+import type { PhysicalKnobDirection } from '../input/types';
+import type { WorkspaceTabGroup } from '$store/renderer/slices/tab-state/tab-groups';
 
-/** The minimal workspace shape the encoder ordering needs. */
-export interface EncoderCycleWorkspace extends WorkspaceActivityTimeFields {
-  id: string;
+/**
+ * The tabs the strip shows: members of a collapsed group are hidden behind
+ * its chip, so only ungrouped tabs and the open group's members remain.
+ */
+export function visibleWorkspaceTabs(
+  tabOrder: readonly string[],
+  groups: readonly WorkspaceTabGroup[],
+  openGroupId: string | null,
+): string[] {
+  const hidden = new Set(
+    groups.filter((group) => group.id !== openGroupId).flatMap((group) => group.workspaceIds),
+  );
+  return tabOrder.filter((id) => !hidden.has(id));
 }
 
 /**
- * Workspaces in encoder-rotate cycling order: most recently active first
- * (activity ordering per `compareWorkspaceActivityDisplayTimeDesc`).
+ * One detent across the tab strip. Clockwise moves one tab right,
+ * counter-clockwise one tab left. Returns null at either end (no wrap) or
+ * with no tabs. From outside the strip (Home, Settings, an unknown id),
+ * clockwise enters at the leftmost tab and counter-clockwise at the rightmost.
  */
-export function orderWorkspacesForCycling<T extends EncoderCycleWorkspace>(
-  workspaces: readonly T[],
-): T[] {
-  return workspaces.slice().sort(compareWorkspaceActivityDisplayTimeDesc);
-}
-
-/**
- * One encoder detent's cycling step. Returns the target workspace id, or
- * null when there is nowhere to go (empty list, or already at the end of
- * the list in the stepped direction — cycling clamps, it does not wrap).
- * Direction honored: cw steps toward more recently active, ccw toward less
- * recently active. An unknown/absent active id enters the list at the
- * direction-appropriate end.
- */
-export function cycleWorkspaceId(
-  orderedIds: readonly string[],
-  activeWorkspaceId: string | null,
-  direction: EncoderDirection,
+export function stepWorkspaceTab(
+  tabOrder: readonly string[],
+  currentWorkspaceId: string | null,
+  direction: PhysicalKnobDirection,
 ): string | null {
-  if (orderedIds.length === 0) return null;
-  const step = direction === 'cw' ? -1 : 1;
-  const index = activeWorkspaceId === null ? -1 : orderedIds.indexOf(activeWorkspaceId);
-  if (index === -1) {
-    return orderedIds[step === 1 ? 0 : orderedIds.length - 1];
-  }
-  const next = index + step;
-  if (next < 0 || next >= orderedIds.length) return null;
-  return orderedIds[next];
+  if (tabOrder.length === 0) return null;
+  const step = direction === 'clockwise' ? 1 : -1;
+  const index = currentWorkspaceId === null ? -1 : tabOrder.indexOf(currentWorkspaceId);
+  if (index === -1) return tabOrder[step === 1 ? 0 : tabOrder.length - 1];
+  return tabOrder[index + step] ?? null;
 }

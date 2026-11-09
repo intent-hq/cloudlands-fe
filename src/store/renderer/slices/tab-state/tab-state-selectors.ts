@@ -8,7 +8,7 @@ import {
   serializeWorkspaceTabsState,
   type WorkspaceTabGroupCollection,
 } from './tab-state-slice';
-import type { WorkspaceTabGroup } from './tab-groups';
+import { resolveOpenWorkspaceTabGroupId, type WorkspaceTabGroup } from './tab-groups';
 
 export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
@@ -75,19 +75,15 @@ function groupListOf(tabState: { tabGroups?: WorkspaceTabGroupCollection }): Wor
   return list;
 }
 
-/**
- * The expanded group: the group of the current tab when it has one (a selected
- * tab is never hidden), otherwise the group the user last opened.
- */
+/** The expanded group; see `resolveOpenWorkspaceTabGroupId`. */
 export const selectOpenWorkspaceTabGroupId = store.createSelector((state): string | null => {
   if (state.userPreferences?.labsTabGroupsEnabled !== true) return null;
   const { openTabGroupId, currentTabId } = state.tabState;
-  const tabGroups = getWorkspaceTabGroupList(state.tabState);
-  const currentGroup = currentTabId
-    ? tabGroups.find((group) => group.workspaceIds.includes(currentTabId))
-    : undefined;
-  if (currentGroup) return currentGroup.id;
-  return tabGroups.some((group) => group.id === openTabGroupId) ? openTabGroupId : null;
+  return resolveOpenWorkspaceTabGroupId(
+    getWorkspaceTabGroupList(state.tabState),
+    currentTabId,
+    openTabGroupId,
+  );
 });
 
 export const selectWorkspaceTabGroupsEnabled = store.createSelector((state) => {

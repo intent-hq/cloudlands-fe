@@ -23,7 +23,10 @@ import {
   type CycleScope,
   type CycleScopeFamilyId,
 } from '$features/hardware-console/actions/cycle-scope';
-import type { EncoderDirection, HardwareDeviceModel } from '$features/hardware-console/input/types';
+import type {
+  HardwareDeviceModel,
+  PhysicalKnobDirection,
+} from '$features/hardware-console/input/types';
 import type { PttRecordingFinishedPayload } from '$features/hardware-console/voice/ptt-controller';
 import type {
   EncoderEffortFeedback,
@@ -150,7 +153,7 @@ export const encoderHudShown = createAction<[workspaceId: string]>(
 );
 /** Decoded detent, with the workspace captured at input time. */
 export const encoderEffortRotated = createAction<
-  [direction: EncoderDirection, workspaceId: string | null]
+  [direction: PhysicalKnobDirection, workspaceId: string | null]
 >('hardwareConsole/encoderEffortRotated');
 /** Drop queued effort writes when the decoder disconnects or is disposed. */
 export const encoderInputStopped = createAction('hardwareConsole/encoderInputStopped');

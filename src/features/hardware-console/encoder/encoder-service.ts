@@ -3,10 +3,10 @@
  *
  * Subscribes an input decoder to the shared manager's raw channel-2 stream
  * (`onRawMessage`) and wires the rotary encoder:
- * - rotate: adjusts the current agent's effort by default, or on Home's
- *   Workspaces list moves the selection (and its side preview) down or up;
- *   optionally cycles workspaces ordered by activity. All modes clamp at the
- *   ends;
+ * - rotate: on Home's Workspaces list moves the selection (and its side
+ *   preview) down or up in every mode; elsewhere adjusts the current agent's
+ *   effort by default, or optionally steps across the open workspace tabs,
+ *   left to right. All modes clamp at the ends;
  * - click (`ENC_CLK` keydown): opens the workspace selected on Home's
  *   Workspaces list, otherwise opens Home like the titlebar Home button.
  *
@@ -18,8 +18,6 @@ import { store as appStore } from '$store/renderer/store';
 import { createLogger } from '$lib/utils/client-logger';
 import { navigateToRoute } from '$lib/utils/navigation.client';
 import { openAndShowWorkspace } from '$lib/utils/show-workspace';
-import { getItems } from '@themislib/themis/utils/collections/collection-utils';
-import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import {
   encoderHudHidden,
   encoderEffortRotated,
@@ -28,10 +26,11 @@ import {
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
-import type { EncoderDirection } from '../input/types';
-import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
+import type { PhysicalKnobDirection } from '../input/types';
 import { isConsoleOwner } from '../owner-gate';
-import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
+import { stepWorkspaceTab, visibleWorkspaceTabs } from './workspace-cycle';
+import { getWorkspaceTabGroupList } from '$store/renderer/slices/tab-state/tab-state-slice';
+import { resolveOpenWorkspaceTabGroupId } from '$store/renderer/slices/tab-state/tab-groups';
 import { getVisibleWorkspaceId } from '$features/workspace/visible-workspace';
 import { currentRoutePath } from '$lib/utils/workspace-route-path';
 import { getHomeEncoderTarget, stepHomeSelection } from '$features/home/home-encoder-target';
@@ -68,11 +67,23 @@ function resolveDeps(deps: EncoderDeps): Required<EncoderDeps> {
   };
 }
 
-function cyclableWorkspaces() {
-  const state = appStore.state;
-  return getItems(state.workspace.workspaces).filter(
-    (workspace) => workspace.id !== CHIEF_WORKSPACE_ID && isKeyAssignableWorkspace(workspace),
+/**
+ * The tabs the strip shows, in order, with `cursor` treated as current so a
+ * detent landing in a group opens it. Mirrors `selectWorkspaceTabOrder` and
+ * `selectOpenWorkspaceTabGroupId`, read straight from state: device services
+ * load before selectors can be created.
+ */
+function visibleTabOrder(cursor: string | null): string[] {
+  const { tabState, userPreferences } = appStore.state;
+  const order = tabState.workspaceStacks.flat();
+  if (userPreferences?.labsTabGroupsEnabled !== true) return order;
+  const groups = getWorkspaceTabGroupList(tabState);
+  const openGroupId = resolveOpenWorkspaceTabGroupId(
+    groups,
+    cursor ?? tabState.currentTabId,
+    tabState.openTabGroupId,
   );
+  return visibleWorkspaceTabs(order, groups, openGroupId);
 }
 
 function navigateToWorkspace(
@@ -87,37 +98,40 @@ function navigateToWorkspace(
 }
 
 /**
- * Handle one encoder detent. Exported for tests. Returns the workspace id
- * the detent navigated to, or null when there was nowhere to go (cycling
- * clamps at the ends of the activity-ordered list).
+ * Handle one Switch tabs detent. Returns the workspace id the detent
+ * navigated to, or null when there was nowhere to go (the tab strip ends).
  */
-function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}): string | null {
+function handleEncoderRotate(
+  direction: PhysicalKnobDirection,
+  deps: EncoderDeps = {},
+): string | null {
   const { showWorkspace, dispatch, getCurrentWorkspaceId } = resolveDeps(deps);
   const state = appStore.state;
 
-  const ordered = orderWorkspacesForCycling(cyclableWorkspaces());
   const cursor = state.hardwareConsole.encoderHudWorkspaceId ?? getCurrentWorkspaceId();
-  const target = cycleWorkspaceId(
-    ordered.map((workspace) => workspace.id),
-    cursor,
-    direction,
-  );
+  const target = stepWorkspaceTab(visibleTabOrder(cursor), cursor, direction);
   if (target === null) return null;
   dispatch(encoderHudShown(target));
   navigateToWorkspace(target, showWorkspace);
   return target;
 }
 
-/**
- * Move Home's workspace selection one row. Returns false when Home's
- * Workspaces list is not on screen, leaving the detent to the effort path.
- */
-function handleHomeRotate(direction: EncoderDirection): boolean {
+/** Home's Workspaces list while it is on screen, with its row ids. */
+function visibleHomeList() {
   const target = getHomeEncoderTarget();
   const ids = currentRoutePath() === '/' ? target?.ids() : null;
-  if (!target || !ids) return false;
-  const next = stepHomeSelection(ids, target.selectedId(), direction);
-  if (next !== null) target.select(next);
+  return target && ids ? { target, ids } : null;
+}
+
+/**
+ * Move Home's workspace selection one row. Returns false when Home's
+ * Workspaces list is not on screen, leaving the detent to the mode's path.
+ */
+function handleHomeRotate(direction: PhysicalKnobDirection): boolean {
+  const home = visibleHomeList();
+  if (!home) return false;
+  const next = stepHomeSelection(home.ids, home.target.selectedId(), direction);
+  if (next !== null) home.target.select(next);
   return true;
 }
 
@@ -126,9 +140,7 @@ function handleHomeRotate(direction: EncoderDirection): boolean {
  * in a collapsed group; the preview still shows it.
  */
 function selectedHomeWorkspaceId(): string | null {
-  const target = getHomeEncoderTarget();
-  if (!target || currentRoutePath() !== '/' || target.ids() === null) return null;
-  return target.selectedId();
+  return visibleHomeList()?.target.selectedId() ?? null;
 }
 
 /**
@@ -174,16 +186,10 @@ export function installHardwareConsoleEncoder(
       if (!isOwner()) return;
       const { encoderBehavior, encoderBehaviorHydrated } = appStore.state.hardwareConsole;
       if (!encoderBehaviorHydrated) return;
+      const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
+      if (workspaceId === null && handleHomeRotate(direction)) return;
       if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
-      else {
-        // Calibrate rotation to the physical Creator Micro 2 report
-        // (intent-hq/intent#5947), shared with Codex Micro. Keep workspace
-        // navigation's existing wire direction and catalog effort order intact.
-        const physical = direction === 'cw' ? 'ccw' : 'cw';
-        const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
-        if (workspaceId === null && handleHomeRotate(physical)) return;
-        dispatch(encoderEffortRotated(physical, workspaceId));
-      }
+      else dispatch(encoderEffortRotated(direction, workspaceId));
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {
       if (key === 'ENC_CLK' && isOwner()) handleEncoderClick(deps);
