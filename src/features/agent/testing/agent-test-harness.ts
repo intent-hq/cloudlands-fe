@@ -15,7 +15,6 @@ import type {
   Workspace,
 } from '../../../shared/types';
 import { WorkspaceStatus } from '../../../shared/types';
-import type { AgentConfig } from '../agent-types';
 import {
   createAgentId,
   AgentId as BrandedAgentId,
@@ -31,6 +30,14 @@ import {
   ErrorSeverity,
 } from '../services/error-handler';
 import { initRendererStoreBridge } from '../../../store/renderer/renderer-store-bridge';
+
+/** Agent creation options the harness accepts; scenarios may pass extra provider keys. */
+interface AgentConfig {
+  provider: string;
+  model?: string;
+  name?: string;
+  [key: string]: unknown;
+}
 
 const harnessRendererState: any = {
   workspace: { workspaces: createCollection('id') },

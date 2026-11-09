@@ -493,45 +493,5 @@ vi.mock('$lib/electron-bridge', () => ({
   emit: vi.fn(async () => {}),
 }));
 
-// Mock typed-invoke to avoid IPC errors in tests
-vi.mock('$shared/ipc/typed-invoke', () => ({
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  typedInvoke: vi.fn(async (channel: string, data?: any) => {
-    // Return mock responses based on channel
-    switch (channel) {
-      case 'agent:create':
-        return {
-          success: true,
-          data: {
-            id: 'test-agent-id',
-            backendSessionId: 'test-session-id',
-            status: 'Active',
-          },
-        };
-      case 'agent:send-message':
-        return {
-          success: true,
-          data: {
-            messageId: 'test-message-id',
-          },
-        };
-      default:
-        return { success: true, data: null };
-    }
-  }),
-  isSuccessResponse: vi.fn(
-    (response: any) => response.success === true && response.data !== undefined,
-  ),
-  isErrorResponse: vi.fn(
-    (response: any) => response.success === false && response.error !== undefined,
-  ),
-  throwOnError: vi.fn((response: any) => {
-    if (response.success !== true || response.data === undefined) {
-      throw new Error(`IPC Error: ${response.error?.code} - ${response.error?.message}`);
-    }
-    return response;
-  }),
-}));
-
 // Note: Provenance modules are not mocked here to allow tests to use actual implementations
 // The reset functions in those modules properly reset global state for testing

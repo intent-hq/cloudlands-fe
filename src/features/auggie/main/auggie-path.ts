@@ -1,15 +1,11 @@
 /**
  * Auggie path helpers — daemon-backed.
  *
- * Shared PATH / auggie-binary discovery used by `auggie.ipc.ts` (IPC handlers)
- * and `execute-auggie-command.ts` (CLI invocation). All probing is delegated
- * to the daemon: `getEnhancedPath()` returns the cached `host.env.enhancedPath`
+ * PATH / auggie-binary discovery used by `auggie.ipc.ts` (IPC handlers).
+ * All probing is delegated to the daemon: `getEnhancedPath()` returns the cached `host.env.enhancedPath`
  * (see `shared/main/find-binary.ts#initializeHostEnv`) so synchronous callers
  * still get an authoritative PATH, and `findAuggiePathAsync()` /
  * `findAuggieInEnhancedPath()` both delegate to `host.checkAuggie`.
- *
- * Lives in its own module to avoid the circular import that previously existed
- * between `auggie.ipc.ts` and `execute-auggie-command.ts`.
  */
 
 import { Logger } from '../../../shared/logger';
@@ -59,9 +55,8 @@ export async function findAuggiePathStrict(): Promise<string | null> {
  * canonical discovery (Intent-managed binary at `~/.augment/bin/auggie`,
  * then a scan of the enhanced PATH including nvm/fnm/volta/asdf/homebrew).
  *
- * Return contract is unchanged (`string | null`) so the spawn helpers in
- * `execute-auggie-command.ts` keep working without changes; availability
- * checks use `findAuggiePathStrict` to keep probe failures distinct.
+ * Returns `string | null`; availability checks use `findAuggiePathStrict`
+ * to keep probe failures distinct.
  */
 export async function findAuggiePathAsync(): Promise<string | null> {
   try {

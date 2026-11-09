@@ -3,6 +3,8 @@
  *
  * Extends the unified logger with file persistence for the main process.
  * Re-exports the unified logger for consistency across the application.
+ *
+ * @internal Used by the dev scripts behind test:workspace-creation, test:workspace-flow and test:edge-cases-advanced.
  */
 
 import { appendFileSync, existsSync, mkdirSync } from 'fs';

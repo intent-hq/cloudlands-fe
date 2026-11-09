@@ -650,7 +650,7 @@ describe('verification planning', () => {
       'src/hooks.client.ts',
       'src/routes/(app)/+layout.svelte',
       'src/features/settings/labels.ts',
-      'src/features/agent/main/stream-manager.ts',
+      'src/features/agent/main/agent-missing.ipc.ts',
       'src/shared/errors/messages.ts',
       'src/store/renderer/seeders/provider-status-bridge-seeder.ts',
       'src/lib/components/chat/streaming-status.preview-fixtures.svelte',
