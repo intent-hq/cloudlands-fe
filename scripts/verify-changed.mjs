@@ -639,7 +639,11 @@ export function createVerificationPlan(files, options = {}) {
       env: { [SKIP_WORKFLOW_LINT_ENV]: '1' },
     });
   if (workflowLint)
-    checks.push(command('workflows', 'Workflow lint (actionlint)', ['run', 'lint:workflows']));
+    checks.push({
+      ...command('workflows', 'Workflow lint (actionlint)', ['run', 'lint:workflows']),
+      // An inherited skip from the caller's shell must not pass this lane unlinted.
+      env: { [SKIP_WORKFLOW_LINT_ENV]: '0' },
+    });
   if (typeCheckWrapper)
     checks.push(
       command('type-check-validate', 'Type check (validate wrapper)', [

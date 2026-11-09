@@ -1376,7 +1376,7 @@ describe('verification planning', () => {
       const plan = createVerificationPlan([file], { root, ctTests: [] });
       const workflows = plan.checks.find((check) => check.id === 'workflows');
       expect(workflows?.args, file).toEqual(['run', 'lint:workflows']);
-      expect(workflows?.env, file).toBeUndefined();
+      expect(workflows?.env, file).toEqual({ [SKIP_WORKFLOW_LINT_ENV]: '0' });
       expect(dryRun([file], root), file).toContain('pnpm run lint:workflows');
     }
   });
