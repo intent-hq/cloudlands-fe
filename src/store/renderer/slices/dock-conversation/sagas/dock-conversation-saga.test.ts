@@ -77,7 +77,8 @@ import {
   selectDockConversationComposer,
 } from '../dock-conversation-selectors';
 import { dockConversationSaga } from './dock-conversation-saga';
-import { configureDockEvidenceNative, setDockDictationMarkSink } from './dock-evidence-saga';
+import { configureDockEvidenceNative, evidenceOf, setDockDictationMarkSink } from './dock-evidence-saga';
+import { DOCK_CAPTURE_EDITOR_CHANNELS } from '$shared/dock-capture-editor';
 import {
   __resetDockRetentionProbesForTests,
   captureDockPasteOrigin,
@@ -87,6 +88,7 @@ import type { SystemStatusWirePayload } from '../../daemon-health/daemon-health-
 import {
   dockEvidenceAnnotationToggleRequested,
   dockEvidenceCaptureRequested,
+  dockMediaEditorOpenRequested,
   dockEvidenceCaptureModeSet,
   dockEvidenceImageRemoveRequested,
   dockEvidenceInsertionCommitted,
@@ -1828,6 +1830,65 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
     appStore.dispatch(dockEvidenceRecordToggleRequested(CHIEF_WORKSPACE_ID, chiefAgent));
     await vi.waitFor(() => expect(chiefView().captureError).toBe('unsupported-workspace'));
     expect(native.calls.clips).toEqual([]);
+  });
+
+  /** Edit on an Assistant screenshot: a stand-in editor channel records OPEN requests. */
+  async function editChiefScreenshot(attachmentsAdvertised: unknown) {
+    advertised = attachmentsAdvertised;
+    const opens: unknown[] = [];
+    const placements: unknown[] = [];
+    const bridge = window as unknown as { electronAPI?: { invoke: (channel: string, request?: unknown) => Promise<unknown> } };
+    const previous = bridge.electronAPI;
+    bridge.electronAPI = {
+      invoke: async (channel, request) => {
+        if (channel === DOCK_CAPTURE_EDITOR_CHANNELS.OPEN) {
+          opens.push(request);
+          return { ok: true, openId: '00000000-0000-4000-8000-000000000001' };
+        }
+        return previous?.invoke(channel, request);
+      },
+    };
+    // Like the daemon: the Assistant workspace refuses attachments it does not advertise.
+    backend.onRequest('file.placeAttachment', (params) => {
+      const row = params as { workspaceId: string; fileName: string; mimeType?: string };
+      placements.push(row.workspaceId);
+      if (row.workspaceId === CHIEF_WORKSPACE_ID && !advertised) throw new Error('chief attachments unsupported');
+      return { ok: true, path: `.intent/attachments/${row.fileName}`, fileName: row.fileName, size: 2048,
+        attachmentId: `chief-image-${placements.length}`, mimeType: row.mimeType ?? 'image/png', uploadedAt: timestamp };
+    });
+    const native = scriptedNative();
+    await openChief(native);
+    appStore.dispatch(dockEvidenceCaptureRequested(CHIEF_WORKSPACE_ID, chiefAgent));
+    await vi.waitFor(() => expect(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images).toHaveLength(1));
+    const image = evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)!.images[0];
+    const before = JSON.stringify(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images);
+    appStore.dispatch(dockMediaEditorOpenRequested(CHIEF_WORKSPACE_ID, chiefAgent, image.id));
+    return { opens, placements, before, restore: () => { bridge.electronAPI = previous; } };
+  }
+
+  it('Edit on an Assistant screenshot without chiefAttachments uploads nothing and says why', async () => {
+    const run = await editChiefScreenshot(0);
+    try {
+      await vi.waitFor(() => expect(notifications.warning).toHaveBeenCalledTimes(1));
+      expect(run.placements).toEqual([]);
+      expect(run.opens).toEqual([]);
+      expect(JSON.stringify(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images)).toBe(run.before);
+      expect(appStore.state.dockConversation.workspaceId).toBe(CHIEF_WORKSPACE_ID);
+      expect(appStore.state.dockConversation.agentId).toBe(chiefAgent);
+    } finally {
+      run.restore();
+    }
+  });
+
+  it('Edit on an Assistant screenshot with chiefAttachments places it once and opens the editor', async () => {
+    const run = await editChiefScreenshot(1);
+    try {
+      await vi.waitFor(() => expect(run.opens).toHaveLength(1));
+      expect(run.placements).toEqual([CHIEF_WORKSPACE_ID]);
+      expect(notifications.warning).not.toHaveBeenCalled();
+    } finally {
+      run.restore();
+    }
   });
 });
 
