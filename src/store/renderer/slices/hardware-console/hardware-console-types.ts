@@ -26,12 +26,13 @@ export interface EncoderEffortFeedback {
 export interface RadialPromptPickerState {
   /** True while the joystick is deflected and the overlay is showing. */
   open: boolean;
-  /** Top-N prompt texts by sector (index 0 = sector 0). */
+  /** Focused chat suggestions captured at engage (ring slots 0-2). */
+  suggestions: string[];
+  /** Top-N used prompts captured at engage; `buildRadialSlots` places both. */
   prompts: string[];
   /**
-   * Highlighted 0-based sector. `prompts.length` = the dedicated Cancel
-   * sector at 6 o'clock; `null` = centered. Release inserts nothing in
-   * either of those cases.
+   * Highlighted slot index; `null` = centered. Release on Cancel, an empty
+   * slot, or centered does nothing.
    */
   sector: number | null;
 }

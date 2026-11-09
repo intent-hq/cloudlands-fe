@@ -239,13 +239,13 @@ describe('hardwareConsoleReducer', () => {
     expect(hardwareConsoleReducer(initialState, consoleOwnerChanged(true))).toBe(initialState);
   });
 
-  it('sets the prompt picker limit, clamped to [1, 12]', () => {
+  it('sets the prompt picker limit, clamped to [1, 7] (the ring has 7 prompt directions)', () => {
     expect(hardwareConsoleReducer(initialState, setPromptPickerLimit(5)).promptPickerLimit).toBe(5);
     expect(hardwareConsoleReducer(initialState, setPromptPickerLimit(99)).promptPickerLimit).toBe(
-      12,
+      7,
     );
     expect(hardwareConsoleReducer(initialState, setPromptPickerLimit(0)).promptPickerLimit).toBe(1);
-    expect(hardwareConsoleReducer(initialState, setPromptPickerLimit(8))).toBe(initialState);
+    expect(hardwareConsoleReducer(initialState, setPromptPickerLimit(7))).toBe(initialState);
   });
 
   it('hydrates the prompt tracker with a clamped limit and marks promptsHydrated', () => {
@@ -253,7 +253,7 @@ describe('hardwareConsoleReducer', () => {
     const state = hardwareConsoleReducer(initialState, hydrateHardwareConsolePrompts(usage, 99));
 
     expect(state.promptUsage).toEqual(usage);
-    expect(state.promptPickerLimit).toBe(12);
+    expect(state.promptPickerLimit).toBe(7);
     expect(state.promptsHydrated).toBe(true);
   });
 
@@ -275,14 +275,27 @@ describe('hardwareConsoleReducer', () => {
   });
 
   it('opens, retargets, and closes the radial picker overlay', () => {
-    const opened = hardwareConsoleReducer(initialState, radialPromptPickerOpened(['a', 'b'], 1));
-    expect(opened.radialPrompt).toEqual({ open: true, prompts: ['a', 'b'], sector: 1 });
+    const opened = hardwareConsoleReducer(
+      initialState,
+      radialPromptPickerOpened(['s1'], ['a', 'b'], 1),
+    );
+    expect(opened.radialPrompt).toEqual({
+      open: true,
+      suggestions: ['s1'],
+      prompts: ['a', 'b'],
+      sector: 1,
+    });
 
     const moved = hardwareConsoleReducer(opened, radialPromptPickerSectorChanged(null));
-    expect(moved.radialPrompt).toEqual({ open: true, prompts: ['a', 'b'], sector: null });
+    expect(moved.radialPrompt).toEqual({ ...opened.radialPrompt, sector: null });
 
     const closed = hardwareConsoleReducer(moved, radialPromptPickerClosed());
-    expect(closed.radialPrompt).toEqual({ open: false, prompts: [], sector: null });
+    expect(closed.radialPrompt).toEqual({
+      open: false,
+      suggestions: [],
+      prompts: [],
+      sector: null,
+    });
   });
 
   it('ignores sector changes and closes while the overlay is closed', () => {
