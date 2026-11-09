@@ -51,21 +51,21 @@ describe('SPECIALISTS', () => {
     );
   });
 
-  it('keeps the Planner fallback identical to the bundled definition', () => {
-    const specialist = getSpecialistById('planner');
+  it('keeps the Product Manager fallback identical to the bundled definition', () => {
+    const specialist = getSpecialistById('product-manager');
     const bundled = readFileSync(
-      resolve(__dirname, '../../../../resources/specialists/planner.md'),
+      resolve(__dirname, '../../../../resources/specialists/product-manager.md'),
       'utf8',
     );
     const bundledBody = bundled.replace(/^---\n[\s\S]*?\n---\n\n/, '');
 
-    expect(specialist).toMatchObject({ id: 'planner', name: 'Planner', icon: 'coordinator' });
+    expect(specialist).toMatchObject({ id: 'product-manager', name: 'Product Manager', icon: 'coordinator' });
     expect(specialist).not.toHaveProperty('defaultModel');
     expect(specialist?.hidden).toBeUndefined();
     expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
     expect(bundled).toContain(`roleReminder: "${specialist?.roleReminder}"`);
     expect(createHash('sha256').update(bundled).digest('hex')).toBe(
-      '7af68d36ab2f3e8c1ead2a84e793c70b23c72331f959219195d84cc15ebddb44',
+      '842ef09f07221da0997f0f2144f11fb46df795acfeb161c82966628295e140f3',
     );
   });
 

@@ -11,7 +11,7 @@ export type BuiltinSpecialistId =
   | 'vulnerability-scanner'
   | 'ui-designer'
   | 'developer'
-  | 'planner'
+  | 'product-manager'
   | 'chief-of-staff';
 
 export interface Specialist {
@@ -566,20 +566,20 @@ Show before/after screenshots when possible and helpful. Show all edge cases.`,
       'You are a coding specialist. Do not run tests or verification commands until work has been completed. Do not overly verify.',
   },
   {
-    id: 'planner',
+    id: 'product-manager',
     icon: 'coordinator',
     get name() {
-      return m.specialists_builtin_planner_name();
+      return m.specialists_builtin_productManager_name();
     },
     get description() {
-      return m.specialists_builtin_planner_description();
+      return m.specialists_builtin_productManager_description();
     },
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
-    defaultBehaviorPrompt: `## Planner
+    defaultBehaviorPrompt: `## Product Manager
 
 You turn a request into a spec that a Developer can build without guessing. You do discovery: ask the user about the problem, the desired outcome, constraints, and non-goals, and explore the codebase so every question and recommendation is grounded in what exists. When there is a tradeoff, recommend one option and say why.
 
-Your deliverable is the \`spec\` note: critiqued by a second Planner, approved by the user, and handed to a Developer. You do not build anything.
+Your deliverable is the \`spec\` note: critiqued by a second Product Manager, approved by the user, and handed to a Developer. You do not build anything.
 
 If your first message says you are in **critique mode**, skip the workflow and follow "Critique mode" below.
 
@@ -603,13 +603,13 @@ If your first message says you are in **critique mode**, skip the workflow and f
 
 ### 2. Critique
 
-Create a second Planner in critique mode and end the turn:
+Create a second Product Manager in critique mode and end the turn:
 
 \`\`\`javascript
 await ws.agent.create(
   "Spec Critique",
   'You are in CRITIQUE MODE. Read the spec with ws.note.read("spec"), verify its claims against the code, and send one critique with ws.agent.reportToParent.',
-  { specialist: "planner" },
+  { specialist: "product-manager" },
 );
 \`\`\`
 
@@ -669,7 +669,7 @@ Cover ambiguity, untestable acceptance criteria, feasibility risks, scope creep,
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)
-      'You plan; you never edit code or repo files. Ask with ws.app.question.ask, keep the spec note current, get a critique from a second Planner, wait for explicit approval, then hand off to a Developer.',
+      'You write specs; you never edit code or repo files. Ask with ws.app.question.ask, keep the spec note current, get a critique from a second Product Manager, wait for explicit approval, then hand off to a Developer.',
   },
   {
     id: 'chief-of-staff',

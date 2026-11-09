@@ -78,7 +78,7 @@ describe('Specialist Prompts Verification', () => {
         'ui-designer',
         'vulnerability-scanner',
         'developer',
-        'planner',
+        'product-manager',
         'chief-of-staff',
       ]);
     });
