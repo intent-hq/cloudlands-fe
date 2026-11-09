@@ -197,13 +197,14 @@ if (typeof window !== 'undefined') {
     })),
   });
 
-  // In-memory localStorage: values round-trip within a test and are cleared before each
-  // test; every method is a vi.fn spy. A no-op stub hid save-and-reload bugs (cloudlands-fe#4332).
+  // In-memory localStorage: values round-trip within a test; values and spy overrides are
+  // reset before each test; every method is a vi.fn spy. A no-op stub hid save-and-reload bugs (cloudlands-fe#4332).
   const localStorageMock = createLocalStorageMock();
   Object.defineProperty(window, 'localStorage', {
     value: localStorageMock,
   });
   beforeEach(() => {
+    localStorageMock.restoreImplementations();
     localStorageMock.clearValues();
   });
 

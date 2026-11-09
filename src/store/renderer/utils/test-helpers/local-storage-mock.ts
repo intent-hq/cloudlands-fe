@@ -10,6 +10,8 @@ export interface LocalStorageMock extends Storage {
   reset(): void;
   /** Clears the backing store without recording a call or touching call history. */
   clearValues(): void;
+  /** Puts back the Map-backed implementations, undoing test overrides; keeps call history. */
+  restoreImplementations(): void;
 }
 
 /**
@@ -66,6 +68,14 @@ export function createLocalStorageMock(): LocalStorageMock {
     return keys[index] ?? null;
   });
 
+  const implementations = [
+    [getItem, getItem.getMockImplementation()],
+    [setItem, setItem.getMockImplementation()],
+    [removeItem, removeItem.getMockImplementation()],
+    [clear, clear.getMockImplementation()],
+    [key, key.getMockImplementation()],
+  ] as const;
+
   const methods = {
     getItem,
     setItem,
@@ -73,6 +83,11 @@ export function createLocalStorageMock(): LocalStorageMock {
     clear,
     key,
     clearValues,
+    restoreImplementations() {
+      for (const [spy, impl] of implementations) {
+        (spy as Mock).mockImplementation(impl as (...args: unknown[]) => unknown);
+      }
+    },
     reset() {
       clearValues();
       getItem.mockClear();
