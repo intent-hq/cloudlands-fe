@@ -74,23 +74,24 @@ const sends = (page: Page) => page.evaluate(() => (window as unknown as { __dock
   .filter((call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage')
   .map((call) => ({ images: ((call.params.imageBlocks ?? []) as unknown[]).length })));
 
-test('19 full-resolution recording frames over the prompt image budget are refused locally; the draft stays', async ({ mount, page }, info) => {
+test('fitted recording frames whose exact bytes exceed the prompt image budget are refused locally; the draft stays', async ({ mount, page }, info) => {
   const component = await mount(ComposerE2EHarness);
   await recordWithMark(page, component);
-  // The median exported frame of the real failing message (3456x2234 PNG).
-  await page.evaluate(() => ((globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes = 1_136_442));
+  // 19 fitted JPEG frames (<= 3 MiB each, so the daemon sends them unchanged) totalling
+  // more than 8 MiB as base64: a known, exact overflow.
+  await page.evaluate(() => ((globalThis as { __syntheticFrameBytes?: number }).__syntheticFrameBytes = 600_000));
   expect(await editRecording(page, 19)).toBe(true);
   await (component.getByRole('button', { name: /^Send/ }) as any).click();
   await expect.poll(() => page.evaluate(() => !!(window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError)).toBe(true);
   expect(await sends(page)).toEqual([]);
-  // The recording stays in the draft, ready to send once it fits.
+  // The recording stays in the draft.
   await expect(component.locator('[data-dock-media-attachments] .tile')).toHaveCount(1);
   const state = await page.evaluate(() => {
     const harness = (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E;
     return { exports: harness.native.log.exports.length, sending: !!harness.store.state.dockConversation.sending };
   });
   expect(state.sending).toBe(false);
-  await writeFile(info.outputPath('image-budget-refused-receipt.json'), JSON.stringify({ frames: 19, frameBytes: 1_136_442, sends: 0, ...state }, null, 2));
+  await writeFile(info.outputPath('image-budget-refused-receipt.json'), JSON.stringify({ frames: 19, frameBytes: 600_000, mime: 'image/jpeg', sends: 0, ...state }, null, 2));
 });
 
 test('19 frames that fit the prompt image budget still send, all of them', async ({ mount, page }, info) => {
@@ -126,4 +127,26 @@ test('a single large pasted image the daemon will prepare smaller is not refused
   expect(sent.images).toBe(1);
   expect(await page.evaluate(() => (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError ?? null)).toBeNull();
   await writeFile(info.outputPath('image-budget-single-large-receipt.json'), JSON.stringify({ pastedBytes: 6_000_000, sent }, null, 2));
+});
+
+test('three referenced images of unknown size are not refused locally', async ({ mount, page }, info) => {
+  const component = await mount(ComposerE2EHarness);
+  const editor = component.locator('.tiptap-editor');
+  await editor.click();
+  await page.keyboard.type('Three restored screenshots');
+  // Restored references keep no size: the daemon prepares them, so only it can tell.
+  await page.evaluate(() => {
+    const { store } = (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E;
+    const { workspaceId, agentId } = store.state.dockConversation;
+    store.dispatch({ type: 'transientUi/setComposerContextItems', payload: [workspaceId, agentId, [1, 2, 3].map((n) => ({
+      id: `restored-${n}`, type: 'file', label: `restored-${n}.png`, imageMimeType: 'image/png',
+      attachmentId: `6b1d0000-0000-4000-8000-00000000000${n}`, placementStatus: 'placed',
+    }))] });
+  });
+  await (component.getByRole('button', { name: /^Send/ }) as any).click();
+  await expect.poll(async () => (await sends(page)).length).toBe(1);
+  const [sent] = await sends(page);
+  expect(sent.images).toBe(3);
+  expect(await page.evaluate(() => (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError ?? null)).toBeNull();
+  await writeFile(info.outputPath('image-budget-unknown-refs-receipt.json'), JSON.stringify({ refs: 3, sizes: 'unknown', sent }, null, 2));
 });
