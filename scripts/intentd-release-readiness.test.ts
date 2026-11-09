@@ -146,6 +146,7 @@ function fixture() {
     headRuns: 1,
     headCommitted: '2026-09-26T05:00:00Z',
     reopened: '',
+    prState: 'OPEN',
     closeFail: false,
     reopenFail: false,
   };
@@ -230,7 +231,7 @@ if (f.fail && endpoint.includes(f.fail)) process.exit(1);
 let value;
 if (endpoint && Object.hasOwn(f.extra, endpoint)) value = f.extra[endpoint];
 else if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : f.extraPr ? [f.pr, {...f.pr, number: 100}] : [f.pr];
-else if (a[0] === 'pr' && a[1] === 'view') value = f.detail;
+else if (a[0] === 'pr' && a[1] === 'view') value = {...f.detail, state: f.prState};
 else if (a[0] === 'pr' && (a[1] === 'close' || a[1] === 'reopen')) process.exit(f[a[1] + 'Fail'] ? 1 : 0);
 else if (a[0] === 'pr' && a[1] === 'merge') {
   const expected = a[a.indexOf('--match-head-commit') + 1];
@@ -1524,7 +1525,21 @@ describe('auto-cut missing-CI restart', () => {
     data.closeFail = true;
     const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false);
     expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
-    expect(restarts(result.calls).at(-1)).toEqual(['pr', 'reopen', '99']);
+    expect(restarts(result.calls)).toEqual([['pr', 'close', '99']]);
+  });
+
+  it('reopens a PR whose failed close took effect', () => {
+    const data = noCiRuns();
+    data.closeFail = true;
+    data.prState = 'CLOSED';
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls).map((args) => args[1])).toEqual(['close', 'reopen']);
+    data.reopenFail = true;
+    expect(runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1).decision).toEqual([
+      'error',
+      'ci-restart-failed',
+    ]);
   });
 
   it('fails loudly when the closed PR cannot be reopened', () => {
