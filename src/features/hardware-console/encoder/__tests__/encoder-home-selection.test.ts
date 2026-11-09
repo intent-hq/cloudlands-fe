@@ -100,11 +100,21 @@ describe('encoder press on Home', () => {
     expect(device.navigate).not.toHaveBeenCalled();
   });
 
-  it('opens Home when nothing on the list is selected', () => {
+  it('opens the previewed workspace even when its group is collapsed', () => {
     ready();
     window.history.replaceState(null, '', '/');
-    const list = homeList(['a', 'b']);
-    list.selected = 'gone';
+    const list = homeList(['a']);
+    list.selected = 'b';
+    const device = manager();
+    press(device);
+    expect(device.showWorkspace.mock.calls).toEqual([['b']]);
+    expect(device.navigate).not.toHaveBeenCalled();
+  });
+
+  it('opens Home when nothing is selected', () => {
+    ready();
+    window.history.replaceState(null, '', '/');
+    homeList(['a', 'b']);
     const device = manager();
     press(device);
     expect(device.showWorkspace).not.toHaveBeenCalled();

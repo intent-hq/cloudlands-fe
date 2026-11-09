@@ -79,10 +79,10 @@ function navigateToWorkspace(
   workspaceId: string,
   showWorkspace: (workspaceId: string) => Promise<unknown>,
 ): void {
-  // Each detent jumps; the helper only tabs the workspace the rotation lands
-  // on, because a newer jump supersedes the earlier ones.
+  // A newer jump supersedes earlier ones, so rapid detents only tab the
+  // workspace the rotation lands on.
   void showWorkspace(workspaceId).catch((error: unknown) => {
-    logger.warn('Failed to switch workspace from encoder', { workspaceId, error });
+    logger.warn('Failed to open workspace from encoder', { workspaceId, error });
   });
 }
 
@@ -121,12 +121,14 @@ function handleHomeRotate(direction: EncoderDirection): boolean {
   return true;
 }
 
-/** The workspace selected on Home's on-screen Workspaces list, if any. */
+/**
+ * The workspace previewed from Home's Workspaces list, if any. Its row may sit
+ * in a collapsed group; the preview still shows it.
+ */
 function selectedHomeWorkspaceId(): string | null {
   const target = getHomeEncoderTarget();
-  const ids = currentRoutePath() === '/' ? target?.ids() : null;
-  const selectedId = target?.selectedId() ?? null;
-  return ids && selectedId !== null && ids.includes(selectedId) ? selectedId : null;
+  if (!target || currentRoutePath() !== '/' || target.ids() === null) return null;
+  return target.selectedId();
 }
 
 /**

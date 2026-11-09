@@ -9,6 +9,7 @@ type KnobDirection = 'cw' | 'ccw';
 export interface HomeEncoderTarget {
   /** Workspace ids in on-screen order, or null when the Workspaces list is not showing. */
   ids(): readonly string[] | null;
+  /** The workspace whose side preview is open, or null. */
   selectedId(): string | null;
   /** Select a workspace, opening its side preview. */
   select(id: string): void;
