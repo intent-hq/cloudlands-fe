@@ -41,6 +41,7 @@
     selectWorkspaceInitializerRecentRepos,
     selectWorkspaceInitializerRemoteSetups,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { mergeKnownRepos } from '$store/renderer/slices/workspace-initializer/utils/known-repos';
   import { recentRepoKey } from '$store/renderer/slices/workspace-initializer/utils/recent-repo-key';
   import type {
     WorkspaceInitializerRecentRepo,
@@ -97,11 +98,6 @@
   } from '$store/renderer/slices/github-repo-search/github-repo-search-selectors';
   import { store as appStore } from '$store/renderer/store';
   import {
-    isolationNoun,
-    resolveEffectiveIsolationMode,
-    type IsolationMode,
-  } from './isolation-mode';
-  import {
     getGitHubPickOwner,
     getRecentRepoLabel,
     getRecentRepoIdentity,
@@ -113,7 +109,6 @@
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { workspacePickerStyles } from './workspace-picker-styles';
   import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
-  import { selectWorkspaceItems } from '$store/renderer/slices/workspace/workspace-selectors';
 
   const logger = createLogger('RepoSelector');
   const dialogPortalTarget = useDialogPortalTarget();
@@ -121,16 +116,8 @@
   let formTriggerElement = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
   let formMenuBelow = $state(false);
 
-  // Effective isolated-checkout mode (worktree vs CoW clone) for creation copy.
-  // Re-resolves when workspace items hydrate (cowSupported is read off them).
-  const workspaceItemsForIsolation$ = selectWorkspaceItems();
-  let isolationMode = $state<IsolationMode>('worktree');
-  $effect(() => {
-    void resolveEffectiveIsolationMode($workspaceItemsForIsolation$).then(
-      (mode) => (isolationMode = mode),
-    );
-  });
-  const isolationLabel = $derived(isolationNoun(isolationMode));
+  // A local repo is always isolated in a linked git worktree.
+  const isolationLabel = m.workspace_isolationMode_worktree_label();
   const mountedDispatch = appStore.dispatch;
   const initializerHydrated$ = selectWorkspaceInitializerHydrated();
   const dismissedRecentRepoKeys$ = selectWorkspaceInitializerDismissedRecentRepoKeys();
@@ -243,7 +230,7 @@
     triggerSuffix,
     triggerValueClass = 'text-subtle',
     triggerContentClass = 'gap-0.75',
-    emptyLabel = m.workspace_repoSelector_selectRepository_label(),
+    emptyLabel,
     showEmptyIcon = false,
     showTriggerChevron = false,
     triggerChevronClass = 'ml-2 opacity-50',
@@ -331,22 +318,13 @@
       appStore.dispatch !== mountedDispatch
     )
       return saved;
-    const merged = new Map<string, WorkspaceInitializerRecentRepo>();
-    if (rowLabel) {
-      // The admitted source already includes saved entries in usage order.
-      // Keep that order and show every known repository in the form picker.
-      for (const repo of [...sourceView.repos, ...saved]) {
-        const key = recentRepoKey(repo);
-        if (!merged.has(key)) merged.set(key, repo);
-      }
-    } else {
-      for (const repo of saved) merged.set(recentRepoKey(repo), repo);
-      for (const repo of sourceView.repos) merged.set(recentRepoKey(repo), repo);
-    }
-    const visible = [...merged.values()].filter(
-      (repo) => !$dismissedRecentRepoKeys$[recentRepoKey(repo)],
-    );
-    return rowLabel ? visible : visible.slice(0, 9);
+    // Shared with the command palette (`selectKnownRepos`): the form picker lists every known repo.
+    return mergeKnownRepos({
+      saved,
+      source: sourceView,
+      dismissed: $dismissedRecentRepoKeys$,
+      mode: rowLabel ? 'all' : 'recent',
+    });
   });
 
   async function handleDismissRecentRepo(event: MouseEvent, repo: WorkspaceInitializerRecentRepo) {
@@ -705,13 +683,19 @@
     }
     return current ? [current, ...recentRepos] : recentRepos;
   });
-  // The form row label follows what the list holds (plain folders, Labs):
+  // The form row label follows the selection (plain folders, Labs): "Folder"
+  // for a plain folder, "Codebase" for a git repository. With nothing selected,
   // "Codebase" with any git repository listed, otherwise "Folder" without a
   // forge or with a plain folder listed.
   const plainFolderCreationAvailable$ = selectPlainFolderCreationAvailable();
   const forgeConnectionState$ = selectForgeConnectionState();
   const isPlainFolderEntry = (repo: WorkspaceInitializerRecentRepo) =>
     repo.type === 'local' && repo.plainFolder === true;
+  const formSelectedKind = $derived.by(() => {
+    const selected = formRepositoryChoices.find(isCurrentRepo);
+    if (!selected) return null;
+    return plainFolderSelected || isPlainFolderEntry(selected) ? 'folder' : 'codebase';
+  });
   const formRowLabel = $derived.by(() => {
     if (!rowLabel) return undefined;
     const kind = resolveRepositoryRowLabelKind({
@@ -720,9 +704,23 @@
         authenticatedForges.length > 0 || $hostMember$ ? 'connected' : $forgeConnectionState$,
       hasGitRepositoryEntry: formRepositoryChoices.some((repo) => !isPlainFolderEntry(repo)),
       hasPlainFolderEntry: formRepositoryChoices.some(isPlainFolderEntry),
+      selected: formSelectedKind,
     });
     return kind === 'folder' ? m.workspace_compactInitializer_folder_label() : rowLabel;
   });
+  const formSearchLabel = $derived(
+    $plainFolderCreationAvailable$
+      ? m.workspace_repoSelector_searchWithFolders_placeholder()
+      : m.workspace_repoSelector_search_placeholder(),
+  );
+  const formAddLabel = $derived(
+    $plainFolderCreationAvailable$
+      ? m.workspace_repoSelector_addRepositoryOrFolder_label()
+      : m.workspace_repoSelector_addRepository_label(),
+  );
+  const triggerEmptyLabel = $derived(
+    emptyLabel ?? (rowLabel ? formAddLabel : m.workspace_repoSelector_selectRepository_label()),
+  );
   const formRepos = $derived(
     formQuery.trim() === ''
       ? formRepositoryChoices
@@ -796,6 +794,17 @@
   }
 
   function openAddStep() {
+    const query = formQuery.trim();
+    if (query && cloneTabVisible) {
+      const github = parseGitHubUrl(normalizeGitHubInput(query));
+      if (github) {
+        preferredForge = 'github';
+        activeTab = 'github';
+        handleGitHubInputChange(`${github.owner}/${github.repo}`);
+      } else if (activeTab === 'github') {
+        handleGitHubInputChange(query);
+      }
+    }
     formStep = 'add';
     void tick().then(() => {
       if (activeTab === 'github') githubInputElement?.focus();
@@ -1691,22 +1700,15 @@
     }
   }
 
-  // Confirm the picked GitHub repo — path-less selection, no clone destination.
-  // Falls back to parsing the raw input so Enter works before the debounced
-  // detection has run.
+  // Confirm current input, never a previous debounced detection.
   function handleConfirmGitHubPick() {
-    let picked = detectedGitHub;
-    if (!picked) {
-      const parsed = parseGitHubUrl(githubUrlInput);
-      if (parsed) {
-        picked = {
-          owner: parsed.owner,
-          repo: parsed.repo,
-          url: `https://github.com/${parsed.owner}/${parsed.repo}`,
-        };
-      }
-    }
-    if (!picked) return;
+    const parsed = parseGitHubUrl(githubUrlInput);
+    if (!parsed) return;
+    const picked = {
+      owner: parsed.owner,
+      repo: parsed.repo,
+      url: `https://github.com/${parsed.owner}/${parsed.repo}`,
+    };
 
     const shorthand = `${picked.owner}/${picked.repo}`;
 
@@ -2058,7 +2060,7 @@
             {:else if !triggerIcon && rowLabel && !showEmptyIcon}
               <GitRepoIcon size={16} class="shrink-0 text-muted-foreground" />
             {/if}
-            {#if !triggerIcon && (hasTriggerValue || emptyLabel)}
+            {#if !triggerIcon && (hasTriggerValue || triggerEmptyLabel)}
               <span
                 class="min-w-0 flex-1 text-left truncate"
                 id={rowLabel ? `${pickerId}-field-value` : undefined}
@@ -2071,7 +2073,7 @@
                     >
                   {/if}
                 {:else}
-                  <span class={triggerValueClass}>{emptyLabel}</span>
+                  <span class={triggerValueClass}>{triggerEmptyLabel}</span>
                 {/if}
                 {#if triggerSuffix}
                   <span class="text-sm text-subtle ml-1">({triggerSuffix})</span>
@@ -2120,8 +2122,8 @@
             value={formQuery}
             oninput={(event) => (formQuery = event.currentTarget.value)}
             onkeydown={handleFormSearchKeydown}
-            placeholder={m.workspace_repoSelector_search_placeholder()}
-            aria-label={m.workspace_repoSelector_search_placeholder()}
+            placeholder={formSearchLabel}
+            aria-label={formSearchLabel}
             aria-controls={`${pickerId}-form-repos`}
           />
         </div>
@@ -2160,7 +2162,7 @@
             onclick={openAddStep}
           >
             <Fa icon={faPlus} class="size-4 shrink-0" />
-            <span>{m.workspace_repoSelector_addRepository_label()}</span>
+            <span>{formAddLabel}</span>
           </Button>
         </div>
       {:else}
@@ -2179,7 +2181,7 @@
               <Fa icon={faArrowLeft} class="size-3.5!" />
             </Button>
             <h2 class="{workspacePickerStyles.title} min-w-0 truncate">
-              {m.workspace_repoSelector_addRepository_label()}
+              {formAddLabel}
             </h2>
           </div>
         {:else}

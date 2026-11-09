@@ -48,6 +48,7 @@ import type {
   WorkspaceInitializationResumeInput,
   WorkspaceInitializationSetupScriptRecord,
   WorkspaceInitializationStagedItem,
+  WorkspaceInitializationStaleBase,
 } from '../workspace-initializer-types';
 
 type Json = NonNullable<WorkspaceInitializationRequest['heldMessage']>['contextReferences'][number];
@@ -315,7 +316,9 @@ export function* prepareCompactWorkspaceInitialization(
   const hasStagedFiles =
     hasStagedFileItems(s.stagedItems as ContextItem[]) || imageBlocks.length > 0;
   const prompt = s.prompt.trim();
-  const startOnPlacement = initialAgentPlacement(s.agent.startOnMachineId);
+  const startOnPlacement = initialAgentPlacement(s.agent.startOnMachineId, {
+    cloudEntries: state.cloudMachines?.entries === true,
+  });
   const initialAgent = {
     // General uses the daemon placeholder so naming does not depend on UI locale.
     ...(specialistId !== undefined ? { name: agentName } : {}),
@@ -626,5 +629,24 @@ export function* prepareOnboardingWorkspaceInitialization(
   return {
     request,
     prepared: { pull: Boolean(request.pull), specialistId, specialistName },
+  };
+}
+
+/**
+ * Continue from last-fetched (PROTOCOL §9.2): the same create, sent with
+ * `skipBaseRefresh: true`, which also arms the may-be-out-of-date toast.
+ */
+export function withContinueFromLastFetched(
+  prepared: PreparedWorkspaceInitialization,
+  staleBase: WorkspaceInitializationStaleBase | undefined,
+): PreparedWorkspaceInitialization {
+  if (!staleBase || !prepared.request.createRequest) return prepared;
+  return {
+    ...prepared,
+    request: {
+      ...prepared.request,
+      createRequest: { ...prepared.request.createRequest, skipBaseRefresh: true },
+      staleBase,
+    },
   };
 }

@@ -46,7 +46,10 @@
     isProviderReadyInResult,
     isProviderAuthenticationReady,
   } from '$shared/types/provider-availability';
-  import { isProviderDisabledInSettings } from '$lib/components/chat/input/model-picker-utils';
+  import {
+    isProviderDisabledInSettings,
+    toDropdownOptions,
+  } from '$lib/components/chat/input/model-picker-utils';
   import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
   import {
     selectEffectiveDefaultProviderId,
@@ -72,6 +75,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { DEFAULT_NEW_WORKSPACE_SPECIALIST_ID } from '$lib/constants/specialists';
   import StartOnPicker from './StartOnPicker.svelte';
+  import { writable } from 'svelte/store';
   import { buildMachineModelGroups } from '$lib/components/chat/input/model-picker-groups';
   import { expandProviderIdsWithProfiles } from '$shared/provider-profiles';
   import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -80,6 +84,7 @@
     selectRemoteMachines,
     selectRemoteMachinesVisible,
     selectRemoteModelSwitchSupport,
+    selectStartOnCloud,
     selectStartOnOptions,
     selectStartOnVisible,
   } from '$features/remote-machines/remote-machines-selectors';
@@ -89,6 +94,8 @@
     machineModelFallback,
     resolveStartOn,
     START_ON_BACKEND,
+    startOnCloudId,
+    startOnCloudMachineId,
   } from '$features/remote-machines/start-on';
 
   const logger = createLogger('InitialAgentPicker');
@@ -206,9 +213,24 @@
   const startOnVisible$ = selectStartOnVisible();
   const startOnOptions$ = selectStartOnOptions();
   const startOnMachines$ = selectRemoteMachines();
+  // E2B needs a configuration that brings its own key or token.
+  const startOnProviderRef = writable<string | undefined>(undefined);
+  $effect(() => {
+    startOnProviderRef.set(selectedProvider);
+  });
+  const startOnCloud$ = selectStartOnCloud(startOnProviderRef);
+  const startOnChoices = $derived(
+    $startOnOptions$.map((option) => {
+      if (option.kind !== 'cloud') return option;
+      const reason = $startOnCloud$?.find(
+        (entry) => startOnCloudId(entry.cloudMachineId) === option.id,
+      )?.unavailableReason;
+      return reason ? { ...option, disabled: true, reason, hint: undefined } : option;
+    }),
+  );
   const effectiveStartOn = $derived(
     $startOnVisible$ && !startOnBackendOnly
-      ? resolveStartOn(startOnMachineId, $startOnMachines$)
+      ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$)
       : START_ON_BACKEND,
   );
   const startOnMachine = $derived(
@@ -243,7 +265,13 @@
         $providerProfiles$,
       ).filter((ref) => !isProviderDisabledInSettings($enabledProviders$, ref)),
       groupLabel: (ref) => ref,
-      catalogModels: {},
+      // A machine that lists no models for a profile offers the backend's list.
+      catalogModels: Object.fromEntries(
+        Object.entries($providerModelsCacheMap$).map(([ref, entry]) => [
+          ref,
+          toDropdownOptions(entry.models),
+        ]),
+      ),
       catalogProfiles: $providerProfiles$,
       defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
       defaultHasOverrides: $defaultHasOverrides$,
@@ -919,11 +947,11 @@
     ),
   );
   const agentOptions = $derived<ComboboxOption[]>([
-    { value: 'general', label: m.workspace_initialAgentPicker_general_label() },
     ...agentSpecialists.map((specialist) => ({
       value: specialist.id === orchestratorId ? 'orchestration' : `specialist:${specialist.id}`,
       label: specialist.name,
     })),
+    { value: 'general', label: m.workspace_initialAgentPicker_general_label() },
   ]);
   const selectedAgentValue = $derived(
     isTeamMode && orchestrator
@@ -1098,7 +1126,9 @@
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
-      machineId={effectiveStartOn || undefined}
+      machineId={effectiveStartOn && !startOnCloudMachineId(effectiveStartOn)
+        ? effectiveStartOn
+        : undefined}
       showMachine={false}
       silentFallback
       portal={true}
@@ -1111,7 +1141,7 @@
     <StartOnPicker
       {presentation}
       value={effectiveStartOn}
-      options={$startOnOptions$}
+      options={startOnChoices}
       onChange={handleStartOnChange}
       lockedReason={startOnBackendOnly === 'plain-folder'
         ? m.workspace_initialAgentPicker_startOnPlainFolder_description({

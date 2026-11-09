@@ -903,14 +903,6 @@ describe('registered model reload owner: picker catalogs', () => {
 });
 
 it('serves learned names during delayed and failed catalog discovery, then learns the accepted wire response', async () => {
-  const storage = new Map<string, string>();
-  vi.mocked(window.localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-  vi.mocked(window.localStorage.setItem).mockImplementation((key, value) => {
-    storage.set(key, value);
-  });
-  vi.mocked(window.localStorage.removeItem).mockImplementation((key) => {
-    storage.delete(key);
-  });
   window.localStorage.setItem(
     MODEL_NAMES_STORAGE_KEY,
     JSON.stringify({

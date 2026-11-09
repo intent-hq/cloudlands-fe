@@ -7,6 +7,7 @@ import {
   intentMatches,
   modelSelectionWrite,
 } from './specialist-model-writes';
+import { isRedundantBuiltInOverride } from './builtin-override-redundancy';
 
 const stored: FileSpecialist = {
   id: 'ui-designer',
@@ -125,6 +126,24 @@ describe('builtInExport', () => {
         source: 'user',
       }),
     );
+  });
+
+  it('keeps an unedited export of a daemon built-in redundant, and an edit modified', () => {
+    const specialist = {
+      id: 'ui-designer',
+      name: 'UI Designer',
+      description: 'Designs',
+      defaultBehaviorPrompt: 'Bundled prompt',
+      roleReminder: 'Remind',
+      source: 'bundled' as const,
+    };
+    const exported = builtInExport(specialist, 'Bundled prompt');
+    expect(isRedundantBuiltInOverride(exported)).toBe(true);
+    expect(isRedundantBuiltInOverride({ ...exported, behaviorPrompt: 'Edited' })).toBe(false);
+    expect(isRedundantBuiltInOverride({ ...exported, model: 'opus' })).toBe(false);
+    expect(
+      isRedundantBuiltInOverride({ ...exported, model: 'opus' }, { ignoreModelPin: true }),
+    ).toBe(true);
   });
 });
 

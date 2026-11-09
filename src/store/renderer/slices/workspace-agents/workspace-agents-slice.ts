@@ -601,13 +601,21 @@ export const deleteAgentSessionRequested = createAsyncAction<[wsId: string, agen
   'workspaceAgents/deleteAgentSessionRequested',
 );
 export const deleteAgentWithUndoRequested = createAsyncAction<
-  [wsId: string, agentId: string, agentName?: string],
+  [wsId: string, agentId: string, agentName?: string, options?: { undoToast?: boolean }],
   AgentSession | null
 >('workspaceAgents/deleteAgentWithUndo', 'workspaceAgents/deleteAgentWithUndoRequested');
+/** Delete several agents in one grace window, with a single Undo toast for all of them. */
+export const deleteAgentsWithUndoRequested = createAction<
+  [wsId: string, agents: Array<{ agentId: string; name?: string }>]
+>('workspaceAgents/deleteAgentsWithUndoRequested');
 export const undoAgentDeletionRequested = createAsyncAction<
   [wsId: string, agentId: string],
   boolean
 >('workspaceAgents/undoAgentDeletion', 'workspaceAgents/undoAgentDeletionRequested');
+/** Undo several pending deletions; one error toast reports any that could not be undone. */
+export const undoAgentDeletionsRequested = createAction<[wsId: string, agentIds: string[]]>(
+  'workspaceAgents/undoAgentDeletionsRequested',
+);
 
 // Stream lifecycle actions
 
@@ -668,6 +676,11 @@ export const agentRetirementSupportReceived = createAction<
 export const retireAgentRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/retireAgent',
   'workspaceAgents/retireAgentRequested',
+);
+
+/** Retire several agents from a list action; one error toast reports any refusal. */
+export const retireAgentsRequested = createAction<[wsId: string, agentIds: string[]]>(
+  'workspaceAgents/retireAgentsRequested',
 );
 
 /**

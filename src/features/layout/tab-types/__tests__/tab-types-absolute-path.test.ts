@@ -229,12 +229,6 @@ vi.mock('$features/git/git-cache', () => ({
   gitCache: { invalidateWorkspace: vi.fn() },
 }));
 
-vi.mock('$features/git/git-write-service', () => ({
-  stageFiles: vi.fn(async () => ({ success: true })),
-  unstageFiles: vi.fn(async () => ({ success: true })),
-  discardFiles: vi.fn(async () => ({ success: true })),
-}));
-
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), error: vi.fn() },
 }));

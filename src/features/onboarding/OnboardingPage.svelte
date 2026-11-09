@@ -141,7 +141,9 @@
     WorkspaceInitializationJson,
     WorkspaceInitializationOutcome,
     WorkspaceInitializationStagedItem,
+    WorkspaceInitializationStaleBase,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
   import { createLogger } from '$lib/utils/client-logger';
   import { cn } from '$lib/utils';
   import { createHorizontalPager } from '$lib/interaction';
@@ -615,6 +617,13 @@
   // `onboardingCreationError` so the error block classifies without prose
   // matching.
   let onboardingCreationErrorCode = $state<string | null>(null);
+  // `error.data` of a `base-refresh-failed` create (PROTOCOL §9.2): category
+  // guidance plus the base/remote that Continue from last-fetched names.
+  let onboardingBaseRefreshFailure = $state<BaseRefreshFailure | null>(null);
+  // Project and base of the latest submitted create, and of the failure.
+  // Continue re-sends the same create, so it is offered only while they match.
+  let onboardingSubmittedFormKey = '';
+  let onboardingBaseRefreshFormKey = $state('');
 
   // Live setup step statuses for WorkspaceSetupCard during creation
   type SetupStepStatus = 'pending' | 'active' | 'done';
@@ -840,6 +849,8 @@
 
   // Track the selected PR's source branch and number
   let selectedPRBranch = $state<string>('');
+  // Continue from last-fetched is offered only while this matches the failed create.
+  const onboardingFormKey = $derived(JSON.stringify([projectSelection, selectedPRBranch]));
   let selectedPRNumber = $state<number | null>(null);
   let lastFetchedPRIdentifier: string | null = null;
   let onboardingContentChangeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -980,6 +991,7 @@
     if (projectIdentityChanged) {
       onboardingCreationError = null;
       onboardingCreationErrorCode = null;
+      onboardingBaseRefreshFailure = null;
     }
     appStore.dispatch(
       setProjectConfig({
@@ -1192,6 +1204,8 @@
       onboardingStagedItems = stagedItems.filter((item) => !(item.imageData && item.imageMimeType));
     }
     onboardingCreationErrorCode = outcome?.errorCode ?? null;
+    onboardingBaseRefreshFailure = outcome?.baseRefreshFailure ?? null;
+    onboardingBaseRefreshFormKey = onboardingSubmittedFormKey;
     if (outcome?.stage === 'pull') {
       onboardingPullError = outcome.error || m.onboarding_page_pullFailed_error();
       onboardingShowPullConflictDialog = true;
@@ -1268,7 +1282,16 @@
     }
   }
 
-  async function handleOnboardingSubmit() {
+  /** Continue from last-fetched: the same create, without refreshing its base (PROTOCOL §9.2). */
+  function handleOnboardingContinue() {
+    const failure = onboardingBaseRefreshFailure;
+    if (!failure || onboardingBaseRefreshFormKey !== onboardingFormKey) return;
+    void handleOnboardingSubmit({ baseRef: failure.baseRef, remote: failure.remote });
+  }
+
+  async function handleOnboardingSubmit(
+    continueFromLastFetched?: WorkspaceInitializationStaleBase,
+  ) {
     const prompt = onboardingInputValue.trim();
     if (!prompt || isOnboardingCreating || !projectSelection?.isValid) return;
     if (projectNeedsGit) {
@@ -1358,6 +1381,8 @@
     isOnboardingCreating = true;
     onboardingCreationError = null;
     onboardingCreationErrorCode = null;
+    onboardingBaseRefreshFailure = null;
+    onboardingSubmittedFormKey = onboardingFormKey;
     setupRepoStatus = 'active';
     setupBranchStatus = 'active';
     setupAgentStatus = 'pending';
@@ -1425,6 +1450,7 @@
         selectedProvider: onboardingSelectedProvider,
         modelWasOverridden: onboardingModelWasOverridden,
         defaultModelPreview: defaultModelPreview ?? undefined,
+        ...(continueFromLastFetched ? { continueFromLastFetched } : {}),
       };
       if (!current()) return;
       handedOff = true;
@@ -1800,6 +1826,11 @@
                           {isOnboardingEnhancing}
                           {onboardingCreationError}
                           {onboardingCreationErrorCode}
+                          {onboardingBaseRefreshFailure}
+                          onContinueFromLastFetched={onboardingBaseRefreshFormKey ===
+                          onboardingFormKey
+                            ? handleOnboardingContinue
+                            : undefined}
                           {projectSelection}
                           {onboardingGithubRepoInfo}
                           {selectedPRBranch}
@@ -1820,7 +1851,7 @@
                           selectedModel={onboardingSelectedModel}
                           modelWasOverridden={onboardingModelWasOverridden}
                           onModelChange={handleOnboardingModelChange}
-                          onSubmit={handleOnboardingSubmit}
+                          onSubmit={() => handleOnboardingSubmit()}
                           onEnhancePrompt={handleOnboardingEnhancePrompt}
                           {enhancePromptAvailable}
                           onContentChange={handleOnboardingContentChange}

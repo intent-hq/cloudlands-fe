@@ -268,6 +268,36 @@ describe('animatedHeight', () => {
     action?.destroy?.();
   });
 
+  it('reports closed only after the collapse settles, and not when reopened mid-collapse', async () => {
+    const wrapper = document.createElement('div');
+    const content = document.createElement('div');
+    vi.spyOn(content, 'offsetHeight', 'get').mockReturnValue(80);
+    wrapper.append(content);
+    const onClosed = vi.fn();
+
+    const action = animatedHeight(wrapper, { open: true, onClosed });
+    flushSync();
+    runFrame();
+    expect(wrapper.style.height).toBe('80px');
+
+    action?.update?.({ open: false, onClosed });
+    runFrame();
+    runFrame();
+    await Promise.resolve();
+    expect(Number.parseFloat(wrapper.style.height)).toBeGreaterThan(0);
+    expect(onClosed).not.toHaveBeenCalled();
+
+    action?.update?.({ open: true, onClosed });
+    runFrame();
+    action?.update?.({ open: false, onClosed });
+    for (let frame = 0; frame < 120 && frames.length > 0; frame += 1) runFrame();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(wrapper.style.height).toBe('0px');
+    expect(onClosed).toHaveBeenCalledOnce();
+    action?.destroy?.();
+  });
+
   it('updates in one layout frame without tweening under reduced motion', () => {
     reducedMotion = true;
     let contentHeight = 20;

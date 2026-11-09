@@ -237,6 +237,11 @@ describe('Devices current-person UI through the actual store and IPC transport',
       try {
         render(DevicesSettings);
         await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
+        await fireEvent.click(
+          await screen.findByRole('menuitem', {
+            name: new RegExp(m.cloudMachines_addMenu_connect_label()),
+          }),
+        );
         expect(screen.getByRole('dialog')).toBeTruthy();
         expect(
           screen.queryByRole('region', { name: m.settings_personalDevices_title() }),

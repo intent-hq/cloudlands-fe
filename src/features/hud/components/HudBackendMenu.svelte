@@ -23,7 +23,7 @@
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import { formatConnectionLabel } from '$lib/components/layout/DaemonStatusIndicator.svelte';
   import {
-    selectConnections,
+    selectBackendConnections,
     selectCurrentConnectionId,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { openConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
@@ -31,7 +31,7 @@
   import { selectHudSystem } from '$store/renderer/slices/hud/hud-selectors';
 
   const system$ = selectHudSystem();
-  const connections$ = selectConnections();
+  const connections$ = selectBackendConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
 
   const online = $derived($system$.online);

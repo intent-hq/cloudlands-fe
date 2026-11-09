@@ -1,3 +1,4 @@
+/** @internal Test helper for the dock composer component specs. */
 import type { Locator } from '@playwright/test';
 
 /** Guard against a visible stop button hiding a clipped timer and unusable meter. */

@@ -1,0 +1,44 @@
+import { m } from '$shared/paraglide/messages.js';
+import type {
+  WorkspaceTabGroup,
+  WorkspaceTabGroupColor,
+} from '$store/renderer/slices/tab-state/tab-groups';
+
+const TAB_GROUP_COLOR_VALUES: Record<WorkspaceTabGroupColor, string> = {
+  blue: 'var(--tab-group-blue)',
+  green: 'var(--tab-group-green)',
+  purple: 'var(--tab-group-purple)',
+  orange: 'var(--tab-group-orange)',
+  pink: 'var(--tab-group-pink)',
+  grey: 'var(--tab-group-grey)',
+};
+
+/** The HSL channels of a group color, for `hsl(var(--tab-group-color))`. */
+export function workspaceTabGroupColorValue(color: WorkspaceTabGroupColor): string {
+  return TAB_GROUP_COLOR_VALUES[color];
+}
+
+export function workspaceTabGroupColorLabel(color: WorkspaceTabGroupColor): string {
+  switch (color) {
+    case 'blue':
+      return m.layout_workspaceTabGroup_color_blue_label();
+    case 'green':
+      return m.layout_workspaceTabGroup_color_green_label();
+    case 'purple':
+      return m.layout_workspaceTabGroup_color_purple_label();
+    case 'orange':
+      return m.layout_workspaceTabGroup_color_orange_label();
+    case 'pink':
+      return m.layout_workspaceTabGroup_color_pink_label();
+    case 'grey':
+      return m.layout_workspaceTabGroup_color_grey_label();
+  }
+}
+
+/** The group name, or "<Color> group" for a group without a name. */
+export function workspaceTabGroupDisplayName(group: WorkspaceTabGroup): string {
+  return (
+    group.name ||
+    m.layout_workspaceTabGroup_unnamed_label({ color: workspaceTabGroupColorLabel(group.color) })
+  );
+}

@@ -43,6 +43,7 @@ import { openWorkspaceTab } from '../../tab-state/tab-state-slice';
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import type { DeepLinkActionPayload } from '../deep-links-types';
 import { deepLinksSaga, drainPendingDeepLinks, handleDeepLinkAction } from './deep-links-saga';
+import { nodeConnectionOpened, nodeLinkReceived } from '$features/nodes/nodes-slice';
 
 function workspace(overrides: Partial<Workspace>): Workspace {
   return {
@@ -266,6 +267,26 @@ describe('intent://settings', () => {
   });
 });
 
+describe('node links', () => {
+  it('hands a held node link (pending id only) to the node flow', async () => {
+    const dispatched = await run({
+      type: 'node-link',
+      params: { pendingId: 'p1', label: 'GPU rig', existingId: '' },
+    });
+    expect(dispatched).toEqual([
+      nodeLinkReceived({ pendingId: 'p1', label: 'GPU rig', existingId: null }),
+    ]);
+  });
+
+  it('hands a just-saved node found at window time to the node flow as added', async () => {
+    const dispatched = await run({
+      type: 'node-link',
+      params: { connectionId: 'gpu-rig', added: 'true' },
+    });
+    expect(dispatched).toEqual([nodeConnectionOpened('gpu-rig', true)]);
+  });
+});
+
 it('shows an error instead of silently dropping a link it cannot handle', async () => {
   await run({ type: 'open', params: {} });
   await run({ type: 'create', params: { title: 'only a title' } });
@@ -291,7 +312,7 @@ describe('pending queue draining', () => {
     await expect(runDrain()).resolves.toBe(0);
 
     expect(mocks.invoke).toHaveBeenNthCalledWith(1, 'deep-link:consume-pending', {
-      types: ['settings'],
+      types: ['settings', 'node-link'],
     });
     expect(mocks.invoke).toHaveBeenNthCalledWith(2, 'deep-link:consume-pending', {});
     expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
@@ -308,7 +329,9 @@ describe('pending queue draining', () => {
     await expect(runDrain()).resolves.toBe(1);
 
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
-    expect(mocks.invoke).toHaveBeenCalledWith('deep-link:consume-pending', { types: ['settings'] });
+    expect(mocks.invoke).toHaveBeenCalledWith('deep-link:consume-pending', {
+      types: ['settings', 'node-link'],
+    });
     expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
   });
 

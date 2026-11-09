@@ -11,19 +11,25 @@ import {
   selectPersistedWorkspaceTabsState,
 } from '../tab-state-selectors';
 import {
+  addWorkspaceTabToGroup,
   closeWorkspaceTab,
+  createWorkspaceTabGroup,
   loadScrollPositions,
   loadWorkspaceTabsState,
   moveWorkspace,
   openWorkspaceTab,
   type PersistedWorkspaceTabsState,
+  removeWorkspaceTabFromGroup,
   reopenLastClosedWorkspaceTab,
   restoreWorkspaceTab,
   saveScrollPosition,
+  setOpenWorkspaceTabGroup,
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
   TAB_SCROLL_POSITIONS_STORAGE_KEY,
+  ungroupWorkspaceTabGroup,
+  updateWorkspaceTabGroup,
   WORKSPACE_TABS_STORAGE_KEY,
   workspaceTabsHydrated,
 } from '../tab-state-slice';
@@ -37,6 +43,12 @@ const TAB_PERSIST_ACTIONS = [
   switchToNextWorkspaceTab,
   switchToPreviousWorkspaceTab,
   switchToWorkspaceTabByIndex,
+  createWorkspaceTabGroup,
+  addWorkspaceTabToGroup,
+  removeWorkspaceTabFromGroup,
+  updateWorkspaceTabGroup,
+  ungroupWorkspaceTabGroup,
+  setOpenWorkspaceTabGroup,
 ];
 
 const SCROLL_PERSIST_ACTIONS = [saveScrollPosition];

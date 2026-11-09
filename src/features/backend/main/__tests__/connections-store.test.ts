@@ -1047,6 +1047,56 @@ describe('connections-store', () => {
     expect(remote?.label).toBe('My Mac');
   });
 
+  it('stores the detected daemon mode at add time and keeps it across a re-pair', async () => {
+    const store = await import('../desktop-connections-store');
+    const rec = await store.add({ ...sampleConn, daemonMode: 'node' });
+    expect(rec.daemonMode).toBe('node');
+    // A re-pair from the Add machine dialog does not know the mode yet.
+    const again = await store.add({ ...sampleConn, token: 'rotated' });
+    expect(again.id).toBe(rec.id);
+    expect(again.daemonMode).toBe('node');
+    expect((await store.list()).filter((c) => !c.isLocal)).toHaveLength(1);
+  });
+
+  it('a record without a detected mode reports none', async () => {
+    const store = await import('../desktop-connections-store');
+    const rec = await store.add(sampleConn);
+    expect(rec.daemonMode ?? null).toBeNull();
+  });
+
+  it('setDaemonMode moves a record between kinds and survives a reload', async () => {
+    const store = await import('../desktop-connections-store');
+    const rec = await store.add(sampleConn);
+    await expect(store.setDaemonMode(rec.id, 'node')).resolves.toBe(true);
+    await expect(store.setDaemonMode(rec.id, 'node')).resolves.toBe(false);
+    await expect(store.setDaemonMode('missing', 'node')).resolves.toBe(false);
+    await store.__drainWriteChainForTesting();
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../desktop-connections-store');
+    expect((await reloaded.list()).find((c) => c.id === rec.id)?.daemonMode).toBe('node');
+    await expect(reloaded.setDaemonMode(rec.id, 'regular')).resolves.toBe(true);
+    expect((await reloaded.list()).find((c) => c.id === rec.id)?.daemonMode).toBe('regular');
+  });
+
+  it('ignores an invalid stored daemon mode instead of dropping the record', async () => {
+    const store = await import('../desktop-connections-store');
+    const rec = await store.add(sampleConn);
+    await store.__drainWriteChainForTesting();
+    const file = path.join(tmpDir, 'backend-connections.json');
+    const raw = JSON.parse(await fs.readFile(file, 'utf8'));
+    raw.connections[0].daemonMode = 'hub';
+    await fs.writeFile(file, JSON.stringify(raw));
+
+    vi.resetModules();
+    mockElectron();
+    const reloaded = await import('../desktop-connections-store');
+    const remote = (await reloaded.list()).find((c) => c.id === rec.id);
+    expect(remote).toBeDefined();
+    expect(remote?.daemonMode ?? null).toBeNull();
+  });
+
   it('records default to a null daemonVersion until one is captured', async () => {
     const store = await import('../desktop-connections-store');
     const rec = await store.add(sampleConn);

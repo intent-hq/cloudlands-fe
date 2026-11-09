@@ -2,7 +2,7 @@
   import { definePreview } from '$lib/component-catalog/preview-definition';
 
   interface Props {
-    kind?: 'agent' | 'note' | 'browser' | 'terminal' | 'file' | 'empty';
+    kind?: 'agent' | 'note' | 'browser' | 'terminal' | 'file' | 'diff' | 'changes' | 'empty';
     stacked?: boolean;
     atLimit?: boolean;
   }
@@ -17,6 +17,8 @@
       browser: { props: { kind: 'browser' } },
       terminal: { props: { kind: 'terminal' } },
       file: { props: { kind: 'file' } },
+      diff: { props: { kind: 'diff' } },
+      changes: { props: { kind: 'changes' } },
       empty: { props: { kind: 'empty' } },
       disabled: { props: { atLimit: true } },
     },
@@ -29,6 +31,7 @@
   import { store } from '$store/renderer/store';
   import { bulkUpsertSessions } from '$store/renderer/slices/agent-session/agent-session-slice';
   import { AgentStatus } from '$shared/types/agent.types';
+  import { desktopEntryPatched } from '$store/renderer/slices/desktop-control/desktop-control-slice';
   import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
   import {
     clearPanelLayout,
@@ -38,11 +41,21 @@
   import type { PanelTab } from '$store/renderer/slices/panel-layout/panel-layout-types';
   import { PREVIEW_FIXTURE_IDS } from '$lib/component-catalog/preview-fixtures';
   import * as Menu from '$lib/components/ui/menu';
-  import { faCopy, faArrowDown, faTrash, faRobot, faRightLeft } from '$lib/icons/phosphor-icons';
+  import {
+    faCopy,
+    faArrowDown,
+    faTrash,
+    faRobot,
+    faRightLeft,
+    faBell,
+    faBoxArchive,
+  } from '$lib/icons/phosphor-icons';
   import TaskProgressControl from '$lib/components/chat/TaskProgressControl.svelte';
   import BrowserTabsMenu from '$lib/components/chat/BrowserTabsMenu.svelte';
   import ChatMessageNavigator from '$lib/components/chat/ChatMessageNavigator.svelte';
   import AgentViewSettingsDropdown from '$features/layout/tab-types/AgentViewSettingsDropdown.svelte';
+  import NoteViewSettingsDropdown from '$features/layout/tab-types/NoteViewSettingsDropdown.svelte';
+  import ViewSettingsDropdown from '$features/layout/components/ViewSettingsDropdown.svelte';
   import PanelTabBar from './PanelTabBar.svelte';
 
   let { kind = 'agent', stacked = false, atLimit = false }: Props = $props();
@@ -60,6 +73,14 @@
   let lastAction = $state('');
   let selectedTab = $state('header-current');
   let atBottom = $state(false);
+  let notifications = $state(true);
+  let markdownPreview = $state(false);
+  let wrapLines = $state(false);
+  let diffIndicators = $state(true);
+  let foldUnchanged = $state(true);
+  let splitView = $state(false);
+  let allExpanded = $state(false);
+  const harnessVersion = '3.8';
   const tabs = $derived<PanelTab[]>(
     reorderedTabs ??
       (kind === 'empty'
@@ -68,7 +89,16 @@
             {
               id: 'header-current',
               type: kind,
-              title: kind === 'agent' ? 'General UI' : 'Implementation plan',
+              title:
+                kind === 'agent'
+                  ? 'General UI'
+                  : kind === 'file'
+                    ? 'README.md'
+                    : kind === 'diff'
+                      ? 'PanelTabBar.svelte'
+                      : kind === 'changes'
+                        ? 'Changes'
+                        : 'Implementation plan',
               agentId: kind === 'agent' ? agentId : undefined,
               browserUrl: kind === 'browser' ? 'https://example.com' : undefined,
               closable: true,
@@ -95,6 +125,19 @@
   );
 
   onMount(() => {
+    const desktopGeneration = store.state.desktopControl.generation;
+    if (kind === 'agent') {
+      store.dispatch(
+        desktopEntryPatched(workspaceId, agentId, desktopGeneration, {
+          permission: {
+            computerId: 'preview-computer',
+            computerName: 'Preview computer',
+            allowed: false,
+          },
+          loading: false,
+        }),
+      );
+    }
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Preview-only in-memory handler registration; no domain data is fetched.
     const restoreWorkspaceLookup = overrideMockIpcHandler('workspace:get', (payload) => {
       const id = (payload as { id?: string } | undefined)?.id;
@@ -127,6 +170,13 @@
       }),
     );
     return () => {
+      if (kind === 'agent')
+        store.dispatch(
+          desktopEntryPatched(workspaceId, agentId, desktopGeneration, {
+            permission: undefined,
+            loading: false,
+          }),
+        );
       restoreWorkspaceLookup();
       store.dispatch(clearPanelLayout(workspaceId));
     };
@@ -186,7 +236,76 @@
 {/snippet}
 
 {#snippet displayActions()}
-  {#if kind === 'agent'}<AgentViewSettingsDropdown embedded />{/if}
+  {#if kind === 'agent'}
+    <AgentViewSettingsDropdown embedded {workspaceId} {agentId} />
+    <Menu.CheckboxItem indicator="switch" icon={faBell} bind:checked={notifications}>
+      Notifications
+    </Menu.CheckboxItem>
+  {:else if kind === 'note'}
+    <NoteViewSettingsDropdown embedded {workspaceId} noteId="panel-header-note" />
+  {:else if kind === 'file'}
+    <ViewSettingsDropdown
+      embedded
+      showFold={false}
+      showSplit={false}
+      showPreview
+      previewEnabled={markdownPreview}
+      onTogglePreview={() => (markdownPreview = !markdownPreview)}
+      showWrap={!markdownPreview}
+      wrapEnabled={wrapLines}
+      onToggleWrap={() => (wrapLines = !wrapLines)}
+      showDiff={!markdownPreview}
+      diffEnabled={diffIndicators}
+      onToggleDiff={() => (diffIndicators = !diffIndicators)}
+    />
+  {:else if kind === 'diff' || kind === 'changes'}
+    <ViewSettingsDropdown
+      embedded
+      showExpand={kind === 'changes'}
+      expanded={allExpanded}
+      onToggleExpand={() => (allExpanded = !allExpanded)}
+      foldEnabled={foldUnchanged}
+      onToggleFold={() => (foldUnchanged = !foldUnchanged)}
+      wrapEnabled={wrapLines}
+      onToggleWrap={() => (wrapLines = !wrapLines)}
+      splitEnabled={splitView}
+      onToggleSplit={() => (splitView = !splitView)}
+    />
+  {/if}
+{/snippet}
+
+{#snippet conversationActions()}
+  <Menu.CommandItem icon={faCopy} label="Copy conversation" onclick={() => (lastAction = 'copy')} />
+  {@render primaryActions()}
+{/snippet}
+
+{#snippet lifecycleActions()}
+  <Menu.CommandItem
+    icon={faRightLeft}
+    label="Replace agent…"
+    onclick={() => (lastAction = 'replace')}
+  />
+  <Menu.CommandItem
+    icon={faBoxArchive}
+    label="Retire agent"
+    onclick={() => (lastAction = 'retire')}
+  />
+  <Menu.CommandItem
+    icon={faTrash}
+    label="Delete agent…"
+    destructive
+    onclick={() => (lastAction = 'delete')}
+  />
+{/snippet}
+
+{#snippet metadata()}
+  <Menu.Footer>
+    <Menu.CommandItem
+      class="min-h-0 px-0 py-0"
+      label={`Lead specialist · Harness v${harnessVersion}`}
+      onclick={() => (lastAction = 'harness')}
+    />
+  </Menu.Footer>
 {/snippet}
 
 {#snippet contentActions()}
@@ -217,9 +336,19 @@
     {panelId}
     {workspaceId}
     contentActions={{
-      display: kind === 'agent' ? displayActions : undefined,
-      actions: contentActions,
-      additional: primaryActions,
+      display:
+        kind === 'agent' ||
+        kind === 'note' ||
+        kind === 'file' ||
+        kind === 'diff' ||
+        kind === 'changes'
+          ? displayActions
+          : undefined,
+      conversation: kind === 'agent' ? conversationActions : undefined,
+      lifecycle: kind === 'agent' ? lifecycleActions : undefined,
+      footer: kind === 'agent' ? metadata : undefined,
+      actions: kind === 'agent' ? undefined : contentActions,
+      additional: kind === 'browser' || kind === 'terminal' ? primaryActions : undefined,
     }}
     onCreateAgent={() => (lastAction = 'new-agent')}
     onCreateNote={() => (lastAction = 'new-note')}

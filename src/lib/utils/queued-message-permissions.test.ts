@@ -60,6 +60,24 @@ describe('shared queue action authority', () => {
     ).toEqual({ edit: false, remove: true, sendNow: false });
   });
 
+  it('lets the host owner send a machine-run wake, which is an ordinary message', () => {
+    expect(
+      queuedMessagePermissions(
+        {
+          ...human,
+          messageMetadata: {
+            type: 'script_monitor_wake',
+            monitorId: 'monitor-1',
+            remoteAgentId: 'agent-remote',
+          },
+        },
+        'admin',
+        'owner',
+        true,
+      ),
+    ).toEqual({ edit: false, remove: true, sendNow: true });
+  });
+
   it('never treats an unknown or portable author as the viewer', () => {
     for (const message of [
       { ...human, messageMetadata: undefined, author: null },
@@ -120,6 +138,10 @@ describe('explicit batch readiness', () => {
     [{ messageMetadata: { humanAuthor: {}, fromPrincipalId: ' ' } }, true],
     [{ messageMetadata: { type: 'script_monitor_wake', monitorId: '' } }, false],
     [{ messageMetadata: { type: 'script_monitor_wake' } }, true],
+    [
+      { messageMetadata: { type: 'script_monitor_wake', monitorId: 'm', remoteAgentId: 'a' } },
+      true,
+    ],
   ] as const)('matches daemon readiness for %j', (fields, ready) => {
     expect(isQueuedMessageReadyForBatch({ ...human, ...fields }, now)).toBe(ready);
   });

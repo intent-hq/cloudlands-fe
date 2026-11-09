@@ -20,6 +20,11 @@ export const selectPrincipalSnapshot = store.createSelector((state) => {
     : null;
 });
 
+/** True when the connected daemon manages app-wide Agent Plugins (PROTOCOL §5.57). */
+export const selectAgentPluginsSupported = store.createSelector(
+  (state) => selectPrincipalSnapshot.select(state)?.capabilities.agentPlugins === 1,
+);
+
 /**
  * True when the connected daemon serves capped `agent.getMessageBlock` pages
  * and accepts image block references in `agent.editAndRegenerate`

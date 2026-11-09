@@ -6,7 +6,7 @@
  * daemon builds where the renderer has no direct disk access.
  *
  * The detector only produces candidates; upsert-into-daemon and the diff
- * against the live `script.list` live in `scripts.client.ts` so the wire
+ * against the live `script.list` live in `scripts-operation-saga.ts` so the wire
  * responsibility stays in one place.
  */
 import type { FilesClient } from '$lib/client';
@@ -281,7 +281,7 @@ export async function detectPackageManager(
  *
  * Reads every manifest through the daemon-owned `file.read` seam so it works
  * in daemon builds. Emits pure candidates — persistence + diff-against-
- * daemon-list happens in `scripts.client.ts`.
+ * daemon-list happens in `scripts-operation-saga.ts`.
  */
 export async function detectScriptCandidates(
   files: FilesClient,

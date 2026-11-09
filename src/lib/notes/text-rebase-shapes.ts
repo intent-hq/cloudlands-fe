@@ -4,6 +4,8 @@
  * names its shape and every machine draws the same bytes. Pure and
  * synchronous — the plain-text projection the alignment maps against is the
  * caller's to produce.
+ *
+ * @internal Perf bench: note shapes for text-rebase-bench.runner.ts.
  */
 
 export interface TextRebaseShape {

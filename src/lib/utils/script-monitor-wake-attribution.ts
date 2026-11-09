@@ -47,3 +47,12 @@ export function getScriptMonitorWakeAttribution(
       : {}),
   };
 }
+
+/**
+ * A home-run monitor wake, delivered from a stored notification. A remote
+ * agent's machine-run wake carries the same card metadata plus
+ * `remoteAgentId`, but the daemon queues and sends it as an ordinary message.
+ */
+export function isDurableScriptMonitorWake(metadata: Record<string, unknown> | undefined): boolean {
+  return metadata?.type === 'script_monitor_wake' && !('remoteAgentId' in metadata);
+}

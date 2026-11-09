@@ -4,6 +4,8 @@
  * preload, e.g. Datadog single-step APM's `--require dd-trace/init`) and every
  * `DD_*` variable the injected tracer reads. Pure: mutates only the passed
  * object and returns the removed key names.
+ *
+ * @internal Test seam: called by src/test-setup.ts.
  */
 export function scrubHostNodeInjection(env: NodeJS.ProcessEnv): string[] {
   const removed: string[] = [];

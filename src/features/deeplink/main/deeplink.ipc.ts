@@ -16,7 +16,9 @@ const logger = new Logger({ category: 'DeepLink-IPC' });
 
 // Validation schemas
 const ConsumePendingSchema = z
-  .object({ types: z.array(z.enum(['open', 'create', 'clone', 'settings'])).optional() })
+  .object({
+    types: z.array(z.enum(['open', 'create', 'clone', 'settings', 'node-link'])).optional(),
+  })
   .strict();
 const WriteFileSchema = z.object({
   filePath: z.string(),

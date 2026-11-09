@@ -7,6 +7,13 @@ import {
   remoteMachineChanged,
   remoteMachineRemoved,
 } from '$features/remote-machines/remote-machines-slice';
+import { parseCloudMachineProvider } from '$shared/types/cloud-machines';
+import {
+  cloudMachineChanged,
+  cloudMachineRemoved,
+  cloudProviderChanged,
+  cloudProviderRemoved,
+} from '$features/cloud-machines/cloud-machines-slice';
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
@@ -1941,12 +1948,14 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
 /**
  * `presence:changed` (§5.46) carries the workspace's whole online roster —
  * a full replacement, never a diff — so it is mirrored straight into the
- * presence slice; a payload off the documented shape is dropped.
+ * presence slice; a payload off the documented shape is dropped. A focus
+ * change can also move the workspace's unpinned browser route.
  */
 function handlePresenceChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: unknown }).data;
   if (!isPresenceRoster(data)) return;
   appStore.dispatch(presenceRosterReceived(data));
+  appStore.dispatch(browserRouteInputChanged(data.workspaceId, { kind: 'presence' }));
 }
 
 /**
@@ -2258,9 +2267,9 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
 /**
  * `comment:added` (§6.5, `{ noteId, commentId }`) and `comment:resolved`
  * (`{ noteId, threadId, resolved }`) are wire pings — the payload only carries
- * identifiers, so the actual comment/thread is refetched via
- * `applyCommentFromEvent`. That helper diffs the affected note's fresh comment
- * list against the global slice and dispatches per-comment
+ * identifiers, so the actual comment/thread is refetched by the
+ * workspace-notes saga on `commentEventReceived`. It diffs the affected note's
+ * fresh comment list against the global slice and dispatches per-comment
  * add/update/remove actions so other notes' comments stay untouched.
  */
 function handleCommentEvent(
@@ -3588,6 +3597,30 @@ function handleRemoteMachineChangedEvent(event: WorkspaceEvent): void {
   if (machine) appStore.dispatch(remoteMachineChanged(machine));
 }
 
+/**
+ * `cloudMachine:changed` carries one of `{ provider }`, `{ providerId, removed }`,
+ * `{ machine }` or `{ machineId, removed }` (PROTOCOL `methods/nodes.md` →
+ * "Cloud machine rows"). Global; owner and member connections only.
+ */
+function handleCloudMachineChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  if (data.removed === true) {
+    if (typeof data.machineId === 'string' && data.machineId)
+      appStore.dispatch(cloudMachineRemoved(data.machineId));
+    else if (typeof data.providerId === 'string' && data.providerId)
+      appStore.dispatch(cloudProviderRemoved(data.providerId));
+    return;
+  }
+  const provider = parseCloudMachineProvider(data.provider);
+  if (provider) {
+    appStore.dispatch(cloudProviderChanged(provider));
+    return;
+  }
+  const machine = parseRemoteMachine(data.machine);
+  if (machine?.cloud) appStore.dispatch(cloudMachineChanged(machine, Date.now()));
+}
+
 function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (typeof data?.principalId !== 'string' || !data.principalId.trim()) return;
@@ -3984,6 +4017,10 @@ export function routeDaemonEventsNotification(
   // added, removed, changed state or reported new capabilities.
   if (type === 'remoteMachine:changed') {
     handleRemoteMachineChangedEvent(event);
+    return;
+  }
+  if (type === 'cloudMachine:changed') {
+    handleCloudMachineChangedEvent(event);
     return;
   }
 
@@ -4909,6 +4946,8 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `remoteMachine:changed` — the current backend's exposed machines
   // (`{ machine }` or `{ machineId, removed: true }`); owner connections only.
   'remoteMachine:changed',
+  // `cloudMachine:changed` — the E2B provider and live sandboxes; owner and members.
+  'cloudMachine:changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions
   // (re-read `client.list`) and the workspace-scoped daemon tab-registry
   // change events (`{ tab, changes? }`, patched into the browser-clients

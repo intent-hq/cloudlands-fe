@@ -22,9 +22,9 @@ export interface PromptUsageEntry {
 }
 
 /** Default top-N surface of the radial picker. */
-export const DEFAULT_PROMPT_PICKER_LIMIT = 8;
-/** Hard cap on the top-N surface (sector legibility limit). */
-export const MAX_PROMPT_PICKER_LIMIT = 12;
+export const DEFAULT_PROMPT_PICKER_LIMIT = 7;
+/** Hard cap on the top-N surface: the 8-direction ring minus Cancel. */
+export const MAX_PROMPT_PICKER_LIMIT = 7;
 /** Maximum number of distinct prompts kept in the tracker. */
 export const MAX_TRACKED_PROMPTS = 64;
 /** Prompts longer than this are not tracked (keeps the settings bag small). */
@@ -40,7 +40,7 @@ export function promptKey(text: string): string {
   return text.trim().replace(/\s+/g, ' ');
 }
 
-/** Clamp the picker limit setting to a usable integer in [1, 12]. */
+/** Clamp the picker limit setting to a usable integer in [1, 7]. */
 export function clampPromptPickerLimit(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value)) return DEFAULT_PROMPT_PICKER_LIMIT;
   const limit = Math.floor(value);

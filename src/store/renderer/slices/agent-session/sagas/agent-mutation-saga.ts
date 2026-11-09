@@ -26,6 +26,7 @@ import {
 } from '$features/agent/agent-read-service';
 import { appClient } from '$lib/client';
 import { withToastCountdown } from '$lib/components/patterns/notify';
+import { formatInteger } from '$lib/i18n/format';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
 import type { AgentSession } from '$shared/types';
@@ -54,11 +55,13 @@ import {
   agentRetirementSupportReceived,
   deleteAgentSessionRequested,
   deleteAgentWithUndoRequested,
+  deleteAgentsWithUndoRequested,
   removeAgent,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
   retireAgentRequested,
+  retireAgentsRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
   setAgentPinnedRequested,
@@ -67,6 +70,7 @@ import {
   addAgent,
   stopAgentSessionRequested,
   undoAgentDeletionRequested,
+  undoAgentDeletionsRequested,
 } from '../../workspace-agents/workspace-agents-slice';
 import {
   bulkUpsertSessions,
@@ -123,6 +127,28 @@ async function showUndoToast(wsId: string, agentId: string, agentName?: string):
           action: {
             label: m.agent_mutation_undo_label(),
             onClick: () => store.dispatch(undoAgentDeletionRequested(wsId, agentId)),
+          },
+        },
+        { pauseOnHover: false },
+      ),
+    );
+  } catch (error) {
+    logger.error('Failed to show agent deletion undo toast', error);
+  }
+}
+
+async function showBulkUndoToast(wsId: string, agentIds: string[]): Promise<void> {
+  try {
+    const { notify } = await import('$lib/components/patterns/notify');
+    const { store } = await import('../../../store');
+    notify.warning(
+      m.agent_mutation_deletedChats_message({ count: formatInteger(agentIds.length) }),
+      withToastCountdown(
+        {
+          duration: UNDO_DURATION_MS,
+          action: {
+            label: m.agent_mutation_undo_label(),
+            onClick: () => store.dispatch(undoAgentDeletionsRequested(wsId, agentIds)),
           },
         },
         { pauseOnHover: false },
@@ -202,8 +228,8 @@ function* loadRetirementSupport(
   }
 }
 
-function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
-  const [wsId, agentId] = action.payload;
+/** Retire one agent (`agent.retire`, §5.5); throws the user-facing failure. */
+function* performRetire(wsId: string, agentId: string): SagaGenerator<void> {
   const initial = yield* selectAgentSession.effect(agentId);
   // A stale workspace action may still settle its RPC, but cannot claim or
   // publish into a row now owned by another workspace.
@@ -211,32 +237,37 @@ function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGene
     !initial || initial.workspaceId === wsId
       ? captureAgentMutationOwnership(agentId, wsId)
       : undefined;
+  const generation = yield* selectDaemonConnectionGeneration.effect();
+  if (
+    !(yield* call([appClient.agents, appClient.agents.supportsRetirement], generation)) ||
+    generation !== (yield* selectDaemonConnectionGeneration.effect())
+  ) {
+    throw new Error(m.agent_mutation_retireUnavailable_error());
+  }
+  const beforeRetire = yield* selectAgentSession.effect(agentId);
+  const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
+  if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
+  const current = yield* selectAgentSession.effect(agentId);
+  if (ownership?.isCurrent(current?.workspaceId)) {
+    if (
+      beforeRetire &&
+      beforeRetire === current &&
+      generation === (yield* selectDaemonConnectionGeneration.effect())
+    ) {
+      yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
+    } else {
+      // Events and Restore can overtake this response. Reconcile the same
+      // workspace through the trailing read instead of replaying an old timestamp.
+      yield* spawn(refreshAgentSessionAfterEvent, agentId, wsId);
+    }
+  }
+}
+
+function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGenerator<void> {
+  const [wsId, agentId] = action.payload;
   let settled = false;
   try {
-    const generation = yield* selectDaemonConnectionGeneration.effect();
-    if (
-      !(yield* call([appClient.agents, appClient.agents.supportsRetirement], generation)) ||
-      generation !== (yield* selectDaemonConnectionGeneration.effect())
-    ) {
-      throw new Error(m.agent_mutation_retireUnavailable_error());
-    }
-    const beforeRetire = yield* selectAgentSession.effect(agentId);
-    const result = yield* call([appClient.agents, appClient.agents.retire], agentId, wsId);
-    if (!result.success) throw new Error(result.error || m.agent_mutation_retireFailed_error());
-    const current = yield* selectAgentSession.effect(agentId);
-    if (ownership?.isCurrent(current?.workspaceId)) {
-      if (
-        beforeRetire &&
-        beforeRetire === current &&
-        generation === (yield* selectDaemonConnectionGeneration.effect())
-      ) {
-        yield* put(updateSession(agentId, { retiredAt: result.retiredAt }));
-      } else {
-        // Events and Restore can overtake this response. Reconcile the same
-        // workspace through the trailing read instead of replaying an old timestamp.
-        yield* spawn(refreshAgentSessionAfterEvent, agentId, wsId);
-      }
-    }
+    yield* call(performRetire, wsId, agentId);
     yield* put(action.success(undefined as never));
     settled = true;
   } catch (error) {
@@ -247,6 +278,24 @@ function* retireAgent(action: ReturnType<typeof retireAgentRequested>): SagaGene
       yield* put(action.failure(new Error(m.agent_mutation_retireFailed_error())));
     }
   }
+}
+
+function* retireAgents(action: ReturnType<typeof retireAgentsRequested>): SagaGenerator<void> {
+  const [wsId, agentIds] = action.payload;
+  const failures = yield* all(
+    agentIds.map((agentId) =>
+      call(function* () {
+        try {
+          yield* call(performRetire, wsId, agentId);
+          return null;
+        } catch (error) {
+          return mutationError(error, m.agent_mutation_retireFailed_error()).message;
+        }
+      }),
+    ),
+  );
+  const failure = failures.find((message) => message !== null);
+  if (failure) yield* call(showError, failure);
 }
 
 /**
@@ -850,7 +899,7 @@ function* rollbackImmediateDeletion(entry: PendingAgentDeletion): SagaGenerator<
 function* deleteWithUndo(
   action: ReturnType<typeof deleteAgentWithUndoRequested>,
 ): SagaGenerator<void> {
-  const [wsId, agentId, agentName] = action.payload;
+  const [wsId, agentId, agentName, options] = action.payload;
   let settled = false;
   let entry: PendingAgentDeletion | null = null;
   let clearerSpawned = false;
@@ -899,7 +948,7 @@ function* deleteWithUndo(
       settled = true;
       return;
     }
-    yield* fork(showUndoToast, wsId, agentId, agentName);
+    if (options?.undoToast !== false) yield* fork(showUndoToast, wsId, agentId, agentName);
     yield* put(action.success(snapshot));
     settled = true;
     // The daemon commits at the deadline. Keep the registry entry as a
@@ -923,50 +972,72 @@ function* deleteWithUndo(
   }
 }
 
+function* deleteAgentsWithUndo(
+  action: ReturnType<typeof deleteAgentsWithUndoRequested>,
+): SagaGenerator<void> {
+  const [wsId, agents] = action.payload;
+  yield* all(
+    agents.map(({ agentId, name }) =>
+      call(deleteWithUndo, deleteAgentWithUndoRequested(wsId, agentId, name, { undoToast: false })),
+    ),
+  );
+  const deleted = agents.filter(({ agentId }) => getPendingAgentDeletion(agentId)?.wsId === wsId);
+  if (deleted.length === 1) {
+    yield* fork(showUndoToast, wsId, deleted[0].agentId, deleted[0].name);
+  } else if (deleted.length > 1) {
+    yield* fork(
+      showBulkUndoToast,
+      wsId,
+      deleted.map(({ agentId }) => agentId),
+    );
+  }
+}
+
+/**
+ * Race-safe `agent.cancelDelete` for one pending deletion. Returns `null` when
+ * nothing is pending, `true` once restored, and `false` when the deletion
+ * already committed or the cancel failed (the caller reports it).
+ */
+function* performUndo(wsId: string, agentId: string): SagaGenerator<boolean | null> {
+  const pending = getPendingAgentDeletion(agentId);
+  if (!pending || pending.wsId !== wsId) return null;
+  let cancel;
+  try {
+    cancel = yield* call([appClient.agents, appClient.agents.cancelDelete], agentId, pending.wsId);
+  } catch (error) {
+    logger.error('agent.cancelDelete failed', { agentId, error });
+    cancel = { success: false as const };
+  }
+  const currentPending = getPendingAgentDeletion(agentId);
+  if (!cancel.success || !cancel.cancelled || (currentPending && currentPending !== pending)) {
+    // Already committed, a failed cancel RPC, or a newer deletion — never
+    // resurrect the agent locally from this request's old snapshot.
+    return false;
+  }
+  // The cancellation event may already have restored/refetched the row.
+  // Acknowledge success without replaying the old snapshot in that case.
+  if (currentPending === pending) {
+    removePendingAgentDeletion(agentId);
+    // Events-bridge entries may not have a snapshot.
+    const current = yield* selectAgentSession.effect(agentId);
+    if (
+      pending.snapshot &&
+      pending.snapshot.workspaceId === wsId &&
+      (!current || current === pending.snapshot)
+    ) {
+      yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
+    }
+  }
+  return true;
+}
+
 function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): SagaGenerator<void> {
   const [wsId, agentId] = action.payload;
   let settled = false;
   try {
-    const pending = getPendingAgentDeletion(agentId);
-    if (!pending || pending.wsId !== wsId) {
-      yield* put(action.success(false));
-      settled = true;
-      return;
-    }
-    let cancel;
-    try {
-      cancel = yield* call(
-        [appClient.agents, appClient.agents.cancelDelete],
-        agentId,
-        pending.wsId,
-      );
-    } catch (error) {
-      logger.error('agent.cancelDelete failed', { agentId, error });
-      cancel = { success: false as const };
-    }
-    const currentPending = getPendingAgentDeletion(agentId);
-    if (cancel.success && cancel.cancelled && (!currentPending || currentPending === pending)) {
-      // The cancellation event may already have restored/refetched the row.
-      // Acknowledge success without replaying the old snapshot in that case.
-      if (currentPending === pending) {
-        removePendingAgentDeletion(agentId);
-        // Events-bridge entries may not have a snapshot.
-        const current = yield* selectAgentSession.effect(agentId);
-        if (
-          pending.snapshot &&
-          pending.snapshot.workspaceId === wsId &&
-          (!current || current === pending.snapshot)
-        ) {
-          yield* call(restoreHiddenSession, pending.wsId, pending.snapshot);
-        }
-      }
-      yield* put(action.success(true));
-    } else {
-      // Already committed, a failed cancel RPC, or a newer deletion — never
-      // resurrect the agent locally from this request's old snapshot.
-      yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
-      yield* put(action.success(false));
-    }
+    const undone = yield* call(performUndo, wsId, agentId);
+    if (undone === false) yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
+    yield* put(action.success(undone === true));
     settled = true;
   } catch (error) {
     yield* put(action.failure(mutationError(error, m.agent_mutation_undoDeleteFailed_error())));
@@ -976,6 +1047,25 @@ function* undoDeletion(action: ReturnType<typeof undoAgentDeletionRequested>): S
       yield* put(action.failure(new Error(m.agent_mutation_undoDeleteFailed_error())));
     }
   }
+}
+
+function* undoDeletions(
+  action: ReturnType<typeof undoAgentDeletionsRequested>,
+): SagaGenerator<void> {
+  const [wsId, agentIds] = action.payload;
+  const results = yield* all(
+    agentIds.map((agentId) =>
+      call(function* () {
+        try {
+          return yield* call(performUndo, wsId, agentId);
+        } catch (error) {
+          logger.error('Bulk agent undo failed', { agentId, error });
+          return false;
+        }
+      }),
+    ),
+  );
+  if (results.includes(false)) yield* call(showError, m.agent_mutation_undoDeleteFailed_error());
 }
 
 function* deleteImmediately(
@@ -1103,6 +1193,7 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(restoreAgentSessionRequested, restoreAgent),
     takeEvery(restoreRetiredAgentRequested, restoreRetiredAgent),
     takeEvery(retireAgentRequested, retireAgent),
+    takeEvery(retireAgentsRequested, retireAgents),
     takeEvery(agentRetirementSupportRequested, loadRetirementSupport),
     takeEvery(activateAgentRequested, activateAgent),
     takeEvery(saveAgentSessionRequested, saveAgent),
@@ -1115,7 +1206,9 @@ export function* agentMutationSaga(): SagaGenerator<void> {
     takeEvery(agentProposalResolveRequested, resolveProposal),
     takeEvery(cancelAgentSubscriptionsRequested, cancelAgentSubscriptions),
     takeEvery(deleteAgentWithUndoRequested, deleteWithUndo),
+    takeEvery(deleteAgentsWithUndoRequested, deleteAgentsWithUndo),
     takeEvery(undoAgentDeletionRequested, undoDeletion),
+    takeEvery(undoAgentDeletionsRequested, undoDeletions),
     takeEvery(deleteAgentSessionRequested, deleteImmediately),
   ]);
 }

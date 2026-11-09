@@ -13,6 +13,7 @@
   } from '$shared/types';
   import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
   import { CHIEF_PROMPT_VERSION, CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+  import { HOME_HIDDEN_REPOS_GROUP } from './home-hidden-repos';
 
   declare global {
     interface Window {
@@ -42,6 +43,9 @@
       | 'status-icons'
       | 'status-grouping'
       | 'labels'
+      | 'auto-archive'
+      | 'hidden-repos'
+      | 'hidden-repos-collapsed'
       | 'purged'
       | 'pr-status-list'
       | 'board-pr-status'
@@ -53,6 +57,7 @@
       | 'board-repository-labels'
       | 'empty'
       | 'assistant'
+      | 'assistant-actions'
       | 'assistant-streaming'
       | 'assistant-activity'
       | 'assistant-activity-many'
@@ -78,6 +83,9 @@
       'status-icons': { props: { scenario: 'status-icons' } },
       'status-grouping': { props: { scenario: 'status-grouping' } },
       labels: { props: { scenario: 'labels' } },
+      'auto-archive': { props: { scenario: 'auto-archive' } },
+      'hidden-repos': { props: { scenario: 'hidden-repos' } },
+      'hidden-repos-collapsed': { props: { scenario: 'hidden-repos-collapsed' } },
       purged: { props: { scenario: 'purged' } },
       'pr-status-list': { props: { scenario: 'pr-status-list', height: 1120 } },
       'board-pr-status': { props: { scenario: 'board-pr-status', height: 1120 } },
@@ -89,6 +97,7 @@
       'board-repository-labels': { props: { scenario: 'board-repository-labels' } },
       empty: { props: { scenario: 'empty' } },
       assistant: { props: { scenario: 'assistant' } },
+      'assistant-actions': { props: { scenario: 'assistant-actions' } },
       'assistant-streaming': { props: { scenario: 'assistant-streaming' } },
       'assistant-activity': { props: { scenario: 'assistant-activity' } },
       'assistant-activity-many': { props: { scenario: 'assistant-activity-many' } },
@@ -407,6 +416,8 @@
   } from '$store/renderer/slices/workspace/workspace-slice';
   import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
   import {
+    autoArchiveIdleAfterDaysCleared,
+    autoArchiveIdleAfterDaysHydrated,
     closePanel,
     hydrateSidebarNav,
     openPanel,
@@ -418,6 +429,8 @@
     hydrateHomeWorkspaceSettings,
     resetHomeWorkspaceView,
     updateHomeWorkspaceView,
+    homeRepositoryHidden,
+    homeRepositoriesUnhidden,
     setHomeWorkspaceAside,
   } from './home-workspaces-slice';
   import { persistedHomeState, readHomePersistence } from './home-workspaces-persistence';
@@ -540,7 +553,16 @@
   $effect.pre(() => {
     admitLegacyPrincipal(
       scenario === 'collaborator' ? 'guest' : 'owner',
-      scenario === 'labels' ? { workspaceLabels: 1 } : {},
+      scenario === 'labels'
+        ? { workspaceLabels: 1 }
+        : scenario === 'auto-archive'
+          ? { workspaceAutoArchiveOptOut: 1 }
+          : {},
+    );
+    store.dispatch(
+      scenario === 'auto-archive'
+        ? autoArchiveIdleAfterDaysHydrated(7)
+        : autoArchiveIdleAfterDaysCleared(),
     );
     store.dispatch(closePanel());
     store.dispatch(resetHomeWorkspaceView());
@@ -555,14 +577,20 @@
       }),
     );
     assistantFixtures.forEach((thread) => store.dispatch(removeSession(thread.id)));
-    const threads =
+    const threads: AgentSession[] =
       scenario === 'assistant-many' || scenario === 'assistant-activity-many'
         ? assistantFixtures
         : scenario === 'assistant-activity'
           ? assistantFixtures.slice(0, 9)
           : scenario === 'assistant' || scenario === 'assistant-streaming'
             ? assistantFixtures.slice(0, 3)
-            : [];
+            : scenario === 'assistant-actions'
+              ? assistantFixtures.slice(0, 5).map((thread, index) => ({
+                  ...thread,
+                  pinned: false,
+                  ...(index === 4 ? { retiredAt: String(thread.updatedAt) } : {}),
+                }))
+              : [];
     store.dispatch(setAgents(CHIEF_WORKSPACE_ID, threads));
     store.dispatch(
       bulkUpsertSessions(
@@ -600,6 +628,9 @@
               ...workspace,
               myRole: scenario === 'collaborator' ? 'collaborator' : 'owner',
               ...(scenario === 'labels' ? { label: labelFixtures[workspace.id] } : {}),
+              ...(scenario === 'auto-archive' && workspace.id === 'home-running'
+                ? { autoArchiveDisabled: true }
+                : {}),
               ...(scenario === 'untitled' && workspace.id === 'home-running'
                 ? { title: '' }
                 : scenario === 'untitled' && workspace.id === 'home-review'
@@ -727,6 +758,17 @@
       store.dispatch(setHomeWorkspaceAside('home-complete'));
     }
     if (scenario === 'prs') store.dispatch(updateHomeWorkspaceView({ tab: 'prs' }));
+    store.dispatch(homeRepositoriesUnhidden(Object.keys(store.state.homeWorkspaces.hiddenRepos)));
+    if (scenario.startsWith('hidden-repos')) {
+      const later = Date.parse('2100-01-01T00:00:00Z');
+      store.dispatch(homeRepositoryHidden('acme/platform', later));
+      store.dispatch(homeRepositoryHidden('/repos/local-tools', later));
+      store.dispatch(
+        updateHomeWorkspaceView({
+          expandedGroups: { [HOME_HIDDEN_REPOS_GROUP]: scenario === 'hidden-repos' },
+        }),
+      );
+    }
     if (['linear', 'integration-error', 'disconnected'].includes(scenario))
       store.dispatch(updateHomeWorkspaceView({ tab: 'linear' }));
   });

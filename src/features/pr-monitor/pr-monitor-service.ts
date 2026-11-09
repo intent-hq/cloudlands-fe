@@ -278,6 +278,9 @@ export function subscribePrMonitors(
     let stopped = false;
     let subscriptionId: string | undefined;
     let monitors: ReviewMonitorRow[] = [];
+    // Before the first list lands there are no rows to fold into: publishing a
+    // fold would replace the retained rows with a partial, often empty, list.
+    let seeded = false;
     let inFlight = false;
     let queued = false;
     let revision = 0;
@@ -305,6 +308,7 @@ export function subscribePrMonitors(
           for (const id of locallyCancelled)
             if (!fetched.some((row) => row.monitorId === id)) locallyCancelled.delete(id);
           monitors = fetched.filter((row) => !locallyCancelled.has(row.monitorId));
+          seeded = true;
           failures = 0;
           cancelRetry();
           emit();
@@ -340,6 +344,8 @@ export function subscribePrMonitors(
       // Pre-ack gaps converge through the unconditional post-ack seed.
       if (!subscriptionId || params?.subscriptionId !== subscriptionId) return;
       revision++;
+      // The bumped revision already re-runs an in-flight list once it settles.
+      if (!seeded) return;
       const result = foldPrMonitorEvent(monitors, event.type, event.data ?? {});
       const folded = result.monitors !== monitors;
       monitors = result.monitors;

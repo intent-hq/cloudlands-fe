@@ -14,6 +14,7 @@ import Separator from './menu-separator.svelte';
 import StackedContent from './menu-stacked-content.svelte';
 import Label from './menu-label.svelte';
 import Indicator from './menu-indicator.svelte';
+import Footer from './menu-footer.svelte';
 
 const Portal = MenuPrimitive.Portal;
 const CheckboxGroup = MenuPrimitive.CheckboxGroup;
@@ -22,7 +23,7 @@ const Group = MenuPrimitive.Group;
 const GroupHeading = MenuPrimitive.GroupHeading;
 export { menuMetadata, menuSemantics } from './menu.meta';
 export { getPageTargetIndex } from './menu-roving-focus';
-export { menuItem, menuOverlay } from './menu-recipes';
+export { menuDescription, menuItem, menuOverlay } from './menu-recipes';
 export type { StackedMenuGroup, StackedMenuItem } from './menu-stacked-content.types';
 
 export {
@@ -30,6 +31,7 @@ export {
   Trigger,
   Portal,
   Content,
+  Footer,
   Item,
   ActionRow,
   CommandItem,

@@ -53,7 +53,13 @@ const virtualModules: Record<string, string> = {
     export const endDrag = () => ({ type: 'endDrag' });
     export const moveWorkspace = (...payload) => ({ type: 'move', payload });
     export const openWorkspaceTab = (...payload) => ({ type: 'open', payload });
-    export const startDrag = () => ({ type: 'startDrag' });`,
+    export const startDrag = () => ({ type: 'startDrag' });
+    export const addWorkspaceTabToGroup = (...payload) => ({ type: 'addToGroup', payload });
+    export const createWorkspaceTabGroup = (...payload) => ({ type: 'createGroup', payload });
+    export const removeWorkspaceTabFromGroup = (...payload) => ({ type: 'removeFromGroup', payload });
+    export const setOpenWorkspaceTabGroup = (...payload) => ({ type: 'setOpenGroup', payload });
+    export const ungroupWorkspaceTabGroup = (...payload) => ({ type: 'ungroup', payload });
+    export const updateWorkspaceTabGroup = (...payload) => ({ type: 'updateGroup', payload });`,
   '$store/renderer/slices/tab-state/tab-state-selectors': `
     const currentSubscribers = new Set();
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
@@ -72,7 +78,17 @@ const virtualModules: Record<string, string> = {
     export const selectWorkspaceTabOrder = Object.assign(
       () => readable(() => globalThis.__workspaceTabScenario.tabOrder),
       { select: () => globalThis.__workspaceTabScenario.tabOrder },
-    );`,
+    );
+    // Tab groups (Labs, off by default) stay empty: the geometry covers ungrouped tabs.
+    export const selectWorkspaceTabGroups = Object.assign(() => readable(() => []), {
+      select: () => [],
+    });
+    export const selectOpenWorkspaceTabGroupId = Object.assign(() => readable(() => null), {
+      select: () => null,
+    });
+    export const selectWorkspaceTabGroupsEnabled = Object.assign(() => readable(() => false), {
+      select: () => false,
+    });`,
   '$store/renderer/slices/workspace/workspace-selectors': `
     const readable = (read) => ({ subscribe(run) { run(read()); return () => {}; } });
     export const selectWorkspaceById = Object.assign(

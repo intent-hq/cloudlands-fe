@@ -23,6 +23,7 @@
     {
       title: 'Other setup stages',
       entries: [
+        { phase: 'base-refresh', percent: 20, message: 'Updating main from origin...' },
         { phase: 'submodules', percent: 80 },
         { phase: 'submodules', percent: 85, message: 'Cloning submodules (2/3)' },
         { phase: 'cow-copy', percent: 90 },

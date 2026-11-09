@@ -28,6 +28,10 @@
     onSubmit,
     onSkipIsolationChange,
     onBranchBehindChange,
+    onboardingCreationError = null,
+    onboardingCreationErrorCode = null,
+    onboardingBaseRefreshFailure = null,
+    onContinueFromLastFetched,
   }: {
     onboardingInputValue?: string;
     isOnboardingCreating?: boolean;
@@ -51,6 +55,10 @@
     onSubmit?: () => void;
     onSkipIsolationChange?: (value: boolean) => void;
     onBranchBehindChange?: (behind: number) => void;
+    onboardingCreationError?: string | null;
+    onboardingCreationErrorCode?: string | null;
+    onboardingBaseRefreshFailure?: unknown;
+    onContinueFromLastFetched?: () => void;
     [key: string]: unknown;
   } = $props();
 
@@ -84,6 +92,13 @@
       onProjectChange,
       onSubmit,
       onModelChange,
+      onContinueFromLastFetched,
+      getCreationError: () => ({
+        message: onboardingCreationError,
+        errorCode: onboardingCreationErrorCode,
+        baseRefreshFailure: onboardingBaseRefreshFailure,
+      }),
+      getSetupScript: () => setupScript,
       setSkipIsolation: (value: boolean) => {
         onboardingSkipIsolation = value;
         onSkipIsolationChange?.(value);

@@ -33,10 +33,13 @@
   <Menu.Root bind:open={menuOpen}>
     <Menu.Trigger aria-label="Panel actions">Panel actions</Menu.Trigger>
     <Menu.Content portal={false} data-testid="header-actions">
+      {@render header.actions.current.conversation?.(menuOpen)}
       {@render header.actions.current.display?.()}
-      <Menu.Separator />
       {@render header.actions.current.actions?.()}
+      {@render header.actions.current.destructive?.()}
+      {@render header.actions.current.lifecycle?.()}
       {@render header.actions.current.additional?.(menuOpen)}
+      {@render header.actions.current.footer?.()}
     </Menu.Content>
   </Menu.Root>
 {/if}

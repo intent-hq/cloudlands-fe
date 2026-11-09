@@ -8,10 +8,7 @@
   } from '$store/renderer/slices/model/model-selectors';
   import { setDefaultReasoningEffort } from '$store/renderer/slices/model/model-slice';
   import { selectEffectiveDefaultProviderId } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
-  import {
-    selectBundledSpecialists,
-    selectFileSpecialists,
-  } from '$store/renderer/slices/specialists/specialists-selectors';
+  import { selectFileSpecialists } from '$store/renderer/slices/specialists/specialists-selectors';
   import {
     deleteFileSpecialist as deleteFileSpecialistAction,
     saveFileSpecialist,
@@ -68,10 +65,8 @@
    * is cleared are deleted instead of rewritten (monorepo#1450).
    */
   function resetAllSpecialistsToInherit() {
-    const bundledSpecialists = selectBundledSpecialists.select(appStore.state);
     const { saves, deletes } = buildResetToInheritPayloads(
       $fileSpecialists$,
-      bundledSpecialists,
       getCurrentWorkspacePath,
     );
     for (const payload of saves) {

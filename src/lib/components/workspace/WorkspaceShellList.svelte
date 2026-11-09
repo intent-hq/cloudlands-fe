@@ -1,10 +1,12 @@
 <script lang="ts">
   import { truncatedTitle } from '$lib/actions/observe-overflow';
+  import { onDestroy } from 'svelte';
   import { writable } from 'svelte/store';
   import Fa from 'svelte-fa';
   import SidebarGroupHeader from './sidebar/SidebarGroupHeader.svelte';
   import ScriptDetectionControls from '$features/scripts/components/ScriptDetectionControls.svelte';
   import { getPanelLayoutManager } from '$features/layout/panel-layout-adapter';
+  import { confirmScriptDeletion } from '$features/scripts/confirm-script-deletion';
   import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
@@ -18,8 +20,10 @@
     faRotateRight,
     faStop,
     faTableColumns,
+    faTrash,
   } from '$lib/icons/phosphor-icons';
   import {
+    selectScriptDetectionOperation,
     selectScriptListPageState,
     selectWorkspaceScriptEntries,
     selectWorkspaceScriptOperations,
@@ -42,7 +46,10 @@
     selectScript,
     setTerminalPlacement,
   } from '$store/renderer/slices/terminals/terminals-slice';
-  import { selectIsWorkspaceCollaborator } from '$store/renderer/slices/workspace/workspace-selectors';
+  import {
+    selectIsWorkspaceCollaborator,
+    selectWorkspaceActionContext,
+  } from '$store/renderer/slices/workspace/workspace-selectors';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -50,6 +57,8 @@
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
+  const actionContext$ = selectWorkspaceActionContext(workspaceIdStore);
+  const detection$ = selectScriptDetectionOperation(workspaceIdStore);
   const terminals$ = selectTerminalsForWorkspace(workspaceIdStore);
   const activeTerminalId$ = selectActiveTerminalIdForWorkspace(workspaceIdStore);
   const scripts$ = selectWorkspaceScriptEntries(workspaceIdStore);
@@ -63,6 +72,11 @@
           Number(isLiveScriptStatus(left.runtime.status)) || left.name.localeCompare(right.name),
     ),
   );
+
+  let mounted = true;
+  onDestroy(() => {
+    mounted = false;
+  });
 
   let terminalsExpanded = $state(true);
   let scriptsExpanded = $state(true);
@@ -142,6 +156,15 @@
           ? stopScriptRequested(workspaceId, scriptId)
           : restartScriptRequested(workspaceId, scriptId);
     appStore.dispatch(operation);
+  }
+
+  function deleteScript(scriptId: string) {
+    const targetWorkspace = workspaceId;
+    return confirmScriptDeletion(
+      targetWorkspace,
+      scriptId,
+      () => mounted && workspaceId === targetWorkspace,
+    );
   }
 </script>
 
@@ -365,6 +388,21 @@
                       >
                         {#snippet leading()}<Fa icon={faRotateRight} class="size-3" />{/snippet}
                         {m.workspace_devScripts_restart_ariaLabel({ name: script.name })}
+                      </Menu.Item>
+                    {/if}
+                    {#if $actionContext$}
+                      <Menu.Separator />
+                      <Menu.Item
+                        destructive
+                        disabled={(operation?.pending || $detection$?.pending) ?? false}
+                        onclick={(event) => {
+                          event.stopPropagation();
+                          void deleteScript(script.id);
+                        }}
+                        data-script-action="delete"
+                      >
+                        {#snippet leading()}<Fa icon={faTrash} class="size-3" />{/snippet}
+                        {m.scripts_delete_label()}
                       </Menu.Item>
                     {/if}
                   </Menu.Content>

@@ -3,13 +3,14 @@
  * Mocks Electron and other dependencies for testing
  */
 
-import { vi, afterEach } from 'vitest';
+import { vi, afterEach, beforeEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
 import { scrubHostNodeInjection } from './scrub-host-node-injection';
 import { scrubHostPythonInjection } from './scrub-host-python-injection';
 import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
 import { installShiftedTestClock } from './shifted-test-clock';
+import { createLocalStorageMock } from './store/renderer/utils/test-helpers/local-storage-mock';
 // Configure @testing-library/dom (the instance @testing-library/svelte re-exports) directly:
 // importing the Svelte binding here would load Svelte into every test file, UI or not.
 import { configure as configureTestingLibrary } from '@testing-library/dom';
@@ -196,15 +197,15 @@ if (typeof window !== 'undefined') {
     })),
   });
 
-  // Mock localStorage (getItem must return null for missing keys per Web Storage API spec)
-  const localStorageMock = {
-    getItem: vi.fn(() => null),
-    setItem: vi.fn(),
-    removeItem: vi.fn(),
-    clear: vi.fn(),
-  };
+  // In-memory localStorage: values round-trip within a test; values and spy overrides are
+  // reset before each test; every method is a vi.fn spy. A no-op stub hid save-and-reload bugs (cloudlands-fe#4332).
+  const localStorageMock = createLocalStorageMock();
   Object.defineProperty(window, 'localStorage', {
     value: localStorageMock,
+  });
+  beforeEach(() => {
+    localStorageMock.restoreImplementations();
+    localStorageMock.clearValues();
   });
 
   // Persistent handler tracking (survives across beforeEach calls) so tests can
@@ -490,46 +491,6 @@ vi.mock('$lib/electron-bridge', () => ({
   listen: vi.fn(async () => () => {}),
   listenSync: vi.fn(() => () => {}),
   emit: vi.fn(async () => {}),
-}));
-
-// Mock typed-invoke to avoid IPC errors in tests
-vi.mock('$shared/ipc/typed-invoke', () => ({
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  typedInvoke: vi.fn(async (channel: string, data?: any) => {
-    // Return mock responses based on channel
-    switch (channel) {
-      case 'agent:create':
-        return {
-          success: true,
-          data: {
-            id: 'test-agent-id',
-            backendSessionId: 'test-session-id',
-            status: 'Active',
-          },
-        };
-      case 'agent:send-message':
-        return {
-          success: true,
-          data: {
-            messageId: 'test-message-id',
-          },
-        };
-      default:
-        return { success: true, data: null };
-    }
-  }),
-  isSuccessResponse: vi.fn(
-    (response: any) => response.success === true && response.data !== undefined,
-  ),
-  isErrorResponse: vi.fn(
-    (response: any) => response.success === false && response.error !== undefined,
-  ),
-  throwOnError: vi.fn((response: any) => {
-    if (response.success !== true || response.data === undefined) {
-      throw new Error(`IPC Error: ${response.error?.code} - ${response.error?.message}`);
-    }
-    return response;
-  }),
 }));
 
 // Note: Provenance modules are not mocked here to allow tests to use actual implementations

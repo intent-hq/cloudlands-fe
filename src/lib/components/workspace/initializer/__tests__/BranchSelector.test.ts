@@ -18,6 +18,7 @@ const {
   mockGithubBranches,
   mockGithubBranchesCached,
   mockToastError,
+  mockSettingsGet,
   debugFlags,
   savedBranchByRepo,
   connectionFixture,
@@ -27,6 +28,7 @@ const {
   mockGithubBranches: vi.fn(),
   mockGithubBranchesCached: vi.fn(),
   mockToastError: vi.fn(),
+  mockSettingsGet: vi.fn(),
   // Mutable knobs for the module-level mocks below. Tests arm form
   // persistence + a saved branch; both are reset in beforeEach.
   debugFlags: {} as Record<string, boolean>,
@@ -44,6 +46,7 @@ const {
 vi.mock('$lib/client', () => ({
   appClient: {
     git: { getBranches: mockGetBranches, branchStatus: mockBranchStatus },
+    settings: { get: mockSettingsGet },
     integrations: {
       githubBranches: mockGithubBranches,
       githubBranchesCached: mockGithubBranchesCached,
@@ -95,6 +98,19 @@ vi.mock('$store/renderer/slices/workspace/workspace-selectors', async () => {
   };
 });
 
+// The connected person owns the host, so nothing gates a settings read.
+vi.mock('$store/renderer/slices/principal/principal-selectors', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('$store/renderer/slices/principal/principal-selectors')>();
+  const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');
+  const store = createAppStoreMock({ state: {} });
+  return {
+    ...actual,
+    selectHostRole: store.createSelector(() => 'owner'),
+    selectPrincipalActionContext: store.createSelector(() => 'host-a:owner'),
+  };
+});
+
 vi.mock('$store/renderer/slices/workspace-initializer/workspace-initializer-slice', () => ({
   setWorkspaceInitializerBranchForRepo: (repoPath: string, branch: string) => ({
     type: 'workspaceInitializer/setBranchForRepo',
@@ -139,6 +155,7 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     mockGithubBranches.mockReset();
     mockGithubBranchesCached.mockReset();
     mockToastError.mockReset();
+    mockSettingsGet.mockReset().mockResolvedValue({ path: 'workspace.any', value: true });
     for (const key of Object.keys(debugFlags)) delete debugFlags[key];
     for (const key of Object.keys(savedBranchByRepo)) delete savedBranchByRepo[key];
     // Default: cold cache — the cached-first path is a no-op unless a test arms it.
@@ -504,6 +521,38 @@ describe('BranchSelector (daemon-backed branch listing, no fabricated fallbacks)
     await rerender({ skipIsolation: false });
     await screen.findByRole('combobox');
     expect(document.activeElement).toBe(toggle);
+  });
+
+  it('local repo: the isolation switch always offers a worktree and reads no setting', async () => {
+    mockGetBranches.mockResolvedValue({
+      branches: ['main'],
+      remoteBranches: [],
+      defaultBranch: 'main',
+      currentBranch: 'main',
+    });
+    const { container } = render(BranchSelector, {
+      props: {
+        repoPath: '/tmp/repo',
+        repoType: 'local',
+        value: 'main',
+        skipIsolation: true,
+        onSkipIsolationChange: vi.fn(),
+      },
+    });
+
+    await waitFor(() => expect(mockGetBranches).toHaveBeenCalledWith('/tmp/repo', true));
+    await fireEvent.click(container.querySelector('button')!);
+    await screen.findByRole('switch', {
+      name: m.workspace_branchSelector_isolation_label({ isolationLabel: 'worktree' }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    flushSync();
+    expect(
+      screen.getByRole('switch', {
+        name: m.workspace_branchSelector_isolation_label({ isolationLabel: 'worktree' }),
+      }),
+    ).toBeTruthy();
+    expect(mockSettingsGet).not.toHaveBeenCalled();
   });
 
   it('local repo: turning isolation off works in the folder on its current branch without switching', async () => {

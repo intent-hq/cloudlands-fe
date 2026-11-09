@@ -3,10 +3,7 @@
  *
  * Covers the quick-action settings pane (#1627): the default picker AND the
  * per-action override rows all render ModelPicker scoped to the active provider, override picks dispatch
- * setTypeOverride ('' for "use default"), and the `fast` row surfaces the
- * auggie-only `agent.enhancePrompt` gate when the catalog is hydrated and
- * the effective provider is not auggie (hidden pre-hydration to avoid a
- * flash of the note for auggie users).
+ * setTypeOverride ('' for "use default").
  */
 import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -90,7 +87,6 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
         '',
         '',
         '',
-        '',
       ]);
       expect(mocks.dispatched).toEqual([]);
     },
@@ -100,7 +96,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     (provider) => {
       mocks.effectiveProviderId.value = provider;
       render(BackgroundAgentSettings);
-      expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(4);
+      expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(3);
     },
   );
   it('does not offer effort when the active provider is unavailable', () => {
@@ -114,7 +110,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     mocks.defaultModel.value = 'claude-code:other';
     render(BackgroundAgentSettings);
     expect(screen.queryAllByTestId('pick-reasoning')).toHaveLength(0);
-    expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(4);
+    expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(3);
     expect(mocks.dispatched).toEqual([]);
   });
 
@@ -122,7 +118,7 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     mocks.typeOverrides.value = { commit: 'claude-code:other', pr: '', review: '', fast: '' };
     render(BackgroundAgentSettings);
     expect(screen.getAllByTestId('quick-action-effort-provider-note')).toHaveLength(1);
-    expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(3);
+    expect(screen.getAllByTestId('pick-reasoning')).toHaveLength(2);
     await fireEvent.click(screen.getAllByTestId('pick-reasoning')[1]);
     expect(mocks.dispatched).toEqual([
       {
@@ -141,12 +137,12 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
     };
     render(BackgroundAgentSettings);
     const values = screen.getAllByTestId('picker-selected').map((el) => el.textContent);
-    expect(values).toEqual(['', 'codex:gpt-5.3-codex', '', '']);
+    expect(values).toEqual(['', 'codex:gpt-5.3-codex', '']);
   });
 
   it('dispatches setTypeOverride with the picked model for an override row', async () => {
     render(BackgroundAgentSettings);
-    // Index 0 is the default picker; 1..3 are commit/pr/fast overrides.
+    // Index 0 is the default picker; 1..2 are commit/pr overrides.
     await fireEvent.click(screen.getAllByTestId('pick-model-with-triple')[1]);
     expect(mocks.dispatched).toHaveLength(1);
     expect(mocks.dispatched).toContainEqual({
@@ -196,53 +192,27 @@ describe('BackgroundAgentSettings (quick-action settings pane)', () => {
   });
 
   it("dispatches setTypeOverride with '' when an override row picks the default option", async () => {
-    mocks.typeOverrides.value = { commit: '', pr: '', review: '', fast: 'some-model' };
+    mocks.typeOverrides.value = { commit: '', pr: 'some-model', review: '', fast: '' };
     render(BackgroundAgentSettings);
-    await fireEvent.click(screen.getAllByTestId('pick-default')[3]);
+    await fireEvent.click(screen.getAllByTestId('pick-default')[2]);
     expect(mocks.dispatched).toHaveLength(1);
     expect(mocks.dispatched).toContainEqual({
       type: 'backgroundAgentSettings/setTypeOverride',
-      payload: [{ type: 'fast', model: '' }],
+      payload: [{ type: 'pr', model: '' }],
     });
-  });
-
-  it('hides the auggie-only note on the fast row when the effective provider is auggie', () => {
-    mocks.effectiveProviderId.value = 'auggie';
-    render(BackgroundAgentSettings);
-    expect(screen.queryByTestId('fast-auggie-only-note')).toBeNull();
-  });
-
-  it('shows the auggie-only note on the fast row when the effective provider is not auggie', () => {
-    mocks.effectiveProviderId.value = 'codex';
-    render(BackgroundAgentSettings);
-    expect(screen.getByTestId('fast-auggie-only-note')).toBeTruthy();
-  });
-
-  it('hides the note before catalog hydration — no flash for auggie users', () => {
-    mocks.catalogLoaded.value = false;
-    mocks.effectiveProviderId.value = '';
-    render(BackgroundAgentSettings);
-    expect(screen.queryByTestId('fast-auggie-only-note')).toBeNull();
-  });
-
-  it("shows the note when hydrated but the provider is still '' — genuinely unavailable", () => {
-    mocks.catalogLoaded.value = true;
-    mocks.effectiveProviderId.value = '';
-    render(BackgroundAgentSettings);
-    expect(screen.getByTestId('fast-auggie-only-note')).toBeTruthy();
   });
 });
 
 it('each quick-action row saves and clears effort without pinning its inherited model', async () => {
   render(BackgroundAgentSettings);
-  for (let index = 0; index < 4; index++) {
+  for (let index = 0; index < 3; index++) {
     await fireEvent.click(screen.getAllByTestId('pick-reasoning')[index]);
     await fireEvent.click(screen.getAllByTestId('clear-reasoning')[index]);
   }
   expect(mocks.dispatched).toEqual([
     { type: 'backgroundAgentSettings/setDefaultReasoningEffort', payload: ['high'] },
     { type: 'backgroundAgentSettings/setDefaultReasoningEffort', payload: [''] },
-    ...['commit', 'pr', 'fast'].flatMap((type) => [
+    ...['commit', 'pr'].flatMap((type) => [
       {
         type: 'backgroundAgentSettings/setTypeReasoningEffortOverride',
         payload: [{ type, effort: 'high' }],

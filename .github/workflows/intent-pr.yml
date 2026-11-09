@@ -407,7 +407,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Fetch PR base commit
-        run: git fetch --no-tags --depth=1 origin ${{ github.event.pull_request.base.sha }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: bash "$GITHUB_WORKSPACE/scripts/git-network-retry.sh" run fetch --no-tags --depth=1 origin "$BASE_SHA"
       - name: Scan changed files for conflict markers
         run: |
           set -euo pipefail
@@ -519,7 +521,7 @@ jobs:
             fi
           else
             echo "diff base: the event base ($base)"
-            git fetch --no-tags --depth=1 origin "$base"
+            bash "$GITHUB_WORKSPACE/scripts/git-network-retry.sh" run fetch --no-tags --depth=1 origin "$base"
           fi
           echo "BASE_SHA=$base" >> "$GITHUB_ENV"
       - name: Evaluate diff shape
@@ -782,6 +784,11 @@ jobs:
       # Architecture gates are added to `lint:architecture` in package.json (run
       # by both this step and `verify:changed`), never as separate workflow steps.
       - name: Architecture validation
+        # lint:workflows may fetch the pinned actionlint through the REST API
+        # when the release download fails; the token lifts the anonymous
+        # 60-requests-per-hour limit that shared runner IPs exhaust.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: pnpm run validate:architecture
       - name: Build main process
         run: pnpm run build:main
@@ -948,20 +955,17 @@ jobs:
         with:
           python-version: '3.12'
       - name: Checkout shared transfer-selection fixtures
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: main
           path: .cache/transfer-selection-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/transfer-selection/
             /scripts/
       - name: Fetch baseline comparison commit
         run: |
           if [ -n "$LINT_BASELINE_BASE_REF" ]; then
-            git fetch --no-tags --depth=1 origin "$LINT_BASELINE_BASE_REF"
+            bash "$GITHUB_WORKSPACE/scripts/git-network-retry.sh" run fetch --no-tags --depth=1 origin "$LINT_BASELINE_BASE_REF"
           fi
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -979,13 +983,10 @@ jobs:
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned backend Keychain contract
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
           path: .cache/backend-keychain-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/backend-keychain/v1/
             /scripts/backend-keychain-contract.mjs
@@ -1001,13 +1002,10 @@ jobs:
         id: suggested-prompts-cases
         run: node scripts/suggested-prompts-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned suggested-prompts cases
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: ${{ steps.suggested-prompts-cases.outputs.sourceCommit }}
           path: .cache/suggested-prompts-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/suggested-prompts/v1/
             /scripts/suggested-prompts-contract.mjs
@@ -1025,13 +1023,10 @@ jobs:
         shell: bash
         run: node scripts/turn-start-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned turn-start events
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: ${{ steps.turn-start-events.outputs.sourceCommit }}
           path: .cache/turn-start-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/turn-start/turn-start-events.json
             /scripts/turn-start-contract.mjs

@@ -1,6 +1,8 @@
 /**
- * Label of the New Workspace form picker row ("Codebase"), which follows what
- * the list can hold once plain folders (Labs) are offered:
+ * Label of the New Workspace form picker row ("Codebase"), which follows the
+ * selection once plain folders (Labs) are offered: a selected plain folder →
+ * "Folder", a selected git repository → "Codebase". With nothing selected it
+ * follows what the list can hold:
  * - a git repository (forge or local) is listed → "Codebase";
  * - otherwise no forge connected, or a plain-folder entry listed → "Folder";
  * - otherwise (forge connected, empty list) → "Codebase".
@@ -16,12 +18,15 @@ export interface RepositoryRowLabelInput {
   forgeState: ForgeConnectionState;
   hasGitRepositoryEntry: boolean;
   hasPlainFolderEntry: boolean;
+  /** Kind of the selected entry; absent or null with nothing selected. */
+  selected?: RepositoryRowLabelKind | null;
 }
 
 export function resolveRepositoryRowLabelKind(
   input: RepositoryRowLabelInput,
 ): RepositoryRowLabelKind {
   if (!input.plainFoldersOffered) return 'codebase';
+  if (input.selected) return input.selected;
   if (input.hasGitRepositoryEntry) return 'codebase';
   if (input.forgeState === 'none' || input.hasPlainFolderEntry) return 'folder';
   return 'codebase';

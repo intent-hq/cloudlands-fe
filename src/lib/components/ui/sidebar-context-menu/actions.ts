@@ -76,7 +76,12 @@ export function toSidebarActions(
         actions.push({ ...base, kind: 'submenu', children: toSidebarActions(entry.submenu) });
       }
     } else if (entry.checked !== undefined) {
-      actions.push({ ...base, kind: 'checkbox', checked: entry.checked });
+      actions.push({
+        ...base,
+        kind: 'checkbox',
+        checked: entry.checked,
+        indicator: entry.indicator,
+      });
     } else {
       actions.push({ ...base, kind: 'action', destructive: entry.destructive });
     }

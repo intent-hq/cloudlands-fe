@@ -256,7 +256,7 @@ async function pickAgent(name: RegExp) {
 
 /** The mocked orchestrator is listed by its own name. */
 const ORCHESTRATION = /Coordinator/;
-const GENERAL = /^General/;
+const GENERAL = /^None/;
 
 async function flush() {
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -517,7 +517,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     await pickAgent(GENERAL);
 
     expect(onTeamModeChange).toHaveBeenLastCalledWith(false);
-    expect(agentTrigger().textContent).toContain('General');
+    expect(agentTrigger().textContent).toContain('None');
   });
 
   it('does not report an automatic reset of a deleted specialist as an agent pick', async () => {
@@ -570,7 +570,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     const onSpecialistChange = vi.fn();
     render(InitialAgentPicker, { props: { onSpecialistChange } });
 
-    expect(agentTrigger().textContent).toContain('General');
+    expect(agentTrigger().textContent).toContain('None');
     expect(agentTrigger().textContent).not.toContain('Developer');
     await flush();
     expect(onSpecialistChange).not.toHaveBeenCalled();
@@ -593,7 +593,7 @@ describe('InitialAgentPicker stale model override clearing', () => {
     ]);
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
-    expect(agentTrigger().textContent).toContain('General');
+    expect(agentTrigger().textContent).toContain('None');
     expect(agentTrigger().textContent).not.toContain('Developer');
   });
 
@@ -1763,7 +1763,7 @@ describe('InitialAgentPicker specialist dropdown', () => {
 
     const trigger = specialistTrigger();
     await fireEvent.click(trigger);
-    const general = await screen.findByRole('option', { name: /General/ });
+    const general = await screen.findByRole('option', { name: /^None/ });
     const developer = screen.getByRole('option', { name: /Developer/ });
     expect(general.getAttribute('aria-selected')).toBe('true');
     expect(developer.getAttribute('aria-selected')).not.toBe('true');
@@ -1778,7 +1778,7 @@ describe('InitialAgentPicker specialist dropdown', () => {
     await fireEvent.click(trigger);
     const selected = await screen.findByRole('option', { name: /Developer/, selected: true });
     expect(screen.getAllByRole('option', { selected: true })).toEqual([selected]);
-    expect(screen.getByRole('option', { name: /General/ }).getAttribute('aria-selected')).not.toBe(
+    expect(screen.getByRole('option', { name: /^None/ }).getAttribute('aria-selected')).not.toBe(
       'true',
     );
   });
@@ -1792,22 +1792,22 @@ describe('InitialAgentPicker specialist dropdown', () => {
 
   async function openedOptionLabels() {
     await fireEvent.click(specialistTrigger());
-    await screen.findByRole('option', { name: /General/ });
+    await screen.findByRole('option', { name: /^None/ });
     return screen.getAllByRole('option').map((el) => el.textContent?.trim());
   }
 
-  it('lists recently used specialists first, newest first, under General', async () => {
+  it('lists recently used specialists first, newest first, and None last', async () => {
     mocks.specialists$.set(catalogSpecialists);
     mocks.recentSpecialistIds$.set(['writer', 'deleted-specialist', 'reviewer']);
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
     expect(await openedOptionLabels()).toEqual([
-      'General',
       'Writer',
       'Reviewer',
       'Coordinator',
       'Developer',
       'Researcher',
+      'None',
     ]);
   });
 
@@ -1816,12 +1816,12 @@ describe('InitialAgentPicker specialist dropdown', () => {
     render(InitialAgentPicker, { props: { selectedSpecialist: null, isTeamMode: false } });
 
     expect(await openedOptionLabels()).toEqual([
-      'General',
       'Coordinator',
       'Developer',
       'Reviewer',
       'Researcher',
       'Writer',
+      'None',
     ]);
   });
 });

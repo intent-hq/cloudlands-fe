@@ -389,6 +389,7 @@ describe('daemonEventsSaga', () => {
       'sourceControl:auth-changed',
       'principal:identity-changed',
       'remoteMachine:changed',
+      'cloudMachine:changed',
       'client:updated',
       'client:connected',
       'client:disconnected',

@@ -59,14 +59,20 @@ describe('HardwareInputDecoder — keys and encoder', () => {
     ]);
   });
 
-  it('emits one encoderrotate per detent (act=2)', () => {
-    const h = createHarness();
+  it('emits one physical encoderrotate per detent (act=2)', () => {
+    const h = createHarness({ deviceModel: 'creator-micro-2' });
     h.feed(hid('ENC_CW', 2), hid('ENC_CW', 2), hid('ENC_CC', 2));
     expect(h.events).toEqual([
-      { type: 'encoderrotate', direction: 'cw' },
-      { type: 'encoderrotate', direction: 'cw' },
-      { type: 'encoderrotate', direction: 'ccw' },
+      { type: 'encoderrotate', direction: 'counterclockwise' },
+      { type: 'encoderrotate', direction: 'counterclockwise' },
+      { type: 'encoderrotate', direction: 'clockwise' },
     ]);
+  });
+
+  it('emits no encoderrotate without a device model', () => {
+    const h = createHarness();
+    h.feed(hid('ENC_CW', 2), hid('ENC_CC', 2), hid('ENC_CLK', 1));
+    expect(h.events).toEqual([{ type: 'keydown', key: 'ENC_CLK' }]);
   });
 
   it('treats encoder click as a key with press/release', () => {

@@ -53,8 +53,10 @@ import { selectTranscriptHydration } from '$store/renderer/slices/chat-state/cha
 import {
   addMessage,
   bulkUpsertSessions,
+  prependHistoryMessages,
   updateSession,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
+import { selectHasHistorySegment } from '$store/renderer/slices/agent-session/agent-session-selectors';
 import { loadChatTranscript } from './chat-read-service';
 import { chatInitialHistoryProgressed } from '$store/renderer/slices/chat-state/chat-state-slice';
 import {
@@ -804,6 +806,85 @@ describe('chatReadService (fake seam, real store)', () => {
 
     expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
       'trunc-user',
+    ]);
+  });
+
+  // Regression: the post-send recovery read fetches only the newest page.
+  // Older resident rows outside that page are not a BE truncation; dropping
+  // them left the preview joining stale history to the new tail with the
+  // middle turn silently missing.
+  it('keeps older resident rows that connect to the newest page', async () => {
+    const agentId = 'agent-keep-older';
+    const seqRow = (seq: number): AgentMessage => ({ ...makeMessage(`row-${seq}`, `${seq}`), seq });
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({ id: agentId, messages: [0, 1, 2, 3, 4, 5, 6, 7, 8].map(seqRow) }),
+      ]),
+    );
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([5, 6, 7, 8, 9].map(seqRow), 'older-page') as never,
+    );
+
+    await loadChatTranscript(agentId, WS);
+
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.seq)).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+    ]);
+  });
+
+  it('drops older resident rows that do not connect to the newest page', async () => {
+    const agentId = 'agent-drop-island';
+    const seqRow = (seq: number): AgentMessage => ({ ...makeMessage(`row-${seq}`, `${seq}`), seq });
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    appStore.dispatch(
+      bulkUpsertSessions([makeSession({ id: agentId, messages: [0, 1, 2].map(seqRow) })]),
+    );
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation([5, 6, 7, 8, 9].map(seqRow), 'older-page') as never,
+    );
+
+    appStore.dispatch(prependHistoryMessages(agentId, [{ ...makeMessage('old', 'old'), seq: 0 }]));
+    expect(selectHasHistorySegment.select(appStore.state, agentId)).toBe(true);
+
+    await loadChatTranscript(agentId, WS);
+
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.seq)).toEqual([
+      5, 6, 7, 8, 9,
+    ]);
+    expect(selectHasHistorySegment.select(appStore.state, agentId)).toBe(false);
+  });
+
+  it('keeps no older rows when the page reuses their seqs with new ids (edit elsewhere)', async () => {
+    const agentId = 'agent-reused-seq';
+    const row = (seq: number, prefix: string): AgentMessage => ({
+      ...makeMessage(`${prefix}-${seq}`, `${seq}`),
+      seq,
+    });
+    agentsApi.get.mockResolvedValue(makeSession({ id: agentId }) as never);
+    appStore.dispatch(
+      bulkUpsertSessions([
+        makeSession({
+          id: agentId,
+          messages: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((s) => row(s, 'old')),
+        }),
+      ]),
+    );
+    agentsApi.getConversation.mockResolvedValueOnce(
+      conversation(
+        [7, 8, 9, 10, 11].map((s) => row(s, 'new')),
+        'older-page',
+      ) as never,
+    );
+
+    await loadChatTranscript(agentId, WS);
+
+    expect(selectAgentMessages.select(appStore.state, agentId).map((m) => m.id)).toEqual([
+      'new-7',
+      'new-8',
+      'new-9',
+      'new-10',
+      'new-11',
     ]);
   });
 });

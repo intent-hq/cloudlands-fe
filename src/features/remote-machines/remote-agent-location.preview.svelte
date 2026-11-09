@@ -17,7 +17,24 @@
     | 'picker'
     | 'picker-stale'
     | 'picker-missing'
-    | 'picker-older-backend';
+    | 'picker-older-backend'
+    | 'picker-machine-without-models'
+    | 'e2b-starting'
+    | 'e2b-running'
+    | 'e2b-paused'
+    | 'e2b-quota'
+    | 'e2b-profile-required'
+    | 'e2b-unavailable'
+    | 'e2b-bootstrap-failed'
+    | 'e2b-bootstrap-not-queued'
+    | 'e2b-sandbox-lost'
+    | 'e2b-template-missing'
+    | 'e2b-key-rejected'
+    | 'e2b-starting-turn'
+    | 'e2b-setup-turn'
+    | 'e2b-started-turn'
+    | 'e2b-waking-turn'
+    | 'remote-starting-turn';
 
   interface Props {
     scene?: Scene;
@@ -45,6 +62,23 @@
       'picker-stale': sceneState('picker-stale'),
       'picker-missing': sceneState('picker-missing'),
       'picker-older-backend': sceneState('picker-older-backend'),
+      'picker-machine-without-models': sceneState('picker-machine-without-models'),
+      'e2b-starting': sceneState('e2b-starting'),
+      'e2b-running': sceneState('e2b-running'),
+      'e2b-paused': sceneState('e2b-paused'),
+      'e2b-quota': sceneState('e2b-quota'),
+      'e2b-profile-required': sceneState('e2b-profile-required'),
+      'e2b-unavailable': sceneState('e2b-unavailable'),
+      'e2b-bootstrap-failed': sceneState('e2b-bootstrap-failed'),
+      'e2b-bootstrap-not-queued': sceneState('e2b-bootstrap-not-queued'),
+      'e2b-sandbox-lost': sceneState('e2b-sandbox-lost'),
+      'e2b-template-missing': sceneState('e2b-template-missing'),
+      'e2b-key-rejected': sceneState('e2b-key-rejected'),
+      'e2b-starting-turn': sceneState('e2b-starting-turn'),
+      'e2b-setup-turn': sceneState('e2b-setup-turn'),
+      'e2b-started-turn': sceneState('e2b-started-turn'),
+      'e2b-waking-turn': sceneState('e2b-waking-turn'),
+      'remote-starting-turn': sceneState('remote-starting-turn'),
     },
     captureReadiness: { selector: '[data-remote-agent-location-scene][data-ready]' },
   });
@@ -81,7 +115,12 @@
   import PanelTabBar from '$lib/components/layout/panel-system/PanelTabBar.svelte';
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import AgentPlacementNotice from './AgentPlacementNotice.svelte';
+  import StreamingStatus from '$lib/components/chat/StreamingStatus.svelte';
+  import { agentCloudStarting, agentCloudWaking } from './agent-location';
+  import { StartLineHosts } from './start-line-hosts.svelte';
+  import QueuedMessageList from '$lib/components/chat/QueuedMessageList.svelte';
   import { remoteMachinesLoaded } from './remote-machines-slice';
+  import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
   import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
   import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { providerModelsLoaded } from '$store/renderer/slices/provider-models/provider-models-slice';
@@ -124,6 +163,19 @@
       { id: 'codex', status: 'signed-out', models: ['gpt-6', 'gpt-6-mini'] },
     ],
   };
+  // A machine with no sign-in of its own (an E2B sandbox) lists no models;
+  // profiles that bring their own credentials show this backend's models.
+  const NO_MODELS_REPORT = {
+    intentdVersion: '0.240.0',
+    providers: [{ id: 'claude-code', status: 'unknown', models: [] }],
+  };
+  const PERSONAL_PROFILE = {
+    id: 'p-personal',
+    providerRef: 'claude-code@p-personal',
+    baseProviderId: 'claude-code',
+    name: 'Personal',
+    remoteCompatible: true,
+  };
   const pickerCatalog = (s: Scene): ProviderCatalogResult => ({
     ...MOCK_PROVIDER_CATALOG,
     profiles:
@@ -152,6 +204,7 @@
               name: 'API key',
               remoteCompatible: true,
             },
+            ...(s === 'picker-machine-without-models' ? [PERSONAL_PROFILE] : []),
           ],
   });
   const reportedAt = (s: Scene) =>
@@ -186,7 +239,15 @@
       ...extra,
     }) as AgentSession;
 
+  // A turn in progress: the working row under the sent message.
+  const isTurnScene = (s: Scene) => s.endsWith('-turn');
+  const SENT_PROMPT = [
+    { phase: 'prompt', message: 'Sent prompt…', level: 'info' as const, timestamp: Date.parse(T) },
+  ];
+  const startLineHosts = new StartLineHosts();
+
   const STARTING_SCENES: Scene[] = [
+    'remote-starting-turn',
     'remote-starting',
     'remote-preparing-checkout',
     'remote-running-setup',
@@ -224,7 +285,109 @@
     },
   };
 
+  // Agents on E2B: a sandbox row while it runs or is paused; start fields and errors otherwise.
+  const E2B_NODE = 'd-e2b-sandbox-1';
+  const isE2bScene = (s: Scene) => s.startsWith('e2b-');
+  const E2B_BOOTSTRAP_DETAIL =
+    [
+      "the sandbox's intentd did not mint a credential (exit 3): intentd or its tunnel did not start in the sandbox.",
+      'Sandbox isx1k2v9 (intent/intent-node-4x8:0.240.0). The sandbox was deleted; no machine was added.',
+      'Last intentd lines:',
+      '02:21:04 INFO intentd 0.240.0 starting (node mode)',
+      '02:21:34 ERROR tailcat: relay handshake timed out after 30s',
+      '02:21:34 ERROR node: tunnel not ready; exiting with code 3',
+    ].join('\n') +
+    ' {"code":"cloud-machine-unavailable","provider":"e2b","reason":"bootstrap-failed","retryable":true}';
+  const E2B_FAILED_AT = new Date(catalogNow() - 60_000).toISOString();
+  const E2B_QUEUE = [
+    {
+      id: 'ral-q1',
+      content: 'Sweep the docs folder for broken links and fix the ones you can.',
+      messageMetadata: { fromPrincipalId: 'preview-author' },
+      queuedAt: '2026-11-08T02:20:00.000Z',
+      position: 0,
+    },
+  ];
+  const E2B_ERRORS: Partial<Record<Scene, { code: string; detail: string }>> = {
+    'e2b-quota': {
+      code: 'cloud-quota',
+      detail:
+        'E2B refused a new sandbox: concurrency limit reached. {"code":"cloud-quota","provider":"e2b","limit":"concurrency","retryable":true}',
+    },
+    'e2b-profile-required': {
+      code: 'cloud-profile-required',
+      detail:
+        'Work uses this backend\'s Claude sign-in, which E2B can\'t use. {"code":"cloud-profile-required","provider":"e2b","providerRef":"claude-code"}',
+    },
+    'e2b-unavailable': {
+      code: 'cloud-machine-unavailable',
+      detail:
+        'E2B failed (503). No sandbox was left behind. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"api-error","retryable":true,"status":503}',
+    },
+    'e2b-bootstrap-failed': { code: 'remote-launch-failed', detail: E2B_BOOTSTRAP_DETAIL },
+    'e2b-bootstrap-not-queued': { code: 'remote-launch-failed', detail: E2B_BOOTSTRAP_DETAIL },
+    'e2b-sandbox-lost': {
+      code: 'remote-launch-failed',
+      detail:
+        'sandbox isx1k2v9 not found (404) while resuming. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"sandbox-lost","retryable":true,"status":404}',
+    },
+    'e2b-template-missing': {
+      code: 'remote-launch-failed',
+      detail:
+        'template intent/intent-node-4x8:0.240.0 not found in project intent. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"template-missing","retryable":false}',
+    },
+    'e2b-key-rejected': {
+      code: 'remote-launch-failed',
+      detail:
+        'E2B answered 401 Unauthorized for GET /sandboxes. {"code":"cloud-machine-unavailable","provider":"e2b","reason":"key-rejected","retryable":false,"status":401}',
+    },
+  };
+  const e2bAgent = (s: Scene): AgentSession =>
+    agent('ral-e2b', 'Docs sweeper', {
+      nodeName: 'E2B',
+      placement: { target: 'e2b', checkout: 'isolated' },
+      ...(s === 'e2b-running' ||
+      s === 'e2b-paused' ||
+      s === 'e2b-started-turn' ||
+      s === 'e2b-waking-turn'
+        ? { nodeId: E2B_NODE, leaseId: 'lease-e2b', effectiveIsolation: 'isolated' as const }
+        : { effectiveIsolation: 'pending' as const }),
+      ...(s === 'e2b-starting' || s === 'e2b-starting-turn'
+        ? { cloudStart: { step: 'starting-daemon' } }
+        : {}),
+      ...(s === 'e2b-setup-turn'
+        ? {
+            setup: {
+              state: 'running' as const,
+              startedAt: '2026-11-02T08:24:10.000Z',
+              output: SETUP_OUTPUT,
+            },
+          }
+        : {}),
+      ...(isTurnScene(s) ? { status: AgentStatus.Processing } : {}),
+      ...(E2B_ERRORS[s] ? { status: AgentStatus.Error, placementError: E2B_ERRORS[s] } : {}),
+      updatedAt: '2026-11-02T08:20:00.000Z',
+    });
+  const e2bSandbox = (s: Scene): RemoteMachine => ({
+    ...machine(E2B_NODE, 'E2B · Docs sweeper', 'linux', 'x86_64', 'connected'),
+    hosts: [],
+    cloud: {
+      provider: 'e2b',
+      cloudMachineId: 'e2b',
+      sandboxId: 'isx1k2v9',
+      state: s === 'e2b-paused' ? 'paused' : s === 'e2b-waking-turn' ? 'resuming' : 'running',
+      template: 'intent/intent-node-4x8:0.240.0',
+      size: '4x8',
+      startedBy: { principalId: 'p-sam', displayName: 'Sam' },
+      agentId: 'ral-e2b',
+      workspaceId: WS,
+      startedAt: T,
+      runningSeconds: 2520,
+    },
+  });
+
   const agentsFor = (s: Scene): AgentSession[] => [
+    ...(isE2bScene(s) ? [e2bAgent(s)] : []),
     agent('ral-local', 'Spec writer', { updatedAt: '2026-11-02T08:30:00.000Z' }),
     agent('ral-mac', 'iOS build fixer', {
       ...remote(
@@ -274,10 +437,22 @@
   ];
 
   const selectedAgentId = $derived(
-    scene === 'local' ? 'ral-local' : scene === 'machine-unreachable' ? 'ral-box' : 'ral-mac',
+    isE2bScene(scene)
+      ? 'ral-e2b'
+      : scene === 'local'
+        ? 'ral-local'
+        : scene === 'machine-unreachable'
+          ? 'ral-box'
+          : 'ral-mac',
   );
   const agents = $derived(agentsFor(scene));
+  const e2bQueued = $derived(!!E2B_ERRORS[scene] && scene !== 'e2b-bootstrap-not-queued');
   const selected = $derived(agents.find((a) => a.id === selectedAgentId) ?? agents[0]!);
+  const turnStartLine = $derived(
+    isTurnScene(scene) &&
+      (agentCloudStarting(selected) ||
+        (scene === 'e2b-waking-turn' && agentCloudWaking(selected, e2bSandbox(scene)))),
+  );
   const tab = $derived<PanelTab>({
     id: 'ral-tab',
     type: 'agent',
@@ -350,6 +525,19 @@
           0,
         ),
       );
+      if (s === 'picker-machine-without-models')
+        store.dispatch(
+          providerModelsLoaded(
+            PERSONAL_PROFILE.providerRef,
+            {
+              models: [
+                { value: 'opus', label: 'Opus 5.5', description: 'Most capable' },
+                { value: 'sonnet', label: 'Sonnet 5', description: 'Fast and capable' },
+              ],
+            },
+            0,
+          ),
+        );
     }
     const mac = machine(
       MAC,
@@ -363,7 +551,11 @@
         supported: true,
         machines: [
           isPickerScene(s) && s !== 'picker-missing'
-            ? { ...mac, capabilities: MAC_REPORT, observedAt: reportedAt(s) }
+            ? {
+                ...mac,
+                capabilities: s === 'picker-machine-without-models' ? NO_MODELS_REPORT : MAC_REPORT,
+                observedAt: reportedAt(s),
+              }
             : mac,
           machine(BOX, 'Build box', 'linux', 'x86_64', 'unreachable'),
         ],
@@ -371,9 +563,24 @@
         executorBackends: null,
       }),
     );
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        providers: [],
+        machines:
+          s === 'e2b-running' || s === 'e2b-paused' || s === 'e2b-waking-turn'
+            ? [e2bSandbox(s)]
+            : [],
+        readAt: 0,
+      }),
+    );
     store.dispatch(bulkUpsertSessions(agentsFor(s)));
   });
 </script>
+
+{#snippet cloudStartLine()}
+  <AgentPlacementNotice agentId={selectedAgentId} phaseLine onPhaseLine={startLineHosts.register} />
+{/snippet}
 
 <div
   class="flex h-[720px] w-full min-w-0 bg-background text-foreground"
@@ -403,13 +610,34 @@
     {/if}
     <div class="flex min-h-0 flex-1 flex-col items-center">
       <div class="flex w-full max-w-[760px] flex-1 flex-col justify-end px-6 pb-4">
+        {#if ready && isTurnScene(scene)}
+          <div class="mb-8 ml-auto max-w-md rounded-lg bg-muted px-3 py-2 type-body">
+            Sweep the docs folder for broken links and fix the ones you can.
+          </div>
+          <StreamingStatus
+            isProcessing
+            statusEvents={SENT_PROMPT}
+            startLine={turnStartLine ? cloudStartLine : null}
+          />
+        {/if}
         {#if ready}
           {#key selectedAgentId}
-            <AgentPlacementNotice agentId={selectedAgentId} />
+            <AgentPlacementNotice
+              agentId={selectedAgentId}
+              phaseLineShown={startLineHosts.shown}
+              failedAt={E2B_ERRORS[scene] ? E2B_FAILED_AT : null}
+              queued={e2bQueued}
+              onRetry={() => {}}
+            />
           {/key}
         {/if}
       </div>
       <div class="w-full max-w-[760px] px-6 pb-6" id="ral-composer">
+        {#if e2bQueued}
+          <div class="pb-2">
+            <QueuedMessageList ownPrincipalId="preview-author" messages={E2B_QUEUE} />
+          </div>
+        {/if}
         {#if ready}
           {#key selectedAgentId}
             <SimpleRichInput

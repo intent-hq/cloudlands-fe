@@ -11,10 +11,15 @@ import {
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { remoteModelSwitchSupport, type RemoteModelSwitchSupport } from './remote-model-picker';
 import {
+  cloudProfileBlockReason,
+  startOnCloud,
+} from '$features/cloud-machines/cloud-machines-selectors';
+import {
   resolveStartOn,
   START_ON_BACKEND,
   startOnOptions,
   startOnVisible,
+  type StartOnCloud,
   type StartOnOption,
 } from './start-on';
 
@@ -64,13 +69,16 @@ export const selectCurrentBackendLabel = store.createSelector((state) =>
 );
 
 /**
- * The current backend's `remoteMachines.list` row for `machineId`, or null.
+ * The current backend's `remoteMachines.list` row for `machineId` (or its
+ * `cloudMachines.list` sandbox row), or null.
  * Not gated on the Labs flag: rows are only loaded while it is on, and agent
  * location badges fall back to the agent's own fields without one.
  */
 export const selectRemoteMachine = store.createSelector(
   (state, machineId?: string): RemoteMachine | null =>
-    (machineId ? state.remoteMachines.machines[machineId] : undefined) ?? null,
+    (machineId
+      ? (state.remoteMachines.machines[machineId] ?? state.cloudMachines?.machines[machineId])
+      : undefined) ?? null,
 );
 
 /**
@@ -116,6 +124,7 @@ export const selectStartOnVisible = store.createSelector((state) =>
     remoteMachinesVisible: selectRemoteMachinesVisible.select(state),
     supported: state.remoteMachines?.initialAgentPlacement === true,
     machines: selectRemoteMachines.select(state),
+    cloud: startOnCloud(state),
   }),
 );
 
@@ -132,6 +141,7 @@ export const selectStartOnOptions = store.createSelector((state): StartOnOption[
         backendLabel: selectCurrentBackendLabel.select(state),
         backendPlatform: backendHostPlatform(state),
         machines: selectRemoteMachines.select(state),
+        cloud: startOnCloud(state),
       })
     : [],
 );
@@ -140,8 +150,41 @@ export const selectStartOnOptions = store.createSelector((state): StartOnOption[
  * The machine the first agent starts on for a remembered choice: that
  * machine while the row shows and it is usable, else the backend ('').
  */
-export const selectEffectiveStartOn = store.createSelector((state, remembered?: string): string =>
-  selectStartOnVisible.select(state)
-    ? resolveStartOn(remembered, selectRemoteMachines.select(state))
-    : START_ON_BACKEND,
+export const selectEffectiveStartOn = store.createSelector(
+  (state, remembered?: string, providerRef?: string): string =>
+    selectStartOnVisible.select(state)
+      ? resolveStartOn(
+          remembered,
+          selectRemoteMachines.select(state),
+          startOnCloudFor(state, providerRef),
+        )
+      : START_ON_BACKEND,
+);
+
+/**
+ * The E2B rows for a model: an entry is unavailable when the configuration
+ * can't run on E2B (no API key or token) or its templates lack the CLI.
+ * Without a model only each entry's state counts.
+ */
+function startOnCloudFor(
+  state: Parameters<typeof startOnCloud>[0],
+  providerRef?: string,
+): StartOnCloud | null {
+  const cloud = startOnCloud(state);
+  if (!cloud || !providerRef) return cloud;
+  const providers = state.cloudMachines?.providers ?? {};
+  return cloud.map((row) => {
+    if (row.unavailableReason) return row;
+    const blocked = cloudProfileBlockReason(
+      state,
+      providerRef,
+      providers[row.cloudMachineId] ?? null,
+    );
+    return blocked ? { ...row, unavailableReason: blocked } : row;
+  });
+}
+
+/** `startOnCloudFor` as a store, for the picker. */
+export const selectStartOnCloud = store.createSelector(
+  (state, providerRef?: string): StartOnCloud | null => startOnCloudFor(state, providerRef),
 );

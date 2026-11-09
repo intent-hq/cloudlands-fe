@@ -71,6 +71,7 @@ test('queued members remain readable with distinct identities through edit, save
     { id: 'member-queue', content: `${initialContent} thanks`, editing: true },
     { id: 'member-queue', content: `${initialContent} thanks`, editing: false },
   ]);
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- QueuedMessageList hard-codes Mod+Enter to send a queued message now; it is not chat.force-send
   await row.getByTestId('queued-message-content').press('Control+Enter');
   await expect(component.getByTestId('queued-member-sent')).toHaveText('member-queue');
 });

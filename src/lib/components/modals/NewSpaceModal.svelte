@@ -16,6 +16,8 @@
     static?: boolean;
     initializer?: Snippet;
     onClose?: () => void;
+    /** Changing it while open re-applies the `workspace-prefill` entry. */
+    prefillRequest?: number;
   }
 
   let {
@@ -23,6 +25,7 @@
     static: staticPosition = false,
     initializer,
     onClose,
+    prefillRequest = 0,
   }: Props = $props();
 
   let isExpanded = $state(true);
@@ -41,8 +44,10 @@
     return pushEscapeLayer(close);
   });
 
-  // Prepare the form; Dialog.Content owns initial focus on the primary action.
+  // Prepare the form; the dialog owns initial focus on the prompt. A new
+  // prefill request re-applies the prefill while the dialog stays open.
   $effect(() => {
+    void prefillRequest;
     if (!open || staticPosition) return;
     isExpanded = true;
     initializerRef?.applyPrefill();
@@ -76,6 +81,7 @@
   bind:open
   static={staticPosition}
   bind:contentRef
+  initialFocus={contentRef?.querySelector<HTMLElement>('[contenteditable="true"]')}
   size="editor"
   allowOverflow
   title={m.modals_newSpace_title()}

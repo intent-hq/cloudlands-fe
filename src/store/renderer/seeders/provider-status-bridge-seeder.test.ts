@@ -606,6 +606,32 @@ describe('provider-status-bridge-seeder', () => {
       expect(response.data?.providers.antigravity?.available).toBe(false);
     });
 
+    it('attaches discovered CLI versions to available providers only', async () => {
+      routeDaemon({
+        'host.checkAuggie': { available: true },
+        'host.toolAvailability': {
+          tools: { ...NO_TOOLS.tools, codex: { available: true }, npx: { available: true } },
+        },
+        'host.providerAuthStatus': authSweep(),
+        'host.providerDiscovery': {
+          providers: [
+            { id: 'auggie', installed: true, cliVersion: '0.35.0 (commit 9a7f3836)' },
+            { id: 'codex', installed: true, cliVersion: 'codex-cli 0.165.0' },
+            { id: 'claude-code', installed: true, cliVersion: '2.1.303 (Claude Code)' },
+            { id: 'opencode', installed: true, cliVersion: '1.18.18' },
+          ],
+        },
+      });
+      const response = await mockInvoke<Envelope<ProviderAvailabilityResult>>(
+        PROVIDERS_CHANNELS.GET_AVAILABILITY,
+      );
+      const providers = response.data?.providers;
+      expect(providers?.auggie?.version).toBe('0.35.0 (commit 9a7f3836)');
+      expect(providers?.codex?.version).toBe('codex-cli 0.165.0');
+      expect(providers?.claudeCode?.version).toBe('2.1.303 (Claude Code)');
+      expect(providers?.opencode).not.toHaveProperty('version');
+    });
+
     it('reports nothing installed honestly — no fake mock@example.com positives', async () => {
       routeDaemon({
         'host.checkAuggie': { available: false },
@@ -1314,6 +1340,46 @@ describe('provider-status-bridge-seeder', () => {
         success: true,
         providerId: 'opencode',
         data: { available: true },
+      });
+    });
+
+    it.each([
+      [true, { available: true, version: '1.18.18' }],
+      [false, { available: false }],
+    ])(
+      'reports the discovered CLI version only for an available provider (available=%s)',
+      async (available, data) => {
+        routeDaemon({
+          'host.findBinary': { available, path: '/usr/local/bin/opencode' },
+          'host.providerAuthStatus': () => {
+            throw new Error('transport down');
+          },
+          'host.providerDiscovery': {
+            providers: [{ id: 'opencode', installed: true, cliVersion: '1.18.18' }],
+          },
+        });
+
+        const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'opencode');
+
+        expect(response).toEqual({ success: true, providerId: 'opencode', data });
+      },
+    );
+
+    it('keeps the status when discovery fails while reading the version', async () => {
+      routeDaemon({
+        'host.findBinary': { available: true, path: '/usr/local/bin/opencode' },
+        'host.providerAuthStatus': authOne('opencode', true),
+        'host.providerDiscovery': () => {
+          throw new Error('transport down');
+        },
+      });
+
+      const response = await mockInvoke(PROVIDERS_CHANNELS.CHECK_SINGLE, 'opencode');
+
+      expect(response).toEqual({
+        success: true,
+        providerId: 'opencode',
+        data: { available: true, authenticated: true },
       });
     });
 

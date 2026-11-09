@@ -7,9 +7,13 @@ import {
   selectScriptById,
 } from '$store/renderer/slices/scripts/scripts-selectors';
 import { deleteScriptRequested } from '$store/renderer/slices/scripts/scripts-slice';
+import { isLiveScriptStatus } from '$features/scripts/utils/script-status';
 import { m } from '$shared/paraglide/messages.js';
 
-/** Both script surfaces use the same confirmation and revalidate after the dialog. */
+/**
+ * Every script surface uses the same confirmation and revalidates after the dialog.
+ * The daemon stops a live script before removing it, which wakes any monitoring agents.
+ */
 export async function confirmScriptDeletion(
   workspaceId: string,
   scriptId: string,
@@ -18,6 +22,7 @@ export async function confirmScriptDeletion(
   const script = selectScriptById.select(store.state, workspaceId, scriptId);
   if (!script || !isCurrent() || !selectCanDeleteScript.select(store.state, workspaceId, scriptId))
     return;
+  const live = isLiveScriptStatus(script.runtime?.status);
   const authority = selectWorkspaceActionContext.select(store.state, workspaceId);
   if (!authority) {
     notify.error(m.workspace_client_accessChanged_error());
@@ -26,7 +31,7 @@ export async function confirmScriptDeletion(
   if (
     !(await confirm({
       title: m.scripts_delete_title({ name: script.name }),
-      description: m.scripts_delete_description(),
+      description: live ? m.scripts_delete_running_description() : m.scripts_delete_description(),
       confirmLabel: m.scripts_delete_label(),
       destructive: true,
     }))
@@ -42,6 +47,7 @@ export async function confirmScriptDeletion(
     !current ||
     current.createdAt !== script.createdAt ||
     current.name !== script.name ||
+    (!live && isLiveScriptStatus(current.runtime?.status)) ||
     !selectCanDeleteScript.select(store.state, workspaceId, scriptId)
   ) {
     notify.error(m.scripts_delete_changed_error());

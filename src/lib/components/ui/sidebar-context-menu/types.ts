@@ -11,6 +11,8 @@ export interface SidebarMenuItem {
   destructive?: boolean;
   /** Checked entries are semantic checkboxes unless inside a single-selection submenu. */
   checked?: boolean;
+  /** `switch` for an on/off setting; checked entries otherwise draw a check. */
+  indicator?: 'check' | 'switch';
   /** Declare a submenu's children as one exclusive set of radio choices. */
   selection?: 'single';
   /** Commands close by default; checked choices remain open unless explicitly requested. */

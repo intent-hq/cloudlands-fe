@@ -968,6 +968,8 @@ describe('observational node capabilities', () => {
           remoteMachines: 1,
           remoteInitialAgent: 1,
           remoteLinkTraffic: 1,
+          cloudMachines: 0,
+          cloudMachineEntries: 0,
         },
       },
     });
@@ -1020,6 +1022,8 @@ describe('observational node capabilities', () => {
           remoteMachines: 0,
           remoteInitialAgent: 0,
           remoteLinkTraffic: 0,
+          cloudMachines: 0,
+          cloudMachineEntries: 0,
         },
       },
     });
@@ -1069,6 +1073,8 @@ describe('observational node capabilities', () => {
           remoteMachines: 0,
           remoteInitialAgent: 0,
           remoteLinkTraffic: 0,
+          cloudMachines: 0,
+          cloudMachineEntries: 0,
         },
       },
     });
@@ -1298,6 +1304,8 @@ describe('monitor replacement hello admission', () => {
                 remoteMachines: 0,
                 remoteInitialAgent: 0,
                 remoteLinkTraffic: 0,
+                cloudMachines: 0,
+                cloudMachineEntries: 0,
               },
             },
           });

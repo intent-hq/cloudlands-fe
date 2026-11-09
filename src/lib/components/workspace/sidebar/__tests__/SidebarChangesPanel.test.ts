@@ -139,20 +139,6 @@ vi.mock('$store/renderer/slices/changes/changes-slice', async (importOriginal) =
   })),
 }));
 
-// Stage/unstage/revert now route through the git-write-service seam
-// (FileChangesSection).
-const { mockStageFiles, mockUnstageFiles, mockDiscardFiles } = vi.hoisted(() => ({
-  mockStageFiles: vi.fn(() => Promise.resolve({ success: true })),
-  mockUnstageFiles: vi.fn(() => Promise.resolve({ success: true })),
-  mockDiscardFiles: vi.fn(() => Promise.resolve({ success: true })),
-}));
-vi.mock('$features/git/git-write-service', () => ({
-  stageFiles: mockStageFiles,
-  unstageFiles: mockUnstageFiles,
-  discardFiles: mockDiscardFiles,
-  commit: vi.fn(() => Promise.resolve({ success: true })),
-}));
-
 const mockGitState = {
   ahead: 0,
   behind: 0,
@@ -769,9 +755,6 @@ warmImport(() => import('./mocks/ChangesHeaderHost.svelte'));
 describe('SidebarChangesPanel', () => {
   beforeEach(async () => {
     await resetMocks();
-    mockStageFiles.mockClear();
-    mockUnstageFiles.mockClear();
-    mockDiscardFiles.mockClear();
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

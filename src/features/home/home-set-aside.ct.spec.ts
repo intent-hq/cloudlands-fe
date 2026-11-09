@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { SHORTCUT_DEFAULTS } from '$lib/utils/shortcut-bindings';
 import { expect, test } from '../../test/ct-test';
+import { shortcutChord } from '../../test/shortcut-chords';
 import Harness from './home-set-aside-harness.svelte';
 
 type HookArgs = Parameters<Parameters<typeof test.beforeEach>[1]>;
@@ -14,6 +16,9 @@ const row = (page: Page, id: string) => page.locator(`[data-home-workspace="${id
 const shelf = (page: Page) => page.locator('[data-home-set-aside-toggle]');
 const snapshot = (page: Page) => page.evaluate(() => window.__homeSetAside!.snapshot());
 const errors = new WeakMap<Page, string[]>();
+const isMac = (page: Page) => page.evaluate(() => /Mac/i.test(navigator.platform));
+const setAsideKeys = async (page: Page, binding = SHORTCUT_DEFAULTS['workspace.set-aside']) =>
+  shortcutChord(binding, await isMac(page)).press;
 
 async function aside(page: Page, id: string) {
   await row(page, id).hover();
@@ -99,8 +104,7 @@ test('Board keeps background work running and returns a new question', async ({
   await page.evaluate(() => document.documentElement.classList.add('dark'));
   await mount(Harness, { props: { view: 'board', height: 800 } });
   const asideColumn = page.locator('[data-home-board] [data-home-set-aside]');
-  await expect(asideColumn).toBeVisible();
-  await expect(asideColumn.locator('[data-home-workspace]')).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await row(page, 'aside-running').hover();
   await capture(page, testInfo, 'before-dark-board');
   const before = (await snapshot(page)).workspaces.find((item) => item.id === 'aside-running');
@@ -124,14 +128,19 @@ test('Board keeps background work running and returns a new question', async ({
     window.__homeSetAside!.update('aside-running', { displayStatus: 'needs_attention' }),
   );
   await expect(asideColumn.locator('[data-home-workspace="aside-running"]')).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await expect(row(page, 'aside-running')).toBeVisible();
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-running');
   await page.locator('[data-home-set-aside-action="aside-running"]').focus();
-  const mod = await page.evaluate(() => (/Mac/i.test(navigator.platform) ? 'Meta' : 'Control'));
-  await page.keyboard.press(`${mod}+Shift+s`);
+  await page.keyboard.press(await setAsideKeys(page));
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-running');
   const result = await snapshot(page);
-  expect(result.actions.filter((type) => /archive|retire|stop|interrupt/i.test(type))).toEqual([]);
+  // The Assistant list's read-only retirement capability probe is not a lifecycle change.
+  const changesLifecycle = (type: string) =>
+    /archive|retire|stop|interrupt/i.test(type) &&
+    !type.startsWith('workspaceAgents/agentRetirementSupport');
+  expect(changesLifecycle('workspaceAgents/retireAgentRequested')).toBe(true);
+  expect(result.actions.filter(changesLifecycle)).toEqual([]);
   expect(
     result.requests.filter(({ method }) => /archive|retire|stop|interrupt/i.test(method)),
   ).toEqual([]);
@@ -146,7 +155,7 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   const board = page.locator('[data-home-board]');
   const asideColumn = board.locator('[data-home-set-aside]');
   const asideCard = asideColumn.locator('[data-home-workspace="aside-idle"]');
-  await expect(asideColumn).toBeVisible();
+  await expect(asideColumn).toHaveCount(0);
   await capture(page, testInfo, 'kanban-column-empty-light');
   await aside(page, 'aside-idle');
   await expect(asideCard).toBeVisible();
@@ -157,10 +166,12 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   ).toHaveCount(0);
   await page.getByRole('button', { name: /^Undo/ }).click();
   await expect(asideCard).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await aside(page, 'aside-idle');
   await page.locator('[data-home-set-aside-action="aside-idle"]').focus();
   await page.keyboard.press('Enter');
   await expect(asideCard).toHaveCount(0);
+  await expect(asideColumn).toHaveCount(0);
   await expect(row(page, 'aside-idle')).toBeFocused();
   await aside(page, 'aside-idle');
   await page.evaluate(() => window.__homeSetAside!.configure({ groupBy: 'repository' }));
@@ -171,7 +182,7 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   await page.evaluate(() =>
     window.__homeSetAside!.configure({ filter: 'all', repoKey: 'acme/platform' }),
   );
-  await expect(asideColumn).toBeVisible();
+  await expect(asideColumn).toHaveCount(0);
   await expect(asideCard).toHaveCount(0);
   await expect(row(page, 'aside-other-repo')).toBeVisible();
   await page.evaluate(() => window.__homeSetAside!.configure({ repoKey: null, groupBy: 'status' }));
@@ -179,7 +190,11 @@ test('Board column supports Bring back, Undo, scopes and narrow layouts', async 
   await page.getByRole('searchbox').fill('Explore keyboard navigation');
   await expect(asideCard).toBeVisible();
   await expect(board.locator('[data-home-workspace]')).toHaveCount(1);
+  await page.getByRole('searchbox').fill('Plan the release');
+  await expect(asideColumn).toHaveCount(0);
+  await expect(row(page, 'aside-other-repo')).toBeVisible();
   await page.getByRole('searchbox').clear();
+  await expect(asideCard).toBeVisible();
   const clearToasts = page.getByRole('button', { name: /^Dismiss all \d+ notifications$/ });
   if (await clearToasts.isVisible()) await clearToasts.click();
   await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
@@ -355,17 +370,17 @@ test('Keyboard follows the configured shortcut and leaves text entry alone', asy
 }) => {
   await mount(Harness);
   await row(page, 'aside-idle').locator('xpath=ancestor-or-self::*[@role="option"]').focus();
-  const mod = await page.evaluate(() => (/Mac/i.test(navigator.platform) ? 'Meta' : 'Control'));
-  await page.keyboard.press(`${mod}+Shift+s`);
+  await page.keyboard.press(await setAsideKeys(page));
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-idle');
   await shelf(page).click();
   await row(page, 'aside-idle').locator('xpath=ancestor-or-self::*[@role="option"]').focus();
-  await page.evaluate(() => window.__homeSetAside!.setShortcut('mod+alt+s'));
-  await page.keyboard.press(`${mod}+Alt+s`);
+  const custom = 'mod+alt+s';
+  await page.evaluate((binding) => window.__homeSetAside!.setShortcut(binding), custom);
+  await page.keyboard.press(await setAsideKeys(page, custom));
   await expect.poll(async () => (await snapshot(page)).asideIds).not.toContain('aside-idle');
   const search = page.getByRole('searchbox');
   await search.fill('keyboard');
-  await page.keyboard.press(`${mod}+Alt+s`);
+  await page.keyboard.press(await setAsideKeys(page, custom));
   await expect(search).toHaveValue('keyboard');
   await expect.poll(async () => (await snapshot(page)).asideIds).toEqual([]);
 });
@@ -411,8 +426,7 @@ test('Moving a workspace preserves list scroll and gives keyboard focus a useful
   const scroll = page.locator('.workspace-list .overflow-y-auto').first();
   const before = await scroll.evaluate((element) => element.scrollTop);
   await target.locator('xpath=ancestor-or-self::*[@role="option"]').focus();
-  const mod = await page.evaluate(() => (/Mac/i.test(navigator.platform) ? 'Meta' : 'Control'));
-  await page.keyboard.press(`${mod}+Shift+s`);
+  await page.keyboard.press(await setAsideKeys(page));
   await expect.poll(async () => (await snapshot(page)).asideIds).toContain('aside-extra-14');
   await expect
     .poll(() =>

@@ -28,6 +28,10 @@ export const NODE_CAPABILITY_KEYS = [
   'remoteInitialAgent',
   // Owner-only daemon-link traffic capture: gates the Dev Console "Daemon links" view.
   'remoteLinkTraffic',
+  // E2B cloud machines: gates Settings → Machines → E2B and the Start On E2B row.
+  'cloudMachines',
+  // Named E2B entries: gates entries under Nodes and `cloudMachineId` in placements.
+  'cloudMachineEntries',
 ] as const;
 
 type NodeCapabilityKey = (typeof NODE_CAPABILITY_KEYS)[number];

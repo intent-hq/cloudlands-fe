@@ -8,11 +8,14 @@
     workspaceId,
     activeFilter,
     isCollaborator,
+    showRepos,
     onFilter,
   }: {
     workspaceId?: string;
     activeFilter: PaletteFilter | null;
     isCollaborator: boolean;
+    /** Same rule as the New Workspace command. */
+    showRepos: boolean;
     onFilter: (prefix: string) => void;
   } = $props();
 
@@ -27,6 +30,9 @@
       ? [{ filter: 'file', label: m.layout_commandPalette_files_group(), prefix: '/' }]
       : []),
     { filter: 'workspace', label: m.lib_commandPalette_workspaces_label(), prefix: '*' },
+    ...(showRepos
+      ? [{ filter: 'repo', label: m.lib_commandPalette_repos_label(), prefix: '+' }]
+      : []),
     { filter: 'message', label: m.layout_commandPalette_messages_group(), prefix: '?' },
     ...(workspaceId
       ? [{ filter: 'change', label: m.layout_commandPalette_changes_group(), prefix: '~' }]

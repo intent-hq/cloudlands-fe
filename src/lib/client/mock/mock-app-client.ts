@@ -249,7 +249,6 @@ export class MockAppClient implements Omit<AppClient, MigratedDomain> {
 
   readonly system: AppClient['system'] = {
     status: async () => fx.mockSystemStatus,
-    capabilities: async () => ({ cowSupported: true }),
     releaseNotes: async () => fx.mockReleaseNotes,
     autoUpdate: async () => null,
     subscribe: (handler) => emitOnce(handler, fx.mockSystemStatus),

@@ -39,7 +39,6 @@ export const IPC_CHANNELS = {
     ARCHIVE: 'workspace:archive',
     UNARCHIVE: 'workspace:unarchive',
     CLEANUP: 'workspace:cleanup',
-    DUPLICATE: 'workspace:duplicate',
     RENAME: 'workspace:rename',
     EXPORT: 'workspace:export',
     IMPORT: 'workspace:import',
@@ -749,19 +748,6 @@ export const IPC_CHANNELS = {
     GET_CONTEXT: 'rules:get-context',
   },
 
-  // Specialists (file-based specialist management)
-  SPECIALISTS: {
-    LIST_FILES: 'specialists:list-files',
-    LIST_BUNDLED: 'specialists:list-bundled',
-    LIST_ALL: 'specialists:list-all',
-    READ_FILE: 'specialists:read-file',
-    WRITE_FILE: 'specialists:write-file',
-    DELETE_FILE: 'specialists:delete-file',
-    GET_FOLDER_PATH: 'specialists:get-folder-path',
-    EXPORT_BUILTIN: 'specialists:export-builtin',
-    FILE_EXISTS: 'specialists:file-exists',
-  },
-
   // Config Rules
   CONFIG_RULES: {
     GET_ALL: 'config:getAll',
@@ -1075,6 +1061,11 @@ export const IPC_CHANNELS = {
     SET_TUNNEL: 'connections:set-tunnel',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
+    // Add from an intent://pair link: test + detect (the token stays in main),
+    // then save or drop the pending credential.
+    PAIR_LINK_INSPECT: 'connections:pair-link-inspect',
+    PAIR_LINK_COMMIT: 'connections:pair-link-commit',
+    PAIR_LINK_DISCARD: 'connections:pair-link-discard',
     // Ask one connected remote backend's daemon to self-update (routes
     // `system.requestUpdate` to that backend's pooled client). Structured
     // result — never throws for daemon-side failures (unsupported/old daemon,

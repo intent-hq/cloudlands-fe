@@ -48,7 +48,6 @@ const baseSettings = [
   { path: 'workspace.sshKeyPath', value: '' },
   { path: 'workspace.defaultShell', value: 'auto' },
   { path: 'git.autoCommit', value: true },
-  { path: 'workspace.cowIsolation', value: false },
   { path: 'workspace.branchPrefix', value: '' },
 ];
 

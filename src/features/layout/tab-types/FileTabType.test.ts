@@ -1281,7 +1281,7 @@ describe('FileTabType Redux integration', () => {
 
     expect(await screen.findByTestId('markdown-viewer')).toBeTruthy();
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
-    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Markdown Preview' }));
+    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Markdown preview' }));
 
     const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
     await fireEvent.input(editor, { target: { value: '# Local draft' } });
@@ -1291,7 +1291,7 @@ describe('FileTabType Redux integration', () => {
     });
 
     await fireEvent.click(
-      await screen.findByRole('menuitemcheckbox', { name: 'Markdown Preview' }),
+      await screen.findByRole('menuitemcheckbox', { name: 'Markdown preview' }),
     );
 
     await waitFor(() =>

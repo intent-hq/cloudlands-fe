@@ -29,6 +29,7 @@ test('find input stays box-free while keyboard search and action focus remain us
   await page.keyboard.type('needle');
   await expect(page.getByTestId('bound-query')).toHaveText('needle');
   await page.keyboard.press('Enter');
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Shift+Enter in the find bar is find previous, not chat.new-line
   await page.keyboard.press('Shift+Enter');
   await expect.poll(() => calls).toEqual(['next:needle', 'previous:needle']);
 

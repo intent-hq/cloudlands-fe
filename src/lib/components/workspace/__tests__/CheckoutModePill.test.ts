@@ -1,11 +1,9 @@
 /**
  * @vitest-environment jsdom
  *
- * CheckoutModePill tests. The pill renders "CoW" for `checkoutMode === 'cow'`
- * only while effective CoW agent isolation is active (the BE-owned
- * `workspace.cowIsolation` setting is on and the machine supports CoW) and
- * "Direct" otherwise (cache-hydrated GitHub picks persist `cow` while agents
- * work directly in the checkout), "Worktree" for `'worktree'`, "Direct" for
+ * CheckoutModePill tests. The pill shows the real `checkoutMode`: "CoW" for
+ * `'cow'` (a checkout cloned from the local repo cache) without reading any
+ * setting, "Worktree" for `'worktree'`, "Direct" for
  * `'direct'`, and nothing at all when the field is absent
  * (non-daemon-provisioned checkouts).
  *
@@ -25,7 +23,6 @@ import { warmImport } from '../../../../test/warm-import';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
-import { invalidateCowIsolationSetting } from '../initializer/cow-isolation-setting';
 
 const fixture = vi.hoisted(() => ({ state: null as StoreState | null }));
 
@@ -33,7 +30,6 @@ const mocks = vi.hoisted(() => ({
   runShrinkWorkspaceAction: vi.fn().mockResolvedValue(undefined),
   diskUsage: vi.fn(),
   settingsGet: vi.fn(),
-  selectWorkspaceItems: vi.fn(() => [] as Array<{ cowSupported?: boolean }>),
   hidesAgentLifecycleActions: false,
 }));
 
@@ -46,9 +42,8 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
 }));
 
 // The component reaches the daemon through the appClient seam (via the
-// disk-usage-poll action module and the isolation-mode resolver's
-// `workspace.cowIsolation` settings read); mock it so no request leaves
-// the test.
+// disk-usage-poll action module); mock it so no request leaves the test.
+// `settings.get` is mocked only to prove the pill never reads a setting.
 vi.mock('$lib/client', () => ({
   appClient: {
     workspaces: { diskUsage: mocks.diskUsage },
@@ -73,7 +68,6 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceItems: { select: mocks.selectWorkspaceItems },
   selectHidesAgentLifecycleActions: () => ({
     subscribe: (fn: (v: boolean) => void) => {
       fn(mocks.hidesAgentLifecycleActions);
@@ -91,7 +85,7 @@ async function flushFetch() {
   await tick();
 }
 
-/** Flush the async `workspace.cowIsolation` label resolution + re-render. */
+/** Flush pending effects + re-render. */
 async function flushLabel() {
   await tick();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -146,145 +140,44 @@ describe('CheckoutModePill', () => {
     mocks.runShrinkWorkspaceAction.mockClear();
     mocks.diskUsage.mockReset();
     mocks.diskUsage.mockResolvedValue({ diskUsage, refreshing: false });
-    // Default: effective CoW agent isolation is active (setting on + machine
-    // CoW support), so `cow` checkouts resolve to the "CoW" label.
     mocks.settingsGet.mockReset();
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: true });
-    mocks.selectWorkspaceItems.mockReset();
-    mocks.selectWorkspaceItems.mockReturnValue([{ cowSupported: true }]);
-    // The setting read is cached module-wide (machine-global single-flight);
-    // each test primes its own mock, so drop the previous test's value.
-    invalidateCowIsolationSetting();
+    mocks.settingsGet.mockResolvedValue(null);
   });
   afterEach(cleanup);
 
-  it('renders "CoW" when checkoutMode is cow and CoW agent isolation is active', async () => {
+  it('renders "CoW" for a cow checkout hydrated from the repo cache', async () => {
+    const { container } = await renderPill({
+      presentation: 'repository',
+      workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
+    });
+    await flushLabel();
+    expect(container.textContent).toContain('Checkout mode: CoW');
+    expect(
+      container.querySelector('[data-checkout-mode-icon]')?.getAttribute('data-checkout-mode-icon'),
+    ).toBe('cow');
+    expect(container.textContent).not.toContain('Checkout mode: Direct');
+  });
+
+  it('renders "CoW" for a cow checkout without reading any setting', async () => {
     await renderPill({ checkoutMode: 'cow' });
     await flushLabel();
     const pill = screen.getByText('CoW');
-    expect(pill).toBeTruthy();
     expect(pill.classList.contains('shrink-0')).toBe(true);
-    expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.cowIsolation');
+    expect(mocks.settingsGet).not.toHaveBeenCalled();
   });
 
-  it('renders "Direct" for a cow checkout when workspace.cowIsolation is off', async () => {
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
-    await renderPill({ workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('renders "Direct" for a cow checkout when the setting is on but CoW is unsupported', async () => {
-    mocks.selectWorkspaceItems.mockReturnValue([{ cowSupported: false }]);
-    await renderPill({ checkoutMode: 'cow' });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it("reads CoW support off the provided workspace's cowSupported, skipping the store", async () => {
-    mocks.selectWorkspaceItems.mockReturnValue([]);
-    await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
+  it('follows the workspace prop from a cow to a direct checkout', async () => {
+    const view = await renderPill({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
     });
     await flushLabel();
     expect(screen.getByText('CoW')).toBeTruthy();
-    expect(mocks.selectWorkspaceItems).not.toHaveBeenCalled();
-  });
-
-  it('defaults a cow checkout to "Direct" while the settings read is pending (no CoW→Direct flash)', async () => {
-    mocks.settingsGet.mockImplementation(() => new Promise(() => {}));
-    await renderPill({ checkoutMode: 'cow' });
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('resets a stale "CoW" to "Direct" when the workspace prop changes (resolve pending)', async () => {
-    const { rerender } = await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await flushLabel();
-    expect(screen.getByText('CoW')).toBeTruthy();
-
-    // The next workspace's settings read never settles within this test —
-    // ws-1's resolved "CoW" must not linger for ws-2 in the meantime.
-    // (Invalidate the shared cache so ws-2's read actually hits the pending
-    // mock instead of resolving instantly from ws-1's cached value.)
-    invalidateCowIsolationSetting();
-    mocks.settingsGet.mockImplementation(() => new Promise(() => {}));
-    await rerender({
-      workspace: {
-        ...baseWorkspace,
-        id: 'ws-2',
-        checkoutMode: 'cow',
-        cowSupported: true,
-      } as Workspace,
+    await view.rerender({
+      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'direct' } as Workspace,
     });
     await flushLabel();
     expect(screen.getByText('Direct')).toBeTruthy();
     expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('ignores an isolation resolve that settles after the workspace prop changed', async () => {
-    const deferred: Array<(value: unknown) => void> = [];
-    mocks.settingsGet.mockImplementation(() => new Promise((resolve) => deferred.push(resolve)));
-    const { rerender } = await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await tick();
-    await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(1));
-
-    // Invalidate between reads so ws-2 issues its own wire call — otherwise
-    // the shared single-flight cache coalesces both onto deferred[0].
-    invalidateCowIsolationSetting();
-    await rerender({
-      workspace: {
-        ...baseWorkspace,
-        id: 'ws-2',
-        checkoutMode: 'cow',
-        cowSupported: true,
-      } as Workspace,
-    });
-    await tick();
-    await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(2));
-
-    // ws-2's own read settles first: isolation off → Direct.
-    deferred[1]({ path: 'workspace.cowIsolation', value: false });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-
-    // ws-1's read settles late with isolation ON — it must not apply to ws-2.
-    deferred[0]({ path: 'workspace.cowIsolation', value: true });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('shares one settings.get RPC across pill instances and workspace-row churn', async () => {
-    // Two pills mount concurrently, then one re-runs its effect because the
-    // workspace row object identity changed (a list refetch) — the
-    // machine-global setting must still cost exactly one RPC.
-    const first = await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await renderPill({
-      workspace: {
-        ...baseWorkspace,
-        id: 'ws-2',
-        checkoutMode: 'cow',
-        cowSupported: true,
-      } as Workspace,
-    });
-    await flushLabel();
-    expect(screen.getAllByText('CoW')).toHaveLength(2);
-
-    await first.rerender({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await flushLabel();
-    expect(screen.getAllByText('CoW')).toHaveLength(2);
-    expect(mocks.settingsGet).toHaveBeenCalledTimes(1);
   });
 
   it('renders an accessible icon instead of Worktree text', async () => {
@@ -316,7 +209,7 @@ describe('CheckoutModePill', () => {
     async (checkoutMode, expected) => {
       const { container } = await renderPill({
         presentation: 'repository',
-        workspace: { ...baseWorkspace, checkoutMode, cowSupported: true } as Workspace,
+        workspace: { ...baseWorkspace, checkoutMode } as Workspace,
       });
       await flushLabel();
 
@@ -325,25 +218,11 @@ describe('CheckoutModePill', () => {
           .querySelector('[data-checkout-mode-icon]')
           ?.getAttribute('data-checkout-mode-icon'),
       ).toBe(expected);
-      expect(container.querySelector('[data-effective-checkout-mode]')?.textContent).toContain(
+      expect(container.querySelector('[data-checkout-mode-label]')?.textContent).toContain(
         checkoutMode === 'cow' ? 'CoW' : checkoutMode === 'worktree' ? 'Worktree' : 'Direct',
       );
     },
   );
-
-  it('uses the Direct icon for a cow checkout with ineffective CoW isolation', async () => {
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
-    const { container } = await renderPill({
-      presentation: 'repository',
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await flushLabel();
-
-    expect(
-      container.querySelector('[data-checkout-mode-icon]')?.getAttribute('data-checkout-mode-icon'),
-    ).toBe('direct');
-    expect(container.textContent).toContain('Checkout mode: Direct');
-  });
 
   it('renders no repository details when checkoutMode is undefined', async () => {
     const { container } = await renderPill({

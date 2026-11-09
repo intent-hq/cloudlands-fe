@@ -26,6 +26,7 @@ import { createRepositoryContextTransport } from './repository-context-transport
  * daemon and fold outcomes into `MutationResult`.
  */
 import { WorkspaceStatus, createWorkspaceId } from '$shared/types';
+import { parseBaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import type {
   CreateWorkspaceRequest,
   UpdateWorkspaceRequest,
@@ -75,15 +76,16 @@ import {
 const DELETE_TIMEOUT_MS = 120_000;
 
 /**
- * Transport timeout for `workspace.create` (PROTOCOL §5.1). Cold Claude Code
- * ACP session opens run under the daemon's own NPX budgets (45s initialize +
- * 20s session/new, 70s overall — see intent-services provider_models/probe.rs)
- * plus first-turn overhead, which exceeds the flat 30s transport default.
- * Mirrors the `git.pull` rationale in the shared `backendRequest` JSDoc: the
- * daemon's structured `{ok:false}` / success result must win over a
- * client-side transport timeout.
+ * Transport timeout for `workspace.create` (PROTOCOL §5.1). A worktree or CoW
+ * create first refreshes its base with a fetch the daemon bounds at 100s,
+ * under a per-repository lock another create may hold; provisioning, the
+ * setup script and a cold Claude Code ACP session open (the daemon's 70s NPX
+ * budget, intent-services provider_models/probe.rs) follow. Mirrors the
+ * `git.pull` rationale in the shared `backendRequest` JSDoc: the daemon's
+ * structured `{ok:false}` / success result must win over a client-side
+ * transport timeout, so a slow but successful create never reads as failed.
  */
-const CREATE_TIMEOUT_MS = 120_000;
+const CREATE_TIMEOUT_MS = 300_000;
 
 /** Daemon status strings → renderer WorkspaceStatus enum. */
 function toWorkspaceStatus(value: unknown): WorkspaceStatus {
@@ -382,13 +384,22 @@ export class LiveWorkspacesClient implements WorkspacesClient {
           }
         : { success: true };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      // A generic -32603 keeps its cause (`data` / `data.detail`) in the
+      // message, so no create screen ever shows a bare "Internal error".
+      const message = mutationErrorMessage(error);
       const conflict = extractConflict(error);
       if (conflict) return { success: false, error: message, conflict };
       const errorCode = extractErrorCode(error);
       const launchFailure = extractLaunchFailure(error);
+      const baseRefreshFailure = parseBaseRefreshFailure((error as { data?: unknown })?.data);
       return errorCode
-        ? { success: false, error: message, errorCode, ...(launchFailure ? { launchFailure } : {}) }
+        ? {
+            success: false,
+            error: message,
+            errorCode,
+            ...(launchFailure ? { launchFailure } : {}),
+            ...(baseRefreshFailure ? { baseRefreshFailure } : {}),
+          }
         : { success: false, error: message };
     }
   }

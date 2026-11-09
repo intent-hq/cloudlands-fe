@@ -11,6 +11,11 @@
  * it is older than `staleLockMs` (every critical section is a few file
  * operations), by renaming it aside so only one waiter wins.
  *
+ * `lockTimeoutMs` bounds how long one holder may keep the lock, not a waiter's
+ * total wait: the deadline restarts whenever the lock changes hands, so many
+ * waiters on a slow machine queue up instead of timing out while the lock is
+ * making progress.
+ *
  * A lock's age is measured on the filesystem's clock, not this process's: its
  * mtime is compared with the mtime of a probe file this waiter writes beside
  * it. Subtracting a file timestamp from `Date.now()` mixes two clocks, so a
@@ -89,8 +94,9 @@ export function createFileSignInStore(
   /** Take the lock; resolves with this holder's token. */
   const acquire = async (): Promise<string> => {
     const token = crypto.randomUUID();
-    const deadline = Date.now() + lockTimeoutMs;
+    let deadline = Date.now() + lockTimeoutMs;
     let clockOffset: number | undefined;
+    let holder: string | undefined;
     for (;;) {
       try {
         await fs.promises.writeFile(lockFile, token, { mode: 0o600, flag: 'wx' });
@@ -99,8 +105,13 @@ export function createFileSignInStore(
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       }
       clockOffset ??= await filesystemClockOffset().catch(() => 0);
-      await takeOverIfStale(clockOffset);
-      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${lockFile}`);
+      const seen = await takeOverIfStale(clockOffset);
+      if (seen !== holder) {
+        holder = seen;
+        deadline = Date.now() + lockTimeoutMs;
+      } else if (Date.now() > deadline) {
+        throw new Error(`Timed out waiting for ${lockFile}`);
+      }
       await sleep(10 + Math.random() * 20);
     }
   };
@@ -109,29 +120,32 @@ export function createFileSignInStore(
    * Remove a lock left by a crashed holder. The lock is renamed aside (atomic,
    * so only one waiter gets a given file) and removed only if it is still the
    * stale one this waiter inspected; a fresh lock taken meanwhile by another
-   * process is put back.
+   * process is put back. Resolves with the token seen in the lock, or
+   * undefined when there is no readable lock.
    */
-  const takeOverIfStale = async (clockOffset: number): Promise<void> => {
+  const takeOverIfStale = async (clockOffset: number): Promise<string | undefined> => {
     // One handle, so the age and the token describe the same file even if
     // another waiter replaces the lock in between.
     let seen: string;
+    let stale: boolean;
     try {
       const handle = await fs.promises.open(lockFile, 'r');
       try {
         const { mtimeMs } = await handle.stat();
-        if (Date.now() + clockOffset - mtimeMs <= staleLockMs) return;
+        stale = Date.now() + clockOffset - mtimeMs > staleLockMs;
         seen = await handle.readFile('utf8');
       } finally {
         await handle.close();
       }
     } catch {
-      return;
+      return undefined;
     }
+    if (!stale) return seen;
     const aside = `${lockFile}.${crypto.randomUUID()}.stale`;
     try {
       await fs.promises.rename(lockFile, aside);
     } catch {
-      return;
+      return seen;
     }
     try {
       if ((await fs.promises.readFile(aside, 'utf8')) !== seen) {
@@ -143,6 +157,7 @@ export function createFileSignInStore(
     } finally {
       await fs.promises.rm(aside, { force: true });
     }
+    return seen;
   };
 
   /** Release the lock only if it is still ours. */

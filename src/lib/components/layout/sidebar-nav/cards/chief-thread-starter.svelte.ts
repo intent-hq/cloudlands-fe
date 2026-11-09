@@ -8,7 +8,9 @@ import {
   CHIEF_PROMPT_VERSION,
   CHIEF_SPECIALIST_ID,
 } from '$shared/chief-agent-config';
+import { notify } from '$lib/components/patterns/notify';
 import { store as appStore } from '$store/renderer/store';
+import { refetchSpecialistsRequested } from '$store/renderer/slices/specialists/specialists-slice';
 import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { selectReusableChiefThread } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 import {
@@ -60,6 +62,12 @@ export function createChiefThreadStarter(
     const chiefSpecialist = selectSpecialists
       .select(state)
       .find((specialist) => specialist.id === CHIEF_SPECIALIST_ID);
+    // The prompt is fixed at creation; never start a thread from a placeholder.
+    if (chiefSpecialist?.promptUnavailable) {
+      appStore.dispatch(refetchSpecialistsRequested());
+      notify.error(m.specialists_catalogLoading_error());
+      return null;
+    }
     const chiefBehaviorPrompt = buildChiefBehaviorPrompt(
       selectEffectiveBehaviorPrompt.select(state, CHIEF_SPECIALIST_ID),
     );

@@ -17,6 +17,7 @@ export const menuMetadata = {
     'CheckboxItem',
     'CommandItem',
     'Content',
+    'Footer',
     'Group',
     'GroupHeading',
     'Indicator',
@@ -38,6 +39,7 @@ export const menuMetadata = {
     'SubTrigger',
     'Trigger',
     'getPageTargetIndex',
+    'menuDescription',
     'menuItem',
     'menuMetadata',
     'menuOverlay',
@@ -64,10 +66,10 @@ export const menuMetadata = {
   owner: '007-B5',
   useWhen: [
     'Presenting commands with shared keyboard, focus, and dismissal behavior.',
+    'Use CheckboxItem indicator="switch" with an icon for independent on/off settings, Label alignIconColumn={false} for section captions, and Footer for quiet menu metadata.',
     'Keeping an unavailable command visible with CommandItem disabledReason; the localized reason disables activation and is linked with aria-describedby.',
   ],
   callers: [
-    'src/features/external-editors/components/FileActionsDropdown.svelte',
     'src/features/external-editors/components/OpenComboButton.svelte',
     'src/features/layout/tab-types/DiscussionTabType.svelte',
     'src/lib/components/chat/RegularAgentWelcome.svelte',

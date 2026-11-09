@@ -52,7 +52,7 @@
       {#if leading}
         {@render leading()}
       {:else if icon}
-        <Fa {icon} weight={iconWeight} size={16} class="size-4 text-muted-foreground opacity-70" />
+        <Fa {icon} weight={iconWeight} size={16} class="size-4 text-muted-foreground/80" />
       {/if}
     </span>
   {/if}

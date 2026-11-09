@@ -140,7 +140,7 @@ it('does not offer foreign-provider picks in quick-action settings', async () =>
   expect(writes).toEqual([]);
 });
 
-it.each([0, 1, 2, 3].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, choice }))))(
+it.each([0, 1, 2].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ row, choice }))))(
   'saves bare model IDs after switching providers, preserving effort (row $row, $choice)',
   async ({ row, choice }) => {
     store.dispatch(setActiveProvider('claude-code'));
@@ -168,7 +168,7 @@ it.each([0, 1, 2, 3].flatMap((row) => ['shared', 'legacy'].map((choice) => ({ ro
     const model = choice === 'legacy' ? 'legacy-model' : 'shared-model';
     const overrides = {
       ...emptyOverrides,
-      ...(row ? { [['commit', 'pr', 'fast'][row - 1]]: model } : {}),
+      ...(row ? { [['commit', 'pr'][row - 1]]: model } : {}),
     };
     await waitFor(() => {
       expect(writes).toHaveLength(1);

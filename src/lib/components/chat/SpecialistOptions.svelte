@@ -20,13 +20,13 @@
   } = $props();
 
   const options = $derived([
+    ...specialists,
     {
       id: null,
       name: m.chat_shared_general_fallback(),
       description: m.chat_shared_noSpecializedBehavior_label(),
       icon: undefined,
     },
-    ...specialists,
   ]);
 </script>
 

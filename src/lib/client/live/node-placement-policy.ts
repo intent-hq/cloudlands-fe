@@ -41,6 +41,12 @@ async function remoteInitialAgentPlacement(
     return false;
   const checked = AgentPlacementRequestSchema.parse(placement);
   if (checked.exclusive === true) throw new Error(m.agent_placement_unavailable());
+  // A new E2B sandbox needs the cloud machines contract as well.
+  if (checked.target === 'e2b' && caps.cloudMachines !== 1)
+    throw new Error(m.agent_placement_unavailable());
+  // A named E2B entry needs a backend that keeps entries.
+  if (checked.cloudMachineId !== undefined && caps.cloudMachineEntries !== 1)
+    throw new Error(m.agent_placement_unavailable());
   return true;
 }
 
@@ -150,14 +156,20 @@ export async function prepareNodeRequest(
     return input;
   }
   const checked = placement == null ? undefined : AgentPlacementRequestSchema.parse(placement);
-  if (!remoteEnabled() && (checked?.target === 'remote' || checked?.exclusive === true))
+  if (
+    !remoteEnabled() &&
+    (checked?.target === 'remote' || checked?.target === 'e2b' || checked?.exclusive === true)
+  )
     throw new Error(m.agent_placement_labsRequired());
   if (readDefaults) capabilities = await client.capabilities();
   if (checked) assertPlacementSupported(checked, capabilities);
   else if (!capabilities.agentNodes) throw new Error(m.agent_placement_unavailable());
   // Omitted placement follows the documented head default, without a human launch prompt.
   // Known remote intent remains explicit and must never be converted to a local fallback.
-  if (!remoteEnabled() && (checked?.target === 'remote' || checked?.exclusive === true))
+  if (
+    !remoteEnabled() &&
+    (checked?.target === 'remote' || checked?.target === 'e2b' || checked?.exclusive === true)
+  )
     throw new Error(m.agent_placement_labsRequired());
   if (!checked) return input;
   if (creation.isolation !== undefined) throw new Error(m.agent_placement_incompatibleIsolation());
@@ -177,7 +189,10 @@ export function assertRemoteRequestEnabled(method: string, input: unknown, enabl
   placements.push(params.defaultAgentPlacement);
   if (
     placements.some(
-      (placement) => object(placement).target === 'remote' || object(placement).exclusive === true,
+      (placement) =>
+        object(placement).target === 'remote' ||
+        object(placement).target === 'e2b' ||
+        object(placement).exclusive === true,
     )
   )
     throw new Error(m.agent_placement_labsRequired());

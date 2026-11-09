@@ -371,20 +371,6 @@ describe('settings-hydration-service (boot read + applySettingsChanges)', () => 
       };
     };
 
-    // The global test-setup localStorage mock is a no-op stub; the migration's
-    // run-once marker needs real read-back, so back it with an in-memory map.
-    const storage = new Map<string, string>();
-    beforeEach(() => {
-      storage.clear();
-      vi.mocked(localStorage.getItem).mockImplementation((key: string) => storage.get(key) ?? null);
-      vi.mocked(localStorage.setItem).mockImplementation((key: string, value: string) => {
-        storage.set(key, String(value));
-      });
-      vi.mocked(localStorage.removeItem).mockImplementation((key: string) => {
-        storage.delete(key);
-      });
-    });
-
     it('marks legacy model migration complete only after persistence acknowledges success', async () => {
       let accept!: (result: { applied: AppliedSettingChange[]; revision: number }) => void;
       updateSpy.mockReturnValueOnce(

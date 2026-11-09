@@ -224,16 +224,6 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function useMemoryLocalStorage() {
-  const values = new Map<string, string>();
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
-  vi.mocked(localStorage.getItem).mockImplementation((key) => values.get(key) ?? null);
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Web Storage test harness.
-  vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-    values.set(key, String(value));
-  });
-}
-
 beforeEach(() => {
   vi.clearAllMocks();
   recorded = [];
@@ -272,10 +262,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   for (const stop of stops) stop();
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
-  vi.mocked(localStorage.getItem).mockImplementation(() => null);
-  // eslint-disable-next-line themis/direct-local-storage-usage -- Restore the global test harness.
-  vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
   vi.restoreAllMocks();
 });
 
@@ -357,7 +343,6 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
   ])(
     'does not persist an untouched $provider repo-config script for a later branch',
     async ({ submission }) => {
-      useMemoryLocalStorage();
       const { value, repoPath, githubUrl } = submission();
       const action = workspaceInitializationSubmitted(value, consumer);
       appStore.dispatch(action);
@@ -377,7 +362,6 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
   );
 
   it('keeps onboarding repo-config comparison keyed to the project path', async () => {
-    useMemoryLocalStorage();
     const action = workspaceInitializationSubmitted(
       onboardingSubmission({
         setupScript: 'echo from project config',
@@ -396,7 +380,6 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
   });
 
   it('persists an intentional compact setup-script override under the repository key', async () => {
-    useMemoryLocalStorage();
     const repoPath = '/clones/app';
     const githubUrl = 'https://github.com/acme/app';
     const setupScriptProbeKey = probeIdentityKey({
@@ -1177,6 +1160,90 @@ describe('workspaceInitializerSaga (registered production owner, reducer-backed 
       status: 'failure',
       stage: 'create',
       pullCompleted: true,
+    });
+  });
+
+  describe('base-refresh failures and Continue (PROTOCOL §9.2)', () => {
+    const baseRefreshFailure = {
+      category: 'auth-required' as const,
+      detail: 'git@github.com: Permission denied (publickey).',
+      baseRef: 'main',
+      remote: 'origin',
+    };
+
+    it('publishes the base-refresh failure data on the correlated outcome', async () => {
+      create.mockResolvedValue({
+        ok: false,
+        error: "Couldn't update main from origin: Permission denied (publickey)",
+        errorCode: 'base-refresh-failed',
+        baseRefreshFailure,
+      });
+      const action = workspaceInitializationRequested(request(), consumer);
+      appStore.dispatch(action);
+
+      await expect(action.promise).rejects.toThrow("Couldn't update main from origin");
+      expect(outcome()).toMatchObject({
+        status: 'failure',
+        stage: 'create',
+        error: "Couldn't update main from origin: Permission denied (publickey)",
+        errorCode: 'base-refresh-failed',
+        baseRefreshFailure,
+      });
+    });
+
+    it('Continue re-sends the onboarding create with skipBaseRefresh and warns once it opens', async () => {
+      const onboardingConsumer = { id: 'onboarding-1', resourceId: 'resource-onboarding' };
+      const action = workspaceInitializationSubmitted(
+        onboardingSubmission({ continueFromLastFetched: { baseRef: 'main', remote: 'origin' } }),
+        onboardingConsumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create).toHaveBeenCalledOnce();
+      expect(create.mock.calls[0]?.[0]).toMatchObject({
+        repositoryPath: '/repo',
+        baseRef: 'main',
+        skipBaseRefresh: true,
+      });
+      expect(notify.warning).toHaveBeenCalledWith(
+        'Started from main as last fetched from origin; it may be out of date.',
+      );
+    });
+
+    it('Continue re-sends the compact create with skipBaseRefresh', async () => {
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ continueFromLastFetched: { baseRef: 'main', remote: 'origin' } }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0]?.[0]).toMatchObject({ skipBaseRefresh: true });
+      expect(notify.warning).toHaveBeenCalledWith(
+        'Started from main as last fetched from origin; it may be out of date.',
+      );
+    });
+
+    it('does not warn when a Continue create fails', async () => {
+      create.mockResolvedValue({ ok: false, error: 'boom' });
+      const action = workspaceInitializationSubmitted(
+        compactSubmission({ continueFromLastFetched: { baseRef: 'main', remote: 'origin' } }),
+        consumer,
+      );
+      appStore.dispatch(action);
+
+      await expect(action.promise).rejects.toThrow('boom');
+      expect(notify.warning).not.toHaveBeenCalled();
+    });
+
+    it('never sends skipBaseRefresh or warns for an ordinary create', async () => {
+      const action = workspaceInitializationSubmitted(compactSubmission(), consumer);
+      appStore.dispatch(action);
+
+      await expect(action.promise).resolves.toMatchObject({ workspaceId: 'ws-1' });
+      expect(create.mock.calls[0]?.[0]).not.toHaveProperty('skipBaseRefresh');
+      expect(notify.warning).not.toHaveBeenCalled();
     });
   });
 

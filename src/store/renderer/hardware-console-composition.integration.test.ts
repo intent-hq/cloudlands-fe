@@ -175,9 +175,10 @@ describe('hardware-console production composition', () => {
     const input = document.createElement('textarea');
     document.body.appendChild(input);
     input.focus();
-    hardware.emitRaw({ a: 0.5, d: 1 });
+    // Up (device a=0.75) is the ring's first direction, holding the top used prompt.
+    hardware.emitRaw({ a: 0.75, d: 1 });
     await vi.waitFor(() => expect(appStore.state.hardwareConsole.radialPrompt.open).toBe(true));
-    hardware.emitRaw({ a: 0.5, d: 0 });
+    hardware.emitRaw({ a: 0.75, d: 0 });
     await vi.waitFor(() => expect(input.value).toContain('Open dashboard'));
     expect(appStore.state.hardwareConsole.radialPrompt.open).toBe(false);
 

@@ -14,6 +14,8 @@
  * - `create` / `clone`: open the New Space form prefilled from the link. The
  *   link never creates a workspace by itself (`autoCreate` is ignored).
  * - `settings?beta=`: switch the update channel; `settings` alone opens Settings.
+ * - `node-link` (queued by main for a node's `intent://pair` link, pending id
+ *   only): Settings → Machines and the "make available" prompt.
  */
 
 import { call, delay, put, race, take, type SagaGenerator } from 'typed-redux-saga';
@@ -40,6 +42,7 @@ import { selectUpdateChannel } from '../../user-preferences/user-preferences-sel
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import type { DeepLinkActionPayload } from '../deep-links-types';
+import { nodeConnectionOpened, nodeLinkReceived } from '$features/nodes/nodes-slice';
 import {
   WORKSPACE_PREFILL_KEY,
   buildCreatePrefill,
@@ -164,6 +167,22 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
     case 'settings':
       if (params.beta !== undefined) return yield* call(switchUpdateChannel, params.beta);
       return yield* call(navigateToRoute, '/settings');
+    case 'node-link':
+      if (params.connectionId) {
+        yield* put(nodeConnectionOpened(params.connectionId, params.added === 'true'));
+        return;
+      }
+      if (params.pendingId) {
+        yield* put(
+          nodeLinkReceived({
+            pendingId: params.pendingId,
+            label: params.label ?? '',
+            existingId: params.existingId || null,
+          }),
+        );
+        return;
+      }
+      break;
   }
   logger.warn('Unsupported deep link', { type: action.type, keys: Object.keys(params) });
   yield* call(notify.error, m.deeplink_links_unsupported_error());
@@ -179,7 +198,7 @@ function isActionPayload(value: unknown): value is DeepLinkActionPayload {
 }
 
 /** Action types that never need daemon authority (navigation, the desktop updater). */
-const DESKTOP_ONLY_TYPES = ['settings'];
+const DESKTOP_ONLY_TYPES = ['settings', 'node-link'];
 
 /**
  * Take this window's queued actions from main and handle them in order.

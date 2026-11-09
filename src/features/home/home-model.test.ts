@@ -71,6 +71,12 @@ describe('Home triage grouping', () => {
     expect(getHomeTriageGroup(workspace({ displayStatus: 'complete', scriptsRunning: true }))).toBe(
       'running',
     );
+    expect(getHomeTriageGroup(workspace({ displayStatus: 'pr_ready', scriptsRunning: true }))).toBe(
+      'running',
+    );
+    expect(
+      getHomeTriageGroup(workspace({ displayStatus: 'pr_ready', activity: 'agent_running' })),
+    ).toBe('running');
     expect(
       getHomeTriageGroup(workspace({ displayStatus: 'needs_attention', scriptsRunning: true })),
     ).toBe('needs-you');
@@ -82,7 +88,7 @@ describe('Home triage grouping', () => {
   });
 
   it('puts agent background tasks in Running without outranking Needs you', () => {
-    for (const displayStatus of ['idle', 'complete', 'pr_merged', 'pr_open'] as const) {
+    for (const displayStatus of ['idle', 'complete', 'pr_merged', 'pr_open', 'pr_ready'] as const) {
       const background = workspace({ displayStatus, backgroundTasksRunning: true });
       expect(getHomeTriageGroup(background)).toBe('running');
       expect(matchesHomeFilter(background, 'running')).toBe(true);

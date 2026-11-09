@@ -14,7 +14,7 @@ import { normalizeActionMappingsByModel } from '../actions/action-mapping';
 import { normalizeCycleScopeByFamily } from '../actions/cycle-scope';
 
 const mockState = {
-  tabState: { currentTabId: 'ws-other' as string | null },
+  tabState: { currentTabId: 'ws-other' as string | null, workspaceStacks: [['ws-1', 'ws-2']] },
   hardwareConsole: {
     isConsoleOwner: true,
     keyPins: [null, null, null, null, null, null] as (string | null)[],
@@ -240,7 +240,6 @@ describe('encoder (two windows, one owner)', () => {
 
     manager.keyDown('ENC_CLK');
     expect(navigateA).toHaveBeenCalledWith('/');
-    expect(dispatchA.mock.calls.length).toBeGreaterThan(0);
     expect(dispatchB).not.toHaveBeenCalled();
     expect(navigateB).not.toHaveBeenCalled();
 
@@ -362,10 +361,10 @@ describe('prompt-picker joystick (two windows, one owner)', () => {
     manager.emitRaw({ a: 0, d: 0 });
     expect(insertA).not.toHaveBeenCalled();
 
-    // Regaining ownership restores normal release insertion.
+    // Regaining ownership restores normal release insertion (up = first prompt).
     owner = 'A';
-    manager.emitRaw({ a: 0, d: 1 });
-    manager.emitRaw({ a: 0, d: 0 });
+    manager.emitRaw({ a: 0.75, d: 1 });
+    manager.emitRaw({ a: 0.75, d: 0 });
     expect(insertA).toHaveBeenCalledTimes(1);
   });
 });

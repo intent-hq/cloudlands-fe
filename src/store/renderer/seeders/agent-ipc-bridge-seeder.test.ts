@@ -4,7 +4,7 @@
  * Asserts each legacy renderer→main agent channel registers a mock IPC
  * handler that (a) forwards to the canonical daemon JSON-RPC method with the
  * right params (PROTOCOL §5.5), and (b) wraps the daemon response in the
- * envelope the call site expects (IpcResponse for typedInvoke;
+ * envelope the call site expects (IpcResponse for agent:create;
  * CommandResponse for set-model). The queue-quintet bridges were removed
  * with their last renderer producer (T3/T4) — queue flows are covered by the
  * `appClient.agents.*` wire-contract tests in `live-agents-client.test.ts`.
@@ -48,7 +48,6 @@ import { backendRequest } from '$lib/client/live/backend-transport';
 import { hasMockIpcHandler, mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
 import { validateIpcRequest } from '$shared/ipc/request-validation';
-import { isSuccessResponse } from '$shared/ipc/typed-invoke';
 // End-to-end consumer for the set-model bridge: ModelPicker calls
 // `agentClient.setModel`, which folds the bridge's CommandResponse envelope
 // into a `Result` — exercising it here catches envelope regressions (the
@@ -104,9 +103,6 @@ describe('agent-ipc-bridge-seeder', () => {
         specialistId: 'coordinator',
         idempotencyKey: 'idk-test',
       });
-      // `typedInvoke` consumers (UnifiedAgentFactory.createInBackend) gate on
-      // `isSuccessResponse`, so the bridge envelope MUST satisfy that guard.
-      expect(isSuccessResponse(response as never)).toBe(true);
       expect(response).toEqual({
         success: true,
         data: { agent: { id: 'agent-42', name: 'Coordinator' }, sessionId: 'agent-42' },

@@ -5,7 +5,7 @@
  * When available workspaces (excluding chief and archived/deleted ones) still
  * exist, an empty window lands on the minimal home empty state at '/';
  * onboarding/creation at '/workspace/new' is reserved for the zero-workspace
- * case. Boot routing is intentionally separate — fresh windows still boot at
+ * case on a backend that never had workspaces. Boot routing is intentionally separate — fresh windows still boot at
  * '/workspace/new' via decideBootRoute (see $lib/utils/boot-route-gate).
  *
  * Dependency-light on purpose: no stores, no `$app/*` imports, so it is safe
@@ -46,10 +46,15 @@ function hasAvailableWorkspace(
  * @param workspaces - Known workspaces (e.g. `selectWorkspaceItems.select(...)`)
  * @param excludedWorkspaceId - A workspace being removed right now, whose
  *   status may not yet reflect the removal in store state
+ * @param onboardingSkipped - The backend has had workspaces before
+ *   (`isOnboardingSkippedForWindow`): land on Home even with none left
  */
 export function resolveEmptyWindowDestination(
   workspaces: readonly EmptyWindowDestinationWorkspace[],
   excludedWorkspaceId?: string,
+  onboardingSkipped = false,
 ): '/' | '/workspace/new' {
-  return hasAvailableWorkspace(workspaces, excludedWorkspaceId) ? '/' : '/workspace/new';
+  return onboardingSkipped || hasAvailableWorkspace(workspaces, excludedWorkspaceId)
+    ? '/'
+    : '/workspace/new';
 }

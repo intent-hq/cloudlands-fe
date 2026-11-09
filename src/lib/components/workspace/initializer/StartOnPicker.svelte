@@ -7,6 +7,7 @@
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
   import { faDesktop } from '@fortawesome/free-solid-svg-icons';
+  import { faCloud } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import type { StartOnOption } from '$features/remote-machines/start-on';
@@ -51,11 +52,14 @@
       // Prefix every id so the backend's empty id is a selectable combobox value.
       value: `machine:${option.id}`,
       label: option.label,
-      description: option.reason ?? option.platform ?? undefined,
+      description: option.reason ?? option.hint ?? option.platform ?? undefined,
       disabled: option.disabled,
       data: option,
     })),
   );
+  // The E2B row and its profile hint need a wider list.
+  const hasCloud = $derived(options.some((option) => option.kind === 'cloud'));
+  const popoverWidth = $derived(hasCloud ? 440 : 360);
   $effect(() => {
     if (!open) return;
     return pushEscapeLayer((event) => {
@@ -68,7 +72,7 @@
   <Popover.Root
     bind:open
     onOpenChange={(next) => {
-      if (next) menuBelow = !canPlaceBeside(trigger, 360);
+      if (next) menuBelow = !canPlaceBeside(trigger, popoverWidth);
     }}
   >
     <Popover.Trigger>
@@ -110,7 +114,9 @@
       sideOffset={presentation === 'footer' || isMobile.current || menuBelow ? 4 : 24}
       strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
       preventScroll={false}
-      class="flex min-h-0 w-[360px] max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0"
+      class="flex min-h-0 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 {hasCloud
+        ? 'w-110'
+        : 'w-90'}"
       style="max-height: min(440px, var(--bits-popover-content-available-height, calc(100dvh - 1rem)))"
       onOpenAutoFocus={(event) => {
         event.preventDefault();
@@ -149,7 +155,10 @@
           if (!next) open = false;
         }}
       >
-        {#snippet optionIcon()}<Fa icon={faDesktop} class={workspacePickerStyles.icon} />{/snippet}
+        {#snippet optionIcon(option)}<Fa
+            icon={(option.data as StartOnOption).kind === 'cloud' ? faCloud : faDesktop}
+            class={workspacePickerStyles.icon}
+          />{/snippet}
       </Combobox>
     </Popover.Content>
   </Popover.Root>

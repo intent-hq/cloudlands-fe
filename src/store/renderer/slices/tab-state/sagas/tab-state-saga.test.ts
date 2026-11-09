@@ -12,14 +12,24 @@ vi.mock('../../../utils/safe-local-storage-saga', () => ({
 }));
 
 import {
+  addWorkspaceTabToGroup,
+  createWorkspaceTabGroup,
+  getWorkspaceTabGroupList,
   loadScrollPositions,
   loadWorkspaceTabsState,
   openWorkspaceTab,
+  removeWorkspaceTabFromGroup,
   saveScrollPosition,
+  setOpenWorkspaceTabGroup,
   TAB_SCROLL_POSITIONS_STORAGE_KEY,
+  tabStateReducer,
+  type PersistedWorkspaceTabsState,
+  ungroupWorkspaceTabGroup,
+  updateWorkspaceTabGroup,
   WORKSPACE_TABS_STORAGE_KEY,
   workspaceTabsHydrated,
 } from '../tab-state-slice';
+import type { WorkspaceTabGroup } from '../tab-groups';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { connectionsListReceived } from '../../connections/connections-slice';
 import { tabStateSaga } from './tab-state-saga';
@@ -95,6 +105,141 @@ describe('tabStateSaga', () => {
     ]);
     task.cancel();
     await task.toPromise();
+  });
+
+  describe.each([
+    { backend: 'local', backendId: LOCAL_CONNECTION_ID, tabsKey: WORKSPACE_TABS_STORAGE_KEY },
+    { backend: 'remote', backendId: REMOTE_ID, tabsKey: REMOTE_TABS_KEY },
+  ])('tab-group persistence in the $backend namespace', ({ backendId, tabsKey }) => {
+    const ungroupedTabs: PersistedWorkspaceTabsState = {
+      openTabs: ['ws-1', 'ws-2', 'ws-3'],
+      currentTabId: 'ws-1',
+      pinnedTabs: [],
+      unsavedTabs: [],
+      optimisticTabs: [],
+      tabOrder: ['ws-1', 'ws-2', 'ws-3'],
+      workspaceStacks: [['ws-1'], ['ws-2'], ['ws-3']],
+    };
+    const group: WorkspaceTabGroup = {
+      id: 'group-1',
+      name: 'Planning',
+      color: 'blue',
+      workspaceIds: ['ws-1', 'ws-2'],
+      lastActiveWorkspaceId: 'ws-1',
+    };
+    const groupedTabs: PersistedWorkspaceTabsState = {
+      ...ungroupedTabs,
+      tabGroups: [group],
+      openTabGroupId: 'group-1',
+    };
+    // A selected group's tabs stay visible; isolate chip state with an outside selection.
+    const outsideSelectedTabs = { ...groupedTabs, currentTabId: 'ws-3' };
+
+    it.each([
+      {
+        edit: 'creating a group',
+        before: ungroupedTabs,
+        action: createWorkspaceTabGroup('ws-1', 'group-1', 'blue'),
+        after: {
+          ...groupedTabs,
+          tabGroups: [{ ...group, name: '', workspaceIds: ['ws-1'] }],
+        },
+      },
+      {
+        edit: 'renaming and recoloring a group',
+        before: groupedTabs,
+        action: updateWorkspaceTabGroup('group-1', { name: 'Review', color: 'purple' }),
+        after: {
+          ...groupedTabs,
+          tabGroups: [{ ...group, name: 'Review', color: 'purple' as const }],
+        },
+      },
+      {
+        edit: 'adding a member',
+        before: groupedTabs,
+        action: addWorkspaceTabToGroup('ws-3', 'group-1'),
+        after: {
+          ...groupedTabs,
+          tabGroups: [{ ...group, workspaceIds: ['ws-1', 'ws-2', 'ws-3'] }],
+        },
+      },
+      {
+        edit: 'removing a member',
+        before: groupedTabs,
+        action: removeWorkspaceTabFromGroup('ws-2'),
+        after: { ...groupedTabs, tabGroups: [{ ...group, workspaceIds: ['ws-1'] }] },
+      },
+      {
+        edit: 'removing the last member',
+        before: { ...groupedTabs, tabGroups: [{ ...group, workspaceIds: ['ws-1'] }] },
+        action: removeWorkspaceTabFromGroup('ws-1'),
+        after: ungroupedTabs,
+      },
+      {
+        edit: 'ungrouping',
+        before: groupedTabs,
+        action: ungroupWorkspaceTabGroup('group-1'),
+        after: ungroupedTabs,
+      },
+      {
+        edit: 'collapsing a group',
+        before: outsideSelectedTabs,
+        action: setOpenWorkspaceTabGroup(null),
+        after: { ...outsideSelectedTabs, openTabGroupId: null },
+      },
+      {
+        edit: 'expanding a group',
+        before: { ...outsideSelectedTabs, openTabGroupId: null },
+        action: setOpenWorkspaceTabGroup('group-1'),
+        after: outsideSelectedTabs,
+      },
+    ])('saves and restores $edit without another tab action', async ({ before, action, after }) => {
+      const saved = new Map([[tabsKey, JSON.stringify(before)]]);
+      storage.getJSON.mockImplementation((key: string) => JSON.parse(saved.get(key) ?? 'null'));
+      storage.setJSON.mockImplementation((key: string, value: unknown) => {
+        saved.set(key, JSON.stringify(value));
+      });
+      let current = tabStateReducer(undefined, { type: '@@INIT' });
+      const channel = stdChannel();
+      const dispatch = (nextAction: Parameters<typeof tabStateReducer>[1]) => {
+        current = tabStateReducer(current, nextAction);
+        channel.put(nextAction);
+      };
+      const io = {
+        channel,
+        dispatch,
+        getState: () => ({
+          ...state,
+          tabState: current,
+          connections: { activeId: backendId, windowBackendId: backendId },
+        }),
+      };
+      let task = runSaga(io, tabStateSaga);
+      try {
+        await settle();
+        dispatch(action);
+        await settle();
+
+        expect(storage.setJSON.mock.calls).toEqual([[tabsKey, after]]);
+
+        task.cancel();
+        await task.toPromise();
+        current = tabStateReducer(undefined, { type: '@@INIT' });
+        task = runSaga(io, tabStateSaga);
+        await settle();
+
+        expect(getWorkspaceTabGroupList(current)).toEqual(after.tabGroups ?? []);
+        expect(current.openTabGroupId).toBe(after.openTabGroupId ?? null);
+        expect(current.workspaceStacks).toEqual(after.workspaceStacks);
+        expect(current.currentTabId).toBe(after.currentTabId);
+        expect(current.hydratedBackendId).toBe(backendId);
+        expect(storage.setJSON).toHaveBeenCalledTimes(1);
+      } finally {
+        task.cancel();
+        await task.toPromise();
+        channel.close();
+      }
+    });
   });
 
   describe('multi-backend namespacing', () => {

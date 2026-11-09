@@ -236,6 +236,107 @@ describe('buildMachineModelGroups', () => {
     expect(byKey['codex@p-key'].options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
   });
 
+  describe('a machine that lists no models for an installed provider', () => {
+    // An E2B sandbox has no Claude Code sign-in of its own: it reports the
+    // provider with status unknown and an empty model list.
+    const sandbox = machine({
+      capabilities: {
+        providers: [
+          { id: 'claude-code', status: 'unknown', models: [] },
+          { id: 'codex', status: 'signed-out', models: [] },
+          { id: 'opencode', status: 'cli-missing', models: [] },
+        ],
+      },
+    });
+    const personal: ProviderProfileSummary = {
+      id: 'p-personal',
+      providerRef: 'claude-code@p-personal',
+      baseProviderId: 'claude-code',
+      name: 'clement@frkz.app',
+      remoteCompatible: true,
+    };
+    const catalogModels = {
+      'claude-code': [{ value: 'opus', label: 'Opus 5.5' }],
+      'claude-code@p-personal': [
+        { value: 'default', label: 'Default' },
+        { value: 'claude-code@p-personal:opus', label: 'Opus 5.5', description: 'Most capable' },
+        { value: 'sonnet', label: 'Sonnet 5' },
+      ],
+      'claude-code@p-work': [{ value: 'haiku', label: 'Haiku 5' }],
+      codex: [{ value: 'gpt-6', label: 'GPT-6' }],
+      opencode: [{ value: 'big-pickle', label: 'Big Pickle' }],
+    };
+    const build = (
+      providerRefs: string[],
+      defaultHasOverrides?: Record<string, boolean>,
+      target = sandbox,
+    ) =>
+      Object.fromEntries(
+        buildMachineModelGroups({
+          machine: target,
+          providerRefs,
+          groupLabel: (ref) => ref,
+          catalogModels,
+          catalogProfiles: [personal, work],
+          defaultHasOverrides,
+        }).map((group) => [group.key, group.options]),
+      );
+
+    it("lists the backend's models for a profile, which brings its own credentials", () => {
+      expect(build(['claude-code@p-personal'])['claude-code@p-personal']).toEqual([
+        { value: 'opus', label: 'Opus 5.5', description: 'Most capable' },
+        { value: 'sonnet', label: 'Sonnet 5' },
+      ]);
+    });
+
+    it("never lists the Default's models for a profile whose own list hasn't loaded", () => {
+      // A Bedrock or Vertex profile can serve different models than its Default.
+      expect(build(['claude-code@p-unloaded'])).toEqual({ 'claude-code@p-unloaded': [] });
+    });
+
+    it("lists the backend's models for a Default whose overrides bring credentials", () => {
+      expect(build(['claude-code', 'codex'], { 'claude-code': true, codex: true })).toEqual({
+        'claude-code': [{ value: 'opus', label: 'Opus 5.5' }],
+        codex: [{ value: 'gpt-6', label: 'GPT-6' }],
+      });
+    });
+
+    it("keeps a Default without overrides on the machine's own (empty) list", () => {
+      expect(build(['claude-code', 'codex'], { 'claude-code': false, codex: false })).toEqual({
+        'claude-code': [],
+        codex: [],
+      });
+      // Unknown overrides: no evidence the Default brings credentials.
+      expect(build(['claude-code'])).toEqual({ 'claude-code': [] });
+    });
+
+    it('keeps a configuration that cannot run on another machine greyed out', () => {
+      expect(build(['claude-code@p-work'])['claude-code@p-work']).toEqual([
+        {
+          value: 'haiku',
+          label: 'Haiku 5',
+          disabled: true,
+          data: { remoteUnavailable: 'incompatible' },
+        },
+      ]);
+    });
+
+    it('still skips a provider the machine reports as not installed', () => {
+      expect(build(['opencode@p-x', 'opencode'], { opencode: true })).toEqual({});
+    });
+
+    it("prefers the machine's own models when it reports some", () => {
+      const reporting = machine({
+        capabilities: {
+          providers: [{ id: 'claude-code', status: 'signed-out', models: ['haiku'] }],
+        },
+      });
+      expect(build(['claude-code@p-personal'], undefined, reporting)).toEqual({
+        'claude-code@p-personal': [{ value: 'haiku', label: 'haiku' }],
+      });
+    });
+  });
+
   it('keeps the provider-default row first when asked', () => {
     const withDefault = buildMachineModelGroups({
       machine: machine(),

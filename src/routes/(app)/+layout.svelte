@@ -99,6 +99,7 @@
     selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
+    selectWindowBackendListedWorkspaces,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -114,6 +115,11 @@
   } from '$store/renderer/slices/connections/connections-selectors';
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
+  import {
+    isOnboardingSkippedForWindow,
+    recordOnboardingSkipMark,
+  } from '$features/onboarding/utils/onboarding-skip-mark';
+  import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
   import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
@@ -143,7 +149,10 @@
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+    selectCreateModalPrefillRequest,
+    selectShowCreateModal,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
@@ -184,6 +193,7 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  const windowBackendListedWorkspaces$ = selectWindowBackendListedWorkspaces();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const noBackendBound$ = selectNoBackendBound();
@@ -197,6 +207,7 @@
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
+  const createModalPrefillRequest$ = selectCreateModalPrefillRequest();
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
   const panelLayouts = selectPanelLayoutWorkspaces();
@@ -299,7 +310,17 @@
     }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
     return () => clearTimeout(timer);
   });
+  // Once this backend lists any workspace, permanently skip the full-page
+  // onboarding for it: later boots and empty windows fall back to Home.
   $effect(() => {
+    if (!$windowBackendListedWorkspaces$) return;
+    untrack(() => recordOnboardingSkipMark(getActiveBackendId(appStore.state)));
+  });
+  $effect(() => {
+    // Unknown (null) until the window is bound to its backend.
+    const onboardingSkipped = $connectionsLoaded$
+      ? untrack(() => isOnboardingSkippedForWindow(appStore.state))
+      : null;
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
@@ -310,6 +331,7 @@
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
       holdTimedOut: bootHoldTimedOut,
+      onboardingSkipped,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {
@@ -1086,6 +1108,7 @@
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
     open={$showCreateModal$ && $canCreateWorkspace$}
+    prefillRequest={$createModalPrefillRequest$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 

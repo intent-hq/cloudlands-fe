@@ -3,6 +3,7 @@ import type { MessageBlockImageReference } from '$shared/types/wire-image-block'
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
+import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import type { SecretAnswerResult, SecretListing } from '$shared/types/secret-request-resource';
 import type {
   ScriptArchiveFilter,
@@ -417,6 +418,8 @@ export interface WorkspaceCreateResult extends MutationResult {
   errorCode?: string;
   /** Set with `errorCode: "launch-failed"`: the workspace was created anyway. */
   launchFailure?: WorkspaceCreateLaunchFailure;
+  /** Set with `errorCode: "base-refresh-failed"` (PROTOCOL §9.2): the base fetch failed. */
+  baseRefreshFailure?: BaseRefreshFailure;
 }
 
 /**
@@ -2158,6 +2161,16 @@ export interface SkillsClient {
  * `behaviorPrompt` mirrors `prompt` (the markdown body). `hidden: true`
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
+/** PROTOCOL §5.11 `SpecialistBaseline`: a built-in's content, never its model pin. */
+export interface SpecialistBaseline {
+  name: string;
+  description: string;
+  behaviorPrompt: string;
+  roleReminder?: string;
+  reasoningEffort?: string;
+  modelOptions?: { provider?: string; model: string; hint: string; reasoningEffort?: string }[];
+}
+
 export interface SpecialistDef {
   runsOn?: AgentPlacement;
   /** Original Claude definition; read-only in Intent. */
@@ -2215,6 +2228,13 @@ export interface SpecialistDef {
   source: 'project' | 'user' | 'bundled';
   isCustomized?: boolean;
   path?: string;
+  /**
+   * The base-tier (`bundled`) definition of the same id, on a user/project
+   * override of a built-in (additive, PROTOCOL §5.11 `bundled` baseline).
+   */
+  bundled?: SpecialistBaseline;
+  /** Set when a paged `specialist.list` dropped an oversized row's `bundled`. */
+  bundledOmitted?: boolean;
   /**
    * Daemon-computed default-model preview (additive, PROTOCOL §5.11): the
    * model a no-model `agent.create` with this specialist would pin, resolved
@@ -2646,16 +2666,8 @@ export interface IntegrationsClient {
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;
 }
 
-/** Machine-level daemon capabilities (`system.capabilities`, PROTOCOL §5.7). */
-export interface SystemCapabilities {
-  /** CoW capability of the workspaces-root filesystem; undefined when the probe could not run. */
-  cowSupported?: boolean;
-}
-
 export interface SystemClient {
   status(): Promise<SystemStatusState>;
-  /** `system.capabilities` (§5.7) — machine capabilities independent of any workspace. */
-  capabilities(workspaceId?: string): Promise<SystemCapabilities>;
   releaseNotes(): Promise<ReleaseNotes | null>;
   autoUpdate(): Promise<AutoUpdateState | null>;
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;

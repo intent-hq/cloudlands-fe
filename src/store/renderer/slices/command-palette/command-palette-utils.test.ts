@@ -11,6 +11,8 @@ import {
   buildNoteBreadcrumbs,
   buildMessageTitleSegments,
   buildRecentItems,
+  matchTier,
+  MATCH_TIER,
   type WorkspaceObject,
 } from './command-palette-utils';
 import { WorkspaceStatus, type Note } from '$shared/types';
@@ -167,6 +169,42 @@ describe('scoreItemFields', () => {
     expect(substring).toBeGreaterThan(subsequence);
     expect(exact).toBe(fuzzyScore('hud', 'hud'));
     expect(prefix).toBe(fuzzyScore('hud panel', 'hud'));
+  });
+});
+
+// ── matchTier ──────────────────────────────────────────────────────────────
+
+describe('matchTier', () => {
+  const tier = (name: string, query: string, secondary: string[] = []) =>
+    matchTier({ names: [name], secondary }, query);
+
+  it.each([
+    ['Build server', 'build', MATCH_TIER.startsWith],
+    ['Fix build', 'build', MATCH_TIER.wordStart],
+    ['owner/build-tools', 'tools', MATCH_TIER.wordStart],
+    ['Rebuild', 'build', MATCH_TIER.substring],
+    ['Big unused interface lib dump', 'build', MATCH_TIER.loose],
+    ['Settings', 'build', MATCH_TIER.none],
+  ])('%s vs %s', (name, query, expected) => {
+    expect(tier(name, query)).toBe(expected);
+  });
+
+  it('ranks a secondary-field match one tier below the same match on the name', () => {
+    expect(tier('x', 'build', ['build.ts'])).toBe(MATCH_TIER.wordStart);
+    expect(tier('x', 'build', ['b-u-i-l-d'])).toBe(MATCH_TIER.secondaryLoose);
+    expect(tier('Build', 'build', ['build.ts'])).toBe(MATCH_TIER.startsWith);
+  });
+
+  it('uses the weakest word for a multi-word query, unless the phrase matches better', () => {
+    expect(tier('Login fix', 'fix login')).toBe(MATCH_TIER.wordStart);
+    expect(tier('Fix login bug', 'fix login')).toBe(MATCH_TIER.startsWith);
+    expect(tier('Login', 'fix login')).toBe(MATCH_TIER.none);
+  });
+
+  it('matches aliases as names', () => {
+    expect(matchTier({ names: ['intent-hq/intentd', 'intentd'], secondary: [] }, 'intentd')).toBe(
+      MATCH_TIER.startsWith,
+    );
   });
 });
 

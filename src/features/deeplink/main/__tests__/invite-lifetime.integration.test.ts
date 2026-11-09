@@ -1,5 +1,4 @@
 /** @vitest-environment jsdom */
-import { installLocalStorageMock } from '$store/renderer/utils/test-helpers/local-storage-mock';
 import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COLLABORATION_AUTH } from '../../../collaboration-auth/types';
@@ -150,7 +149,6 @@ function holdPolicy(forward: boolean) {
   return ack;
 }
 beforeEach(() => {
-  installLocalStorageMock();
   vi.resetModules();
   state.handlers.clear();
   state.listeners.clear();

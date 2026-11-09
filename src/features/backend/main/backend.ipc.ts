@@ -47,6 +47,8 @@ import {
   type BackendConnectionConfig,
   type HostCertMismatch,
 } from './backend-connection';
+import { detectDaemonMode, reportedDaemonMode } from './daemon-mode';
+import { NODE_REFUSED_MARKER } from '$shared/types/pair-link';
 import { devConsoleCapture } from '../../dev-console/main/dev-console-service';
 import {
   JsonRpcClient,
@@ -113,6 +115,7 @@ import * as connectionsStore from './desktop-connections-store';
 import * as guestSessionsStore from './guest-sessions-store';
 import {
   authenticateInvitedCredential,
+  inspectPairCredential,
   inspectPersonalCredential,
   invitedRole,
 } from './invited-principal';
@@ -2043,6 +2046,7 @@ function createAdditionalBackendClient(
             } else {
               void captureRemoteHostnameOwned(id, owner);
               void captureRemoteUpdateSupportedOwned(id, owner);
+              void captureRemoteDaemonModeOwned(id, result, owner);
               void captureConnectedProvidersOwned(id, owner);
               void captureConnectedEnabledProvidersOwned(id, owner);
             }
@@ -3080,6 +3084,35 @@ function extractUpdateSupported(result: unknown): boolean | null {
  * for the local entry.
  */
 
+/**
+ * Detect the remote's running mode on every connect (reported
+ * `server.daemonMode`, else the `node-mode` refusal probe) and store it, so a
+ * node moves to Nodes and a re-set-up daemon moves back to Machines. Unknown
+ * (transport failure) keeps the stored value until the next connect.
+ */
+function captureRemoteDaemonModeOwned(
+  id: string,
+  hello: unknown,
+  parent?: PoolOwner,
+): Promise<void> {
+  return poolWork('captureRemoteDaemonMode', parent, async (owner) => {
+    try {
+      const client = poolClient(owner, getBackendClientForId(id));
+      const mode = await detectDaemonMode(hello, (method, params, options) =>
+        poolRequest(owner, client, method, params, options),
+      );
+      if (!mode || backendClients.get(id) !== client) return;
+      if (await connectionsStore.setDaemonMode(id, mode))
+        await broadcastConnectionsChangedOwned(owner);
+    } catch (error) {
+      logger.warn('Failed to capture remote daemon mode', {
+        connectionId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+
 function captureRemoteUpdateSupportedOwned(id: string, parent?: PoolOwner): Promise<void> {
   return poolWork('captureRemoteUpdateSupported', parent, (owner) =>
     captureRemoteUpdateSupportedOriginal(id, owner),
@@ -4043,6 +4076,86 @@ function enqueueConnectionOperation<T>(fn: (owner?: PoolOwner) => Promise<T>): P
  * deadline-driven callers whose budget is shorter than the 30s client
  * default); it is ignored for a remote, which issues no probe.
  */
+/**
+ * Save an owner connection and apply the fresh credential to a live (or
+ * active) pooled client in place, then broadcast. Runs inside the caller's
+ * connection-operation critical section.
+ */
+async function saveOwnerConnectionOwned(
+  params: connectionsStore.NewConnection,
+  owner?: PoolOwner,
+): Promise<{ connection: ConnectionRecord; activeId: string }> {
+  const connection = await connectionsStore.add(params);
+  const activeId = await connectionsStore.getActiveId();
+  // Open-only model: the persisted activeId no longer tracks which
+  // backends have windows, so the rebuild decision keys off the live
+  // pool — any backend serving windows gets the refreshed credentials
+  // applied in place, active or not.
+  const hadLiveClient = backendClients.has(connection.id);
+  disconnectBackendClient(connection.id);
+  if (hadLiveClient || connection.id === activeId) {
+    // Refresh a live (or active) target's credentials without
+    // destroying any windows. The caller opens/focuses it through
+    // connections:open.
+    const rebuilt = await connectBackendClientOwned(connection.id, undefined, owner);
+    // This backend's windows stay alive across the swap. Replay the
+    // reconnect marker exactly as the instance's own `reconnected`
+    // handler would — once the fresh socket has connected — so
+    // main-process services and renderer consumers holding daemon
+    // `events.subscribe` leases re-subscribe against the new client
+    // (requests queue until then, T8).
+    replayReconnectOnceConnected(connection.id, rebuilt);
+  }
+  await broadcastConnectionsChangedOwned(owner);
+  return { connection, activeId };
+}
+
+/** {@link saveOwnerConnectionOwned} in its own critical section (pair links). */
+export function saveOwnerConnection(
+  params: connectionsStore.NewConnection,
+): Promise<ConnectionRecord> {
+  return enqueueConnectionOperation(
+    async (owner) => (await saveOwnerConnectionOwned(params, owner)).connection,
+  );
+}
+
+/** A node only runs agents for other backends: it never opens a backend window. */
+export class NodeWindowRefusedError extends Error {
+  constructor(readonly connectionId: string) {
+    super('A node cannot open a backend window'); // i18n-ignore (main-process diagnostic)
+    this.name = 'NodeWindowRefusedError';
+  }
+}
+
+/**
+ * Whether a just-connected remote is a node, before any window opens: the
+ * reported `daemonMode`, else the stored mode, else the refusal probe (older
+ * daemons). Unknown after all three opens the window, as before.
+ */
+async function remoteIsNodeOwned(
+  id: string,
+  client: JsonRpcClient,
+  owner?: PoolOwner,
+): Promise<boolean> {
+  try {
+    const hello = client.getAcknowledgedHello?.() ?? null;
+    let mode = reportedDaemonMode(hello);
+    if (!mode) {
+      const stored = (await connectionsStore.list()).find((c) => c.id === id)?.daemonMode;
+      if (stored) return stored === 'node';
+      mode = await detectDaemonMode(hello, (method, params, options) =>
+        poolRequest(owner, client, method, params, options),
+      );
+    }
+    if (!mode) return false;
+    if (await connectionsStore.setDaemonMode(id, mode))
+      await broadcastConnectionsChangedOwned(owner);
+    return mode === 'node';
+  } catch {
+    return false;
+  }
+}
+
 export function openBackendWindow(
   id: string,
   options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
@@ -4098,6 +4211,7 @@ async function performOpenBackendWindowOriginal(
       // fire-and-forget/fail-soft.
       void captureRemoteHostnameOwned(id, owner);
       void refreshRemoteHostsOwned(id, owner);
+      if (await remoteIsNodeOwned(id, target, owner)) throw new NodeWindowRefusedError(id);
     }
     if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
     await windowHooks.openOrFocus?.(id);
@@ -4936,16 +5050,18 @@ function registerConnectionsHandlers(): void {
         assertNormalAppOperation();
         const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
         return enqueueConnectionOperation(async (owner) => {
-          const remote = await inspectPersonalCredential({
-            ...params,
+          const { refuseNode, ...connectionParams } = params;
+          const inspected = await inspectPairCredential({
+            ...connectionParams,
             hosts: [params.host],
             tcAddress: params.tcAddress ?? null,
           });
+          const remote = inspected.snapshot;
           const role = invitedRole(remote);
           if (role) {
             if (!allowed()) throw new Error('Multiplayer is unavailable');
             const invited = await guestSessionsStore.add({
-              ...params,
+              ...connectionParams,
               principalId: remote.principal.id,
               login: remote.principal.login,
               identity: remote.principal.identity,
@@ -4959,28 +5075,20 @@ function registerConnectionsHandlers(): void {
           }
           if (!remote.principal.isAdministrator)
             throw new Error('Personal credential identity unavailable');
-          const connection = await connectionsStore.add(params);
-          const activeId = await connectionsStore.getActiveId();
-          // Open-only model: the persisted activeId no longer tracks which
-          // backends have windows, so the rebuild decision keys off the live
-          // pool — any backend serving windows gets the refreshed credentials
-          // applied in place, active or not.
-          const hadLiveClient = backendClients.has(connection.id);
-          disconnectBackendClient(connection.id);
-          if (hadLiveClient || connection.id === activeId) {
-            // Refresh a live (or active) target's credentials without
-            // destroying any windows. The caller opens/focuses it through
-            // connections:open.
-            const rebuilt = await connectBackendClientOwned(connection.id, undefined, owner);
-            // This backend's windows stay alive across the swap. Replay the
-            // reconnect marker exactly as the instance's own `reconnected`
-            // handler would — once the fresh socket has connected — so
-            // main-process services and renderer consumers holding daemon
-            // `events.subscribe` leases re-subscribe against the new client
-            // (requests queue until then, T8).
-            replayReconnectOnceConnected(connection.id, rebuilt);
-          }
-          await broadcastConnectionsChangedOwned(owner);
+          // A node the current backend can't use is refused before anything is
+          // written, so a refused link never changes a saved node either.
+          if (inspected.daemonMode === 'node' && refuseNode)
+            throw new Error(`${NODE_REFUSED_MARKER}:${refuseNode}`);
+          // Unknown mode while nodes are refused: it could be a node, so save nothing.
+          if (!inspected.daemonMode && refuseNode)
+            throw new Error(`${NODE_REFUSED_MARKER}:unknown`);
+          const { connection, activeId } = await saveOwnerConnectionOwned(
+            {
+              ...connectionParams,
+              ...(inspected.daemonMode ? { daemonMode: inspected.daemonMode } : {}),
+            },
+            owner,
+          );
           return {
             connection,
             switched: connection.id === activeId,
@@ -5180,6 +5288,9 @@ function registerConnectionsHandlers(): void {
         } catch (error) {
           if (error instanceof ConnectionSecretUnavailableError) {
             return { status: 'secret-unavailable' } satisfies OpenConnectionResult;
+          }
+          if (error instanceof NodeWindowRefusedError) {
+            return { status: 'node', id } satisfies OpenConnectionResult;
           }
           throw error;
         }

@@ -7,6 +7,7 @@ vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } })
 import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
 import {
   setLabsBrowserAccessEnabled,
+  setLabsCloudMachinesEnabled,
   setLabsPlainFolderWorkspacesEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
@@ -25,6 +26,22 @@ describe('command palette Labs commands', () => {
     expect(isLabCommandHidden('disable-experimental-plain-folders', false, false)).toBe(true);
     expect(isLabCommandHidden('enable-experimental-plain-folders', false, false)).toBe(false);
     expect(isLabCommandHidden('new-workspace', false, false)).toBe(false);
+  });
+
+  it('hides the E2B command matching its current value and toggles it', () => {
+    expect(
+      isLabCommandHidden('enable-experimental-cloud-machines', false, false, false, false, true),
+    ).toBe(true);
+    expect(
+      isLabCommandHidden('disable-experimental-cloud-machines', false, false, false, false, true),
+    ).toBe(false);
+    expect(isLabCommandHidden('disable-experimental-cloud-machines', false)).toBe(true);
+    expect(runLabCommand('enable-experimental-cloud-machines')).toBe(true);
+    expect(runLabCommand('disable-experimental-cloud-machines')).toBe(true);
+    expect(mocks.dispatch.mock.calls.map(([action]) => action)).toEqual([
+      setLabsCloudMachinesEnabled(true),
+      setLabsCloudMachinesEnabled(false),
+    ]);
   });
 
   it('toggles plain-folder workspaces through the preferences slice', () => {

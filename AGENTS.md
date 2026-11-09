@@ -67,6 +67,7 @@ in a monorepo checkout, where this repo mounts at `packages/cloudlands-fe/`.
 | agents                                                                  | ../../docs/fe/agent-message-dedup-and-stream-sagas.md, ../../docs/fe/RULES_SYSTEM.md                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `agent.list` requests (unbounded on a large workspace)                  | `pnpm run lint:agent-list-scope` — `scripts/check-agent-list-scope.mjs` fails any non-test `agent.list` request (wire literal, `agents.list` / `listWithMeta`, saga `call` / tuple) without `retiredOnly: true` or a `scope` literal / variable (`false`, `undefined`, `''` and words inside strings do not bound it); the file-level `ALLOWLIST` in the script needs a one-line reason and stale entries fail; CI runs it via `lint:architecture` (intent-hq/intent#5531)                                   |
 | state/store                                                             | ../../docs/fe/STATE_MANAGEMENT.md, src/store/renderer/docs/                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| chat row shows sent before confirmed (or flips back to the queue)       | Three sources draw it: pending conversation submissions and processing rows (`src/store/renderer/slices/pending-submissions/pending-submissions-projection.ts`) and predicted queue drains (`src/lib/components/chat/queue-drain-prediction.ts`); `pendingConversationMessages` in `src/lib/components/chat/ChatPanel.svelte` merges them (cloudlands-fe#4312)                                                                                                                                               |
 | component design                                                        | ../../docs/fe/COMPONENTS_DESIGN.md                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | UI invariant gates                                                      | `pnpm run test:ui-invariants` — ratchets + catalog `*.meta.ts` ledgers, see below                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Electron test helpers (`test/electron*.ts`, `test/fixtures/**/*.ts`)    | `pnpm run lint:electron-test-paths` (in `lint:architecture`) — `tsconfig.electron-tests.json` type-checks them and `scripts/check-electron-test-paths.mjs` checks their `src/` path strings and Vite `resolveId` stubs; they otherwise run only in the merge queue (cloudlands-fe#4050)                                                                                                                                                                                                                      |
@@ -395,7 +396,9 @@ Each run prints `record: <path>` for its attempt under `.dev/verify-changed/atte
 and passes only when every check and resolved unit file is satisfied. To continue after a
 failure or interruption, rerun with `--resume` (`--resolved-plan --resume` previews it);
 never hand-pick stages. A run stops at its first failed check; `--keep-going` still runs and
-records every remaining check, then fails listing them all (prerequisites still stop it). Receipt files and resume-credit rules:
+records every remaining check, then fails listing them all (prerequisites still stop it). Each
+check's output lands in `<record>/logs/<check id>.log`; a failure prints that path and its last
+lines, so read the log instead of rerunning the check. Receipt files and resume-credit rules:
 [Changed-file verification receipts](../../docs/fe/DEVELOPER_GUIDE.md#changed-file-verification-receipts).
 
 It runs scoped Prettier and ESLint, related Vitest tests, colocated component tests one
@@ -419,7 +422,9 @@ Rules that follow from it:
   `// protocol-version-ok-file: <reason>` in a file's first 10 lines.
 - Never hand-edit `src/preload/index.ts`; `pnpm run generate:ipc-channels` generates it.
 - Workflow edits: `pnpm run lint:workflows` (part of `lint:architecture`) runs the pinned
-  actionlint with shellcheck; add path-scoped ignores with a reason there.
+  actionlint with shellcheck; add path-scoped ignores with a reason there. `verify:changed`
+  runs it only when `.github/workflows/**`, local action metadata, the actionlint config or
+  `scripts/check-workflows.mjs` change (actionlint can hang on a loaded host; #4332).
 
 Playwright CT holds a host-wide `ct-<port>` lock (per-worktree port by default; see above) and the full Vitest
 fallback holds `vitest-full`. A second run waits (240 s / 120 s by default,
@@ -757,6 +762,13 @@ is roughly 10× the cost of a jsdom test and the CT job is sharded and time-boxe
   Do not use clock stepping to check animation choreography. Lint
   (`intent/no-unpaused-clock-in-ct`) rejects an install whose test never pauses; keep
   one, disabled on the line with the reason, only to skip a delay and check settled state.
+- Press a registered shortcut with `shortcutChord(SHORTCUT_DEFAULTS[id], isMac)`
+  (`src/test/shortcut-chords.ts`; `.press` or the `KeyboardEvent` init `.event`), never its
+  keys typed out: a moved shortcut leaves the spec pressing the old keys (cloudlands-fe#4205;
+  nightly intent-hq/intent#8681, #8682). Import `SHORTCUT_DEFAULTS` in the spec itself, since
+  changed-test selection follows direct imports only. Lint
+  (`intent/no-hand-typed-shortcut-in-ct`) flags a literal chord equal to a binding; disable
+  it on the line, with the reason, when a hard-coded handler only shares the keys.
 - **Every CT spec imports `test` / `expect` from `src/test/ct-test.ts`** — lint-enforced
   (`no-restricted-imports`; only type imports may come from
   `@playwright/experimental-ct-svelte`). The module gives every test a fresh browser

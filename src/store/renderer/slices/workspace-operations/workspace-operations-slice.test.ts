@@ -67,7 +67,6 @@ const guests = { collaboratorCount: 2, openInviteCount: 1 };
 describe('workspaceOperationsReducer', () => {
   it('starts with no local-changes or guest data for either warning', () => {
     expect(initialState.localChangesForDelete).toBeNull();
-    expect(initialState.localChangesForArchive).toBeNull();
     expect(initialState.guestsForDelete).toBeNull();
     expect(initialState.guestsForArchive).toBeNull();
   });
@@ -92,7 +91,6 @@ describe('workspaceOperationsReducer', () => {
     expect(getItems(opened.openPrsForDelete)).toEqual([openPr]);
     expect(opened.localChangesForDelete).toEqual(localChanges);
     expect(opened.guestsForDelete).toEqual(guests);
-    expect(opened.localChangesForArchive).toBeNull();
     expect(opened.guestsForArchive).toBeNull();
 
     const closed = workspaceOperationsReducer(opened, closeDeleteWarning());
@@ -130,7 +128,6 @@ describe('workspaceOperationsReducer', () => {
         agentNames: ['Agent Two'],
         hookNames: ['pr-watch'],
         openPrs: [{ ...openPr, status: 'Draft' as const, mergeConflicts: true }],
-        localChanges,
         guests,
       }),
     );
@@ -142,7 +139,6 @@ describe('workspaceOperationsReducer', () => {
     expect(getItems(opened.openPrsForArchive)).toEqual([
       { ...openPr, status: 'Draft', mergeConflicts: true },
     ]);
-    expect(opened.localChangesForArchive).toEqual(localChanges);
     expect(opened.guestsForArchive).toEqual(guests);
     expect(opened.localChangesForDelete).toBeNull();
     expect(opened.guestsForDelete).toBeNull();
@@ -154,24 +150,7 @@ describe('workspaceOperationsReducer', () => {
     expect(closed.runningAgentNamesForArchive).toEqual([]);
     expect(closed.activeHookNamesForArchive).toEqual([]);
     expect(getItems(closed.openPrsForArchive)).toEqual([]);
-    expect(closed.localChangesForArchive).toBeNull();
     expect(closed.guestsForArchive).toBeNull();
-  });
-
-  it('opens the archive warning with null local changes when the RPC failed', () => {
-    const opened = workspaceOperationsReducer(
-      initialState,
-      openArchiveWarning({
-        workspaceId: 'ws-2',
-        agentNames: [],
-        hookNames: ['pr-watch'],
-        openPrs: [],
-        localChanges: null,
-      }),
-    );
-
-    expect(opened.showArchiveWarning).toBe(true);
-    expect(opened.localChangesForArchive).toBeNull();
   });
 
   it('opens and clears both group-scoped bulk confirms', () => {

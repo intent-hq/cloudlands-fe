@@ -22,7 +22,7 @@ for (const scenario of [
     });
     await page.evaluate(() => document.fonts.ready);
     const rows = root.locator('[data-slot="settings-field-row"]');
-    await expect(rows).toHaveCount(5);
+    await expect(rows).toHaveCount(4);
     const edges = await rows.evaluateAll((elements) =>
       elements.map((row) => {
         const rect = row.getBoundingClientRect();
@@ -74,7 +74,7 @@ for (const scenario of [
   });
 }
 
-for (const action of ['default', 'commit', 'pr', 'fast']) {
+for (const action of ['default', 'commit', 'pr']) {
   test(`quick-action ${action} effort supports inherited models and keyboard reset`, async ({
     mount,
     page,
@@ -123,14 +123,14 @@ test('Auggie catalog effort remains available for ordinary agents but not quick 
   await main.click();
   await expect(page.getByTestId('effort-picker-trigger')).toBeVisible();
   await page.keyboard.press('Escape');
-  for (const action of ['default', 'commit', 'pr', 'fast']) {
+  for (const action of ['default', 'commit', 'pr']) {
     const trigger = root.locator(`#background-agent-${action} button[aria-haspopup="listbox"]`);
     await expect(trigger).not.toContainText('Medium');
     await trigger.click();
     await expect(page.getByTestId('effort-picker-trigger')).toHaveCount(0);
     await page.keyboard.press('Escape');
   }
-  await expect(root.getByTestId('quick-action-effort-route-note')).toHaveCount(4);
+  await expect(root.getByTestId('quick-action-effort-route-note')).toHaveCount(3);
   await expect(root.getByTestId('defaults-state')).toContainText('"quickEffort":"medium"');
   await expect(root.getByTestId('defaults-state')).toContainText('"quickEffortOverrides":{}');
 });

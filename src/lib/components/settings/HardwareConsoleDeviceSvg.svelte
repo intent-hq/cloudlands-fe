@@ -528,6 +528,9 @@
             : m.settings_hardware_knobExplainer_rotate_description()}
         </p>
         <p class="type-body text-subtle mt-1.5">
+          {m.settings_hardware_knobExplainer_home_description()}
+        </p>
+        <p class="type-body text-subtle mt-1.5">
           {m.settings_hardware_knobExplainer_click_description()}
         </p>
       {:else}

@@ -58,23 +58,23 @@ afterEach(() => {
   dispose = undefined;
 });
 
-describe('Home workspace Disable auto-archive toggle', () => {
-  it('offers the owner an unchecked toggle by default', () => {
-    const toggle = item(setup(), 'disable-auto-archive');
-    expect(toggle?.checked).toBe(false);
+describe('Home workspace Auto-archive switch', () => {
+  it('offers the owner a switch that is on by default', () => {
+    const toggle = item(setup(), 'auto-archive');
+    expect(toggle?.checked).toBe(true);
     expect(toggle?.submenu).toBeUndefined();
   });
 
-  it('turns the opt-out on from an unchecked item', () => {
-    item(setup(), 'disable-auto-archive')!.onClick();
-    expect(close).toHaveBeenCalledTimes(1);
+  it('turns the opt-out on when switched off and keeps the menu open', () => {
+    item(setup(), 'auto-archive')!.onClick();
+    expect(close).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledWith(setWorkspaceAutoArchiveDisabled('ws-target', true));
   });
 
-  it('shows the item checked and turns the opt-out off when it is on', () => {
+  it('shows the switch off and turns the opt-out off when it is on', () => {
     const entries = setup({ target: labelWorkspace('ws-target', { autoArchiveDisabled: true }) });
-    const toggle = item(entries, 'disable-auto-archive')!;
-    expect(toggle.checked).toBe(true);
+    const toggle = item(entries, 'auto-archive')!;
+    expect(toggle.checked).toBe(false);
     toggle.onClick();
     expect(dispatch).toHaveBeenCalledWith(setWorkspaceAutoArchiveDisabled('ws-target', false));
   });
@@ -83,11 +83,11 @@ describe('Home workspace Disable auto-archive toggle', () => {
     const entries = setup({
       target: labelWorkspace('ws-target', { status: WorkspaceStatusEnum.Archived }),
     });
-    expect(item(entries, 'disable-auto-archive')).toBeDefined();
+    expect(item(entries, 'auto-archive')).toBeDefined();
   });
 
   it('toggles from the value current at click time, not when the menu opened', () => {
-    const toggle = item(setup(), 'disable-auto-archive')!;
+    const toggle = item(setup(), 'auto-archive')!;
     dispatch.mockRestore();
     store.dispatch(
       bulkUpdateWorkspaceEntities([
@@ -101,22 +101,19 @@ describe('Home workspace Disable auto-archive toggle', () => {
 
   it('is hidden on remote workspaces, which are never auto-archived', () => {
     expect(
-      item(
-        setup({ target: labelWorkspace('ws-target', { isRemote: true }) }),
-        'disable-auto-archive',
-      ),
+      item(setup({ target: labelWorkspace('ws-target', { isRemote: true }) }), 'auto-archive'),
     ).toBeUndefined();
   });
 
   it('is hidden when the daemon does not advertise the opt-out', () => {
     const entries = setup({ supported: false });
-    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
+    expect(item(entries, 'auto-archive')).toBeUndefined();
     expect(item(entries, 'archive')).toBeDefined();
   });
 
   it('is hidden while idle auto-archive is turned off in Settings', () => {
     const entries = setup({ autoArchiveIdleAfterDays: 0 });
-    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
+    expect(item(entries, 'auto-archive')).toBeUndefined();
     expect(item(entries, 'archive')).toBeDefined();
   });
 
@@ -125,12 +122,12 @@ describe('Home workspace Disable auto-archive toggle', () => {
       target: labelWorkspace('ws-target', { autoArchiveDisabled: true }),
       autoArchiveIdleAfterDays: 0,
     });
-    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
+    expect(item(entries, 'auto-archive')).toBeUndefined();
   });
 
   it('is hidden until the auto-archive setting has been read', () => {
     const entries = setup({ autoArchiveIdleAfterDays: null });
-    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
+    expect(item(entries, 'auto-archive')).toBeUndefined();
   });
 
   it('is hidden for a collaborator who does not own the workspace', () => {
@@ -138,7 +135,7 @@ describe('Home workspace Disable auto-archive toggle', () => {
       target: labelWorkspace('ws-target', { myRole: 'collaborator' }),
       role: 'guest',
     });
-    expect(item(entries, 'disable-auto-archive')).toBeUndefined();
+    expect(item(entries, 'auto-archive')).toBeUndefined();
     expect(dispatch).not.toHaveBeenCalled();
   });
 });

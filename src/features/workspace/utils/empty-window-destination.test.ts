@@ -49,4 +49,10 @@ describe('resolveEmptyWindowDestination', () => {
   it('treats workspaces without a status as available', () => {
     expect(resolveEmptyWindowDestination([{ id: 'ws-1' }])).toBe('/');
   });
+  it("returns '/' (Home) without workspaces once the backend skips onboarding", () => {
+    expect(resolveEmptyWindowDestination([], undefined, true)).toBe('/');
+    expect(
+      resolveEmptyWindowDestination([{ id: 'ws-archived', status: 'Archived' }], undefined, true),
+    ).toBe('/');
+  });
 });

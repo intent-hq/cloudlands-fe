@@ -221,6 +221,7 @@ test('preserves the edit, remove, and send-now callbacks', async ({ mount, page 
   await page.keyboard.press('Enter');
   await expect(lastAction).toHaveText('send:queued-geometry-0');
 
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- QueuedMessageList hard-codes Mod+Enter to send a queued message now; it is not chat.force-send
   await row.getByTestId('queued-message-content').press('ControlOrMeta+Enter');
   await expect(lastAction).toHaveText('send:queued-geometry-0');
 

@@ -1,4 +1,5 @@
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { PalettePick } from './palette-pick-memory';
 
 export type PaletteState = {
   isOpen: boolean;
@@ -6,6 +7,9 @@ export type PaletteState = {
   mruEntryIds: string[];
   mruEntriesByKey: Record<string, PaletteMruEntry>;
   fileMru: Record<string, number>;
+  /** Pick memory queries, newest first. Persisted per daemon. */
+  pickQueries: string[];
+  picksByQuery: Record<string, PalettePick>;
   noteSearches: Collection<PaletteNoteSearchEntry, 'consumerId'>;
 };
 
@@ -40,10 +44,20 @@ type PaletteNoteSearchEntry = PaletteNoteSearchUpdate & {
   authority: string | null;
 };
 
-export type PaletteMruEntryType = 'agent' | 'note' | 'change' | 'terminal' | 'file' | 'browser';
+/** Workspace object types listed in the palette. */
+export type PaletteObjectType = 'agent' | 'note' | 'change' | 'terminal' | 'file' | 'browser';
+
+/** Everything that counts as recently picked: objects plus commands, workspaces and repos. */
+export type PaletteMruEntryType = PaletteObjectType | 'command' | 'workspace' | 'repo';
 
 export type PaletteMruEntry = {
   type: PaletteMruEntryType;
   id: string;
   timestamp: number;
 };
+
+/** Persisted palette memory for one daemon connection. */
+export type PaletteMemorySnapshot = Pick<
+  PaletteState,
+  'mruEntryIds' | 'mruEntriesByKey' | 'fileMru' | 'pickQueries' | 'picksByQuery'
+>;

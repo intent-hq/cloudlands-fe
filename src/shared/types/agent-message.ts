@@ -5,7 +5,6 @@
  * Consolidates definitions from:
  * - src/shared/types.ts (main definition)
  * - src/lib/types/agent.ts (legacy)
- * - src/features/agent/agent-types.ts (provider version)
  * - src/features/agent/agent-providers/base-provider.ts (provider variant)
  *
  * Supports both core messages (with full metadata) and provider messages (simplified).

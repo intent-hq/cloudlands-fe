@@ -33,7 +33,7 @@ vi.mock('$store/renderer/store', async () => {
   return createAppStoreMockModule({ dispatch, state: mockState });
 });
 
-import { scriptsClient } from '$features/scripts/scripts.client';
+import { scriptsClient } from '$features/scripts/scripts.test-helpers';
 import {
   scriptOperationSucceeded,
   scriptsReducer,
@@ -217,16 +217,45 @@ describe('script panel deletion', () => {
   });
 
   it.each(['running', 'starting', 'restarting', 'unknown', undefined])(
-    'disables panel deletion for %s',
+    'deletes a %s script after warning that it will be stopped',
     async (status) => {
       mockState.scripts.byWorkspaceId['workspace-1'].scripts.check.runtime.status = status;
       render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
       await openMenu();
-      expect(
-        screen.getByRole('menuitem', { name: /Delete script/ }).getAttribute('aria-disabled'),
-      ).toBe('true');
+      await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
+      expect(confirm).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: expect.stringMatching(/stopped first.*agents monitoring it will be woken/),
+        }),
+      );
+      await waitFor(() =>
+        expect(dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({ type: 'scripts/deleteScriptRequested' }),
+        ),
+      );
     },
   );
+
+  it('still deletes when a running script exits while the dialog is open', async () => {
+    mockState.scripts.byWorkspaceId['workspace-1'].scripts.check.runtime.status = 'running';
+    let accept!: (value: boolean) => void;
+    vi.mocked(confirm).mockReturnValue(
+      new Promise((resolve) => {
+        accept = resolve;
+      }),
+    );
+    render(TerminalTabTypeHeaderHarness, { activeTabId: 'terminal-tab-1', scriptId: 'check' });
+    await openMenu();
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Delete script' }));
+    mockState.scripts.byWorkspaceId['workspace-1'].scripts.check.runtime.status = 'exited';
+    (store as any).emitState();
+    accept(true);
+    await waitFor(() =>
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'scripts/deleteScriptRequested' }),
+      ),
+    );
+  });
 
   it.each(['runtime', 'pending', 'workspace', 'script', 'tab'])(
     'rejects stale panel confirmation after %s changes',

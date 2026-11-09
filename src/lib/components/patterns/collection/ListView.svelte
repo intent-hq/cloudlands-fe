@@ -24,7 +24,8 @@
      * `selectedKeys`, so owners should commit synchronously.
      */
     onSelectedKeysChange?: (keys: ListKey[]) => void;
-    onActivate?: (item: T, index: number) => void;
+    /** `event` carries the modifiers of the click or key that activated the row. */
+    onActivate?: (item: T, index: number, event: MouseEvent | KeyboardEvent) => void;
     status?: 'ready' | 'loading' | 'error';
     empty?: Snippet;
     loading?: Snippet;
@@ -215,7 +216,7 @@
     activeIndex = index;
     hover?.setActiveIndex(index);
     toggleSelection(index);
-    onActivate?.(item, index);
+    onActivate?.(item, index, event);
   }
 
   function handleKeydown(event: KeyboardEvent, item: T, index: number) {
@@ -233,7 +234,7 @@
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       toggleSelection(index);
-      onActivate?.(item, index);
+      onActivate?.(item, index, event);
       return;
     }
     if (event.key.length !== 1 || event.metaKey || event.ctrlKey || event.altKey) return;

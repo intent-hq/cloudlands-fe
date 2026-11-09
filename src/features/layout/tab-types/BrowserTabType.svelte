@@ -14,6 +14,7 @@
   import { writable } from 'svelte/store';
   import EmbeddedBrowser from '$lib/components/browser/EmbeddedBrowser.svelte';
   import BrowserViewerTab from '$lib/components/browser/BrowserViewerTab.svelte';
+  import BrowserTabNotices from '$lib/components/browser/BrowserTabNotices.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { faRobot } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
@@ -96,6 +97,10 @@
   const hostClientIdStore = writable(untrack(() => tab.hostClientId ?? ''));
   $effect(() => hostClientIdStore.set(tab.hostClientId ?? ''));
   const tabHost$ = selectBrowserTabHost(hostClientIdStore, workspaceIdStore);
+  // An offline host already has its own banner in the mirror.
+  const mirrorHostName = $derived(
+    !isHostedHere && $tabHost$.connected ? $tabHost$.name : undefined,
+  );
 </script>
 
 {#snippet connectedAgent()}
@@ -109,78 +114,81 @@
   {/if}
 {/snippet}
 
-{#if !isHostedHere}
-  <div
-    use:browserClientConsumer={workspaceId}
-    bind:this={viewportActionNode}
-    class="h-full"
-    data-browser-tab-mirror={tab.hostClientId}
-  >
-    <BrowserViewerTab
-      url={browserUrl}
-      title={tab.title}
-      host={$tabHost$}
-      {isActive}
-      onNavigate={(newUrl: string) => {
-        return appStore.dispatch(navigateBrowserTabRequested(tab.id, newUrl));
-      }}
-      onClose={({ force }) => {
-        appStore.dispatch(closeBrowserTabRequested(tab.id, force));
-      }}
-      onFaviconChange={(faviconUrl: string) => {
-        appStore.dispatch(updateTabFavicon(panelLayoutId, tab.id, faviconUrl));
-      }}
-      {onFocus}
-    />
-  </div>
-{:else if browserUrl}
-  <div
-    use:browserClientConsumer={workspaceId}
-    bind:this={viewportActionNode}
-    class="h-full"
-    use:browserViewportAction={{ layoutId: panelLayoutId, tabId: tab.id }}
-  >
-    <EmbeddedBrowser
-      url={browserUrl}
-      {workspaceId}
-      tabId={tab.id}
-      {isActive}
-      focusUrlBarOnMount={isActive && isPanelFocused && !isFocusPreservingReveal}
-      isFocused={isPanelFocused}
-      ownerAgentId={tab.ownerAgentId}
-      viewport={tab.viewport ?? { mode: 'fit' }}
-      onViewportChange={(viewport) => {
-        viewportActionNode?.dispatchEvent(
-          new CustomEvent(BROWSER_VIEWPORT_CHANGE_EVENT, { detail: viewport }),
-        );
-      }}
-      onNavigate={(newUrl: string, requestedUrl?: string) => {
-        // Update the tab's browserUrl so it stays in sync with actual location.
-        // An address-bar alias resolution names its pre-rewrite URL so the tab
-        // restores by re-resolving it; other navigations keep the auto mode.
-        appStore.dispatch(
-          requestedUrl === undefined
-            ? updateTabBrowserUrl(panelLayoutId, tab.id, newUrl)
-            : updateTabBrowserUrl(panelLayoutId, tab.id, newUrl, requestedUrl),
-        );
-        // Update context store item if this tab is linked to one
-        if (tab.contextItemId) {
-          appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { url: newUrl }));
-        }
-      }}
-      onTitleChange={(title: string) => {
-        // Update the tab title in the panel layout
-        appStore.dispatch(updateTabTitle(panelLayoutId, tab.id, title));
-        // Update context store item title if this tab is linked to one
-        if (tab.contextItemId) {
-          appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { title }));
-        }
-      }}
-      onFaviconChange={(faviconUrl: string) => {
-        // Update the tab's favicon URL in the panel layout
-        appStore.dispatch(updateTabFavicon(panelLayoutId, tab.id, faviconUrl));
-      }}
-      {onFocus}
-    />
-  </div>
-{/if}
+<div class="flex h-full flex-col" data-browser-tab-frame>
+  <BrowserTabNotices {mirrorHostName} agentName={ownerAgentName} onOpenAgent={openOwnerAgent} />
+  {#if !isHostedHere}
+    <div
+      use:browserClientConsumer={workspaceId}
+      bind:this={viewportActionNode}
+      class="min-h-0 flex-1"
+      data-browser-tab-mirror={tab.hostClientId}
+    >
+      <BrowserViewerTab
+        url={browserUrl}
+        title={tab.title}
+        host={$tabHost$}
+        {isActive}
+        onNavigate={(newUrl: string) => {
+          return appStore.dispatch(navigateBrowserTabRequested(tab.id, newUrl));
+        }}
+        onClose={({ force }) => {
+          appStore.dispatch(closeBrowserTabRequested(tab.id, force));
+        }}
+        onFaviconChange={(faviconUrl: string) => {
+          appStore.dispatch(updateTabFavicon(panelLayoutId, tab.id, faviconUrl));
+        }}
+        {onFocus}
+      />
+    </div>
+  {:else if browserUrl}
+    <div
+      use:browserClientConsumer={workspaceId}
+      bind:this={viewportActionNode}
+      class="min-h-0 flex-1"
+      use:browserViewportAction={{ layoutId: panelLayoutId, tabId: tab.id }}
+    >
+      <EmbeddedBrowser
+        url={browserUrl}
+        {workspaceId}
+        tabId={tab.id}
+        {isActive}
+        focusUrlBarOnMount={isActive && isPanelFocused && !isFocusPreservingReveal}
+        isFocused={isPanelFocused}
+        ownerAgentId={tab.ownerAgentId}
+        viewport={tab.viewport ?? { mode: 'fit' }}
+        onViewportChange={(viewport) => {
+          viewportActionNode?.dispatchEvent(
+            new CustomEvent(BROWSER_VIEWPORT_CHANGE_EVENT, { detail: viewport }),
+          );
+        }}
+        onNavigate={(newUrl: string, requestedUrl?: string) => {
+          // Update the tab's browserUrl so it stays in sync with actual location.
+          // An address-bar alias resolution names its pre-rewrite URL so the tab
+          // restores by re-resolving it; other navigations keep the auto mode.
+          appStore.dispatch(
+            requestedUrl === undefined
+              ? updateTabBrowserUrl(panelLayoutId, tab.id, newUrl)
+              : updateTabBrowserUrl(panelLayoutId, tab.id, newUrl, requestedUrl),
+          );
+          // Update context store item if this tab is linked to one
+          if (tab.contextItemId) {
+            appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { url: newUrl }));
+          }
+        }}
+        onTitleChange={(title: string) => {
+          // Update the tab title in the panel layout
+          appStore.dispatch(updateTabTitle(panelLayoutId, tab.id, title));
+          // Update context store item title if this tab is linked to one
+          if (tab.contextItemId) {
+            appStore.dispatch(updateContextItem(workspaceId, tab.contextItemId, { title }));
+          }
+        }}
+        onFaviconChange={(faviconUrl: string) => {
+          // Update the tab's favicon URL in the panel layout
+          appStore.dispatch(updateTabFavicon(panelLayoutId, tab.id, faviconUrl));
+        }}
+        {onFocus}
+      />
+    </div>
+  {/if}
+</div>

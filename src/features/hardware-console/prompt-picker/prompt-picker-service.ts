@@ -11,15 +11,16 @@
  * 2. Joystick session — subscribes an input decoder to the shared manager's
  *    raw channel-2 stream (`onRawMessage` — includes the CM2's bare `{a,d}`
  *    joystick frames that never reach `onNotification`). Deflection past the
- *    dead-zone opens the radial overlay with the top-N prompts by sector;
- *    sector math runs here from the raw angle (converted from the device
- *    convention — 0 = 3 o'clock, clockwise — to screen turns, see
- *    `radial-layout.ts`) over N+1 slices: one per prompt plus a dedicated
- *    Cancel slice at 6 o'clock.
- * 3. Release handling — release while a prompt sector is highlighted inserts
- *    that prompt at the cursor of the focused text input (never auto-sends);
- *    release on the Cancel sector inserts nothing, and a centered release
- *    cancels too. "Centered" means the stick dwelled inside the selection
+ *    dead-zone opens the radial overlay: a fixed 8-direction ring with the
+ *    focused chat's suggested prompts at top, top-right and right, Cancel at
+ *    the bottom, and the top-N used prompts in the other directions (see
+ *    `radial-layout.ts`). Direction math runs here from the raw angle
+ *    (device convention — 0 = 3 o'clock, clockwise — converted to screen
+ *    turns).
+ * 3. Release handling — release on a chat suggestion sends it right away,
+ *    like clicking it; release on a used prompt inserts it at the cursor of
+ *    the focused text input (never auto-sends). Cancel, an empty direction,
+ *    and a centered release do nothing. "Centered" means the stick dwelled inside the selection
  *    radius for {@link DEFAULT_CENTER_DWELL_MS} before release, so the
  *    spring snap-back through the hysteresis band still commits.
  *
@@ -41,7 +42,14 @@ import {
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder, DEFAULT_JOYSTICK_ENGAGE_DISTANCE } from '../input/input-decoder';
-import { radialCancelSector, radialSectorForAngle } from './radial-layout';
+import {
+  buildRadialSlots,
+  isActionSlot,
+  nextSelectableSlot,
+  radialSlotForAngle,
+  type RadialSlot,
+} from './radial-layout';
+import { type ChatSuggestionSource, getFocusedChatSuggestions } from './chat-suggestions';
 import {
   clampPromptPickerLimit,
   type PromptUsageEntry,
@@ -59,6 +67,8 @@ export const DEFAULT_CENTER_DWELL_MS = 150;
 export interface PromptPickerJoystickDeps {
   /** Top-N prompt texts to surface. Defaults to the store's ranked tracker. */
   getTopPrompts?: () => string[];
+  /** The focused chat's suggestions. Defaults to the ChatPanel-published source. */
+  getSuggestions?: () => ChatSuggestionSource | null;
   /** Dispatch into the app store. Defaults to `appStore.dispatch`. */
   dispatch?: (action: unknown) => void;
   /** Insert text into the focused editable. Defaults to the insertion seam. */
@@ -75,7 +85,9 @@ export interface PromptPickerJoystickDeps {
 }
 
 interface JoystickSession {
-  prompts: string[];
+  slots: RadialSlot[];
+  /** Chat that offered the suggestions when the stick engaged. */
+  source: ChatSuggestionSource | null;
   selection: number | null;
   /** Timestamp the stick last dropped inside the selection radius. */
   belowSince: number | null;
@@ -98,6 +110,7 @@ export function installHardwareConsolePromptPickerJoystick(
   const dispatch = deps.dispatch ?? ((action: unknown) => appStore.dispatch(action as never));
   const insertText = deps.insertText ?? ((text: string) => insertPromptText(text));
   const getTopPrompts = deps.getTopPrompts ?? defaultGetTopPrompts;
+  const getSuggestions = deps.getSuggestions ?? getFocusedChatSuggestions;
   const selectDistance = deps.selectDistance ?? DEFAULT_JOYSTICK_ENGAGE_DISTANCE;
   const centerDwellMs = deps.centerDwellMs ?? DEFAULT_CENTER_DWELL_MS;
   const isOwner = deps.isOwner ?? isConsoleOwner;
@@ -110,9 +123,6 @@ export function installHardwareConsolePromptPickerJoystick(
 
   let session: JoystickSession | null = null;
   let detachDecoder: (() => void) | null = null;
-
-  const sectorFor = (angle: number, prompts: string[]): number =>
-    radialSectorForAngle(angle, prompts.length);
 
   const closeSession = (): void => {
     if (!session) return;
@@ -132,22 +142,26 @@ export function installHardwareConsolePromptPickerJoystick(
     // still tracks and closes cleanly in the window that opened it —
     // but `onRelease` re-checks ownership before inserting.
     if (!isOwner()) return;
+    const source = getSuggestions();
+    const suggestions = [...(source?.prompts ?? [])];
     const prompts = getTopPrompts();
-    if (prompts.length === 0) return;
-    const sector = sectorFor(angle, prompts);
+    const slots = buildRadialSlots(suggestions, prompts);
+    if (!slots.some(isActionSlot)) return;
+    const sector = radialSlotForAngle(angle);
     session = {
-      prompts,
+      slots,
+      source,
       selection: sector,
       belowSince: distance >= selectDistance ? null : now(),
     };
-    dispatch(radialPromptPickerOpened(prompts, sector));
+    dispatch(radialPromptPickerOpened(suggestions, prompts, sector));
   };
 
   const onMove = (angle: number, distance: number): void => {
     if (!session) return;
     if (distance >= selectDistance) {
       session.belowSince = null;
-      setSelection(sectorFor(angle, session.prompts));
+      setSelection(radialSlotForAngle(angle));
       return;
     }
     if (session.belowSince === null) session.belowSince = now();
@@ -156,16 +170,27 @@ export function installHardwareConsolePromptPickerJoystick(
 
   const onRelease = (): void => {
     if (!session) return;
-    const { prompts, selection, belowSince } = session;
+    const { slots, source, selection, belowSince } = session;
     const dwelledCentered = belowSince !== null && now() - belowSince >= centerDwellMs;
     closeSession();
     // Ownership moved mid-session (#1928): the session still closes here,
     // but insertion would target this non-owner window's editor — skip it.
     if (!isOwner()) return;
     if (selection === null || dwelledCentered) return;
-    if (selection === radialCancelSector(prompts.length)) return;
-    const prompt = prompts[selection];
-    if (prompt !== undefined && !insertText(prompt)) {
+    const slot = slots[selection];
+    if (slot?.kind === 'suggestion') {
+      // The offering chat must still be focused and still show the suggestion,
+      // or the send would land in a conversation the user is no longer looking
+      // at. Match by owner: the chat re-publishes a fresh source on any update.
+      const current = getSuggestions();
+      if (source && current?.ownerId === source.ownerId && current.prompts.includes(slot.text)) {
+        current.send(slot.text);
+      } else {
+        logger.info('Radial suggestion release after its chat lost focus; send skipped');
+      }
+      return;
+    }
+    if (slot?.kind === 'prompt' && !insertText(slot.text)) {
       logger.info('Radial prompt release with no focused text input; insertion skipped');
     }
   };
@@ -190,10 +215,9 @@ export function installHardwareConsolePromptPickerJoystick(
     } else if (key.key === 'Enter') {
       onRelease();
     } else {
-      const count = session.prompts.length + 1;
       const direction = key.key === 'ArrowLeft' || key.key === 'ArrowUp' ? -1 : 1;
       session.belowSince = null;
-      setSelection(((session.selection ?? count - 1) + direction + count) % count);
+      setSelection(nextSelectableSlot(session.slots, session.selection, direction));
     }
   };
   keyboardTarget?.addEventListener('keydown', onKeydown, true);

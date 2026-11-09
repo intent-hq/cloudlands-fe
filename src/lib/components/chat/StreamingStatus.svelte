@@ -7,7 +7,7 @@
   - Error/Timeout: clear failed state with Try Again button
 -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import { crispOut, fade } from '$lib/motion';
   import Fa from 'svelte-fa';
   import { faRotateRight, faExclamationTriangle, faStop } from '@fortawesome/free-solid-svg-icons';
@@ -108,6 +108,12 @@
     onStop?: () => void;
     /** Callback to cancel the stalled turn and re-send the last input (monorepo#3402) */
     onStalledRetry?: () => void;
+    /**
+     * Shown in place of the phase line while the turn works, e.g. the cloud
+     * machine start line before the agent's machine is up. A stall row (with
+     * Stop and Retry) still shows below it.
+     */
+    startLine?: Snippet | null;
     /** Additional class names */
     class?: string;
   }
@@ -138,6 +144,7 @@
     onRetryWithProvider,
     onStop,
     onStalledRetry,
+    startLine = null,
     class: className = '',
   }: Props = $props();
 
@@ -182,10 +189,12 @@
   // Daemon-reported mid-turn stall (monorepo#3402): only meaningful while the
   // turn is still active — turn end/failure clears statusEvents or flips
   // status away from 'normal', so the stalled row can never outlive the turn.
+  let startLineVisible = $derived(turnActive && !!startLine);
+  const rowOffsetClass = 'mt-[var(--space-3)]';
   let stalledEvent = $derived(
     turnActive && !queueWait ? getActiveStalledEvent(statusEvents, lastChunkTime) : null,
   );
-  let thinkingVisible = $derived(turnActive && !stalledEvent);
+  let thinkingVisible = $derived(turnActive && !stalledEvent && !startLine);
   let queueWaitMessage = $derived(
     queueWait
       ? queueWait.reason === 'memory-budget'
@@ -252,6 +261,12 @@
   let errorDisplay = $derived(deriveErrorDisplay(error, sessionCorrupted));
 </script>
 
+{#if startLineVisible && startLine}
+  <div class="{rowOffsetClass} {className}" data-stream-start-line>
+    {@render startLine()}
+  </div>
+{/if}
+
 <StreamingTypingIndicator
   visible={thinkingVisible}
   message={m.chat_streamingStatus_thinking_label()}
@@ -260,7 +275,7 @@
   elapsed={elapsedTime}
   onHoverChange={(hovered) => (thinkingHovered = hovered)}
   variant={markVariant}
-  class="mt-[var(--space-3)] {className}"
+  class="{rowOffsetClass} {className}"
 />
 
 {#if queueWait && queueWaitMessage}

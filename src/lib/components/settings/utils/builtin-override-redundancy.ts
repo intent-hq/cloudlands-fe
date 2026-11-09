@@ -6,11 +6,9 @@
  * decides whether such an override is redundant so callers can delete the
  * file (reset paths) or suppress the Modified indicators (badge/banner).
  *
- * Dependency-light on purpose: bundled specialists are passed in as a
- * parameter, with the shipped catalog as a fallback when the daemon returns
- * only the winning user row — no store or selector imports.
+ * The bundled defaults come from the daemon: an override row carries its
+ * built-in's content as the `bundled` baseline (PROTOCOL §5.11).
  */
-import { SPECIALISTS, type Specialist } from '$lib/constants/specialists';
 import type { SpecialistModelOption } from '$shared/specialist-file-types';
 import type { FileSpecialist } from '$store/renderer/slices/specialists/specialists-slice';
 
@@ -43,10 +41,12 @@ function modelOptionsEqual(
 
 /**
  * True when a user-scope override of a built-in specialist is redundant:
- * `name`, `description`, `behaviorPrompt` (vs `defaultBehaviorPrompt`), and
- * `roleReminder` all match the bundled definition, and no explicit model pin
- * remains. Pass `ignoreModelPin: true` when the pin is about to be cleared
- * (reset paths) to classify what the file becomes after clearing.
+ * `name`, `description`, `behaviorPrompt`, `roleReminder`, `reasoningEffort`
+ * and `modelOptions` all match its `bundled` baseline, and no explicit model
+ * pin remains. Pass `ignoreModelPin: true` when the pin is about to be cleared
+ * (reset paths) to classify what the file becomes after clearing. Without a
+ * baseline (not an override of a built-in, or the daemon omitted it) the
+ * override is never redundant.
  *
  * A non-empty `codingAgent` counts as a pin too (unless `ignoreModelPin`):
  * per PROTOCOL §5.11 inherit-on-omit, a `codingAgent` in a user-tier file
@@ -57,25 +57,19 @@ function modelOptionsEqual(
  * affordance — for a file that still pins the provider. The reset/delete
  * paths pass `ignoreModelPin: true` and physically delete the file, which
  * removes the stale `codingAgent` along with the pin.
- *
- * Bundled `name`/`description` are i18n getters; comparing via property
- * access evaluates them to the current locale's values.
  */
 export function isRedundantBuiltInOverride(
   fileSpec: FileSpecialist,
-  bundledSpecialists: Specialist[],
   options?: { ignoreModelPin?: boolean },
 ): boolean {
   if (fileSpec.source !== 'user') return false;
   if (!options?.ignoreModelPin && (fileSpec.model || fileSpec.codingAgent)) return false;
-  const bundled =
-    bundledSpecialists.find((s) => s.id === fileSpec.id) ??
-    SPECIALISTS.find((s) => s.id === fileSpec.id);
+  const bundled = fileSpec.bundled;
   if (!bundled) return false;
   return (
     normalized(fileSpec.name) === normalized(bundled.name) &&
     normalized(fileSpec.description) === normalized(bundled.description) &&
-    normalized(fileSpec.behaviorPrompt) === normalized(bundled.defaultBehaviorPrompt) &&
+    normalized(fileSpec.behaviorPrompt) === normalized(bundled.behaviorPrompt) &&
     normalized(fileSpec.roleReminder) === normalized(bundled.roleReminder) &&
     normalized(fileSpec.reasoningEffort) === normalized(bundled.reasoningEffort) &&
     modelOptionsEqual(fileSpec.modelOptions, bundled.modelOptions)

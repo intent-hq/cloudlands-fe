@@ -672,10 +672,14 @@ describe('settings tab route and focus behavior', () => {
           name: developerDefinition.name,
           description: developerDefinition.description,
           model: '',
-          behaviorPrompt: `${developerDefinition.defaultBehaviorPrompt}\nModified`,
-          roleReminder: developerDefinition.roleReminder,
+          behaviorPrompt: 'Bundled developer prompt.\nModified',
           filePath: '/Users/test/.intent/specialists/developer.md',
           source: 'user',
+          bundled: {
+            name: developerDefinition.name,
+            description: developerDefinition.description,
+            behaviorPrompt: 'Bundled developer prompt.',
+          },
         },
       ]),
     );

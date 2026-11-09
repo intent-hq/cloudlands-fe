@@ -21,7 +21,11 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { getItem, updateItem } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  createCollection,
+  getItem,
+  updateItem,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareDeviceModel } from '../../input/types';
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { AGENT_CHANNELS } from '$shared/ipc/channels';
@@ -85,7 +89,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     expect(device.navigate).not.toHaveBeenCalled();
     expect(device.showWorkspace).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1000);
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    device.turn('clockwise');
     expect(state.hardwareConsole.encoderBehavior).toBe('workspace-switch');
     expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
     expect(mutations()).toHaveLength(0);
@@ -98,7 +102,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
   it('follows advertised order and clamps both endpoints, including explicit Auto null', async () => {
     ready();
     const device = manager();
-    device.turn('ccw');
+    device.turn('counterclockwise');
     await flush();
     expect(mutations()).toHaveLength(0);
     for (let n = 0; n < 5; n++) {
@@ -111,7 +115,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       { reasoningEffort: 'high' },
     ]);
     for (let n = 0; n < 5; n++) {
-      device.turn('ccw');
+      device.turn('counterclockwise');
       await flush();
     }
     expect(effort()).toBeNull();
@@ -143,7 +147,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       device.turn();
-      device.turn('ccw');
+      device.turn('counterclockwise');
       device.turn();
       expect(mutations()).toHaveLength(1);
       expect(effort()).toBe('high');
@@ -217,7 +221,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       const first = deferred<unknown>();
       request.mockImplementationOnce(() => first.promise);
       device.turn();
-      device.turn('ccw');
+      device.turn('counterclockwise');
       expect(effort()).toBeNull();
       if (fails) first.reject(new Error('offline'));
       else first.resolve(reply());
@@ -239,7 +243,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     request.mockImplementationOnce(() => first.promise);
     device.turn();
     device.turn();
-    device.turn('ccw');
+    device.turn('counterclockwise');
     expect(effort()).toBe('low');
     first.reject(new Error('old save failed'));
     await flush();
@@ -382,7 +386,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       const editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
-      device.turn('ccw');
+      device.turn('counterclockwise');
       device.turn();
       first.resolve(reply('low'));
       expect(await editing).toBe(false);
@@ -405,7 +409,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       const editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
-      device.turn('ccw');
+      device.turn('counterclockwise');
       first.resolve(reply('low'));
       await flush();
       expect(mutations()).toHaveLength(2);
@@ -451,7 +455,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
-      for (let n = 0; n < turns; n++) device.turn('ccw');
+      for (let n = 0; n < turns; n++) device.turn('counterclockwise');
       if (acceptsOld) first.resolve(reply('low'));
       else first.reject(new Error('old save rejected'));
       await flush();
@@ -470,7 +474,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     device.turn();
     device.turn();
     mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
-    device.turn('ccw');
+    device.turn('counterclockwise');
     device.statusChanged('disconnected');
     first.reject(new Error('old save rejected'));
     await flush();
@@ -520,7 +524,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     },
   );
 
-  it.each(['cw', 'ccw', 'none'] as const)(
+  it.each(['clockwise', 'counterclockwise', 'none'] as const)(
     'keeps latest intent across a leading echo during the trailing save (%s)',
     async (direction) => {
       ready();
@@ -539,8 +543,8 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       if (direction !== 'none') device.turn(direction);
       second.resolve(reply('high'));
       await flush();
-      expect(effort()).toBe(direction === 'ccw' ? 'medium' : 'high');
-      expect(mutations()).toHaveLength(direction === 'ccw' ? 3 : 2);
+      expect(effort()).toBe(direction === 'counterclockwise' ? 'medium' : 'high');
+      expect(mutations()).toHaveLength(direction === 'counterclockwise' ? 3 : 2);
     },
   );
 
@@ -735,18 +739,18 @@ describe('decoded Micro encoder effort and wire behavior', () => {
 
   it('preserves workspace cycling and pressing without waiting for effort hydration', async () => {
     const device = manager();
+    const homeView = state.homeWorkspaces;
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(device.navigate).toHaveBeenLastCalledWith('/');
-    expect(state.sidebarNav.panelItem).toBeNull();
     device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CLK', act: 1 } });
-    expect(state.homeWorkspaces.tab).toBe('workspaces');
+    expect(device.navigate.mock.calls).toEqual([['/'], ['/']]);
+    expect(state.homeWorkspaces).toBe(homeView);
     device.navigate.mockClear();
     device.showWorkspace.mockClear();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    device.turn('clockwise');
+    device.turn('clockwise');
     expect(device.showWorkspace).toHaveBeenCalledTimes(1);
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    device.turn('counterclockwise');
     expect(device.showWorkspace).toHaveBeenLastCalledWith('ws-1');
     expect(mutations()).toHaveLength(0);
   });
@@ -892,7 +896,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       else if (edit === 'independent') {
         mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
         request.mockRejectedValueOnce(new Error('new save rejected'));
-        device.turn('ccw');
+        device.turn('counterclockwise');
       } else if (edit === 'model')
         mocks.dispatch(updateSession('agent-1', { model: 'model-b', reasoningEffort: 'minimal' }));
       else {
@@ -1122,19 +1126,38 @@ describe('encoder rotation from Home or Settings', () => {
     expect(effort()).toBeNull();
   });
 
-  it('enters the activity list at the most recent workspace on a ccw detent from Home', () => {
+  it('enters the tab strip at the leftmost tab on a clockwise turn from Home', () => {
     window.history.replaceState(null, '', '/');
     const device = manager();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    device.turn('clockwise');
+    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+  });
+
+  it('enters the tab strip at the rightmost tab on a counter-clockwise turn from Home', () => {
+    window.history.replaceState(null, '', '/');
+    const device = manager();
+    mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
+    device.turn('counterclockwise');
     expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
   });
 
-  it('enters the activity list at the least recent workspace on a cw detent from Home', () => {
-    window.history.replaceState(null, '', '/');
+  it.each([
+    { labs: true, expected: [['ws-3'], ['ws-1']] },
+    { labs: false, expected: [['ws-2'], ['ws-3'], ['ws-2'], ['ws-1']] },
+  ])('skips tabs hidden in a collapsed group (tab groups on: $labs)', ({ labs, expected }) => {
+    Object.assign(state, { userPreferences: { labsTabGroupsEnabled: labs } });
+    Object.assign(state.tabState, {
+      workspaceStacks: [['ws-1', 'ws-2', 'ws-3']],
+      tabGroups: createCollection('id', [
+        { id: 'group', name: '', color: 'blue', workspaceIds: ['ws-2'] },
+      ]),
+      openTabGroupId: null,
+    });
     const device = manager();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
-    expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
+    for (let i = 0; i < 3; i += 1) device.turn('clockwise');
+    for (let i = 0; i < 3; i += 1) device.turn('counterclockwise');
+    expect(device.showWorkspace.mock.calls).toEqual(expected);
   });
 });

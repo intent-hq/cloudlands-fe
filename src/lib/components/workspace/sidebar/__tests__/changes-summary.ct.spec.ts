@@ -166,6 +166,7 @@ test('secondary file buttons retain native and modifier activation inside the Ch
   await page.keyboard.press('Space');
   await expect.poll(() => actions.length).toBe(2);
   expect(actions[1]).toEqual(actions[0]);
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Mod+Enter activates the file button like a Mod+click (open beside), not chat.force-send
   await page.keyboard.press('ControlOrMeta+Enter');
   await expect.poll(() => actions.length).toBe(3);
   expect(actions[2]).toMatchObject({

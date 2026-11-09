@@ -48,12 +48,13 @@ import {
 import { expectsElectronPreloadBridge, isElectronPlatform } from '$lib/utils/platform-capabilities';
 import { takeEveryByContextFIFO, takeLatestInContext } from '../../../utils/context-saga-effects';
 import {
+  selectConnections,
   selectConnectionWorkflow,
   selectKeychainSyncState,
   selectSelfPublication,
   selectConnectionRecoveryTarget,
 } from '../connections-selectors';
-import type { ConnectionWorkflowOutcome } from '../connections-types';
+import type { ConnectionWorkflowIntent, ConnectionWorkflowOutcome } from '../connections-types';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { connectionTunnelSaga } from './connection-tunnel-saga';
 import {
@@ -95,6 +96,10 @@ import type {
   SelfPublishedStateResult,
   UnpublishSelfResult,
 } from '$shared/types/connections';
+import { nodeConnectionOpened } from '$features/nodes/nodes-slice';
+import { nodeRefusal, nodeRefusalMessage } from '$features/nodes/nodes-saga';
+import { selectCurrentBackendLabel } from '$features/remote-machines/remote-machines-selectors';
+import { NODE_REFUSED_MARKER, type NodeRefusal } from '$shared/types/pair-link';
 import {
   addConnectionRequested,
   authRejectedReceived,
@@ -150,6 +155,22 @@ function getApi(): Window['electronAPI'] | undefined {
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+/** A node main refused before saving reads as its refusal; anything else keeps its message. */
+function workflowErrorMessage(
+  error: unknown,
+  intent: ConnectionWorkflowIntent,
+  backend: string,
+): string {
+  const message = toError(error).message;
+  if (intent.kind !== 'connect' || !message.includes(NODE_REFUSED_MARKER)) return message;
+  const refusal: NodeRefusal | 'unknown' = message.includes(`${NODE_REFUSED_MARKER}:labs-off`)
+    ? 'labs-off'
+    : message.includes(`${NODE_REFUSED_MARKER}:backend-unsupported`)
+      ? 'backend-unsupported'
+      : 'unknown';
+  return nodeRefusalMessage(refusal, intent.params.label, backend);
 }
 
 /**
@@ -948,7 +969,14 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
         ? { kind: 'captured', fingerprint: result.fingerprint }
         : { kind: 'captureRejected', statusCode: result.statusCode };
     } else if (intent.kind === 'connect') {
-      const add = addConnectionRequested(intent.params);
+      // A re-pair upserts an existing record; only a brand-new node may be removed when refused.
+      const savedIds = new Set((yield* selectConnections.effect()).map((c) => c.id));
+      // The current backend can't use nodes: main then refuses a node before saving it.
+      const refuseNode = yield* call(nodeRefusal);
+      const add = addConnectionRequested({
+        ...intent.params,
+        ...(refuseNode ? { refuseNode } : {}),
+      });
       yield* call(addConnection, add);
       const { connection } = yield* call(() => add.promise);
       if (!(yield* workflowIsCurrent(action))) return;
@@ -958,6 +986,8 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') outcome = { kind: 'secretUnavailable' };
+      else if (result.status === 'node')
+        yield* put(nodeConnectionOpened(connection.id, !savedIds.has(connection.id)));
     } else if (intent.kind === 'save' || intent.kind === 'localIcon') {
       if (intent.kind === 'save' && intent.secret) {
         yield* put(connectionWorkflowProgress(consumerId, requestId, 'secret'));
@@ -1004,7 +1034,7 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
         outcome = { kind: 'secretUnavailable' };
         if (intent.recovery === 'settings' && (yield* workflowIsCurrent(action)))
           yield* recoverOpenInSettings(action, intent.id);
-      }
+      } else if (result.status === 'node') yield* put(nodeConnectionOpened(intent.id, false));
     } else if (intent.kind === 'forget') {
       yield* call(invokeForgetConnection, { id: intent.id });
     } else {
@@ -1017,7 +1047,7 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
     yield* put(
       connectionWorkflowFinished(consumerId, requestId, {
         kind: 'error',
-        message: toError(error).message,
+        message: workflowErrorMessage(error, intent, yield* selectCurrentBackendLabel.effect()),
       }),
     );
     if (intent.kind === 'localIcon') {

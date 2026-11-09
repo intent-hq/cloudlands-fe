@@ -176,8 +176,6 @@ export const WorkspaceSchema = z.object({
   agentSummary: z.object({ agentIds: z.array(z.string()) }).optional(),
   taskStats: z.any().optional(), // Task progress rollup; carried on metadata payloads (PROTOCOL §5.1)
   gitSummary: z.any().optional(), // Deprecated aggregate; fetch on demand
-  /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1); gates the cowIsolation toggle. */
-  cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
   defaultAgentPlacement: AgentPlacementRequestSchema.optional(),
@@ -233,6 +231,7 @@ export const CreateWorkspaceRequestSchema = z.object({
   environmentConfig: EnvironmentConfigSchema.optional(),
   isNewRepo: z.boolean().optional(),
   skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
+  skipBaseRefresh: z.boolean().optional(), // Continue from last-fetched after base-refresh-failed (PROTOCOL §5.1 / §9.2)
   progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
   contextLinks: z.array(ContextLinkSchema).max(20).optional(), // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1)
   // The applied proposal card (PROTOCOL §5.1 "Proposal origin").

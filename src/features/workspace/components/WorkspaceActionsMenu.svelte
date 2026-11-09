@@ -702,7 +702,7 @@
         label: m.ui_workspaceActions_deleteSpace_label(),
         icon: faTrash,
         variant: 'destructive',
-        dividerBefore: result.length > 0,
+        dividerBefore: result.length > 0 && result.at(-1)?.id !== 'archive-workspace',
         onClick: handleDelete,
       });
     if (showDeleteFileOption && !isDirectory)

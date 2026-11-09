@@ -8,6 +8,8 @@ function thread(agentId: string): ChiefThreadSummary {
     title: agentId,
     isActive: false,
     messageCount: 1,
+    pinned: false,
+    retired: false,
   };
 }
 

@@ -10,6 +10,8 @@ import { invitationAccountSearchSaga } from './slices/invitation-account-search/
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { remoteMachinesSaga } from '$features/remote-machines/remote-machines-saga';
+import { nodesSaga } from '$features/nodes/nodes-saga';
+import { cloudMachinesSaga } from '$features/cloud-machines/cloud-machines-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
 import { repositoryCheckoutSaga } from './slices/repository-checkout/sagas/repository-checkout-saga';
@@ -116,7 +118,9 @@ import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalo
 import { agentSkillsSaga } from './slices/skills/agent-skills-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
+import { pluginsSettingsSaga } from './slices/plugins-settings/sagas/plugins-settings-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
+import { paletteMemorySaga } from './slices/palette/sagas/palette-memory-saga';
 import { proposalWorkspaceTabSaga } from './slices/tab-state/sagas/proposal-workspace-tab-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
@@ -256,12 +260,14 @@ export const sagas = [
   mcpSettingsSaga,
   directoryPickerSaga,
   statsReadSaga,
+  pluginsSettingsSaga,
   prMonitorSaga,
   scriptMonitorSaga,
   agentWorkersSaga,
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
+  paletteMemorySaga,
   workspaceTabReconciliationSaga,
   proposalWorkspaceTabSaga,
   workspaceTabCleanupSaga,
@@ -274,6 +280,8 @@ export const sagas = [
   browserClientsSaga,
   personalDevicesSaga,
   remoteMachinesSaga,
+  nodesSaga,
+  cloudMachinesSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,

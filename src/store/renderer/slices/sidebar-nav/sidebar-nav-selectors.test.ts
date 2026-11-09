@@ -20,8 +20,10 @@ import {
   initialState as agentSessionInitialState,
 } from '../agent-session/agent-session-slice';
 import {
+  selectAllChiefThreads,
   selectCurrentChiefThread,
   selectChiefThreads,
+  selectRetiredChiefThreads,
   selectReusableChiefThread,
 } from './sidebar-nav-selectors';
 import { CHIEF_WORKSPACE_ID } from './sidebar-nav-types';
@@ -506,6 +508,78 @@ describe('sidebar nav Chief selectors', () => {
       unsubscribe();
       resetMockBackend();
     }
+  });
+
+  describe('pinned and archived (retired) threads', () => {
+    const identity = {
+      metadata: { specialist: CHIEF_SPECIALIST_ID, chiefPromptVersion: CHIEF_PROMPT_VERSION },
+    };
+    const at = (minute: number) => `2026-01-01T10:${String(minute).padStart(2, '0')}:00.000Z`;
+    const thread = (id: string, minute: number, overrides: Partial<AgentSession> = {}) =>
+      session(id, CHIEF_WORKSPACE_ID, [message(`${id}-m`, 'user', id, at(minute))], at(minute), {
+        ...identity,
+        ...overrides,
+      });
+
+    it('lists live threads with pinned ones first, each group by latest activity', () => {
+      const state = stateWithSessions([
+        thread('agent-newest', 50),
+        thread('agent-pinned-old', 10, { pinned: true }),
+        thread('agent-middle', 30),
+        thread('agent-pinned-new', 20, { pinned: true }),
+        thread('agent-retired', 59, { retiredAt: at(59) }),
+      ]);
+
+      const live = selectChiefThreads.select(state);
+
+      expect(live.map((item) => item.agentId)).toEqual([
+        'agent-pinned-new',
+        'agent-pinned-old',
+        'agent-newest',
+        'agent-middle',
+      ]);
+      expect(live.map((item) => [item.pinned, item.retired])).toEqual([
+        [true, false],
+        [true, false],
+        [false, false],
+        [false, false],
+      ]);
+    });
+
+    it('lists archived threads separately by latest activity', () => {
+      const state = stateWithSessions([
+        thread('agent-live', 50),
+        thread('agent-archived-old', 10, { retiredAt: at(40) }),
+        thread('agent-archived-new', 30, { retiredAt: at(35), pinned: true }),
+      ]);
+
+      expect(
+        selectRetiredChiefThreads.select(state).map((item) => [item.agentId, item.retired]),
+      ).toEqual([
+        ['agent-archived-new', true],
+        ['agent-archived-old', true],
+      ]);
+      expect(selectAllChiefThreads.select(state).map((item) => item.agentId)).toEqual([
+        'agent-live',
+        'agent-archived-new',
+        'agent-archived-old',
+      ]);
+    });
+
+    it('never resolves an archived thread as the current or reusable thread', () => {
+      const archivedBlank = session('agent-archived-blank', CHIEF_WORKSPACE_ID, [], at(59), {
+        ...identity,
+        retiredAt: at(59),
+        messageCount: 0,
+      });
+      const archivedLatest = thread('agent-archived-latest', 58, { retiredAt: at(58) });
+      const live = thread('agent-live', 10);
+
+      const state = stateWithSessions([archivedBlank, archivedLatest, live]);
+
+      expect(selectCurrentChiefThread.select(state)?.agentId).toBe('agent-live');
+      expect(selectReusableChiefThread.select(state)).toBeNull();
+    });
   });
 });
 

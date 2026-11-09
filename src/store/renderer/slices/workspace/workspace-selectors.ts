@@ -290,6 +290,17 @@ export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state
   );
 });
 
+/**
+ * True when the loaded workspace list belongs to this window's backend and
+ * has at least one workspace. Rows from a previous backend never count.
+ */
+export const selectWindowBackendListedWorkspaces = store.createSelector(
+  (state) =>
+    state.connections?.hasReceivedList === true &&
+    state.workspace.loadedBackendId === state.connections.windowBackendId &&
+    selectWorkspaceItems.select(state).length > 0,
+);
+
 export const selectWorkspaceIsEmpty = store.createSelector((state) => {
   return state.workspace.workspaces.ids.length === 0;
 });

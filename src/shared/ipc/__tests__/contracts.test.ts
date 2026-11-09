@@ -23,7 +23,7 @@ import {
   tryValidateIpcRequest,
 } from '../request-validation';
 import { POWER_CHANNELS } from '../channels';
-import { getAllowedChannelsList } from '../validation';
+import { getAllowedChannels } from '../../ipc-registry';
 import { IpcContracts } from '../../type-system/contracts';
 import { AgentId, WorkspaceId } from '../../types/branded-ids';
 
@@ -292,7 +292,7 @@ describe('IPC Contracts', () => {
     it('exposes the battery wire names and allowlists the push channel', () => {
       expect(POWER_CHANNELS.GET_BATTERY_STATE).toBe('power:get-battery-state');
       expect(POWER_CHANNELS.BATTERY_CHANGED).toBe('power:battery-changed');
-      const allowed = getAllowedChannelsList();
+      const allowed = getAllowedChannels();
       expect(allowed).toContain('power:get-battery-state');
       expect(allowed).toContain('power:battery-changed');
     });

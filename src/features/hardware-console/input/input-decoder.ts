@@ -7,6 +7,7 @@
  * - Double-press detection per logical key (350 ms window by default).
  * - Joystick dead-zone with hysteresis, host-side sector math, and a debounce
  *   on sector changes (the ~45 Hz stream jitters near sector boundaries).
+ * - Encoder detents converted to the physical turn direction per device model.
  *
  * The Codex Micro's factory 2U Mic keycap presses the ACT10 + ACT11 switches
  * together, but the firmware reports them as two distinct ids and the decoder
@@ -18,11 +19,14 @@ import { decodeVendorMessage } from './decode';
 import { angleToSector, clampDistance, normalizeAngle } from './sector';
 import type {
   DecodedVendorMessage,
+  HardwareDeviceModel,
   HardwareInputEventMap,
   HardwareInputEventType,
   HardwareInputListener,
   HardwareInputOptions,
   LogicalKeyId,
+  PhysicalKnobDirection,
+  RawEncoderControl,
   VendorControlId,
   VendorNotificationSource,
 } from './types';
@@ -33,6 +37,19 @@ const DEFAULT_JOYSTICK_RELEASE_DISTANCE = 0.2;
 const DEFAULT_SECTOR_COUNT = 8;
 const DEFAULT_SECTOR_DEBOUNCE_MS = 50;
 
+/**
+ * The physical turn each encoder wire id reports, per device model. Both
+ * firmwares name the detents opposite to the turn: the user confirmed this on
+ * Creator Micro 2 (intent-hq/intent#5947); Codex Micro shares the encoder and
+ * firmware naming. This is the only place that reads the raw id.
+ */
+export const PHYSICAL_KNOB_TURN: Readonly<
+  Record<HardwareDeviceModel, Readonly<Record<RawEncoderControl, PhysicalKnobDirection>>>
+> = {
+  'creator-micro-2': { ENC_CW: 'counterclockwise', ENC_CC: 'clockwise' },
+  'codex-micro': { ENC_CW: 'counterclockwise', ENC_CC: 'clockwise' },
+};
+
 export class HardwareInputDecoder {
   private readonly listeners = new Map<HardwareInputEventType, Set<(payload: never) => void>>();
   private readonly now: () => number;
@@ -41,6 +58,7 @@ export class HardwareInputDecoder {
   private readonly releaseDistance: number;
   private readonly sectorOffset: number;
   private readonly sectorDebounceMs: number;
+  private readonly deviceModel: HardwareDeviceModel | undefined;
   private sectorCount: number;
 
   private readonly lastPressAt = new Map<LogicalKeyId, number>();
@@ -51,6 +69,7 @@ export class HardwareInputDecoder {
 
   constructor(options: HardwareInputOptions = {}) {
     this.now = options.now ?? Date.now;
+    this.deviceModel = options.deviceModel;
     this.doublePressWindowMs = options.doublePressWindowMs ?? DEFAULT_DOUBLE_PRESS_WINDOW_MS;
     this.engageDistance = options.joystick?.engageDistance ?? DEFAULT_JOYSTICK_ENGAGE_DISTANCE;
     this.releaseDistance = options.joystick?.releaseDistance ?? DEFAULT_JOYSTICK_RELEASE_DISTANCE;
@@ -104,7 +123,11 @@ export class HardwareInputDecoder {
   private handleDecoded(decoded: DecodedVendorMessage): void {
     switch (decoded.kind) {
       case 'encoder-rotate':
-        this.emit('encoderrotate', { direction: decoded.direction });
+        if (this.deviceModel) {
+          this.emit('encoderrotate', {
+            direction: PHYSICAL_KNOB_TURN[this.deviceModel][decoded.control],
+          });
+        }
         return;
       case 'key':
         this.handleKey(decoded.control, decoded.action);

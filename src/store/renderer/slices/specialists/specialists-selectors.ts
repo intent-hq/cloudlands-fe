@@ -411,14 +411,14 @@ export const selectHasOverrides = store.createSelector(
       if (!def || def.importedFrom || def.source === 'project') return false;
       return (
         isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists) &&
-        !isRedundantBuiltInOverride(def, state.specialists.bundledSpecialists)
+        !isRedundantBuiltInOverride(def)
       );
     }
     const isBuiltIn = isKnownBuiltIn(specialistId, state.specialists.bundledSpecialists);
     if (!isBuiltIn) return false;
     const file = getItem(state.specialists.fileSpecialists, specialistId);
     if (!file || file.source !== 'user') return false;
-    return !isRedundantBuiltInOverride(file, state.specialists.bundledSpecialists);
+    return !isRedundantBuiltInOverride(file);
   },
 );
 /** Get a file specialist by ID */

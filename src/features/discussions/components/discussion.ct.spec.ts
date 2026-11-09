@@ -116,6 +116,7 @@ test('composer preserves multiline drafts, ignores composition Enter, and sends 
   const composer = component.getByRole('textbox', { name: 'Message', exact: true });
   await expect(composer).toBeEditable();
   await composer.fill('First line');
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- the discussion composer sends only on Enter without Shift (DiscussionThread); it does not read chat.new-line
   await composer.press('Shift+Enter');
   await composer.press('x');
   await expect(composer).toHaveValue('First line\nx');

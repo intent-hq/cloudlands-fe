@@ -418,20 +418,22 @@
         },
         { id: 'catalog-verifier', name: 'Verifier', specialist: 'verifier', state: 'running' },
       ]}
-      localChanges={{
-        hasUnpushedCommits: true,
-        hasUncommittedChanges: true,
-        roots: [
-          {
-            kind: 'primary',
-            path: '/workspace/catalog',
-            branch: 'refine-modals',
-            hasRemoteRefs: true,
-            unpushedCount: 2,
-            uncommittedCount: 1,
-          },
-        ],
-      }}
+      localChanges={state === 'archive-warning-dialog'
+        ? null
+        : {
+            hasUnpushedCommits: true,
+            hasUncommittedChanges: true,
+            roots: [
+              {
+                kind: 'primary',
+                path: '/workspace/catalog',
+                branch: 'refine-modals',
+                hasRemoteRefs: true,
+                unpushedCount: 2,
+                uncommittedCount: 1,
+              },
+            ],
+          }}
       hookNames={['Watch release build']}
       openPrs={[{ number: 418, title: 'Refine modal catalog', status: 'Open', url: '' }]}
       guests={{ collaboratorCount: 2, openInviteCount: 1 }}

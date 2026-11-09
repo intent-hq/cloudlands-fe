@@ -81,10 +81,10 @@ Pattern-first routing for product UI. Open the catalog URL in \`pnpm run dev:ui\
 ## Menus and choices
 
 - **Commands:** \`ActionMenu\` and \`defineActions\` from \`$lib/components/patterns/action-menu\`; use one readonly action model for overflow and right-click. Only the trigger/\`contextMenu\` anchor differs.
-- **Kinds:** \`action\`, \`checkbox\`, \`radio-group\` with \`radio\` children, \`submenu\`, \`section\`, and passive \`label\`. Use \`when\` for visibility, \`disabledReason\` for an unavailable command's explanation, and \`closeOnSelect\` to override the command-close / choice-stay-open default. Labels render as \`Menu.Label\`, never inline ActionBar buttons; sidebar adapters accept \`{ type: 'label', label, id? }\`.
+- **Kinds:** \`action\`, \`checkbox\`, \`radio-group\` with \`radio\` children, \`submenu\`, \`section\`, and passive \`label\`. Use \`when\` for visibility, \`disabledReason\` for an unavailable command's explanation, and \`closeOnSelect\` to override the command-close / choice-stay-open default. Give a checkbox that turns a setting on or off \`indicator: 'switch'\`. Labels render as \`Menu.Label\`, never inline ActionBar buttons; sidebar adapters accept \`{ type: 'label', label, id? }\`.
 - **Composition:** \`Menu.Content\`, \`Menu.Item\`, \`Menu.CheckboxItem\`, \`Menu.RadioItem\`, and \`Menu.Sub\` from \`$lib/components/ui/menu\`. Do not make decorative checkmarks stand in for checked semantics.
-- **Indicators:** \`Menu.Indicator\` owns glyph, trailing slot, and \`aria-hidden\`; set \`state="checked" | "mixed" | "submenu" | "empty"\`. Render empty to reserve spacing; the row still owns \`aria-checked\` or \`aria-selected\`.
-- **Adapter recipes:** public \`menuOverlay()\` and \`menuItem()\` from \`$lib/components/ui/menu\` supply canonical shell/row styling, not interaction behavior. Feature code should prefer semantic Menu components.
+- **Indicators:** \`Menu.Indicator\` owns glyph, trailing slot, and \`aria-hidden\`; set \`state="checked" | "mixed" | "submenu" | "empty"\`, or \`"on" | "off"\` for a switch. Render empty to reserve spacing; the row still owns \`aria-checked\` or \`aria-selected\`.
+- **Adapter recipes:** public \`menuOverlay()\` and \`menuItem()\` from \`$lib/components/ui/menu\` supply canonical shell/row styling, not interaction behavior; \`menuDescription\` gives row values, descriptions and notes the quiet shortcut-hint ink. Feature code should prefer semantic Menu components.
 - **Unavailable commands:** \`Menu.CommandItem disabledReason\` accepts localized explanatory text, disables activation, and appends its reason to \`aria-describedby\`; preserve the command rather than silently hiding it when its unavailability needs explanation.
 - **Context invocation:** \`getSidebarContextPosition(event)\` from \`$lib/components/ui/sidebar-context-menu/types\` supports pointer and Shift+F10/context-menu-key invocation. Preserve \`returnFocus\`; existing context/overflow adapters share the action renderer.
 - **Values:** use Select for a closed value set; \`Combobox\` from \`$lib/components/ui/combobox\` for search, remote options, groups, and multiple selection. Supply a purpose-specific \`ariaLabel\`; use \`ariaLabelledby\` / \`ariaDescribedby\` for associated fields.
@@ -153,6 +153,7 @@ Existing callers may retain these names, but new code must use the canonical rep
 ${buttonAliases}
 
 - **Geometry escape hatch:** use \`wrapContent={false}\` only for full-card interactive containers whose flex or grid layout requires slotted regions to remain direct button children.
+- **Bordered surfaces:** paint hover and selected backgrounds on the Button root, not its inset \`button-surface\`. Native background clipping keeps custom radii and joined borders aligned. Review \`/sandbox/button?state=surface-geometry\` in both themes.
 
 ### Primitive-internal button decisions
 

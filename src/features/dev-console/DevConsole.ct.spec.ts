@@ -302,6 +302,7 @@ for (const [label, raw] of [
     await search.press('Enter');
     await expect(region.locator('.matchesCount')).toHaveText('2 of 2');
     await expect(lines(region)).toContainText('second');
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- Shift+Enter in the find field is find previous, not chat.new-line
     await search.press('Shift+Enter');
     await expect(region.locator('.matchesCount')).toHaveText('1 of 2');
     await search.fill('no-such-payload-value');

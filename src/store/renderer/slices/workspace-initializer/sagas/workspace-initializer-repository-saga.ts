@@ -1,11 +1,12 @@
 import type { SagaGenerator } from 'typed-redux-saga';
-import { all, call, delay, put } from 'typed-redux-saga';
+import { all, call, delay, put, takeEvery } from 'typed-redux-saga';
 import { takeLatestInContext } from '$store/renderer/utils/context-saga-effects';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { replaceWorkspaceList } from '../../workspace/workspace-slice';
 import {
   selectCanAdministerHost,
   selectPrincipalActionContext,
+  selectWorkspaceCreationVisible,
 } from '../../principal/principal-selectors';
 import { invoke } from '$lib/electron-bridge';
 import { appClient } from '$lib/client';
@@ -21,12 +22,14 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { RepositoryTarget } from '$shared/types/repository-context';
 import {
+  selectKnownReposGitLabInstance,
   selectWorkspaceInitializerDirectoryStatusCheck,
   selectWorkspaceInitializerHydrated,
   selectWorkspaceInitializerRecentRepoRefresh,
   selectWorkspaceInitializerRecentRepos,
 } from '../workspace-initializer-selectors';
 import {
+  ensureKnownReposLoaded,
   setWorkspaceInitializerRecentRepos,
   workspaceInitializerDirectoryStatusFinished,
   workspaceInitializerDirectoryStatusRequested,
@@ -38,6 +41,7 @@ import {
   aggregateRecentRepositories,
   recentRepositoryOriginPaths,
 } from '../utils/recent-repository-refresh';
+import { decideKnownReposLoad, KNOWN_REPOS_REFRESH_ID } from '../utils/known-repos';
 
 const logger = createLogger('WorkspaceInitializerRepositorySaga');
 
@@ -222,8 +226,44 @@ function* checkDirectoryStatusWorker(
   }
 }
 
+/** One shared full load for the palette: reuse a running one, throttle a fresh one. */
+export function* knownReposLoadSaga() {
+  let readyAt: { requestId: string; at: number } | null = null;
+  yield* all([
+    takeEvery(
+      workspaceInitializerRecentReposRefreshFinished,
+      function* (action: ReturnType<typeof workspaceInitializerRecentReposRefreshFinished>) {
+        const [id, requestId, status] = action.payload;
+        if (id === KNOWN_REPOS_REFRESH_ID && status === 'ready') {
+          readyAt = { requestId, at: Date.now() };
+        }
+      },
+    ),
+    takeEvery(ensureKnownReposLoaded, function* () {
+      const admission = yield* selectPrincipalActionContext.effect();
+      const decision = decideKnownReposLoad({
+        visible: yield* selectWorkspaceCreationVisible.effect(),
+        admission,
+        entry: yield* selectWorkspaceInitializerRecentRepoRefresh.effect(KNOWN_REPOS_REFRESH_ID),
+        readyAt,
+        now: Date.now(),
+      });
+      if (decision !== 'load' || !admission) return;
+      yield* put(
+        workspaceInitializerRecentReposRefreshRequested(
+          KNOWN_REPOS_REFRESH_ID,
+          crypto.randomUUID(),
+          admission,
+          yield* selectKnownReposGitLabInstance.effect(),
+        ),
+      );
+    }),
+  ]);
+}
+
 export function* workspaceInitializerRepositorySaga(client: RecentRepositoriesClient = appClient) {
   yield* all([
+    call(knownReposLoadSaga),
     takeLatestInContext(
       workspaceInitializerRecentReposRefreshRequested,
       (action) => action.payload[0],

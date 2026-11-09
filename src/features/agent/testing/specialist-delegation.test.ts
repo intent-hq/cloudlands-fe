@@ -3,12 +3,9 @@
  *
  * Tests that specialist agents
  * are used properly and delegate correctly.
- *
- * Uses actual prompts from the codebase to ensure tests stay in sync.
  */
 
 import { describe, it, expect } from 'vitest';
-import { getSpecialists, getSpecialist } from './prompt-loader';
 import {
   validateAgentActions,
   validateWaveExecution,
@@ -16,26 +13,6 @@ import {
   type AgentAction,
   type DelegationRecord,
 } from './specialist-validator';
-
-describe('Specialist Prompts', () => {
-  describe('Prompt Loading', () => {
-    it('should load all specialist prompts', () => {
-      const specialists = getSpecialists();
-      expect(specialists).toHaveLength(5);
-      expect(specialists.map((s) => s.id)).toEqual([
-        'pr-reviewer',
-        'ui-designer',
-        'vulnerability-scanner',
-        'developer',
-        'chief-of-staff',
-      ]);
-    });
-
-    it.each(['spec-writer', 'implementor'])('does not load retired specialist %s', (id) => {
-      expect(getSpecialist(id)).toBeUndefined();
-    });
-  });
-});
 
 describe('Specialist Behavior Validation', () => {
   describe('Developer Behavior', () => {

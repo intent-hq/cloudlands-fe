@@ -3,7 +3,12 @@ import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { type Workspace } from '$shared/types';
 import { store } from '../../store';
 import { getActiveBackendId } from '../../utils/backend-storage-namespace';
-import { serializeWorkspaceTabsState } from './tab-state-slice';
+import {
+  getWorkspaceTabGroupList,
+  serializeWorkspaceTabsState,
+  type WorkspaceTabGroupCollection,
+} from './tab-state-slice';
+import { resolveOpenWorkspaceTabGroupId, type WorkspaceTabGroup } from './tab-groups';
 
 export const selectIsDragging = store.createSelector((state) => {
   return state.tabState.isDragging;
@@ -53,6 +58,43 @@ export const selectWorkspaceTabsHydrated = store.createSelector((state) => {
 
 export const selectWorkspaceTabOrder = store.createSelector((state) => {
   return state.tabState.workspaceStacks.flatMap((stack) => stack);
+});
+
+const NO_TAB_GROUPS: WorkspaceTabGroup[] = [];
+const groupLists = new WeakMap<WorkspaceTabGroupCollection, WorkspaceTabGroup[]>();
+
+/** The ordered group list, cached per collection so selector output stays stable. */
+function groupListOf(tabState: { tabGroups?: WorkspaceTabGroupCollection }): WorkspaceTabGroup[] {
+  const collection = tabState.tabGroups;
+  if (!collection) return NO_TAB_GROUPS;
+  let list = groupLists.get(collection);
+  if (!list) {
+    list = getWorkspaceTabGroupList(tabState);
+    groupLists.set(collection, list);
+  }
+  return list;
+}
+
+/** The expanded group; see `resolveOpenWorkspaceTabGroupId`. */
+export const selectOpenWorkspaceTabGroupId = store.createSelector((state): string | null => {
+  if (state.userPreferences?.labsTabGroupsEnabled !== true) return null;
+  const { openTabGroupId, currentTabId } = state.tabState;
+  return resolveOpenWorkspaceTabGroupId(
+    getWorkspaceTabGroupList(state.tabState),
+    currentTabId,
+    openTabGroupId,
+  );
+});
+
+export const selectWorkspaceTabGroupsEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsTabGroupsEnabled === true;
+});
+
+/** Tab groups to show; none while the tab groups Lab is off (stored groups are kept). */
+export const selectWorkspaceTabGroups = store.createSelector((state) => {
+  return state.userPreferences?.labsTabGroupsEnabled === true
+    ? groupListOf(state.tabState)
+    : NO_TAB_GROUPS;
 });
 
 export const selectActiveWorkspaceIds = store.createSelector((state): string[] => {

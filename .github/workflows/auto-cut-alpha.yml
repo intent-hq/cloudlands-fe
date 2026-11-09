@@ -29,8 +29,9 @@
 # - An in-flight intentd release build defers the cut: when intent-hq/intentd
 #   has a semver tag newer than the published alpha channel manifest and the
 #   tag is younger than 90 minutes, a release build is running and a pin bump
-#   is imminent — cutting now would ship a stale sidecar. The age bound stops
-#   a failed intentd build from deferring fe alphas forever, and the check
+#   is imminent — cutting now would ship a stale sidecar. A finished,
+#   unsuccessful v-release.yml run for the tag ends the deferral at once;
+#   the age bound covers an unreadable run, and the check
 #   fails OPEN on any lookup error (unreachable manifest, unreadable tags)
 #   so an unreadable intentd never blocks fe releases.
 # - An open pin-bump PR (branch `auto/intentd-pin`) defers the cut: an
@@ -46,14 +47,20 @@
 #   safe — the cut proceeds unrestricted. When intentd main IS ahead of
 #   the pinned tag and this cut would ship fe commits merged after the tag
 #   was cut, those commits may depend on BE work that is in no published
-#   build (the intentd-first rule orders merges, not releases) — defer
-#   with a notice; the next intentd alpha advances the pin and its
-#   pin-bump push chains into a cut that re-evaluates. While intentd
-#   cannot publish (failed build) the deferral persists. An explicit no-op
+#   build (the intentd-first rule orders merges, not releases). Time
+#   overlap alone held most cuts, so scripts/intentd-skew-evidence.mjs
+#   then looks for real dependencies: a fresh fe commit or its PR body
+#   naming an intentd PR that is merged, missing from the pinned tag, and
+#   not docs-only; or the fe diff adding a quoted use of an intentd
+#   method/event (protocol goldens) that the pin lacks. Positive proof of
+#   neither lets the cut proceed; evidence defers with a notice naming it,
+#   and the next intentd alpha's pin-bump push chains into a cut that
+#   re-evaluates. While intentd cannot publish (failed build) a real
+#   dependency keeps deferring. An explicit no-op
 #   from the latest release-plz main-push run exempts only the exact
 #   assessed main SHA. That run must have succeeded, with no open release
 #   PR and its baseline tag and commit already pinned by fe main.
-#   Missing/stale/unreadable proof never exempts skew; workflow_dispatch
+#   Missing/stale/unreadable proof (no-op or evidence) never exempts skew; workflow_dispatch
 #   remains the operator override. Automation
 #   commits (the sidecar pin bump itself, chore(release) squash merges)
 #   are exempt from the freshness test, and the check fails OPEN on any
@@ -67,6 +74,10 @@
 #   (which makes the thread blocking) or resolving it. Anything else logs
 #   and exits 0 — the next scheduled run retries. Metadata-only PRs use
 #   the CI identity exemption to merge directly; other diffs use the queue.
+# - Missing-CI restart: GitHub sometimes starts no workflow for a Release PR
+#   push, and CI Gate then never reports. When the head commit is
+#   AUTO_CUT_CI_RESTART_MINUTES (10) old with no workflow run of any kind,
+#   the run closes and reopens the PR once per head to start CI again.
 # - The PR branch is never updated from here: release-please owns the
 #   Release PR branch content and force-refreshes it on every release-worthy
 #   push to main.
@@ -175,6 +186,7 @@ jobs:
           sparse-checkout: |
             /scripts/ci-gate-state.mjs
             /scripts/intentd-release-readiness.mjs
+            /scripts/intentd-skew-evidence.mjs
             /scripts/release-pr-fast-path.mjs
             /scripts/rolling-pr.mjs
       # Every automated attempt obeys the hourly floor, including pin pushes.
@@ -237,9 +249,9 @@ jobs:
       # version), cutting an fe alpha now would ship a stale sidecar that the
       # imminent pin bump immediately obsoletes — defer with a notice instead;
       # the pin merge's push-triggered run (or the next cron) cuts the alpha
-      # with the new sidecar. The 90-minute age bound stops a FAILED intentd
-      # build from deferring fe alphas forever (cargo-dist builds take 20-45
-      # min). Strictly fail-open: any lookup problem (unreachable manifest,
+      # with the new sidecar. A finished, unsuccessful release run for the
+      # tag ends the deferral at once; the 90-minute age bound covers an
+      # unreadable run (cargo-dist builds take 20-45 min). Strictly fail-open: any lookup problem (unreachable manifest,
       # unreadable tags) proceeds with the cut — this guardrail must never
       # block fe releases when intentd is unreadable. intent-hq/intentd is
       # public, so the implicit GITHUB_TOKEN covers its reads.
@@ -312,7 +324,20 @@ jobs:
             exit 0
           fi
           age_min=$(( ($(date +%s) - tag_epoch) / 60 ))
+          # A finished, unsuccessful build of the tag brings no pin bump, so
+          # nothing is in flight (v0.11.161 died on a transient 504 and held
+          # fe cuts for the rest of the window). A re-run reopens the same
+          # run as in progress. An unreadable run keeps the age bound.
+          build=""
           if (( age_min < 90 )); then
+            build=$(gh api \
+              "repos/intent-hq/intentd/actions/workflows/v-release.yml/runs?event=push&branch=$tag&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.head_branch) \(.status) \(.conclusion)"' 2>/dev/null) || build=""
+          fi
+          read -r build_tag build_status build_conclusion <<<"$build" || true
+          if (( age_min < 90 )) && [[ "${build_tag:-}" == "$tag" && "${build_status:-}" == "completed" && "${build_conclusion:-}" != "success" ]]; then
+            echo "intentd $tag release build finished with '${build_conclusion:-}', so no new sidecar is coming from it; proceeding with the cut."
+          elif (( age_min < 90 )); then
             echo "::notice::intentd $tag was cut ${age_min} min ago and its alpha has not published yet (channel has $published); deferring the alpha cut so the next alpha ships the new sidecar"
             echo "defer=true" >> "$GITHUB_OUTPUT"
             # This run's decision line (see the merge step's decide()).
@@ -342,6 +367,7 @@ jobs:
           # the throttle was skipped, i.e. workflow_dispatch); used by the
           # pre-merge re-check below.
           THROTTLE_TAG: ${{ steps.throttle.outputs.tag }}
+          AUTO_CUT_CI_RESTART_MINUTES: '10'
         run: |
           set -euo pipefail
 
@@ -377,6 +403,97 @@ jobs:
             decide "$outcome" "$1" "$2; skipping."
           }
 
+          # Missing-CI restart (restart_ci <pr> <head>): GitHub sometimes
+          # delivers no pull_request event for a Release PR push, so the head
+          # gets no workflow run at all and CI Gate never reports until
+          # someone closes and reopens the PR (cloudlands-fe#4336 head
+          # c5118d91 and intentd#3185 head 3276c2c, both on 2026-11-09).
+          # Once the head commit is AUTO_CUT_CI_RESTART_MINUTES old, has no
+          # workflow run of any kind, and the PR has not been reopened since
+          # that commit, close and reopen it so pull_request:reopened starts
+          # CI. The reopen marks the restart as spent, so no later run
+          # repeats it for this head. Both calls use the PAT: a reopen with
+          # the implicit GITHUB_TOKEN would start no workflows. A failed
+          # lookup leaves the PR alone (the missing-gate deferral applies); a
+          # PR this run closed but could not reopen is a loud error, since it
+          # stalls every later run. Returns 0 after a restart, with
+          # restart_what describing it; restart_note explains a spent restart.
+          restart_minutes=${AUTO_CUT_CI_RESTART_MINUTES:-10}
+          [[ "$restart_minutes" =~ ^[0-9]+$ ]] || restart_minutes=10
+          restart_note=""
+          restart_what=""
+          restart_ci() {
+            local close_failed=0 number=$1 head=$2 info oid committed_at reopened_at committed reopened age runs
+            [[ "$head" =~ ^[0-9a-f]{40}$ ]] || return 1
+            # The single quotes keep $owner/$repo/$pr as GraphQL variables.
+            # shellcheck disable=SC2016
+            info=$(gh api graphql \
+              -f query='query($owner: String!, $repo: String!, $pr: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  pullRequest(number: $pr) {
+                    commits(last: 1) { nodes { commit { oid committedDate } } }
+                    timelineItems(itemTypes: [REOPENED_EVENT], last: 1) {
+                      nodes { ... on ReopenedEvent { createdAt } }
+                    }
+                  }
+                }
+              }' \
+              -f owner="${GITHUB_REPOSITORY%/*}" \
+              -f repo="${GITHUB_REPOSITORY#*/}" \
+              -F pr="$number" \
+              --jq '.data.repository.pullRequest
+                | [(.commits.nodes[0].commit.oid // "-"),
+                   (.commits.nodes[0].commit.committedDate // "-"),
+                   (.timelineItems.nodes[0].createdAt // "-")]
+                | join(" ")' 2>/dev/null) || return 1
+            read -r oid committed_at reopened_at <<<"$info"
+            [[ "$oid" == "$head" && "$committed_at" != "-" ]] || return 1
+            committed=$(date -d "$committed_at" +%s 2>/dev/null) || return 1
+            reopened=0
+            if [[ "$reopened_at" != "-" ]]; then
+              reopened=$(date -d "$reopened_at" +%s 2>/dev/null) || return 1
+            fi
+            age=$(( ($(date +%s) - committed) / 60 ))
+            (( age >= restart_minutes )) || return 1
+            if (( reopened >= committed )); then
+              restart_note="; CI was already restarted for this head (the PR was reopened after its commit) and still has no workflow runs — push to the branch or re-run CI by hand"
+              return 1
+            fi
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$head&per_page=1" \
+              --jq '.total_count' 2>/dev/null) || return 1
+            [[ "$runs" == "0" ]] || return 1
+            restart_what="Release PR #$number head ${head:0:12} had no workflow runs for $age min"
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY RUN: $restart_what; would close and reopen it to restart CI."
+              return 1
+            fi
+            if ! GH_TOKEN="$RELEASE_PAT" gh pr close "$number" --repo "$GITHUB_REPOSITORY" \
+              --comment "Auto-cut: $restart_what (GitHub started no CI). Closing and reopening it to restart CI."; then
+              close_failed=1
+              # A close can fail after taking effect: only a PR confirmed
+              # open is left alone; anything else goes through the reopen.
+              if [[ $(gh pr view "$number" --repo "$GITHUB_REPOSITORY" --json state --jq '.state' 2>/dev/null) == "OPEN" ]]; then
+                echo "::warning::$restart_what, but closing it to restart CI failed"
+                return 1
+              fi
+            fi
+            if ! GH_TOKEN="$RELEASE_PAT" gh pr reopen "$number" --repo "$GITHUB_REPOSITORY" \
+              && ! GH_TOKEN="$RELEASE_PAT" gh pr reopen "$number" --repo "$GITHUB_REPOSITORY"; then
+              # Rare race: a release bot run between the close and the reopen
+              # can open a new Release PR on the same branch, and the old one
+              # then cannot reopen. The next run picks up the new PR.
+              msg="Closed Release PR #$number to restart CI but could not reopen it; reopen it by hand (or, if a new Release PR replaced it, nothing is needed)"
+              echo "::error::$msg"
+              decide error ci-restart-failed "$msg" 1
+            fi
+            if (( close_failed )); then
+              # The close reported an error, so this is no confirmed restart.
+              echo "::warning::$restart_what; closing it reported an error, so this run reopened it to be safe"
+              return 1
+            fi
+            return 0
+          }
+
           # The CI Gate and pin-PR guards below run these trusted helpers.
           # Without them (the sparse checkout above failed) no guard can be
           # evaluated, so stop with a named error instead of merging blind.
@@ -409,7 +526,7 @@ jobs:
           # above).
           be_skew_msg=""
           be_dependency_skew() {
-            local pin cmp ahead tag_date tag_epoch fe_tag fresh baseline_sha
+            local pin cmp ahead tag_date tag_epoch fe_tag fresh baseline_sha evidence evidence_status
 
             # The pin this cut would ship: intentd.version at main HEAD
             # (the squash merge cuts the tag on main's tree).
@@ -484,17 +601,31 @@ jobs:
               return 1
             fi
 
+            # Time overlap alone is not a dependency: both repos merge all
+            # day, so it would hold almost every cut. Positive proof that no
+            # fresh fe commit names a merged, unpublished, non-docs intentd
+            # PR and that the fe diff uses no protocol name the pin lacks
+            # exempts the cut. Like the no-op proof below, these lookups
+            # are fail-CLOSED only for the exemption.
+            baseline_sha=$(jq -r '.base_commit.sha // empty' <<<"$cmp")
+            evidence=$(node scripts/intentd-skew-evidence.mjs \
+              "$pin" "$baseline_sha" "$fe_tag" "$tag_epoch" "$GITHUB_REPOSITORY") \
+              && evidence_status=0 || evidence_status=$?
+            if (( evidence_status == 0 )); then
+              echo "intentd main is ahead of the pinned v$pin, but $evidence; no BE-dependency skew."
+              return 1
+            fi
+
             # A positive release-plz assessment can prove that the extra
             # commits need no new sidecar. This new lookup is fail-CLOSED
             # only for the exemption: errors retain the skew established
             # above, without changing any original fail-open lookup.
-            baseline_sha=$(jq -r '.base_commit.sha // empty' <<<"$cmp")
             if node scripts/intentd-release-readiness.mjs "$pin" "$baseline_sha" "$GITHUB_REPOSITORY"; then
               echo "release-plz confirmed no release needed for current intentd main against pinned v$pin@$baseline_sha; no BE-dependency skew."
               return 1
             fi
 
-            be_skew_msg="intentd main is $ahead commit(s) ahead of the pinned v$pin and this cut would ship $fresh fe commit(s) merged after that tag was cut ($tag_date) — they may depend on intentd work in no published sidecar"
+            be_skew_msg="intentd main is $ahead commit(s) ahead of the pinned v$pin and this cut would ship $fresh fe commit(s) merged after that tag was cut ($tag_date): ${evidence:-dependency evidence is unreadable}"
             return 0
           }
 
@@ -684,11 +815,11 @@ jobs:
           fi
 
           # BE-dependency freshness guardrail (see be_dependency_skew
-          # above): normally the deferral is bounded by the intentd alpha
-          # cadence — the next alpha advances the pin, and the pin-bump
+          # above): it defers only on dependency evidence (or unreadable
+          # evidence); the next alpha advances the pin, and the pin-bump
           # merge push chains straight into a fresh cut run. When intentd
-          # cannot publish (failed build) or no confirmed current no-op
-          # exists, the deferral persists; workflow_dispatch bypasses
+          # cannot publish (failed build) and a real dependency remains,
+          # the deferral persists; workflow_dispatch bypasses
           # this guard (manual means urgent — same convention as the
           # throttle) so an operator can always force the cut.
           if [[ "$EVENT_NAME" != "workflow_dispatch" ]] && be_dependency_skew; then
@@ -741,7 +872,10 @@ jobs:
               decide skip ci-gate-failed "CI Gate concluded unsuccessfully on the current head (state: ${gate#failed:}); skipping."
               ;;
             missing)
-              skip ci-gate-missing "CI Gate is not green on the current head (state: missing)"
+              if restart_ci "$number" "$(jq -r '.headRefOid // empty' <<<"$detail")"; then
+                decide defer ci-restarted "$restart_what, so this run closed and reopened it to restart CI; a later attempt merges once CI Gate is green."
+              fi
+              skip ci-gate-missing "CI Gate is not green on the current head (state: missing)$restart_note"
               ;;
             pending:*)
               skip ci-gate-pending "CI Gate is not green on the current head (state: ${gate#pending:})"

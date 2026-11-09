@@ -19,6 +19,9 @@
  *   agent as a tab and focus its composer, reusing the action-key flow
  *   (`setActiveAgentId` + `openAgentTabRequested` + composer focus).
  *
+ * Whenever the press lands on an agent tab, its chat composer is focused so
+ * the user can type right away.
+ *
  * A fresh decoder is created per connection so the Mic-coalescing device
  * model always matches the connected device.
  *
@@ -109,6 +112,12 @@ function focusTab(workspaceId: string, tab: OrderedTab): void {
   appStore.dispatch(setActiveTab(workspaceId, tab.tabId, tab.panelId));
 }
 
+/** Put the caret in the landed tab's chat composer, when it is an agent tab. */
+function focusLandedComposer(tab: OrderedTab | undefined, deps: KeySwitchDeps): void {
+  if (tab?.type !== 'agent' || !tab.agentId) return;
+  (deps.focusComposer ?? focusAgentComposer)(tab.agentId);
+}
+
 /**
  * First open agent tab whose session needs attention — pending attention
  * request (discussion/blocker) or pending wizard question, per the shared
@@ -174,11 +183,17 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
       return;
     }
     const attentionTab = findFirstAttentionTab(tabs);
+    let landed: OrderedTab | undefined;
     if (attentionTab) {
+      landed = attentionTab;
       focusTab(workspaceId, attentionTab);
     } else if (activeTabId === null) {
+      landed = tabs[0];
       focusTab(workspaceId, tabs[0]);
+    } else {
+      landed = tabs.find((tab) => tab.panelId === focusedPanelId && tab.tabId === activeTabId);
     }
+    focusLandedComposer(landed, deps);
     return;
   }
 
@@ -190,7 +205,9 @@ export function focusWorkspaceSlot(workspaceId: string, deps: KeySwitchDeps = {}
   const currentIndex = tabs.findIndex(
     (tab) => tab.panelId === focusedPanelId && tab.tabId === activeTabId,
   );
-  focusTab(workspaceId, tabs[(currentIndex + 1) % tabs.length]);
+  const next = tabs[(currentIndex + 1) % tabs.length];
+  focusTab(workspaceId, next);
+  focusLandedComposer(next, deps);
 }
 
 /**

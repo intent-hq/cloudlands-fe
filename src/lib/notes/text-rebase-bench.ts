@@ -4,6 +4,8 @@
  * aggregates. Browser-safe on purpose (no Node imports) so it is type-checked
  * and linted with the renderer code it measures; `text-rebase-bench.runner.ts`
  * drives it under vitest and `vitest.text-rebase-bench.config.ts` does the IO.
+ *
+ * @internal Perf bench: driven by text-rebase-bench.runner.ts (vitest.text-rebase-bench.config.ts).
  */
 
 export const BENCH_CLOCKS = ['natural', 'unbounded'] as const;

@@ -1,6 +1,14 @@
-// @verify-changed-triggers: .github/workflows/*.yml, .github/actions/*/action.yml, scripts/setup-sccache.py
+// @verify-changed-triggers: .github/workflows/*.yml, .github/actions/*/action.yml
 // @vitest-environment node
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -487,12 +495,100 @@ describe('GitHub-hosted CI runners', () => {
       for (const [, runner] of macRows) expect(runner, file).toBe('macos-15-xlarge');
     }
   });
+});
 
-  it('configures managed caching without Rust cache actions', () => {
-    const result = spawnSync('python3', ['-B', 'scripts/test-setup-sccache.py'], {
-      encoding: 'utf8',
-    });
+// intentd owns setup-sccache.py (and its download-outage fallback, intentd#3156);
+// the signed build runs it from the intentd checkout it compiles, so no fe copy can drift.
+describe('self-hosted compiler cache', () => {
+  type Step = {
+    name?: string;
+    if?: string;
+    uses?: string;
+    run?: string;
+    shell?: string;
+    'working-directory'?: string;
+    with?: Record<string, string>;
+    env?: Record<string, string>;
+  };
+  const gated = "${{ inputs.intentd_ref != '' }}";
+  const jobs = Object.values(read('.github/workflows/manual-signed-build.yml').jobs) as {
+    steps?: Step[];
+  }[];
+  const configured = jobs.flatMap((job) =>
+    (job.steps ?? [])
+      .map((step, index) => ({ steps: job.steps!, step, index }))
+      .filter(({ step }) => step.run?.includes('setup-sccache.py')),
+  );
+  const run = (script?: string) => {
+    const dir = mkdtempSync(join(tmpdir(), 'setup-sccache-'));
+    const env = join(dir, 'github-env');
+    writeFileSync(env, '');
+    if (script) {
+      mkdirSync(join(dir, 'intentd-src/scripts'), { recursive: true });
+      writeFileSync(join(dir, 'intentd-src/scripts/setup-sccache.py'), script);
+    }
+    try {
+      const result = spawnSync(
+        'bash',
+        ['--noprofile', '--norc', '-eo', 'pipefail', '-c', configured[0].step.run!],
+        { cwd: dir, encoding: 'utf8', env: { ...process.env, GITHUB_ENV: env } },
+      );
+      return { ...result, written: readFileSync(env, 'utf8') };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  it("runs intentd's script from the intentd_ref checkout with the cache inputs", () => {
+    expect(configured).toHaveLength(3);
+    for (const { steps, step, index } of configured) {
+      const checkout = steps.findIndex(
+        (s) =>
+          s.uses?.startsWith('actions/checkout@') &&
+          s.with?.repository === 'intent-hq/intentd' &&
+          s.with?.path === 'intentd-src',
+      );
+      expect(checkout, step.name).toBeGreaterThanOrEqual(0);
+      expect(checkout, step.name).toBeLessThan(index);
+      expect(index, step.name).toBeLessThan(
+        steps.findIndex((s) => s.name === 'Build intentd from source'),
+      );
+      // The script path is relative to the job root.
+      expect(step['working-directory'], step.name).toBeUndefined();
+      expect(steps[checkout].if).toBe(gated);
+      expect(step.if).toBe(gated);
+      expect(step.shell).toBe('bash');
+      expect(step.run).toBe(configured[0].step.run);
+      expect(step.env).toEqual({
+        INTENT_SCCACHE_ENDPOINT: '${{ vars.INTENT_SCCACHE_ENDPOINT }}',
+        INTENT_SCCACHE_TOKEN: '${{ secrets.INTENT_SCCACHE_TOKEN }}',
+        INTENT_SCCACHE_MODE: '${{ vars.INTENT_SCCACHE_MODE }}',
+      });
+    }
+  });
+
+  it('keeps no local copy of the setup script', () => {
+    expect(existsSync('scripts/setup-sccache.py')).toBe(false);
+    for (const file of readdirSync('.github/workflows').filter((name) => name.endsWith('.yml'))) {
+      const text = readFileSync(`.github/workflows/${file}`, 'utf8');
+      expect(text, file).not.toMatch(/(?<!intentd-src\/)scripts\/setup-sccache\.py/);
+      expect(text, file).not.toMatch(/DEPOT_SCCACHE_TOKEN|setup-depot-sccache/);
+    }
+  });
+
+  it("fails the step when intentd's script fails", () => {
+    const result = run(
+      'import os, sys\nopen(os.environ["GITHUB_ENV"], "a").write("RAN=1\\n")\nsys.exit(3)\n',
+    );
+    expect(result.status).toBe(3);
+    expect(result.written).toBe('RAN=1\n');
+  });
+
+  it('builds uncached at an intentd ref that predates the script', () => {
+    const result = run();
     expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('::warning::intentd-src/scripts/setup-sccache.py is missing');
+    expect(result.written).toBe('');
   });
 });
 

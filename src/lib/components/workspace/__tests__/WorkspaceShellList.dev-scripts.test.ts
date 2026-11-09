@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => {
   const openUserTab = vi.fn();
   return {
     isCollaborator: false,
+    actionContext: 'admitted' as string | null,
+    confirmScriptDeletion: vi.fn(),
     dispatch: vi.fn(),
     openUserTab,
     getPanelLayoutManager: vi.fn(() => ({ openUserTab })),
@@ -96,6 +98,11 @@ vi.mock('$store/renderer/slices/terminals/terminals-selectors', () => ({
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
   selectIsWorkspaceCollaborator: workspaceReadable(() => mocks.isCollaborator),
+  selectWorkspaceActionContext: workspaceReadable(() => mocks.actionContext),
+}));
+
+vi.mock('$features/scripts/confirm-script-deletion', () => ({
+  confirmScriptDeletion: mocks.confirmScriptDeletion,
 }));
 
 vi.mock('$features/layout/panel-layout-adapter', () => ({
@@ -147,6 +154,7 @@ describe('WorkspaceShellList development script controls', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.isCollaborator = false;
+    mocks.actionContext = 'admitted';
     mocks.scripts = {};
     mocks.operations = {};
     mocks.terminals = {};
@@ -285,6 +293,49 @@ describe('WorkspaceShellList development script controls', () => {
         type: 'terminals/setPlacement',
         payload: [WS, 'script-1', 'panel'],
       });
+    });
+  });
+
+  describe('script deletion', () => {
+    async function openActions(id: string) {
+      await fireEvent.click(within(scriptRow(id)).getByRole('button', { name: 'Actions' }));
+    }
+
+    it.each(['idle', 'running'] as const)(
+      'confirms deletion of a %s script from its actions menu',
+      async (status) => {
+        mocks.scripts[WS] = [script('script-1', 'Dev server', status)];
+        render(WorkspaceShellList, { props: { workspaceId: WS } });
+        await openActions('script-1');
+        await fireEvent.click(await screen.findByRole('menuitem', { name: 'Delete script' }));
+        expect(mocks.confirmScriptDeletion).toHaveBeenCalledExactlyOnceWith(
+          WS,
+          'script-1',
+          expect.any(Function),
+        );
+        expect(mocks.confirmScriptDeletion.mock.calls[0][2]()).toBe(true);
+      },
+    );
+
+    it('disables deletion while another script operation is pending', async () => {
+      mocks.scripts[WS] = [script('script-1', 'Dev server', 'running')];
+      mocks.operations[WS] = { 'script-1': { action: 'stop', pending: true } };
+      render(WorkspaceShellList, { props: { workspaceId: WS } });
+      await openActions('script-1');
+      expect(
+        (await screen.findByRole('menuitem', { name: 'Delete script' })).getAttribute(
+          'aria-disabled',
+        ),
+      ).toBe('true');
+    });
+
+    it('hides deletion without workspace management authority', async () => {
+      mocks.actionContext = null;
+      mocks.scripts[WS] = [script('script-1', 'Dev server', 'idle')];
+      render(WorkspaceShellList, { props: { workspaceId: WS } });
+      await openActions('script-1');
+      await screen.findByRole('menuitem', { name: 'Show in a panel' });
+      expect(screen.queryByRole('menuitem', { name: 'Delete script' })).toBeNull();
     });
   });
 
