@@ -13,6 +13,37 @@ describe('resolveRepositoryRowLabelKind', () => {
   const offered = { plainFoldersOffered: true };
 
   it.each(['none', 'connected', 'unknown'] as const)(
+    'follows the selection over the list (forge %s)',
+    (forgeState) => {
+      for (const list of [
+        { hasGitRepositoryEntry: true, hasPlainFolderEntry: true },
+        { hasGitRepositoryEntry: true, hasPlainFolderEntry: false },
+        { hasGitRepositoryEntry: false, hasPlainFolderEntry: true },
+        { hasGitRepositoryEntry: false, hasPlainFolderEntry: false },
+      ]) {
+        expect(
+          resolveRepositoryRowLabelKind({ ...offered, forgeState, ...list, selected: 'folder' }),
+        ).toBe('folder');
+        expect(
+          resolveRepositoryRowLabelKind({ ...offered, forgeState, ...list, selected: 'codebase' }),
+        ).toBe('codebase');
+      }
+    },
+  );
+
+  it('keeps Codebase for a selected plain folder with plain folders not offered', () => {
+    expect(
+      resolveRepositoryRowLabelKind({
+        plainFoldersOffered: false,
+        forgeState: 'none',
+        hasGitRepositoryEntry: false,
+        hasPlainFolderEntry: true,
+        selected: 'folder',
+      }),
+    ).toBe('codebase');
+  });
+
+  it.each(['none', 'connected', 'unknown'] as const)(
     'is Codebase whenever a git repository is listed (forge %s)',
     (forgeState) => {
       for (const hasPlainFolderEntry of [false, true]) {

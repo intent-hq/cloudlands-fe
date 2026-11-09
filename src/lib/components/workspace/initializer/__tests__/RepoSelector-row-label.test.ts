@@ -2,7 +2,8 @@
  * @vitest-environment jsdom
  *
  * The New Workspace form picker's row label follows what the list can hold:
- * "Codebase" whenever a git repository is listed; otherwise "Folder" with no
+ * the selection when there is one ("Folder" for a plain folder, "Codebase" for a
+ * git repository); with nothing selected, "Codebase" whenever a git repository is listed; otherwise "Folder" with no
  * forge connected or a plain folder listed; otherwise (forge connected, empty
  * list) "Codebase". Plain folders not offered (Labs off) keep "Codebase". The
  * label never reads "Codebase/Project" or "Codebase/Folder" and updates live.
@@ -306,6 +307,58 @@ describe('RepoSelector form row label', () => {
       },
     });
     expect(rowLabel(container)).toBe('Folder');
+  });
+
+  it('reads Folder for a selected plain folder in a mixed list', () => {
+    for (const forgeState of ['none', 'connected', 'unknown'] as const) {
+      mocks.forgeState = forgeState;
+      mocks.state.recentRepos = [gitRepo, forgeRepo, plainFolder];
+      const { container } = render(RepoSelector, {
+        props: { rowLabel: 'Codebase', value: plainFolder.path, plainFolderSelected: true },
+      });
+      expect(rowLabel(container)).toBe('Folder');
+      cleanup();
+    }
+  });
+
+  it('reads Folder for a selected recent plain-folder row', () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo, plainFolder];
+    const { container } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: plainFolder.path },
+    });
+    expect(rowLabel(container)).toBe('Folder');
+  });
+
+  it('reads Codebase for a selected git repository in a plain-folder list', () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [plainFolder, gitRepo];
+    const { container } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: gitRepo.path },
+    });
+    expect(rowLabel(container)).toBe('Codebase');
+  });
+
+  it('keeps Codebase for a selected plain folder with plain folders not offered', () => {
+    mocks.plainFoldersOffered = false;
+    mocks.state.recentRepos = [gitRepo, plainFolder];
+    const { container } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: plainFolder.path, plainFolderSelected: true },
+    });
+    expect(rowLabel(container)).toBe('Codebase');
+  });
+
+  it('switches live between Folder and Codebase as the selection changes', async () => {
+    mocks.forgeState = 'connected';
+    mocks.state.recentRepos = [gitRepo, plainFolder];
+    const { container, rerender } = render(RepoSelector, {
+      props: { rowLabel: 'Codebase', value: gitRepo.path },
+    });
+    expect(rowLabel(container)).toBe('Codebase');
+    await rerender({ rowLabel: 'Codebase', value: plainFolder.path, plainFolderSelected: true });
+    await waitFor(() => expect(rowLabel(container)).toBe('Folder'));
+    await rerender({ rowLabel: 'Codebase', value: gitRepo.path, plainFolderSelected: false });
+    await waitFor(() => expect(rowLabel(container)).toBe('Codebase'));
   });
 
   it('keeps Codebase for a selected git folder not in recents yet', () => {

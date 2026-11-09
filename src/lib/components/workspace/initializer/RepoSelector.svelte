@@ -697,13 +697,19 @@
     }
     return current ? [current, ...recentRepos] : recentRepos;
   });
-  // The form row label follows what the list holds (plain folders, Labs):
+  // The form row label follows the selection (plain folders, Labs): "Folder"
+  // for a plain folder, "Codebase" for a git repository. With nothing selected,
   // "Codebase" with any git repository listed, otherwise "Folder" without a
   // forge or with a plain folder listed.
   const plainFolderCreationAvailable$ = selectPlainFolderCreationAvailable();
   const forgeConnectionState$ = selectForgeConnectionState();
   const isPlainFolderEntry = (repo: WorkspaceInitializerRecentRepo) =>
     repo.type === 'local' && repo.plainFolder === true;
+  const formSelectedKind = $derived.by(() => {
+    const selected = formRepositoryChoices.find(isCurrentRepo);
+    if (!selected) return null;
+    return plainFolderSelected || isPlainFolderEntry(selected) ? 'folder' : 'codebase';
+  });
   const formRowLabel = $derived.by(() => {
     if (!rowLabel) return undefined;
     const kind = resolveRepositoryRowLabelKind({
@@ -712,6 +718,7 @@
         authenticatedForges.length > 0 || $hostMember$ ? 'connected' : $forgeConnectionState$,
       hasGitRepositoryEntry: formRepositoryChoices.some((repo) => !isPlainFolderEntry(repo)),
       hasPlainFolderEntry: formRepositoryChoices.some(isPlainFolderEntry),
+      selected: formSelectedKind,
     });
     return kind === 'folder' ? m.workspace_compactInitializer_folder_label() : rowLabel;
   });
