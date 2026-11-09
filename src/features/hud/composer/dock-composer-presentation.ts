@@ -177,16 +177,21 @@ export function buildDockComposerMedia(input: {
   const clipsFull = view.clips.length >= DOCK_EVIDENCE_LIMITS.clips;
   const caps = view.capabilities;
   const speechAvailable = view.speech.available;
+  const recordingImages = new Set(
+    view.clips.flatMap((clip) => clip.captureHistory?.map((entry) => entry.image.id) ?? []),
+  );
   const attachments: DockComposerAttachment[] = [
-    ...view.tiles.map(({ image, marks }): DockComposerAttachment => ({
-      kind: 'image',
-      id: image.contextItemId,
-      url: local.previews[image.id] ?? '',
-      markCount: marks.length,
-      owner: 'evidence',
-      // No preview yet: explicit pending so presentation never renders an empty image.
-      ...(local.previews[image.id] ? {} : { status: 'placing' as const }),
-    })),
+    ...view.tiles
+      .filter(({ image }) => image.source !== 'annotate' || !recordingImages.has(image.id))
+      .map(({ image, marks }): DockComposerAttachment => ({
+        kind: 'image',
+        id: image.contextItemId,
+        url: local.previews[image.id] ?? '',
+        markCount: marks.length,
+        owner: 'evidence',
+        // No preview yet: explicit pending so presentation never renders an empty image.
+        ...(local.previews[image.id] ? {} : { status: 'placing' as const }),
+      })),
     // One tile per recording, in start order.
     ...view.clips.map((clip): DockComposerAttachment => ({
       kind: 'clip' as const,
