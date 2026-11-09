@@ -1040,8 +1040,7 @@
       "base64DecodedBytes"
     ],
     "src/lib/components/chat/input/model-picker-utils.ts": [
-      "collapseCodexEffortModels",
-      "isDefaultPseudoModelId"
+      "collapseCodexEffortModels"
     ],
     "src/lib/components/chat/input/slash-skill-command.ts": [
       "applySlashSkillSelection"
