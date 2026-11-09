@@ -28,7 +28,7 @@ import {
 } from '$store/renderer/slices/hardware-console/hardware-console-slice';
 import type { HardwareConsoleManager } from '../device/device-manager';
 import { HardwareInputDecoder } from '../input/input-decoder';
-import type { EncoderDirection } from '../input/types';
+import type { PhysicalKnobDirection } from '../input/types';
 import { isKeyAssignableWorkspace } from '../assignment/key-assignment';
 import { isConsoleOwner } from '../owner-gate';
 import { cycleWorkspaceId, orderWorkspacesForCycling } from './workspace-cycle';
@@ -91,7 +91,10 @@ function navigateToWorkspace(
  * the detent navigated to, or null when there was nowhere to go (cycling
  * clamps at the ends of the activity-ordered list).
  */
-function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}): string | null {
+function handleEncoderRotate(
+  direction: PhysicalKnobDirection,
+  deps: EncoderDeps = {},
+): string | null {
   const { showWorkspace, dispatch, getCurrentWorkspaceId } = resolveDeps(deps);
   const state = appStore.state;
 
@@ -112,7 +115,7 @@ function handleEncoderRotate(direction: EncoderDirection, deps: EncoderDeps = {}
  * Move Home's workspace selection one row. Returns false when Home's
  * Workspaces list is not on screen, leaving the detent to the effort path.
  */
-function handleHomeRotate(direction: EncoderDirection): boolean {
+function handleHomeRotate(direction: PhysicalKnobDirection): boolean {
   const target = getHomeEncoderTarget();
   const ids = currentRoutePath() === '/' ? target?.ids() : null;
   if (!target || !ids) return false;
@@ -176,13 +179,9 @@ export function installHardwareConsoleEncoder(
       if (!encoderBehaviorHydrated) return;
       if (encoderBehavior === 'workspace-switch') handleEncoderRotate(direction, deps);
       else {
-        // Calibrate rotation to the physical Creator Micro 2 report
-        // (intent-hq/intent#5947), shared with Codex Micro. Keep workspace
-        // navigation's existing wire direction and catalog effort order intact.
-        const physical = direction === 'cw' ? 'ccw' : 'cw';
         const workspaceId = resolveDeps(deps).getCurrentWorkspaceId();
-        if (workspaceId === null && handleHomeRotate(physical)) return;
-        dispatch(encoderEffortRotated(physical, workspaceId));
+        if (workspaceId === null && handleHomeRotate(direction)) return;
+        dispatch(encoderEffortRotated(direction, workspaceId));
       }
     });
     const offKeydown = decoder.on('keydown', ({ key }) => {

@@ -47,8 +47,7 @@ function decodeHidParams(params: unknown): DecodedVendorMessage | null {
   const { k, act } = params;
   if (!isVendorControlId(k) || typeof act !== 'number') return null;
   if (act === 2) {
-    if (k === 'ENC_CW') return { kind: 'encoder-rotate', direction: 'cw' };
-    if (k === 'ENC_CC') return { kind: 'encoder-rotate', direction: 'ccw' };
+    if (k === 'ENC_CW' || k === 'ENC_CC') return { kind: 'encoder-rotate', control: k };
     return null;
   }
   if (act !== 0 && act !== 1) return null;

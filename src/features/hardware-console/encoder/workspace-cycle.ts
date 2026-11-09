@@ -6,7 +6,7 @@
  * Pure web code — no Electron imports, no store imports.
  */
 
-import type { EncoderDirection } from '../input/types';
+import type { PhysicalKnobDirection } from '../input/types';
 import {
   compareWorkspaceActivityDisplayTimeDesc,
   type WorkspaceActivityTimeFields,
@@ -31,17 +31,17 @@ export function orderWorkspacesForCycling<T extends EncoderCycleWorkspace>(
  * One encoder detent's cycling step. Returns the target workspace id, or
  * null when there is nowhere to go (empty list, or already at the end of
  * the list in the stepped direction — cycling clamps, it does not wrap).
- * Direction honored: cw steps toward more recently active, ccw toward less
+ * Clockwise steps toward less recently active, counter-clockwise toward more
  * recently active. An unknown/absent active id enters the list at the
  * direction-appropriate end.
  */
 export function cycleWorkspaceId(
   orderedIds: readonly string[],
   activeWorkspaceId: string | null,
-  direction: EncoderDirection,
+  direction: PhysicalKnobDirection,
 ): string | null {
   if (orderedIds.length === 0) return null;
-  const step = direction === 'cw' ? -1 : 1;
+  const step = direction === 'clockwise' ? 1 : -1;
   const index = activeWorkspaceId === null ? -1 : orderedIds.indexOf(activeWorkspaceId);
   if (index === -1) {
     return orderedIds[step === 1 ? 0 : orderedIds.length - 1];

@@ -40,9 +40,9 @@ describe('encoder rotation on Home', () => {
     window.history.replaceState(null, '', '/');
     const list = homeList(['a', 'b', 'c']);
     const device = manager('creator-micro-2');
-    for (let i = 0; i < 4; i += 1) device.turn('cw');
+    for (let i = 0; i < 4; i += 1) device.turn('clockwise');
     expect(list.picks).toEqual(['a', 'b', 'c']);
-    for (let i = 0; i < 3; i += 1) device.turn('ccw');
+    for (let i = 0; i < 3; i += 1) device.turn('counterclockwise');
     expect(list.picks).toEqual(['a', 'b', 'c', 'b', 'a']);
     await flush();
     expect(mutations()).toHaveLength(0);
@@ -54,7 +54,7 @@ describe('encoder rotation on Home', () => {
     window.history.replaceState(null, '', '/');
     const list = homeList(null);
     const device = manager();
-    device.turn('cw');
+    device.turn('clockwise');
     await flush();
     expect(list.picks).toEqual([]);
     expect(mutations()).toHaveLength(0);
@@ -64,7 +64,7 @@ describe('encoder rotation on Home', () => {
     ready();
     const list = homeList(['a', 'b']);
     const device = manager();
-    device.turn('cw');
+    device.turn('clockwise');
     await flush();
     expect(list.picks).toEqual([]);
     expect(mutations().map(([, params]) => (params as { changes: unknown }).changes)).toEqual([

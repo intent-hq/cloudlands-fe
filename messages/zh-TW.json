@@ -5219,7 +5219,7 @@
   "settings_hardware_knobExplainer_effort_description": "旋轉可調整目前代理程式的推理強度：順時針提高，逆時針降低，並在支援的上限和下限處停止。",
   "settings_hardware_knobExplainer_home_description": "在主頁上，旋轉可在工作區清單中移動並預覽每一項。",
   "settings_hardware_knobExplainer_label": "旋鈕",
-  "settings_hardware_knobExplainer_rotate_description": "旋轉可循環切換工作區：順時針切換到最近活躍的工作區，逆時針切換到較早的工作區，到清單兩端即停止。",
+  "settings_hardware_knobExplainer_rotate_description": "旋轉可循環切換工作區：順時針切換到較早的工作區，逆時針切換到最近活躍的工作區，到清單兩端即停止。",
   "settings_hardware_knob_ariaLabel": "旋鈕 — 查看功能",
   "settings_hardware_ledStatus_attention_label": "需要輸入",
   "settings_hardware_ledStatus_complete_label": "已完成",

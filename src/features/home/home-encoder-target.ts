@@ -3,8 +3,7 @@
  * Home's components: the mounted Home page registers its list here.
  */
 
-/** Physical knob direction: clockwise moves down the list. */
-type KnobDirection = 'cw' | 'ccw';
+import type { PhysicalKnobDirection } from '$features/hardware-console/input/types';
 
 export interface HomeEncoderTarget {
   /** Workspace ids in on-screen order, or null when the Workspaces list is not showing. */
@@ -50,10 +49,10 @@ export function homeListOrder(input: {
 export function stepHomeSelection(
   ids: readonly string[],
   selectedId: string | null,
-  direction: KnobDirection,
+  direction: PhysicalKnobDirection,
 ): string | null {
   if (ids.length === 0) return null;
   const index = selectedId === null ? -1 : ids.indexOf(selectedId);
   if (index === -1) return ids[0];
-  return ids[index + (direction === 'cw' ? 1 : -1)] ?? null;
+  return ids[index + (direction === 'clockwise' ? 1 : -1)] ?? null;
 }

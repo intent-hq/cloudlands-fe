@@ -30,16 +30,16 @@ describe('stepHomeSelection', () => {
   const ids = ['a', 'b', 'c'];
 
   it('enters at the top in either direction', () => {
-    expect(stepHomeSelection(ids, null, 'cw')).toBe('a');
-    expect(stepHomeSelection(ids, null, 'ccw')).toBe('a');
-    expect(stepHomeSelection(ids, 'gone', 'cw')).toBe('a');
+    expect(stepHomeSelection(ids, null, 'clockwise')).toBe('a');
+    expect(stepHomeSelection(ids, null, 'counterclockwise')).toBe('a');
+    expect(stepHomeSelection(ids, 'gone', 'clockwise')).toBe('a');
   });
 
   it('moves one row and stops at the ends', () => {
-    expect(stepHomeSelection(ids, 'a', 'cw')).toBe('b');
-    expect(stepHomeSelection(ids, 'b', 'ccw')).toBe('a');
-    expect(stepHomeSelection(ids, 'c', 'cw')).toBeNull();
-    expect(stepHomeSelection(ids, 'a', 'ccw')).toBeNull();
-    expect(stepHomeSelection([], null, 'cw')).toBeNull();
+    expect(stepHomeSelection(ids, 'a', 'clockwise')).toBe('b');
+    expect(stepHomeSelection(ids, 'b', 'counterclockwise')).toBe('a');
+    expect(stepHomeSelection(ids, 'c', 'clockwise')).toBeNull();
+    expect(stepHomeSelection(ids, 'a', 'counterclockwise')).toBeNull();
+    expect(stepHomeSelection([], null, 'clockwise')).toBeNull();
   });
 });

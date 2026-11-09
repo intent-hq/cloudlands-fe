@@ -16,6 +16,8 @@ import { setHardwareConsoleEncoderBehavior } from '$store/renderer/slices/hardwa
 import { m } from '$shared/paraglide/messages.js';
 import EffortPicker from '$lib/components/chat/input/EffortPicker.svelte';
 import EncoderCycleHud from '../EncoderCycleHud.svelte';
+import { HardwareInputDecoder } from '../../input/input-decoder';
+import type { PhysicalKnobDirection } from '../../input/types';
 
 useEncoderEffortHarness();
 
@@ -24,11 +26,30 @@ useEncoderEffortHarness();
 // of stepEncoderEffort and the harness's symbolic turn helper.
 const levels = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
 
+// The one raw-to-physical mapping per model. The user confirmed on Creator
+// Micro 2 that ENC_CW is a counter-clockwise turn (intent-hq/intent#5947).
+// Codex Micro shares the mapping but still needs physical confirmation.
+const physicalTurnByModel = {
+  'creator-micro-2': { ENC_CW: 'counterclockwise', ENC_CC: 'clockwise' },
+  'codex-micro': { ENC_CW: 'counterclockwise', ENC_CC: 'clockwise' },
+} as const;
+
+describe('raw encoder direction per device model', () => {
+  it.each(Object.entries(physicalTurnByModel))('%s', (model, expected) => {
+    const decoder = new HardwareInputDecoder({
+      deviceModel: model as keyof typeof physicalTurnByModel,
+    });
+    const turns: PhysicalKnobDirection[] = [];
+    decoder.on('encoderrotate', ({ direction }) => turns.push(direction));
+    decoder.handleMessage({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    decoder.handleMessage({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    expect(turns).toEqual([expected.ENC_CW, expected.ENC_CC]);
+  });
+});
+
 describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routing', (model) => {
-  // The user physically confirmed reversed effort rotation on Creator Micro 2
-  // (intent-hq/intent#5947). These opposite raw-to-effort expectations calibrate
-  // the shared path from that report, not a captured packet trace. Codex Micro
-  // uses the same correction but still needs physical confirmation.
+  // Raw packets through the production decoder: a physical clockwise turn
+  // (ENC_CC) raises effort and moves workspace switching to less recent work.
   it.each([
     {
       key: 'ENC_CW',
@@ -91,7 +112,7 @@ describe.each(['codex-micro', 'creator-micro-2'] as const)('%s raw encoder routi
     },
   );
 
-  it('preserves workspace ordering, boundaries, and encoder presses after opting out', async () => {
+  it('switches workspaces in the physical direction after opting out', async () => {
     ready();
     mocks.dispatch(setHardwareConsoleEncoderBehavior('workspace-switch'));
     const device = manager(model);

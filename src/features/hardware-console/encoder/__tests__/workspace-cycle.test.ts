@@ -44,35 +44,35 @@ describe('orderWorkspacesForCycling', () => {
 describe('cycleWorkspaceId', () => {
   const ids = ['most', 'mid', 'least'];
 
-  it('steps cw toward more recently active', () => {
-    expect(cycleWorkspaceId(ids, 'least', 'cw')).toBe('mid');
-    expect(cycleWorkspaceId(ids, 'mid', 'cw')).toBe('most');
+  it('steps counter-clockwise toward more recently active', () => {
+    expect(cycleWorkspaceId(ids, 'least', 'counterclockwise')).toBe('mid');
+    expect(cycleWorkspaceId(ids, 'mid', 'counterclockwise')).toBe('most');
   });
 
-  it('steps ccw toward less recently active', () => {
-    expect(cycleWorkspaceId(ids, 'most', 'ccw')).toBe('mid');
-    expect(cycleWorkspaceId(ids, 'mid', 'ccw')).toBe('least');
+  it('steps clockwise toward less recently active', () => {
+    expect(cycleWorkspaceId(ids, 'most', 'clockwise')).toBe('mid');
+    expect(cycleWorkspaceId(ids, 'mid', 'clockwise')).toBe('least');
   });
 
   it('clamps at both ends instead of wrapping', () => {
-    expect(cycleWorkspaceId(ids, 'most', 'cw')).toBeNull();
-    expect(cycleWorkspaceId(ids, 'least', 'ccw')).toBeNull();
+    expect(cycleWorkspaceId(ids, 'most', 'counterclockwise')).toBeNull();
+    expect(cycleWorkspaceId(ids, 'least', 'clockwise')).toBeNull();
   });
 
   it('enters the list at the direction-appropriate end when the active id is unknown', () => {
-    expect(cycleWorkspaceId(ids, null, 'cw')).toBe('least');
-    expect(cycleWorkspaceId(ids, null, 'ccw')).toBe('most');
-    expect(cycleWorkspaceId(ids, 'gone', 'cw')).toBe('least');
+    expect(cycleWorkspaceId(ids, null, 'counterclockwise')).toBe('least');
+    expect(cycleWorkspaceId(ids, null, 'clockwise')).toBe('most');
+    expect(cycleWorkspaceId(ids, 'gone', 'counterclockwise')).toBe('least');
   });
 
   it('returns null when there is nowhere to go', () => {
-    expect(cycleWorkspaceId([], 'most', 'cw')).toBeNull();
-    expect(cycleWorkspaceId(['only'], 'only', 'cw')).toBeNull();
-    expect(cycleWorkspaceId(['only'], 'only', 'ccw')).toBeNull();
+    expect(cycleWorkspaceId([], 'most', 'counterclockwise')).toBeNull();
+    expect(cycleWorkspaceId(['only'], 'only', 'counterclockwise')).toBeNull();
+    expect(cycleWorkspaceId(['only'], 'only', 'clockwise')).toBeNull();
   });
 
   it('cycles into a single non-active workspace', () => {
-    expect(cycleWorkspaceId(['only'], null, 'cw')).toBe('only');
-    expect(cycleWorkspaceId(['only'], 'other', 'ccw')).toBe('only');
+    expect(cycleWorkspaceId(['only'], null, 'counterclockwise')).toBe('only');
+    expect(cycleWorkspaceId(['only'], 'other', 'clockwise')).toBe('only');
   });
 });

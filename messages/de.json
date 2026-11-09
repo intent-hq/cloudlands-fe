@@ -5219,7 +5219,7 @@
   "settings_hardware_knobExplainer_effort_description": "Drehen passt den Denkaufwand des aktuellen Agenten an — im Uhrzeigersinn wird er erhöht, gegen den Uhrzeigersinn verringert, jeweils bis zur unterstützten Grenze.",
   "settings_hardware_knobExplainer_home_description": "Auf der Startseite bewegt Drehen die Auswahl durch die Workspace-Liste und zeigt jeweils die Vorschau.",
   "settings_hardware_knobExplainer_label": "Drehknopf",
-  "settings_hardware_knobExplainer_rotate_description": "Drehen wechselt zwischen Workspaces — im Uhrzeigersinn zu zuletzt aktiven, gegen den Uhrzeigersinn zu weniger aktuellen; stoppt an den Listenenden.",
+  "settings_hardware_knobExplainer_rotate_description": "Drehen wechselt zwischen Workspaces — im Uhrzeigersinn zu weniger aktuellen, gegen den Uhrzeigersinn zu zuletzt aktiven; stoppt an den Listenenden.",
   "settings_hardware_knob_ariaLabel": "Drehknopf — Funktion anzeigen",
   "settings_hardware_ledStatus_attention_label": "Eingabe erforderlich",
   "settings_hardware_ledStatus_complete_label": "Abgeschlossen",

@@ -98,7 +98,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
   it('follows advertised order and clamps both endpoints, including explicit Auto null', async () => {
     ready();
     const device = manager();
-    device.turn('ccw');
+    device.turn('counterclockwise');
     await flush();
     expect(mutations()).toHaveLength(0);
     for (let n = 0; n < 5; n++) {
@@ -111,7 +111,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       { reasoningEffort: 'high' },
     ]);
     for (let n = 0; n < 5; n++) {
-      device.turn('ccw');
+      device.turn('counterclockwise');
       await flush();
     }
     expect(effort()).toBeNull();
@@ -143,7 +143,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       device.turn();
-      device.turn('ccw');
+      device.turn('counterclockwise');
       device.turn();
       expect(mutations()).toHaveLength(1);
       expect(effort()).toBe('high');
@@ -217,7 +217,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       const first = deferred<unknown>();
       request.mockImplementationOnce(() => first.promise);
       device.turn();
-      device.turn('ccw');
+      device.turn('counterclockwise');
       expect(effort()).toBeNull();
       if (fails) first.reject(new Error('offline'));
       else first.resolve(reply());
@@ -239,7 +239,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     request.mockImplementationOnce(() => first.promise);
     device.turn();
     device.turn();
-    device.turn('ccw');
+    device.turn('counterclockwise');
     expect(effort()).toBe('low');
     first.reject(new Error('old save failed'));
     await flush();
@@ -382,7 +382,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       const editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
-      device.turn('ccw');
+      device.turn('counterclockwise');
       device.turn();
       first.resolve(reply('low'));
       expect(await editing).toBe(false);
@@ -405,7 +405,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       const editing = applyReasoningEffort('agent-1', 'ws-1', 'high', 'medium');
-      device.turn('ccw');
+      device.turn('counterclockwise');
       first.resolve(reply('low'));
       await flush();
       expect(mutations()).toHaveLength(2);
@@ -451,7 +451,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       device.turn();
       device.turn();
       mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
-      for (let n = 0; n < turns; n++) device.turn('ccw');
+      for (let n = 0; n < turns; n++) device.turn('counterclockwise');
       if (acceptsOld) first.resolve(reply('low'));
       else first.reject(new Error('old save rejected'));
       await flush();
@@ -470,7 +470,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     device.turn();
     device.turn();
     mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
-    device.turn('ccw');
+    device.turn('counterclockwise');
     device.statusChanged('disconnected');
     first.reject(new Error('old save rejected'));
     await flush();
@@ -520,7 +520,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
     },
   );
 
-  it.each(['cw', 'ccw', 'none'] as const)(
+  it.each(['clockwise', 'counterclockwise', 'none'] as const)(
     'keeps latest intent across a leading echo during the trailing save (%s)',
     async (direction) => {
       ready();
@@ -539,8 +539,8 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       if (direction !== 'none') device.turn(direction);
       second.resolve(reply('high'));
       await flush();
-      expect(effort()).toBe(direction === 'ccw' ? 'medium' : 'high');
-      expect(mutations()).toHaveLength(direction === 'ccw' ? 3 : 2);
+      expect(effort()).toBe(direction === 'counterclockwise' ? 'medium' : 'high');
+      expect(mutations()).toHaveLength(direction === 'counterclockwise' ? 3 : 2);
     },
   );
 
@@ -892,7 +892,7 @@ describe('decoded Micro encoder effort and wire behavior', () => {
       else if (edit === 'independent') {
         mocks.dispatch(updateSession('agent-1', { reasoningEffort: 'high' }));
         request.mockRejectedValueOnce(new Error('new save rejected'));
-        device.turn('ccw');
+        device.turn('counterclockwise');
       } else if (edit === 'model')
         mocks.dispatch(updateSession('agent-1', { model: 'model-b', reasoningEffort: 'minimal' }));
       else {
@@ -1122,19 +1122,19 @@ describe('encoder rotation from Home or Settings', () => {
     expect(effort()).toBeNull();
   });
 
-  it('enters the activity list at the most recent workspace on a ccw detent from Home', () => {
+  it('enters the activity list at the most recent workspace on a clockwise turn from Home', () => {
     window.history.replaceState(null, '', '/');
     const device = manager();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } });
+    device.turn('clockwise');
     expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-2');
   });
 
-  it('enters the activity list at the least recent workspace on a cw detent from Home', () => {
+  it('enters the activity list at the least recent workspace on a counter-clockwise turn from Home', () => {
     window.history.replaceState(null, '', '/');
     const device = manager();
     mocks.dispatch(hydrateHardwareConsoleEncoderBehavior('workspace-switch'));
-    device.emit({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } });
+    device.turn('counterclockwise');
     expect(device.showWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1');
   });
 });

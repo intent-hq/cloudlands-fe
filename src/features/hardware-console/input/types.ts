@@ -26,12 +26,19 @@ export type VendorControlId = AgentKeyId | ActionKeyId | 'ENC_CC' | 'ENC_CW' | '
  */
 export type LogicalKeyId = AgentKeyId | ActionKeyId | 'ENC_CLK';
 
-export type EncoderDirection = 'cw' | 'ccw';
+/**
+ * The wire id of one encoder detent. Its name does not match the turn the user
+ * made; only the input decoder may read it (see `PHYSICAL_KNOB_TURN`).
+ */
+export type RawEncoderControl = 'ENC_CW' | 'ENC_CC';
+
+/** The direction the user physically turned the knob, as they see it. */
+export type PhysicalKnobDirection = 'clockwise' | 'counterclockwise';
 
 /** Intermediate result of pure per-message decoding (no session state). */
 export type DecodedVendorMessage =
   | { kind: 'key'; control: VendorControlId; action: 'press' | 'release' }
-  | { kind: 'encoder-rotate'; direction: EncoderDirection }
+  | { kind: 'encoder-rotate'; control: RawEncoderControl }
   | { kind: 'joystick'; angle: number; distance: number };
 
 /** Payloads for the typed events emitted by {@link HardwareInputEventMap}. */
@@ -40,7 +47,7 @@ interface KeyEventPayload {
 }
 
 interface EncoderRotateEventPayload {
-  direction: EncoderDirection;
+  direction: PhysicalKnobDirection;
 }
 
 interface JoystickEventPayload {
@@ -63,7 +70,7 @@ export interface HardwareInputEventMap {
   keyup: KeyEventPayload;
   /** Second press of the same key within the double-press window. */
   doublepress: KeyEventPayload;
-  /** One event per encoder detent. */
+  /** One event per encoder detent, in the physical direction. Needs `deviceModel`. */
   encoderrotate: EncoderRotateEventPayload;
   /** Deflection crossed the dead-zone: the radial interaction begins. */
   joystickengage: JoystickEventPayload;
@@ -108,8 +115,11 @@ interface JoystickOptions {
 }
 
 export interface HardwareInputOptions {
-  /** Connected device model. Currently informational — decoding is identical
-   * across models (the Codex Mic pair's ACT10/ACT11 stay separate keys). */
+  /**
+   * Connected device model. It sets the physical knob direction; without it
+   * the decoder emits no `encoderrotate`. Key and joystick decoding are the
+   * same for all models (the Codex Mic pair's ACT10/ACT11 stay separate keys).
+   */
   deviceModel?: HardwareDeviceModel;
   /** Window for double-press detection, in ms. Defaults to 350. */
   doublePressWindowMs?: number;
