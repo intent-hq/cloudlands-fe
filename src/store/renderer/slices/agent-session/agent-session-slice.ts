@@ -1900,11 +1900,8 @@ agentSessionReducer.with(removeMessage, (state, { payload: [agentId, messageId] 
   if (!session) return state;
   const nextMessages = session.messages.filter((message) => message.id !== messageId);
   if (nextMessages.length === session.messages.length) return state;
-  return accountLostOlderTailRows(
-    setSession(state, agentId, { ...session, messages: nextMessages }),
-    agentId,
-    session.messages,
-  );
+  // Removal deletes the row itself; it cannot hide any other resident row, so no gap accounting.
+  return setSession(state, agentId, { ...session, messages: nextMessages });
 });
 agentSessionReducer.with(replaceMessageById, (state, { payload: [agentId, oldId, newMessage] }) =>
   replaceSessionMessageById(state, agentId, oldId, newMessage),
