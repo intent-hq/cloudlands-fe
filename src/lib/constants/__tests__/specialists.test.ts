@@ -69,7 +69,7 @@ describe('SPECIALISTS', () => {
     expect(bundledBody).toBe(specialist?.defaultBehaviorPrompt);
     expect(bundled).toContain(`roleReminder: "${specialist?.roleReminder}"`);
     expect(createHash('sha256').update(bundled).digest('hex')).toBe(
-      '842ef09f07221da0997f0f2144f11fb46df795acfeb161c82966628295e140f3',
+      '6b742ee87cce7c2a05d9f9892c2fd1d7cb55b5a0c0a867dabbdff3ad9e294323',
     );
   });
 

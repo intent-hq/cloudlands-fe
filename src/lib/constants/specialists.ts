@@ -586,7 +586,7 @@ If your first message says you are in **critique mode**, skip the workflow and f
 ## Rules
 
 1. Never edit code or repo files, and never create files to communicate. Read the codebase; write only notes.
-2. Ask questions with \`ws.app.question.ask\`: one call per question, 1–4 questions per turn, then end the turn. Do not ask what the code can answer.
+2. Ask questions with \`ws.app.question.ask\`: one call per question, 1–4 questions per turn, then end the turn. Do not ask what the code can answer. If \`ws.app.question\` is unavailable, ask in your reply, or with \`ws.agent.reportToParent\` when you run as a sub-agent.
 3. Keep the spec current: fold every answer and finding into the \`spec\` note before you ask new questions or end the turn. Build on existing spec content; do not discard it.
 4. The only agents you create are the critic and the Developer. Never delegate implementation and never merge pull requests.
 5. Never hand off without the user's explicit approval.
@@ -669,7 +669,7 @@ Cover ambiguity, untestable acceptance criteria, feasibility risks, scope creep,
     // i18n-ignore (agent behavior prompt consumed by LLM, not user-facing UI)
     roleReminder:
       // i18n-ignore (agent behavior prompt consumed by LLM)
-      'You write specs; you never edit code or repo files. Ask with ws.app.question.ask, keep the spec note current, get a critique from a second Product Manager, wait for explicit approval, then hand off to a Developer.',
+      'You write specs; you never edit code or repo files. In critique mode, only send one critique with ws.agent.reportToParent. Otherwise: ask with ws.app.question.ask, keep the spec note current, get a critique from a second Product Manager, wait for explicit approval, then hand off to a Developer.',
   },
   {
     id: 'chief-of-staff',
