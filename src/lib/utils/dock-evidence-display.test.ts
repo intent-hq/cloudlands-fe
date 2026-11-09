@@ -154,6 +154,31 @@ describe('persisted edited capture presentation', () => {
 });
 
 describe('queued capture display boundary', () => {
+  it('uses exactly one matching flat batch contribution, including adjacent Screen evidence', () => {
+    const content = `${screen}\n\n${prefix}\n\n${prose}`;
+    const group = {
+      content,
+      messageMetadata: { mergedMessageMetadata: [{ type: 'other' }, metadata] },
+      imageBlocks: [blocks[1]],
+      fileBlocks: [blocks[0]],
+    };
+    expect(queuedCapturePresentation(group)).toEqual({
+      text: prose,
+      captureSummary: ['recording'],
+    });
+    expect(
+      queuedCapturePresentation({
+        ...group,
+        messageMetadata: { mergedMessageMetadata: [metadata, metadata] },
+      }).text,
+    ).toBe(content);
+    expect(
+      queuedCapturePresentation({ ...group, content: `${screen}\n\nUnrelated prose\n\n${prefix}` })
+        .text,
+    ).toBe(`${screen}\n\nUnrelated prose\n\n${prefix}`);
+    expect(queuedCapturePresentation({ ...group, messageMetadata: undefined }).text).toBe(content);
+  });
+
   it('consumes trusted screen then edited outputs, retaining user prose and queue bytes', () => {
     const content = `${DOCK_EVIDENCE_CONTEXT_HEADER}\n\`\`\`json\n${JSON.stringify({ type: 'dock_screen_evidence' })}\n\`\`\`\n\n${prefix}\n\n${prose}`;
     const group = {
@@ -169,11 +194,9 @@ describe('queued capture display boundary', () => {
     });
     expect(JSON.stringify(group)).toBe(before);
   });
-  it('keeps untrusted and unmatched-resource JSON byte-identical', () => {
+  it('keeps untrusted JSON but projects exact envelopes independently of resources', () => {
     expect(queuedCapturePresentation({ content: prefix }).text).toBe(prefix);
-    expect(queuedCapturePresentation({ content: prefix, messageMetadata: metadata }).text).toBe(
-      prefix,
-    );
+    expect(queuedCapturePresentation({ content: prefix, messageMetadata: metadata }).text).toBe('');
     expect(
       queuedCapturePresentation({
         content: `user prose\n\n${prefix}`,
@@ -260,8 +283,8 @@ describe('recording-only queued producer envelope', () => {
       queuedCapturePresentation({
         ...group,
         fileBlocks: [{ type: 'image', attachmentId: 'video-1', mimeType: 'video/mp4' }],
-      }).text,
-    ).toBe(prefix);
+      }).captureSummary,
+    ).toEqual([]);
   });
 });
 

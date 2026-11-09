@@ -6,7 +6,7 @@
     type PendingQueueDisplayRow,
   } from '$store/renderer/slices/pending-submissions/pending-submissions-projection';
   import { queuePresentationMessages, queuePresentationLabel } from './queued-message-presentation';
-  import { queuedCapturePresentation, queuedCaptureGroup } from './queued-capture-presentation';
+  import { queuedCaptureDisplay, queuedCaptureGroup } from './queued-capture-presentation';
   import { USER_MESSAGE_TEXT_CLASS } from './user-message-surface';
   import {
     findQueuedMessageForEdit,
@@ -1224,7 +1224,10 @@
                       {/if}
                       <div class="queued-message-body min-w-0 flex-1">
                         {#each message.deliveryGroups?.length ? message.deliveryGroups : [message] as group, index (index)}
-                          {@const captureDisplay = queuedCapturePresentation({ ...queuedCaptureGroup(message, group), content: presentedQueuedText(message, group.content) })}
+                          {@const captureDisplay = queuedCaptureDisplay({
+                            ...queuedCaptureGroup(message, group),
+                            content: presentedQueuedText(message, group.content),
+                          })}
                           {@const groupText = captureDisplay.text}
                           <div
                             class={message.deliveryGroups?.length
@@ -1236,16 +1239,13 @@
                           >
                             <QueuedMessageAttachments
                               message={group}
+                              captures={captureDisplay.captures}
+                              {workspaceId}
                               {queuedImageSrc}
                               {openImageLightbox}
                               {handleReferenceImageError}
                               {openQueuedFileAttachment}
                             />
-                            {#if captureDisplay.captureSummary.length}
-                              <div class="type-caption text-muted-foreground" data-testid="queued-capture-summary">
-                                {captureDisplay.captureSummary.map((kind) => kind === 'screenshot' ? m.browser_overflow_screenshot_label() : m.dock_composer_recording_status()).join(' · ')}
-                              </div>
-                            {/if}
                             {#if groupText.trim()}
                               <Button
                                 variant="plain"

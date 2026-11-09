@@ -1,4 +1,6 @@
 <script lang="ts">
+  import EditedCaptureCard from './EditedCaptureCard.svelte';
+  import type { EditedCapture } from '$lib/utils/dock-evidence-display';
   import FileIcon from 'phosphor-svelte/lib/File';
   import { Button } from '$lib/components/ui/button';
   import type { QueuedMessage } from '$shared/types';
@@ -10,30 +12,55 @@
   type FileBlock = NonNullable<QueuedMessage['fileBlocks']>[number];
   let {
     message,
+    captures = [],
+    workspaceId,
     queuedImageSrc,
     openImageLightbox,
     handleReferenceImageError,
     openQueuedFileAttachment,
   }: {
     message: Pick<QueuedMessage, 'imageBlocks' | 'fileBlocks'>;
+    captures?: EditedCapture[];
+    workspaceId?: string;
     queuedImageSrc: (block: ImageBlock) => string | null;
     openImageLightbox: (block: ImageBlock, opener: HTMLButtonElement, index: number) => void;
     handleReferenceImageError: (block: ImageBlock, src: string) => void;
     openQueuedFileAttachment: (block: FileBlock) => void;
   } = $props();
-  const unsupportedImages = $derived(
-    (message.imageBlocks ?? []).filter(
-      (block) => block.mimeType && !isSupportedImageMimeType(block.mimeType),
+  const captureIds = $derived(
+    new Set(
+      captures.flatMap((capture) => [
+        ...(capture.primaryId ? [capture.primaryId] : []),
+        ...(capture.frames ?? []).map((frame) => frame.attachment_id),
+      ]),
     ),
   );
+  const remainingImages = $derived(
+    (message.imageBlocks ?? []).filter(
+      (block) => !block.attachmentId || !captureIds.has(block.attachmentId),
+    ),
+  );
+  const captureImages = $derived(
+    Object.fromEntries(
+      (message.imageBlocks ?? []).flatMap((block) =>
+        block.attachmentId ? [[block.attachmentId, queuedImageSrc(block)]] : [],
+      ),
+    ),
+  );
+  const imageFailures: Record<string, true> = {};
+  const unsupportedImages = $derived(
+    remainingImages.filter((block) => block.mimeType && !isSupportedImageMimeType(block.mimeType)),
+  );
   const imageBlocks = $derived(
-    (message.imageBlocks ?? []).filter((block) => !unsupportedImages.includes(block)),
+    remainingImages.filter((block) => !unsupportedImages.includes(block)),
   );
   const fileBlocks = $derived([
-    ...(message.fileBlocks ?? []).map((block) => ({
-      ...block,
-      data: undefined as string | undefined,
-    })),
+    ...(message.fileBlocks ?? [])
+      .filter((block) => !captureIds.has(block.attachmentId))
+      .map((block) => ({
+        ...block,
+        data: undefined as string | undefined,
+      })),
     ...unsupportedImages.map((block) => ({
       type: 'file' as const,
       attachmentId: block.attachmentId,
@@ -43,6 +70,40 @@
     })),
   ]);
 </script>
+
+{#if captures.length}
+  <div
+    class="mb-2 flex max-w-full flex-wrap items-start gap-2"
+    data-testid="queued-capture-previews"
+  >
+    {#each captures as capture (capture.id)}
+      <EditedCaptureCard
+        {capture}
+        compact
+        {workspaceId}
+        images={captureImages}
+        {imageFailures}
+        videoMimeType={message.fileBlocks?.find((block) => block.attachmentId === capture.primaryId)
+          ?.mimeType === 'video/webm'
+          ? 'video/webm'
+          : 'video/mp4'}
+        onImage={(id, opener) => {
+          const index = message.imageBlocks?.findIndex((block) => block.attachmentId === id) ?? -1;
+          const block = message.imageBlocks?.[index];
+          if (block) openImageLightbox(block, opener, index);
+        }}
+        onImageError={(id, src) => {
+          const block = message.imageBlocks?.find((block) => block.attachmentId === id);
+          if (block) handleReferenceImageError(block, src);
+        }}
+        onOpenFile={(id) => {
+          const block = message.fileBlocks?.find((block) => block.attachmentId === id);
+          if (block) openQueuedFileAttachment(block);
+        }}
+      />
+    {/each}
+  </div>
+{/if}
 
 {#if imageBlocks.length > 0}
   <div class="inline-flex max-w-full flex-wrap items-center gap-1">

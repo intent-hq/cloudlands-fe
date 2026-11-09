@@ -1,23 +1,34 @@
 import {
-  consumeEditedCapturePrefix,
+  consumeEditedCaptureEnvelope,
+  dockCaptureDisplayCandidates,
   editedCaptureCards,
-  isDockEvidenceMessage,
   type CaptureResource,
+  type EditedCapture,
 } from '$lib/utils/dock-evidence-display';
-type QueueResource = Omit<CaptureResource, 'type'> & { type?: string };
 import { consumeDockEvidencePrefix } from '$lib/utils/parseStoredMessage';
+type QueueResource = Omit<CaptureResource, 'type'> & { type?: string };
 
-/** Display only: each delivery unit must vouch for its own prefix and resources. */
-export function queuedCapturePresentation(group: {
-  content: string;
-  messageMetadata?: Record<string, unknown>;
-  imageBlocks?: readonly QueueResource[];
-  fileBlocks?: readonly QueueResource[];
-}): { text: string; captureSummary: Array<'screenshot' | 'recording'> } {
-  const original = { text: group.content, captureSummary: [] };
-  if (!isDockEvidenceMessage(group.messageMetadata)) return original;
-  // Queue arrays carry their resource kind separately from each descriptor.
-  // Accept an omitted redundant tag, but refuse a contradictory explicit tag.
+interface CaptureDisplay {
+  text: string;
+  captures: EditedCapture[];
+}
+
+/** Display only: exact producer metadata owns its adjacent envelopes. Resource
+ * joins remain separately required for cards, never for hiding generated text. */
+export function queuedCaptureDisplay(group: CaptureUnit): CaptureDisplay {
+  const original = { text: group.content, captures: [] };
+  const candidates = dockCaptureDisplayCandidates(group.messageMetadata);
+  // Inspect Screen without trusting it yet: only an exact adjacent Edited
+  // envelope from one contribution can vouch for the pair.
+  const screen = consumeDockEvidencePrefix(group.content, { trusted: true });
+  const text = screen?.remaining ?? group.content;
+  const matches = candidates.flatMap((metadata) => {
+    const envelope = consumeEditedCaptureEnvelope(text, metadata);
+    return envelope ? [{ metadata, envelope }] : [];
+  });
+  if (matches.length !== 1) return original;
+  const { metadata, envelope } = matches[0];
+  // Queue arrays own the resource kind; contradictory explicit tags are refused.
   const blocks: CaptureResource[] = [
     ...(group.imageBlocks ?? [])
       .filter((b) => b.type === undefined || b.type === 'image')
@@ -26,21 +37,16 @@ export function queuedCapturePresentation(group: {
       .filter((b) => b.type === undefined || b.type === 'file')
       .map((b) => ({ ...b, type: 'file' })),
   ];
-  const screen = consumeDockEvidencePrefix(group.content, { trusted: true });
-  const edited = consumeEditedCapturePrefix(
-    screen?.remaining ?? group.content,
-    group.messageMetadata,
-    blocks,
-  );
-  // Hide neither prefix unless the edited producer payload and resource joins
-  // agree; malformed or unrelated JSON remains fully visible.
-  if (!edited) return original;
-  return {
-    text: edited.remaining,
-    captureSummary: editedCaptureCards(group.messageMetadata, blocks).map(
-      (capture) => capture.kind,
-    ),
-  };
+  return { text: envelope.remaining, captures: editedCaptureCards(metadata, blocks) };
+}
+
+/** Retain the small summary API for callers that do not render cards. */
+export function queuedCapturePresentation(group: CaptureUnit): {
+  text: string;
+  captureSummary: Array<'screenshot' | 'recording'>;
+} {
+  const display = queuedCaptureDisplay(group);
+  return { text: display.text, captureSummary: display.captures.map((capture) => capture.kind) };
 }
 
 interface CaptureUnit {
