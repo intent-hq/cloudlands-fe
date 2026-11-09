@@ -353,7 +353,16 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script, so each ref runs its own version of it
+          # (refs before intentd#3156 lack the download-outage fallback); a
+          # ref that predates the script builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -799,10 +808,7 @@ jobs:
           rustup target add x86_64-pc-windows-msvc
           rustup show active-toolchain
 
-      # Keyed per target so a cache saved by another leg's target can never
-      # be restored here; cache-on-failure keeps the compiled deps when a
-      # later step fails after a completed cold cargo build (see the macOS
-      # leg for the full rationale).
+      # Share compiler outputs through the self-hosted cache (see the macOS leg).
       - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash
@@ -810,7 +816,16 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script, so each ref runs its own version of it
+          # (refs before intentd#3156 lack the download-outage fallback); a
+          # ref that predates the script builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -1118,10 +1133,7 @@ jobs:
           rustup target add ${{ matrix.intentd_target }}
           rustup show active-toolchain
 
-      # Keyed per target so a cache saved by another leg's target can never
-      # be restored here; cache-on-failure keeps the compiled deps when a
-      # later step fails after a completed cold cargo build (see the macOS
-      # leg for the full rationale).
+      # Share compiler outputs through the self-hosted cache (see the macOS leg).
       - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash
@@ -1129,7 +1141,16 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script, so each ref runs its own version of it
+          # (refs before intentd#3156 lack the download-outage fallback); a
+          # ref that predates the script builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands

@@ -87,7 +87,7 @@ export function installFromArchive(buffer, { key, cacheDir }) {
 // reaches the API fallback within a few minutes.
 const DOWNLOAD_TIMEOUT_MS = 30_000;
 // Delays between attempts, in milliseconds: four attempts per source in all,
-// matching scripts/download_retry.py.
+// matching intent-hq/intentd scripts/download_retry.py.
 export const RETRY_DELAYS_MS = Object.freeze([2_000, 5_000, 15_000]);
 const RELEASE_REPO = 'rhysd/actionlint';
 const ATTEMPTS = RETRY_DELAYS_MS.length + 1;
