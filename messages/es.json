@@ -5114,6 +5114,7 @@
   "settings_gitWorkspace_defaultShell_label": "Shell predeterminado",
   "settings_gitWorkspace_experimental_badge": "Experimental",
   "settings_gitWorkspace_gitCredentials_description": "Cuando está activado, los comandos de git en los terminales de espacios de trabajo y las sesiones de agente pueden autenticarse en github.com con su cuenta de GitHub conectada, mediante un asistente de credenciales limitado a remotos HTTPS de github.com. El token nunca se expone como GITHUB_TOKEN, y sus propios asistentes de credenciales de git siempre tienen prioridad.",
+  "settings_gitWorkspace_gitCredentials_remoteDescription": "Los agentes en máquinas remotas también reciben el token como GH_TOKEN para gh. Allí, el asistente de Intent es el único que se usa para github.com, y los subagentes pueden leer pero no enviar cambios.",
   "settings_gitWorkspace_gitCredentials_label": "Credenciales de Git en terminales y agentes",
   "settings_gitWorkspace_loadError": "No se pudo cargar la configuración desde el backend.",
   "settings_gitWorkspace_saveError": "No se pudo guardar la configuración. Inténtelo de nuevo.",

@@ -5114,6 +5114,7 @@
   "settings_gitWorkspace_defaultShell_label": "デフォルトシェル",
   "settings_gitWorkspace_experimental_badge": "実験的",
   "settings_gitWorkspace_gitCredentials_description": "オンにすると、ワークスペースのターミナルおよびエージェントセッション内の git コマンドが、HTTPS の github.com リモートに限定された資格情報ヘルパーを介して、接続済みの GitHub アカウントで github.com に認証できるようになります。トークンが GITHUB_TOKEN として公開されることはなく、ご自身の git 資格情報ヘルパーが常に優先されます。",
+  "settings_gitWorkspace_gitCredentials_remoteDescription": "リモートマシン上のエージェントには、gh 用にトークンが GH_TOKEN としても渡されます。そこでは github.com に Intent のヘルパーだけが使われ、サブエージェントは読み取りのみでプッシュできません。",
   "settings_gitWorkspace_gitCredentials_label": "ターミナルとエージェントでの Git 資格情報",
   "settings_gitWorkspace_loadError": "バックエンドから設定を読み込めませんでした。",
   "settings_gitWorkspace_saveError": "設定を保存できませんでした。もう一度お試しください。",

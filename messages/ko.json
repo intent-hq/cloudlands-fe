@@ -5114,6 +5114,7 @@
   "settings_gitWorkspace_defaultShell_label": "기본 셸",
   "settings_gitWorkspace_experimental_badge": "실험적",
   "settings_gitWorkspace_gitCredentials_description": "켜면 작업 공간 터미널과 에이전트 세션의 git 명령이 HTTPS github.com 원격 저장소로 범위가 제한된 자격 증명 도우미를 통해 연결된 GitHub 계정으로 github.com에 인증할 수 있습니다. 토큰은 GITHUB_TOKEN으로 노출되지 않으며, 사용자의 git 자격 증명 도우미가 항상 우선합니다.",
+  "settings_gitWorkspace_gitCredentials_remoteDescription": "원격 머신의 에이전트는 gh용 GH_TOKEN으로도 토큰을 받습니다. 그곳에서는 github.com에 Intent의 도우미만 사용되며, 하위 에이전트는 읽을 수 있지만 푸시할 수 없습니다.",
   "settings_gitWorkspace_gitCredentials_label": "터미널 및 에이전트의 Git 자격 증명",
   "settings_gitWorkspace_loadError": "백엔드에서 설정을 불러오지 못했습니다.",
   "settings_gitWorkspace_saveError": "설정을 저장하지 못했습니다. 다시 시도해 주세요.",

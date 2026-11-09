@@ -5114,6 +5114,7 @@
   "settings_gitWorkspace_defaultShell_label": "默认 Shell",
   "settings_gitWorkspace_experimental_badge": "实验性",
   "settings_gitWorkspace_gitCredentials_description": "开启后，工作区终端和智能体会话中的 git 命令可以通过你已连接的 GitHub 账号向 github.com 进行身份验证，凭据助手仅作用于 HTTPS github.com 远程仓库。令牌绝不会以 GITHUB_TOKEN 形式暴露，且你自己的 git 凭据助手始终优先。",
+  "settings_gitWorkspace_gitCredentials_remoteDescription": "远程机器上的智能体还会以 GH_TOKEN 形式获得令牌，供 gh 使用。在那里，github.com 只使用 Intent 的凭据助手，子智能体可以读取但不能推送。",
   "settings_gitWorkspace_gitCredentials_label": "终端和智能体中的 Git 凭据",
   "settings_gitWorkspace_loadError": "从后端加载设置失败。",
   "settings_gitWorkspace_saveError": "保存设置失败，请重试。",

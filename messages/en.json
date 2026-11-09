@@ -5114,6 +5114,7 @@
   "settings_gitWorkspace_defaultShell_label": "Default Shell",
   "settings_gitWorkspace_experimental_badge": "Experimental",
   "settings_gitWorkspace_gitCredentials_description": "When on, git commands in workspace terminals and agent sessions can authenticate to github.com using your connected GitHub account, via a credential helper scoped to HTTPS github.com remotes. The token is never exposed as GITHUB_TOKEN, and your own git credential helpers always take precedence.",
+  "settings_gitWorkspace_gitCredentials_remoteDescription": "Agents on remote machines also get the token as GH_TOKEN for gh. There, Intent's helper is the only one used for github.com, and sub-agents can read but not push.",
   "settings_gitWorkspace_gitCredentials_label": "Git credentials in terminals & agents",
   "settings_gitWorkspace_loadError": "Failed to load settings from the backend.",
   "settings_gitWorkspace_saveError": "Failed to save settings. Please try again.",
