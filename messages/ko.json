@@ -8174,6 +8174,7 @@
   "dock_conversation_chooseAgent_description": "대화를 볼 에이전트를 선택하세요.",
   "dock_conversation_loadFailed_error": "이 대화를 불러올 수 없습니다.",
   "dock_conversation_sendFailed_error": "답장을 보낼 수 없습니다. 초안은 저장되었습니다.",
+  "dock_conversation_imageBudget_error": "이 이미지들은 함께 보내기에 너무 큽니다. 일부를 삭제한 후 다시 보내세요. 초안은 저장되었습니다.",
   "dock_conversation_attention_description": "작업 공간을 열어 대기 중인 요청에 답하세요.",
   "dock_conversation_attachments_description": "이 초안에는 첨부 파일이 있습니다. 작업 공간에서 계속하세요.",
   "dock_conversation_queued_label": "답장이 대기열에 추가됨",

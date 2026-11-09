@@ -8174,6 +8174,7 @@
   "dock_conversation_chooseAgent_description": "選擇智慧體以查看其對話。",
   "dock_conversation_loadFailed_error": "無法載入此對話。",
   "dock_conversation_sendFailed_error": "無法傳送回覆。草稿已儲存。",
+  "dock_conversation_imageBudget_error": "這些圖片合在一起太大，無法傳送。請移除一些後再傳送。草稿已儲存。",
   "dock_conversation_attention_description": "開啟工作區以回應待處理的請求。",
   "dock_conversation_attachments_description": "此草稿包含附件。請在工作區中繼續。",
   "dock_conversation_queued_label": "回覆已加入佇列",

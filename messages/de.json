@@ -8174,6 +8174,7 @@
   "dock_conversation_chooseAgent_description": "Wähle einen Agenten, um seine Unterhaltung anzuzeigen.",
   "dock_conversation_loadFailed_error": "Diese Unterhaltung konnte nicht geladen werden.",
   "dock_conversation_sendFailed_error": "Deine Antwort konnte nicht gesendet werden. Dein Entwurf ist gespeichert.",
+  "dock_conversation_imageBudget_error": "Diese Bilder sind zusammen zu groß zum Senden. Entferne einige und sende dann erneut. Dein Entwurf ist gespeichert.",
   "dock_conversation_attention_description": "Öffne den Arbeitsbereich, um die ausstehende Anfrage zu beantworten.",
   "dock_conversation_attachments_description": "Dieser Entwurf enthält Anhänge. Fahre im Arbeitsbereich fort.",
   "dock_conversation_queued_label": "Antwort in Warteschlange",

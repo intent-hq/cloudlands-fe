@@ -26,7 +26,7 @@ const KNOWN_CODES = new Set([
   // canonical rendering
   'capture-render-unavailable', 'capture-blur-unavailable', 'stale-source-pixels', 'not-a-screenshot',
   // admission and evidence
-  'not-admitted', 'unavailable', 'dock-evidence-missing-pixels', 'draft-restore-failed',
+  'not-admitted', 'unavailable', 'dock-evidence-missing-pixels', 'draft-restore-failed', 'image-budget-exceeded',
 ]);
 /** A native result's own error words, kept after `media-export-failed:`. */
 const NATIVE_ERRORS = new Set(['unavailable', 'permission', 'failed', 'busy', 'cancelled', 'limit']);

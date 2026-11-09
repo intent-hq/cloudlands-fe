@@ -8174,6 +8174,7 @@
   "dock_conversation_chooseAgent_description": "Choose an agent to view its conversation.",
   "dock_conversation_loadFailed_error": "Could not load this conversation.",
   "dock_conversation_sendFailed_error": "Could not send your reply. Your draft is saved.",
+  "dock_conversation_imageBudget_error": "These images are too large to send together. Remove some, then send again. Your draft is saved.",
   "dock_conversation_attention_description": "Open the workspace to answer the pending request.",
   "dock_conversation_attachments_description": "This draft has attachments. Continue in the workspace.",
   "dock_conversation_queued_label": "Reply queued",

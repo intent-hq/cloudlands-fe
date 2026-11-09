@@ -8174,6 +8174,7 @@
   "dock_conversation_chooseAgent_description": "Choisissez un agent pour afficher sa conversation.",
   "dock_conversation_loadFailed_error": "Impossible de charger cette conversation.",
   "dock_conversation_sendFailed_error": "Impossible d’envoyer votre réponse. Votre brouillon est enregistré.",
+  "dock_conversation_imageBudget_error": "Ces images sont trop volumineuses pour être envoyées ensemble. Retirez-en quelques-unes, puis renvoyez. Votre brouillon est enregistré.",
   "dock_conversation_attention_description": "Ouvrez l’espace de travail pour répondre à la demande en attente.",
   "dock_conversation_attachments_description": "Ce brouillon contient des pièces jointes. Continuez dans l’espace de travail.",
   "dock_conversation_queued_label": "Réponse en attente",

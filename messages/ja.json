@@ -8174,6 +8174,7 @@
   "dock_conversation_chooseAgent_description": "エージェントを選択して会話を表示します。",
   "dock_conversation_loadFailed_error": "この会話を読み込めませんでした。",
   "dock_conversation_sendFailed_error": "返信を送信できませんでした。下書きは保存されています。",
+  "dock_conversation_imageBudget_error": "これらの画像はまとめて送信するには大きすぎます。いくつか削除してから、もう一度送信してください。下書きは保存されています。",
   "dock_conversation_attention_description": "ワークスペースを開いて保留中のリクエストに回答してください。",
   "dock_conversation_attachments_description": "この下書きには添付ファイルがあります。ワークスペースで続けてください。",
   "dock_conversation_queued_label": "返信は送信待ちです",

@@ -11,6 +11,7 @@ import {
   type DockSavedMedia,
 } from '../../../shared/dock-media-edit';
 import type { DockMediaExportRequest, DockMediaNativeOutput, DockMediaTranscribeRequest } from '../../../shared/dock-media-output';
+import { fitDockMediaFrames } from './dock-media-frames';
 import type { DockNativeResult } from '../../../shared/dock-evidence';
 import type { DockEvidenceContext } from './dock-evidence-session';
 import { requestRouted } from '../../backend/main/transfer-connections';
@@ -226,7 +227,9 @@ export async function exportDockMedia(context: DockEvidenceContext, request: Doc
     if (completed.outputVersion !== DOCK_MEDIA_OUTPUT_VERSION) throw new Error('media-output-version-mismatch');
     const videoSize = (await stat(output)).size;
     if (videoSize <= 0 || videoSize > MAX_BYTES) throw new Error('media-output-size');
-    const frameFiles = await Promise.all(frames.map(async (frame, index) => ({ sourcePath: frame.path, mimeType: 'image/png', size: (await stat(frame.path)).size, markId: plan.marks[index].mark.id })));
+    const fitted = frames.length ? await fitDockMediaFrames(frames.map((frame) => frame.path), job.directory) : [];
+    check(context, job);
+    const frameFiles = await Promise.all(fitted.map(async (file, index) => ({ sourcePath: file, mimeType: 'image/jpeg', size: (await stat(file)).size, markId: plan.marks[index].mark.id })));
     check(context, job);
     return { ok: true, value: { jobId: job.id, video: { sourcePath: output, mimeType: 'video/mp4', size: videoSize }, frames: frameFiles } };
   } catch {
