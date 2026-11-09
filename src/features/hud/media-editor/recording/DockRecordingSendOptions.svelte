@@ -34,6 +34,17 @@
     onChange: (choice: DockMediaChoice) => void;
   } = $props();
 
+  let fullHelpOpen = $state(false);
+  let highlightsHelpOpen = $state(false);
+
+  function dismissHelp(event: KeyboardEvent): void {
+    if (event.key !== 'Escape' || event.isComposing || (!fullHelpOpen && !highlightsHelpOpen)) return;
+    // Dismiss this local help layer before the editor's Escape-to-close handler.
+    event.preventDefault();
+    fullHelpOpen = false;
+    highlightsHelpOpen = false;
+  }
+
   const highlights = $derived(edit ? canUseHighlights(edit) : false);
   const voice = $derived(
     source
@@ -54,6 +65,8 @@
   } as const;
 </script>
 
+<svelte:window onkeydowncapture={dismissHelp} />
+
 <section class="options" data-send-options>
   <div class="group">
     <span class="label" id="send-video-label">{m.dock_captureEditor_video_label()}</span>
@@ -70,12 +83,17 @@
           onChange({ video: value, voice: voiceChoice });
       }}
     >
-      <Tooltip content={m.dock_captureEditor_videoFull_help()} contentClass="dock-chrome-tooltip">
+      <Tooltip
+        bind:open={fullHelpOpen}
+        content={m.dock_captureEditor_videoFull_help()}
+        contentClass="dock-chrome-tooltip"
+      >
         <ToggleGroup.Item {...keepToggleSelected} value="full"
           >{m.dock_captureEditor_videoFull_label()}</ToggleGroup.Item
         >
       </Tooltip>
       <Tooltip
+        bind:open={highlightsHelpOpen}
         content={highlights
           ? m.dock_captureEditor_videoHighlights_help()
           : m.dock_captureEditor_videoHighlights_disabled()}
