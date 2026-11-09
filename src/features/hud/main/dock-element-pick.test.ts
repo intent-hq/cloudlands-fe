@@ -4,6 +4,17 @@ import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../main/dock-window', () => ({ getDockWindow: () => null }));
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/fake/dist/main' } }));
+const logged = vi.hoisted(() => [] as { message: string; data: unknown }[]);
+vi.mock('../../../shared/logger', () => ({
+  Logger: class {
+    info(message: string, data?: unknown) {
+      logged.push({ message, data });
+    }
+    warn() {}
+    error() {}
+    debug() {}
+  },
+}));
 
 import type { ChildProcess } from 'node:child_process';
 import { DockElementPicker, parseDockHitReply } from './dock-element-pick';
@@ -146,5 +157,54 @@ describe('DockElementPicker', () => {
     await expect(
       picker('darwin', null).instance.hit({ x: 1, y: 1 }, { element: true }),
     ).resolves.toMatchObject({ checked: false });
+  });
+});
+
+describe('window-null diagnostic', () => {
+  const blocker = { pid: 77, windowId: 4242, layer: 25, bounds: { x: 0, y: 33, width: 1728, height: 1084 }, alpha: 1 };
+
+  it('keeps only bounded window metadata, never names or titles', () => {
+    const reply = parseDockHitReply(
+      JSON.stringify({
+        id: 3, ok: true, trusted: true, window: null, element: null,
+        diagnostic: { reason: 'system-layer', listCount: 41, blocker: { ...blocker, app: 'Secret App', name: 'Inbox — me@x' } },
+      }),
+    );
+    expect(reply!.hit.window).toBeNull();
+    expect(reply!.hit.diagnostic).toEqual({ reason: 'system-layer', listCount: 41, blocker });
+    expect(JSON.stringify(reply)).not.toMatch(/Secret|Inbox/);
+  });
+
+  it('drops a malformed diagnostic and ignores one when a window was found', () => {
+    const parse = (diagnostic: unknown, win: unknown = null) =>
+      parseDockHitReply(JSON.stringify({ id: 1, ok: true, trusted: true, window: win, element: null, diagnostic }))!.hit;
+    expect(parse({ reason: 'guess', listCount: 3 }).diagnostic).toBeNull();
+    expect(parse({ reason: 'none', listCount: -1 }).diagnostic).toBeNull();
+    expect(parse({ reason: 'system-layer', listCount: 3, blocker: { ...blocker, layer: 'x' } }).diagnostic).toEqual({
+      reason: 'system-layer', listCount: 3, blocker: null,
+    });
+    expect(parse({ reason: 'none', listCount: 0 }).diagnostic).toEqual({ reason: 'none', listCount: 0, blocker: null });
+    expect(parse({ reason: 'none', listCount: 9 }, window)).not.toHaveProperty('diagnostic');
+    // An older helper sends none: the answer is as before.
+    expect(parse(undefined)).toMatchObject({ checked: true, window: null, diagnostic: null });
+  });
+
+  it('logs one bounded line per checked answer with no window', async () => {
+    logged.length = 0;
+    const { instance, helpers } = picker();
+    const first = instance.hit({ x: 10, y: 20 }, { element: true });
+    await vi.waitFor(() => expect(helpers[0]!.commands).toHaveLength(1));
+    helpers[0]!.reply({ id: 1, ok: true, trusted: true, window: null, element: null,
+      diagnostic: { reason: 'system-layer', listCount: 41, blocker: { ...blocker, app: 'Secret App' } } });
+    await first;
+    const second = instance.hit({ x: 10, y: 20 }, { element: false });
+    await vi.waitFor(() => expect(helpers[0]!.commands).toHaveLength(2));
+    helpers[0]!.reply({ id: 2, ok: true, trusted: true, window, element: null });
+    await second;
+    const lines = logged.filter((row) => row.message === 'Dock element picker found no app window');
+    expect(lines).toEqual([
+      { message: 'Dock element picker found no app window', data: { reason: 'system-layer', listCount: 41, blocker } },
+    ]);
+    expect(JSON.stringify(logged)).not.toMatch(/Secret/);
   });
 });
