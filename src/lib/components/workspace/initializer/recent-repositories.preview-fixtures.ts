@@ -16,7 +16,6 @@ import {
 } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { workspaceInitializerSaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga';
 import { workspaceInitializerRepositorySaga } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga';
-import { invalidateCowIsolationSetting } from './cow-isolation-setting';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { createRecentRepositoriesClientFixture } from '../../../../test/fixtures/recent-repositories-client';
 import {
@@ -62,7 +61,6 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
   workspaceClient.list = async () => ({ ok: true, data: [] });
   appClient.git.originUrl = createRecentRepositoriesClientFixture().git.originUrl;
   appClient.settings.get = async () => null;
-  invalidateCowIsolationSetting();
   appStore.dispatch(setWorkspaceInitializerRecentRepos([]));
   const restoreRegistry = overrideMockIpcHandler(
     WORKSPACE_CHANNELS.GET_RECENT_REPOSITORIES,
@@ -110,7 +108,6 @@ export function setupRecentRepositoriesPreview(persist = false, hydrationReady?:
     appClient.git.originUrl = previousOriginUrl;
     appClient.settings.get = previousGetSetting;
     appClient.settings.update = previousUpdateSetting;
-    invalidateCowIsolationSetting();
     appStore.dispatch(replaceWorkspaceList(previousWorkspaces));
     // A preview without the persistence saga may still have pending sources.
     // Settle that first so restoring the prior fixture is an ordinary hydration.
