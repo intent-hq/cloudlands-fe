@@ -521,8 +521,9 @@ napi_value ReleaseKey(napi_env env, napi_value* args, Environment* environment) 
     environment->keySink = sink;
   }
   // This app is active (the person was in one of its windows): its frontmost other
-  // window takes the keyboard back. Otherwise (the dock panel never activated the app)
-  // the sink takes key for an instant and orders out, returning it to the active app.
+  // window takes the keyboard back, or with none the app deactivates. If the dock is
+  // still key (the panel never activated the app), the sink takes key for an instant
+  // and orders out, returning it to the active app. The dock never leaves the screen.
   NSWindow* next = nil;
   if (NSApp.active) {
     for (NSWindow* candidate in NSApp.orderedWindows) {
@@ -535,7 +536,12 @@ napi_value ReleaseKey(napi_env env, napi_value* args, Environment* environment) 
   }
   if (next) {
     [next makeKeyWindow];
-  } else {
+  } else if (NSApp.active) {
+    // Active with no other window to take the keyboard: step back so the app the
+    // person came from becomes active again.
+    [NSApp deactivate];
+  }
+  if (window.keyWindow) {
     IntentDockKeySink* sink = environment->keySink;
     sink.level = window.level;
     [sink makeKeyAndOrderFront:nil];
