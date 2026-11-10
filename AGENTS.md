@@ -803,6 +803,7 @@ Reuse the existing infrastructure instead of inventing parallel harnesses:
 | `src/shared/ipc/__tests__/contracts.test.ts`       | Reference pattern for asserting IPC contracts and request schemas — extend it for new methods.       |
 | `src/test-setup.ts`                                | Vitest global setup (Electron mocks, jsdom shims, temp workspace dir). New suites get this for free. |
 | `src/test/layer-exit.ts`                           | Unit tests closing menus/dialogs: `waitForLayerExit(el)`, `pressOutsideLayer(el)` (jsdom-safe).      |
+| `src/test/animation-frames.ts`                     | Unit tests stepping rAF: `installAnimationFrames()` honors cancels and flushes effects per callback. |
 
 Run the targeted suite with `pnpm vitest run <files>` (see [Verification](#verification)
 above) before opening a PR.

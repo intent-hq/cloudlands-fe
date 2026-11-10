@@ -16,6 +16,9 @@
  * - Writes scheduled during either phase run in this frame's write phase.
  * - Reads scheduled during the write phase defer to the NEXT frame (the
  *   write phase dirties layout).
+ * - Cancelling never cancels the shared frame. A task queued after a cancel
+ *   (for example, by a tween callback that runs earlier in the same browser
+ *   frame) must still run in that frame; a new request would run next frame.
  */
 
 interface Task {
@@ -28,7 +31,7 @@ export type CancelLayoutTask = () => void;
 
 let readTasks: Task[] = [];
 let writeTasks: Task[] = [];
-let frameId: number | null = null;
+let frameRequested = false;
 let flushing = false;
 let pendingTasks = 0;
 
@@ -46,17 +49,14 @@ function runTask(task: Task) {
   }
 }
 
-const FRAME_PENDING = -1;
 let scheduledWith: typeof globalThis.requestAnimationFrame | null = null;
 
 function cancelTask(task: Task) {
   if (!task.pending) return;
   task.pending = false;
   pendingTasks -= 1;
+  // Release cancelled closures; the armed frame then flushes nothing.
   if (pendingTasks > 0 || flushing) return;
-  if (frameId !== null && frameId !== FRAME_PENDING) cancelAnimationFrame(frameId);
-  frameId = null;
-  scheduledWith = null;
   readTasks = [];
   writeTasks = [];
 }
@@ -67,18 +67,16 @@ function ensureFrame() {
   // scheduled against a different requestAnimationFrame implementation —
   // test environments stub rAF per test, which would otherwise strand the
   // queue behind a callback that never fires.
-  if (frameId !== null && scheduledWith === raf) return;
+  if (frameRequested && scheduledWith === raf) return;
   scheduledWith = raf;
-  // Sentinel first: stubs that invoke the callback synchronously reset
-  // frameId to null inside flush() before the call returns — the returned
-  // id must not be written back over that.
-  frameId = FRAME_PENDING;
-  const id = raf(flush);
-  if (frameId === FRAME_PENDING) frameId = id;
+  // Set before the call: stubs that invoke the callback synchronously clear
+  // it inside flush().
+  frameRequested = true;
+  raf(flush);
 }
 
 function flush() {
-  frameId = null;
+  frameRequested = false;
   flushing = true;
   try {
     while (readTasks.length > 0) {

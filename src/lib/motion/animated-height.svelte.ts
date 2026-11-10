@@ -73,8 +73,7 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
     $effect(() => {
       // Subscribe here; the write consumes the latest value after all reads.
       const current = height.current;
-      // Keep a pending write: replacing it every tick can cancel the shared
-      // frame and starve the write until the animation ends.
+      // One pending write serves every tick; it writes the latest height.
       if (!initialized || destroyed || current === writtenHeight || cancelStyle) return;
       cancelStyle = scheduleLayoutWrite(() => {
         cancelStyle = undefined;

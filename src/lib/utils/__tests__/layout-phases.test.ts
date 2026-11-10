@@ -1,35 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { installAnimationFrames, type AnimationFrames } from '../../../test/animation-frames';
 import { scheduleLayoutRead, scheduleLayoutWrite } from '../layout-phases';
 
 describe('layout-phases', () => {
-  let rafCallbacks: FrameRequestCallback[];
-  let rafSpy: ReturnType<typeof vi.spyOn>;
+  let frames: AnimationFrames;
 
   beforeEach(() => {
-    rafCallbacks = [];
-    rafSpy = vi
-      .spyOn(globalThis, 'requestAnimationFrame')
-      .mockImplementation((cb: FrameRequestCallback) => {
-        rafCallbacks.push(cb);
-        return rafCallbacks.length;
-      });
+    frames = installAnimationFrames({ afterCallback: () => {} });
   });
 
   afterEach(() => {
     // Drain any pending tasks so state does not leak across tests.
-    flushFrames();
-    rafSpy.mockRestore();
+    frames.runFrames(10);
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
-
-  function flushFrames() {
-    let guard = 0;
-    while (rafCallbacks.length > 0 && guard < 10) {
-      const batch = rafCallbacks;
-      rafCallbacks = [];
-      for (const cb of batch) cb(performance.now());
-      guard += 1;
-    }
-  }
 
   it('runs all reads before all writes within one frame, regardless of scheduling order', () => {
     const order: string[] = [];
@@ -39,7 +24,7 @@ describe('layout-phases', () => {
     scheduleLayoutRead(() => order.push('read-2'));
 
     expect(order).toEqual([]);
-    flushFrames();
+    frames.runFrame();
     expect(order).toEqual(['read-1', 'read-2', 'write-1', 'write-2']);
   });
 
@@ -47,7 +32,7 @@ describe('layout-phases', () => {
     scheduleLayoutRead(() => {});
     scheduleLayoutRead(() => {});
     scheduleLayoutWrite(() => {});
-    expect(rafCallbacks).toHaveLength(1);
+    expect(frames.pending).toBe(1);
   });
 
   it('lets a read schedule a write into the same frame', () => {
@@ -56,7 +41,7 @@ describe('layout-phases', () => {
       order.push('read');
       scheduleLayoutWrite(() => order.push('write'));
     });
-    flushFrames();
+    frames.runFrame();
     expect(order).toEqual(['read', 'write']);
   });
 
@@ -67,7 +52,7 @@ describe('layout-phases', () => {
       scheduleLayoutRead(() => order.push('read-2'));
     });
     scheduleLayoutWrite(() => order.push('write'));
-    flushFrames();
+    frames.runFrame();
     expect(order).toEqual(['read-1', 'read-2', 'write']);
   });
 
@@ -78,13 +63,11 @@ describe('layout-phases', () => {
       scheduleLayoutRead(() => order.push('late-read'));
     });
 
-    const frame = rafCallbacks;
-    rafCallbacks = [];
-    for (const cb of frame) cb(performance.now());
+    frames.runFrame();
     expect(order).toEqual(['write']);
-    expect(rafCallbacks).toHaveLength(1);
+    expect(frames.pending).toBe(1);
 
-    flushFrames();
+    frames.runFrame();
     expect(order).toEqual(['write', 'late-read']);
   });
 
@@ -95,7 +78,7 @@ describe('layout-phases', () => {
     const cancelWrite = scheduleLayoutWrite(write);
     cancelRead();
     cancelWrite();
-    flushFrames();
+    frames.runFrame();
     expect(read).not.toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
   });
@@ -118,14 +101,14 @@ describe('layout-phases', () => {
     });
     scheduleLayoutRead(() => order.push('read-2'));
     scheduleLayoutWrite(() => order.push('write'));
-    expect(() => flushFrames()).not.toThrow();
+    expect(() => frames.runFrame()).not.toThrow();
     expect(order).toEqual(['read-2', 'write']);
     expect(microtaskSpy).toHaveBeenCalledTimes(1);
     microtaskSpy.mockRestore();
   });
 
   it('supports synchronously-invoking rAF stubs without stranding the queue', () => {
-    rafSpy.mockImplementation((cb: FrameRequestCallback) => {
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
       cb(performance.now());
       return 0;
     });
@@ -134,5 +117,33 @@ describe('layout-phases', () => {
     expect(order).toEqual(['read']);
     scheduleLayoutWrite(() => order.push('write'));
     expect(order).toEqual(['read', 'write']);
+  });
+
+  it('keeps a write cancelled and rescheduled earlier in the frame in that frame', () => {
+    const order: string[] = [];
+    // Tweens tick in their own frame callback, queued before the layout frame.
+    requestAnimationFrame(() => {
+      order.push('tick');
+      cancel();
+      scheduleLayoutWrite(() => order.push('fresh'));
+    });
+    const cancel = scheduleLayoutWrite(() => order.push('stale'));
+
+    frames.runFrame();
+    expect(order).toEqual(['tick', 'fresh']);
+    expect(frames.pending).toBe(0);
+  });
+
+  it('keeps a frame armed for tasks queued after the last pending task was cancelled', () => {
+    const order: string[] = [];
+    const cancelRead = scheduleLayoutRead(() => order.push('stale'));
+    cancelRead();
+    scheduleLayoutRead(() => order.push('read'));
+    scheduleLayoutWrite(() => order.push('write'));
+    expect(frames.pending).toBe(1);
+
+    frames.runFrame();
+    expect(order).toEqual(['read', 'write']);
+    expect(frames.pending).toBe(0);
   });
 });
