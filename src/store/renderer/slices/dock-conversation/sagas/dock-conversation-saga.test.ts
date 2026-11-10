@@ -87,6 +87,8 @@ import { systemStatusSuccess } from '../../daemon-health/daemon-health-slice';
 import type { SystemStatusWirePayload } from '../../daemon-health/daemon-health-types';
 import {
   dockEvidenceAnnotationToggleRequested,
+  dockEvidenceToolSelectRequested,
+  dockEvidenceCaptureCancelled,
   dockEvidenceCaptureRequested,
   dockMediaEditorOpenRequested,
   dockEvidenceCaptureModeSet,
@@ -2071,8 +2073,11 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     // The composer's state reaches the bar, and again before a session starts.
     appStore.dispatch(dockEvidenceBarMediaChanged(workspaceA, mainA, media));
     await vi.waitFor(() => expect(native.calls.media).toEqual([media]));
-    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    // Selecting a drawing tool opens a standalone bar; Annotate starts recording.
+    appStore.dispatch(dockEvidenceToolSelectRequested(workspaceA, mainA, 'pick'));
     await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    expect(evidenceView().recording).toBe(false);
+    expect(native.calls.clips).toEqual([]);
     expect(native.calls.media).toEqual([media, media]);
     const sessionId = native.calls.started[0].id;
 
@@ -2102,6 +2107,16 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     expect(evidenceView().tiles).toHaveLength(1);
     expect(native.calls.clips).toHaveLength(1);
     expect(evidenceView().annotating).toBe(true);
+    // Retiring the real session invalidates both controls, even after permission clears.
+    appStore.dispatch(dockEvidenceAnnotationEndRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    appStore.dispatch(dockEvidenceCaptureCancelled(workspaceA, mainA));
+    native.emit({ type: 'annotation-media', sessionId, action: 'capture' });
+    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
+    await settle();
+    expect(evidenceView().tiles).toHaveLength(1);
+    expect(native.calls.clips).toHaveLength(1);
+    expect(evidenceView().annotating).toBe(false);
   });
 
   it('the recording bar pauses and resumes the clip, and Done stops, attaches and ends the session', async () => {
@@ -2396,7 +2411,7 @@ describe('dock annotate Done on the on-screen bar', () => {
     expect(evidenceView().tiles).toEqual([]);
   });
 
-  it('Done preserves an in-flight screenshot, recording and queued editor evidence', async () => {
+  it('Ending annotation preserves an in-flight screenshot, recording and queued editor evidence', async () => {
     const native = scriptedNative({ record: true });
     let finishCapture: (result: DockNativeResult<DockCapturedPixels>) => void = () => {
       throw new Error('Capture is not waiting');
@@ -2409,11 +2424,11 @@ describe('dock annotate Done on the on-screen bar', () => {
     await open();
     appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
     await vi.waitFor(() => expect(evidenceView().annotating).toBe(true));
+    // Annotate already owns a recording; this is annotation-ended, not toolbar Done.
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
     const sessionId = native.calls.started[0].id;
     native.emit({ type: 'annotation-media', sessionId, action: 'capture' });
     await vi.waitFor(() => expect(evidenceView().capturePending).toBe(true));
-    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
-    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
     appStore.dispatch(
       dockEvidenceInsertionQueued(workspaceA, mainA, {
         id: 'queued-before-done',
