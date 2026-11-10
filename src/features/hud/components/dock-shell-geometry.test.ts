@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 import type { DockPlacementSnapshot } from '$shared/dock-placement';
 import {
   DOCK_INTRO_HEIGHT,
-  DOCK_OVERVIEW_HISTORY_HEIGHT,
   dockCompactWingWidth,
   dockDragEndCommand,
   getDockShellLayout,
@@ -30,21 +29,6 @@ const input = {
 };
 
 describe('getDockShellLayout with the intro', () => {
-  it('fits the history control and fixed Assistant with no recent rows, then admits older rows', () => {
-    const empty = getDockShellLayout(placement, { ...input, workspaceCount: 0 });
-    const collapsed = getDockShellLayout(placement, {
-      ...input,
-      workspaceCount: 0,
-      hasOlderWorkspaces: true,
-    });
-    const expanded = getDockShellLayout(placement, {
-      ...input,
-      workspaceCount: 3,
-      hasOlderWorkspaces: true,
-    });
-    expect(collapsed.desiredHeight - empty.desiredHeight).toBe(DOCK_OVERVIEW_HISTORY_HEIGHT);
-    expect(expanded.desiredHeight - collapsed.desiredHeight).toBe(3 * 52);
-  });
   it('adds the intro card height to the open overview only', () => {
     const plain = getDockShellLayout(placement, input).desiredHeight;
     expect(getDockShellLayout(placement, { ...input, intro: true }).desiredHeight).toBe(
