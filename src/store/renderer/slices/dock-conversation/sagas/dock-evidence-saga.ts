@@ -1634,6 +1634,7 @@ function* recordingToolbarAction(
       try {
         if (held.service?.setAnnotationMouse) yield* call([held.service, held.service.setAnnotationMouse], session.id);
       } catch { /* The main toolbar already disabled input; still pause the recording. */ }
+      if (nativeService !== held.service || getPrincipalActionContext(appStore.state) !== held.authority || !activePair(workspaceId, agentId) || evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id) return;
       held.paused = clip ? yield* setRecordingPaused(workspaceId, agentId, true) : true;
       // Keep the original marks and attachment intact until confirmation; Undo restores them.
     } catch {
