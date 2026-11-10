@@ -46,10 +46,10 @@ export function createDockPointerRegionController(
   let lastSignal = '';
   let destroyed = false;
   let latestRevision: number | undefined;
-  let replayedInside = false;
   let readySent = false;
   let active = false;
   let publishedRegions: DockPointerRect[] = [];
+  let nativeInside = false;
   let nativeOutside = false;
   let nativePoint: { x: number; y: number } | null = null;
   const replay = (presence: unknown): void => {
@@ -71,17 +71,20 @@ export function createDockPointerRegionController(
     const hoverScope = element.closest('[data-dock-hover-scope]') ?? element;
     const hovered = hoverScope.matches(':hover');
     if (inside) {
+      nativeInside = true;
       const reentered = nativeOutside;
       nativeOutside = false;
       if (hovered && !reentered) {
-        replayedInside = false;
         return;
       }
     } else {
       nativeOutside = true;
-      if (!replayedInside && !hovered) return;
+      // Retain an admitted entry through capture, including when DOM hover had
+      // already reflected it. Its outside resync must settle Shell dismissal.
+      // An initial outside with no entry must not dismiss the first-run intro.
+      if (!nativeInside && !hovered) return;
+      nativeInside = false;
     }
-    replayedInside = inside;
     const Event = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
     element.dispatchEvent(
       new Event(inside ? 'pointerenter' : 'pointerleave', { clientX: x, clientY: y }),

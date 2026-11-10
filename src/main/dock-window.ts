@@ -217,7 +217,13 @@ export function setDockPointerRegions(
       x: localPoint.x,
       y: localPoint.y,
       revision: state.revision,
-      suppressed: !window.isVisible() || !!snapshot?.captureHidden,
+      // Inactive/empty publications are routing resets, not physical exits.
+      // Leave the first live-region sample available to resynchronize after capture.
+      suppressed:
+        !state.active ||
+        state.regions.length === 0 ||
+        !window.isVisible() ||
+        !!snapshot?.captureHidden,
     });
     const x = Math.round(localPoint.x);
     const y = Math.round(localPoint.y);

@@ -1,3 +1,4 @@
+import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
@@ -331,6 +332,36 @@ describe('owned dock capture visibility release', () => {
     dock.setDockHiddenForCapture(false, { window });
     expect(window.showInactive).not.toHaveBeenCalled();
     powerMonitor.emit('unlock-screen');
+  });
+});
+
+describe('dock presence capture return', () => {
+  it('does not consume the first outside resync with inactive or empty regions', () => {
+    const region = { x: 0, y: 0, width: 80, height: 40 };
+    const publish = (active: boolean, regions = [region], x = 10) =>
+      dock.setDockPointerRegions(window, { active, regions, revision: 1 }, 'darwin', { x, y: 10 });
+    const events = () =>
+      vi
+        .mocked(window.webContents.send)
+        .mock.calls.filter(
+          ([channel]) => channel === WINDOW_CHANNELS.DOCK_POINTER_PRESENCE_CHANGED,
+        );
+    publish(true);
+    dock.setDockHiddenForCapture(true, { window });
+    publish(false, []);
+    dock.setDockHiddenForCapture(false, { window });
+    vi.mocked(window.webContents.send).mockClear();
+    publish(false, [], 300);
+    publish(true, [], 300);
+    expect(events()).toHaveLength(0);
+    publish(true, [region], 300);
+    expect(events()).toHaveLength(1);
+    expect(events()[0][1]).toMatchObject({ inside: false, x: 300, y: 10, revision: 1 });
+    publish(true, [region], 300);
+    expect(events()).toHaveLength(1);
+    publish(true);
+    expect(events()).toHaveLength(2);
+    expect(events()[1][1]).toMatchObject({ inside: true });
   });
 });
 
