@@ -119,6 +119,20 @@ describe('Windows artifact verification', () => {
   });
 
   it.each([
+    ['empty feed', 'feed', ''],
+    ['comment-only feed', 'feed', '# no document\n'],
+    ['null feed', 'feed', '---\n'],
+    ['empty updater config', 'updater', ''],
+    ['null updater config', 'updater', '---\n'],
+  ])('fails closed for an %s', async (_label, file, contents) => {
+    const f = await fixture();
+    f.put(file === 'feed' ? f.names.feed : 'win-unpacked/resources/app-update.yml', contents);
+    await expect(
+      verifyWindowsArtifacts({ ...f, config, signing: { mode: 'unsigned' } }),
+    ).rejects.toThrow();
+  });
+
+  it.each([
     '../escape.exe',
     'sub/file.exe',
     'C:\\escape.exe',
