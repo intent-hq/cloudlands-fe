@@ -406,7 +406,6 @@
     const settled = expanded && surfaceExpanded && reveal === 1;
     const immediate =
       reducedMotion ||
-      keyboardOpen ||
       dragging ||
       placement.captureHidden ||
       conversationResize.held ||
