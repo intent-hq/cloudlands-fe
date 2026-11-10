@@ -55,7 +55,7 @@ type InvitePreviewState =
   | 'link-version';
 
 export const NODE_INVITE_SECRET = 'invite-secret-value';
-export const NODE_INVITE_LINK = `intent://node?v=1&host=192.0.2.40&port=7443&fp=AA%3A40&tc=tc-lab-node&invite=inv_7&secret=${NODE_INVITE_SECRET}`;
+const NODE_INVITE_LINK = `intent://node?v=1&host=192.0.2.40&port=7443&fp=AA%3A40&tc=tc-lab-node&invite=inv_7&secret=${NODE_INVITE_SECRET}`;
 
 const isInviteState = (state: NodesPreviewState): state is InvitePreviewState =>
   state.startsWith('invite') || state === 'link-version';

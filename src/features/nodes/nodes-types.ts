@@ -2,7 +2,7 @@ import type { NodeInviteInspectErrorCode } from '$shared/types/node-invite';
 import type { PairLinkErrorCode } from '$shared/types/pair-link';
 
 /** Why an `intent://node` claim failed (the backend's reason, or a refusal). */
-export type NodeInviteAddErrorCode =
+type NodeInviteAddErrorCode =
   | NodeInviteInspectErrorCode
   | 'node-invite-invalid'
   | 'node-invite-expired'
