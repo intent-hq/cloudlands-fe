@@ -20,6 +20,12 @@ import type {
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
 import type { ConnectionRecord } from '$shared/types/connections';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { WorkspaceStatus } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
 import { E2B_SANDBOXES } from '../../../test/cloud-machines-preview';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
@@ -175,12 +181,13 @@ const remoteAgentMemoryUsage = {
   ],
 } satisfies AgentMemoryUsageWirePayload;
 
-// Hosted rows from a daemon whose launch carries the agent name and the
-// backend's workspace title; the second hosted row keeps the older shape.
+// Hosted rows from a backend whose launch carries the agent name and its
+// workspace title; the second hosted row keeps the older shape. Local rows
+// carry no title: the scene stores one local workspace for the client to
+// resolve, and leaves the other unresolved.
 const labeledAgentMemoryUsage = {
   ...remoteAgentMemoryUsage,
   agents: remoteAgentMemoryUsage.agents.map((agent) => {
-    if (agent.agentId === 'agent-2f1c') return { ...agent, workspaceTitle: 'Dark mode toggle' };
     if (agent.workspaceId === 'ws-remote-docs') {
       return { ...agent, agentName: 'Write release notes', workspaceTitle: 'Docs refresh' };
     }
@@ -312,6 +319,21 @@ function setup({
         }),
       );
     }
+    if (remoteAgents === 'labeled') {
+      store.dispatch(
+        setWorkspaceEntity({
+          id: WorkspaceId('ws-dark-mode'),
+          title: 'Dark mode toggle',
+          repositoryName: 'intent',
+          branch: 'feat/dark-mode',
+          status: WorkspaceStatus.Active,
+          changesets: [],
+          timeline: [],
+          conversationInfo: [],
+          ...PREVIEW_FIXTURE_TIMESTAMPS,
+        }),
+      );
+    }
     if (agentMemory) {
       // No saga runs in the preview, so the breakdown's first open shows this
       // seeded sample instead of waiting on agent.memoryUsage.
@@ -346,6 +368,7 @@ function setup({
         );
       }
       if (agentMemory) store.dispatch(agentMemoryBreakdownClosed());
+      if (remoteAgents === 'labeled') store.dispatch(removeWorkspaceEntity('ws-dark-mode'));
       store.dispatch(connectionStatusChanged('disconnected'));
       if (machines) {
         store.dispatch(

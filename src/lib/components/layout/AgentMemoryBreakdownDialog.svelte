@@ -30,6 +30,9 @@
     selectAgentMemoryUsage,
     selectAgentMemoryUsageError,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectWorkspaceEntities } from '$store/renderer/slices/workspace/workspace-selectors';
+  import type { Workspace } from '$shared/types';
+  import { getItem } from '@themislib/themis/utils/collections/collection-utils';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import type {
     AgentMemoryRemoteOwner,
@@ -47,6 +50,7 @@
   const agentMemoryUsage$ = selectAgentMemoryUsage();
   const agentMemoryUsageError$ = selectAgentMemoryUsageError();
   const providerEntries$ = selectProviderCatalogEntries();
+  const workspaces$ = selectWorkspaceEntities();
 
   let open = $state(true);
   // Agent ids whose process list is expanded.
@@ -91,6 +95,11 @@
     return workspace ? `${tag} · ${workspace}` : tag; // i18n-ignore (separator)
   }
 
+  // Local rows carry no title: resolve it from this client's workspaces.
+  function localWorkspaceLabel(workspaceId: string): string {
+    return getItem($workspaces$, workspaceId as Workspace['id'])?.title?.trim() || workspaceId;
+  }
+
   // Local rows: workspace (title, else id) and provider/model. Remote rows:
   // provider and model only when the label is the agent's name.
   function agentDetail(agent: AgentMemoryUsageAgentWirePayload): string {
@@ -98,9 +107,12 @@
       return agent.agentName?.trim() && agent.provider ? providerModel(agent) : '';
     }
     const parts: string[] = [];
-    const workspace = agent.workspaceTitle?.trim() || agent.workspaceId;
-    if (workspace) {
-      parts.push(m.layout_agentMemoryBreakdown_workspace_label({ workspace }));
+    if (agent.workspaceId) {
+      parts.push(
+        m.layout_agentMemoryBreakdown_workspace_label({
+          workspace: localWorkspaceLabel(agent.workspaceId),
+        }),
+      );
     }
     if (agent.provider) {
       parts.push(agent.model ? `${agent.provider}/${agent.model}` : agent.provider);

@@ -135,7 +135,11 @@ export interface AgentMemoryUsageAgentWirePayload {
   agentId: string;
   agentName?: string;
   workspaceId?: string;
-  /** The workspace's title; on a `remoteOwner` row, the owning backend's. Absent on older daemons. */
+  /**
+   * `remoteOwner` rows only: the owning backend's workspace title from the
+   * launch, omitted when the launch sent none. Local rows omit it; the client
+   * resolves its own workspace titles.
+   */
   workspaceTitle?: string;
   provider?: string;
   model?: string;
