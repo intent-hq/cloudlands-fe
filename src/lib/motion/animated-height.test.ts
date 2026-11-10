@@ -24,9 +24,21 @@ describe('animatedHeight', () => {
     resizeObservers = [];
     removeMotionListener = vi.fn();
     vi.spyOn(performance, 'now').mockImplementation(() => now);
+    const frameEntries = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 0;
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      frames.push(callback);
-      return frames.length;
+      const id = ++nextFrameId;
+      const entry: FrameRequestCallback = (time) => {
+        if (frameEntries.delete(id)) callback(time);
+      };
+      frameEntries.set(id, entry);
+      frames.push(entry);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
+      const entry = frameEntries.get(id);
+      frameEntries.delete(id);
+      if (entry) frames = frames.filter((frame) => frame !== entry);
     });
     vi.stubGlobal(
       'matchMedia',
@@ -70,6 +82,18 @@ describe('animatedHeight', () => {
     frames = [];
     pending.forEach((callback) => callback(now));
     flushSync();
+  }
+
+  // Browsers drain microtasks (Svelte effects) after each frame callback, so an
+  // effect can cancel a frame callback that is still queued for this frame.
+  function runBrowserFrame() {
+    now += 1000 / 60;
+    const pending = frames;
+    frames = [];
+    for (const callback of pending) {
+      callback(now);
+      flushSync();
+    }
   }
 
   it('mounts closed empty rows without reading geometry', () => {
@@ -295,6 +319,28 @@ describe('animatedHeight', () => {
     await Promise.resolve();
     expect(wrapper.style.height).toBe('0px');
     expect(onClosed).toHaveBeenCalledOnce();
+    action?.destroy?.();
+  });
+
+  it('writes collapse heights while easing instead of holding the open height', () => {
+    const wrapper = document.createElement('div');
+    const content = document.createElement('div');
+    vi.spyOn(content, 'offsetHeight', 'get').mockReturnValue(80);
+    wrapper.append(content);
+    const action = animatedHeight(wrapper, { open: true });
+    flushSync();
+    runBrowserFrame();
+    expect(wrapper.style.height).toBe('80px');
+
+    action?.update?.({ open: false });
+    runBrowserFrame();
+    for (let frame = 0; frame < 5; frame += 1) runBrowserFrame();
+    const height = Number.parseFloat(wrapper.style.height);
+    expect(height).toBeGreaterThan(0);
+    expect(height).toBeLessThan(80);
+
+    for (let frame = 0; frame < 120 && frames.length > 0; frame += 1) runBrowserFrame();
+    expect(wrapper.style.height).toBe('0px');
     action?.destroy?.();
   });
 
