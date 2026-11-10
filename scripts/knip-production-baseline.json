@@ -2,27 +2,12 @@
   "version": 1,
   "note": "Known code used only by tests. Shrink-only: delete entries as the code is removed or gains a production caller (node scripts/check-dead-code.mjs --prune-baseline). Never add entries.",
   "files": [
-    "src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte",
-    "src/features/agent/components/agent-avatar/agent-avatar.catalog.ts",
-    "src/features/hud/components/dock-composer-ct-helpers.ts",
-    "src/features/hud/components/dock-composer-e2e-geometry.ts",
-    "src/lib/components/chat/input/ImageAttachmentFeedbackHost.svelte",
-    "src/lib/components/chat/input/SimpleRichInputQueueHost.svelte",
-    "src/lib/components/diagrams/diagram-templates.ts",
-    "src/lib/components/ui/SizeContextConsumer.svelte",
-    "src/lib/components/ui/SurfaceContextConsumer.svelte",
     "src/lib/components/ui/dropdown/dropdown-caller-ledger.ts",
-    "src/lib/components/ui/skeleton/SkeletonMotionHost.svelte",
-    "src/lib/motion/AnimatedHeightHost.svelte",
     "src/lib/notes/text-rebase-bench.ts",
     "src/lib/notes/text-rebase-shapes.ts",
     "src/main/isolated-test-inspection.ts",
     "src/main/utils/logger.ts",
-    "src/scrub-host-node-injection.ts",
-    "src/scrub-host-python-injection.ts",
-    "src/shared/ipc/request-validation.ts",
-    "src/shifted-test-clock.ts",
-    "src/store/renderer/slices/connections/test-harness.ts"
+    "src/shared/ipc/request-validation.ts"
   ],
   "exports": {
     "src/features/acp-official/main/server/handlers/terminal.ts": [

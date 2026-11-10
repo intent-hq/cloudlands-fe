@@ -1,12 +1,12 @@
 <script lang="ts">
-  import SurfaceContextConsumer from './SurfaceContextConsumer.svelte';
+  import SurfaceContextConsumerTestHost from './SurfaceContextConsumerTestHost.svelte';
   import SurfaceProvider from './SurfaceProvider.svelte';
 </script>
 
-<SurfaceContextConsumer testId="unscoped-surface" />
+<SurfaceContextConsumerTestHost testId="unscoped-surface" />
 <SurfaceProvider value={3}>
-  <SurfaceContextConsumer testId="provided-surface" />
+  <SurfaceContextConsumerTestHost testId="provided-surface" />
   <SurfaceProvider value={20}>
-    <SurfaceContextConsumer testId="nested-surface" />
+    <SurfaceContextConsumerTestHost testId="nested-surface" />
   </SurfaceProvider>
 </SurfaceProvider>

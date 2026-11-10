@@ -15,7 +15,7 @@ A comprehensive diagram system for the Intent app that enables agents and users 
 
 - **layout-engine.ts** - Layout algorithms (layered, force-directed, circular, tree)
 - **types.ts** - Grammar configurations and computed types
-- **diagram-templates.ts** - Test fixture builders for each grammar type
+- **`__tests__/diagram-templates.ts`** - Test fixture builders for each grammar type
 
 ### Integration
 
@@ -98,7 +98,7 @@ src/lib/components/diagrams/
 ├── DiagramControls.svelte      # Controls UI
 ├── layout-engine.ts            # Layout algorithms
 ├── types.ts                    # Type definitions
-├── diagram-templates.ts        # Test fixture builders
+├── __tests__/diagram-templates.ts  # Test fixture builders
 └── README.md                   # This file
 
 src/lib/utils/tiptap-primitives/

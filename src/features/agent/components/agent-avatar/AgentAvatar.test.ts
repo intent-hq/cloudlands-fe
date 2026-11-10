@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
 import AgentAvatar from './AgentAvatar.svelte';
-import { agentAvatarCatalogIdentities } from './agent-avatar.catalog';
+import { agentAvatarCatalogIdentities } from './agent-avatar-catalog.fixtures';
 import { getAgentAvatarDesign } from './avatar-design';
 
 afterEach(cleanup);

@@ -23,7 +23,7 @@ vi.mock('$lib/components/patterns/notify', () => ({
 }));
 vi.mock('$store/renderer/store', async () => {
   const { createConnectionsHarness } =
-    await import('$store/renderer/slices/connections/test-harness');
+    await import('$store/renderer/slices/connections/connections.test-helpers');
   const harness = createConnectionsHarness(
     () => ({ windowBackendId: mocks.activeId }),
     undefined,

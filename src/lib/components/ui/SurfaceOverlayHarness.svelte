@@ -4,7 +4,7 @@
   import * as Sheet from './sheet';
   import { Combobox } from './combobox';
   import { Select } from './select';
-  import SurfaceContextConsumer from './SurfaceContextConsumer.svelte';
+  import SurfaceContextConsumerTestHost from './SurfaceContextConsumerTestHost.svelte';
   import SurfaceProvider from './SurfaceProvider.svelte';
   import Toast from './toast/Toast.svelte';
 
@@ -19,7 +19,7 @@
 </script>
 
 {#snippet probe()}
-  <SurfaceContextConsumer testId={`${kind}-surface`} />
+  <SurfaceContextConsumerTestHost testId={`${kind}-surface`} />
 {/snippet}
 
 <SurfaceProvider value={substrate}>

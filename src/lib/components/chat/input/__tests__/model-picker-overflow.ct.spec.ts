@@ -7,7 +7,7 @@ import {
 import { expectDismissibleLayerArmed } from '../../../../../test/dismissible-layer';
 import type { Locator, Page } from '@playwright/test';
 import ModelPickerGeometryHost from './ModelPickerGeometryHost.svelte';
-import SimpleRichInputQueueHost from '../SimpleRichInputQueueHost.svelte';
+import SimpleRichInputQueueTestHost from '../SimpleRichInputQueueTestHost.svelte';
 
 const outerMenu = (page: Page) =>
   page.locator('[data-slot="dropdown-content"]').filter({ has: page.getByRole('searchbox') });
@@ -66,7 +66,7 @@ test('composer model content aligns with text while its hover target extends on 
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(SimpleRichInputQueueHost, { props: { queueCount: 0 } });
+  const component = await mount(SimpleRichInputQueueTestHost, { props: { queueCount: 0 } });
   await component.locator('.tiptap-editor').fill('Align this composer');
   await page.evaluate(() => document.fonts.ready);
   const trigger = component.locator('[data-chat-input-primary-actions] button').first();

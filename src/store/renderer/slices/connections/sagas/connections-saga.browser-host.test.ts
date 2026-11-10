@@ -15,7 +15,7 @@ const notify = vi.hoisted(() => ({
 vi.mock('$lib/components/patterns/notify', () => ({ notify }));
 import { m } from '$shared/paraglide/messages.js';
 import type { ConnectionRecord } from '$shared/types/connections';
-import { createConnectionsHarness } from '../test-harness';
+import { createConnectionsHarness } from '../connections.test-helpers';
 import {
   addConnectionRequested,
   browserHostDetected,

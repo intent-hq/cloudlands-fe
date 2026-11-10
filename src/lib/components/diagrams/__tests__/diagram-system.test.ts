@@ -18,7 +18,7 @@ import {
   createDataFlowDiagram,
   createNetworkDiagram,
   createTimelineDiagram,
-} from '../diagram-templates';
+} from './diagram-templates';
 import {
   buildRoundedOrthogonalPath,
   compactEdgeLabelMaxWidth,

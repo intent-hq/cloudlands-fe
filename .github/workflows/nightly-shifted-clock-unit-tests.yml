@@ -1,7 +1,7 @@
 name: Nightly Shifted-Clock Unit Tests
 
 # Runs the unit suite with the real clock moved to an odd UTC time of day
-# (src/shifted-test-clock.ts). A test that pins a fake clock and then falls back
+# (src/test/shifted-test-clock.ts). A test that pins a fake clock and then falls back
 # to the real one passes or fails depending on when CI runs: cloudlands-fe#3574
 # passed its PR checks in the morning and failed 20/20 in the merge queue after
 # 08:00 UTC (merge_group run 39583441525). The intent/no-fake-clock-reset-before-assertion

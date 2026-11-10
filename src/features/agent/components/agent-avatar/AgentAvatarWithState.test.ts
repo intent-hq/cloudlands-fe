@@ -5,8 +5,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AgentStatus } from '$shared/types/agent.types';
 import { getAvatarState, type AvatarState } from './avatar-state';
 import AgentAvatarWithState from './AgentAvatarWithState.svelte';
-import AgentAvatarCatalog from './AgentAvatarCatalog.svelte';
-import { agentAvatarCatalogStates, agentAvatarCatalogIdentities } from './agent-avatar.catalog';
+import AgentAvatarCatalogHarness from './AgentAvatarCatalogHarness.svelte';
+import {
+  agentAvatarCatalogStates,
+  agentAvatarCatalogIdentities,
+} from './agent-avatar-catalog.fixtures';
 import { getAgentAvatarStateLabel } from './avatar-state-label';
 import { agentAvatarVariants } from './avatar-size';
 
@@ -252,7 +255,7 @@ describe('AgentAvatarWithState', () => {
   });
 
   it('renders the compact catalog as every design across every state', async () => {
-    const { container } = render(AgentAvatarCatalog);
+    const { container } = render(AgentAvatarCatalogHarness);
     expect(container.querySelectorAll('[data-catalog-avatar-design]')).toHaveLength(
       agentAvatarCatalogIdentities.length,
     );

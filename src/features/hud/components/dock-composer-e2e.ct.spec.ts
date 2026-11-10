@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import ComposerE2EHarness from './DockComposerE2EHarness.svelte';
-import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry';
+import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry.fixtures';
 
 /**
  * End-to-end walkthrough of the dock composer with synthetic content only:
