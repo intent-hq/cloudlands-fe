@@ -4,6 +4,21 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.308.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.307.0...v2.308.0) (2026-11-10)
+
+
+### 🚀 Features
+
+* **dock:** default the notch dock off and hide its settings switch while off ([#4376](https://github.com/intent-hq/cloudlands-fe/issues/4376)) ([1d60578](https://github.com/intent-hq/cloudlands-fe/commit/1d605789d928b2140bb31e61bea6a6243a220f0b))
+* **sidebar:** size stacked sidebar panels to their content ([#4238](https://github.com/intent-hq/cloudlands-fe/issues/4238)) ([367c0ed](https://github.com/intent-hq/cloudlands-fe/commit/367c0ed57b5471204dc732e7f34cc52f024fae60))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.168 ([#4378](https://github.com/intent-hq/cloudlands-fe/issues/4378)) ([a34a5e8](https://github.com/intent-hq/cloudlands-fe/commit/a34a5e801a859be1fad38e6682a10b33d18a88ea))
+* guard stored session restore against hidden older rows ([#4362](https://github.com/intent-hq/cloudlands-fe/issues/4362)) ([a4e24a8](https://github.com/intent-hq/cloudlands-fe/commit/a4e24a8f4a59423fa4e5e4d2c293bb387ad9219e))
+* **motion:** stop animated height writes from starving until settle ([#4375](https://github.com/intent-hq/cloudlands-fe/issues/4375)) ([a74e925](https://github.com/intent-hq/cloudlands-fe/commit/a74e9250d88eb12466e1125a10038a20877e16f9))
+
 ## [2.307.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.306.3...v2.307.0) (2026-11-09)
 
 
