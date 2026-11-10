@@ -175,6 +175,19 @@ const remoteAgentMemoryUsage = {
   ],
 } satisfies AgentMemoryUsageWirePayload;
 
+// Hosted rows from a daemon whose launch carries the agent name and the
+// backend's workspace title; the second hosted row keeps the older shape.
+const labeledAgentMemoryUsage = {
+  ...remoteAgentMemoryUsage,
+  agents: remoteAgentMemoryUsage.agents.map((agent) => {
+    if (agent.agentId === 'agent-2f1c') return { ...agent, workspaceTitle: 'Dark mode toggle' };
+    if (agent.workspaceId === 'ws-remote-docs') {
+      return { ...agent, agentName: 'Write release notes', workspaceTitle: 'Docs refresh' };
+    }
+    return agent;
+  }),
+} satisfies AgentMemoryUsageWirePayload;
+
 const generation = () => selectDaemonConnectionGeneration.select(store.state);
 
 // Live uptime is base uptime plus time elapsed since the last successful
@@ -188,7 +201,7 @@ interface Scenario {
   /** Report agent-attributed memory and seed the breakdown the row opens. */
   agentMemory?: boolean;
   /** Seed the breakdown with agents run for other backends (needs `agentMemory`). */
-  remoteAgents?: boolean;
+  remoteAgents?: boolean | 'labeled';
   /** `system.status.remoteLinks`; omitted models an older daemon. */
   remoteLinks?: { backends: number; machines: number };
   /** Seed saved machines so the menu shows its Machines list. */
@@ -304,7 +317,13 @@ function setup({
       // seeded sample instead of waiting on agent.memoryUsage.
       store.dispatch(agentMemoryUsageRequested());
       store.dispatch(
-        agentMemoryUsageSucceeded(remoteAgents ? remoteAgentMemoryUsage : agentMemoryUsage),
+        agentMemoryUsageSucceeded(
+          remoteAgents === 'labeled'
+            ? labeledAgentMemoryUsage
+            : remoteAgents
+              ? remoteAgentMemoryUsage
+              : agentMemoryUsage,
+        ),
       );
     }
     if (failures === 'heartbeat') {
@@ -370,6 +389,14 @@ export const preview = definePreview<Record<string, never>>({
       setup: setup({
         agentMemory: true,
         remoteAgents: true,
+        remoteLinks: { backends: 2, machines: 1 },
+      }),
+    },
+    'remote-agents-labeled': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteAgents: 'labeled',
         remoteLinks: { backends: 2, machines: 1 },
       }),
     },

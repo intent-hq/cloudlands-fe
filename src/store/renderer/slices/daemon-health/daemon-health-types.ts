@@ -128,12 +128,15 @@ export interface AgentMemoryRemoteOwner {
 /**
  * One spawned agent adapter and its process tree (`agent.memoryUsage`).
  * Rows tagged `remoteOwner` are agents run for another backend: they carry
- * the launch's values and may omit `agentName`, `workspaceId` and `provider`.
+ * the launch's values and may omit `agentName`, `workspaceId`,
+ * `workspaceTitle` and `provider`.
  */
 export interface AgentMemoryUsageAgentWirePayload {
   agentId: string;
   agentName?: string;
   workspaceId?: string;
+  /** The workspace's title; on a `remoteOwner` row, the owning backend's. Absent on older daemons. */
+  workspaceTitle?: string;
   provider?: string;
   model?: string;
   /** Present only on agents run for another backend; absent on local rows and older daemons. */
