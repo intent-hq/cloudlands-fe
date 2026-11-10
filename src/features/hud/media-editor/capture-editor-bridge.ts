@@ -168,6 +168,7 @@ export function connectDockCaptureEditor(
       send(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, { openId, requestId }),
     keep: (openId, requestId) => send(DOCK_CAPTURE_EDITOR_CHANNELS.KEEP, { openId, requestId }),
     save: async (openId, edit, replacement) => {
+      if (disposed) return null;
       let stage: 'serialize' | 'invoke' = 'serialize';
       try {
         const canonical = DockMediaEditSchema.parse(edit);
@@ -203,6 +204,7 @@ export function connectDockCaptureEditor(
       }
     },
     retake: async (openId) => {
+      if (disposed) return null;
       try {
         return ((await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.RETAKE, { openId })) ??
           null) as DockCaptureEditorRetakeOutcome | null;
