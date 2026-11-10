@@ -72,6 +72,9 @@ export function setupConversationWire(
     operationalHistory?: number;
     /** A second ready provider (Claude Code), and effort levels on Auggie's models. */
     providerChoice?: boolean;
+    /** Exercise the real composer's model/profile trigger at constrained widths. */
+    modelLabel?: string;
+    profileName?: string;
   } = {},
 ) {
   const root = document.documentElement;
@@ -100,7 +103,12 @@ export function setupConversationWire(
     return {
       success: true,
       data: [
-        { value: 'opus4.7', label: 'Opus 4.7', isDefault: true, ...effortLevels },
+        {
+          value: 'opus4.7',
+          label: options.modelLabel ?? 'Opus 4.7',
+          isDefault: true,
+          ...effortLevels,
+        },
         { value: 'sonnet4.5', label: 'Sonnet 4.5', ...effortLevels },
       ],
     };
@@ -125,6 +133,7 @@ export function setupConversationWire(
       command: 'auggie',
       canBeDisabled: true,
       visible: true,
+      ...(options.profileName ? { supportsProfiles: true } : {}),
     },
     ...(options.providerChoice
       ? [
@@ -272,6 +281,19 @@ export function setupConversationWire(
       case 'providers.catalog':
         return {
           providers: providerEntries,
+          ...(options.profileName
+            ? {
+                profiles: [
+                  {
+                    id: 'footer-profile',
+                    providerRef: 'auggie@footer-profile',
+                    baseProviderId: 'auggie',
+                    name: 'Work',
+                  },
+                ],
+                defaultNames: { auggie: options.profileName },
+              }
+            : {}),
         };
       case 'host.providerDiscovery':
         return { providers: providerIds.map((id) => ({ id, installed: true })) };
