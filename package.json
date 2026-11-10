@@ -271,7 +271,7 @@
     "@types/yazl": "^3.3.0",
     "@typescript-eslint/eslint-plugin": "^8.70.1",
     "@typescript-eslint/parser": "^8.70.1",
-    "@vitest/ui": "^4.1.11",
+    "@vitest/ui": "^4.1.12",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-search": "^0.16.0",
     "@xterm/addon-web-links": "^0.12.0",
@@ -287,14 +287,14 @@
     "ct-browser": "npm:playwright-core@1.63.0",
     "d3": "^7.9.0",
     "diff": "^9.0.0",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "electron": "^44.10.2",
     "electron-builder": "^26.15.3",
     "eslint": "^10.11.0",
     "eslint-plugin-svelte": "^3.23.0",
     "eslint-plugin-unused-imports": "^4.4.1",
     "eslint-scope": "^9.1.2",
-    "glob": "^13.0.6",
+    "glob": "^13.0.7",
     "highlight.js": "^11.12.0",
     "html-to-image": "^1.11.13",
     "js-yaml": "4.3.2",
@@ -327,13 +327,13 @@
     "tsx": "^4.23.15",
     "typed-redux-saga": "1.5.0",
     "typescript": "~6.0.3",
-    "vite": "^6.4.3",
-    "vitest": "^4.1.11",
+    "vite": "^6.4.6",
+    "vitest": "^4.1.12",
     "wait-on": "^9.1.0"
   },
   "dependencies": {
     "@themislib/themis": "0.3.3",
-    "body-parser": "^2.3.0",
+    "body-parser": "^2.4.0",
     "chrome-remote-interface": "^0.34.0",
     "date-fns": "^4.4.0",
     "electron-updater": "^6.8.9",
@@ -362,11 +362,12 @@
       "entities": "7.0.0",
       "tar@<7.5.19": "^7.5.19",
       "cookie@<0.7.0": "^0.7.2",
-      "dompurify@<3.4.12": "^3.4.12",
+      "dompurify@<3.4.17": "^3.4.17",
       "esbuild@>=0.27.3 <0.28.1": "^0.28.1",
-      "shell-quote@<1.9.0": "^1.9.0",
-      "brace-expansion": "5.0.8",
-      "isbinaryfile@<5.0.0": "^5.0.7"
+      "shell-quote@<1.11.0": "^1.11.0",
+      "brace-expansion": "5.0.12",
+      "isbinaryfile@<5.0.0": "^5.0.7",
+      "postcss-selector-parser@<6.1.5": "^6.1.5"
     },
     "onlyBuiltDependencies": [
       "cpu-features",
@@ -379,7 +380,7 @@
     "patchedDependencies": {
       "playwright-core@1.58.2": "patches/playwright-core@1.58.2.patch",
       "bits-ui": "patches/bits-ui@2.18.1.patch",
-      "brace-expansion@5.0.8": "patches/brace-expansion@5.0.8.patch"
+      "brace-expansion@5.0.12": "patches/brace-expansion@5.0.12.patch"
     },
     "ignorePatchFailures": false
   }
