@@ -1,4 +1,5 @@
 import { setDockLabEnabled } from '$lib/dock-lab';
+import { setUnifiedWindowLabEnabled } from '$lib/unified-window-lab';
 import { store as appStore } from '$store/renderer/store';
 import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
 import {
@@ -18,6 +19,8 @@ const ENABLE_CLOUD_MACHINES = 'enable-experimental-cloud-machines';
 const DISABLE_CLOUD_MACHINES = 'disable-experimental-cloud-machines';
 const ENABLE_TAB_GROUPS = 'enable-experimental-tab-groups';
 const DISABLE_TAB_GROUPS = 'disable-experimental-tab-groups';
+const ENABLE_UNIFIED_WINDOW = 'enable-experimental-unified-window';
+const DISABLE_UNIFIED_WINDOW = 'disable-experimental-unified-window';
 
 /** The Labs command that would set a lab to its current value is hidden. */
 export function isLabCommandHidden(
@@ -27,8 +30,10 @@ export function isLabCommandHidden(
   browserAccessEnabled = false,
   tabGroupsEnabled = false,
   cloudMachinesEnabled = false,
+  unifiedWindowEnabled = false,
 ): boolean {
   return (
+    commandId === (unifiedWindowEnabled ? ENABLE_UNIFIED_WINDOW : DISABLE_UNIFIED_WINDOW) ||
     commandId === (cloudMachinesEnabled ? ENABLE_CLOUD_MACHINES : DISABLE_CLOUD_MACHINES) ||
     commandId === (tabGroupsEnabled ? ENABLE_TAB_GROUPS : DISABLE_TAB_GROUPS) ||
     commandId === (dockEnabled ? ENABLE_DOCK : DISABLE_DOCK) ||
@@ -38,6 +43,10 @@ export function isLabCommandHidden(
 }
 
 export function runLabCommand(commandId: string): boolean {
+  if (commandId === ENABLE_UNIFIED_WINDOW || commandId === DISABLE_UNIFIED_WINDOW) {
+    void setUnifiedWindowLabEnabled(commandId === ENABLE_UNIFIED_WINDOW);
+    return true;
+  }
   if (commandId === ENABLE_CLOUD_MACHINES || commandId === DISABLE_CLOUD_MACHINES) {
     appStore.dispatch(setLabsCloudMachinesEnabled(commandId === ENABLE_CLOUD_MACHINES));
     return true;

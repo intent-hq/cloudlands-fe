@@ -116,6 +116,20 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
+    id: 'enable-experimental-unified-window',
+    get label() {
+      return m.lib_commandPalette_enableExperimentalUnifiedWindow_label();
+    },
+    icon: faFlask,
+  },
+  {
+    id: 'disable-experimental-unified-window',
+    get label() {
+      return m.lib_commandPalette_disableExperimentalUnifiedWindow_label();
+    },
+    icon: faFlask,
+  },
+  {
     id: 'enable-experimental-dock',
     get label() {
       return m.lib_commandPalette_enableExperimentalDock_label();

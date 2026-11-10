@@ -766,6 +766,7 @@ export const WindowSetFullScreenSchema = z.object({
 });
 
 export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict();
+export const WindowSetUnifiedWindowLabSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 

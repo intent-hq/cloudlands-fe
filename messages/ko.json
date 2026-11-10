@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "기기",
   "unifiedWindow_home_machineFilter_all": "모든 기기",
   "unifiedWindow_lab_label": "통합 창 (Labs)",
-  "unifiedWindow_lab_description": "모든 기기의 워크스페이스 탭을 한 창에서 엽니다. 기기 메뉴 맨 위에서 열 수 있습니다."
+  "unifiedWindow_lab_description": "모든 기기의 워크스페이스 탭을 한 창에서 엽니다. 기기 메뉴 맨 위에서 열 수 있습니다.",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "실험적 통합 창 사용",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "실험적 통합 창 사용 안 함"
 }

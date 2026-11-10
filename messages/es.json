@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "Máquina",
   "unifiedWindow_home_machineFilter_all": "Todas las máquinas",
   "unifiedWindow_lab_label": "Ventana unificada (Labs)",
-  "unifiedWindow_lab_description": "Una ventana con pestañas de espacios de trabajo de todas tus máquinas. Ábrela desde el inicio del menú de máquinas."
+  "unifiedWindow_lab_description": "Una ventana con pestañas de espacios de trabajo de todas tus máquinas. Ábrela desde el inicio del menú de máquinas.",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "Activar la ventana unificada experimental",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "Desactivar la ventana unificada experimental"
 }

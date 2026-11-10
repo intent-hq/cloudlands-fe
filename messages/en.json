@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "Machine",
   "unifiedWindow_home_machineFilter_all": "All machines",
   "unifiedWindow_lab_label": "Unified window (Labs)",
-  "unifiedWindow_lab_description": "One window with workspace tabs from every machine. Open it from the top of the machines menu."
+  "unifiedWindow_lab_description": "One window with workspace tabs from every machine. Open it from the top of the machines menu.",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "Enable experimental Unified window",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "Disable experimental Unified window"
 }

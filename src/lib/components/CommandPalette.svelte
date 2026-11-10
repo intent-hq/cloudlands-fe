@@ -111,6 +111,7 @@
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
   import { isLabCommandHidden } from './command-palette-labs';
   import { dockLabEnabled } from '$lib/dock-lab';
+  import { unifiedWindowLabEnabled } from '$lib/unified-window-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
   import { selectAllNotes } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
@@ -194,6 +195,7 @@
           $labsBrowserAccess$,
           $labsTabGroups$,
           $labsCloudMachines$,
+          $unifiedWindowLabEnabled,
         ),
     ),
   );

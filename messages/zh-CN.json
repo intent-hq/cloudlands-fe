@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "机器",
   "unifiedWindow_home_machineFilter_all": "所有机器",
   "unifiedWindow_lab_label": "统一窗口（Labs）",
-  "unifiedWindow_lab_description": "在一个窗口中显示所有机器的工作区标签页。可从机器菜单顶部打开。"
+  "unifiedWindow_lab_description": "在一个窗口中显示所有机器的工作区标签页。可从机器菜单顶部打开。",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "启用实验性统一窗口",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "停用实验性统一窗口"
 }

@@ -425,6 +425,10 @@ export const IPC_CHANNELS = {
     GET_DOCK_LAB: 'window:get-dock-lab',
     SET_DOCK_LAB: 'window:set-dock-lab',
     DOCK_LAB_CHANGED: 'window:dock-lab-changed',
+    // Experimental Unified window Labs setting, owned by main; same shapes as the dock lab.
+    GET_UNIFIED_WINDOW_LAB: 'window:get-unified-window-lab',
+    SET_UNIFIED_WINDOW_LAB: 'window:set-unified-window-lab',
+    UNIFIED_WINDOW_LAB_CHANGED: 'window:unified-window-lab-changed',
     // Renderer → main invoke: focus the next open app window (wraps; skips
     // destroyed, hidden, and HUD pop-out windows; minimized windows are
     // restored) → { cycled: boolean, windowCount: number }

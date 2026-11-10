@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "機器",
   "unifiedWindow_home_machineFilter_all": "所有機器",
   "unifiedWindow_lab_label": "統一視窗（Labs）",
-  "unifiedWindow_lab_description": "在一個視窗中顯示所有機器的工作區分頁。可從機器選單頂端開啟。"
+  "unifiedWindow_lab_description": "在一個視窗中顯示所有機器的工作區分頁。可從機器選單頂端開啟。",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "啟用實驗性統一視窗",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "停用實驗性統一視窗"
 }

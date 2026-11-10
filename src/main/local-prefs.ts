@@ -166,6 +166,33 @@ export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void
   return write;
 }
 
+/** The Unified window lab is off until the user turns it on; read errors reject like the dock lab. */
+export async function getUnifiedWindowLabEnabledLocalPref(): Promise<boolean> {
+  let raw: string;
+  try {
+    raw = await fs.readFile(filePath(), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    throw error;
+  }
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+    throw new Error('local-prefs is not a JSON object');
+  return (parsed as Record<string, unknown>).unifiedWindowLabEnabled === true;
+}
+
+export async function setUnifiedWindowLabEnabledLocalPref(enabled: boolean): Promise<void> {
+  const write = writeChain.then(async () => {
+    const all = await readAll();
+    all.unifiedWindowLabEnabled = enabled;
+    await writeAll(all);
+  });
+  writeChain = write.catch((error) =>
+    logger.error('Failed to persist Unified window Labs setting', error as Error),
+  );
+  return write;
+}
+
 /** While the dock lab is on, the dock is visible by default; Window menu changes persist locally. */
 export async function getDockEnabledLocalPref(): Promise<boolean> {
   return (await getLocalPref('dockEnabled')) !== false;

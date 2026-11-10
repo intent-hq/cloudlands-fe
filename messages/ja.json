@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "マシン",
   "unifiedWindow_home_machineFilter_all": "すべてのマシン",
   "unifiedWindow_lab_label": "統合ウィンドウ（Labs）",
-  "unifiedWindow_lab_description": "すべてのマシンのワークスペースタブを 1 つのウィンドウにまとめます。マシンメニューの一番上から開けます。"
+  "unifiedWindow_lab_description": "すべてのマシンのワークスペースタブを 1 つのウィンドウにまとめます。マシンメニューの一番上から開けます。",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "試験的な統合ウィンドウを有効にする",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "試験的な統合ウィンドウを無効にする"
 }

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), setDock: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), setDock: vi.fn(), setUnified: vi.fn() }));
 vi.mock('$lib/dock-lab', () => ({ setDockLabEnabled: mocks.setDock }));
+vi.mock('$lib/unified-window-lab', () => ({ setUnifiedWindowLabEnabled: mocks.setUnified }));
 vi.mock('$store/renderer/store', () => ({ store: { dispatch: mocks.dispatch } }));
 
 import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
@@ -16,6 +17,24 @@ describe('command palette Labs commands', () => {
   beforeEach(() => {
     mocks.dispatch.mockClear();
     mocks.setDock.mockClear();
+    mocks.setUnified.mockClear();
+  });
+
+  it('hides the Unified window command matching its current value', () => {
+    const hidden = (id: string, on: boolean) =>
+      isLabCommandHidden(id, false, false, false, false, false, on);
+    expect(hidden('enable-experimental-unified-window', true)).toBe(true);
+    expect(hidden('disable-experimental-unified-window', true)).toBe(false);
+    expect(hidden('disable-experimental-unified-window', false)).toBe(true);
+    expect(hidden('enable-experimental-unified-window', false)).toBe(false);
+  });
+
+  it('asks main to turn the Unified window lab on and off', () => {
+    expect(runLabCommand('enable-experimental-unified-window')).toBe(true);
+    expect(runLabCommand('disable-experimental-unified-window')).toBe(true);
+    expect(mocks.setUnified.mock.calls).toEqual([[true], [false]]);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.setDock).not.toHaveBeenCalled();
   });
 
   it('hides only the command that would set each lab to its current value', () => {

@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "Machine",
   "unifiedWindow_home_machineFilter_all": "Toutes les machines",
   "unifiedWindow_lab_label": "Fenêtre unifiée (Labs)",
-  "unifiedWindow_lab_description": "Une seule fenêtre avec les onglets d’espaces de travail de toutes vos machines. Ouvrez-la en haut du menu des machines."
+  "unifiedWindow_lab_description": "Une seule fenêtre avec les onglets d’espaces de travail de toutes vos machines. Ouvrez-la en haut du menu des machines.",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "Activer la fenêtre unifiée expérimentale",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "Désactiver la fenêtre unifiée expérimentale"
 }

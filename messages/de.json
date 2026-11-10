@@ -8619,5 +8619,7 @@
   "unifiedWindow_home_machineFilter_label": "Gerät",
   "unifiedWindow_home_machineFilter_all": "Alle Geräte",
   "unifiedWindow_lab_label": "Gemeinsames Fenster (Labs)",
-  "unifiedWindow_lab_description": "Ein Fenster mit Workspace-Tabs von allen Geräten. Öffne es oben im Gerätemenü."
+  "unifiedWindow_lab_description": "Ein Fenster mit Workspace-Tabs von allen Geräten. Öffne es oben im Gerätemenü.",
+  "lib_commandPalette_enableExperimentalUnifiedWindow_label": "Experimentelles gemeinsames Fenster aktivieren",
+  "lib_commandPalette_disableExperimentalUnifiedWindow_label": "Experimentelles gemeinsames Fenster deaktivieren"
 }
