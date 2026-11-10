@@ -31,6 +31,7 @@
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { selectDockCloseRequest } from '$store/renderer/slices/hud/hud-selectors';
+  import { selectDockSideDefaultWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-side-default';
   import { WorkspaceStatus } from '$shared/types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
@@ -70,6 +71,7 @@
   const shortcut$ = selectDockShortcut();
   const workspaces$ = selectDockShortcutWorkspaces();
   const closeRequest$ = selectDockCloseRequest();
+  const sideDefaultWorkspaceId$ = selectDockSideDefaultWorkspaceId();
   const workspaceId$ = selectDockConversationWorkspaceId();
   const home = $derived(!!$shortcut$ && $shortcut$.destination === null && !$shortcut$.resolving);
   function openHome(id: string) {
@@ -265,6 +267,7 @@
       {...props}
       focusRequest={request}
       closeRequest={$closeRequest$}
+      sideDefaultWorkspaceId={$sideDefaultWorkspaceId$}
       workspaces={$workspaces$.map((workspace) => ({ ...props.workspaces[0], workspace }))}
       conversationFixture
       conversationContent={conversation}

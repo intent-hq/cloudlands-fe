@@ -35,6 +35,7 @@
     failOpenOnce = false,
     focusRequest = 0,
     closeRequest = 0,
+    sideDefaultWorkspaceId = null,
     placementError = false,
     floatingDisplay,
     controlledPlacement = false,
@@ -550,6 +551,7 @@
       {placement}
       {focusRequest}
       {closeRequest}
+      {sideDefaultWorkspaceId}
       {dragStartResult}
       {resizeStartResult}
       {placementError}

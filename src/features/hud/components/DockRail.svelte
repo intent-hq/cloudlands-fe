@@ -75,6 +75,8 @@
     focusRequest?: number;
     /** Increments when the open shortcut is pressed again while the dock has the keyboard. */
     closeRequest?: number;
+    /** On a side, the chat the open shortcut returns to (see AdaptiveDockShell). */
+    sideDefaultWorkspaceId?: string | null;
     placementError?: DockPlacementFailure | boolean | null;
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
@@ -102,6 +104,7 @@
     onPlacementCommand,
     focusRequest,
     closeRequest,
+    sideDefaultWorkspaceId = null,
     placementError,
     dragStartResult,
     resizeStartResult,
@@ -641,6 +644,7 @@
     {onPlacementCommand}
     {focusRequest}
     {closeRequest}
+    {sideDefaultWorkspaceId}
     {placementError}
     {dragStartResult}
     {resizeStartResult}

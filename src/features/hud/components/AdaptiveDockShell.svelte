@@ -66,6 +66,7 @@
     onPlacementCommand,
     focusRequest = 0,
     closeRequest = 0,
+    sideDefaultWorkspaceId = null,
     placementError = false,
     dragStartResult,
     resizeStartResult,
@@ -99,6 +100,8 @@
     focusRequest?: number;
     /** Increments when the open shortcut is pressed again: close as Escape would. */
     closeRequest?: number;
+    /** On a side, the chat the open shortcut returns to (open, last, else first). */
+    sideDefaultWorkspaceId?: string | null;
     placementError?: Parameters<typeof dockPlacementFailureMessage>[0];
     dragStartResult?: { id: number; token: string | null } | null;
     resizeStartResult?: { id: number; token: string | null } | null;
@@ -905,7 +908,15 @@
     untrack(() => {
       // Live input, a recording, a native menu or capture hiding: the press changes nothing.
       if (placement.captureHidden || nativeMenuOpen || inputLive || recording) return;
-      if (expanded || (edge && sidePreviewOpen) || (pinned && conversationVisible)) closeLikeEscape();
+      // On a side the press opens a chat, like the shortcut does: a side entry's preview
+      // (focus returned to it after Back, or a hover card) is not an open chat to close.
+      const sideOpens = edge && !!sideDefaultWorkspaceId && !(pinned && conversationVisible);
+      if (!sideOpens && (expanded || (edge && sidePreviewOpen) || (pinned && conversationVisible)))
+        closeLikeEscape();
+      else if (sideOpens && sideDefaultWorkspaceId)
+        openWorkspace(
+          sideDefaultWorkspaceId === CHIEF_WORKSPACE_ID ? assistantId : sideDefaultWorkspaceId,
+        );
       else shortcutOpenRequest += 1;
     });
   });

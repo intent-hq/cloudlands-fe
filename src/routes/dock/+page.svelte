@@ -15,6 +15,7 @@
   import { openDockConversation, choosePendingDockShortcut } from '$features/hud/dock-navigation';
   import { initDockIntro } from '$features/hud/intro/dock-intro.svelte';
   import { selectDockConversationWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { selectDockSideDefaultWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-side-default';
   import { selectCurrentDockComposerEvidence } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import {
     selectPttRecording,
@@ -105,6 +106,7 @@
   const resizeStartResult$ = selectDockResizeStartResult();
   const shortcut$ = selectDockShortcut();
   const conversationWorkspaceId$ = selectDockConversationWorkspaceId();
+  const sideDefaultWorkspaceId$ = selectDockSideDefaultWorkspaceId();
   const choosingWorkspace = $derived(
     !!$shortcut$ && !$shortcut$.destination && !$shortcut$.resolving,
   );
@@ -161,6 +163,7 @@
       placement={$placement$}
       focusRequest={$focusRequest$}
       closeRequest={$closeRequest$}
+      sideDefaultWorkspaceId={$sideDefaultWorkspaceId$}
       placementError={$placementError$}
       dragStartResult={$dragStartResult$}
       resizeStartResult={$resizeStartResult$}

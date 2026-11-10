@@ -18,7 +18,7 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { resolveDockDestination, type DockShortcutContext } from '$shared/dock-shortcuts';
 import { store as appStore } from '../../../store';
 import { selectDockShortcutWorkspaces } from '../dock-conversation-selectors';
-import { selectDockWorkspaces } from '../../hud/hud-selectors';
+import { dockSideDefaultWorkspaceId } from '../dock-side-default';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   dockShortcutChanged,
@@ -70,25 +70,10 @@ function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void
  * machine and authority, still present), else the first workspace the side shows. The
  * side has no home row to choose from; null (no workspace) keeps the existing flow.
  */
-function sideDockFallback(
-  context: DockShortcutContext,
-  ids: readonly string[],
-  selectionValid: boolean,
-): string | null {
+function sideDockFallback(context: DockShortcutContext): string | null {
   const state = appStore.state;
   if (context.action !== 'focus' || state.hud.dockPlacement?.shape !== 'edge') return null;
-  const dock = state.dockConversation;
-  const known = (id: string | null | undefined): id is string =>
-    !!id && (id === CHIEF_WORKSPACE_ID || ids.includes(id));
-  if (dock.authority && dock.authority === getPrincipalActionContext(state) && known(dock.workspaceId))
-    return dock.workspaceId;
-  const selected = selectionValid ? dock.shortcutSelection?.workspaceId : null;
-  if (known(selected)) return selected;
-  const shown = selectDockWorkspaces
-    .select(state)
-    .map((view) => String(view.workspace.id))
-    .find((id) => ids.includes(id));
-  return shown ?? ids[0] ?? null;
+  return dockSideDefaultWorkspaceId(state);
 }
 
 function* receive(context?: DockShortcutContext): SagaGenerator<void> {
@@ -158,7 +143,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     !(context.url && selection.url && context.url !== selection.url);
   // On a side, the open shortcut returns to the chat (open, last, else first workspace)
   // before any foreground routing.
-  const side = sideDockFallback(context, ids, selectionValid);
+  const side = sideDockFallback(context);
   const retained = sameContext ? (selection?.workspaceId ?? null) : null;
   const resolved = resolveDockDestination(context, ids, {});
   const owned =
