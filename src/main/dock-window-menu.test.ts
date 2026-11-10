@@ -10,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   saved: true as boolean,
+  failSave: false,
   sent: [] as unknown[],
   handlers: new Map<string, (...args: unknown[]) => Promise<unknown>>(),
 }));
@@ -30,6 +31,7 @@ vi.mock('electron', () => ({
 vi.mock('./local-prefs', () => ({
   getDockLabEnabledLocalPref: async () => mocks.saved,
   setDockLabEnabledLocalPref: async (enabled: boolean) => {
+    if (mocks.failSave) throw new Error('disk unavailable');
     mocks.saved = enabled;
   },
 }));
@@ -53,6 +55,7 @@ const labels = {
 };
 let dockShown = false;
 const requested: string[] = [];
+let refreshes = 0;
 function menu(): MenuItemConstructorOptions[] {
   return dockWindowMenuItems({
     labEnabled: isDockLabEnabled(),
@@ -62,6 +65,7 @@ function menu(): MenuItemConstructorOptions[] {
     setNotchDock: changeDockLabEnabled,
     requestShortcut: (action) => void requested.push(action),
     warn: () => {},
+    refresh: () => void (refreshes += 1),
   });
 }
 const show = (items: MenuItemConstructorOptions[]) => items.find((item) => item.label === labels.show);
@@ -77,6 +81,8 @@ async function clickShow() {
 
 async function launch(saved: boolean) {
   mocks.saved = saved;
+  mocks.failSave = false;
+  refreshes = 0;
   mocks.sent.length = 0;
   requested.length = 0;
   await loadDockLabEnabled();
@@ -124,6 +130,19 @@ describe('Window menu Show Intent Dock is the Notch dock setting', () => {
     expect(mocks.saved).toBe(false);
     expect(dockShown).toBe(false);
     expect(mocks.sent).toEqual([{ enabled: false }]);
+    expect(show(menu())).toMatchObject({ checked: false });
+  });
+
+  it('a check whose save fails is redrawn from the real setting (still off)', async () => {
+    await launch(false);
+    mocks.failSave = true;
+    const item = show(menu())!;
+    // Electron shows the item checked before the click handler runs.
+    (item.click as (item: { checked: boolean }) => void)({ ...item, checked: true } as never);
+    await vi.waitFor(() => expect(refreshes).toBe(1));
+    expect(isDockLabEnabled()).toBe(false);
+    expect(mocks.saved).toBe(false);
+    expect(mocks.sent).toEqual([]);
     expect(show(menu())).toMatchObject({ checked: false });
   });
 
