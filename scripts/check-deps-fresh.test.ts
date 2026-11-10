@@ -275,6 +275,76 @@ describe('check-deps-fresh CLI', () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain(`Unsupported Node v${process.versions.node}`);
   });
+
+  it('--warn-stale warns on a stale install, exits 0, and leaves i18n to the caller', () => {
+    const root = fixtureRoot({
+      'package.json': PACKAGE_JSON,
+      'pnpm-lock.yaml': LOCKFILE.replace('a: 1.0.0', 'a: 1.0.1'),
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    expect(runCli(root, ['--warn-stale'])).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: `[deps:check] warning: node_modules is out of sync with pnpm-lock.yaml — run: ${INSTALL_COMMAND}\n`,
+    });
+    expect(existsSync(repoParaglidePaths(root).outdir)).toBe(false);
+  });
+
+  it('--warn-stale is silent on a fresh install and does not provision i18n', () => {
+    const root = fixtureRoot({
+      'package.json': PACKAGE_JSON,
+      'pnpm-lock.yaml': LOCKFILE,
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    expect(runCli(root, ['--warn-stale'])).toEqual({ status: 0, stdout: '', stderr: '' });
+    expect(existsSync(repoParaglidePaths(root).outdir)).toBe(false);
+  });
+
+  it('--warn-stale warns on an unreadable lockfile copy', () => {
+    const root = fixtureRoot({ 'package.json': PACKAGE_JSON, 'pnpm-lock.yaml': LOCKFILE });
+    mkdirSync(join(root, 'node_modules', '.pnpm', 'lock.yaml'), { recursive: true });
+    const result = runCli(root, ['--warn-stale']);
+    expect(result.status).toBe(0);
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      `[deps:check] warning: node_modules/.pnpm/lock.yaml could not be read (EISDIR) — run: ${INSTALL_COMMAND}`,
+    ]);
+  });
+
+  it('--warn-stale still refuses a missing install, since nothing can build without it', () => {
+    const root = fixtureRoot({ 'package.json': PACKAGE_JSON, 'pnpm-lock.yaml': LOCKFILE });
+    const result = runCli(root, ['--warn-stale']);
+    expect(result.status).toBe(1);
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      `[deps:check] node_modules is missing (no node_modules/.pnpm/lock.yaml) — run: ${INSTALL_COMMAND}`,
+    ]);
+  });
+
+  it('--warn-stale warns on an unsupported Node and still checks the install', () => {
+    const root = fixtureRoot({
+      'package.json': JSON.stringify({ engines: { node: UNSUPPORTED_NODE } }),
+      'pnpm-lock.yaml': LOCKFILE.replace('a: 1.0.0', 'a: 1.0.1'),
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    const result = runCli(root, ['--warn-stale']);
+    expect(result.status).toBe(0);
+    expect(result.stderr.trimEnd().split('\n')).toEqual([
+      `[node:check] warning: Unsupported Node v${process.versions.node} — cloudlands-fe requires Node ${UNSUPPORTED_NODE} (${REMEDIATION_HINT}).`,
+      `[deps:check] warning: node_modules is out of sync with pnpm-lock.yaml — run: ${INSTALL_COMMAND}`,
+    ]);
+  });
+
+  it('--warn-stale warns when package.json declares no engines.node', () => {
+    const root = fixtureRoot({
+      'package.json': '{}',
+      'pnpm-lock.yaml': LOCKFILE,
+      'node_modules/.pnpm/lock.yaml': LOCKFILE,
+    });
+    expect(runCli(root, ['--warn-stale'])).toEqual({
+      status: 0,
+      stdout: '',
+      stderr: '[node:check] warning: package.json declares no engines.node range\n',
+    });
+  });
 });
 
 describe('verify:changed entry point', () => {
