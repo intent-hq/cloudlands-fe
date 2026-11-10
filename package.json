@@ -341,7 +341,7 @@
     "flatstr": "^1.0.12",
     "font-list": "^2.0.2",
     "ignore": "^7.0.14",
-    "katex": "0.18.9",
+    "katex": "0.19.1",
     "marked": "^18.0.11",
     "node-pty": "1.1.0",
     "pdfjs-dist": "6.5.438",

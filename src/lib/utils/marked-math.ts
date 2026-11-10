@@ -1,14 +1,20 @@
-import { renderToString } from 'katex';
+import { renderToString, type StrictFunction } from 'katex';
 import { Lexer, type Marked } from 'marked';
 
 export const MAX_MATH_SOURCE_LENGTH = 4096;
+
+// Reject LaTeX-incompatible input, but render glyphs that merely lack KaTeX font
+// metrics with a fallback font (KaTeX 0.19 routes those through `strict`, which
+// would otherwise turn them into render errors).
+const strictMath: StrictFunction = (errorCode) =>
+  errorCode === 'symbolNotInFont' ? 'ignore' : 'error';
 
 export function renderKatexToString(text: string, displayMode: boolean): string {
   return renderToString(text, {
     displayMode,
     output: 'htmlAndMathml',
     throwOnError: false,
-    strict: 'error',
+    strict: strictMath,
     trust: false,
     maxExpand: 100,
     maxSize: 20,
