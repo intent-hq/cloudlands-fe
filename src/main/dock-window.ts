@@ -324,9 +324,11 @@ export async function updateDockPlacement(
     return getDockPlacementSnapshot(window);
   }
   if (command.action === 'release') {
-    // A transient close: the renderer collapsed; only hand the keyboard back.
+    // A transient close: the renderer collapsed; only hand the keyboard back. Electron's
+    // blur on macOS orders the window out and back, which blanks the dock: hand it back
+    // natively first (the dock stays on screen) and blur only if that is unavailable.
     placementController?.cancelInteraction();
-    if (window.isFocused()) window.blur();
+    if (window.isFocused() && !dockCursor?.releaseKey()) window.blur();
     return getDockPlacementSnapshot(window);
   }
   if (command.action === 'dismiss') {

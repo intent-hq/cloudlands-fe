@@ -62,6 +62,8 @@ interface NativeCursorModule {
   update(token: unknown, state: CursorState & { kind: DockCursorKind }): void;
   dispose(token: unknown): void;
   inspect(token: unknown): unknown;
+  /** Optional: an older helper build lacks it (the caller then falls back to blur). */
+  releaseKey?(token: unknown): boolean;
 }
 
 interface DockCursorController {
@@ -69,6 +71,11 @@ interface DockCursorController {
   cursorChanged(type: string): void;
   dispose(): void;
   inspect(): unknown;
+  /**
+   * Hands the keyboard back while the dock stays on screen; true when the dock is no
+   * longer key. False when unavailable or refused (the caller may blur instead).
+   */
+  releaseKey(): boolean;
 }
 
 const controllers = new WeakMap<BrowserWindow, DockCursorController>();
@@ -143,6 +150,15 @@ export function attachDockCursor(window: BrowserWindow): DockCursorController | 
         }
       },
       inspect: () => native.inspect(token),
+      releaseKey() {
+        if (disposed || typeof native.releaseKey !== 'function') return false;
+        try {
+          return native.releaseKey(token) === true;
+        } catch (error) {
+          logger.warn('Failed to hand the keyboard back from the dock', { error });
+          return false;
+        }
+      },
     };
     controllers.set(window, controller);
     return controller;

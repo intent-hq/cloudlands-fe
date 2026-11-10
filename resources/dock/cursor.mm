@@ -8,6 +8,16 @@
 #include <unordered_set>
 #include <vector>
 
+// A 1x1 transparent panel that can take key status for an instant. Making it key and
+// ordering it out hands the keyboard back (to the active app, or to this app's own key
+// window) while the dock stays on screen. Electron's blur instead orders the dock itself
+// out and back, which blanks it.
+@interface IntentDockKeySink : NSPanel
+@end
+@implementation IntentDockKeySink
+- (BOOL)canBecomeKeyWindow { return YES; }
+@end
+
 namespace {
 struct Region {
   double x, y, width, height;
@@ -275,7 +285,10 @@ struct Token {
   Environment* environment;
   IntentDockCursorOwner* __strong owner;
 };
-struct Environment { std::unordered_set<Token*> tokens; };
+struct Environment {
+  std::unordered_set<Token*> tokens;
+  IntentDockKeySink* __strong keySink = nil;
+};
 
 void Check(napi_env env, napi_status status) {
   if (status == napi_ok) return;
@@ -329,6 +342,8 @@ void Cleanup(void* data) {
     [token->owner dispose];
     token->environment = nullptr;
   }
+  [environment->keySink close];
+  environment->keySink = nil;
   delete environment;
 }
 
@@ -462,6 +477,7 @@ napi_value Inspect(napi_env env, napi_value* args, Environment* environment) {
   Check(env, napi_set_named_property(env, result, "screenPoint", screenPoint));
   Set(env, result, "windowKey", bool(window.keyWindow));
   Set(env, result, "windowVisible", bool(window.visible));
+  Set(env, result, "appActive", bool(NSApp.active));
   Set(env, result, "interactive", bool(window && !window.ignoresMouseEvents));
   Set(env, result, "currentSystemCursor", CursorName(NSCursor.currentSystemCursor));
   Set(env, result, "processCurrent", CursorName(NSCursor.currentCursor));
@@ -478,6 +494,56 @@ napi_value Inspect(napi_env env, napi_value* args, Environment* environment) {
   return result;
 }
 
+napi_value ReleaseKey(napi_env env, napi_value* args, Environment* environment) {
+  IntentDockCursorOwner* owner = GetToken(env, args[0], environment)->owner;
+  NSWindow* window = owner->view.window;
+  napi_value result;
+  if (!window || !window.keyWindow || !window.visible) {
+    Check(env, napi_get_boolean(env, false, &result));
+    return result;
+  }
+  if (!environment->keySink) {
+    IntentDockKeySink* sink =
+        [[IntentDockKeySink alloc] initWithContentRect:NSMakeRect(0, 0, 1, 1)
+                                             styleMask:NSWindowStyleMaskBorderless |
+                                                       NSWindowStyleMaskNonactivatingPanel
+                                               backing:NSBackingStoreBuffered
+                                                 defer:YES];
+    sink.alphaValue = 0;
+    sink.opaque = NO;
+    sink.hasShadow = NO;
+    sink.ignoresMouseEvents = YES;
+    sink.releasedWhenClosed = NO;
+    sink.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces |
+                              NSWindowCollectionBehaviorFullScreenAuxiliary |
+                              NSWindowCollectionBehaviorTransient |
+                              NSWindowCollectionBehaviorIgnoresCycle;
+    environment->keySink = sink;
+  }
+  // This app is active (the person was in one of its windows): its frontmost other
+  // window takes the keyboard back. Otherwise (the dock panel never activated the app)
+  // the sink takes key for an instant and orders out, returning it to the active app.
+  NSWindow* next = nil;
+  if (NSApp.active) {
+    for (NSWindow* candidate in NSApp.orderedWindows) {
+      if (candidate != window && candidate.visible && candidate.canBecomeKeyWindow &&
+          ![candidate isKindOfClass:[IntentDockKeySink class]]) {
+        next = candidate;
+        break;
+      }
+    }
+  }
+  if (next) {
+    [next makeKeyWindow];
+  } else {
+    IntentDockKeySink* sink = environment->keySink;
+    sink.level = window.level;
+    [sink makeKeyAndOrderFront:nil];
+    [sink orderOut:nil];
+  }
+  Check(env, napi_get_boolean(env, !window.keyWindow && window.visible, &result));
+  return result;
+}
 template <napi_value (*Function)(napi_env, napi_value*, Environment*), size_t Count>
 napi_value Call(napi_env env, napi_callback_info info) {
   @autoreleasepool {
@@ -516,8 +582,9 @@ napi_value Initialize(napi_env env, napi_value exports) {
     {"update", nullptr, Call<Update, 2>, nullptr, nullptr, nullptr, napi_default, environment},
     {"dispose", nullptr, Call<Dispose, 1>, nullptr, nullptr, nullptr, napi_default, environment},
     {"inspect", nullptr, Call<Inspect, 1>, nullptr, nullptr, nullptr, napi_default, environment},
+    {"releaseKey", nullptr, Call<ReleaseKey, 1>, nullptr, nullptr, nullptr, napi_default, environment},
   };
-  if (napi_define_properties(env, exports, 4, methods) != napi_ok) {
+  if (napi_define_properties(env, exports, 5, methods) != napi_ok) {
     napi_throw_error(env, nullptr, "Cannot export dock cursor methods");
     return nullptr;
   }
