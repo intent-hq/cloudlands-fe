@@ -1728,8 +1728,8 @@
   // are real and usable, so the notice would be wrong there.
   // The notice shows only when the daemon labels the warning `warningKind:
   // "cli-missing"` (§5.30); every other degraded warning — an adapter crash,
-  // a timeout, missing Node.js — keeps the generic failure row with Details
-  // and Retry, never an install prompt keyed on the warning text.
+  // a timeout, missing Node.js — keeps the generic failure row with Details,
+  // never an install prompt keyed on the warning text.
   // Named Codex profiles (§5.54) have their own catalogs and get the same rule.
   function hasCatalogModels(providerId: string): boolean {
     return (
@@ -1761,7 +1761,7 @@
   // Display groups — every picker browses one provider at a time.
   const displayGroups = $derived.by(() => {
     // Once every catalog attempt settles without usable models, use the
-    // existing terminal error/Retry surface rather than disabled error rows.
+    // existing terminal error surface rather than disabled error rows.
     // Pending retries and partial/cached success keep their groups/default row.
     if (
       !remoteScoped &&
@@ -2045,7 +2045,7 @@
   );
   const refreshProviderId = $derived(activeBrowseProviderId || preferredBrowseProviderId);
   const refreshBusy = $derived(isRefreshBusy(refreshProviderId));
-  // Issue rows and Retry wait for the load to settle.
+  // Issue rows and Details wait for the load to settle.
   const showProviderIssue = $derived(activeProviderIssue !== null && !refreshBusy);
   // A remote agent's list comes from its machine: the backend's own catalog
   // loads and failures say nothing about it.
@@ -2056,22 +2056,12 @@
   const railProviderIds = $derived(providerTabIds);
   let pointerInteraction = $state(false);
 
-  function focusModelSearch(from: Element) {
-    from
+  function clearModelSearch(event: MouseEvent) {
+    modelSearchValue = '';
+    (event.currentTarget as HTMLElement)
       .closest('[data-slot="dropdown-content"]')
       ?.querySelector<HTMLInputElement>('[role="searchbox"]')
       ?.focus();
-  }
-
-  function clearModelSearch(event: MouseEvent) {
-    modelSearchValue = '';
-    focusModelSearch(event.currentTarget as Element);
-  }
-
-  function retryActiveProvider(event: MouseEvent) {
-    // Retry hides while its refresh runs; keep focus in the picker.
-    focusModelSearch(event.currentTarget as Element);
-    handleRefreshProvider(refreshProviderId);
   }
 
   function selectProviderTab(providerId: string) {
@@ -2710,6 +2700,18 @@
     {/if}
   {/snippet}
 
+  {#snippet providerDetailsLink(issue: ProviderLoadError)}
+    <Button
+      type="button"
+      variant="link"
+      size="xs"
+      class="h-auto shrink-0 p-0"
+      onclick={() => showProviderDetails(issue)}
+    >
+      {m.chat_modelPicker_errorDetails_label()}
+    </Button>
+  {/snippet}
+
   {#snippet dropdownFooter()}
     {#if !remoteScoped}
       {#if codexFallbackWarning}
@@ -2723,39 +2725,41 @@
           />
         </div>
       {/if}
+      <!-- The refresh icon retries the browsed provider; the footer states the issue and offers Details. -->
       {#if footerProviderWarnings.length > 0 && !refreshBusy}
         <div class="px-(--model-picker-gutter) py-2 space-y-1.5 text-xs">
           {#each footerProviderWarnings as warning (warning.providerId)}
-            <div class="flex items-start gap-2 text-muted-foreground" role="status">
-              <ModelProviderErrorItem
-                providerId={warning.providerId}
-                providerLabel={warning.providerName}
-                error={warning.message}
-                hint={warning.hint}
-                compact={true}
-              />
+            <div class="flex items-start gap-2">
+              <div
+                class="flex min-w-0 flex-1 items-start gap-2 text-muted-foreground"
+                role="status"
+              >
+                <ModelProviderErrorItem
+                  providerId={warning.providerId}
+                  providerLabel={warning.providerName}
+                  error={warning.message}
+                  hint={warning.hint}
+                  compact={true}
+                />
+              </div>
+              {#if warning === activeProviderIssue}
+                {@render providerDetailsLink(warning)}
+              {/if}
             </div>
           {/each}
         </div>
       {/if}
-      {#if showProviderIssue}
-        <div class="flex flex-wrap items-center gap-2 px-(--model-picker-gutter) py-2">
-          <Button type="button" variant="secondary" size="sm" onclick={retryActiveProvider}>
-            {m.chat_modelPicker_retry_label()}
-          </Button>
-          <Button
-            type="button"
-            variant="link"
-            size="sm"
-            onclick={() => activeProviderIssue && showProviderDetails(activeProviderIssue)}
-          >
-            {m.chat_modelPicker_errorDetails_label()}
-          </Button>
+      {#if showProviderIssue && activeProviderIssue && !footerProviderWarnings.includes(activeProviderIssue)}
+        <div class="px-(--model-picker-gutter) py-2">
+          {@render providerDetailsLink(activeProviderIssue)}
         </div>
       {/if}
     {/if}
     {#if showReasoningFooter}
-      <div class="w-full min-w-0 px-(--model-picker-gutter) py-2" data-testid="model-reasoning-section">
+      <div
+        class="w-full min-w-0 px-(--model-picker-gutter) py-2"
+        data-testid="model-reasoning-section"
+      >
         <EffortPicker
           mode="embedded"
           class="w-full min-w-0 gap-2! [&>div]:w-24 [&>span]:min-w-0 [&>span>span]:truncate"
@@ -3095,7 +3099,10 @@
           </div>
         </div>
       {:else if usingEarlierProfileSettings}
-        <div class="px-(--model-picker-gutter) py-2.5 border-b border-border" data-testid="model-picker-earlier-settings">
+        <div
+          class="px-(--model-picker-gutter) py-2.5 border-b border-border"
+          data-testid="model-picker-earlier-settings"
+        >
           <div class="flex items-start gap-2" role="status">
             <Fa icon={faCircleInfo} class="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
             <div class="min-w-0">

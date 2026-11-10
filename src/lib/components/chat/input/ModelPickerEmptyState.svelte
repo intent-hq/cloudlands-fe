@@ -104,7 +104,9 @@
       {/if}
     </div>
   {:else}
-    <div class="flex flex-col items-start gap-2.5 py-4 px-(--model-picker-row-gutter) text-left text-muted-foreground">
+    <div
+      class="flex flex-col items-start gap-2.5 py-4 px-(--model-picker-row-gutter) text-left text-muted-foreground"
+    >
       <span class="type-body">{m.chat_modelPicker_noModels_label()}</span>
       {#if !hideRetry}
         <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
