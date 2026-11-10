@@ -6,10 +6,10 @@
 import { vi, afterEach, beforeEach } from 'vitest';
 import * as path from 'path';
 import { tmpdir } from 'os';
-import { scrubHostNodeInjection } from './scrub-host-node-injection';
-import { scrubHostPythonInjection } from './scrub-host-python-injection';
+import { scrubHostNodeInjection } from './test/scrub-host-node-injection';
+import { scrubHostPythonInjection } from './test/scrub-host-python-injection';
 import { stripForkExecArgv } from '../scripts/vitest-fork-exec-argv.mjs';
-import { installShiftedTestClock } from './shifted-test-clock';
+import { installShiftedTestClock } from './test/shifted-test-clock';
 import { createLocalStorageMock } from './store/renderer/utils/test-helpers/local-storage-mock';
 // Configure @testing-library/dom (the instance @testing-library/svelte re-exports) directly:
 // importing the Svelte binding here would load Svelte into every test file, UI or not.

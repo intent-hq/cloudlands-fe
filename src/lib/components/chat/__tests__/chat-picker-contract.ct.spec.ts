@@ -2,7 +2,7 @@ import { expect, test } from '../../../../test/ct-test';
 import BrowserTabsPreview from '$lib/component-catalog/browser-tabs-menu.preview.svelte';
 import BrowserTabsMenu from '../BrowserTabsMenu.svelte';
 import BrowserTabsConfirmationHarness from './mocks/BrowserTabsConfirmationHarness.svelte';
-import SimpleRichInputQueueHost from '../input/SimpleRichInputQueueHost.svelte';
+import SimpleRichInputQueueTestHost from '../input/SimpleRichInputQueueTestHost.svelte';
 import MentionResultsPreview from '../input/mention-results.preview.svelte';
 
 test('browser navigation and close are separate keyboard targets and Escape restores the trigger', async ({
@@ -116,7 +116,7 @@ test('composer context command keeps its parent menu and Escape returns through 
   mount,
   page,
 }) => {
-  await mount(SimpleRichInputQueueHost, { props: { queueCount: 0, width: 440 } });
+  await mount(SimpleRichInputQueueTestHost, { props: { queueCount: 0, width: 440 } });
   const trigger = page.getByTestId('prompt-actions-trigger');
   await trigger.click();
   const command = page.getByRole('menuitem', { name: /Add Context/ });

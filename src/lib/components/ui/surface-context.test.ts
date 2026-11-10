@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'svelte-sonner';
-import SurfaceContextConsumer from './SurfaceContextConsumer.svelte';
+import SurfaceContextConsumerTestHost from './SurfaceContextConsumerTestHost.svelte';
 import SurfaceContextHarness from './SurfaceContextHarness.svelte';
 import SurfaceOverlayHarness from './SurfaceOverlayHarness.svelte';
 import { clampSurface, surfaceClasses, surfaceHoverClasses } from './surface-context';
@@ -53,7 +53,7 @@ describe('surface context', () => {
 
   it('raises toast content and provides its surface to custom toast children', async () => {
     render(SurfaceOverlayHarness, { props: { kind: 'toast', substrate: 2 } });
-    toast.custom(SurfaceContextConsumer, {
+    toast.custom(SurfaceContextConsumerTestHost, {
       duration: Number.POSITIVE_INFINITY,
       componentProps: { testId: 'toast-surface' },
     });

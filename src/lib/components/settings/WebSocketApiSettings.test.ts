@@ -78,7 +78,7 @@ const connectionState = vi.hoisted(() => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createConnectionsHarness } =
-    await import('$store/renderer/slices/connections/test-harness');
+    await import('$store/renderer/slices/connections/connections.test-helpers');
   const harness = createConnectionsHarness(
     () => ({ windowBackendId: connectionState.activeId }),
     (action) => connectionState.dispatched.push(action),

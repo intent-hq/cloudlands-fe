@@ -1,12 +1,12 @@
 <script lang="ts">
   import { SizeProvider } from './index.js';
-  import SizeContextConsumer from './SizeContextConsumer.svelte';
+  import SizeContextConsumerTestHost from './SizeContextConsumerTestHost.svelte';
 </script>
 
-<SizeContextConsumer testId="unscoped-size" />
+<SizeContextConsumerTestHost testId="unscoped-size" />
 <SizeProvider size="compact">
-  <SizeContextConsumer testId="compact-size" />
+  <SizeContextConsumerTestHost testId="compact-size" />
   <SizeProvider size="default">
-    <SizeContextConsumer testId="nested-size" />
+    <SizeContextConsumerTestHost testId="nested-size" />
   </SizeProvider>
 </SizeProvider>

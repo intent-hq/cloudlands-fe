@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const consumerFiles = [
-  'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
+  'src/features/agent/components/agent-avatar/AgentAvatarCatalogHarness.svelte',
   'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte',
   'src/features/agent/components/agent-avatar/__tests__/AgentAvatarWaitingHost.svelte',
   'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
@@ -51,7 +51,7 @@ const overflowFiles = [
 ] as const;
 
 const canonicalStackConsumers = [
-  'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
+  'src/features/agent/components/agent-avatar/AgentAvatarCatalogHarness.svelte',
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',

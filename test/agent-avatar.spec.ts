@@ -10,7 +10,7 @@ import { agentAvatarVariants } from '../src/features/agent/components/agent-avat
 import {
   agentAvatarCatalogIdentities,
   agentAvatarCatalogStates,
-} from '../src/features/agent/components/agent-avatar/agent-avatar.catalog';
+} from '../src/features/agent/components/agent-avatar/agent-avatar-catalog.fixtures';
 
 // Each test mounts a fresh host; report every contract failure independently.
 test.describe.configure({ mode: 'default', timeout: 120_000 });

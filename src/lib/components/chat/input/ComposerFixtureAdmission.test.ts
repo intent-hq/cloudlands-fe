@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import { store } from '$store/renderer/store';
 import { principalContextChanged } from '$store/renderer/slices/principal/principal-slice';
 import { admitLegacyPrincipal } from '../../../../test/fixtures/principal-state';
-import QueueHost from './SimpleRichInputQueueHost.svelte';
+import QueueHost from './SimpleRichInputQueueTestHost.svelte';
 import MentionsHost from './__tests__/MemberMentionsHost.svelte';
 
 // Keep the actual composer, admission selectors, store, and fixture transport.

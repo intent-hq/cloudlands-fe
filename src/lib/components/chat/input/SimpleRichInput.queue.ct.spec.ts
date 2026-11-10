@@ -1,5 +1,5 @@
 import { expect, test, wheelUntilScrolled } from '../../../../test/ct-test';
-import SimpleRichInputQueueHost from './SimpleRichInputQueueHost.svelte';
+import SimpleRichInputQueueTestHost from './SimpleRichInputQueueTestHost.svelte';
 
 for (const submit of ['button', 'Enter'] as const) {
   test(`sends a Chief message with ${submit} without project-role fields`, async ({
@@ -7,7 +7,7 @@ for (const submit of ['button', 'Enter'] as const) {
     page,
   }, testInfo) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const component = await mount(SimpleRichInputQueueHost, {
+    const component = await mount(SimpleRichInputQueueTestHost, {
       props: { chief: true, queueCount: 0, width: 560 },
     });
     const input = component.getByTestId('message-input');
@@ -31,7 +31,7 @@ test('keeps queued messages above subscriptions without moving the composer', as
   page,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(SimpleRichInputQueueHost, { props: { queueCount: 0, width: 240 } });
+  const component = await mount(SimpleRichInputQueueTestHost, { props: { queueCount: 0, width: 240 } });
   const input = component.getByTestId('message-input');
   const editor = input.locator('.tiptap-editor');
   const queue = component.getByTestId('queued-messages-container');
@@ -71,7 +71,7 @@ for (const streaming of [false, true]) {
   test(`keeps the editor and ${streaming ? 'stop' : 'send'} reachable with twelve queued messages`, async ({
     mount,
   }, testInfo) => {
-    const component = await mount(SimpleRichInputQueueHost, { props: { streaming } });
+    const component = await mount(SimpleRichInputQueueTestHost, { props: { streaming } });
     const input = component.getByTestId('message-input');
     const queue = component.getByTestId('queued-messages-container');
     const editor = input.locator('.tiptap-editor');

@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { activateHoverAction, expect, test } from '../../../test/ct-test';
 import ComposerMediaPreview from './dock-composer-media.preview.svelte';
-import { readDictationIndicators } from './dock-composer-ct-helpers';
+import { readDictationIndicators } from './dock-composer.test-helpers';
 import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import type { DockComposerAttachment } from './dock-composer-media-presentation';
 

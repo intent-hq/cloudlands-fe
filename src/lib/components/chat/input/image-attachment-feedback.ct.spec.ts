@@ -1,5 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
-import Host from './ImageAttachmentFeedbackHost.svelte';
+import Host from './ImageAttachmentFeedbackTestHost.svelte';
 
 const png =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=';

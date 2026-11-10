@@ -2,7 +2,7 @@
   /** @internal Test host: renders every avatar identity and state for the avatar unit and Playwright suites. */
   import AgentAvatarStack, { type AgentAvatarStackItem } from './AgentAvatarStack.svelte';
   import AgentAvatarWithState from './AgentAvatarWithState.svelte';
-  import { agentAvatarCatalogIdentities, agentAvatarCatalogStates } from './agent-avatar.catalog';
+  import { agentAvatarCatalogIdentities, agentAvatarCatalogStates } from './agent-avatar-catalog.fixtures';
   import type { AvatarState } from './avatar-state';
   import { agentAvatarVariants } from './avatar-size';
 

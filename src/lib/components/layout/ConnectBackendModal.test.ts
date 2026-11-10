@@ -41,7 +41,7 @@ vi.mock('svelte-fa', () => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createConnectionsHarness } =
-    await import('$store/renderer/slices/connections/test-harness');
+    await import('$store/renderer/slices/connections/connections.test-helpers');
   const harness = createConnectionsHarness(
     () => ({ keychainSync: mocks.syncState.value, browserHost: mocks.browserHost.value }),
     mocks.dispatch,
