@@ -4,6 +4,22 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.310.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.309.0...v2.310.0) (2026-11-10)
+
+
+### 🚀 Features
+
+* **nodes:** add a machine from an intent://node link ([#4387](https://github.com/intent-hq/cloudlands-fe/issues/4387)) ([d1d4d42](https://github.com/intent-hq/cloudlands-fe/commit/d1d4d42a21431a72340504d5fe7d2dd671c0b042))
+
+
+### 🐛 Bug Fixes
+
+* **build:** generate build:main inputs when they are missing ([#4395](https://github.com/intent-hq/cloudlands-fe/issues/4395)) ([227b0da](https://github.com/intent-hq/cloudlands-fe/commit/227b0dad90e1f78251bdff7c9999b683aea0fcd1))
+* bump intentd sidecar to v0.11.171 ([#4398](https://github.com/intent-hq/cloudlands-fe/issues/4398)) ([e298305](https://github.com/intent-hq/cloudlands-fe/commit/e298305fc40c758bd445b8e1381ddf963b073df8))
+* **layout:** keep cancelled-then-rescheduled layout tasks in the same frame ([#4392](https://github.com/intent-hq/cloudlands-fe/issues/4392)) ([1b1e4ef](https://github.com/intent-hq/cloudlands-fe/commit/1b1e4ef735d5f54a78defc1c593b5faf542be1b5))
+* **lint:** stop the dead-code gate early when generated files are missing ([#4393](https://github.com/intent-hq/cloudlands-fe/issues/4393)) ([71551d0](https://github.com/intent-hq/cloudlands-fe/commit/71551d0eef1dd8767c0866dd0263ff392768d5fb))
+* **notes:** register the inline suggestion mark and restyle its popup ([#4389](https://github.com/intent-hq/cloudlands-fe/issues/4389)) ([9c693b6](https://github.com/intent-hq/cloudlands-fe/commit/9c693b6bdde2d6a88fb0943164c0eede53e116e2))
+
 ## [2.309.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.308.1...v2.309.0) (2026-11-10)
 
 
