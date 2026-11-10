@@ -493,7 +493,7 @@
   let editor: Editor = $state(null!);
   let editorInitializationPromise: Promise<void> | null = null;
   let selectedSuggestion = $state<SuggestionDetails | null>(null);
-  let tooltipPosition = $state({ x: 0, y: 0 });
+  let suggestionAnchor = $state<HTMLElement | null>(null);
   // Task menu state - track discovered task buttons
   let taskMenuData = $state<TaskMenuPopoverData[]>([]);
   let cleanupFn: (() => void) | null = null;
@@ -928,33 +928,15 @@
   }
 
   function handleSuggestionClick(suggestion: SuggestionDetails, suggestionElement: HTMLElement) {
-    const container = element?.parentElement;
-    if (!container) return;
-    const anchor = suggestionElement.getBoundingClientRect();
-    const origin = container.getBoundingClientRect();
-    tooltipPosition = { x: anchor.left - origin.left, y: anchor.top - origin.top };
+    suggestionAnchor = suggestionElement;
     selectedSuggestion = suggestion;
   }
-
-  function dismissSuggestionOnOutsidePointer(event: PointerEvent) {
-    const target = event.target as Element | null;
-    if (target?.closest('.suggestion-tooltip, .suggestion[data-suggestion-id]')) return;
-    selectedSuggestion = null;
-  }
-
-  $effect(() => {
-    if (!selectedSuggestion) return;
-    window.addEventListener('pointerdown', dismissSuggestionOnOutsidePointer, true);
-    return () => window.removeEventListener('pointerdown', dismissSuggestionOnOutsidePointer, true);
-  });
 
   async function handleSuggestionDecision(decision: SuggestionDecision) {
     const suggestionId = selectedSuggestion?.id;
     if (!editor || !suggestionId) return;
-    const applied = await applySuggestionDecision(editor, suggestionId, decision, () =>
-      saveEditorContent(true),
-    );
-    if (applied) selectedSuggestion = null;
+    selectedSuggestion = null;
+    await applySuggestionDecision(editor, suggestionId, decision, () => saveEditorContent(true));
   }
 
   function syncTaskAgentAssociations() {
@@ -2292,16 +2274,13 @@
           ondragover={handleDragOver}
         ></div>
 
-        <!-- Suggestion Tooltip -->
-        {#if selectedSuggestion && !shouldShowRawNoteView}
-          <SuggestionTooltip
-            suggestion={selectedSuggestion}
-            x={tooltipPosition.x}
-            y={tooltipPosition.y}
-            onAccept={() => void handleSuggestionDecision('accept')}
-            onReject={() => void handleSuggestionDecision('reject')}
-          />
-        {/if}
+        <SuggestionTooltip
+          suggestion={shouldShowRawNoteView ? null : selectedSuggestion}
+          anchor={suggestionAnchor}
+          onAccept={() => void handleSuggestionDecision('accept')}
+          onReject={() => void handleSuggestionDecision('reject')}
+          onClose={() => (selectedSuggestion = null)}
+        />
 
         <!-- Bubble Menu for formatting and comments -->
         {#if editor && !shouldShowRawNoteView}
