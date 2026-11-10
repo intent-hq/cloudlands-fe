@@ -63,7 +63,7 @@ it('provides usage for every public parts-style component entry', async () => {
 // tooltip trigger (#2803) because nothing required either.
 const UI_DIR = 'src/lib/components/ui';
 const CATALOG_EXEMPT_MARKER = '@catalog-exempt:';
-const CATALOG_SUPPORT_FILE = /(?:\.preview|Harness|Consumer|TestHost)\.svelte$/;
+const CATALOG_SUPPORT_FILE = /(?:\.preview|Harness|TestHost)\.svelte$/;
 
 type CatalogExemption = { kind: 'exempt'; reason: string } | { kind: null };
 
