@@ -13,6 +13,11 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { Plugin, PluginKey } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import { CommentAnchor } from '$lib/components/tiptap/CommentAnchor';
+import {
+  Suggestion,
+  readSuggestionElement,
+  type SuggestionDetails,
+} from '$lib/components/tiptap/Suggestion';
 import { createCommentDecorationsPlugin } from '$lib/components/tiptap/CommentDecorations';
 import { createWorkspacesLink } from './tiptap-link-extension';
 import CodeBlockLowlight from '@tiptap/extension-code-block-lowlight';
@@ -241,7 +246,7 @@ interface EditorConfigOptions {
   editable: boolean;
   onUpdate: (content: string) => void;
   onSelectionUpdate?: (selectedText: string) => void;
-  onSuggestionClick?: (target: HTMLElement) => void;
+  onSuggestionClick?: (suggestion: SuggestionDetails, element: HTMLElement) => void;
   onCommentClick?: (commentId: string) => void;
   onFilePathClick?: (filePath: string, event: MouseEvent) => void; // Handle clicks on file paths in code elements
   useMarkdown?: boolean;
@@ -947,7 +952,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
       ];
 
   // Add selection preservation and comment extensions
-  let extensions = [...baseExtensions, SelectionPreservation];
+  let extensions = [...baseExtensions, Suggestion, SelectionPreservation];
 
   if (enableComments) {
     // Anchor-based system with decorations plugin
@@ -974,6 +979,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
 
     extensions = [
       ...baseExtensions,
+      Suggestion,
       SelectionPreservation,
       CommentAnchor,
       CommentDecorationsExtension,
@@ -1158,10 +1164,11 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
           return true; // Handled
         }
 
-        // Check if clicking on a suggestion
-        if (target.closest('.suggestion') && onSuggestionClick) {
-          onSuggestionClick(target);
-          return true; // Prevent default behavior for suggestions
+        const suggestionElement = target.closest<HTMLElement>('.suggestion[data-suggestion-id]');
+        const suggestion = suggestionElement && readSuggestionElement(suggestionElement);
+        if (suggestionElement && suggestion && onSuggestionClick) {
+          onSuggestionClick(suggestion, suggestionElement);
+          return true;
         }
 
         // Check if clicking on a file path (e.g., "src/components/Button.tsx")

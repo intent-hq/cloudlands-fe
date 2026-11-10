@@ -5,10 +5,37 @@ export interface SuggestionOptions {
   HTMLAttributes: Record<string, any>;
 }
 
+export type SuggestionType = 'addition' | 'deletion' | 'modification';
+
+export interface SuggestionDetails {
+  id: string;
+  type: SuggestionType;
+  author?: string;
+  reason?: string;
+  originalText?: string;
+}
+
+const SUGGESTION_TYPES: readonly string[] = ['addition', 'deletion', 'modification'];
+
+/** Read the suggestion a rendered `.suggestion` span carries. */
+export function readSuggestionElement(element: Element): SuggestionDetails | null {
+  const id = element.getAttribute('data-suggestion-id');
+  if (!id) return null;
+  const type = element.getAttribute('data-suggestion-type') ?? 'addition';
+  const optional = (name: string) => element.getAttribute(name) || undefined;
+  return {
+    id,
+    type: (SUGGESTION_TYPES.includes(type) ? type : 'addition') as SuggestionType,
+    author: optional('data-suggestion-author'),
+    reason: optional('data-suggestion-reason'),
+    originalText: optional('data-suggestion-original'),
+  };
+}
+
 type SuggestionRange = {
   from: number;
   to: number;
-  type: 'addition' | 'deletion' | 'modification';
+  type: SuggestionType;
   originalText?: string;
 };
 

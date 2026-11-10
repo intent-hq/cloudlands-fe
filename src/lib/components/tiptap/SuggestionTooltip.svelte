@@ -3,15 +3,10 @@
   import Fa from 'svelte-fa';
   import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
   import { m } from '$shared/paraglide/messages.js';
+  import type { SuggestionDetails } from './Suggestion';
 
   interface Props {
-    suggestion: {
-      id: string;
-      type: 'addition' | 'deletion' | 'modification';
-      author?: string;
-      reason?: string;
-      originalText?: string;
-    };
+    suggestion: SuggestionDetails;
     x?: number;
     y?: number;
     onAccept?: (id: string) => void;

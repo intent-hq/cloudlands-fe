@@ -6,6 +6,7 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import RawNoteCodeEditor from '$lib/components/workspace/RawNoteCodeEditor.svelte';
   import SuggestionTooltip from '$lib/components/tiptap/SuggestionTooltip.svelte';
+  import type { SuggestionDetails } from '$lib/components/tiptap/Suggestion';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -491,7 +492,7 @@
 
   let editor: Editor = $state(null!);
   let editorInitializationPromise: Promise<void> | null = null;
-  let selectedSuggestion: any = $state(null);
+  let selectedSuggestion = $state<SuggestionDetails | null>(null);
   let tooltipPosition = $state({ x: 0, y: 0 });
   // Task menu state - track discovered task buttons
   let taskMenuData = $state<TaskMenuPopoverData[]>([]);
@@ -926,15 +927,26 @@
     }
   }
 
-  // Handle suggestion click
-  function handleSuggestionClick(suggestion: any) {
+  function handleSuggestionClick(suggestion: SuggestionDetails, suggestionElement: HTMLElement) {
+    const container = element?.parentElement;
+    if (!container) return;
+    const anchor = suggestionElement.getBoundingClientRect();
+    const origin = container.getBoundingClientRect();
+    tooltipPosition = { x: anchor.left - origin.left, y: anchor.top - origin.top };
     selectedSuggestion = suggestion;
-    if (editor && editor.view) {
-      const { from } = editor.state.selection;
-      const rect = editor.view.coordsAtPos(from);
-      tooltipPosition = { x: rect.left, y: rect.top };
-    }
   }
+
+  function dismissSuggestionOnOutsidePointer(event: PointerEvent) {
+    const target = event.target as Element | null;
+    if (target?.closest('.suggestion-tooltip, .suggestion[data-suggestion-id]')) return;
+    selectedSuggestion = null;
+  }
+
+  $effect(() => {
+    if (!selectedSuggestion) return;
+    window.addEventListener('pointerdown', dismissSuggestionOnOutsidePointer, true);
+    return () => window.removeEventListener('pointerdown', dismissSuggestionOnOutsidePointer, true);
+  });
 
   async function handleSuggestionDecision(decision: SuggestionDecision) {
     const suggestionId = selectedSuggestion?.id;

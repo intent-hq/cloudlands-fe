@@ -30,7 +30,6 @@
     "src/lib/components/layout/Drawer.svelte",
     "src/lib/components/layout/panel-system/PanelNavigator.svelte",
     "src/lib/components/layout/panel-system/panel-navigator-geometry.ts",
-    "src/lib/components/tiptap/Suggestion.ts",
     "src/lib/components/tiptap/TaskNotePreview.svelte",
     "src/lib/components/ui/CollapsiblePanel.meta.ts",
     "src/lib/components/ui/CollapsiblePanel.svelte",
