@@ -62,7 +62,8 @@
   import { Select } from '$lib/components/ui/select';
   import { MessageComposer } from '$lib/components/ui/message-composer';
   import { InputMessage } from '$lib/components/ui/input-message';
-  import { ScreenHeader, EmptyState, LoadingState } from '$lib/components/patterns/screen';
+  import { ScreenHeader, EmptyState } from '$lib/components/patterns/screen';
+  import { Skeleton } from '$lib/components/ui/skeleton';
   import { activateIntentFromDock } from '../dock-context-menu';
   import ScrollToBottomButton from '$lib/components/chat/ScrollToBottomButton.svelte';
   import ChatMessage from '$lib/components/chat/ChatMessage.svelte';
@@ -412,12 +413,24 @@
         operational
       >
         {#if loading && transcriptEmpty}
-          <LoadingState
-            density="compact"
-            count={3}
-            label={m.chat_agentThread_loading_label()}
-            class="py-6"
-          />
+          <div
+            class="conversation-loading"
+            role="status"
+            aria-label={m.chat_agentThread_loading_label()}
+          >
+            <div class="loading-turn loading-user" aria-hidden="true">
+              <Skeleton class="h-2 w-full" />
+              <Skeleton class="h-2 w-3/5" />
+            </div>
+            <div class="loading-turn loading-assistant" aria-hidden="true">
+              <Skeleton class="h-2 w-full" />
+              <Skeleton class="h-2 w-5/6" />
+              <Skeleton class="h-2 w-2/3" />
+            </div>
+            <div class="loading-turn loading-user loading-followup" aria-hidden="true">
+              <Skeleton class="h-2 w-full" />
+            </div>
+          </div>
         {:else if !error && transcriptEmpty}
           <EmptyState density="compact">
             {#snippet title()}{m.dock_conversation_empty_label()}{/snippet}
@@ -696,6 +709,32 @@
     min-width: 0;
     max-width: 100%;
     overflow-wrap: anywhere;
+  }
+  .conversation-loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    padding-block: var(--space-3);
+  }
+  .loading-turn {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .loading-user {
+    width: 62%;
+    align-self: flex-end;
+    align-items: flex-end;
+  }
+  .loading-assistant {
+    width: 90%;
+  }
+  .loading-followup {
+    width: 44%;
+  }
+  .conversation-loading :global([data-slot='skeleton']) {
+    animation: none;
+    background-image: none;
   }
   .conversation-queue {
     min-width: 0;
