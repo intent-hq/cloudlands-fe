@@ -14,6 +14,7 @@ import { store } from '$store/renderer/store';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import RemoteMachinesSection from '$features/remote-machines/RemoteMachinesSection.svelte';
 import DeviceRow from '../DeviceRow.svelte';
 
@@ -44,6 +45,10 @@ beforeEach(() => {
   store.init();
   store.dispatch(backendReconnected());
   store.dispatch(setLabsRemoteAgentsEnabled(true));
+  // Saved here: a machine this app has no connection to is listed under Nodes.
+  store.dispatch(
+    connectionsListReceived({ connections: [DEVICE], activeId: 'local', windowBackendId: 'local' }),
+  );
   store.dispatch(
     remoteMachinesLoaded({
       supported: true,

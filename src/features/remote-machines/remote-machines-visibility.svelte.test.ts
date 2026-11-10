@@ -14,6 +14,7 @@ import type { ExecutorBackend, RemoteMachine } from '$shared/types/remote-machin
 import BackendsWithAccessSection from './BackendsWithAccessSection.svelte';
 import RemoteMachinesSection from './RemoteMachinesSection.svelte';
 import { remoteMachinesLoaded } from './remote-machines-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { selectRemoteMachinesVisible } from './remote-machines-selectors';
 import { parsePrincipalSnapshot } from '$shared/types/principal';
 import {
@@ -55,6 +56,23 @@ function seed(labs: boolean, supported: boolean) {
 beforeEach(() => {
   store.init();
   store.dispatch(backendReconnected());
+  // A saved connection to the machine: without one it is listed under Nodes.
+  store.dispatch(
+    connectionsListReceived({
+      connections: [
+        {
+          id: 'studio-mac',
+          label: 'Studio Mac',
+          host: '192.0.2.4',
+          port: 5179,
+          fingerprint: 'AA:BB',
+          isLocal: false,
+        },
+      ],
+      activeId: 'local',
+      windowBackendId: 'local',
+    }),
+  );
 });
 
 describe.each([

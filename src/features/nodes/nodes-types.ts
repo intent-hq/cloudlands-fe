@@ -1,12 +1,32 @@
+import type { NodeInviteInspectErrorCode } from '$shared/types/node-invite';
 import type { PairLinkErrorCode } from '$shared/types/pair-link';
 
-/** Why adding from a link failed. Never carries the link or its token. */
+/** Why an `intent://node` claim failed (the backend's reason, or a refusal). */
+type NodeInviteAddErrorCode =
+  | NodeInviteInspectErrorCode
+  | 'node-invite-invalid'
+  | 'node-invite-expired'
+  | 'node-invite-used'
+  | 'node-invite-revoked'
+  | 'node-invite-self'
+  | 'machine-unreachable'
+  | 'machine-update-required'
+  /** Every route failed the link's certificate pin. */
+  | 'certificate-mismatch'
+  /** The backend can't claim node links (no capability, or `-32601`). */
+  | 'invites-unsupported'
+  /** The window's connection is not the backend's owner. */
+  | 'invite-not-owner';
+
+/** Why adding from a link failed. Never carries the link, its token or invite secret. */
 export interface NodeAddError {
-  code: PairLinkErrorCode | 'expired' | 'backend-unsupported' | 'labs-off';
-  /** Routes tried, for `unreachable`. */
+  code: PairLinkErrorCode | NodeInviteAddErrorCode | 'expired' | 'backend-unsupported' | 'labs-off';
+  /** Routes tried, for `unreachable` and `machine-unreachable`. */
   routes?: string[];
   /** Localized detail for `incompatible`. */
   message?: string;
+  /** A node link's claim may have used the invite: only a new link helps. */
+  inviteSpent?: boolean;
   /** The node's name, for the refusal messages. */
   node?: string;
 }

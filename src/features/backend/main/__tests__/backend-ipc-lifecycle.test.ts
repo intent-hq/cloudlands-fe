@@ -873,6 +873,7 @@ describe('actual main finalization fence and original pool', () => {
             noteTruncatedRead: 0,
             remoteMachines: 0,
             remoteLinkTraffic: 0,
+            remoteMachineClaim: 0,
             cloudMachines: 0,
             cloudMachineEntries: 0,
             remoteInitialAgent: 0,

@@ -12,6 +12,7 @@ import type { RemoteMachineOperation, RemoteMachinesState } from './remote-machi
 export const initialState: RemoteMachinesState = {
   supported: false,
   initialAgentPlacement: false,
+  claimInvites: false,
   machines: {},
   localFingerprint: null,
   executorBackends: null,
@@ -32,6 +33,8 @@ export const remoteMachinesLoaded = createAction<
       supported: boolean;
       /** `remoteInitialAgent: 1`; absent counts as unsupported. */
       initialAgentPlacement?: boolean;
+      /** Node-invite claim capability; absent counts as unsupported. */
+      claimInvites?: boolean;
       machines: RemoteMachine[];
       localFingerprint: string | null;
       executorBackends: ExecutorBackend[] | null;
@@ -85,6 +88,7 @@ remoteMachinesReducer.with(remoteMachinesLoaded, (state, { payload: [snapshot] }
   ...state,
   supported: snapshot.supported,
   initialAgentPlacement: snapshot.supported && snapshot.initialAgentPlacement === true,
+  claimInvites: snapshot.supported && snapshot.claimInvites === true,
   machines: Object.fromEntries(snapshot.machines.map((machine) => [machine.id, machine])),
   localFingerprint: snapshot.localFingerprint,
   executorBackends: snapshot.executorBackends,

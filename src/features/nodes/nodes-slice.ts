@@ -25,6 +25,10 @@ export const nodeLinkReceived =
   createAction<[link: { pendingId: string; label: string; existingId: string | null }]>(
     'nodes/nodeLinkReceived',
   );
+/** An `intent://node` link opened from outside the app: main holds it under `pendingId`. */
+export const nodeInviteReceived = createAction<[link: { pendingId: string; label: string }]>(
+  'nodes/nodeInviteReceived',
+);
 /**
  * Opening a saved connection found a node (no window opened). `added` is true
  * when the Add machine dialog just saved it: refused nodes are then removed.

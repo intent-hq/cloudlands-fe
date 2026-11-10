@@ -26,6 +26,8 @@ export const NODE_CAPABILITY_KEYS = [
   'remoteMachines',
   // `workspace.create.initialAgent.placement` on a remote machine: gates Start On.
   'remoteInitialAgent',
+  // `remoteMachines.claim`: gates adding a machine from an intent://node link.
+  'remoteMachineClaim',
   // Owner-only daemon-link traffic capture: gates the Dev Console "Daemon links" view.
   'remoteLinkTraffic',
   // E2B cloud machines: gates Settings → Machines → E2B and the Start On E2B row.
