@@ -358,6 +358,8 @@ export function dockWindowEnvelope(
   const margin = supportsForwarding ? shadowMargin : 0;
   const panelMargin = supportsForwarding ? DOCK_FLOATING_SHADOW_MARGIN : 0;
   const expansion = side && supportsForwarding ? 600 : 0;
+  // Reserve the side panel shadow too: opening must not move the native origin
+  // before the renderer receives its new window-local coordinates.
   // Side hover cards need vertical room independent of the compact rail's height.
   // Keep the rail and its margins in the union even outside the work area.
   const sideHoverEnvelope = side !== null && supportsForwarding;
@@ -377,7 +379,7 @@ export function dockWindowEnvelope(
       Math.min(
         surface.y - margin,
         preview?.y ?? surface.y,
-        sideHoverEnvelope ? display.workArea.y : surface.y,
+        sideHoverEnvelope ? display.workArea.y - panelMargin : surface.y,
         sidePanel ? sidePanel.y - panelMargin : surface.y,
       ),
     ),
@@ -398,7 +400,9 @@ export function dockWindowEnvelope(
       Math.max(
         surface.y + surface.height + margin,
         preview ? preview.y + preview.height : surface.y,
-        sideHoverEnvelope ? display.workArea.y + display.workArea.height : surface.y,
+        sideHoverEnvelope
+          ? display.workArea.y + display.workArea.height + panelMargin
+          : surface.y,
         sidePanel ? sidePanel.y + sidePanel.height + panelMargin : surface.y,
       ),
     ),
