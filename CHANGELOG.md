@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.308.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.308.0...v2.308.1) (2026-11-10)
+
+
+### 🐛 Bug Fixes
+
+* **ci:** scan the built main-process import graph for non-runtime imports ([#4377](https://github.com/intent-hq/cloudlands-fe/issues/4377)) ([d9440ba](https://github.com/intent-hq/cloudlands-fe/commit/d9440ba2f8f9a2e85d23cfc61e02dc3ce6bdd432))
+* **deps:** bump electron to ^44.10.2 ([#4379](https://github.com/intent-hq/cloudlands-fe/issues/4379)) ([7c8b2d4](https://github.com/intent-hq/cloudlands-fe/commit/7c8b2d4ab54694e6e08e49a0d5dbd76b1fd44721))
+
 ## [2.308.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.307.0...v2.308.0) (2026-11-10)
 
 
