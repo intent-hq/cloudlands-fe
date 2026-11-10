@@ -160,7 +160,7 @@ const CheckoutUnavailableSchema = z
   })
   .strict();
 
-export function checkoutResultSchema<T extends z.ZodTypeAny>(value: T) {
+export function checkoutResultSchema<T extends z.ZodType>(value: T) {
   return z.discriminatedUnion('status', [
     z.object({ status: z.literal('ready'), value }).strict(),
     CheckoutUnavailableSchema,
@@ -183,7 +183,10 @@ export type CheckoutUnavailable = z.infer<typeof CheckoutUnavailableSchema>;
 export type CheckoutResult<T> = { status: 'ready'; value: T } | CheckoutUnavailable;
 
 /** Keep the discriminant concrete when the payload schema is generic. */
-export function parseCheckoutResult<T>(schema: z.ZodType<T>, input: unknown): CheckoutResult<T> {
+export function parseCheckoutResult<S extends z.ZodType>(
+  schema: S,
+  input: unknown,
+): CheckoutResult<z.output<S>> {
   const envelope = z
     .object({ status: z.enum(['ready', 'unavailable']) })
     .passthrough()

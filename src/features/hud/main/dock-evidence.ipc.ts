@@ -42,9 +42,9 @@ import type { DockSpeechEvent } from '../../../shared/dock-speech';
 
 const id = z.string().min(1).max(512);
 const BeginSchema = z.object({ workspaceId: id, agentId: id, draftId: id }).strict();
-const SessionSchema = BeginSchema.extend({ sessionId: z.string().uuid() });
+const SessionSchema = BeginSchema.extend({ sessionId: z.guid() });
 const CaptureSchema = SessionSchema.extend({
-  requestId: z.string().uuid(),
+  requestId: z.guid(),
   source: z.enum(['capture', 'annotate', 'dictation']).optional(),
   mode: z.enum(['fullscreen', 'window', 'region']).optional(),
 });
@@ -93,7 +93,7 @@ const controlSchema = z.discriminatedUnion('action', [
       action: z.literal('annotation-start'),
       annotation: z
         .object({
-          id: z.string().uuid(),
+          id: z.guid(),
           tool,
           mode: z.enum(['live', 'still', 'dictation']),
           still: z.object({ imageId: id, pixels }).strict().optional(),
@@ -101,20 +101,18 @@ const controlSchema = z.discriminatedUnion('action', [
         .strict(),
     })
     .strict(),
-  z
-    .object({ action: z.literal('annotation-tool'), annotationId: z.string().uuid(), tool })
-    .strict(),
+  z.object({ action: z.literal('annotation-tool'), annotationId: z.guid(), tool }).strict(),
   z
     .object({
       action: z.literal('annotation-sync'),
-      annotationId: z.string().uuid(),
+      annotationId: z.guid(),
       marks: z
         .array(z.object({ n: z.number().int().min(1).max(99), tool, geometry }).strict())
         .max(99),
     })
     .strict(),
-  z.object({ action: z.literal('annotation-end'), annotationId: z.string().uuid() }).strict(),
-  z.object({ action: z.literal('annotation-mouse'), annotationId: z.string().uuid() }).strict(),
+  z.object({ action: z.literal('annotation-end'), annotationId: z.guid() }).strict(),
+  z.object({ action: z.literal('annotation-mouse'), annotationId: z.guid() }).strict(),
   (() => {
     const label = z.string().min(1).max(200);
     const button = {
@@ -147,7 +145,7 @@ const controlSchema = z.discriminatedUnion('action', [
   z
     .object({
       action: z.literal('annotation-mark-result'),
-      annotationId: z.string().uuid(),
+      annotationId: z.guid(),
       markId: z.string().min(1).max(128),
       accepted: z.boolean(),
     })
@@ -155,21 +153,21 @@ const controlSchema = z.discriminatedUnion('action', [
   z
     .object({
       action: z.literal('clip-start'),
-      clipId: z.string().uuid(),
+      clipId: z.guid(),
       maxMs: z.number().int().positive().max(120000),
     })
     .strict(),
-  z.object({ action: z.literal('clip-stop'), clipId: z.string().uuid() }).strict(),
-  z.object({ action: z.literal('clip-release'), clipId: z.string().uuid() }).strict(),
+  z.object({ action: z.literal('clip-stop'), clipId: z.guid() }).strict(),
+  z.object({ action: z.literal('clip-release'), clipId: z.guid() }).strict(),
   z
     .object({
       action: z.literal('speech-start'),
-      speechId: z.string().uuid(),
+      speechId: z.guid(),
       locale: z.string().min(1).max(64).optional(),
     })
     .strict(),
-  z.object({ action: z.literal('speech-stop'), speechId: z.string().uuid() }).strict(),
-  z.object({ action: z.literal('speech-mark'), speechId: z.string().uuid(), markId: id }).strict(),
+  z.object({ action: z.literal('speech-stop'), speechId: z.guid() }).strict(),
+  z.object({ action: z.literal('speech-mark'), speechId: z.guid(), markId: id }).strict(),
 ]);
 const ControlSchema = SessionSchema.extend({ control: controlSchema });
 

@@ -64,19 +64,13 @@ export type AgentPlacementRequest = z.infer<typeof AgentPlacementRequestSchema>;
  * Agent projections include platform fields, but always resolve target and
  * checkout. A cloud agent's projection is read as reported (no request rules).
  */
-const AgentResolvedPlacementSchema = AgentPlacementRequestShape.refine(
-  (value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated',
-)
+const AgentResolvedPlacementSchema = AgentPlacementRequestShape.extend({
+  target: z.enum(['local', 'remote', 'e2b']),
+  checkout: z.enum(['shared', 'worktree', 'isolated']),
+})
+  .refine((value) => value.target !== 'remote' || value.checkout === 'isolated')
   .refine(
-    (value) =>
-      !value.exclusive ||
-      (value.target !== 'local' && (value.checkout ?? 'isolated') === 'isolated'),
-  )
-  .and(
-    z.object({
-      target: z.enum(['local', 'remote', 'e2b']),
-      checkout: z.enum(['shared', 'worktree', 'isolated']),
-    }),
+    (value) => !value.exclusive || (value.target !== 'local' && value.checkout === 'isolated'),
   );
 
 export const AgentCheckpointSchema = z.object({

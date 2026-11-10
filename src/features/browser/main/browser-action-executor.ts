@@ -2030,12 +2030,12 @@ export async function executeActions(
   // Validate input against schema
   const parseResult = ActionSequenceSchema.safeParse(input);
   if (!parseResult.success) {
-    logger.error('Invalid action sequence', { errors: parseResult.error.errors });
+    logger.error('Invalid action sequence', { errors: parseResult.error.issues });
     return {
       success: false,
       results: [],
       // i18n-ignore (agent-facing protocol error, not user-facing)
-      error: `Invalid action sequence: ${parseResult.error.errors.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`,
+      error: `Invalid action sequence: ${parseResult.error.issues.map((e) => `${e.path.join('.')}: ${e.message}`).join(', ')}`,
     };
   }
 

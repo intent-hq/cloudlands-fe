@@ -61,7 +61,7 @@ export function validateIpcRequest<K extends IpcContractKey>(
     if (result.success) {
       return {
         success: true,
-        data: result.data,
+        data: result.data as z.infer<(typeof IpcContracts)[K]['request']>,
       };
     }
 
@@ -111,7 +111,7 @@ export function validateIpcResponse<K extends IpcContractKey>(
     if (result.success) {
       return {
         success: true,
-        data: result.data,
+        data: result.data as z.infer<(typeof IpcContracts)[K]['response']>,
       };
     }
 
@@ -142,7 +142,7 @@ export function validateIpcResponse<K extends IpcContractKey>(
  * Format Zod errors into a more readable format
  */
 function formatZodErrors(error: z.ZodError): ValidationError[] {
-  return error.errors.map((err) => ({
+  return error.issues.map((err) => ({
     path: err.path.join('.'),
     message: err.message,
     code: err.code,

@@ -85,10 +85,10 @@ export function expectSchemaKeysCovered(
   ).toEqual([]);
 }
 
-/** The object shape under a schema, unwrapping `.refine()` / `.transform()` effects. */
-function objectShape(schema: z.ZodTypeAny): z.ZodRawShape {
+/** The object shape under a schema, unwrapping `.transform()` pipes (`.refine()` keeps the type). */
+function objectShape(schema: z.ZodType): z.ZodRawShape {
   let current = schema;
-  while (current instanceof z.ZodEffects) current = current.innerType();
+  while (current instanceof z.ZodPipe) current = current.in as z.ZodType;
   if (!(current instanceof z.ZodObject)) {
     throw new Error('expectSchemaKeysCovered needs an object schema (optionally refined)');
   }

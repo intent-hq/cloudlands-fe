@@ -411,7 +411,7 @@ export type NotePrimitive =
 
 // Base schema
 const BasePrimitiveSchema = z.object({
-  id: z.string().uuid(),
+  id: z.guid(),
   type: z.enum(['reference', 'cli', 'agent_action', 'patch', 'diagram']),
   version: z.literal(1),
   label: z.string().optional(),
@@ -419,7 +419,7 @@ const BasePrimitiveSchema = z.object({
   createdAt: z.string().datetime(),
   createdBy: z.enum(['user', 'agent', 'system']),
   createdByAgentId: z.string().optional(),
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.string(), z.unknown()).optional(),
 });
 
 // Reference schemas
@@ -479,7 +479,7 @@ export const CliPrimitiveSchema = BasePrimitiveSchema.extend({
   type: z.literal('cli'),
   command: z.string(),
   cwd: z.string().optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   timeoutMs: z.number().positive().optional(),
   lastRun: CliLastRunSchema.optional(),
   outputSnapshot: CliOutputSnapshotSchema.optional(),
@@ -577,7 +577,7 @@ const DiagramSemanticStyleSchema = z.enum([
 const DiagramBindingSchema = z.object({
   type: z.enum(['file', 'symbol', 'spec', 'note', 'timeline_event', 'metric', 'log', 'test']),
   target: z.string(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const DiagramNodeSchema = z.object({
@@ -590,7 +590,7 @@ const DiagramNodeSchema = z.object({
   binding: DiagramBindingSchema.optional(), // Singular binding (alternative to bindings)
   bindings: z.array(DiagramBindingSchema).optional(),
   group: z.string().optional(), // Group ID this node belongs to
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const DiagramEdgeSchema = z.object({
@@ -604,7 +604,7 @@ const DiagramEdgeSchema = z.object({
   dashed: z.boolean().optional(),
   flowDirection: z.enum(['forward', 'backward', 'bidirectional']).optional(),
   bindings: z.array(DiagramBindingSchema).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const DiagramGroupSchema = z.object({
@@ -612,7 +612,7 @@ const DiagramGroupSchema = z.object({
   label: z.string(),
   nodeIds: z.array(z.string()),
   semanticStyle: DiagramSemanticStyleSchema.optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const DiagramModelSchema = z.object({
@@ -629,9 +629,10 @@ const DiagramLayoutSchema = z.object({
 });
 
 const DiagramSemanticStylesSchema = z.record(
+  z.string(),
   z.object({
     class: z.string().optional(),
-    style: z.record(z.string()).optional(),
+    style: z.record(z.string(), z.string()).optional(),
   }),
 );
 
@@ -657,7 +658,7 @@ const DiagramNarrativeSchema = z.object({
 
 const DiagramOverlaySchema = z.object({
   type: z.string(),
-  data: z.record(z.unknown()),
+  data: z.record(z.string(), z.unknown()),
 });
 
 const DiagramTransitionSchema = z.object({

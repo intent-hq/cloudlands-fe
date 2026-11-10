@@ -119,7 +119,7 @@ export function createRepositoryCheckoutTransport(
       early.clear();
       if (!current()) throw unavailable();
       const capture = Object.freeze(result.value.capture);
-      const request = async <T extends z.ZodTypeAny>(
+      const request = async <T extends z.ZodType>(
         kind: string,
         params: object,
         schema: T,

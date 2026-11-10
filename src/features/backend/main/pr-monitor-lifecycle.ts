@@ -13,7 +13,7 @@ import { JsonRpcClient } from './json-rpc-client';
 const channels = IPC_CHANNELS.BACKEND.PR_MONITOR;
 const workspace = z.object({ workspaceId: z.string().min(1).max(128) }).strict();
 const capture = workspace.extend({ reviewMonitoring: z.unknown().optional() });
-const owned = workspace.extend({ id: z.string().uuid() }).strict();
+const owned = workspace.extend({ id: z.guid() }).strict();
 const request = owned
   .extend({
     method: z.enum([

@@ -32,7 +32,7 @@ const NoteReadRecordSchema = z.object({
 const UserActivityDataSchema = z.object({
   version: z.literal(USER_ACTIVITY_VERSION),
   userId: z.string(),
-  noteReads: z.record(NoteReadRecordSchema),
+  noteReads: z.record(z.string(), NoteReadRecordSchema),
   lastUpdated: z.string(),
 });
 

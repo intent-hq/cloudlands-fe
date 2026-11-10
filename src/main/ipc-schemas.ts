@@ -177,7 +177,7 @@ export const WorkspaceCreateSchema = z.object({
   statusMessage: WorkspaceStatusMessageSchema.optional(),
   path: z.string().optional(),
   template: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   repositoryPath: z.string().optional(),
   githubUrl: z.string().optional(), // GitHub URL to clone (e.g., https://github.com/owner/repo)
   clonePath: z.string().optional(), // User-selected folder path where the GitHub repo should be cloned
@@ -216,7 +216,7 @@ export const WorkspaceCreateSchema = z.object({
           }),
         )
         .optional(),
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     })
     .optional(),
 });
@@ -232,7 +232,7 @@ export const WorkspaceUpdateSchema = z.object({
   branch: z.string().optional(),
   baseRef: z.string().optional(),
   baseCommitSha: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   // PR-related fields use .nullable() to distinguish between:
   // - undefined (field omitted): don't change the existing value
   // - null: explicitly clear the field (e.g., when PR is closed/merged)
@@ -286,7 +286,7 @@ export const WorkspaceGetMetadataSchema = z.object({
 
 export const WorkspaceUpdateMetadataSchema = z.object({
   id: WorkspaceIdSchema,
-  metadata: z.record(z.any()),
+  metadata: z.record(z.string(), z.any()),
 });
 
 export const WorkspaceSaveSchema = z.object({
@@ -342,7 +342,7 @@ export const WorkspaceGetSettingsSchema = z.object({
 
 export const WorkspaceUpdateGitInfoSchema = z.object({
   id: WorkspaceIdSchema,
-  gitInfo: z.record(z.any()),
+  gitInfo: z.record(z.string(), z.any()),
 });
 
 export const WorkspaceGetSettingsAltSchema = z.object({
@@ -351,7 +351,7 @@ export const WorkspaceGetSettingsAltSchema = z.object({
 
 export const WorkspaceUpdateSettingsAltSchema = z.object({
   id: WorkspaceIdSchema,
-  settings: z.record(z.any()),
+  settings: z.record(z.string(), z.any()),
 });
 
 // ============================================================================
@@ -471,7 +471,7 @@ const EventActorSchema = z.object({
     .or(z.literal(''))
     .transform((v) => v || 'Unknown'),
   email: z.string().email().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const EventsEmitSchema = z.object({
@@ -487,7 +487,7 @@ export const EventsEmitSchema = z.object({
     sessionId: z.string().optional(),
     correlationId: z.string().optional(),
     parentEventId: z.string().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
     data: z.any().optional(),
   }),
   options: z
@@ -559,7 +559,7 @@ export const TerminalCreateWithCommandSchema = z.object({
   command: z.string().min(1, 'Command is required'),
   cwd: z.string().optional(),
   title: z.string().optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   /**
    * When `true`, the command text is written to the PTY prompt but NOT
    * executed — the trailing `\r` is skipped so the user has to press
@@ -697,7 +697,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
     sidePanelSize: DockSurfaceSizeSchema.nullable().optional(),
     sidePanelAnchor: z.number().finite().min(0).max(16384).nullable().optional(),
     expansionDirection: z.enum(['up', 'down']).nullable().optional(),
-    resizeToken: z.string().uuid().optional(),
+    resizeToken: z.guid().optional(),
     landingSizes: z
       .object({
         notch: DockSurfaceSizeSchema,
@@ -718,7 +718,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
     }),
   }),
   ...(['end-resize', 'cancel-resize'] as const).map((action) =>
-    z.object({ action: z.literal(action), token: z.string().uuid() }),
+    z.object({ action: z.literal(action), token: z.guid() }),
   ),
   z.object({
     action: z.literal('begin-drag'),
@@ -738,7 +738,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   }),
   z.object({
     action: z.literal('end-drag'),
-    token: z.string().uuid(),
+    token: z.guid(),
     sequence: z.number().int().nonnegative(),
     releasePoint: z
       .object({
@@ -750,7 +750,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   ...(['drag', 'cancel-drag'] as const).map((action) =>
     z.object({
       action: z.literal(action),
-      token: z.string().uuid(),
+      token: z.guid(),
       sequence: z.number().int().nonnegative(),
     }),
   ),
@@ -838,7 +838,7 @@ export const UserMcpCheckAuthSchema = z.object({
 
 export const UserMcpTestConnectionSchema = z.object({
   url: z.string().min(1, 'URL is required'),
-  headers: z.record(z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   name: z.string().optional(), // Server name for OAuth token lookup
 });
 
@@ -893,7 +893,7 @@ export const WorkspaceUpdateSpecWatcherTimestampSchema = z.object({
 
 export const WorkspaceUpdateCurrentContextSchema = z.object({
   workspaceId: z.string().min(1, 'Workspace ID is required'),
-  context: z.record(z.any()).optional(),
+  context: z.record(z.string(), z.any()).optional(),
 });
 
 export const WorkspaceLoadRulesSchema = z.object({
@@ -955,7 +955,7 @@ export const FirstVisitStateExistsSchema = z.object({
 
 const LayoutSnapshotSchema = z.object({
   root: z.any(),
-  panels: z.record(z.any()),
+  panels: z.record(z.string(), z.any()),
   focusedPanelId: z.string().nullable(),
   timestamp: z.number(),
 });

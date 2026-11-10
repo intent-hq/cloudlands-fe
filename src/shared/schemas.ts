@@ -307,9 +307,9 @@ export function safeValidateFirstVisitState(data: unknown) {
  */
 
 // ID Schemas
-export const AgentIdSchema = z.string().uuid().or(z.string().startsWith('agent-'));
-export const SessionIdSchema = z.string().startsWith('sess_').or(z.string().uuid());
-export const MessageIdSchema = z.string().startsWith('msg_').or(z.string().uuid());
+export const AgentIdSchema = z.guid().or(z.string().startsWith('agent-'));
+export const SessionIdSchema = z.string().startsWith('sess_').or(z.guid());
+export const MessageIdSchema = z.string().startsWith('msg_').or(z.guid());
 
 // Content Block Schema
 // Mirrors the `type` union in src/shared/types/content-block.ts. Persistence
@@ -349,7 +349,7 @@ export const ContentBlockSchema = z
     is_error: z.boolean().optional(),
     isError: z.boolean().optional(),
     output: z.any().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
     // Media-specific fields (image, audio, file)
     data: z.string().optional(), // Base64 encoded data
     mimeType: z.string().optional(), // e.g., 'image/png', 'audio/mp3', 'text/plain'
@@ -381,7 +381,7 @@ export const ContentBlockSchema = z
 export const ToolCallSchema = z.object({
   id: z.string(),
   name: z.string(),
-  arguments: z.record(z.any()),
+  arguments: z.record(z.string(), z.any()),
   result: z.any().optional(),
   error: z.string().optional(),
   timestamp: z.string(),
@@ -404,7 +404,7 @@ export const AgentMessageSchema = z.object({
   toolResults: z.array(z.any()).optional(),
   error: z.string().optional(),
   isStreaming: z.boolean().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // Agent Session Schema
@@ -435,8 +435,8 @@ export const AgentSessionSchema = z.object({
   updatedAt: z.union([z.string(), z.date()]).optional(),
   lastActivity: z.union([z.string(), z.date()]).optional(),
   progress: z.any().optional(),
-  metadata: z.record(z.any()).optional(),
-  agentMetadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+  agentMetadata: z.record(z.string(), z.any()).optional(),
   fileChanges: z.array(z.any()).optional(),
   currentUserMessage: z.string().optional(),
   lastUserMessage: z.string().optional(),
@@ -458,7 +458,7 @@ export const AgentSessionSchema = z.object({
       provider: z.string().optional(), // ACP provider (auggie, claude-code, codex)
       roleReminder: z.string().optional(), // Critical constraints reminder for the specialist
       specialistName: z.string().optional(), // Display name of the specialist (e.g., "Coordinator")
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     })
     .optional(),
   // Fork metadata (for conversation forking)
