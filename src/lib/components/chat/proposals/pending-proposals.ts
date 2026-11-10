@@ -2,6 +2,12 @@ import type { AgentMessage, PendingProposalRef } from '$shared/types';
 import type { Proposal } from '$shared/types/proposal';
 import { getProposalFromResourceBlock } from '$shared/types/proposal-resource';
 import { dedupeResourceBlocks } from '$shared/types/resource-block-identity';
+import type {
+  ProposalLifecycleEntry,
+  ProposalLifecycleState,
+} from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types';
+import { stableStringify } from './proposal-id';
+import { agentScopedProposalKey } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
 
 /**
  * Pending-proposal derivation for inline transcript cards and the off-screen
@@ -111,4 +117,113 @@ export function missingPendingProposalMessageIds(
     if (!hasMessage(ref.messageId)) missing.push(ref.messageId);
   }
   return missing;
+}
+
+export type ProposalOutcome = 'applied' | 'dismissed';
+
+/** Where a proposal's applied/dismissed outcome can come from. */
+export interface ProposalOutcomeSources {
+  /** Local apply/dismiss lifecycle (both daemon-keyed and card-keyed entries). */
+  lifecycle: ProposalLifecycleState | undefined;
+  /** Daemon-recorded outcomes (`proposalResolutions` session metadata). */
+  resolutions: Readonly<Record<string, ProposalOutcome>> | undefined;
+}
+
+function entryTimestamp(entry: ProposalLifecycleEntry): number {
+  return entry.completedAt ?? entry.startedAt ?? 0;
+}
+
+/**
+ * The newer of the card-keyed (`localId`) and agent-scoped daemon-keyed
+ * lifecycle entries, merged so the daemon-keyed result wins on ties.
+ */
+export function getProposalLifecycleEntry(
+  lifecycle: ProposalLifecycleState,
+  agentId: string,
+  proposalId: string,
+  localId: string | undefined,
+): ProposalLifecycleEntry | undefined {
+  const local = localId ? lifecycle[localId] : undefined;
+  const scoped = lifecycle[agentScopedProposalKey(agentId, proposalId)];
+  if (!local) return scoped;
+  if (!scoped || entryTimestamp(local) > entryTimestamp(scoped)) return local;
+  return { ...local, ...scoped, result: scoped.result ?? local.result };
+}
+
+/**
+ * A proposal's settled outcome: the local lifecycle's applied/dismissed
+ * status first, else the daemon's `proposalResolutions` entry. `undefined`
+ * means the proposal has no outcome yet.
+ */
+export function proposalOutcomeOf(
+  agentId: string,
+  sources: ProposalOutcomeSources,
+  proposalId: string,
+  localId: string | undefined,
+): ProposalOutcome | undefined {
+  const entry = getProposalLifecycleEntry(sources.lifecycle ?? {}, agentId, proposalId, localId);
+  if (entry?.status === 'applied' || entry?.status === 'dismissed') return entry.status;
+  return sources.resolutions?.[proposalId];
+}
+
+/**
+ * The single "is this proposal really waiting for the user?" rule shared by
+ * the inline card and the composer pill: a metadata ref counts only while
+ * neither the local lifecycle nor the daemon's `proposalResolutions` records
+ * an outcome for it. Legacy title-keyed refs can stay in `pendingProposals`
+ * after the same key was resolved, so the raw refs alone are not enough.
+ */
+function isPendingProposalRefOpen(
+  agentId: string,
+  ref: PendingProposalRef,
+  sources: ProposalOutcomeSources,
+  localId: string | undefined,
+): boolean {
+  return proposalOutcomeOf(agentId, sources, ref.proposalId, localId) === undefined;
+}
+
+/**
+ * Metadata refs that are effectively pending (metadata order). `localIdOf`
+ * supplies the card-keyed lifecycle id when the ref's proposal body is known.
+ */
+export function effectivelyPendingProposalRefs(
+  agentId: string,
+  refs: readonly PendingProposalRef[],
+  sources: ProposalOutcomeSources,
+  localIdOf: (ref: PendingProposalRef) => string | undefined = () => undefined,
+): PendingProposalRef[] {
+  return refs.filter((ref) => isPendingProposalRefOpen(agentId, ref, sources, localIdOf(ref)));
+}
+
+/**
+ * Whether a rendered card is the one a ref points at. Only the ref's own
+ * message counts (a re-proposal elsewhere with the same key is not this
+ * ref's card), and within that message only the FIRST block with the key —
+ * the same block `proposalsOf` resolves for the pill.
+ */
+export function isPendingProposalCard(input: {
+  agentId: string;
+  refs: readonly PendingProposalRef[];
+  sources: ProposalOutcomeSources;
+  proposal: Proposal;
+  messageId: string;
+  localId: string;
+  /** Proposal bodies of the carrying message, when available. */
+  messageProposals?: ReadonlyMap<string, Proposal>;
+}): boolean {
+  const proposalId = pendingProposalKeyOf(input.proposal);
+  const ref = input.refs.find(
+    (candidate) => candidate.proposalId === proposalId && candidate.messageId === input.messageId,
+  );
+  if (!ref) return false;
+  const first = input.messageProposals?.get(proposalId);
+  if (first && first !== input.proposal && !sameProposal(first, input.proposal)) return false;
+  return isPendingProposalRefOpen(input.agentId, ref, input.sources, input.localId);
+}
+
+function sameProposal(a: Proposal, b: Proposal): boolean {
+  // JSON round-trip drops `undefined` members (inline-parsed cards carry
+  // `applyToolCallId: undefined`); stable key order ignores parse order.
+  const canonical = (value: Proposal) => stableStringify(JSON.parse(JSON.stringify(value)));
+  return canonical(a) === canonical(b);
 }

@@ -1,10 +1,7 @@
 import type { PendingProposalRef } from '$shared/types';
 import type { ProposalActionDetail } from '$shared/types/proposal';
 import { agentProposalResolveRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
-import type {
-  ProposalLifecycleEntry,
-  ProposalLifecycleState,
-} from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types';
+import type { ProposalLifecycleState } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-types';
 import {
   applyProposalRequested,
   agentScopedProposalKey,
@@ -25,10 +22,6 @@ function proposalKey(agentId: string, proposalId: string): string {
   return `${agentId}::${proposalId}`;
 }
 
-function entryTimestamp(entry: ProposalLifecycleEntry): number {
-  return entry.completedAt ?? entry.startedAt ?? 0;
-}
-
 export function rememberProposalIdentity(
   agentId: string,
   proposalId: string,
@@ -37,17 +30,12 @@ export function rememberProposalIdentity(
   localProposalIds.set(proposalKey(agentId, proposalId), localId);
 }
 
-export function getProposalLifecycleEntry(
-  lifecycle: ProposalLifecycleState,
+/** Card-keyed lifecycle id a rendered card recorded for a daemon ref key. */
+export function rememberedProposalIdentity(
   agentId: string,
   proposalId: string,
-  localId: string,
-): ProposalLifecycleEntry | undefined {
-  const local = lifecycle[localId];
-  const scoped = lifecycle[agentScopedProposalKey(agentId, proposalId)];
-  if (!local) return scoped;
-  if (!scoped || entryTimestamp(local) > entryTimestamp(scoped)) return local;
-  return { ...local, ...scoped, result: scoped.result ?? local.result };
+): string | undefined {
+  return localProposalIds.get(proposalKey(agentId, proposalId));
 }
 
 // The daemon rejects a blank or over-256-byte origin id with -32602 before

@@ -264,8 +264,14 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import { derivePendingProposalRecoveryState } from './proposals/pending-proposal-recovery';
-  import { classifyPendingProposalRefs } from './proposals/pending-proposals';
+  import {
+    derivePendingProposalRecoveryState,
+    pendingProposalLocalIdResolver,
+  } from './proposals/pending-proposal-recovery';
+  import {
+    classifyPendingProposalRefs,
+    effectivelyPendingProposalRefs,
+  } from './proposals/pending-proposals';
   import { reconcileAppliedProposals } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import {
@@ -1526,6 +1532,23 @@
   const pendingProposalRefs = $derived(
     classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals),
   );
+  // The refs still awaiting the user under the card's own rule: a ref whose
+  // id already has an applied/dismissed outcome (local lifecycle or daemon
+  // `proposalResolutions`) renders as settled, so the pill must ignore it.
+  const openPendingProposalRefs = $derived.by(() => {
+    void $agentMessages$;
+    void $agentHistoryMessages$;
+    void $pendingProposalRecovery$;
+    return effectivelyPendingProposalRefs(
+      agentId,
+      pendingProposalRefs,
+      {
+        lifecycle: $proposalLifecycleMap$ ?? {},
+        resolutions: $agentSession$?.metadata?.proposalResolutions,
+      },
+      pendingProposalLocalIdResolver(appStore.state, agentId),
+    );
+  });
 
   // Targeted recovery for refs whose carrying message is not hydrated
   // (mirrors the marked-question recovery): request each missing messageId
@@ -1541,13 +1564,14 @@
   });
   $effect(() => {
     if ($agentSession$?.id !== agentId) return;
-    const refs = pendingProposalRefs;
+    // Prune against the raw refs: a recovered body is what lets a settled
+    // ref resolve its card-keyed lifecycle, so dropping it would reopen it.
     const tracked = $pendingProposalRecovery$;
-    const keep = [...new Set(refs.map((ref) => ref.messageId))];
+    const keep = [...new Set(pendingProposalRefs.map((ref) => ref.messageId))];
     if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
       appStore.dispatch(pendingProposalRecoveryPruned(agentId, keep));
     }
-    if (refs.length === 0 || $transcriptHydration$ !== 'settled') return;
+    if (pendingProposalRecoveryRequests.length === 0 || $transcriptHydration$ !== 'settled') return;
     for (const request of pendingProposalRecoveryRequests) {
       if (request.shouldRequest) {
         appStore.dispatch(pendingProposalRecoveryRequested(agentId, request.messageId));
@@ -4702,7 +4726,7 @@
   // LazyTurn shell survives content hydration changes, so observation does
   // not go stale when a card is replaced by a placeholder and restored.
   $effect(() => {
-    const refs = pendingProposalRefs;
+    const refs = openPendingProposalRefs;
     const root = scrollContainer;
     void $agentMessages$;
     void $pendingProposalRecovery$;
@@ -5454,7 +5478,7 @@
 
   async function scrollToPendingProposal(): Promise<void> {
     const messageId = offscreenPendingProposalMessageId;
-    const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
+    const ref = openPendingProposalRefs.find((candidate) => candidate.messageId === messageId);
     if (!messageId || !ref) return;
     const getContainer = beginScrollNavigation();
     if (!messageIdToTurnKey.has(messageId)) {
