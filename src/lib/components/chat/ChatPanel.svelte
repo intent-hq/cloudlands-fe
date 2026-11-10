@@ -498,10 +498,7 @@
     shouldShowTranscriptSkeleton,
     shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
-  import {
-    isUserQueuedMessage,
-    omitDrainedQueuedMessages,
-  } from '$lib/utils/queued-message-visibility';
+  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
@@ -1416,8 +1413,8 @@
   // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
   // the list, its count, and the up-arrow edit path all use this filtered
   // view (display-only; the daemon queue and drain order are untouched).
-  // Legacy queues omit transcript-stamped drains. Correlated full snapshots
-  // remain authoritative: a restored retry may legitimately share history aliases.
+  // Queue membership is daemon-authoritative. Persisted history can also belong
+  // to a restored batch that has never reached the provider.
   const admittedPrincipal$ = selectPrincipalSnapshot();
 
   // Agent secret requests (PROTOCOL §5.56), shown as composer-slot cards
@@ -1427,10 +1424,9 @@
     secretRequestsSupported ? deriveSecretRequestTranscript($agentMessages$) : null,
   );
   const visibleQueuedMessages = $derived(
-    ($admittedPrincipal$?.capabilities.submissionCorrelation === 1
-      ? $queuedMessages$.filter(isUserQueuedMessage)
-      : omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$)
-    ).filter((message) => !predictedDrainIds.has(message.id)),
+    $queuedMessages$
+      .filter(isUserQueuedMessage)
+      .filter((message) => !predictedDrainIds.has(message.id)),
   );
 
   const visibleQueueRows = $derived(

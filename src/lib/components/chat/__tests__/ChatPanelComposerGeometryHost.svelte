@@ -1,5 +1,21 @@
+<script module lang="ts">
+  import type { QueuedMessage } from '$shared/types';
+  declare global {
+    interface Window {
+      __queueLifecycle?: {
+        setResponse: (queue: QueuedMessage[], hold?: boolean) => void;
+        release: () => void;
+        emit: (type: string, data?: Record<string, unknown>) => void;
+        reads: () => number;
+      };
+    }
+  }
+</script>
+
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { appClient } from '$lib/client';
+  import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
   import {
     createComposerDraftTransport,
     type ComposerDraftRequest,
@@ -73,6 +89,7 @@
     persistedDraft = '',
     attention = null,
     queued = false,
+    queueLifecycle = false,
     suggestions = false,
     questions = false,
     newerQuestion = false,
@@ -106,6 +123,7 @@
     persistedDraft?: string;
     attention?: 'blocker' | 'discussion' | null;
     queued?: boolean;
+    queueLifecycle?: boolean;
     suggestions?: boolean;
     questions?: boolean;
     newerQuestion?: boolean;
@@ -673,6 +691,55 @@
       ),
     );
   });
+  if (queueLifecycle) {
+    const original = appClient.agents.getQueue;
+    let response: QueuedMessage[] = [
+      {
+        id: 'attention-queue-fixture',
+        content: 'Check the narrow layout too.',
+        queuedAt: timestamp,
+        position: 0,
+      },
+    ];
+    let held = false;
+    let reads = 0;
+    let release = () => {};
+    appClient.agents.getQueue = async () => {
+      reads++;
+      const captured = structuredClone(response);
+      if (held)
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      return captured;
+    };
+    window.__queueLifecycle = {
+      setResponse: (queue, hold = false) => {
+        response = queue;
+        held = hold;
+      },
+      release: () => {
+        held = false;
+        release();
+      },
+      reads: () => reads,
+      emit: (type, data = {}) =>
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- Test-only protocol event injection into the production bridge.
+        routeDaemonEventsNotification('events.event', {
+          event: {
+            type,
+            workspaceId,
+            timestamp: new Date().toISOString(),
+            data: { agentId, ...data },
+          },
+        }),
+    };
+    onDestroy(() => {
+      release();
+      appClient.agents.getQueue = original;
+      delete window.__queueLifecycle;
+    });
+  }
   store.dispatch(
     initializeLayout(workspaceId, {
       root: { type: 'panel', panelId: 'chat-panel' },
