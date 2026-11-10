@@ -64,7 +64,32 @@ export function parseNodeInviteUri(raw: string): ParsedNodeInviteUri | null {
   };
 }
 
-/** The link with its invite secret replaced, safe to show on screen. */
+function decodedKey(key: string): string {
+  try {
+    return decodeURIComponent(key.replace(/\+/g, ' ')).trim().toLowerCase();
+  } catch {
+    return key.trim().toLowerCase();
+  }
+}
+
+/**
+ * The link with every invite secret replaced, safe to show on screen. Keys are
+ * read as the parser reads them: tab and newlines dropped, percent-decoded
+ * (`%73ecret=`), any case, every repeat.
+ */
 export function maskNodeInviteUri(raw: string): string {
-  return raw.trim().replace(/([?&]secret=)[^&#]*/gi, '$1••••');
+  const text = raw.trim().replace(/[\t\n\r]/g, '');
+  const queryAt = text.indexOf('?');
+  if (queryAt < 0) return text;
+  const hashAt = text.indexOf('#', queryAt);
+  const query = text.slice(queryAt + 1, hashAt < 0 ? undefined : hashAt);
+  const masked = query
+    .split('&')
+    .map((pair) => {
+      const equals = pair.indexOf('=');
+      const key = equals < 0 ? pair : pair.slice(0, equals);
+      return decodedKey(key) === 'secret' ? `${key}=••••` : pair;
+    })
+    .join('&');
+  return `${text.slice(0, queryAt + 1)}${masked}${hashAt < 0 ? '' : text.slice(hashAt)}`;
 }

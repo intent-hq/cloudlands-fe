@@ -79,4 +79,15 @@ describe('maskNodeInviteUri', () => {
     expect(masked).toContain('secret=••••');
     expect(masked).toContain('invite=inv_1');
   });
+
+  it.each([
+    ['an encoded key', `intent://node?v=1&invite=i&%73ecret=${SECRET}`],
+    ['an encoded key in another case', `intent://node?v=1&invite=i&%73%45CRET=${SECRET}`],
+    ['a key split by a newline', `intent://node?v=1&invite=i&sec\nret=${SECRET}`],
+    ['a repeated key', `intent://node?v=1&invite=i&secret=x&secret=${SECRET}`],
+    ['a key after a fragment-free tail', `intent://node?v=1&invite=i&secret=${SECRET}#frag`],
+  ])('hides the secret spelled with %s, as the parser reads it', (_case, link) => {
+    expect(parseNodeInviteUri(link)).not.toBeNull();
+    expect(maskNodeInviteUri(link)).not.toContain(SECRET);
+  });
 });
