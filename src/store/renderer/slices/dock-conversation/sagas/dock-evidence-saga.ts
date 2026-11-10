@@ -1064,11 +1064,13 @@ function* toggleRecording({
     return;
   }
   // Refused before any native recording starts when the clip could not be stored.
-  if (!(yield* clipStorable(workspaceId))) {
+  const storable = yield* clipStorable(workspaceId);
+  // A negative/unobserved result is still an asynchronous reply from the captured owner.
+  if (nativeService !== service || !activePair(workspaceId, agentId)) return 'cancelled';
+  if (!storable) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unsupported-workspace'));
     return;
   }
-  if (nativeService !== service || !activePair(workspaceId, agentId)) return 'cancelled';
   // A second request while the toolbar opens must not start another native clip.
   if (startingRecordings.has(service)) return 'cancelled';
   startingRecordings.add(service);

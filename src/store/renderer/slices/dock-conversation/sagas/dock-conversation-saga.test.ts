@@ -5,7 +5,7 @@ import {
   type DockMediaSource,
 } from '$shared/dock-media-edit';
 import { emptyDockEvidence, dockEvidenceId } from '$shared/dock-evidence';
-import { dockEvidenceRestored, dockEvidenceMediaChanged } from '../dock-conversation-slice';
+import { dockEvidenceRestored, dockEvidenceMediaChanged, dockEvidenceAnnotationChanged } from '../dock-conversation-slice';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createWorkspaceId, createAgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -1697,6 +1697,46 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
     expect(native.calls.clips).toEqual([]);
     expect(chiefView().clips).toEqual([]);
   });
+
+  it.each(['negative', 'unobserved'] as const)(
+    'does not let a held %s capability result mutate a replacement native owner',
+    async (result) => {
+      const native = scriptedNative({ record: true });
+      await openChief(native);
+      const current = appStore.state.dockConversation.serverCapabilities!;
+      appStore.dispatch(
+        dockEvidenceServerCapabilitiesObserved({ ...current, backendId: 'old-backend' }),
+      );
+      __resetDockRetentionProbesForTests();
+      const gate = deferred<unknown>();
+      const reads = backend.requests.filter((row) => row.method === 'client.hello').length;
+      backend.onRequest('client.hello', () => gate.promise);
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(CHIEF_WORKSPACE_ID, chiefAgent));
+      await vi.waitFor(() =>
+        expect(backend.requests.filter((row) => row.method === 'client.hello')).toHaveLength(
+          reads + 1,
+        ),
+      );
+      const replacement = scriptedNative({ record: true });
+      configureDockEvidenceNative(replacement.service);
+      appStore.dispatch(
+        dockEvidenceAnnotationChanged(CHIEF_WORKSPACE_ID, chiefAgent, {
+          id: 'replacement-annotation',
+          mode: 'live',
+          imageId: null,
+        }),
+      );
+      gate.resolve(
+        result === 'negative' ? { server: { capabilities: { chiefAttachments: 0 } } } : null,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(replacement.calls.ended).toEqual([]);
+      expect(replacement.calls.started).toEqual([]);
+      expect(chiefView().evidence?.annotation?.id).toBe('replacement-annotation');
+      expect(chiefView().captureError).not.toBe('unsupported-workspace');
+      expect(native.calls.clips).toEqual([]);
+    },
+  );
 
   it('records several clips, each placed as its own file reference and removable on its own', async () => {
     advertised = 1;
