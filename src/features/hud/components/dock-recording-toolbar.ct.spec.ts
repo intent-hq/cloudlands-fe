@@ -22,7 +22,7 @@ test.beforeEach(async ({ page }) => {
   await page.mouse.move(5, 395);
 });
 
-test('Pointer sits alone; Element selector, Rectangle, Draw and Arrow sit in the well in order', async ({
+test('Pointer sits alone; Rectangle, Draw and Arrow sit in the well in order', async ({
   mount,
   page,
 }) => {
@@ -33,7 +33,7 @@ test('Pointer sits alone; Element selector, Rectangle, Draw and Arrow sit in the
   const well = await bar(page)
     .locator('.well [data-tool]')
     .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-tool')));
-  expect(well).toEqual(['pick', 'box', 'pen', 'arrow']);
+  expect(well).toEqual(['box', 'pen', 'arrow']);
   await expect(bar(page)).toHaveAttribute('role', 'toolbar');
   await expect(bar(page)).toHaveAccessibleName('Recording tools');
 });
@@ -43,7 +43,7 @@ test('exactly one tool is selected as tools change', async ({ mount, page }) => 
   const checked = bar(page).locator('[role="radio"][aria-checked="true"]');
   await expect(checked).toHaveCount(1);
   await expect(checked).toHaveAttribute('data-tool', 'pointer');
-  for (const name of ['pick', 'box', 'pen', 'arrow', 'pointer']) {
+  for (const name of ['box', 'pen', 'arrow', 'pointer']) {
     await tool(page, name).click();
     await expect(checked).toHaveCount(1);
     await expect(checked).toHaveAttribute('data-tool', name);
@@ -160,7 +160,6 @@ test('shortcuts select tools, pause and finish, and never fire while typing in a
   const harness = await mount(Harness);
   const checked = bar(page).locator('[role="radio"][aria-checked="true"]');
   for (const [key, name] of [
-    ['e', 'pick'],
     ['r', 'box'],
     ['d', 'pen'],
     ['a', 'arrow'],
@@ -189,7 +188,7 @@ test('arrow keys move focus between the bar buttons', async ({ mount, page }) =>
   await mount(Harness);
   await tool(page, 'pointer').focus();
   await page.keyboard.press('ArrowRight');
-  await expect(tool(page, 'pick')).toBeFocused();
+  await expect(tool(page, 'box')).toBeFocused();
 });
 
 test('tooltips: every control names itself and its bar key on hover, never taking focus or moving the bar, and flip below at the top edge', async ({
@@ -205,15 +204,14 @@ test('tooltips: every control names itself and its bar key on hover, never takin
     // The shared tooltip opens after its short delay.
     await page.clock.runFor(400);
   };
-  // Focus sits on Element selector; hovering elsewhere must not move it.
+  // Focus sits on Rectangle; hovering elsewhere must not move it.
   await tool(page, 'pointer').focus();
   await page.keyboard.press('ArrowRight');
-  await expect(tool(page, 'pick')).toBeFocused();
+  await expect(tool(page, 'box')).toBeFocused();
   const placed = await bar(page).boundingBox();
 
   for (const [name, label, key] of [
     ['pointer', 'Pointer', 'V'],
-    ['pick', 'Element selector', 'E'],
     ['box', 'Rectangle', 'R'],
     ['pen', 'Draw', 'D'],
     ['arrow', 'Arrow', 'A'],
@@ -232,7 +230,7 @@ test('tooltips: every control names itself and its bar key on hover, never takin
   await page.screenshot({ path: info.outputPath('recording-toolbar-tooltip.png') });
   await hover(bar(page).locator('[data-grip]'));
   await expect(tip('Drag to move')).toBeVisible();
-  await expect(tool(page, 'pick')).toBeFocused();
+  await expect(tool(page, 'box')).toBeFocused();
   expect(await bar(page).boundingBox()).toEqual(placed);
 
   // A click is still a click: the tool is chosen.
@@ -309,3 +307,14 @@ for (const scheme of ['light', 'dark'] as const) {
     await empty.unmount();
   });
 }
+
+
+test('removed Element tool has no button or E binding', async ({ mount, page }, info) => {
+  const harness = await mount(Harness);
+  await expect(tool(page, 'pick')).toHaveCount(0);
+  const before = await actions(harness);
+  await page.keyboard.press('e');
+  expect(await actions(harness)).toEqual(before);
+  await expect(tool(page, 'pointer')).toHaveAttribute('aria-checked', 'true');
+  await page.screenshot({ path: info.outputPath('no-element-toolbar.png') });
+});

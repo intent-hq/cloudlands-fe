@@ -23,9 +23,9 @@ const key = (value: string, target: EventTarget | null = null, mods = {}) =>
   });
 
 describe('dockRecordingShortcut', () => {
-  it('maps V/E/R/D/A, Space, Enter and Esc, case-insensitively', () => {
+  it('maps V/R/D/A, Space, Enter and Esc, case-insensitively', () => {
     expect(key('v')).toEqual({ kind: 'tool', tool: 'pointer' });
-    expect(key('E')).toEqual({ kind: 'tool', tool: 'pick' });
+    expect(key('E')).toBeNull();
     expect(key('r')).toEqual({ kind: 'tool', tool: 'box' });
     expect(key('d')).toEqual({ kind: 'tool', tool: 'pen' });
     expect(key('a')).toEqual({ kind: 'tool', tool: 'arrow' });

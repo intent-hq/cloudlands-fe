@@ -1426,7 +1426,7 @@ export type DockEvidenceNativeEvent =
   /** Clear on the tool bar: the current marks (and a live session's image) are dropped. */
   | { type: 'annotation-clear'; sessionId: string }
   /** Screenshot or Record on the tool bar: the dock runs the composer's own action. */
-  | { type: 'annotation-media'; sessionId: string; action: DockAnnotationMediaAction }
+  | { type: 'annotation-media'; sessionId: string; action: DockAnnotationMediaAction; inputRevision?: number }
   /**
    * A genuine failure in a live session (no capture taken, no mark made): `pick`
    * means accessibility metadata is unreadable, `target`/`capture` that the screen
@@ -1453,7 +1453,7 @@ export interface DockEvidenceNativeService {
     mode: DockAnnotationSession['mode'];
     still?: { imageId: string; pixels: DockCapturedPixels };
   }): Promise<DockNativeResult<void>>;
-  setAnnotationTool(sessionId: string, tool: DockMarkTool): Promise<void>;
+  setAnnotationTool(sessionId: string, tool: DockMarkTool, restoreInputRevision?: number): Promise<void>;
   /** Mouse mode: the screen is used normally until a tool is chosen again. */
   setAnnotationMouse?(sessionId: string): Promise<void>;
   /** The composer's Screenshot/Record state, mirrored on the annotate tool bar. */

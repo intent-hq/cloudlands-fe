@@ -58,6 +58,7 @@ export type DockEvidenceControl =
       action: 'annotation-tool';
       annotationId: string;
       tool: Parameters<DockEvidenceNativeService['setAnnotationTool']>[1];
+      restoreInputRevision?: number;
     }
   | { action: 'annotation-mouse'; annotationId: string }
   | {
