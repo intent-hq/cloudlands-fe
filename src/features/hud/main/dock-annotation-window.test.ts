@@ -693,7 +693,7 @@ describe('DockAnnotationController', () => {
     expect(marks(t.events)[0]!.element).toBeNull();
   });
 
-  it('still excludes dock controls and requires a target for picks during recording', async () => {
+  it('still excludes dock controls and rejects removed Pick during recording', async () => {
     const t = setup({ hit: () => ({ ...noHit, window: null }) });
     await t.start();
     t.host.clip = 2500;
@@ -704,7 +704,7 @@ describe('DockAnnotationController', () => {
     await t.controller.setAnnotationTool('s1', 'pick');
     await expect(
       t.gesture([{ x: 100, y: 100 }], 'pick'),
-    ).resolves.toEqual({ ok: false, reason: 'outside' });
+    ).resolves.toEqual({ ok: false, reason: 'stale' });
     expect(marks(t.events)).toEqual([]);
     expect(t.captures).toEqual([]);
   });
@@ -790,9 +790,9 @@ describe('DockAnnotationController', () => {
     // A frozen image has no live element: pick is refused, not faked.
     expect(await t.gesture([{ x: 220, y: 100 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
-    expect(t.issues).toEqual([{ sessionId: 's1', kind: 'pick', error: 'unavailable' }]);
+    expect(t.issues).toEqual([]);
     await t.controller.setAnnotationTool('s1', 'box');
     // 1200×900 contained in 1440×900 → scale 1, offset x 120.
     await t.gesture(
@@ -813,23 +813,16 @@ describe('DockAnnotationController', () => {
     });
   });
 
-  it('pick reports the actual accessibility role, name and frame with no invented path or source', async () => {
-    const element = {
-      role: 'AXButton',
-      name: 'Get started',
-      rect: { x: -1340, y: -50, width: 112, height: 36 },
-    };
+  it('removed Pick cannot create a mark even when accessibility metadata is available', async () => {
+    const element = { role: 'AXButton', name: 'Get started', rect: { x: -1340, y: -50, width: 112, height: 36 } };
     const t = setup({ hit: () => ({ ...noHit, element }) });
     await t.start('dictation', 'pick');
-    await t.gesture([{ x: 120, y: 60 }], 'pick');
-    expect(marks(t.events)[0]).toMatchObject({
-      tool: 'pick',
-      geometry: { kind: 'rect', x: 200, y: 100, w: 224, h: 72 },
-      element: { role: 'button', name: 'Get started', path: null, source: null },
-    });
+    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'stale' });
+    expect(marks(t.events)).toEqual([]);
+    expect(t.captures).toEqual([]);
   });
 
-  it("picks in Intent's main window from its page, but has nothing to pick in its browser panel", async () => {
+  it("removed Pick never inspects an Intent page or browser panel", async () => {
     const requests: unknown[] = [];
     let answer: Awaited<ReturnType<DockAnnotationNative['intentWindow']>> = {
       kind: 'intent',
@@ -850,50 +843,41 @@ describe('DockAnnotationController', () => {
       },
     });
     await t.start('dictation', 'pick');
-    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: true });
-    expect(requests[0]).toMatchObject({
-      windowId: appWindow.windowId,
-      elementPoint: { x: -1320, y: -40 },
-    });
-    expect(marks(t.events)[0]).toMatchObject({
-      element: { role: 'button', name: 'Save', path: 'main > button#save', source: null },
-    });
+    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'stale' });
+    expect(requests).toEqual([]);
+    expect(marks(t.events)).toEqual([]);
     answer = { kind: 'intent', inPanel: true, element: null };
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
     answer = { kind: 'failed' };
-    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'failed' });
-    expect(t.captures).toHaveLength(1);
-    expect(marks(t.events)).toHaveLength(1);
+    expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'stale' });
+    expect(t.captures).toHaveLength(0);
+    expect(marks(t.events)).toHaveLength(0);
   });
 
-  it('a pick without accessibility leaves images and marks unchanged and reports why', async () => {
+  it('removed Pick leaves images and marks unchanged without requesting accessibility', async () => {
     let hit: DockElementHit = { ...noHit, access: 'permission', element: null };
     const t = setup({ hit: () => hit });
     await t.start('live', 'pick');
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'permission',
+      reason: 'stale',
     });
     hit = { ...noHit, access: 'granted', element: null };
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
     hit = { checked: false, access: 'unavailable', window: null, element: null };
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({
       ok: false,
-      reason: 'unavailable',
+      reason: 'stale',
     });
     expect(t.captures).toEqual([]);
     expect(t.events).toEqual([]);
-    expect(t.issues.map(({ kind, error }) => `${kind}:${error}`)).toEqual([
-      'pick:permission',
-      'pick:unavailable',
-      'target:unavailable',
-    ]);
+    expect(t.issues).toEqual([]);
     // Shapes stay usable without accessibility.
     hit = { ...noHit, access: 'permission', element: null };
     await t.controller.setAnnotationTool('s1', 'pen');
@@ -1280,7 +1264,7 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
     expect(t.controller.handleToolbar({ sessionId: 'other', action: 'record' })).toBe(false);
     expect(t.controller.isActive()).toBe(true);
     expect(sent().tool).toBe('box');
-    expect(sent().mouse).toBe(false);
+    expect(sent().mouse).toBe(true);
   });
 
   it('Clear empties the screen without attaching and keeps the tool (no mouse mode)', async () => {
