@@ -10,6 +10,8 @@ vi.mock('electron', () => ({
   session: { defaultSession: electronMocks.defaultSession },
 }));
 
+import { EventEmitter } from 'node:events';
+import { bindViewToBackend } from '../window-backend';
 import {
   createAuthorizedIpcHandler,
   createTrustedBrowserBridgeIpcContext,
@@ -107,5 +109,42 @@ describe('privileged IPC authorization', () => {
         DEV_PORT: '5197',
       }),
     ).toBe(false);
+  });
+
+  describe('Unified window machine views', () => {
+    function viewEvent(hostDestroyed = false) {
+      const mainFrame = { url: 'app://workspaces/?embedded=1' };
+      const sender = Object.assign(new EventEmitter(), {
+        isDestroyed: () => false,
+        getType: () => 'browserView',
+        mainFrame,
+        session: electronMocks.defaultSession,
+      });
+      const host = { isDestroyed: () => hostDestroyed, webContents: {} };
+      electronMocks.fromWebContents.mockReturnValue(host);
+      return { event: { sender, senderFrame: mainFrame } as any, sender, host };
+    }
+
+    it('admits a view through its own binding', async () => {
+      const { event, sender, host } = viewEvent();
+      bindViewToBackend(sender as any, host as any, 'studio');
+      const handler = vi.fn(async () => 'ok');
+      await expect(createAuthorizedIpcHandler('file:read', handler)(event)).resolves.toBe('ok');
+    });
+
+    it('refuses an unbound view even though its window is an app window', async () => {
+      const { event } = viewEvent();
+      await expect(createAuthorizedIpcHandler('file:read', vi.fn())(event)).rejects.toEqual(
+        expect.objectContaining<IpcAuthorizationError>({ reason: 'unexpected sender' }),
+      );
+    });
+
+    it('refuses a view whose host window has closed', async () => {
+      const { event, sender, host } = viewEvent(true);
+      bindViewToBackend(sender as any, host as any, 'studio');
+      await expect(createAuthorizedIpcHandler('file:read', vi.fn())(event)).rejects.toEqual(
+        expect.objectContaining<IpcAuthorizationError>({ reason: 'view host closed' }),
+      );
+    });
   });
 });

@@ -7,9 +7,13 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: (sender: object) => windows.get(sender) ?? null },
 }));
 import {
+  bindViewToBackend,
   getBackendIdForWebContents,
   getStrictBackendBindingForWebContents,
+  getViewBinding,
   stampWindowWithBackend,
+  unbindView,
+  UNIFIED_SHELL_BACKEND_ID,
 } from './window-backend';
 
 function makeWindow() {
@@ -79,5 +83,67 @@ describe('strict window backend documents', () => {
       retire(pair);
       expect(getStrictBackendBindingForWebContents(pair.sender)).toBeNull();
     }
+  });
+});
+
+describe('Unified window machine views', () => {
+  function makeView(host: WindowType, hostedBy: 'host' | 'none' = 'host') {
+    const sender = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false });
+    // A view's contents resolve to the host window (or, defensively, to nothing).
+    if (hostedBy === 'host') windows.set(sender, host);
+    return sender as unknown as WebContents;
+  }
+
+  it('resolves a view to its own machine, never to the shell or local', () => {
+    const shell = makeWindow();
+    stampWindowWithBackend(shell.window, UNIFIED_SHELL_BACKEND_ID);
+    const studio = makeView(shell.window);
+    const local = makeView(shell.window);
+    bindViewToBackend(studio, shell.window, 'studio');
+    bindViewToBackend(local, shell.window, 'local');
+
+    expect(getBackendIdForWebContents(studio)).toBe('studio');
+    expect(getBackendIdForWebContents(local)).toBe('local');
+    expect(getStrictBackendBindingForWebContents(studio)?.backendId).toBe('studio');
+    expect(getStrictBackendBindingForWebContents(studio)?.window).toBe(shell.window);
+  });
+
+  it('refuses the shell: it resolves to an id no backend client serves', () => {
+    const shell = makeWindow();
+    stampWindowWithBackend(shell.window, UNIFIED_SHELL_BACKEND_ID);
+    expect(getBackendIdForWebContents(shell.sender)).toBe(UNIFIED_SHELL_BACKEND_ID);
+    expect(getBackendIdForWebContents(shell.sender)).not.toBe('local');
+  });
+
+  it('refuses a view once unbound, even when Electron maps it to no window', () => {
+    const shell = makeWindow();
+    stampWindowWithBackend(shell.window, UNIFIED_SHELL_BACKEND_ID);
+    const orphan = makeView(shell.window, 'none');
+    bindViewToBackend(orphan, shell.window, 'studio');
+    unbindView(orphan);
+    expect(getBackendIdForWebContents(orphan)).toBe(UNIFIED_SHELL_BACKEND_ID);
+    expect(getStrictBackendBindingForWebContents(orphan)).toBeNull();
+  });
+
+  it('retires a view binding on navigation and rebinds the new document to the same machine', () => {
+    const shell = makeWindow();
+    const view = makeView(shell.window);
+    bindViewToBackend(view, shell.window, 'studio');
+    const initial = getStrictBackendBindingForWebContents(view);
+    (view as unknown as EventEmitter).emit('did-start-navigation', {}, 'app://x', false, true);
+    expect(getStrictBackendBindingForWebContents(view)).toBeNull();
+    (view as unknown as EventEmitter).emit('dom-ready');
+    expect(getStrictBackendBindingForWebContents(view)?.stamp).not.toBe(initial?.stamp);
+    expect(getStrictBackendBindingForWebContents(view)?.backendId).toBe('studio');
+  });
+
+  it('drops a destroyed view from the binding and the push targets', () => {
+    const shell = makeWindow();
+    const view = makeView(shell.window);
+    bindViewToBackend(view, shell.window, 'studio');
+    expect(getViewBinding(view)?.backendId).toBe('studio');
+    (view as unknown as EventEmitter).emit('destroyed');
+    expect(getViewBinding(view)).toBeNull();
+    expect(getStrictBackendBindingForWebContents(view)).toBeNull();
   });
 });

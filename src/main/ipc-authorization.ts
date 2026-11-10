@@ -1,5 +1,6 @@
 import { BrowserWindow, session } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
+import { getViewBinding } from './window-backend';
 
 const trustedBrowserBridgeBrand = Symbol('trusted-browser-bridge-ipc-context');
 
@@ -67,7 +68,9 @@ function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: stri
   const event = context as IpcMainInvokeEvent;
   const sender = event?.sender;
   const senderFrame = event?.senderFrame;
-  if (!sender || sender.isDestroyed() || sender.getType() !== 'window') {
+  // A Unified window machine view is admitted only through its own live binding.
+  const view = sender && !sender.isDestroyed() ? getViewBinding(sender) : null;
+  if (!sender || sender.isDestroyed() || (!view && sender.getType() !== 'window')) {
     throw new IpcAuthorizationError(channel, 'unexpected sender');
   }
   if (!senderFrame || senderFrame !== sender.mainFrame) {
@@ -77,9 +80,13 @@ function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: stri
     throw new IpcAuthorizationError(channel, 'unexpected session');
   }
 
-  const owner = BrowserWindow.fromWebContents(sender);
-  if (!owner || owner.isDestroyed() || owner.webContents !== sender) {
-    throw new IpcAuthorizationError(channel, 'sender is not an app window');
+  if (view) {
+    if (view.host.isDestroyed()) throw new IpcAuthorizationError(channel, 'view host closed');
+  } else {
+    const owner = BrowserWindow.fromWebContents(sender);
+    if (!owner || owner.isDestroyed() || owner.webContents !== sender) {
+      throw new IpcAuthorizationError(channel, 'sender is not an app window');
+    }
   }
   if (!isTrustedRendererUrl(senderFrame.url)) {
     throw new IpcAuthorizationError(channel, 'unexpected renderer URL');

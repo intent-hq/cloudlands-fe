@@ -214,6 +214,7 @@ import {
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
+import { getRendererTargets } from '../../../main/window-backend';
 import { PresenceAggregator } from './presence-aggregator';
 import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
@@ -2423,15 +2424,15 @@ function broadcast<C extends string>(
 
 /** Delivery for {@link broadcast} and {@link broadcastBackendStatus}; do not call it directly. */
 function sendToWindows(channel: string, payload: unknown, backendId?: string): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    if (backendId && getBackendIdForWebContents(win.webContents) !== backendId) continue;
+  // Every renderer, including Unified window machine views (each bound to its own backend).
+  for (const target of getRendererTargets()) {
+    if (backendId && target.backendId !== backendId) continue;
     try {
-      win.webContents.send(channel, payload);
+      target.contents.send(channel, payload);
     } catch (error) {
       logger.warn('Failed to broadcast backend message', {
         channel,
-        windowId: win.id,
+        webContentsId: target.contents.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
