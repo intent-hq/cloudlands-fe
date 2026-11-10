@@ -34,6 +34,8 @@
  * This is automatically run by:
  *   - pnpm run build (production builds)
  *   - pnpm run dev (development builds)
+ *   - pnpm run build:main, with --if-missing, so a standalone main build works
+ *     on a cold checkout without replacing a config `build` already generated
  *   - pnpm run verify:changed, with --if-missing, before the main-process
  *     type check: the generated module is the only input tsc needs, so a
  *     cold checkout gets a file and an existing one is left untouched

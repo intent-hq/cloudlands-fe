@@ -34,7 +34,7 @@
     "build:web": "node scripts/pnpm-run.mjs generate:i18n && node scripts/pnpm-run.mjs build:i18n-bundle && cross-env GIT_TERMINAL_PROMPT=0 NODE_ENV=production INTENT_DISABLE_SOURCEMAPS=1 INTENT_BUILD_TARGET=web node scripts/vite-build.mjs && node scripts/inject-production-i18n.mjs dist/web",
     "build:intent-web-package": "node scripts/build-intent-web-package.mjs",
     "smoke:intent-web-package": "node scripts/smoke-intent-web-package.mjs",
-    "build:main": "cross-env NODE_ENV=production tsc -p tsconfig.main.json && tsx scripts/fix-esm-imports.ts",
+    "build:main": "node scripts/generate-build-config.cjs --if-missing && node scripts/paraglide-inputs-hash.mjs --if-stale && cross-env NODE_ENV=production tsc -p tsconfig.main.json && tsx scripts/fix-esm-imports.ts",
     "build:main:dev": "node scripts/pnpm-run.mjs build:main && node scripts/dev-ready.js main",
     "build:cdp-mcp": "node scripts/build-cdp-mcp.js",
     "build:preload": "cross-env NODE_ENV=production node scripts/pnpm-run.mjs generate:ipc-channels && node scripts/prepare-preload-output.mjs && tsc -p tsconfig.preload.json && tsc-alias -p tsconfig.preload.json",
