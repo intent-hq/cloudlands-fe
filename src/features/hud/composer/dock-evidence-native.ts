@@ -225,8 +225,8 @@ export function createDockEvidenceNative(
     setAnnotationMouse: (annotationId: string) =>
       command({ action: 'annotation-mouse', annotationId }),
     setAnnotationMedia: (media) => command({ action: 'annotation-media', media }),
-    setAnnotationTool: (annotationId, tool) =>
-      command({ action: 'annotation-tool', annotationId, tool }),
+    setAnnotationTool: (annotationId, tool, restoreInputRevision) =>
+      command({ action: 'annotation-tool', annotationId, tool, ...(restoreInputRevision !== undefined ? { restoreInputRevision } : {}) }),
     syncMarks: (annotationId, marks) => command({ action: 'annotation-sync', annotationId, marks }),
     endAnnotation: (annotationId) => command({ action: 'annotation-end', annotationId }),
     reportMarkAcceptance: (annotationId, markId, accepted) =>

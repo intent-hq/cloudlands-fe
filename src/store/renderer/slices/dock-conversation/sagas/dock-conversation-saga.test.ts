@@ -2213,11 +2213,11 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     const imagesBefore = structuredClone(evidenceView().evidence?.images);
     mouse.mockClear(); tool.mockClear();
     try {
-      native.emit({ type: 'annotation-media', sessionId, action: 'discard' });
+      native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
       await new Promise((r) => setTimeout(r, 0));
       expect(mouse).toHaveBeenCalledWith(sessionId);
       native.emit({ type: 'mark', sessionId, markId: 'late-discard', tool: 'box', geometry: { kind: 'box', x: 10, y: 10, w: 30, h: 30 }, element: null, capture: shot(1) });
-      native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo' });
+      native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
       await new Promise((r) => setTimeout(r, 0));
       expect(evidenceView().evidence?.marks).toEqual(marksBefore);
       expect(evidenceView().evidence?.images).toEqual(imagesBefore);
@@ -2227,9 +2227,43 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     if (replaceOwner) {
       await new Promise((r) => setTimeout(r, 0));
       expect(tool).not.toHaveBeenCalled();
-    } else await vi.waitFor(() => expect(tool).toHaveBeenCalledWith(sessionId, 'box'));
+    } else await vi.waitFor(() => expect(tool).toHaveBeenCalledWith(sessionId, 'box', 1));
     expect(evidenceView().recording).toBe(true);
     expect(native.calls.stopped).toEqual([]);
+  });
+
+  it.each(['mouse', 'tool'] as const)('a rejected %s control during discard/Undo leaves the saga usable', async (failure) => {
+    const native = scriptedNative({ record: true });
+    native.service.setAnnotationMouse = vi.fn(async () => {});
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const sessionId = native.calls.started[0].id;
+    if (failure === 'mouse') vi.mocked(native.service.setAnnotationMouse).mockRejectedValueOnce(new Error('transport'));
+    if (failure === 'tool') vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+    await vi.waitFor(() => expect(native.calls.pauses).toHaveLength(1));
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
+    await new Promise((r) => setTimeout(r, 0));
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-confirm', inputRevision: 1 });
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    await vi.waitFor(() => expect(evidenceView().clips).toEqual([]));
+  });
+
+  it('an unexpected annotation-ended retires discard ownership before another session', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+    await vi.waitFor(() => expect(native.calls.pauses).toHaveLength(1));
+    native.emit({ type: 'annotation-ended', sessionId });
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(2));
   });
 
   it('discard pauses at once; undo keeps the clip, and confirm deletes it and ends the session', async () => {
@@ -2244,9 +2278,9 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
     const clipId = native.calls.clips[0];
 
-    native.emit({ type: 'annotation-media', sessionId, action: 'discard' });
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
     await vi.waitFor(() => expect(native.calls.pauses).toEqual([[clipId, true]]));
-    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo' });
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(evidenceView().recording).toBe(true);
     expect(evidenceView().annotating).toBe(true);

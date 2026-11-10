@@ -233,6 +233,7 @@ interface Session {
   mouse: boolean;
   discarding: boolean;
   discardMouse: boolean;
+  undoRequested: boolean;
   inputRevision: number;
 }
 
@@ -432,6 +433,7 @@ export class DockAnnotationController implements AnnotationService {
       mouse: false,
       discarding: false,
       discardMouse: false,
+      undoRequested: false,
       inputRevision: 0,
     };
     this.session = session;
@@ -497,10 +499,13 @@ export class DockAnnotationController implements AnnotationService {
     return { ok: true, value: undefined };
   }
 
-  async setAnnotationTool(sessionId: string, tool: DockMarkTool): Promise<void> {
+  async setAnnotationTool(sessionId: string, tool: DockMarkTool, restoreInputRevision?: number): Promise<void> {
     const session = this.session;
     if (!session || session.id !== sessionId || session.ended || !validTool(tool) || tool === 'pick') return;
+    if (!session.discarding && restoreInputRevision !== undefined) return;
     if (session.discarding) {
+      if (!session.undoRequested || restoreInputRevision !== session.inputRevision) return;
+      session.undoRequested = false;
       session.discarding = false;
       session.mouse = session.discardMouse;
       this.publish(session);
@@ -710,6 +715,7 @@ export class DockAnnotationController implements AnnotationService {
       request?.sessionId !== session.id
     )
       return false;
+    if (session.discarding && request.action === 'discard') return false;
     if (session.discarding && !['discard', 'discard-undo', 'discard-confirm', 'rect', 'mouse'].includes(request.action)) return false;
     if (request.action !== 'rect') this.activity();
     if (request.action === 'tool') {
@@ -781,13 +787,15 @@ export class DockAnnotationController implements AnnotationService {
       request.action === 'discard-confirm'
     ) {
       if (request.action === 'discard') {
+        session.undoRequested = false;
         session.discardMouse = session.mouse;
         session.discarding = true;
         session.inputRevision += 1;
         this.enterMouse(session);
       }
-      // Undo requests restoration; the owning dock restores input after pause settles.
-      this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action });
+      if (request.action === 'discard-undo') session.undoRequested = true;
+      // Only the owned Undo reply for this discard revision may restore input.
+      this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action, inputRevision: session.inputRevision });
       return true;
     }
     if (request.action === 'rect') {

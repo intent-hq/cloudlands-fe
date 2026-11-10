@@ -113,7 +113,7 @@ const controlSchema = z.discriminatedUnion('action', [
     })
     .strict(),
   z
-    .object({ action: z.literal('annotation-tool'), annotationId: z.string().uuid(), tool })
+    .object({ action: z.literal('annotation-tool'), annotationId: z.string().uuid(), tool, restoreInputRevision: z.number().int().nonnegative().optional() })
     .strict(),
   z
     .object({
@@ -635,7 +635,7 @@ function createMediaBinder() {
       case 'annotation-end': {
         if (state.annotationId !== control.annotationId) return unavailable();
         if (control.action === 'annotation-tool')
-          await dockAnnotationController.setAnnotationTool(control.annotationId, control.tool);
+          await dockAnnotationController.setAnnotationTool(control.annotationId, control.tool, control.restoreInputRevision);
         else if (control.action === 'annotation-mouse')
           await dockAnnotationController.setAnnotationMouse(control.annotationId);
         else if (control.action === 'annotation-sync') {

@@ -252,7 +252,12 @@ describe('DockAnnotationController', () => {
     expect(state().marks).toEqual([old]);
     t.controller.handleToolbar({ sessionId: 's1', action: 'discard' });
     expect(state().marks).toEqual([]);
-    await t.controller.setAnnotationTool('s1', 'box');
+    await t.controller.setAnnotationTool('s1', 'pen');
+    await t.controller.setAnnotationTool('s1', 'pen', 1);
+    expect(state().marks).toEqual([]);
+    expect(state().tool).toBe('box');
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
+    await t.controller.setAnnotationTool('s1', 'box', 1);
     expect(state().marks).toEqual([old]);
     expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pick' })).toBe(false);
     await t.controller.endAnnotation('s1');
@@ -267,7 +272,10 @@ describe('DockAnnotationController', () => {
     expect(t.controller.handleToolbar({ sessionId: 's1', action: 'discard' })).toBe(true);
     expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pen' })).toBe(false);
     t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
-    await t.controller.setAnnotationTool('s1', 'box');
+    await t.controller.setAnnotationTool('s1', 'pen');
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
+    await t.controller.setAnnotationTool('s1', 'box', 0);
+    await t.controller.setAnnotationTool('s1', 'box', 1);
     t.releaseCapture();
     await pending;
     expect(marks(t.events)).toEqual([]);

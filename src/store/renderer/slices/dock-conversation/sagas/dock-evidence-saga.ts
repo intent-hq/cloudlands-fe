@@ -824,7 +824,12 @@ function* onNativeMark(
   const owner = getItems(appStore.state.dockConversation.evidence).find(
     (row) => row.annotation?.id === event.sessionId,
   );
-  if (!owner?.annotation || discardedSessions.has(event.sessionId)) {
+  if (owner?.annotation && discardedSessions.has(event.sessionId)) {
+    const [ws, agent] = JSON.parse(owner.id) as [string, string];
+    yield* rejectNativeMark(ws, agent, event.sessionId, nativeId);
+    return;
+  }
+  if (!owner?.annotation) {
     // A late gesture from an ended session never joins any image; settle its speech chip.
     const ended = endedSessions.get(event.sessionId);
     if (ended) yield* rejectNativeMark(ended[0], ended[1], event.sessionId, nativeId);
@@ -1422,9 +1427,10 @@ function* barMediaAction(
   workspaceId: string,
   agentId: string,
   action: DockAnnotationMediaAction,
+  inputRevision?: number,
 ): SagaGenerator<void> {
   if (action !== 'capture' && action !== 'record') {
-    yield* recordingToolbarAction(workspaceId, agentId, action);
+    yield* recordingToolbarAction(workspaceId, agentId, action, inputRevision);
     return;
   }
   if (discardedSessions.has(evidenceOf(workspaceId, agentId)?.annotation?.id ?? '')) return;
@@ -1551,7 +1557,7 @@ function* setRecordingPaused(
 
 const discardedSessions = new Set<string>();
 const discardGenerations = new Map<string, number>();
-const discardWaits = new Map<string, { done: Promise<void>; service: DockEvidenceNativeService | null; authority: string | null; paused: boolean; clipId: string | null }>();
+const discardWaits = new Map<string, { done: Promise<void>; service: DockEvidenceNativeService | null; authority: string | null; paused: boolean; inputRevision?: number; clipId: string | null }>();
 
 /**
  * The recording tool bar. Done: the screen's marks go (they are in the clip already),
@@ -1563,6 +1569,7 @@ function* recordingToolbarAction(
   workspaceId: string,
   agentId: string,
   action: Exclude<DockAnnotationMediaAction, 'capture' | 'record'>,
+  inputRevision?: number,
 ): SagaGenerator<void> {
   if (discardedSessions.has(evidenceOf(workspaceId, agentId)?.annotation?.id ?? '') && !['discard', 'discard-undo', 'discard-confirm'].includes(action)) return;
   if (action === 'pause' || action === 'resume') {
@@ -1581,11 +1588,11 @@ function* recordingToolbarAction(
       !activePair(workspaceId, agentId) ||
       evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id ||
       !held.service ||
-      !held.paused || (held.clipId !== null && recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
+      !held.paused || held.inputRevision === undefined || (held.clipId !== null && recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
     )
       return;
     try {
-      yield* call([held.service, held.service.setAnnotationTool], session.id, toolFor(workspaceId));
+      yield* call([held.service, held.service.setAnnotationTool], session.id, toolFor(workspaceId), held.inputRevision);
     } catch {
       return;
     }
@@ -1615,12 +1622,14 @@ function* recordingToolbarAction(
       service: nativeService,
       authority: getPrincipalActionContext(appStore.state),
       paused: false,
+      inputRevision,
       clipId: clip?.id ?? null,
     };
     discardWaits.set(session.id, held);
     try {
-      if (held.service?.setAnnotationMouse)
-        yield* call([held.service, held.service.setAnnotationMouse], session.id);
+      try {
+        if (held.service?.setAnnotationMouse) yield* call([held.service, held.service.setAnnotationMouse], session.id);
+      } catch { /* The main toolbar already disabled input; still pause the recording. */ }
       held.paused = clip ? yield* setRecordingPaused(workspaceId, agentId, true) : true;
       // Keep the original marks and attachment intact until confirmation; Undo restores them.
     } catch {
@@ -1694,7 +1703,7 @@ function* watchNative(): SagaGenerator<void> {
         if (owner && DOCK_ANNOTATION_MEDIA_ACTIONS.includes(event.action)) {
           const [workspaceId, agentId] = JSON.parse(owner.id) as [string, string];
           if (activePair(workspaceId, agentId))
-            yield* fork(barMediaAction, workspaceId, agentId, event.action);
+            yield* fork(barMediaAction, workspaceId, agentId, event.action, event.inputRevision);
         }
       } else if (event.type === 'annotation-tool') {
         // Switched on the on-screen tool bar: native already uses it.
@@ -1707,6 +1716,9 @@ function* watchNative(): SagaGenerator<void> {
             yield* put(dockEvidenceToolSet(workspaceId, event.tool));
         }
       } else if (event.type === 'annotation-ended') {
+        discardedSessions.delete(event.sessionId);
+        discardWaits.delete(event.sessionId);
+        discardGenerations.delete(event.sessionId);
         const owner = getItems(appStore.state.dockConversation.evidence).find(
           (row) => row.annotation?.id === event.sessionId,
         );
