@@ -1,6 +1,6 @@
 /**
  * Parse an `intent://node` link (`intentd pair --node`):
- * `intent://node?v=1&host=<ip[,ip...]>&port=<p>&fp=<sha256>[&tc=<addr>]&invite=<id>&secret=<s>[&name=<label>]`.
+ * `intent://node?v=1&host=<ip[,ip...]>&port=<p>&fp=<sha256>&invite=<id>&secret=<s>[&tc=<addr>]`.
  *
  * It carries routes, the certificate pin and a single-use invite secret,
  * never an owner token (a `token=` param is ignored). Missing or invalid
@@ -19,8 +19,6 @@ export interface ParsedNodeInviteUri {
   inviteId: string | null;
   /** Single-use invite secret. Never log or show it. */
   secret: string | null;
-  /** Invite label (`name=`), for display only. */
-  name: string | null;
 }
 
 // i18n-ignore (wire constant, node invite link scheme)
@@ -63,7 +61,6 @@ export function parseNodeInviteUri(raw: string): ParsedNodeInviteUri | null {
     tcAddress: value('tc'),
     inviteId: value('invite'),
     secret: value('secret'),
-    name: value('name'),
   };
 }
 

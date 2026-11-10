@@ -233,24 +233,30 @@ function* addInspected(
   return null;
 }
 
+/** A tunnel-only link has no host to name the machine by. */
+const inviteLabel = (label: unknown): string =>
+  typeof label === 'string' && label.trim() ? label : m.nodes_invite_tunnelLabel();
+
 function inviteInspectReply(
   reply: unknown,
 ): NodeInviteInspectResult | { ok: false; code: 'failed' } {
   const value = (reply ?? {}) as Record<string, unknown>;
-  if (value.ok === true && typeof value.pendingId === 'string' && typeof value.label === 'string')
-    return { ok: true, pendingId: value.pendingId, label: value.label };
+  if (value.ok === true && typeof value.pendingId === 'string')
+    return { ok: true, pendingId: value.pendingId, label: inviteLabel(value.label) };
   if (value.code === 'not-a-link' || value.code === 'incomplete' || value.code === 'link-version')
     return { ok: false, code: value.code };
   return { ok: false, code: 'failed' };
 }
 
 const CLAIM_CODES: ReadonlySet<string> = new Set([
-  'invite-invalid',
-  'invite-expired',
-  'invite-used',
-  'invite-revoked',
+  'node-invite-invalid',
+  'node-invite-expired',
+  'node-invite-used',
+  'node-invite-revoked',
+  'node-invite-self',
   'machine-unreachable',
   'machine-update-required',
+  'certificate-mismatch',
   'expired',
 ]);
 
@@ -264,10 +270,12 @@ function claimError(reply: unknown, node: string): NodeAddError | null {
     : [];
   if (code === 'backend-unsupported') return { code: 'invites-unsupported', node };
   if (code === 'not-owner') return { code: 'invite-not-owner', node };
+  if (code === 'invalid-node-link') return { code: 'incomplete', node };
   if (!CLAIM_CODES.has(code)) return { code: 'failed', node };
   return {
     code: code as NodeAddError['code'],
     node,
+    ...(value.inviteSpent === true ? { inviteSpent: true } : {}),
     ...(code === 'machine-unreachable' && routes.length ? { routes } : {}),
   };
 }
@@ -426,7 +434,7 @@ function nodeLinkErrorMessage(error: NodeAddError): string {
 
 /** An `intent://node` link opened from outside the app: Settings → Machines, ask, claim. */
 function* receiveNodeInvite(action: ReturnType<typeof nodeInviteReceived>): SagaGenerator<void> {
-  const held = action.payload[0];
+  const held = { ...action.payload[0], label: inviteLabel(action.payload[0].label) };
   const { navigateToSettings } = yield* call(() => import('$lib/utils/workspace-navigation'));
   yield* call(navigateToSettings, { tab: 'devices' });
   const error = yield* call(claimInvite, held);

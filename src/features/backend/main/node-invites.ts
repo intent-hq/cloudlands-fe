@@ -1,11 +1,11 @@
 /**
  * Add a machine from an `intent://node` link (main process).
  *
- * `inspect` parses the link and holds it in a single-use pending slot that
- * expires after a few minutes; only the pending id and a display name cross
- * to the renderer. `claim` sends the invite to the current backend, which
- * dials the machine, trades the invite for a scoped executor credential and
- * saves the machine. The app never connects to the machine as its owner.
+ * `inspect` checks the link (v1, every field present) and holds it in a
+ * single-use pending slot that expires after a few minutes; only the pending
+ * id and the first host cross to the renderer. `claim` hands the link to the
+ * current backend, which dials the machine, trades the invite for an executor
+ * credential and saves the machine. The app never connects to the machine.
  */
 
 import { randomUUID } from 'crypto';
@@ -41,21 +41,26 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 const DAEMON_CODES: ReadonlySet<string> = new Set(NODE_INVITE_DAEMON_CODES);
 
+const CERTIFICATE_MISMATCH = 'node-link-certificate-mismatch';
+
 function claimFailure(error: unknown): NodeInviteClaimResult {
   const rpcCode =
     record(error) || error instanceof Error ? (error as { rpcCode?: unknown }).rpcCode : undefined;
   if (rpcCode === -32601) return { ok: false, code: 'backend-unsupported' };
   if (rpcCode === -32003) return { ok: false, code: 'not-owner' };
   const data = (error as { data?: unknown } | null)?.data;
-  const code = record(data) && text(data.code) && DAEMON_CODES.has(data.code) ? data.code : null;
-  if (!code || !record(data)) return { ok: false, code: 'failed' };
-  if (code === 'machine-unreachable' && Array.isArray(data.attempts)) {
-    const routes = data.attempts.flatMap((attempt) =>
-      record(attempt) && text(attempt.route) ? [attempt.route] : [],
-    );
-    return { ok: false, code, routes };
-  }
-  return { ok: false, code: code as NodeInviteClaimErrorCode };
+  if (!record(data) || !text(data.code) || !DAEMON_CODES.has(data.code))
+    return { ok: false, code: 'failed' };
+  const code = data.code as NodeInviteClaimErrorCode;
+  if (code !== 'machine-unreachable' && code !== 'machine-update-required')
+    return { ok: false, code };
+  const inviteSpent = data.inviteSpent === true;
+  if (code === 'machine-update-required') return { ok: false, code, inviteSpent };
+  const attempts = Array.isArray(data.attempts) ? data.attempts.filter(record) : [];
+  if (attempts.length > 0 && attempts.every((attempt) => attempt.error === CERTIFICATE_MISMATCH))
+    return { ok: false, code: 'certificate-mismatch', inviteSpent };
+  const routes = attempts.flatMap((attempt) => (text(attempt.route) ? [attempt.route] : []));
+  return { ok: false, code, inviteSpent, ...(routes.length ? { routes } : {}) };
 }
 
 export function createNodeInvites(deps: { now?: () => number } = {}): NodeInvites {
@@ -71,25 +76,18 @@ export function createNodeInvites(deps: { now?: () => number } = {}): NodeInvite
   function inspect(uri: unknown): NodeInviteInspectResult {
     const parsed = typeof uri === 'string' ? parseNodeInviteUri(uri) : null;
     if (!parsed) return { ok: false, code: 'not-a-link' };
-    const { version, hosts, port, fingerprint, tcAddress, inviteId, secret, name } = parsed;
-    if (version !== null && version !== NODE_INVITE_LINK_VERSION)
-      return { ok: false, code: 'link-version' };
+    const { version, hosts, port, fingerprint, tcAddress, inviteId, secret } = parsed;
+    if (version === null) return { ok: false, code: 'incomplete' };
+    if (version !== NODE_INVITE_LINK_VERSION) return { ok: false, code: 'link-version' };
     if ((hosts.length === 0 && !tcAddress) || port === null || !fingerprint || !inviteId || !secret)
       return { ok: false, code: 'incomplete' };
     prune();
     const pendingId = randomUUID();
     pending.set(pendingId, {
-      params: {
-        inviteId,
-        secret,
-        hosts,
-        port,
-        ...(tcAddress ? { tcAddress } : {}),
-        fingerprint,
-      },
+      params: { uri: (uri as string).trim() },
       expiresAt: now() + PENDING_TTL_MS,
     });
-    return { ok: true, pendingId, label: name ?? hosts[0] ?? tcAddress! };
+    return { ok: true, pendingId, label: hosts[0] ?? null };
   }
 
   async function claim(

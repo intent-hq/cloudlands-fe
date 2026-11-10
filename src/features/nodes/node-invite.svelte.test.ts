@@ -81,6 +81,9 @@ describe('paste row with a node link', () => {
     ['invite-update-required', 'Lab node needs an update', false],
     ['invites-unsupported', "Build box can't add machines from intent://node links yet.", true],
     ['invite-labs-off', 'To add Lab node, turn on Remote agents in Settings → Labs.', false],
+    ['invite-self', "This link is for Build box's own machine", false],
+    ['invite-certificate', "Lab node's certificate doesn't match this link.", false],
+    ['invite-unreachable-spent', 'this link may be used up', false],
   ] as const)('%s shows its error inline', (state, text, retry) => {
     seed(state);
     const view = render(PairLinkPaste);

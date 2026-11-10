@@ -3,7 +3,7 @@ import { NODE_INVITE_CLAIM_METHOD } from '$shared/types/node-invite';
 import { createNodeInvites } from '../node-invites';
 
 const SECRET = 'invite-secret-value';
-const LINK = `intent://node?v=1&host=192.0.2.20,10.0.0.4&port=7443&fp=AA%3ABB&tc=tc-node.example&invite=inv_1&secret=${SECRET}&name=GPU%20rig`;
+const LINK = `intent://node?v=1&host=192.0.2.20,10.0.0.4&port=7443&fp=AA%3ABB&tc=tc-node.example&invite=inv_1&secret=${SECRET}`;
 
 const MACHINE = {
   id: 'd-gpu',
@@ -31,17 +31,15 @@ beforeEach(() => {
 });
 
 describe('inspecting a node link', () => {
-  it('holds a complete link and names it from the link', () => {
+  it('holds a complete link, named after its first host', () => {
     const result = invites().inspect(LINK);
-    expect(result).toEqual({ ok: true, pendingId: expect.any(String), label: 'GPU rig' });
+    expect(result).toEqual({ ok: true, pendingId: expect.any(String), label: '192.0.2.20' });
     expect(JSON.stringify(result)).not.toContain(SECRET);
   });
 
-  it('names an unnamed link after its first route', () => {
-    const unnamed = LINK.replace('&name=GPU%20rig', '');
-    expect(invites().inspect(unnamed)).toMatchObject({ ok: true, label: '192.0.2.20' });
-    const tunnelOnly = unnamed.replace('host=192.0.2.20,10.0.0.4', 'host=');
-    expect(invites().inspect(tunnelOnly)).toMatchObject({ ok: true, label: 'tc-node.example' });
+  it('a tunnel-only link has no name for the renderer to show', () => {
+    const tunnelOnly = LINK.replace('host=192.0.2.20,10.0.0.4', 'host=');
+    expect(invites().inspect(tunnelOnly)).toMatchObject({ ok: true, label: null });
   });
 
   it('rejects text that is not a node link', () => {
@@ -58,12 +56,13 @@ describe('inspecting a node link', () => {
     ['fingerprint', LINK.replace('&fp=AA%3ABB', '')],
     ['invite id', LINK.replace('&invite=inv_1', '')],
     ['secret', LINK.replace(`&secret=${SECRET}`, '')],
+    ['version', LINK.replace('v=1&', '')],
   ])('rejects a link without its %s', (_part, link) => {
     expect(invites().inspect(link)).toEqual({ ok: false, code: 'incomplete' });
   });
 
-  it('refuses a newer link format', () => {
-    expect(invites().inspect(LINK.replace('v=1', 'v=2'))).toEqual({
+  it.each(['v=2', 'v=0', 'v=one'])('refuses another link version (%s)', (version) => {
+    expect(invites().inspect(LINK.replace('v=1', version))).toEqual({
       ok: false,
       code: 'link-version',
     });
@@ -71,7 +70,7 @@ describe('inspecting a node link', () => {
 });
 
 describe('claiming a node invite', () => {
-  it('sends the invite to the current backend and returns the saved machine', async () => {
+  it('hands the link to the current backend and returns the saved machine', async () => {
     const links = invites();
     const held = links.inspect(LINK);
     if (!held.ok) throw new Error('not held');
@@ -81,24 +80,9 @@ describe('claiming a node invite', () => {
     });
     expect(request).toHaveBeenCalledWith(
       NODE_INVITE_CLAIM_METHOD,
-      {
-        inviteId: 'inv_1',
-        secret: SECRET,
-        hosts: ['192.0.2.20', '10.0.0.4'],
-        port: 7443,
-        tcAddress: 'tc-node.example',
-        fingerprint: 'AA:BB',
-      },
+      { uri: LINK },
       { timeoutMs: expect.any(Number) },
     );
-  });
-
-  it('omits the tunnel when the link has none', async () => {
-    const links = invites();
-    const held = links.inspect(LINK.replace('&tc=tc-node.example', ''));
-    if (!held.ok) throw new Error('not held');
-    await links.claim(held.pendingId, client());
-    expect(request.mock.calls[0][1]).not.toHaveProperty('tcAddress');
   });
 
   it('claims each held link once', async () => {
@@ -136,11 +120,12 @@ describe('claiming a node invite', () => {
   });
 
   it.each([
-    ['invite-invalid', rpcError(-32602, { code: 'invite-invalid' })],
-    ['invite-expired', rpcError(-32602, { code: 'invite-expired' })],
-    ['invite-used', rpcError(-32602, { code: 'invite-used' })],
-    ['invite-revoked', rpcError(-32602, { code: 'invite-revoked' })],
-    ['machine-update-required', rpcError(-32603, { code: 'machine-update-required' })],
+    ['invalid-node-link', rpcError(-32602, { code: 'invalid-node-link' })],
+    ['node-invite-invalid', rpcError(-32602, { code: 'node-invite-invalid' })],
+    ['node-invite-expired', rpcError(-32602, { code: 'node-invite-expired', expiresAt: 'x' })],
+    ['node-invite-used', rpcError(-32602, { code: 'node-invite-used' })],
+    ['node-invite-revoked', rpcError(-32602, { code: 'node-invite-revoked' })],
+    ['node-invite-self', rpcError(-32602, { code: 'node-invite-self' })],
     ['backend-unsupported', rpcError(-32601)],
     ['not-owner', rpcError(-32003)],
     ['failed', rpcError(-32603, { code: 'something-new' })],
@@ -153,24 +138,55 @@ describe('claiming a node invite', () => {
     await expect(links.claim(held.pendingId, client())).resolves.toEqual({ ok: false, code });
   });
 
-  it('lists the routes the backend tried when the machine is unreachable', async () => {
-    request.mockRejectedValueOnce(
-      rpcError(-32603, {
+  async function failWith(data: Record<string, unknown>, rpcCode = -32603) {
+    request.mockRejectedValueOnce(rpcError(rpcCode, data));
+    const links = invites();
+    const held = links.inspect(LINK);
+    if (!held.ok) throw new Error('not held');
+    return links.claim(held.pendingId, client());
+  }
+
+  it('lists the routes the backend tried, and whether the invite was spent', async () => {
+    await expect(
+      failWith({
         code: 'machine-unreachable',
+        inviteSpent: false,
         attempts: [
           { route: '192.0.2.20:7443', error: 'node-link-connect-timeout' },
           { route: 'tailcat', error: 'node-link-certificate-mismatch' },
           { bogus: true },
         ],
       }),
-    );
-    const links = invites();
-    const held = links.inspect(LINK);
-    if (!held.ok) throw new Error('not held');
-    await expect(links.claim(held.pendingId, client())).resolves.toEqual({
+    ).resolves.toEqual({
       ok: false,
       code: 'machine-unreachable',
+      inviteSpent: false,
       routes: ['192.0.2.20:7443', 'tailcat'],
+    });
+  });
+
+  it('reports a certificate mismatch when every route failed the pin', async () => {
+    await expect(
+      failWith({
+        code: 'machine-unreachable',
+        inviteSpent: false,
+        attempts: [
+          { route: '192.0.2.20:7443', error: 'node-link-certificate-mismatch' },
+          { route: 'tailcat', error: 'node-link-certificate-mismatch' },
+        ],
+      }),
+    ).resolves.toEqual({ ok: false, code: 'certificate-mismatch', inviteSpent: false });
+  });
+
+  it.each([
+    ['machine-unreachable', true],
+    ['machine-update-required', true],
+    ['machine-update-required', false],
+  ] as const)('keeps inviteSpent on %s (spent: %s)', async (code, inviteSpent) => {
+    await expect(failWith({ code, inviteSpent })).resolves.toEqual({
+      ok: false,
+      code,
+      inviteSpent,
     });
   });
 

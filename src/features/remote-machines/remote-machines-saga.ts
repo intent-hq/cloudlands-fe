@@ -132,7 +132,7 @@ async function readSupported(): Promise<{
         capabilities?: {
           remoteMachines?: unknown;
           remoteInitialAgent?: unknown;
-          remoteMachineInvites?: unknown;
+          remoteMachineClaim?: unknown;
         } | null;
       };
     } | null;
@@ -142,7 +142,7 @@ async function readSupported(): Promise<{
     return {
       supported,
       initialAgentPlacement: supported && capabilities.remoteInitialAgent === 1,
-      claimInvites: supported && capabilities.remoteMachineInvites === 1,
+      claimInvites: supported && capabilities.remoteMachineClaim === 1,
     };
   } catch {
     return null;

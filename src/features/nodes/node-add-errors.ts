@@ -27,18 +27,26 @@ export function nodeAddErrorMessage(error: NodeAddError, backend: string): strin
       return m.nodes_error_backendUnsupported({ node, backend });
     case 'link-version':
       return m.nodes_error_linkVersion();
-    case 'invite-invalid':
+    case 'node-invite-invalid':
       return m.nodes_error_inviteInvalid({ node });
-    case 'invite-expired':
+    case 'node-invite-expired':
       return m.nodes_error_inviteExpired({ node });
-    case 'invite-used':
+    case 'node-invite-used':
       return m.nodes_error_inviteUsed({ node });
-    case 'invite-revoked':
+    case 'node-invite-revoked':
       return m.nodes_error_inviteRevoked({ node });
+    case 'node-invite-self':
+      return m.nodes_error_inviteSelf({ backend });
+    case 'certificate-mismatch':
+      return m.nodes_error_inviteCertificate({ node });
     case 'machine-unreachable':
-      return m.nodes_error_inviteUnreachable({ node, backend });
+      return error.inviteSpent
+        ? m.nodes_error_inviteUnreachableSpent({ node, backend })
+        : m.nodes_error_inviteUnreachable({ node, backend });
     case 'machine-update-required':
-      return m.nodes_error_inviteUpdateRequired({ node, backend });
+      return error.inviteSpent
+        ? m.nodes_error_inviteUpdateRequiredSpent({ node, backend })
+        : m.nodes_error_inviteUpdateRequired({ node, backend });
     case 'invites-unsupported':
       return m.nodes_error_invitesUnsupported({ backend });
     case 'invite-not-owner':
@@ -52,7 +60,7 @@ export function nodeAddErrorMessage(error: NodeAddError, backend: string): strin
 export function nodeAddErrorRetryable(error: NodeAddError | null): boolean {
   return (
     error?.code === 'unreachable' ||
-    error?.code === 'machine-unreachable' ||
+    (error?.code === 'machine-unreachable' && !error.inviteSpent) ||
     error?.code === 'failed' ||
     error?.code === 'backend-unsupported' ||
     error?.code === 'invites-unsupported'

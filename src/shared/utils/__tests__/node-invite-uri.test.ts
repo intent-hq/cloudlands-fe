@@ -8,7 +8,7 @@ import {
 } from '../node-invite-uri';
 
 const SECRET = 'invite-secret-value';
-const LINK = `intent://node?v=1&host=192.0.2.20,10.0.0.4&port=7443&fp=AA%3ABB&tc=${TC_ADDRESS}&invite=inv_1&secret=${SECRET}&name=GPU%20rig`;
+const LINK = `intent://node?v=1&host=192.0.2.20,10.0.0.4&port=7443&fp=AA%3ABB&tc=${TC_ADDRESS}&invite=inv_1&secret=${SECRET}`;
 
 describe('isNodeInviteUri', () => {
   it('recognizes node links, whatever the case and surrounding space', () => {
@@ -41,7 +41,6 @@ describe('parseNodeInviteUri', () => {
       tcAddress: TC_ADDRESS,
       inviteId: 'inv_1',
       secret: SECRET,
-      name: 'GPU rig',
     });
   });
 
@@ -54,7 +53,6 @@ describe('parseNodeInviteUri', () => {
       tcAddress: null,
       inviteId: null,
       secret: null,
-      name: null,
     });
   });
 

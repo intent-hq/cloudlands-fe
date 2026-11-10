@@ -45,6 +45,9 @@ type InvitePreviewState =
   | 'invite-revoked'
   | 'invite-invalid'
   | 'invite-unreachable'
+  | 'invite-unreachable-spent'
+  | 'invite-certificate'
+  | 'invite-self'
   | 'invite-update-required'
   | 'invite-not-owner'
   | 'invites-unsupported'
@@ -52,7 +55,7 @@ type InvitePreviewState =
   | 'link-version';
 
 export const NODE_INVITE_SECRET = 'invite-secret-value';
-export const NODE_INVITE_LINK = `intent://node?v=1&host=192.0.2.40&port=7443&fp=AA%3A40&tc=tc-lab-node&invite=inv_7&secret=${NODE_INVITE_SECRET}&name=Lab%20node`;
+export const NODE_INVITE_LINK = `intent://node?v=1&host=192.0.2.40&port=7443&fp=AA%3A40&tc=tc-lab-node&invite=inv_7&secret=${NODE_INVITE_SECRET}`;
 
 const isInviteState = (state: NodesPreviewState): state is InvitePreviewState =>
   state.startsWith('invite') || state === 'link-version';
@@ -226,14 +229,22 @@ export function setupNodesFixture(state: NodesPreviewState) {
     'wrong-token': { code: 'rejected' },
     'backend-unsupported': { code: 'backend-unsupported', node: 'GPU rig' },
     'labs-off': { code: 'labs-off', node: 'GPU rig' },
-    'invite-used': { code: 'invite-used', node: 'Lab node' },
-    'invite-expired': { code: 'invite-expired', node: 'Lab node' },
-    'invite-revoked': { code: 'invite-revoked', node: 'Lab node' },
-    'invite-invalid': { code: 'invite-invalid', node: 'Lab node' },
+    'invite-used': { code: 'node-invite-used', node: 'Lab node' },
+    'invite-expired': { code: 'node-invite-expired', node: 'Lab node' },
+    'invite-revoked': { code: 'node-invite-revoked', node: 'Lab node' },
+    'invite-invalid': { code: 'node-invite-invalid', node: 'Lab node' },
+    'invite-self': { code: 'node-invite-self', node: 'Lab node' },
+    'invite-certificate': { code: 'certificate-mismatch', node: 'Lab node' },
     'invite-unreachable': {
       code: 'machine-unreachable',
       node: 'Lab node',
       routes: ['192.0.2.40:7443', 'tc-lab-node'],
+    },
+    'invite-unreachable-spent': {
+      code: 'machine-unreachable',
+      node: 'Lab node',
+      inviteSpent: true,
+      routes: ['192.0.2.40:7443'],
     },
     'invite-update-required': { code: 'machine-update-required', node: 'Lab node' },
     'invite-not-owner': { code: 'invite-not-owner', node: 'Lab node' },

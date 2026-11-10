@@ -271,7 +271,7 @@ async function routeNodeInvite(url: string): Promise<void> {
   logger.info('Node link received; asking in the app window');
   queueDeepLinkForWindow(window, {
     type: 'node-invite',
-    params: { pendingId: held.pendingId, label: held.label },
+    params: { pendingId: held.pendingId, label: held.label ?? '' },
   });
   bringToFront(window);
 }

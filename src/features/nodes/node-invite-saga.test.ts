@@ -40,7 +40,7 @@ import {
 import { stashPastedLink } from './pasted-link';
 
 const SECRET = 'invite-secret-value';
-const LINK = `intent://node?v=1&host=192.0.2.20&port=7443&fp=AA%3A20&invite=inv_1&secret=${SECRET}&name=GPU%20rig`;
+const LINK = `intent://node?v=1&host=192.0.2.20&port=7443&fp=AA%3A20&invite=inv_1&secret=${SECRET}`;
 const CHANNELS = IPC_CHANNELS.REMOTE_MACHINES;
 
 const MACHINE: RemoteMachine = {
@@ -217,11 +217,14 @@ describe('paste an intent://node link', () => {
   );
 
   it.each([
-    ['invite-invalid', 'invite-invalid'],
-    ['invite-expired', 'invite-expired'],
-    ['invite-used', 'invite-used'],
-    ['invite-revoked', 'invite-revoked'],
+    ['node-invite-invalid', 'node-invite-invalid'],
+    ['node-invite-expired', 'node-invite-expired'],
+    ['node-invite-used', 'node-invite-used'],
+    ['node-invite-revoked', 'node-invite-revoked'],
+    ['node-invite-self', 'node-invite-self'],
+    ['certificate-mismatch', 'certificate-mismatch'],
     ['machine-update-required', 'machine-update-required'],
+    ['invalid-node-link', 'incomplete'],
     ['not-owner', 'invite-not-owner'],
     ['backend-unsupported', 'invites-unsupported'],
     ['expired', 'expired'],
@@ -247,6 +250,23 @@ describe('paste an intent://node link', () => {
       CHANNELS.INVITE_CLAIM,
       { pendingId: 'inv-p2' },
     ]);
+  });
+
+  it('keeps whether the claim may have used the invite', async () => {
+    claimReply = { ok: false, code: 'machine-unreachable', inviteSpent: true, routes: ['r'] };
+    submit(LINK);
+    await vi.waitFor(() => expect(store.state.nodes.paste.error?.inviteSpent).toBe(true));
+    expect(store.state.nodes.paste.error?.code).toBe('machine-unreachable');
+  });
+
+  it('names a tunnel-only link "this node"', async () => {
+    inspectReply = { ok: true, pendingId: 'inv-p1', label: null };
+    submit(LINK);
+    await vi.waitFor(() =>
+      expect(ui.confirm).toHaveBeenCalledWith(
+        expect.objectContaining({ title: 'Make this node available to Build box?' }),
+      ),
+    );
   });
 
   it('a failed bridge call shows a failure instead of hanging', async () => {
@@ -344,7 +364,7 @@ describe('a node link opened from outside the app', () => {
   });
 
   it('shows a claim failure as an error toast', async () => {
-    claimReply = { ok: false, code: 'invite-used' };
+    claimReply = { ok: false, code: 'node-invite-used' };
     dispatch(nodeInviteReceived({ pendingId: 'inv-os', label: 'GPU rig' }));
     await vi.waitFor(() => expect(ui.error).toHaveBeenCalled());
     expect(ui.error.mock.calls[0][0]).toContain('already used');
