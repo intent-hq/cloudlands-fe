@@ -30,7 +30,7 @@ const hubTarget = z
   .object({
     workspaceId: z.string().min(1),
     agentId: z.string().min(1),
-    requestId: z.string().uuid(),
+    requestId: z.guid(),
   })
   .strict();
 const hubMerge = hubTarget.extend({ checkpointId: z.string().min(1) });

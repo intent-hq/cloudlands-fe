@@ -292,7 +292,7 @@ function parseMarkdownToPrimitives(
           const result = NotePrimitiveSchema.safeParse(parsed);
           if (!result.success) {
             logger.error('Invalid primitive schema', {
-              errors: result.error.errors,
+              errors: result.error.issues,
               primitiveType: parsed.type,
               primitiveId: parsed.id,
               content: jsonContent,
@@ -526,7 +526,7 @@ function validatePrimitive(primitive: unknown): NotePrimitive | null {
   }
 
   logger.warn('Invalid primitive', {
-    errors: result.error.errors,
+    errors: result.error.issues,
     primitive,
   });
   return null;

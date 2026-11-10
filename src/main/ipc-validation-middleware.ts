@@ -47,7 +47,7 @@ function summarizeImageBlocks(value: unknown) {
 class ValidationError extends Error {
   constructor(
     public channel: string,
-    public errors: z.ZodError['errors'],
+    public errors: z.ZodError['issues'],
     public input: unknown,
   ) {
     // i18n-ignore (developer diagnostic error)
@@ -85,13 +85,13 @@ export function createValidatedHandler<T>(
     } catch (error) {
       if (error instanceof z.ZodError) {
         logger.error('IPC validation failed', {
-          errors: error.errors,
+          errors: error.issues,
         });
 
         // Track validation error
         ipcDebugTracker.trackValidationError(channelName, error, data);
 
-        throw new ValidationError(channelName, error.errors, data);
+        throw new ValidationError(channelName, error.issues, data);
       }
       throw error;
     }
@@ -152,7 +152,7 @@ export function createSafeValidatedHandler<T>(
       if (error instanceof z.ZodError) {
         logger.warn('IPC validation failed', {
           channel: channelName,
-          errors: error.errors,
+          errors: error.issues,
         });
 
         // Track validation error
@@ -164,7 +164,7 @@ export function createSafeValidatedHandler<T>(
             code: 'VALIDATION_ERROR',
             // i18n-ignore (developer diagnostic error; schema messages are not localized)
             message: 'Invalid request parameters',
-            details: error.errors,
+            details: error.issues,
           },
         };
       }
