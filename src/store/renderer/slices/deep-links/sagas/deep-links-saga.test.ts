@@ -312,7 +312,7 @@ describe('pending queue draining', () => {
     await expect(runDrain()).resolves.toBe(0);
 
     expect(mocks.invoke).toHaveBeenNthCalledWith(1, 'deep-link:consume-pending', {
-      types: ['settings', 'node-link'],
+      types: ['settings', 'node-link', 'node-invite'],
     });
     expect(mocks.invoke).toHaveBeenNthCalledWith(2, 'deep-link:consume-pending', {});
     expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
@@ -330,7 +330,7 @@ describe('pending queue draining', () => {
 
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
     expect(mocks.invoke).toHaveBeenCalledWith('deep-link:consume-pending', {
-      types: ['settings', 'node-link'],
+      types: ['settings', 'node-link', 'node-invite'],
     });
     expect(mocks.notifySuccess).toHaveBeenCalledTimes(1);
   });
