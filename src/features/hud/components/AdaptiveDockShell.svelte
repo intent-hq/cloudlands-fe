@@ -591,6 +591,7 @@
   );
   function enter(): void {
     if (disposed || placement.captureHidden || dismissedUntilLeave) return;
+    pointerRegion.recordEnter?.();
     hoverComposerFocus.enter();
     pointerInside = true;
     clearTimeout(closeTimer);

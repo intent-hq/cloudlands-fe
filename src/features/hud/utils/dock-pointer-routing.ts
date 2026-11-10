@@ -15,6 +15,8 @@ interface DockPointerBridge {
 
 export interface DockPointerRegionController {
   activate(regions: DockPointerRect[], revision?: number): void;
+  /** Preserve a real surface entry that can precede main's next cursor poll. */
+  recordEnter?(): void;
   deactivate(regions?: DockPointerRect[], revision?: number): void;
   destroy(): void;
 }
@@ -79,7 +81,7 @@ export function createDockPointerRegionController(
       }
     } else {
       nativeOutside = true;
-      // Retain an admitted entry through capture, including when DOM hover had
+      // Retain a native or real surface entry through capture, even when DOM hover had
       // already reflected it. Its outside resync must settle Shell dismissal.
       // An initial outside with no entry must not dismiss the first-run intro.
       if (!nativeInside && !hovered) return;
@@ -144,6 +146,9 @@ export function createDockPointerRegionController(
 
   return {
     activate: (regions, revision) => signal(true, regions, revision),
+    recordEnter: () => {
+      nativeInside = true;
+    },
     deactivate: (regions = [], revision) => signal(false, regions, revision),
     destroy: () => {
       if (destroyed) return;
