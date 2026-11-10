@@ -54,10 +54,6 @@ vi.mock('electron', () => ({
   shell: {},
 }));
 
-vi.mock('../../../../main/window-backend', () => ({
-  getBackendIdForWindow: (window: { backendId?: string }) => window.backendId ?? 'local',
-}));
-
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: vi.fn(() => false),
 }));

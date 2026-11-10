@@ -119,6 +119,10 @@ vi.mock('../../features/backend/main/transfer-connections', async (importOrigina
 
 vi.mock('../window-backend', () => ({
   getBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
+  // Renderer ids of plain windows are their window ids; no Unified views here.
+  backendIdForRendererId: (id: number) =>
+    windowBackends.has(id) ? (windowBackends.get(id) ?? 'local') : null,
+  getViewBinding: () => null,
 }));
 
 import {

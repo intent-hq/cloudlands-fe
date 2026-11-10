@@ -23,7 +23,15 @@
 import { app, BrowserWindow, Notification, screen } from 'electron';
 import { claimActivationFocus } from '../../../main/activation-focus-claim';
 import { isHudWindow } from '../../../main/hud-window';
-import { getBackendIdForWindow } from '../../../main/window-backend';
+import {
+  backendIdForRendererId,
+  contentsForRendererId,
+  focusRendererIdForWindow,
+  getBackendIdForWindow,
+  getRendererTargets,
+  hostWindowForRendererId,
+  isUnifiedShellWindow,
+} from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
@@ -160,29 +168,71 @@ interface NotificationContent {
  * Without `backendId` (test notifications) any window qualifies. The HUD pop-out is never a target (shared `isHudWindow`
  * helper). Returns undefined when no window qualifies.
  */
+/**
+ * A notification destination: the window to raise and the renderer to message.
+ * They differ only for a Unified window machine view, whose host window is raised
+ * while the view (bound to the workspace's machine) receives the payload.
+ */
+interface RendererTarget {
+  id: number;
+  window: BrowserWindow;
+  contents: Electron.WebContents;
+}
+
+function targetForRendererId(id: number): RendererTarget | null {
+  if (id >= 0) {
+    const window = BrowserWindow.fromId(id);
+    return window && !window.isDestroyed() ? { id, window, contents: window.webContents } : null;
+  }
+  const window = hostWindowForRendererId(id);
+  const contents = contentsForRendererId(id);
+  return window && contents ? { id, window, contents } : null;
+}
+
+/** The focused window's renderer (for the Unified window, the machine view it shows). */
+function focusedRendererTarget(): RendererTarget | null {
+  const focused = BrowserWindow.getFocusedWindow();
+  if (!focused || focused.isDestroyed()) return null;
+  if (!isUnifiedShellWindow(focused))
+    return { id: focused.id, window: focused, contents: focused.webContents };
+  const id = focusRendererIdForWindow(focused);
+  return id === null ? null : targetForRendererId(id);
+}
+
+/** Every renderer that can show a workspace; the Unified shell itself is never one. */
+function allRendererTargets(): RendererTarget[] {
+  return getRendererTargets()
+    .filter(({ window, contents }) => !(isUnifiedShellWindow(window) && window.webContents === contents))
+    .map(({ id, window, contents }) => ({ id, window, contents }));
+}
+
+function targetBackendId(target: RendererTarget): string | null {
+  return target.id >= 0 ? getBackendIdForWindow(target.window) : backendIdForRendererId(target.id);
+}
+
 function pickNotificationClickTarget(
   workspaceId: string | undefined,
   backendId: string | undefined,
-): BrowserWindow | undefined {
-  const usable = (w: BrowserWindow): boolean =>
-    !w.isDestroyed() &&
-    !isHudWindow(w) &&
-    (backendId === undefined || getBackendIdForWindow(w) === backendId);
+): RendererTarget | undefined {
+  const usable = (t: RendererTarget): boolean =>
+    !t.window.isDestroyed() &&
+    !isHudWindow(t.window) &&
+    (backendId === undefined || targetBackendId(t) === backendId);
 
   if (workspaceId) {
-    const workspaceWindows = getWindowIdsForWorkspace(workspaceId, backendId ?? ANY_HOST)
-      .map((id) => BrowserWindow.fromId(id))
-      .filter((w): w is BrowserWindow => w !== null && usable(w));
-    const viewing = workspaceWindows.find(
-      (w) => getViewedWorkspaceIdForWindow(w.id) === workspaceId,
+    const workspaceTargets = getWindowIdsForWorkspace(workspaceId, backendId ?? ANY_HOST)
+      .map((id) => targetForRendererId(id))
+      .filter((t): t is RendererTarget => t !== null && usable(t));
+    const viewing = workspaceTargets.find(
+      (t) => getViewedWorkspaceIdForWindow(t.id) === workspaceId,
     );
-    const holding = viewing ?? workspaceWindows[0];
+    const holding = viewing ?? workspaceTargets[0];
     if (holding) return holding;
   }
 
-  const focused = BrowserWindow.getFocusedWindow();
+  const focused = focusedRendererTarget();
   if (focused && usable(focused)) return focused;
-  return BrowserWindow.getAllWindows().find(usable);
+  return allRendererTargets().find(usable);
 }
 
 /**
@@ -649,10 +699,10 @@ export class NotificationService {
       // The focused window must be on the emitting host: workspace ids are
       // only unique per host (the Assistant id is shared), so a local window
       // viewing the local Assistant is not viewing a remote one.
-      const focusedWindow = BrowserWindow.getFocusedWindow();
+      const focusedTarget = focusedRendererTarget();
       const focusedViewingWorkspace =
-        focusedWindow !== null &&
-        getBackendIdForWindow(focusedWindow) === backendId &&
+        focusedTarget !== null &&
+        targetBackendId(focusedTarget) === backendId &&
         getFocusedWindowWorkspaceId() === workspaceId;
       if (focusedViewingWorkspace) {
         logger.debug('Focused window is viewing the workspace, sound only', {
@@ -676,9 +726,9 @@ export class NotificationService {
       // host cannot open this workspace. Otherwise the OS banner is shown
       // (visible even if, on macOS while frontmost, its click may not fire).
       const appFrontmostOnHost =
-        focusedWindow !== null &&
-        !isHudWindow(focusedWindow) &&
-        getBackendIdForWindow(focusedWindow) === backendId;
+        focusedTarget !== null &&
+        !isHudWindow(focusedTarget.window) &&
+        targetBackendId(focusedTarget) === backendId;
       if (appFrontmostOnHost) {
         logger.debug('App is frontmost, delivering in-app toast instead of OS banner', {
           workspaceId,
@@ -692,7 +742,7 @@ export class NotificationService {
                 ...(event.data.agentId ? { agentId: event.data.agentId } : {}),
               }
             : { workspaceId };
-        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, focusedWindow);
+        this.sendShowEvent(content, backendId, workspaceId, navigateTarget, focusedTarget);
         return;
       }
 
@@ -825,7 +875,7 @@ export class NotificationService {
     scope: WindowHostScope,
     workspaceId?: string,
     navigateTarget?: NotificationNavigateTarget,
-    toastWindow?: BrowserWindow,
+    toastTarget?: RendererTarget,
   ): void {
     const payload = {
       title: content.title,
@@ -834,17 +884,15 @@ export class NotificationService {
       ...(content.structured ? { structured: content.structured } : {}),
       ...(navigateTarget ? { navigateTarget } : {}),
     };
-    if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
+    if (navigateTarget && toastTarget && !toastTarget.window.isDestroyed()) {
       const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
-      if (!toastWindow.webContents.isDestroyed()) {
-        toastWindow.webContents.send('notification:show', payload);
+      if (!toastTarget.contents.isDestroyed()) {
+        toastTarget.contents.send('notification:show', payload);
       }
       for (const id of workspaceId ? getWindowIdsForWorkspace(workspaceId, scope) : []) {
-        if (id === toastWindow.id) continue;
-        const window = BrowserWindow.fromId(id);
-        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-          window.webContents.send('notification:show', soundOnlyPayload);
-        }
+        if (id === toastTarget.id) continue;
+        const contents = contentsForRendererId(id);
+        if (contents) contents.send('notification:show', soundOnlyPayload);
       }
       return;
     }
@@ -852,30 +900,24 @@ export class NotificationService {
       sendToWorkspaceWindows(workspaceId, 'notification:show', payload, scope);
       return;
     }
-    const send = (window: BrowserWindow | null | undefined, data: unknown): void => {
-      if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send('notification:show', data);
+    const send = (target: RendererTarget | null | undefined, data: unknown): void => {
+      if (target && !target.window.isDestroyed() && !target.contents.isDestroyed()) {
+        target.contents.send('notification:show', data);
       }
     };
-    const onHost = (w: BrowserWindow): boolean =>
-      !w.isDestroyed() &&
-      !isHudWindow(w) &&
-      (scope === ANY_HOST || getBackendIdForWindow(w) === scope);
-    const focused = BrowserWindow.getFocusedWindow();
-    const hostWindow =
-      focused && onHost(focused) ? focused : BrowserWindow.getAllWindows().find(onHost);
-    if (hostWindow) {
-      send(hostWindow, payload);
+    const usable = (t: RendererTarget): boolean => !t.window.isDestroyed() && !isHudWindow(t.window);
+    const onHost = (t: RendererTarget): boolean =>
+      usable(t) && (scope === ANY_HOST || targetBackendId(t) === scope);
+    const focused = focusedRendererTarget();
+    const hostTarget = focused && onHost(focused) ? focused : allRendererTargets().find(onHost);
+    if (hostTarget) {
+      send(hostTarget, payload);
       return;
     }
     // No window is connected to the emitting host: keep the sound, drop the
     // click target (see the doc comment).
     const { navigateTarget: _dropped, ...soundOnly } = payload;
-    const usable = (w: BrowserWindow): boolean => !w.isDestroyed() && !isHudWindow(w);
-    send(
-      focused && usable(focused) ? focused : BrowserWindow.getAllWindows().find(usable),
-      soundOnly,
-    );
+    send(focused && usable(focused) ? focused : allRendererTargets().find(usable), soundOnly);
   }
 
   /**
@@ -970,13 +1012,13 @@ export class NotificationService {
 
         // Activating the app also emits `activate`, whose handler would
         // otherwise raise the main window over this target.
-        claimActivationFocus(target);
+        claimActivationFocus(target.window);
         activateAppOnMac();
-        if (target.isMinimized()) {
-          target.restore();
+        if (target.window.isMinimized()) {
+          target.window.restore();
         }
-        target.show();
-        target.focus();
+        target.window.show();
+        target.window.focus();
         if (!hostLive) {
           logger.info('Notification click for a closed host; focused a window without navigating', {
             workspaceId,
@@ -984,7 +1026,7 @@ export class NotificationService {
           });
           return;
         }
-        if (workspaceId && !target.webContents.isDestroyed()) {
+        if (workspaceId && !target.contents.isDestroyed()) {
           // Chief completions route to the sidebar Assistant panel (the
           // chief workspace page is hidden); everything else keeps the
           // bare `{ workspaceId }` payload.
@@ -992,7 +1034,7 @@ export class NotificationService {
             workspaceId === CHIEF_WORKSPACE_ID
               ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
               : { workspaceId };
-          target.webContents.send('notification:navigate', payload);
+          target.contents.send('notification:navigate', payload);
         }
       });
 

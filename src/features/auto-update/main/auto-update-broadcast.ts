@@ -7,7 +7,7 @@
  * pop-out is explicitly excluded: it must never receive update toasts.
  */
 
-import { BrowserWindow } from 'electron';
+import { getRendererTargets } from '../../../main/window-backend';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 
 /**
@@ -18,9 +18,9 @@ export function broadcastToRenderers(channel: string, ...args: unknown[]): void 
   // isHudWindow() is URL-based and misses a newly registered HUD that is
   // still on about:blank, so also exclude tracked HUD windows —
   // isTrackedHudWindow() covers them even mid-navigation.
-  for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
+  // Unified window machine views receive it too (their host is never a HUD).
+  for (const { window, contents } of getRendererTargets()) {
     if (isTrackedHudWindow(window) || isHudWindow(window)) continue;
-    window.webContents.send(channel, ...args);
+    contents.send(channel, ...args);
   }
 }

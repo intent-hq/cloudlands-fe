@@ -11,9 +11,10 @@
  * download destination.
  */
 
+import { getRendererTargets } from '../../../main/window-backend';
 import { createWriteStream, promises as fs } from 'node:fs';
 import type { WriteStream } from 'node:fs';
-import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
+import { dialog, ipcMain, webContents } from 'electron';
 import { m } from '$shared/paraglide/messages.js';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
@@ -45,13 +46,12 @@ let handlersRegistered = false;
 let relay: WorkspaceTransferRelay | null = null;
 
 function broadcastProgress(event: TransferProgressEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
+  for (const { contents, id } of getRendererTargets()) {
     try {
-      win.webContents.send(TRANSFER.PROGRESS, event);
+      contents.send(TRANSFER.PROGRESS, event);
     } catch (error) {
       logger.warn('Failed to broadcast transfer progress', {
-        windowId: win.id,
+        windowId: id,
         error: error instanceof Error ? error.message : String(error),
       });
     }

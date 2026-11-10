@@ -52,6 +52,8 @@ import {
 import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
+  hasLiveViewForBackend,
+  isUnifiedShellWindow,
   stampWindowWithBackend,
 } from './window-backend';
 
@@ -410,10 +412,33 @@ export function setOnLastWindowClosedForBackend(
   onLastWindowClosedForBackend = handler;
 }
 
+/**
+ * A Unified window machine view on `backendId` closed. Dispose the pooled client
+ * when nothing else holds it: no normal window, dock or other view. Local is exempt.
+ */
+export function releaseBackendViewHolder(backendId: string): void {
+  if (backendId === LOCAL_CONNECTION_ID || isQuitTeardownInProgress) return;
+  if (hasLiveViewForBackend(backendId)) return;
+  const holders = getAppWindows().filter(
+    (window) =>
+      !window.isDestroyed() &&
+      !isUnifiedShellWindow(window) &&
+      getBackendIdForWindow(window) === backendId,
+  );
+  if (holders.length > 0) return;
+  try {
+    onLastWindowClosedForBackend?.(backendId);
+  } catch (error) {
+    logger.warn('Failed to release backend after its last Unified view closed', error);
+  }
+}
+
 function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
   return getAppWindows()
     .filter((w: BrowserWindowType) => {
       if (w.isDestroyed() || isTransientCaptureWindow(w)) return false;
+      // The Unified window keeps its own restore record, never a machine session.
+      if (isUnifiedShellWindow(w)) return false;
       if (getBackendIdForWindow(w) !== backendId) return false;
       const url = w.webContents.getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
@@ -475,7 +500,8 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       !isQuitTeardownInProgress &&
       this &&
       typeof this.isDestroyed === 'function' &&
-      !isTransientCaptureWindow(this)
+      !isTransientCaptureWindow(this) &&
+      !isUnifiedShellWindow(this)
     ) {
       const closingBackendId = getBackendIdForWindow(this);
       const isLastForBackend =
@@ -504,7 +530,12 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
         // client so no socket or reconnect timer keeps dialing a daemon with
         // no windows left ("Open" reconnects on demand). Local is exempt —
         // the sidecar management must stay alive.
-        if (closingBackendId !== LOCAL_CONNECTION_ID && !hasSurvivingDockForBackend) {
+        // A Unified window machine view on this backend is a holder too.
+        if (
+          closingBackendId !== LOCAL_CONNECTION_ID &&
+          !hasSurvivingDockForBackend &&
+          !hasLiveViewForBackend(closingBackendId)
+        ) {
           try {
             onLastWindowClosedForBackend?.(closingBackendId);
           } catch (err) {

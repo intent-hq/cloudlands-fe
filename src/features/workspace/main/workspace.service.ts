@@ -5,8 +5,8 @@
  * Uses repository pattern for data access and event bus for notifications.
  */
 
+import { getRendererTargets } from '../../../main/window-backend';
 import { collectListPages } from '$shared/paged-list';
-import { BrowserWindow } from 'electron';
 import { promises as fs } from 'fs';
 
 import { Logger } from '../../../shared/logger';
@@ -606,14 +606,9 @@ export class WorkspaceService {
     }
 
     try {
-      const windows = BrowserWindow.getAllWindows();
-      for (const win of windows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send('workspace:background-enrichment-complete', {
-            workspaceId,
-            updates,
-          });
-        }
+      // Every renderer, Unified window machine views included.
+      for (const { contents } of getRendererTargets()) {
+        contents.send('workspace:background-enrichment-complete', { workspaceId, updates });
       }
     } catch (broadcastError) {
       logger.debug('Failed to broadcast enrichment update', {

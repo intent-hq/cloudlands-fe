@@ -7,7 +7,8 @@
  * backend transport — the former local AugmentCLI spawn path was retired.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
+import { contentsForRendererId, getRendererTargets } from '../../../main/window-backend';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
 import { Logger } from '$shared/logger';
@@ -32,17 +33,22 @@ let circuitBreakerBroadcastUnsubscribe: (() => void) | null = null;
 function broadcastCircuitBreakerStatus(workspaceId: string, status: CircuitStatus): void {
   // ANY_HOST: the circuit breaker is keyed by workspace id alone and carries
   // no host, so every host's windows holding this id are notified.
-  const targetWindowIds = getWindowIdsForWorkspace(workspaceId, ANY_HOST);
-  const targetSet = targetWindowIds.length > 0 ? new Set(targetWindowIds) : null;
+  const targetIds = getWindowIdsForWorkspace(workspaceId, ANY_HOST);
+  // Renderer ids (windows and Unified window views); none open → every renderer.
+  const targets =
+    targetIds.length > 0
+      ? targetIds
+          .map((id) => contentsForRendererId(id))
+          .filter((contents): contents is Electron.WebContents => contents !== null)
+      : getRendererTargets().map((target) => target.contents);
 
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    if (targetSet && !targetSet.has(win.id)) continue;
+  for (const contents of targets) {
+    if (contents.isDestroyed()) continue;
     try {
-      win.webContents.send('agent:circuit-breaker:status', { workspaceId, status });
+      contents.send('agent:circuit-breaker:status', { workspaceId, status });
     } catch (error) {
       logger.warn('Failed to send circuit-breaker status to window', {
-        windowId: win.id,
+        webContentsId: contents.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }

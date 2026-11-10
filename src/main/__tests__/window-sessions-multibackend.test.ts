@@ -12,6 +12,7 @@
  *     path constructs a `BrowserWindow` before the boot flow releases it.
  */
 
+import { EventEmitter } from 'node:events';
 import * as fs from 'fs';
 import fsAsync from 'fs/promises';
 import * as os from 'os';
@@ -169,10 +170,16 @@ import {
   restoreWindowsForBackend,
   saveAllWindowSessions,
   saveWindowSessions,
+  releaseBackendViewHolder,
   setOnLastWindowClosedForBackend,
   showWorkspaceInBackendWindow,
   type WindowSession,
 } from '../window';
+import {
+  bindViewToBackend,
+  unbindView,
+  UNIFIED_SHELL_BACKEND_ID,
+} from '../window-backend';
 
 function seedLiveWindow(
   url: string,
@@ -1540,6 +1547,69 @@ describe('multi-backend window sessions', () => {
       // The gate stays open: a later creator no longer waits.
       await createWindow('local');
       expect(FakeBrowserWindow.instances).toHaveLength(3);
+    });
+  });
+
+  describe('Unified window', () => {
+    function bindView(host: FakeBrowserWindow, backendId: string) {
+      const view = Object.assign(new EventEmitter(), {
+        id: 900 + FakeBrowserWindow.instances.length,
+        mainFrame: {},
+        isDestroyed: () => false,
+      });
+      bindViewToBackend(view as never, host as never, backendId);
+      return view;
+    }
+
+    it('never saves the Unified window as a machine window session', async () => {
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      seedLiveWindow('app://workspaces/unified', undefined, UNIFIED_SHELL_BACKEND_ID);
+      await saveAllWindowSessions();
+      expect(readMap()).toEqual({ local: [{ route: '/work/local', bounds: local.bounds }] });
+    });
+
+    it("keeps a remote's client while a Unified view still shows that machine", async () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const remote = seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      const unified = seedLiveWindow('app://workspaces/unified', undefined, UNIFIED_SHELL_BACKEND_ID);
+      const view = bindView(unified, 'remote-1');
+
+      captureWindowSessionsSnapshot.call(remote as never);
+      remote.destroy();
+      expect(disposer).not.toHaveBeenCalled();
+
+      // The view closes: now nothing holds the remote, so its client is released.
+      unbindView(view as never);
+      releaseBackendViewHolder('remote-1');
+      expect(disposer).toHaveBeenCalledWith('remote-1');
+      setOnLastWindowClosedForBackend(null);
+    });
+
+    it('keeps the client when a normal window still holds the machine after its view closes', () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      seedLiveWindow('app://workspaces/work/remote', undefined, 'remote-1');
+      const unified = seedLiveWindow('app://workspaces/unified', undefined, UNIFIED_SHELL_BACKEND_ID);
+      const view = bindView(unified, 'remote-1');
+      unbindView(view as never);
+      releaseBackendViewHolder('remote-1');
+      expect(disposer).not.toHaveBeenCalled();
+      setOnLastWindowClosedForBackend(null);
+    });
+
+    it('closing the Unified window never tombstones a machine or disposes a client', async () => {
+      const disposer = vi.fn();
+      setOnLastWindowClosedForBackend(disposer);
+      const local = seedLiveWindow('app://workspaces/work/local', undefined, 'local');
+      const unified = seedLiveWindow('app://workspaces/unified', undefined, UNIFIED_SHELL_BACKEND_ID);
+      await saveAllWindowSessions();
+      captureWindowSessionsSnapshot.call(unified as never);
+      unified.destroy();
+      expect(disposer).not.toHaveBeenCalled();
+      expect(readMap()).toEqual({ local: [{ route: '/work/local', bounds: local.bounds }] });
+      setOnLastWindowClosedForBackend(null);
     });
   });
 });

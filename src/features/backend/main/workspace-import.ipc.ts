@@ -9,6 +9,7 @@
  * random-access archive reads.
  */
 
+import { getRendererTargets } from '../../../main/window-backend';
 import { promises as fs } from 'node:fs';
 import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
 import { Logger } from '$shared/logger';
@@ -32,13 +33,12 @@ let handlersRegistered = false;
 let relay: WorkspaceImportRelay | null = null;
 
 function broadcastProgress(event: ImportProgressEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
+  for (const { contents, id } of getRendererTargets()) {
     try {
-      win.webContents.send(TRANSFER.IMPORT_PROGRESS, event);
+      contents.send(TRANSFER.IMPORT_PROGRESS, event);
     } catch (error) {
       logger.warn('Failed to broadcast import progress', {
-        windowId: win.id,
+        windowId: id,
         error: error instanceof Error ? error.message : String(error),
       });
     }

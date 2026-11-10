@@ -17,7 +17,16 @@ import {
   type WindowHostChecker,
   type WindowHostScope,
 } from './window-workspace-tracking';
-import { getBackendIdForWindow } from '../../../main/window-backend';
+import {
+  backendIdForRendererId,
+  contentsForRendererId,
+  focusRendererIdForWindow,
+  getBackendIdForWindow,
+  getContentsForWindow,
+  getRendererTargets,
+  isRendererAlive,
+  rendererIdForContents,
+} from '../../../main/window-backend';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
   clearWindowBrowserFocusOwner,
@@ -240,16 +249,21 @@ function windowBackgroundWorkspaces(): Map<number, OpenWorkspaceTabsEntry> {
 }
 
 /** Liveness + current host of a tracked window, read from Electron. */
+// Ids here are renderer ids (window id, or a negative Unified-window view id).
 const liveWindowHostChecker: WindowHostChecker = {
   isAlive(windowId: number) {
-    const win = BrowserWindow.fromId(windowId);
-    return !!win && !win.isDestroyed();
+    return isRendererAlive(windowId);
   },
   backendIdOf(windowId: number) {
-    const win = BrowserWindow.fromId(windowId);
-    return win && !win.isDestroyed() ? getBackendIdForWindow(win) : null;
+    return backendIdForRendererId(windowId);
   },
 };
+
+/** The focused window's renderer id (for the Unified window, its shown machine view). */
+function focusedRendererId(): number | undefined {
+  const focusedWindow = BrowserWindow.getFocusedWindow();
+  return focusedWindow ? (focusRendererIdForWindow(focusedWindow) ?? undefined) : undefined;
+}
 
 /**
  * The workspace a window is viewing, only while the window is still on the
@@ -268,9 +282,9 @@ function currentViewedWorkspaceId(windowId: number): string | undefined {
  * Used by the menu builder to enable/disable workspace-specific menu items.
  */
 export function isFocusedWindowInWorkspace(): boolean {
-  const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (!focusedWindow) return false;
-  return windowWorkspaceState.get(focusedWindow.id) ?? false;
+  const rendererId = focusedRendererId();
+  if (rendererId === undefined) return false;
+  return windowWorkspaceState.get(rendererId) ?? false;
 }
 
 /**
@@ -278,9 +292,9 @@ export function isFocusedWindowInWorkspace(): boolean {
  * Returns undefined if no window is focused or the window is not viewing a workspace.
  */
 export function getFocusedWindowWorkspaceId(): string | undefined {
-  const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (!focusedWindow) return undefined;
-  return currentViewedWorkspaceId(focusedWindow.id);
+  const rendererId = focusedRendererId();
+  if (rendererId === undefined) return undefined;
+  return currentViewedWorkspaceId(rendererId);
 }
 
 /**
@@ -390,17 +404,15 @@ export function adoptWorkspaceForBackgroundHosting(
   const hosting = getWindowIdsForWorkspace(workspaceId, backendId);
   if (hosting.length > 0) return { windowId: hosting[0], adopted: false };
 
-  const focusedId = BrowserWindow.getFocusedWindow()?.id;
+  const focusedId = focusedRendererId();
   const candidates = new Set<number>(
     focusedId !== undefined && windowOpenWorkspaceTabs.has(focusedId) ? [focusedId] : [],
   );
   for (const windowId of windowOpenWorkspaceTabs.keys()) candidates.add(windowId);
   const windowId = pickBackgroundHostWindow(backendId, candidates, liveWindowHostChecker);
   if (windowId === undefined) return { windowId: undefined, adopted: false };
-  const window = BrowserWindow.fromId(windowId);
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
-    return { windowId: undefined, adopted: false };
-  }
+  const contents = contentsForRendererId(windowId);
+  if (!contents) return { windowId: undefined, adopted: false };
 
   const existing = windowBackgroundAdoptions.get(windowId);
   const adoptions =
@@ -409,7 +421,7 @@ export function adoptWorkspaceForBackgroundHosting(
       : { backendId, confirmed: new Set<string>(), pending: new Map<string, number>() };
   adoptions.pending.set(workspaceId, Date.now() + BACKGROUND_ADOPTION_CONFIRM_MS);
   windowBackgroundAdoptions.set(windowId, adoptions);
-  window.webContents.send(IPC_CHANNELS.BROWSER.HOST_WORKSPACE, { workspaceId, backendId });
+  contents.send(IPC_CHANNELS.BROWSER.HOST_WORKSPACE, { workspaceId, backendId });
   logger.info('Background-hosting workspace for browser ops', { workspaceId, windowId });
   app.emit('window-workspace-state-changed');
   return { windowId, adopted: true };
@@ -422,16 +434,17 @@ export function adoptWorkspaceForBackgroundHosting(
  * reported yet keep waiting for their own confirmation or expiry (the
  * report may predate the request).
  */
-function applyBackgroundHostingReport(window: BrowserWindow, workspaceIds: string[]): void {
-  const backendId = getBackendIdForWindow(window);
-  const existing = windowBackgroundAdoptions.get(window.id);
+function applyBackgroundHostingReport(rendererId: number, workspaceIds: string[]): void {
+  const backendId = backendIdForRendererId(rendererId);
+  if (backendId === null) return;
+  const existing = windowBackgroundAdoptions.get(rendererId);
   const pending = existing && existing.backendId === backendId ? existing.pending : new Map();
   for (const workspaceId of workspaceIds) pending.delete(workspaceId);
   if (workspaceIds.length === 0 && pending.size === 0) {
-    if (windowBackgroundAdoptions.delete(window.id)) app.emit('window-workspace-state-changed');
+    if (windowBackgroundAdoptions.delete(rendererId)) app.emit('window-workspace-state-changed');
     return;
   }
-  windowBackgroundAdoptions.set(window.id, {
+  windowBackgroundAdoptions.set(rendererId, {
     backendId,
     confirmed: new Set(workspaceIds),
     pending,
@@ -480,33 +493,29 @@ export function sendToWorkspaceWindows(
   data: unknown,
   scope: WindowHostScope,
 ): WorkspaceWindowDelivery {
-  let targetWindows: BrowserWindow[];
+  let targetContents: Electron.WebContents[];
   const isContentBearing = isContentBearingWorkspaceChannel(channel, data);
   const effectiveWorkspaceId =
     workspaceId ?? (isContentBearing ? getPayloadWorkspaceId(data) : undefined);
 
   if (effectiveWorkspaceId) {
     const windowIds = getWindowIdsForWorkspace(effectiveWorkspaceId, scope);
-    if (windowIds.length > 0) {
-      targetWindows = windowIds
-        .map((id) => BrowserWindow.fromId(id))
-        .filter((w): w is BrowserWindow => !!w && !w.isDestroyed());
-    } else {
-      // Workspace-scoped events must never fall back to unrelated windows.
-      targetWindows = [];
-    }
+    // Workspace-scoped events must never fall back to unrelated windows.
+    targetContents = windowIds
+      .map((id) => contentsForRendererId(id))
+      .filter((contents): contents is Electron.WebContents => contents !== null);
   } else if (isContentBearing) {
     // Without a workspace context there is no safe target for workspace content.
-    targetWindows = [];
+    targetContents = [];
   } else {
-    // No workspace context — broadcast to all windows
-    targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+    // No workspace context — broadcast to every renderer, Unified window views included.
+    targetContents = getRendererTargets().map((target) => target.contents);
   }
 
   let windowCount = 0;
-  for (const window of targetWindows) {
-    if (window.webContents && !window.webContents.isDestroyed()) {
-      window.webContents.send(channel, data);
+  for (const contents of targetContents) {
+    if (!contents.isDestroyed()) {
+      contents.send(channel, data);
       windowCount++;
     }
   }
@@ -538,6 +547,22 @@ export function isFocusedWindowBrowserActive(): boolean {
   return hasWindowBrowserFocusOwner(focusedWindow.id);
 }
 
+/**
+ * Drop everything recorded for one renderer (a closed Unified window machine view;
+ * windows clean up on 'closed' below). `reloaded` keeps the view's tab reports and
+ * forgets only what a fresh document no longer hosts.
+ */
+export function forgetRendererState(rendererId: number, reloaded = false): void {
+  const hadBackground = windowBackgroundAdoptions.delete(rendererId);
+  if (!reloaded) {
+    windowWorkspaceState.delete(rendererId);
+    windowWorkspaceIds.delete(rendererId);
+    lastKnownWindowWorkspaceIds.delete(rendererId);
+    windowOpenWorkspaceTabs.delete(rendererId);
+  }
+  if (hadBackground || !reloaded) app.emit('window-workspace-state-changed');
+}
+
 // Clean up state when windows are closed
 app.on('browser-window-created', (_event, window) => {
   window.on('closed', () => {
@@ -563,20 +588,16 @@ app.on('browser-window-created', (_event, window) => {
   window.webContents.on('render-process-gone', forgetBackgroundWorkspaces);
   // Keep each window's renderer in sync with its native full-screen state,
   // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
-  window.on('enter-full-screen', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', true);
-  });
-  window.on('leave-full-screen', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', false);
-  });
+  // Unified window machine views share their host window's state.
+  const sendToWindow = (channel: string, value: boolean) => {
+    for (const contents of getContentsForWindow(window)) contents.send(channel, value);
+  };
+  window.on('enter-full-screen', () => sendToWindow('window:fullscreen', true));
+  window.on('leave-full-screen', () => sendToWindow('window:fullscreen', false));
   // Renderer DOM blur also fires when focus enters an embedded webview. Use
   // BrowserWindow focus instead so the renderer tracks the native app window.
-  window.on('focus', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', true);
-  });
-  window.on('blur', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', false);
-  });
+  window.on('focus', () => sendToWindow('window:focus', true));
+  window.on('blur', () => sendToWindow('window:focus', false));
 });
 
 // ============================================================================
@@ -1122,14 +1143,14 @@ export function setupSystemIPC() {
       WindowSetInWorkspaceSchema,
       async (event, validated) => {
         try {
-          const window = BrowserWindow.fromWebContents(event.sender);
-          if (window) {
-            const windowId = window.id;
+          const windowId = rendererIdForContents(event.sender);
+          const backendId = windowId === null ? null : backendIdForRendererId(windowId);
+          if (windowId !== null && backendId !== null) {
             windowWorkspaceState.set(windowId, validated.inWorkspace);
             if (validated.workspaceId) {
               windowWorkspaceIds.set(windowId, {
                 workspaceId: validated.workspaceId,
-                backendId: getBackendIdForWindow(window),
+                backendId,
               });
               lastKnownWindowWorkspaceIds.set(windowId, validated.workspaceId);
             } else if (!validated.inWorkspace) {
@@ -1165,11 +1186,12 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       WindowSetOpenWorkspaceTabsSchema,
       async (event, validated) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
-          windowOpenWorkspaceTabs.set(window.id, {
+        const rendererId = rendererIdForContents(event.sender);
+        const backendId = rendererId === null ? null : backendIdForRendererId(rendererId);
+        if (rendererId !== null && backendId !== null) {
+          windowOpenWorkspaceTabs.set(rendererId, {
             workspaceIds: validated.workspaceIds,
-            backendId: getBackendIdForWindow(window),
+            backendId,
           });
           app.emit('window-workspace-state-changed');
         }
@@ -1186,8 +1208,8 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       BrowserBackgroundHostedWorkspacesSchema,
       async (event, validated) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) applyBackgroundHostingReport(window, validated.workspaceIds);
+        const rendererId = rendererIdForContents(event.sender);
+        if (rendererId !== null) applyBackgroundHostingReport(rendererId, validated.workspaceIds);
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES,

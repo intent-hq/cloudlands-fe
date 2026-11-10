@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app, BrowserWindow } from 'electron';
+import { EventEmitter } from 'node:events';
+import { app, BrowserWindow, webContents } from 'electron';
+import {
+  bindViewToBackend,
+  unbindView,
+  UNIFIED_SHELL_BACKEND_ID,
+} from '../../../main/window-backend';
 import {
   NotificationService,
   __resetNotificationCacheForTesting,
@@ -222,6 +228,7 @@ vi.mock('electron', () => ({
     getFocusedWindow: vi.fn(() => null),
     fromId: vi.fn(() => null),
   },
+  webContents: { fromId: vi.fn(() => null) },
   screen: {
     getPrimaryDisplay: vi.fn(() => ({
       workArea: { x: 0, y: 0, width: 1920, height: 1080 },
@@ -2712,6 +2719,37 @@ describe('NotificationService click-time window targeting (multiple windows, rem
     } finally {
       Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true });
     }
+  });
+
+  it('routes a remote click to the Unified window machine view for that host, never the shell', async () => {
+    liveBackendIds.push(REMOTE_ID);
+    const localWindow = makeWindow(1);
+    const unifiedWindow = makeWindow(3, UNIFIED_SHELL_BACKEND_ID);
+    const view = Object.assign(new EventEmitter(), {
+      id: 55,
+      mainFrame: {},
+      send: vi.fn(),
+      isDestroyed: () => false,
+    });
+    bindViewToBackend(view as never, unifiedWindow as never, REMOTE_ID);
+    vi.mocked(webContents.fromId).mockImplementation((id: number) =>
+      (id === 55 ? view : null) as never,
+    );
+    setLiveWindows([localWindow, unifiedWindow]);
+    vi.mocked(getWindowIdsForWorkspace).mockReturnValue([-55]);
+
+    const service = new NotificationService();
+    await service.handleAgentIdle(buildIdleEvent('remote-workspace'), REMOTE_ID);
+    vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(localWindow as never);
+    mockNotificationInstances[0].handlers['click']();
+
+    expect(unifiedWindow.focus).toHaveBeenCalled();
+    expect(view.send).toHaveBeenCalledWith('notification:navigate', {
+      workspaceId: 'remote-workspace',
+    });
+    expect(navigateCalls(unifiedWindow)).toEqual([]);
+    expect(navigateCalls(localWindow)).toEqual([]);
+    unbindView(view as never);
   });
 });
 

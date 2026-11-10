@@ -16,7 +16,7 @@ import {
   resolveWorkspaceBackendClientWithRetry,
   type WorkspaceOwnershipProber,
 } from './utils/workspace-backend-client';
-import { getBackendIdForWindow } from './window-backend';
+import { backendIdForRendererId, getBackendIdForWindow, getViewBinding } from './window-backend';
 import { ANY_HOST } from '../features/system/main/window-workspace-tracking';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
@@ -58,10 +58,8 @@ async function backendClientForWorkspace(workspaceId: string, backendIdHint: str
       // ANY_HOST: this resolver's job is to find the host from the windows
       // (and to report windows on different hosts as ambiguous).
       getWindowIdsForWorkspace: (id) => getWindowIdsForWorkspace(id, ANY_HOST),
-      getBackendIdForWindowId: (windowId) => {
-        const window = BrowserWindow.fromId(windowId);
-        return window && !window.isDestroyed() ? getBackendIdForWindow(window) : null;
-      },
+      // Renderer ids: a window, or a Unified window machine view.
+      getBackendIdForWindowId: (windowId) => backendIdForRendererId(windowId),
       getClientForBackend: getBackendClientForConnection,
       getPrimaryClient: getBackendClient,
       // The local pooled client and the compatibility client coincide at
@@ -364,10 +362,13 @@ export function workspaceMediaBackendRedirect(
   webContentsId: number | undefined,
 ): { redirectURL?: string } {
   const contents = webContentsId === undefined ? null : webContents.fromId(webContentsId);
+  // A Unified window machine view hints its own machine, never its host window's.
+  const view = contents && !contents.isDestroyed() ? getViewBinding(contents) : null;
   const window =
-    contents && !contents.isDestroyed() ? BrowserWindow.fromWebContents(contents) : null;
-  const redirectURL = window
-    ? withWorkspaceMediaBackendHint(url, getBackendIdForWindow(window))
+    contents && !contents.isDestroyed() && !view ? BrowserWindow.fromWebContents(contents) : null;
+  const backendId = view ? view.backendId : window ? getBackendIdForWindow(window) : null;
+  const redirectURL = backendId
+    ? withWorkspaceMediaBackendHint(url, backendId)
     : withoutWorkspaceMediaBackendHint(url);
   return redirectURL ? { redirectURL } : {};
 }

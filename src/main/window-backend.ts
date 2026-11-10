@@ -9,7 +9,7 @@
  * helpers, so either import path resolves to the same implementation.
  */
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, webContents as webContentsModule } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 
@@ -166,6 +166,103 @@ export function getBoundViews(): Electron.WebContents[] {
   return [...boundViews].filter((contents) => !contents.isDestroyed());
 }
 
+/**
+ * Renderer ids key per-renderer state (viewed workspace, open tabs, background
+ * hosting). A normal window keeps its `BrowserWindow.id`; a Unified window machine
+ * view gets the negative of its contents id, so the two never collide and three
+ * views in one window do not overwrite each other.
+ */
+export function rendererIdForContents(contents: Electron.WebContents): number | null {
+  if (contents.isDestroyed?.()) return null;
+  if (viewBindings.has(contents)) return -contents.id;
+  if (unifiedContents.has(contents)) return null;
+  const window = BrowserWindow.fromWebContents(contents);
+  return window && !window.isDestroyed() ? window.id : null;
+}
+
+function liveContents(window: BrowserWindowType): Electron.WebContents | null {
+  const contents = window.webContents;
+  return contents && !contents.isDestroyed?.() ? contents : null;
+}
+
+/** The live contents behind a renderer id (a window's own contents, or a bound view). */
+export function contentsForRendererId(id: number): Electron.WebContents | null {
+  if (id < 0) {
+    const contents = webContentsModule?.fromId?.(-id);
+    return contents && !contents.isDestroyed() && viewBindings.has(contents) ? contents : null;
+  }
+  const window = BrowserWindow.fromId(id);
+  return window && !window.isDestroyed() ? liveContents(window) : null;
+}
+
+/** Whether a renderer id is live: a window still open, or a still-bound view. */
+export function isRendererAlive(id: number): boolean {
+  if (id < 0) return contentsForRendererId(id) !== null;
+  const window = BrowserWindow.fromId(id);
+  return !!window && !window.isDestroyed();
+}
+
+/** The window that shows a renderer (a view's host window). */
+export function hostWindowForRendererId(id: number): BrowserWindowType | null {
+  if (id < 0) {
+    const contents = contentsForRendererId(id);
+    const host = contents ? viewBindings.get(contents)?.host : undefined;
+    return host && !host.isDestroyed() ? host : null;
+  }
+  const window = BrowserWindow.fromId(id);
+  return window && !window.isDestroyed() ? window : null;
+}
+
+/** The backend a renderer talks to now, or null when it is gone. */
+export function backendIdForRendererId(id: number): string | null {
+  if (id < 0) {
+    const contents = contentsForRendererId(id);
+    return contents ? (viewBindings.get(contents)?.backendId ?? null) : null;
+  }
+  const window = BrowserWindow.fromId(id);
+  return window && !window.isDestroyed() ? getBackendIdForWindow(window) : null;
+}
+
+const activeViews = new WeakMap<BrowserWindowType, Electron.WebContents>();
+
+/** Record the machine view a Unified window currently shows (focus and menu routing). */
+export function setActiveView(host: BrowserWindowType, contents: Electron.WebContents | null): void {
+  if (contents) activeViews.set(host, contents);
+  else activeViews.delete(host);
+}
+
+/**
+ * The renderer that stands for `window` for focus-based routing: the window's own
+ * renderer, or for the Unified window the machine view it shows.
+ */
+export function focusRendererIdForWindow(window: BrowserWindowType): number | null {
+  if (window.isDestroyed()) return null;
+  if (isUnifiedShellWindow(window)) {
+    const active = activeViews.get(window);
+    return active && viewBindings.has(active) ? rendererIdForContents(active) : null;
+  }
+  return window.id;
+}
+
+/** Whether a live Unified window machine view still holds `backendId`'s pooled client. */
+export function hasLiveViewForBackend(backendId: string): boolean {
+  return getBoundViews().some((contents) => {
+    const binding = viewBindings.get(contents);
+    return binding?.backendId === backendId && !binding.host.isDestroyed();
+  });
+}
+
+/** A window's own contents plus any Unified window machine views it hosts. */
+export function getContentsForWindow(window: BrowserWindowType): Electron.WebContents[] {
+  if (window.isDestroyed()) return [];
+  const own = liveContents(window);
+  const contents = own ? [own] : [];
+  for (const view of getBoundViews()) {
+    if (viewBindings.get(view)?.host === window) contents.push(view);
+  }
+  return contents;
+}
+
 /** Whether `window` is the Unified window (its own renderer is the shell). */
 export function isUnifiedShellWindow(window: BrowserWindowType): boolean {
   return (window as BackendBoundWindow).backendId === UNIFIED_SHELL_BACKEND_ID;
@@ -176,18 +273,35 @@ export function isUnifiedShellWindow(window: BrowserWindowType): boolean {
  * plus every Unified window machine view, with the backend each one talks to.
  */
 export function getRendererTargets(): Array<{
+  id: number;
+  window: BrowserWindowType;
   contents: Electron.WebContents;
   backendId: string;
 }> {
-  const targets: Array<{ contents: Electron.WebContents; backendId: string }> = [];
+  const targets: Array<{
+    id: number;
+    window: BrowserWindowType;
+    contents: Electron.WebContents;
+    backendId: string;
+  }> = [];
   for (const window of BrowserWindow.getAllWindows()) {
-    if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
-    targets.push({ contents: window.webContents, backendId: getBackendIdForWindow(window) });
+    if (window.isDestroyed() || !liveContents(window)) continue;
+    targets.push({
+      id: window.id,
+      window,
+      contents: window.webContents,
+      backendId: getBackendIdForWindow(window),
+    });
   }
   for (const contents of getBoundViews()) {
     const binding = viewBindings.get(contents);
     if (binding && !binding.host.isDestroyed())
-      targets.push({ contents, backendId: binding.backendId });
+      targets.push({
+        id: -contents.id,
+        window: binding.host,
+        contents,
+        backendId: binding.backendId,
+      });
   }
   return targets;
 }
