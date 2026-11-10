@@ -794,19 +794,14 @@ describe('a transient close (release) keeps the dock; only its own Hide closes i
 });
 
 describe('a transient close hands the keyboard back without taking the dock off screen', () => {
-  // Electron's blur on macOS is orderOut + orderBack (native_window_mac.mm): the dock leaves
-  // the screen and returns, which blanks it. The native handback keeps it on screen.
+  // Electron's blur on macOS is orderOut + orderBack (native_window_mac.mm): it takes the
+  // dock off screen and back. The native handback never calls blur.
   function nativeFocus() {
     let focused = false;
     const native = window as unknown as { focus: () => void; isFocused: () => boolean; blur: () => void };
     native.focus = () => void (focused = true);
     native.isFocused = () => focused;
-    // Modelled on Electron macOS: blur orders the window out and back (hide, then show).
-    native.blur = vi.fn(() => {
-      focused = false;
-      window.emit('hide');
-      window.emit('show');
-    });
+    native.blur = vi.fn(() => void (focused = false));
     return { release: () => void (focused = false) };
   }
 
