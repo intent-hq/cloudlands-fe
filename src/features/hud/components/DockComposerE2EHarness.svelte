@@ -30,6 +30,7 @@
   import { dockRailPreview } from './dock-rail.preview-fixtures';
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
+  import { selectDockCloseRequest } from '$store/renderer/slices/hud/hud-selectors';
   import { WorkspaceStatus } from '$shared/types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
   import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
@@ -68,6 +69,7 @@
   } = $props();
   const shortcut$ = selectDockShortcut();
   const workspaces$ = selectDockShortcutWorkspaces();
+  const closeRequest$ = selectDockCloseRequest();
   const workspaceId$ = selectDockConversationWorkspaceId();
   const home = $derived(!!$shortcut$ && $shortcut$.destination === null && !$shortcut$.resolving);
   function openHome(id: string) {
@@ -226,7 +228,8 @@
       },
       disconnect: () => store.dispatch(connectionStatusChanged('disconnected')),
       shortcut(context: import('$shared/dock-shortcuts').DockShortcutContext) {
-        request++;
+        // A second press while the dock has the keyboard is a close request (decided by the dock saga).
+        if (context.toggleClose !== true) request++;
         fixture.emit('window:focus-dock', context);
       },
       seedWorkspace(workspace: import('$shared/types').Workspace) {
@@ -261,6 +264,7 @@
     <DockRailPreview
       {...props}
       focusRequest={request}
+      closeRequest={$closeRequest$}
       workspaces={$workspaces$.map((workspace) => ({ ...props.workspaces[0], workspace }))}
       conversationFixture
       conversationContent={conversation}

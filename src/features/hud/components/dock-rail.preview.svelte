@@ -34,6 +34,7 @@
     placement: initialPlacement,
     failOpenOnce = false,
     focusRequest = 0,
+    closeRequest = 0,
     placementError = false,
     floatingDisplay,
     controlledPlacement = false,
@@ -548,6 +549,7 @@
       onHomeDismiss={conversationController?.dismiss}
       {placement}
       {focusRequest}
+      {closeRequest}
       {dragStartResult}
       {resizeStartResult}
       {placementError}

@@ -203,3 +203,43 @@ for (const conflict of ['a different last chat', 'a foreground workspace with a 
     await writeFile(info.outputPath('side-conflict-receipt.json'), JSON.stringify({ conflict, kept: 'open chat', composerFocused: true }));
   });
 }
+
+test('side, focused but collapsed: the open shortcut again opens the first workspace chat, not the Assistant', async ({ mount, page }, info) => {
+  await mountSide(mount, page);
+  const first = await firstEntry(page);
+  await close(page);
+  await page.mouse.move(200, 200);
+  await press(page, { toggleClose: true });
+  await expect.poll(() => state(page, 'workspaceId')).toBe(first);
+  await expect.poll(() => composerFocused(page)).toBe(true);
+  await expect(page.locator('[data-dock-entry="dock:assistant"]')).not.toBeFocused();
+  await writeFile(info.outputPath('side-toggle-cold-receipt.json'), JSON.stringify({ toggleClose: true, opened: 'first entry', composerFocused: true }));
+});
+
+test('side, focused but collapsed after Back: the open shortcut again returns to that last chat', async ({ mount, page }, info) => {
+  await mountSide(mount, page);
+  await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(2), null);
+  await close(page);
+  await page.locator('[data-dock-entry="choice-1"]').click();
+  await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
+  // Back.
+  await close(page);
+  await page.mouse.move(200, 200);
+  await press(page, { toggleClose: true });
+  await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
+  await expect(page.getByTestId('dock-edge-shell')).toBeVisible();
+  await expect(page.locator('[data-dock-entry="dock:assistant"]')).not.toBeFocused();
+  await expect(page.locator('[data-preview-workspace-id="dock:assistant"]')).toHaveCount(0);
+  await writeFile(info.outputPath('side-toggle-last-receipt.json'), JSON.stringify({ toggleClose: true, opened: 'choice-1' }));
+});
+
+test('side, with the chat open and focused: the open shortcut again closes it as Escape would', async ({ mount, page }) => {
+  await mountSide(mount, page);
+  const open = await state(page, 'workspaceId');
+  await press(page);
+  await expect.poll(() => composerFocused(page)).toBe(true);
+  await press(page, { toggleClose: true });
+  await expect(page.getByTestId('dock-edge-shell')).toHaveCount(0);
+  // The chat stays chosen; only the side conversation closed.
+  expect(await state(page, 'workspaceId')).toBe(open);
+});
