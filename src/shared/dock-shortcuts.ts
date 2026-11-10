@@ -1,4 +1,4 @@
-export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'annotate' | 'dictate';
+export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'dictate';
 /** Includes OS-local wildcard/loopback aliases; normalize WHATWG URL hostname first. */
 export function isDockLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, '');

@@ -14,9 +14,9 @@ export type DockComposerLabels = DockComposerMediaLabels & {
 export function createDockComposerLabels(
   overrides: ShortcutOverrides | (() => ShortcutOverrides) = {},
 ): DockComposerLabels {
-  const binding = (id: 'dock.capture' | 'dock.record' | 'dock.annotate' | 'dock.dictate') =>
+  const binding = (id: 'dock.capture' | 'dock.record' | 'dock.dictate') =>
     resolveShortcut(id, typeof overrides === 'function' ? overrides() : overrides);
-  const key = (id: 'dock.capture' | 'dock.record' | 'dock.annotate' | 'dock.dictate') =>
+  const key = (id: 'dock.capture' | 'dock.record' | 'dock.dictate') =>
     formatShortcut(binding(id));
   return {
     actionHints: {
@@ -58,9 +58,6 @@ export function createDockComposerLabels(
       return m.dock_composer_record_tooltip({ shortcut: key('dock.record') });
     },
     stopRecording: m.dock_composer_stopRecording_tooltip(),
-    get annotate() {
-      return m.dock_composer_annotate_tooltip({ shortcut: key('dock.annotate') });
-    },
     annotationTools: m.annotation_toolbar_ariaLabel(),
     annotateCurrent: (tool) => m.dock_composer_annotate_ariaLabel({ tool }),
     tools: {

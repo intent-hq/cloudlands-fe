@@ -1083,7 +1083,6 @@ const bootFlow = app.whenReady().then(async () => {
           focus: m.menu_focus_intent_dock(),
           record: m.dock_shortcut_record_menu(),
           capture: m.browser_overflow_screenshot_label(),
-          annotate: m.dock_annotate_label(),
           dictate: m.dock_shortcut_dictate_label(),
           unavailable: m.dock_shortcut_unavailable(),
         },

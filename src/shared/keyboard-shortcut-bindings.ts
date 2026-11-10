@@ -56,7 +56,6 @@ export const SHORTCUT_DEFAULTS = {
   'dock.focus': 'ctrl+shift+d',
   'dock.capture': 'ctrl+shift+s',
   'dock.record': 'ctrl+shift+r',
-  'dock.annotate': 'ctrl+shift+a',
   'dock.dictate': 'ctrl+shift+m',
 } as const;
 

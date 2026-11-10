@@ -19,7 +19,6 @@ export interface DockComposerMediaLabels {
   clipLimit: string;
   record: string;
   stopRecording: string;
-  annotate: string;
   annotationTools: string;
   annotateCurrent: (tool: string) => string;
   tools: Record<DockComposerTool, string>;

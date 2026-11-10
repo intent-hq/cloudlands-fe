@@ -208,6 +208,5 @@ export const SHORTCUT_RUNTIME_CONSUMERS = {
   'dock.focus': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },
   'dock.capture': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },
   'dock.record': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },
-  'dock.annotate': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },
   'dock.dictate': { source: 'main/dock-shortcut-registration.ts', handler: 'globalShortcut' },
 } as const satisfies Record<ShortcutId, RuntimeShortcutConsumer>;

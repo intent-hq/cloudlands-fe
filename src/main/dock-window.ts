@@ -988,12 +988,12 @@ export function focusDockWindow(
   if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
   if (recordingHidden(window)) {
     // Out of sight for a recording: never shown or focused, and a focus-only request
-    // (or capture) does nothing meanwhile. Record, annotate and dictate reach the dock
+    // (or capture) does nothing meanwhile. Record and dictate reach the dock
     // flagged owner-only: they act on the live recording's own pair, never route.
     const action = context?.action;
     if (
       context &&
-      (action === 'record' || action === 'annotate' || action === 'dictate') &&
+      (action === 'record' || action === 'dictate') &&
       !window.webContents.isDestroyed()
     )
       window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, {

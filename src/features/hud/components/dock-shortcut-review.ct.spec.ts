@@ -41,7 +41,7 @@ async function invoke(
     { action, id, url },
   );
 }
-for (const action of ['capture', 'annotate', 'dictate'] as const) {
+for (const action of ['capture', 'dictate'] as const) {
   test(`${action} routes a global action once through the real native owner`, async ({
     mount,
     page,
@@ -69,9 +69,7 @@ for (const action of ['capture', 'annotate', 'dictate'] as const) {
             .log;
           return action === 'capture'
             ? log.captures
-            : action === 'annotate'
-              ? log.annotations.length
-              : log.speech.started.length;
+            : log.speech.started.length;
         }, action),
       )
       .toBe(1);
@@ -93,7 +91,7 @@ for (const action of ['capture', 'annotate', 'dictate'] as const) {
     );
   });
 }
-for (const action of ['record', 'annotate', 'dictate'] as const) {
+for (const action of ['record', 'dictate'] as const) {
   test(`${action} stops its active A owner when foreground context changes to B`, async ({
     mount,
     page,
@@ -121,9 +119,7 @@ for (const action of ['record', 'annotate', 'dictate'] as const) {
             .log;
           return action === 'record'
             ? log.clips.started.length
-            : action === 'annotate'
-              ? log.annotations.length
-              : log.speech.started.length;
+            : log.speech.started.length;
         }, action),
       )
       .toBe(1);
@@ -158,9 +154,7 @@ for (const action of ['record', 'annotate', 'dictate'] as const) {
           ).__dockComposerE2E;
           return action === 'record'
             ? h.native.log.clips.stopped.length
-            : action === 'annotate'
-              ? h.native.log.ended.length
-              : h.native.log.speech.stopped.length;
+            : h.native.log.speech.stopped.length;
         }, action),
       )
       .toBe(1);
@@ -187,9 +181,7 @@ for (const action of ['record', 'annotate', 'dictate'] as const) {
     const starts =
       action === 'record'
         ? evidence.log.clips.started.length
-        : action === 'annotate'
-          ? evidence.log.annotations.length
-          : evidence.log.speech.started.length;
+        : evidence.log.speech.started.length;
     expect(starts).toBe(1);
     await writeFile(
       info.outputPath(`${action}-active-owner.json`),

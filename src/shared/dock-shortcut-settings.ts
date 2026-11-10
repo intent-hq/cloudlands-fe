@@ -10,7 +10,6 @@ export const DOCK_SHORTCUT_IDS = [
   'dock.focus',
   'dock.capture',
   'dock.record',
-  'dock.annotate',
   'dock.dictate',
 ] as const;
 export type DockShortcutId = (typeof DOCK_SHORTCUT_IDS)[number];

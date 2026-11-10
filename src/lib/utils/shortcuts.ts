@@ -621,7 +621,7 @@ const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> 
     'leader.jump-to-panel',
     'leader.cycle-layout',
   ],
-  dock: ['dock.focus', 'dock.capture', 'dock.record', 'dock.annotate', 'dock.dictate'],
+  dock: ['dock.focus', 'dock.capture', 'dock.record', 'dock.dictate'],
 };
 
 export interface ShortcutDefinition extends ShortcutEntry {
@@ -1037,13 +1037,6 @@ export const SHORTCUT_CATEGORIES: Record<
         key: SHORTCUT_DEFAULTS['dock.record'],
         get label() {
           return m.ui_shortcuts_dockRecord_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUT_DEFAULTS['dock.annotate'],
-        get label() {
-          return m.ui_shortcuts_dockAnnotate_label();
         },
         contexts: ['global'],
       },

@@ -48,7 +48,7 @@ async function home(page: import('@playwright/test').Page) {
   await expect(page.getByText('Foreground app unavailable')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Just once', exact: true })).toHaveCount(0);
 }
-for (const action of ['focus', 'capture', 'record', 'annotate', 'dictate'] as const) {
+for (const action of ['focus', 'capture', 'record', 'dictate'] as const) {
   test(`${action}: unresolved shortcut uses ordinary home row exactly once`, async ({
     mount,
     page,
@@ -90,9 +90,7 @@ for (const action of ['focus', 'capture', 'record', 'annotate', 'dictate'] as co
             ? l.captures
             : action === 'record'
               ? l.clips.started.length
-              : action === 'annotate'
-                ? l.annotations.length
-                : l.speech.started.length;
+              : l.speech.started.length;
       }, action);
     await expect.poll(count).toBe(action === 'focus' ? 0 : 1);
     await writeFile(

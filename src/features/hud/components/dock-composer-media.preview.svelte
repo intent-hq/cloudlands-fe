@@ -59,7 +59,6 @@
     clipLimit: 'Up to 5 recordings',
     record: 'Record the screen',
     stopRecording: 'Stop recording',
-    annotate: 'Annotate the screen',
     annotationTools: 'Annotation tools',
     annotateCurrent: (tool) => `Annotate the screen. Current tool: ${tool}`,
     tools: { pick: 'Pick an element', box: 'Box', pen: 'Pen', arrow: 'Arrow' },

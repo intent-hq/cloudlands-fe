@@ -29,7 +29,6 @@ import {
   dockNativeSpeechSessionChanged,
   dockEvidenceRecordToggleRequested,
   dockEvidenceCaptureRequested,
-  dockEvidenceAnnotationToggleRequested,
   dockSpeechToggleRequested,
   closeDockConversationRequested,
 } from '../dock-conversation-slice';
@@ -46,8 +45,8 @@ function* waitForNative(pairId: string): SagaGenerator<void> {
 /**
  * A shortcut while a recording keeps the notch out of sight: it acts on the pair that
  * owns the live recording (same admitted authority, current pair, native owner) or
- * not at all. Record stops it, annotate draws in its session (bringing its bar back
- * if needed), dictate toggles speech there. No focus, selection or destination.
+ * not at all. Record stops it, dictate toggles speech there. No focus, selection or
+ * destination.
  */
 function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void> {
   const dock = appStore.state.dockConversation;
@@ -58,8 +57,6 @@ function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void
   if (!recordingDockClip(evidenceOf(workspaceId, agentId))) return;
   if (context.action === 'record')
     yield* put(dockEvidenceRecordToggleRequested(workspaceId, agentId));
-  else if (context.action === 'annotate')
-    yield* put(dockEvidenceAnnotationToggleRequested(workspaceId, agentId));
   else if (context.action === 'dictate')
     yield* put(dockSpeechToggleRequested(workspaceId, agentId));
 }
@@ -80,7 +77,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   if (
     !context ||
     typeof context.id !== 'string' ||
-    !['focus', 'capture', 'record', 'annotate', 'dictate'].includes(context.action) ||
+    !['focus', 'capture', 'record', 'dictate'].includes(context.action) ||
     !valid(context)
   )
     return;
@@ -111,19 +108,15 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     const stop =
       context.action === 'record'
         ? !!recordingDockClip(evidence)
-        : context.action === 'annotate'
-          ? !!evidence?.annotation && evidence.annotation.mode !== 'dictation'
-          : context.action === 'dictate'
-            ? !!dock.nativeSpeech.activeId
-            : false;
+        : context.action === 'dictate'
+          ? !!dock.nativeSpeech.activeId
+          : false;
     if (stop) {
       yield* put(
         dockShortcutChanged({ context, destination: dock.workspaceId, error: null, authority }),
       );
       if (context.action === 'record')
         yield* put(dockEvidenceRecordToggleRequested(dock.workspaceId, dock.agentId));
-      else if (context.action === 'annotate')
-        yield* put(dockEvidenceAnnotationToggleRequested(dock.workspaceId, dock.agentId));
       else yield* put(dockSpeechToggleRequested(dock.workspaceId, dock.agentId));
       return;
     }
@@ -285,8 +278,6 @@ function* choose({
       yield* put(dockEvidenceCaptureRequested(workspaceId, dock.agentId));
     else if (context.action === 'record')
       yield* put(dockEvidenceRecordToggleRequested(workspaceId, dock.agentId));
-    else if (context.action === 'annotate')
-      yield* put(dockEvidenceAnnotationToggleRequested(workspaceId, dock.agentId));
     else yield* put(dockSpeechToggleRequested(workspaceId, dock.agentId));
   }
 }

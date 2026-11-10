@@ -1,6 +1,6 @@
 import type { MenuItemConstructorOptions } from 'electron';
 
-export type DockMenuAction = 'focus' | 'record' | 'capture' | 'annotate' | 'dictate';
+export type DockMenuAction = 'focus' | 'record' | 'capture' | 'dictate';
 
 /**
  * The Window menu's dock items. "Show Intent Dock" is the Notch dock setting itself: it is
@@ -45,7 +45,7 @@ export function dockWindowMenuItems(deps: {
   };
   return [
     show,
-    ...(['focus', 'record', 'capture', 'annotate', 'dictate'] as const).map(command),
+    ...(['focus', 'record', 'capture', 'dictate'] as const).map(command),
     { type: 'separator' },
   ];
 }
