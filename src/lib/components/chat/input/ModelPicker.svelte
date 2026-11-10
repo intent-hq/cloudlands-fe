@@ -844,8 +844,9 @@
     ),
   );
 
-  // The refresh icon is the picker's only loading indicator: a refresh the user
-  // started, or a provider still loading with no models to show yet.
+  // The refresh icon is the picker's only loading indicator: it spins for a refresh
+  // the user started, or a provider still loading with no models to show yet.
+  // Only a running refresh blocks another one.
   function isRefreshBusy(providerId: string): boolean {
     return (
       refreshingProviders.has(providerId) ||
@@ -855,7 +856,7 @@
 
   function handleRefreshProvider(providerId: string) {
     if (!canUseProviderModels(providerId)) return;
-    if (isRefreshBusy(providerId)) return;
+    if (refreshingProviders.has(providerId)) return;
     appStore.dispatch(providerModelsRequested(providerId, 'refresh', workspaceId));
   }
 
@@ -2648,7 +2649,7 @@
         {group}
         {groupIndex}
         collapsed={collapsedGroups.has(group.key)}
-        refreshing={isRefreshBusy(group.key)}
+        refreshing={refreshingProviders.has(group.key)}
         onToggle={toggleGroup}
         onRefresh={handleRefreshProvider}
       />
@@ -2917,7 +2918,9 @@
         {/if}
       </span>
       {#if refreshProviderId && !remoteScoped}
-        <!-- aria-disabled, not disabled: keyboard focus stays here through a refresh. -->
+        <!-- aria-disabled, not disabled: keyboard focus stays here through a refresh.
+             The end margin puts the icon on the right gutter: 16px = the search row's
+             8px inset + the 12px icon's 8px inset in its 28px button. -->
         <Button
           variant="ghost"
           size="icon-xs"
@@ -2928,10 +2931,10 @@
           aria-label={m.chat_modelPicker_refreshGroup_title({
             group: providerDisplayName(refreshProviderId),
           })}
-          class="shrink-0 text-subtle hover:bg-muted/40"
+          class="shrink-0 text-subtle hover:bg-muted/40 me-[calc(var(--model-picker-gutter)-16px)]"
           data-testid="model-provider-refresh-button"
           aria-busy={refreshBusy}
-          aria-disabled={refreshBusy || undefined}
+          aria-disabled={refreshingProviders.has(refreshProviderId) || undefined}
           onclick={() => void handleRefreshProvider(refreshProviderId)}
         >
           {#if refreshBusy}

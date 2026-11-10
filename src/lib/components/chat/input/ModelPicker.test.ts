@@ -3156,7 +3156,7 @@ describe('ModelPicker multi-provider mode', () => {
     expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
     // …and browsing the empty provider still exposes its warning row.
     await fireEvent.click(screen.getByRole('tab', { name: /OpenCode/ }));
-    expect(screen.getAllByText(/OpenCode: opencode binary not found/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/OpenCode binary not found/).length).toBeGreaterThan(0);
   });
 
   it('shows the Codex default-list notice only inside the open picker on the Codex tab', async () => {

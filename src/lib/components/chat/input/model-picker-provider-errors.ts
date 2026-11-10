@@ -68,6 +68,21 @@ function getProviderErrorHint(providerId: string, message: string): string | und
   return undefined;
 }
 
+/** "<Provider>: <message>", unless the message already leads with the provider's name. */
+export function providerErrorText(
+  providerId: string,
+  providerName: string,
+  message: string,
+): string {
+  const lower = message.toLowerCase();
+  for (const prefix of [providerName, providerId]) {
+    if (prefix && lower.startsWith(`${prefix.toLowerCase()} `)) {
+      return `${providerName}${message.slice(prefix.length)}`;
+    }
+  }
+  return `${providerName}: ${message}`;
+}
+
 export function formatProviderLoadError(providerId: string, error: unknown): ProviderLoadError {
   const state = appStore.state;
   const normalizedId = selectNormalizedProviderId.select(state, providerId);
@@ -86,7 +101,7 @@ export function formatProviderLoadError(providerId: string, error: unknown): Pro
     providerName,
     message,
     details,
-    displayText: `${providerName}: ${message}`,
+    displayText: providerErrorText(normalizedId, providerName, message),
     hint: getProviderErrorHint(normalizedId, stripped),
   };
 }
