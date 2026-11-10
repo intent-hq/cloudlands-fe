@@ -52,17 +52,21 @@ export function installAnimationFrames(options: AnimationFramesOptions = {}): An
     running = callbacks;
     callbacks = new Map();
     let ran = 0;
-    try {
-      for (const [id, callback] of running) {
-        // A callback earlier in this frame may have cancelled this one.
-        if (!running.delete(id)) continue;
-        ran += 1;
+    const errors: unknown[] = [];
+    for (const [id, callback] of running) {
+      // A callback earlier in this frame may have cancelled this one.
+      if (!running.delete(id)) continue;
+      ran += 1;
+      // Like browsers, a throwing callback does not stop the rest of the frame.
+      try {
         callback(now);
-        afterCallback();
+      } catch (error) {
+        errors.push(error);
       }
-    } finally {
-      running = new Map();
+      afterCallback();
     }
+    running = new Map();
+    if (errors.length > 0) throw errors[0];
     return ran;
   };
 
