@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "直接實作，視需要規劃和委派",
   "specialists_builtin_developer_name": "開發者",
+  "specialists_builtin_maintenanceCoordinator_description": "為錯誤、相依套件與安全性更新、CI 失敗和小型維護工作持續準備經過審查且檢查通過的 PR",
+  "specialists_builtin_maintenanceCoordinator_name": "維護協調員",
   "specialists_builtin_prReviewer_description": "以高置信度、可操作的回饋審查拉取請求",
   "specialists_builtin_prReviewer_name": "PR 審查員",
   "specialists_builtin_productManager_description": "與你訪談需求、探索程式碼，並為開發者撰寫經過審查的規格說明",

@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "直接実装し、必要に応じて計画や委任を行います",
   "specialists_builtin_developer_name": "開発者",
+  "specialists_builtin_maintenanceCoordinator_description": "バグ、依存関係とセキュリティの更新、CI の失敗、小さなメンテナンス作業について、レビュー済みでチェックが通った PR を途切れなく用意します",
+  "specialists_builtin_maintenanceCoordinator_name": "メンテナンスコーディネーター",
   "specialists_builtin_prReviewer_description": "確度の高い実用的なフィードバックでプルリクエストをレビューします",
   "specialists_builtin_prReviewer_name": "PR レビュアー",
   "specialists_builtin_productManager_description": "ヒアリングを行い、コードを調査して、開発者向けにレビュー済みの仕様を作成します",

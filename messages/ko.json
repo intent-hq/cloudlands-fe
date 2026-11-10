@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "직접 구현하며 필요에 따라 계획하고 위임합니다",
   "specialists_builtin_developer_name": "개발자",
+  "specialists_builtin_maintenanceCoordinator_description": "버그, 의존성 및 보안 업데이트, CI 실패, 작은 유지 관리 작업에 대해 검토되고 검사를 통과한 PR을 꾸준히 준비합니다",
+  "specialists_builtin_maintenanceCoordinator_name": "유지 관리 코디네이터",
   "specialists_builtin_prReviewer_description": "확신도 높고 실행 가능한 피드백으로 풀 리퀘스트를 검토합니다",
   "specialists_builtin_prReviewer_name": "PR 리뷰어",
   "specialists_builtin_productManager_description": "사용자를 인터뷰하고 코드를 탐색해 개발자를 위한 검토된 사양을 작성합니다",

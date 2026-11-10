@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "Implementa directamente, planifica y delega según sea necesario",
   "specialists_builtin_developer_name": "Desarrollador",
+  "specialists_builtin_maintenanceCoordinator_description": "Mantiene un flujo constante de PR revisados y en verde para errores, actualizaciones de dependencias y seguridad, fallos de CI y pequeñas tareas de mantenimiento",
+  "specialists_builtin_maintenanceCoordinator_name": "Coordinador de mantenimiento",
   "specialists_builtin_prReviewer_description": "Revisa pull requests con comentarios fiables y accionables",
   "specialists_builtin_prReviewer_name": "Revisor de PR",
   "specialists_builtin_productManager_description": "Le entrevista, explora el código y redacta una especificación revisada para un Desarrollador",

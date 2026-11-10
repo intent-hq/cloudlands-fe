@@ -5900,6 +5900,8 @@
   "specialists_builtin_chiefOfStaff_name": "Assistant",
   "specialists_builtin_developer_description": "Implements directly, plans and delegates as needed",
   "specialists_builtin_developer_name": "Developer",
+  "specialists_builtin_maintenanceCoordinator_description": "Keeps a steady pipeline of reviewed, green PRs for bugs, dependency and security updates, CI failures, and small maintenance tasks",
+  "specialists_builtin_maintenanceCoordinator_name": "Maintenance Coordinator",
   "specialists_builtin_prReviewer_description": "Reviews pull requests with high-confidence, actionable feedback",
   "specialists_builtin_prReviewer_name": "PR Reviewer",
   "specialists_builtin_productManager_description": "Interviews you, explores the code, and writes a reviewed spec for a Developer",
