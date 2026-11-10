@@ -6,7 +6,10 @@ import { AgentStatus } from '$shared/types/agent.types';
 import { getAvatarState, type AvatarState } from './avatar-state';
 import AgentAvatarWithState from './AgentAvatarWithState.svelte';
 import AgentAvatarCatalogHarness from './AgentAvatarCatalogHarness.svelte';
-import { agentAvatarCatalogStates, agentAvatarCatalogIdentities } from './agent-avatar-catalog.fixtures';
+import {
+  agentAvatarCatalogStates,
+  agentAvatarCatalogIdentities,
+} from './agent-avatar-catalog.fixtures';
 import { getAgentAvatarStateLabel } from './avatar-state-label';
 import { agentAvatarVariants } from './avatar-size';
 

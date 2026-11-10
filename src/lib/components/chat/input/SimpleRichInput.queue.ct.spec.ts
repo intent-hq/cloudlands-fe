@@ -31,7 +31,9 @@ test('keeps queued messages above subscriptions without moving the composer', as
   page,
 }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  const component = await mount(SimpleRichInputQueueTestHost, { props: { queueCount: 0, width: 240 } });
+  const component = await mount(SimpleRichInputQueueTestHost, {
+    props: { queueCount: 0, width: 240 },
+  });
   const input = component.getByTestId('message-input');
   const editor = input.locator('.tiptap-editor');
   const queue = component.getByTestId('queued-messages-container');

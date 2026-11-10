@@ -15,7 +15,7 @@ A comprehensive diagram system for the Intent app that enables agents and users 
 
 - **layout-engine.ts** - Layout algorithms (layered, force-directed, circular, tree)
 - **types.ts** - Grammar configurations and computed types
-- **__tests__/diagram-templates.ts** - Test fixture builders for each grammar type
+- ****tests**/diagram-templates.ts** - Test fixture builders for each grammar type
 
 ### Integration
 
