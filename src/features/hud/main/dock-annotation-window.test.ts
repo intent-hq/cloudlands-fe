@@ -97,6 +97,7 @@ function setup(
     hashes?: string[];
     hit?: Hit;
     intent?: DockAnnotationNative['intentWindow'];
+    nativeCursor?: boolean;
   } = {},
 ) {
   const windows: FakeWindow[] = [];
@@ -144,7 +145,36 @@ function setup(
   const started: string[] = [];
   const settled: string[] = [];
   const timers: { callback: () => void; ms: number }[] = [];
+  const cursorOwners: Array<{
+    window: unknown;
+    updates: Array<{
+      enabled: boolean;
+      regions: unknown[];
+      excludedRegions: unknown[];
+      revision: number;
+    }>;
+    changes: Array<{ type: string; custom: unknown }>;
+    disposed: number;
+  }> = [];
   const native: DockAnnotationNative = {
+    ...(options.nativeCursor
+      ? {
+          attachCursor: (window: BrowserWindow) => {
+            const owner: (typeof cursorOwners)[number] = {
+              window,
+              updates: [],
+              changes: [],
+              disposed: 0,
+            };
+            cursorOwners.push(owner);
+            return {
+              update: (state) => void owner.updates.push(state),
+              cursorChanged: (type, custom) => void owner.changes.push({ type, custom }),
+              dispose: () => void (owner.disposed += 1),
+            };
+          },
+        }
+      : {}),
     createWindow: (_display, backendId) => {
       const window = new FakeWindow();
       window.backendId = backendId;
@@ -227,6 +257,7 @@ function setup(
     windows,
     captures,
     cursor,
+    cursorOwners,
     tick: () => intervals.forEach((callback) => callback()),
     start,
     gesture,
@@ -1421,5 +1452,121 @@ describe('recorded gesture progress lifetime', () => {
     clipId = 'clip-b'; t.releaseCapture();
     expect((await pending).ok).toBe(false);
     expect(marks(t.events)).toHaveLength(0);
+  });
+});
+
+describe('DockAnnotationController native drawing cursor', () => {
+  const lastUpdate = (t: ReturnType<typeof setup>) => t.cursorOwners[0]!.updates.at(-1)!;
+
+  it('owns the cursor only while the overlay takes the pointer for drawing, minus the dock and bar', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'pen');
+    expect(t.cursorOwners).toHaveLength(1);
+    expect(t.cursorOwners[0]!.window).toBe(t.windows[0]);
+    const bar = { x: 600, y: 760, width: 200, height: 38 };
+    t.controller.handleToolbar({ sessionId: 's1', action: 'rect', rect: bar });
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(t.windows[0]!.ignore.at(-1)).toBe(false);
+    expect(lastUpdate(t)).toMatchObject({
+      enabled: true,
+      regions: [{ x: 0, y: 0, width: 1440, height: 900 }],
+      excludedRegions: [{ x: 1140, y: 0, width: 300, height: 900 }, bar],
+    });
+    // Over the dock the overlay is click-through: no native ownership.
+    t.cursor.x = -100;
+    t.tick();
+    expect(t.windows[0]!.ignore.at(-1)).toBe(true);
+    expect(lastUpdate(t)).toMatchObject({ enabled: false, regions: [], excludedRegions: [] });
+    // Unchanged routing writes nothing (the route runs every 33 ms).
+    const writes = t.cursorOwners[0]!.updates.length;
+    t.tick();
+    t.tick();
+    expect(t.cursorOwners[0]!.updates.length).toBe(writes);
+  });
+
+  it('forwards Chromium custom cursor payloads (pen -> box) and standard types unchanged', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'pen');
+    const custom = (tag: string) => ({
+      image: { tag },
+      scale: 2,
+      size: { width: 48, height: 48 },
+      hotspot: { x: 6, y: 42 },
+    });
+    const pen = custom('pen');
+    t.windows[0]!.webContents.emit(
+      'cursor-changed',
+      {},
+      'custom',
+      pen.image,
+      pen.scale,
+      pen.size,
+      pen.hotspot,
+    );
+    const box = custom('box');
+    t.windows[0]!.webContents.emit(
+      'cursor-changed',
+      {},
+      'custom',
+      box.image,
+      box.scale,
+      box.size,
+      box.hotspot,
+    );
+    t.windows[0]!.webContents.emit('cursor-changed', {}, 'default');
+    expect(t.cursorOwners[0]!.changes).toEqual([
+      { type: 'custom', custom: pen },
+      { type: 'custom', custom: box },
+      { type: 'default', custom: undefined },
+    ]);
+  });
+
+  it('releases in Mouse mode and while discarding, resumes on a tool', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'box');
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(true);
+    t.controller.handleToolbar({ sessionId: 's1', action: 'mouse' });
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(false);
+    await t.controller.setAnnotationTool('s1', 'pen');
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(true);
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard' });
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(false);
+  });
+
+  it('disables before hiding on end, and disposes with the overlay window', async () => {
+    const t = setup({ nativeCursor: true });
+    await t.start('live', 'pen');
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(lastUpdate(t).enabled).toBe(true);
+    await t.controller.endAnnotation('s1');
+    expect(lastUpdate(t).enabled).toBe(false);
+    expect(t.windows[0]!.visible).toBe(false);
+    expect(t.cursorOwners[0]!.disposed).toBe(0);
+    t.expire(60_000);
+    expect(t.windows[0]!.destroyed).toBe(true);
+    expect(t.cursorOwners[0]!.disposed).toBe(1);
+    t.windows[0]!.webContents.emit('cursor-changed', {}, 'custom', {}, 2, {}, {});
+    expect(t.cursorOwners[0]!.changes).toEqual([]);
+  });
+
+  it('without a native cursor owner nothing changes', async () => {
+    const t = setup();
+    await t.start('live', 'pen');
+    t.cursor.x = -1440 + 300;
+    t.cursor.y = -100 + 300;
+    t.tick();
+    expect(t.windows[0]!.ignore.at(-1)).toBe(false);
+    expect(t.cursorOwners).toEqual([]);
+    expect(t.windows[0]!.webContents.listenerCount('cursor-changed')).toBe(0);
   });
 });

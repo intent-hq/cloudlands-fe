@@ -72,6 +72,7 @@ import { Logger } from '../../../shared/logger';
 import { stampWindowWithBackend } from '../../../main/window-backend';
 import { registerDockAnnotationWindow } from '../../../main/dock-annotation-identity';
 import { fixWebContentsZoom } from '../../../main/fixed-zoom';
+import { attachDockCursor, type DockCursorController } from '../../../main/dock-cursor';
 import {
   createDockElementPicker,
   type DockElementHit,
@@ -177,6 +178,13 @@ export interface DockAnnotationNative {
   setInterval(callback: () => void, ms: number): () => void;
   setTimeout(callback: () => void, ms: number): () => void;
   onDisplaysChanged(listener: () => void): () => void;
+  /**
+   * Native AppKit cursor owner for the overlay panel (it never becomes key, so Chromium's
+   * CSS cursor is not shown by AppKit). Optional: absent means today's behaviour.
+   */
+  attachCursor?(
+    window: BrowserWindow,
+  ): Pick<DockCursorController, 'update' | 'cursorChanged' | 'dispose'> | undefined;
   /** Intent's own window under a gesture: panel check and page element; 'other' for any other app. */
   intentWindow(
     windowId: number,
@@ -353,6 +361,10 @@ export class DockAnnotationController implements AnnotationService {
    */
   private revealing: Session | null = null;
   private windowCleanup: Array<() => void> = [];
+  private overlayCursor: Pick<DockCursorController, 'update' | 'cursorChanged' | 'dispose'> | null =
+    null;
+  private cursorKey = '';
+  private cursorRevision = 0;
   private cancelIdle: (() => void) | null = null;
   private stopRouting: (() => void) | null = null;
   private stopDisplays: (() => void) | null = null;
@@ -1445,6 +1457,7 @@ export class DockAnnotationController implements AnnotationService {
     }
     if (session.hold) {
       this.setInteractive(session, true);
+      this.syncCursor(session);
       return;
     }
     const cursor = this.native.cursor();
@@ -1459,6 +1472,53 @@ export class DockAnnotationController implements AnnotationService {
       onToolbar ||
         (!session.mouse && this.insideDisplay(session, local) && !pointInRects(local, excluded)),
     );
+    this.syncCursor(session);
+  }
+
+  /**
+   * The overlay's drawing cursor through the native owner: only while the overlay takes the
+   * pointer for a drawing session (not Mouse, not discarding), over the display minus the
+   * dock, its excluded rects and the tool bar. Same eligibility rules as the dock's cursor.
+   */
+  private syncCursor(session: Session | null): void {
+    const cursor = this.overlayCursor;
+    if (!cursor) return;
+    const active =
+      !!session &&
+      !session.ended &&
+      session.revealed &&
+      session.interactive === true &&
+      !session.mouse &&
+      !session.discarding &&
+      usable(session.window) &&
+      session.window === this.window;
+    const { width, height } = session ? session.display.bounds : { width: 0, height: 0 };
+    const enabled = active && width > 0 && height > 0;
+    const sized = (rect: DockAnnotationRect) =>
+      [rect.x, rect.y, rect.width, rect.height].every(
+        (v) => Number.isFinite(v) && Math.abs(v) <= 1_000_000,
+      ) &&
+      rect.width > 0 &&
+      rect.height > 0 &&
+      rect.width <= 16384 &&
+      rect.height <= 16384;
+    const regions = enabled ? [{ x: 0, y: 0, width, height }] : [];
+    const excludedRegions =
+      enabled && session
+        ? [...this.localExcluded(session), ...(session.toolbar ? [session.toolbar] : [])]
+            .filter(sized)
+            .slice(0, 64)
+        : [];
+    const key = JSON.stringify([enabled, regions, excludedRegions]);
+    if (key === this.cursorKey) return;
+    this.cursorKey = key;
+    this.cursorRevision += 1;
+    try {
+      cursor.update({ regions, excludedRegions, revision: this.cursorRevision, enabled });
+    } catch (error) {
+      this.cursorKey = '';
+      logger.warn('Failed to update the dock annotation cursor', { error });
+    }
   }
 
   private startRouting(): void {
@@ -1500,18 +1560,45 @@ export class DockAnnotationController implements AnnotationService {
     current.on('closed', onGone);
     current.webContents.on('render-process-gone', onGone);
     current.webContents.on('did-start-loading', onLoading);
+    const cursor = this.native.attachCursor?.(current) ?? null;
+    this.overlayCursor = cursor;
+    this.cursorKey = '';
+    const onCursor = (
+      _event: Electron.Event,
+      type: string,
+      image?: Electron.NativeImage,
+      scale?: number,
+      size?: Electron.Size,
+      hotspot?: Electron.Point,
+    ) => {
+      if (this.window !== current || !cursor) return;
+      cursor.cursorChanged(
+        type,
+        type === 'custom' && image && size && hotspot && typeof scale === 'number'
+          ? { image, scale, size, hotspot }
+          : undefined,
+      );
+    };
+    if (cursor) current.webContents.on('cursor-changed', onCursor);
     this.windowCleanup.push(() => {
       current.removeListener('closed', onGone);
       if (!current.webContents.isDestroyed()) {
         current.webContents.removeListener('render-process-gone', onGone);
         current.webContents.removeListener('did-start-loading', onLoading);
+        current.webContents.removeListener('cursor-changed', onCursor);
       }
+      if (this.overlayCursor === cursor) {
+        this.overlayCursor = null;
+        this.cursorKey = '';
+      }
+      cursor?.dispose();
     });
     return current;
   }
 
   private hideWindow(): void {
     const window = this.window;
+    this.syncCursor(null);
     if (usable(window)) {
       try {
         window.setIgnoreMouseEvents(true, { forward: true });
@@ -1632,6 +1719,7 @@ function hashPng(png: Buffer): string | null {
 export const dockAnnotationController = new DockAnnotationController(null, {
   createWindow: createOverlayWindow,
   cursor: () => screen.getCursorScreenPoint(),
+  attachCursor: (window) => attachDockCursor(window),
   hash: hashPng,
   picker: createDockElementPicker(),
   intentWindow: inspectDockIntentWindow,
