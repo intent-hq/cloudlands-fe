@@ -17,11 +17,11 @@
     second = false,
     noteId = 'spec',
     generation = 0,
-  } = $props<{
+  }: {
     second?: boolean;
     noteId?: string;
     generation?: number;
-  }>();
+  } = $props();
   let ready = $state(false);
   let requests = $state<unknown[]>([]);
   let updated = false;

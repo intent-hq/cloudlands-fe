@@ -148,9 +148,11 @@ export function hasUniversalSubject(selector: string): boolean {
 
 /**
  * The top-level arguments of every `:is()` / `:where()` / `:not()` / `:global()`
- * in `selector`, each a selector of its own. Tailwind v4 compiles variants such
- * as `group-has-[…]:pr-8` to `.utility:is(:where(.group):has(…) *)`, so the
- * offending shape lives inside the argument rather than at the subject.
+ * in `selector`, each a selector of its own. Arbitrary variants such as
+ * `[.foo:has(.bar)_:is(*,.baz)]:pr-8` compile to `:is(.foo:has(.bar) :is(*, .baz))`
+ * (and Tailwind 4.3.3 compiled `group-has-[…]:pr-8` to
+ * `.utility:is(:where(.group):has(…) *)`), so the offending shape lives inside
+ * the argument rather than at the subject.
  */
 export function wrappedSelectorArguments(selector: string): string[] {
   return [...selector.matchAll(wrappedArguments)].flatMap((match) => {

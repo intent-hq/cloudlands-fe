@@ -2,9 +2,9 @@
 // @ui-invariant
 // Compiled-stylesheet counterpart of `css-has-invalidation-audit.test.ts`.
 // The source ratchet cannot see what Tailwind emits: a `[body:has(.x)_&]:pr-8`
-// candidate in any scanned file, or a `group-has-*` variant, only becomes a
-// document-anchored or universal-subject `:has()` selector in the compiled
-// CSS. This suite compiles `src/app.css` the way the production build does
+// candidate in any scanned file only becomes a document-anchored or
+// universal-subject `:has()` selector in the compiled CSS. This suite compiles
+// `src/app.css` the way the production build does
 // (Tailwind v4 via `@tailwindcss/postcss`, auto-detected sources rooted at the
 // package directory) and audits every emitted rule selector.
 import tailwindcss from '@tailwindcss/postcss';
@@ -48,7 +48,6 @@ describe('compiled css :has() invalidation audit', () => {
   describe('compiler fixtures', () => {
     it.each([
       ['[body:has(.probe)_&]:pr-8', 'body:has(.probe)'],
-      ['group-has-[open]:pr-8', ':where(.group):has(:is(open)) *'],
       ['[.foo:has(.bar)_:is(*,.baz)]:pr-8', ':is(.foo:has(.bar) :is(*, .baz))'],
       ['[.foo:has(.bar)_:where(*):hover]:pr-8', ':is(.foo:has(.bar) :where(*):hover)'],
       ['[&:is(body):has(.probe)]:pr-8', ':is(body):has(.probe)'],
@@ -59,16 +58,22 @@ describe('compiled css :has() invalidation audit', () => {
       expect(violations[0]).toContain(emittedShape);
     });
 
-    it.each([['has-[>svg]:pl-2'], ['dark:pr-8'], ['[.x:not(body):has(.y)_&]:pr-8']])(
-      'accepts the utility %s',
-      async (candidate) => {
-        const css = await compile(candidateStylesheet([candidate]));
-        expect(compiledSelectors(css).some((s) => s.includes(':pl-2') || s.includes(':pr-8'))).toBe(
-          true,
-        );
-        expect(auditCompiled(css)).toEqual([]);
-      },
-    );
+    // Tailwind 4.3.3 compiled `group-has-*` to the universal-subject shape
+    // `.utility:is(:where(.group):has(…) *)`; 4.3.5 emits
+    // `:is(:where(.group):has(…) .utility)`, whose subject is the utility class.
+    // The source ratchet still bans `group-has-*` / `peer-has-*` in markup.
+    it.each([
+      ['has-[>svg]:pl-2'],
+      ['dark:pr-8'],
+      ['[.x:not(body):has(.y)_&]:pr-8'],
+      ['group-has-[open]:pr-8'],
+    ])('accepts the utility %s', async (candidate) => {
+      const css = await compile(candidateStylesheet([candidate]));
+      expect(compiledSelectors(css).some((s) => s.includes(':pl-2') || s.includes(':pr-8'))).toBe(
+        true,
+      );
+      expect(auditCompiled(css)).toEqual([]);
+    });
   });
 
   describe('production stylesheet', () => {
