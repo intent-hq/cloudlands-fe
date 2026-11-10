@@ -8,6 +8,9 @@
 // `--installed-only` (verify:changed) refuses only an unsupported Node or a
 // missing install: verify-changed.mjs imports npm packages before its own
 // freshness check, which it skips for --dry-run and --help.
+// `--warn-stale` (build:main) refuses only a missing install and prints every
+// other problem as a warning: a build should say its install is out of date
+// without blocking, and build:main provisions its own i18n output.
 import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -68,33 +71,37 @@ export async function ensureI18nFresh(root = REPO_ROOT, { ensure = ensureRepoPar
 const isDirectRun =
   process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
 if (isDirectRun) {
+  const installedOnly = process.argv.includes('--installed-only');
+  const warnStale = process.argv.includes('--warn-stale');
+  const report = (prefix, reason) => {
+    if (warnStale) {
+      console.error(`${prefix}warning: ${reason}`);
+    } else {
+      console.error(`${prefix}${reason}`);
+      process.exitCode = 1;
+    }
+  };
   let node;
   try {
     node = checkNodeSupport();
-    if (!node.ok) {
-      console.error(node.reason);
-      process.exitCode = 1;
-    }
+    if (!node.ok) report(warnStale ? '[node:check] ' : '', node.reason);
   } catch (error) {
-    console.error(`[node:check] ${error instanceof Error ? error.message : error}`);
-    process.exitCode = 1;
+    report('[node:check] ', error instanceof Error ? error.message : error);
   }
-  const installedOnly = process.argv.includes('--installed-only');
   let deps;
-  if (node?.ok) {
+  if (node?.ok || warnStale) {
     try {
       deps = checkDepsFresh();
       if (installedOnly && deps.status !== 'missing') deps = null;
-      else if (!deps.ok) {
+      else if (deps.status === 'missing') {
         console.error(`[deps:check] ${deps.reason}`);
         process.exitCode = 1;
-      }
+      } else if (!deps.ok) report('[deps:check] ', deps.reason);
     } catch (error) {
-      console.error(`[deps:check] ${error instanceof Error ? error.message : error}`);
-      process.exitCode = 1;
+      report('[deps:check] ', error instanceof Error ? error.message : error);
     }
   }
-  if (deps?.ok) {
+  if (deps?.ok && !warnStale) {
     try {
       const i18n = await ensureI18nFresh();
       if (!i18n.ok) {
