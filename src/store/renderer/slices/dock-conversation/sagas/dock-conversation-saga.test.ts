@@ -1907,6 +1907,17 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
 });
 
 describe('recording toolbar startup admission', () => {
+  it('refuses an unsupported Record before opening a toolbar or calling native recording', async () => {
+    const native = scriptedNative();
+    const startClip = vi.spyOn(native.service, 'startClip');
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().captureError).toBe('unavailable'));
+    expect(native.calls.started).toEqual([]);
+    expect(startClip).not.toHaveBeenCalled();
+  });
+
   it.each([true, false])(
     'cancelling a pending toolbar cannot start recording or fallback annotate (record=%s)',
     async (record) => {
