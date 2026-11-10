@@ -344,6 +344,7 @@ import {
   setDockHideHandler,
 } from './dock-window';
 import { createDockMenuController } from './dock-menu-controller';
+import { dockWindowMenuItems } from './dock-window-menu';
 import { registerDockActivateAppHandler } from './dock-placement-ipc';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
 import {
@@ -1072,55 +1073,28 @@ const bootFlow = app.whenReady().then(async () => {
       { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
-      // The dock is an experimental Labs feature: its items exist only while the lab is on.
-      ...(isDockLabEnabled()
-        ? ([
-            {
-              label: m.menu_show_intent_dock(),
-              type: 'checkbox',
-              checked: dockMenuController.isEnabled(),
-              // Unchecking turns Notch dock off (one setting); checking brings back a
-              // dock that closed without a hide (a crash, a failed load).
-              click: (menuItem) =>
-                void (menuItem.checked
-                  ? dockMenuController.setEnabled(true)
-                  : changeDockLabEnabled(false)
-                ).catch((error: unknown) => logger.warn('Failed to change the dock', { error })),
-            },
-            {
-              label: m.menu_focus_intent_dock(),
-              // Registered globally; a menu accelerator would dispatch twice.
-              sublabel: dockShortcutAvailable('focus')
-                ? dockShortcutMenuKey('focus')
-                : m.dock_shortcut_unavailable(),
-              enabled: dockMenuController.isEnabled(),
-              click: () => void requestDockShortcut('focus'),
-            },
-            {
-              label: m.dock_shortcut_record_menu(),
-              sublabel: dockShortcutAvailable('record')
-                ? dockShortcutMenuKey('record')
-                : m.dock_shortcut_unavailable(),
-              enabled: dockMenuController.isEnabled(),
-              click: () => void requestDockShortcut('record'),
-            },
-            ...(
-              [
-                ['capture', m.browser_overflow_screenshot_label()],
-                ['annotate', m.dock_annotate_label()],
-                ['dictate', m.dock_shortcut_dictate_label()],
-              ] as const
-            ).map(([action, label]) => ({
-              label,
-              sublabel: dockShortcutAvailable(action)
-                ? dockShortcutMenuKey(action)
-                : m.dock_shortcut_unavailable(),
-              enabled: dockMenuController.isEnabled(),
-              click: () => void requestDockShortcut(action),
-            })),
-            { type: 'separator' },
-          ] satisfies Electron.MenuItemConstructorOptions[])
-        : []),
+      // Show Intent Dock is the Notch dock setting (always present); the dock commands
+      // exist only while it is on.
+      ...dockWindowMenuItems({
+        labEnabled: isDockLabEnabled(),
+        dockShown: dockMenuController.isEnabled(),
+        labels: {
+          show: m.menu_show_intent_dock(),
+          focus: m.menu_focus_intent_dock(),
+          record: m.dock_shortcut_record_menu(),
+          capture: m.browser_overflow_screenshot_label(),
+          annotate: m.dock_annotate_label(),
+          dictate: m.dock_shortcut_dictate_label(),
+          unavailable: m.dock_shortcut_unavailable(),
+        },
+        hint: (action) => ({
+          available: dockShortcutAvailable(action),
+          key: dockShortcutMenuKey(action),
+        }),
+        setNotchDock: changeDockLabEnabled,
+        requestShortcut: (action) => void requestDockShortcut(action),
+        warn: (error) => logger.warn('Failed to change the dock', { error }),
+      }),
       {
         label: m.menu_select_previous_tab(),
         accelerator: 'CmdOrCtrl+[',
