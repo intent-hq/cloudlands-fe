@@ -419,9 +419,14 @@
         if (openHeight !== null || heldHeight !== null) stopHeight();
         return;
       }
-      if (previous === target || previous === 0) return;
+      const retainedHeight =
+        openHeight !== null &&
+        !heightLoop.active &&
+        !growGate.pending &&
+        Math.abs(openHeight - target) > 0.5;
+      if ((previous === target && !retainedHeight) || previous === 0) return;
       if (!settled) {
-        stopHeight(!expanded && reveal > 0);
+        stopHeight(true);
         return;
       }
       const from = openHeight ?? placement.surface.height;
