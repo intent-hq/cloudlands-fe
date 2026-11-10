@@ -252,11 +252,13 @@ describe('DockAnnotationController', () => {
     expect(state().marks).toEqual([old]);
     t.controller.handleToolbar({ sessionId: 's1', action: 'discard' });
     expect(state().marks).toEqual([]);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'done' })).toBe(false);
     await t.controller.setAnnotationTool('s1', 'pen');
     await t.controller.setAnnotationTool('s1', 'pen', 1);
     expect(state().marks).toEqual([]);
     expect(state().tool).toBe('box');
     t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'done' })).toBe(true);
     await t.controller.setAnnotationTool('s1', 'box', 1);
     expect(state().marks).toEqual([old]);
     expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pick' })).toBe(false);

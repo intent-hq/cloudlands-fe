@@ -2233,6 +2233,27 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     expect(native.calls.stopped).toEqual([]);
   });
 
+  it.each(['pause', 'tool'] as const)('Done remains a safe recovery after rejected %s restoration', async (failure) => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const sessionId = native.calls.started[0].id;
+    const clipId = native.calls.clips[0];
+    const pauseCommand = vi.spyOn(native.service, 'pauseClip');
+    if (failure === 'pause') pauseCommand.mockRejectedValueOnce(new Error('transport'));
+    else vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+    await vi.waitFor(() => expect(pauseCommand).toHaveBeenCalledTimes(1));
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
+    await new Promise((r) => setTimeout(r, 0));
+    native.emit({ type: 'annotation-media', sessionId, action: 'done' });
+    await vi.waitFor(() => expect(native.calls.stopped).toEqual([clipId]));
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    expect(evidenceView().clips).toHaveLength(1);
+  });
+
   it.each(['mouse', 'tool'] as const)('a rejected %s control during discard/Undo leaves the saga usable', async (failure) => {
     const native = scriptedNative({ record: true });
     native.service.setAnnotationMouse = vi.fn(async () => {});

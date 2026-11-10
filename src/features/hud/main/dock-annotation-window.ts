@@ -716,7 +716,8 @@ export class DockAnnotationController implements AnnotationService {
     )
       return false;
     if (session.discarding && request.action === 'discard') return false;
-    if (session.discarding && !['discard', 'discard-undo', 'discard-confirm', 'rect', 'mouse'].includes(request.action)) return false;
+    if (session.discarding && request.action === 'done' && !session.undoRequested) return false;
+    if (session.discarding && !['discard', 'discard-undo', 'discard-confirm', 'rect', 'mouse', 'done'].includes(request.action)) return false;
     if (request.action !== 'rect') this.activity();
     if (request.action === 'tool') {
       if (session.discarding || !validTool(request.tool) || request.tool === 'pick') return false;

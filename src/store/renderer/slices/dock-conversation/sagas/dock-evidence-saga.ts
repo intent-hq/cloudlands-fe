@@ -1065,8 +1065,8 @@ function* toggleRecording({
 }: ReturnType<typeof dockEvidenceRecordToggleRequested>): SagaGenerator<void | 'cancelled'> {
   if (!activePair(workspaceId, agentId)) return;
   const evidence = evidenceOf(workspaceId, agentId);
-  if (discardedSessions.has(evidence?.annotation?.id ?? '')) return 'cancelled';
   const clip = recordingDockClip(evidence);
+  if (discardedSessions.has(evidence?.annotation?.id ?? '') && (!clip || expectedClipId !== clip.id)) return 'cancelled';
   if (recordingToggleIntent(clip?.id, expectedClipId) === 'ignore') return;
   const service = nativeService;
   if (clip) {
@@ -1561,7 +1561,7 @@ function* setRecordingPaused(
 
 const discardedSessions = new Set<string>();
 const discardGenerations = new Map<string, number>();
-const discardWaits = new Map<string, { done: Promise<void>; service: DockEvidenceNativeService | null; authority: string | null; paused: boolean; inputRevision?: number; clipId: string | null }>();
+const discardWaits = new Map<string, { done: Promise<void>; service: DockEvidenceNativeService | null; authority: string | null; paused: boolean; undoRequested: boolean; inputRevision?: number; clipId: string | null }>();
 
 /**
  * The recording tool bar. Done: the screen's marks go (they are in the clip already),
@@ -1575,7 +1575,9 @@ function* recordingToolbarAction(
   action: Exclude<DockAnnotationMediaAction, 'capture' | 'record'>,
   inputRevision?: number,
 ): SagaGenerator<void> {
-  if (discardedSessions.has(evidenceOf(workspaceId, agentId)?.annotation?.id ?? '') && !['discard', 'discard-undo', 'discard-confirm'].includes(action)) return;
+  const lockedSessionId = evidenceOf(workspaceId, agentId)?.annotation?.id ?? '';
+  const recoveringDone = action === 'done' && discardWaits.get(lockedSessionId)?.undoRequested === true;
+  if (discardedSessions.has(lockedSessionId) && !recoveringDone && !['discard', 'discard-undo', 'discard-confirm'].includes(action)) return;
   if (action === 'pause' || action === 'resume') {
     yield* setRecordingPaused(workspaceId, agentId, action === 'pause');
     return;
@@ -1584,6 +1586,7 @@ function* recordingToolbarAction(
     const session = evidenceOf(workspaceId, agentId)?.annotation;
     const held = session && discardWaits.get(session.id);
     if (!session || !held) return;
+    held.undoRequested = true;
     yield* call(() => held.done);
     if (
       discardWaits.get(session.id) !== held ||
@@ -1626,6 +1629,7 @@ function* recordingToolbarAction(
       service: nativeService,
       authority: getPrincipalActionContext(appStore.state),
       paused: false,
+      undoRequested: false,
       inputRevision,
       clipId: clip?.id ?? null,
     };
@@ -1648,7 +1652,7 @@ function* recordingToolbarAction(
   if (clip)
     yield* put(
       action === 'done'
-        ? dockEvidenceRecordToggleRequested(workspaceId, agentId)
+        ? dockEvidenceRecordToggleRequested(workspaceId, agentId, clip.id)
         : dockEvidenceClipRemoveRequested(workspaceId, agentId, clip.id),
     );
   yield* endSession(workspaceId, agentId);
