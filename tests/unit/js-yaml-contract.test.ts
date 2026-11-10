@@ -93,7 +93,9 @@ describe('js-yaml contract', () => {
     }
   });
 
-  it('dumps an update feed in the block style electron-updater reads', () => {
+  // Release feeds themselves are written with electron-updater's own js-yaml
+  // copy; this pins our direct copy's output for feed-shaped test fixtures.
+  it('dumps feed-shaped data in block style', () => {
     expect(dump(feed)).toBe(`version: 2.310.0
 files:
   - url: Intent-Setup-2.310.0.exe
