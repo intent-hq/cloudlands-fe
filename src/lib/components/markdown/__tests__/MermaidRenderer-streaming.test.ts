@@ -8,7 +8,6 @@ const mocks = vi.hoisted(() => ({
   mermaidAPI: { getDiagramFromText: vi.fn(async () => ({ type: 'mock' })) },
 }));
 vi.mock('mermaid', () => ({ default: mocks }));
-vi.mock('@mermaid-js/layout-elk', () => ({ default: [] }));
 import MermaidRenderer from '../MermaidRenderer.svelte';
 
 const tokens = {
