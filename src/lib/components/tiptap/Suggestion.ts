@@ -5,7 +5,7 @@ export interface SuggestionOptions {
   HTMLAttributes: Record<string, any>;
 }
 
-export type SuggestionType = 'addition' | 'deletion' | 'modification';
+type SuggestionType = 'addition' | 'deletion' | 'modification';
 
 export interface SuggestionDetails {
   id: string;
