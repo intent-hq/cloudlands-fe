@@ -1112,7 +1112,7 @@ describe('dock screen evidence through the canonical send', () => {
     appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
     await vi.waitFor(() => expect(evidenceView().annotating).toBe(true));
     const sessionId = native.calls.started[0].id;
-    expect(native.calls.started[0]).toMatchObject({ tool: 'pick', mode: 'live' });
+    expect(native.calls.started[0]).toMatchObject({ tool: 'box', mode: 'live' });
     // The first live mark carries the capture that becomes the session image.
     native.emit({
       type: 'mark',
@@ -2117,7 +2117,7 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     appStore.dispatch(dockEvidenceBarMediaChanged(workspaceA, mainA, media));
     await vi.waitFor(() => expect(native.calls.media).toEqual([media]));
     // Selecting a drawing tool opens a standalone bar; Annotate starts recording.
-    appStore.dispatch(dockEvidenceToolSelectRequested(workspaceA, mainA, 'pick'));
+    appStore.dispatch(dockEvidenceToolSelectRequested(workspaceA, mainA, 'box'));
     await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
     expect(evidenceView().recording).toBe(false);
     expect(native.calls.clips).toEqual([]);
@@ -2193,6 +2193,43 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     expect(native.calls.ended).toContain(sessionId);
     // The stopped clip is kept: it becomes the composer's attachment.
     await vi.waitFor(() => expect(evidenceView().clips.map((clip) => clip.id)).toEqual([clipId]));
+  });
+
+  it.each([false, true])('discard suspends input before held pause; Undo respects owner replacement=%s', async (replaceOwner) => {
+    const native = scriptedNative({ record: true });
+    const pause = deferred<DockNativeResult<{ paused: boolean }>>();
+    vi.spyOn(native.service, 'pauseClip').mockReturnValue(pause.promise);
+    const mouse = vi.fn(async () => {});
+    native.service.setAnnotationMouse = mouse;
+    const tool = vi.spyOn(native.service, 'setAnnotationTool');
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'mark', sessionId, markId: 'kept-before-discard', tool: 'box', geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 }, element: null, capture: shot(1) });
+    await vi.waitFor(() => expect(evidenceView().evidence?.marks).toHaveLength(1));
+    const marksBefore = structuredClone(evidenceView().evidence?.marks);
+    const imagesBefore = structuredClone(evidenceView().evidence?.images);
+    mouse.mockClear(); tool.mockClear();
+    try {
+      native.emit({ type: 'annotation-media', sessionId, action: 'discard' });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(mouse).toHaveBeenCalledWith(sessionId);
+      native.emit({ type: 'mark', sessionId, markId: 'late-discard', tool: 'box', geometry: { kind: 'box', x: 10, y: 10, w: 30, h: 30 }, element: null, capture: shot(1) });
+      native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo' });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(evidenceView().evidence?.marks).toEqual(marksBefore);
+      expect(evidenceView().evidence?.images).toEqual(imagesBefore);
+      expect(tool).not.toHaveBeenCalled();
+      if (replaceOwner) configureDockEvidenceNative(scriptedNative({ record: true }).service);
+    } finally { pause.resolve({ ok: true, value: { paused: true } }); }
+    if (replaceOwner) {
+      await new Promise((r) => setTimeout(r, 0));
+      expect(tool).not.toHaveBeenCalled();
+    } else await vi.waitFor(() => expect(tool).toHaveBeenCalledWith(sessionId, 'box'));
+    expect(evidenceView().recording).toBe(true);
+    expect(native.calls.stopped).toEqual([]);
   });
 
   it('discard pauses at once; undo keeps the clip, and confirm deletes it and ends the session', async () => {

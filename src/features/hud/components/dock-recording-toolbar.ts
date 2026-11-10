@@ -4,12 +4,11 @@
  */
 import type { DockMarkTool } from '$shared/dock-evidence';
 
-/** Pointer, then the well: Element selector, Rectangle, Draw, Arrow (spec order). */
-export const DOCK_RECORDING_TOOLS: readonly DockMarkTool[] = ['pick', 'box', 'pen', 'arrow'];
+/** Pointer, then Rectangle, Draw and Arrow. Legacy element marks remain readable. */
+export const DOCK_RECORDING_TOOLS: readonly DockMarkTool[] = ['box', 'pen', 'arrow'];
 
-export const DOCK_RECORDING_TOOL_KEYS: Record<DockMarkTool | 'pointer', string> = {
+export const DOCK_RECORDING_TOOL_KEYS: Partial<Record<DockMarkTool | 'pointer', string>> = {
   pointer: 'V',
-  pick: 'E',
   box: 'R',
   pen: 'D',
   arrow: 'A',
@@ -29,7 +28,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
-/** V/E/R/D/A select a tool, Space pauses or resumes, Enter is Done, Esc selects Pointer. */
+/** V/R/D/A select a tool, Space pauses or resumes, Enter is Done, Esc selects Pointer. */
 export function dockRecordingShortcut(
   event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'target'> & {
     isComposing?: boolean;

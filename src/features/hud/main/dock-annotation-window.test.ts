@@ -242,6 +242,38 @@ const marks = (events: DockEvidenceNativeEvent[]) =>
   );
 
 describe('DockAnnotationController', () => {
+  it('normalizes removed Pick entry but preserves legacy element marks through Discard and Undo', async () => {
+    const t = setup();
+    await t.start('live', 'pick');
+    const state = () => t.windows[0]!.webContents.sent.at(-1) as { tool: string; marks: unknown[] };
+    expect(state().tool).toBe('box');
+    const old = { n: 1, tool: 'pick' as const, geometry: { kind: 'rect' as const, x: 100, y: 100, w: 30, h: 30 } };
+    await t.controller.syncMarks('s1', [old]);
+    expect(state().marks).toEqual([old]);
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard' });
+    expect(state().marks).toEqual([]);
+    await t.controller.setAnnotationTool('s1', 'box');
+    expect(state().marks).toEqual([old]);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pick' })).toBe(false);
+    await t.controller.endAnnotation('s1');
+  });
+
+  it('discard cancels held and queued strokes, blocks tools until owned restoration', async () => {
+    const t = setup();
+    await t.start();
+    t.holdCaptures();
+    const pending = t.gesture([{ x: 100, y: 100 }, { x: 160, y: 160 }]);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'discard' })).toBe(true);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pen' })).toBe(false);
+    t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
+    await t.controller.setAnnotationTool('s1', 'box');
+    t.releaseCapture();
+    await pending;
+    expect(marks(t.events)).toEqual([]);
+    await t.controller.endAnnotation('s1');
+  });
+
   it.each([false, true])(
     'retires active or warm resources and preserves subscribers (ended=%s)',
     async (ended) => {

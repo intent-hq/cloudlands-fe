@@ -231,6 +231,9 @@ interface Session {
   toolbar: DockAnnotationRect | null;
   /** Mouse mode: click-through except the tool bar; no gesture starts. */
   mouse: boolean;
+  discarding: boolean;
+  discardMouse: boolean;
+  inputRevision: number;
 }
 
 interface Lease {
@@ -242,6 +245,7 @@ interface Frozen {
   gestureProgress?: DockGestureProgress;
   session: Session;
   lease: Lease;
+  inputRevision: number;
   tool: DockMarkTool;
   display: Display;
   origin: DockImagePoint;
@@ -407,7 +411,7 @@ export class DockAnnotationController implements AnnotationService {
     const session: Session = {
       id: request.id,
       mode: request.mode,
-      tool: request.tool,
+      tool: request.tool === 'pick' ? 'box' : request.tool,
       display,
       window,
       ready: false,
@@ -426,6 +430,9 @@ export class DockAnnotationController implements AnnotationService {
       excludedKey: '',
       toolbar: null,
       mouse: false,
+      discarding: false,
+      discardMouse: false,
+      inputRevision: 0,
     };
     this.session = session;
     this.stopNavigation = host.watchNavigation?.(() => this.notifyNavigation()) ?? null;
@@ -492,7 +499,14 @@ export class DockAnnotationController implements AnnotationService {
 
   async setAnnotationTool(sessionId: string, tool: DockMarkTool): Promise<void> {
     const session = this.session;
-    if (!session || session.id !== sessionId || session.ended || !validTool(tool)) return;
+    if (!session || session.id !== sessionId || session.ended || !validTool(tool) || tool === 'pick') return;
+    if (session.discarding) {
+      session.discarding = false;
+      session.mouse = session.discardMouse;
+      this.publish(session);
+      this.route();
+      return;
+    }
     // A held gesture keeps the tool it started with. Choosing a tool leaves mouse mode.
     session.tool = tool;
     session.mouse = false;
@@ -696,9 +710,10 @@ export class DockAnnotationController implements AnnotationService {
       request?.sessionId !== session.id
     )
       return false;
+    if (session.discarding && !['discard', 'discard-undo', 'discard-confirm', 'rect', 'mouse'].includes(request.action)) return false;
     if (request.action !== 'rect') this.activity();
     if (request.action === 'tool') {
-      if (!validTool(request.tool)) return false;
+      if (session.discarding || !validTool(request.tool) || request.tool === 'pick') return false;
       if (session.tool !== request.tool || session.mouse) {
         session.tool = request.tool;
         session.mouse = false;
@@ -765,7 +780,13 @@ export class DockAnnotationController implements AnnotationService {
       request.action === 'discard-undo' ||
       request.action === 'discard-confirm'
     ) {
-      // The recording tool bar's own actions; the dock applies them to its live clip.
+      if (request.action === 'discard') {
+        session.discardMouse = session.mouse;
+        session.discarding = true;
+        session.inputRevision += 1;
+        this.enterMouse(session);
+      }
+      // Undo requests restoration; the owning dock restores input after pause settles.
       this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action });
       return true;
     }
@@ -816,7 +837,7 @@ export class DockAnnotationController implements AnnotationService {
     if (request.sequence <= session.lastSequence) return reject('stale');
     session.lastSequence = request.sequence;
     // Mouse mode makes no marks (the overlay is click-through there anyway).
-    if (session.mouse) return reject('excluded');
+    if (session.mouse || session.discarding) return reject('excluded');
     if (request.tool !== session.tool) return reject('stale');
     const origin = { x: request.x, y: request.y };
     if (!this.insideDisplay(session, origin)) return reject('outside');
@@ -938,6 +959,7 @@ export class DockAnnotationController implements AnnotationService {
     return {
       session,
       lease,
+      inputRevision: session.inputRevision,
       tool: hold.tool,
       display: session.display,
       origin: { ...hold.origin },
@@ -972,7 +994,7 @@ export class DockAnnotationController implements AnnotationService {
     const { session, display } = frozen;
     const host = this.host;
     // Every await is fenced by the session and the commit deadline before any state changes.
-    const live = () => !frozen.lease.expired && this.current(session);
+    const live = () => !frozen.lease.expired && !session.discarding && frozen.inputRevision === session.inputRevision && this.current(session);
     if (!host || !live()) return reject('stale');
     const { x: dx, y: dy } = display.bounds;
     const originGlobal = { x: dx + frozen.origin.x, y: dy + frozen.origin.y };
@@ -1199,7 +1221,7 @@ export class DockAnnotationController implements AnnotationService {
     element: DockMarkElement | null,
     capture?: DockCapturedPixels,
   ): boolean {
-    if (frozen.lease.expired || !this.current(frozen.session)) return false;
+    if (frozen.lease.expired || frozen.session.discarding || frozen.inputRevision !== frozen.session.inputRevision || !this.current(frozen.session)) return false;
     if (frozen.clipId && frozen.clipId !== this.host?.clipIdentity?.()) return false;
     const sameClip = frozen.clipId ? frozen.clipId === this.host?.clipIdentity?.() : !this.host?.clipIdentity;
     const width = capture?.width ?? frozen.session.image?.width;
@@ -1313,7 +1335,7 @@ export class DockAnnotationController implements AnnotationService {
             height: session.still.pixels.height,
           }
         : null,
-      marks: session.marks,
+      marks: session.discarding ? [] : session.marks,
       marksRevision: session.marksRevision,
       excluded: this.localExcluded(session),
       pick: session.mode === 'still' ? 'unavailable' : pickStatus(this.native.picker.access()),
