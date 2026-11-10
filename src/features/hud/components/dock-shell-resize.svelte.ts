@@ -36,7 +36,11 @@ export function useDockShellResize(
       action: 'resize',
       // Keep the native horizontal allocation stable while only the visible shell opens.
       width: placement.shape === 'edge' ? width : Math.max(width, current.conversationSize.width),
-      height,
+      // Upward floating panels also need their native origin to stay fixed while closing.
+      height:
+        placement.shape === 'floating'
+          ? Math.max(height, DOCK_FLOATING_COMPACT_SIZE.height + current.conversationSize.height)
+          : height,
       revision: placement.revision,
       compactNotchWingWidth: compactWingWidth,
       sidePanelSize:
