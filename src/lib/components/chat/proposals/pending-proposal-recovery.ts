@@ -32,7 +32,8 @@ function refProposalBody(
 /**
  * Card-keyed lifecycle id for a metadata ref: derived from the ref's proposal
  * body (resident row or recovery cache) exactly as the card derives it, else
- * the identity a rendered card remembered for the ref's key.
+ * the identity a card rendered from the ref's carrying message remembered (a
+ * same-key card in another message never lends its lifecycle).
  */
 export function pendingProposalLocalIdResolver(
   state: StoreState,
@@ -42,7 +43,7 @@ export function pendingProposalLocalIdResolver(
     const proposal = refProposalBody(state, agentId, ref);
     return proposal
       ? getCardProposalId(proposal, agentId, ref.messageId)
-      : rememberedProposalIdentity(agentId, ref.proposalId);
+      : rememberedProposalIdentity(agentId, ref);
   };
 }
 

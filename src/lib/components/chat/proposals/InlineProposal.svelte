@@ -136,7 +136,7 @@
   }
 
   $effect(() => {
-    rememberProposalIdentity(agentId, proposalId, localProposalId);
+    rememberProposalIdentity(agentId, { proposalId, messageId }, localProposalId);
     void $lifecycleMap$;
     if (!matchingRef) return;
     reconcileAppliedProposals({
@@ -180,7 +180,7 @@
           suppressLocalDiscard
           {initialDraft}
           onDraftChange={handleDraftChange}
-          onApply={(detail) => applyProposal(agentId, detail)}
+          onApply={(detail) => applyProposal(agentId, detail, messageId)}
           onDiscard={() =>
             proposal.kind === 'workspace-transfer'
               ? handleConfirmDismiss()

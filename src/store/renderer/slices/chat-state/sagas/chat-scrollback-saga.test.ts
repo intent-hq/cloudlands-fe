@@ -23,6 +23,9 @@ import {
   deriveWizardPendingQuestions,
 } from '$lib/components/chat/questions/wizard-gate';
 import { derivePendingProposalRecoveryState } from '$lib/components/chat/proposals/pending-proposal-recovery';
+import { pendingProposalKeyOf } from '$lib/components/chat/proposals/pending-proposals';
+import { rememberProposalIdentity } from '$lib/components/chat/proposals/proposal-action-handlers';
+import { getCardProposalId } from '$lib/components/chat/proposals/proposal-id';
 import {
   HISTORY_SEGMENT_MAX,
   agentSessionReducer,
@@ -1073,6 +1076,45 @@ describe('chatScrollbackSaga (on-demand history paging)', () => {
     expect(run.chat()?.pendingProposalRecovery?.['m-far']?.status).toBe('found');
     // Resident carrying message settles synchronously from the loaded row.
     expect(run.chat()?.pendingProposalRecovery?.['m-resident']?.status).toBe('found');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a same-title legacy ref in another unloaded message pending and recovers it', async () => {
+    const run = harness();
+    // Legacy cards (no applyToolCallId) share the title-derived ref key.
+    const legacy = {
+      kind: 'workspace-create',
+      payload: { params: { title: 'Same title' } },
+      preview: { title: 'Same title' },
+    } as Proposal;
+    const key = pendingProposalKeyOf(legacy);
+    // Card A (message m-a, no longer loaded) rendered, remembered its
+    // identity and was applied.
+    const localIdA = getCardProposalId(legacy, AGENT, 'm-a');
+    rememberProposalIdentity(AGENT, { proposalId: key, messageId: 'm-a' }, localIdA);
+    run.dispatch(
+      bulkUpsertSessions([
+        session({
+          messages: [message('m-tail', 2000)],
+          metadata: { pendingProposals: [{ proposalId: key, messageId: 'm-b' }] },
+        }),
+      ]),
+    );
+    const state = {
+      ...run.state(),
+      proposalLifecycle: { [localIdA]: { status: 'applied', completedAt: 1 } },
+    } as StoreState;
+
+    // Message B's ref must not inherit card A's applied lifecycle.
+    expect(derivePendingProposalRecoveryState(state, AGENT)).toEqual([
+      { messageId: 'm-b', shouldRequest: true, loading: true },
+    ]);
+    mocks.getConversation.mockResolvedValueOnce(page([proposalMessage('m-b', 1000, [legacy])]));
+    run.dispatch(pendingProposalRecoveryRequested(AGENT, 'm-b'));
+    await settle();
+
+    expect(run.chat()?.pendingProposalRecovery?.['m-b']?.status).toBe('found');
     run.task.cancel();
     await run.task.toPromise();
   });

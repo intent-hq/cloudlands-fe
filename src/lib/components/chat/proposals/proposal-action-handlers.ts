@@ -22,20 +22,27 @@ function proposalKey(agentId: string, proposalId: string): string {
   return `${agentId}::${proposalId}`;
 }
 
-export function rememberProposalIdentity(
-  agentId: string,
-  proposalId: string,
-  localId: string,
-): void {
-  localProposalIds.set(proposalKey(agentId, proposalId), localId);
+// A legacy (title-keyed) ref key can repeat across messages, so the remembered
+// card identity is scoped to the carrying message: a new card must never
+// inherit an earlier card's applied/dismissed lifecycle through a shared key.
+function localIdentityKey(agentId: string, ref: PendingProposalRef): string {
+  return `${proposalKey(agentId, ref.proposalId)}@${ref.messageId}`;
 }
 
-/** Card-keyed lifecycle id a rendered card recorded for a daemon ref key. */
+export function rememberProposalIdentity(
+  agentId: string,
+  ref: PendingProposalRef,
+  localId: string,
+): void {
+  localProposalIds.set(localIdentityKey(agentId, ref), localId);
+}
+
+/** Card-keyed lifecycle id a card rendered from the ref's carrying message recorded. */
 export function rememberedProposalIdentity(
   agentId: string,
-  proposalId: string,
+  ref: PendingProposalRef,
 ): string | undefined {
-  return localProposalIds.get(proposalKey(agentId, proposalId));
+  return localProposalIds.get(localIdentityKey(agentId, ref));
 }
 
 // The daemon rejects a blank or over-256-byte origin id with -32602 before
@@ -46,10 +53,20 @@ function isSendableOriginId(id: string): boolean {
   return id.trim() !== '' && new TextEncoder().encode(id).length <= MAX_ORIGIN_ID_BYTES;
 }
 
-export function applyProposal(agentId: string, detail: ProposalActionDetail): void {
+export function applyProposal(
+  agentId: string,
+  detail: ProposalActionDetail,
+  messageId?: string,
+): void {
   const { proposal } = detail;
   const proposalId = pendingProposalKeyOf(proposal);
-  rememberProposalIdentity(agentId, proposalId, detail.lifecycleId ?? getProposalId(proposal));
+  if (messageId) {
+    rememberProposalIdentity(
+      agentId,
+      { proposalId, messageId },
+      detail.lifecycleId ?? getProposalId(proposal),
+    );
+  }
   if (proposal.kind === 'workspace-transfer') {
     appStore.dispatch(
       applyProposalRequested({ proposalId: getProposalId(proposal), kind: proposal.kind, detail }),
@@ -131,7 +148,7 @@ export function reconcileAppliedProposals(input: {
   lifecycle: ProposalLifecycleState;
 }): void {
   for (const ref of input.refs) {
-    const localId = localProposalIds.get(proposalKey(input.agentId, ref.proposalId));
+    const localId = rememberedProposalIdentity(input.agentId, ref);
     const scoped = input.lifecycle[agentScopedProposalKey(input.agentId, ref.proposalId)];
     const local = localId ? input.lifecycle[localId] : undefined;
     const applied =
