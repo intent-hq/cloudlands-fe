@@ -51,6 +51,35 @@ export const TEST_ONLY_CANARY_FILES = Object.freeze([
 export const PRODUCTION_CANARY_PATHS = Object.freeze([TEST_ONLY_CANARY_FILES[0].path]);
 export const ALL_CANARY_FILES = Object.freeze([...CANARY_FILES, ...TEST_ONLY_CANARY_FILES]);
 
+// Generated modules that source imports resolve through. Without them knip reports more
+// than a thousand unresolved `$shared/paraglide/messages.js` imports that read as dead code.
+// Each output is required only in a root that has its generator input, so knip fixture
+// roots in tests are unaffected.
+export const GENERATED_FILES = Object.freeze([
+  Object.freeze({
+    output: 'src/shared/paraglide/messages.js',
+    input: 'project.inlang/settings.json',
+    command: 'pnpm run generate:i18n',
+  }),
+  Object.freeze({
+    output: 'src/main/build-config.generated.ts',
+    input: 'scripts/generate-build-config.cjs',
+    command: 'pnpm run generate:build-config',
+  }),
+]);
+
+/** Generated files whose input exists but whose output does not; `exists` takes a root-relative path. */
+export function findMissingGeneratedFiles(exists) {
+  return GENERATED_FILES.filter((file) => exists(file.input) && !exists(file.output));
+}
+
+export function formatMissingGeneratedFiles(missing) {
+  return (
+    `Dead-code check not run: generated file(s) missing (${missing.map((file) => file.output).join(', ')}). ` +
+    `Run ${missing.map((file) => file.command).join(' && ')}, or use pnpm run lint:dead-code, which generates them.`
+  );
+}
+
 // Issue types of the production pass. Dependencies, unresolved imports and duplicates stay
 // with the default pass, which already fails on them.
 export const PRODUCTION_ISSUE_TYPES = Object.freeze([

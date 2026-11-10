@@ -442,6 +442,69 @@ describe('check-dead-code CLI cleanup', () => {
   });
 });
 
+// A fresh worktree has no generated i18n/build-config modules; knip then reports >1,200
+// unresolved imports that read as dead code. The gate must name the generate command instead.
+describe('check-dead-code generated-file preflight', () => {
+  const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'check-dead-code.mjs');
+  const I18N_OUTPUT = 'src/shared/paraglide/messages.js';
+  const BUILD_CONFIG_OUTPUT = 'src/main/build-config.generated.ts';
+
+  function run(present: string[]) {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'check-dead-code-generated-'));
+    try {
+      const root = path.join(tmp, 'root');
+      const files = [
+        'knip.jsonc',
+        'project.inlang/settings.json',
+        'scripts/generate-build-config.cjs',
+        ...present,
+      ];
+      for (const file of files) {
+        mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        writeFileSync(path.join(root, file), file === 'knip.jsonc' ? '{}' : '');
+      }
+      const result = spawnSync(process.execPath, [cliPath], {
+        cwd: root,
+        env: { ...process.env, CHECK_DEAD_CODE_ROOT: root },
+        encoding: 'utf8',
+        timeout: 20_000,
+      });
+      return { ...result, canaryWritten: existsSync(path.join(root, CANARY_DIR)) };
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it.each([
+    {
+      present: [],
+      named: ['pnpm run generate:i18n', 'pnpm run generate:build-config'],
+      absent: [],
+    },
+    {
+      present: [BUILD_CONFIG_OUTPUT],
+      named: ['pnpm run generate:i18n'],
+      absent: ['generate:build-config'],
+    },
+    {
+      present: [I18N_OUTPUT],
+      named: ['pnpm run generate:build-config'],
+      absent: ['generate:i18n'],
+    },
+  ])('with $present present, exits 1 naming only $named', ({ present, named, absent }) => {
+    const result = run(present);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    const lines = result.stderr.trim().split('\n');
+    expect(lines).toHaveLength(1);
+    for (const command of named) expect(lines[0]).toContain(command);
+    for (const command of absent) expect(lines[0]).not.toContain(command);
+    expect(lines[0]).toContain('pnpm run lint:dead-code');
+    expect(result.canaryWritten).toBe(false);
+  });
+});
+
 // Real gate processes and real scanner children share a disposable root. The scanner
 // reads the files only when released over a socket; no sleep determines scan ordering.
 describe('check-dead-code concurrent processes', () => {

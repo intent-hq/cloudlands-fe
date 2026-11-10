@@ -11,6 +11,8 @@
 //      that only tests use. A canary imported only by a test must be reported; findings
 //      outside scripts/knip-production-baseline.json fail, and stale baseline entries fail
 //      until `--prune-baseline` removes them (the baseline only shrinks).
+// Missing generated modules (fresh worktree) stop the gate with the generate command to run,
+// instead of a flood of unresolved-import errors.
 // A per-worktree lock owns the canaries from creation through scan completion and cleanup.
 // They are excluded in tsconfig.json so a concurrent type-check never sees them (TS6053).
 import { execFile } from 'node:child_process';
@@ -28,7 +30,9 @@ import {
   compareToBaseline,
   decideExitCode,
   findMissingCanaries,
+  findMissingGeneratedFiles,
   formatCanaryFailure,
+  formatMissingGeneratedFiles,
   formatProductionCanaryFailure,
   parseKnipJson,
   parseKnipRules,
@@ -208,6 +212,13 @@ function checkProduction(result, { prune }) {
 }
 
 async function main() {
+  const missingGenerated = findMissingGeneratedFiles((file) =>
+    existsSync(path.join(REPO_ROOT, file)),
+  );
+  if (missingGenerated.length > 0) {
+    console.error(formatMissingGeneratedFiles(missingGenerated));
+    return 1;
+  }
   const prune = process.argv.includes('--prune-baseline');
   const rules = parseKnipRules(readFileSync(path.join(REPO_ROOT, 'knip.jsonc'), 'utf8'));
   releaseLock = await acquireVerificationLock({
