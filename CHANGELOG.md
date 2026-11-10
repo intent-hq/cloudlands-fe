@@ -4,6 +4,17 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.310.6](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.5...v2.310.6) (2026-11-10)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.176 ([#4416](https://github.com/intent-hq/cloudlands-fe/issues/4416)) ([a95b4e1](https://github.com/intent-hq/cloudlands-fe/commit/a95b4e15d492892194f67e6445e66335b22721ee))
+* bump intentd sidecar to v0.11.178 ([#4421](https://github.com/intent-hq/cloudlands-fe/issues/4421)) ([cbd7318](https://github.com/intent-hq/cloudlands-fe/commit/cbd7318b942fbead865a41f9d1fdc5636253b054))
+* **chat:** pending proposals pill counts only open cards and scrolls to them ([#4417](https://github.com/intent-hq/cloudlands-fe/issues/4417)) ([6c420b1](https://github.com/intent-hq/cloudlands-fe/commit/6c420b1ae84265cfef693320d9a746580b449724))
+* keep inline text stable while editing ([#4420](https://github.com/intent-hq/cloudlands-fe/issues/4420)) ([b8903aa](https://github.com/intent-hq/cloudlands-fe/commit/b8903aaec0a664d06fb1e60c01182ba9cd3c1573))
+* reconcile queued messages at lifecycle boundaries ([#4419](https://github.com/intent-hq/cloudlands-fe/issues/4419)) ([a3b0ec1](https://github.com/intent-hq/cloudlands-fe/commit/a3b0ec1cb24c723382c0f9f49b6be4b339a0e449))
+
 ## [2.310.5](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.4...v2.310.5) (2026-11-10)
 
 
