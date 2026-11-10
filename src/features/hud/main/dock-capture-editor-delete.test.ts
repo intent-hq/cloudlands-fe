@@ -205,4 +205,18 @@ describe('editor delete authority and save serialization', () => {
     ).toBe(false);
     expect(await invoke(C.GET, next.editor)).toMatchObject({ openId: next.openId });
   });
+  it('a pending Retake blocks Delete and a failed/cancelled retry preserves the source', async () => {
+    const { editor, openId, dock } = await open();
+    for (const error of ['failed', 'cancelled'] as const) {
+      const retaking = invoke(C.RETAKE, editor, { openId });
+      const request = dock.webContents.sent.at(-1);
+      expect(request.channel).toBe(C.RETAKE_REQUESTED);
+      expect(await invoke(C.DELETE, editor, { openId })).toBe(false);
+      expect(await invoke(C.RETAKE_RESULT, dock, { requestId: request.payload.requestId, ok: false, error })).toBe(true);
+      expect(await retaking).toEqual({ ok: false, error });
+      expect(await invoke(C.GET, editor)).toMatchObject({ openId, attachmentId: 'file', source });
+    }
+    expect(dock.webContents.sent.filter((message: { channel: string }) => message.channel === C.RETAKE_REQUESTED)).toHaveLength(2);
+  });
+
 });
