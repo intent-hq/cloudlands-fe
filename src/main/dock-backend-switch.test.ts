@@ -31,6 +31,7 @@ vi.mock('electron', async () => {
       getURL: () => this.url,
       send: vi.fn(),
       sendInputEvent: vi.fn(),
+      focus: vi.fn(),
       setZoomMode: vi.fn(),
       setZoomLevel: vi.fn(),
     });
@@ -745,5 +746,47 @@ describe('dock reveal waits for a responsive renderer', () => {
     await fresh();
     expect(dock.markDockRendererReady(old)).toBe(false);
     expect(old.showInactive).not.toHaveBeenCalled();
+  });
+});
+
+describe('a transient close (release) keeps the dock; only its own Hide closes it', () => {
+  // macOS handing the keyboard back to the previous app is native behaviour, not covered here.
+  it('six focus/release cycles keep the same open dock, never Hide it or save anything', async () => {
+    // Native key focus for this window only (other tests rely on the shared mock as is).
+    let focused = false;
+    const native = window as unknown as { focus: () => void; isFocused: () => boolean; blur: () => void };
+    native.focus = () => void (focused = true);
+    native.isFocused = () => focused;
+    native.blur = vi.fn(() => void (focused = false));
+    const hide = vi.fn();
+    dock.setDockHideHandler(hide);
+    fixture.setLocalPref.mockClear();
+    for (let cycle = 1; cycle <= 6; cycle++) {
+      await dock.updateDockPlacement(window, { action: 'focus' });
+      expect(window.isFocused()).toBe(true);
+      await dock.updateDockPlacement(window, { action: 'release' });
+      await vi.advanceTimersByTimeAsync(1);
+      await flush();
+      expect(window.isFocused()).toBe(false);
+      expect(window.blur).toHaveBeenCalledTimes(cycle);
+      expect(dock.getDockWindow()).toBe(window);
+      expect(window.isDestroyed()).toBe(false);
+    }
+    // Released while not focused: nothing to hand back.
+    await dock.updateDockPlacement(window, { action: 'release' });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(window.blur).toHaveBeenCalledTimes(6);
+    expect(hide).not.toHaveBeenCalled();
+    expect(fixture.setLocalPref).not.toHaveBeenCalled();
+    expect(dock.getDockWindow()).toBe(window);
+  });
+
+  it("the dock's own Hide (dismiss) still goes to the hide handler", async () => {
+    const hide = vi.fn();
+    dock.setDockHideHandler(hide);
+    await dock.updateDockPlacement(window, { action: 'dismiss' });
+    await vi.advanceTimersByTimeAsync(1);
+    await flush();
+    expect(hide).toHaveBeenCalledTimes(1);
   });
 });
