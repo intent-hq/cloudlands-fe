@@ -7,7 +7,7 @@ import type { DockMarkTool } from '$shared/dock-evidence';
 /** Pointer, then Rectangle, Draw and Arrow. Legacy element marks remain readable. */
 export const DOCK_RECORDING_TOOLS: readonly DockMarkTool[] = ['box', 'pen', 'arrow'];
 
-export const DOCK_RECORDING_TOOL_KEYS: Partial<Record<DockMarkTool | 'pointer', string>> = {
+export const DOCK_RECORDING_TOOL_KEYS: Record<Exclude<DockMarkTool, 'pick'> | 'pointer', string> & { pick?: never } = {
   pointer: 'V',
   box: 'R',
   pen: 'D',
