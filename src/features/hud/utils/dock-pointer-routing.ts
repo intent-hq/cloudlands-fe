@@ -1,5 +1,5 @@
 import { WINDOW_CHANNELS } from '$shared/ipc/channels';
-import type { DockPointerRect } from '$shared/dock-layout';
+import { isPointInDockPointerRegions, type DockPointerRect } from '$shared/dock-layout';
 
 export const DOCK_EDGE_STRIP_WIDTH_PX = 8;
 
@@ -36,7 +36,8 @@ function defaultSurface(): HTMLElement | null {
  * Main also reports cursor presence over those regions from its poll, because the
  * non-key dock window does not reliably receive hover. A report that the real hover
  * state does not already reflect is replayed as pointerenter/pointerleave on the
- * surface, so the shell's own hover rules apply; real DOM hover always wins.
+ * surface, so the shell's own hover rules apply. A fresh native exit and re-entry
+ * can repair stale Chromium hover.
  */
 export function createDockPointerRegionController(
   bridge: DockPointerBridge | undefined = defaultBridge(),
@@ -47,17 +48,38 @@ export function createDockPointerRegionController(
   let latestRevision: number | undefined;
   let replayedInside = false;
   let readySent = false;
+  let active = false;
+  let publishedRegions: DockPointerRect[] = [];
+  let nativeOutside = false;
+  let nativePoint: { x: number; y: number } | null = null;
   const replay = (presence: unknown): void => {
-    const { inside, x, y } = (presence ?? {}) as { inside?: unknown; x?: unknown; y?: unknown };
+    const { inside, x, y, revision } = (presence ?? {}) as {
+      inside?: unknown;
+      x?: unknown;
+      y?: unknown;
+      revision?: unknown;
+    };
     const element = surface();
-    if (destroyed || !element || typeof inside !== 'boolean') return;
+    if (destroyed || !active || !element || typeof inside !== 'boolean') return;
+    if (revision !== latestRevision) return;
     if (typeof x !== 'number' || typeof y !== 'number' || !Number.isFinite(x + y)) return;
+    // Main reports region membership, not motion. Ignore identical transition
+    // points so a region-only membership flip cannot count as re-entry.
+    if (inside !== isPointInDockPointerRegions({ x, y }, publishedRegions)) return;
+    if (nativePoint?.x === x && nativePoint.y === y) return;
+    nativePoint = { x, y };
     const hoverScope = element.closest('[data-dock-hover-scope]') ?? element;
     const hovered = hoverScope.matches(':hover');
-    // Enter only when Chromium has not; leave only what was replayed and is not hovered.
-    if (inside ? hovered : !replayedInside || hovered) {
-      if (inside) replayedInside = false;
-      return;
+    if (inside) {
+      const reentered = nativeOutside;
+      nativeOutside = false;
+      if (hovered && !reentered) {
+        replayedInside = false;
+        return;
+      }
+    } else {
+      nativeOutside = true;
+      if (!replayedInside && !hovered) return;
     }
     replayedInside = inside;
     const Event = typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
@@ -72,16 +94,34 @@ export function createDockPointerRegionController(
     // Presence is a fallback; regions still route real pointer events.
   }
 
-  const signal = (active: boolean, regions: DockPointerRect[], revision?: number): void => {
-    const nextSignal = JSON.stringify({ active, regions, revision });
+  const signal = (nextActive: boolean, regions: DockPointerRect[], revision?: number): void => {
+    const nextSignal = JSON.stringify({ active: nextActive, regions, revision });
     if (destroyed || lastSignal === nextSignal) return;
-    if (revision !== undefined) latestRevision = revision;
+    const compatibleRegions =
+      regions.length === publishedRegions.length &&
+      regions.every((region, index) => {
+        const previous = publishedRegions[index];
+        return (
+          region.x === previous.x &&
+          region.y === previous.y &&
+          region.width === previous.width &&
+          region.height === previous.height
+        );
+      });
+    // A metadata-only revision must not erase an admitted exit before its re-entry.
+    if (!nextActive || (revision !== latestRevision && !compatibleRegions)) {
+      nativePoint = null;
+      nativeOutside = false;
+    }
+    latestRevision = revision;
+    active = nextActive;
+    publishedRegions = regions.map((region) => ({ ...region }));
     lastSignal = nextSignal;
     if (!bridge) return;
     try {
       void bridge
         .invoke(WINDOW_CHANNELS.SET_DOCK_POINTER_REGION, {
-          active,
+          active: nextActive,
           // Plain copies: reactive proxies cannot cross IPC, and the call would drop silently.
           regions: regions.map(({ x, y, width, height }) => ({ x, y, width, height })),
           ...(revision === undefined ? {} : { revision }),
@@ -89,7 +129,7 @@ export function createDockPointerRegionController(
         .then(() => {
           // Presence is subscribed and main holds the first live regions: the dock can
           // respond, so main may show it. Sent once per document.
-          if (!active || readySent || destroyed) return;
+          if (!nextActive || readySent || destroyed) return;
           readySent = true;
           return bridge.invoke(WINDOW_CHANNELS.DOCK_RENDERER_READY, {});
         })
