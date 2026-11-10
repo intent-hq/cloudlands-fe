@@ -510,12 +510,14 @@
     outline: none;
   }
   .dock-conversation-composer[data-dock-media] :global([data-chat-input-submit-actions]) {
-    flex: 1 0 auto;
+    flex: 0 0 auto;
     min-width: min-content;
+    margin-inline-start: auto;
   }
   .dock-conversation-composer[data-dock-media] :global([data-chat-input-primary-actions]) {
-    flex: 0 1 110px;
-    min-width: 24px;
+    /* Keep the model and profile readable; crowded controls take their own row. */
+    flex: 1 1 180px;
+    min-width: 0;
   }
   /* The picker glyph sits on the editor text edge; its hover fill bleeds outward.
      The negative margin equals the trigger's inline padding (px-2). */
@@ -526,6 +528,7 @@
     margin-inline-start: -0.5rem;
   }
   .dock-conversation-composer[data-dock-media] :global([data-chat-input-action-bar]) {
+    flex-wrap: wrap;
     gap: 4px;
   }
   /* Spec card radius 16. Send hugs the bottom-right corner 6px from the card edges with a
