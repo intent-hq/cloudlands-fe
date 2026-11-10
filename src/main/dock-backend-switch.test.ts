@@ -16,7 +16,7 @@ const fixture = vi.hoisted(() => ({
   placementRevision: 1,
   dragging: false,
   captureHidden: vi.fn(),
-  cursor: undefined as undefined | { releaseKey: () => boolean },
+  cursor: undefined as undefined | Record<string, unknown>,
 }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
@@ -818,7 +818,7 @@ describe('a transient close hands the keyboard back without taking the dock off 
       focus.current?.release();
       return true;
     });
-    fixture.cursor = { releaseKey };
+    fixture.cursor = { update: vi.fn(), cursorChanged: vi.fn(), dispose: vi.fn(), inspect: vi.fn(), releaseKey };
     dock.closeDockWindow();
     dock = await import('./dock-window');
     window = dock.createDockWindow();
@@ -852,7 +852,7 @@ describe('a transient close hands the keyboard back without taking the dock off 
     fixture.cursor = undefined;
     vi.resetModules();
     const releaseKey = vi.fn(() => false);
-    fixture.cursor = { releaseKey };
+    fixture.cursor = { update: vi.fn(), cursorChanged: vi.fn(), dispose: vi.fn(), inspect: vi.fn(), releaseKey };
     dock.closeDockWindow();
     dock = await import('./dock-window');
     window = dock.createDockWindow();
