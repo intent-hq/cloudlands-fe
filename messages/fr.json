@@ -748,7 +748,6 @@
   "chat_modelPicker_legacyModels_ariaLabel": "Afficher ou masquer les modèles hérités",
   "chat_modelPicker_legacyModels_label": "Modèles hérités",
   "chat_modelPicker_loadFailed_label": "Impossible de charger les modèles",
-  "chat_modelPicker_loadingMore_label": "Chargement de plus de modèles…",
   "chat_modelPicker_loadingProviderModels_label": "Chargement des modèles {provider}…",
   "chat_modelPicker_missingProfile_name": "Profil supprimé",
   "chat_modelPicker_modelLocked_title": "Modèle verrouillé : {model}",

@@ -748,7 +748,6 @@
   "chat_modelPicker_legacyModels_ariaLabel": "Toggle legacy models",
   "chat_modelPicker_legacyModels_label": "Legacy models",
   "chat_modelPicker_loadFailed_label": "Failed to load models",
-  "chat_modelPicker_loadingMore_label": "Loading more models…",
   "chat_modelPicker_loadingProviderModels_label": "Loading {provider} models…",
   "chat_modelPicker_missingProfile_name": "Removed profile",
   "chat_modelPicker_modelLocked_title": "Model locked: {model}",

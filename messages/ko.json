@@ -748,7 +748,6 @@
   "chat_modelPicker_legacyModels_ariaLabel": "레거시 모델 표시 전환",
   "chat_modelPicker_legacyModels_label": "레거시 모델",
   "chat_modelPicker_loadFailed_label": "모델을 로드하지 못했습니다",
-  "chat_modelPicker_loadingMore_label": "더 많은 모델 로드 중…",
   "chat_modelPicker_loadingProviderModels_label": "{provider} 모델 로드 중…",
   "chat_modelPicker_missingProfile_name": "삭제된 프로필",
   "chat_modelPicker_modelLocked_title": "모델 잠김: {model}",

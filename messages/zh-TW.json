@@ -748,7 +748,6 @@
   "chat_modelPicker_legacyModels_ariaLabel": "切換舊版模型顯示",
   "chat_modelPicker_legacyModels_label": "舊版模型",
   "chat_modelPicker_loadFailed_label": "載入模型失敗",
-  "chat_modelPicker_loadingMore_label": "正在載入更多模型…",
   "chat_modelPicker_loadingProviderModels_label": "正在載入 {provider} 模型…",
   "chat_modelPicker_missingProfile_name": "已刪除的設定檔",
   "chat_modelPicker_modelLocked_title": "模型已鎖定：{model}",

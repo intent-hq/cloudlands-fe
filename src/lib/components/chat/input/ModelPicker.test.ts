@@ -911,8 +911,6 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(header.textContent).toContain('Models on Mac mini');
       expect(header.textContent).toContain('macOS arm64');
       expect(header.textContent).toMatch(/Reported/);
-      // The backend's own catalog loads say nothing about the machine.
-      expect(screen.queryByText(/Loading more models/)).toBeNull();
       const rail = screen.getByTestId('model-provider-tabs');
       expect(rail.getAttribute('aria-label')).toBe('Providers on Mac mini');
       // Auggie runs on the backend but the machine never reported it.
@@ -2367,7 +2365,7 @@ describe('ModelPicker combined reasoning mode', () => {
         workspaceId: 'ws-1',
       });
     });
-    expect(refreshButton.hasAttribute('disabled')).toBe(true);
+    expect(refreshButton.getAttribute('aria-disabled')).toBe('true');
     expect(refreshButton.getAttribute('aria-busy')).toBe('true');
     await fireEvent.click(refreshButton);
     expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledTimes(1);
@@ -2378,7 +2376,7 @@ describe('ModelPicker combined reasoning mode', () => {
 
     expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull());
-    await waitFor(() => expect(refreshButton.hasAttribute('disabled')).toBe(false));
+    await waitFor(() => expect(refreshButton.hasAttribute('aria-disabled')).toBe(false));
   });
 
   it('keeps the selected model on refresh failure and permits retry', async () => {
@@ -2849,24 +2847,24 @@ describe('ModelPicker multi-provider mode', () => {
       rejectSilent(new Error('silent catalog unavailable'));
       const { notify } = await import('$lib/components/patterns/notify');
       await waitFor(() => expect(notify.warning).toHaveBeenCalledOnce());
-      const retry = await screen.findByRole('button', { name: 'Retry' });
-      expect(retry.hasAttribute('disabled')).toBe(false);
+      const refresh = screen.getByTestId('model-provider-refresh-button');
+      await waitFor(() => expect(refresh.hasAttribute('aria-disabled')).toBe(false));
       expect(screen.queryByRole('option')).toBeNull();
       expect(screen.getByText(/background catalog unavailable/)).toBeTruthy();
       expect(screen.queryByText(/silent catalog unavailable/)).toBeNull();
       // Searching an entirely failed catalog must keep the actionable error,
       // not replace it with generic no-results copy.
       await fireEvent.input(search, { target: { value: 'missing-model' } });
-      expect(screen.getByRole('button', { name: 'Retry' })).toBe(retry);
+      expect(screen.getByText(/background catalog unavailable/)).toBeTruthy();
       await fireEvent.keyDown(search, { key: 'Escape' });
       await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull());
       expect(trigger.getAttribute('aria-expanded')).toBe('false');
       await fireEvent.click(trigger);
       search = screen.getByRole('searchbox', { name: 'Search models...' });
       await waitFor(() => expect(document.activeElement).toBe(search));
-      expect((await screen.findByRole('button', { name: 'Retry' })).hasAttribute('disabled')).toBe(
-        false,
-      );
+      expect(
+        screen.getByTestId('model-provider-refresh-button').hasAttribute('aria-disabled'),
+      ).toBe(false);
 
       const models = [{ value: 'auggie:recovered', label: 'Recovered model' }];
       if (recoveryMode === 'silentRetry') {
@@ -2876,7 +2874,7 @@ describe('ModelPicker multi-provider mode', () => {
         vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) => ({
           models: providerId === 'auggie' ? models : [],
         }));
-        await fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+        await fireEvent.click(screen.getByTestId('model-provider-refresh-button'));
         await waitFor(() => expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(4));
       }
       await waitFor(() =>
@@ -2887,7 +2885,7 @@ describe('ModelPicker multi-provider mode', () => {
       );
       await fireEvent.input(search, { target: { value: '' } });
       expect(await screen.findByRole('option', { name: /Recovered model/ })).toBeTruthy();
-      expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Details' })).toBeNull();
       expect(getModelsForProviderForLoadingState).toHaveBeenCalledTimes(4);
     },
   );
@@ -2983,7 +2981,9 @@ describe('ModelPicker multi-provider mode', () => {
       ).toBeTruthy();
       expect(screen.getByRole('option', { name: /Default model/ })).toBeTruthy();
       // A settled provider can retry independently while another is still loading.
-      expect(screen.getByRole('button', { name: 'Retry' }).hasAttribute('disabled')).toBe(false);
+      expect(
+        screen.getByTestId('model-provider-refresh-button').hasAttribute('aria-disabled'),
+      ).toBe(false);
 
       rejectPending(new Error('second catalog unavailable'));
       await fireEvent.click(screen.getByRole('tab', { name: /Codex/ }));
@@ -2994,7 +2994,7 @@ describe('ModelPicker multi-provider mode', () => {
           modelId: 'cached',
         });
       } else {
-        expect(await screen.findByRole('button', { name: 'Retry' })).toBeTruthy();
+        expect(await screen.findByRole('button', { name: 'Details' })).toBeTruthy();
         expect(screen.queryByRole('option')).toBeNull();
         expect(onModelChange).not.toHaveBeenCalled();
       }
@@ -3058,24 +3058,22 @@ describe('ModelPicker multi-provider mode', () => {
             rejectRetry = reject;
           }),
       );
-      await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+      const refresh = screen.getByTestId('model-provider-refresh-button');
+      await fireEvent.click(refresh);
       await waitFor(() =>
         expect(getModelsForProviderForLoadingState).toHaveBeenCalledExactlyOnceWith('codex', {
           forceRefresh: true,
           workspaceId: 'ws-1',
         }),
       );
-      expect(
-        screen.getByRole('button', { name: 'Retry', exact: true }).hasAttribute('disabled'),
-      ).toBe(true);
+      // Only the refresh icon reports the retry; the issue returns once it settles.
+      expect(refresh.getAttribute('aria-busy')).toBe('true');
+      expect(screen.queryByRole('button', { name: 'Details' })).toBeNull();
       rejectRetry(new Error('Still unavailable'));
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'Retry', exact: true }).hasAttribute('disabled'),
-        ).toBe(false),
-      );
+      expect(await screen.findByRole('button', { name: 'Details' })).toBeTruthy();
+      expect(refresh.hasAttribute('aria-disabled')).toBe(false);
       vi.mocked(getModelsForProviderForLoadingState).mockResolvedValue({ models: cachedModels });
-      await fireEvent.click(screen.getByRole('button', { name: 'Retry', exact: true }));
+      await fireEvent.click(refresh);
       await waitFor(() => expect(screen.queryByRole('button', { name: 'Details' })).toBeNull());
       expect(await screen.findByRole('option', { name: /Cached Codex model/ })).toBeTruthy();
       expect(
@@ -3156,7 +3154,7 @@ describe('ModelPicker multi-provider mode', () => {
     expect(await screen.findByRole('option', { name: /GPT 5\.4/ })).toBeTruthy();
     // …and browsing the empty provider still exposes its warning row.
     await fireEvent.click(screen.getByRole('tab', { name: /OpenCode/ }));
-    expect(screen.getAllByText(/OpenCode: opencode binary not found/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/OpenCode binary not found/).length).toBeGreaterThan(0);
   });
 
   it('shows the Codex default-list notice only inside the open picker on the Codex tab', async () => {
@@ -3195,9 +3193,11 @@ describe('ModelPicker multi-provider mode', () => {
       'https://developers.openai.com/codex/cli#cli-setup',
     );
     // The notice replaces the generic warning row for the same fallback, so
-    // the warning is not stated twice; Retry stays available.
+    // the warning is not stated twice; refreshing stays available.
     expect(screen.queryByText(/Codex not installed; using static model list/)).toBeNull();
-    expect(screen.getByRole('button', { name: /Retry/ })).toBeTruthy();
+    expect(screen.getByTestId('model-provider-refresh-button').hasAttribute('aria-disabled')).toBe(
+      false,
+    );
   });
 
   it('hides the Codex default-list notice while another provider tab is browsed', async () => {
@@ -4161,10 +4161,7 @@ describe('ModelPicker selected-model loading state', () => {
         // The production reconnect seeder clears this cache; mounted observers recover.
         mockAppStore.dispatch(providerModelsCacheCleared());
       } else {
-        const retry =
-          screen.queryByRole('button', { name: 'Retry' }) ??
-          screen.getByRole('button', { name: /Refresh .* models/ });
-        await fireEvent.click(retry);
+        await fireEvent.click(screen.getByRole('button', { name: /Refresh .* models/ }));
       }
       await waitFor(() => expect(trigger.textContent).toContain('Sonnet 4.6'));
       expect(await screen.findByRole('option', { name: /Sonnet 4.6/ })).toBeTruthy();
