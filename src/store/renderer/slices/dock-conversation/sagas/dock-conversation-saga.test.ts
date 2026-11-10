@@ -2495,7 +2495,6 @@ describe('held capture preparation local-admission content CAS', () => {
         await gate.promise;
         return {
           images: {},
-          framePromptBytes: [],
           files: [
             {
               type: 'file',
