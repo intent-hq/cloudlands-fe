@@ -10,13 +10,13 @@
     contentHeight = 48,
     empty = false,
     sidebar = false,
-  } = $props<{
+  }: {
     count?: number;
     open?: boolean;
     contentHeight?: number;
     empty?: boolean;
     sidebar?: boolean;
-  }>();
+  } = $props();
 </script>
 
 <div data-testid="height-host">

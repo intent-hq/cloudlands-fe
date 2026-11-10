@@ -3,7 +3,7 @@
   import WorkspaceRouteContextProvider from '$lib/components/workspace/WorkspaceRouteContextProvider.svelte';
   import ChatMessage from '../ChatMessage.svelte';
 
-  let { workspaceId, ...chatMessageProps } = $props<{ workspaceId: WorkspaceId }>();
+  let { workspaceId, ...chatMessageProps }: { workspaceId: WorkspaceId } = $props();
 </script>
 
 <WorkspaceRouteContextProvider {workspaceId}>
