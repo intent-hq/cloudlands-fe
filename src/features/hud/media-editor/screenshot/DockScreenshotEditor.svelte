@@ -485,7 +485,7 @@
   function onToolEscape(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
     const shortcut = captureEditorToolShortcut(event,
-      blocked || gesturePending || !!editingTextId || !!pendingTextMark || !!cropCandidate || previewPending || previewFailed,
+      blocked || gesturePending || !!editingTextId || !!pendingTextMark || !!cropCandidate,
     );
     if (shortcut && (shortcut !== 'blur' || canCreateV2)) {
       event.preventDefault();
