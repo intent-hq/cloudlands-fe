@@ -53,6 +53,7 @@
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
   import { unifiedWindowLabEnabled } from '$lib/unified-window-lab';
+  import { unifiedInvoke } from '$lib/unified-ipc';
   import Fa from 'svelte-fa';
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
@@ -181,7 +182,7 @@
   });
 
   function openUnifiedWindow() {
-    invoke(IPC_CHANNELS.UNIFIED.OPEN, {}).catch(() => {});
+    unifiedInvoke(IPC_CHANNELS.UNIFIED.OPEN).catch(() => {});
   }
 
   async function handleSettings() {

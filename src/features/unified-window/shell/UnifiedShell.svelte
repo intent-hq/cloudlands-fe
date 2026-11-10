@@ -7,7 +7,7 @@
    * main-process cross-machine feed.
    */
   import { onDestroy, onMount } from 'svelte';
-  import { invoke } from '$lib/electron-bridge';
+  import { unifiedInvoke as invoke } from '$lib/unified-ipc';
   import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
