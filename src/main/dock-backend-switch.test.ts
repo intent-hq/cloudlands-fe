@@ -16,6 +16,7 @@ const fixture = vi.hoisted(() => ({
   placementRevision: 1,
   dragging: false,
   captureHidden: vi.fn(),
+  cursor: undefined as undefined | { releaseKey: () => boolean },
 }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
@@ -31,6 +32,7 @@ vi.mock('electron', async () => {
       getURL: () => this.url,
       send: vi.fn(),
       sendInputEvent: vi.fn(),
+      invalidate: vi.fn(),
       focus: vi.fn(),
       setZoomMode: vi.fn(),
       setZoomLevel: vi.fn(),
@@ -102,7 +104,7 @@ vi.mock('../features/backend/main/backend.ipc', () => ({
   getBackendClientForConnection: (id: string) => fixture.clients.get(id),
   openBackendWindow: fixture.openBackendWindow,
 }));
-vi.mock('./dock-cursor', () => ({ attachDockCursor: () => undefined }));
+vi.mock('./dock-cursor', () => ({ attachDockCursor: () => fixture.cursor }));
 vi.mock('./local-prefs', () => ({
   getLocalPref: async (key: string) => fixture.preferences.get(key),
   setLocalPref: fixture.setLocalPref,
@@ -788,5 +790,80 @@ describe('a transient close (release) keeps the dock; only its own Hide closes i
     await vi.advanceTimersByTimeAsync(1);
     await flush();
     expect(hide).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a transient close hands the keyboard back without taking the dock off screen', () => {
+  // Electron's blur on macOS is orderOut + orderBack (native_window_mac.mm): the dock leaves
+  // the screen and returns, which blanks it. The native handback keeps it on screen.
+  function nativeFocus() {
+    let focused = false;
+    const native = window as unknown as { focus: () => void; isFocused: () => boolean; blur: () => void };
+    native.focus = () => void (focused = true);
+    native.isFocused = () => focused;
+    // Modelled on Electron macOS: blur orders the window out and back (hide, then show).
+    native.blur = vi.fn(() => {
+      focused = false;
+      window.emit('hide');
+      window.emit('show');
+    });
+    return { release: () => void (focused = false) };
+  }
+
+  it('six focus/release cycles hand the keyboard back natively: never blurred, hidden or reshown', async () => {
+    fixture.cursor = undefined;
+    vi.resetModules();
+    const focus = { current: null as null | ReturnType<typeof nativeFocus> };
+    const releaseKey = vi.fn(() => {
+      focus.current?.release();
+      return true;
+    });
+    fixture.cursor = { releaseKey };
+    dock.closeDockWindow();
+    dock = await import('./dock-window');
+    window = dock.createDockWindow();
+    await flush();
+    dock.markDockRendererReady(window);
+    focus.current = nativeFocus();
+    const hidden = vi.fn();
+    const shown = vi.fn();
+    window.on('hide', hidden);
+    window.on('show', shown);
+    vi.mocked(window.webContents.invalidate).mockClear();
+    for (let cycle = 1; cycle <= 6; cycle++) {
+      await dock.updateDockPlacement(window, { action: 'focus' });
+      expect(window.isFocused()).toBe(true);
+      await dock.updateDockPlacement(window, { action: 'release' });
+      expect(window.isFocused()).toBe(false);
+      expect(releaseKey).toHaveBeenCalledTimes(cycle);
+    }
+    expect(window.blur).not.toHaveBeenCalled();
+    expect(hidden).not.toHaveBeenCalled();
+    expect(shown).not.toHaveBeenCalled();
+    expect(window.webContents.invalidate).not.toHaveBeenCalled();
+    expect(dock.getDockWindow()).toBe(window);
+    // Not focused: nothing to hand back.
+    await dock.updateDockPlacement(window, { action: 'release' });
+    expect(releaseKey).toHaveBeenCalledTimes(6);
+    fixture.cursor = undefined;
+  });
+
+  it('falls back to blur when the native handback is unavailable or refused', async () => {
+    fixture.cursor = undefined;
+    vi.resetModules();
+    const releaseKey = vi.fn(() => false);
+    fixture.cursor = { releaseKey };
+    dock.closeDockWindow();
+    dock = await import('./dock-window');
+    window = dock.createDockWindow();
+    await flush();
+    dock.markDockRendererReady(window);
+    nativeFocus();
+    await dock.updateDockPlacement(window, { action: 'focus' });
+    await dock.updateDockPlacement(window, { action: 'release' });
+    expect(releaseKey).toHaveBeenCalledTimes(1);
+    expect(window.blur).toHaveBeenCalledTimes(1);
+    expect(window.isFocused()).toBe(false);
+    fixture.cursor = undefined;
   });
 });
