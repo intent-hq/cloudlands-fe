@@ -65,10 +65,10 @@ function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void
 }
 
 /**
- * The open shortcut with the dock on a screen side and nothing chosen by the foreground:
- * the chat open in the dock, else the last one opened from it (same machine and
- * authority, still present), else the first workspace the side shows. The side has no
- * home row to choose from; null (no workspace) keeps that existing flow.
+ * The open shortcut with the dock on a screen side returns to a chat, ahead of any
+ * foreground routing: the chat open in the dock, else the last one opened from it (same
+ * machine and authority, still present), else the first workspace the side shows. The
+ * side has no home row to choose from; null (no workspace) keeps the existing flow.
  */
 function sideDockFallback(
   context: DockShortcutContext,
@@ -156,17 +156,16 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     selection &&
     !(context.appId && selection.appId && context.appId !== selection.appId) &&
     !(context.url && selection.url && context.url !== selection.url);
+  // On a side, the open shortcut returns to the chat (open, last, else first workspace)
+  // before any foreground routing.
+  const side = sideDockFallback(context, ids, selectionValid);
   const retained = sameContext ? (selection?.workspaceId ?? null) : null;
   const resolved = resolveDockDestination(context, ids, {});
   const owned =
     context.workspaceId && ids.includes(context.workspaceId) ? context.workspaceId : null;
-  const explicit = yield* call(readDockSavedDestination, context, ids);
+  const explicit = side ? null : yield* call(readDockSavedDestination, context, ids);
   const destination =
-    explicit ??
-    owned ??
-    (context.url && retained
-      ? null
-      : (retained ?? resolved ?? sideDockFallback(context, ids, selectionValid)));
+    side ?? explicit ?? owned ?? (context.url && retained ? null : (retained ?? resolved));
   yield* put(
     dockShortcutChanged({
       context,
