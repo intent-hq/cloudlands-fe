@@ -1,12 +1,12 @@
 import { flushSync } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { scheduleLayoutRead, scheduleLayoutWrite } from '$lib/utils/layout-phases';
+import { installAnimationFrames, type AnimationFrames } from '../../test/animation-frames';
 import { animatedHeight } from './animated-height.svelte';
 
 describe('animatedHeight', () => {
   let resize: ResizeObserverCallback;
-  let frames: FrameRequestCallback[];
-  let now: number;
+  let frames: AnimationFrames;
   let reducedMotion: boolean;
   let resizeObservers: Array<{
     callback: ResizeObserverCallback;
@@ -18,28 +18,10 @@ describe('animatedHeight', () => {
   let removeMotionListener: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    frames = [];
-    now = 0;
+    frames = installAnimationFrames();
     reducedMotion = false;
     resizeObservers = [];
     removeMotionListener = vi.fn();
-    vi.spyOn(performance, 'now').mockImplementation(() => now);
-    const frameEntries = new Map<number, FrameRequestCallback>();
-    let nextFrameId = 0;
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      const id = ++nextFrameId;
-      const entry: FrameRequestCallback = (time) => {
-        if (frameEntries.delete(id)) callback(time);
-      };
-      frameEntries.set(id, entry);
-      frames.push(entry);
-      return id;
-    });
-    vi.stubGlobal('cancelAnimationFrame', (id: number) => {
-      const entry = frameEntries.get(id);
-      frameEntries.delete(id);
-      if (entry) frames = frames.filter((frame) => frame !== entry);
-    });
     vi.stubGlobal(
       'matchMedia',
       vi.fn(() => ({
@@ -76,25 +58,7 @@ describe('animatedHeight', () => {
     vi.unstubAllGlobals();
   });
 
-  function runFrame() {
-    now += 1000 / 60;
-    const pending = frames;
-    frames = [];
-    pending.forEach((callback) => callback(now));
-    flushSync();
-  }
-
-  // Browsers drain microtasks (Svelte effects) after each frame callback, so an
-  // effect can cancel a frame callback that is still queued for this frame.
-  function runBrowserFrame() {
-    now += 1000 / 60;
-    const pending = frames;
-    frames = [];
-    for (const callback of pending) {
-      callback(now);
-      flushSync();
-    }
-  }
+  const runFrame = () => frames.runFrame();
 
   it('mounts closed empty rows without reading geometry', () => {
     const wrappers = Array.from({ length: 100 }, () => document.createElement('div'));
@@ -144,9 +108,9 @@ describe('animatedHeight', () => {
     runFrame();
     expect(events.slice(0, 4)).toEqual(['read:0', 'read:1', 'read:2', 'read:3']);
     expect(events.slice(4)).toEqual(['write:0', 'write:1', 'write:2', 'write:3']);
-    expect(frames).toHaveLength(0);
+    expect(frames.pending).toBe(0);
     runFrame();
-    expect(frames).toHaveLength(0);
+    expect(frames.pending).toBe(0);
     actions.forEach((action) => action?.destroy?.());
   });
 
@@ -273,7 +237,7 @@ describe('animatedHeight', () => {
     runFrame();
     const heightBeforeRetarget = Number.parseFloat(wrapper.style.height);
     expect(heightBeforeRetarget).toBeGreaterThan(20);
-    expect(frames.length).toBeGreaterThan(0);
+    expect(frames.pending).toBeGreaterThan(0);
 
     contentHeight = 10;
     resize([], {} as ResizeObserver);
@@ -281,7 +245,7 @@ describe('animatedHeight', () => {
 
     runFrame(); // Apply the new destination in the shared write phase.
     let previousHeight = Number.parseFloat(wrapper.style.height);
-    for (let frame = 0; frame < 30 && frames.length > 0; frame += 1) {
+    for (let frame = 0; frame < 30 && frames.pending > 0; frame += 1) {
       runFrame();
       const currentHeight = Number.parseFloat(wrapper.style.height);
       expect(currentHeight).toBeLessThanOrEqual(previousHeight);
@@ -314,7 +278,7 @@ describe('animatedHeight', () => {
     action?.update?.({ open: true, onClosed });
     runFrame();
     action?.update?.({ open: false, onClosed });
-    for (let frame = 0; frame < 120 && frames.length > 0; frame += 1) runFrame();
+    for (let frame = 0; frame < 120 && frames.pending > 0; frame += 1) runFrame();
     await Promise.resolve();
     await Promise.resolve();
     expect(wrapper.style.height).toBe('0px');
@@ -329,17 +293,17 @@ describe('animatedHeight', () => {
     wrapper.append(content);
     const action = animatedHeight(wrapper, { open: true });
     flushSync();
-    runBrowserFrame();
+    runFrame();
     expect(wrapper.style.height).toBe('80px');
 
     action?.update?.({ open: false });
-    runBrowserFrame();
-    for (let frame = 0; frame < 5; frame += 1) runBrowserFrame();
+    runFrame();
+    for (let frame = 0; frame < 5; frame += 1) runFrame();
     const height = Number.parseFloat(wrapper.style.height);
     expect(height).toBeGreaterThan(0);
     expect(height).toBeLessThan(80);
 
-    for (let frame = 0; frame < 120 && frames.length > 0; frame += 1) runBrowserFrame();
+    for (let frame = 0; frame < 120 && frames.pending > 0; frame += 1) runFrame();
     expect(wrapper.style.height).toBe('0px');
     action?.destroy?.();
   });
@@ -363,7 +327,7 @@ describe('animatedHeight', () => {
     runFrame();
     expect(wrapper.style.height).toBe('60px');
     runFrame();
-    expect(frames).toHaveLength(0);
+    expect(frames.pending).toBe(0);
     action?.destroy?.();
   });
 
@@ -384,7 +348,7 @@ describe('animatedHeight', () => {
     runFrame();
     expect(wrapper.style.height).toBe('48px');
     runFrame();
-    expect(frames).toHaveLength(0);
+    expect(frames.pending).toBe(0);
     action?.destroy?.();
   });
 
@@ -415,7 +379,7 @@ describe('animatedHeight', () => {
     expect(resizeObservers[0].unobserve).toHaveBeenCalledWith(outgoing);
     expect(resizeObservers[0].observe).toHaveBeenLastCalledWith(incoming);
     runFrame();
-    expect(frames).toHaveLength(0);
+    expect(frames.pending).toBe(0);
     action?.destroy?.();
   });
   it('preserves fractional layout height under zoom and transforms', () => {
