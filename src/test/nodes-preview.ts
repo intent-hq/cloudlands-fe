@@ -18,6 +18,7 @@ import {
 import type { ConnectionRecord } from '$shared/types/connections';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { maskPairingUri } from '$shared/utils/pairing-uri';
+import { maskNodeInviteUri } from '$shared/utils/node-invite-uri';
 
 export type NodesPreviewState =
   | 'no-nodes'
@@ -32,7 +33,47 @@ export type NodesPreviewState =
   | 'unreachable'
   | 'wrong-token'
   | 'backend-unsupported'
-  | 'labs-off';
+  | 'labs-off'
+  | InvitePreviewState;
+
+/** After an `intent://node` link: claiming, claimed (listed under Nodes), and each failure. */
+type InvitePreviewState =
+  | 'invite-claiming'
+  | 'invite-claimed'
+  | 'invite-used'
+  | 'invite-expired'
+  | 'invite-revoked'
+  | 'invite-invalid'
+  | 'invite-unreachable'
+  | 'invite-unreachable-spent'
+  | 'invite-certificate'
+  | 'invite-self'
+  | 'invite-update-required'
+  | 'invite-not-owner'
+  | 'invites-unsupported'
+  | 'invite-labs-off'
+  | 'link-version';
+
+export const NODE_INVITE_SECRET = 'invite-secret-value';
+const NODE_INVITE_LINK = `intent://node?v=1&host=192.0.2.40&port=7443&fp=AA%3A40&tc=tc-lab-node&invite=inv_7&secret=${NODE_INVITE_SECRET}`;
+
+const isInviteState = (state: NodesPreviewState): state is InvitePreviewState =>
+  state.startsWith('invite') || state === 'link-version';
+
+/** A machine the backend claimed from a node link; this app has no connection to it. */
+const LAB_NODE: RemoteMachine = {
+  id: 'd-lab-node',
+  name: 'Lab node',
+  platform: { os: 'linux', arch: 'aarch64' },
+  hosts: ['192.0.2.40'],
+  port: 7443,
+  fingerprint: 'AA:40',
+  state: 'connected',
+  runningAgents: 0,
+  capabilities: { providers: [{ id: 'claude', status: 'signed-in', models: ['opus'] }] },
+  observedAt: '2026-11-10T00:00:00Z',
+  addedAt: '2026-11-10T00:00:00Z',
+};
 
 export const NODE_LINK =
   'intent://pair?v=1&host=192.0.2.20&port=7443&fp=AA%3A20&token=owner-secret-token&mode=node&tc=tc-gpu-rig';
@@ -115,6 +156,7 @@ export function setupNodesFixture(state: NodesPreviewState) {
     state === 'no-nodes' ||
     state === 'added-machine' ||
     state.startsWith('paste') ||
+    isInviteState(state) ||
     [
       'testing',
       'not-a-link',
@@ -152,16 +194,19 @@ export function setupNodesFixture(state: NodesPreviewState) {
   );
   store.dispatch(connectionStatusChanged('connected'));
   store.dispatch(backendReconnected());
-  store.dispatch(setLabsRemoteAgentsEnabled(state !== 'labs-off'));
+  store.dispatch(setLabsRemoteAgentsEnabled(state !== 'labs-off' && state !== 'invite-labs-off'));
   const exposedRows =
     state === 'machines-and-nodes'
       ? [exposed(GPU_RIG, 2), exposed(MACHINES[2])]
       : state === 'node-added'
         ? [exposed(GPU_RIG)]
-        : [];
+        : state === 'invite-claimed'
+          ? [LAB_NODE]
+          : [];
   store.dispatch(
     remoteMachinesLoaded({
       supported: state !== 'backend-unsupported',
+      claimInvites: state !== 'invites-unsupported',
       machines: exposedRows,
       localFingerprint: 'EE:FF',
       executorBackends: [],
@@ -172,6 +217,9 @@ export function setupNodesFixture(state: NodesPreviewState) {
   if (state === 'paste-field') store.dispatch(pasteFieldOpened());
   if (state === 'testing') store.dispatch(pasteTestingStarted(maskPairingUri(NODE_LINK)));
   if (state === 'added-machine') store.dispatch(rowHighlighted('lab-pc'));
+  if (state === 'invite-claimed') store.dispatch(rowHighlighted(LAB_NODE.id));
+  if (state === 'invite-claiming')
+    store.dispatch(pasteTestingStarted(maskNodeInviteUri(NODE_INVITE_LINK)));
   if (state === 'node-added' || state === 'node-not-now') store.dispatch(rowHighlighted('gpu-rig'));
   if (state === 'making-available')
     store.dispatch(remoteMachineOperationStarted('gpu-rig', 'exposing'));
@@ -181,10 +229,36 @@ export function setupNodesFixture(state: NodesPreviewState) {
     'wrong-token': { code: 'rejected' },
     'backend-unsupported': { code: 'backend-unsupported', node: 'GPU rig' },
     'labs-off': { code: 'labs-off', node: 'GPU rig' },
+    'invite-used': { code: 'node-invite-used', node: 'Lab node' },
+    'invite-expired': { code: 'node-invite-expired', node: 'Lab node' },
+    'invite-revoked': { code: 'node-invite-revoked', node: 'Lab node' },
+    'invite-invalid': { code: 'node-invite-invalid', node: 'Lab node' },
+    'invite-self': { code: 'node-invite-self', node: 'Lab node' },
+    'invite-certificate': { code: 'certificate-mismatch', node: 'Lab node' },
+    'invite-unreachable': {
+      code: 'machine-unreachable',
+      node: 'Lab node',
+      routes: ['192.0.2.40:7443', 'tc-lab-node'],
+    },
+    'invite-unreachable-spent': {
+      code: 'machine-unreachable',
+      node: 'Lab node',
+      inviteSpent: true,
+      routes: ['192.0.2.40:7443'],
+    },
+    'invite-update-required': { code: 'machine-update-required', node: 'Lab node' },
+    'invite-not-owner': { code: 'invite-not-owner', node: 'Lab node' },
+    'invites-unsupported': { code: 'invites-unsupported', node: 'Lab node' },
+    'invite-labs-off': { code: 'labs-off', node: 'Lab node' },
+    'link-version': { code: 'link-version' },
   };
   const failure = failures[state];
   if (failure) {
-    store.dispatch(pasteTestingStarted(maskPairingUri(NODE_LINK)));
+    store.dispatch(
+      pasteTestingStarted(
+        isInviteState(state) ? maskNodeInviteUri(NODE_INVITE_LINK) : maskPairingUri(NODE_LINK),
+      ),
+    );
     store.dispatch(pasteFailed(failure));
   }
   return () => {

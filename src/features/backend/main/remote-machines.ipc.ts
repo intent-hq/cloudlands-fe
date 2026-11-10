@@ -24,6 +24,7 @@ import {
   getLocalBackendClient,
   resolveBackendRecord,
 } from './backend.ipc';
+import { createNodeInvites, type NodeInvites } from './node-invites';
 import {
   createRemoteMachineRelay,
   type RemoteMachineBackend,
@@ -35,6 +36,13 @@ const CHANNELS = IPC_CHANNELS.REMOTE_MACHINES;
 
 let handlersRegistered = false;
 let relay: RemoteMachineRelay | null = null;
+let nodeInvites: NodeInvites | null = null;
+
+/** Held `intent://node` links, shared by the paste row and the OS link handler. */
+export function getNodeInvites(): NodeInvites {
+  nodeInvites ??= createNodeInvites();
+  return nodeInvites;
+}
 
 function getRelay(): RemoteMachineRelay {
   relay ??= createRemoteMachineRelay({
@@ -116,6 +124,30 @@ export function registerRemoteMachinesHandlers(): void {
       },
       currentBackend(event),
     );
+  });
+
+  ipcMain.handle(CHANNELS.INVITE_INSPECT, (_event, params: { uri?: unknown } | undefined) =>
+    getNodeInvites().inspect(params?.uri),
+  );
+
+  ipcMain.handle(
+    CHANNELS.INVITE_CLAIM,
+    async (event, params: { pendingId?: unknown } | undefined) => {
+      if (!text(params?.pendingId)) return { ok: false, code: 'expired' };
+      let backend: RemoteMachineBackend;
+      try {
+        backend = currentBackend(event);
+      } catch {
+        getNodeInvites().discard(params.pendingId);
+        return { ok: false, code: 'failed' };
+      }
+      return getNodeInvites().claim(params.pendingId, backend.client);
+    },
+  );
+
+  ipcMain.handle(CHANNELS.INVITE_DISCARD, (_event, params: { pendingId?: unknown } | undefined) => {
+    if (text(params?.pendingId)) getNodeInvites().discard(params.pendingId);
+    return { ok: true };
   });
 
   ipcMain.handle(CHANNELS.MACHINE_FINGERPRINT, async (_event, connectionId: unknown) =>

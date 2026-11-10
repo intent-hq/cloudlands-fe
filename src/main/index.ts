@@ -420,7 +420,7 @@ import { handlePairDeepLink, routePairLinkFromOs } from '../features/deeplink/ma
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
 import { isInviteUri } from '../shared/utils/invite-uri';
-import { isPairingUri } from '../shared/utils/pairing-uri';
+import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
@@ -1790,7 +1790,7 @@ const bootFlow = app.whenReady().then(async () => {
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = findIntentUrl(process.argv);
     const isPairLinkArg =
-      intentUrlArg !== undefined && (isPairingUri(intentUrlArg) || isInviteUri(intentUrlArg));
+      intentUrlArg !== undefined && (isMainOnlyLinkUri(intentUrlArg) || isInviteUri(intentUrlArg));
 
     // A pair or invite link is handled fully in the main process: park it now
     // and let the pending-URL pass after window creation route it to its
@@ -2110,7 +2110,7 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   // window (the confirm dialog can show parentless and openBackendWindow
   // creates its own window), which covers macOS staying alive with zero
   // windows open. Before ready, parked as pending for the startup pass.
-  if (isPairingUri(url)) {
+  if (isMainOnlyLinkUri(url)) {
     await routePairLinkFromOs(url, (pending) => deepLinkHandler.handleDeepLink(pending, null));
     return;
   }
@@ -2164,7 +2164,7 @@ if (!gotTheLock) {
 
     if (deepLinkUrl) {
       logger.info('Found deep link URL in second instance:', { url: scrubToken(deepLinkUrl) });
-      if (isPairingUri(deepLinkUrl)) {
+      if (isMainOnlyLinkUri(deepLinkUrl)) {
         // Pair links go straight to the main-process handler — the first
         // instance is already running, so no parking or window is needed.
         await handlePairDeepLink(deepLinkUrl);

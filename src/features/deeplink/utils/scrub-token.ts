@@ -1,7 +1,8 @@
 import { isTcAddress } from '$shared/tc-address';
 
 /**
- * Redact pairing credentials (`token=`, `tc=`, whole `intent://pair` links,
+ * Redact pairing credentials (`token=`, `tc=`, whole `intent://pair` and
+ * `intent://node` links,
  * bare Tailcat addresses) and the one-time invite secret (`secret=`,
  * `intent://invite`) in free-form diagnostics, never in connection inputs.
  *
@@ -40,6 +41,7 @@ export function scrubToken(text: string): string {
   return text
     .replace(URL_STRIPPED, '')
     .replace(/intent:\/\/pair[^\s"'<>]*/gi, 'intent://pair:REDACTED')
+    .replace(/intent:\/\/node[^\s"'<>]*/gi, 'intent://node:REDACTED')
     .replace(QUERY_PAIR, (pair, rawKey: string) =>
       isCredentialKey(rawKey) ? `${rawKey}=REDACTED` : pair,
     )

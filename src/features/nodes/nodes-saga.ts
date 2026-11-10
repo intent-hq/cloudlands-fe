@@ -1,5 +1,6 @@
 /**
- * Add a machine or node from an `intent://pair` link (renderer).
+ * Add a machine or node from an `intent://pair` link, or a machine from an
+ * `intent://node` link (renderer).
  *
  * Main tests the link and keeps its credential (`connections:pair-link-*`);
  * this saga only handles the pending id, a masked copy for display, and the
@@ -8,6 +9,9 @@
  * saved), then the in-app prompt asks whether to make it available. Every
  * route asks: the paste item, the Add machine dialog and links opened from
  * outside the app.
+ *
+ * An `intent://node` link holds no owner token: main keeps it, this saga asks
+ * "Make <machine> available to <backend>?" and the backend claims the invite.
  */
 
 import {
@@ -31,11 +35,15 @@ import type {
   PairLinkInspectResult,
   PairLinkInspected,
 } from '$shared/types/pair-link';
+import type { NodeInviteClaimResult, NodeInviteInspectErrorCode } from '$shared/types/node-invite';
+import { parseRemoteMachine } from '$shared/types/remote-machines';
 import { isPairingUri, maskPairingUri } from '$shared/utils/pairing-uri';
+import { isNodeInviteUri, maskNodeInviteUri } from '$shared/utils/node-invite-uri';
 import { confirm } from '$lib/components/patterns/confirm';
 import { notify } from '$lib/components/patterns/notify';
 import { store } from '$store/renderer/store';
 import {
+  remoteMachineChanged,
   remoteMachineExposeRequested,
   remoteMachinesLoaded,
   remoteMachinesRefreshRequested,
@@ -53,6 +61,7 @@ import { formatConnectionLabel } from '$lib/utils/connection-label';
 import { forgetConnectionRequested } from '$store/renderer/slices/connections/connections-slice';
 import {
   nodeConnectionOpened,
+  nodeInviteReceived,
   nodeLinkReceived,
   pasteClosed,
   pasteCompleted,
@@ -65,7 +74,8 @@ import {
   rowHighlighted,
 } from './nodes-slice';
 import type { NodeAddError } from './nodes-types';
-import { selectNodeRefusal } from './nodes-selectors';
+import { selectNodeInviteRefusal, selectNodeRefusal } from './nodes-selectors';
+import { nodeAddErrorMessage } from './node-add-errors';
 import { takePastedLink } from './pasted-link';
 
 const HIGHLIGHT_MS = 2_500;
@@ -87,6 +97,12 @@ const invokeCommit = async (pendingId: string): Promise<unknown> =>
   bridge().invoke(IPC_CHANNELS.CONNECTIONS.PAIR_LINK_COMMIT, { pendingId });
 const invokeDiscard = async (pendingId: string): Promise<unknown> =>
   bridge().invoke(IPC_CHANNELS.CONNECTIONS.PAIR_LINK_DISCARD, { pendingId });
+const invokeInviteInspect = async (uri: string): Promise<unknown> =>
+  bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.INVITE_INSPECT, { uri });
+const invokeInviteClaim = async (pendingId: string): Promise<unknown> =>
+  bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.INVITE_CLAIM, { pendingId });
+const invokeInviteDiscard = async (pendingId: string): Promise<unknown> =>
+  bridge().invoke(IPC_CHANNELS.REMOTE_MACHINES.INVITE_DISCARD, { pendingId });
 
 async function readClipboard(): Promise<string> {
   try {
@@ -217,6 +233,145 @@ function* addInspected(
   return null;
 }
 
+/** A tunnel-only link has no host to name the machine by. */
+const inviteLabel = (label: unknown): string =>
+  typeof label === 'string' && label.trim() ? label : m.nodes_invite_tunnelLabel();
+
+type HeldInvite =
+  | { ok: true; pendingId: string; label: string }
+  | { ok: false; code: NodeInviteInspectErrorCode | 'failed' };
+
+function inviteInspectReply(reply: unknown): HeldInvite {
+  const value = (reply ?? {}) as Record<string, unknown>;
+  if (value.ok === true && typeof value.pendingId === 'string')
+    return { ok: true, pendingId: value.pendingId, label: inviteLabel(value.label) };
+  if (value.code === 'not-a-link' || value.code === 'incomplete' || value.code === 'link-version')
+    return { ok: false, code: value.code };
+  return { ok: false, code: 'failed' };
+}
+
+const CLAIM_CODES: ReadonlySet<string> = new Set([
+  'node-invite-invalid',
+  'node-invite-expired',
+  'node-invite-used',
+  'node-invite-revoked',
+  'node-invite-self',
+  'machine-unreachable',
+  'machine-update-required',
+  'certificate-mismatch',
+  'expired',
+]);
+
+/** A claim failure as shown to the user; the backend's own names stay in main. */
+function claimError(reply: unknown, node: string): NodeAddError | null {
+  const value = (reply ?? {}) as Partial<NodeInviteClaimResult> & Record<string, unknown>;
+  if (value.ok === true && parseRemoteMachine(value.machine)) return null;
+  const code = typeof value.code === 'string' ? value.code : 'failed';
+  const routes = Array.isArray(value.routes)
+    ? value.routes.filter((route): route is string => typeof route === 'string')
+    : [];
+  if (code === 'backend-unsupported') return { code: 'invites-unsupported', node };
+  if (code === 'not-owner') return { code: 'invite-not-owner', node };
+  if (code === 'invalid-node-link') return { code: 'incomplete', node };
+  if (!CLAIM_CODES.has(code)) return { code: 'failed', node };
+  return {
+    code: code as NodeAddError['code'],
+    node,
+    ...(value.inviteSpent === true ? { inviteSpent: true } : {}),
+    ...(code === 'machine-unreachable' && routes.length ? { routes } : {}),
+  };
+}
+
+/**
+ * Labs Remote agents is on and the backend can claim node links. A snapshot
+ * that does not show it yet is read again before refusing.
+ */
+function* inviteSupport(): SagaGenerator<'ok' | NodeRefusal | 'invites-unsupported'> {
+  const refusal = yield* selectNodeInviteRefusal.effect();
+  if (refusal === null || refusal === 'labs-off') return refusal ?? 'ok';
+  yield* put(remoteMachinesRefreshRequested());
+  yield* race({ loaded: take(remoteMachinesLoaded), timeout: delay(SNAPSHOT_WAIT_MS) });
+  return (yield* selectNodeInviteRefusal.effect()) ?? 'ok';
+}
+
+/**
+ * Ask, then claim a held node link on the current backend. Refused (and
+ * dropped) when the backend can't use the machine. From the paste row,
+ * Cancel stops it before the claim; during the claim it only closes the row
+ * (a machine still added is listed). Returns the error to show, null once
+ * claimed, or 'cancelled'.
+ */
+function* claimInvite(
+  held: { pendingId: string; label: string },
+  masked: string | null = null,
+): SagaGenerator<NodeAddError | null | 'cancelled'> {
+  const fromPaste = masked !== null;
+  const checked = fromPaste
+    ? yield* race({ support: call(inviteSupport), cancelled: take(pasteClosed) })
+    : { support: yield* call(inviteSupport), cancelled: undefined };
+  const support = checked.cancelled ? 'cancelled' : (checked.support ?? 'cancelled');
+  if (support !== 'ok') {
+    yield* call(invokeInviteDiscard, held.pendingId);
+    return support === 'cancelled' ? 'cancelled' : { code: support, node: held.label };
+  }
+  const backend = selectCurrentBackendLabel.select(store.state);
+  const accepted = yield* call(confirm, {
+    title: m.nodes_prompt_title({ node: held.label, backend }),
+    description: m.nodes_invite_prompt_description({ node: held.label, backend }),
+    confirmLabel: m.nodes_prompt_confirm_label(),
+    cancelLabel: m.nodes_paste_cancel_label(),
+  });
+  if (!accepted) {
+    yield* call(invokeInviteDiscard, held.pendingId);
+    if (fromPaste) yield* put(pasteClosed());
+    return 'cancelled';
+  }
+  if (masked !== null) yield* put(pasteTestingStarted(masked));
+  let request: Promise<unknown>;
+  try {
+    request = invokeInviteClaim(held.pendingId).catch(() => ({ ok: false, code: 'failed' }));
+  } catch {
+    request = Promise.resolve({ ok: false, code: 'failed' });
+  }
+  // The backend can't be stopped once it claims: Cancel only closes the row.
+  let dismissed = false;
+  let reply: unknown;
+  if (fromPaste) {
+    const claimed = yield* race({ reply: call(() => request), closed: take(pasteClosed) });
+    dismissed = !!claimed.closed;
+    reply = dismissed ? yield* call(() => request) : claimed.reply;
+  } else {
+    reply = yield* call(() => request);
+  }
+  const error = claimError(reply, held.label);
+  if (error) return dismissed ? 'cancelled' : error;
+  const machine = parseRemoteMachine((reply as { machine: unknown }).machine)!;
+  yield* put(remoteMachineChanged(machine));
+  yield* call(highlight, machine.id);
+  if (fromPaste) {
+    lastPasted = null;
+    if (!dismissed) yield* put(pasteCompleted());
+  }
+  return null;
+}
+
+/** One pasted `intent://node` link: main holds it, then ask and claim. */
+function* pasteInvite(text: string): SagaGenerator<void> {
+  let held: HeldInvite;
+  try {
+    held = inviteInspectReply(yield* call(invokeInviteInspect, text));
+  } catch {
+    held = { ok: false, code: 'failed' };
+  }
+  if (!held.ok) {
+    yield* put(pasteFailed({ code: held.code }));
+    return;
+  }
+  const error = yield* call(claimInvite, held, maskNodeInviteUri(text));
+  if (error === 'cancelled') lastPasted = null;
+  else if (error) yield* put(pasteFailed(error));
+}
+
 /** Drop a credential main tested for a paste the user already cancelled. */
 function discardLate(request: Promise<unknown>) {
   request
@@ -230,6 +385,10 @@ function discardLate(request: Promise<unknown>) {
 /** One paste attempt. Cancel stops it before anything is saved. */
 function* testPasted(text: string): SagaGenerator<void> {
   lastPasted = text;
+  if (isNodeInviteUri(text)) {
+    yield* call(pasteInvite, text);
+    return;
+  }
   if (!isPairingUri(text)) {
     yield* put(pasteFieldOpened());
     yield* put(pasteFailed({ code: 'not-a-link' }));
@@ -269,7 +428,7 @@ function* testPasted(text: string): SagaGenerator<void> {
 
 function* requestPaste(): SagaGenerator<void> {
   const clipboard = (yield* call(readClipboard)).trim();
-  if (isPairingUri(clipboard)) yield* call(testPasted, clipboard);
+  if (isPairingUri(clipboard) || isNodeInviteUri(clipboard)) yield* call(testPasted, clipboard);
   else yield* put(pasteFieldOpened());
 }
 
@@ -283,18 +442,16 @@ function* retryPaste(): SagaGenerator<void> {
 }
 
 function nodeLinkErrorMessage(error: NodeAddError): string {
-  const backend = selectCurrentBackendLabel.select(store.state);
-  const node = error.node ?? '';
-  switch (error.code) {
-    case 'labs-off':
-      return m.nodes_error_labsOff({ node });
-    case 'backend-unsupported':
-      return m.nodes_error_backendUnsupported({ node, backend });
-    case 'expired':
-      return m.nodes_error_expired();
-    default:
-      return m.nodes_error_failed();
-  }
+  return nodeAddErrorMessage(error, selectCurrentBackendLabel.select(store.state));
+}
+
+/** An `intent://node` link opened from outside the app: Settings → Machines, ask, claim. */
+function* receiveNodeInvite(action: ReturnType<typeof nodeInviteReceived>): SagaGenerator<void> {
+  const held = { ...action.payload[0], label: inviteLabel(action.payload[0].label) };
+  const { navigateToSettings } = yield* call(() => import('$lib/utils/workspace-navigation'));
+  yield* call(navigateToSettings, { tab: 'devices' });
+  const error = yield* call(claimInvite, held);
+  if (error && error !== 'cancelled') yield* call(notify.error, nodeLinkErrorMessage(error));
 }
 
 /** A node link opened from a browser or a QR scan: Settings → Machines, then the same prompt. */
@@ -334,12 +491,18 @@ function* openedNode(action: ReturnType<typeof nodeConnectionOpened>): SagaGener
 
 /** Outside links and dialog hand-offs run one at a time, so each one gets its prompt. */
 function* queueNodeHandoffs(): SagaGenerator<void> {
-  const handoffs = yield* actionChannel([nodeLinkReceived, nodeConnectionOpened]);
+  const handoffs = yield* actionChannel([
+    nodeLinkReceived,
+    nodeInviteReceived,
+    nodeConnectionOpened,
+  ]);
   while (true) {
     const action = yield* take(handoffs);
     try {
       if (action.type === nodeLinkReceived.toString())
         yield* call(receiveNodeLink, action as ReturnType<typeof nodeLinkReceived>);
+      else if (action.type === nodeInviteReceived.toString())
+        yield* call(receiveNodeInvite, action as ReturnType<typeof nodeInviteReceived>);
       else yield* call(openedNode, action as ReturnType<typeof nodeConnectionOpened>);
     } catch {
       // One failed hand-off must not stop the queue.

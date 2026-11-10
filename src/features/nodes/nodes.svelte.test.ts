@@ -129,7 +129,7 @@ describe('paste row', () => {
   });
 
   it.each([
-    ['not-a-link', "This isn't an intent:// pair link.", false],
+    ['not-a-link', "This isn't an intent:// pair or node link.", false],
     ['wrong-token', 'Run intentd pair --rotate there', false],
     ['labs-off', 'To add GPU rig, turn on Remote agents in Settings → Labs.', false],
     [

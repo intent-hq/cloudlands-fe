@@ -64,6 +64,36 @@ test('Remote agents are tagged with their backend and links are counted', async 
   await attach(testInfo, 'agent-memory-remote-agents.png', await dialog.screenshot());
 });
 
+test('Hosted agents show their name and workspace; local rows show the workspace title', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await mount(DaemonStatusIndicator, scene('remote-agents-labeled'));
+  await openStatusPanel(page);
+  const dialog = await openBreakdown(page);
+  // A hosted row with labels: agent name as the label, workspace after the backend.
+  await expect(dialog.getByText('Write release notes', { exact: true })).toBeVisible();
+  await expect(
+    dialog.getByText('for Studio MacBook Pro · Docs refresh', { exact: true }),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole('button', {
+      name: /^Write release notes for Studio MacBook Pro · Docs refresh claude-code\/claude-sonnet-4 /,
+    }),
+  ).toBeVisible();
+  // A hosted row without labels keeps the provider label and the bare backend tag.
+  await expect(dialog.getByRole('button', { name: /^(Codex|codex) for a92e04d7 / })).toBeVisible();
+  await expect(dialog.getByText('for a92e04d7', { exact: true })).toBeVisible();
+  // Backend workspace ids never show.
+  await expect(dialog.getByText(/ws-remote-/)).toHaveCount(0);
+  // A local row with a title shows it instead of the raw id; one without keeps the id.
+  await expect(dialog.getByText(/^Workspace Dark mode toggle( · |$)/)).toBeVisible();
+  await expect(dialog.getByText(/^Workspace ws-dark-mode/)).toHaveCount(0);
+  await expect(dialog.getByText(/^Workspace ws-flaky-ct( · |$)/)).toBeVisible();
+  await attach(testInfo, 'agent-memory-hosted-labels.png', await dialog.screenshot());
+});
+
 test('The links row hides when both counts are zero', async ({ mount, page }, testInfo) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await mount(DaemonStatusIndicator, scene('remote-agents-no-links'));

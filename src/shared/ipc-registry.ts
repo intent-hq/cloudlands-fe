@@ -1147,6 +1147,11 @@ export const IPC_CHANNELS = {
     EXPOSE: 'remote-machines:expose',
     UNEXPOSE: 'remote-machines:unexpose',
     MACHINE_FINGERPRINT: 'remote-machines:machine-fingerprint',
+    /** Hold an `intent://node` link in main; returns a pending id, never the secret. */
+    INVITE_INSPECT: 'remote-machines:invite-inspect',
+    /** Claim a held node invite on the window's backend. */
+    INVITE_CLAIM: 'remote-machines:invite-claim',
+    INVITE_DISCARD: 'remote-machines:invite-discard',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)

@@ -15,6 +15,7 @@ import { app, dialog, type MessageBoxOptions } from 'electron';
 import { Logger } from '$shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { parsePairingUri } from '$shared/utils/pairing-uri';
+import { isNodeInviteUri } from '$shared/utils/node-invite-uri';
 import { getMainWindow } from '../../../main/state';
 import * as connectionsStore from '../../backend/main/desktop-connections-store';
 import * as guestSessionsStore from '../../backend/main/guest-sessions-store';
@@ -27,6 +28,7 @@ import { canonicalFingerprint } from '../../backend/main/invited-session-key';
 import { captureInviteAttempt } from './invite-attempt';
 import { NodeWindowRefusedError, openBackendWindow } from '../../backend/main/backend.ipc';
 import { getPairLinks } from '../../backend/main/pair-link.ipc';
+import { getNodeInvites } from '../../backend/main/remote-machines.ipc';
 import type { TestedPairLink } from '../../backend/main/pair-link';
 import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
 import { queueDeepLinkForWindow } from './pending-deep-links';
@@ -57,6 +59,10 @@ export async function handlePairDeepLink(url: string): Promise<void> {
   let addedId: string | null = null;
   const attempt = captureInviteAttempt();
   try {
+    if (isNodeInviteUri(url)) {
+      await routeNodeInvite(url);
+      return;
+    }
     const parsed = parsePairingUri(url);
     if (!parsed) {
       logger.warn('Ignoring deep link that is not a pairing URI');
@@ -182,13 +188,7 @@ export async function handlePairDeepLink(url: string): Promise<void> {
           ? error.message
           : m.deeplink_pairFailure_message(),
     };
-    try {
-      const parent = getMainWindow();
-      if (parent && !parent.isDestroyed()) await dialog.showMessageBox(parent, options);
-      else await dialog.showMessageBox(options);
-    } catch {
-      logger.warn('Could not show pairing failure dialog');
-    }
+    await showMessage(options);
   } finally {
     attempt.release();
     pairLinkInFlight = false;
@@ -244,6 +244,46 @@ async function routeNodeLink(link: TestedPairLink): Promise<void> {
     },
   });
   bringToFront(window);
+}
+
+/**
+ * An `intent://node` link: main holds it, the app window asks and the current
+ * backend claims it. Only the pending id and the name reach the renderer.
+ */
+async function routeNodeInvite(url: string): Promise<void> {
+  const invites = getNodeInvites();
+  const held = invites.inspect(url);
+  if (!held.ok) {
+    logger.warn('Ignoring node link', { code: held.code });
+    await showMessage({
+      type: 'error',
+      title: m.nodes_inviteFailure_title(),
+      message:
+        held.code === 'link-version' ? m.nodes_error_linkVersion() : m.nodes_error_incomplete(),
+    });
+    return;
+  }
+  const window = await appWindow();
+  if (!window) {
+    invites.discard(held.pendingId);
+    throw new Error('No app window to ask in');
+  }
+  logger.info('Node link received; asking in the app window');
+  queueDeepLinkForWindow(window, {
+    type: 'node-invite',
+    params: { pendingId: held.pendingId, label: held.label ?? '' },
+  });
+  bringToFront(window);
+}
+
+async function showMessage(options: MessageBoxOptions): Promise<void> {
+  try {
+    const parent = getMainWindow();
+    if (parent && !parent.isDestroyed()) await dialog.showMessageBox(parent, options);
+    else await dialog.showMessageBox(options);
+  } catch {
+    logger.warn('Could not show pairing failure dialog');
+  }
 }
 
 /**

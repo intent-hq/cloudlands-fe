@@ -54,7 +54,7 @@ Check the type definitions in 'src/shared/type-system/contracts.ts' for the corr
         fixes.push(`Change ${error.path} from ${error.received} to ${error.expected}`);
       } else if (error.code === 'unrecognized_keys') {
         fixes.push(`Remove unexpected property: ${error.path}`);
-      } else if (error.code === 'invalid_enum_value') {
+      } else if (error.code === 'invalid_value' || error.code === 'invalid_enum_value') {
         fixes.push(`Use one of the valid enum values for ${error.path}`);
       }
     }

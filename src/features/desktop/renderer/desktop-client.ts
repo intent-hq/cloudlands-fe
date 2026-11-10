@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDateTime } from '$shared/zod-compat';
 import { m } from '$shared/paraglide/messages.js';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import { BackendError } from '$lib/client/live/backend-transport-types';
@@ -26,7 +27,7 @@ const request = z.object({
   claimsPrimary: z.boolean(),
   computerId: id,
   computerName: id,
-  expiresAt: z.string().datetime(),
+  expiresAt: isoDateTime(),
   options: z
     .array(z.object({ id: decision, label: id }))
     .refine(

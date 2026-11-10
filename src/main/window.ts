@@ -12,7 +12,7 @@ import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
 import { queueDeepLinkForWindow } from '../features/deeplink/main/pending-deep-links';
 import { isInviteUri } from '../shared/utils/invite-uri';
-import { isPairingUri } from '../shared/utils/pairing-uri';
+import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { getMainWindow, setMainWindow } from './state';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { fileURLToPath } from 'url';
@@ -1032,7 +1032,7 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
   const intentUrl = coldStartDeepLinkTaken ? undefined : findIntentUrl(process.argv);
   const loadUrl = buildLoadUrl();
 
-  if (intentUrl && !isPairingUri(intentUrl) && !isInviteUri(intentUrl)) {
+  if (intentUrl && !isMainOnlyLinkUri(intentUrl) && !isInviteUri(intentUrl)) {
     coldStartDeepLinkTaken = true;
     const deepLinkHandler = new DeepLinkHandler();
     const action = deepLinkHandler.parseDeepLink(intentUrl);
@@ -1081,7 +1081,7 @@ export async function createWindowForDeepLink(
   // Pair links never touch the renderer (no window, no IPC): route straight
   // to the main-process pair handler. Dynamic import — pair-deep-link reaches
   // backend.ipc, which imports this module (a static import would cycle).
-  if (isPairingUri(deepLinkUrl)) {
+  if (isMainOnlyLinkUri(deepLinkUrl)) {
     const { handlePairDeepLink } = await import('../features/deeplink/main/pair-deep-link');
     await handlePairDeepLink(deepLinkUrl);
     return;

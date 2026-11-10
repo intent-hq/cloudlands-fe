@@ -172,7 +172,7 @@ export function createRepositoryCheckoutFeed(client: JsonRpcClient) {
         );
         expiry.unref();
         const captured = binding;
-        const perform = async <T extends z.ZodTypeAny>(
+        const perform = async <T extends z.ZodType>(
           method: string,
           params: object,
           schema: T,

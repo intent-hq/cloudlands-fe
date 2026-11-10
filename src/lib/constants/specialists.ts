@@ -12,6 +12,7 @@ export type BuiltinSpecialistId =
   | 'ui-designer'
   | 'developer'
   | 'product-manager'
+  | 'maintenance-coordinator'
   | 'chief-of-staff';
 
 export interface Specialist {
@@ -165,6 +166,18 @@ export const SPECIALISTS: Specialist[] = [
     },
     get description() {
       return m.specialists_builtin_productManager_description();
+    },
+    defaultBehaviorPrompt: '',
+    promptUnavailable: true,
+  },
+  {
+    id: 'maintenance-coordinator',
+    icon: 'ralph',
+    get name() {
+      return m.specialists_builtin_maintenanceCoordinator_name();
+    },
+    get description() {
+      return m.specialists_builtin_maintenanceCoordinator_description();
     },
     defaultBehaviorPrompt: '',
     promptUnavailable: true,

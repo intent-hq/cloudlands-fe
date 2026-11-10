@@ -20,6 +20,12 @@ import type {
 import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
 import type { ConnectionRecord } from '$shared/types/connections';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { WorkspaceStatus } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
 import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
 import { E2B_SANDBOXES } from '../../../test/cloud-machines-preview';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
@@ -175,6 +181,20 @@ const remoteAgentMemoryUsage = {
   ],
 } satisfies AgentMemoryUsageWirePayload;
 
+// Hosted rows from a backend whose launch carries the agent name and its
+// workspace title; the second hosted row keeps the older shape. Local rows
+// carry no title: the scene stores one local workspace for the client to
+// resolve, and leaves the other unresolved.
+const labeledAgentMemoryUsage = {
+  ...remoteAgentMemoryUsage,
+  agents: remoteAgentMemoryUsage.agents.map((agent) => {
+    if (agent.workspaceId === 'ws-remote-docs') {
+      return { ...agent, agentName: 'Write release notes', workspaceTitle: 'Docs refresh' };
+    }
+    return agent;
+  }),
+} satisfies AgentMemoryUsageWirePayload;
+
 const generation = () => selectDaemonConnectionGeneration.select(store.state);
 
 // Live uptime is base uptime plus time elapsed since the last successful
@@ -188,7 +208,7 @@ interface Scenario {
   /** Report agent-attributed memory and seed the breakdown the row opens. */
   agentMemory?: boolean;
   /** Seed the breakdown with agents run for other backends (needs `agentMemory`). */
-  remoteAgents?: boolean;
+  remoteAgents?: boolean | 'labeled';
   /** `system.status.remoteLinks`; omitted models an older daemon. */
   remoteLinks?: { backends: number; machines: number };
   /** Seed saved machines so the menu shows its Machines list. */
@@ -299,12 +319,33 @@ function setup({
         }),
       );
     }
+    if (remoteAgents === 'labeled') {
+      store.dispatch(
+        setWorkspaceEntity({
+          id: WorkspaceId('ws-dark-mode'),
+          title: 'Dark mode toggle',
+          repositoryName: 'intent',
+          branch: 'feat/dark-mode',
+          status: WorkspaceStatus.Active,
+          changesets: [],
+          timeline: [],
+          conversationInfo: [],
+          ...PREVIEW_FIXTURE_TIMESTAMPS,
+        }),
+      );
+    }
     if (agentMemory) {
       // No saga runs in the preview, so the breakdown's first open shows this
       // seeded sample instead of waiting on agent.memoryUsage.
       store.dispatch(agentMemoryUsageRequested());
       store.dispatch(
-        agentMemoryUsageSucceeded(remoteAgents ? remoteAgentMemoryUsage : agentMemoryUsage),
+        agentMemoryUsageSucceeded(
+          remoteAgents === 'labeled'
+            ? labeledAgentMemoryUsage
+            : remoteAgents
+              ? remoteAgentMemoryUsage
+              : agentMemoryUsage,
+        ),
       );
     }
     if (failures === 'heartbeat') {
@@ -327,6 +368,7 @@ function setup({
         );
       }
       if (agentMemory) store.dispatch(agentMemoryBreakdownClosed());
+      if (remoteAgents === 'labeled') store.dispatch(removeWorkspaceEntity('ws-dark-mode'));
       store.dispatch(connectionStatusChanged('disconnected'));
       if (machines) {
         store.dispatch(
@@ -370,6 +412,14 @@ export const preview = definePreview<Record<string, never>>({
       setup: setup({
         agentMemory: true,
         remoteAgents: true,
+        remoteLinks: { backends: 2, machines: 1 },
+      }),
+    },
+    'remote-agents-labeled': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteAgents: 'labeled',
         remoteLinks: { backends: 2, machines: 1 },
       }),
     },

@@ -2,7 +2,6 @@
   "version": 1,
   "note": "Known code used only by tests. Shrink-only: delete entries as the code is removed or gains a production caller (node scripts/check-dead-code.mjs --prune-baseline). Never add entries.",
   "files": [
-    "src/lib/components/tiptap/Suggestion.ts",
     "src/lib/components/ui/dropdown/dropdown-caller-ledger.ts",
     "src/lib/notes/text-rebase-bench.ts",
     "src/lib/notes/text-rebase-shapes.ts",

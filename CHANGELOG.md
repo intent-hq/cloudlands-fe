@@ -4,6 +4,23 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.309.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.308.1...v2.309.0) (2026-11-10)
+
+
+### 🚀 Features
+
+* **agent-memory:** show workspace and agent name for hosted agents ([#4384](https://github.com/intent-hq/cloudlands-fe/issues/4384)) ([4c4b9f4](https://github.com/intent-hq/cloudlands-fe/commit/4c4b9f47327c20bb1af87bd711680435cc1d177a))
+* **specialists:** add Maintenance Coordinator built-in display entry ([#4381](https://github.com/intent-hq/cloudlands-fe/issues/4381)) ([fc629d5](https://github.com/intent-hq/cloudlands-fe/commit/fc629d55d26ca4eb8cae65def7512ee2c6d42f8a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.169 ([#4385](https://github.com/intent-hq/cloudlands-fe/issues/4385)) ([00cfe04](https://github.com/intent-hq/cloudlands-fe/commit/00cfe04dfc6c3312e0f811431dd77d36ccb9c0b3))
+* bump intentd sidecar to v0.11.170 ([#4391](https://github.com/intent-hq/cloudlands-fe/issues/4391)) ([9cfab85](https://github.com/intent-hq/cloudlands-fe/commit/9cfab855d23e136a2db42228d2d596bd3316bae0))
+* **deps:** migrate zod 3 to 4.6.7 (GHSA-mrhx-c7xc-m3w5) ([#4383](https://github.com/intent-hq/cloudlands-fe/issues/4383)) ([a9abe54](https://github.com/intent-hq/cloudlands-fe/commit/a9abe54ee6c777d63e8098b699a3b0071f132324))
+* **deps:** resolve transitive npm security alerts via lockfile refresh ([#4382](https://github.com/intent-hq/cloudlands-fe/issues/4382)) ([f1ed8aa](https://github.com/intent-hq/cloudlands-fe/commit/f1ed8aa9d9da4103ef1ecc175e3d9377e7c7b61c))
+* **model-picker:** keep loading in the refresh icon and align rows ([#4388](https://github.com/intent-hq/cloudlands-fe/issues/4388)) ([9c24b96](https://github.com/intent-hq/cloudlands-fe/commit/9c24b96b4c8e0d9977860687929557c0f8f7d905))
+
 ## [2.308.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.308.0...v2.308.1) (2026-11-10)
 
 

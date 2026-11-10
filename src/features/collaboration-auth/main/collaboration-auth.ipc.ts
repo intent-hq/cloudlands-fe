@@ -36,7 +36,7 @@ const actionSchema = z.discriminatedUnion('type', [
     z.object({ type: z.literal(type) }).strict(),
   ),
 ]);
-const messageSchema = z.object({ requestId: z.string().uuid(), action: actionSchema }).strict();
+const messageSchema = z.object({ requestId: z.guid(), action: actionSchema }).strict();
 let active: { flow: CollaborationAuthFlow; contentsId: number; requestId: string } | null = null;
 let sequence = 0;
 let releaseAttempt: (() => void) | undefined;

@@ -124,17 +124,26 @@ function generation(): number {
 async function readSupported(): Promise<{
   supported: boolean;
   initialAgentPlacement: boolean;
+  claimInvites: boolean;
 } | null> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
       server?: {
-        capabilities?: { remoteMachines?: unknown; remoteInitialAgent?: unknown } | null;
+        capabilities?: {
+          remoteMachines?: unknown;
+          remoteInitialAgent?: unknown;
+          remoteMachineClaim?: unknown;
+        } | null;
       };
     } | null;
     const capabilities = hello?.server?.capabilities;
     if (!capabilities) return null;
     const supported = capabilities.remoteMachines === 1;
-    return { supported, initialAgentPlacement: supported && capabilities.remoteInitialAgent === 1 };
+    return {
+      supported,
+      initialAgentPlacement: supported && capabilities.remoteInitialAgent === 1,
+      claimInvites: supported && capabilities.remoteMachineClaim === 1,
+    };
   } catch {
     return null;
   }
@@ -186,6 +195,7 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
   }
   const supported = known?.supported === true;
   const initialAgentPlacement = known?.initialAgentPlacement === true;
+  const claimInvites = known?.claimInvites === true;
   let machines: RemoteMachine[] = [];
   let localFingerprint: string | null = null;
   if (supported) {
@@ -197,7 +207,14 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
     localFingerprint = yield* call(readLocalFingerprint);
   }
   const executorBackends = yield* call(readExecutorBackends);
-  return { supported, initialAgentPlacement, machines, localFingerprint, executorBackends };
+  return {
+    supported,
+    initialAgentPlacement,
+    claimInvites,
+    machines,
+    localFingerprint,
+    executorBackends,
+  };
 }
 
 /**

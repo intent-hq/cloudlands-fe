@@ -41,6 +41,23 @@ import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 /** Workspace entity changes observed by independent UI projections. */
 export const selectWorkspaceEntities = store.createSelector((state) => state.workspace.workspaces);
 
+// Recomputed only when the workspace collection changes.
+let titlesSource: unknown;
+let titlesById: Record<string, string> = {};
+
+/** Workspace titles keyed by id, for views that label rows by workspace id. */
+export const selectWorkspaceTitlesById = store.createSelector<[], Record<string, string>>(
+  (state) => {
+    if (state.workspace.workspaces !== titlesSource) {
+      titlesSource = state.workspace.workspaces;
+      titlesById = Object.fromEntries(
+        getItems(state.workspace.workspaces).map((workspace) => [workspace.id, workspace.title]),
+      );
+    }
+    return titlesById;
+  },
+);
+
 export const selectWorkspaceLoading = store.createSelector((state) => {
   return state.workspace.loading;
 });
