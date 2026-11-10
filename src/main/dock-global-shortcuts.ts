@@ -61,6 +61,8 @@ const preferences = createDockShortcutPreferences({
     return issues;
   },
   changed(snapshot: DockShortcutSettingsSnapshot) {
+    // A foreground read admitted under older bindings/capture ownership cannot act later.
+    generation++;
     for (const window of BrowserWindow.getAllWindows())
       if (!window.isDestroyed() && !window.webContents.isDestroyed())
         window.webContents.send(IPC_CHANNELS.DOCK_SHORTCUTS.CHANGED, snapshot);
@@ -78,7 +80,7 @@ export function dockShortcutMenuKey(action: DockShortcutContext['action']): stri
 
 export async function requestDockShortcut(action: DockShortcutContext['action']): Promise<void> {
   const window = getDockWindow();
-  if (!enabled || !window) return;
+  if (!enabled || !window || preferences.snapshot().capturing) return;
   const binding = getStrictBackendBindingForWebContents(window.webContents);
   if (!binding) return;
   // Pressed again while the dock has the keyboard: ask the dock to close as Escape would.

@@ -24,9 +24,9 @@ export function registerDockShortcutSettingsHandlers(
   service: ReturnType<typeof createDockShortcutPreferences>,
 ) {
   let lease: { token: string; sender: WebContents; stop: () => void } | null = null;
-  async function endCapture() {
+  async function endCapture(expectedToken?: string) {
     const current = lease;
-    if (!current) return;
+    if (!current || (expectedToken !== undefined && current.token !== expectedToken)) return;
     lease = null;
     current.stop();
     await service.capture(false);
@@ -81,7 +81,7 @@ export function registerDockShortcutSettingsHandlers(
         const sender = event.sender,
           window = BrowserWindow.fromWebContents(sender),
           token = randomUUID();
-        const release = () => void endCapture();
+        const release = () => void endCapture(token);
         const timer = setTimeout(release, 30_000);
         timer.unref();
         const retire = onStrictBackendBindingRetired(sender, release);
@@ -102,12 +102,12 @@ export function registerDockShortcutSettingsHandlers(
         try {
           const snapshot = await service.capture(true);
           if (lease?.token !== token) {
-            await service.capture(false);
+            // Its release already queued capture(false). A replacement may now own capture.
             return { snapshot: service.snapshot(), token: null };
           }
           return { snapshot, token };
         } catch (error) {
-          await endCapture();
+          await endCapture(token);
           throw error;
         }
       },
