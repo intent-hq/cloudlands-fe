@@ -735,13 +735,13 @@
     composerAsk.open = recording.workspaceId;
     composerAsk.request += 1;
   }
-  function openWorkspace(id: string): void {
+  function openWorkspace(id: string, fromKeyboard = false): void {
     if (onOpenConversation) {
       command({ action: 'focus' });
       const workspaceId = id === assistantId ? CHIEF_WORKSPACE_ID : id;
       if (notch || edge) composerAsk.open = workspaceId;
       if (edge) composerAsk.request += 1;
-      conversationPresence.show();
+      conversationPresence.show(fromKeyboard);
       onOpenConversation(workspaceId);
       return;
     }
@@ -918,6 +918,7 @@
       else if (sideOpens && sideDefaultWorkspaceId)
         openWorkspace(
           sideDefaultWorkspaceId === CHIEF_WORKSPACE_ID ? assistantId : sideDefaultWorkspaceId,
+          true,
         );
       else shortcutOpenRequest += 1;
     });
