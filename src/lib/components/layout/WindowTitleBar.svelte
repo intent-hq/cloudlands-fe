@@ -24,7 +24,8 @@
   import { directSelectorReadable } from '$store/renderer/utils/direct-selector';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
-  import { onMount } from 'svelte';
+  import { onMount, type Snippet } from 'svelte';
+  import type { UnifiedMachine } from '$features/unified-window/unified-machines';
   import { writable } from 'svelte/store';
   import {
     selectZoomFactor,
@@ -55,9 +56,15 @@
 
   interface Props {
     workspaceId?: string;
+    /** Unified window: the machine dropdown, rendered right after Home. */
+    machineSwitcher?: Snippet;
+    /** Unified window: the machine each workspace tab lives on. */
+    tabMachine?: (workspaceId: string) => UnifiedMachine | null;
+    /** Unified window: the shell's selected tab, in place of the routed workspace. */
+    activeTabId?: string | null;
   }
 
-  let { workspaceId }: Props = $props();
+  let { workspaceId, machineSwitcher, tabMachine, activeTabId }: Props = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
   const reducedMotion = watchReducedMotion();
@@ -221,6 +228,7 @@
         data-titlebar-fixed-controls
       >
         <SidebarNav />
+        {@render machineSwitcher?.()}
       </div>
       <div
         class="flex min-w-0 self-end items-center gap-1 transition-[margin-left] duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
@@ -230,7 +238,8 @@
         <WorkspaceTabStrip
           onActiveTabBoundsChange={handleActiveTabBoundsChange}
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
-          activeWorkspaceId={routedWorkspaceId}
+          activeWorkspaceId={activeTabId === undefined ? routedWorkspaceId : activeTabId}
+          {tabMachine}
           leadingInsetPx={workspaceTabLeadingInsetPx}
           scrollerMarginLeftPx={workspaceTabScrollerMarginLeftPx}
           horizontalPositionTrackingKey={workspaceControlsOffset +

@@ -106,6 +106,7 @@
   import RepositoryPickerIcon from './workspace/initializer/RepositoryPickerIcon.svelte';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
+  import type { UnifiedMachine } from '$features/unified-window/unified-machines';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
   import { isLabCommandHidden } from './command-palette-labs';
@@ -133,6 +134,8 @@
     isOpen: boolean;
     initialQuery?: string;
     workspaceId?: string;
+    /** Unified window: the machine each workspace result lives on. */
+    workspaceMachine?: (workspaceId: string) => UnifiedMachine | null;
     onClose: () => void;
     /** Callback when a file is selected. Includes openInAdjacentPanel for cmd+Enter support. */
     onSelectFile?: (detail: { path: string; line?: number; openInAdjacentPanel?: boolean }) => void;
@@ -141,6 +144,7 @@
     isOpen = $bindable(false),
     initialQuery = '',
     workspaceId,
+    workspaceMachine,
     onClose,
     onSelectFile,
   }: Props = $props();
@@ -550,6 +554,7 @@
             : undefined,
           _workspace: true as const,
           isRetiredWorkspace: w.retiredAt ? true : undefined, // retiredAt ⇔ Retired (§5.1)
+          machine: workspaceMachine?.(w.id) ?? undefined,
           _time: activityTime > 0 ? formatRelativeTime(new Date(activityTime)) : '',
           // Ranking recency: last activity or last palette pick, whichever is newer.
           _activityTime: Math.max(activityTime, paletteMruTimes.get(`workspace:${w.id}`) ?? 0),

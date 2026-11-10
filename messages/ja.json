@@ -8605,5 +8605,19 @@
   "lib_commandPalette_categoryWorkspace_label": "ワークスペース",
   "lib_commandPalette_categoryRepo_label": "リポジトリ",
   "lib_commandPalette_categoryFolder_label": "フォルダー",
-  "lib_commandPalette_categoryMessage_label": "メッセージ"
+  "lib_commandPalette_categoryMessage_label": "メッセージ",
+  "unifiedWindow_menu_open_label": "統合ウィンドウ",
+  "unifiedWindow_switcher_ariaLabel": "{machine} のホームと設定",
+  "unifiedWindow_switcher_header": "ホームと設定の取得元",
+  "unifiedWindow_machine_guest_badge": "ゲスト",
+  "unifiedWindow_machine_offline_label": "オフライン",
+  "unifiedWindow_machine_offlineName_label": "{machine}（オフライン）",
+  "unifiedWindow_tab_ariaLabel": "{tab}、{machine} 上",
+  "unifiedWindow_offline_title": "{machine} はオフラインです",
+  "unifiedWindow_offline_description": "マシンが戻ると、このタブは自動的に再接続されます。",
+  "unifiedWindow_home_offlineGroup_detail": "オフライン — 自動的に再接続します",
+  "unifiedWindow_home_machineFilter_label": "マシン",
+  "unifiedWindow_home_machineFilter_all": "すべてのマシン",
+  "unifiedWindow_lab_label": "統合ウィンドウ（Labs）",
+  "unifiedWindow_lab_description": "すべてのマシンのワークスペースタブを 1 つのウィンドウにまとめます。マシンメニューの一番上から開けます。"
 }

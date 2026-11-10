@@ -3,6 +3,7 @@
  * Extracted from the component so it is testable outside Svelte.
  */
 
+import type { UnifiedMachine } from '$features/unified-window/unified-machines';
 import {
   fuzzyScore,
   isExactNameMatch,
@@ -36,6 +37,8 @@ interface WorkspaceItem {
   /** Archived workspace whose folder was purged (`Retired`, PROTOCOL §5.1):
    *  search opts in and shows the Archived badge. */
   isRetiredWorkspace?: boolean;
+  /** Unified window: the machine the workspace lives on. */
+  machine?: UnifiedMachine;
   _time?: string;
   /** Raw last-activity timestamp (ms) used as a search-ranking tiebreak. */
   _activityTime?: number;

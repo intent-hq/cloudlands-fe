@@ -8605,5 +8605,19 @@
   "lib_commandPalette_categoryWorkspace_label": "工作區",
   "lib_commandPalette_categoryRepo_label": "儲存庫",
   "lib_commandPalette_categoryFolder_label": "資料夾",
-  "lib_commandPalette_categoryMessage_label": "訊息"
+  "lib_commandPalette_categoryMessage_label": "訊息",
+  "unifiedWindow_menu_open_label": "統一視窗",
+  "unifiedWindow_switcher_ariaLabel": "{machine} 的首頁和設定",
+  "unifiedWindow_switcher_header": "首頁和設定來自",
+  "unifiedWindow_machine_guest_badge": "訪客",
+  "unifiedWindow_machine_offline_label": "離線",
+  "unifiedWindow_machine_offlineName_label": "{machine}（離線）",
+  "unifiedWindow_tab_ariaLabel": "{tab}，位於 {machine}",
+  "unifiedWindow_offline_title": "{machine} 已離線",
+  "unifiedWindow_offline_description": "機器恢復後，此分頁會自動重新連線。",
+  "unifiedWindow_home_offlineGroup_detail": "離線 — 將自動重新連線",
+  "unifiedWindow_home_machineFilter_label": "機器",
+  "unifiedWindow_home_machineFilter_all": "所有機器",
+  "unifiedWindow_lab_label": "統一視窗（Labs）",
+  "unifiedWindow_lab_description": "在一個視窗中顯示所有機器的工作區分頁。可從機器選單頂端開啟。"
 }

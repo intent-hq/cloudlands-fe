@@ -18,6 +18,7 @@
     onfilter,
     onview,
     settings,
+    machineFilter,
   }: {
     query: string;
     filter: HomeFilter;
@@ -28,6 +29,8 @@
     onview: (view: 'list' | 'board') => void;
     settings: Snippet;
     children?: Snippet;
+    /** Unified window: the machine filter, shown after search. */
+    machineFilter?: Snippet;
   } = $props();
 </script>
 
@@ -38,6 +41,7 @@
   class="min-w-24 w-48 shrink"
   inputClass="home-control-fill rounded-xl border-transparent"
 />
+{@render machineFilter?.()}
 <div
   class="home-choice-group home-workspace-filters-wide ml-auto shrink-0"
   role="group"

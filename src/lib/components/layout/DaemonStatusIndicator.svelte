@@ -99,6 +99,7 @@
     faChevronRight,
     faTriangleExclamation,
     faUsers,
+    faLayerGroup,
   } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -176,6 +177,9 @@
   const certWarningsById$ = selectCertWarningsByConnectionId();
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
+
+  /** Labs: opens (or focuses) the Unified window; the item is shown only when set. */
+  let { onOpenUnifiedWindow }: { onOpenUnifiedWindow?: () => void } = $props();
 
   let dropdownOpen = $state(false);
   let menuBody = $state<HTMLDivElement | null>(null);
@@ -577,6 +581,24 @@
       up to two right-aligned lines instead of widening the menu.
     -->
     <div bind:this={menuBody} class="min-w-56 w-max max-w-80">
+      {#if onOpenUnifiedWindow}
+        <div class="px-1">
+          <Menu.Item
+            class="w-full cursor-pointer text-xs px-2 py-1.5"
+            onSelect={() => {
+              dropdownOpen = false;
+              onOpenUnifiedWindow();
+            }}
+            data-unified-window-item
+          >
+            {#snippet leading()}
+              <Fa icon={faLayerGroup} class="text-foreground" />
+            {/snippet}
+            {m.unifiedWindow_menu_open_label()}
+          </Menu.Item>
+        </div>
+        <div class="h-px bg-border my-1"></div>
+      {/if}
       <Menu.Sub>
         <div class="px-1">
           <Menu.SubTrigger class="w-full cursor-pointer text-xs px-2 py-1.5">

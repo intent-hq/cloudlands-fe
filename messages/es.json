@@ -8605,5 +8605,19 @@
   "lib_commandPalette_categoryWorkspace_label": "Espacio de trabajo",
   "lib_commandPalette_categoryRepo_label": "Repo",
   "lib_commandPalette_categoryFolder_label": "Carpeta",
-  "lib_commandPalette_categoryMessage_label": "Mensaje"
+  "lib_commandPalette_categoryMessage_label": "Mensaje",
+  "unifiedWindow_menu_open_label": "Ventana unificada",
+  "unifiedWindow_switcher_ariaLabel": "Inicio y ajustes de {machine}",
+  "unifiedWindow_switcher_header": "Inicio y ajustes de",
+  "unifiedWindow_machine_guest_badge": "Invitado",
+  "unifiedWindow_machine_offline_label": "Sin conexión",
+  "unifiedWindow_machine_offlineName_label": "{machine} (sin conexión)",
+  "unifiedWindow_tab_ariaLabel": "{tab}, en {machine}",
+  "unifiedWindow_offline_title": "{machine} no tiene conexión",
+  "unifiedWindow_offline_description": "Esta pestaña se vuelve a conectar sola cuando la máquina vuelva.",
+  "unifiedWindow_home_offlineGroup_detail": "Sin conexión: se reconecta automáticamente",
+  "unifiedWindow_home_machineFilter_label": "Máquina",
+  "unifiedWindow_home_machineFilter_all": "Todas las máquinas",
+  "unifiedWindow_lab_label": "Ventana unificada (Labs)",
+  "unifiedWindow_lab_description": "Una ventana con pestañas de espacios de trabajo de todas tus máquinas. Ábrela desde el inicio del menú de máquinas."
 }

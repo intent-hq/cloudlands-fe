@@ -8605,5 +8605,19 @@
   "lib_commandPalette_categoryWorkspace_label": "워크스페이스",
   "lib_commandPalette_categoryRepo_label": "저장소",
   "lib_commandPalette_categoryFolder_label": "폴더",
-  "lib_commandPalette_categoryMessage_label": "메시지"
+  "lib_commandPalette_categoryMessage_label": "메시지",
+  "unifiedWindow_menu_open_label": "통합 창",
+  "unifiedWindow_switcher_ariaLabel": "{machine}의 홈 및 설정",
+  "unifiedWindow_switcher_header": "홈 및 설정 출처",
+  "unifiedWindow_machine_guest_badge": "게스트",
+  "unifiedWindow_machine_offline_label": "오프라인",
+  "unifiedWindow_machine_offlineName_label": "{machine} (오프라인)",
+  "unifiedWindow_tab_ariaLabel": "{tab}, {machine}",
+  "unifiedWindow_offline_title": "{machine}이(가) 오프라인입니다",
+  "unifiedWindow_offline_description": "기기가 돌아오면 이 탭이 자동으로 다시 연결됩니다.",
+  "unifiedWindow_home_offlineGroup_detail": "오프라인 — 자동으로 다시 연결됩니다",
+  "unifiedWindow_home_machineFilter_label": "기기",
+  "unifiedWindow_home_machineFilter_all": "모든 기기",
+  "unifiedWindow_lab_label": "통합 창 (Labs)",
+  "unifiedWindow_lab_description": "모든 기기의 워크스페이스 탭을 한 창에서 엽니다. 기기 메뉴 맨 위에서 열 수 있습니다."
 }

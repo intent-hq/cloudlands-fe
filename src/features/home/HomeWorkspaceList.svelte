@@ -26,12 +26,16 @@
   import HomeWorkspaceRepositoryLabel from './HomeWorkspaceRepositoryLabel.svelte';
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
+  import UnifiedMachineMarker from '$features/unified-window/components/UnifiedMachineMarker.svelte';
+  import type { UnifiedMachine } from '$features/unified-window/unified-machines';
 
   interface HomeListSection {
     id: string;
     label: string;
     items: Workspace[];
     expanded: boolean;
+    /** Secondary header text, such as an offline machine's reconnect note. */
+    detail?: string;
   }
 
   let {
@@ -50,6 +54,7 @@
     ongroupexpanded,
     onasideexpanded,
     ontoggleaside,
+    machineOf,
   }: {
     /** Active rows in display order (set-aside rows excluded). */
     workspaces: Workspace[];
@@ -70,6 +75,8 @@
     ongroupexpanded: (group: string, expanded: boolean, items: Workspace[]) => void;
     onasideexpanded: (expanded: boolean) => void;
     ontoggleaside: (workspace: Workspace) => void;
+    /** Unified window: the machine a row lives on; offline rows are greyed and drop stale status. */
+    machineOf?: (workspace: Workspace) => UnifiedMachine | null;
   } = $props();
 
   const asideIds = $derived(new Set(aside.map((workspace) => workspace.id)));
@@ -138,9 +145,12 @@
   {@const pullRequestCount = isPlainFolderWorkspace(item)
     ? 0
     : (item.pullRequestsTotal ?? item.pullRequests?.length ?? 0)}
+  {@const machine = machineOf?.(item) ?? null}
+  {@const machineOffline = machine !== null && !machine.online}
   <ListRow
     class="home-list-row h-12 items-center border-b border-border px-3 py-1"
     data-home-workspace={item.id}
+    data-machine-offline={machineOffline || undefined}
     onclick={(event) => onopen(event, item.id)}
     oncontextmenu={(event) => onmenu(event, item)}
   >
@@ -232,8 +242,19 @@
               ></Tooltip.Root
             ></Tooltip.Provider
           >{/if}
+        {#if machine}
+          <span
+            class="flex max-w-32 min-w-0 items-center gap-1.5 type-caption"
+            data-home-row-machine={machine.id}
+          >
+            <UnifiedMachineMarker {machine} />
+            <span class="truncate">{machine.label}</span>
+          </span>
+        {/if}
         <HomeWorkspacePurgedBadge workspace={item} />
-        <HomeWorkspaceStatus workspace={item} />
+        {#if !machineOffline}
+          <HomeWorkspaceStatus workspace={item} />
+        {/if}
         <span class="home-aside-slot shrink-0">
           <span
             class="inline-flex min-w-6 shrink-0 justify-end whitespace-nowrap type-caption tabular-nums"
@@ -285,6 +306,7 @@
   expanded: boolean,
   toggle: () => void,
   count?: number,
+  detail?: string,
 )}
   <h3 class="home-group-header flex min-h-8 items-center gap-2 px-2" data-home-group={id}>
     <Button
@@ -302,6 +324,7 @@
           ? 'text-muted-foreground'
           : 'text-foreground'}">{label}</span
       >
+      {#if detail}<span class="font-normal text-muted-foreground">{detail}</span>{/if}
       {#if count !== undefined && !expanded}<span
           class="font-normal tabular-nums text-muted-foreground">{formatInteger(count)}</span
         >{/if}
@@ -322,8 +345,13 @@
           inset={false}
         >
           {#snippet header(group)}
-            {@render groupHeader(group.id, group.label, group.expanded, () =>
-              ongroupexpanded(group.id, !group.expanded, group.items),
+            {@render groupHeader(
+              group.id,
+              group.label,
+              group.expanded,
+              () => ongroupexpanded(group.id, !group.expanded, group.items),
+              undefined,
+              group.detail,
             )}
           {/snippet}
           {#snippet children(group)}
@@ -358,3 +386,9 @@
     {@render workspaceList(workspaces, m.home_tab_workspaces(), true)}
   {/if}
 </div>
+
+<style>
+  :global(.home-list-row[data-machine-offline]) :global(.home-row-line) {
+    opacity: 0.55;
+  }
+</style>

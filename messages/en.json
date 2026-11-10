@@ -8605,5 +8605,19 @@
   "lib_commandPalette_categoryWorkspace_label": "Workspace",
   "lib_commandPalette_categoryRepo_label": "Repo",
   "lib_commandPalette_categoryFolder_label": "Folder",
-  "lib_commandPalette_categoryMessage_label": "Message"
+  "lib_commandPalette_categoryMessage_label": "Message",
+  "unifiedWindow_menu_open_label": "Unified window",
+  "unifiedWindow_switcher_ariaLabel": "Home and settings from {machine}",
+  "unifiedWindow_switcher_header": "Home and settings from",
+  "unifiedWindow_machine_guest_badge": "Guest",
+  "unifiedWindow_machine_offline_label": "Offline",
+  "unifiedWindow_machine_offlineName_label": "{machine} (offline)",
+  "unifiedWindow_tab_ariaLabel": "{tab}, on {machine}",
+  "unifiedWindow_offline_title": "{machine} is offline",
+  "unifiedWindow_offline_description": "This tab reconnects automatically when it comes back.",
+  "unifiedWindow_home_offlineGroup_detail": "Offline — reconnects automatically",
+  "unifiedWindow_home_machineFilter_label": "Machine",
+  "unifiedWindow_home_machineFilter_all": "All machines",
+  "unifiedWindow_lab_label": "Unified window (Labs)",
+  "unifiedWindow_lab_description": "One window with workspace tabs from every machine. Open it from the top of the machines menu."
 }

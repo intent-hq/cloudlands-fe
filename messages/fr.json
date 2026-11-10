@@ -8605,5 +8605,19 @@
   "lib_commandPalette_categoryWorkspace_label": "Espace de travail",
   "lib_commandPalette_categoryRepo_label": "Dépôt",
   "lib_commandPalette_categoryFolder_label": "Dossier",
-  "lib_commandPalette_categoryMessage_label": "Message"
+  "lib_commandPalette_categoryMessage_label": "Message",
+  "unifiedWindow_menu_open_label": "Fenêtre unifiée",
+  "unifiedWindow_switcher_ariaLabel": "Accueil et réglages de {machine}",
+  "unifiedWindow_switcher_header": "Accueil et réglages de",
+  "unifiedWindow_machine_guest_badge": "Invité",
+  "unifiedWindow_machine_offline_label": "Hors ligne",
+  "unifiedWindow_machine_offlineName_label": "{machine} (hors ligne)",
+  "unifiedWindow_tab_ariaLabel": "{tab}, sur {machine}",
+  "unifiedWindow_offline_title": "{machine} est hors ligne",
+  "unifiedWindow_offline_description": "Cet onglet se reconnecte automatiquement dès que la machine revient.",
+  "unifiedWindow_home_offlineGroup_detail": "Hors ligne — reconnexion automatique",
+  "unifiedWindow_home_machineFilter_label": "Machine",
+  "unifiedWindow_home_machineFilter_all": "Toutes les machines",
+  "unifiedWindow_lab_label": "Fenêtre unifiée (Labs)",
+  "unifiedWindow_lab_description": "Une seule fenêtre avec les onglets d’espaces de travail de toutes vos machines. Ouvrez-la en haut du menu des machines."
 }

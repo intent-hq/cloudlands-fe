@@ -61,6 +61,11 @@
     type SidebarMenuEntry,
   } from '$lib/components/ui/sidebar-context-menu/types';
   import WorkspaceTabFlare from './WorkspaceTabFlare.svelte';
+  import UnifiedMachineMarker from '$features/unified-window/components/UnifiedMachineMarker.svelte';
+  import {
+    showsMachineMarker,
+    type UnifiedMachine,
+  } from '$features/unified-window/unified-machines';
   import { buildWorkspaceTabContextMenu } from './workspace-tab-context-actions';
   import WorkspaceTabGroupChip from './WorkspaceTabGroupChip.svelte';
   import './workspace-tab-groups.css';
@@ -96,6 +101,8 @@
     horizontalPositionTrackingKey?: number;
     leadingInsetPx?: number;
     scrollerMarginLeftPx?: number;
+    /** Unified window: the machine each tab lives on; non-local tabs get a marker, offline tabs grey out. */
+    tabMachine?: (workspaceId: string) => UnifiedMachine | null;
   }
   let {
     onActiveTabBoundsChange,
@@ -104,6 +111,7 @@
     horizontalPositionTrackingKey = 0,
     leadingInsetPx = 28,
     scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
+    tabMachine,
   }: Props = $props();
   const microConnected$ = microConnectedReadable();
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
@@ -1021,6 +1029,8 @@
           {@const isArchived = workspace.status === WorkspaceStatus.Archived}
           {@const workspaceTitle =
             workspace.title?.trim() || m.layout_workspaceTabStrip_untitled_label()}
+          {@const machine = tabMachine?.(workspaceId) ?? null}
+          {@const machineOffline = machine !== null && !machine.online}
           {#if isDragged}
             <div
               class="invisible h-full w-full"
@@ -1100,14 +1110,28 @@
                   role="tab"
                   aria-selected={isCurrent}
                   aria-current={isCurrent ? 'page' : undefined}
-                  aria-label={tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
+                  aria-label={machine
+                    ? m.unifiedWindow_tab_ariaLabel({
+                        tab: tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus),
+                        machine: machineOffline
+                          ? m.unifiedWindow_machine_offlineName_label({ machine: machine.label })
+                          : machine.label,
+                      })
+                    : tabAccessibleLabel(workspaceTitle, workspaceStatusState, tabStatus)}
+                  data-machine-offline={machineOffline || undefined}
                   tabindex={isCurrent ? 0 : -1}
                   id={`workspace-tab-${workspaceId}`}
                   data-workspace-tab-hover-trigger
                 >
                   <WorkspaceMicroKeySlot {workspaceId} size="compact" />
+                  {#if machine && showsMachineMarker(machine)}
+                    <UnifiedMachineMarker {machine} class={cn(machineOffline && 'opacity-50')} />
+                  {/if}
                   <span
-                    class={cn('min-w-0 flex-1 truncate', isArchived && 'opacity-60')}
+                    class={cn(
+                      'min-w-0 flex-1 truncate',
+                      (isArchived || machineOffline) && 'opacity-60',
+                    )}
                     data-workspace-tab-title>{workspaceTitle}</span
                   >
                   <span
@@ -1118,7 +1142,9 @@
                       class="pointer-events-none flex h-4 max-w-14 shrink-0 items-center justify-end overflow-hidden"
                       data-workspace-tab-status-cluster
                     >
-                      <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                      {#if !machineOffline}
+                        <WorkspaceStatusIcon status={workspaceStatusState} size={14} decorative />
+                      {/if}
                     </span>
                     <span
                       class="size-(--control-height-compact) shrink-0"

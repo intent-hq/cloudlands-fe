@@ -8605,5 +8605,19 @@
   "lib_commandPalette_categoryWorkspace_label": "工作区",
   "lib_commandPalette_categoryRepo_label": "仓库",
   "lib_commandPalette_categoryFolder_label": "文件夹",
-  "lib_commandPalette_categoryMessage_label": "消息"
+  "lib_commandPalette_categoryMessage_label": "消息",
+  "unifiedWindow_menu_open_label": "统一窗口",
+  "unifiedWindow_switcher_ariaLabel": "{machine} 的主页和设置",
+  "unifiedWindow_switcher_header": "主页和设置来自",
+  "unifiedWindow_machine_guest_badge": "访客",
+  "unifiedWindow_machine_offline_label": "离线",
+  "unifiedWindow_machine_offlineName_label": "{machine}（离线）",
+  "unifiedWindow_tab_ariaLabel": "{tab}，位于 {machine}",
+  "unifiedWindow_offline_title": "{machine} 已离线",
+  "unifiedWindow_offline_description": "机器恢复后，此标签页会自动重新连接。",
+  "unifiedWindow_home_offlineGroup_detail": "离线 — 将自动重新连接",
+  "unifiedWindow_home_machineFilter_label": "机器",
+  "unifiedWindow_home_machineFilter_all": "所有机器",
+  "unifiedWindow_lab_label": "统一窗口（Labs）",
+  "unifiedWindow_lab_description": "在一个窗口中显示所有机器的工作区标签页。可从机器菜单顶部打开。"
 }
