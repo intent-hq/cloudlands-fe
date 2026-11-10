@@ -280,11 +280,11 @@
   });
   const headerWingLeft = $derived(shown.x + 6);
   const headerWingRight = $derived(placement.surface.width - shown.x - shown.width + 12);
-  function stopHeight(): void {
+  function stopHeight(preservePaintedHeight = false): void {
     growGate.cancel();
     heightLoop.cancel();
     heldHeight = null;
-    openHeight = null;
+    if (!preservePaintedHeight) openHeight = null;
   }
   function morphHeight(from: number, to: number): void {
     heldHeight = to < from ? Math.max(heldHeight ?? 0, placement.surface.height) : null;
@@ -323,6 +323,7 @@
           shellSpring.animate(1, instant);
         }
       } else {
+        stopHeight(true);
         const focused = document.activeElement;
         if (
           focused instanceof HTMLElement &&
@@ -420,7 +421,7 @@
       }
       if (previous === target || previous === 0) return;
       if (!settled) {
-        stopHeight();
+        stopHeight(!expanded && reveal > 0);
         return;
       }
       const from = openHeight ?? placement.surface.height;
@@ -696,7 +697,7 @@
     if (dragFrame !== undefined) cancelAnimationFrame(dragFrame);
     if (measureFrame !== undefined) cancelAnimationFrame(measureFrame);
     dragFrame = measureFrame = undefined;
-    stopHeight();
+    stopHeight(true);
     pointerEnd(true);
     expandedByUser = false;
     keyboardOpen = false;
