@@ -369,20 +369,21 @@ function* startSession(
   tool: DockMarkTool,
   mode: 'live' | 'still' | 'dictation',
   stillImageId?: string,
-): SagaGenerator<void> {
+): SagaGenerator<'opened' | 'failed' | 'cancelled'> {
+  if (!activePair(workspaceId, agentId)) return 'cancelled';
   const service = nativeService;
   // Dictation's click-to-pick session is implicit; only an annotate start reports refusals.
   const visible = mode !== 'dictation';
   if (!service) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     if (visible) yield* notice(workspaceId, agentId, annotationStartNotice('unavailable'));
-    return;
+    return 'failed';
   }
   const image = stillImageId
     ? evidenceOf(workspaceId, agentId)?.images.find((row) => row.id === stillImageId)
     : undefined;
   const pixels = image ? pixelsFor(workspaceId, agentId, image) : null;
-  if (stillImageId && (!image || !pixels)) return;
+  if (stillImageId && (!image || !pixels)) return 'failed';
   const id = crypto.randomUUID();
   // Immediate feedback: the session shows (button, header, placeholder) while the
   // overlay opens. Ending it meanwhile ends the start; a refusal takes it back.
@@ -392,6 +393,8 @@ function* startSession(
   const ours = () => evidenceOf(workspaceId, agentId)?.annotation?.id === id;
   // The tool bar shows the composer's Screenshot/Record from its first frame.
   if (visible) yield* sendBarMedia(workspaceId, agentId);
+  if (nativeService !== service || !activePair(workspaceId, agentId) || !ours())
+    return 'cancelled';
   let result: DockNativeResult<void>;
   try {
     result = yield* call([service, service.startAnnotation], {
@@ -403,24 +406,27 @@ function* startSession(
   } catch {
     result = { ok: false, error: 'failed' };
   }
-  if (!activePair(workspaceId, agentId)) {
+  if (nativeService !== service || !activePair(workspaceId, agentId)) {
     if (result.ok) yield* endNative(service, id);
-    return;
+    return 'cancelled';
   }
   if (!result.ok) {
     // Ended or replaced while opening: that was the person's choice, not a failure.
-    if (!ours()) return;
+    if (!ours()) return 'cancelled';
     yield* put(dockEvidenceAnnotationChanged(workspaceId, agentId, null));
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, result.error));
     if (visible)
       yield* notice(workspaceId, agentId, annotationStartNotice(result.error, result.detail));
-    return;
+    return 'failed';
   }
   if (!ours()) {
     yield* endNative(service, id);
-    return;
+    return 'cancelled';
   }
   yield* syncMarks(workspaceId, agentId);
+  return nativeService === service && activePair(workspaceId, agentId) && ours()
+    ? 'opened'
+    : 'cancelled';
 }
 
 /**
@@ -644,9 +650,13 @@ function* toggleAnnotation({
   if (!stillImageId) {
     // A live recording is never toggled here (that would stop it): its tool bar
     // session comes back instead. A recording starts only when none is running.
-    if (recordingDockClip(evidenceOf(workspaceId, agentId)))
-      yield* openRecordingBar(workspaceId, agentId);
-    else yield* toggleRecording(dockEvidenceRecordToggleRequested(workspaceId, agentId));
+    if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
+      if (!(yield* openRecordingBar(workspaceId, agentId))) return;
+    } else if (
+      (yield* toggleRecording(dockEvidenceRecordToggleRequested(workspaceId, agentId))) === 'cancelled'
+    ) {
+      return;
+    }
     if (recordingDockClip(evidenceOf(workspaceId, agentId))) {
       yield* drawInRecording(workspaceId, agentId);
       return;
@@ -982,6 +992,7 @@ function clipCancelled(result: DockNativeResult<unknown>): boolean {
 
 /** Annotate sessions a recording opened for its tool bar; they close with that recording. */
 const recordingBarSessions = new Set<string>();
+const startingRecordings = new WeakSet<DockEvidenceNativeService>();
 
 /**
  * A recording always runs with its on-screen tool bar. Started from the composer
@@ -989,27 +1000,33 @@ const recordingBarSessions = new Set<string>();
  * screen stays usable, and the bar's tools are there when wanted. If the session
  * cannot open (a permission), the recording still starts without the bar.
  */
-function* openRecordingBar(workspaceId: string, agentId: string): SagaGenerator<void> {
+function* openRecordingBar(workspaceId: string, agentId: string): SagaGenerator<boolean> {
   const session = evidenceOf(workspaceId, agentId)?.annotation;
-  if (session && session.mode !== 'dictation') return;
+  if (session && session.mode !== 'dictation') return true;
   if (
     !selectDockComposerEvidence.select(appStore.state, workspaceId, agentId).capabilities.annotate
   )
-    return;
+    return true;
   if (session) yield* endSession(workspaceId, agentId);
-  yield* startSession(workspaceId, agentId, toolFor(workspaceId), 'live');
+  const result = yield* startSession(workspaceId, agentId, toolFor(workspaceId), 'live');
+  if (result === 'cancelled') return false;
+  if (result === 'failed') return true; // A refused toolbar does not refuse recording.
   const opened = evidenceOf(workspaceId, agentId)?.annotation;
   const service = nativeService;
-  if (!opened || opened.mode !== 'live' || !service) return;
+  if (!opened || opened.mode !== 'live' || !service) return false;
   // One annotate session exists at a time: only the latest can still be open.
   recordingBarSessions.clear();
   recordingBarSessions.add(opened.id);
-  if (!service.setAnnotationMouse) return;
+  if (!service.setAnnotationMouse) return true;
   try {
     yield* call([service, service.setAnnotationMouse], opened.id);
   } catch {
     // The session already ended natively; the recording goes ahead without it.
   }
+  return (
+    nativeService === service && activePair(workspaceId, agentId) &&
+    evidenceOf(workspaceId, agentId)?.annotation?.id === opened.id
+  );
 }
 
 /** Stopping a recording closes the tool bar session it opened (not one the person opened). */
@@ -1021,7 +1038,7 @@ function* closeRecordingBar(workspaceId: string, agentId: string): SagaGenerator
 
 function* toggleRecording({
   payload: [workspaceId, agentId, expectedClipId],
-}: ReturnType<typeof dockEvidenceRecordToggleRequested>): SagaGenerator<void> {
+}: ReturnType<typeof dockEvidenceRecordToggleRequested>): SagaGenerator<void | 'cancelled'> {
   if (!activePair(workspaceId, agentId)) return;
   const evidence = evidenceOf(workspaceId, agentId);
   const clip = recordingDockClip(evidence);
@@ -1051,59 +1068,66 @@ function* toggleRecording({
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }
-  if (nativeService !== service || !activePair(workspaceId, agentId)) return;
-  yield* openRecordingBar(workspaceId, agentId);
-  if (nativeService !== service || !activePair(workspaceId, agentId)) return;
-  const id = crypto.randomUUID();
-  const hasMicAudio = evidence?.dictation?.status === 'listening';
-  yield* put(
-    dockEvidenceClipChanged(workspaceId, agentId, id, {
-      id,
-      status: 'recording',
-      startedAt: Date.now(),
-      durationMs: 0,
-      hasMicAudio,
-    }),
-  );
-  let started: DockNativeResult<void>;
+  if (nativeService !== service || !activePair(workspaceId, agentId)) return 'cancelled';
+  // A second request while the toolbar opens must not start another native clip.
+  if (startingRecordings.has(service)) return 'cancelled';
+  startingRecordings.add(service);
   try {
-    started = yield* call([service, service.startClip], id, {
-      includeMic: hasMicAudio,
-      maxMs: DOCK_EVIDENCE_LIMITS.clipMs,
-    });
-  } catch {
-    started = { ok: false, error: 'failed' };
-  }
-  if (
-    nativeService !== service ||
-    !activePair(workspaceId, agentId) ||
-    !clipOf(workspaceId, agentId, id)
-  )
-    return;
-  if (started.ok) stampRecordingInSpeech(workspaceId, agentId, id, false);
-  else yield* closeRecordingBar(workspaceId, agentId);
-  if (!started.ok && started.error === 'permission' && activePair(workspaceId, agentId)) {
-    yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'permission'));
-    yield* notice(workspaceId, agentId, screenPermissionNotice('record'));
-  }
-  if (!started.ok && clipOf(workspaceId, agentId, id))
+    if (!(yield* openRecordingBar(workspaceId, agentId))) return 'cancelled';
+    if (nativeService !== service || !activePair(workspaceId, agentId)) return 'cancelled';
+    const id = crypto.randomUUID();
+    const hasMicAudio = evidence?.dictation?.status === 'listening';
     yield* put(
-      dockEvidenceClipChanged(
-        workspaceId,
-        agentId,
+      dockEvidenceClipChanged(workspaceId, agentId, id, {
         id,
-        clipCancelled(started)
-          ? null
-          : {
-              id,
-              status: 'failed',
-              startedAt: Date.now(),
-              durationMs: 0,
-              hasMicAudio,
-              error: started.error,
-            },
-      ),
+        status: 'recording',
+        startedAt: Date.now(),
+        durationMs: 0,
+        hasMicAudio,
+      }),
     );
+    let started: DockNativeResult<void>;
+    try {
+      started = yield* call([service, service.startClip], id, {
+        includeMic: hasMicAudio,
+        maxMs: DOCK_EVIDENCE_LIMITS.clipMs,
+      });
+    } catch {
+      started = { ok: false, error: 'failed' };
+    }
+    if (
+      nativeService !== service ||
+      !activePair(workspaceId, agentId) ||
+      !clipOf(workspaceId, agentId, id)
+    )
+      return 'cancelled';
+    if (started.ok) stampRecordingInSpeech(workspaceId, agentId, id, false);
+    else yield* closeRecordingBar(workspaceId, agentId);
+    if (!started.ok && started.error === 'permission' && activePair(workspaceId, agentId)) {
+      yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'permission'));
+      yield* notice(workspaceId, agentId, screenPermissionNotice('record'));
+    }
+    if (!started.ok && clipOf(workspaceId, agentId, id))
+      yield* put(
+        dockEvidenceClipChanged(
+          workspaceId,
+          agentId,
+          id,
+          clipCancelled(started)
+            ? null
+            : {
+                id,
+                status: 'failed',
+                startedAt: Date.now(),
+                durationMs: 0,
+                hasMicAudio,
+                error: started.error,
+              },
+        ),
+      );
+  } finally {
+    startingRecordings.delete(service);
+  }
 }
 
 const completingClips = new Set<string>();

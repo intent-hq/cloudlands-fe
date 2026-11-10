@@ -1906,6 +1906,46 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
   });
 });
 
+describe('recording toolbar startup admission', () => {
+  it.each([true, false])(
+    'cancelling a pending toolbar cannot start recording or fallback annotate (record=%s)',
+    async (record) => {
+      const gate = deferred<DockNativeResult<void>>();
+      const native = scriptedNative({ record, start: () => gate.promise });
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      expect(evidenceView().annotating).toBe(false);
+      gate.resolve({ ok: true, value: undefined });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(native.calls.clips).toEqual([]);
+      expect(native.calls.started).toHaveLength(1);
+      expect(evidenceView().annotating).toBe(false);
+      expect(evidenceView().recording).toBe(false);
+    },
+  );
+
+  it('does not admit a second Record while the first toolbar is opening', async () => {
+    const gate = deferred<DockNativeResult<void>>();
+    const native = scriptedNative({ record: true, start: () => gate.promise });
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    try {
+      appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(native.calls.clips).toEqual([]);
+    } finally {
+      gate.resolve({ ok: true, value: undefined });
+    }
+    await vi.waitFor(() => expect(native.calls.clips).toHaveLength(1));
+    expect(native.calls.started).toHaveLength(1);
+  });
+});
+
 describe('dock annotate start feedback, refusals and dictation', () => {
   function deferredStart() {
     const pending: ((result: DockNativeResult<void>) => void)[] = [];
@@ -2404,6 +2444,7 @@ describe('held capture preparation local-admission content CAS', () => {
         await gate.promise;
         return {
           images: {},
+          framePromptBytes: [],
           files: [
             {
               type: 'file',
