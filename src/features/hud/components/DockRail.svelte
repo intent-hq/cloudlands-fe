@@ -65,6 +65,7 @@
     onCloseConversation?: () => void;
     onHomeDismiss?: () => void;
     workspaces: DockWorkspaceView[];
+    olderWorkspaces?: DockWorkspaceView[];
     machines?: DockMachineOption[];
     machineId?: string;
     machineSwitching?: string | null;
@@ -91,6 +92,7 @@
 
   let {
     workspaces,
+    olderWorkspaces = [],
     recording = null,
     inputLive = false,
     recordingStopping = false,
@@ -639,6 +641,7 @@
     {onCloseConversation}
     {onHomeDismiss}
     {workspaces}
+    {olderWorkspaces}
     {staticData}
     {placement}
     {onPlacementCommand}

@@ -10,7 +10,10 @@
  * the store has caught up (see `reconcileDisplayStatusOverride`).
  */
 
-import { isRecentDockConversation } from '$features/hud/utils/dock-recency';
+import {
+  isOlderDockConversation,
+  isRecentDockConversation,
+} from '$features/hud/utils/dock-recency';
 import { store } from '../../store';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
@@ -1488,57 +1491,59 @@ function dockBadgeKind(status: WorkspaceTabStatus | undefined): DockWorkspaceBad
   return 'none';
 }
 
-/** Workspace grouping, admitted and ordered only by recent human conversation. */
-export const selectDockWorkspaces = store.createSelector((state): DockWorkspaceView[] => {
-  const cards = selectHudWorkspaceCards.select(state);
-  const statuses = selectWorkspaceTabStatuses.select(state);
-  const workspacesById = new Map(
-    selectHudWorkspaces.select(state).map((workspace) => [String(workspace.id), workspace]),
-  );
-  const groups: Record<DockWorkspacePriorityGroup, DockWorkspaceView[]> = {
-    action: [],
-    unread: [],
-    active: [],
-  };
+/** Workspace grouping, admitted and ordered only by confirmed human conversation. */
+export const selectDockWorkspaces = store.createSelector(
+  (state, age: 'recent' | 'older' = 'recent'): DockWorkspaceView[] => {
+    const cards = selectHudWorkspaceCards.select(state);
+    const statuses = selectWorkspaceTabStatuses.select(state);
+    const workspacesById = new Map(
+      selectHudWorkspaces.select(state).map((workspace) => [String(workspace.id), workspace]),
+    );
+    const groups: Record<DockWorkspacePriorityGroup, DockWorkspaceView[]> = {
+      action: [],
+      unread: [],
+      active: [],
+    };
 
-  for (const card of cards) {
-    const workspace = workspacesById.get(card.workspaceId);
-    if (!workspace || workspace.id === CHIEF_WORKSPACE_ID) continue;
-    if (
-      !isRecentDockConversation(
-        state.hud.dockConversationAtByWorkspaceId[card.workspaceId],
-        state.hud.dockRecencyNow,
+    for (const card of cards) {
+      const workspace = workspacesById.get(card.workspaceId);
+      if (!workspace || workspace.id === CHIEF_WORKSPACE_ID) continue;
+      if (
+        !(age === 'older' ? isOlderDockConversation : isRecentDockConversation)(
+          state.hud.dockConversationAtByWorkspaceId[card.workspaceId],
+          state.hud.dockRecencyNow,
+        )
       )
-    )
-      continue;
-    const status = statuses[card.workspaceId];
-    const categories = status?.categories ?? [];
-    const hasAction = categories.some((item) => DOCK_ACTION_CATEGORIES.has(item.category));
-    const isUnread = card.isUnread;
-    const isRunning = categories.some((item) => item.category === 'running');
-    const priorityGroup: DockWorkspacePriorityGroup | null = hasAction
-      ? 'action'
-      : isUnread
-        ? 'unread'
-        : 'active';
-    if (!priorityGroup) continue;
-    groups[priorityGroup].push({
-      workspace,
-      badgeKind: dockBadgeKind(status),
-      priorityGroup,
-      isUnread,
-      isRunning,
-      isWaiting: card.isWaiting,
-    });
-  }
+        continue;
+      const status = statuses[card.workspaceId];
+      const categories = status?.categories ?? [];
+      const hasAction = categories.some((item) => DOCK_ACTION_CATEGORIES.has(item.category));
+      const isUnread = card.isUnread;
+      const isRunning = categories.some((item) => item.category === 'running');
+      const priorityGroup: DockWorkspacePriorityGroup | null = hasAction
+        ? 'action'
+        : isUnread
+          ? 'unread'
+          : 'active';
+      if (!priorityGroup) continue;
+      groups[priorityGroup].push({
+        workspace,
+        badgeKind: dockBadgeKind(status),
+        priorityGroup,
+        isUnread,
+        isRunning,
+        isWaiting: card.isWaiting,
+      });
+    }
 
-  return [...groups.action, ...groups.unread, ...groups.active].sort(
-    (left, right) =>
-      state.hud.dockConversationAtByWorkspaceId[String(right.workspace.id)] -
-        state.hud.dockConversationAtByWorkspaceId[String(left.workspace.id)] ||
-      String(left.workspace.id).localeCompare(String(right.workspace.id)),
-  );
-});
+    return [...groups.action, ...groups.unread, ...groups.active].sort(
+      (left, right) =>
+        state.hud.dockConversationAtByWorkspaceId[String(right.workspace.id)] -
+          state.hud.dockConversationAtByWorkspaceId[String(left.workspace.id)] ||
+        String(left.workspace.id).localeCompare(String(right.workspace.id)),
+    );
+  },
+);
 
 export const selectDockPlacement = store.createSelector((state) => state.hud.dockPlacement);
 export const selectDockPlacementError = store.createSelector(

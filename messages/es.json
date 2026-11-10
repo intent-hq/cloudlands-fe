@@ -8455,5 +8455,7 @@
   "dock_captureEditor_openFailed_error": "No se pudo abrir el editor. Tu captura se queda en el borrador.",
   "dock_captureEditor_deleteScreenshot_label": "Eliminar captura de pantalla",
   "dock_captureEditor_deleteRecording_label": "Eliminar grabación",
-  "dock_captureEditor_deleteFailed_error": "No se pudo eliminar esta captura. Inténtalo de nuevo."
+  "dock_captureEditor_deleteFailed_error": "No se pudo eliminar esta captura. Inténtalo de nuevo.",
+  "dock_overview_showOlder_label": "Mostrar anteriores",
+  "dock_overview_showRecent_label": "Mostrar recientes"
 }

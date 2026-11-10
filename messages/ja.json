@@ -8455,5 +8455,7 @@
   "dock_captureEditor_openFailed_error": "エディターを開けませんでした。キャプチャは下書きに残ります。",
   "dock_captureEditor_deleteScreenshot_label": "スクリーンショットを削除",
   "dock_captureEditor_deleteRecording_label": "録画を削除",
-  "dock_captureEditor_deleteFailed_error": "このキャプチャを削除できませんでした。もう一度お試しください。"
+  "dock_captureEditor_deleteFailed_error": "このキャプチャを削除できませんでした。もう一度お試しください。",
+  "dock_overview_showOlder_label": "以前の会話を表示",
+  "dock_overview_showRecent_label": "最近の会話のみ表示"
 }

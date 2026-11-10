@@ -8455,5 +8455,7 @@
   "dock_captureEditor_openFailed_error": "Der Editor konnte nicht geöffnet werden. Deine Aufnahme bleibt im Entwurf.",
   "dock_captureEditor_deleteScreenshot_label": "Screenshot löschen",
   "dock_captureEditor_deleteRecording_label": "Aufnahme löschen",
-  "dock_captureEditor_deleteFailed_error": "Diese Aufnahme konnte nicht gelöscht werden. Versuche es erneut."
+  "dock_captureEditor_deleteFailed_error": "Diese Aufnahme konnte nicht gelöscht werden. Versuche es erneut.",
+  "dock_overview_showOlder_label": "Ältere anzeigen",
+  "dock_overview_showRecent_label": "Aktuelle anzeigen"
 }

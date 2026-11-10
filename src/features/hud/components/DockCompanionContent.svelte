@@ -7,6 +7,8 @@
 
   let {
     workspaces,
+    olderWorkspaces = [],
+    showOlder = $bindable(false),
     pending,
     expanded,
     reveal,
@@ -23,6 +25,8 @@
     onPopupStateChange,
   }: {
     workspaces: DockWorkspaceView[];
+    olderWorkspaces?: DockWorkspaceView[];
+    showOlder?: boolean;
     pending: boolean;
     expanded: boolean;
     reveal: number;
@@ -69,7 +73,7 @@
       {@render conversation()}
     </DockConversationSurface>
   {:else}
-    <DockOverview {workspaces} {pending} {onOpen} />
+    <DockOverview {workspaces} {olderWorkspaces} bind:showOlder {pending} {onOpen} />
   {/if}
 </div>
 

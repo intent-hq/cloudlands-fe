@@ -8455,5 +8455,7 @@
   "dock_captureEditor_openFailed_error": "無法開啟編輯器。截圖或錄影內容會保留在草稿中。",
   "dock_captureEditor_deleteScreenshot_label": "刪除螢幕截圖",
   "dock_captureEditor_deleteRecording_label": "刪除錄製內容",
-  "dock_captureEditor_deleteFailed_error": "無法刪除此擷取內容。請再試一次。"
+  "dock_captureEditor_deleteFailed_error": "無法刪除此擷取內容。請再試一次。",
+  "dock_overview_showOlder_label": "顯示較早的對話",
+  "dock_overview_showRecent_label": "僅顯示近期對話"
 }

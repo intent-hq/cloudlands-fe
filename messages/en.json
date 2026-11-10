@@ -8461,5 +8461,7 @@
   "dock_logo_move_hint": "Open Intent · Drag to move",
   "dock_recordingIndicator_open": "{status} · {elapsed} — Show recording controls",
   "dock_captureEditor_assistantUnavailable_error": "Editing isn't available in the Assistant workspace on this connection. Your capture stays in the draft.",
-  "dock_captureEditor_openFailed_error": "The editor couldn't open. Your capture stays in the draft."
+  "dock_captureEditor_openFailed_error": "The editor couldn't open. Your capture stays in the draft.",
+  "dock_overview_showOlder_label": "Show older",
+  "dock_overview_showRecent_label": "Show recent"
 }

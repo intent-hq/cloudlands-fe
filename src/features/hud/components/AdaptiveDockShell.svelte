@@ -53,6 +53,7 @@
   import type { DockMachineOption } from './dock-machine-types';
   let {
     workspaces,
+    olderWorkspaces = [],
     recording = null,
     inputLive = false,
     recordingStopping = false,
@@ -80,6 +81,7 @@
     onHomeDismiss,
   }: {
     workspaces: DockWorkspaceView[];
+    olderWorkspaces?: DockWorkspaceView[];
     recording?: RecordingState | null;
     inputLive?: boolean;
     recordingStopping?: boolean;
@@ -244,6 +246,8 @@
     () => resizeStartResult,
     (value) => onPlacementCommand(value),
   );
+  let showOlder = $state(false);
+  const overviewWorkspaceCount = $derived(workspaces.length + (!edge && showOlder ? olderWorkspaces.length : 0));
   const layout = $derived(
     getDockShellLayout(placement, {
       surfaceExpanded,
@@ -254,8 +258,9 @@
       expandedHeight: openHeight,
       rowLimit,
       workspaceCount: machineMenuOpen
-        ? Math.max(workspaces.length, Math.min(machines?.length ?? 0, 5))
-        : workspaces.length,
+        ? Math.max(overviewWorkspaceCount, Math.min(machines?.length ?? 0, 5))
+        : overviewWorkspaceCount,
+      hasOlderWorkspaces: olderWorkspaces.length > 0,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
       intro: dockIntro.open,
@@ -1212,6 +1217,8 @@
         {#if contentVisible && !edge}
           <DockCompanionContent
             {workspaces}
+            {olderWorkspaces}
+            bind:showOlder
             {pending}
             {expanded}
             {reveal}

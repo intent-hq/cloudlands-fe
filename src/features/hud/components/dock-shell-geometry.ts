@@ -17,6 +17,8 @@ interface DockShellLayoutInput {
   expandedHeight?: number | null;
   rowLimit: number;
   workspaceCount: number;
+  /** The overview's local older-conversation disclosure stays above the Assistant. */
+  hasOlderWorkspaces?: boolean;
   compactWingWidth: number;
   hasFeedback: boolean;
   /** The "Meet the notch" card sits above the rows (DockIntroCard). */
@@ -25,6 +27,7 @@ interface DockShellLayoutInput {
 
 /** DockIntroCard's fixed height plus its gap below; keep in step with its styles. */
 export const DOCK_INTRO_HEIGHT = 130;
+export const DOCK_OVERVIEW_HISTORY_HEIGHT = 32;
 
 /** Width of the compact notch wing that shows one dot per status group. */
 export function dockCompactWingWidth(statusGroups: number): number {
@@ -56,6 +59,7 @@ export function getDockShellLayout(
     expandedHeight = null,
     rowLimit,
     workspaceCount,
+    hasOlderWorkspaces = false,
     compactWingWidth,
     hasFeedback,
     intro = false,
@@ -76,7 +80,12 @@ export function getDockShellLayout(
   // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40) and the
   // frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
   const overviewHeight =
-    Math.min(workspaceCount, rowLimit) * 52 + 7 + 40 + 16 + (intro ? DOCK_INTRO_HEIGHT : 0);
+    Math.min(workspaceCount, rowLimit) * 52 +
+    7 +
+    40 +
+    16 +
+    (hasOlderWorkspaces ? DOCK_OVERVIEW_HISTORY_HEIGHT : 0) +
+    (intro ? DOCK_INTRO_HEIGHT : 0);
   const railHeight = (edge ? headerHeight + 8 : 48) + (Math.min(workspaceCount, rowLimit) + 1) * 32;
   const full = placement.surface;
   const desiredWidth = dragging

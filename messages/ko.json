@@ -8455,5 +8455,7 @@
   "dock_captureEditor_openFailed_error": "편집기를 열 수 없습니다. 캡처는 초안에 남아 있습니다.",
   "dock_captureEditor_deleteScreenshot_label": "스크린샷 삭제",
   "dock_captureEditor_deleteRecording_label": "녹화 삭제",
-  "dock_captureEditor_deleteFailed_error": "이 캡처를 삭제하지 못했습니다. 다시 시도해 주세요."
+  "dock_captureEditor_deleteFailed_error": "이 캡처를 삭제하지 못했습니다. 다시 시도해 주세요.",
+  "dock_overview_showOlder_label": "이전 대화 표시",
+  "dock_overview_showRecent_label": "최근 대화만 표시"
 }

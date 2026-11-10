@@ -66,6 +66,7 @@
     })),
   );
   const dockWorkspaces$ = selectDockWorkspaces();
+  const olderDockWorkspaces$ = selectDockWorkspaces('older');
   const recording$ = selectDockRecordingIndicator();
   const evidence$ = selectCurrentDockComposerEvidence();
   const pttRecording$ = selectPttRecording();
@@ -155,6 +156,7 @@
       recordingStopping={stoppingClipId !== null}
       onStopRecording={stopRecording}
       workspaces={$dockWorkspaces$}
+      olderWorkspaces={$olderDockWorkspaces$}
       {machines}
       machineId={$currentConnectionId$}
       machineSwitching={$machineSwitch$.pending}

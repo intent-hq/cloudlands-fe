@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { workspaceRepositoryLabel } from '$lib/components/workspace/utils/workspace-repository-label';
   import { Button } from '$lib/components/ui/button';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
@@ -13,16 +14,47 @@
   import { keepDockFocusVisible, revealDockItem } from '$features/hud/utils/dock-scroll';
   import DockIntroCard from '$features/hud/intro/DockIntroCard.svelte';
   import { dockIntro, releaseDockIntroHold } from '$features/hud/intro/dock-intro.svelte';
+  import { DOCK_OVERVIEW_HISTORY_HEIGHT } from './dock-shell-geometry';
 
   let {
     workspaces,
+    olderWorkspaces = [],
+    showOlder = $bindable(false),
     pending = false,
     onOpen,
   }: {
     workspaces: DockWorkspaceView[];
+    olderWorkspaces?: DockWorkspaceView[];
+    showOlder?: boolean;
     pending?: boolean;
     onOpen: (id: string) => void;
   } = $props();
+  const rowsId = $props.id();
+  const visibleWorkspaces = $derived(showOlder ? [...workspaces, ...olderWorkspaces] : workspaces);
+  let rows = $state<HTMLDivElement>();
+  let historyButton = $state<HTMLButtonElement | null>(null);
+  let assistantButton = $state<HTMLButtonElement | null>(null);
+  // A recency refresh can remove the last older row and its focused disclosure.
+  $effect.pre(() => {
+    if (olderWorkspaces.length > 0) return;
+    showOlder = false;
+    const previous = historyButton;
+    if (previous && document.activeElement === previous) {
+      void tick().then(() => {
+        if (!previous.isConnected && document.activeElement === document.body)
+          assistantButton?.focus({ preventScroll: true });
+      });
+    }
+  });
+  let recentScrollTop = 0;
+  async function toggleOlder(): Promise<void> {
+    if (!showOlder) recentScrollTop = rows?.scrollTop ?? 0;
+    showOlder = !showOlder;
+    if (!showOlder) {
+      await tick();
+      if (!showOlder && rows) rows.scrollTop = recentScrollTop;
+    }
+  }
   // Opening a workspace or the Assistant ends the intro's hold on the open notch.
   function openRow(id: string): void {
     releaseDockIntroHold();
@@ -76,13 +108,15 @@
 >
   {#if dockIntro.open}<DockIntroCard />{/if}
   <div
+    bind:this={rows}
+    id={rowsId}
     class="overview-rows"
     class:more-below={moreBelow}
     data-dock-scroll
     use:keepDockFocusVisible
-    use:trackOverflow={workspaces.length}
+    use:trackOverflow={visibleWorkspaces.length}
   >
-    {#each workspaces as item (item.workspace.id)}
+    {#each visibleWorkspaces as item (item.workspace.id)}
       {@const id = String(item.workspace.id)}
       {@const title = item.workspace.title?.trim() || m.workspace_links_untitled_label()}
       {@const state = resolveWorkspaceStatusState(item.workspace)}
@@ -122,10 +156,29 @@
       </div>
     {/each}
   </div>
+  {#if olderWorkspaces.length > 0}
+    <div class="overview-history" style:height={`${DOCK_OVERVIEW_HISTORY_HEIGHT}px`}>
+      <Button
+        bind:ref={historyButton}
+        variant="plain"
+        size="sm"
+        class="overview-history-control"
+        disabled={pending}
+        data-dock-row
+        aria-controls={rowsId}
+        aria-expanded={showOlder}
+        onclick={toggleOlder}
+        >{showOlder
+          ? m.dock_overview_showRecent_label()
+          : m.dock_overview_showOlder_label()}</Button
+      >
+    </div>
+  {/if}
   <!-- The Assistant is set apart below the workspaces, always in view. -->
   <div class="assistant-divider" role="presentation"></div>
   <div class="overview-row assistant-row">
     <Button
+      bind:ref={assistantButton}
       variant="plain"
       size="sm"
       class="overview-open"
@@ -156,6 +209,16 @@
     overflow: auto;
     min-height: 0;
     overscroll-behavior: contain;
+  }
+  .overview-history {
+    display: flex;
+    flex: none;
+  }
+  .overview-history :global(.overview-history-control) {
+    width: 100%;
+    justify-content: flex-start;
+    padding-inline: 6px;
+    color: hsl(var(--muted-foreground));
   }
   .overview-row {
     display: grid;
