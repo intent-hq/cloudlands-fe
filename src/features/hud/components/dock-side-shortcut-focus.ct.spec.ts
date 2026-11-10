@@ -21,6 +21,7 @@ import {
 type Fixture = {
   shortcut(context: DockShortcutContext): void;
   close(): void;
+  reopen(): void;
   seedChoices(count: number): void;
   archiveWorkspace(id: string): void;
   store: {
@@ -82,15 +83,16 @@ function state<K extends 'workspaceId' | 'loading' | 'destination'>(page: Page, 
     return key === 'destination' ? (dock.shortcut?.destination ?? null) : dock[key];
   }, key);
 }
-async function press(page: Page) {
-  await h(page)(() => {
+async function press(page: Page, extra: Partial<DockShortcutContext> = {}) {
+  await h(page)((extra) => {
     const fixture = (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E;
     fixture.shortcut({
       id: crypto.randomUUID(),
       backendId: fixture.store.state.connections.windowBackendId,
       action: 'focus',
+      ...extra,
     });
-  }, null);
+  }, extra);
 }
 async function close(page: Page) {
   await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(), null);
@@ -175,3 +177,29 @@ test('side: with a chat open but unfocused, the shortcut keeps that chat instead
   await expect.poll(() => state(page, 'destination')).toBe(open);
   await expect.poll(() => composerFocused(page)).toBe(true);
 });
+
+for (const conflict of ['a different last chat', 'a foreground workspace with a URL'] as const) {
+  test(`side: the open chat wins over ${conflict}`, async ({ mount, page }, info) => {
+    await mountSide(mount, page);
+    const open = await state(page, 'workspaceId');
+    expect(open).not.toBeNull();
+    await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(2), null);
+    // Remember choice-1 as the last chat, then return to the fixture chat (A).
+    await close(page);
+    await page.locator('[data-dock-entry="choice-1"]').click();
+    await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
+    await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.reopen(), null);
+    await expect.poll(() => state(page, 'workspaceId')).toBe(open);
+    await page.mouse.move(200, 200);
+    await press(
+      page,
+      conflict === 'a foreground workspace with a URL'
+        ? { workspaceId: 'choice-1', url: 'https://example.com/choice-1', appId: 'com.example.browser' }
+        : {},
+    );
+    await expect.poll(() => state(page, 'destination')).toBe(open);
+    expect(await state(page, 'workspaceId')).toBe(open);
+    await expect.poll(() => composerFocused(page)).toBe(true);
+    await writeFile(info.outputPath('side-conflict-receipt.json'), JSON.stringify({ conflict, kept: 'open chat', composerFocused: true }));
+  });
+}
