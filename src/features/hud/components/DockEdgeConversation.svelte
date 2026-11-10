@@ -95,7 +95,8 @@
     }
     if (workspaceId) lastWorkspace = workspaceId;
   });
-  const wanted = $derived(open && !!workspaceId && !!panel);
+  // A late compact reply must not reverse a reopen that still has its last panel.
+  const wanted = $derived(open && !!workspaceId && !!(panel ?? lastPanel));
   $effect(() => {
     const target = wanted ? 1 : 0;
     const fadeOnly = reducedMotion;
