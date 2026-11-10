@@ -1059,7 +1059,7 @@ function* toggleRecording({
   }
   // Each finished recording is its own attachment; a new one starts beside them.
   if ((evidence?.clips.length ?? 0) >= DOCK_EVIDENCE_LIMITS.clips) return;
-  if (!service?.capabilities.record) {
+  if (!service?.capabilities?.record) {
     yield* put(dockEvidenceCaptureFailed(workspaceId, agentId, 'unavailable'));
     return;
   }

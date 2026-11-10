@@ -1949,6 +1949,20 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
 });
 
 describe('recording toolbar startup admission', () => {
+  it('refuses Record when a capture-only native service omits capabilities', async () => {
+    const native = scriptedNative();
+    const startClip = vi.spyOn(native.service, 'startClip');
+    const captureOnly = { ...native.service };
+    delete captureOnly.capabilities;
+    configureDockEvidenceNative(captureOnly);
+    await open();
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(evidenceView().captureError).toBe('unavailable');
+    expect(native.calls.started).toEqual([]);
+    expect(startClip).not.toHaveBeenCalled();
+  });
+
   it('does not reopen Annotate when cancelled START settles before the held STOP reply', async () => {
     const native = scriptedNative({ record: true });
     const start = deferred<Awaited<ReturnType<DockEvidenceNativeService['startClip']>>>();
