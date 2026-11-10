@@ -2,9 +2,11 @@
 // Blink shares one `:has()` invalidation set per anchor. A `:has()` anchored at
 // `html`/`body`/`:root` turns every DOM or style mutation in the page into a
 // candidate invalidation of that anchor, and a universal subject (`:has(…) *`,
-// which is what Tailwind `group-has-*` / `peer-has-*` compile to) makes that
-// invalidation restyle the whole subtree. Together they restyled the entire
-// transcript on every disclosure-motion frame (events footer stutter).
+// which is what Tailwind <= 4.3.3 compiled `group-has-*` / `peer-has-*` to)
+// makes that invalidation restyle the whole subtree. Together they restyled the
+// entire transcript on every disclosure-motion frame (events footer stutter).
+// Tailwind 4.3.5 makes the utility the subject instead; the ratchet still bans
+// these variants so a compiler change cannot silently bring the shape back.
 //
 // This is a source ratchet: it resolves authored stylesheet nesting (`&`,
 // implicit descendants, at-rule wrappers) and scans Tailwind variant classes in

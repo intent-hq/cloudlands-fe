@@ -67,6 +67,7 @@ describe('compiled css :has() invalidation audit', () => {
       ['dark:pr-8'],
       ['[.x:not(body):has(.y)_&]:pr-8'],
       ['group-has-[open]:pr-8'],
+      ['peer-has-[open]:pl-2'],
     ])('accepts the utility %s', async (candidate) => {
       const css = await compile(candidateStylesheet([candidate]));
       expect(compiledSelectors(css).some((s) => s.includes(':pl-2') || s.includes(':pr-8'))).toBe(

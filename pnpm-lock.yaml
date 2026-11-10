@@ -80,7 +80,7 @@ importers:
         specifier: ^14.0.3
         version: 14.0.3
       ws:
-        specifier: ^8.22.1
+        specifier: ^8.22.2
         version: 8.22.2
       yazl:
         specifier: ^3.3.1
@@ -252,10 +252,10 @@ importers:
         specifier: ^3.3.0
         version: 3.3.1
       '@typescript-eslint/eslint-plugin':
-        specifier: ^8.72.1
+        specifier: ^8.72.2
         version: 8.72.2(@typescript-eslint/parser@8.72.2(eslint@10.14.0(jiti@2.7.0))(typescript@6.0.3))(eslint@10.14.0(jiti@2.7.0))(typescript@6.0.3)
       '@typescript-eslint/parser':
-        specifier: ^8.72.1
+        specifier: ^8.72.2
         version: 8.72.2(eslint@10.14.0(jiti@2.7.0))(typescript@6.0.3)
       '@vitest/ui':
         specifier: ^4.1.12
@@ -291,7 +291,7 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       concurrently:
-        specifier: ^10.0.6
+        specifier: ^10.0.7
         version: 10.0.7
       cross-env:
         specifier: ^10.1.0
@@ -318,7 +318,7 @@ importers:
         specifier: ^10.14.0
         version: 10.14.0(jiti@2.7.0)
       eslint-plugin-svelte:
-        specifier: ^3.24.0
+        specifier: ^3.24.1
         version: 3.24.1(eslint@10.14.0(jiti@2.7.0))(svelte@5.57.3(@typescript-eslint/types@8.72.2))
       eslint-plugin-unused-imports:
         specifier: ^4.4.1

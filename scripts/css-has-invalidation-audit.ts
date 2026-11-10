@@ -3,8 +3,8 @@
 // (`css-has-invalidation-built-audit.test.ts`). Blink shares one `:has()`
 // invalidation set per anchor: a `:has()` anchored at `html`/`body`/`:root`
 // makes every mutation in the page a candidate invalidation, and a universal
-// subject (`:has(…) *`, what Tailwind `group-has-*` / `peer-has-*` compile to)
-// restyles the whole subtree when it fires.
+// subject (`:has(…) *`, what Tailwind <= 4.3.3 compiled `group-has-*` /
+// `peer-has-*` to) restyles the whole subtree when it fires.
 const compoundSuffix = String.raw`(?:#[\w-]+|\.[\w-]+|\[[^\]]*\]|:(?!has\b)[\w-]+(?:\((?:[^()]|\([^()]*\))*\))?)*`;
 const documentSimple = /^(?:html|body|:root)$/i;
 const documentWrapper = /^:(?:is|where|global)\(/;
