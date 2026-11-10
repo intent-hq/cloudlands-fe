@@ -2365,7 +2365,7 @@ describe('ModelPicker combined reasoning mode', () => {
         workspaceId: 'ws-1',
       });
     });
-    expect(refreshButton.hasAttribute('disabled')).toBe(true);
+    expect(refreshButton.getAttribute('aria-disabled')).toBe('true');
     expect(refreshButton.getAttribute('aria-busy')).toBe('true');
     await fireEvent.click(refreshButton);
     expect(vi.mocked(getModelsForProviderForLoadingState)).toHaveBeenCalledTimes(1);
@@ -2376,7 +2376,7 @@ describe('ModelPicker combined reasoning mode', () => {
 
     expect(await screen.findByRole('option', { name: /GPT-6 Codex/ })).toBeTruthy();
     await waitFor(() => expect(screen.queryByRole('option', { name: /GPT-5\.6-Sol/ })).toBeNull());
-    await waitFor(() => expect(refreshButton.hasAttribute('disabled')).toBe(false));
+    await waitFor(() => expect(refreshButton.hasAttribute('aria-disabled')).toBe(false));
   });
 
   it('keeps the selected model on refresh failure and permits retry', async () => {
@@ -3063,13 +3063,11 @@ describe('ModelPicker multi-provider mode', () => {
           workspaceId: 'ws-1',
         }),
       );
-      // Only the refresh icon reports the retry; an error clears with it, a warning stays.
+      // Only the refresh icon reports the retry; Retry returns once it settles.
       expect(screen.getByTestId('model-provider-refresh-button').getAttribute('aria-busy')).toBe(
         'true',
       );
-      const retrying = screen.queryByRole('button', { name: 'Retry', exact: true });
-      if (failure === 'error') expect(retrying).toBeNull();
-      else expect(retrying?.hasAttribute('disabled')).toBe(true);
+      expect(screen.queryByRole('button', { name: 'Retry', exact: true })).toBeNull();
       rejectRetry(new Error('Still unavailable'));
       await waitFor(() =>
         expect(

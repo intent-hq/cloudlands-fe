@@ -952,7 +952,10 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div class="type-caption py-1 px-3 text-left text-muted-foreground">
+        <div
+          class="type-caption py-1 px-3 text-left text-muted-foreground"
+          data-dropdown-no-results
+        >
           <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
         </div>
       {:else if empty}
