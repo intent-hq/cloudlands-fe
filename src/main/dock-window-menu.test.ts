@@ -2,7 +2,7 @@
  * The Window menu's "Show Intent Dock" is the Notch dock setting itself: present whether
  * the dock is on or off, checked from main's setting, and its click goes through the same
  * serialized setter as Settings and the dock's own Hide, so every window agrees. The dock
- * commands (focus, record, capture, annotate, dictate) exist only while the dock is on.
+ * commands (focus, record, capture, dictate) exist only while the dock is on.
  * Real dock-lab module; electron, the preference file and the dock window are fakes.
  * (A transient close never changes the setting: see dock-backend-switch.test.ts.)
  */
@@ -49,7 +49,6 @@ const labels = {
   focus: 'Focus Intent Dock',
   record: 'Record',
   capture: 'Screenshot',
-  annotate: 'Annotate',
   dictate: 'Dictate',
   unavailable: 'Shortcut unavailable',
 };
@@ -111,7 +110,9 @@ describe('Window menu Show Intent Dock is the Notch dock setting', () => {
     // Settings follows the same push.
     expect(mocks.sent).toEqual([{ enabled: true }]);
     expect(show(menu())).toMatchObject({ checked: true });
-    expect(commands(menu())).toEqual([labels.focus, labels.record, labels.capture, labels.annotate, labels.dictate]);
+    expect(commands(menu())).toEqual([labels.focus, labels.record, labels.capture, labels.dictate]);
+    // Show + the four dock commands (no Annotate), then a separator.
+    expect(menu().filter((item) => item.type !== 'separator')).toHaveLength(5);
   });
 
   it('turned off in Settings, the item stays, unchecked, and the dock commands go away', async () => {
