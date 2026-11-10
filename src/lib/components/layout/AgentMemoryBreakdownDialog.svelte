@@ -163,9 +163,7 @@
                       <span class="truncate text-foreground">{agentLabel(agent)}</span>
                       {#if agent.remoteOwner}
                         <Badge variant="dot" size="compact" class="min-w-0 shrink">
-                          <span class="min-w-0 truncate"
-                            >{ownerTag(agent, agent.remoteOwner)}</span
-                          >
+                          <span class="min-w-0 truncate">{ownerTag(agent, agent.remoteOwner)}</span>
                         </Badge>
                       {/if}
                     </span>
