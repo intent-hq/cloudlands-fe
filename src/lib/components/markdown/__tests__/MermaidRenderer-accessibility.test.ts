@@ -9,7 +9,6 @@ const mermaidMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('mermaid', () => ({ default: mermaidMocks }));
-vi.mock('@mermaid-js/layout-elk', () => ({ default: [] }));
 
 vi.mock('$store/renderer/slices/theme/theme-selectors', async () => {
   const { createAppStoreMock } = await import('$store/renderer/utils/test-helpers/store-mock');

@@ -43,9 +43,10 @@ describe('Mermaid design-system theme', () => {
       htmlLabels: true,
     });
     expect(config).not.toHaveProperty('layout');
-    expect(config.class).toEqual({ defaultRenderer: 'dagre-d3', htmlLabels: false });
+    expect(config.class).toEqual({ htmlLabels: false });
     expect(config.state).toEqual({
-      defaultRenderer: 'dagre-d3',
+      minNodeWidth: 0,
+      wrappingWidth: 200,
       nodeSpacing: 48,
       rankSpacing: 48,
       padding: 8,

@@ -1,10 +1,7 @@
 <script lang="ts" module>
-  import mermaid from 'mermaid';
-  import elkLayouts from '@mermaid-js/layout-elk';
-
-  // Register the ELK layout engine once per module load; per-diagram
+  // Mermaid 12 bundles and registers the ELK layout engine itself; per-diagram
   // frontmatter (`config: layout: ...`) still overrides the default.
-  mermaid.registerLayoutLoaders(elkLayouts);
+  import mermaid from 'mermaid';
 
   export type MermaidRenderState = 'pending' | 'empty' | 'rendered' | 'error';
 </script>
@@ -1683,6 +1680,9 @@ ${source}`;
           };
         }
       }
+      // Mermaid 12 wraps state labels at `state.wrappingWidth` (default 120); before,
+      // they followed the flowchart width, which the layout branches above tune.
+      config.state = { ...config.state, wrappingWidth: config.flowchart?.wrappingWidth };
       await document.fonts?.load(`400 ${config.fontSize}px "${MERMAID_PRIMARY_FONT}"`);
       if (!isCurrent()) return;
       const renderResult = await runSerializedMermaidRender(
@@ -2319,7 +2319,9 @@ ${source}`;
   .mermaid-presentation :global(svg[aria-roledescription='sequence'] .sequence-note-text) {
     fill: var(--diagram-metadata) !important;
     font-size: 12px !important;
-    font-weight: 500 !important;
+    /* Regular weight, as shipped: Mermaid 11's own `.noteText > tspan` rule used to
+       override a heavier weight here; Mermaid 12 no longer emits it. */
+    font-weight: 400 !important;
   }
 
   .mermaid-presentation :global(text),

@@ -58,6 +58,16 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
   return {
     startOnLoad: false,
     theme: 'base',
+    // Mermaid 12 defaults to the `neo` look and to a new ELK preset with line hops,
+    // edge straightening and feedback-edge reorientation. Pin the pre-12 rendering;
+    // MermaidRenderer chooses `layout` (dagre, or ELK for state/ER) per diagram.
+    look: 'classic',
+    elk: {
+      preset: 'legacy',
+      lineHops: false,
+      straightenEdges: false,
+      orientFeedbackEdges: false,
+    },
     securityLevel: 'loose',
     fontFamily,
     fontSize: Number.parseFloat(fontSize),
@@ -79,6 +89,8 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       nodeSpacing: 32,
       rankSpacing: 40,
       wrappingWidth: 200,
+      // Mermaid 12 widens every node to 120px by default; keep label-sized nodes.
+      minNodeWidth: 0,
     },
     sequence: {
       useMaxWidth: false,
@@ -92,9 +104,10 @@ export function createMermaidConfig(styles: TokenStyle, htmlLabels = true): Merm
       width: 140,
       wrapPadding: 6,
     },
-    class: { defaultRenderer: 'dagre-d3', htmlLabels: false },
+    class: { htmlLabels: false },
     state: {
-      defaultRenderer: 'dagre-d3',
+      minNodeWidth: 0,
+      wrappingWidth: 200,
       nodeSpacing: 48,
       rankSpacing: 48,
       padding: 8,
