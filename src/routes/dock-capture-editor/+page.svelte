@@ -63,6 +63,7 @@
         {discardRequest}
         onClose={() => bridge.close(openId)}
         onAttach={() => bridge.attach(openId)}
+        onDelete={snapshot.deleteReady ? () => bridge.deleteCapture(openId) : undefined}
         onDirtyChange={(value) => (dirty = value)}
         onDiscardRequested={() => answer(true)}
         onKeepEditing={() => answer(false)}
@@ -80,6 +81,7 @@
         {discardRequest}
         onClose={() => bridge.close(openId)}
         onAttach={() => bridge.attach(openId)}
+        onDelete={snapshot.deleteReady ? () => bridge.deleteCapture(openId) : undefined}
         onDirtyChange={(value) => (dirty = value)}
         onDiscardRequested={() => answer(true)}
         onKeepEditing={() => answer(false)}

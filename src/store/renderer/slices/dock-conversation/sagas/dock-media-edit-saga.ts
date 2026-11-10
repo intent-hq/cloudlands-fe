@@ -34,6 +34,9 @@ import {
 import { applyDockMediaSave, DockMediaSaveRequestSchema } from '$shared/dock-media-edit';
 import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
+  DockCaptureEditorDeleteRequestSchema,
+  type DockCaptureEditorDeleteRequest,
+  type DockCaptureEditorDeleteResult,
   type DockCaptureEditorOpenResult,
   type DockCaptureEditorRetakeResult,
   type DockCaptureEditorSaveResult,
@@ -52,6 +55,10 @@ import {
   dockMediaEditSaveRequested,
   dockMediaEditSaveSettled,
   dockEvidenceMediaChanged,
+  dockEvidenceImageRemoveRequested,
+  dockEvidenceClipRemoveRequested,
+  dockEvidenceImageRemoved,
+  dockEvidenceClipChanged,
 } from '../dock-conversation-slice';
 import { evidenceOf, dockMediaNativeService } from './dock-evidence-saga';
 import { dockInputLive } from './dock-live-input';
@@ -497,6 +504,96 @@ function* retakeCapture(request: z.infer<typeof retakeSchema>): SagaGenerator<vo
   }
 }
 
+/** Remove through the same logical-id path as the Dock, never by a supplied file path. */
+export function* deleteEditorCapture(request: DockCaptureEditorDeleteRequest): SagaGenerator<void> {
+  const { workspaceId, agentId } = request.pair;
+  let outcome: DockCaptureEditorDeleteResult['result'] = 'stale-source';
+  const authority = getPrincipalActionContext(store.state);
+  const binding = captureDockPlacementBinding();
+  const current = () =>
+    !!authority &&
+    getPrincipalActionContext(store.state) === authority &&
+    isDockBindingCurrent(binding) &&
+    store.state.dockConversation.workspaceId === workspaceId &&
+    store.state.dockConversation.agentId === agentId;
+  try {
+    if (!current()) return;
+    const evidence = evidenceOf(workspaceId, agentId);
+    const rows = request.kind === 'screenshot' ? (evidence?.images ?? []) : (evidence?.clips ?? []);
+    const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
+    const matches = rows.filter((row) => {
+      const item = items.find((entry) => entry.id === row.contextItemId);
+      if (!item || item.attachmentId !== request.attachmentId) return false;
+      const media = row.media;
+      // A canonical source cannot be downgraded to a legacy file-only request.
+      if (!media)
+        return (
+          request.sourceId === undefined &&
+          request.sourceRevision === undefined &&
+          request.expectedEditRevision === undefined
+        );
+      return (
+        media.source.kind === request.kind &&
+        media.source.id === request.sourceId &&
+        media.source.revision === request.sourceRevision &&
+        media.source.attachmentId === request.attachmentId &&
+        item.path === media.source.path &&
+        (media.saved?.revision ?? 0) === request.expectedEditRevision
+      );
+    });
+    if (matches.length !== 1) return;
+    const row = matches[0];
+    // Subscribe before dispatch: the canonical removal may complete synchronously.
+    const changed = yield* actionChannel(
+      (action: { type: string; payload?: unknown[] }) =>
+        (action.type === dockEvidenceImageRemoved.type || action.type === dockEvidenceClipChanged.type) ||
+        action.type === setComposerContextItems.type,
+      buffers.sliding(1),
+    );
+    try {
+      if (!current()) return;
+      yield* put(
+        request.kind === 'screenshot'
+          ? dockEvidenceImageRemoveRequested(workspaceId, agentId, row.id)
+          : dockEvidenceClipRemoveRequested(workspaceId, agentId, row.id),
+      );
+      const removed = () => {
+        const after = evidenceOf(workspaceId, agentId);
+        return (
+          ![...(after?.images ?? []), ...(after?.clips ?? [])].some(
+            (entry) => entry.id === row.id,
+          ) &&
+          !selectComposerContextItems
+            .select(store.state, workspaceId, agentId)
+            .some((entry) => entry.id === row.contextItemId)
+        );
+      };
+      // Native temp-file cleanup can finish later. Only the draft removal is acknowledged.
+      while (current() && !removed()) {
+        const { timedOut } = yield* race({ changed: take(changed), timedOut: delay(1500) });
+        if (timedOut) {
+          outcome = 'failed';
+          return;
+        }
+      }
+      if (current() && removed()) outcome = 'deleted';
+    } finally {
+      changed.close();
+    }
+  } finally {
+    try {
+      yield* call(() =>
+        window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT, {
+          requestId: request.requestId,
+          result: outcome,
+        } satisfies DockCaptureEditorDeleteResult),
+      );
+    } catch {
+      /* A retired owner is never retried into another editor. */
+    }
+  }
+}
+
 /** Sole dock listener; the editor and main have separate, strictly bound ends. */
 export function* dockMediaEditSaga(): SagaGenerator<void> {
   const preparation = channel<MediaPreparation>(buffers.expanding());
@@ -548,6 +645,19 @@ export function* dockMediaEditSaga(): SagaGenerator<void> {
       bufferPolicy: {
         kind: 'lossless',
         rationale: 'Each editor save requires a correlated durable result.',
+      },
+    },
+  );
+  yield* takeEveryFromElectronChannel<object>(
+    DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_REQUESTED,
+    function* (value) {
+      const parsed = DockCaptureEditorDeleteRequestSchema.safeParse(value);
+      if (parsed.success) yield* deleteEditorCapture(parsed.data);
+    },
+    {
+      bufferPolicy: {
+        kind: 'lossless',
+        rationale: 'Each bound removal requires a correlated result.',
       },
     },
   );

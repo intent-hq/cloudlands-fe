@@ -107,6 +107,8 @@ export interface DockCaptureEditorSnapshot extends Omit<
   'attachmentPath'
 > {
   openId: string;
+  /** Main supports identity-bound removal from the owning draft. */
+  deleteReady?: boolean;
   /** `workspace-file://` URL main resolved from the attachment path. */
   mediaUrl: string;
 }
@@ -372,3 +374,25 @@ export const DockCaptureEditorWaveformUpdateSchema = z
     waveform: DockMediaWaveformSchema,
   })
   .strict();
+
+/** Main fills this from the bound session; renderer never chooses a deletion target. */
+export const DockCaptureEditorDeleteRequestSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    openId: id,
+    pair: z.object({ workspaceId: id, agentId: id }).strict(),
+    kind: z.enum(['screenshot', 'recording']),
+    attachmentId: id,
+    sourceId: id.optional(),
+    sourceRevision: z.number().int().nonnegative().optional(),
+    expectedEditRevision: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+export type DockCaptureEditorDeleteRequest = z.infer<typeof DockCaptureEditorDeleteRequestSchema>;
+export const DockCaptureEditorDeleteResultSchema = z
+  .object({
+    requestId: z.string().uuid(),
+    result: z.enum(['deleted', 'stale-source', 'failed']),
+  })
+  .strict();
+export type DockCaptureEditorDeleteResult = z.infer<typeof DockCaptureEditorDeleteResultSchema>;

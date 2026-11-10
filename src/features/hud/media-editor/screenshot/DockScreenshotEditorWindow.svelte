@@ -45,6 +45,7 @@
     snapshot,
     onClose,
     onAttach,
+    onDelete,
     discardRequest = 0,
     onDirtyChange,
     onDiscardRequested,
@@ -57,6 +58,7 @@
     snapshot: DockCaptureEditorSnapshot;
     onClose: () => void;
     onAttach?: () => void | boolean | Promise<void | boolean>;
+    onDelete?: () => Promise<boolean>;
     discardRequest?: number;
     onDirtyChange?: (dirty: boolean) => void;
     onDiscardRequested?: () => void;
@@ -108,6 +110,7 @@
   let active = true;
   let saving = $state(false);
   let finishing = $state(false);
+  let deleting = $state(false);
   let retaking = $state(false);
   let error = $state<string | null>(null);
   type NoteControl = {
@@ -311,13 +314,13 @@
     }
   });
   function applyEditorEdit(edit: DockMediaEdit): void {
-    if (!edits || saving || retaking) return;
+    if (!edits || saving || deleting || retaking) return;
     const next = { ...edits.draft, edit };
     if (noteSession && !ownsNote(noteSession, next)) void cancelNote();
     edits.apply(next);
   }
   function close(): void {
-    if (saving || finishing) return;
+    if (saving || deleting || finishing) return;
     void cancelNote();
     onClose();
   }
@@ -330,14 +333,14 @@
       void cancelNote();
       return;
     }
-    if (!saving && !retaking) edits?.undo();
+    if (!saving && !deleting && !retaking) edits?.undo();
   }
   function redo(): void {
     if (noteSession) {
       void cancelNote();
       return;
     }
-    if (!saving && !retaking) edits?.redo();
+    if (!saving && !deleting && !retaking) edits?.redo();
   }
   onDestroy(() => {
     void cancelNote();
@@ -365,8 +368,36 @@
   const saveBlocked = $derived(interactionPending || (needsNewOutput && !outputAdmitted));
   const canSave = $derived(saveCapable && !saveBlocked);
 
+  async function deleteCapture(): Promise<void> {
+    if (
+      !active ||
+      !ownsSnapshot() ||
+      !onDelete ||
+      saving ||
+      finishing ||
+      deleting ||
+      retaking ||
+      !!noteSession
+    )
+      return;
+    deleting = true;
+    error = null;
+    try {
+      const removed = await onDelete();
+      if (!active || !ownsSnapshot()) return;
+      if (removed) {
+        // Main closes only this bound session after the owner removed its media.
+        active = false;
+        onDirtyChange?.(false);
+      } else error = m.dock_captureEditor_deleteFailed_error();
+    } catch {
+      if (active && ownsSnapshot()) error = m.dock_captureEditor_deleteFailed_error();
+    } finally {
+      if (active && ownsSnapshot()) deleting = false;
+    }
+  }
   async function finishAttachment(): Promise<void> {
-    if (!active || finishing || !ownsSnapshot()) return;
+    if (!active || deleting || finishing || !ownsSnapshot()) return;
     finishing = true;
     onDirtyChange?.(false);
     try {
@@ -384,7 +415,8 @@
     }
   }
   function attach(): void {
-    if (!active || saving || finishing || retaking || noteSession || saveBlocked) return;
+    if (!active || saving || deleting || finishing || retaking || noteSession || saveBlocked)
+      return;
     if (dirty) void save(true);
     else void finishAttachment();
   }
@@ -401,6 +433,7 @@
       !onSave ||
       !canSave ||
       saving ||
+      deleting ||
       finishing ||
       retaking ||
       noteSession ||
@@ -455,7 +488,7 @@
     }
   }
   async function retake() {
-    if (!edits || !onRetake || saving || retaking || interactionPending) return;
+    if (!edits || !onRetake || saving || deleting || retaking || interactionPending) return;
     const bundle = edits.draft;
     const stopping = cancelNote();
     retaking = true;
@@ -498,7 +531,7 @@
       void cancelNote(markId);
     }}
     onNoteBlur={stopNote}
-    disabled={saving}
+    disabled={saving || deleting}
     {retaking}
     onInteractionPending={(pending) => (interactionPending = pending)}
     admittedOutputVersion={outputAdmitted ? DOCK_MEDIA_OUTPUT_VERSION : undefined}
@@ -511,10 +544,13 @@
         title={m.dock_screenshotEditor_title()}
         subtitle={snapshot.title}
         {dirty}
-        saving={saving || finishing || !!noteSession}
+        saving={saving || finishing || retaking || !!noteSession}
         {saveBlocked}
         onCancel={close}
         onSave={saveCapable ? () => void save() : undefined}
+        onDelete={onDelete ? () => void deleteCapture() : undefined}
+        deleteLabel={m.dock_captureEditor_deleteScreenshot_label()}
+        {deleting}
         onAttach={attach}
         onUndo={undo}
         onRedo={redo}
@@ -538,6 +574,9 @@
   </DockScreenshotEditor>
 {:else}
   <DockCaptureEditorShell
+    onDelete={onDelete ? () => void deleteCapture() : undefined}
+    deleteLabel={m.dock_captureEditor_deleteScreenshot_label()}
+    {deleting}
     onAttach={attach}
     saving={finishing}
     title={m.dock_screenshotEditor_title()}

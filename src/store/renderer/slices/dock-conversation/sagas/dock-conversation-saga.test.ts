@@ -2471,3 +2471,49 @@ describe('held capture preparation local-admission content CAS', () => {
     },
   );
 });
+
+
+describe('bound editor capture removal', () => {
+  it.each(['screenshot', 'recording'] as const)('removes only the current %s and refuses a later stale Save', async (kind) => {
+    await open();
+    const source: DockMediaSource = {
+      id: 'delete-source', revision: 0, kind, attachmentId: 'delete-file',
+      path: '.intent/attachments/delete.' + (kind === 'screenshot' ? 'png' : 'mp4'),
+      durationMs: kind === 'recording' ? 1000 : 0, width: 320, height: 180,
+      audio: 'none', visuals: 'clean', batches: [],
+    };
+    const media: DockSavedMedia = { source, saved: defaultDockMediaEdit(source, [], null), transcript: null };
+    const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
+    if (kind === 'screenshot') evidence.images = [{ id: 'current-capture', contextItemId: 'current-item', width: 320, height: 180, displayScale: 1, capturedAt: timestamp, source: 'capture', media }];
+    else evidence.clips = [{ id: 'current-capture', contextItemId: 'current-item', status: 'ready', startedAt: 1, durationMs: 1000, hasMicAudio: false, path: source.path, media }];
+    appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
+    const other: ContextItem = { id: 'other', type: 'file', label: 'Keep this', attachmentId: 'other-file', path: '.intent/attachments/other.png' };
+    appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, [other, { id: 'current-item', type: kind === 'screenshot' ? 'image' : 'file', label: 'Synthetic', attachmentId: source.attachmentId, path: source.path }]));
+    const bridge = window as unknown as { electronAPI?: { invoke: (...args: unknown[]) => Promise<unknown> } };
+    const previous = bridge.electronAPI;
+    const replies: unknown[] = [];
+    bridge.electronAPI = { invoke: async (...args) => { replies.push(args); return true; } };
+    try {
+      const { deleteEditorCapture } = await import('./dock-media-edit-saga');
+      const request = { requestId: crypto.randomUUID(), openId: crypto.randomUUID(), pair: { workspaceId: workspaceA, agentId: mainA }, kind, attachmentId: source.attachmentId, sourceId: source.id, sourceRevision: 0, expectedEditRevision: 0 };
+      cleanups.push(appStore.runSaga(function* () { yield* deleteEditorCapture({ ...request, sourceId: 'wrong-source' }); }));
+      await vi.waitFor(() => expect(replies).toContainEqual([DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT, { requestId: request.requestId, result: 'stale-source' }]));
+      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toHaveLength(2);
+      replies.length = 0;
+      cleanups.push(appStore.runSaga(function* () { yield* deleteEditorCapture(request); }));
+      await vi.waitFor(() => expect(replies).toContainEqual([DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT, { requestId: request.requestId, result: 'deleted' }]));
+      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([other]);
+      expect(evidenceOf(workspaceA, mainA)?.images).toEqual([]);
+      expect(evidenceOf(workspaceA, mainA)?.clips).toEqual([]);
+      const { dockMediaEditSaveRequested, dockMediaEditSaveSettled } = await import('../dock-conversation-slice');
+      const { getPrincipalActionContext } = await import('../../principal/principal-context');
+      const results: unknown[] = [];
+      cleanups.push(appStore.runSaga(function* () { results.push(yield* take(dockMediaEditSaveSettled)); }));
+      const saveId = crypto.randomUUID();
+      appStore.dispatch(dockMediaEditSaveRequested(saveId, { openId: request.openId, pair: request.pair, sourceId: source.id, sourceRevision: 0, expectedEditRevision: 0, edit: media.saved! }, getPrincipalActionContext(appStore.state)!));
+      await vi.waitFor(() => expect(results).toContainEqual(dockMediaEditSaveSettled(saveId, { requestId: saveId, result: 'stale-source' })));
+      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([other]);
+      expect([...evidenceOf(workspaceA, mainA)!.images, ...evidenceOf(workspaceA, mainA)!.clips]).toEqual([]);
+    } finally { bridge.electronAPI = previous; }
+  });
+});

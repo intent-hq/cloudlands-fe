@@ -59,6 +59,7 @@
     snapshot,
     onClose,
     onAttach,
+    onDelete,
     discardRequest = 0,
     onDirtyChange,
     onDiscardRequested,
@@ -68,6 +69,7 @@
     snapshot: DockCaptureEditorSnapshot;
     onClose: () => void;
     onAttach?: () => void | boolean | Promise<void | boolean>;
+    onDelete?: () => Promise<boolean>;
     /** Main's "edits would be lost" questions (window close, a switch); see the shell. */
     discardRequest?: number;
     onDirtyChange?: (dirty: boolean) => void;
@@ -127,17 +129,37 @@
     active = false;
   });
   let finishing = $state(false);
+  let deleting = $state(false);
   let framePending = $state(false);
   let transcriptPending = $state(false);
   const interactionPending = $derived(framePending || transcriptPending);
   let saving = $state(false);
+  let deleteProblem = $state<string | null>(null);
   let saveProblem = $state<'conflict' | 'failed' | 'close' | null>(null);
   /** Highlights with every mark excluded sends no clips: warned once, before saving. */
   let confirmEmptyHighlights = $state(false);
   let warnedEmptyHighlights = false;
   let attachAfterWarning = false;
+  async function deleteCapture(): Promise<void> {
+    if (!active || !ownsSnapshot() || !onDelete || saving || finishing || deleting) return;
+    deleting = true;
+    deleteProblem = null;
+    try {
+      const removed = await onDelete();
+      if (!active || !ownsSnapshot()) return;
+      if (removed) {
+        // Main closes only this bound session after the owner removed its media.
+        active = false;
+        onDirtyChange?.(false);
+      } else deleteProblem = m.dock_captureEditor_deleteFailed_error();
+    } catch {
+      if (active && ownsSnapshot()) deleteProblem = m.dock_captureEditor_deleteFailed_error();
+    } finally {
+      if (active && ownsSnapshot()) deleting = false;
+    }
+  }
   async function finishAttachment(): Promise<void> {
-    if (!active || finishing || !ownsSnapshot()) return;
+    if (!active || deleting || finishing || !ownsSnapshot()) return;
     finishing = true;
     onDirtyChange?.(false);
     try {
@@ -155,12 +177,13 @@
     }
   }
   function attach(): void {
-    if (!active || saving || finishing || interactionPending) return;
+    if (!active || saving || deleting || finishing || interactionPending) return;
     if (edits?.dirty) void save(true);
     else void finishAttachment();
   }
   async function save(attachAfterSave = false): Promise<void> {
-    if (!edits || !onSave || !canSave || saving || finishing || interactionPending) return;
+    if (!edits || !onSave || !canSave || saving || deleting || finishing || interactionPending)
+      return;
     if (
       edits.draft.video === 'highlights' &&
       !canUseHighlights(edits.draft) &&
@@ -472,6 +495,9 @@
   dirty={interactionPending || (edits?.dirty ?? false)}
   saving={saving || finishing}
   saveBlocked={interactionPending}
+  onDelete={onDelete ? () => void deleteCapture() : undefined}
+  deleteLabel={m.dock_captureEditor_deleteRecording_label()}
+  {deleting}
   onAttach={attach}
   onSave={canSave ? () => void save() : undefined}
   onCancel={onClose}
@@ -484,7 +510,7 @@
   {onKeepEditing}
 >
   {#snippet main()}
-    <div class="stage" inert={saving}>
+    <div class="stage" inert={saving || deleting}>
       <div class="frame">
         {#if failed}
           <p class="unavailable" role="status">{m.dock_captureEditor_unavailable_label()}</p>
@@ -567,6 +593,7 @@
           >{formatRecordingTime(outputMs)} / {formatRecordingTime(outputDurationMs)}</span
         >
       </CaptureEditorToolbar>
+      {#if deleteProblem}<p class="save-problem" role="alert">{deleteProblem}</p>{/if}
       {#if saveProblem}
         <p class="save-problem" role="alert" data-save-problem>
           {saveProblem === 'close'
@@ -634,7 +661,7 @@
 {#snippet sendOptions()}
   {#if source && edits}
     <div class="sidebar-content">
-      <div inert={saving || finishing}>
+      <div inert={saving || deleting || finishing}>
         <DockRecordingSendOptions
           edit={edits.draft}
           {source}
@@ -651,7 +678,7 @@
         {/if}
       </div>
       <DockRecordingTranscript
-        locked={saving || finishing}
+        locked={saving || deleting || finishing}
         onSubmit={attach}
         onInteractionPending={(pending) => (transcriptPending = pending)}
         {transcript}
@@ -690,7 +717,7 @@
     </div>
   {:else}
     <!-- Playback only: the same sidebar, nothing to change; says why. -->
-    <div class="sidebar-content" inert={saving}>
+    <div class="sidebar-content" inert={saving || deleting}>
       <DockRecordingSendOptions
         edit={null}
         source={null}

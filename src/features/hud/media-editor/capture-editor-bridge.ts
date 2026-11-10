@@ -46,6 +46,8 @@ export function reportCaptureEditorSaveFailure(stage: CaptureEditorSaveFailureSt
 export interface DockCaptureEditorBridge {
   /** Close the session `openId` names (never a newer one main retargeted to). */
   close(openId: string): Promise<boolean>;
+  /** Remove only the capture owned by this session; main closes on success. */
+  deleteCapture(openId: string): Promise<boolean>;
   /** Finish this capture; older main builds still close safely by openId. */
   attach(openId: string): Promise<boolean>;
   /** The answer to main's request `requestId` (`onConfirmDiscard`). */
@@ -81,6 +83,7 @@ export function connectDockCaptureEditor(
     const none = () => {};
     return {
       close: async () => false,
+      deleteCapture: async () => false,
       attach: async () => false,
       discard: none,
       keep: none,
@@ -149,6 +152,12 @@ export function connectDockCaptureEditor(
   else void load();
   return {
     close: (openId) => requestClose({ openId }),
+    deleteCapture: async (openId) => {
+      if (disposed) return false;
+      try {
+        return await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, { openId }) === true;
+      } catch { return false; }
+    },
     attach: async (openId) => {
       if (await requestClose({ openId, intent: 'attach' })) return true;
       // An older main rejects the optional intent. Retry only the same session;

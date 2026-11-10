@@ -470,6 +470,9 @@ export const IPC_CHANNELS = {
     OPEN: 'dock-capture-editor:open',
     GET: 'dock-capture-editor:get',
     CLOSE: 'dock-capture-editor:close',
+    DELETE: 'dock-capture-editor:delete',
+    DELETE_REQUESTED: 'dock-capture-editor:delete-requested',
+    DELETE_RESULT: 'dock-capture-editor:delete-result',
     /** editor → main: the answer to main's CONFIRM_DISCARD request (by its id). */
     DISCARD: 'dock-capture-editor:discard',
     KEEP: 'dock-capture-editor:keep',
@@ -1243,6 +1246,7 @@ export const EVENT_CHANNELS = [
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CHANGED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.CONFIRM_DISCARD,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.SAVE_REQUESTED,
+  IPC_CHANNELS.DOCK_CAPTURE_EDITOR.DELETE_REQUESTED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.RETAKE_REQUESTED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_REQUESTED,
   IPC_CHANNELS.DOCK_CAPTURE_EDITOR.NOTE_DICTATION_UPDATE,

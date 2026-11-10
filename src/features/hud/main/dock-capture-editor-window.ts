@@ -18,6 +18,8 @@ import {
   DOCK_CAPTURE_EDITOR_CHANNELS,
   DOCK_CAPTURE_EDITOR_ROUTE,
   DockCaptureEditorCloseSchema,
+  DockCaptureEditorDeleteResultSchema,
+  type DockCaptureEditorDeleteRequest,
   DockCaptureEditorAnswerSchema,
   DockCaptureEditorOpenSchema,
   canonicalDockAttachmentPath,
@@ -76,6 +78,7 @@ const MIN_SIZE = { width: 640, height: 480 };
 
 interface Session {
   snapshot: DockCaptureEditorSnapshot;
+  deleting?: boolean;
   backendId: string;
   /** The opening dock document: the only one that persists this session's saves. */
   owner: { sender: Electron.WebContents; binding: object };
@@ -98,6 +101,22 @@ interface PendingSave {
 }
 const SAVE_TIMEOUT_MS = 15_000;
 const pendingSaves = new Map<string, PendingSave>();
+
+/** Removal is serialized with this session's saves and retakes. */
+interface PendingDelete {
+  openId: string;
+  owner: Session['owner'];
+  resolve: (removed: boolean) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+const pendingDeletes = new Map<string, PendingDelete>();
+function settleDelete(requestId: string, removed: boolean): void {
+  const pending = pendingDeletes.get(requestId);
+  if (!pending) return;
+  pendingDeletes.delete(requestId);
+  clearTimeout(pending.timer);
+  pending.resolve(removed);
+}
 
 /** A retake sent to the owning dock, waiting for its placed candidate. */
 interface PendingRetake {
@@ -226,6 +245,8 @@ function endSession(): void {
     for (const [requestId, pending] of pendingSaves)
       if (pending.openId === ended.snapshot.openId)
         settleSave(requestId, { requestId, result: 'failed' });
+    for (const [requestId, pending] of pendingDeletes)
+      if (pending.openId === ended.snapshot.openId) settleDelete(requestId, false);
     for (const [requestId, pending] of pendingRetakes)
       if (pending.openId === ended.snapshot.openId)
         settleRetake(requestId, { ok: false, error: 'failed' });
@@ -254,6 +275,10 @@ function closeEditor(): void {
  * the earlier one does nothing.
  */
 function askDiscard(next: { kind: 'close' } | { kind: 'retarget'; next: Session }): void {
+  if (session?.deleting) {
+    if (next.kind === 'retarget') next.next.stopWatching();
+    return;
+  }
   if (pending && next.kind === 'close') return;
   if (!usable(editor) || !session) {
     if (next.kind === 'retarget') showSession(next.next);
@@ -399,6 +424,7 @@ async function open(
   const mediaUrl = mediaUrlFor(rest.workspaceId, canonical, binding.backendId);
   if (!mediaUrl) return unavailable('invalid-path');
 
+  if (session?.deleting) return unavailable('busy');
   const generation = ++openGeneration;
   // Whether sending honors saved edits of this source (asked of the output owner),
   // and the person's last saved choice, the default for a new edit.
@@ -413,6 +439,7 @@ async function open(
   // Nothing may have changed meanwhile: no newer open or close, and the same dock
   // window, document and binding.
   if (
+    session?.deleting ||
     generation !== openGeneration ||
     getDockWindow() !== dock ||
     event.sender.isDestroyed() ||
@@ -434,6 +461,7 @@ async function open(
       ...rest,
       openId,
       mediaUrl,
+      deleteReady: true,
       ...(output ? { output } : {}),
       ...(rememberedChoice ? { rememberedChoice } : {}),
     },
@@ -496,15 +524,28 @@ export function setupDockCaptureEditorIPC(): void {
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, (event, request: unknown) => {
     const parsed = DockCaptureEditorCloseSchema.safeParse(request);
     if (!parsed.success || !fromEditor(event)) return false;
-    if (session?.snapshot.openId !== parsed.data.openId) return false;
+    if (session?.snapshot.openId !== parsed.data.openId || session?.deleting) return false;
     closeEditor();
+    return true;
+  });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, (event, value: unknown) =>
+    deleteCapture(event, value),
+  );
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT, (event, value: unknown) => {
+    const parsed = DockCaptureEditorDeleteResultSchema.safeParse(value);
+    if (!parsed.success) return false;
+    const pending = pendingDeletes.get(parsed.data.requestId);
+    if (!pending || event.sender !== pending.owner.sender) return false;
+    if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
+    if (getStrictBackendBindingForWebContents(event.sender) !== pending.owner.binding) return false;
+    settleDelete(parsed.data.requestId, parsed.data.result === 'deleted');
     return true;
   });
   // The person's answer to main's question: Discard does what was waiting.
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DISCARD, (event, request: unknown) => {
     const parsed = DockCaptureEditorAnswerSchema.safeParse(request);
     if (!parsed.success || !fromEditor(event) || !session || !pending) return false;
-    if (session.snapshot.openId !== parsed.data.openId) return false;
+    if (session.snapshot.openId !== parsed.data.openId || session.deleting) return false;
     if (pending.requestId !== parsed.data.requestId) return false;
     const waiting = pending;
     pending = null;
@@ -641,6 +682,67 @@ export function setupDockCaptureEditorIPC(): void {
   });
 }
 
+/** The editor chooses only its open identity; main binds every removal field. */
+async function deleteCapture(event: IpcMainInvokeEvent, value: unknown): Promise<boolean> {
+  const parsed = z.object({ openId: z.string().uuid() }).strict().safeParse(value);
+  if (!parsed.success || !fromEditor(event) || !session) return false;
+  const current = session;
+  const { snapshot, owner } = current;
+  if (snapshot.openId !== parsed.data.openId || current.deleting || pending) return false;
+  if (
+    [...pendingSaves.values(), ...pendingRetakes.values()].some(
+      (request) => request.openId === snapshot.openId,
+    )
+  )
+    return false;
+  if (
+    owner.sender.isDestroyed() ||
+    getStrictBackendBindingForWebContents(owner.sender) !== owner.binding
+  )
+    return false;
+  current.deleting = true;
+  const requestId = randomUUID();
+  const request: DockCaptureEditorDeleteRequest = {
+    requestId,
+    openId: snapshot.openId,
+    pair: { workspaceId: snapshot.workspaceId, agentId: snapshot.agentId },
+    kind: snapshot.kind,
+    attachmentId: snapshot.attachmentId,
+    ...(snapshot.source
+      ? {
+          sourceId: snapshot.source.id,
+          sourceRevision: snapshot.source.revision,
+          expectedEditRevision: snapshot.saved?.revision ?? 0,
+        }
+      : {}),
+  };
+  try {
+    const removed = await new Promise<boolean>((resolve) => {
+      pendingDeletes.set(requestId, {
+        openId: snapshot.openId,
+        owner,
+        resolve,
+        timer: setTimeout(() => settleDelete(requestId, false), SAVE_TIMEOUT_MS),
+      });
+      try {
+        owner.sender.send(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_REQUESTED, request);
+      } catch {
+        settleDelete(requestId, false);
+      }
+    });
+    if (
+      !removed ||
+      session !== current ||
+      getStrictBackendBindingForWebContents(owner.sender) !== owner.binding
+    )
+      return false;
+    closeEditor();
+    return true;
+  } finally {
+    if (session === current) current.deleting = false;
+  }
+}
+
 /**
  * A save from the editor: only when sending honors saved edits of this source, only
  * for this session's own source and pair, and only through the dock document that
@@ -657,7 +759,7 @@ async function save(
     result: 'failed',
   });
   const parsed = EditorSaveSchema.safeParse(request);
-  if (!parsed.success || !fromEditor(event) || !session) return failed();
+  if (!parsed.success || !fromEditor(event) || !session || session.deleting) return failed();
   const current = session;
   const { snapshot, owner } = current;
   if (snapshot.openId !== parsed.data.openId || !snapshot.source) return failed();
@@ -746,7 +848,8 @@ async function retake(
   request: unknown,
 ): Promise<DockCaptureEditorRetakeOutcome> {
   const parsed = DockCaptureEditorCloseSchema.safeParse(request);
-  if (!parsed.success || !fromEditor(event) || !session) return { ok: false, error: 'failed' };
+  if (!parsed.success || !fromEditor(event) || !session || session.deleting)
+    return { ok: false, error: 'failed' };
   const current = session;
   const { snapshot, owner } = current;
   const window = editor;

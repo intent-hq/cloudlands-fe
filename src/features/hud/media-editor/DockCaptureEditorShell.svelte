@@ -2,6 +2,7 @@
   import type { Snippet } from 'svelte';
   import '$lib/styles/dock-tokens.css';
   import { m } from '$shared/paraglide/messages.js';
+  import TrashIcon from 'phosphor-svelte/lib/TrashIcon';
   import { Button } from '$lib/components/ui/button';
   import { FormDialog } from '$lib/components/patterns/confirm';
   import { formatShortcut, isMacPlatform } from '$lib/utils/shortcuts';
@@ -22,6 +23,9 @@
     subtitle,
     dirty = false,
     saving = false,
+    deleting = false,
+    onDelete,
+    deleteLabel,
     saveBlocked = false,
     onCancel,
     onSave,
@@ -42,6 +46,9 @@
     subtitle?: string;
     dirty?: boolean;
     saving?: boolean;
+    deleting?: boolean;
+    onDelete?: () => void;
+    deleteLabel?: string;
     /** Save stays in place but cannot run (an edit still open, or unsupported output). */
     saveBlocked?: boolean;
     onCancel: () => void;
@@ -73,6 +80,7 @@
      */
     actionsPlacement?: 'header' | 'sidebar';
   } = $props();
+  const busy = $derived(saving || deleting);
   const primaryLabel = $derived(
     dirty ? m.dock_captureEditor_save_label() : m.dock_captureEditor_attach_label(),
   );
@@ -98,7 +106,7 @@
     if (request <= answered) return;
     answered = request;
     // A durable write in flight cannot be discarded or retargeted midway.
-    if (saving) {
+    if (busy) {
       onKeepEditing?.();
       return;
     }
@@ -107,7 +115,7 @@
   });
 
   function requestClose(): void {
-    if (saving) return;
+    if (busy) return;
     fromMain = false;
     if (dirty) confirming = true;
     else onCancel();
@@ -156,8 +164,8 @@
       requestClose();
     } else if (mod && key === 'enter' && onAttach && !isTextEntryTarget(event.target)) {
       event.preventDefault();
-      if (!saving && !saveBlocked && (!dirty || onSave)) onAttach();
-    } else if (mod && key === 'z' && !saving && !isTextEntryTarget(event.target)) {
+      if (!busy && !saveBlocked && (!dirty || onSave)) onAttach();
+    } else if (mod && key === 'z' && !busy && !isTextEntryTarget(event.target)) {
       event.preventDefault();
       if (event.shiftKey) onRedo?.();
       else onUndo?.();
@@ -170,10 +178,23 @@
 {#snippet actions()}
   <div class="actions">
     {#if !footerActions}{@render headerActions?.()}{/if}
+    {#if onDelete && deleteLabel}
+      <Button
+        variant="ghost"
+        size="icon"
+        disabled={busy}
+        loading={deleting}
+        aria-label={deleteLabel}
+        tooltip={deleteLabel}
+        tooltipContentClass="dock-chrome-tooltip"
+        data-delete-capture
+        onclick={onDelete}><TrashIcon size={18} /></Button
+      >
+    {/if}
     <Button
       variant="ghost"
       size="default"
-      disabled={saving}
+      disabled={busy}
       aria-label={m.dock_captureEditor_close_label()}
       tooltip={m.dock_captureEditor_close_tooltip()}
       tooltipShortcut="Esc"
@@ -184,7 +205,7 @@
       <Button
         variant="primary"
         size="default"
-        disabled={saving || saveBlocked || (dirty && !onSave)}
+        disabled={busy || saveBlocked || (dirty && !onSave)}
         tooltip={primaryLabel}
         tooltipShortcut="mod+Enter"
         tooltipContentClass="dock-chrome-tooltip"
@@ -205,7 +226,7 @@
       <Button
         variant={dirty ? 'primary' : 'secondary'}
         size="default"
-        disabled={!dirty || saving || saveBlocked}
+        disabled={!dirty || busy || saveBlocked}
         loading={saving}
         data-save
         onclick={() => onSave?.()}>{m.dock_captureEditor_save_label()}</Button
