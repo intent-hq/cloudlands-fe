@@ -15,9 +15,7 @@ const TIME_SOURCE = '([01]\\d|2[0-3]):[0-5]\\d(:[0-5]\\d(\\.\\d+)?)?';
 
 /** zod 3 `datetimeRegex({ precision: null, local: false, offset })`. */
 const ZOD3_DATETIME = new RegExp(`^${DATE_SOURCE}T${TIME_SOURCE}(Z)$`);
-const ZOD3_DATETIME_OFFSET = new RegExp(
-  `^${DATE_SOURCE}T${TIME_SOURCE}(Z|([+-]\\d{2}:?\\d{2}))$`,
-);
+const ZOD3_DATETIME_OFFSET = new RegExp(`^${DATE_SOURCE}T${TIME_SOURCE}(Z|([+-]\\d{2}:?\\d{2}))$`);
 /** zod 3 `emailRegex`. */
 const ZOD3_EMAIL =
   /^(?!\.)(?!.*\.\.)([A-Z0-9_'+\-.]*)[A-Z0-9_+-]@([A-Z0-9][A-Z0-9-]*\.)+[A-Z]{2,}$/i;
