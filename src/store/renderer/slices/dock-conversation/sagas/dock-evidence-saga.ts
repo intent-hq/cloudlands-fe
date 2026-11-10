@@ -1551,7 +1551,7 @@ function* setRecordingPaused(
 
 const discardedSessions = new Set<string>();
 const discardGenerations = new Map<string, number>();
-const discardWaits = new Map<string, { done: Promise<void>; service: DockEvidenceNativeService | null; authority: string | null; paused: boolean }>();
+const discardWaits = new Map<string, { done: Promise<void>; service: DockEvidenceNativeService | null; authority: string | null; paused: boolean; clipId: string | null }>();
 
 /**
  * The recording tool bar. Done: the screen's marks go (they are in the clip already),
@@ -1581,7 +1581,7 @@ function* recordingToolbarAction(
       !activePair(workspaceId, agentId) ||
       evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id ||
       !held.service ||
-      !held.paused
+      !held.paused || (held.clipId !== null && recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
     )
       return;
     try {
@@ -1594,7 +1594,8 @@ function* recordingToolbarAction(
       nativeService !== held.service ||
       getPrincipalActionContext(appStore.state) !== held.authority ||
       !activePair(workspaceId, agentId) ||
-      evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id
+      evidenceOf(workspaceId, agentId)?.annotation?.id !== session.id ||
+      (held.clipId !== null && recordingDockClip(evidenceOf(workspaceId, agentId))?.id !== held.clipId)
     )
       return;
     discardedSessions.delete(session.id);
@@ -1614,6 +1615,7 @@ function* recordingToolbarAction(
       service: nativeService,
       authority: getPrincipalActionContext(appStore.state),
       paused: false,
+      clipId: clip?.id ?? null,
     };
     discardWaits.set(session.id, held);
     try {
