@@ -7,6 +7,7 @@
     textEntryControlClasses,
     textEntryFocusResetClasses,
     textEntryHeight,
+    textEntryInlineClasses,
     textEntrySearchClasses,
     type TextEntryVariant,
   } from '../text-entry';
@@ -15,7 +16,7 @@
   type InputType = Exclude<HTMLInputTypeAttribute, 'file'>;
   type SharedProps = Omit<HTMLInputAttributes, 'size' | 'type'> & {
     size?: UiSize | number;
-    /** `search` is the shared flat menu/picker search field. */
+    /** `inline` preserves surrounding text styles; `search` is the flat menu search field. */
     variant?: TextEntryVariant;
     noFocusStyle?: boolean;
     message?: string;
@@ -104,21 +105,27 @@
     {id}
     data-slot={dataSlot}
     data-size={resolvedSize}
-    data-variant={variant === 'search' ? 'search' : undefined}
-    class={variant === 'search'
+    data-variant={variant === 'default' ? undefined : variant}
+    class={variant === 'inline'
       ? cn(
-          'flex selection:bg-primary selection:text-primary-foreground',
-          textEntrySearchClasses,
+          'selection:bg-primary selection:text-primary-foreground',
+          textEntryInlineClasses,
           className,
         )
-      : cn(
-          'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
-          textEntryControlClasses,
-          textEntryCaretFocusClasses,
-          textEntryHeight(resolvedSize),
-          noFocusStyle && textEntryFocusResetClasses,
-          className,
-        )}
+      : variant === 'search'
+        ? cn(
+            'flex selection:bg-primary selection:text-primary-foreground',
+            textEntrySearchClasses,
+            className,
+          )
+        : cn(
+            'type-caption text-foreground selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground flex w-full min-w-0 rounded-(--radius-medium) border px-3 py-1',
+            textEntryControlClasses,
+            textEntryCaretFocusClasses,
+            textEntryHeight(resolvedSize),
+            noFocusStyle && textEntryFocusResetClasses,
+            className,
+          )}
     {type}
     size={nativeSize}
     aria-describedby={describedBy}

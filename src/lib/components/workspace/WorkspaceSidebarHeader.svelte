@@ -106,6 +106,7 @@
   }
 
   async function saveTitle() {
+    if (!isEditingTitle) return;
     if (isSavingTitle || !workspace || !editedTitle.trim()) {
       isEditingTitle = false;
       return;
@@ -484,23 +485,25 @@
     <div class="relative flex w-full min-w-0 items-center">
       {#if isEditingTitle}
         <Input
+          variant="inline"
           bind:ref={titleInputRef}
           type="text"
           bind:value={editedTitle}
           onblur={saveTitle}
           onkeydown={handleTitleKeydown}
           aria-label={m.workspace_sidebarHeader_editTitle_tooltip()}
-          class="type-title h-auto w-full rounded border-none bg-transparent px-0 py-0.5 text-foreground leading-normal
+          class="type-title relative z-10 font-normal h-(--control-height-medium) w-full rounded border-none bg-transparent px-0 py-0 text-foreground leading-(--text-title-line-height)
                  hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none
-                 focus-visible:outline-solid focus-visible:outline-1 focus-visible:outline-ring focus-visible:outline-offset-[-1px]"
+                 focus-visible:outline-none"
           placeholder={m.ui_editableName_placeholder()}
         />
       {:else}
         <Button
           variant="ghost"
-          class="type-title relative z-10 h-auto cursor-text rounded border-none bg-transparent px-0 py-0.5 pr-1 text-left text-foreground
+          labelClass="whitespace-pre"
+          class="type-title relative z-10 h-(--control-height-medium) cursor-text rounded border-none bg-transparent px-0 py-0 text-left text-foreground
                  max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-                 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-normal line-clamp-3
+                 transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-(--text-title-line-height) line-clamp-3
                 focus-visible:outline focus-visible:outline-1
                  focus-visible:outline-ring focus-visible:outline-offset-[-1px]
                  disabled:cursor-default disabled:opacity-50 {!workspace?.title
@@ -515,11 +518,18 @@
           {/if}
         </Button>
       {/if}
+      <span
+        aria-hidden="true"
+        class="pointer-events-none absolute -inset-x-2 inset-y-0 z-0 rounded-(--radius-small) transition-colors duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+          ? 'bg-hover dark:bg-surface-1'
+          : 'bg-transparent'}"
+      ></span>
     </div>
 
     <!-- status message -->
     {#if isEditingStatusMessage}
       <Textarea
+        variant="inline"
         bind:ref={statusInputRef}
         bind:value={editedStatusMessage}
         onblur={saveStatusMessage}
@@ -528,7 +538,7 @@
         maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
         aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
         rows={1}
-        class="type-body max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded bg-none py-0.5 text-foreground
+        class="type-body max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent px-0 py-0.5 text-muted-foreground
                outline-none leading-snug
                focus:ring-none! focus:outline-none!
                transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
@@ -539,7 +549,7 @@
       <Button
         variant="ghost"
         wrapContent={false}
-        class="type-body h-auto cursor-pointer rounded border-none bg-transparent py-0.5 text-left text-muted-foreground {!currentStatusMessage
+        class="type-body h-auto w-full justify-start cursor-pointer rounded border-none bg-transparent px-0 py-0.5 text-left text-muted-foreground {!currentStatusMessage
           ? 'italic text-ghost'
           : ''}
                max-w-full break-words whitespace-pre-wrap
@@ -587,13 +597,14 @@
         <div class="flex h-5 min-w-0 flex-1 items-center leading-5" data-sidebar-branch-metadata>
           {#if isEditingBranch}
             <Input
+              variant="inline"
               bind:ref={branchInputRef}
               type="text"
               bind:value={editedBranch}
               onblur={saveBranch}
               onkeydown={handleBranchKeydown}
               disabled={isSavingBranch}
-              class="type-caption h-5 w-0 min-w-0 flex-1 rounded-sm bg-none px-1 py-0 leading-5 text-foreground
+              class="type-caption h-5 w-0 min-w-0 flex-1 rounded-sm bg-transparent px-0 py-0 leading-5 text-muted-foreground
                      outline-none focus:ring-none! focus:outline-none!
                      transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               placeholder={m.workspace_sidebarHeader_branchName_placeholder()}

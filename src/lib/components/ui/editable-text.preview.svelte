@@ -11,7 +11,7 @@
 
   export interface EditableTextPreviewProps {
     layout: 'normal' | 'edge-cases' | 'narrow' | 'dense-context';
-    mode: 'display' | 'editing';
+    mode: 'display' | 'editing' | 'comparison';
   }
 
   interface TextCase {
@@ -76,6 +76,7 @@
     states: {
       display: { props: { layout: 'normal', mode: 'display' } },
       editing: { props: { layout: 'normal', mode: 'editing' } },
+      comparison: { props: { layout: 'normal', mode: 'comparison' } },
       'edge-cases': { props: { layout: 'edge-cases', mode: 'display' } },
       'edge-cases-editing': { props: { layout: 'edge-cases', mode: 'editing' } },
       narrow: { props: { layout: 'narrow', mode: 'editing' } },
@@ -88,18 +89,33 @@
   import { onMount, tick } from 'svelte';
   import ContentHeader from '$features/layout/components/content-header/ContentHeader.svelte';
   import WorkspaceSidebarHeader from '$lib/components/workspace/WorkspaceSidebarHeader.svelte';
+  import WorkspaceProgressCard from '$lib/components/workspace/sidebar/WorkspaceProgressCard.svelte';
   import EditableName from '$lib/components/ui/EditableName.svelte';
+  import { store } from '$store/renderer/store';
+  import {
+    setWorkspaceEntity,
+    removeWorkspaceEntity,
+  } from '$store/renderer/slices/workspace/workspace-slice';
 
   let { layout, mode }: EditableTextPreviewProps = $props();
   let previewRoot: HTMLElement;
 
-  const cases = $derived(layout === 'edge-cases' ? edgeCases : normalCases);
-  const editableNameCases = $derived(layout === 'edge-cases' ? editableNameEdgeCases : normalCases);
-  const contentHeaderCases = $derived(
-    layout === 'edge-cases' ? contentHeaderEdgeCases : normalCases,
+  const comparisonCases = normalCases.flatMap((example) =>
+    ['display', 'editing'].map((state) => ({
+      ...example,
+      id: `${example.id}-${state}`,
+      label: state,
+    })),
   );
+  const cases = $derived(
+    layout === 'edge-cases' ? edgeCases : mode === 'comparison' ? comparisonCases : normalCases,
+  );
+  const editableNameCases = $derived(layout === 'edge-cases' ? editableNameEdgeCases : cases);
+  const contentHeaderCases = $derived(layout === 'edge-cases' ? contentHeaderEdgeCases : cases);
   const shouldEdit = (example: TextCase) =>
-    mode === 'editing' && !example.disabled && example.editable !== false;
+    (mode === 'editing' || (mode === 'comparison' && example.id.endsWith('-editing'))) &&
+    !example.disabled &&
+    example.editable !== false;
   const workspaceFor = (example: TextCase) =>
     workspaceFixture({
       id: WorkspaceId(`${PREVIEW_FIXTURE_IDS.workspace}-${example.id}`),
@@ -108,14 +124,16 @@
 
   async function enterRequestedEditors() {
     await tick();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const targets = Array.from(previewRoot.querySelectorAll<HTMLElement>('[data-edit-target]'));
     if (targets.length === 0) return;
 
     const suppressBlur = (event: FocusEvent) => event.stopImmediatePropagation();
     previewRoot.addEventListener('blur', suppressBlur, true);
+    previewRoot.addEventListener('focusout', suppressBlur, true);
     try {
       for (const target of targets) {
-        target.querySelector<HTMLButtonElement>('button:not(:disabled)')?.click();
+        target.querySelector<HTMLButtonElement>('button')?.click();
       }
       await tick();
       for (const target of targets) {
@@ -125,16 +143,29 @@
           input.value = editValue;
           input.dispatchEvent(new InputEvent('input', { bubbles: true }));
         }
+        input?.setSelectionRange(0, 0);
+        if (input) input.scrollLeft = 0;
       }
-      targets[0]?.querySelector<HTMLInputElement>('input[type="text"]')?.focus();
+      const firstInput = targets[0]?.querySelector<HTMLInputElement>('input[type="text"]');
+      firstInput?.focus();
+      firstInput?.setSelectionRange(0, 0);
+      if (firstInput) firstInput.scrollLeft = 0;
       await tick();
     } finally {
       previewRoot.removeEventListener('blur', suppressBlur, true);
+      previewRoot.removeEventListener('focusout', suppressBlur, true);
     }
   }
 
+  $effect.pre(() => {
+    for (const example of cases) store.dispatch(setWorkspaceEntity(workspaceFor(example)));
+  });
+
   onMount(() => {
     void enterRequestedEditors();
+    return () => {
+      for (const example of cases) store.dispatch(removeWorkspaceEntity(workspaceFor(example).id));
+    };
   });
 </script>
 
@@ -165,6 +196,22 @@
       {/each}
     </section>
   {:else}
+    <section class="grid gap-3">
+      <h2 class="text-lg font-semibold">Workspace title</h2>
+      <div class="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">
+        {#each cases as example (example.id)}
+          <div
+            class="min-w-0 rounded-md border border-border bg-sidebar p-3 text-sidebar-foreground"
+            data-edit-target={shouldEdit(example) ? true : undefined}
+            data-edit-value={example.editValue}
+          >
+            <p class="mb-3 text-xs text-muted-foreground">Workspace title — {example.label}</p>
+            <WorkspaceProgressCard workspaceId={workspaceFor(example).id} />
+          </div>
+        {/each}
+      </div>
+    </section>
+
     <section class="grid gap-3">
       <h2 class="text-lg font-semibold">EditableName</h2>
       <div class="grid gap-3 sm:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))]">

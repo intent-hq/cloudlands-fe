@@ -1,25 +1,12 @@
 import { expect, test } from '../../../../test/ct-test';
 import TerminalSidebarEditGeometryHost from './mocks/TerminalSidebarEditGeometryHost.svelte';
 
-function isTransparent(color: string) {
-  const normalized = color.replace(/\s+/g, '').toLowerCase();
-  return (
-    normalized === 'transparent' ||
-    /rgba\([^)]*,0(?:\.0+)?\)$/.test(normalized) ||
-    /color\([^)]*\/0(?:\.0+)?\)$/.test(normalized)
-  );
-}
-
 test('keeps script rename decoration visible, padded, unclipped, and motion-safe', async ({
   mount,
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(TerminalSidebarEditGeometryHost);
-  const decoration = component.locator('[data-script-rename-decoration="script-geometry"]');
-  expect(
-    isTransparent(await decoration.evaluate((node) => getComputedStyle(node).borderTopColor)),
-  ).toBe(true);
 
   await component.locator('[data-script-id="script-geometry"] [data-slot="list-item"]').dblclick();
   const input = component.locator('[data-edit-script="script-geometry"]');
@@ -54,7 +41,7 @@ test('keeps script rename decoration visible, padded, unclipped, and motion-safe
         top: inputRect.top - decorationRect.top,
         bottom: decorationRect.bottom - inputRect.bottom,
       },
-      borderColor: style.borderTopColor,
+
       transitionDurations: style.transitionDuration.split(',').map((value) => value.trim()),
       hasOverflowAncestor: clientRect !== null,
       decorationRect: decorationRect.toJSON(),
@@ -78,7 +65,7 @@ test('keeps script rename decoration visible, padded, unclipped, and motion-safe
   expect(result.margins.right).toBeGreaterThanOrEqual(4);
   expect(result.margins.top).toBeGreaterThanOrEqual(2);
   expect(result.margins.bottom).toBeGreaterThanOrEqual(2);
-  expect(isTransparent(result.borderColor)).toBe(false);
+
   expect(result.transitionDurations.every((duration) => duration === '0s')).toBe(true);
   expect(result.hasOverflowAncestor).toBe(true);
   expect(result.clipped).toBe(false);

@@ -30,6 +30,7 @@
 
 {#if rename.agentId === thread.agentId}
   <Input
+    variant="inline"
     bind:ref={rename.input}
     bind:value={rename.name}
     size="compact"
@@ -40,7 +41,7 @@
     disabled={rename.busy}
     onkeydown={rename.keydown}
     onblur={handleBlur}
-    class={cn('h-6! min-w-0 px-1 py-0', className, rename.error && 'border-danger')}
+    class={cn('min-w-0 py-0 type-caption', className, rename.error && 'ring-1 ring-danger')}
   />
 {:else}
   <Button

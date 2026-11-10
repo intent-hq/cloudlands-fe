@@ -838,6 +838,7 @@
                     >
                       {#if editingScriptId === script.id}
                         <Input
+                          variant="inline"
                           type="text"
                           data-edit-script={script.id}
                           bind:value={editingScriptName}
@@ -852,10 +853,10 @@
                       <span
                         aria-hidden="true"
                         data-script-rename-decoration={script.id}
-                        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingScriptId ===
+                        class="pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingScriptId ===
                         script.id
-                          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
-                          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                          ? '-inset-x-2 -inset-y-0.5 bg-hover dark:bg-surface-1'
+                          : '-inset-x-1 -inset-y-0.5 bg-transparent'}"
                       ></span>
                     </div>
                   {/snippet}

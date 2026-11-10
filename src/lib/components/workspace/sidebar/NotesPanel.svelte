@@ -581,13 +581,14 @@
                   {/if}
                 </div>
                 <Input
+                  variant="inline"
                   bind:ref={editInputRef}
                   type="text"
                   bind:value={editingValue}
                   onblur={saveEdit}
                   onkeydown={handleEditKeydown}
                   noFocusStyle
-                  class="inline-edit-input relative z-10 h-7 min-h-0 min-w-0 flex-1 border-none px-0 bg-transparent hover:bg-transparent type-caption font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+                  class="inline-edit-input relative z-10 h-auto min-h-0 min-w-0 flex-1 border-none px-0 bg-transparent hover:bg-transparent type-caption font-normal outline-none ring-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
                   onclick={(e) => e.stopPropagation()}
                 />
               </div>
@@ -795,10 +796,10 @@
             {/if}
             <span
               aria-hidden="true"
-              class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingNoteId ===
+              class="pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingNoteId ===
               note.id
-                ? 'inset-0 border-ring/60 bg-background'
-                : 'inset-0 border-transparent bg-transparent'}"
+                ? 'inset-0 bg-hover dark:bg-surface-1'
+                : 'inset-0 bg-transparent'}"
             ></span>
             {#if hasChildren}
               <span
