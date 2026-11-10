@@ -8452,5 +8452,8 @@
   "dock_logo_move_hint": "開啟 Intent · 拖曳以移動",
   "dock_recordingIndicator_open": "{status} · {elapsed} — 顯示錄製控制項",
   "dock_captureEditor_assistantUnavailable_error": "此連線無法在助理工作區中編輯。截圖或錄影內容會保留在草稿中。",
-  "dock_captureEditor_openFailed_error": "無法開啟編輯器。截圖或錄影內容會保留在草稿中。"
+  "dock_captureEditor_openFailed_error": "無法開啟編輯器。截圖或錄影內容會保留在草稿中。",
+  "dock_captureEditor_deleteScreenshot_label": "刪除螢幕截圖",
+  "dock_captureEditor_deleteRecording_label": "刪除錄製內容",
+  "dock_captureEditor_deleteFailed_error": "無法刪除此擷取內容。請再試一次。"
 }

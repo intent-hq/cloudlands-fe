@@ -8452,5 +8452,8 @@
   "dock_logo_move_hint": "Intent öffnen · Zum Verschieben ziehen",
   "dock_recordingIndicator_open": "{status} · {elapsed} — Aufnahmesteuerung anzeigen",
   "dock_captureEditor_assistantUnavailable_error": "Bearbeiten ist im Assistent-Arbeitsbereich mit dieser Verbindung nicht verfügbar. Deine Aufnahme bleibt im Entwurf.",
-  "dock_captureEditor_openFailed_error": "Der Editor konnte nicht geöffnet werden. Deine Aufnahme bleibt im Entwurf."
+  "dock_captureEditor_openFailed_error": "Der Editor konnte nicht geöffnet werden. Deine Aufnahme bleibt im Entwurf.",
+  "dock_captureEditor_deleteScreenshot_label": "Screenshot löschen",
+  "dock_captureEditor_deleteRecording_label": "Aufnahme löschen",
+  "dock_captureEditor_deleteFailed_error": "Diese Aufnahme konnte nicht gelöscht werden. Versuche es erneut."
 }

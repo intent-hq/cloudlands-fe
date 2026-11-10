@@ -8452,5 +8452,8 @@
   "dock_logo_move_hint": "Intent を開く · ドラッグで移動",
   "dock_recordingIndicator_open": "{status} · {elapsed} — 録画コントロールを表示",
   "dock_captureEditor_assistantUnavailable_error": "この接続ではアシスタントのワークスペースで編集できません。キャプチャは下書きに残ります。",
-  "dock_captureEditor_openFailed_error": "エディターを開けませんでした。キャプチャは下書きに残ります。"
+  "dock_captureEditor_openFailed_error": "エディターを開けませんでした。キャプチャは下書きに残ります。",
+  "dock_captureEditor_deleteScreenshot_label": "スクリーンショットを削除",
+  "dock_captureEditor_deleteRecording_label": "録画を削除",
+  "dock_captureEditor_deleteFailed_error": "このキャプチャを削除できませんでした。もう一度お試しください。"
 }

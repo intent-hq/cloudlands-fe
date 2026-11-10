@@ -8452,5 +8452,8 @@
   "dock_logo_move_hint": "Abrir Intent · Arrastra para mover",
   "dock_recordingIndicator_open": "{status} · {elapsed} — Mostrar controles de grabación",
   "dock_captureEditor_assistantUnavailable_error": "La edición no está disponible en el espacio de trabajo del Asistente con esta conexión. Tu captura se queda en el borrador.",
-  "dock_captureEditor_openFailed_error": "No se pudo abrir el editor. Tu captura se queda en el borrador."
+  "dock_captureEditor_openFailed_error": "No se pudo abrir el editor. Tu captura se queda en el borrador.",
+  "dock_captureEditor_deleteScreenshot_label": "Eliminar captura de pantalla",
+  "dock_captureEditor_deleteRecording_label": "Eliminar grabación",
+  "dock_captureEditor_deleteFailed_error": "No se pudo eliminar esta captura. Inténtalo de nuevo."
 }

@@ -8452,5 +8452,8 @@
   "dock_logo_move_hint": "Ouvrir Intent · Glisser pour déplacer",
   "dock_recordingIndicator_open": "{status} · {elapsed} — Afficher les commandes d’enregistrement",
   "dock_captureEditor_assistantUnavailable_error": "La modification n’est pas disponible dans l’espace de travail Assistant avec cette connexion. Votre capture reste dans le brouillon.",
-  "dock_captureEditor_openFailed_error": "Impossible d’ouvrir l’éditeur. Votre capture reste dans le brouillon."
+  "dock_captureEditor_openFailed_error": "Impossible d’ouvrir l’éditeur. Votre capture reste dans le brouillon.",
+  "dock_captureEditor_deleteScreenshot_label": "Supprimer la capture d’écran",
+  "dock_captureEditor_deleteRecording_label": "Supprimer l’enregistrement",
+  "dock_captureEditor_deleteFailed_error": "Impossible de supprimer cette capture. Réessayez."
 }
