@@ -263,13 +263,7 @@ export function buildDockComposerMedia(input: {
     ...(copy
       ? {
           // Live dictation is content: no hint under the words about to appear.
-          placeholder: view.dictation
-            ? ''
-            : view.annotating
-              ? copy.annotating
-              : view.tiles.length
-                ? copy.captured
-                : copy.idle,
+          placeholder: view.dictation ? '' : copy.idle,
         }
       : {}),
     state: {
