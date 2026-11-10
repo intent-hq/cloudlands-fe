@@ -16,6 +16,7 @@
   import { setUnifiedShellOpener } from '$lib/utils/show-workspace';
   import { userPreferencesPersistenceSaga } from '$store/renderer/slices/user-preferences/sagas/user-preferences-persistence-saga';
   import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+  import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
   import {
     selectConnectedIds,
@@ -249,6 +250,43 @@
     };
   });
 
+  // ── Shell overlays (menus, dialogs, palette) must show above the machine view. ──
+  // Views are native layers drawn over the shell, so while an overlay is open the
+  // view hides and a snapshot of it is painted in its place.
+  let overlaySnapshot = $state<string | null>(null);
+  let overlayOpen = false;
+  const OVERLAY_SELECTOR = '[role="menu"], [role="dialog"], [role="listbox"], [role="alertdialog"]';
+  $effect(() => {
+    let frame = 0;
+    const sync = () => {
+      frame = 0;
+      const open = document.querySelector(OVERLAY_SELECTOR) !== null;
+      if (open === overlayOpen) return;
+      overlayOpen = open;
+      if (!open) overlaySnapshot = null;
+      void invoke<{ snapshot: string | null }>(UNIFIED.SET_OVERLAY, { open })
+        .then((result) => {
+          if (overlayOpen && open) overlaySnapshot = result?.snapshot ?? null;
+        })
+        .catch(() => {});
+    };
+    const observer = new MutationObserver(() => {
+      if (!frame) frame = requestAnimationFrame(sync);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      observer.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+    };
+  });
+
+  // The machines menu's status dot follows the dropdown machine (the shell itself
+  // talks to no daemon).
+  $effect(() => {
+    const online = machineById.get(dropdownMachineId)?.online ?? false;
+    appStore.dispatch(connectionStatusChanged(online ? 'connected' : 'disconnected'));
+  });
+
   function chooseMachine(machineId: string) {
     dropdownMachineId = machineId;
     if (!machineById.get(machineId)?.online)
@@ -339,6 +377,15 @@
     }}
   />
   <div class="relative min-h-0 flex-1" bind:this={contentElement} data-unified-content>
+    {#if overlaySnapshot && selection.kind !== 'offline'}
+      <img
+        src={overlaySnapshot}
+        alt=""
+        class="pointer-events-none absolute inset-0 h-full w-full select-none"
+        draggable="false"
+        data-unified-view-snapshot
+      />
+    {/if}
     {#if selection.kind === 'offline'}
       <div class="h-full p-2 pt-0">
         <div class="h-full rounded-lg bg-background">

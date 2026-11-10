@@ -40,6 +40,7 @@ function fakeView(machineId: string) {
     setBounds: vi.fn(),
     setVisible: vi.fn(),
     send: vi.fn(),
+    capture: vi.fn(async () => `data:image/png;base64,${machineId}`),
     isDestroyed: () => destroyed,
     destroy: vi.fn(() => {
       destroyed = true;
@@ -163,5 +164,20 @@ describe('UnifiedWindowController', () => {
     ]);
     expect(h.controller.isOpen()).toBe(false);
     expect(h.controller.show('studio', '/')).toBe(false);
+  });
+
+  it('hides views behind a shell menu, hands back a snapshot, and restores them on close', async () => {
+    const h = harness();
+    await h.controller.openOrFocus();
+    h.controller.show('local', '/');
+    await expect(h.controller.setOverlay(true)).resolves.toBe('data:image/png;base64,local');
+    expect(h.views[0].setVisible).toHaveBeenLastCalledWith(false);
+
+    // A view shown while the menu is open stays hidden until it closes.
+    h.controller.show('studio', '/');
+    expect(h.views[1].setVisible).toHaveBeenLastCalledWith(false);
+
+    await expect(h.controller.setOverlay(false)).resolves.toBeNull();
+    expect(h.views[1].setVisible).toHaveBeenLastCalledWith(true);
   });
 });

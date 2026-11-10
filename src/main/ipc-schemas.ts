@@ -779,6 +779,7 @@ export const UnifiedContentBoundsSchema = z
   })
   .strict();
 export const UnifiedMachineSchema = z.object({ machineId: z.string().min(1) }).strict();
+export const UnifiedOverlaySchema = z.object({ open: z.boolean() }).strict();
 export const UnifiedOpenWorkspaceSchema = z
   .object({ workspaceId: z.string().min(1), route: z.string().startsWith('/').optional() })
   .strict();

@@ -15,6 +15,7 @@ import {
   UnifiedContentBoundsSchema,
   UnifiedMachineSchema,
   UnifiedOpenWorkspaceSchema,
+  UnifiedOverlaySchema,
   UnifiedSaveStateSchema,
   UnifiedSetTabsSchema,
   UnifiedShowSchema,
@@ -139,6 +140,14 @@ function viewHandle(window: BrowserWindow, machineId: string): UnifiedViewHandle
     },
     send(channel, payload) {
       if (!contents.isDestroyed()) contents.send(channel, payload);
+    },
+    async capture() {
+      if (contents.isDestroyed()) return null;
+      try {
+        return (await contents.capturePage()).toDataURL();
+      } catch {
+        return null;
+      }
     },
     isDestroyed: () => contents.isDestroyed(),
     destroy() {
@@ -369,6 +378,16 @@ export function registerUnifiedWindowHandlers(): void {
         ok: false,
       }),
       UNIFIED.CONNECT,
+    ),
+  );
+  ipcMain.handle(
+    UNIFIED.SET_OVERLAY,
+    createSafeValidatedHandler(
+      UnifiedOverlaySchema,
+      shellOnly(async ({ open }) => ({ snapshot: await controller.setOverlay(open) }), {
+        snapshot: null,
+      }),
+      UNIFIED.SET_OVERLAY,
     ),
   );
   ipcMain.handle(

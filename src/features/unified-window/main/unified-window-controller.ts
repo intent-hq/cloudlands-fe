@@ -16,6 +16,8 @@ export interface UnifiedViewHandle {
   setBounds(bounds: Rect): void;
   setVisible(visible: boolean): void;
   send(channel: string, payload: unknown): void;
+  /** A PNG data URL of what the view shows now (null when it cannot be captured). */
+  capture(): Promise<string | null>;
   isDestroyed(): boolean;
   destroy(): void;
 }
@@ -73,6 +75,8 @@ export class UnifiedWindowController {
   /** Machines connected for this window (with or without a view yet). */
   private readonly held = new Set<string>();
   private tabsByMachine: Record<string, string[]> = {};
+  /** A shell menu, dialog or palette is open: views are native layers drawn above it. */
+  private overlayOpen = false;
 
   constructor(private readonly host: UnifiedWindowHost) {}
 
@@ -156,10 +160,29 @@ export class UnifiedWindowController {
       const tabs = this.tabsByMachine[machineId];
       if (tabs) view.send(UNIFIED_SHELL_CHANNELS.TABS, { workspaceIds: tabs });
     }
-    for (const [id, other] of this.views) other.setVisible(id === machineId);
+    for (const [id, other] of this.views) other.setVisible(!this.overlayOpen && id === machineId);
     this.activeMachineId = machineId;
     this.host.activateView(window, view);
     return true;
+  }
+
+  /**
+   * A shell overlay (menu, dialog, palette) opened or closed. Views are native
+   * layers above the shell, so while it is open they hide; the shell paints a
+   * snapshot of the active view in their place so nothing visibly changes.
+   */
+  async setOverlay(open: boolean): Promise<string | null> {
+    this.overlayOpen = open;
+    const active = this.activeMachineId ? this.views.get(this.activeMachineId) : undefined;
+    if (!open) {
+      if (active && !active.isDestroyed()) active.setVisible(true);
+      return null;
+    }
+    const snapshot = active && !active.isDestroyed() ? await active.capture() : null;
+    // Closed again while capturing: keep the view shown.
+    if (!this.overlayOpen) return null;
+    for (const view of this.views.values()) if (!view.isDestroyed()) view.setVisible(false);
+    return snapshot;
   }
 
   /** The shell shows something itself (an offline tab): no machine view is visible. */

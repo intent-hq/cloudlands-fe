@@ -1202,6 +1202,8 @@ export const IPC_CHANNELS = {
     SET_TABS: 'unified:set-tabs',
     // Shell → main: hide every machine view (the shell shows an offline tab itself)
     HIDE_VIEWS: 'unified:hide-views',
+    // Shell → main: a shell menu/dialog opened or closed { open } → { snapshot: dataURL | null }
+    SET_OVERLAY: 'unified:set-overlay',
     // Main → shell push: a tab shortcut pressed while a machine view had focus { command, index? }
     SHORTCUT: 'unified:shortcut',
   },
