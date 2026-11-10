@@ -118,9 +118,9 @@ export function getDockShellLayout(
       ? placement.cutout.x + placement.cutout.width / 2 - full.x
       : full.width / 2;
   const openHeight =
-    edge || dragging || expandedHeight === null
+    edge || dragging
       ? full.height
-      : Math.max(compactHeight, Math.min(full.height, expandedHeight));
+      : Math.max(compactHeight, Math.min(full.height, expandedHeight ?? desiredHeight));
   const width = Math.min(full.width, compactWidth + (full.width - compactWidth) * progress);
   const height = Math.min(full.height, compactHeight + (openHeight - compactHeight) * progress);
   const openY = floatingUp ? full.height - openHeight : 0;

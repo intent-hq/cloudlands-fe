@@ -304,8 +304,8 @@
   $effect(() => {
     const wantOpen = expanded;
     const moving = dragging;
-    // A cold keyboard open is immediate; reversing an active close keeps its velocity.
-    const instant = reducedMotion || (keyboardOpen && untrack(() => reveal) === 0);
+    // Keyboard focus is immediate; normal opening and reversals keep the spring.
+    const instant = reducedMotion;
     const room = edge
       ? placement.surface.width > compactWidth || placement.surface.height > compactHeight
       : placement.surface.height > compactHeight;

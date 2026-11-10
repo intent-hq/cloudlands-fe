@@ -12,6 +12,7 @@
     focusRequest = 0,
     focusComposerOnMount = false,
     active = true,
+    focusActive = active,
     resizable = true,
     clip,
     rect,
@@ -23,6 +24,8 @@
     focusRequest?: number;
     focusComposerOnMount?: boolean;
     active?: boolean;
+    /** Admit typing during opening without enabling popups or resize handles early. */
+    focusActive?: boolean;
     /** False while the visible shell still clips the panel edges (height settling). */
     resizable?: boolean;
     /** Inline only: current visible host ink in viewport CSS pixels. Detached panels omit it. */
@@ -111,7 +114,7 @@
     const id = workspaceId;
     const request = focusRequest;
     const composerOnMount = focusComposerOnMount;
-    if (!element || !active) return;
+    if (!element || !focusActive) return;
     untrack(() => {
       const changed = id !== lastWorkspace;
       // A switch to the conversation a click asked for focuses its composer too.
@@ -123,7 +126,7 @@
       if (!explicitFocus && !changed) return;
       // The composer can render a few frames after the conversation: retry briefly.
       const focus = (attempt: number): void => {
-        if (disposed || !active || workspaceId !== id || !element.isConnected) return;
+        if (disposed || !focusActive || workspaceId !== id || !element.isConnected) return;
         const composer = explicitFocus
           ? element.querySelector<HTMLElement>('[data-dock-conversation-composer]:not(:disabled)')
           : null;

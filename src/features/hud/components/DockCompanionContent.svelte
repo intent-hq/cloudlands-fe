@@ -35,7 +35,7 @@
     conversation?: Snippet;
     conversationWorkspaceId?: string | null;
     focusRequest: number;
-    /** A user gesture opened this conversation: focus its composer once it settles. */
+    /** A user gesture opened this conversation: focus its composer as it opens. */
     focusComposerOnMount?: boolean;
     onOpen: (id: string) => void;
     onRegionsChange: (regions: DockPointerRect[]) => void;
@@ -62,6 +62,7 @@
       resizable={!settling}
       {clip}
       active={expanded && reveal === 1}
+      focusActive={expanded && reveal > 0}
       {onRegionsChange}
       {onPopupStateChange}
     >
