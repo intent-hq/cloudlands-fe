@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.310.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.1...v2.310.2) (2026-11-10)
+
+
+### 🐛 Bug Fixes
+
+* **build:** warn from build:main when node_modules is out of sync ([#4400](https://github.com/intent-hq/cloudlands-fe/issues/4400)) ([21ba504](https://github.com/intent-hq/cloudlands-fe/commit/21ba504cd2be2c9713b551fcca22961e93d66ad8))
+* **deps:** upgrade mermaid to 12 to drop vulnerable katex 0.16 ([#4397](https://github.com/intent-hq/cloudlands-fe/issues/4397)) ([c4e74f3](https://github.com/intent-hq/cloudlands-fe/commit/c4e74f35a32a522d61e7bfec7e7bf7b0d037740c))
+
 ## [2.310.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.0...v2.310.1) (2026-11-10)
 
 
