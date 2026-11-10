@@ -826,6 +826,10 @@ function* onNativeMark(
   );
   if (owner?.annotation && discardedSessions.has(event.sessionId)) {
     const [ws, agent] = JSON.parse(owner.id) as [string, string];
+    if (nativeId && activePair(ws, agent) && owner.marks.some((mark) => mark.id === nativeId)) {
+      yield* answerNativeMark(event.sessionId, nativeId, true);
+      return;
+    }
     yield* rejectNativeMark(ws, agent, event.sessionId, nativeId);
     return;
   }

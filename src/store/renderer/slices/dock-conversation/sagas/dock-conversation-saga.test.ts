@@ -2216,10 +2216,11 @@ describe('dock annotate start feedback, refusals and dictation', () => {
       native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
       await new Promise((r) => setTimeout(r, 0));
       expect(mouse).toHaveBeenCalledWith(sessionId);
-      native.emit({ type: 'mark', sessionId, markId: 'late-discard', tool: 'box', geometry: { kind: 'box', x: 10, y: 10, w: 30, h: 30 }, element: null, capture: shot(1) });
+      native.emit({ type: 'mark', sessionId, markId: 'late-discard', tool: 'box', geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 }, element: null, capture: shot(1) });
       native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
       await new Promise((r) => setTimeout(r, 0));
       expect(evidenceView().evidence?.marks).toEqual(marksBefore);
+      expect(native.calls.acks).toContainEqual([sessionId, 'late-discard', false]);
       expect(evidenceView().evidence?.images).toEqual(imagesBefore);
       expect(tool).not.toHaveBeenCalled();
       if (replaceOwner) configureDockEvidenceNative(scriptedNative({ record: true }).service);
