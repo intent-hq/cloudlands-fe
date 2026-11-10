@@ -45,11 +45,8 @@ describe('renderKatexToString strict policy', () => {
   });
 
   it('does not trust commands that need trust', () => {
-    expect(
-      errorTitle(renderKatexToString(String.raw`\href{https://example.com}{x}`, false)),
-    ).toBeUndefined();
-    expect(renderKatexToString(String.raw`\href{https://example.com}{x}`, false)).not.toContain(
-      '<a ',
-    );
+    const html = renderKatexToString(String.raw`\href{https://example.com}{x}`, false);
+    expect(errorTitle(html)).toBeUndefined();
+    expect(html).not.toContain('<a ');
   });
 });
