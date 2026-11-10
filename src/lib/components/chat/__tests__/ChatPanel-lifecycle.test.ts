@@ -4336,7 +4336,12 @@ describe('ChatPanel mounted lifecycle', () => {
     expect(replacementObserver).not.toBe(previousObserver);
     replacementObserver.fire([{ target: shellB, isIntersecting: false }]);
     await tick();
-    const replacementBounds = vi.spyOn(messageB, 'getBoundingClientRect');
+    // The pill scrolls to the pending card itself (found by its daemon key),
+    // not merely to the carrying message.
+    const cardB = document.createElement('div');
+    cardB.setAttribute('data-pending-proposal-key', proposalB.proposalId);
+    messageB.append(cardB);
+    const replacementBounds = vi.spyOn(cardB, 'getBoundingClientRect');
     mocks.animateScrollTo.mockClear();
     await fireEvent.click(screen.getByTestId('pending-proposal-chip'));
     await tick();

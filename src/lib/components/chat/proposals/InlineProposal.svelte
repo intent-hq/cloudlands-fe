@@ -3,15 +3,24 @@
   import { Button } from '$lib/components/ui/button';
   import { m } from '$shared/paraglide/messages.js';
   import type { Proposal } from '$shared/types/proposal';
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import {
+    selectAgentMessageById,
+    selectAgentSession,
+  } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import ProposalCard from './ProposalCard.svelte';
   import DismissProposalConfirmDialog from './DismissProposalConfirmDialog.svelte';
-  import { classifyPendingProposalRefs, pendingProposalKeyOf } from './pending-proposals';
+  import {
+    classifyPendingProposalRefs,
+    getProposalLifecycleEntry,
+    isPendingProposalCard,
+    pendingProposalKeyOf,
+    proposalOutcomeOf,
+    proposalsOf,
+  } from './pending-proposals';
   import {
     applyProposal,
     dismissProposal,
-    getProposalLifecycleEntry,
     reconcileAppliedProposals,
     rememberProposalIdentity,
     undoProposal,
@@ -37,6 +46,7 @@
   const proposalId = $derived(pendingProposalKeyOf(proposal));
   const localProposalId = $derived(getCardProposalId(proposal, agentId, messageId));
   const agentSession$ = $derived(selectAgentSession(agentId));
+  const carryingMessage$ = $derived(selectAgentMessageById(agentId, messageId));
   const lifecycleMap$ = selectProposalLifecycleMap();
   let initialDraft = $state<ProposalCardDraft | null>(null);
   let initialDraftLoaded = $state(false);
@@ -53,17 +63,25 @@
   const lifecycleEntry = $derived(
     getProposalLifecycleEntry($lifecycleMap$, agentId, proposalId, localProposalId),
   );
-  const localOutcome = $derived(
-    lifecycleEntry?.status === 'applied' || lifecycleEntry?.status === 'dismissed'
-      ? lifecycleEntry.status
-      : undefined,
-  );
-  const outcome = $derived(
-    localOutcome ?? $agentSession$?.metadata?.proposalResolutions?.[proposalId],
-  );
+  const outcomeSources = $derived({
+    lifecycle: $lifecycleMap$,
+    resolutions: $agentSession$?.metadata?.proposalResolutions,
+  });
+  const outcome = $derived(proposalOutcomeOf(agentId, outcomeSources, proposalId, localProposalId));
   const isApplied = $derived(outcome === 'applied');
   const isDismissed = $derived(outcome === 'dismissed');
-  const isPending = $derived(Boolean(matchingRef) && !isApplied && !isDismissed);
+  // Same rule as the composer pill (`effectivelyPendingProposalRefs` in ChatPanel).
+  const isPending = $derived(
+    isPendingProposalCard({
+      agentId,
+      refs: pendingRefs,
+      sources: outcomeSources,
+      proposal,
+      messageId,
+      localId: localProposalId,
+      messageProposals: $carryingMessage$ ? proposalsOf($carryingMessage$) : undefined,
+    }),
+  );
   const canUndo = $derived(
     lifecycleEntry?.status === 'applied' &&
       (proposal.kind === 'settings-change' || proposal.kind === 'specialist-edit'),
@@ -118,7 +136,7 @@
   }
 
   $effect(() => {
-    rememberProposalIdentity(agentId, proposalId, localProposalId);
+    rememberProposalIdentity(agentId, { proposalId, messageId }, localProposalId);
     void $lifecycleMap$;
     if (!matchingRef) return;
     reconcileAppliedProposals({
@@ -146,7 +164,13 @@
 </script>
 
 {#if isPending || isApplied || isDismissed}
-  <div class="my-4 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}" data-inline-proposal>
+  <!-- The composer pill's click finds the card a pending ref points at by
+       this daemon-parity key (id or title), so id-less cards resolve too. -->
+  <div
+    class="my-4 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+    data-inline-proposal
+    data-pending-proposal-key={isPending ? proposalId : undefined}
+  >
     {#if isPending}
       {#if initialDraftLoaded}
         <ProposalCard
@@ -156,7 +180,7 @@
           suppressLocalDiscard
           {initialDraft}
           onDraftChange={handleDraftChange}
-          onApply={(detail) => applyProposal(agentId, detail)}
+          onApply={(detail) => applyProposal(agentId, detail, messageId)}
           onDiscard={() =>
             proposal.kind === 'workspace-transfer'
               ? handleConfirmDismiss()

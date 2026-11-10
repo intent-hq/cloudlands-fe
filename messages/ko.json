@@ -928,6 +928,7 @@
   "chat_proposalTray_forward_ariaLabel": "다음 제안",
   "chat_proposalTray_hide_label": "숨기기",
   "chat_proposalTray_hide_tooltip": "다시 펼칠 때까지 숨깁니다",
+  "chat_proposalTray_notFound_error": "이 대화에서 해당 대기 중인 제안을 찾을 수 없습니다.",
   "chat_proposalTray_stepCounter_label": "{total}개 중 {current}번째",
   "chat_proposalTray_title": "대기 중인 제안",
   "chat_providerFailoverNotice_fallback_label": "백업 공급자로 전환했습니다",

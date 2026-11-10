@@ -70,6 +70,7 @@ vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
       },
     })),
   ),
+  selectAgentMessageById: vi.fn(() => readable(() => undefined)),
 }));
 vi.mock('$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors', () => ({
   selectProposalLifecycleMap: vi.fn(() => readable(() => state.lifecycle)),
