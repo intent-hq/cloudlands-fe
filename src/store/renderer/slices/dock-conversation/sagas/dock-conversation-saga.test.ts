@@ -1949,6 +1949,35 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
 });
 
 describe('recording toolbar startup admission', () => {
+  it('does not reopen Annotate when cancelled START settles before the held STOP reply', async () => {
+    const native = scriptedNative({ record: true });
+    const start = deferred<Awaited<ReturnType<DockEvidenceNativeService['startClip']>>>();
+    const stop = deferred<Awaited<ReturnType<DockEvidenceNativeService['stopClip']>>>();
+    const startClip = vi.spyOn(native.service, 'startClip').mockReturnValue(start.promise);
+    const stopClip = vi.spyOn(native.service, 'stopClip').mockReturnValue(stop.promise);
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(startClip).toHaveBeenCalledTimes(1));
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(stopClip).toHaveBeenCalledTimes(1));
+    const cancelled = { ok: false, error: 'failed', detail: 'cancelled' } as const;
+    try {
+      start.resolve(cancelled);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(native.calls.started).toHaveLength(1);
+      expect(evidenceView().annotating).toBe(false);
+      expect(evidenceView().clips).toEqual([]);
+      expect(evidenceView().captureError).toBeNull();
+      expect(notifications.warning).not.toHaveBeenCalled();
+    } finally {
+      stop.resolve(cancelled);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(native.calls.started).toHaveLength(1);
+    expect(evidenceView().recording).toBe(false);
+  });
+
   it('refuses an unsupported Record before opening a toolbar or calling native recording', async () => {
     const native = scriptedNative();
     const startClip = vi.spyOn(native.service, 'startClip');

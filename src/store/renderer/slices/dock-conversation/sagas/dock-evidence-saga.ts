@@ -1127,6 +1127,7 @@ function* toggleRecording({
               },
         ),
       );
+    if (clipCancelled(started)) return 'cancelled';
   } finally {
     startingRecordings.delete(service);
   }
