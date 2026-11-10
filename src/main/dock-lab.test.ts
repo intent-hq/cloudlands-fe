@@ -1,7 +1,7 @@
 /**
- * The main-owned dock setting. Startup load under the default-on policy: a profile
- * that never chose is opted in, an explicit saved opt-out stays off, and a read
- * failure keeps the dock off rather than guessing. And the `window:set-dock-lab`
+ * The main-owned dock setting. Startup load: a saved opt-in turns the dock on, a
+ * saved opt-out or a profile that never chose stays off, and a read failure keeps
+ * the dock off rather than guessing. And the `window:set-dock-lab`
  * handler's lifecycle: a disable from Settings stops the dock at once (even if the
  * save fails); a disable from the dock itself (its intro's "Turn off") closes the
  * dock only after the save is confirmed, so a failed save leaves it open to retry.
@@ -40,13 +40,13 @@ beforeEach(() => {
 });
 
 describe('loadDockLabEnabled', () => {
-  it('is on for a profile that never chose (the preference reads as on)', async () => {
+  it('is on when the saved preference is on', async () => {
     mocks.read.mockResolvedValue(true);
     await expect(loadDockLabEnabled()).resolves.toBe(true);
     expect(isDockLabEnabled()).toBe(true);
   });
 
-  it('keeps an explicit saved opt-out off', async () => {
+  it('stays off when the preference reads as off (opt-out or never chose)', async () => {
     mocks.read.mockResolvedValue(false);
     await expect(loadDockLabEnabled()).resolves.toBe(false);
     expect(isDockLabEnabled()).toBe(false);
