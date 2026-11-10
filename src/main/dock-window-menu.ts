@@ -37,7 +37,7 @@ export function dockWindowMenuItems(deps: {
     const hint = deps.hint(action);
     return {
       label: deps.labels[action],
-      // Registered globally; a menu accelerator would dispatch twice.
+      // Global shortcuts own these keys; keep menu hints display-only.
       sublabel: hint.available ? hint.key : deps.labels.unavailable,
       enabled: deps.dockShown,
       click: () => deps.requestShortcut(action),
