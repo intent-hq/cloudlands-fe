@@ -1166,7 +1166,7 @@ export function createEditorConfig(options: EditorConfigOptions): EditorOptions 
 
         const suggestionElement = target.closest<HTMLElement>('.suggestion[data-suggestion-id]');
         const suggestion = suggestionElement && readSuggestionElement(suggestionElement);
-        if (suggestionElement && suggestion && onSuggestionClick) {
+        if (suggestionElement && suggestion && onSuggestionClick && _view.editable) {
           onSuggestionClick(suggestion, suggestionElement);
           return true;
         }

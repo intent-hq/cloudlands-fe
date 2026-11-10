@@ -5,7 +5,11 @@ export interface SuggestionOptions {
   HTMLAttributes: Record<string, any>;
 }
 
-type SuggestionType = 'addition' | 'deletion' | 'modification';
+const SUGGESTION_TYPES = ['addition', 'deletion', 'modification'] as const;
+type SuggestionType = (typeof SUGGESTION_TYPES)[number];
+
+const isSuggestionType = (value: string | null): value is SuggestionType =>
+  (SUGGESTION_TYPES as readonly (string | null)[]).includes(value);
 
 export interface SuggestionDetails {
   id: string;
@@ -15,17 +19,15 @@ export interface SuggestionDetails {
   originalText?: string;
 }
 
-const SUGGESTION_TYPES: readonly string[] = ['addition', 'deletion', 'modification'];
-
 /** Read the suggestion a rendered `.suggestion` span carries. */
 export function readSuggestionElement(element: Element): SuggestionDetails | null {
   const id = element.getAttribute('data-suggestion-id');
   if (!id) return null;
-  const type = element.getAttribute('data-suggestion-type') ?? 'addition';
+  const type = element.getAttribute('data-suggestion-type');
   const optional = (name: string) => element.getAttribute(name) || undefined;
   return {
     id,
-    type: (SUGGESTION_TYPES.includes(type) ? type : 'addition') as SuggestionType,
+    type: isSuggestionType(type) ? type : 'addition',
     author: optional('data-suggestion-author'),
     reason: optional('data-suggestion-reason'),
     originalText: optional('data-suggestion-original'),
@@ -75,7 +77,7 @@ declare module '@tiptap/core' {
        */
       setSuggestion: (attributes?: {
         id: string;
-        type: 'addition' | 'deletion' | 'modification';
+        type: SuggestionType;
         author?: string;
         reason?: string;
         originalText?: string;
@@ -85,7 +87,7 @@ declare module '@tiptap/core' {
        */
       toggleSuggestion: (attributes?: {
         id: string;
-        type: 'addition' | 'deletion' | 'modification';
+        type: SuggestionType;
         author?: string;
         reason?: string;
         originalText?: string;
@@ -108,6 +110,8 @@ declare module '@tiptap/core' {
 
 export const Suggestion = Mark.create<SuggestionOptions>({
   name: 'suggestion',
+
+  inclusive: false,
 
   addOptions() {
     return {

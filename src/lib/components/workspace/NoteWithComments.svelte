@@ -777,7 +777,7 @@
 
     wasRawNoteViewEnabled = true;
     showCommentDialog = false;
-    selectedSuggestion = null;
+    closeSuggestion();
     taskMenuData = [];
     cleanupCommentClickHandler?.();
     cleanupCommentClickHandler = null;
@@ -932,11 +932,29 @@
     selectedSuggestion = suggestion;
   }
 
+  function closeSuggestion() {
+    selectedSuggestion = null;
+    suggestionAnchor = null;
+  }
+
+  function closeDetachedSuggestion() {
+    if (suggestionAnchor && !suggestionAnchor.isConnected) closeSuggestion();
+  }
+
   async function handleSuggestionDecision(decision: SuggestionDecision) {
     const suggestionId = selectedSuggestion?.id;
     if (!editor || !suggestionId) return;
-    selectedSuggestion = null;
-    await applySuggestionDecision(editor, suggestionId, decision, () => saveEditorContent(true));
+    try {
+      const applied = await applySuggestionDecision(editor, suggestionId, decision, () =>
+        saveEditorContent(true),
+      );
+      if (!applied)
+        logger.warn('[NoteWithComments] Suggestion no longer in note', { suggestionId });
+    } catch (error) {
+      logger.error('[NoteWithComments] Failed to apply suggestion decision', error);
+    } finally {
+      closeSuggestion();
+    }
   }
 
   function syncTaskAgentAssociations() {
@@ -1293,6 +1311,7 @@
     });
 
     editor = new Editor(config);
+    editor.on('transaction', closeDetachedSuggestion);
 
     logger.debug('[NoteWithComments] Editor created successfully', {
       noteId,
@@ -1454,6 +1473,7 @@
 
   // Cleanup
   function cleanup() {
+    closeSuggestion();
     // Flush any pending save BEFORE destroying the editor
     // This prevents data loss when switching to version view or navigating away
     // Must happen before cleanupFn() which destroys the editor
@@ -2279,7 +2299,7 @@
           anchor={suggestionAnchor}
           onAccept={() => void handleSuggestionDecision('accept')}
           onReject={() => void handleSuggestionDecision('reject')}
-          onClose={() => (selectedSuggestion = null)}
+          onClose={closeSuggestion}
         />
 
         <!-- Bubble Menu for formatting and comments -->

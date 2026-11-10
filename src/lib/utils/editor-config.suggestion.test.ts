@@ -11,13 +11,13 @@ afterEach(() => {
   editor = undefined;
 });
 
-function createNoteEditor(content: string, onSuggestionClick = vi.fn()) {
+function createNoteEditor(content: string, onSuggestionClick = vi.fn(), editable = true) {
   const element = document.createElement('div');
   document.body.appendChild(element);
   const config = createEditorConfig({
     element,
     content,
-    editable: true,
+    editable,
     onUpdate: () => {},
     onSuggestionClick,
     workspace: { id: 'workspace-1' },
@@ -36,7 +36,7 @@ function clickSuggestion(
   const target = element.querySelector('.suggestion') as HTMLElement;
   const event = new MouseEvent('click', { bubbles: true, cancelable: true });
   Object.defineProperty(event, 'target', { value: target });
-  return { handled: config.editorProps?.handleClick?.({} as never, 0, event), target };
+  return { handled: config.editorProps?.handleClick?.(editor!.view, 0, event), target };
 }
 
 const suggestionHtml = (type: string, text: string) =>
@@ -83,6 +83,28 @@ describe('note editor inline suggestions', () => {
       expect(element.querySelector('.suggestion')).toBeNull();
     },
   );
+
+  it('keeps text typed at the end of a suggestion out of the suggestion', async () => {
+    const { element } = createNoteEditor(suggestionHtml('addition', 'proposed'));
+    const end = editor!.getText().indexOf(' text') + 1;
+
+    editor!.view.dispatch(editor!.state.tr.insertText(' today', end));
+    expect(element.querySelector('.suggestion')?.textContent).toBe('proposed');
+
+    await applySuggestionDecision(editor!, 'suggestion-1', 'reject', async () => {});
+    expect(editor!.getText()).toBe('Keep  today text');
+  });
+
+  it('does not open suggestion decisions in a read-only note', () => {
+    const { config, element, onSuggestionClick } = createNoteEditor(
+      suggestionHtml('addition', 'proposed'),
+      vi.fn(),
+      false,
+    );
+
+    expect(clickSuggestion(config, element).handled).toBeFalsy();
+    expect(onSuggestionClick).not.toHaveBeenCalled();
+  });
 
   it('does not persist a decision for a suggestion that is no longer in the note', async () => {
     createNoteEditor('<p>Plain text</p>');
