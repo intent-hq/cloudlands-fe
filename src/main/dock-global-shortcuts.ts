@@ -26,6 +26,7 @@ import type { DockShortcutContext } from '../shared/dock-shortcuts';
 const logger = new Logger('DockGlobalShortcuts');
 let generation = 0;
 let enabled = false;
+let admissionSettings = '';
 const registration = createDockShortcutRegistration(
   globalShortcut,
   (action) => void requestDockShortcut(action),
@@ -62,7 +63,13 @@ const preferences = createDockShortcutPreferences({
   },
   changed(snapshot: DockShortcutSettingsSnapshot) {
     // A foreground read admitted under older bindings/capture ownership cannot act later.
-    generation++;
+    const admission = JSON.stringify([
+      snapshot.revision, snapshot.enabled, snapshot.capturing, snapshot.registered,
+    ]);
+    if (admission !== admissionSettings) {
+      admissionSettings = admission;
+      generation++;
+    }
     for (const window of BrowserWindow.getAllWindows())
       if (!window.isDestroyed() && !window.webContents.isDestroyed())
         window.webContents.send(IPC_CHANNELS.DOCK_SHORTCUTS.CHANGED, snapshot);

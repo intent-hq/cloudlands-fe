@@ -81,6 +81,15 @@ describe('dock shortcut async admission', () => {
     );
   });
 
+  it('keeps an admitted lookup current through an unchanged settings refresh', async () => {
+    const finish = heldObservation();
+    const pending = requestDockShortcut('capture');
+    await fixture.service!.refresh({});
+    finish();
+    await pending;
+    expect(fixture.focus).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['capture active', 'capture ended', 'bindings changed'] as const)(
     'retires a foreground lookup after %s',
     async (change) => {
