@@ -1094,6 +1094,7 @@ const bootFlow = app.whenReady().then(async () => {
         setNotchDock: changeDockLabEnabled,
         requestShortcut: (action) => void requestDockShortcut(action),
         warn: (error) => logger.warn('Failed to change the dock', { error }),
+        refresh: () => void rebuildMenu(),
       }),
       {
         label: m.menu_select_previous_tab(),

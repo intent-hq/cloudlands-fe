@@ -18,13 +18,19 @@ export function dockWindowMenuItems(deps: {
   setNotchDock: (enabled: boolean) => Promise<unknown>;
   requestShortcut: (action: DockMenuAction) => void;
   warn: (error: unknown) => void;
+  /** Rebuild the menu from main's state (a failed save leaves the native check flipped). */
+  refresh: () => void;
 }): MenuItemConstructorOptions[] {
   const show: MenuItemConstructorOptions = {
     label: deps.labels.show,
     type: 'checkbox',
     checked: deps.labEnabled,
     // Electron flips the checkbox before calling click: `checked` is the requested state.
-    click: (item) => void deps.setNotchDock(item.checked).catch(deps.warn),
+    click: (item) =>
+      void deps.setNotchDock(item.checked).catch((error: unknown) => {
+        deps.warn(error);
+        deps.refresh();
+      }),
   };
   if (!deps.labEnabled) return [show, { type: 'separator' }];
   const command = (action: DockMenuAction): MenuItemConstructorOptions => {
