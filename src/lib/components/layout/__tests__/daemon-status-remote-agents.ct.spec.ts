@@ -89,7 +89,7 @@ test('Hosted agents show their name and workspace; local rows show the workspace
   await expect(dialog.getByText(/ws-remote-/)).toHaveCount(0);
   // A local row with a title shows it instead of the raw id; one without keeps the id.
   await expect(dialog.getByText(/^Workspace Dark mode toggle( · |$)/)).toBeVisible();
-  await expect(dialog.getByText(/ws-dark-mode/)).toHaveCount(0);
+  await expect(dialog.getByText(/^Workspace ws-dark-mode/)).toHaveCount(0);
   await expect(dialog.getByText(/^Workspace ws-flaky-ct( · |$)/)).toBeVisible();
   await attach(testInfo, 'agent-memory-hosted-labels.png', await dialog.screenshot());
 });
