@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { protocolAdapter } from '$features/protocol/main/protocol-adapter';
 import { isInviteUri } from '$shared/utils/invite-uri';
-import { isPairingUri } from '$shared/utils/pairing-uri';
+import { isMainOnlyLinkUri } from '$shared/utils/node-invite-uri';
 import type { Workspace } from '../../shared/types';
 import { Logger } from '../../shared/logger';
 import { scrubToken } from './utils/scrub-token';
@@ -10,8 +10,8 @@ import { queueDeepLinkForWindow } from './main/pending-deep-links';
 const mainLogger = new Logger('DeepLinkHandler');
 
 export interface DeepLinkAction {
-  /** `node-link` is queued by the pair-link flow only, never parsed from a URL. */
-  type: 'open' | 'create' | 'clone' | 'settings' | 'node-link';
+  /** `node-link` and `node-invite` are queued by main only, never parsed from a URL. */
+  type: 'open' | 'create' | 'clone' | 'settings' | 'node-link' | 'node-invite';
   params: Record<string, string>;
 }
 
@@ -88,7 +88,7 @@ export class DeepLinkHandler {
   async handleDeepLink(url: string, mainWindow: BrowserWindow | null): Promise<void> {
     // Pair links are handled entirely in the main process: the bearer token in
     // the URL must never reach the renderer (IPC payload or load URL query).
-    if (isPairingUri(url)) {
+    if (isMainOnlyLinkUri(url)) {
       if (!mainWindow) {
         // Cold start — park until startup finishes (processPendingUrl), when
         // the connections store and backend IPC are available.

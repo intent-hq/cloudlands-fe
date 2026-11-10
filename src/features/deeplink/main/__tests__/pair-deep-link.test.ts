@@ -85,6 +85,10 @@ const pairLinks = vi.hoisted(() => ({
   discard: vi.fn(),
 }));
 vi.mock('../../../backend/main/pair-link.ipc', () => ({ getPairLinks: () => pairLinks }));
+const nodeInvites = vi.hoisted(() => ({ inspect: vi.fn(), claim: vi.fn(), discard: vi.fn() }));
+vi.mock('../../../backend/main/remote-machines.ipc', () => ({
+  getNodeInvites: () => nodeInvites,
+}));
 const queueDeepLinkForWindow = vi.hoisted(() => vi.fn());
 vi.mock('../pending-deep-links', () => ({ queueDeepLinkForWindow }));
 
@@ -210,6 +214,50 @@ describe('a node pairing link', () => {
     expect(openBackendWindow).not.toHaveBeenCalled();
     expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
     expect(showMessageBox).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a node invite link', () => {
+  const SECRET = 'invite-secret-value';
+  const NODE_INVITE = `intent://node?v=1&host=192.0.2.20&port=7443&fp=${PIN}&invite=inv_1&secret=${SECRET}`;
+  const window = {
+    isDestroyed: () => false,
+    isMinimized: () => false,
+    show: vi.fn(),
+    focus: vi.fn(),
+  };
+
+  it('holds the link in main and asks in the app window with the pending id only', async () => {
+    mainWindow = window;
+    nodeInvites.inspect.mockReturnValue({ ok: true, pendingId: 'inv-p', label: 'GPU rig' });
+    await handlePairDeepLink(NODE_INVITE);
+    expect(nodeInvites.inspect).toHaveBeenCalledWith(NODE_INVITE);
+    expect(queueDeepLinkForWindow).toHaveBeenCalledWith(window, {
+      type: 'node-invite',
+      params: { pendingId: 'inv-p', label: 'GPU rig' },
+    });
+    expect(window.focus).toHaveBeenCalled();
+    expect(inspectCredential).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+    expect(openBackendWindow).not.toHaveBeenCalled();
+    expect(logLines.join('\n')).not.toContain(SECRET);
+  });
+
+  it('a bad link shows why in a native dialog and asks nothing', async () => {
+    nodeInvites.inspect.mockReturnValue({ ok: false, code: 'link-version' });
+    await handlePairDeepLink(NODE_INVITE.replace('v=1', 'v=2'));
+    expect(showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('newer version of Intent') }),
+    );
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
+  });
+
+  it('drops the held link when there is no app window to ask in', async () => {
+    nodeInvites.inspect.mockReturnValue({ ok: true, pendingId: 'inv-p', label: 'GPU rig' });
+    openBackendWindow.mockResolvedValue(undefined);
+    await handlePairDeepLink(NODE_INVITE);
+    expect(nodeInvites.discard).toHaveBeenCalledWith('inv-p');
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
   });
 });
 

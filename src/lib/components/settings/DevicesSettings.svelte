@@ -23,6 +23,14 @@
   } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
   import RemoteMachinesSection from '$features/remote-machines/RemoteMachinesSection.svelte';
+  import RemoteMachineRow from '$features/remote-machines/RemoteMachineRow.svelte';
+  import {
+    selectLocalMachineFingerprint,
+    selectRemoteMachines,
+    selectRemoteMachinesVisible,
+  } from '$features/remote-machines/remote-machines-selectors';
+  import { connectionForMachine } from '$features/remote-machines/remote-machines-utils';
+  import type { RemoteMachine } from '$shared/types/remote-machines';
   import BackendsWithAccessSection from '$features/remote-machines/BackendsWithAccessSection.svelte';
   import { remoteMachinesRefreshRequested } from '$features/remote-machines/remote-machines-slice';
   import CloudMachineRow from '$features/cloud-machines/CloudMachineRow.svelte';
@@ -87,16 +95,40 @@
       cloudEditing !== NEW_CLOUD_ENTRY &&
       ($cloudNamed$ ? $cloudEntries$.length < CLOUD_ENTRY_LIMIT : $cloudEntries$.length === 0),
   );
-  type ListRowItem = { kind: 'device'; device: ConnectionRecord } | CloudRow;
+  type MachineRow = { kind: 'machine'; machine: RemoteMachine };
+  type ListRowItem = { kind: 'device'; device: ConnectionRecord } | CloudRow | MachineRow;
   const rowKey = (row: ListRowItem) =>
-    row.kind === 'device' ? row.device.id : `cloud:${row.entry?.id ?? NEW_CLOUD_ENTRY}`;
+    row.kind === 'device'
+      ? row.device.id
+      : row.kind === 'machine'
+        ? `machine:${row.machine.id}`
+        : `cloud:${row.entry?.id ?? NEW_CLOUD_ENTRY}`;
   const rowText = (row: ListRowItem) =>
-    row.kind === 'device' ? row.device.label : (row.entry?.name ?? 'E2B'); // i18n-ignore (product name)
+    row.kind === 'device'
+      ? row.device.label
+      : row.kind === 'machine'
+        ? row.machine.name
+        : (row.entry?.name ?? 'E2B'); // i18n-ignore (product name)
+  // Machines the backend runs agents on that this app can't open (added from
+  // an intent://node link): nodes, as far as this app is concerned.
+  const remoteVisible$ = selectRemoteMachinesVisible();
+  const remoteMachines$ = selectRemoteMachines();
+  const localFingerprint$ = selectLocalMachineFingerprint();
+  const unlinkedMachineRows = $derived<MachineRow[]>(
+    $remoteVisible$
+      ? $remoteMachines$
+          .filter(
+            (machine) => connectionForMachine(machine, $connections$, $localFingerprint$) === null,
+          )
+          .map((machine) => ({ kind: 'machine', machine }))
+      : [],
+  );
   // Nodes only run agents for other backends: listed apart, never a backend.
   const nodeRows = $derived<ListRowItem[]>([
     ...rows
       .filter((device) => device.daemonMode === 'node')
       .map((device): ListRowItem => ({ kind: 'device', device })),
+    ...unlinkedMachineRows,
     ...($cloudNamed$ ? cloudRows : []),
   ]);
   const highlightId$ = selectHighlightedConnectionId();
@@ -184,7 +216,7 @@
           onClosePanel={closePanel}
           onRequestRemove={requestRemove}
         />
-      {:else}
+      {:else if item.kind === 'cloud'}
         {@render cloudRow(item)}
       {/if}
     {/snippet}
@@ -235,6 +267,13 @@
               onOpenPanel={(panel) => openPanel(device.id, panel)}
               onClosePanel={closePanel}
               onRequestRemove={requestRemove}
+            />
+          {:else if item.kind === 'machine'}
+            <RemoteMachineRow
+              machine={item.machine}
+              highlighted={$highlightId$ === item.machine.id}
+              first={index === 0}
+              last={index === nodeRows.length - 1}
             />
           {:else}
             {@render cloudRow(item, index === 0)}

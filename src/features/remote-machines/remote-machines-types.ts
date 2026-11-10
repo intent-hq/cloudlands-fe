@@ -15,6 +15,8 @@ export interface RemoteMachinesState {
    * accepts `initialAgent.placement`. Older backends may ignore the field.
    */
   initialAgentPlacement: boolean;
+  /** `client.hello` also advertises the node-invite claim capability (`intent://node` links). */
+  claimInvites: boolean;
   /** The current backend's exposed machines, keyed by machine (daemon) id. */
   machines: Record<string, RemoteMachine>;
   /** WSS certificate fingerprint of this computer's own daemon, to match its row. */

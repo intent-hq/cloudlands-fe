@@ -1,70 +1,30 @@
 <script lang="ts">
-  import {
-    ListRow,
-    ListView,
-    RowActions,
-    type ActionDefinition,
-  } from '$lib/components/patterns/collection';
-  import { faLinkSlash } from '@fortawesome/free-solid-svg-icons';
+  import { ListView } from '$lib/components/patterns/collection';
   import { m } from '$shared/paraglide/messages.js';
-  import type { RemoteMachine } from '$shared/types/remote-machines';
   import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
-  import { store as appStore } from '$store/renderer/store';
-  import RemoteMachineBadge from './RemoteMachineBadge.svelte';
-  import RemoteMachineNotice from './RemoteMachineNotice.svelte';
+  import RemoteMachineRow from './RemoteMachineRow.svelte';
   import {
     selectCurrentBackendLabel,
     selectLocalMachineFingerprint,
-    selectRemoteMachineFailures,
-    selectRemoteMachineOperations,
     selectRemoteMachines,
     selectRemoteMachinesVisible,
   } from './remote-machines-selectors';
-  import { remoteMachineUnexposeRequested } from './remote-machines-slice';
-  import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
-  import { selectRemoteScriptsSupported } from '$store/renderer/slices/scripts/scripts-selectors';
-  import { runningAgentsLabel } from './remote-machines-messages';
+  import { connectionForMachine } from './remote-machines-utils';
 
   const supported$ = selectRemoteMachinesVisible();
   const machines$ = selectRemoteMachines();
   const connections$ = selectConnections();
   const localFingerprint$ = selectLocalMachineFingerprint();
-  const operations$ = selectRemoteMachineOperations();
-  const failures$ = selectRemoteMachineFailures();
   const backendLabel$ = selectCurrentBackendLabel();
-  const remoteScriptsSupported$ = selectRemoteScriptsSupported();
 
-  // Nodes are listed in their own section (Settings → Machines → Nodes).
+  // Nodes, and machines this app has no connection to (added from an
+  // intent://node link), are listed under Nodes.
   const machines = $derived(
     $machines$.filter((machine) => {
       const id = connectionForMachine(machine, $connections$, $localFingerprint$);
-      return !$connections$.some((c) => c.id === id && c.daemonMode === 'node');
+      return id !== null && !$connections$.some((c) => c.id === id && c.daemonMode === 'node');
     }),
   );
-
-  function actions(machine: RemoteMachine): ActionDefinition[] {
-    return [
-      {
-        id: 'unexpose',
-        label: m.remoteMachines_unexposeAction_label({ backend: $backendLabel$ }),
-        icon: faLinkSlash,
-        disabled: $operations$[machine.id] === 'removing',
-      },
-    ];
-  }
-
-  function platformLabel(machine: RemoteMachine): string | null {
-    return machine.platform ? `${machine.platform.os} · ${machine.platform.arch}` : null; // i18n-ignore (OS/arch identifiers)
-  }
-
-  function unexpose(machine: RemoteMachine) {
-    appStore.dispatch(
-      remoteMachineUnexposeRequested(
-        machine.id,
-        connectionForMachine(machine, $connections$, $localFingerprint$),
-      ),
-    );
-  }
 </script>
 
 {#if $supported$ && machines.length > 0}
@@ -86,40 +46,7 @@
       class="overflow-visible rounded-xl border border-border bg-card [&>div>div[aria-hidden=true]]:hidden"
     >
       {#snippet row({ item: machine })}
-        <article class="border-t border-border first:border-t-0" aria-label={machine.name}>
-          <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
-            {#snippet title()}{machine.name}{/snippet}
-            {#snippet meta()}
-              <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
-              {#if platformLabel(machine)}<span>{platformLabel(machine)}</span>{/if}
-              {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span
-                >{/if}
-              {#if machineNeedsUpdateForScripts(machine, $remoteScriptsSupported$)}
-                <span class="text-warning-ink" data-machine-scripts-update
-                  >{m.remoteMachines_scriptsUpdate_label()}</span
-                >
-              {/if}
-            {/snippet}
-            {#snippet trailing()}
-              <RowActions
-                alwaysVisible
-                actions={actions(machine)}
-                onAction={() => unexpose(machine)}
-                visibleCount={0}
-                overflowLabel={m.remoteMachines_actionsFor_ariaLabel({ name: machine.name })}
-              />
-            {/snippet}
-          </ListRow>
-          <RemoteMachineNotice
-            failure={$failures$[machine.id] ?? null}
-            failureKey={machine.id}
-            {machine}
-            connectionId={connectionForMachine(machine, $connections$, $localFingerprint$)}
-            machineLabel={machine.name}
-            backendLabel={$backendLabel$}
-            busy={$operations$[machine.id] === 'removing'}
-          />
-        </article>
+        <RemoteMachineRow {machine} />
       {/snippet}
     </ListView>
   </section>

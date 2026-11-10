@@ -4,7 +4,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { setupNodesFixture as setup, type NodesPreviewState } from '../../test/nodes-preview';
 
-  type Scene = NodesPreviewState | 'add-menu' | 'prompt';
+  type Scene = NodesPreviewState | 'add-menu' | 'prompt' | 'invite-prompt';
   interface Props {
     scene?: Scene;
   }
@@ -45,6 +45,34 @@
       'wrong-token': sceneState('wrong-token'),
       'backend-unsupported': sceneState('backend-unsupported'),
       'labs-off': sceneState('labs-off'),
+      'invite-prompt': {
+        props: { scene: 'invite-prompt' },
+        setup: () => {
+          const restore = setup('paste-field');
+          void confirm({
+            title: m.nodes_prompt_title({ node: 'Lab node', backend: 'Build box' }),
+            description: m.nodes_invite_prompt_description({
+              node: 'Lab node',
+              backend: 'Build box',
+            }),
+            confirmLabel: m.nodes_prompt_confirm_label(),
+            cancelLabel: m.nodes_paste_cancel_label(),
+          });
+          return restore;
+        },
+      },
+      'invite-claiming': sceneState('invite-claiming'),
+      'invite-claimed': sceneState('invite-claimed'),
+      'invite-used': sceneState('invite-used'),
+      'invite-expired': sceneState('invite-expired'),
+      'invite-revoked': sceneState('invite-revoked'),
+      'invite-invalid': sceneState('invite-invalid'),
+      'invite-unreachable': sceneState('invite-unreachable'),
+      'invite-update-required': sceneState('invite-update-required'),
+      'invite-not-owner': sceneState('invite-not-owner'),
+      'invites-unsupported': sceneState('invites-unsupported'),
+      'invite-labs-off': sceneState('invite-labs-off'),
+      'link-version': sceneState('link-version'),
     },
     captureReadiness: { selector: '[data-nodes-scene][data-ready]' },
   });

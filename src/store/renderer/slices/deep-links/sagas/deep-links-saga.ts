@@ -16,6 +16,8 @@
  * - `settings?beta=`: switch the update channel; `settings` alone opens Settings.
  * - `node-link` (queued by main for a node's `intent://pair` link, pending id
  *   only): Settings → Machines and the "make available" prompt.
+ * - `node-invite` (queued by main for an `intent://node` link, pending id and
+ *   name only): Settings → Machines, the prompt, then the backend claims it.
  */
 
 import { call, delay, put, race, take, type SagaGenerator } from 'typed-redux-saga';
@@ -42,7 +44,11 @@ import { selectUpdateChannel } from '../../user-preferences/user-preferences-sel
 import { setUpdateChannel } from '../../user-preferences/user-preferences-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import type { DeepLinkActionPayload } from '../deep-links-types';
-import { nodeConnectionOpened, nodeLinkReceived } from '$features/nodes/nodes-slice';
+import {
+  nodeConnectionOpened,
+  nodeInviteReceived,
+  nodeLinkReceived,
+} from '$features/nodes/nodes-slice';
 import {
   WORKSPACE_PREFILL_KEY,
   buildCreatePrefill,
@@ -183,6 +189,12 @@ export function* handleDeepLinkAction(action: DeepLinkActionPayload): SagaGenera
         return;
       }
       break;
+    case 'node-invite':
+      if (params.pendingId) {
+        yield* put(nodeInviteReceived({ pendingId: params.pendingId, label: params.label ?? '' }));
+        return;
+      }
+      break;
   }
   logger.warn('Unsupported deep link', { type: action.type, keys: Object.keys(params) });
   yield* call(notify.error, m.deeplink_links_unsupported_error());
@@ -198,7 +210,7 @@ function isActionPayload(value: unknown): value is DeepLinkActionPayload {
 }
 
 /** Action types that never need daemon authority (navigation, the desktop updater). */
-const DESKTOP_ONLY_TYPES = ['settings', 'node-link'];
+const DESKTOP_ONLY_TYPES = ['settings', 'node-link', 'node-invite'];
 
 /**
  * Take this window's queued actions from main and handle them in order.

@@ -12,6 +12,7 @@
  */
 import { registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import type { NodeInviteClaimResult, NodeInviteInspectResult } from '$shared/types/node-invite';
 import type {
   RemoteMachineExposeResult,
   RemoteMachineUnexposeResult,
@@ -25,6 +26,12 @@ const FALLBACKS: ReadonlyArray<[string, () => unknown]> = [
   [REMOTE_MACHINES.EXPOSE, (): RemoteMachineExposeResult => ({ ...UNSUPPORTED })],
   [REMOTE_MACHINES.UNEXPOSE, (): RemoteMachineUnexposeResult => ({ ...UNSUPPORTED })],
   [REMOTE_MACHINES.MACHINE_FINGERPRINT, (): string | null => null],
+  [
+    REMOTE_MACHINES.INVITE_INSPECT,
+    (): NodeInviteInspectResult => ({ ok: false, code: 'not-a-link' }),
+  ],
+  [REMOTE_MACHINES.INVITE_CLAIM, (): NodeInviteClaimResult => ({ ok: false, code: 'failed' })],
+  [REMOTE_MACHINES.INVITE_DISCARD, () => ({ ok: true })],
 ];
 
 for (const [channel, fallback] of FALLBACKS) {

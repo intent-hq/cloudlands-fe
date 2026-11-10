@@ -1,7 +1,7 @@
 <!--
   Settings → Machines → Add machine → "Paste an intent:// link": an inline
-  field (when the clipboard held no pair link), then the test with the token
-  masked. Errors show inline. The typed link stays in this component and the
+  field (when the clipboard held no pair or node link), then the test with
+  the token or invite secret masked. Errors show inline. The typed link stays in this component and the
   main process; state holds only the masked copy.
 -->
 <script lang="ts">
@@ -12,7 +12,7 @@
   import { selectCurrentBackendLabel } from '$features/remote-machines/remote-machines-selectors';
   import { selectNodePaste } from './nodes-selectors';
   import { pasteClosed, pasteLinkRetried, pasteLinkSubmitted } from './nodes-slice';
-  import type { NodeAddError } from './nodes-types';
+  import { nodeAddErrorMessage, nodeAddErrorRetryable } from './node-add-errors';
   import { stashPastedLink } from './pasted-link';
 
   const paste$ = selectNodePaste();
@@ -22,43 +22,11 @@
   let input: HTMLInputElement | null = $state(null);
 
   const paste = $derived($paste$);
-  const retryable = $derived(
-    paste.error?.code === 'unreachable' ||
-      paste.error?.code === 'failed' ||
-      paste.error?.code === 'backend-unsupported',
-  );
+  const retryable = $derived(nodeAddErrorRetryable(paste.error));
 
   $effect(() => {
     if (paste.phase === 'field') requestAnimationFrame(() => input?.focus());
   });
-
-  function errorText(error: NodeAddError): string {
-    const node = error.node ?? '';
-    switch (error.code) {
-      case 'not-a-link':
-        return m.nodes_error_notLink();
-      case 'incomplete':
-        return m.nodes_error_incomplete();
-      case 'unreachable':
-        return m.nodes_error_unreachable();
-      case 'rejected':
-        return m.nodes_error_rejected();
-      case 'certificate':
-        return m.nodes_error_certificate();
-      case 'not-owner':
-        return m.nodes_error_notOwner();
-      case 'incompatible':
-        return error.message ?? m.nodes_error_failed();
-      case 'expired':
-        return m.nodes_error_expired();
-      case 'labs-off':
-        return m.nodes_error_labsOff({ node });
-      case 'backend-unsupported':
-        return m.nodes_error_backendUnsupported({ node, backend: $backend$ });
-      default:
-        return m.nodes_error_failed();
-    }
-  }
 
   function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -100,7 +68,7 @@
           bind:ref={input}
           bind:value={text}
           class="min-w-0 flex-1 font-mono"
-          placeholder="intent://pair?…"
+          placeholder="intent://…"
           autocomplete="off"
           spellcheck={false}
           aria-label={m.nodes_paste_field_label()}
@@ -116,7 +84,7 @@
       </div>
       {#if paste.error}
         <div class="space-y-1" role="alert" data-pair-link-error={paste.error.code}>
-          <p class="type-body text-danger">{errorText(paste.error)}</p>
+          <p class="type-body text-danger">{nodeAddErrorMessage(paste.error, $backend$)}</p>
           {#if paste.error.routes?.length}
             <p class="font-mono type-caption whitespace-pre-line text-muted-foreground">
               {paste.error.routes.join('\n')}
