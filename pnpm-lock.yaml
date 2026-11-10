@@ -62,8 +62,8 @@ importers:
         specifier: ^7.0.14
         version: 7.0.14
       katex:
-        specifier: 0.18.9
-        version: 0.18.9
+        specifier: 0.19.1
+        version: 0.19.1
       marked:
         specifier: ^18.0.11
         version: 18.0.11
@@ -4286,6 +4286,10 @@ packages:
 
   katex@0.18.9:
     resolution: {integrity: sha512-8ad9RyoKsb/g8/yLFE+KAlP+DhbCTRUNi/V9XGsxn0R+trJJltNwzcDNo0q/DEkOy5fQUQTAQyCXCYSE+OakTQ==}
+    hasBin: true
+
+  katex@0.19.1:
+    resolution: {integrity: sha512-jG8uKntjSEcm2EpQOh0XturpPuuC9r3Sq5HLHdsFdWZT27E672SF19QEi+of0/YeOy15lDgRhKvr5614uRrEfA==}
     hasBin: true
 
   kefir@3.8.8:
@@ -9749,6 +9753,10 @@ snapshots:
       graceful-fs: 4.2.11
 
   katex@0.18.9:
+    dependencies:
+      commander: 15.0.0
+
+  katex@0.19.1:
     dependencies:
       commander: 15.0.0
 

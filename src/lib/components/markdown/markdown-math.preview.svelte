@@ -4,6 +4,7 @@
   export interface MarkdownMathPreviewProps {
     isStreaming?: boolean;
     dense?: boolean;
+    coverage?: boolean;
   }
 
   export const preview = definePreview<MarkdownMathPreviewProps>({
@@ -14,6 +15,7 @@
       complete: { props: {} },
       streaming: { props: { isStreaming: true } },
       narrow: { props: { dense: true } },
+      coverage: { props: { coverage: true } },
     },
   });
 </script>
@@ -23,7 +25,7 @@
   import MessageContent from '$lib/components/chat/MessageContent.svelte';
   import RenderedNotePreview from '$features/layout/tab-types/RenderedNotePreview.svelte';
 
-  let { isStreaming = false, dense = false }: MarkdownMathPreviewProps = $props();
+  let { isStreaming = false, dense = false, coverage = false }: MarkdownMathPreviewProps = $props();
 
   const chatContent: ContentBlock[] = [
     {
@@ -44,6 +46,12 @@ Fractions $\frac{1}{2}$, roots \(\sqrt{x}\), Unicode α + β, and adjacent formu
 
 $$\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}\qquad(x_1+y_1+z_1)(x_2+y_2+z_2)(x_3+y_3+z_3)(x_4+y_4+z_4)$$` +
     '\n\nCode stays literal: `$not-math$`. A price stays literal: Costs $5 and $10.';
+
+  const coverageContent = String.raw`Inline $x^2 + y^2 = r^2$, text $\text{if } x > 0$, colour $\color{red}{x} + \color{blue}{y}$, CJK $\text{日本語}$, and a glyph without KaTeX metrics $\text{\char"263A}$.
+
+$$\int_0^1 x\,dx = \tfrac{1}{2}\qquad \begin{bmatrix}1 & 0\\0 & 1\end{bmatrix}$$
+
+Invalid TeX stays visible: $\frac{1}{$ and LaTeX-incompatible input: $\text{€}$.`;
 </script>
 
 <section class:dense class="grid gap-5" data-testid="markdown-math-preview">
@@ -60,6 +68,17 @@ $$\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}\qquad(x_1+y_1+z_1)(x_2+y_2+z_
       scrollKey="preview-note-tab"
     />
   </article>
+  {#if coverage}
+    <article class="surface" data-testid="math-coverage">
+      <h2>Rendering coverage</h2>
+      <RenderedNotePreview
+        content={coverageContent}
+        workspaceId="preview-workspace"
+        noteId="preview-coverage-note"
+        scrollKey="preview-coverage-tab"
+      />
+    </article>
+  {/if}
 </section>
 
 <style>
