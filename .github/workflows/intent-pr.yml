@@ -792,49 +792,11 @@ jobs:
         run: pnpm run validate:architecture
       - name: Build main process
         run: pnpm run build:main
-      - name: Verify main process has no devDependency imports
-        run: |
-          # svelte is a devDependency stripped from packaged builds.
-          # Hide it and try importing files reachable from the main-
-          # process entry. If any module in the chain transitively
-          # resolves 'svelte', Node fails with ERR_MODULE_NOT_FOUND —
-          # the same crash that occurs inside the packaged app.asar.
-          #
-          # We cannot import dist/main/index.js directly because it
-          # requires 'electron' (unavailable in plain Node), which may
-          # error out *before* the resolver reaches the svelte path,
-          # producing a false pass (this is exactly the bug that let
-          # PR #654 through). Instead we import the specific service
-          # modules that sit on the boundary between the main process
-          # and renderer-only dependencies.
-          mv node_modules/svelte node_modules/svelte.HIDDEN
-
-          FAILED=0
-          for MODULE in \
-            dist/features/agent/services/stream-manager.js \
-            dist/features/agent/main/consolidated-backend.service.js \
-            dist/features/agent/main/agent-backend-handler.service.js; do
-
-            EXIT_CODE=0
-            OUTPUT=$(node --input-type=module \
-              -e "await import('./$MODULE'); process.exit(0);" \
-              2>&1) || EXIT_CODE=$?
-
-            if [ "$EXIT_CODE" -ne 0 ] && grep -q "Cannot find package 'svelte'" <<<"$OUTPUT"; then
-              echo "FAIL: $MODULE"
-              echo "$OUTPUT" | head -3
-              FAILED=1
-            fi
-          done
-
-          mv node_modules/svelte.HIDDEN node_modules/svelte
-
-          if [ "$FAILED" -ne 0 ]; then
-            echo "::error::Main-process modules transitively import svelte. This will crash packaged builds."
-            exit 1
-          fi
-
-          echo "✓ No svelte imports found in main-process module graph."
+      - name: Verify main process imports only runtime dependencies
+        # Walks the built import graph from dist/main/index.js and fails on a
+        # devDependency, an unresolved alias, or a missing module: each one
+        # crashes the packaged app (cloudlands-fe#654, intent-hq/intent#8971).
+        run: pnpm run verify:main-runtime-imports
 
   build-web:
     name: Build (web)

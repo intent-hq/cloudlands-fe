@@ -243,18 +243,6 @@ export const selectProviderConfigurationLabel = store.createSelector(
 );
 
 /**
- * Whether a (legacy compound or bare) model id belongs to
- * `targetProviderId`; bare ids attribute to the effective default provider.
- */
-export const selectIsModelValidForProvider = store.createSelector(
-  (state, model: string, targetProviderId: string): boolean =>
-    selectNormalizedProviderId.select(
-      state,
-      splitLegacyCompoundId(model).providerId ?? selectEffectiveDefaultProviderId.select(state),
-    ) === selectNormalizedProviderId.select(state, targetProviderId),
-);
-
-/**
  * `isProviderAuthenticationError`-equivalent: match an error message against
  * the provider's catalog `authErrorPatterns`. Unresolved explicit IDs do not
  * inherit authentication guidance from a different provider.

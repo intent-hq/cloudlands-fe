@@ -172,6 +172,19 @@ describe('specialists selectors', () => {
       expect(modalIds).toContain('vulnerability-scanner');
     });
 
+    it('keeps Maintenance Coordinator pickable as a standard specialist with the ralph avatar', () => {
+      const coordinator = SPECIALISTS.find(({ id }) => id === 'maintenance-coordinator');
+      const modalIds = filterModalPickableSpecialists(SPECIALISTS, true).map(({ id }) => id);
+
+      expect(coordinator).toMatchObject({
+        name: 'Maintenance Coordinator',
+        icon: 'ralph',
+        promptUnavailable: true,
+      });
+      expect(coordinator?.role).toBeUndefined();
+      expect(modalIds).toContain('maintenance-coordinator');
+    });
+
     it('filterModalPickableSpecialists should drop internal specialists in addition to hidden', () => {
       const ids = filterModalPickableSpecialists(SPECIALISTS, true).map(
         (specialist) => specialist.id,

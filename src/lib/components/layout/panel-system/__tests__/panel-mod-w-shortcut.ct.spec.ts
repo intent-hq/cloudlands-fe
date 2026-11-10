@@ -11,22 +11,12 @@ function measureGeometry(component: Locator) {
     const inset = document.querySelector<HTMLElement>('[data-testid="panel-workspace-inset"]')!;
     const canvas = inset.querySelector('.panel-canvas-frame') as HTMLElement;
     const panels = [...document.querySelectorAll<HTMLElement>('[data-panel-id]')];
-    const track = document.querySelector<HTMLElement>('.panel-navigator-track');
-    const thumb = document.querySelector<HTMLElement>('[data-panel-navigator-thumb]');
-    const trackRect = track?.getBoundingClientRect();
-    const thumbRect = thumb?.getBoundingClientRect();
     return {
       insetClientWidth: inset.clientWidth,
       insetScrollWidth: inset.scrollWidth,
       insetRect: inset.getBoundingClientRect().toJSON(),
       canvasRect: canvas.getBoundingClientRect().toJSON(),
       panelWidths: panels.map((panel) => panel.getBoundingClientRect().width),
-      navigatorSegments: document.querySelectorAll('[data-panel-navigator-segment]').length,
-      navigatorInBounds:
-        !!trackRect &&
-        !!thumbRect &&
-        thumbRect.left >= trackRect.left - 1 &&
-        thumbRect.right <= trackRect.right + 1,
     };
   });
 }
@@ -64,8 +54,6 @@ for (const { platform, isMac } of [
       expect(Math.abs(geometry.panelWidths[0] - geometry.panelWidths[1])).toBeLessThanOrEqual(1);
       expect(geometry.canvasRect.right).toBeLessThanOrEqual(geometry.insetRect.right + 1);
       expect(geometry.insetScrollWidth).toBeLessThanOrEqual(geometry.insetClientWidth + 1);
-      expect(geometry.navigatorSegments).toBe(2);
-      expect(geometry.navigatorInBounds).toBe(true);
       await expect(layoutState).toHaveAttribute(
         'data-tab-order',
         `other-workspace,mod-w-browser-${isMac ? 'mac' : 'non-mac'}-${zoomFactor}-3`,

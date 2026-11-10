@@ -42,6 +42,10 @@
       'plain-folder': { props: { plainFolder: true, initialSections: ['agents', 'files'] } },
       'plain-folder-git-comparison': { props: { initialSections: ['agents', 'files'] } },
       'multiple-panes': { props: { initialSections: ['agents', 'context'] } },
+      'multiple-uneven': { props: { initialSections: ['agents', 'context', 'files'], items: 1 } },
+      'multiple-uneven-long': {
+        props: { initialSections: ['agents', 'changes', 'files'], items: 1, extraFiles: 200 },
+      },
       'multiple-short': {
         props: { initialSections: ['agents', 'context', 'files'], height: 440, items: 40 },
       },

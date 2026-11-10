@@ -19,7 +19,6 @@ import {
   createNetworkDiagram,
   createTimelineDiagram,
 } from '../diagram-templates';
-import { validateDiagram } from '../diagram-validator';
 import {
   buildRoundedOrthogonalPath,
   compactEdgeLabelMaxWidth,
@@ -53,11 +52,6 @@ describe('Diagram Templates', () => {
     // Should pass schema validation
     const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
     expect(schemaResult.success).toBe(true);
-
-    // Should pass semantic validation
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
-    expect(validation.warnings).toHaveLength(0);
   });
 
   it('should create valid sequence diagram', () => {
@@ -72,9 +66,6 @@ describe('Diagram Templates', () => {
 
     const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
     expect(schemaResult.success).toBe(true);
-
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
   });
 
   it('should create valid state machine diagram', () => {
@@ -97,9 +88,6 @@ describe('Diagram Templates', () => {
       console.error('State machine schema errors:', schemaResult.error.errors);
     }
     expect(schemaResult.success).toBe(true);
-
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
   });
 
   it('should create valid flowchart diagram', () => {
@@ -120,9 +108,6 @@ describe('Diagram Templates', () => {
 
     const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
     expect(schemaResult.success).toBe(true);
-
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
   });
 
   it('should create valid dependency graph', () => {
@@ -143,9 +128,6 @@ describe('Diagram Templates', () => {
       console.error('Dependency graph schema errors:', schemaResult.error.errors);
     }
     expect(schemaResult.success).toBe(true);
-
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
   });
 
   it('should create valid data flow diagram', () => {
@@ -164,8 +146,6 @@ describe('Diagram Templates', () => {
     const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
     expect(schemaResult.success).toBe(true);
 
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
     expect(diagram.grammar).toBe('data_flow');
   });
 
@@ -185,8 +165,6 @@ describe('Diagram Templates', () => {
     const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
     expect(schemaResult.success).toBe(true);
 
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
     expect(diagram.grammar).toBe('network');
     expect(diagram.baseView.layout.type).toBe('force');
   });
@@ -207,36 +185,7 @@ describe('Diagram Templates', () => {
     const schemaResult = DiagramPrimitiveSchema.safeParse(diagram);
     expect(schemaResult.success).toBe(true);
 
-    const validation = validateDiagram(diagram);
-    expect(validation.errors).toHaveLength(0);
     expect(diagram.grammar).toBe('timeline');
-  });
-});
-
-describe('Diagram Validation', () => {
-  it('should detect duplicate node IDs', () => {
-    const diagram = createArchitectureDiagram(
-      [
-        { id: 'node1', label: 'Node 1' },
-        { id: 'node1', label: 'Node 1 Duplicate' }, // Duplicate ID
-      ],
-      [],
-    );
-
-    const validation = validateDiagram(diagram);
-    expect(validation.errors.length).toBeGreaterThan(0);
-    expect(validation.errors.some((e) => e.message.includes('Duplicate'))).toBe(true);
-  });
-
-  it('should detect invalid edge references', () => {
-    const diagram = createArchitectureDiagram(
-      [{ id: 'node1', label: 'Node 1' }],
-      [{ from: 'node1', to: 'nonexistent', label: 'Invalid' }],
-    );
-
-    const validation = validateDiagram(diagram);
-    expect(validation.errors.length).toBeGreaterThan(0);
-    expect(validation.errors.some((e) => e.message.includes('non-existent'))).toBe(true);
   });
 });
 

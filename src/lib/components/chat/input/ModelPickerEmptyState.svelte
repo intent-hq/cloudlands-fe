@@ -10,7 +10,7 @@
 
   interface Props {
     isLoadingModels: boolean;
-    retryInFooter?: boolean;
+    hideRetry?: boolean;
     blockingLoadError: ProviderLoadError | null;
     hasNoAvailableProvider?: boolean;
     hostManaged?: boolean;
@@ -20,7 +20,7 @@
 
   let {
     isLoadingModels,
-    retryInFooter = false,
+    hideRetry = false,
     blockingLoadError,
     hasNoAvailableProvider = false,
     hostManaged = false,
@@ -29,14 +29,14 @@
   }: Props = $props();
 </script>
 
-<!-- Dropdown supplies OPTION_LIST_CONTAINER_CLASS; branches use OPTION_LIST_ROW_CLASS horizontal padding. -->
+<!-- Dropdown supplies OPTION_LIST_CONTAINER_CLASS; branches match its menu item horizontal padding. -->
 <div
   class="py-1 text-left"
   in:springIn={{ tier: 'fast', y: 0, scale: 1 }}
   out:crispOut={{ tier: 'fast' }}
 >
   {#if hasNoAvailableProvider}
-    <div class="flex items-start gap-2.5 px-2 py-3" role="status">
+    <div class="flex items-start gap-2.5 px-(--model-picker-row-gutter) py-3" role="status">
       <div class="min-w-0">
         <div class="type-body font-medium text-foreground">
           {m.chat_modelPicker_noProviderAvailable_title()}
@@ -64,12 +64,12 @@
   {:else if isLoadingModels}
     {#each [4, 3] as itemCount, i}
       <div>
-        <div class="px-2 pt-3 pb-1 flex items-start gap-2">
+        <div class="px-(--model-picker-row-gutter) pt-3 pb-1 flex items-start gap-2">
           <div class="h-3 w-16 bg-muted/60 rounded animate-pulse"></div>
           <div class="size-3.5 rounded bg-muted/60 animate-pulse"></div>
         </div>
         {#each Array.from(Array(itemCount), (_, i) => i) as j}
-          <div class="px-2 py-2 flex items-start gap-2">
+          <div class="px-(--model-picker-row-gutter) py-2 flex items-start gap-2">
             <div class="flex-1 min-w-0">
               <div
                 class="h-3.5 rounded bg-muted/40 animate-pulse"
@@ -83,7 +83,7 @@
       </div>
     {/each}
   {:else if blockingLoadError}
-    <div class="flex flex-col items-start gap-2.5 py-4 px-2 text-left">
+    <div class="flex flex-col items-start gap-2.5 py-4 px-(--model-picker-row-gutter) text-left">
       <div class="flex items-start gap-1.5 text-danger">
         <span class="type-body font-medium">{m.chat_modelPicker_loadFailed_label()}</span>
         <Fa icon={faExclamationTriangle} class="h-3.5 w-3.5" />
@@ -96,7 +96,7 @@
           <div class="mt-1 text-subtle">{blockingLoadError.hint}</div>
         {/if}
       </div>
-      {#if !retryInFooter}
+      {#if !hideRetry}
         <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
           <Fa icon={faArrowsRotate} class="h-3 w-3" />
           {m.chat_modelPicker_retry_label()}
@@ -104,9 +104,11 @@
       {/if}
     </div>
   {:else}
-    <div class="flex flex-col items-start gap-2.5 py-4 px-2 text-left text-muted-foreground">
+    <div
+      class="flex flex-col items-start gap-2.5 py-4 px-(--model-picker-row-gutter) text-left text-muted-foreground"
+    >
       <span class="type-body">{m.chat_modelPicker_noModels_label()}</span>
-      {#if !retryInFooter}
+      {#if !hideRetry}
         <Button type="button" variant="secondary" size="sm" onclick={onRetry}>
           <Fa icon={faArrowsRotate} class="h-3 w-3" />
           {m.chat_modelPicker_retry_label()}

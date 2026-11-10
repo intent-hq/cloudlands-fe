@@ -111,7 +111,7 @@ function setupModels(
         : [];
       const warning = providerId === 'codex' ? fallbackWarning : undefined;
       // A degraded first answer (empty list + warning, as the daemon reports
-      // a failed probe); Retry then gets the real rows.
+      // a failed probe); a refresh then gets the real rows.
       const failed =
         degraded || (diagnostic && providerId === 'codex')
           ? {
@@ -340,8 +340,8 @@ export const preview = definePreview<ComponentProps<typeof ModelPickerPreview>>(
     },
     // Codex CLI missing, as the daemon reports it (§5.30): an empty Codex
     // catalog with the real missing-CLI warning labeled `warningKind:
-    // "cli-missing"`; the open menu's footer shows the install notice above
-    // Retry, which (CLI installed) then loads the real rows.
+    // "cli-missing"`; the open menu's footer shows the install notice, and a
+    // refresh (CLI installed) then loads the real rows.
     'codex-fallback': {
       props: {
         initialOpen: true,

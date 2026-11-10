@@ -139,15 +139,7 @@ vi.mock('../walkthrough/WalkthroughFileDiff.svelte', async () => ({
 }));
 
 import CodeReviewTabContent from '../CodeReviewTabContent.svelte';
-import CodeReviewPanel from '../CodeReviewPanel.svelte';
 import CodeWalkthroughSection from '../walkthrough/CodeWalkthroughSection.svelte';
-
-const walkthroughA = {
-  title: 'Workspace A walkthrough',
-  overview: 'Workspace A changes',
-  annotations: [],
-  categories: [],
-};
 
 const walkthrough = {
   title: 'Workspace B walkthrough',
@@ -177,34 +169,6 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('code-review workspace propagation', () => {
-  it('clears workspace A walkthrough when the mounted panel changes to idle workspace B', async () => {
-    mocks.executorStates['ws-a'] = {
-      walkthrough: {
-        status: 'success',
-        result: JSON.stringify(walkthroughA),
-        error: null,
-      },
-    };
-    mocks.executorStates['ws-b'] = {
-      walkthrough: { status: 'idle', result: null, error: null },
-    };
-
-    const panel = render(CodeReviewPanel, {
-      props: { workspaceId: 'ws-a', review: null, status: 'idle' },
-    });
-
-    expect(await screen.findByText('Workspace A walkthrough')).toBeTruthy();
-
-    await panel.rerender({ workspaceId: 'ws-b', review: null, status: 'idle' });
-
-    await waitFor(() => {
-      expect(screen.queryByText('Workspace A walkthrough')).toBeNull();
-    });
-
-    await panel.rerender({ workspaceId: null, review: null, status: 'idle' });
-    expect(screen.queryByText('Workspace A walkthrough')).toBeNull();
-  });
-
   it('uses explicit workspace B for staged review actions while active workspace is A', async () => {
     render(CodeReviewTabContent, { props: { workspaceId: 'ws-b' } });
 

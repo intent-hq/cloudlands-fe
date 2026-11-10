@@ -23,7 +23,7 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class={cn(
-      'group/header type-caption flex cursor-pointer select-none items-center gap-2 px-2 font-medium text-muted-foreground',
+      'group/header type-caption flex cursor-pointer select-none items-center gap-2 px-(--model-picker-row-gutter) font-medium text-muted-foreground',
       groupIndex > 0 && 'pt-1.5',
     )}
     role="button"

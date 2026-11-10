@@ -1,14 +1,12 @@
 import { z } from 'zod';
+import { urlString } from '$shared/zod-compat';
 import { isCanonicalGitLabInstance } from '$shared/utils/gitlab-resource-link';
 
 const nonempty = z.string().min(1);
-const httpsUrl = z
-  .string()
-  .url()
-  .refine((value) => {
-    const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password;
-  });
+const httpsUrl = urlString().refine((value) => {
+  const url = new URL(value);
+  return url.protocol === 'https:' && !url.username && !url.password;
+});
 const instanceUrl = httpsUrl.refine((value) => {
   return isCanonicalGitLabInstance(value);
 });
@@ -49,7 +47,7 @@ export const CheckoutProjectSchema = z
     cloneUrl: httpsUrl,
     defaultBranch: nonempty.optional(),
     // Optional display metadata must never invalidate an otherwise usable checkout target.
-    ownerAvatarUrl: z.string().url().pipe(httpsUrl).optional().catch(undefined),
+    ownerAvatarUrl: urlString().pipe(httpsUrl).optional().catch(undefined),
   })
   .strict();
 
@@ -160,7 +158,7 @@ const CheckoutUnavailableSchema = z
   })
   .strict();
 
-export function checkoutResultSchema<T extends z.ZodTypeAny>(value: T) {
+export function checkoutResultSchema<T extends z.ZodType>(value: T) {
   return z.discriminatedUnion('status', [
     z.object({ status: z.literal('ready'), value }).strict(),
     CheckoutUnavailableSchema,
@@ -183,7 +181,10 @@ export type CheckoutUnavailable = z.infer<typeof CheckoutUnavailableSchema>;
 export type CheckoutResult<T> = { status: 'ready'; value: T } | CheckoutUnavailable;
 
 /** Keep the discriminant concrete when the payload schema is generic. */
-export function parseCheckoutResult<T>(schema: z.ZodType<T>, input: unknown): CheckoutResult<T> {
+export function parseCheckoutResult<S extends z.ZodType>(
+  schema: S,
+  input: unknown,
+): CheckoutResult<z.output<S>> {
   const envelope = z
     .object({ status: z.enum(['ready', 'unavailable']) })
     .passthrough()

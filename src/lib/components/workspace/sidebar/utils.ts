@@ -419,7 +419,7 @@ export function getActivityTitle(
  * events (created/completed/…) the actor is often the system, so fall back to
  * the subject agent carried in the payload.
  */
-export function getEventAgentId(event: WorkspaceEvent): string | null {
+function getEventAgentId(event: WorkspaceEvent): string | null {
   const actor = event.actor;
   if ((actor?.type === 'agent' || actor?.type === 'external') && actor.id) {
     return actor.id;

@@ -30,6 +30,7 @@ export const builtinSpecialistAvatarDesigns: Readonly<Record<string, BuiltinAgen
   verifier: 'verifier',
   developer: 'verifier',
   'product-manager': 'coordinator',
+  'maintenance-coordinator': 'ralph',
   'pr-reviewer': 'pr-reviewer',
   'ui-designer': 'ui-designer',
   'chief-of-staff': 'chief-of-staff',

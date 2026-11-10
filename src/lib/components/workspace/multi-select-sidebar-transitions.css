@@ -20,6 +20,13 @@
   --sidebar-section-offset-y: 8px;
 }
 
+/* Stacked panes share the height but stop at their content, so short panes leave no gap. */
+[data-sidebar-panels][data-stacked='true']:not([data-floating='true']) .sidebar-section {
+  min-height: 10rem;
+  min-height: calc-size(max-content, min(size, 10rem));
+  max-height: max-content;
+}
+
 [data-sidebar-panels][data-floating='true'] .sidebar-section {
   position: absolute;
   inset: 0 0 auto;

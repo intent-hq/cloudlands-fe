@@ -4,7 +4,7 @@ import { EmptySchema, WindowSetDockLabSchema } from './ipc-schemas';
 import { createSafeValidatedHandler } from './ipc-validation-middleware';
 import { getDockLabEnabledLocalPref, setDockLabEnabledLocalPref } from './local-prefs';
 
-/** Main owns the dock Labs setting; it is on by default until the user turns it off. */
+/** Main owns the dock Labs setting; it is off until the user turns it on. */
 let enabled = false;
 let changeChain: Promise<void> = Promise.resolve();
 

@@ -739,7 +739,7 @@ jobs:
           node-version: '22'
 
       - name: Setup native desktop helper SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -1336,7 +1336,7 @@ jobs:
         with:
           node-version: '22'
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: manual-macos-dmg-${{ matrix.arch }}
           path: isolated-package

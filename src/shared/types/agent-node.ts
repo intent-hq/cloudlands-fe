@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDateTime } from '$shared/zod-compat';
 
 // Prepared additive contract, protocol §5.50. Absence retains legacy behavior.
 const decimalU64 = z
@@ -64,27 +65,21 @@ export type AgentPlacementRequest = z.infer<typeof AgentPlacementRequestSchema>;
  * Agent projections include platform fields, but always resolve target and
  * checkout. A cloud agent's projection is read as reported (no request rules).
  */
-const AgentResolvedPlacementSchema = AgentPlacementRequestShape.refine(
-  (value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated',
-)
+const AgentResolvedPlacementSchema = AgentPlacementRequestShape.extend({
+  target: z.enum(['local', 'remote', 'e2b']),
+  checkout: z.enum(['shared', 'worktree', 'isolated']),
+})
+  .refine((value) => value.target !== 'remote' || value.checkout === 'isolated')
   .refine(
-    (value) =>
-      !value.exclusive ||
-      (value.target !== 'local' && (value.checkout ?? 'isolated') === 'isolated'),
-  )
-  .and(
-    z.object({
-      target: z.enum(['local', 'remote', 'e2b']),
-      checkout: z.enum(['shared', 'worktree', 'isolated']),
-    }),
+    (value) => !value.exclusive || (value.target !== 'local' && value.checkout === 'isolated'),
   );
 
 export const AgentCheckpointSchema = z.object({
   id: z.string().min(1),
   assignmentEpoch: decimalU64,
   captureRevision: decimalU64,
-  capturedAt: z.string().datetime({ offset: true }),
-  committedAt: z.string().datetime({ offset: true }),
+  capturedAt: isoDateTime({ offset: true }),
+  committedAt: isoDateTime({ offset: true }),
 });
 /**
  * A remote agent's checkout setup on its machine (PROTOCOL `methods/nodes.md`
