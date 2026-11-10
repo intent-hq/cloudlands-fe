@@ -802,8 +802,6 @@
               ? 'agent-panel-row-header'
               : 'pr-1.5'}"
         >
-          <!-- Avatar with streaming indicator -->
-
           <div
             class="flex-1 min-w-0 flex items-center {panelRow
               ? `gap-1.5 ${isEditing ? 'overflow-visible' : 'overflow-hidden'}`
@@ -827,6 +825,7 @@
               {#if isEditing}
                 <!-- svelte-ignore a11y_autofocus -->
                 <Input
+                  variant="inline"
                   bind:ref={editInputRef}
                   type="text"
                   bind:value={editingValue}
@@ -848,8 +847,10 @@
                   onpastecapture={isolateEditEvent}
                   noFocusStyle
                   class="inline-edit-input relative z-10 min-w-0 flex-1 truncate border-none bg-transparent hover:bg-transparent {panelRow
-                    ? 'type-caption font-normal'
-                    : 'text-sm'} text-foreground outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
+                    ? 'type-caption font-normal text-foreground'
+                    : inline
+                      ? 'type-body font-normal text-muted-foreground'
+                      : 'text-sm font-normal text-foreground'} outline-none! ring-0! focus:outline-none! focus:ring-0! focus-visible:outline-none! focus-visible:ring-0!"
                 />
               {:else}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -870,9 +871,9 @@
               {/if}
               <span
                 aria-hidden="true"
-                class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditing
-                  ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
-                  : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                class="pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditing
+                  ? '-inset-x-2 -inset-y-0.5 bg-hover dark:bg-surface-1'
+                  : '-inset-x-1 -inset-y-0.5 bg-transparent'}"
               ></span>
             </div>
             <AgentLocationBadge {agentId} hidden={inline && !panelRow} />

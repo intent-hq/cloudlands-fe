@@ -190,18 +190,24 @@
     <!-- Working branch -->
     <div class="min-w-0 w-full" data-branch-field="working">
       {#if branchRename.active}
-        <Input
-          bind:ref={branchRename.inputRef}
-          type="text"
-          bind:value={branchRename.value}
-          onblur={saveBranch}
-          onkeydown={handleBranchKeydown}
-          disabled={branchRename.saving}
-          size="compact"
-          aria-labelledby={`${fieldId}-working`}
-          class="type-caption font-normal"
-          placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
-        />
+        <div
+          class="type-caption flex h-8 w-full min-w-0 items-center gap-1 px-2 font-normal text-foreground"
+        >
+          <GitBranchIcon size={14} class="shrink-0 text-subtle" />
+          <Input
+            variant="inline"
+            bind:ref={branchRename.inputRef}
+            type="text"
+            bind:value={branchRename.value}
+            onblur={saveBranch}
+            onkeydown={handleBranchKeydown}
+            disabled={branchRename.saving}
+            size="compact"
+            aria-labelledby={`${fieldId}-working`}
+            class="type-caption min-w-0 flex-1 font-normal"
+            placeholder={m.workspace_sidebarHeader_branchName_placeholder()}
+          />
+        </div>
       {:else}
         <Tooltip
           class="w-full min-w-0"

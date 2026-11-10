@@ -122,6 +122,12 @@ Use `Select` for a short, closed set of values and `Combobox` from
 Give the trigger a purpose-specific accessible name; the selected value and search
 placeholder are not substitutes for that name. `Combobox` requires `ariaLabel` and also
 accepts `ariaLabelledby` and `ariaDescribedby` for field integration.
+
+For click-to-edit text, use `Input variant="inline"` or `Textarea variant="inline"`.
+These inherit surrounding typography without form padding, borders, or fixed heights.
+Match the display text's type role, padding, width, and alignment in both states;
+keep icons and adjacent actions in place. The caller owns a neutral background fill
+for the editing affordance, without an outline around the field.
 Result panels keep the menu's inner gutter, including with `inputVariant="search"`.
 Use `viewportClass` to remove it only when the enclosing picker supplies that inset.
 

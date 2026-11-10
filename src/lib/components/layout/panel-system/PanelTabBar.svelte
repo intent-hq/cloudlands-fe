@@ -1528,9 +1528,25 @@
   {/if}
 {/snippet}
 
+{#snippet paneStackIdentity(tab: PanelTab)}
+  <span
+    class="panel-header-leading-surface flex shrink-0 items-center justify-center"
+    data-panel-header-leading-surface
+  >
+    {#if tab.type === 'agent' && tab.agentId}
+      {#key tab.agentId}
+        <PanelHeaderAgentAvatar agentId={tab.agentId} />
+      {/key}
+    {:else}
+      {@render panelIdentity(tab)}
+    {/if}
+  </span>
+{/snippet}
+
 {#snippet paneStackSelector()}
   <span
     class="pane-stack-selector relative z-10 min-w-0 shrink self-center"
+    class:editing={!!activeTab && renamingTabId === activeTab.id}
     data-panel-header-identity
   >
     <Menu.Root bind:open={paneStackMenuOpen}>
@@ -1572,18 +1588,7 @@
                 : undefined}
             >
               {#if activeTab}
-                <span
-                  class="panel-header-leading-surface flex shrink-0 items-center justify-center"
-                  data-panel-header-leading-surface
-                >
-                  {#if activeTab.type === 'agent' && activeTab.agentId}
-                    {#key activeTab.agentId}
-                      <PanelHeaderAgentAvatar agentId={activeTab.agentId} />
-                    {/key}
-                  {:else}
-                    {@render panelIdentity(activeTab)}
-                  {/if}
-                </span>
+                {@render paneStackIdentity(activeTab)}
                 <span
                   class="panel-selector-title min-w-0 flex-1 truncate text-left"
                   use:observeOverflow={(overflow) => (selectorTitleOverflow = overflow)}
@@ -1677,6 +1682,34 @@
         </div>
       </Menu.Content>
     </Menu.Root>
+    {#if activeTab && renamingTabId === activeTab.id && !showTabStrip}
+      <div
+        class="panel-selector-button absolute inset-0 flex min-w-0 items-center bg-sidebar dark:bg-muted"
+        data-panel-title-editor
+      >
+        {@render paneStackIdentity(activeTab)}
+        <Input
+          variant="inline"
+          noFocusStyle
+          bind:ref={renameInputRef}
+          bind:value={renameValue}
+          class="panel-selector-title min-w-0 flex-1"
+          aria-label={m.ui_editableName_rename_tooltip()}
+          onblur={saveInlineRename}
+          onkeydown={async (event) => {
+            if (event.key !== 'Enter' && event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            const header = event.currentTarget.closest('[data-panel-tabless-header]');
+            if (event.key === 'Enter') saveInlineRename();
+            else cancelInlineRename();
+            await tick();
+            header?.querySelector<HTMLButtonElement>('[data-pane-stack-selector-trigger]')?.focus();
+          }}
+        />
+        <span class="w-2 shrink-0" aria-hidden="true"></span>
+      </div>
+    {/if}
   </span>
 {/snippet}
 
@@ -1783,9 +1816,12 @@
               {#if renamingTabId === tab.id}
                 <!-- Inline rename input -->
                 <Input
+                  variant="inline"
+                  noFocusStyle
+                  style="field-sizing: content;"
                   bind:ref={renameInputRef}
                   bind:value={renameValue}
-                  class="tab-title font-medium bg-transparent border-none outline-none focus:ring-0! focus:outline-none! px-0 text-inherit max-w-24"
+                  class="tab-title w-auto min-w-[1ch] max-w-24 font-medium"
                   onkeydown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();
@@ -1897,27 +1933,7 @@
       data-pane-stack
       data-pane-stack-size={tabs.length}
     >
-      {#if renamingTabId === activeTab.id && !showTabStrip}
-        <Input
-          bind:ref={renameInputRef}
-          bind:value={renameValue}
-          class="min-w-0 flex-1"
-          aria-label={m.ui_editableName_rename_tooltip()}
-          onblur={saveInlineRename}
-          onkeydown={async (event) => {
-            if (event.key !== 'Enter' && event.key !== 'Escape') return;
-            event.preventDefault();
-            event.stopPropagation();
-            const header = event.currentTarget.closest('[data-panel-tabless-header]');
-            if (event.key === 'Enter') saveInlineRename();
-            else cancelInlineRename();
-            await tick();
-            header?.querySelector<HTMLButtonElement>('[data-pane-stack-selector-trigger]')?.focus();
-          }}
-        />
-      {:else}
-        {@render paneStackSelector()}
-      {/if}
+      {@render paneStackSelector()}
       <div class="min-w-0 flex-1" aria-hidden="true"></div>
 
       <!-- Right: all actions at the far edge in stable order. -->
@@ -2022,7 +2038,10 @@
   :global(.dark .panel-selector-button:hover) {
     background-color: color-mix(in srgb, hsl(var(--muted)), hsl(var(--foreground)) 4%);
   }
-  .panel-selector-title {
+  .pane-stack-selector.editing :global([data-pane-stack-selector-trigger]) {
+    visibility: hidden;
+  }
+  .pane-stack-selector :global(.panel-selector-title) {
     font-size: 12px;
     font-weight: 500;
     line-height: 1.2;

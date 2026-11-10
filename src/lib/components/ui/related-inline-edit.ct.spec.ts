@@ -28,8 +28,7 @@ for (const theme of ['light', 'dark'] as const) {
         await trigger.press('Enter');
         const control = component.getByRole('textbox');
         await expectUnpaintedEditControl(control);
-        const boundary = component.locator(`[data-workspace-${field}-edit-decoration]`);
-        await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+
         await control.press('ArrowRight');
         await component.screenshot({
           path: testInfo.outputPath(`workspace-${field}-${theme}.png`),
@@ -47,8 +46,7 @@ for (const theme of ['light', 'dark'] as const) {
       await row.dispatchEvent('dblclick');
       const control = row.getByRole('textbox');
       await expectUnpaintedEditControl(control);
-      const boundary = row.locator(':scope > span[aria-hidden="true"]');
-      await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+
       await control.press('ArrowRight');
       await component.screenshot({ path: testInfo.outputPath(`file-rename-${theme}.png`) });
       await control.fill('unsaved.md');
@@ -64,8 +62,7 @@ for (const theme of ['light', 'dark'] as const) {
       const control = component.locator('[data-edit-script="script-geometry"]');
       await control.click();
       await expectUnpaintedEditControl(control);
-      const boundary = component.locator('[data-script-rename-decoration="script-geometry"]');
-      await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+
       await control.press('ArrowRight');
       await component.screenshot({ path: testInfo.outputPath(`script-rename-${theme}.png`) });
       await control.fill('Unsaved script');
@@ -82,8 +79,7 @@ for (const theme of ['light', 'dark'] as const) {
       const control = row.getByRole('textbox', { name: 'Rename' });
       await control.click();
       await expectUnpaintedEditControl(control);
-      const boundary = control.locator('..').locator(':scope > span[aria-hidden="true"]');
-      await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
+
       await control.press('Home');
       await row.screenshot({ path: testInfo.outputPath(`agent-rename-hover-${theme}.png`) });
       await control.fill('Unsaved agent name');

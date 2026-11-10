@@ -79,7 +79,7 @@
 
   // Update edited title when prop changes
   $effect(() => {
-    editedTitle = title;
+    if (!isEditingTitle) editedTitle = title;
   });
 
   async function startEditingTitle() {
@@ -90,10 +90,12 @@
     if (titleInputRef) {
       titleInputRef.focus();
       titleInputRef.select();
+      titleInputRef.scrollLeft = 0;
     }
   }
 
   function saveTitle() {
+    if (!isEditingTitle) return;
     if (editedTitle.trim() && editedTitle !== title) {
       onTitleChange?.(editedTitle.trim());
     }
@@ -150,42 +152,44 @@
       <!-- Title -->
       <div class="flex items-center gap-1.5 min-w-0">
         <!-- <Fa icon={faChevronLeft} class="w-2.5! h-2.5! text-ghost opacity-50 shrink-0" /> -->
-        <div class="relative inline-flex min-w-0 items-center">
+        <div class="relative inline-flex min-w-[1ch] items-center">
+          <Button
+            variant="plain"
+            class="relative z-10 h-auto min-h-[1lh] min-w-0 max-w-full shrink text-sm font-medium truncate text-left hover:opacity-80 transition-opacity {isEditingTitle
+              ? 'invisible'
+              : ''} {editableTitle ? 'cursor-text' : 'cursor-default'}"
+            onclick={startEditingTitle}
+            disabled={!editableTitle}
+            wrapContent={false}
+            title={editableTitle
+              ? m.ui_contentHeader_clickToEdit_tooltip()
+              : titleOverflow
+                ? title
+                : undefined}
+          >
+            <span
+              class="truncate whitespace-pre"
+              use:observeOverflow={(overflow) => (titleOverflow = overflow)}
+              >{isEditingTitle ? editedTitle || title : title}</span
+            >
+          </Button>
           {#if isEditingTitle}
             <Input
+              variant="inline"
               bind:ref={titleInputRef}
               type="text"
               bind:value={editedTitle}
               onblur={saveTitle}
               onkeydown={handleTitleKeydown}
               noFocusStyle
-              class="edit-input relative z-10 text-sm font-medium bg-transparent hover:bg-transparent border-none outline-none focus:ring-0 px-0 min-w-[4ch] max-w-full"
-              style="field-sizing: content;"
+              class="edit-input absolute inset-0 z-10 h-full min-w-[1ch] text-sm font-medium"
             />
-          {:else}
-            <Button
-              class="relative z-10 text-sm font-medium truncate text-left hover:opacity-80 transition-opacity {editableTitle
-                ? 'cursor-text'
-                : 'cursor-default'}"
-              onclick={startEditingTitle}
-              disabled={!editableTitle}
-              wrapContent={false}
-              title={editableTitle
-                ? m.ui_contentHeader_clickToEdit_tooltip()
-                : titleOverflow
-                  ? title
-                  : undefined}
-            >
-              <span class="truncate" use:observeOverflow={(overflow) => (titleOverflow = overflow)}
-                >{title}</span
-              >
-            </Button>
           {/if}
           <span
             aria-hidden="true"
-            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
-              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
-              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+            class="pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+              ? '-inset-x-2 -inset-y-0.5 bg-hover dark:bg-surface-1'
+              : '-inset-x-1 -inset-y-0.5 bg-transparent'}"
           ></span>
         </div>
         {#if subtitle}

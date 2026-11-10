@@ -73,6 +73,7 @@
     if (inputRef) {
       inputRef.focus();
       inputRef.select();
+      inputRef.scrollLeft = 0;
     }
   }
 
@@ -119,61 +120,54 @@
       };
     }
   });
-
-  // Calculate input width based on content
-  function getInputWidth(text: string): number {
-    return Math.max(60, Math.min(maxWidth, text.length * 8 + 20));
-  }
 </script>
 
-<div class={cn('relative inline-flex items-center min-w-0 shrink whitespace-nowrap', className)}>
+<div
+  class={cn(
+    'relative inline-flex items-center min-w-0 shrink whitespace-nowrap',
+    textClass,
+    className,
+  )}
+  style="max-width: {maxWidth}px"
+>
+  <Button
+    variant="plain"
+    labelClass="whitespace-pre"
+    class={cn(
+      textClass,
+      'relative z-10 h-auto min-w-0 max-w-full shrink bg-transparent border-none cursor-text text-left',
+      'truncate transition-opacity hover:opacity-80',
+      isEditing && 'invisible',
+      disabled && 'cursor-default opacity-50',
+    )}
+    onclick={startEditing}
+    {disabled}
+    {title}
+    aria-label={buttonAriaLabel}
+  >
+    {(isEditing ? editedValue : value) || placeholder}
+  </Button>
   {#if isEditing}
     <Input
+      variant="inline"
       bind:ref={inputRef}
       type="text"
       bind:value={editedValue}
       onblur={save}
       onkeydown={handleKeydown}
-      oninput={(e) => {
-        const target = e.currentTarget;
-        target.style.width = `${getInputWidth(target.value)}px`;
-      }}
-      class={cn(
-        textClass,
-        'edit-input relative z-10 bg-transparent hover:bg-transparent border-none outline-none px-0',
-        'focus:outline-none!',
-        'min-w-[60px]',
-      )}
+      class={cn(textClass, 'edit-input absolute inset-0 z-10 h-full')}
       noFocusStyle
       aria-label={inputAriaLabel}
       {placeholder}
-      style="width: {getInputWidth(editedValue)}px; max-width: {maxWidth}px"
     />
-  {:else}
-    <Button
-      variant="plain"
-      class={cn(
-        textClass,
-        'relative z-10 bg-transparent border-none cursor-text text-left',
-        'truncate transition-opacity hover:opacity-80',
-        disabled && 'cursor-default opacity-50',
-      )}
-      style="max-width: {maxWidth}px"
-      onclick={startEditing}
-      {disabled}
-      {title}
-      aria-label={buttonAriaLabel}
-    >
-      {value || placeholder}
-    </Button>
   {/if}
   <span
     aria-hidden="true"
     class={cn(
-      'pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
+      'pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none',
       isEditing
-        ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-background'
-        : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent',
+        ? '-inset-x-2 -inset-y-0.5 bg-hover dark:bg-surface-1'
+        : '-inset-x-1 -inset-y-0.5 bg-transparent',
     )}
   ></span>
 </div>

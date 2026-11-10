@@ -65,7 +65,8 @@
   {#if editing}
     <span class="tab-group-dot" aria-hidden="true"></span>
     <Input
-      class="tab-group-name-input type-caption font-medium!"
+      variant="inline"
+      class="tab-group-name-input type-caption"
       size="compact"
       noFocusStyle
       bind:value={draftName}
@@ -132,7 +133,7 @@
 
   .tab-group-chip.is-editing {
     padding-left: 8px;
-    padding-right: 2px;
+    padding-right: 8px;
   }
 
   .tab-group-chip :global(.tab-group-trigger) {
@@ -186,12 +187,10 @@
   }
 
   .tab-group-chip :global(.tab-group-name-input) {
-    width: 112px;
-    height: 18px;
-    padding: 0 4px;
-    border: 0;
-    background: hsl(var(--background));
-    color: hsl(var(--foreground));
+    field-sizing: content;
+    width: auto;
+    min-width: 1ch;
+    font-weight: 600;
   }
 
   @container style(--motion-reduced: 1) {

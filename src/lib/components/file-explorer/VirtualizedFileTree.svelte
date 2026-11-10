@@ -1294,6 +1294,7 @@
                     {/if}
                   </span>
                   <Input
+                    variant="inline"
                     bind:ref={editInputRef}
                     type="text"
                     bind:value={editingValue}
@@ -1391,10 +1392,10 @@
               {/if}
               <span
                 aria-hidden="true"
-                class="pointer-events-none absolute -z-10 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
+                class="pointer-events-none absolute -z-10 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingPath ===
                 node.path
-                  ? 'inset-x-1 inset-y-px border-ring/60 bg-background'
-                  : `inset-x-1 inset-y-0.5 border-transparent ${isSelected(node.path) ? 'bg-active' : isFocused ? 'bg-selected' : 'bg-transparent group-hover/file-row:bg-hover'}`}"
+                  ? 'inset-x-1 inset-y-px bg-hover dark:bg-surface-1'
+                  : `inset-x-1 inset-y-0.5 ${isSelected(node.path) ? 'bg-active' : isFocused ? 'bg-selected' : 'bg-transparent group-hover/file-row:bg-hover'}`}"
               ></span>
             </div>
           {/if}

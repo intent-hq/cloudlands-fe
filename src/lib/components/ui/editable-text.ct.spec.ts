@@ -27,10 +27,6 @@ for (const theme of ['light', 'dark'] as const) {
       const input = section.getByRole('textbox');
       await expectUnpaintedEditControl(input);
 
-      const boundary = input.locator('..').locator(':scope > span[aria-hidden="true"]');
-      await expect(boundary).not.toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');
-      await expect(boundary).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
-
       await input.press('ArrowRight');
       await testInfo.attach('editing-surface', {
         body: await section.screenshot(),
