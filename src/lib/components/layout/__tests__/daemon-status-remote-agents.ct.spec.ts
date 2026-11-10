@@ -79,7 +79,7 @@ test('Hosted agents show their name and workspace; local rows show the workspace
   ).toBeVisible();
   await expect(
     dialog.getByRole('button', {
-      name: /^Write release notes for Studio MacBook Pro · Docs refresh (Claude Code|claude-code) · claude-sonnet-4 /,
+      name: /^Write release notes for Studio MacBook Pro · Docs refresh claude-code\/claude-sonnet-4 /,
     }),
   ).toBeVisible();
   // A hosted row without labels keeps the provider label and the bare backend tag.

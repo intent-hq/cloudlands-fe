@@ -98,12 +98,15 @@
     return $workspaceTitles$[workspaceId]?.trim() || workspaceId;
   }
 
+  function providerDetail(agent: AgentMemoryUsageAgentWirePayload): string {
+    if (!agent.provider) return '';
+    return agent.model ? `${agent.provider}/${agent.model}` : agent.provider;
+  }
+
   // Local rows: workspace (title, else id) and provider/model. Remote rows:
-  // provider and model only when the label is the agent's name.
+  // provider/model only when the label is the agent's name.
   function agentDetail(agent: AgentMemoryUsageAgentWirePayload): string {
-    if (agent.remoteOwner) {
-      return agent.agentName?.trim() && agent.provider ? providerModel(agent) : '';
-    }
+    if (agent.remoteOwner) return agent.agentName?.trim() ? providerDetail(agent) : '';
     const parts: string[] = [];
     if (agent.workspaceId) {
       parts.push(
@@ -112,9 +115,7 @@
         }),
       );
     }
-    if (agent.provider) {
-      parts.push(agent.model ? `${agent.provider}/${agent.model}` : agent.provider);
-    }
+    if (agent.provider) parts.push(providerDetail(agent));
     return parts.join(' · '); // i18n-ignore (separator between already-localized parts)
   }
 </script>
