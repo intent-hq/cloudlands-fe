@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { CAPTURE_EDITOR_TOOL_KEYS } from '../capture-editor-shortcuts';
   import CaptureEditorToolbar from '../CaptureEditorToolbar.svelte';
   import { screenshotKindLabel } from './screenshot-labels';
   import { m } from '$shared/paraglide/messages.js';
@@ -42,6 +43,8 @@
       size="icon-sm"
       aria-label={item.label}
       tooltip={item.label}
+      tooltipShortcut={CAPTURE_EDITOR_TOOL_KEYS[item.id]}
+      aria-keyshortcuts={CAPTURE_EDITOR_TOOL_KEYS[item.id]}
       tooltipContentClass="dock-chrome-tooltip"
       aria-pressed={tool === item.id}
       active={tool === item.id}

@@ -179,6 +179,28 @@
       top.fontBoundingBoxAscent
     );
   });
+  // Keep the native line box/caret and canonical line spacing; only the visible
+  // editing frame follows ink. Blank lines retain room for their next caret.
+  const textBox = $derived.by(() => {
+    const text = textShape?.text;
+    if (!text || !textLayout) return { offset: 0, height: 0 };
+    if (!fontsReady || text.wrapped || typeof document === 'undefined')
+      return { offset: 0, height: textLayout.height };
+    const context = document.createElement('canvas').getContext('2d');
+    if (!context) return { offset: 0, height: textLayout.height };
+    context.font = `${text.fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
+    context.textBaseline = 'top';
+    let top = Infinity, bottom = -Infinity;
+    for (const [index, line] of textLayout.lines.entries()) {
+      const ink = context.measureText(line || 'Mg');
+      top = Math.min(top, index * textLayout.lineHeight - ink.actualBoundingBoxAscent);
+      bottom = Math.max(bottom, index * textLayout.lineHeight + ink.actualBoundingBoxDescent);
+    }
+    if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom <= top)
+      return { offset: 0, height: textLayout.height };
+    const padding = Math.max(2 * unit, text.fontSize / 24);
+    return { offset: top - padding, height: bottom - top + 2 * padding };
+  });
   const textWidth = $derived.by(() => {
     const text = textShape?.text;
     if (!text || !textLayout) return 0;
@@ -809,9 +831,9 @@
       {@const origin = textShape.text.origin ?? dockGeometryRect(textShape.geometry)}
       <foreignObject
         x={origin.x}
-        y={origin.y}
+        y={origin.y + textBox.offset}
         width={Math.min(frame.x + frame.w - origin.x, Math.max(12 * unit, textWidth))}
-        height={Math.min(frame.y + frame.h - origin.y, textLayout.height)}
+        height={Math.min(frame.y + frame.h - origin.y - textBox.offset, textBox.height)}
         style:overflow="visible"
       >
         <div
@@ -822,7 +844,7 @@
           style:--capture-text-halo={DOCK_MEDIA_PAINT.halo}
           style:--capture-text-stroke={`${DOCK_MEDIA_PAINT.haloWidth * Math.max(1, Math.max(width, height) / 1440)}px`}
           style:--capture-text-outline={`${unit}px`}
-          style:--capture-text-leading={`${textLeading}px`}
+          style:--capture-text-leading={`${textLeading - textBox.offset}px`}
           style:padding={`${textShape.text.padding}px`}
           onpointerdown={(event) => event.stopPropagation()}
           onkeydown={(event) => {
@@ -847,6 +869,7 @@
             bind:ref={textInput}
             bind:value={textValue}
             class="text-input"
+            style={`height: ${textLayout.height}px`}
             maxlength={10000}
             oncompositionstart={() => (composing = true)}
             oncompositionend={() => (composing = false)}

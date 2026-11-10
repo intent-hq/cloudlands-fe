@@ -2,6 +2,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { createRecordingPlayback } from './recording-playback';
   import { m } from '$shared/paraglide/messages.js';
+  import { CAPTURE_EDITOR_TOOL_KEYS, captureEditorToolShortcut } from '../capture-editor-shortcuts';
   import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { Button } from '$lib/components/ui/button';
   import type {
@@ -451,8 +452,22 @@
     playback?.pause();
     seek(recordingOutputToSource(clampTime(outputMs + ms, outputDurationMs), playbackRanges));
   }
+  function chooseFrameTool(next: FrameTool | null): void {
+    frameTool = next;
+    pauseForFrame();
+    if (next) selectedMarkId = null;
+  }
   function onKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
+    const shortcut = captureEditorToolShortcut(event,
+      !active || saving || finishing || deleting || interactionPending || !marksEditable || failed || !source || !edits || !frameKept,
+    );
+    if (shortcut && shortcut !== 'crop' && shortcut !== 'blur') {
+      event.preventDefault();
+      event.stopPropagation();
+      chooseFrameTool(shortcut === 'pointer' ? null : shortcut === 'draw' ? 'pen' : shortcut);
+      return;
+    }
     // A focused annotation owns its selection keys, rather than seeking the video.
     if (
       frameTool === null &&
@@ -562,12 +577,10 @@
                 aria-pressed={frameTool === entry.tool}
                 aria-label={frameToolLabels[entry.tool ?? 'pointer']()}
                 tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
+                tooltipShortcut={CAPTURE_EDITOR_TOOL_KEYS[entry.tool === 'pen' ? 'draw' : entry.tool ?? 'pointer']}
+                aria-keyshortcuts={CAPTURE_EDITOR_TOOL_KEYS[entry.tool === 'pen' ? 'draw' : entry.tool ?? 'pointer']}
                 tooltipContentClass="dock-chrome-tooltip"
-                onclick={() => {
-                  frameTool = entry.tool;
-                  pauseForFrame();
-                  if (entry.tool) selectedMarkId = null;
-                }}
+                onclick={() => chooseFrameTool(entry.tool)}
               >
                 <DockComposerIcon glyph={entry.glyph} size={16} />
               </Button>

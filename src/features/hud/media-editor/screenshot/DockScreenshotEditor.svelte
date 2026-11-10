@@ -4,6 +4,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { onDestroy, onMount, untrack, type Snippet } from 'svelte';
   import { layoutDockMediaMarks } from '$features/hud/composer/dock-media-render';
+  import { captureEditorToolShortcut } from '../capture-editor-shortcuts';
   import { isTextEntryTarget } from '$lib/utils/text-entry';
   import { createScreenshotPreviewRenderer } from './screenshot-preview';
   import {
@@ -483,8 +484,18 @@
   /** Esc with a tool chosen puts it down (before the shell's Esc closes the editor). */
   function onToolEscape(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
+    const shortcut = captureEditorToolShortcut(event,
+      blocked || gesturePending || !!editingTextId || !!pendingTextMark || !!cropCandidate || previewPending || previewFailed,
+    );
+    if (shortcut && (shortcut !== 'blur' || canCreateV2)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (shortcut === 'crop') crop();
+      else setTool(shortcut);
+      return;
+    }
     if (event.key === 'Escape' && gesturePending) return;
-    const target = event.target as HTMLElement | null;
+    const target = event.target instanceof Element ? event.target : null;
     if (isTextEntryTarget(target) || target?.closest('[role="menu"], [role="dialog"], [role="alertdialog"]')) return;
     if (event.key === 'Enter' && target?.closest('button')) return;
     if (cropCandidate && (event.key === 'Enter' || event.key === 'Escape')) {

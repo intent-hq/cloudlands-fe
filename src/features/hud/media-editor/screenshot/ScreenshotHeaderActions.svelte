@@ -1,6 +1,7 @@
 <script lang="ts">
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
+  import { CAPTURE_EDITOR_TOOL_KEYS } from '../capture-editor-shortcuts';
   import CropIcon from 'phosphor-svelte/lib/CropIcon';
   let {
     cropping = false,
@@ -34,6 +35,10 @@
         variant="ghost"
         size="compact"
         aria-pressed={false}
+        tooltip={m.dock_screenshotEditor_crop()}
+        tooltipShortcut={CAPTURE_EDITOR_TOOL_KEYS.crop}
+        tooltipContentClass="dock-chrome-tooltip"
+        aria-keyshortcuts={CAPTURE_EDITOR_TOOL_KEYS.crop}
         disabled={disabled}
         onclick={onCrop}><CropIcon size={16} />{m.dock_screenshotEditor_crop()}</Button
       >
