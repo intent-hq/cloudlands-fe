@@ -35,7 +35,7 @@ import type {
   PairLinkInspectResult,
   PairLinkInspected,
 } from '$shared/types/pair-link';
-import type { NodeInviteClaimResult, NodeInviteInspectResult } from '$shared/types/node-invite';
+import type { NodeInviteClaimResult, NodeInviteInspectErrorCode } from '$shared/types/node-invite';
 import { parseRemoteMachine } from '$shared/types/remote-machines';
 import { isPairingUri, maskPairingUri } from '$shared/utils/pairing-uri';
 import { isNodeInviteUri, maskNodeInviteUri } from '$shared/utils/node-invite-uri';
@@ -237,9 +237,11 @@ function* addInspected(
 const inviteLabel = (label: unknown): string =>
   typeof label === 'string' && label.trim() ? label : m.nodes_invite_tunnelLabel();
 
-function inviteInspectReply(
-  reply: unknown,
-): NodeInviteInspectResult | { ok: false; code: 'failed' } {
+type HeldInvite =
+  | { ok: true; pendingId: string; label: string }
+  | { ok: false; code: NodeInviteInspectErrorCode | 'failed' };
+
+function inviteInspectReply(reply: unknown): HeldInvite {
   const value = (reply ?? {}) as Record<string, unknown>;
   if (value.ok === true && typeof value.pendingId === 'string')
     return { ok: true, pendingId: value.pendingId, label: inviteLabel(value.label) };
@@ -344,7 +346,7 @@ function* claimInvite(
 
 /** One pasted `intent://node` link: main holds it, then ask and claim. */
 function* pasteInvite(text: string): SagaGenerator<void> {
-  let held: ReturnType<typeof inviteInspectReply>;
+  let held: HeldInvite;
   try {
     held = inviteInspectReply(yield* call(invokeInviteInspect, text));
   } catch {
