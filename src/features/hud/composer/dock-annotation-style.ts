@@ -10,7 +10,8 @@ export const DOCK_ANNOTATION_STYLE = {
   badgeOutline: 0.85,
   badgeTextScale: 1.2,
   arrowHead: 10,
-  arrowSpread: Math.PI / 7,
+  // Match the open 90° head in diagrams/DiagramRenderer.svelte.
+  arrowSpread: Math.PI / 4,
   halo: 'rgba(248, 250, 255, 0.88)',
   haloWidth: 1.2,
   textLineHeight: 1.4,
