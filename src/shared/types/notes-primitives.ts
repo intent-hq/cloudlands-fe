@@ -9,6 +9,7 @@
  */
 
 import { z } from 'zod';
+import { isoDateTime } from '$shared/zod-compat';
 
 // ============================================================================
 // Base Types
@@ -416,7 +417,7 @@ const BasePrimitiveSchema = z.object({
   version: z.literal(1),
   label: z.string().optional(),
   description: z.string().optional(),
-  createdAt: z.string().datetime(),
+  createdAt: isoDateTime(),
   createdBy: z.enum(['user', 'agent', 'system']),
   createdByAgentId: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
@@ -461,8 +462,8 @@ export const ReferencePrimitiveSchema = BasePrimitiveSchema.extend({
 const CliLastRunSchema = z.object({
   status: z.enum(['running', 'success', 'error', 'cancelled']),
   exitCode: z.number().optional(),
-  startedAt: z.string().datetime(),
-  finishedAt: z.string().datetime().optional(),
+  startedAt: isoDateTime(),
+  finishedAt: isoDateTime().optional(),
 });
 
 const CliOutputSnapshotSchema = z.object({
@@ -506,8 +507,8 @@ const AgentActionConfigSchema = z
 
 const AgentActionLastRunSchema = z.object({
   status: z.enum(['pending', 'running', 'success', 'error']),
-  startedAt: z.string().datetime(),
-  finishedAt: z.string().datetime().optional(),
+  startedAt: isoDateTime(),
+  finishedAt: isoDateTime().optional(),
   errorMessage: z.string().optional(),
 });
 
@@ -530,7 +531,7 @@ export const AgentActionPrimitiveSchema = BasePrimitiveSchema.extend({
 // Patch schemas
 const PatchLastApplySchema = z.object({
   status: z.enum(['success', 'conflict', 'error']),
-  appliedAt: z.string().datetime(),
+  appliedAt: isoDateTime(),
   errorMessage: z.string().optional(),
 });
 

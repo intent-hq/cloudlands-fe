@@ -1,14 +1,12 @@
 import { z } from 'zod';
+import { urlString } from '$shared/zod-compat';
 import { isCanonicalGitLabInstance } from '$shared/utils/gitlab-resource-link';
 
 const nonempty = z.string().min(1);
-const httpsUrl = z
-  .string()
-  .url()
-  .refine((value) => {
-    const url = new URL(value);
-    return url.protocol === 'https:' && !url.username && !url.password;
-  });
+const httpsUrl = urlString().refine((value) => {
+  const url = new URL(value);
+  return url.protocol === 'https:' && !url.username && !url.password;
+});
 const instanceUrl = httpsUrl.refine((value) => {
   return isCanonicalGitLabInstance(value);
 });
@@ -49,7 +47,7 @@ export const CheckoutProjectSchema = z
     cloneUrl: httpsUrl,
     defaultBranch: nonempty.optional(),
     // Optional display metadata must never invalidate an otherwise usable checkout target.
-    ownerAvatarUrl: z.string().url().pipe(httpsUrl).optional().catch(undefined),
+    ownerAvatarUrl: urlString().pipe(httpsUrl).optional().catch(undefined),
   })
   .strict();
 

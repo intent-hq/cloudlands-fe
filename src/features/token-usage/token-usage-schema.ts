@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDateTime } from '$shared/zod-compat';
 import type { TokenUsage } from './token-usage-types';
 
 const TokenUsageCostSchema = z
@@ -66,7 +67,7 @@ export const TokenUsageSchema = z
     byModel: z.record(z.string(), TokenUsageTotalsSchema),
     byAgentModel: TokenUsageCrossFilterRowsSchema.optional(),
     agentNames: z.record(z.string(), z.string()).optional(),
-    lastScanAt: z.string().datetime({ offset: true }).nullable(),
+    lastScanAt: isoDateTime({ offset: true }).nullable(),
   })
   .passthrough();
 

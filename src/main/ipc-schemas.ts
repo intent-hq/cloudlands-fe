@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { emailString, urlString } from '$shared/zod-compat';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
 import { DOCK_SURFACE_MAX_SIZE } from '../shared/dock-placement';
 import type { InviteProgressAction } from '../shared/ipc/invite-progress';
@@ -470,7 +471,7 @@ const EventActorSchema = z.object({
     .min(1, 'Actor name is required')
     .or(z.literal(''))
     .transform((v) => v || 'Unknown'),
-  email: z.string().email().optional(),
+  email: emailString().optional(),
   metadata: z.record(z.string(), z.any()).optional(),
 });
 
@@ -828,7 +829,7 @@ export const UserMcpAuthenticateSchema = z.object({
   serverId: z.string().min(1, 'Server ID is required'),
   // Advisory only: the handler resolves the OAuth URL from the daemon record
   // by `serverId` and rejects a renderer URL that disagrees with it.
-  url: z.string().url('A valid MCP server URL is required').optional(),
+  url: urlString('A valid MCP server URL is required').optional(),
 });
 
 export const UserMcpCheckAuthSchema = z.object({

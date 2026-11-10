@@ -8,6 +8,7 @@ import { AgentNodeFieldsSchema } from './types/agent-node';
  */
 
 import { z } from 'zod';
+import { isoDateTime } from '$shared/zod-compat';
 import { CheckoutSelectionSchema } from './types/repository-checkout';
 import {
   AgentStatus,
@@ -95,7 +96,7 @@ const DiffSummaryFileSchema = z.object({
 
 const DiffSummarySchema = z.object({
   schemaVersion: z.number().int(),
-  updatedAt: z.string().datetime(),
+  updatedAt: isoDateTime(),
   totalFiles: z.number().int().nonnegative(),
   totalAdditions: z.number().int().nonnegative(),
   totalDeletions: z.number().int().nonnegative(),
@@ -140,12 +141,12 @@ export const WorkspaceSchema = z.object({
   myRole: z.enum(['owner', 'collaborator', 'manager']).optional(),
   memberCount: z.number().int().nonnegative().optional(),
   openInviteCount: z.number().int().nonnegative().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: isoDateTime(),
+  updatedAt: isoDateTime(),
   archived: z.boolean().optional(),
-  archivedAt: z.string().datetime().optional(),
+  archivedAt: isoDateTime().optional(),
 
-  lastActivity: z.string().datetime().optional(),
+  lastActivity: isoDateTime().optional(),
   tags: z.array(z.string()).optional(),
   path: z.string().optional(),
   repositoryPath: z.string().optional(),
@@ -184,7 +185,7 @@ export const WorkspaceSchema = z.object({
     .object({
       bytes: z.number().int().nonnegative(),
       fileCount: z.number().int().nonnegative(),
-      computedAt: z.string().datetime({ offset: true }),
+      computedAt: isoDateTime({ offset: true }),
       breakdown: z.array(
         z.object({
           name: z.string(),
@@ -250,7 +251,7 @@ export const FirstVisitStateSchema = z.object({
   mainContentRevealed: z.boolean(),
   navigationRailRevealed: z.boolean(),
   workspaceDockRevealed: z.boolean(),
-  lastUpdated: z.string().datetime(),
+  lastUpdated: isoDateTime(),
 });
 
 /**
@@ -280,8 +281,8 @@ export const TaskMetadataSchema = z.object({
   estimatedEffort: z.string().optional(),
   actualEffort: z.string().optional(),
   blockedReason: z.string().optional(),
-  completedAt: z.string().datetime().optional(),
-  startedAt: z.string().datetime().optional(),
+  completedAt: isoDateTime().optional(),
+  startedAt: isoDateTime().optional(),
   dependsOn: z.array(z.string()).optional(), // Hard ordering edges (task note ids)
   conflictsWith: z.array(z.string()).optional(), // Advisory conflict edges (task note ids)
   unmetDependsOn: z.array(z.string()).optional(), // Daemon-computed unmet deps (read/push shapes only)

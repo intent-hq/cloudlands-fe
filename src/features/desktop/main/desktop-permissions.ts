@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isoDateTime } from '$shared/zod-compat';
 import { ReverseRpcHandlerError, type JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { getDesktopNativeAdapter } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
@@ -19,7 +20,7 @@ const pendingState = z.object({
     agentId: z.string(),
     requestId: z.string(),
     computerId: z.string(),
-    expiresAt: z.string().datetime(),
+    expiresAt: isoDateTime(),
   }),
 });
 /** A local Allow click is not OS authorization. Revalidate the daemon's candidate

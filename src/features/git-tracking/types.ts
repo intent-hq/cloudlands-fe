@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { emailString } from '$shared/zod-compat';
 
 /**
  * Git file status
@@ -189,12 +190,12 @@ export const GitCommitSchema = z.object({
   shortSha: z.string(),
   author: z.object({
     name: z.string(),
-    email: z.string().email(),
+    email: emailString(),
     date: z.string(),
   }),
   committer: z.object({
     name: z.string(),
-    email: z.string().email(),
+    email: emailString(),
     date: z.string(),
   }),
   message: z.string(),
