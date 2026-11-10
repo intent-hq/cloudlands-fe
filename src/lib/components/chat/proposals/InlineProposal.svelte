@@ -164,7 +164,13 @@
 </script>
 
 {#if isPending || isApplied || isDismissed}
-  <div class="my-4 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}" data-inline-proposal>
+  <!-- The composer pill's click finds the card a pending ref points at by
+       this daemon-parity key (id or title), so id-less cards resolve too. -->
+  <div
+    class="my-4 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+    data-inline-proposal
+    data-pending-proposal-key={isPending ? proposalId : undefined}
+  >
     {#if isPending}
       {#if initialDraftLoaded}
         <ProposalCard

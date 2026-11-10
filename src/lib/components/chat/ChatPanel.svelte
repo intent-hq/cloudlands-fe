@@ -4706,19 +4706,36 @@
 
   let offscreenPendingProposalMessageId = $state<string | null>(null);
 
+  // The card a ref points at, by key: the pending wrapper InlineProposal tags
+  // with its daemon-parity key (id or title, so id-less cards resolve to the
+  // right card, not the message's first one), else an exact applyToolCallId.
+  function findPendingProposalCardByKey(
+    message: HTMLElement,
+    ref: PendingProposalRef,
+    claimed: Set<Element> = new Set(),
+  ): HTMLElement | null {
+    const unclaimed = (selector: string) =>
+      Array.from(message.querySelectorAll<HTMLElement>(selector)).find(
+        (candidate) => !claimed.has(candidate),
+      ) ?? null;
+    const key = CSS.escape(ref.proposalId);
+    return (
+      unclaimed(`[data-pending-proposal-key="${key}"]`) ??
+      unclaimed(`[data-apply-tool-call-id="${key}"]`)
+    );
+  }
+
   function findPendingProposalCard(
     message: HTMLElement,
     ref: PendingProposalRef,
     claimed: Set<Element> = new Set(),
   ): HTMLElement | null {
-    const exact = message.querySelector<HTMLElement>(
-      `[data-apply-tool-call-id="${CSS.escape(ref.proposalId)}"]`,
-    );
-    if (exact && !claimed.has(exact)) return exact;
     return (
+      findPendingProposalCardByKey(message, ref, claimed) ??
       Array.from(message.querySelectorAll<HTMLElement>('[data-proposal-kind]')).find(
         (candidate) => !claimed.has(candidate),
-      ) ?? null
+      ) ??
+      null
     );
   }
 
@@ -5476,25 +5493,74 @@
     return null;
   }
 
+  type PendingProposalReveal =
+    'shown' | 'cancelled' | 'seek-failed' | 'message-not-rendered' | 'card-not-found';
+
+  // Bring the ref's card into view: seek history when its message is outside
+  // the loaded window, force-render its (possibly virtualized) turn, find the
+  // card by key, scroll and flash. 'cancelled' means a newer navigation or
+  // deactivation took over; every other non-'shown' outcome is a real miss.
+  async function revealPendingProposal(
+    ref: PendingProposalRef,
+    getContainer: () => HTMLElement | null,
+  ): Promise<PendingProposalReveal> {
+    if (!messageIdToTurnKey.has(ref.messageId)) {
+      const found = await seekConversationToMessage(agentId, ref.messageId, workspace?.id);
+      if (!getContainer()) return 'cancelled';
+      if (!found) return 'seek-failed';
+      await tick();
+      if (!getContainer()) return 'cancelled';
+    }
+    const message = await forceRenderAndFindMessage(ref.messageId, getContainer);
+    if (!getContainer()) return 'cancelled';
+    if (!message) return 'message-not-rendered';
+    let card: HTMLElement | null = null;
+    for (let attempt = 0; attempt < 5 && !card; attempt++) {
+      if (attempt > 0) await new Promise(requestAnimationFrame);
+      else await tick();
+      if (!getContainer()) return 'cancelled';
+      card = findPendingProposalCardByKey(message, ref);
+    }
+    if (!card) {
+      scheduleDeepOpenRelease();
+      return 'card-not-found';
+    }
+    smoothScrollTo(card, 'center', undefined, getContainer);
+    card.classList.add('highlight-flash');
+    scheduleHighlightRemoval(card, 'highlight-flash', 1500);
+    scheduleDeepOpenRelease();
+    return 'shown';
+  }
+
   async function scrollToPendingProposal(): Promise<void> {
     const messageId = offscreenPendingProposalMessageId;
     const ref = openPendingProposalRefs.find((candidate) => candidate.messageId === messageId);
-    if (!messageId || !ref) return;
-    const getContainer = beginScrollNavigation();
-    if (!messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id)) || !getContainer())
-        return;
-      await tick();
+    if (!messageId || !ref) {
+      offscreenPendingProposalMessageId = null;
+      return;
     }
-    const message = await forceRenderAndFindMessage(messageId, getContainer);
-    if (!message || !getContainer()) return;
-    await tick();
-    if (!getContainer()) return;
-    const target = findPendingProposalCard(message, ref) ?? message;
-    smoothScrollTo(target, 'center', undefined, getContainer);
-    target.classList.add('highlight-flash');
-    scheduleHighlightRemoval(target, 'highlight-flash', 1500);
-    scheduleDeepOpenRelease();
+    const getContainer = beginScrollNavigation();
+    const outcome = await revealPendingProposal(ref, getContainer);
+    if (outcome === 'shown' || outcome === 'cancelled') return;
+    logger.warn('[ChatPanel] Pending proposal card not reachable from the pill', {
+      agentId,
+      messageId: ref.messageId,
+      proposalId: ref.proposalId,
+      reason: outcome,
+    });
+    const stillPending = openPendingProposalRefs.some(
+      (candidate) =>
+        candidate.messageId === ref.messageId && candidate.proposalId === ref.proposalId,
+    );
+    // A ref settled while we looked: the pill is stale, not the user's problem.
+    if (!stillPending) {
+      if (offscreenPendingProposalMessageId === ref.messageId)
+        offscreenPendingProposalMessageId = null;
+      return;
+    }
+    notify.warning(m.chat_proposalTray_notFound_error(), {
+      key: `pending-proposal-not-found:${agentId}`,
+    });
   }
 
   // Entry positioning for the unread marker: force-render the anchor message's
