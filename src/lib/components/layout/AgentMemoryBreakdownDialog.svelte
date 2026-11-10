@@ -30,6 +30,7 @@
     selectAgentMemoryUsage,
     selectAgentMemoryUsageError,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectWorkspaceTitlesById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import type {
     AgentMemoryRemoteOwner,
@@ -47,6 +48,7 @@
   const agentMemoryUsage$ = selectAgentMemoryUsage();
   const agentMemoryUsageError$ = selectAgentMemoryUsageError();
   const providerEntries$ = selectProviderCatalogEntries();
+  const workspaceTitles$ = selectWorkspaceTitlesById();
 
   let open = $state(true);
   // Agent ids whose process list is expanded.
@@ -68,32 +70,52 @@
     return $providerEntries$.find((entry) => entry.id === providerId)?.shortName ?? providerId;
   }
 
-  // An agent run for another backend has no name on this machine (the launch
-  // does not carry one), and its workspace id is the backend's, so it cannot
-  // be resolved here: name it by provider and model instead, falling back to
-  // a short agent id.
+  // An agent run for another backend is named by its launch on newer
+  // daemons; older ones send no name and a backend workspace id that cannot
+  // be resolved here, so fall back to provider and model, then a short id.
   function agentLabel(agent: AgentMemoryUsageAgentWirePayload): string {
     const name = agent.agentName?.trim();
     if (name) return name;
-    if (agent.remoteOwner && agent.provider) {
-      const provider = providerName(agent.provider);
-      // i18n-ignore (separator between provider and model names)
-      return agent.model ? `${provider} · ${agent.model}` : provider;
-    }
+    if (agent.remoteOwner && agent.provider) return providerModel(agent);
     return m.layout_agentMemoryBreakdown_unnamedAgent_label({ id: agent.agentId.slice(0, 8) });
   }
 
-  // Workspace and provider/model for local rows; a remote row's label
-  // already names its provider and model.
+  function providerModel(agent: AgentMemoryUsageAgentWirePayload): string {
+    const provider = providerName(agent.provider ?? '');
+    // i18n-ignore (separator between provider and model names)
+    return agent.model ? `${provider} · ${agent.model}` : provider;
+  }
+
+  // "for <backend>", plus the backend's workspace title when the launch sent one.
+  function ownerTag(agent: AgentMemoryUsageAgentWirePayload, owner: AgentMemoryRemoteOwner) {
+    const tag = m.layout_agentMemoryBreakdown_remoteOwner_label({ backend: ownerName(owner) });
+    const workspace = agent.workspaceTitle?.trim();
+    return workspace ? `${tag} · ${workspace}` : tag; // i18n-ignore (separator)
+  }
+
+  // Local rows carry no title: resolve it from this client's workspaces.
+  function localWorkspaceLabel(workspaceId: string): string {
+    return $workspaceTitles$[workspaceId]?.trim() || workspaceId;
+  }
+
+  function providerDetail(agent: AgentMemoryUsageAgentWirePayload): string {
+    if (!agent.provider) return '';
+    return agent.model ? `${agent.provider}/${agent.model}` : agent.provider;
+  }
+
+  // Local rows: workspace (title, else id) and provider/model. Remote rows:
+  // provider/model only when the label is the agent's name.
   function agentDetail(agent: AgentMemoryUsageAgentWirePayload): string {
-    if (agent.remoteOwner) return '';
+    if (agent.remoteOwner) return agent.agentName?.trim() ? providerDetail(agent) : '';
     const parts: string[] = [];
     if (agent.workspaceId) {
-      parts.push(m.layout_agentMemoryBreakdown_workspace_label({ workspace: agent.workspaceId }));
+      parts.push(
+        m.layout_agentMemoryBreakdown_workspace_label({
+          workspace: localWorkspaceLabel(agent.workspaceId),
+        }),
+      );
     }
-    if (agent.provider) {
-      parts.push(agent.model ? `${agent.provider}/${agent.model}` : agent.provider);
-    }
+    if (agent.provider) parts.push(providerDetail(agent));
     return parts.join(' · '); // i18n-ignore (separator between already-localized parts)
   }
 </script>
@@ -152,11 +174,7 @@
                       <span class="truncate text-foreground">{agentLabel(agent)}</span>
                       {#if agent.remoteOwner}
                         <Badge variant="dot" size="compact" class="min-w-0 shrink">
-                          <span class="min-w-0 truncate"
-                            >{m.layout_agentMemoryBreakdown_remoteOwner_label({
-                              backend: ownerName(agent.remoteOwner),
-                            })}</span
-                          >
+                          <span class="min-w-0 truncate">{ownerTag(agent, agent.remoteOwner)}</span>
                         </Badge>
                       {/if}
                     </span>
