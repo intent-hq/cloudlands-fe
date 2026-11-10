@@ -51,10 +51,7 @@ import {
 import type { QueuedMessage } from '$shared/types';
 import type { PendingQueueDisplayRow } from '../pending-submissions/pending-submissions-projection';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
-import {
-  isUserQueuedMessage,
-  omitDrainedQueuedMessages,
-} from '$lib/utils/queued-message-visibility';
+import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
 import {
   pendingSubmissionMessage,
   processingSubmissionMessage,
@@ -161,10 +158,7 @@ export const selectDockConversationView = store.createSelector((state) => {
     const humanQueue = selectAgentQueueMessages
       .select(state, agentId, workspaceId)
       .filter(isUserQueuedMessage);
-    queuedMessages =
-      state.principal.snapshot?.capabilities.submissionCorrelation === 1
-        ? humanQueue
-        : omitDrainedQueuedMessages(humanQueue, tail);
+    queuedMessages = humanQueue;
     queueRows = (pending?.queue ?? []).filter(
       (row) => !row.confirmedId || queuedMessages.some((message) => message.id === row.confirmedId),
     );

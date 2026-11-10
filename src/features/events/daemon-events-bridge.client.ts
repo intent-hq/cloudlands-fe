@@ -1,3 +1,4 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectCanReadScriptDefinition,
   selectUsesGuestScriptScope,
@@ -1804,6 +1805,21 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
  * Queue snapshots and enqueue acknowledgements cannot override that authority.
  * Legacy events without the array retain turn-based best-effort promotion.
  */
+/**
+ * A processing/terminal edge can outlive a dropped queue snapshot. Re-read the
+ * daemon rather than inferring membership from persisted transcript IDs: a
+ * partially persisted batch may be restored under those same IDs. The shared
+ * reader coalesces bursts and fences late reads against newer snapshots/owners.
+ */
+function reconcileQueueAfterLifecycle(event: WorkspaceEvent, agentId: string): void {
+  const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
+  if (!isAgentReadWorkspaceCurrent(agentId, event.workspaceId)) return;
+  const entry = appStore.state.agentQueue?.byAgentId[agentId];
+  if (!entry || getItems(entry.messages).length === 0) return;
+  void hydrateAgentQueue(agentId, event.workspaceId ?? ownerWorkspace);
+}
+
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -1835,6 +1851,7 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
     appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
   } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
   openDrainedTurn(event, agentId);
+  reconcileQueueAfterLifecycle(event, agentId);
 }
 
 /**
@@ -4626,6 +4643,8 @@ export function routeDaemonEventsNotification(
       observeSubmissionLifecycle(submissionAgentId, workspaceId, false);
     if (type === 'agent:stream:start')
       observeSubmissionLifecycle(submissionAgentId, workspaceId, true);
+    if (type === 'agent:idle' || type === 'agent:failed' || type === 'agent:stream:end')
+      reconcileQueueAfterLifecycle(event, submissionAgentId);
   }
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
