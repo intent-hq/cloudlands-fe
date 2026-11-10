@@ -135,12 +135,12 @@ export function isProviderReadyInResult(
  */
 export const NPX_ONLY_PATH_OVERRIDE_PROVIDERS: ReadonlySet<string> = new Set(['claude-code']);
 
-/** Antigravity needs a confirmed OAuth session; preserve other providers' gates. */
+/** A provider is auth-ready unless its probe said it is not logged in. */
 export function isProviderAuthenticationReady(
-  providerId: string,
+  _providerId: string,
   authenticated?: boolean,
 ): boolean {
-  return providerId === 'antigravity' ? authenticated === true : authenticated !== false;
+  return authenticated !== false;
 }
 
 /**

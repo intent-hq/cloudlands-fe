@@ -102,7 +102,6 @@ import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposa
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
 import { secretRequestsSaga } from './slices/secret-requests/sagas/secret-requests-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
-import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
 import { agentWorkersSaga } from './slices/agent-workers/sagas/agent-workers-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
@@ -231,7 +230,6 @@ export const sagas = [
   modelSelectionSaga,
   backgroundAgentSettingsSaga,
   providerSettingsSaga,
-  antigravitySetupSaga,
   modelBootSaga,
   modelReloadSaga,
   providerAvailabilitySaga,

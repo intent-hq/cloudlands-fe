@@ -353,7 +353,7 @@ export class UnifiedAgentFactory {
           // agent creation ended up targeting an uninstalled Auggie binary.
           // An explicit provider is a caller's deliberate choice and
           // is not gated here; only this active-provider fallback is.
-          let isActiveProviderAvailable = activeId !== 'antigravity';
+          let isActiveProviderAvailable = true;
           try {
             // Only refuse once availability is confirmed known; while the
             // first check hasn't resolved yet, selectAvailableEnabledProviderIds
@@ -361,10 +361,10 @@ export class UnifiedAgentFactory {
             // unavailable" — that would refuse creation during initial load.
             const availabilityKnown = selectHasCheckedOnce.select(appStore.state);
             isActiveProviderAvailable =
-              (!availabilityKnown && activeId !== 'antigravity') ||
+              !availabilityKnown ||
               selectAvailableEnabledProviderIds.select(appStore.state).includes(activeId);
           } catch {
-            // Keep other providers' unknown-state behavior; Antigravity needs confirmation.
+            // Keep unknown-state behavior: do not refuse on a selector failure.
           }
           if (!isActiveProviderAvailable) {
             logger.error('Active provider is unavailable; refusing to create agent', {

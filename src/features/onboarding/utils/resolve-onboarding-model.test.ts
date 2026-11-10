@@ -167,17 +167,6 @@ function setAvailability(
 }
 
 describe('resolveOnboardingModel', () => {
-  it('does not auto-pick Antigravity without a saved preference or card/model choice', async () => {
-    mockState.activeProviderId = '';
-    setAvailability({ antigravity: { available: true, authenticated: true } });
-    expect((await resolveOnboardingModel(fakeState)).provider).toBe('');
-    setAvailability({
-      antigravity: { available: true, authenticated: true },
-      codex: { available: true, authenticated: true },
-    });
-    expect((await resolveOnboardingModel(fakeState)).provider).toBe('codex');
-  });
-
   it.each(['active', 'specialist', 'model'])(
     'honors an explicit Antigravity %s choice',
     async (choice) => {

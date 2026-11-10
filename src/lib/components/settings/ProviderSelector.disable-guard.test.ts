@@ -42,8 +42,6 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 async function buildState(fileSpecialists: object[]) {
-  const { initialState: setupInitialState } =
-    await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
   const { initialState: specialistsInitialState } =
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
@@ -65,7 +63,6 @@ async function buildState(fileSpecialists: object[]) {
     // The add-profile dialog reads the daemon transport; the real store always
     // registers this slice.
     daemonHealth: { ...daemonHealthInitialState },
-    antigravitySetup: { ...setupInitialState },
     providerCatalog: providerCatalogReducer(
       providerCatalogInitialState,
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),

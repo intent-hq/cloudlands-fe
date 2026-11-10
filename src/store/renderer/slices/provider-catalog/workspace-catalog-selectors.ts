@@ -80,9 +80,7 @@ export const selectContextModelProviderIds = store.createSelector(
         (p) =>
           p.visible &&
           (!p.canBeDisabled || enabled[p.id] || p.id === defaultId) &&
-          readiness[p.id]?.available &&
-          (p.id !== 'antigravity' ||
-            isProviderAuthenticationReady(p.id, readiness[p.id]?.authenticated)),
+          readiness[p.id]?.available,
       )
       .map((p) => p.id);
   },

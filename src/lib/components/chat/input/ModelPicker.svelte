@@ -67,10 +67,7 @@
     selectIsDaemonAppOwned,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { ensureProvidersChecked } from '$store/renderer/slices/agent-availability/agent-availability-slice';
-  import {
-    selectIsProviderModelAccessAllowed,
-    selectActiveProviderId,
-  } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+  import { selectActiveProviderId } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import {
     selectContextDefaultProvider,
     selectContextReadinessLoaded,
@@ -273,23 +270,13 @@
     return $providerCatalogEntries$.some((p) => p.id === normalizeProviderId(providerId));
   }
 
-  const antigravityModelsAllowed$ = selectIsProviderModelAccessAllowed('antigravity');
-  // Antigravity sign-in is a guest-local fact; a guest-locked picker reads the
-  // host catalog regardless (`isGuestLocked` is declared with the props below
-  // and only read once the picker is rendering).
   function canUseProviderModels(providerId: string, allowLoadedCatalog = false): boolean {
     if (workspaceId && isGuestLocked && providerId) return true;
     // An existing models.list response has its own provider provenance. Keep
     // its labels during registry hydration; writes still require a registry row.
-    if (
-      !hasResolvedProvider(providerId) &&
-      !(allowLoadedCatalog && providerId && providerId === $availableModelsProviderId$)
-    )
-      return false;
     return (
-      normalizeProviderId(providerId) !== 'antigravity' ||
-      (workspaceId ? $modelFetchProviderIds$.includes(providerId) : $antigravityModelsAllowed$) ||
-      isGuestLocked
+      hasResolvedProvider(providerId) ||
+      (allowLoadedCatalog && !!providerId && providerId === $availableModelsProviderId$)
     );
   }
   const availableModels$ = selectAvailableModels();

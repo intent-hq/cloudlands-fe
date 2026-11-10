@@ -114,43 +114,24 @@ function isProviderHidden(state: any, providerId: string): boolean {
   return Boolean(entry?.requiresEnvVar || entry?.requiresFeatureCode);
 }
 
-/** Antigravity model access requires confirmed sign-in, including at startup.
- * Other providers retain their existing model-probe behavior. This does not
- * change enabled/default preferences or require an agent's provider to be enabled. */
-export const selectIsProviderModelAccessAllowed = store.createSelector(
-  (state, providerId: string): boolean => {
-    if (providerId !== 'antigravity') return true;
-    const status = selectProviderStatusMap.select(state)[providerId];
-    return (
-      status?.available === true && isProviderAuthenticationReady(providerId, status.authenticated)
-    );
-  },
-);
-
 /** Enabled, visible providers that are ready for model selection.
  * This set never changes the user's saved provider preference. */
 export const selectAvailableEnabledProviderIds = store.createSelector((state): string[] => {
   const statusMap = selectProviderStatusMap.select(state);
   return selectEnabledProviderIds
     .select(state)
-    .filter(
-      (id) =>
-        !isProviderHidden(state, id) &&
-        statusMap[id]?.available === true &&
-        selectIsProviderModelAccessAllowed.select(state, id),
-    );
+    .filter((id) => !isProviderHidden(state, id) && statusMap[id]?.available === true);
 });
 
 /**
  * Providers a quota-exceeded turn can be retried on (#4455): the
  * available+enabled set narrowed to providers whose sign-in is ready, minus
- * the exhausted provider. `selectAvailableEnabledProviderIds` is a model-picker
- * gate that only applies the auth rule to Antigravity, so a signed-out Codex /
- * Droid / Auggie with `{ available: true, authenticated: false }` would
- * otherwise be offered as a dead-end retry target. Unknown auth (no
- * `authenticated` flag reported) stays offered, matching
- * `isProviderAuthenticationReady`. A retry target must be explicitly enabled
- * or the daemon's setModel gate rejects the switch.
+ * the exhausted provider. `selectAvailableEnabledProviderIds` applies no auth
+ * rule, so a signed-out Codex / Droid / Auggie with
+ * `{ available: true, authenticated: false }` would otherwise be offered as a
+ * dead-end retry target. Unknown auth (no `authenticated` flag reported)
+ * stays offered, matching `isProviderAuthenticationReady`. A retry target
+ * must be explicitly enabled or the daemon's setModel gate rejects the switch.
  * Does not change the generic picker policy.
  */
 export const selectQuotaRetryProviderIds = store.createSelector(
@@ -168,13 +149,12 @@ export const selectQuotaRetryProviderIds = store.createSelector(
   },
 );
 
-/** Initial model fetches may precede general discovery, but not Antigravity auth. */
-export const selectModelFetchProviderIds = store.createSelector((state): string[] => {
-  const ids = selectHasCheckedOnce.select(state)
+/** Initial model fetches may precede general discovery. */
+export const selectModelFetchProviderIds = store.createSelector((state): string[] =>
+  selectHasCheckedOnce.select(state)
     ? selectAvailableEnabledProviderIds.select(state)
-    : selectEnabledProviderIds.select(state);
-  return ids.filter((id) => selectIsProviderModelAccessAllowed.select(state, id));
-});
+    : selectEnabledProviderIds.select(state),
+);
 
 /** Whether the currently active provider is in the available+enabled set. */
 export const selectIsActiveProviderAvailable = store.createSelector((state): boolean => {

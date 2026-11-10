@@ -129,17 +129,6 @@ describe('selectShowRemoteSetupPrompt', () => {
 });
 
 describe('selectBackendSetupGate', () => {
-  it.each([undefined, false, true])(
-    'does not bypass setup with Antigravity auth=%s',
-    (authenticated) => {
-      const state = stateWith({
-        providerStatusMap: { antigravity: { available: true, authenticated } },
-      });
-      expect(selectBackendSetupGate.select(state)).toBe(
-        authenticated === true ? 'none' : 'pending',
-      );
-    },
-  );
   it("returns 'none' when the backend has workspaces", () => {
     const state = stateWith({ workspaceIds: ['ws-1'] });
     expect(selectBackendSetupGate.select(state)).toBe('none');

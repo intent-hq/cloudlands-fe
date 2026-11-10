@@ -87,7 +87,6 @@ describe('renderer app saga registry', () => {
       'modelSelectionSaga',
       'backgroundAgentSettingsSaga',
       'providerSettingsSaga',
-      'antigravitySetupSaga',
       'modelBootSaga',
       'modelReloadSaga',
       'providerAvailabilitySaga',

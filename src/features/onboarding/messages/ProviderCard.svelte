@@ -93,18 +93,10 @@
   const needsLogin = $derived(
     provider.available && !provider.statusLoading && provider.authenticated === false,
   );
-  const authUnknown = $derived(
-    provider.id === 'antigravity' &&
-      installed &&
-      provider.authenticated === undefined &&
-      !provider.statusLoading,
-  );
   const ready = $derived(
     installed && isProviderAuthenticationReady(provider.id, provider.authenticated),
   );
-  const needsAction = $derived(
-    !provider.statusLoading && (needsInstall || needsLogin || authUnknown),
-  );
+  const needsAction = $derived(!provider.statusLoading && (needsInstall || needsLogin));
   const cardClickable = $derived(
     ready || (!ready && !provider.statusLoading && !!provider.docsUrl),
   );
@@ -163,11 +155,9 @@
         ? selected
           ? m.onboarding_providerCard_selected_ariaLabel({ name: provider.name })
           : m.onboarding_providerCard_use_ariaLabel({ name: provider.name })
-        : authUnknown
-          ? m.providers_antigravity_authUnknown()
-          : needsLogin
-            ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
-            : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
+        : needsLogin
+          ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
+          : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
@@ -268,8 +258,6 @@
               {/if}
             </div>
           </div>
-        {:else if authUnknown}
-          <span>{m.providers_antigravity_authUnknown()}</span>
         {:else if needsLogin}
           {#if provider.id === 'claude-code'}
             <ClaudeLoginButton />
@@ -289,7 +277,7 @@
         {/if}
 
         <div class="flex items-center gap-1.5">
-          {#if needsInstall || needsLogin || authUnknown}
+          {#if needsInstall || needsLogin}
             <Button
               variant="plain"
               type="button"

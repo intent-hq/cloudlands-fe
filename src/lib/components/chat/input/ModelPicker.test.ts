@@ -387,8 +387,6 @@ const mockAgentSession$ = writable<
     }
   | undefined
 >(undefined);
-// Guest-local Antigravity sign-in state (`selectIsProviderModelAccessAllowed`).
-const antigravityModelsAllowed$ = writable(true);
 // Raw `providers.enabled` map (settings-derived disabled state, intent#5737).
 // Empty by default: an absent entry is "not disabled", so existing tests that
 // only manipulate the enabled/available lists keep working unchanged.
@@ -401,8 +399,6 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
       [hasCheckedOnce$, enabledProviderIds$, availableEnabledProviderIds$],
       ([checked, enabled, available]) => (checked ? available : enabled),
     ),
-  selectIsProviderModelAccessAllowed: (providerId: string) =>
-    providerId === 'antigravity' ? antigravityModelsAllowed$ : readable(true),
   selectAvailableEnabledProviderIds: () => availableEnabledProviderIds$,
 }));
 
@@ -671,7 +667,6 @@ describe('ModelPicker guest / collaborator lock', () => {
     hasCheckedOnce$.set(true);
     enabledProviderIds$.set(['auggie']);
     activeProviderId$.set('auggie');
-    antigravityModelsAllowed$.set(true);
   });
 
   it('guest window: renders disabled with the host catalog label and provider icon, no warning, no mutation', async () => {
@@ -1089,11 +1084,10 @@ describe('ModelPicker guest / collaborator lock', () => {
     });
   });
 
-  it('guest window: an Antigravity agent reads the host catalog even without local Antigravity sign-in', async () => {
+  it('guest window: an Antigravity agent reads the host catalog even without a local Antigravity install', async () => {
     const { agentClient } = await import('$features/agent/agent.client');
     asGuestWindow();
     availableProviderOverride$.set([]);
-    antigravityModelsAllowed$.set(false);
     mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'antigravity' });
     vi.mocked(getModelsForProviderForLoadingState).mockImplementation(async (providerId) =>
       providerId === 'antigravity'
@@ -1121,19 +1115,6 @@ describe('ModelPicker guest / collaborator lock', () => {
     expect(screen.queryByRole('status')).toBeNull();
     expect(dispatchedTypes()).not.toContain('agentSession/updateSession');
     expect(vi.mocked(agentClient.setModel)).not.toHaveBeenCalled();
-  });
-
-  it('owner window: an Antigravity agent still waits for local Antigravity sign-in before reading its catalog', async () => {
-    withWorkspaceRole('owner');
-    antigravityModelsAllowed$.set(false);
-    mockAgentSession$.set({ id: 'agent-1', workspaceId: 'ws-1', provider: 'antigravity' });
-
-    renderAgentPicker('antigravity:gemini-3.7-flash-high');
-
-    const button = screen.getByRole('button');
-    expect(button.hasAttribute('disabled')).toBe(false);
-    await new Promise((r) => setTimeout(r, 50));
-    expect(vi.mocked(getModelsForProviderForLoadingState)).not.toHaveBeenCalledWith('antigravity');
   });
 
   it('collaborator seat in an owner window: renders disabled with the catalog label and no warning', async () => {

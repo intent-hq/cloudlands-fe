@@ -1774,9 +1774,6 @@
     "src/store/renderer/sagas.ts": [
       "sagas"
     ],
-    "src/store/renderer/seeders/antigravity-setup-bridge-seeder.ts": [
-      "registerAntigravitySetupBridge"
-    ],
     "src/store/renderer/seeders/auto-update-bridge-seeder.ts": [
       "registerAutoUpdateBridge"
     ],
@@ -1884,12 +1881,6 @@
     ],
     "src/store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga.ts": [
       "COMPLETED_DISPLAY_DURATION_MS"
-    ],
-    "src/store/renderer/slices/antigravity-setup/antigravity-setup-slice.ts": [
-      "initialState"
-    ],
-    "src/store/renderer/slices/antigravity-setup/sagas/antigravity-setup-saga.ts": [
-      "antigravitySetupWorker"
     ],
     "src/store/renderer/slices/app-layout/app-layout-slice.ts": [
       "initialState"
