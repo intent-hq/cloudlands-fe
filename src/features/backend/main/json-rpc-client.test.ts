@@ -56,6 +56,28 @@ describe('JsonRpcClient', () => {
     vi.useRealTimers();
   });
 
+  it.each(['remoteMachines.add', 'remoteMachines.claim'])(
+    'never shows %s params (token or node link) to traffic observers',
+    async (method) => {
+      const { client, socket } = makeClient();
+      const observer = vi.fn();
+      client.observeTraffic(observer);
+      client.start();
+      socket.open();
+      const pending = client.request(method, {
+        uri: 'intent://node?v=1&invite=i&secret=never-log-secret',
+        token: 'never-log-token',
+      });
+      socket.receive(`{"jsonrpc":"2.0","id":1,"result":{"machine":null}}\n`);
+      await pending;
+      const seen = JSON.stringify(observer.mock.calls);
+      expect(seen).toContain(method);
+      expect(seen).not.toContain('never-log-secret');
+      expect(seen).not.toContain('never-log-token');
+      client.dispose();
+    },
+  );
+
   it('frames requests as newline-delimited JSON with incrementing ids', async () => {
     const { client, socket } = makeClient();
     client.start();

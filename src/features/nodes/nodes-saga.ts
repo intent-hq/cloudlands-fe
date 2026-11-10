@@ -297,8 +297,9 @@ function* inviteSupport(): SagaGenerator<'ok' | NodeRefusal | 'invites-unsupport
 /**
  * Ask, then claim a held node link on the current backend. Refused (and
  * dropped) when the backend can't use the machine. From the paste row,
- * Cancel still applies while support is checked; once the claim starts it
- * runs to the end. Returns the error to show, null once claimed, or 'cancelled'.
+ * Cancel stops it before the claim; during the claim it only closes the row
+ * (a machine still added is listed). Returns the error to show, null once
+ * claimed, or 'cancelled'.
  */
 function* claimInvite(
   held: { pendingId: string; label: string },
@@ -326,20 +327,30 @@ function* claimInvite(
     return 'cancelled';
   }
   if (masked !== null) yield* put(pasteTestingStarted(masked));
-  let reply: unknown;
+  let request: Promise<unknown>;
   try {
-    reply = yield* call(invokeInviteClaim, held.pendingId);
+    request = invokeInviteClaim(held.pendingId).catch(() => ({ ok: false, code: 'failed' }));
   } catch {
-    reply = { ok: false, code: 'failed' };
+    request = Promise.resolve({ ok: false, code: 'failed' });
+  }
+  // The backend can't be stopped once it claims: Cancel only closes the row.
+  let dismissed = false;
+  let reply: unknown;
+  if (fromPaste) {
+    const claimed = yield* race({ reply: call(() => request), closed: take(pasteClosed) });
+    dismissed = !!claimed.closed;
+    reply = dismissed ? yield* call(() => request) : claimed.reply;
+  } else {
+    reply = yield* call(() => request);
   }
   const error = claimError(reply, held.label);
-  if (error) return error;
+  if (error) return dismissed ? 'cancelled' : error;
   const machine = parseRemoteMachine((reply as { machine: unknown }).machine)!;
   yield* put(remoteMachineChanged(machine));
   yield* call(highlight, machine.id);
   if (fromPaste) {
     lastPasted = null;
-    yield* put(pasteCompleted());
+    if (!dismissed) yield* put(pasteCompleted());
   }
   return null;
 }

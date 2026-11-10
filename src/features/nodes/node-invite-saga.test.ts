@@ -193,6 +193,30 @@ describe('paste an intent://node link', () => {
     await vi.waitFor(() => expect(store.state.nodes.paste.phase).toBe('closed'));
   });
 
+  it('Cancel while the backend claims keeps the row closed when the claim fails', async () => {
+    let finish: (reply: NodeInviteClaimResult) => void = () => {};
+    claimReply = new Promise((resolve) => (finish = resolve));
+    submit(LINK);
+    await vi.waitFor(() => expect(store.state.nodes.paste.phase).toBe('testing'));
+    dispatch(pasteClosed());
+    finish({ ok: false, code: 'node-invite-used' });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(store.state.nodes.paste.phase).toBe('closed');
+    expect(store.state.nodes.paste.error).toBeNull();
+  });
+
+  it('Cancel while the backend claims still lists a machine it added', async () => {
+    let finish: (reply: NodeInviteClaimResult) => void = () => {};
+    claimReply = new Promise((resolve) => (finish = resolve));
+    submit(LINK);
+    await vi.waitFor(() => expect(store.state.nodes.paste.phase).toBe('testing'));
+    dispatch(pasteClosed());
+    finish({ ok: true, machine: MACHINE });
+    await vi.waitFor(() => expect(store.state.nodes.highlightId).toBe('d-gpu'));
+    expect(store.state.remoteMachines.machines['d-gpu']).toBeDefined();
+    expect(store.state.nodes.paste.phase).toBe('closed');
+  });
+
   it('Cancel in the dialog drops the held link and claims nothing', async () => {
     ui.confirm.mockResolvedValue(false);
     submit(LINK);

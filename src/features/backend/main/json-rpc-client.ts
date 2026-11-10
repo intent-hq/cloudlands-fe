@@ -210,6 +210,8 @@ const REDACTED_TRAFFIC_METHODS: ReadonlySet<string> = new Set([
   'desktop.revoke',
   'secret.provide',
   'remoteMachines.add',
+  // `uri` is an `intent://node` link carrying the invite secret.
+  'remoteMachines.claim',
 ]);
 
 /** Request methods whose results never reach traffic observers: `executor.mint` returns the executor token. */
