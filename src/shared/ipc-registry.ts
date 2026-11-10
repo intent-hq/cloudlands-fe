@@ -1168,6 +1168,43 @@ export const IPC_CHANNELS = {
     // { isOwner: boolean } payload (also in EVENT_CHANNELS).
     OWNER_CHANGED: 'hardware-console:owner-changed',
   },
+
+  // Unified window (Labs): one window whose tab strip mixes workspaces from every
+  // machine. The shell renderer owns the tabs; one view per machine shows content.
+  UNIFIED: {
+    // Any normal window → main: open the Unified window, or focus it → { opened }
+    OPEN: 'unified:open',
+    // Shell → main: the persisted restore record → UnifiedWindowState | null
+    GET_STATE: 'unified:get-state',
+    // Shell → main: persist the restore record (tabs, groups, active tab, dropdown machine)
+    SAVE_STATE: 'unified:save-state',
+    // Shell → main: the cross-machine workspace feed → UnifiedMachineFeed[]
+    GET_FEED: 'unified:get-feed',
+    // Main → shell push: UnifiedMachineFeed[] after any change
+    FEED_CHANGED: 'unified:feed-changed',
+    // Shell → main: show a machine's view at a route { machineId, route } → { ok }
+    SHOW: 'unified:show',
+    // Shell → main: where views go, in window coordinates { x, y, width, height }
+    SET_CONTENT_BOUNDS: 'unified:set-content-bounds',
+    // Shell → main: connect one machine now (user picked it; may show a keychain prompt)
+    CONNECT: 'unified:connect',
+    // Main → shell push: { machineId, state } connection attempts ('connecting' | 'failed' | 'connected')
+    MACHINE_STATE: 'unified:machine-state',
+    // Machine view → main: open a workspace as a Unified tab { workspaceId } (view's own machine)
+    OPEN_WORKSPACE: 'unified:open-workspace',
+    // Main → shell push: { machineId, workspaceId } from a view, a link or a notification
+    OPEN_REQUEST: 'unified:open-request',
+    // Main → machine view push: navigate to a route (the shell selected a tab or Home)
+    NAVIGATE: 'unified:navigate',
+    // Main → machine view push: the shell's open tabs on that view's machine { workspaceIds }
+    TABS: 'unified:tabs',
+    // Shell → main: the shell's open tabs per machine { tabs: Record<machineId, workspaceId[]> }
+    SET_TABS: 'unified:set-tabs',
+    // Shell → main: hide every machine view (the shell shows an offline tab itself)
+    HIDE_VIEWS: 'unified:hide-views',
+    // Main → shell push: a tab shortcut pressed while a machine view had focus { command, index? }
+    SHORTCUT: 'unified:shortcut',
+  },
 } as const;
 
 // Event channels that are sent from main to renderer
@@ -1193,6 +1230,13 @@ export const EVENT_CHANNELS = [
   'window:dock-placement-changed',
   'window:dock-pointer-presence-changed',
   'window:dock-lab-changed',
+  'window:unified-window-lab-changed',
+  'unified:feed-changed',
+  'unified:machine-state',
+  'unified:open-request',
+  'unified:navigate',
+  'unified:tabs',
+  'unified:shortcut',
   'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',

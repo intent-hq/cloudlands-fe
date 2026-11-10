@@ -55,6 +55,7 @@ import {
   hasLiveViewForBackend,
   isUnifiedShellWindow,
   stampWindowWithBackend,
+  UNIFIED_SHELL_BACKEND_ID,
 } from './window-backend';
 
 export { getBackendIdForWebContents, getBackendIdForWindow, stampWindowWithBackend };
@@ -132,12 +133,7 @@ function buildWindowOptions(opts: {
     height: opts.bounds.height,
     minWidth: 800,
     minHeight: 600,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload-build/preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true,
-    },
+    webPreferences: appRendererWebPreferences(),
     ...getWindowTitleBarOptions(),
     title: opts.title,
     ...getWindowAppearanceOptions(isDarkMode),
@@ -151,6 +147,41 @@ function buildWindowOptions(opts: {
  * handlers are registered (see ./renderer-window-gate.ts); callers never
  * re-derive that readiness themselves.
  */
+/** Web preferences every app renderer uses (windows and Unified window views). */
+export function appRendererWebPreferences(): Electron.WebPreferences {
+  return {
+    preload: path.join(__dirname, '../preload-build/preload/index.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    webviewTag: true,
+  };
+}
+
+/** Whether windows are closing because the app is quitting or installing an update. */
+export function isWindowSessionTeardown(): boolean {
+  return isQuitTeardownInProgress;
+}
+
+/**
+ * Create the Unified window: a normal app window stamped with the shell id (it
+ * talks to no backend) and loaded on the shell route. Its machine views are added
+ * by the Unified window controller.
+ */
+export async function createUnifiedHostWindow(route: string): Promise<BrowserWindowType> {
+  const { workArea } = screen.getPrimaryDisplay();
+  const window = await createConfiguredWindow({
+    bounds: { x: workArea.x, y: workArea.y, width: workArea.width, height: workArea.height },
+    title: resolveAppTitle(),
+    iconPath: resolveIcon(true),
+  });
+  stampWindowWithBackend(window, UNIFIED_SHELL_BACKEND_ID);
+  forwardRendererConsoleToMainLog(window);
+  window
+    .loadURL(buildLoadUrl(route))
+    .catch((error: unknown) => logger.error('Failed to load Unified window URL:', error as Error));
+  return window;
+}
+
 async function createConfiguredWindow(
   opts: Parameters<typeof buildWindowOptions>[0],
 ): Promise<BrowserWindowType> {
@@ -244,6 +275,11 @@ export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void
  * Build the URL to load in a window (dev server or production app:// protocol).
  */
 const DEFAULT_WINDOW_ROUTE = '/workspace/new';
+
+/** The app URL for a renderer route (dev server or the packaged app protocol). */
+export function buildAppLoadUrl(route: string): string {
+  return buildLoadUrl(route);
+}
 
 function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
   if (process.env.NODE_ENV === 'development') {

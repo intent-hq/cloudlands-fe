@@ -103,6 +103,11 @@
     scrollerMarginLeftPx?: number;
     /** Unified window: the machine each tab lives on; non-local tabs get a marker, offline tabs grey out. */
     tabMachine?: (workspaceId: string) => UnifiedMachine | null;
+    /**
+     * Unified window: select a tab (or, with null, the empty destination) without
+     * routing this renderer; the shell shows the tab in its machine view.
+     */
+    navigateToTab?: (workspaceId: string | null) => void;
   }
   let {
     onActiveTabBoundsChange,
@@ -112,6 +117,7 @@
     leadingInsetPx = 28,
     scrollerMarginLeftPx = WORKSPACE_TAB_SCROLLER_MARGIN_LEFT_PX,
     tabMachine,
+    navigateToTab,
   }: Props = $props();
   const microConnected$ = microConnectedReadable();
   const currentWorkspaceTabId$ = selectCurrentWorkspaceTabId();
@@ -590,8 +596,9 @@
 
   async function openWorkspace(workspaceId: string, restoreFocus = false) {
     appStore.dispatch(openWorkspaceTab(workspaceId));
+    if (navigateToTab) navigateToTab(workspaceId);
     // eslint-disable-next-line intent/no-raw-workspace-navigation -- selects a tab already in the strip; it is focused before navigating so the strip highlights at once.
-    await goto(`/workspace/${workspaceId}`);
+    else await goto(`/workspace/${workspaceId}`);
     if (restoreFocus) requestAnimationFrame(() => tabButtons[workspaceId]?.focus());
   }
 
@@ -606,12 +613,14 @@
     reportActiveTabTracking();
     activeTabBoundsControllers.get(workspaceId)?.(false);
     if (nextWorkspaceId) activeTabBoundsControllers.get(nextWorkspaceId)?.(true);
+    if (navigateToTab) navigateToTab(nextWorkspaceId ?? null);
     // eslint-disable-next-line intent/no-raw-workspace-navigation -- tab-close fallback to the tab the strip just selected.
-    void goto(
-      nextWorkspaceId
-        ? `/workspace/${nextWorkspaceId}`
-        : resolveWindowEmptyDestination(appStore.state),
-    );
+    else
+      void goto(
+        nextWorkspaceId
+          ? `/workspace/${nextWorkspaceId}`
+          : resolveWindowEmptyDestination(appStore.state),
+      );
   }
 
   function closeWorkspaceTabs(workspaceIds: string[], focusWorkspaceId?: string) {
@@ -629,12 +638,14 @@
       activeTabBoundsControllers.get(closingWorkspaceId)?.(false);
       if (nextWorkspaceId) activeTabBoundsControllers.get(nextWorkspaceId)?.(true);
     }
+    if (navigateToTab) navigateToTab(nextWorkspaceId ?? null);
     // eslint-disable-next-line intent/no-raw-workspace-navigation -- tab-close fallback to the tab the strip just selected.
-    void goto(
-      nextWorkspaceId
-        ? `/workspace/${nextWorkspaceId}`
-        : resolveWindowEmptyDestination(appStore.state),
-    );
+    else
+      void goto(
+        nextWorkspaceId
+          ? `/workspace/${nextWorkspaceId}`
+          : resolveWindowEmptyDestination(appStore.state),
+      );
   }
 
   function handleWorkspaceTabContextMenu(event: MouseEvent | KeyboardEvent, workspaceId: string) {

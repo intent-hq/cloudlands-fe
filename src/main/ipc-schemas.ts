@@ -767,6 +767,25 @@ export const WindowSetFullScreenSchema = z.object({
 
 export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict();
 export const WindowSetUnifiedWindowLabSchema = z.object({ enabled: z.boolean() }).strict();
+export const UnifiedShowSchema = z
+  .object({ machineId: z.string().min(1), route: z.string().startsWith('/') })
+  .strict();
+export const UnifiedContentBoundsSchema = z
+  .object({
+    x: z.number().int().min(0),
+    y: z.number().int().min(0),
+    width: z.number().int().min(0),
+    height: z.number().int().min(0),
+  })
+  .strict();
+export const UnifiedMachineSchema = z.object({ machineId: z.string().min(1) }).strict();
+export const UnifiedOpenWorkspaceSchema = z
+  .object({ workspaceId: z.string().min(1), route: z.string().startsWith('/').optional() })
+  .strict();
+export const UnifiedSetTabsSchema = z
+  .object({ tabs: z.record(z.string(), z.array(z.string())) })
+  .strict();
+export const UnifiedSaveStateSchema = z.object({ state: z.unknown() }).strict();
 
 export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 

@@ -16,10 +16,16 @@
   import TitlebarNavigationTooltip from '../TitlebarNavigationTooltip.svelte';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
+  interface Props {
+    /** Unified window: the shell decides whether Home shows and what Home does. */
+    homeActive?: boolean;
+    onHome?: () => void;
+  }
+  let { homeActive, onHome }: Props = $props();
   const onboardingActive$ = selectOnboardingActive();
   const tabShortcut$ = effectiveShortcutReadable('navigation.go-to-tab');
   const homeShortcut = $derived($tabShortcut$.replace(/([1-8])-9$/, '1'));
-  const isHome = $derived(page.url.pathname === '/');
+  const isHome = $derived(homeActive ?? page.url.pathname === '/');
 </script>
 
 {#if !$onboardingActive$}
@@ -65,7 +71,7 @@
           variant="plain"
           size="icon"
           class="sidebar-nav-btn flex h-(--control-height-medium) w-12 cursor-pointer items-center justify-center rounded-[inherit] focus-visible:text-foreground"
-          onclick={() => goto('/')}
+          onclick={() => (onHome ? onHome() : goto('/'))}
           aria-label={m.home_navigation_label()}
           aria-current={isHome ? 'page' : undefined}
           data-nav-item="home"

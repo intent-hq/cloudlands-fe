@@ -359,7 +359,9 @@ vi.mock('$features/agent/components/agent-avatar/AgentAvatar.svelte', async () =
   return { default: MockSimple };
 });
 
-vi.mock('@fortawesome/free-solid-svg-icons', () => ({
+vi.mock('@fortawesome/free-solid-svg-icons', async (importOriginal) => ({
+  // Real icons for modules this suite does not stub (machine markers' device icons).
+  ...(await importOriginal<typeof import('@fortawesome/free-solid-svg-icons')>()),
   faSearch: { iconName: 'search' },
   faFile: { iconName: 'file' },
   faCog: { iconName: 'cog' },

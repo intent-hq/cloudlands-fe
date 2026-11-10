@@ -10,6 +10,8 @@ import {
   navigateToAppRoute,
   navigateToAppRouteSaga,
   openAndShowWorkspace,
+  setUnifiedShellOpener,
+  showUnifiedShellRoute,
   showWorkspaceSaga,
   workspaceRoute,
 } from './show-workspace';
@@ -17,6 +19,12 @@ import { bumpNavigationEpoch } from './navigation-epoch';
 
 const mocks = vi.hoisted(() => ({
   route: vi.fn<(route: string, options?: { state?: App.PageState }) => Promise<void>>(),
+  embedded: false,
+  requestUnified: vi.fn(async (_workspaceId: string, _route: string) => true),
+}));
+vi.mock('$lib/unified-embedded', () => ({
+  isUnifiedEmbedded: () => mocks.embedded,
+  requestUnifiedWorkspace: mocks.requestUnified,
 }));
 
 /** Like the real `goto`: the window ends up on the route. */
@@ -330,3 +338,53 @@ describe('showWorkspaceSaga', () => {
     await expect(run('ws-1')).rejects.toThrow('boom');
   });
 });
+
+describe('Unified window', () => {
+  let dispose: () => void;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.route.mockImplementation(land);
+    window.history.replaceState({}, '', '/workspace/open-ws');
+    dispose = store.init();
+    store.dispatch(openWorkspaceTab('open-ws'));
+  });
+
+  afterEach(() => {
+    mocks.embedded = false;
+    setUnifiedShellOpener(null);
+    dispose();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('a machine view hands a jump to another workspace to the shell instead of opening a tab', async () => {
+    mocks.embedded = true;
+    await expect(openAndShowWorkspace('other-ws', { query: { note: 'n1' } })).resolves.toBe(true);
+    expect(mocks.requestUnified).toHaveBeenCalledWith('other-ws', '/workspace/other-ws?note=n1');
+    expect(mocks.route).not.toHaveBeenCalled();
+    expect(selectWorkspaceTabOrder.select(store.state)).toEqual(['open-ws']);
+  });
+
+  it('a machine view keeps a jump within the shown workspace local', async () => {
+    mocks.embedded = true;
+    await expect(openAndShowWorkspace('open-ws', { query: { note: 'n1' } })).resolves.toBe(true);
+    expect(mocks.requestUnified).not.toHaveBeenCalled();
+    expect(mocks.route).toHaveBeenCalledWith('/workspace/open-ws?note=n1');
+  });
+
+  it('a machine view shows what the shell selected without asking the shell again', async () => {
+    mocks.embedded = true;
+    await showUnifiedShellRoute('/workspace/other-ws');
+    expect(mocks.requestUnified).not.toHaveBeenCalled();
+    expect(selectCurrentWorkspaceTabId.select(store.state)).toBe('other-ws');
+  });
+
+  it('the shell opens a workspace as its own tab and never routes', async () => {
+    const opener = vi.fn();
+    setUnifiedShellOpener(opener);
+    await expect(openAndShowWorkspace('local|w1')).resolves.toBe(true);
+    expect(opener).toHaveBeenCalledWith('local|w1');
+    expect(mocks.route).not.toHaveBeenCalled();
+  });
+});
+

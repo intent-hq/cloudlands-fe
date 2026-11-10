@@ -29,6 +29,7 @@ import { isHudWindowRenderer } from './hud-window';
 import { navigateToRoute } from './navigation.client';
 import { bumpNavigationEpoch, navigationEpoch } from './navigation-epoch';
 import { currentRoutePath, parseWorkspaceRoute } from './workspace-route-path';
+import { isUnifiedEmbedded, requestUnifiedWorkspace } from '$lib/unified-embedded';
 
 export interface ShowWorkspaceOptions {
   /** Search params for the workspace route (e.g. `{ note: id }`, `{ panel: 'terminal' }`). */
@@ -113,7 +114,42 @@ function jumpLanded(jump: Jump, tabId: string | null): boolean {
   return pathname === null || parseWorkspaceRoute(pathname) === jump.workspaceId;
 }
 
+let unifiedShellOpener: ((workspaceId: string) => void) | null = null;
+
+/**
+ * The Unified window shell opens workspaces as tabs of its own strip (palette
+ * results, links) instead of routing; workspace ids there are Unified tab keys.
+ */
+export function setUnifiedShellOpener(opener: ((workspaceId: string) => void) | null): void {
+  unifiedShellOpener = opener;
+}
+
+/**
+ * In a Unified window machine view the shell owns the tab strip: a jump to another
+ * workspace asks the shell to open (or select) its tab, and the shell then tells
+ * this view to navigate. A jump within the shown workspace stays local.
+ */
+function forwardsToShell(workspaceId: string): boolean {
+  if (!isUnifiedEmbedded()) return false;
+  const pathname = currentRoutePath();
+  return pathname === null || parseWorkspaceRoute(pathname) !== workspaceId;
+}
+
 async function showAt(
+  workspaceId: string,
+  route: string,
+  state: App.PageState | undefined,
+): Promise<boolean> {
+  if (skipJump(workspaceId)) return false;
+  if (unifiedShellOpener) {
+    unifiedShellOpener(workspaceId);
+    return true;
+  }
+  if (forwardsToShell(workspaceId)) return requestUnifiedWorkspace(workspaceId, route);
+  return showAtLocal(workspaceId, route, state);
+}
+
+async function showAtLocal(
   workspaceId: string,
   route: string,
   state: App.PageState | undefined,
@@ -131,6 +167,12 @@ function* showAtSaga(
   state: App.PageState | undefined,
 ): SagaGenerator<boolean> {
   if (skipJump(workspaceId)) return false;
+  if (unifiedShellOpener) {
+    yield* call(unifiedShellOpener, workspaceId);
+    return true;
+  }
+  if (forwardsToShell(workspaceId))
+    return yield* call(requestUnifiedWorkspace, workspaceId, route);
   const startTabId = tabIdOf(yield* select((s: TabStateLike) => s));
   const jump = yield* call(runJump, workspaceId, route, state, startTabId);
   if (!jumpLanded(jump, tabIdOf(yield* select((s: TabStateLike) => s)))) return false;
@@ -186,6 +228,16 @@ export function showWorkspaceSaga(
 export async function navigateToAppRoute(route: string): Promise<void> {
   const workspaceId = parseWorkspaceRoute(route);
   if (workspaceId) await showAt(workspaceId, route, undefined);
+  else await navigateToRoute(route);
+}
+
+/**
+ * Unified window machine view: show what the shell selected (a workspace tab, or
+ * Home / Settings on the dropdown machine). Never forwarded back to the shell.
+ */
+export async function showUnifiedShellRoute(route: string): Promise<void> {
+  const workspaceId = parseWorkspaceRoute(route);
+  if (workspaceId) await showAtLocal(workspaceId, route, undefined);
   else await navigateToRoute(route);
 }
 

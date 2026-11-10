@@ -80,7 +80,12 @@
   import { toggleCheatSheet } from '$store/renderer/slices/shortcuts-cheatsheet/shortcuts-cheatsheet-slice';
   import { toggleLineWrapping } from '$store/renderer/slices/ui-layout/ui-layout-slice';
   import { setStatsOverlayOpen } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { openWorkspaceTab } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import {
+    loadWorkspaceTabsState,
+    openWorkspaceTab,
+  } from '$store/renderer/slices/tab-state/tab-state-slice';
+  import { isUnifiedEmbedded, listenToUnifiedShell } from '$lib/unified-embedded';
+  import { showUnifiedShellRoute } from '$lib/utils/show-workspace';
   import {
     selectCurrentWorkspaceTabId,
     selectWorkspaceTabOrder,
@@ -378,6 +383,29 @@
   });
 
   let paletteShortcuts: KeyboardShortcutManager | null = null;
+  const unifiedEmbedded = isUnifiedEmbedded();
+
+  // Unified window machine view: the shell selects what to show and which of this
+  // machine's workspaces are open tabs (kept as hidden tab state so background
+  // tabs keep their browser pages and agent browser operations).
+  onMount(() =>
+    listenToUnifiedShell({
+      navigate: (route) => void showUnifiedShellRoute(route),
+      tabs: (workspaceIds) => {
+        const current = appStore.state.tabState.currentTabId;
+        appStore.dispatch(
+          loadWorkspaceTabsState({
+            openTabs: workspaceIds,
+            currentTabId: current && workspaceIds.includes(current) ? current : null,
+            pinnedTabs: [],
+            unsavedTabs: [],
+            optimisticTabs: [],
+            tabOrder: workspaceIds,
+          }),
+        );
+      },
+    }),
+  );
 
   onMount(() => {
     // Hide the splash screen from app.html now that Svelte has mounted
@@ -990,8 +1018,10 @@
     aria-label={m.layout_appShell_shell_ariaLabel()}
     data-testid="app-ready"
   >
-    <!-- Title bar at top -->
-    <WindowTitleBar {workspaceId} />
+    <!-- Title bar at top; a Unified window machine view shows the shell's instead -->
+    {#if !unifiedEmbedded}
+      <WindowTitleBar {workspaceId} />
+    {/if}
 
     <!-- Main Content Area -->
     <ErrorBoundary componentName="MainLayout">

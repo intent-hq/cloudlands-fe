@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 
 const storage = vi.hoisted(() => ({ getJSON: vi.fn(), setJSON: vi.fn() }));
+const embedded = vi.hoisted(() => ({ value: false }));
+vi.mock('$lib/unified-embedded', () => ({ isUnifiedEmbedded: () => embedded.value }));
 vi.mock('../../../utils/safe-local-storage-saga', () => ({
   getLocalStorageJSON: function* (key: string) {
     return storage.getJSON(key);
@@ -73,7 +75,30 @@ const settle = async () => {
 };
 
 describe('tabStateSaga', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    embedded.value = false;
+  });
+
+  it("in a Unified window machine view, never restores or saves that machine's workspace tabs", async () => {
+    embedded.value = true;
+    storage.getJSON.mockReturnValue(persistedTabs);
+    const channel = stdChannel();
+    const dispatch = vi.fn((action) => channel.put(action));
+    const task = runSaga({ channel, dispatch, getState: () => remoteState }, tabStateSaga);
+    await settle();
+    dispatch(openWorkspaceTab('ws-2'));
+    await settle();
+
+    expect(dispatch.mock.calls.map(([action]) => action)).toEqual([
+      workspaceTabsHydrated(REMOTE_ID),
+      openWorkspaceTab('ws-2'),
+    ]);
+    expect(storage.getJSON).not.toHaveBeenCalledWith(REMOTE_TABS_KEY);
+    expect(storage.setJSON).not.toHaveBeenCalledWith(REMOTE_TABS_KEY, expect.anything());
+    task.cancel();
+    await task.toPromise();
+  });
 
   it('hydrates scroll positions before an old persisted workspace-tab snapshot', async () => {
     storage.getJSON.mockImplementation((key: string) =>

@@ -1,5 +1,6 @@
 import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
+import { isUnifiedEmbedded } from '$lib/unified-embedded';
 import {
   namespaceBackendKey,
   selectActiveBackendId,
@@ -179,8 +180,22 @@ function* watchBackendSwitch(): SagaGenerator<void> {
   }
 }
 
+/**
+ * A Unified window machine view shares localStorage with that machine's normal
+ * windows, but its tab strip belongs to the Unified shell: it neither restores nor
+ * saves workspace tabs, so it never overwrites the machine window's saved strip.
+ */
+function* embeddedTabState(): SagaGenerator<void> {
+  yield* put(workspaceTabsHydrated(yield* selectActiveBackendId()));
+  yield* takeEvery(SCROLL_PERSIST_ACTIONS, persistScrollPositions);
+}
+
 /** Unregistered until the S20 middleware cutover. */
 export function* tabStateSaga(): SagaGenerator<void> {
+  if (isUnifiedEmbedded()) {
+    yield* call(embeddedTabState);
+    return;
+  }
   yield* call(hydrateTabState);
   yield* fork(watchBackendSwitch);
   yield* takeEvery(TAB_PERSIST_ACTIONS, persistWorkspaceTabs);

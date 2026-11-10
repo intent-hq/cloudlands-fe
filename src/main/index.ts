@@ -332,6 +332,17 @@ import { createDockMenuController } from './dock-menu-controller';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
 import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
 import {
+  isUnifiedWindowLabEnabled,
+  loadUnifiedWindowLabEnabled,
+  registerUnifiedWindowLabHandlers,
+} from './unified-window-lab';
+import {
+  closeUnifiedWindow,
+  isUnifiedWindowRestorePending,
+  registerUnifiedWindowHandlers,
+  restoreUnifiedWindow,
+} from '../features/unified-window/main/unified-window.ipc';
+import {
   setupBrowserAccess,
   shutdownBrowserAccess,
 } from '../features/browser-access/main/browser-access.ipc';
@@ -1653,6 +1664,13 @@ const bootFlow = app.whenReady().then(async () => {
     onChange: () => void rebuildMenu(),
     isDock: (sender) => getDockWindow()?.webContents === sender,
   });
+  // The Unified window lab is main-owned and off by default; turning it off closes the window.
+  await loadUnifiedWindowLabEnabled();
+  registerUnifiedWindowLabHandlers({
+    disabled: () => closeUnifiedWindow(),
+    onChange: () => void rebuildMenu(),
+  });
+  registerUnifiedWindowHandlers();
   markRendererWindowsAllowed();
   if (isDockLabEnabled()) await dockMenuController.restore();
   void rebuildMenu();
@@ -1816,7 +1834,11 @@ const bootFlow = app.whenReady().then(async () => {
       intentUrlArg && !isPairLinkArg
         ? false
         : await restoreAllBackendWindowSessions(bootBackendId, connectBackendClient);
-    if (!restored) {
+    // Only the Unified window was open at quit: it restores itself below, so no
+    // default machine window is created for it.
+    const unifiedOnly =
+      !restored && intentUrlArg === undefined && (await isUnifiedWindowRestorePending());
+    if (!restored && !unifiedOnly) {
       // No saved sessions anywhere (or has deep link) — create a single default
       // window. A remote boot backend needs its pooled client connected first
       // (only the local client is created lazily); if its client cannot be
@@ -1846,6 +1868,12 @@ const bootFlow = app.whenReady().then(async () => {
     startupMetrics.end('createWindow');
   }
   bootWindowsGate.release();
+  // The Unified window has its own restore record, after the machine windows.
+  if (isUnifiedWindowLabEnabled()) {
+    void restoreUnifiedWindow().catch((error: unknown) =>
+      logger.warn('Failed to restore the Unified window', error),
+    );
+  }
 
   // Register intent:// protocol handler with the OS.
   // In production, electron-builder registers the scheme statically (Info.plist / registry),

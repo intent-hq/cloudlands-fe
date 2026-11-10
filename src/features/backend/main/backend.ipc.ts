@@ -3549,6 +3549,27 @@ async function listConnectionsOriginal(
   };
 }
 
+/**
+ * Machines the Unified window includes: saved machines (local first) and guest
+ * hosts. Remote nodes never open a window, so they are excluded, as is this
+ * machine's own published entry.
+ */
+export async function listUnifiedWindowMachineIds(): Promise<string[]> {
+  const [{ connections }, guests] = await Promise.all([
+    listConnections(),
+    guestSessionsStore.list(),
+  ]);
+  return [
+    ...connections.filter((connection) => connection.daemonMode !== 'node').map((c) => c.id),
+    ...guests.map((session) => session.id),
+  ];
+}
+
+/** Whether a machine's pooled client is connected right now. */
+export function isBackendConnected(id: string): boolean {
+  return backendClients.get(id)?.getStatus() === 'connected';
+}
+
 /** Broadcast the current list + selections, tailored to each recipient window. */
 function broadcastConnectionsChanged(): Promise<void> {
   return broadcastConnectionsChangedOwned();
@@ -3565,9 +3586,7 @@ async function broadcastConnectionsChangedOriginal(owner?: PoolOwner): Promise<v
   // connection labels) — renderers get the tailored payload below.
   app.emit('connections-changed');
   const payload = await listConnectionsOwned(undefined, owner);
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    const windowBackendId = getBackendIdForWebContents(win.webContents);
+  for (const { contents, backendId: windowBackendId, id: rendererId } of getRendererTargets()) {
     // Re-derive the per-backend sticky replay for THIS window's backend — the
     // shared payload was computed for the local default.
     const windowPayload: ConnectionsChangedEvent = {
@@ -3579,11 +3598,11 @@ async function broadcastConnectionsChangedOriginal(owner?: PoolOwner): Promise<v
       certWarnings: getCertWarningsEvent(windowBackendId),
     };
     try {
-      win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
+      contents.send(CONNECTIONS.CHANGED, windowPayload);
     } catch (error) {
       recordPoolError(owner, error);
       logger.warn('Failed to broadcast connections change', {
-        windowId: win.id,
+        windowId: rendererId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -3619,14 +3638,13 @@ async function broadcastGuestSessionsChangedOriginal(owner?: PoolOwner): Promise
   const payload = await buildGuestSessionsListResult();
   // Native Window-menu entries use the same guest labels as renderer chrome.
   app.emit('guest-sessions-changed');
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
+  for (const { contents, id: rendererId } of getRendererTargets()) {
     try {
-      win.webContents.send(GUEST_SESSIONS.CHANGED, payload);
+      contents.send(GUEST_SESSIONS.CHANGED, payload);
     } catch (error) {
       recordPoolError(owner, error);
       logger.warn('Failed to broadcast guest sessions change', {
-        windowId: win.id,
+        windowId: rendererId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -4164,9 +4182,22 @@ export function openBackendWindow(
   return enqueueConnectionOperation((owner) => performOpenBackendWindowOwned(id, options, owner));
 }
 
+/**
+ * Connect a machine for the Unified window without opening a machine window:
+ * the same checks as {@link openBackendWindow} (local probe, node refusal, and
+ * disconnect of a client this attempt created when it fails). Queued with the
+ * other connection operations, so keychain reads for remote secrets happen one
+ * machine at a time.
+ */
+export function connectMachineForUnifiedWindow(id: string): Promise<{ id: string }> {
+  return enqueueConnectionOperation((owner) =>
+    performOpenBackendWindowOwned(id, { openWindow: false }, owner),
+  );
+}
+
 function performOpenBackendWindowOwned(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean; openWindow?: boolean },
   parent?: PoolOwner,
 ): Promise<{ id: string }> {
   return poolWork('performOpenBackendWindow', parent, (owner) =>
@@ -4176,7 +4207,7 @@ function performOpenBackendWindowOwned(
 
 async function performOpenBackendWindowOriginal(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean; openWindow?: boolean },
   owner?: PoolOwner,
 ): Promise<{ id: string }> {
   if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
@@ -4215,7 +4246,7 @@ async function performOpenBackendWindowOriginal(
       if (await remoteIsNodeOwned(id, target, owner)) throw new NodeWindowRefusedError(id);
     }
     if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
-    await windowHooks.openOrFocus?.(id);
+    if (options?.openWindow !== false) await windowHooks.openOrFocus?.(id);
     return { id };
   } catch (error) {
     recordPoolError(owner, error);

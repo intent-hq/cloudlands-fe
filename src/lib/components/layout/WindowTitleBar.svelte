@@ -52,6 +52,9 @@
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
+  import { unifiedWindowLabEnabled } from '$lib/unified-window-lab';
+  import Fa from 'svelte-fa';
+  import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
   interface Props {
@@ -62,9 +65,20 @@
     tabMachine?: (workspaceId: string) => UnifiedMachine | null;
     /** Unified window: the shell's selected tab, in place of the routed workspace. */
     activeTabId?: string | null;
+    /** Unified window: the shell handles navigation instead of routing this renderer. */
+    unifiedShell?: {
+      /** Native window title: the active workspace and, if not local, its machine. */
+      title: string;
+      homeActive: boolean;
+      settingsActive: boolean;
+      onHome(): void;
+      onSettings(): void;
+      onNewWorkspace(): void;
+      selectTab(workspaceId: string | null): void;
+    };
   }
 
-  let { workspaceId, machineSwitcher, tabMachine, activeTabId }: Props = $props();
+  let { workspaceId, machineSwitcher, tabMachine, activeTabId, unifiedShell }: Props = $props();
   let activeTabBounds = $state<WorkspaceTabBorderMaskBounds | null>(null);
   let activeTabTracking = $state(false);
   const reducedMotion = watchReducedMotion();
@@ -156,7 +170,7 @@
 
   // Update the native window title when displayText changes
   $effect(() => {
-    const workspaceTitle = displayText || 'Intent';
+    const workspaceTitle = unifiedShell?.title || displayText || 'Intent';
     const title = $windowGuestSession$
       ? `${workspaceTitle} [${formatGuestSessionLabel($windowGuestSession$)}]`
       : workspaceTitle;
@@ -166,7 +180,15 @@
     });
   });
 
+  function openUnifiedWindow() {
+    invoke(IPC_CHANNELS.UNIFIED.OPEN, {}).catch(() => {});
+  }
+
   async function handleSettings() {
+    if (unifiedShell) {
+      unifiedShell.onSettings();
+      return;
+    }
     if (page.url.pathname.startsWith('/settings')) {
       await navigateBackFromSettings();
     } else {
@@ -177,7 +199,9 @@
 
 {#snippet titlebarUtilities(showDaemonStatus: boolean)}
   {#if showDaemonStatus}
-    <DaemonStatusIndicator />
+    <DaemonStatusIndicator
+      onOpenUnifiedWindow={$unifiedWindowLabEnabled ? openUnifiedWindow : undefined}
+    />
   {/if}
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>
     <Button
@@ -187,7 +211,9 @@
       class={TITLEBAR_NAVIGATION_CONTROL_CLASS}
       onclick={() => void handleSettings()}
       aria-label={m.layout_sidebarNav_settings_label()}
-      aria-current={page.url.pathname.startsWith('/settings') ? 'page' : undefined}
+      aria-current={(unifiedShell ? unifiedShell.settingsActive : page.url.pathname.startsWith('/settings'))
+        ? 'page'
+        : undefined}
       data-titlebar-settings
     >
       <span class={TITLEBAR_NAVIGATION_GLYPH_CLASS} data-titlebar-navigation-glyph>
@@ -227,7 +253,7 @@
         bind:this={fixedControlsEl}
         data-titlebar-fixed-controls
       >
-        <SidebarNav />
+        <SidebarNav homeActive={unifiedShell?.homeActive} onHome={unifiedShell?.onHome} />
         {@render machineSwitcher?.()}
       </div>
       <div
@@ -240,13 +266,27 @@
           onActiveTabTrackingChange={handleActiveTabTrackingChange}
           activeWorkspaceId={activeTabId === undefined ? routedWorkspaceId : activeTabId}
           {tabMachine}
+          navigateToTab={unifiedShell?.selectTab}
           leadingInsetPx={workspaceTabLeadingInsetPx}
           scrollerMarginLeftPx={workspaceTabScrollerMarginLeftPx}
           horizontalPositionTrackingKey={workspaceControlsOffset +
             workspaceTabLeadingInsetPx +
             workspaceTabScrollerMarginLeftPx}
         />
-        {#if !$onboardingActive$}
+        {#if unifiedShell}
+          <Button
+            variant="ghost"
+            size="icon-compact"
+            iconOnly
+            class="ml-1"
+            onclick={() => unifiedShell?.onNewWorkspace()}
+            aria-label={m.home_new_workspace()}
+            tooltip={m.home_new_workspace()}
+            data-unified-new-workspace
+          >
+            <Fa icon={faPlus} class="size-3.5!" />
+          </Button>
+        {:else if !$onboardingActive$}
           <WorkspaceRepoLauncher />
         {/if}
       </div>
