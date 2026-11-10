@@ -9,7 +9,6 @@
     "src/lib/components/chat/input/ImageAttachmentFeedbackHost.svelte",
     "src/lib/components/chat/input/SimpleRichInputQueueHost.svelte",
     "src/lib/components/diagrams/diagram-templates.ts",
-    "src/lib/components/tiptap/Suggestion.ts",
     "src/lib/components/ui/SizeContextConsumer.svelte",
     "src/lib/components/ui/SurfaceContextConsumer.svelte",
     "src/lib/components/ui/dropdown/dropdown-caller-ledger.ts",
