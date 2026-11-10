@@ -2414,8 +2414,9 @@ describe('held capture preparation local-admission content CAS', () => {
             },
           ],
           frames: [],
+          framePromptBytes: [],
           metadata: [],
-        };
+        } satisfies Awaited<ReturnType<typeof mediaSend.prepareDockMediaSend>>;
       });
       try {
         appStore.dispatch(sendDockConversationRequested());
