@@ -170,6 +170,11 @@ describe('streaming diagram presentation lifecycle', () => {
     expect(nodes(result.container)).toEqual([]);
     result.unmount();
     await tick();
+    const leftover = [...frames.values()];
+    frames.clear();
+    // An empty shared layout flush may remain; it must do no work.
+    leftover.forEach((callback) => callback(performance.now()));
+    await tick();
     expect(frames.size).toBe(0);
   });
 });

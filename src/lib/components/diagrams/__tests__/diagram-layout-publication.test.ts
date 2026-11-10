@@ -146,6 +146,11 @@ it('does not remeasure or queue settlement after disposal while fonts are pendin
   const calls = vi.mocked(computeLayout).mock.calls.length;
   resolveFonts();
   await settle();
+  const leftover = [...frames.values()];
+  frames.clear();
+  // An empty shared layout flush may remain; it must do no work.
+  leftover.forEach((callback) => callback(performance.now()));
+  await settle();
   expect(computeLayout).toHaveBeenCalledTimes(calls);
   expect(frames.size).toBe(0);
 });
