@@ -15,6 +15,7 @@ import {
   structuralGuardrailFailures,
   validateMigrationReplacement,
 } from './ui-component-manifest';
+import { isTestOnlySvelteFile } from './test-only-svelte-files.mjs';
 import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
@@ -89,7 +90,7 @@ function productionSvelteSource(file: string): boolean {
     file.endsWith('.svelte') &&
     !internalRoute &&
     !normalized.includes('/__tests__/') &&
-    !/(?:test-harness|Harness|TestWrapper)\.svelte$/.test(normalized)
+    !isTestOnlySvelteFile(normalized)
   );
 }
 

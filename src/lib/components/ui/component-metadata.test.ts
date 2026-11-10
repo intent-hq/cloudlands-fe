@@ -4,6 +4,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { isTestOnlySvelteFile } from '../../../../scripts/test-only-svelte-files.mjs';
 import { warmImport } from '../../../test/warm-import';
 import { parseUiComponentMetadata } from './component-metadata';
 import { canonicalComponentManifest } from './manifest';
@@ -63,7 +64,9 @@ it('provides usage for every public parts-style component entry', async () => {
 // tooltip trigger (#2803) because nothing required either.
 const UI_DIR = 'src/lib/components/ui';
 const CATALOG_EXEMPT_MARKER = '@catalog-exempt:';
-const CATALOG_SUPPORT_FILE = /(?:\.preview|Harness|TestHost)\.svelte$/;
+// Previews ship in the sandbox catalog, so they are support files here but not test-only.
+const isCatalogSupportFile = (name: string) =>
+  name.endsWith('.preview.svelte') || isTestOnlySvelteFile(name);
 
 type CatalogExemption = { kind: 'exempt'; reason: string } | { kind: null };
 
@@ -96,7 +99,7 @@ function listFlatUiComponents(root = process.cwd()): string[] {
   return readdirSync(path.join(root, UI_DIR), { withFileTypes: true })
     .filter(
       (entry) =>
-        entry.isFile() && entry.name.endsWith('.svelte') && !CATALOG_SUPPORT_FILE.test(entry.name),
+        entry.isFile() && entry.name.endsWith('.svelte') && !isCatalogSupportFile(entry.name),
     )
     .map((entry) => entry.name)
     .sort();
