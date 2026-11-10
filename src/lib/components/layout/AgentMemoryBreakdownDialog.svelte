@@ -30,9 +30,7 @@
     selectAgentMemoryUsage,
     selectAgentMemoryUsageError,
   } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
-  import { selectWorkspaceEntities } from '$store/renderer/slices/workspace/workspace-selectors';
-  import type { Workspace } from '$shared/types';
-  import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+  import { selectWorkspaceTitlesById } from '$store/renderer/slices/workspace/workspace-selectors';
   import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import type {
     AgentMemoryRemoteOwner,
@@ -50,7 +48,7 @@
   const agentMemoryUsage$ = selectAgentMemoryUsage();
   const agentMemoryUsageError$ = selectAgentMemoryUsageError();
   const providerEntries$ = selectProviderCatalogEntries();
-  const workspaces$ = selectWorkspaceEntities();
+  const workspaceTitles$ = selectWorkspaceTitlesById();
 
   let open = $state(true);
   // Agent ids whose process list is expanded.
@@ -97,7 +95,7 @@
 
   // Local rows carry no title: resolve it from this client's workspaces.
   function localWorkspaceLabel(workspaceId: string): string {
-    return getItem($workspaces$, workspaceId as Workspace['id'])?.title?.trim() || workspaceId;
+    return $workspaceTitles$[workspaceId]?.trim() || workspaceId;
   }
 
   // Local rows: workspace (title, else id) and provider/model. Remote rows:
