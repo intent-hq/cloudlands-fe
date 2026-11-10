@@ -34,7 +34,8 @@ export function useDockShellResize(
     if (current.gestureHeld || placement.captureHidden || placement.phase === 'dragging') return;
     const request: DockPlacementCommand = {
       action: 'resize',
-      width,
+      // Keep the native horizontal allocation stable while only the visible shell opens.
+      width: placement.shape === 'edge' ? width : Math.max(width, current.conversationSize.width),
       height,
       revision: placement.revision,
       compactNotchWingWidth: compactWingWidth,
