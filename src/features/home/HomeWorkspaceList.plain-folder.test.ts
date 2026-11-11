@@ -48,7 +48,7 @@ function renderRow(item: Workspace) {
     aside: [],
     asideExpanded: false,
     pinnedIds: [],
-    selectedId: null,
+    selectedIds: [],
     showRepository: false,
     showRepositoryOwner: false,
     menu: () => [],

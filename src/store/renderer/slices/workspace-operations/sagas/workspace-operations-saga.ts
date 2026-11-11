@@ -67,11 +67,13 @@ import {
   closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteConfirm,
+  closeBulkRetireConfirm,
   closeDeleteWarning,
   closeRemoveRepoConfirm,
   confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDelete,
+  confirmBulkRetire,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
   closeRetireConfirm,
@@ -801,6 +803,90 @@ function* bulkDelete(): SagaGenerator<void> {
   }
 }
 
+/**
+ * Retire (purge the folder of) each archived workspace that still has one, one at a time.
+ * Like `bulkDelete`, the batch belongs to the store, backend and admission that confirmed
+ * it: when any of them changes, it stops and stays silent.
+ */
+function* bulkRetire(): SagaGenerator<void> {
+  if (yield* selectBulkOperationInFlight.effect()) return;
+  const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
+  const workspaces = yield* selectWorkspaceItems.effect();
+  const targets = workspacesForIds(workspaceIds, workspaces).filter(
+    (workspace) => workspace.status === WorkspaceStatusEnum.Archived,
+  );
+  const dispatch = store.dispatch;
+  const backend = store.state.connections.windowBackendId;
+  const admission = selectPrincipalActionContext.select(store.state);
+  const reservedIds = targets.map(({ id }) => id);
+  const ownsBulk = () => {
+    try {
+      return (
+        store.dispatch === dispatch &&
+        store.state.connections.windowBackendId === backend &&
+        store.state.workspaceOperations.bulkReservedWorkspaceIds === reservedIds
+      );
+    } catch {
+      return false;
+    }
+  };
+  const current = () =>
+    ownsBulk() &&
+    admission !== null &&
+    selectPrincipalActionContext.select(store.state) === admission;
+  yield* put(bulkOperationStarted({ kind: 'retire', workspaceIds: reservedIds }));
+  yield* put(closeBulkRetireConfirm());
+  try {
+    const notify = yield* call(getToast);
+    if (!current()) return;
+    if (targets.length === 0) {
+      notify.info(m.workspace_ops_noFoldersToPurge_message());
+      return;
+    }
+    let retiredCount = 0;
+    let failCount = 0;
+    for (const workspace of targets) {
+      if (!current()) return;
+      try {
+        const result = yield* call([workspaceClient, workspaceClient.retire], workspace.id);
+        if (!current()) return;
+        if (!result.ok) {
+          failCount++;
+          continue;
+        }
+        retiredCount++;
+        yield* applyWorkspaceChanges(workspace.id, {
+          status: WorkspaceStatusEnum.Retired,
+          archived: true,
+          ...(result.data?.archivedAt ? { archivedAt: result.data.archivedAt } : {}),
+          ...(result.data?.retiredAt ? { retiredAt: result.data.retiredAt } : {}),
+        });
+      } catch (error) {
+        if (!current()) return;
+        logger.error('workspace.retire failed', { workspaceId: workspace.id, error });
+        failCount++;
+      }
+    }
+    if (retiredCount > 0) {
+      notify.success(
+        retiredCount === 1
+          ? m.workspace_ops_purgedCount_one({ count: retiredCount })
+          : m.workspace_ops_purgedCount_many({ count: retiredCount }),
+      );
+    }
+    if (failCount > 0) {
+      notify.error(
+        failCount === 1
+          ? m.workspace_ops_purgeFailedCount_one({ count: failCount })
+          : m.workspace_ops_purgeFailedCount_many({ count: failCount }),
+      );
+    }
+  } finally {
+    // An obsolete admission may settle its own lock, never a replacement store's.
+    if (ownsBulk()) dispatch(bulkOperationFinished());
+  }
+}
+
 function* removeRepoFromRegistry(): SagaGenerator<void> {
   const repoPath = yield* selectPendingRemoveRepoPath.effect();
   yield* put(closeRemoveRepoConfirm());
@@ -1004,6 +1090,7 @@ export function* workspaceOperationsSaga(): SagaGenerator<void> {
     takeLatest(loadRetiredWorkspacesRequested, loadRetiredWorkspaces),
     takeLeading(confirmBulkArchive, bulkArchive),
     takeLeading(confirmBulkDelete, bulkDelete),
+    takeLeading(confirmBulkRetire, bulkRetire),
     takeEvery(confirmRemoveRepo, removeRepoFromRegistry),
     takeEvery(applyWorkspaceProposal, applyProposal),
   ]);

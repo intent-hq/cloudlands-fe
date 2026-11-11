@@ -12,10 +12,12 @@
   import {
     closeBulkArchiveConfirm,
     closeBulkDeleteConfirm,
+    closeBulkRetireConfirm,
     closeArchiveWarning,
     closeDeleteWarning,
     confirmBulkArchive,
     confirmBulkDelete,
+    confirmBulkRetire,
     confirmArchiveWorkspace,
     confirmDeleteWorkspace,
     closeRetireConfirm,
@@ -41,6 +43,7 @@
     selectShowArchiveWarning,
     selectShowBulkArchiveConfirm,
     selectShowBulkDeleteConfirm,
+    selectShowBulkRetireConfirm,
     selectShowDeleteWarning,
     selectPendingRetireWorkspaceTitle,
     selectShowRetireConfirm,
@@ -84,6 +87,9 @@
   const showBulkDeleteConfirm$ = untrack(() =>
     staticData ? readable(undefined) : selectShowBulkDeleteConfirm(),
   );
+  const showBulkRetireConfirm$ = untrack(() =>
+    staticData ? readable(false) : selectShowBulkRetireConfirm(),
+  );
   const pendingBulkWorkspaces$ = untrack(() =>
     staticData ? readable([]) : selectPendingBulkWorkspaces(),
   );
@@ -113,6 +119,24 @@
   );
   const pendingRetireWorkspaceTitle$ = untrack(() =>
     staticData ? readable('') : selectPendingRetireWorkspaceTitle(),
+  );
+
+  const bulkCount = $derived(formatInteger($pendingBulkWorkspaces$.length));
+  const bulkOne = $derived($pendingBulkWorkspaces$.length === 1);
+  // A group action names its group; a Home selection is titled by its count.
+  const bulkArchiveTitle = $derived(
+    $pendingBulkGroupLabel$
+      ? m.modals_bulkArchive_title({ group: $pendingBulkGroupLabel$ })
+      : bulkOne
+        ? m.modals_bulkArchive_selectionTitle_one({ count: bulkCount })
+        : m.modals_bulkArchive_selectionTitle_many({ count: bulkCount }),
+  );
+  const bulkDeleteTitle = $derived(
+    $pendingBulkGroupLabel$
+      ? m.modals_bulkDelete_title({ group: $pendingBulkGroupLabel$ })
+      : bulkOne
+        ? m.modals_bulkDelete_selectionTitle_one({ count: bulkCount })
+        : m.modals_bulkDelete_selectionTitle_many({ count: bulkCount }),
   );
 </script>
 
@@ -153,7 +177,7 @@
   <BulkActionConfirmDialog
     open={$showBulkArchiveConfirm$}
     mode="archive"
-    title={m.modals_bulkArchive_title({ group: $pendingBulkGroupLabel$ ?? '' })}
+    title={bulkArchiveTitle}
     description={$pendingBulkWorkspaces$.length === 1
       ? m.modals_bulkArchive_description_one({
           count: formatInteger($pendingBulkWorkspaces$.length),
@@ -179,7 +203,7 @@
 
   <BulkActionConfirmDialog
     open={$showBulkDeleteConfirm$}
-    title={m.modals_bulkDelete_title({ group: $pendingBulkGroupLabel$ ?? '' })}
+    title={bulkDeleteTitle}
     description={$pendingBulkWorkspaces$.length === 1
       ? m.modals_bulkDelete_description_one({
           count: formatInteger($pendingBulkWorkspaces$.length),
@@ -199,6 +223,25 @@
       appStore.dispatch(confirmBulkDelete());
     }}
     onCancel={() => appStore.dispatch(closeBulkDeleteConfirm())}
+  >
+    {#snippet body()}
+      <BulkWorkspaceList workspaces={$pendingBulkWorkspaces$} />
+    {/snippet}
+  </BulkActionConfirmDialog>
+
+  <BulkActionConfirmDialog
+    open={$showBulkRetireConfirm$}
+    title={bulkOne
+      ? m.modals_bulkPurge_title_one({ count: bulkCount })
+      : m.modals_bulkPurge_title_many({ count: bulkCount })}
+    description={m.modals_bulkPurge_description()}
+    confirmText={m.modals_bulkPurge_confirm_label()}
+    variant="destructive"
+    initialFocus="cancel"
+    onConfirm={() => {
+      appStore.dispatch(confirmBulkRetire());
+    }}
+    onCancel={() => appStore.dispatch(closeBulkRetireConfirm())}
   >
     {#snippet body()}
       <BulkWorkspaceList workspaces={$pendingBulkWorkspaces$} />
