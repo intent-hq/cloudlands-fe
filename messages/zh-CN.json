@@ -5589,6 +5589,8 @@
   "settings_providerProfiles_value_ariaLabel": "{name} 的值",
   "settings_providerProfiles_value_placeholder": "值",
   "settings_providerProfiles_variableN_label": "变量 {n}",
+  "settings_providers_agyUpdatePending_warning": "agy 版本低于 {minimum}。Intent 会在下一个 Antigravity 代理启动前运行 agy update。",
+  "settings_providers_agyUpdateFailed_warning": "agy 自动更新失败：{reason}",
   "settings_providers_cursorUnsupported_warning": "不支持的 Cursor CLI：{reason}",
   "settings_providers_actionsFor_ariaLabel": "{name} 的提供商操作",
   "settings_providers_cannotDisable": "无法禁用 {name}",

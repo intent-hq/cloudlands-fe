@@ -5589,6 +5589,8 @@
   "settings_providerProfiles_value_ariaLabel": "Valeur de {name}",
   "settings_providerProfiles_value_placeholder": "Valeur",
   "settings_providerProfiles_variableN_label": "variable n° {n}",
+  "settings_providers_agyUpdatePending_warning": "agy est antérieur à {minimum}. Intent exécute agy update avant le démarrage du prochain agent Antigravity.",
+  "settings_providers_agyUpdateFailed_warning": "Échec de la mise à jour automatique d’agy : {reason}",
   "settings_providers_cursorUnsupported_warning": "CLI Cursor non pris en charge : {reason}",
   "settings_providers_actionsFor_ariaLabel": "Actions du fournisseur pour {name}",
   "settings_providers_cannotDisable": "Impossible de désactiver {name}",
