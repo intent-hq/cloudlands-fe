@@ -652,6 +652,9 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
       await page.keyboard.press('Tab');
       await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
     }
+    // The index search takes the keyboard first; ArrowDown enters the rows.
+    await expect(component.getByRole('searchbox')).toBeFocused();
+    await page.keyboard.press('ArrowDown');
     await expect(row).toBeFocused();
     await expect(shell).toHaveAttribute('data-reveal', '1');
     await page.keyboard.press('Tab');

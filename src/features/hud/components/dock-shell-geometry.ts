@@ -28,6 +28,8 @@ interface DockShellLayoutInput {
 /** DockIntroCard's fixed height plus its gap below; keep in step with its styles. */
 export const DOCK_INTRO_HEIGHT = 130;
 export const DOCK_OVERVIEW_HISTORY_HEIGHT = 44;
+/** The index search field (28) and its gap below (8); keep in step with DockOverview. */
+export const DOCK_OVERVIEW_SEARCH_HEIGHT = 36;
 
 /** Width of the compact notch wing that shows one dot per status group. */
 export function dockCompactWingWidth(statusGroups: number): number {
@@ -77,13 +79,14 @@ export function getDockShellLayout(
       : null;
   const headerHeight = edge && recording ? 104 : (compactNotchSize?.height ?? 40);
   // Cap the viewport, not the rendered list: every workspace remains scrollable.
-  // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40) and the
-  // frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
+  // Workspace rows (52), the divider (1 + 2 + 4), the Assistant row (40), the search
+  // field and the frame's 8 + 8 padding. Keep in step with DockOverview / DockCompanionContent.
   const overviewHeight =
     Math.min(workspaceCount, rowLimit) * 52 +
     7 +
     40 +
     16 +
+    DOCK_OVERVIEW_SEARCH_HEIGHT +
     (hasOlderWorkspaces ? DOCK_OVERVIEW_HISTORY_HEIGHT : 0) +
     (intro ? DOCK_INTRO_HEIGHT : 0);
   const railHeight = (edge ? headerHeight + 8 : 48) + (Math.min(workspaceCount, rowLimit) + 1) * 32;

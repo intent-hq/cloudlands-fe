@@ -39,9 +39,11 @@ export function useDockConversationFocus(state: DockConversationFocus) {
       lastRequest = request;
       void tick().then(() => {
         if (!disposed && state.keyboardOpen && state.expanded && !state.workspaceId)
-          state.surface
-            ?.querySelector<HTMLElement>('[data-dock-row]')
-            ?.focus({ preventScroll: true });
+          // The index search when it shows, else the first row.
+          (
+            state.surface?.querySelector<HTMLElement>('[data-dock-search]') ??
+            state.surface?.querySelector<HTMLElement>('[data-dock-row]')
+          )?.focus({ preventScroll: true });
       });
     });
   });

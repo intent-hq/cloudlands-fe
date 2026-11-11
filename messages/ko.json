@@ -8458,5 +8458,15 @@
   "dock_captureEditor_deleteRecording_label": "녹화 삭제",
   "dock_captureEditor_deleteFailed_error": "이 캡처를 삭제하지 못했습니다. 다시 시도해 주세요.",
   "dock_overview_showOlder_label": "이전 대화 표시",
-  "dock_overview_showRecent_label": "최근 대화만 표시"
+  "dock_overview_showRecent_label": "최근 대화만 표시",
+  "dock_linkedTab_thisTab_label": "이 탭",
+  "dock_linkedTab_thisApp_label": "이 앱",
+  "dock_linkedTab_link_label": "연결",
+  "dock_linkedTab_unlink_label": "연결 해제",
+  "dock_linkedTab_link_ariaLabel": "{context}을(를) {workspace}에 연결",
+  "dock_linkedTab_unlink_ariaLabel": "{context}과(와) {workspace}의 연결 해제",
+  "dock_linkedTab_current_ariaLabel": "현재: {context}",
+  "dock_overview_search_ariaLabel": "스페이스 검색",
+  "dock_overview_search_placeholder": "검색",
+  "dock_overview_searchClear_ariaLabel": "검색 지우기"
 }

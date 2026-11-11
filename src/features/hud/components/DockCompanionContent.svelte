@@ -73,7 +73,14 @@
       {@render conversation()}
     </DockConversationSurface>
   {:else}
-    <DockOverview {workspaces} {olderWorkspaces} bind:showOlder {pending} {onOpen} />
+    <DockOverview
+      {workspaces}
+      {olderWorkspaces}
+      bind:showOlder
+      {pending}
+      {onOpen}
+      active={expanded && reveal > 0}
+    />
   {/if}
 </div>
 

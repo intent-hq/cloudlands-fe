@@ -2,8 +2,13 @@
   import { tick } from 'svelte';
   import { workspaceRepositoryLabel } from '$lib/components/workspace/utils/workspace-repository-label';
   import { Button } from '$lib/components/ui/button';
+  import { Input } from '$lib/components/ui/input';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
+  import DockLinkedRowSlot from './DockLinkedRowSlot.svelte';
+  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
+  import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
+  import XIcon from 'phosphor-svelte/lib/XIcon';
   import {
     getWorkspaceStatusPresentation,
     resolveWorkspaceStatusState,
@@ -22,15 +27,43 @@
     showOlder = $bindable(false),
     pending = false,
     onOpen,
+    active = true,
   }: {
     workspaces: DockWorkspaceView[];
     olderWorkspaces?: DockWorkspaceView[];
     showOlder?: boolean;
     pending?: boolean;
     onOpen: (id: string) => void;
+    /** The index is on screen; when the dock fully closes the search is cleared. */
+    active?: boolean;
   } = $props();
   const rowsId = $props.id();
-  const visibleWorkspaces = $derived(showOlder ? [...workspaces, ...olderWorkspaces] : workspaces);
+  const searchId = `${rowsId}-search`;
+  // Search: title, repository label and owner; while searching, older rows are included.
+  let query = $state('');
+  let searchInput = $state<HTMLElement | null>(null);
+  const needle = $derived(query.trim().toLocaleLowerCase());
+  const searching = $derived(needle.length > 0);
+  function matches(item: DockWorkspaceView): boolean {
+    const fields = [
+      item.workspace.title,
+      workspaceRepositoryLabel(item.workspace),
+      item.workspace.repositoryOwner,
+      item.workspace.repositoryName,
+    ];
+    return fields.some((field) => !!field && field.toLocaleLowerCase().includes(needle));
+  }
+  const visibleWorkspaces = $derived(
+    searching
+      ? [...workspaces, ...olderWorkspaces].filter(matches)
+      : showOlder
+        ? [...workspaces, ...olderWorkspaces]
+        : workspaces,
+  );
+  // A full close (the index leaves the screen) starts the next open with an empty search.
+  $effect(() => {
+    if (!active) query = '';
+  });
   let rows = $state<HTMLDivElement>();
   let historyButton = $state<HTMLButtonElement | null>(null);
   let assistantButton = $state<HTMLButtonElement | null>(null);
@@ -52,7 +85,8 @@
     showOlder = true;
     await tick();
     if (hadFocus && previous && !previous.isConnected && document.activeElement === document.body) {
-      const target = rows?.querySelectorAll<HTMLButtonElement>('[data-workspace-id]')[workspaces.length];
+      const target =
+        rows?.querySelectorAll<HTMLButtonElement>('[data-workspace-id]')[workspaces.length];
       target?.focus({ preventScroll: true });
       if (target) revealDockItem(target);
     }
@@ -81,13 +115,37 @@
       },
     };
   }
+  function searchKey(event: KeyboardEvent): void {
+    if (event.isComposing) return;
+    if (event.key === 'Escape' && query) {
+      // Clear first; an empty search lets Escape close the dock as usual.
+      event.preventDefault();
+      event.stopPropagation();
+      query = '';
+    } else if (event.key === 'ArrowDown' || (event.key === 'Enter' && searching)) {
+      const first = rows?.querySelector<HTMLButtonElement>('[data-dock-row]:not(:disabled)');
+      if (!first) return;
+      event.preventDefault();
+      if (event.key === 'Enter') first.click();
+      else {
+        first.focus({ preventScroll: true });
+        revealDockItem(first);
+      }
+    }
+  }
   function navigate(event: KeyboardEvent): void {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    if (event.target === searchInput) return;
     const root = event.currentTarget as HTMLElement;
     const buttons = Array.from(root.querySelectorAll<HTMLButtonElement>('[data-dock-row]'));
     const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
     if (current < 0) return;
     event.preventDefault();
+    // Up from the first row returns to the search field.
+    if (event.key === 'ArrowUp' && current === 0 && searchInput) {
+      searchInput.focus({ preventScroll: true });
+      return;
+    }
     const next =
       event.key === 'Home'
         ? 0
@@ -109,6 +167,35 @@
   data-testid="dock-overview"
 >
   {#if dockIntro.open}<DockIntroCard />{/if}
+  <div class="overview-search type-caption" role="search">
+    <MagnifyingGlassIcon size={13} aria-hidden="true" />
+    <Input
+      bind:ref={searchInput}
+      bind:value={query}
+      id={searchId}
+      type="search"
+      variant="search"
+      data-dock-search
+      class="search-input h-full px-0"
+      autocomplete="off"
+      aria-label={m.dock_overview_search_ariaLabel()}
+      placeholder={m.dock_overview_search_placeholder()}
+      aria-controls={rowsId}
+      onkeydown={searchKey}
+    />
+    {#if query}
+      <Button
+        variant="plain"
+        size="icon-compact"
+        class="search-clear"
+        aria-label={m.dock_overview_searchClear_ariaLabel()}
+        onclick={() => {
+          query = '';
+          searchInput?.focus({ preventScroll: true });
+        }}><XIcon size={11} aria-hidden="true" /></Button
+      >
+    {/if}
+  </div>
   <div
     bind:this={rows}
     id={rowsId}
@@ -116,7 +203,8 @@
     class:more-below={moreBelow}
     data-dock-scroll
     use:keepDockFocusVisible
-    use:trackOverflow={visibleWorkspaces.length + Number(!showOlder && olderWorkspaces.length > 0)}
+    use:trackOverflow={visibleWorkspaces.length +
+      Number(!searching && !showOlder && olderWorkspaces.length > 0)}
   >
     {#each visibleWorkspaces as item (item.workspace.id)}
       {@const id = String(item.workspace.id)}
@@ -137,7 +225,22 @@
           aria-describedby="dock-status-{id}"
           onclick={() => openRow(id)}
         >
-          <DockWorkspaceAvatar {item} variant="emphasized" />
+          {#if item.workspace.repositoryOwner}
+            <!-- The repository owner's avatar; the agent avatar when there is none or it fails. -->
+            <span class="repo-avatar" data-dock-repo-avatar
+              ><GitHubAvatar
+                identity={item.workspace.repositoryOwner}
+                size={32}
+                class="repo-avatar-img"
+                >{#snippet fallback()}<DockWorkspaceAvatar
+                    {item}
+                    variant="emphasized"
+                  />{/snippet}</GitHubAvatar
+              ></span
+            >
+          {:else}
+            <DockWorkspaceAvatar {item} variant="emphasized" />
+          {/if}
           <span class="row-copy">
             <span class="type-body font-medium truncate" {title}>{title}</span>
             <!-- The repo identifies the row; rows without one keep their status line. -->
@@ -152,12 +255,16 @@
             </span>
           </span>
         </Button>
-        <span class="row-time type-caption" title={item.workspace.updatedAt}>
-          {item.workspace.updatedAt ? formatCompactRelativeTime(item.workspace.updatedAt) : ''}
-        </span>
+        <DockLinkedRowSlot
+          workspaceId={id}
+          {title}
+          disabled={pending}
+          time={item.workspace.updatedAt ? formatCompactRelativeTime(item.workspace.updatedAt) : ''}
+          timeTitle={item.workspace.updatedAt}
+        />
       </div>
     {/each}
-    {#if !showOlder && olderWorkspaces.length > 0}
+    {#if !searching && !showOlder && olderWorkspaces.length > 0}
       <div
         class="overview-history"
         data-dock-scroll-item
@@ -172,8 +279,7 @@
           data-dock-row
           aria-controls={rowsId}
           aria-expanded={showOlder}
-          onclick={revealOlder}
-          >{m.dock_overview_showOlder_label()}</Button
+          onclick={revealOlder}>{m.dock_overview_showOlder_label()}</Button
         >
       </div>
     {/if}
@@ -226,9 +332,55 @@
     padding-inline: 6px;
     color: hsl(var(--muted-foreground));
   }
+  /* Quiet, compact search above the rows (DOCK_OVERVIEW_SEARCH_HEIGHT budgets it). */
+  .overview-search {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 28px;
+    margin: 0 6px 8px;
+    padding: 0 8px;
+    border-radius: var(--radius-medium);
+    background: hsl(var(--dock-hover, var(--muted)) / 0.6);
+    color: hsl(var(--muted-foreground));
+  }
+  .overview-search:focus-within {
+    box-shadow: inset 0 0 0 1px hsl(var(--dock-border, var(--border)));
+  }
+  .overview-search :global(input.search-input) {
+    flex: 1;
+    font-size: inherit;
+    line-height: inherit;
+  }
+  .overview-search :global(input.search-input::-webkit-search-cancel-button) {
+    display: none;
+  }
+  .overview-search :global(.search-clear) {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 999px;
+    color: inherit;
+  }
+  .overview-search :global(.search-clear:focus-visible) {
+    outline: 1px solid hsl(var(--dock-border, var(--border)));
+  }
+  .repo-avatar {
+    flex: none;
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+  }
+  .repo-avatar :global(.repo-avatar-img) {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    object-fit: cover;
+  }
   .overview-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 56px;
+    grid-template-columns: minmax(0, 1fr) 72px;
     align-items: center;
     column-gap: 8px;
     min-height: 52px;

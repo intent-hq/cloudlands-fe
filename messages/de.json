@@ -8458,5 +8458,15 @@
   "dock_captureEditor_deleteRecording_label": "Aufnahme löschen",
   "dock_captureEditor_deleteFailed_error": "Diese Aufnahme konnte nicht gelöscht werden. Versuche es erneut.",
   "dock_overview_showOlder_label": "Ältere anzeigen",
-  "dock_overview_showRecent_label": "Aktuelle anzeigen"
+  "dock_overview_showRecent_label": "Aktuelle anzeigen",
+  "dock_linkedTab_thisTab_label": "Dieser Tab",
+  "dock_linkedTab_thisApp_label": "Diese App",
+  "dock_linkedTab_link_label": "Verknüpfen",
+  "dock_linkedTab_unlink_label": "Trennen",
+  "dock_linkedTab_link_ariaLabel": "{context} mit {workspace} verknüpfen",
+  "dock_linkedTab_unlink_ariaLabel": "{context} von {workspace} trennen",
+  "dock_linkedTab_current_ariaLabel": "Aktuell: {context}",
+  "dock_overview_search_ariaLabel": "Bereiche durchsuchen",
+  "dock_overview_search_placeholder": "Suchen",
+  "dock_overview_searchClear_ariaLabel": "Suche löschen"
 }

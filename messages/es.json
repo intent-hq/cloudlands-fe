@@ -8458,5 +8458,15 @@
   "dock_captureEditor_deleteRecording_label": "Eliminar grabación",
   "dock_captureEditor_deleteFailed_error": "No se pudo eliminar esta captura. Inténtalo de nuevo.",
   "dock_overview_showOlder_label": "Mostrar anteriores",
-  "dock_overview_showRecent_label": "Mostrar recientes"
+  "dock_overview_showRecent_label": "Mostrar recientes",
+  "dock_linkedTab_thisTab_label": "Esta pestaña",
+  "dock_linkedTab_thisApp_label": "Esta app",
+  "dock_linkedTab_link_label": "Vincular",
+  "dock_linkedTab_unlink_label": "Desvincular",
+  "dock_linkedTab_link_ariaLabel": "Vincular {context} a {workspace}",
+  "dock_linkedTab_unlink_ariaLabel": "Desvincular {context} de {workspace}",
+  "dock_linkedTab_current_ariaLabel": "Actual: {context}",
+  "dock_overview_search_ariaLabel": "Buscar espacios",
+  "dock_overview_search_placeholder": "Buscar",
+  "dock_overview_searchClear_ariaLabel": "Borrar búsqueda"
 }

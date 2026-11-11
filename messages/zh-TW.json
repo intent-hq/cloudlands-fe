@@ -8458,5 +8458,15 @@
   "dock_captureEditor_deleteRecording_label": "刪除錄製內容",
   "dock_captureEditor_deleteFailed_error": "無法刪除此擷取內容。請再試一次。",
   "dock_overview_showOlder_label": "顯示較早的對話",
-  "dock_overview_showRecent_label": "僅顯示近期對話"
+  "dock_overview_showRecent_label": "僅顯示近期對話",
+  "dock_linkedTab_thisTab_label": "此分頁",
+  "dock_linkedTab_thisApp_label": "此應用程式",
+  "dock_linkedTab_link_label": "連結",
+  "dock_linkedTab_unlink_label": "取消連結",
+  "dock_linkedTab_link_ariaLabel": "將{context}連結到{workspace}",
+  "dock_linkedTab_unlink_ariaLabel": "取消{context}與{workspace}的連結",
+  "dock_linkedTab_current_ariaLabel": "目前：{context}",
+  "dock_overview_search_ariaLabel": "搜尋空間",
+  "dock_overview_search_placeholder": "搜尋",
+  "dock_overview_searchClear_ariaLabel": "清除搜尋"
 }
