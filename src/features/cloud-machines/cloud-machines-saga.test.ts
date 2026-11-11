@@ -24,6 +24,8 @@ import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-
 import {
   E2B_PROVIDER,
   E2B_SANDBOXES,
+  NORTHFLANK_ENTRY,
+  NORTHFLANK_SANDBOXES,
   TEAM_ENTRY,
   TEAM_SANDBOXES,
 } from '../../test/cloud-machines-preview';
@@ -205,6 +207,7 @@ describe('cloud machines saga — configure', () => {
       code: 'cloud-machine-unavailable',
       reason: 'key-rejected',
       retryable: false,
+      provider: 'e2b',
     });
     expect(store.state.cloudMachines.failures[cloudConfigureKey(NEW_CLOUD_ENTRY)]).toBeUndefined();
     expect(JSON.stringify(store.state)).not.toContain(SECRET);
@@ -421,5 +424,116 @@ describe('cloud machines saga — named entries', () => {
     });
     expect(Object.keys(store.state.cloudMachines.machines)).toEqual(['sb-1', 'sb-2', 'sb-3']);
     expect(store.state.cloudMachines.providers.e2b).toEqual(E2B_PROVIDER);
+  });
+});
+
+describe('cloud machines saga — Northflank', () => {
+  const NF_CAPS = {
+    remoteMachines: 1,
+    cloudMachines: 1,
+    cloudMachineEntries: 1,
+    cloudMachineProviders: 1,
+  };
+  const TOKEN = 'nf_live_do-not-store-me';
+
+  function seedProviders() {
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: true,
+        providerKinds: ['e2b', 'northflank'],
+        providers: [E2B_PROVIDER, NORTHFLANK_ENTRY],
+        machines: [...E2B_SANDBOXES, ...NORTHFLANK_SANDBOXES],
+        readAt: 1,
+      }),
+    );
+  }
+
+  it('reads which providers the backend offers', async () => {
+    const mock = backend(NF_CAPS);
+    mock.onRequest('cloudMachines.list', () => ({
+      providers: [NORTHFLANK_ENTRY],
+      machines: [],
+      providerKinds: ['e2b', 'northflank', 'modal'],
+    }));
+    start();
+    dispatch(remoteLoaded);
+    await vi.waitFor(() => expect(store.state.cloudMachines.loaded).toBe(true));
+    expect(store.state.cloudMachines.providerKinds).toEqual(['e2b', 'northflank']);
+    expect(store.state.cloudMachines.providers[NORTHFLANK_ENTRY.id]).toEqual(NORTHFLANK_ENTRY);
+  });
+
+  it('offers only E2B without cloudMachineProviders, even if the list names more', async () => {
+    const mock = backend({ remoteMachines: 1, cloudMachines: 1, cloudMachineEntries: 1 });
+    mock.onRequest('cloudMachines.list', () => ({
+      providers: [],
+      machines: [],
+      providerKinds: ['e2b', 'northflank'],
+    }));
+    start();
+    dispatch(remoteLoaded);
+    await vi.waitFor(() => expect(store.state.cloudMachines.loaded).toBe(true));
+    expect(store.state.cloudMachines.providerKinds).toEqual(['e2b']);
+  });
+
+  it('creates a Northflank entry with its token and project, and keeps no token', async () => {
+    const mock = backend(NF_CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: NORTHFLANK_ENTRY }));
+    seedProviders();
+    start();
+    dispatch(
+      cloudMachinesConfigureRequested({
+        provider: 'northflank',
+        name: 'Northflank',
+        apiKey: TOKEN,
+        projectId: 'intent-agents',
+        size: '4x8',
+      }),
+    );
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'northflank',
+      name: 'Northflank',
+      apiKey: TOKEN,
+      projectId: 'intent-agents',
+      size: '4x8',
+    });
+    expect(JSON.stringify(store.state)).not.toContain(TOKEN);
+  });
+
+  it('copies another Northflank entry token with apiKeyFrom', async () => {
+    const mock = backend(NF_CAPS);
+    mock.onRequest('cloudMachines.configure', () => ({ provider: NORTHFLANK_ENTRY }));
+    seedProviders();
+    start();
+    dispatch(
+      cloudMachinesConfigureRequested(
+        { provider: 'northflank', name: 'Second', apiKeyFrom: NORTHFLANK_ENTRY.id },
+        true,
+      ),
+    );
+    await settle();
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'northflank',
+      name: 'Second',
+      apiKeyFrom: NORTHFLANK_ENTRY.id,
+      validateOnly: true,
+    });
+  });
+
+  it('removes a Northflank entry with its own provider', async () => {
+    const mock = backend(NF_CAPS);
+    mock.onRequest('cloudMachines.remove', () => ({ ok: true, unconfirmedStops: [] }));
+    seedProviders();
+    start();
+    dispatch(cloudMachinesRemoveRequested(NORTHFLANK_ENTRY.id));
+    await vi.waitFor(() =>
+      expect(store.state.cloudMachines.providers[NORTHFLANK_ENTRY.id]).toBeUndefined(),
+    );
+    expect(requests().at(-1)?.params).toEqual({
+      provider: 'northflank',
+      cloudMachineId: NORTHFLANK_ENTRY.id,
+      stopAgents: true,
+    });
   });
 });

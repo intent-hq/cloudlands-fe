@@ -1870,6 +1870,7 @@ describe('captured repository socket dispatch', () => {
       remoteInitialAgent: 1,
       cloudMachines: 0,
       cloudMachineEntries: 0,
+      cloudMachineProviders: 0,
     });
     expect(client.getRepositoryConnection()).toBe(connection);
     expect(sockets[0].writes).toHaveLength(1);
@@ -1894,6 +1895,7 @@ describe('captured repository socket dispatch', () => {
       remoteMachineClaim: 0,
       cloudMachines: 0,
       cloudMachineEntries: 0,
+      cloudMachineProviders: 0,
       remoteInitialAgent: 0,
     });
     client.dispose();

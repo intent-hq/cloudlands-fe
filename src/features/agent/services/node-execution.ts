@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   AgentPlacementSchema,
   AgentPlacementRequestSchema,
+  isCloudTarget,
   type AgentPlacementRequest,
 } from '$shared/types/agent-node';
 
@@ -78,7 +79,7 @@ export class NodeExecutionClient {
     const checkLabs = () => {
       if (
         (placement.target === 'remote' ||
-          placement.target === 'e2b' ||
+          isCloudTarget(placement.target) ||
           placement.exclusive === true) &&
         !this.remoteEnabled()
       ) {

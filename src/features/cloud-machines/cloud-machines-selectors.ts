@@ -1,6 +1,11 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
-import { DEFAULT_CLOUD_MACHINE_ID, type CloudMachineProvider } from '$shared/types/cloud-machines';
+import {
+  DEFAULT_CLOUD_MACHINE_ID,
+  cloudProviderName,
+  type CloudMachineProvider,
+  type CloudProviderKind,
+} from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
 import { store } from '$store/renderer/store';
@@ -32,6 +37,12 @@ export const selectCloudMachinesVisible = store.createSelector(
     state.remoteMachines?.supported === true &&
     state.cloudMachines?.supported === true,
 );
+
+/** The providers a new entry can use; Northflank needs named entries. */
+export const selectCloudProviderKinds = store.createSelector((state): CloudProviderKind[] => {
+  const kinds = state.cloudMachines?.providerKinds ?? ['e2b'];
+  return state.cloudMachines?.entries === true ? kinds : kinds.filter((kind) => kind === 'e2b');
+});
 
 /** `cloudMachineEntries: 1`: entries are named and listed under Nodes. */
 export const selectCloudEntriesSupported = store.createSelector(
@@ -131,13 +142,21 @@ export function startOnCloud(state: State): StartOnCloud | null {
   const named = state.cloudMachines?.entries === true;
   return entries.map((entry) => ({
     cloudMachineId: entry.id,
-    // One entry still called "E2B" needs no name; otherwise "E2B · <name>".
+    // One entry still called "E2B" needs no name; otherwise "<provider> · <name>".
     label:
-      named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
-        ? m.cloudMachines_startOn_entry_label({ name: entry.name })
-        : m.cloudMachines_startOn_label(),
+      entry.provider === 'northflank'
+        ? entry.name.trim().toLowerCase() === 'northflank'
+          ? cloudProviderName('northflank')
+          : m.cloudMachines_startOn_northflank_label({ name: entry.name })
+        : named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
+          ? m.cloudMachines_startOn_entry_label({ name: entry.name })
+          : m.cloudMachines_startOn_label(),
     unavailableReason:
-      entry.state === 'key-rejected' ? m.cloudMachines_state_keyRejected_label() : null,
+      entry.state !== 'key-rejected'
+        ? null
+        : entry.provider === 'northflank'
+          ? m.cloudMachines_northflank_state_tokenRejected_label()
+          : m.cloudMachines_state_keyRejected_label(),
     needsProfile: !cloudEntrySendsConfig(state, entry),
   }));
 }

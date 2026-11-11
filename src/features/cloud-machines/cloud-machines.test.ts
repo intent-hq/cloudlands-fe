@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { m } from '$shared/paraglide/messages.js';
 import {
   estimateCloudCost,
+  nextCloudEntryName,
   parseCloudMachineError,
   parseCloudMachineProvider,
 } from '$shared/types/cloud-machines';
@@ -35,6 +36,8 @@ import {
 import {
   E2B_PROVIDER,
   E2B_SANDBOXES,
+  NORTHFLANK_ENTRY,
+  NORTHFLANK_SANDBOXES,
   TEAM_ENTRY,
   TEAM_SANDBOXES,
   setupCloudMachinesFixture,
@@ -303,6 +306,7 @@ describe('the Start On profile hint (intent#9101)', () => {
     profileEnv,
     defaultEnv,
     disabled = [],
+    fixture = 'connected',
   }: {
     defaultRemoteLaunch: Record<string, string>;
     catalogProfiles?: (typeof marked)[];
@@ -310,9 +314,10 @@ describe('the Start On profile hint (intent#9101)', () => {
     /** The Default's saved overrides; omitted = not reported. */
     defaultEnv?: typeof keyed;
     disabled?: string[];
+    fixture?: 'connected' | 'providers';
   }) {
     store.init();
-    restore = setupCloudMachinesFixture('connected');
+    restore = setupCloudMachinesFixture(fixture);
     store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
     store.dispatch(
       providerCatalogLoaded({ providers: [], profiles: catalogProfiles, defaultRemoteLaunch }),
@@ -376,6 +381,24 @@ describe('the Start On profile hint (intent#9101)', () => {
     expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
     seed({ defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' } });
     expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
+  });
+
+  it('follows the same rule on Northflank entries', () => {
+    const hints = () =>
+      startOnOptions({ backendLabel: 'Box', machines: [], cloud: startOnCloud(store.state) })
+        .filter((option) => option.kind === 'cloud')
+        .map((option) => option.hint);
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' },
+      fixture: 'providers',
+    });
+    expect(hints()).toEqual([m.cloudMachines_startOn_hint(), m.cloudMachines_startOn_hint()]);
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' },
+      defaultEnv: keyed,
+      fixture: 'providers',
+    });
+    expect(hints()).toEqual([undefined, undefined]);
   });
 });
 
@@ -511,3 +534,103 @@ function remoteSnapshot() {
     executorBackends: null,
   };
 }
+
+describe('Northflank entries', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  it('reads a Northflank entry with its settings and plan per size, never the token', () => {
+    const parsed = parseCloudMachineProvider({ ...NORTHFLANK_ENTRY, apiKey: 'nf_secret' });
+    expect(parsed).toEqual(NORTHFLANK_ENTRY);
+    expect(parsed).not.toHaveProperty('apiKey');
+    expect(parsed?.sizes.map((size) => [size.deploymentPlan, size.plan])).toEqual([
+      ['nf-compute-200', undefined],
+      ['nf-compute-400', undefined],
+      ['nf-compute-800-16', undefined],
+    ]);
+    expect(parseRemoteMachine(NORTHFLANK_SANDBOXES[0])?.cloud?.provider).toBe('northflank');
+  });
+
+  it('accepts target cloud as a bare isolated placement, with or without an entry', () => {
+    const entry = { target: 'cloud', cloudMachineId: NORTHFLANK_ENTRY.id };
+    expect(AgentPlacementRequestSchema.safeParse(entry).success).toBe(true);
+    expect(AgentPlacementRequestSchema.safeParse({ target: 'cloud' }).success).toBe(true);
+    expect(AgentPlacementRequestSchema.safeParse({ ...entry, nodeId: 'x' }).success).toBe(false);
+    expect(AgentPlacementRequestSchema.safeParse({ ...entry, checkout: 'shared' }).success).toBe(
+      false,
+    );
+  });
+
+  it('places a Northflank entry with the provider-neutral target, and E2B as before', () => {
+    const providerOf = (id: string) => (id === NORTHFLANK_ENTRY.id ? 'northflank' : 'e2b');
+    expect(
+      initialAgentPlacement(startOnCloudId(NORTHFLANK_ENTRY.id), {
+        cloudEntries: true,
+        providerOf,
+      }),
+    ).toEqual({ target: 'cloud', checkout: 'isolated', cloudMachineId: NORTHFLANK_ENTRY.id });
+    expect(initialAgentPlacement(START_ON_E2B, { cloudEntries: true, providerOf })).toEqual({
+      target: 'e2b',
+      checkout: 'isolated',
+      cloudMachineId: 'e2b',
+    });
+  });
+
+  it('lists a Northflank entry in Start On by provider and name', () => {
+    store.init();
+    restore = setupCloudMachinesFixture('providers');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    const cloud = selectStartOnOptions.select(store.state).filter((o) => o.kind === 'cloud');
+    expect(cloud.map((o) => [o.id, o.label])).toEqual([
+      [START_ON_E2B, m.cloudMachines_startOn_entry_label({ name: 'E2B' })],
+      [
+        startOnCloudId(NORTHFLANK_ENTRY.id),
+        m.cloudMachines_startOn_northflank_label({ name: NORTHFLANK_ENTRY.name }),
+      ],
+    ]);
+  });
+
+  it('names Northflank, not E2B, in its errors', () => {
+    const rejected = cloudErrorText({
+      code: 'cloud-machine-unavailable',
+      reason: 'key-rejected',
+      retryable: false,
+      provider: 'northflank',
+    });
+    expect(rejected.title).toBe(m.cloudMachines_northflank_error_tokenRejected_title());
+    expect(rejected.description).not.toContain('E2B');
+    const project = cloudErrorText(
+      { code: 'cloud-machine-unavailable', reason: 'project-missing', retryable: false },
+      'northflank',
+    );
+    expect(project.description).toBe(m.cloudMachines_northflank_error_projectMissing_description());
+    expect(
+      parseCloudMachineError({
+        code: 'cloud-machine-unavailable',
+        reason: 'permission-denied',
+        retryable: false,
+        provider: 'northflank',
+        action: 'create-service',
+      }),
+    ).toMatchObject({ provider: 'northflank', action: 'create-service' });
+    expect(
+      cloudErrorText({ code: 'cloud-quota', limit: 'plan', retryable: false }, 'northflank')
+        .description,
+    ).not.toContain('E2B');
+  });
+
+  it('names a starting Northflank agent by its provider, not E2B', () => {
+    const location = agentMachineLocation({
+      id: 'a-nf',
+      placement: { target: 'e2b', checkout: 'isolated', cloudMachineId: NORTHFLANK_ENTRY.id },
+      cloudStart: { step: 'creating-sandbox' },
+    } as AgentSession);
+    expect(location?.name).toBe('Northflank');
+  });
+
+  it('picks the next free default name per provider', () => {
+    expect(nextCloudEntryName(['E2B'], 'northflank')).toBe('Northflank');
+    expect(nextCloudEntryName(['northflank'], 'northflank')).toBe('Northflank 2');
+    expect(nextCloudEntryName(['Northflank'])).toBe('E2B');
+  });
+});

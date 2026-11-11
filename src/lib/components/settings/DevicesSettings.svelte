@@ -38,9 +38,18 @@
     selectCloudEntries,
     selectCloudEntriesSupported,
     selectCloudMachinesVisible,
+    selectCloudProviderKinds,
   } from '$features/cloud-machines/cloud-machines-selectors';
-  import { NEW_CLOUD_ENTRY } from '$features/cloud-machines/cloud-machines-slice';
-  import { CLOUD_ENTRY_LIMIT, type CloudMachineProvider } from '$shared/types/cloud-machines';
+  import {
+    NEW_CLOUD_ENTRY,
+    type CloudFormDraft,
+  } from '$features/cloud-machines/cloud-machines-slice';
+  import {
+    CLOUD_ENTRY_LIMIT,
+    cloudProviderName,
+    type CloudMachineProvider,
+    type CloudProviderKind,
+  } from '$shared/types/cloud-machines';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import { faCloud, faDesktop, faLink } from '$lib/icons/phosphor-icons';
   import PairLinkPaste from '$features/nodes/PairLinkPaste.svelte';
@@ -52,13 +61,22 @@
     initialCloudSetup = false,
     initialCloudEdit,
     initialAddMenuOpen = false,
+    initialAddCloudOpen = false,
+    initialCloudProvider = 'e2b',
+    initialCloudDraft,
   }: {
     initialEditedMachine?: string;
     initialCloudSetup?: boolean;
-    /** Previews: open the edit form of this E2B entry on mount. */
+    /** Previews: open the edit form of this cloud entry on mount. */
     initialCloudEdit?: string;
     /** Previews: open the Add machine menu on mount. */
     initialAddMenuOpen?: boolean;
+    /** Previews: open its Add cloud choice too. */
+    initialAddCloudOpen?: boolean;
+    /** Previews: the provider of the entry `initialCloudSetup` adds. */
+    initialCloudProvider?: CloudProviderKind;
+    /** Previews: the setup form's starting values. */
+    initialCloudDraft?: CloudFormDraft;
   } = $props();
 
   // Full ordered list (local first) drives the rows AND the empty state (the
@@ -81,6 +99,15 @@
     untrack(() => (initialCloudSetup ? NEW_CLOUD_ENTRY : (initialCloudEdit ?? null))),
   );
   let addMenuOpen = $state(untrack(() => initialAddMenuOpen));
+  let addCloudOpen = $state(untrack(() => initialAddCloudOpen));
+  /** The provider of the entry being added. */
+  let newCloudProvider = $state<CloudProviderKind>(untrack(() => initialCloudProvider));
+  const cloudKinds$ = selectCloudProviderKinds();
+
+  function addCloud(provider: CloudProviderKind) {
+    newCloudProvider = provider;
+    cloudEditing = NEW_CLOUD_ENTRY;
+  }
   type CloudRow = { kind: 'cloud'; entry: CloudMachineProvider | null };
   const cloudRows = $derived<CloudRow[]>(
     $cloudVisible$
@@ -108,7 +135,7 @@
       ? row.device.label
       : row.kind === 'machine'
         ? row.machine.name
-        : (row.entry?.name ?? 'E2B'); // i18n-ignore (product name)
+        : (row.entry?.name ?? cloudProviderName(newCloudProvider));
   // Machines the backend runs agents on that this app can't open (added from
   // an intent://node link): nodes, as far as this app is concerned.
   const remoteVisible$ = selectRemoteMachinesVisible();
@@ -317,11 +344,8 @@
             >
           </span>
         </Menu.Item>
-        {#if canAddCloud}
-          <Menu.Item
-            onSelect={() => (cloudEditing = NEW_CLOUD_ENTRY)}
-            data-testid="add-cloud-machine"
-          >
+        {#if canAddCloud && $cloudKinds$.length === 1}
+          <Menu.Item onSelect={() => addCloud('e2b')} data-testid="add-cloud-e2b">
             {#snippet leading()}<Fa icon={faCloud} />{/snippet}
             <span class="flex min-w-0 flex-col">
               <span>{m.cloudMachines_addMenu_e2b_label()}</span>
@@ -330,6 +354,32 @@
               >
             </span>
           </Menu.Item>
+        {:else if canAddCloud}
+          <Menu.Sub bind:open={addCloudOpen}>
+            <Menu.SubTrigger data-testid="add-cloud-machine">
+              {#snippet leading()}<Fa icon={faCloud} />{/snippet}
+              <span class="flex min-w-0 flex-col">
+                <span>{m.cloudMachines_addMenu_cloud_label()}</span>
+                <span class="type-caption text-muted-foreground"
+                  >{m.cloudMachines_addMenu_cloud_description()}</span
+                >
+              </span>
+            </Menu.SubTrigger>
+            <Menu.SubContent class="w-80">
+              {#each $cloudKinds$ as kind (kind)}
+                <Menu.Item onSelect={() => addCloud(kind)} data-testid="add-cloud-{kind}">
+                  <span class="flex min-w-0 flex-col">
+                    <span>{cloudProviderName(kind)}</span>
+                    <span class="type-caption text-muted-foreground"
+                      >{kind === 'northflank'
+                        ? m.cloudMachines_addMenu_northflank_description()
+                        : m.cloudMachines_addMenu_e2b_description()}</span
+                    >
+                  </span>
+                </Menu.Item>
+              {/each}
+            </Menu.SubContent>
+          </Menu.Sub>
         {/if}
       </Menu.Content>
     </Menu.Root>
@@ -355,6 +405,8 @@
   {@const formKey = item.entry?.id ?? NEW_CLOUD_ENTRY}
   <CloudMachineRow
     entry={item.entry}
+    newProvider={newCloudProvider}
+    initialDraft={item.entry ? undefined : initialCloudDraft}
     {first}
     editing={cloudEditing === formKey}
     onEdit={() => (cloudEditing = formKey)}

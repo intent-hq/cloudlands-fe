@@ -400,6 +400,8 @@
   "settings_plugins_skillCount_many": ["fr", "es"],
   "cloudMachines_agent_chip": "*",
   "cloudMachines_startOn_entry_label": "*",
+  "cloudMachines_startOn_northflank_label": "*",
+  "cloudMachines_northflank_form_region_label": ["de"],
   "cloudMachines_form_name_label": ["de"],
   "cloudMachines_row_template": "*",
   "cloudMachines_size_label": ["de", "es", "ja", "ko", "zh-CN", "zh-TW"],

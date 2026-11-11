@@ -1,6 +1,7 @@
 import {
   AgentCheckpointSchema,
   AgentNodeFieldsSchema,
+  isCloudTarget,
   type AgentCheckpoint,
   type AgentNodeFields,
   type RemoteSetupStatus,
@@ -64,7 +65,7 @@ export function hasNodeOwnedAgentPath(agent?: AgentNodeFields | null): boolean {
   return (
     !!agent &&
     (agent.placement?.target === 'remote' ||
-      agent.placement?.target === 'e2b' ||
+      isCloudTarget(agent.placement?.target) ||
       agent.placement?.checkout === 'isolated' ||
       agent.nodePath !== undefined)
   );
