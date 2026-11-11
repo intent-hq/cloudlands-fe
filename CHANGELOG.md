@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.312.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.311.0...v2.312.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **agent:** show starting context breakdown in the harness dialog ([#4428](https://github.com/intent-hq/cloudlands-fe/issues/4428)) ([ca27a4e](https://github.com/intent-hq/cloudlands-fe/commit/ca27a4e5904f9eec0cbb39249c50a9e87410c5bf))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.181 ([#4430](https://github.com/intent-hq/cloudlands-fe/issues/4430)) ([ce82f3e](https://github.com/intent-hq/cloudlands-fe/commit/ce82f3e2997fffb7dff98bdf48fb3147298754b1))
+
 ## [2.311.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.8...v2.311.0) (2026-11-11)
 
 
