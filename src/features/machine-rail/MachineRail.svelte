@@ -14,6 +14,7 @@
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
+  import DaemonStatusIndicator from '$lib/components/layout/DaemonStatusIndicator.svelte';
   import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
   import { Button } from '$lib/components/ui/button';
   import Header from '$lib/components/ui/Header.svelte';
@@ -30,9 +31,11 @@
     selectMachineRailCandidates,
     selectMachineRailEnabled,
     selectMachineRailItems,
+    selectRailMenuRequests,
   } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import {
     addRailMachineRequested,
+    openRailMachineMenuRequested,
     removeRailMachineRequested,
     selectRailMachineRequested,
   } from '$store/renderer/slices/machine-rail/machine-rail-slice';
@@ -42,7 +45,24 @@
   const items$ = selectMachineRailItems();
   const candidates$ = selectMachineRailCandidates();
 
+  const menuRequests$ = selectRailMenuRequests();
+
   let menuOpen = $state(false);
+  // This machine's status menu (health, machines): opened by a context click on
+  // its rail item here, or on another machine's rail from that machine's renderer.
+  let statusMenuOpen = $state(false);
+  let seenMenuRequests = 0;
+  $effect(() => {
+    if ($menuRequests$ === seenMenuRequests) return;
+    seenMenuRequests = $menuRequests$;
+    statusMenuOpen = true;
+  });
+
+  function openStatusMenu(event: MouseEvent, id: string, own: boolean) {
+    event.preventDefault();
+    if (own) statusMenuOpen = true;
+    else appStore.dispatch(openRailMachineMenuRequested(id));
+  }
   let connectModalOpen = $state(false);
 
   const removable = $derived($items$.filter((item) => !item.home));
@@ -92,6 +112,7 @@
             data-machine-id={item.id}
             data-offline={item.offline || undefined}
             onclick={() => appStore.dispatch(selectRailMachineRequested(item.id))}
+            oncontextmenu={(event: MouseEvent) => openStatusMenu(event, item.id, item.own)}
           >
             {#if item.record}
               <DeviceIcon
@@ -101,6 +122,15 @@
               />
             {/if}
           </Button>
+          {#if item.own}
+            <!-- Zero-size anchor at the item's right edge: the menu opens beside the item. -->
+            <span
+              class="absolute top-0 right-0 size-0 overflow-hidden"
+              aria-hidden={!statusMenuOpen}
+            >
+              <DaemonStatusIndicator railAnchor bind:open={statusMenuOpen} />
+            </span>
+          {/if}
         </div>
       {/each}
     </div>

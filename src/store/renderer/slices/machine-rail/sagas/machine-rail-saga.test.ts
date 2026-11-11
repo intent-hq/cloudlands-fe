@@ -13,6 +13,7 @@ import type { ConnectionRecord } from '$shared/types/connections';
 import type { MachineRailState } from '$shared/types/machine-rail';
 import {
   addRailMachineRequested,
+  openRailMachineMenuRequested,
   machineRailReducer,
   removeRailMachineRequested,
   selectRailMachineRequested,
@@ -58,6 +59,7 @@ function installMain(initial: MachineRailState) {
     invoke,
     push: (state: MachineRailState) => listeners.get('machine-rail:changed')?.(state),
     pushToast: (toast: unknown) => listeners.get('machine-rail:toast')?.(toast),
+    pushMenuRequest: () => listeners.get('machine-rail:menu-requested')?.({ id: 'local' }),
   };
 }
 
@@ -125,6 +127,7 @@ describe('machineRailSaga', () => {
     ['select', selectRailMachineRequested('b'), 'machine-rail:select', { id: 'b' }],
     ['add', addRailMachineRequested('b'), 'machine-rail:add', { id: 'b' }],
     ['remove', removeRailMachineRequested('b'), 'machine-rail:remove', { id: 'b' }],
+    ['open menu', openRailMachineMenuRequested('b'), 'machine-rail:open-menu', { id: 'b' }],
     [
       'set enabled',
       setMachineRailEnabledRequested(false),
@@ -140,7 +143,7 @@ describe('machineRailSaga', () => {
     dispatch(action);
     await settle();
     expect(main.invoke).toHaveBeenLastCalledWith(wire, params);
-    expect(getState().machineRail).toEqual(reply);
+    expect(getState().machineRail).toMatchObject(reply);
     task.cancel();
   });
 
@@ -161,7 +164,7 @@ describe('machineRailSaga', () => {
     main.invoke.mockRejectedValueOnce(new Error('Unknown machine'));
     dispatch(addRailMachineRequested('gone'));
     await settle();
-    expect(getState().machineRail).toEqual(railState());
+    expect(getState().machineRail).toMatchObject(railState());
     expect(notifyError).toHaveBeenCalledTimes(1);
     task.cancel();
   });
@@ -207,6 +210,18 @@ describe('machineRailSaga', () => {
     } finally {
       rendered.remove();
     }
+    task.cancel();
+  });
+
+  it("counts a request from main to open this machine's status menu", async () => {
+    const main = installMain(railState());
+    const { task, getState } = createHarness();
+    await settle();
+    expect(getState().machineRail.menuRequests).toBe(0);
+    main.pushMenuRequest();
+    await settle();
+    expect(getState().machineRail.menuRequests).toBe(1);
+    expect(getState().machineRail.machineIds).toEqual(['local']);
     task.cancel();
   });
 

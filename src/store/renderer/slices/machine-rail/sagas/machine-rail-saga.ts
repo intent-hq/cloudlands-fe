@@ -18,6 +18,7 @@ import { m } from '$shared/paraglide/messages.js';
 import {
   MACHINE_HIDDEN_ATTRIBUTE,
   MACHINE_RAIL_CHANGED_EVENT,
+  MACHINE_RAIL_MENU_REQUESTED_EVENT,
   MACHINE_RAIL_TOAST_EVENT,
   type MachineRailState,
   type MachineRailToastEvent,
@@ -28,6 +29,8 @@ import { selectIsRailMachineShown, selectMachineRailEnabled } from '../machine-r
 import {
   addRailMachineRequested,
   machineRailStateReceived,
+  openRailMachineMenuRequested,
+  railMachineMenuRequested,
   removeRailMachineRequested,
   selectRailMachineRequested,
   setMachineRailEnabledRequested,
@@ -179,6 +182,22 @@ function* showForwardedToasts(channel: EventChannel<MachineRailToastEvent>) {
   }
 }
 
+function createMenuRequestChannel(): EventChannel<true> {
+  return eventChannel<true>((emit) => {
+    const api = getApi();
+    if (!api?.on) return () => {};
+    const listenerId = api.on(MACHINE_RAIL_MENU_REQUESTED_EVENT, () => emit(true));
+    return () => api.offById(MACHINE_RAIL_MENU_REQUESTED_EVENT, listenerId);
+  }, buffers.sliding<true>(1));
+}
+
+function* mirrorMenuRequests(channel: EventChannel<true>) {
+  while (true) {
+    yield* take(channel);
+    yield* put(railMachineMenuRequested());
+  }
+}
+
 function* mirrorPushes(channel: EventChannel<MachineRailState>) {
   while (true) {
     const state = yield* take(channel);
@@ -201,6 +220,9 @@ export function* machineRailSaga() {
   yield* takeEvery(removeRailMachineRequested, function* ({ payload: [id] }) {
     yield* request(MACHINE_RAIL.REMOVE, { id });
   });
+  yield* takeEvery(openRailMachineMenuRequested, function* ({ payload: [id] }) {
+    yield* request(MACHINE_RAIL.OPEN_MENU, { id });
+  });
   yield* takeEvery(setMachineRailEnabledRequested, function* ({ payload: [enabled] }) {
     yield* request(MACHINE_RAIL.SET_ENABLED, { enabled });
   });
@@ -209,6 +231,7 @@ export function* machineRailSaga() {
   const channel = createChangedChannel();
   yield* fork(mirrorPushes, channel);
   yield* fork(showForwardedToasts, createToastChannel());
+  yield* fork(mirrorMenuRequests, createMenuRequestChannel());
   try {
     const state = yield* call(invokeRail, MACHINE_RAIL.GET_STATE, {});
     yield* put(machineRailStateReceived(state));

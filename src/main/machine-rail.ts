@@ -363,6 +363,24 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
       MACHINE_RAIL.REMOVE,
     ),
   );
+  // The status menu of a machine lives in that machine's renderer: show the
+  // machine, then ask its renderer to open the menu at its rail item.
+  ipcMain.handle(
+    MACHINE_RAIL.OPEN_MENU,
+    createValidatedHandler(
+      MachineRailMachineSchema,
+      async (event, { id }) => {
+        assertEnabled();
+        const window = windowOf(event.sender);
+        const state = selectMachine(window, id);
+        const target = getShownRendererWebContents(window);
+        // A view that is still loading has no rail to anchor the menu to yet.
+        if (!target.isLoadingMainFrame()) target.send(MACHINE_RAIL.MENU_REQUESTED, { id });
+        return state;
+      },
+      MACHINE_RAIL.OPEN_MENU,
+    ),
+  );
   // A toast from a machine that is not shown appears in the one that is.
   ipcMain.handle(
     MACHINE_RAIL.FORWARD_TOAST,

@@ -45,12 +45,13 @@ describe('machineRailReducer', () => {
       homeId: '',
       machineIds: [],
       selectedId: '',
+      menuRequests: 0,
     });
   });
 
   it('replaces the state with what main sent', () => {
     const next = { enabled: true, homeId: 'local', machineIds: ['local', 'b'], selectedId: 'b' };
-    expect(machineRailReducer(initialState, machineRailStateReceived(next))).toEqual(next);
+    expect(machineRailReducer(initialState, machineRailStateReceived(next))).toMatchObject(next);
   });
 });
 

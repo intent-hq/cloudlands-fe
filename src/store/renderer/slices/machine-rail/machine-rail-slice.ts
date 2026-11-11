@@ -12,11 +12,18 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { MachineRailState } from '$shared/types/machine-rail';
 
-const initialState: MachineRailState = {
+/** Main's rail state plus renderer-only UI requests. */
+export type MachineRailSliceState = MachineRailState & {
+  /** Counts requests to open this machine's status menu at its rail item. */
+  menuRequests: number;
+};
+
+const initialState: MachineRailSliceState = {
   enabled: false,
   homeId: '',
   machineIds: [],
   selectedId: '',
+  menuRequests: 0,
 };
 
 /** State from `machine-rail:get-state`, a request reply, or a `machine-rail:changed` push. */
@@ -31,8 +38,20 @@ export const setMachineRailEnabledRequested = createAction<[enabled: boolean]>(
   'machineRail/setEnabledRequested',
 );
 
-export const machineRailReducer = createReducer<MachineRailState>(initialState);
-machineRailReducer.with(machineRailStateReceived, (_state, { payload: [next] }) => ({
+/** Open the status menu of a rail machine (switching to it first when it is not shown). */
+export const openRailMachineMenuRequested = createAction<[id: string]>(
+  'machineRail/openMenuRequested',
+);
+/** This renderer was asked to open its own machine's status menu. */
+export const railMachineMenuRequested = createAction('machineRail/menuRequested');
+
+export const machineRailReducer = createReducer<MachineRailSliceState>(initialState);
+machineRailReducer.with(railMachineMenuRequested, (state) => ({
+  ...state,
+  menuRequests: state.menuRequests + 1,
+}));
+machineRailReducer.with(machineRailStateReceived, (state, { payload: [next] }) => ({
+  menuRequests: state.menuRequests,
   enabled: next.enabled,
   homeId: next.homeId,
   machineIds: [...next.machineIds],

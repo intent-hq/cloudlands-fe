@@ -9,6 +9,8 @@ export interface MachineRailItem {
   selected: boolean;
   /** The machine the window itself is bound to; it cannot be removed. */
   home: boolean;
+  /** The machine this renderer serves; its status menu opens from this item. */
+  own: boolean;
   /** Not connected right now: shown greyed out. */
   offline: boolean;
 }
@@ -28,10 +30,16 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
       record,
       selected: id === selectedId,
       home: id === homeId,
+      own: id === state.connections.windowBackendId,
       offline: record !== null && record.status !== 'connected' && record.status !== 'connecting',
     };
   });
 });
+
+/** Bumps each time this renderer is asked to open its machine's status menu. */
+export const selectRailMenuRequests = store.createSelector(
+  (state): number => state.machineRail.menuRequests,
+);
 
 /** Saved machines that can still be added to this window's rail. */
 export const selectMachineRailCandidates = store.createSelector((state): ConnectionRecord[] => {

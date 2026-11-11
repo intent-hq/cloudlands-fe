@@ -11,6 +11,7 @@
 export const MACHINE_RAIL_CHANGED_EVENT = 'machine-rail:changed';
 
 export const MACHINE_RAIL_TOAST_EVENT = 'machine-rail:toast';
+export const MACHINE_RAIL_MENU_REQUESTED_EVENT = 'machine-rail:menu-requested';
 
 /** Root attribute of a renderer whose machine is not the one the window shows. */
 export const MACHINE_HIDDEN_ATTRIBUTE = 'data-machine-hidden';
