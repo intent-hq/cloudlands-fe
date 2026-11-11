@@ -2050,6 +2050,9 @@
   // `gitAvailable === 'unknown'` (probe couldn't run) does NOT block: only a
   // daemon-confirmed missing git (false) or a still-pending probe (null) gates.
   // A failed/placing attachment pill also blocks (retry or remove to proceed).
+  // New Workspace → Import a session: Create waits while the picked session's
+  // repository and branch are still being matched (see selectImportSession).
+  let importSessionMatching = $state(false);
   const isValid = $derived(
     $canCreateWorkspace$ &&
       // A plain folder needs no git.
@@ -2066,7 +2069,8 @@
               repoType === 'remote' ||
               (skipIsolation && repoType === 'local')) &&
             (repoType !== 'github' || githubAuthNeeded === 'none')) &&
-      !hasBlockingAttachments(contextItems),
+      !hasBlockingAttachments(contextItems) &&
+      !importSessionMatching,
   );
 
   /**
@@ -2198,6 +2202,7 @@
       plainFolder?: 'existing' | 'new';
     }>,
   ) {
+    if (!applyingImportSessionMatch) cancelImportSessionMatch();
     const repositoryChanged =
       repositorySelectionChanged({
         repoPath: event.detail.path,
@@ -2261,7 +2266,26 @@
 
   // New Workspace → Import a session: the picked session becomes the first agent.
   let importSessionPick = $state<SessionImportSelection | null>(null);
+  // Each repo/branch match for a picked session gets a revision. Any other
+  // repo or branch change, a new pick, or a submit bumps it, so a late result
+  // never overrides the user's choice or a create already under way.
   let importSessionRevision = 0;
+  // True only while a match result is being applied through the shared handlers.
+  let applyingImportSessionMatch = false;
+
+  function cancelImportSessionMatch() {
+    importSessionRevision++;
+    importSessionMatching = false;
+  }
+
+  function applyImportSessionMatch(apply: () => void) {
+    applyingImportSessionMatch = true;
+    try {
+      apply();
+    } finally {
+      applyingImportSessionMatch = false;
+    }
+  }
 
   /** The git root holding `cwd` on the daemon host, else null. */
   async function sessionRepositoryRoot(cwd: string): Promise<string | null> {
@@ -2298,18 +2322,27 @@
   async function selectImportSession(pick: SessionImportSelection | null) {
     const revision = ++importSessionRevision;
     importSessionPick = pick;
+    importSessionMatching = !!pick;
     if (!pick) return;
-    const root = await sessionRepositoryRoot(pick.cwd);
-    if (!mounted || revision !== importSessionRevision || !root) return;
-    if (repoType !== 'local' || repoPath !== root) {
-      const detail = { path: root, type: 'local' as const, isValidPath: true };
-      handleRepoChange({ detail } as CustomEvent<typeof detail>);
+    const current = () => mounted && revision === importSessionRevision;
+    try {
+      const root = await sessionRepositoryRoot(pick.cwd);
+      if (!current() || !root) return;
+      if (repoType !== 'local' || repoPath !== root) {
+        const detail = { path: root, type: 'local' as const, isValidPath: true };
+        applyImportSessionMatch(() => handleRepoChange({ detail } as CustomEvent<typeof detail>));
+      }
+      if (!pick.gitBranch) return;
+      const listing = await appClient.git.getBranches(root, true);
+      if (!current() || repoPath !== root) return;
+      const base = sessionBaseBranch(pick.gitBranch, listing);
+      if (base)
+        applyImportSessionMatch(() =>
+          handleBranchChange(new CustomEvent('branch', { detail: { branch: base } })),
+        );
+    } finally {
+      if (revision === importSessionRevision) importSessionMatching = false;
     }
-    if (!pick.gitBranch) return;
-    const listing = await appClient.git.getBranches(root, true);
-    if (!mounted || revision !== importSessionRevision || repoPath !== root) return;
-    const base = sessionBaseBranch(pick.gitBranch, listing);
-    if (base) handleBranchChange(new CustomEvent('branch', { detail: { branch: base } }));
   }
 
   function importProviderLabel(provider: string): string {
@@ -2318,6 +2351,7 @@
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
     logger.debug('handleBranchChange called', { branch: event.detail.branch });
+    if (!applyingImportSessionMatch) cancelImportSessionMatch();
     branch = event.detail.branch;
 
     // Dispatch event for context mention pills to know the current branch
@@ -2452,6 +2486,8 @@
       });
     const preparationCurrent = () => current() && setupScriptProbeKey === preparationRepoKey;
     pullContinuation = null;
+    // A create is under way: a match still in flight must not change the form.
+    cancelImportSessionMatch();
     isCreating = true;
     error = null;
     submittedFormKey = createFormKey;
@@ -2843,7 +2879,7 @@
       scope = '';
     }
     remoteSetup = null;
-    importSessionRevision++;
+    cancelImportSessionMatch();
     importSessionPick = null;
     // A late drafts.get or its delayed editor update must not refill the form.
     draftRestoreCancelled = true;
