@@ -33,6 +33,7 @@
   import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
   import { createMockBridgeListeners } from '../../../test/ct-mock-electron-bridge';
   import { emitMockIpcEvent } from '$shared/ipc-mock-router';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
@@ -148,7 +149,7 @@
   const { detachAll: detachListeners, ...listeners } = createMockBridgeListeners();
   const notifyBackend = (method: string) =>
     // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock bridge transport for preview events; never fetches domain data.
-    emitMockIpcEvent('backend:notification', { method, params: {} });
+    emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, { method, params: {} });
   let stopCatalog: (() => void) | undefined;
 
   function refreshCatalog(empty = false, fail = false) {
