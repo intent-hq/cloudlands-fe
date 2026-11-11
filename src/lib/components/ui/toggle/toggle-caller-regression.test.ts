@@ -129,6 +129,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/workspace/initializer/BranchSelector.svelte',
       ],
       'toggle-group': [
+        'src/features/session-import/ImportSessionList.svelte',
         'src/lib/component-catalog/CatalogControls.svelte',
         'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',
