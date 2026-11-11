@@ -47,6 +47,7 @@
   import GitCredentialsModal from '$lib/components/GitCredentialsModal.svelte';
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
+  import MachineRail from '$features/machine-rail/MachineRail.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
@@ -997,6 +998,7 @@
     <!-- Main Content Area -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2">
+        <MachineRail />
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main

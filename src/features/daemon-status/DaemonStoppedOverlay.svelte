@@ -376,8 +376,9 @@
 {#if visible}
   <Portal target="body" zIndex="var(--layer-connection-overlay)">
     <div
-      class="fixed inset-x-0 bottom-0 flex items-center justify-center bg-black/70 backdrop-blur-md"
+      class="fixed right-0 bottom-0 flex items-center justify-center bg-black/70 backdrop-blur-md"
       style:top="{overlayTopPx}px"
+      style:left="var(--machine-rail-inset, 0px)"
       style:z-index="var(--layer-connection-overlay)"
       role="alertdialog"
       aria-modal={isGuestOffline ? undefined : 'true'}

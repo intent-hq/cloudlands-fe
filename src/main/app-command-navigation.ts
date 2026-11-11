@@ -18,6 +18,7 @@
  * utilities like Logi Options+ that synthesize swipes instead of X-buttons.
  */
 import type { BrowserWindow } from 'electron';
+import { getShownRendererWebContents } from './window-backend';
 
 import { IPC_CHANNELS } from '../shared/ipc-registry';
 
@@ -47,6 +48,6 @@ export function attachAppCommandHistoryNavigation(
     const direction = historyDirectionForAppCommand(command);
     if (direction === null) return;
     if (window.isDestroyed() || window.webContents.isDestroyed()) return;
-    window.webContents.send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, direction);
+    getShownRendererWebContents(window).send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, direction);
   });
 }

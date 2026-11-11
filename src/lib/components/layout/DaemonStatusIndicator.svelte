@@ -177,7 +177,8 @@
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
 
-  let dropdownOpen = $state(false);
+  // Machine rail (Labs): the menu opens from the machine's rail item, with no visible trigger.
+  let { open: dropdownOpen = $bindable(false), railAnchor = false } = $props();
   let menuBody = $state<HTMLDivElement | null>(null);
   // Align the details surface to the parent menu, not its inset first row.
   const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
@@ -540,8 +541,8 @@
 </script>
 
 <DropdownMenu
-  align="end"
-  side="bottom"
+  align={railAnchor ? 'start' : 'end'}
+  side={railAnchor ? 'right' : 'bottom'}
   alignIconColumn={false}
   bind:open={dropdownOpen}
   contentClass="px-0"
@@ -554,7 +555,12 @@
       variant="ghost-light"
       size={currentRemoteName ? 'compact' : 'icon-compact'}
       wrapContent={false}
-      class={cn('hover:bg-muted/50 rounded', currentRemoteName && 'gap-1.5 px-1.5')}
+      class={cn(
+        'hover:bg-muted/50 rounded',
+        currentRemoteName && 'gap-1.5 px-1.5',
+        railAnchor && 'pointer-events-none opacity-0',
+      )}
+      tabindex={railAnchor ? -1 : undefined}
       aria-label={triggerAriaLabel}
     >
       {#if currentRemoteName}

@@ -205,6 +205,7 @@
   "log_filters_actorSystem_label": ["de"],
   "log_filters_actor_label": ["es"],
   "log_friendlyLabels_agentFallback_label": ["de", "fr"],
+  "machineRail_toast_message": "*",
   "menu_services": ["fr"],
   "menu_substitutions": ["fr"],
   "menu_window_hud_label": "*",

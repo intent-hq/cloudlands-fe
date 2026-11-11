@@ -34,6 +34,7 @@
  * (Windows `app-command`, Linux renderer mouse events).
  */
 import type { BrowserWindow } from 'electron';
+import { getShownRendererWebContents } from './window-backend';
 
 import { IPC_CHANNELS } from '../shared/ipc-registry';
 
@@ -65,6 +66,6 @@ export function attachSwipeHistoryNavigation(
     const historyDirection = historyDirectionForSwipe(direction);
     if (historyDirection === null) return;
     if (window.isDestroyed() || window.webContents.isDestroyed()) return;
-    window.webContents.send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, historyDirection);
+    getShownRendererWebContents(window).send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, historyDirection);
   });
 }

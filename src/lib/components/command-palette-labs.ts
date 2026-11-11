@@ -1,6 +1,8 @@
 import { setDockLabEnabled } from '$lib/dock-lab';
 import { store as appStore } from '$store/renderer/store';
 import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
+import { setMachineRailEnabledRequested } from '$store/renderer/slices/machine-rail/machine-rail-slice';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import {
   setLabsBrowserAccessEnabled,
   setLabsCloudMachinesEnabled,
@@ -8,6 +10,8 @@ import {
   setLabsTabGroupsEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
+const ENABLE_MACHINE_RAIL = 'enable-experimental-machine-rail';
+const DISABLE_MACHINE_RAIL = 'disable-experimental-machine-rail';
 const ENABLE_DOCK = 'enable-experimental-dock';
 const DISABLE_DOCK = 'disable-experimental-dock';
 const ENABLE_PLAIN_FOLDERS = 'enable-experimental-plain-folders';
@@ -37,7 +41,22 @@ export function isLabCommandHidden(
   );
 }
 
+/**
+ * The machine rail lab exists in the desktop app only; elsewhere both of its
+ * commands are hidden, and in the desktop app the one that would not change
+ * the setting is.
+ */
+export function isMachineRailCommandHidden(commandId: string, railEnabled: boolean): boolean {
+  if (commandId !== ENABLE_MACHINE_RAIL && commandId !== DISABLE_MACHINE_RAIL) return false;
+  if (!isElectronPlatform()) return true;
+  return commandId === (railEnabled ? ENABLE_MACHINE_RAIL : DISABLE_MACHINE_RAIL);
+}
+
 export function runLabCommand(commandId: string): boolean {
+  if (commandId === ENABLE_MACHINE_RAIL || commandId === DISABLE_MACHINE_RAIL) {
+    appStore.dispatch(setMachineRailEnabledRequested(commandId === ENABLE_MACHINE_RAIL));
+    return true;
+  }
   if (commandId === ENABLE_CLOUD_MACHINES || commandId === DISABLE_CLOUD_MACHINES) {
     appStore.dispatch(setLabsCloudMachinesEnabled(commandId === ENABLE_CLOUD_MACHINES));
     return true;

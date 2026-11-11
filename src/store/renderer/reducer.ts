@@ -29,6 +29,7 @@ import { multiPanelContextReducer } from './slices/multi-panel-context/multi-pan
 import { permissionReducer } from './slices/permission/permission-slice';
 import { pipReducer } from './slices/pip/pip-slice';
 import { powerReducer } from './slices/power/power-slice';
+import { machineRailReducer } from './slices/machine-rail/machine-rail-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
 import { globalModalsReducer } from './slices/global-modals/global-modals-slice';
 import { knownReposReducer } from './slices/known-repos/known-repos-slice';
@@ -164,6 +165,7 @@ export const reducers = {
   pip: pipReducer,
   dockConversation: dockConversationReducer,
   power: powerReducer,
+  machineRail: machineRailReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,
   transientUi: transientUiReducer,
