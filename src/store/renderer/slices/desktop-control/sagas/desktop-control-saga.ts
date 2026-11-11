@@ -196,7 +196,14 @@ function* setPermission(
 function* pollOsPermissions(): SagaGenerator<void> {
   const requestId = crypto.randomUUID();
   for (let attempt = 0; attempt < 120; attempt++) {
-    const result = yield* call(desktopClient.requestOsPermissions, requestId);
+    let result: Awaited<ReturnType<typeof desktopClient.requestOsPermissions>>;
+    try {
+      result = yield* call(desktopClient.requestOsPermissions, requestId);
+    } catch (error) {
+      // Only the user-started first call reports; later refusals keep the last checklist.
+      if (attempt === 0) throw error;
+      return;
+    }
     yield* put(desktopOsPermissionsReceived(result));
     if (!result || result.checklist.screenCapture === 'unavailable') return;
     yield* delay(1000);

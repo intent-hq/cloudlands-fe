@@ -408,6 +408,35 @@ describe('AgentFeaturesSettings', () => {
       ).rejects.toThrow();
     });
 
+    it('keeps the checklist without an error when a background re-check is refused', async () => {
+      listWithDesktop(false);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agentFeatures.desktopControl', value: true },
+      ]);
+      desktopMocks.requestOsPermissions
+        .mockResolvedValueOnce(missing)
+        .mockRejectedValueOnce(
+          Object.assign(new Error('The Mac session is locked'), {
+            code: 'desktop-unsupported-operation',
+          }),
+        )
+        .mockResolvedValueOnce(undefined);
+      await renderReady();
+      await fireEvent.click(await screen.findByRole('switch', { name: 'Desktop control' }));
+      await waitFor(() => expect(desktopMocks.requestOsPermissions).toHaveBeenCalledTimes(2));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(mockToast.error).not.toHaveBeenCalled();
+      const checklist = screen.getByRole('list', { name: 'macOS permissions' });
+      expect(checklist.textContent).toContain('Screen Recording');
+      const again = screen.getByRole('button', { name: 'Check again' });
+      await waitFor(() => expect(again.hasAttribute('disabled')).toBe(false));
+      await fireEvent.click(again);
+      await waitFor(() =>
+        expect(screen.queryByRole('list', { name: 'macOS permissions' })).toBeNull(),
+      );
+      expect(desktopMocks.requestOsPermissions).toHaveBeenCalledTimes(3);
+    });
+
     it('does not ask the OS when desktop control is turned off', async () => {
       listWithDesktop(true);
       mocks.mockSettingsUpdate.mockResolvedValueOnce([

@@ -99,6 +99,7 @@ desktopControlReducer.with(desktopOsPermissionsReceived, (state, { payload: [res
 desktopControlReducer.with(desktopOsPermissionsCleared, (state) => ({
   ...state,
   osPermissions: undefined,
+  osPermissionsChecking: false,
 }));
 desktopControlReducer.with(connectionStatusChanged, (state, { payload: [status] }) =>
   status === 'connected' ? state : invalidate(state),
