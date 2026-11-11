@@ -174,7 +174,10 @@
 
   let applied = $state<string | null>(null);
   function onApply(detail: ProposalActionDetail) {
-    applied = JSON.stringify(detail.editedFields.placement ?? null);
+    // "absent" = no placement edit: the payload's own placement would be kept.
+    applied = JSON.stringify(
+      'placement' in detail.editedFields ? detail.editedFields.placement : 'absent',
+    );
   }
 </script>
 

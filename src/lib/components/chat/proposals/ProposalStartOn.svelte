@@ -97,11 +97,14 @@
 
   $effect(() => {
     unavailable = active && choices.unavailable !== null;
+    // With nothing to choose the card starts on the backend: say so, so no payload placement wins.
     placement = active
       ? (initialAgentPlacement(effective, {
           cloudEntries: $cloudEntries$,
         }) ?? null)
-      : undefined;
+      : enabled
+        ? null
+        : undefined;
   });
 </script>
 
