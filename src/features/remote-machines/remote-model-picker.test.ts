@@ -283,7 +283,15 @@ describe('buildMachineModelGroups', () => {
 
     it("never lists the Default's models for a profile whose own list hasn't loaded", () => {
       // A Bedrock or Vertex profile can serve different models than its Default.
-      expect(build(['claude-code@p-unloaded'])).toEqual({ 'claude-code@p-unloaded': [] });
+      expect(build(['claude-code@p-unloaded'])).toEqual({});
+    });
+
+    it('shows no tab for a provider with nothing to pick (intent#9102)', () => {
+      // Droid on a Mac: status unknown, no models, and nothing on this backend to send.
+      const mac = machine({
+        capabilities: { providers: [{ id: 'droid', status: 'unknown', models: [] }] },
+      });
+      expect(build(['droid'], undefined, mac)).toEqual({});
     });
 
     it("lists the backend's models for a Default whose overrides bring credentials", () => {
@@ -293,13 +301,11 @@ describe('buildMachineModelGroups', () => {
       });
     });
 
-    it("keeps a Default without overrides on the machine's own (empty) list", () => {
+    it("hides a Default without overrides when the machine lists no models", () => {
       // Codex is signed out there and its Default has nothing to send: hidden.
-      expect(build(['claude-code', 'codex'], { 'claude-code': false, codex: false })).toEqual({
-        'claude-code': [],
-      });
+      expect(build(['claude-code', 'codex'], { 'claude-code': false, codex: false })).toEqual({});
       // Unknown overrides: no evidence the Default brings credentials.
-      expect(build(['claude-code'])).toEqual({ 'claude-code': [] });
+      expect(build(['claude-code'])).toEqual({});
     });
 
     it('hides a configuration that cannot be sent', () => {

@@ -4,6 +4,7 @@
  * agent on E2B and its errors read.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import {
   estimateCloudCost,
@@ -170,8 +171,17 @@ describe('cost and uptime', () => {
 
 describe('Start On', () => {
   const machines = [{ ...E2B_SANDBOXES[0]!, id: 'd-mac', name: 'Mac', cloud: undefined }];
-  const entry = (cloudMachineId: string, unavailableReason: string | null = null) =>
-    ({ cloudMachineId, label: `E2B · ${cloudMachineId}`, unavailableReason }) as StartOnCloudEntry;
+  const entry = (
+    cloudMachineId: string,
+    unavailableReason: string | null = null,
+    needsProfile = true,
+  ) =>
+    ({
+      cloudMachineId,
+      label: `E2B · ${cloudMachineId}`,
+      unavailableReason,
+      needsProfile,
+    }) as StartOnCloudEntry;
 
   it('adds one row per entry after the machines, with the profile hint', () => {
     const options = startOnOptions({
@@ -188,7 +198,9 @@ describe('Start On', () => {
         reason: 'key rejected',
       },
     ]);
-    expect(options.at(-2)?.hint).toBeTruthy();
+    expect(options.at(-2)?.hint).toBe(m.cloudMachines_startOn_hint());
+    const ready = startOnOptions({ backendLabel: 'Box', machines, cloud: [entry('e2b', null, false)] });
+    expect(ready.at(-1)?.hint).toBeUndefined();
     expect(
       startOnOptions({ backendLabel: 'Box', machines, cloud: [] }).some((o) => o.kind === 'cloud'),
     ).toBe(false);
@@ -260,6 +272,75 @@ describe('which configurations can run on E2B', () => {
   it('blocks a provider whose CLI the templates do not install', () => {
     seed({ loadStatus: 'success' });
     expect(cloudProfileBlockReason(store.state, 'gemini')).toBeTruthy();
+  });
+});
+
+describe('the Start On profile hint (intent#9101)', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  const keyed = [{ key: 'CLAUDE_CODE_OAUTH_TOKEN', kind: 'set' as const, value: '••••' }];
+  const marked = {
+    id: 'p-personal',
+    providerRef: 'claude-code@p-personal',
+    baseProviderId: 'claude-code',
+    name: 'clement@frkz.app',
+    remoteCompatible: true,
+  };
+
+  function seed({
+    defaultRemoteLaunch,
+    catalogProfiles = [],
+    profileEnv,
+  }: {
+    defaultRemoteLaunch: Record<string, string>;
+    catalogProfiles?: (typeof marked)[];
+    profileEnv?: { key: string; kind: 'set' | 'unset'; value?: string }[];
+  }) {
+    store.init();
+    restore = setupCloudMachinesFixture('connected');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    const state = store.state as unknown as {
+      providerCatalog: Record<string, unknown>;
+      providerSettings: { profiles: ProviderProfilesState };
+    };
+    state.providerCatalog.defaultRemoteLaunch = defaultRemoteLaunch;
+    state.providerCatalog.profiles = createCollection('id', catalogProfiles);
+    if (profileEnv)
+      state.providerSettings.profiles = {
+        ...state.providerSettings.profiles,
+        loadStatus: 'success',
+        items: createCollection('id', [
+          { ...marked, env: profileEnv },
+        ]) as unknown as ProviderProfilesState['items'],
+      };
+  }
+  const cloudHint = () =>
+    selectStartOnOptions.select(store.state).find((option) => option.kind === 'cloud')?.hint;
+
+  it('is hidden when the marked Default sends its settings', () => {
+    seed({ defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' } });
+    expect(cloudHint()).toBeUndefined();
+  });
+
+  it('is hidden when a marked profile sends a set variable', () => {
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' },
+      catalogProfiles: [marked],
+      profileEnv: keyed,
+    });
+    expect(cloudHint()).toBeUndefined();
+  });
+
+  it('shows when nothing marked can be sent', () => {
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'refused' },
+      catalogProfiles: [marked],
+      profileEnv: [{ key: 'X', kind: 'unset' }],
+    });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
+    seed({ defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' } });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
   });
 });
 
