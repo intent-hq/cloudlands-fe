@@ -28,8 +28,8 @@ interface DockShellLayoutInput {
 /** DockIntroCard's fixed height plus its gap below; keep in step with its styles. */
 export const DOCK_INTRO_HEIGHT = 130;
 export const DOCK_OVERVIEW_HISTORY_HEIGHT = 44;
-/** The index search field (28) and its gap below (8); keep in step with DockOverview. */
-export const DOCK_OVERVIEW_SEARCH_HEIGHT = 36;
+/** The index search field (32) and its gap below (8); keep in step with DockOverview. */
+export const DOCK_OVERVIEW_SEARCH_HEIGHT = 40;
 
 /** Width of the compact notch wing that shows one dot per status group. */
 export function dockCompactWingWidth(statusGroups: number): number {
