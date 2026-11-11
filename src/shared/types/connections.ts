@@ -493,6 +493,8 @@ export interface ConnectionTunnelResult {
 /** `connections:open` params. */
 export interface OpenConnectionParams {
   id: string;
+  /** Rebind the calling window to this backend in place instead of opening another window. */
+  switchSenderWindow?: boolean;
 }
 
 /** `connections:open` result: echoes the opened or focused backend id. */

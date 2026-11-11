@@ -23,7 +23,6 @@
 import { app, BrowserWindow, Notification, screen } from 'electron';
 import { claimActivationFocus } from '../../../main/activation-focus-claim';
 import { isHudWindow } from '../../../main/hud-window';
-import { getBackendIdForWindow } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { m } from '../../../shared/paraglide/messages.js';
 import { CHIEF_WORKSPACE_ID, WorkspaceId } from '../../../shared/types/branded-ids';
@@ -46,6 +45,14 @@ import {
   getWindowIdsForWorkspace,
   sendToWorkspaceWindows,
 } from '../../system/main/system.ipc';
+import {
+  getActiveContents,
+  getBackendIdForWindow,
+  getHostWindowForWebContents,
+  getPageForBackend,
+  getRendererPage,
+  showRendererPage,
+} from '../../../main/window-backend';
 import { ANY_HOST, type WindowHostScope } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('NotificationService');
@@ -167,16 +174,21 @@ function pickNotificationClickTarget(
   const usable = (w: BrowserWindow): boolean =>
     !w.isDestroyed() &&
     !isHudWindow(w) &&
-    (backendId === undefined || getBackendIdForWindow(w) === backendId);
+    (backendId === undefined || getPageForBackend(w, backendId) !== undefined);
 
   if (workspaceId) {
-    const workspaceWindows = getWindowIdsForWorkspace(workspaceId, backendId ?? ANY_HOST)
-      .map((id) => BrowserWindow.fromId(id))
-      .filter((w): w is BrowserWindow => w !== null && usable(w));
-    const viewing = workspaceWindows.find(
-      (w) => getViewedWorkspaceIdForWindow(w.id) === workspaceId,
+    // Registry ids are renderer page ids (a window can host connection panels).
+    const pageIds = getWindowIdsForWorkspace(workspaceId, backendId ?? ANY_HOST);
+    const hostOf = (pageId: number): BrowserWindow | null => {
+      const page = getRendererPage(pageId);
+      const host = page ? getHostWindowForWebContents(page) : null;
+      return host && usable(host) ? host : null;
+    };
+    const viewingId = pageIds.find(
+      (pageId) => hostOf(pageId) && getViewedWorkspaceIdForWindow(pageId) === workspaceId,
     );
-    const holding = viewing ?? workspaceWindows[0];
+    const holdingId = viewingId ?? pageIds.find((pageId) => hostOf(pageId));
+    const holding = holdingId === undefined ? null : hostOf(holdingId);
     if (holding) return holding;
   }
 
@@ -836,15 +848,13 @@ export class NotificationService {
     };
     if (navigateTarget && toastWindow && !toastWindow.isDestroyed()) {
       const { navigateTarget: _toastOnly, ...soundOnlyPayload } = payload;
-      if (!toastWindow.webContents.isDestroyed()) {
-        toastWindow.webContents.send('notification:show', payload);
+      const toastPage = getActiveContents(toastWindow);
+      if (!toastPage.isDestroyed()) {
+        toastPage.send('notification:show', payload);
       }
       for (const id of workspaceId ? getWindowIdsForWorkspace(workspaceId, scope) : []) {
-        if (id === toastWindow.id) continue;
-        const window = BrowserWindow.fromId(id);
-        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-          window.webContents.send('notification:show', soundOnlyPayload);
-        }
+        const page = getRendererPage(id);
+        if (page && page !== toastPage) page.send('notification:show', soundOnlyPayload);
       }
       return;
     }
@@ -853,8 +863,9 @@ export class NotificationService {
       return;
     }
     const send = (window: BrowserWindow | null | undefined, data: unknown): void => {
-      if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
-        window.webContents.send('notification:show', data);
+      if (window && !window.isDestroyed()) {
+        const page = getActiveContents(window);
+        if (!page.isDestroyed()) page.send('notification:show', data);
       }
     };
     const onHost = (w: BrowserWindow): boolean =>
@@ -984,7 +995,11 @@ export class NotificationService {
           });
           return;
         }
-        if (workspaceId && !target.webContents.isDestroyed()) {
+        const page =
+          (backendId === undefined ? undefined : getPageForBackend(target, backendId)) ??
+          getActiveContents(target);
+        showRendererPage(page);
+        if (workspaceId && !page.isDestroyed()) {
           // Chief completions route to the sidebar Assistant panel (the
           // chief workspace page is hidden); everything else keeps the
           // bare `{ workspaceId }` payload.
@@ -992,7 +1007,7 @@ export class NotificationService {
             workspaceId === CHIEF_WORKSPACE_ID
               ? { workspaceId, chief: true, ...(agentId ? { agentId } : {}) }
               : { workspaceId };
-          target.webContents.send('notification:navigate', payload);
+          page.send('notification:navigate', payload);
         }
       });
 

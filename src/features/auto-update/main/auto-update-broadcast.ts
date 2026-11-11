@@ -8,6 +8,7 @@
  */
 
 import { BrowserWindow } from 'electron';
+import { getRendererContents } from '../../../main/window-backend';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
 
 /**
@@ -21,6 +22,6 @@ export function broadcastToRenderers(channel: string, ...args: unknown[]): void 
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed() || window.webContents.isDestroyed()) continue;
     if (isTrackedHudWindow(window) || isHudWindow(window)) continue;
-    window.webContents.send(channel, ...args);
+    for (const contents of getRendererContents(window)) contents.send(channel, ...args);
   }
 }

@@ -432,7 +432,7 @@ import {
   disposeDevConsole,
 } from '../features/dev-console/main/dev-console-window';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
-import { getBackendIdForWindow } from './window-backend.js';
+import { getActiveContents, getBackendIdForWindow } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { buildNativeEditMenu, buildNativeViewMenu } from './native-menu-model.js';
 import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
@@ -853,7 +853,7 @@ const bootFlow = app.whenReady().then(async () => {
             click: () => {
               const mainWindow = getMainWindow();
               if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('navigate', `/workspace/${workspace.id}`);
+                getActiveContents(mainWindow).send('navigate', `/workspace/${workspace.id}`);
               }
             },
           });
@@ -887,7 +887,7 @@ const bootFlow = app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('navigate', '/workspace/new');
+            getActiveContents(focusedWindow).send('navigate', '/workspace/new');
           }
         },
       },
@@ -940,7 +940,7 @@ const bootFlow = app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow() ?? getMainWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:import-workspace');
+            getActiveContents(focusedWindow).send('menu:import-workspace');
           }
         },
       },

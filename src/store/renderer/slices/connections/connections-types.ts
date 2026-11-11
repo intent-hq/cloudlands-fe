@@ -67,7 +67,12 @@ export type ConnectionTunnelIntent =
 /** Secrets occur only in intent payloads, never in retained workflow state. */
 export type ConnectionWorkflowIntent =
   | { kind: 'capture'; params: CaptureFingerprintParams }
-  | { kind: 'connect'; params: AddConnectionParams; enableSync: boolean }
+  | {
+      kind: 'connect';
+      params: AddConnectionParams;
+      enableSync: boolean;
+      switchSenderWindow?: boolean;
+    }
   | {
       kind: 'save';
       params: UpdateConnectionParams;
@@ -75,7 +80,7 @@ export type ConnectionWorkflowIntent =
       enableSync: boolean;
     }
   | { kind: 'test'; params: TestConnectionParams }
-  | { kind: 'open'; id: string; recovery?: 'settings' }
+  | { kind: 'open'; id: string; recovery?: 'settings'; switchSenderWindow?: boolean }
   | { kind: 'forget' | 'updateBackend'; id: string }
   | { kind: 'localIcon'; params: UpdateConnectionParams };
 

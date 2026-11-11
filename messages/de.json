@@ -3232,6 +3232,7 @@
   "layout_daemonStatus_attachedAgents_label": "Verbundene Agenten",
   "layout_daemonStatus_certWarnings_tooltip": "Eine Adresse hat ein unerwartetes Zertifikat präsentiert",
   "layout_daemonStatus_connectAnotherDevice_action": "Weiteren Rechner verbinden",
+  "layout_connectionRail_add_tooltip": "Verbindung hinzufügen",
   "layout_daemonStatus_connectToAnother_action": "Mit einem anderen intentd verbinden…",
   "layout_daemonStatus_connectionActive_label": "Aktiv",
   "layout_daemonStatus_connectionViaTailcat_label": "{target} über tailcat",

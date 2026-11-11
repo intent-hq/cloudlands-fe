@@ -4,7 +4,8 @@
  * IPC handlers for renderer event subscriptions.
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
+import { getHostWindowForWebContents } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { m } from '$shared/paraglide/messages.js';
 import { EVENTS_CHANNELS } from '../../../shared/ipc/channels';
@@ -64,8 +65,9 @@ export function setupEventsIPC(): void {
       EventsSubscribeSchema,
       async (event, validated) => {
         try {
+          // `windowId` is the renderer page id (a window can host connection panels).
           const windowId = event.sender.id;
-          const win = BrowserWindow.fromId(windowId);
+          const win = getHostWindowForWebContents(event.sender);
 
           if (!win || win.isDestroyed()) {
             logger.debug('Skipping renderer subscription for destroyed window', {

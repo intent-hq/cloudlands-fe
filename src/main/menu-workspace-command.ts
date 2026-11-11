@@ -1,3 +1,5 @@
+import type { BrowserWindow } from 'electron';
+import { getActiveContents } from './window-backend';
 import type { WorkspaceCommandPayload } from '../shared/ipc/workspace-command-payloads';
 import { workspaceCommandPayload } from '../shared/ipc/workspace-command-payloads';
 
@@ -16,6 +18,9 @@ export function sendWorkspaceCommand(
   const payload = workspaceCommandPayload(workspaceId);
   if (!window || window.isDestroyed() || !payload) return false;
 
-  window.webContents.send(channel, payload);
+  // The visible page: a connection panel when the window shows one.
+  const page = getActiveContents(window as unknown as BrowserWindow) as unknown as
+    WorkspaceCommandWindow['webContents'] | undefined;
+  (page ?? window.webContents).send(channel, payload);
   return true;
 }

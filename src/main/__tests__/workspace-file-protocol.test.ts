@@ -63,8 +63,11 @@ vi.mock('electron', () => ({
   protocol: { handle: protocolHandle },
   session: { defaultSession: { webRequest: { onBeforeRequest } } },
   webContents: {
+    // Registry ids are page ids; a window's own page here shares its window's id.
     fromId: (id: number) =>
-      webContentsWindows.has(id) ? { id, isDestroyed: () => false } : undefined,
+      webContentsWindows.has(id) || windowBackends.has(id)
+        ? { id, isDestroyed: () => false }
+        : undefined,
   },
   BrowserWindow: {
     fromId: (id: number) => (windowBackends.has(id) ? { id, isDestroyed: () => false } : null),
@@ -117,9 +120,21 @@ vi.mock('../../features/backend/main/transfer-connections', async (importOrigina
   };
 });
 
-vi.mock('../window-backend', () => ({
-  getBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
-}));
+vi.mock('../window-backend', () => {
+  const hostIdOf = (page: { id: number }) =>
+    webContentsWindows.get(page.id) ?? (windowBackends.has(page.id) ? page.id : undefined);
+  return {
+    getBackendIdForWindow: (window: { id: number }) => windowBackends.get(window.id) ?? 'local',
+    getHostWindowForWebContents: (page: { id: number }) => {
+      const id = hostIdOf(page);
+      return id === undefined ? null : { id, isDestroyed: () => false };
+    },
+    getBackendIdForWebContents: (page: { id: number }) => {
+      const id = hostIdOf(page);
+      return (id === undefined ? undefined : windowBackends.get(id)) ?? 'local';
+    },
+  };
+});
 
 import {
   imageMimeTypeForPath,

@@ -7,6 +7,7 @@
 
 import { collectListPages } from '$shared/paged-list';
 import { BrowserWindow } from 'electron';
+import { getRendererContents } from '../../../main/window-backend';
 import { promises as fs } from 'fs';
 
 import { Logger } from '../../../shared/logger';
@@ -608,8 +609,8 @@ export class WorkspaceService {
     try {
       const windows = BrowserWindow.getAllWindows();
       for (const win of windows) {
-        if (!win.isDestroyed()) {
-          win.webContents.send('workspace:background-enrichment-complete', {
+        for (const contents of getRendererContents(win)) {
+          contents.send('workspace:background-enrichment-complete', {
             workspaceId,
             updates,
           });

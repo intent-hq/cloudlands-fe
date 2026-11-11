@@ -16,6 +16,7 @@
  */
 
 import { BrowserWindow, ipcMain } from 'electron';
+import { getActiveContents, getRendererContents } from '../../../main/window-backend';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { Logger } from '../../../shared/logger';
@@ -42,7 +43,7 @@ let pendingReleaseNotes: ReleaseNotesContent | null = null;
 function broadcastToAllWindows(channel: string, payload?: unknown): void {
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
-    window.webContents.send(channel, payload);
+    for (const contents of getRendererContents(window)) contents.send(channel, payload);
   }
 }
 
@@ -86,7 +87,7 @@ export function sendShowReleaseNotes(
   payload: ShowReleaseNotesPayload,
 ): void {
   if (!window || window.isDestroyed()) return;
-  window.webContents.send(RELEASE_NOTES_CHANNELS.SHOW, payload);
+  getActiveContents(window).send(RELEASE_NOTES_CHANNELS.SHOW, payload);
 }
 
 /**

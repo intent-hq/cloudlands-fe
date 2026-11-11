@@ -14,6 +14,7 @@ const electronMocks = vi.hoisted(() => ({
   fromId: vi.fn(),
   getFocusedWindow: vi.fn(),
   getAllWindows: vi.fn(() => []),
+  pageFromId: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
@@ -29,6 +30,8 @@ vi.mock('electron', () => ({
   ipcMain: { handle: electronMocks.handle, removeHandler: vi.fn() },
   nativeTheme: { themeSource: 'system', shouldUseDarkColors: false },
   shell: {},
+  // Tracking is keyed by renderer page id; each window's own page shares its id here.
+  webContents: { fromId: electronMocks.pageFromId },
 }));
 
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
@@ -69,8 +72,9 @@ function handlerFor(channel: string): Handler {
 }
 
 describe('WINDOW_CHANNELS.SET_BROWSER_FOCUSED ownership', () => {
-  const window = { id: 914 };
-  const event = { sender: {} };
+  const sender = { id: 914 };
+  const window = { id: 914, isDestroyed: () => false, webContents: sender };
+  const event = { sender };
 
   beforeEach(() => {
     electronMocks.handle.mockReset();
@@ -102,14 +106,24 @@ describe('WINDOW_CHANNELS.SET_BROWSER_FOCUSED ownership', () => {
 
 describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
   // A live window; `backendId` is the host stamp read by getBackendIdForWindow.
-  const window: { id: number; isDestroyed: () => boolean; backendId?: string } = {
+  const sender = { id: 915, isDestroyed: () => false };
+  const window: {
+    id: number;
+    isDestroyed: () => boolean;
+    webContents: typeof sender;
+    backendId?: string;
+  } = {
     id: 915,
     isDestroyed: () => false,
+    webContents: sender,
   };
-  const event = { sender: {} };
+  const event = { sender };
 
   beforeEach(() => {
     electronMocks.handle.mockReset();
+    electronMocks.pageFromId.mockImplementation((id: number) =>
+      id === sender.id ? sender : undefined,
+    );
     delete window.backendId;
     electronMocks.fromWebContents.mockReturnValue(window);
     electronMocks.fromId.mockImplementation((id: number) => (id === window.id ? window : null));
@@ -185,6 +199,7 @@ describe('app menu zoom IPC', () => {
       id,
       isDestroyed: vi.fn(() => false),
       webContents: {
+        id,
         isDestroyed: vi.fn(() => false),
         getZoomLevel: () => zoom.level,
         getZoomFactor: () => 1.2 ** zoom.level,

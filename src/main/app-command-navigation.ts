@@ -20,6 +20,7 @@
 import type { BrowserWindow } from 'electron';
 
 import { IPC_CHANNELS } from '../shared/ipc-registry';
+import { getActiveContents } from './window-backend';
 
 export type AppCommandHistoryDirection = 'back' | 'forward';
 
@@ -47,6 +48,6 @@ export function attachAppCommandHistoryNavigation(
     const direction = historyDirectionForAppCommand(command);
     if (direction === null) return;
     if (window.isDestroyed() || window.webContents.isDestroyed()) return;
-    window.webContents.send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, direction);
+    getActiveContents(window).send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, direction);
   });
 }

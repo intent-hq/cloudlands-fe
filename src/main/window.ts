@@ -1,7 +1,7 @@
 import { isDevConsoleRoute } from '../shared/dev-console-route';
 import { isDesktopOverlayRoute } from '../shared/desktop-overlay';
 import path from 'path';
-import { app, screen, nativeTheme, nativeImage, BrowserWindow } from 'electron';
+import { app, screen, nativeTheme, nativeImage, BrowserWindow, WebContentsView } from 'electron';
 import type { BrowserWindow as BrowserWindowType } from 'electron';
 import fs from 'fs';
 import fsAsync from 'fs/promises';
@@ -50,8 +50,13 @@ import {
   registerHudWindow,
 } from './hud-window';
 import {
+  getActiveContents,
   getBackendIdForWebContents,
   getBackendIdForWindow,
+  getAllRendererContents,
+  registerPanelSwitcher,
+  setActivePanel,
+  stampPanelWithBackend,
   stampWindowWithBackend,
 } from './window-backend';
 
@@ -117,6 +122,15 @@ function validateBounds(
 /**
  * Build the standard BrowserWindowConstructorOptions used by all window creation functions.
  */
+function appWebPreferences(): Electron.WebPreferences {
+  return {
+    preload: path.join(__dirname, '../preload-build/preload/index.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    webviewTag: true,
+  };
+}
+
 function buildWindowOptions(opts: {
   bounds: { x: number; y: number; width: number; height: number };
   title: string;
@@ -130,12 +144,7 @@ function buildWindowOptions(opts: {
     height: opts.bounds.height,
     minWidth: 800,
     minHeight: 600,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload-build/preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true,
-    },
+    webPreferences: appWebPreferences(),
     ...getWindowTitleBarOptions(),
     title: opts.title,
     ...getWindowAppearanceOptions(isDarkMode),
@@ -202,9 +211,13 @@ const rendererConsoleLogger = new Logger('RendererConsole');
  * duplicates are counted instead of re-written, to keep the log file bounded.
  */
 export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void {
+  forwardContentsConsoleToMainLog(window.webContents);
+}
+
+function forwardContentsConsoleToMainLog(contents: Electron.WebContents): void {
   let lastLine = '';
   let suppressed = 0;
-  window.webContents.on('console-message', (details) => {
+  contents.on('console-message', (details) => {
     const { level, message, sourceId, lineNumber } = details;
     const forwardedInfo = isForwardedInfoMessage(level, message);
     if (level !== 'warning' && level !== 'error' && !forwardedInfo) return;
@@ -415,7 +428,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
     .filter((w: BrowserWindowType) => {
       if (w.isDestroyed() || isTransientCaptureWindow(w)) return false;
       if (getBackendIdForWindow(w) !== backendId) return false;
-      const url = w.webContents.getURL();
+      const url = getActiveContents(w).getURL();
       // Skip windows that haven't loaded yet (about:blank) or have empty URLs
       if (!url || url === 'about:blank') return false;
       if (isDevConsoleRoute(new URL(url).pathname) || isDesktopOverlayRoute(new URL(url).pathname))
@@ -424,7 +437,7 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
     })
     .map((w: BrowserWindowType) => {
       const bounds = w.getBounds();
-      const url = w.webContents.getURL();
+      const url = getActiveContents(w).getURL();
       let route = DEFAULT_WINDOW_ROUTE;
       try {
         const parsed = new URL(url);
@@ -841,17 +854,166 @@ export async function restoreAllBackendWindowSessions(
 /** Focus the first app window for a backend, restoring saved/fresh windows if needed. */
 /** First live, non-HUD app window bound to `backendId`, if any. */
 function findAppWindowForBackend(backendId: string): BrowserWindowType | undefined {
-  return getAppWindows().find(
+  const windows = getAppWindows().filter(
     (window) =>
       !window.isDestroyed() &&
       !isTransientCaptureWindow(window) &&
-      getBackendIdForWebContents(window.webContents) === backendId &&
       !isTrackedHudWindow(window) &&
       !isHudWindow(window),
   );
+  // Prefer a window showing the backend; then one whose own page is it.
+  return (
+    windows.find((window) => getBackendIdForWindow(window) === backendId) ??
+    windows.find((window) => getBackendIdForWebContents(window.webContents) === backendId)
+  );
+}
+
+// ---- Connection panels ----
+// A window shows one backend at a time, Slack-style. Its own page is the
+// backend it was created for; every other backend the user switches to gets a
+// `WebContentsView` panel in the same window. Hidden panels stay loaded, so
+// they keep receiving updates and switching back is instant.
+
+const panelViews = new WeakMap<BrowserWindowType, Map<string, WebContentsView>>();
+
+const OWN_PAGE_HIDDEN_ATTRIBUTE = 'data-connection-panel-covered';
+const ownPageHidden = new WeakSet<BrowserWindowType>();
+
+/** Panels are transparent like the window, so the covered own page must not paint. */
+function applyOwnPageHidden(window: BrowserWindowType): void {
+  if (window.isDestroyed() || window.webContents.isDestroyed()) return;
+  const hidden = ownPageHidden.has(window);
+  window.webContents
+    .executeJavaScript(
+      `document.documentElement.toggleAttribute(${JSON.stringify(OWN_PAGE_HIDDEN_ATTRIBUTE)}, ${hidden})`,
+    )
+    .catch(() => {});
+}
+
+function setOwnPageHidden(window: BrowserWindowType, hidden: boolean): void {
+  if (hidden === ownPageHidden.has(window)) return;
+  if (hidden) ownPageHidden.add(window);
+  else ownPageHidden.delete(window);
+  applyOwnPageHidden(window);
+}
+
+function fitPanels(window: BrowserWindowType): void {
+  const [width, height] = window.getContentSize();
+  for (const view of panelViews.get(window)?.values() ?? []) {
+    view.setBounds({ x: 0, y: 0, width, height });
+  }
+}
+
+function releasePanels(window: BrowserWindowType): void {
+  const views = panelViews.get(window);
+  if (!views) return;
+  panelViews.delete(window);
+  for (const [backendId, view] of views) {
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+    if (isQuitTeardownInProgress || backendId === LOCAL_CONNECTION_ID) continue;
+    const stillUsed = getAllRendererContents().some(
+      (contents) => !contents.isDestroyed() && getBackendIdForWebContents(contents) === backendId,
+    );
+    if (stillUsed) continue;
+    try {
+      onLastWindowClosedForBackend?.(backendId);
+    } catch (err) {
+      logger.warn('Failed to dispose backend client after panel close:', err);
+    }
+  }
+}
+
+function createPanel(window: BrowserWindowType, backendId: string): WebContentsView {
+  let views = panelViews.get(window);
+  if (!views) {
+    views = new Map();
+    panelViews.set(window, views);
+    window.on('resize', () => fitPanels(window));
+    window.webContents.on('did-finish-load', () => applyOwnPageHidden(window));
+    window.once('closed', () => releasePanels(window));
+  }
+  const view = new WebContentsView({ webPreferences: appWebPreferences() });
+  view.setBackgroundColor(
+    getWindowAppearanceOptions(nativeTheme.shouldUseDarkColors).backgroundColor ?? '#00000000',
+  );
+  views.set(backendId, view);
+  window.contentView.addChildView(view);
+  stampPanelWithBackend(window, view.webContents, backendId);
+  forwardContentsConsoleToMainLog(view.webContents);
+  view.webContents.on('page-title-updated', (_event, title) => {
+    if (getActiveContents(window) === view.webContents) window.setTitle(title);
+  });
+  view.webContents.once('destroyed', () => {
+    if (panelViews.get(window)?.get(backendId) === view) panelViews.get(window)?.delete(backendId);
+  });
+  fitPanels(window);
+  view.webContents
+    .loadURL(buildLoadUrl())
+    .catch((error: unknown) => logger.error('Failed to load connection panel:', error as Error));
+  return view;
+}
+
+/** Drop `window`'s panel for `backendId`, showing its own page if that panel was visible. */
+function closePanel(window: BrowserWindowType, backendId: string): void {
+  const view = panelViews.get(window)?.get(backendId);
+  if (!view) return;
+  if (getActiveContents(window) === view.webContents) {
+    switchWindowToBackend(window, getBackendIdForWebContents(window.webContents));
+  }
+  panelViews.get(window)?.delete(backendId);
+  window.contentView.removeChildView(view);
+  if (!view.webContents.isDestroyed()) view.webContents.close();
+}
+
+/**
+ * Show `backendId` in `window` (connection rail): its own page when that is
+ * the window's backend, else that backend's panel, created on first use.
+ * Call AFTER the backend's client is connected.
+ */
+export function switchWindowToBackend(window: BrowserWindowType, backendId: string): void {
+  if (window.isDestroyed()) return;
+  const views = panelViews.get(window);
+  const ownBackend = getBackendIdForWebContents(window.webContents);
+  let active: Electron.WebContents = window.webContents;
+  if (backendId !== ownBackend) {
+    const existing = views?.get(backendId);
+    const view =
+      existing && !existing.webContents.isDestroyed() ? existing : createPanel(window, backendId);
+    // Re-adding moves the view to the top of the window's view stack.
+    window.contentView.addChildView(view);
+    active = view.webContents;
+  }
+  for (const view of panelViews.get(window)?.values() ?? []) {
+    view.setVisible(view.webContents === active);
+  }
+  setOwnPageHidden(window, active !== window.webContents);
+  setActivePanel(window, active === window.webContents ? null : active);
+  const title = active.getTitle();
+  if (title) window.setTitle(title);
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  active.focus();
+  setMainWindow(window);
+  void saveAllWindowSessions();
+}
+
+registerPanelSwitcher(switchWindowToBackend);
+
+/** The window holding a live connection panel for `backendId`, if any. */
+function findWindowWithPageForBackend(backendId: string): BrowserWindowType | undefined {
+  return getAppWindows().find((window) => {
+    const view = panelViews.get(window)?.get(backendId);
+    return !window.isDestroyed() && !!view && !view.webContents.isDestroyed();
+  });
 }
 
 export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
+  const host = findWindowWithPageForBackend(backendId);
+  if (host) {
+    switchWindowToBackend(host, backendId);
+    return;
+  }
   const findAppWindow = () => findAppWindowForBackend(backendId);
   let existing = findAppWindow();
   if (!existing) {
@@ -875,6 +1037,8 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
  * bound to the backend.
  */
 export function showWorkspaceInBackendWindow(backendId: string, workspaceId: string): boolean {
+  const host = findWindowWithPageForBackend(backendId);
+  if (host && getBackendIdForWindow(host) !== backendId) switchWindowToBackend(host, backendId);
   const window = findAppWindowForBackend(backendId);
   if (!window) {
     logger.warn('No window for backend to show workspace in', { backendId, workspaceId });
@@ -906,12 +1070,9 @@ export async function ensureLocalWindowBeforeClosingBackend(backendId: string): 
 export function closeWindowsForBackend(backendId: string): void {
   const windows = getAppWindows();
   for (const window of windows) {
-    if (
-      !window.isDestroyed() &&
-      !isDockWindow(window) &&
-      getBackendIdForWindow(window) === backendId
-    )
-      window.destroy();
+    if (window.isDestroyed() || isDockWindow(window)) continue;
+    if (getBackendIdForWebContents(window.webContents) === backendId) window.destroy();
+    else closePanel(window, backendId);
   }
   const main = getMainWindow();
   if (main?.isDestroyed()) {

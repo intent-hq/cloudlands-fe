@@ -74,6 +74,8 @@
     prefillLabel?: string | null;
     prefillAccent?: ConnectionAccent;
     defaultAccent?: ConnectionAccent;
+    /** Switch this window to the new connection in place (connection rail). */
+    switchSenderWindow?: boolean;
   }
 
   let {
@@ -83,6 +85,7 @@
     prefillLabel = null,
     prefillAccent = undefined,
     defaultAccent = DEFAULT_CONNECTION_ACCENT,
+    switchSenderWindow = false,
   }: Props = $props();
 
   type Step = 'details' | 'confirm' | 'syncConfirm';
@@ -272,6 +275,7 @@
       connectionWorkflowRequested(consumerId, {
         kind: 'connect',
         enableSync: opts.enableSyncAfterAdd === true,
+        ...(switchSenderWindow ? { switchSenderWindow: true } : {}),
         params: {
           label: name.trim(),
           accent,

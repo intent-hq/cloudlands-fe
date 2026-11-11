@@ -6,7 +6,7 @@
  */
 
 import { createRequire } from 'module';
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain } from 'electron';
 import { getFocusedWindowWorkspaceId } from '../../system/main/system.ipc';
 import { m } from '$shared/paraglide/messages.js';
 import type { Result, CommandResponse, WorkspaceId } from '../../../shared/types';
@@ -27,6 +27,7 @@ import { validateIPCString } from '../../ipc/ipc-validation';
 
 import { WORKSPACE_CHANNELS, EDITOR_CHANNELS } from '$shared/ipc/channels';
 import { ROOT_WORKSPACE_ID } from '$shared/types/branded-ids';
+import { getHostWindowForWebContents } from '../../../main/window-backend';
 import {
   createSafeValidatedHandler,
   registerValidationSchema,
@@ -149,7 +150,7 @@ export function setupWorkspaceIPC(): void {
       WorkspaceGetCurrentSchema,
       async (event) => {
         // Determine workspace ID from the sender window
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const senderWindow = getHostWindowForWebContents(event.sender);
         const workspaceId = senderWindow ? getFocusedWindowWorkspaceId() : undefined;
 
         if (!workspaceId) {

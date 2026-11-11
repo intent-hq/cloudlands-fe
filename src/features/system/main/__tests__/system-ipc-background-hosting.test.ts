@@ -16,9 +16,12 @@ interface FakeWindow {
   isDestroyed: () => boolean;
   on: ReturnType<typeof vi.fn>;
   webContents: {
+    id: number;
+    getType: () => string;
     isDestroyed: () => boolean;
     send: ReturnType<typeof vi.fn>;
     on: (event: string, listener: Listener) => void;
+    once: (event: string, listener: Listener) => void;
     emit: (event: string) => void;
   };
 }
@@ -54,9 +57,27 @@ vi.mock('electron', () => ({
   shell: {},
 }));
 
-vi.mock('../../../../main/window-backend', () => ({
-  getBackendIdForWindow: (window: { backendId?: string }) => window.backendId ?? 'local',
-}));
+// Tracking is keyed by renderer page id; each fake window's own page shares its id.
+vi.mock('../../../../main/window-backend', () => {
+  const live = (window: FakeWindow | undefined) =>
+    window && !window.isDestroyed() ? window : undefined;
+  return {
+    getBackendIdForWindow: (window: { backendId?: string }) => window.backendId ?? 'local',
+    getBackendIdForWebContents: (page: { id: number }) =>
+      windows.get(page.id)?.backendId ?? 'local',
+    getHostWindowForWebContents: (page: { id: number }) => live(windows.get(page.id)) ?? null,
+    getActiveContents: (window: FakeWindow) => window.webContents,
+    getRendererContents: (window: FakeWindow) => (live(window) ? [window.webContents] : []),
+    getAllRendererContents: () =>
+      [...windows.values()].filter((window) => live(window)).map((window) => window.webContents),
+    getRendererPage: (id: number) => live(windows.get(id))?.webContents ?? null,
+    showRendererPage: (page: { id: number }) => live(windows.get(page.id)) ?? null,
+    registerPanelSwitcher: () => {},
+    setActivePanel: () => {},
+    stampPanelWithBackend: () => {},
+    stampWindowWithBackend: () => {},
+  };
+});
 
 vi.mock('../../../../main/browser-ipc-broadcast-adapter', () => ({
   broadcastToBrowserIpcClients: vi.fn(() => false),
@@ -88,16 +109,20 @@ function makeWindow(id: number, backendId = 'local'): FakeWindow {
     isDestroyed: () => window.destroyed,
     on: vi.fn(),
     webContents: {
+      id,
+      getType: () => 'window',
       isDestroyed: () => window.destroyed,
       send: vi.fn(),
       on: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener]),
+      once: (event, listener) => listeners.set(event, [...(listeners.get(event) ?? []), listener]),
       emit: (event) => listeners.get(event)?.forEach((listener) => listener()),
     },
   };
   windows.set(id, window);
-  // Fire the app-level hook system.ipc uses to observe each new window.
+  // Fire the app-level hooks system.ipc uses to observe each new window and page.
   for (const [event, listener] of electronMocks.appOn.mock.calls) {
     if (event === 'browser-window-created') (listener as Listener)({}, window);
+    if (event === 'web-contents-created') (listener as Listener)({}, window.webContents);
   }
   return window;
 }
@@ -110,7 +135,10 @@ function handlerFor(channel: string): Handler {
 
 async function reportTabStrip(window: FakeWindow, workspaceIds: string[]) {
   electronMocks.fromWebContents.mockReturnValue(window);
-  await handlerFor(IPC_CHANNELS.WINDOW.SET_OPEN_WORKSPACE_TABS)({ sender: {} }, { workspaceIds });
+  await handlerFor(IPC_CHANNELS.WINDOW.SET_OPEN_WORKSPACE_TABS)(
+    { sender: window.webContents },
+    { workspaceIds },
+  );
 }
 
 let nextWindowId = 100;
@@ -131,7 +159,7 @@ function freshId() {
 async function reportBackgroundHosting(window: FakeWindow, workspaceIds: string[]) {
   electronMocks.fromWebContents.mockReturnValue(window);
   await handlerFor(IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES)(
-    { sender: {} },
+    { sender: window.webContents },
     { workspaceIds },
   );
 }

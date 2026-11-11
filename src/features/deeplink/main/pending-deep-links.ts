@@ -12,6 +12,7 @@
 
 import type { BrowserWindow, WebContents } from 'electron';
 import type { DeepLinkAction } from '../deep-link-handler';
+import { getActiveContents } from '../../../main/window-backend';
 
 /** Payload of the `deep-link` nudge: "your window has queued actions". */
 const DEEP_LINK_NUDGE = Object.freeze({ pending: true });
@@ -31,10 +32,12 @@ function queueFor(webContents: WebContents): DeepLinkAction[] {
 
 /** Queue `action` for `window` and nudge its renderer. Does not focus. */
 export function queueDeepLinkForWindow(window: BrowserWindow, action: DeepLinkAction): void {
-  queueFor(window.webContents).push(action);
+  // The visible page: a connection panel when the window shows one.
+  const page = getActiveContents(window);
+  queueFor(page).push(action);
   // A renderer that is not listening yet ignores the nudge; it drains the
   // queue on startup instead.
-  window.webContents.send('deep-link', DEEP_LINK_NUDGE);
+  page.send('deep-link', DEEP_LINK_NUDGE);
 }
 
 /**

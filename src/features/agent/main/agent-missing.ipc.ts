@@ -7,12 +7,13 @@
  * backend transport — the former local AugmentCLI spawn path was retired.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { ipcMain } from 'electron';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { z } from 'zod';
 import { Logger } from '$shared/logger';
 import { agentCircuitBreaker, type CircuitStatus } from '$shared/services/agent-circuit-breaker';
 import { getWindowIdsForWorkspace } from '../../system/main/system.ipc';
+import { getAllRendererContents } from '../../../main/window-backend';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 import { m } from '../../../shared/paraglide/messages.js';
 
@@ -35,14 +36,13 @@ function broadcastCircuitBreakerStatus(workspaceId: string, status: CircuitStatu
   const targetWindowIds = getWindowIdsForWorkspace(workspaceId, ANY_HOST);
   const targetSet = targetWindowIds.length > 0 ? new Set(targetWindowIds) : null;
 
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    if (targetSet && !targetSet.has(win.id)) continue;
+  for (const page of getAllRendererContents()) {
+    if (targetSet && !targetSet.has(page.id)) continue;
     try {
-      win.webContents.send('agent:circuit-breaker:status', { workspaceId, status });
+      page.send('agent:circuit-breaker:status', { workspaceId, status });
     } catch (error) {
       logger.warn('Failed to send circuit-breaker status to window', {
-        windowId: win.id,
+        webContentsId: page.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }

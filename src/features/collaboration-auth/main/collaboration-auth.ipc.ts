@@ -3,6 +3,7 @@ import { BrowserWindow, ipcMain, shell, type WebContents } from 'electron';
 import { z } from 'zod';
 import { getMainWindow } from '../../../main/state';
 import { captureLocalIdentityConnection, onBackendStatus } from '../../backend/main/backend.ipc';
+import { getHostWindowForWebContents } from '../../../main/window-backend';
 import {
   COLLABORATION_AUTH,
   type CollaborationAction,
@@ -206,7 +207,7 @@ export function registerCollaborationAuthHandlers(): void {
   });
   ipcMain.handle(COLLABORATION_AUTH.OPEN, (event) => {
     // Only the local sign-in surface can open; it performs the flag handshake before any RPC.
-    const parent = BrowserWindow.fromWebContents(event.sender);
+    const parent = getHostWindowForWebContents(event.sender);
     void prepareCollaborationIdentity({ scope: 'settings' }, { parent }).catch(() => {});
     return { ok: true };
   });

@@ -3232,6 +3232,7 @@
   "layout_daemonStatus_attachedAgents_label": "接続中のエージェント",
   "layout_daemonStatus_certWarnings_tooltip": "アドレスが予期しない証明書を提示しました",
   "layout_daemonStatus_connectAnotherDevice_action": "別のマシンを接続",
+  "layout_connectionRail_add_tooltip": "接続を追加",
   "layout_daemonStatus_connectToAnother_action": "別の intentd に接続…",
   "layout_daemonStatus_connectionActive_label": "アクティブ",
   "layout_daemonStatus_connectionViaTailcat_label": "{target}（tailcat 経由）",

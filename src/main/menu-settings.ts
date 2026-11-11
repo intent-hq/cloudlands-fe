@@ -1,6 +1,7 @@
 import { BrowserWindow, type MenuItemConstructorOptions } from 'electron';
 import { isDockAnnotationWindow } from './dock-annotation-identity';
 import { isDockWindow } from './dock-window';
+import { getActiveContents } from './window-backend';
 
 function acceptsSettings(window: BrowserWindow | null): window is BrowserWindow {
   return (
@@ -21,7 +22,7 @@ export function createSettingsMenuItem(label: string): MenuItemConstructorOption
     click: () => {
       // Focus may have changed since the debounced application menu rebuild.
       const window = BrowserWindow.getFocusedWindow();
-      if (acceptsSettings(window)) window.webContents.send('navigate', '/settings');
+      if (acceptsSettings(window)) getActiveContents(window).send('navigate', '/settings');
     },
   };
 }

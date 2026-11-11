@@ -204,52 +204,68 @@ const { mockNotificationIsSupported, mockNotificationInstances, mockShowShouldTh
   }),
 );
 
-vi.mock('electron', () => ({
-  app: {
-    on: vi.fn(),
-    off: vi.fn(),
-    emit: vi.fn(),
-    show: vi.fn(),
-    focus: vi.fn(),
-    getName: vi.fn(() => 'test-app'),
-    getVersion: vi.fn(() => '1.0.0'),
-    getPath: vi.fn(() => '/tmp/test'),
-    getAppPath: vi.fn(() => '/tmp/test-app'),
-    isReady: vi.fn(() => true),
-  },
-  BrowserWindow: {
+vi.mock('electron', () => {
+  // Registry ids are renderer page ids; a window's own page shares its id here.
+  const BrowserWindow = {
     getAllWindows: vi.fn(() => []),
     getFocusedWindow: vi.fn(() => null),
     fromId: vi.fn(() => null),
-  },
-  screen: {
-    getPrimaryDisplay: vi.fn(() => ({
-      workArea: { x: 0, y: 0, width: 1920, height: 1080 },
-    })),
-  },
-  Notification: class {
-    static isSupported() {
-      return mockNotificationIsSupported.value;
-    }
-
-    handlers: Record<string, Function> = {};
-    opts?: unknown;
-    show = vi.fn(() => {
-      if (mockShowShouldThrow.value) {
-        throw new Error('show failed');
+    fromWebContents: (page: { __window?: unknown } | null) => page?.__window ?? null,
+  };
+  const webContents = {
+    fromId: (id: number) => {
+      const window = (BrowserWindow.fromId as (id: number) => { webContents?: object } | null)(id);
+      const page = window?.webContents as { __window?: unknown; id?: number } | undefined;
+      if (!page) return undefined;
+      page.__window = window;
+      page.id ??= id;
+      return page;
+    },
+  };
+  return {
+    BrowserWindow,
+    webContents,
+    app: {
+      on: vi.fn(),
+      off: vi.fn(),
+      emit: vi.fn(),
+      show: vi.fn(),
+      focus: vi.fn(),
+      getName: vi.fn(() => 'test-app'),
+      getVersion: vi.fn(() => '1.0.0'),
+      getPath: vi.fn(() => '/tmp/test'),
+      getAppPath: vi.fn(() => '/tmp/test-app'),
+      isReady: vi.fn(() => true),
+    },
+    screen: {
+      getPrimaryDisplay: vi.fn(() => ({
+        workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+      })),
+    },
+    Notification: class {
+      static isSupported() {
+        return mockNotificationIsSupported.value;
       }
-    });
 
-    constructor(opts?: unknown) {
-      this.opts = opts;
-      mockNotificationInstances.push(this as any);
-    }
+      handlers: Record<string, Function> = {};
+      opts?: unknown;
+      show = vi.fn(() => {
+        if (mockShowShouldThrow.value) {
+          throw new Error('show failed');
+        }
+      });
 
-    on(event: string, handler: Function) {
-      this.handlers[event] = handler;
-    }
-  },
-}));
+      constructor(opts?: unknown) {
+        this.opts = opts;
+        mockNotificationInstances.push(this as any);
+      }
+
+      on(event: string, handler: Function) {
+        this.handlers[event] = handler;
+      }
+    },
+  };
+});
 
 // workspace-event-bus mock removed — module was deleted
 

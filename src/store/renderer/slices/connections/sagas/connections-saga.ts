@@ -356,7 +356,12 @@ async function invokeOpenConnection(params: OpenConnectionParams): Promise<OpenC
   // A tab with no backend yet becomes the opened backend's tab.
   const pageHost = getPageHost();
   if (pageHost) {
-    return openBrowserAccessBackend(params.id, undefined, undefined, pageHost.backendId === null);
+    return openBrowserAccessBackend(
+      params.id,
+      undefined,
+      undefined,
+      pageHost.backendId === null || params.switchSenderWindow === true,
+    );
   }
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
@@ -740,7 +745,7 @@ function* rotateConnectionSecret(
 }
 
 function* openConnection(action: ReturnType<typeof openConnectionRequested>): SagaGenerator<void> {
-  const id = action.payload[0];
+  const [id, options] = action.payload;
   let settled = false;
   yield* put(openOperationStarted(id));
   try {
@@ -761,7 +766,10 @@ function* openConnection(action: ReturnType<typeof openConnectionRequested>): Sa
       )
         throw new Error('Invitation is no longer current');
     }
-    const result = yield* call(invokeOpenConnection, { id });
+    const result = yield* call(invokeOpenConnection, {
+      id,
+      ...(options?.switchSenderWindow ? { switchSenderWindow: true } : {}),
+    });
     yield* put(openOperationSettled(id));
     yield* put(action.success(result));
     settled = true;
@@ -982,7 +990,9 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
       if (!(yield* workflowIsCurrent(action))) return;
       if (intent.enableSync && !(yield* enableSyncForWorkflow(action))) return;
       if (!(yield* workflowIsCurrent(action))) return;
-      const open = openConnectionRequested(connection.id);
+      const open = intent.switchSenderWindow
+        ? openConnectionRequested(connection.id, { switchSenderWindow: true })
+        : openConnectionRequested(connection.id);
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') outcome = { kind: 'secretUnavailable' };
@@ -1027,7 +1037,9 @@ function* runWorkflow(action: WorkflowAction): SagaGenerator<void> {
             ? { kind: 'secretUnavailable' }
             : { kind: 'blocked', operation: 'test', result };
     } else if (intent.kind === 'open') {
-      const open = openConnectionRequested(intent.id);
+      const open = intent.switchSenderWindow
+        ? openConnectionRequested(intent.id, { switchSenderWindow: true })
+        : openConnectionRequested(intent.id);
       yield* call(openConnection, open);
       const result = yield* call(() => open.promise);
       if (result.status === 'secret-unavailable') {

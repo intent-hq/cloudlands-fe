@@ -131,6 +131,11 @@
   outline-offset: 2px;
 }
 
+/* A connection panel covers this page (main/window.ts); do not paint under it. */
+html[data-connection-panel-covered] body {
+  visibility: hidden;
+}
+
 html,
 body {
   background-color: transparent;

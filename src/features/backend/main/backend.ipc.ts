@@ -214,6 +214,7 @@ import {
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
+import { getAllRendererContents, getHostWindowForWebContents } from '../../../main/window-backend';
 import { PresenceAggregator } from './presence-aggregator';
 import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
@@ -1294,6 +1295,7 @@ let keychainSyncLifecycle: KeychainSyncLifecycle | null = null;
  */
 interface BackendWindowHooks {
   openOrFocus?(backendId: string): void | Promise<void>;
+  switchWindow?(window: BrowserWindow, backendId: string): void | Promise<void>;
   ensureLocalWindowBeforeClose?(backendId: string): void | Promise<void>;
   closeForBackend?(backendId: string): void | Promise<void>;
 }
@@ -1303,6 +1305,12 @@ const defaultWindowHooks: BackendWindowHooks = {
       openOrFocusWindowsForBackend: (id: string) => Promise<void>;
     };
     await mod.openOrFocusWindowsForBackend(backendId);
+  },
+  async switchWindow(window, backendId) {
+    const mod = (await import('../../../main/window')) as unknown as {
+      switchWindowToBackend: (window: BrowserWindow, id: string) => void;
+    };
+    mod.switchWindowToBackend(window, backendId);
   },
   async ensureLocalWindowBeforeClose(backendId) {
     const mod = (await import('../../../main/window')) as unknown as {
@@ -2423,15 +2431,14 @@ function broadcast<C extends string>(
 
 /** Delivery for {@link broadcast} and {@link broadcastBackendStatus}; do not call it directly. */
 function sendToWindows(channel: string, payload: unknown, backendId?: string): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    if (backendId && getBackendIdForWebContents(win.webContents) !== backendId) continue;
+  for (const contents of getAllRendererContents()) {
+    if (backendId && getBackendIdForWebContents(contents) !== backendId) continue;
     try {
-      win.webContents.send(channel, payload);
+      contents.send(channel, payload);
     } catch (error) {
       logger.warn('Failed to broadcast backend message', {
         channel,
-        windowId: win.id,
+        webContentsId: contents.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -3564,9 +3571,8 @@ async function broadcastConnectionsChangedOriginal(owner?: PoolOwner): Promise<v
   // connection labels) — renderers get the tailored payload below.
   app.emit('connections-changed');
   const payload = await listConnectionsOwned(undefined, owner);
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    const windowBackendId = getBackendIdForWebContents(win.webContents);
+  for (const contents of getAllRendererContents()) {
+    const windowBackendId = getBackendIdForWebContents(contents);
     // Re-derive the per-backend sticky replay for THIS window's backend — the
     // shared payload was computed for the local default.
     const windowPayload: ConnectionsChangedEvent = {
@@ -3578,11 +3584,11 @@ async function broadcastConnectionsChangedOriginal(owner?: PoolOwner): Promise<v
       certWarnings: getCertWarningsEvent(windowBackendId),
     };
     try {
-      win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
+      contents.send(CONNECTIONS.CHANGED, windowPayload);
     } catch (error) {
       recordPoolError(owner, error);
       logger.warn('Failed to broadcast connections change', {
-        windowId: win.id,
+        webContentsId: contents.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -3618,14 +3624,13 @@ async function broadcastGuestSessionsChangedOriginal(owner?: PoolOwner): Promise
   const payload = await buildGuestSessionsListResult();
   // Native Window-menu entries use the same guest labels as renderer chrome.
   app.emit('guest-sessions-changed');
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
+  for (const contents of getAllRendererContents()) {
     try {
-      win.webContents.send(GUEST_SESSIONS.CHANGED, payload);
+      contents.send(GUEST_SESSIONS.CHANGED, payload);
     } catch (error) {
       recordPoolError(owner, error);
       logger.warn('Failed to broadcast guest sessions change', {
-        windowId: win.id,
+        webContentsId: contents.id,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -4158,14 +4163,14 @@ async function remoteIsNodeOwned(
 
 export function openBackendWindow(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean; targetWindow?: BrowserWindow },
 ): Promise<{ id: string }> {
   return enqueueConnectionOperation((owner) => performOpenBackendWindowOwned(id, options, owner));
 }
 
 function performOpenBackendWindowOwned(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean; targetWindow?: BrowserWindow },
   parent?: PoolOwner,
 ): Promise<{ id: string }> {
   return poolWork('performOpenBackendWindow', parent, (owner) =>
@@ -4175,7 +4180,7 @@ function performOpenBackendWindowOwned(
 
 async function performOpenBackendWindowOriginal(
   id: string,
-  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean },
+  options?: { probeTimeoutMs?: number; mayOpen?: () => boolean; targetWindow?: BrowserWindow },
   owner?: PoolOwner,
 ): Promise<{ id: string }> {
   if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
@@ -4214,7 +4219,8 @@ async function performOpenBackendWindowOriginal(
       if (await remoteIsNodeOwned(id, target, owner)) throw new NodeWindowRefusedError(id);
     }
     if (options?.mayOpen && !options.mayOpen()) throw new Error('Invitation is no longer current');
-    await windowHooks.openOrFocus?.(id);
+    if (options?.targetWindow) await windowHooks.switchWindow?.(options.targetWindow, id);
+    else await windowHooks.openOrFocus?.(id);
     return { id };
   } catch (error) {
     recordPoolError(owner, error);
@@ -4822,13 +4828,12 @@ export function registerBackendHandlers(): void {
       return broadcastGuestSessionsChanged();
     },
     onStatusChanged: (status) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (win.isDestroyed()) continue;
+      for (const contents of getAllRendererContents()) {
         try {
-          win.webContents.send(CONNECTIONS.SYNC_STATUS_CHANGED, status);
+          contents.send(CONNECTIONS.SYNC_STATUS_CHANGED, status);
         } catch (error) {
           logger.warn('Failed to broadcast keychain sync status', {
-            windowId: win.id,
+            webContentsId: contents.id,
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -5277,13 +5282,20 @@ function registerConnectionsHandlers(): void {
     CONNECTIONS.OPEN,
     createValidatedHandler(
       ConnectionsOpenSchema,
-      async (event, { id }) => {
+      async (event, { id, switchSenderWindow }) => {
         const allowed = captureCollaborationPolicy(event.sender?.id ?? null);
         const invited = (await guestSessionsStore.findById(id)) !== null;
         const mayOpen = () => allowed() && !event.sender.isDestroyed();
         if (invited && !mayOpen()) throw new Error('Multiplayer is unavailable');
+        const host = switchSenderWindow ? getHostWindowForWebContents(event.sender) : null;
+        const targetWindow = host && !host.isDestroyed() ? host : undefined;
         try {
-          const opened = await openBackendWindow(id, invited ? { mayOpen } : undefined);
+          const opened = await openBackendWindow(
+            id,
+            invited || targetWindow
+              ? { ...(invited ? { mayOpen } : {}), ...(targetWindow ? { targetWindow } : {}) }
+              : undefined,
+          );
           return { status: 'opened', id: opened.id } satisfies OpenConnectionResult;
         } catch (error) {
           if (error instanceof ConnectionSecretUnavailableError) {

@@ -22,8 +22,18 @@ vi.mock('electron', () => ({
     }),
     removeHandler: electronMocks.removeHandler,
   },
+  // Subscriptions are keyed by renderer page id; a window's own page shares its id here.
   BrowserWindow: {
     fromId: electronMocks.fromId,
+    fromWebContents: (page: { id: number }) => electronMocks.fromId(page.id),
+  },
+  webContents: {
+    fromId: (id: number) => {
+      const window = electronMocks.fromId(id);
+      return window
+        ? { id, send: window.webContents.send, isDestroyed: () => window.isDestroyed() }
+        : undefined;
+    },
   },
 }));
 

@@ -14,6 +14,7 @@ import { spawn } from 'child_process';
 import { ipcMain } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
+import { getHostWindowForWebContents } from '../../../main/window-backend';
 
 const logger = new Logger({ category: 'ExternalEditors-IPC' });
 
@@ -39,7 +40,7 @@ export function registerExternalEditorsHandlers(): void {
       async (event, { path }) => {
         try {
           // Import dialog here to avoid issues with module loading
-          const { BrowserWindow, dialog: electronDialog } = await import('electron');
+          const { dialog: electronDialog } = await import('electron');
 
           // Platform-specific dialog configuration
           let dialogOptions: Electron.OpenDialogOptions;
@@ -84,7 +85,7 @@ export function registerExternalEditorsHandlers(): void {
             };
           }
 
-          const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+          const ownerWindow = getHostWindowForWebContents(event.sender);
           const result = ownerWindow
             ? await electronDialog.showOpenDialog(ownerWindow, dialogOptions)
             : await electronDialog.showOpenDialog(dialogOptions);

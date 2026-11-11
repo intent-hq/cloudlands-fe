@@ -3232,6 +3232,7 @@
   "layout_daemonStatus_attachedAgents_label": "연결된 에이전트",
   "layout_daemonStatus_certWarnings_tooltip": "주소가 예기치 않은 인증서를 제시했습니다",
   "layout_daemonStatus_connectAnotherDevice_action": "다른 컴퓨터 연결",
+  "layout_connectionRail_add_tooltip": "연결 추가",
   "layout_daemonStatus_connectToAnother_action": "다른 intentd에 연결…",
   "layout_daemonStatus_connectionActive_label": "활성",
   "layout_daemonStatus_connectionViaTailcat_label": "{target} (tailcat 경유)",

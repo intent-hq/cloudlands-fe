@@ -11,6 +11,7 @@
 
 import { promises as fs } from 'node:fs';
 import { BrowserWindow, dialog, ipcMain, webContents } from 'electron';
+import { getRendererContents } from '../../../main/window-backend';
 import { Logger } from '$shared/logger';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 import type {
@@ -35,7 +36,8 @@ function broadcastProgress(event: ImportProgressEvent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
-      win.webContents.send(TRANSFER.IMPORT_PROGRESS, event);
+      for (const contents of getRendererContents(win))
+        contents.send(TRANSFER.IMPORT_PROGRESS, event);
     } catch (error) {
       logger.warn('Failed to broadcast import progress', {
         windowId: win.id,

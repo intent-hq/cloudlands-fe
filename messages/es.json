@@ -3232,6 +3232,7 @@
   "layout_daemonStatus_attachedAgents_label": "Agentes conectados",
   "layout_daemonStatus_certWarnings_tooltip": "Una dirección presentó un certificado inesperado",
   "layout_daemonStatus_connectAnotherDevice_action": "Conectar otro equipo",
+  "layout_connectionRail_add_tooltip": "Añadir conexión",
   "layout_daemonStatus_connectToAnother_action": "Conectar a otro intentd…",
   "layout_daemonStatus_connectionActive_label": "Activo",
   "layout_daemonStatus_connectionViaTailcat_label": "{target} vía tailcat",

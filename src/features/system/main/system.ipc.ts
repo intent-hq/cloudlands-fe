@@ -17,7 +17,15 @@ import {
   type WindowHostChecker,
   type WindowHostScope,
 } from './window-workspace-tracking';
-import { getBackendIdForWindow } from '../../../main/window-backend';
+import {
+  getActiveContents,
+  getAllRendererContents,
+  getBackendIdForWebContents,
+  getHostWindowForWebContents,
+  getRendererContents,
+  getRendererPage,
+  showRendererPage,
+} from '../../../main/window-backend';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
   clearWindowBrowserFocusOwner,
@@ -239,15 +247,30 @@ function windowBackgroundWorkspaces(): Map<number, OpenWorkspaceTabsEntry> {
   return effective;
 }
 
-/** Liveness + current host of a tracked window, read from Electron. */
+// The registries below are keyed by renderer page id (`webContents.id`), not
+// BrowserWindow id: one window can host several pages (connection panels).
+
+/** Whether a page is the one its window shows (hidden panels are not). */
+function isShownPage(pageId: number): boolean {
+  const contents = getRendererPage(pageId);
+  const host = contents ? getHostWindowForWebContents(contents) : null;
+  return !!host && getActiveContents(host) === contents;
+}
+
+/** The page the focused window shows, if any. */
+function focusedPageId(): number | undefined {
+  const focused = BrowserWindow.getFocusedWindow();
+  return focused && !focused.isDestroyed() ? getActiveContents(focused).id : undefined;
+}
+
+/** Liveness + current host of a tracked page, read from Electron. */
 const liveWindowHostChecker: WindowHostChecker = {
-  isAlive(windowId: number) {
-    const win = BrowserWindow.fromId(windowId);
-    return !!win && !win.isDestroyed();
+  isAlive(pageId: number) {
+    return getRendererPage(pageId) !== null;
   },
-  backendIdOf(windowId: number) {
-    const win = BrowserWindow.fromId(windowId);
-    return win && !win.isDestroyed() ? getBackendIdForWindow(win) : null;
+  backendIdOf(pageId: number) {
+    const contents = getRendererPage(pageId);
+    return contents ? getBackendIdForWebContents(contents) : null;
   },
 };
 
@@ -257,7 +280,7 @@ const liveWindowHostChecker: WindowHostChecker = {
  */
 function currentViewedWorkspaceId(windowId: number): string | undefined {
   const entry = windowWorkspaceIds.get(windowId);
-  if (!entry) return undefined;
+  if (!entry || !isShownPage(windowId)) return undefined;
   return entryMatchesScope(windowId, entry.backendId, ANY_HOST, liveWindowHostChecker)
     ? entry.workspaceId
     : undefined;
@@ -268,9 +291,9 @@ function currentViewedWorkspaceId(windowId: number): string | undefined {
  * Used by the menu builder to enable/disable workspace-specific menu items.
  */
 export function isFocusedWindowInWorkspace(): boolean {
-  const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (!focusedWindow) return false;
-  return windowWorkspaceState.get(focusedWindow.id) ?? false;
+  const pageId = focusedPageId();
+  if (pageId === undefined) return false;
+  return windowWorkspaceState.get(pageId) ?? false;
 }
 
 /**
@@ -278,9 +301,9 @@ export function isFocusedWindowInWorkspace(): boolean {
  * Returns undefined if no window is focused or the window is not viewing a workspace.
  */
 export function getFocusedWindowWorkspaceId(): string | undefined {
-  const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (!focusedWindow) return undefined;
-  return currentViewedWorkspaceId(focusedWindow.id);
+  const pageId = focusedPageId();
+  if (pageId === undefined) return undefined;
+  return currentViewedWorkspaceId(pageId);
 }
 
 /**
@@ -336,7 +359,10 @@ export function getWindowIdForWorkspace(
       windowWorkspaceIds.delete(windowId);
       continue;
     }
-    if (entryMatchesScope(windowId, entry.backendId, scope, liveWindowHostChecker)) {
+    if (
+      isShownPage(windowId) &&
+      entryMatchesScope(windowId, entry.backendId, scope, liveWindowHostChecker)
+    ) {
       return windowId;
     }
   }
@@ -390,15 +416,15 @@ export function adoptWorkspaceForBackgroundHosting(
   const hosting = getWindowIdsForWorkspace(workspaceId, backendId);
   if (hosting.length > 0) return { windowId: hosting[0], adopted: false };
 
-  const focusedId = BrowserWindow.getFocusedWindow()?.id;
+  const focusedId = focusedPageId();
   const candidates = new Set<number>(
     focusedId !== undefined && windowOpenWorkspaceTabs.has(focusedId) ? [focusedId] : [],
   );
   for (const windowId of windowOpenWorkspaceTabs.keys()) candidates.add(windowId);
   const windowId = pickBackgroundHostWindow(backendId, candidates, liveWindowHostChecker);
   if (windowId === undefined) return { windowId: undefined, adopted: false };
-  const window = BrowserWindow.fromId(windowId);
-  if (!window || window.isDestroyed() || window.webContents.isDestroyed()) {
+  const page = getRendererPage(windowId);
+  if (!page) {
     return { windowId: undefined, adopted: false };
   }
 
@@ -409,7 +435,7 @@ export function adoptWorkspaceForBackgroundHosting(
       : { backendId, confirmed: new Set<string>(), pending: new Map<string, number>() };
   adoptions.pending.set(workspaceId, Date.now() + BACKGROUND_ADOPTION_CONFIRM_MS);
   windowBackgroundAdoptions.set(windowId, adoptions);
-  window.webContents.send(IPC_CHANNELS.BROWSER.HOST_WORKSPACE, { workspaceId, backendId });
+  page.send(IPC_CHANNELS.BROWSER.HOST_WORKSPACE, { workspaceId, backendId });
   logger.info('Background-hosting workspace for browser ops', { workspaceId, windowId });
   app.emit('window-workspace-state-changed');
   return { windowId, adopted: true };
@@ -422,16 +448,16 @@ export function adoptWorkspaceForBackgroundHosting(
  * reported yet keep waiting for their own confirmation or expiry (the
  * report may predate the request).
  */
-function applyBackgroundHostingReport(window: BrowserWindow, workspaceIds: string[]): void {
-  const backendId = getBackendIdForWindow(window);
-  const existing = windowBackgroundAdoptions.get(window.id);
+function applyBackgroundHostingReport(page: Electron.WebContents, workspaceIds: string[]): void {
+  const backendId = getBackendIdForWebContents(page);
+  const existing = windowBackgroundAdoptions.get(page.id);
   const pending = existing && existing.backendId === backendId ? existing.pending : new Map();
   for (const workspaceId of workspaceIds) pending.delete(workspaceId);
   if (workspaceIds.length === 0 && pending.size === 0) {
-    if (windowBackgroundAdoptions.delete(window.id)) app.emit('window-workspace-state-changed');
+    if (windowBackgroundAdoptions.delete(page.id)) app.emit('window-workspace-state-changed');
     return;
   }
-  windowBackgroundAdoptions.set(window.id, {
+  windowBackgroundAdoptions.set(page.id, {
     backendId,
     confirmed: new Set(workspaceIds),
     pending,
@@ -480,7 +506,7 @@ export function sendToWorkspaceWindows(
   data: unknown,
   scope: WindowHostScope,
 ): WorkspaceWindowDelivery {
-  let targetWindows: BrowserWindow[];
+  let targetPages: Electron.WebContents[];
   const isContentBearing = isContentBearingWorkspaceChannel(channel, data);
   const effectiveWorkspaceId =
     workspaceId ?? (isContentBearing ? getPayloadWorkspaceId(data) : undefined);
@@ -488,25 +514,25 @@ export function sendToWorkspaceWindows(
   if (effectiveWorkspaceId) {
     const windowIds = getWindowIdsForWorkspace(effectiveWorkspaceId, scope);
     if (windowIds.length > 0) {
-      targetWindows = windowIds
-        .map((id) => BrowserWindow.fromId(id))
-        .filter((w): w is BrowserWindow => !!w && !w.isDestroyed());
+      targetPages = windowIds
+        .map((id) => getRendererPage(id))
+        .filter((page): page is Electron.WebContents => page !== null);
     } else {
       // Workspace-scoped events must never fall back to unrelated windows.
-      targetWindows = [];
+      targetPages = [];
     }
   } else if (isContentBearing) {
     // Without a workspace context there is no safe target for workspace content.
-    targetWindows = [];
+    targetPages = [];
   } else {
-    // No workspace context — broadcast to all windows
-    targetWindows = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+    // No workspace context — broadcast to every page of every window
+    targetPages = getAllRendererContents();
   }
 
   let windowCount = 0;
-  for (const window of targetWindows) {
-    if (window.webContents && !window.webContents.isDestroyed()) {
-      window.webContents.send(channel, data);
+  for (const page of targetPages) {
+    if (!page.isDestroyed()) {
+      page.send(channel, data);
       windowCount++;
     }
   }
@@ -533,50 +559,51 @@ export function sendToWorkspaceWindows(
  * Used by the menu builder to route zoom shortcuts to the correct webContents.
  */
 export function isFocusedWindowBrowserActive(): boolean {
-  const focusedWindow = BrowserWindow.getFocusedWindow();
-  if (!focusedWindow) return false;
-  return hasWindowBrowserFocusOwner(focusedWindow.id);
+  const pageId = focusedPageId();
+  if (pageId === undefined) return false;
+  return hasWindowBrowserFocusOwner(pageId);
 }
 
 // Clean up state when windows are closed
-app.on('browser-window-created', (_event, window) => {
-  window.on('closed', () => {
-    windowWorkspaceState.delete(window.id);
-    windowWorkspaceIds.delete(window.id);
-    lastKnownWindowWorkspaceIds.delete(window.id);
-    clearWindowBrowserFocusOwner(window.id);
-    windowOpenWorkspaceTabs.delete(window.id);
-    windowBackgroundAdoptions.delete(window.id);
+// Clean up state when renderer pages (window pages and connection panels) go away
+app.on('web-contents-created', (_event, page) => {
+  if (page.getType() !== 'window' && page.getType() !== 'browserView') return;
+  const pageId = page.id;
+  page.once('destroyed', () => {
+    windowWorkspaceState.delete(pageId);
+    windowWorkspaceIds.delete(pageId);
+    lastKnownWindowWorkspaceIds.delete(pageId);
+    clearWindowBrowserFocusOwner(pageId);
+    windowOpenWorkspaceTabs.delete(pageId);
+    windowBackgroundAdoptions.delete(pageId);
     // A close changes the set of open workspaces: notify listeners (menu
     // rebuild, cache trim, notification-service reconciliation) so services
     // for workspaces no longer open anywhere are torn down.
     app.emit('window-workspace-state-changed');
   });
   // A full renderer load (reload, crash recovery) starts from empty state,
-  // so the window no longer hosts any background workspace; the next agent
+  // so the page no longer hosts any background workspace; the next agent
   // browser op re-adopts on demand.
-  const windowId = window.id;
   const forgetBackgroundWorkspaces = () => {
-    if (windowBackgroundAdoptions.delete(windowId)) app.emit('window-workspace-state-changed');
+    if (windowBackgroundAdoptions.delete(pageId)) app.emit('window-workspace-state-changed');
   };
-  window.webContents.on('did-navigate', forgetBackgroundWorkspaces);
-  window.webContents.on('render-process-gone', forgetBackgroundWorkspaces);
-  // Keep each window's renderer in sync with its native full-screen state,
+  page.on('did-navigate', forgetBackgroundWorkspaces);
+  page.on('render-process-gone', forgetBackgroundWorkspaces);
+});
+
+app.on('browser-window-created', (_event, window) => {
+  const sendToPages = (channel: string, value: boolean) => {
+    if (window.isDestroyed()) return;
+    for (const page of getRendererContents(window)) page.send(channel, value);
+  };
+  // Keep each window's renderers in sync with its native full-screen state,
   // including OS-gesture transitions (green traffic-light, Cmd+Ctrl+F).
-  window.on('enter-full-screen', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', true);
-  });
-  window.on('leave-full-screen', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:fullscreen', false);
-  });
+  window.on('enter-full-screen', () => sendToPages('window:fullscreen', true));
+  window.on('leave-full-screen', () => sendToPages('window:fullscreen', false));
   // Renderer DOM blur also fires when focus enters an embedded webview. Use
   // BrowserWindow focus instead so the renderer tracks the native app window.
-  window.on('focus', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', true);
-  });
-  window.on('blur', () => {
-    if (!window.isDestroyed()) window.webContents.send('window:focus', false);
-  });
+  window.on('focus', () => sendToPages('window:focus', true));
+  window.on('blur', () => sendToPages('window:focus', false));
 });
 
 // ============================================================================
@@ -996,7 +1023,7 @@ export function setupSystemIPC() {
       EmptySchema,
       async (event) => {
         const window =
-          BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
+          getHostWindowForWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
         if (!window || window.isDestroyed()) {
           return { success: true };
         }
@@ -1023,9 +1050,8 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       EmptySchema,
       async (event) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
-          return { success: true, data: window.webContents.getZoomFactor() };
+        if (!event.sender.isDestroyed()) {
+          return { success: true, data: event.sender.getZoomFactor() };
         }
         return { success: true, data: 1.0 };
       },
@@ -1040,7 +1066,7 @@ export function setupSystemIPC() {
       WindowSetThemeSchema,
       async (event, validated) => {
         try {
-          const window = BrowserWindow.fromWebContents(event.sender);
+          const window = getHostWindowForWebContents(event.sender);
           if (window) {
             nativeTheme.themeSource = validated.theme;
             const isDark = nativeTheme.shouldUseDarkColors;
@@ -1097,8 +1123,9 @@ export function setupSystemIPC() {
       WindowSetTitleSchema,
       async (event, validated) => {
         try {
-          const window = BrowserWindow.fromWebContents(event.sender);
-          if (window) {
+          const window = getHostWindowForWebContents(event.sender);
+          // A hidden connection panel must not retitle the window it sits in.
+          if (window && getActiveContents(window) === event.sender) {
             window.setTitle(decorateWindowTitle(validated.title));
           }
           return { success: true };
@@ -1122,14 +1149,13 @@ export function setupSystemIPC() {
       WindowSetInWorkspaceSchema,
       async (event, validated) => {
         try {
-          const window = BrowserWindow.fromWebContents(event.sender);
-          if (window) {
-            const windowId = window.id;
+          if (getHostWindowForWebContents(event.sender)) {
+            const windowId = event.sender.id;
             windowWorkspaceState.set(windowId, validated.inWorkspace);
             if (validated.workspaceId) {
               windowWorkspaceIds.set(windowId, {
                 workspaceId: validated.workspaceId,
-                backendId: getBackendIdForWindow(window),
+                backendId: getBackendIdForWebContents(event.sender),
               });
               lastKnownWindowWorkspaceIds.set(windowId, validated.workspaceId);
             } else if (!validated.inWorkspace) {
@@ -1165,11 +1191,10 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       WindowSetOpenWorkspaceTabsSchema,
       async (event, validated) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
-          windowOpenWorkspaceTabs.set(window.id, {
+        if (getHostWindowForWebContents(event.sender)) {
+          windowOpenWorkspaceTabs.set(event.sender.id, {
             workspaceIds: validated.workspaceIds,
-            backendId: getBackendIdForWindow(window),
+            backendId: getBackendIdForWebContents(event.sender),
           });
           app.emit('window-workspace-state-changed');
         }
@@ -1186,8 +1211,9 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       BrowserBackgroundHostedWorkspacesSchema,
       async (event, validated) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) applyBackgroundHostingReport(window, validated.workspaceIds);
+        if (getHostWindowForWebContents(event.sender)) {
+          applyBackgroundHostingReport(event.sender, validated.workspaceIds);
+        }
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.BACKGROUND_HOSTED_WORKSPACES,
@@ -1200,10 +1226,9 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       WindowSetBrowserFocusedSchema,
       async (event, validated) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
+        if (getHostWindowForWebContents(event.sender)) {
           updateWindowBrowserFocusOwner(
-            window.id,
+            event.sender.id,
             validated.browserFocused,
             validated.focusOwnerId,
           );
@@ -1378,25 +1403,33 @@ export function setupSystemIPC() {
     return newWindow;
   }
 
-  function isNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
+  function isNormalWindowForBackend(
+    existing: BrowserWindow,
+    backendId: string,
+    page: Electron.WebContents = existing.webContents,
+  ): boolean {
     return (
       !existing.isDestroyed() &&
-      !existing.webContents.isDestroyed() &&
+      !page.isDestroyed() &&
       !isDockWindow(existing) &&
       !isDockAnnotationWindow(existing) &&
       !isWebviewPopupWindow(existing) &&
-      !isDevConsoleRoute(new URL(existing.webContents.getURL() || 'about:blank').pathname) &&
+      !isDevConsoleRoute(new URL(page.getURL() || 'about:blank').pathname) &&
       !isHudWindow(existing) &&
       !isTrackedHudWindow(existing) &&
-      getBackendIdForWindow(existing) === backendId
+      getBackendIdForWebContents(page) === backendId
     );
   }
 
-  function isReadyNormalWindowForBackend(existing: BrowserWindow, backendId: string): boolean {
+  function isReadyNormalWindowForBackend(
+    existing: BrowserWindow,
+    backendId: string,
+    page: Electron.WebContents = existing.webContents,
+  ): boolean {
     return (
-      isNormalWindowForBackend(existing, backendId) &&
-      existing.webContents.getURL() !== '' &&
-      !existing.webContents.isLoadingMainFrame()
+      isNormalWindowForBackend(existing, backendId, page) &&
+      page.getURL() !== '' &&
+      !page.isLoadingMainFrame()
     );
   }
 
@@ -1407,10 +1440,17 @@ export function setupSystemIPC() {
     workspaceTarget?: DockNavigationTarget['workspaceTarget'],
   ): BrowserWindow | null {
     let existing: BrowserWindow | null = null;
-    for (const windowId of getWindowIdsForWorkspace(workspaceId, backendId)) {
-      const candidate = BrowserWindow.fromId(windowId);
-      if (candidate && isNormalWindowForBackend(candidate, backendId)) {
+    let page: Electron.WebContents | null = null;
+    for (const pageId of getWindowIdsForWorkspace(workspaceId, backendId)) {
+      const candidatePage = getRendererPage(pageId);
+      const candidate = candidatePage ? getHostWindowForWebContents(candidatePage) : null;
+      if (
+        candidatePage &&
+        candidate &&
+        isNormalWindowForBackend(candidate, backendId, candidatePage)
+      ) {
         existing = candidate;
+        page = candidatePage;
         break;
       }
     }
@@ -1420,15 +1460,24 @@ export function setupSystemIPC() {
       const candidates = focused
         ? [focused, ...BrowserWindow.getAllWindows().filter((window) => window !== focused)]
         : BrowserWindow.getAllWindows();
-      existing =
-        candidates.find((candidate) => isReadyNormalWindowForBackend(candidate, backendId)) ?? null;
+      for (const candidate of candidates) {
+        const candidatePage = getRendererContents(candidate).find((contents) =>
+          isReadyNormalWindowForBackend(candidate, backendId, contents),
+        );
+        if (candidatePage) {
+          existing = candidate;
+          page = candidatePage;
+          break;
+        }
+      }
     }
 
-    if (!existing) return null;
+    if (!existing || !page) return null;
+    showRendererPage(page);
     if (existing.isMinimized()) existing.restore();
     existing.show();
     existing.focus();
-    existing.webContents.send('notification:navigate', {
+    page.send('notification:navigate', {
       workspaceId,
       ...(agentId ? { agentId } : {}),
       ...(workspaceTarget ? { workspaceTarget } : {}),
@@ -1591,7 +1640,7 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       WindowSetFullScreenSchema,
       async (event, validated) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
+        const window = getHostWindowForWebContents(event.sender);
         if (!window) {
           return { success: false, fullScreen: false };
         }
@@ -1608,7 +1657,7 @@ export function setupSystemIPC() {
     createSafeValidatedHandler(
       EmptySchema,
       async (event) => {
-        const window = BrowserWindow.fromWebContents(event.sender);
+        const window = getHostWindowForWebContents(event.sender);
         return { success: true, fullScreen: window ? window.isFullScreen() : false };
       },
       WINDOW_CHANNELS.GET_FULL_SCREEN,
@@ -1642,7 +1691,7 @@ export function setupSystemIPC() {
         if (windows.length < 2) {
           return { cycled: false, windowCount: windows.length };
         }
-        const senderWindow = BrowserWindow.fromWebContents(event.sender);
+        const senderWindow = getHostWindowForWebContents(event.sender);
         const senderIndex = senderWindow ? windows.indexOf(senderWindow) : -1;
         const next = windows[(senderIndex + 1) % windows.length];
         if (next.isMinimized()) next.restore();
@@ -1660,7 +1709,7 @@ export function setupSystemIPC() {
       DialogMessageSchema,
       async (event, validated) => {
         const window = BrowserWindow.getFocusedWindow();
-        const targetWindow = window || BrowserWindow.fromWebContents(event.sender);
+        const targetWindow = window || getHostWindowForWebContents(event.sender);
 
         const options: Electron.MessageBoxOptions = {
           message: validated.message,
@@ -1684,7 +1733,7 @@ export function setupSystemIPC() {
       DialogOpenSchema,
       async (event, validated) => {
         const focusedWindow = BrowserWindow.getFocusedWindow();
-        const targetWindow = focusedWindow || BrowserWindow.fromWebContents(event.sender);
+        const targetWindow = focusedWindow || getHostWindowForWebContents(event.sender);
         // File mode passes `noResolveAliases` so a picked symlink (e.g.
         // ~/.local/bin/claude) is stored as-is instead of its versioned
         // target, which goes stale on the next update (monorepo#4352).

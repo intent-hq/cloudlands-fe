@@ -36,6 +36,7 @@
 import type { BrowserWindow } from 'electron';
 
 import { IPC_CHANNELS } from '../shared/ipc-registry';
+import { getActiveContents } from './window-backend';
 
 type SwipeHistoryDirection = 'back' | 'forward';
 
@@ -65,6 +66,6 @@ export function attachSwipeHistoryNavigation(
     const historyDirection = historyDirectionForSwipe(direction);
     if (historyDirection === null) return;
     if (window.isDestroyed() || window.webContents.isDestroyed()) return;
-    window.webContents.send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, historyDirection);
+    getActiveContents(window).send(IPC_CHANNELS.APP.HISTORY_NAVIGATE, historyDirection);
   });
 }

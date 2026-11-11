@@ -33,6 +33,7 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import NoBackendScreen from '$features/intent-web/components/NoBackendScreen.svelte';
+  import ConnectionRail from '$features/connection-rail/ConnectionRail.svelte';
   import WebExperimentalNoticeHost from '$features/intent-web/components/WebExperimentalNoticeHost.svelte';
   import { showsNoBackendScreen } from '$features/intent-web/utils/no-backend-gate';
   import { selectNoBackendBound } from '$store/renderer/slices/connections/connections-selectors';
@@ -996,6 +997,7 @@
     <!-- Main Content Area -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2">
+        <ConnectionRail />
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main

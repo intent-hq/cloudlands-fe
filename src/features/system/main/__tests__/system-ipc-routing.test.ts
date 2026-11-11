@@ -167,22 +167,24 @@ describe('browser IPC broadcast adapter delivery acknowledgment', () => {
 });
 
 describe('window close cleanup', () => {
-  it('emits window-workspace-state-changed when a window closes so open-workspace listeners reconcile', () => {
-    // system.ipc.ts registers this at module scope.
+  it('emits window-workspace-state-changed when a renderer page goes away so open-workspace listeners reconcile', () => {
+    // system.ipc.ts registers this at module scope. Tracking is per renderer
+    // page (a window can host connection panels), so cleanup follows the page.
     const createdHandler = electronMocks.appOn.mock.calls.find(
-      ([event]) => event === 'browser-window-created',
-    )?.[1] as ((event: unknown, window: unknown) => void) | undefined;
+      ([event]) => event === 'web-contents-created',
+    )?.[1] as ((event: unknown, page: unknown) => void) | undefined;
     expect(createdHandler).toBeDefined();
 
     const closedHandlers: Array<() => void> = [];
-    const window = {
+    const page = {
       id: 42,
-      webContents: { on: vi.fn() },
-      on: vi.fn((event: string, cb: () => void) => {
-        if (event === 'closed') closedHandlers.push(cb);
+      getType: () => 'window',
+      on: vi.fn(),
+      once: vi.fn((event: string, cb: () => void) => {
+        if (event === 'destroyed') closedHandlers.push(cb);
       }),
     };
-    createdHandler!({}, window);
+    createdHandler!({}, page);
     expect(closedHandlers).toHaveLength(1);
 
     // Regression: the closed cleanup used to delete the tracking maps

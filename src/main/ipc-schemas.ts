@@ -1170,6 +1170,7 @@ export const ConnectionsSetTunnelSchema = ConnectionsGetTunnelSchema.extend({
 
 export const ConnectionsOpenSchema = z.object({
   id: z.string().min(1, 'Connection ID is required'),
+  switchSenderWindow: z.boolean().optional(),
 });
 
 export const ConnectionsUpdateBackendSchema = z.object({

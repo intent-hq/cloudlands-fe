@@ -3232,6 +3232,7 @@
   "layout_daemonStatus_attachedAgents_label": "已连接的智能体",
   "layout_daemonStatus_certWarnings_tooltip": "有地址出示了意外的证书",
   "layout_daemonStatus_connectAnotherDevice_action": "连接其他计算机",
+  "layout_connectionRail_add_tooltip": "添加连接",
   "layout_daemonStatus_connectToAnother_action": "连接到另一个 intentd…",
   "layout_daemonStatus_connectionActive_label": "活跃",
   "layout_daemonStatus_connectionViaTailcat_label": "{target}（通过 tailcat）",

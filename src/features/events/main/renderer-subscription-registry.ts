@@ -12,7 +12,7 @@
  * downstream delivery owner.
  */
 
-import { BrowserWindow } from 'electron';
+import { webContents, type BrowserWindow } from 'electron';
 import { Logger } from '../../../shared/logger';
 import type { WorkspaceEvent, EventFilter } from '../types';
 import { eventMatchesSubscription } from '../event-filter-engine';
@@ -181,14 +181,14 @@ export function deliverEventToSubscriptions(event: WorkspaceEvent): void {
     }
 
     try {
-      const window = BrowserWindow.fromId(sub.windowId);
-      if (!window || window.isDestroyed()) {
+      const page = webContents.fromId(sub.windowId);
+      if (!page || page.isDestroyed()) {
         removeRendererSubscription(subId);
         continue;
       }
 
       if (eventMatchesSubscription(event, sub.filters)) {
-        window.webContents.send('workspace:event', event);
+        page.send('workspace:event', event);
       }
     } catch (error) {
       logger.error('Failed to deliver event to subscription', {
