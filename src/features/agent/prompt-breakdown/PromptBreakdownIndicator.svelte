@@ -110,7 +110,7 @@
             <dt class="flex min-w-0 items-start gap-2 text-sm text-foreground">
               <span class="owner-key mt-1.5 size-1.5 shrink-0 rounded-full" data-owner={row.group}
               ></span>
-              <span class="min-w-0 break-words">{row.label}</span>
+              <span class="min-w-0 wrap-anywhere">{row.label}</span>
             </dt>
             <dd class="text-xs text-muted-foreground">{ownerLabel(row.group)}</dd>
             <dd
@@ -121,7 +121,7 @@
               {tokens(row.estTokens)}
             </dd>
             {#if row.hint || !row.counted}
-              <dd class="section-note pl-3.5 text-xs text-muted-foreground">
+              <dd class="section-note pl-3.5 text-xs text-muted-foreground wrap-anywhere">
                 {[row.counted ? '' : m.agent_contextBreakdown_notCounted_label(), row.hint ?? '']
                   .filter(Boolean)
                   .join(' · ')}
@@ -140,7 +140,7 @@
           {#each breakdown.hiddenSkills as skill (skill.name)}
             <div class="min-w-0">
               <dt class="truncate text-sm text-foreground">{skill.name}</dt>
-              <dd class="text-xs text-muted-foreground">
+              <dd class="text-xs text-muted-foreground wrap-anywhere">
                 {[skill.detail, skill.fix].filter(Boolean).join(' · ')}
               </dd>
             </div>
