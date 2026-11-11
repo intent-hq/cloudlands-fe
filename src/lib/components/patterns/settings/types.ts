@@ -12,7 +12,6 @@ export type SettingsTab =
   | 'collaboration'
   | 'setup'
   | 'advanced'
-  | 'labs'
   | 'input'
   | 'specialists';
 

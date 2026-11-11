@@ -275,7 +275,7 @@
   "settings_section_notifications": ["fr"],
   "settings_section_updates": ["de"],
   "settings_sidebar_agents_label": ["fr"],
-  "settings_sidebar_labs_label": ["de", "fr", "es"],
+  "settings_labs_title_label": ["de", "fr", "es"],
   "settings_sidebar_appBehavior_label": ["es"],
   "settings_sidebar_guestSessions_label": ["fr"],
   "settings_theme_label": ["de"],

@@ -165,7 +165,6 @@
       ...getSettingsPaletteCommands({
         isCollaboratorOnlyClient: $isCollaboratorOnlyClient$,
         multiplayerEnabled: $labsMultiplayerEnabled$,
-        labsVisible: $labsSettingsVisible$,
       }),
     ].filter(
       (command) =>

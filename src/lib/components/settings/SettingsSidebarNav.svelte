@@ -4,7 +4,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import DesktopIcon from 'phosphor-svelte/lib/DesktopIcon';
   import DeviceMobileIcon from 'phosphor-svelte/lib/DeviceMobileIcon';
-  import FlaskIcon from 'phosphor-svelte/lib/FlaskIcon';
   import GearSixIcon from 'phosphor-svelte/lib/GearSixIcon';
   import GitBranchIcon from 'phosphor-svelte/lib/GitBranchIcon';
   import KeyboardIcon from 'phosphor-svelte/lib/KeyboardIcon';
@@ -103,13 +102,6 @@
       icon: GearSixIcon,
       get label() {
         return m.settings_sidebar_advanced_label();
-      },
-    },
-    {
-      id: 'labs',
-      icon: FlaskIcon,
-      get label() {
-        return m.settings_sidebar_labs_label();
       },
     },
   ];

@@ -8399,7 +8399,7 @@
   "settings_section_labs": "Labs",
   "settings_dockLab_label": "瀏海塢",
   "settings_dockLab_description": "在螢幕頂端顯示實驗性塢，用於快速聊天、截圖、標註和聽寫。",
-  "settings_sidebar_labs_label": "實驗室",
+  "settings_labs_title_label": "實驗室",
   "settings_labs_disclaimer_description": "實驗室是仍在測試中的實驗性功能。它們可能隨時變更、發生故障或被移除。",
   "settings_labs_remoteAgents_label": "遠端代理",
   "settings_labs_remoteAgents_description": "設定遠端電腦並在其上執行新的代理。關閉後，現有的遠端工作階段仍可使用。",

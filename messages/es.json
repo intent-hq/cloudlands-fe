@@ -8399,7 +8399,7 @@
   "settings_section_labs": "Labs",
   "settings_dockLab_label": "Dock de la muesca",
   "settings_dockLab_description": "Muestra el dock experimental en la parte superior de la pantalla para chats rápidos, capturas, anotaciones y dictado.",
-  "settings_sidebar_labs_label": "Labs",
+  "settings_labs_title_label": "Labs",
   "settings_labs_disclaimer_description": "Labs son funciones experimentales que aún se están probando. Pueden cambiar, fallar o eliminarse en cualquier momento.",
   "settings_labs_remoteAgents_label": "Agentes remotos",
   "settings_labs_remoteAgents_description": "Configura equipos remotos y ejecuta nuevos agentes en ellos. Las sesiones remotas existentes siguen disponibles cuando esto está desactivado.",

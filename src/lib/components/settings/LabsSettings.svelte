@@ -38,7 +38,7 @@
       sections: [
         {
           id: 'labs',
-          title: m.settings_sidebar_labs_label(),
+          title: m.settings_labs_title_label(),
           description: m.settings_labs_disclaimer_description(),
           entries: [
             {
@@ -112,6 +112,4 @@
   );
 </script>
 
-<div id="labs" class="scroll-mt-20">
-  <SettingsForm {schema} compact={false} />
-</div>
+<SettingsForm {schema} compact={false} />

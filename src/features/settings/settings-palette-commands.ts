@@ -70,12 +70,6 @@ const SETTINGS_PAGES = {
     },
     searchText: 'advanced tool output retention agent backend connection data import reset',
   },
-  labs: {
-    get label() {
-      return m.settings_sidebar_labs_label();
-    },
-    searchText: 'labs experimental experiments preview beta features',
-  },
   specialists: {
     get label() {
       return m.settings_sidebar_specialists_label();
@@ -87,19 +81,16 @@ const SETTINGS_PAGES = {
 export function getSettingsPaletteCommands({
   isCollaboratorOnlyClient,
   multiplayerEnabled,
-  labsVisible,
 }: {
   isCollaboratorOnlyClient: boolean;
   multiplayerEnabled: boolean;
-  labsVisible: boolean;
 }) {
   // Match the settings page's hidden tabs, including its safe boot-time defaults.
   return (Object.keys(SETTINGS_PAGES) as SettingsTab[])
     .filter(
       (tab) =>
         !(isCollaboratorOnlyClient && (tab === 'providers' || tab === 'connections')) &&
-        !(tab === 'collaboration' && !multiplayerEnabled) &&
-        !(tab === 'labs' && !labsVisible),
+        !(tab === 'collaboration' && !multiplayerEnabled),
     )
     .map((tab) => ({
       id: `settings-${tab}`,

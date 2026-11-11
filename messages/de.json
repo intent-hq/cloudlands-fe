@@ -8399,7 +8399,7 @@
   "settings_section_labs": "Labs",
   "settings_dockLab_label": "Notch-Dock",
   "settings_dockLab_description": "Zeigt das experimentelle Dock oben am Bildschirm für schnelle Chats, Bildschirmaufnahmen, Anmerkungen und Diktat.",
-  "settings_sidebar_labs_label": "Labs",
+  "settings_labs_title_label": "Labs",
   "settings_labs_disclaimer_description": "Labs sind experimentelle Funktionen, die noch getestet werden. Sie können sich jederzeit ändern, fehlschlagen oder entfernt werden.",
   "settings_labs_remoteAgents_label": "Remote-Agenten",
   "settings_labs_remoteAgents_description": "Remote-Rechner einrichten und neue Agenten darauf ausführen. Bestehende Remote-Sitzungen bleiben verfügbar, wenn dies ausgeschaltet ist.",

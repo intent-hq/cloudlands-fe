@@ -8399,7 +8399,7 @@
   "settings_section_labs": "Labs",
   "settings_dockLab_label": "노치 독",
   "settings_dockLab_description": "화면 상단에 실험용 독을 표시해 빠른 채팅, 화면 캡처, 주석, 받아쓰기를 사용할 수 있습니다.",
-  "settings_sidebar_labs_label": "랩",
+  "settings_labs_title_label": "랩",
   "settings_labs_disclaimer_description": "랩은 아직 테스트 중인 실험적 기능입니다. 언제든지 변경, 중단 또는 제거될 수 있습니다.",
   "settings_labs_remoteAgents_label": "원격 에이전트",
   "settings_labs_remoteAgents_description": "원격 컴퓨터를 설정하고 새 에이전트를 실행합니다. 꺼도 기존 원격 세션은 계속 사용할 수 있습니다.",

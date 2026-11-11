@@ -8399,7 +8399,7 @@
   "settings_section_labs": "Labs",
   "settings_dockLab_label": "ノッチドック",
   "settings_dockLab_description": "画面上部に試験的なドックを表示し、すばやいチャット、画面キャプチャ、注釈、音声入力を使えるようにします。",
-  "settings_sidebar_labs_label": "ラボ",
+  "settings_labs_title_label": "ラボ",
   "settings_labs_disclaimer_description": "ラボはまだテスト中の実験的な機能です。いつでも変更、動作不良、または削除される可能性があります。",
   "settings_labs_remoteAgents_label": "リモートエージェント",
   "settings_labs_remoteAgents_description": "リモートマシンを設定し、新しいエージェントをそこで実行します。オフにしても既存のリモートセッションは引き続き利用できます。",

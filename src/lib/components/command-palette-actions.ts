@@ -66,7 +66,7 @@ export function runPaletteCommand(commandId: string, context: PaletteCommandCont
     case 'show-labs-in-settings':
       appStore.dispatch(setLabsSettingsVisible(true));
       appStore.dispatch(setShowCreateModal(false));
-      navigateToSettings({ tab: 'labs' });
+      navigateToSettings({ tab: 'advanced', hash: 'labs' });
       return true;
     case 'hide-labs-in-settings':
       appStore.dispatch(setLabsSettingsVisible(false));

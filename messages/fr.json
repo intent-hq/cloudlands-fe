@@ -8399,7 +8399,7 @@
   "settings_section_labs": "Labs",
   "settings_dockLab_label": "Dock de l’encoche",
   "settings_dockLab_description": "Affiche le dock expérimental en haut de l’écran pour les discussions rapides, les captures, les annotations et la dictée.",
-  "settings_sidebar_labs_label": "Labs",
+  "settings_labs_title_label": "Labs",
   "settings_labs_disclaimer_description": "Les Labs sont des fonctionnalités expérimentales encore en cours de test. Elles peuvent changer, dysfonctionner ou être retirées à tout moment.",
   "settings_labs_remoteAgents_label": "Agents distants",
   "settings_labs_remoteAgents_description": "Configurez des ordinateurs distants et lancez-y de nouveaux agents. Les sessions distantes existantes restent disponibles lorsque cette option est désactivée.",

@@ -544,7 +544,7 @@ describe('CommandPalette new actions', () => {
     expect(screen.queryByRole('button', { name: /experimental GitLab/i })).toBeNull();
   });
 
-  it('shows Labs in Settings and opens it without a workspace', async () => {
+  it('shows Labs in Settings and opens it under Advanced without a workspace', async () => {
     const onClose = vi.fn();
     render(CommandPalette, { props: { isOpen: true, initialQuery: 'labs', onClose } });
     const command = await screen.findByRole('button', { name: /Show Labs in Settings/i });
@@ -558,7 +558,10 @@ describe('CommandPalette new actions', () => {
         .map(([action]) => action)
         .filter((action) => action.type.startsWith('userPreferences/')),
     ).toEqual([{ type: 'userPreferences/setLabsSettingsVisible', payload: [true] }]);
-    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'labs' });
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({
+      tab: 'advanced',
+      hash: 'labs',
+    });
     expect(onClose).toHaveBeenCalledOnce();
   });
 

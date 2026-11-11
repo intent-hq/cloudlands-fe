@@ -8399,7 +8399,7 @@
   "settings_section_labs": "Labs",
   "settings_dockLab_label": "刘海坞",
   "settings_dockLab_description": "在屏幕顶部显示实验性坞，用于快速聊天、截屏、标注和听写。",
-  "settings_sidebar_labs_label": "实验室",
+  "settings_labs_title_label": "实验室",
   "settings_labs_disclaimer_description": "实验室是仍在测试中的实验性功能。它们可能随时更改、出现故障或被移除。",
   "settings_labs_remoteAgents_label": "远程智能体",
   "settings_labs_remoteAgents_description": "设置远程机器并在其上运行新的智能体。关闭后，现有的远程会话仍然可用。",
