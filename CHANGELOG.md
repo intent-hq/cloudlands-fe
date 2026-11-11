@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.318.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.2...v2.318.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **cloud-machines:** add Northflank beside E2B with an Add cloud menu ([#4445](https://github.com/intent-hq/cloudlands-fe/issues/4445)) ([a33e7cb](https://github.com/intent-hq/cloudlands-fe/commit/a33e7cb93d285906c20f2e407c0cfa33ecc4f4f8))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.188 ([#4464](https://github.com/intent-hq/cloudlands-fe/issues/4464)) ([5be42c9](https://github.com/intent-hq/cloudlands-fe/commit/5be42c9dfadc8f907e521448a29cbf7fb7e4c528))
+
 ## [2.317.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.1...v2.317.2) (2026-11-11)
 
 
