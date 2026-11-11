@@ -91,6 +91,7 @@
                 cloudMachineId: TEAM_ENTRY.id,
                 label: m.cloudMachines_startOn_entry_label({ name: TEAM_ENTRY.name }),
                 unavailableReason: null,
+                needsProfile: true,
               },
               {
                 cloudMachineId: 'e2b-0c1d2e3f4a5b',

@@ -5628,7 +5628,7 @@
   "settings_providerProfiles_variableN_label": "variable {n}",
   "settings_providerRemote_accountFolderBlocked_description": "Sets an account folder ({keys}) that is signed in on this backend, so it can only run here.",
   "settings_providerRemote_defaultSaveFailed_error": "Could not save Use on remote machines.",
-  "settings_providerRemote_defaultUseOnRemote_description": "When a remote machine isn't signed in to this provider, send the Default's settings from here.",
+  "settings_providerRemote_defaultUseOnRemote_description": "Send the Default's settings to remote machines, even ones signed in to this provider.",
   "settings_providerRemote_pill_label": "Remote Ready",
   "settings_providerRemote_thisMachineOnly_label": "This machine only",
   "settings_providerRemote_useOnRemote_description": "Send these settings to any machine this backend runs agents on.",

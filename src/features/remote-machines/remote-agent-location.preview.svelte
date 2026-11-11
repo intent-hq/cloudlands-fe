@@ -164,6 +164,8 @@
     providers: [
       { id: 'claude-code', status: 'ready', models: ['opus', 'sonnet', 'haiku'] },
       { id: 'codex', status: 'signed-out', models: ['gpt-6', 'gpt-6-mini'] },
+      // Nothing to pick: no tab.
+      { id: 'droid', status: 'unknown', models: [] },
     ],
   };
   // A machine with no sign-in of its own (an E2B sandbox) lists no models;
@@ -524,7 +526,7 @@
     store.dispatch(setLabsRemoteAgentsEnabled(s !== 'labs-off'));
     if (isPickerScene(s)) {
       store.dispatch(providerCatalogLoaded(pickerCatalog(s)));
-      for (const providerId of ['claude-code', 'codex'])
+      for (const providerId of ['claude-code', 'codex', 'droid'])
         store.dispatch(setProviderEnabled({ providerId, enabled: true }));
       // This backend's labels for the machine's model ids.
       store.dispatch(

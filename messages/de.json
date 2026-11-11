@@ -5628,7 +5628,7 @@
   "settings_providerProfiles_variableN_label": "Variable {n}",
   "settings_providerRemote_accountFolderBlocked_description": "Legt einen Kontoordner fest ({keys}), der auf diesem Backend angemeldet ist, und läuft daher nur hier.",
   "settings_providerRemote_defaultSaveFailed_error": "„Auf entfernten Rechnern verwenden“ konnte nicht gespeichert werden.",
-  "settings_providerRemote_defaultUseOnRemote_description": "Wenn ein entfernter Rechner bei diesem Anbieter nicht angemeldet ist, die Einstellungen des Standards von hier senden.",
+  "settings_providerRemote_defaultUseOnRemote_description": "Die Einstellungen des Standards an entfernte Rechner senden, auch an solche, die bei diesem Anbieter angemeldet sind.",
   "settings_providerRemote_pill_label": "Remote-bereit",
   "settings_providerRemote_thisMachineOnly_label": "Nur dieser Rechner",
   "settings_providerRemote_useOnRemote_description": "Sendet diese Einstellungen an jeden Rechner, auf dem dieses Backend Agenten ausführt.",
