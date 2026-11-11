@@ -51,7 +51,9 @@
               label: m.settings_labs_remoteAgents_label(),
               description: m.settings_labs_remoteAgents_description(),
               get: () => $remoteAgents$,
-              set: (enabled) => appStore.dispatch(setLabsRemoteAgentsEnabled(enabled)),
+              set: (enabled) => {
+                appStore.dispatch(setLabsRemoteAgentsEnabled(enabled));
+              },
             },
             {
               kind: 'switch',
@@ -60,7 +62,9 @@
               label: m.settings_labs_cloudMachines_label(),
               description: m.settings_labs_cloudMachines_description(),
               get: () => $cloudMachines$,
-              set: (enabled) => appStore.dispatch(setLabsCloudMachinesEnabled(enabled)),
+              set: (enabled) => {
+                appStore.dispatch(setLabsCloudMachinesEnabled(enabled));
+              },
             },
             {
               kind: 'switch',
@@ -69,7 +73,9 @@
               label: m.settings_labs_plainFolders_label(),
               description: m.settings_labs_plainFolders_description(),
               get: () => $plainFolders$,
-              set: (enabled) => appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(enabled)),
+              set: (enabled) => {
+                appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(enabled));
+              },
             },
             {
               kind: 'switch',
@@ -78,7 +84,9 @@
               label: m.settings_labs_tabGroups_label(),
               description: m.settings_labs_tabGroups_description(),
               get: () => $tabGroups$,
-              set: (enabled) => appStore.dispatch(setLabsTabGroupsEnabled(enabled)),
+              set: (enabled) => {
+                appStore.dispatch(setLabsTabGroupsEnabled(enabled));
+              },
             },
             {
               kind: 'switch',
@@ -97,7 +105,9 @@
               description: m.settings_labs_machineRail_description(),
               when: () => desktop,
               get: () => $machineRail$,
-              set: (enabled) => appStore.dispatch(setMachineRailEnabledRequested(enabled)),
+              set: (enabled) => {
+                appStore.dispatch(setMachineRailEnabledRequested(enabled));
+              },
             },
             {
               kind: 'switch',
