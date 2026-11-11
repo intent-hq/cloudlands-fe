@@ -343,21 +343,69 @@ describe('AgentFeaturesSettings', () => {
       expect(screen.getByText('Allow Intent in System Settings.')).toBeTruthy();
     });
 
-    it('checks again on request and hides the checklist once everything is allowed', async () => {
+    it('re-checks the same request until a pending capture check settles', async () => {
       listWithDesktop(false);
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'agentFeatures.desktopControl', value: true },
       ]);
       desktopMocks.requestOsPermissions
-        .mockResolvedValueOnce(missing)
+        .mockResolvedValueOnce({
+          guidance: 'Allow Intent in System Settings.',
+          checklist: { accessibility: true, screenRecording: true, screenCapture: 'pending' },
+        })
+        .mockResolvedValueOnce(undefined);
+      await renderReady();
+      await fireEvent.click(await screen.findByRole('switch', { name: 'Desktop control' }));
+      await screen.findByRole('list', { name: 'macOS permissions' });
+      await waitFor(() =>
+        expect(screen.queryByRole('list', { name: 'macOS permissions' })).toBeNull(),
+      );
+      const [[first], [second]] = desktopMocks.requestOsPermissions.mock.calls;
+      expect(first).toMatch(/\S/);
+      expect(second).toBe(first);
+    });
+
+    it('starts a new check with a new request when asked again after a settled failure', async () => {
+      listWithDesktop(false);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agentFeatures.desktopControl', value: true },
+      ]);
+      const unavailable = {
+        guidance: 'Allow Intent in System Settings.',
+        checklist: { accessibility: true, screenRecording: true, screenCapture: 'unavailable' },
+      };
+      desktopMocks.requestOsPermissions
+        .mockResolvedValueOnce(unavailable)
         .mockResolvedValueOnce(undefined);
       await renderReady();
       await fireEvent.click(await screen.findByRole('switch', { name: 'Desktop control' }));
       await fireEvent.click(await screen.findByRole('button', { name: 'Check again' }));
-      expect(desktopMocks.requestOsPermissions).toHaveBeenCalledTimes(2);
       await waitFor(() =>
         expect(screen.queryByRole('list', { name: 'macOS permissions' })).toBeNull(),
       );
+      const [[first], [second]] = desktopMocks.requestOsPermissions.mock.calls;
+      expect(second).not.toBe(first);
+    });
+
+    it('stops re-checking when desktop control is turned off', async () => {
+      listWithDesktop(false);
+      mocks.mockSettingsUpdate
+        .mockResolvedValueOnce([{ path: 'agentFeatures.desktopControl', value: true }])
+        .mockResolvedValueOnce([{ path: 'agentFeatures.desktopControl', value: false }]);
+      desktopMocks.requestOsPermissions.mockResolvedValue(missing);
+      await renderReady();
+      const toggle = await screen.findByRole('switch', { name: 'Desktop control' });
+      await fireEvent.click(toggle);
+      await screen.findByRole('list', { name: 'macOS permissions' });
+      await fireEvent.click(toggle);
+      await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+      const calls = desktopMocks.requestOsPermissions.mock.calls.length;
+      await expect(
+        waitFor(
+          () => expect(desktopMocks.requestOsPermissions.mock.calls.length).toBeGreaterThan(calls),
+          { timeout: 1500 },
+        ),
+      ).rejects.toThrow();
     });
 
     it('does not ask the OS when desktop control is turned off', async () => {

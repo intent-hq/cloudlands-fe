@@ -4491,9 +4491,9 @@ export function registerBackendHandlers(): void {
       return { ok: false, error: toErrorPayload(error) };
     }
   });
-  ipcMain.handle(BACKEND.DESKTOP_OS_PERMISSIONS, async () => {
+  ipcMain.handle(BACKEND.DESKTOP_OS_PERMISSIONS, async (_event, params: unknown) => {
     try {
-      return { ok: true, result: await requestLocalDesktopPermissions() };
+      return { ok: true, result: await requestLocalDesktopPermissions(params) };
     } catch (error) {
       return { ok: false, error: toErrorPayload(error) };
     }

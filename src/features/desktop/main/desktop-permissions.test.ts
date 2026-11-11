@@ -207,8 +207,12 @@ describe('settings-initiated OS permission request', () => {
       })),
     };
   }
-  const run = (n: ReturnType<typeof native>, available = true) =>
-    requestLocalDesktopPermissions(n as unknown as DesktopNativeAdapter, () => available);
+  const id = '0b9f6a52-3c1e-4b8a-9d2f-6e5a4c3b2a10';
+  const run = (
+    n: ReturnType<typeof native>,
+    available = true,
+    value: unknown = { requestId: id },
+  ) => requestLocalDesktopPermissions(value, n as unknown as DesktopNativeAdapter, () => available);
 
   it('reports unsupported without launching the helper when it is unavailable', async () => {
     const n = native();
@@ -223,7 +227,7 @@ describe('settings-initiated OS permission request', () => {
     expect(n.requestPermissions).not.toHaveBeenCalled();
   });
 
-  it('asks the helper for this computer with a fresh request identity each time', async () => {
+  it('reuses the caller request identity so a pending capture check can settle', async () => {
     const n = native();
     expect(await run(n)).toEqual({
       platform: 'macos',
@@ -233,10 +237,18 @@ describe('settings-initiated OS permission request', () => {
     });
     await run(n);
     const [first, second] = n.requestPermissions.mock.calls as unknown as [string, string][];
-    expect(first[0]).toBe('local');
-    expect(first[1]).toMatch(/\S/);
-    expect(second[1]).not.toBe(first[1]);
+    expect(first).toEqual(['local', `settings:${id}`]);
+    expect(second).toEqual(first);
   });
+
+  it.each([null, {}, { requestId: 'x' }, { requestId: id, extra: 1 }])(
+    'rejects a malformed request %j before touching the helper',
+    async (value) => {
+      const n = native();
+      await expect(run(n, true, value)).rejects.toThrow();
+      expect(n.identity).not.toHaveBeenCalled();
+    },
+  );
 
   it('serializes a native refusal as a JSON-RPC error', async () => {
     const n = native();

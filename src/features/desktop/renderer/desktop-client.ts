@@ -142,12 +142,12 @@ export const desktopClient = {
     return checklistFrom(permissionResult.parse(response.result));
   },
   /** Settings gesture: prompt this computer's OS for any missing permission. */
-  async requestOsPermissions(): Promise<
-    { guidance: string; checklist: DesktopOsChecklist } | undefined
-  > {
+  async requestOsPermissions(
+    requestId: string,
+  ): Promise<{ guidance: string; checklist: DesktopOsChecklist } | undefined> {
     const api = electronAPI();
     if (!api) return;
-    const response = await api.invoke(IPC_CHANNELS.BACKEND.DESKTOP_OS_PERMISSIONS);
+    const response = await api.invoke(IPC_CHANNELS.BACKEND.DESKTOP_OS_PERMISSIONS, { requestId });
     if (!response?.ok)
       throw new BackendError(
         response?.error ?? { code: 'TRANSPORT_ERROR', message: m.desktop_consent_failed() },

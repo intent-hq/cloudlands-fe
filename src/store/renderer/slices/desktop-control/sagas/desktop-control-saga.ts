@@ -3,6 +3,7 @@ import {
   delay,
   fork,
   put,
+  race,
   take,
   takeEvery,
   takeLeading,
@@ -31,6 +32,7 @@ import {
   desktopDecisionRequested,
   desktopEntryPatched,
   desktopEventReceived,
+  desktopOsPermissionsCleared,
   desktopOsPermissionsReceived,
   desktopOsPermissionsRequested,
   desktopPermissionRequested,
@@ -189,9 +191,20 @@ function* setPermission(
       yield* put(desktopReadRequested(ws, agent));
   }
 }
+// Re-ask with the same id while anything is missing: the capture check settles
+// per id, and a grant made in System Settings shows up without another click.
+function* pollOsPermissions(): SagaGenerator<void> {
+  const requestId = crypto.randomUUID();
+  for (let attempt = 0; attempt < 120; attempt++) {
+    const result = yield* call(desktopClient.requestOsPermissions, requestId);
+    yield* put(desktopOsPermissionsReceived(result));
+    if (!result || result.checklist.screenCapture === 'unavailable') return;
+    yield* delay(1000);
+  }
+}
 function* requestOsPermissions(): SagaGenerator<void> {
   try {
-    yield* put(desktopOsPermissionsReceived(yield* call(desktopClient.requestOsPermissions)));
+    yield* race({ poll: call(pollOsPermissions), cleared: take(desktopOsPermissionsCleared) });
   } catch (error) {
     yield* put(desktopOsPermissionsReceived(undefined));
     const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
