@@ -15,6 +15,9 @@ The reviewer reads the diff. The body gives only what the diff cannot show: the
 change in behavior and the reason for it. Text that repeats git or CI hides
 those two facts. Do not write it.
 
+The monorepo guide `docs/fe/PR_DESCRIPTION_GUIDE.md` (intent-hq/intent) has the
+same rules. Change the two files together.
+
 ## Title
 
 `type(scope): imperative subject`
