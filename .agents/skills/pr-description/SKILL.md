@@ -36,8 +36,6 @@ Write two parts. No other part is mandatory.
 
 - A small change needs one to three sentences and no headings.
 - A large change gets one bullet for each change in behavior.
-- Keep the body below 15 lines. A longer body needs a reason from the table
-  below.
 
 ## Add only when it applies
 
