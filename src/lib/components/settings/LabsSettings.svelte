@@ -9,21 +9,18 @@
   import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import {
     setLabsBrowserAccessEnabled,
-    setLabsCloudMachinesEnabled,
     setLabsPlainFolderWorkspacesEnabled,
     setLabsRemoteAgentsEnabled,
     setLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     selectLabsBrowserAccessEnabled,
-    selectLabsCloudMachinesEnabled,
     selectLabsPlainFolderWorkspacesEnabled,
     selectLabsRemoteAgentsEnabled,
     selectLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 
   const remoteAgents$ = selectLabsRemoteAgentsEnabled();
-  const cloudMachines$ = selectLabsCloudMachinesEnabled();
   const plainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const tabGroups$ = selectLabsTabGroupsEnabled();
   const browserAccess$ = selectLabsBrowserAccessEnabled();
@@ -53,17 +50,6 @@
               get: () => $remoteAgents$,
               set: (enabled) => {
                 appStore.dispatch(setLabsRemoteAgentsEnabled(enabled));
-              },
-            },
-            {
-              kind: 'switch',
-              id: 'labs-cloud-machines',
-              size: 'sm',
-              label: m.settings_labs_cloudMachines_label(),
-              description: m.settings_labs_cloudMachines_description(),
-              get: () => $cloudMachines$,
-              set: (enabled) => {
-                appStore.dispatch(setLabsCloudMachinesEnabled(enabled));
               },
             },
             {

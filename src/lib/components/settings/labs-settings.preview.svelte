@@ -8,7 +8,7 @@
     states: {
       default: { props: {} },
       mixed: { props: { enabled: ['remoteAgents', 'tabGroups'] } },
-      desktop: { props: { desktop: true, enabled: ['remoteAgents', 'cloudMachines'] } },
+      desktop: { props: { desktop: true, enabled: ['remoteAgents', 'browserAccess'] } },
     },
   });
 </script>
@@ -20,20 +20,18 @@
   import { machineRailStateReceived } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import {
     setLabsBrowserAccessEnabled,
-    setLabsCloudMachinesEnabled,
     setLabsPlainFolderWorkspacesEnabled,
     setLabsRemoteAgentsEnabled,
     setLabsTabGroupsEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import LabsSettings from './LabsSettings.svelte';
 
-  type Lab = 'remoteAgents' | 'cloudMachines' | 'plainFolders' | 'tabGroups' | 'browserAccess';
+  type Lab = 'remoteAgents' | 'plainFolders' | 'tabGroups' | 'browserAccess';
 
   let { enabled = [], desktop = false }: { enabled?: Lab[]; desktop?: boolean } = $props();
 
   const setters = {
     remoteAgents: setLabsRemoteAgentsEnabled,
-    cloudMachines: setLabsCloudMachinesEnabled,
     plainFolders: setLabsPlainFolderWorkspacesEnabled,
     tabGroups: setLabsTabGroupsEnabled,
     browserAccess: setLabsBrowserAccessEnabled,
@@ -62,7 +60,6 @@
 
   onDestroy(() => {
     appStore.dispatch(setLabsRemoteAgentsEnabled(previousPreferences.labsRemoteAgentsEnabled));
-    appStore.dispatch(setLabsCloudMachinesEnabled(previousPreferences.labsCloudMachinesEnabled));
     appStore.dispatch(
       setLabsPlainFolderWorkspacesEnabled(previousPreferences.labsPlainFolderWorkspacesEnabled),
     );

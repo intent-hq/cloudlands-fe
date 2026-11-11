@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "Labs sind experimentelle Funktionen, die noch getestet werden. Sie können sich jederzeit ändern, fehlschlagen oder entfernt werden.",
   "settings_labs_remoteAgents_label": "Remote-Agenten",
   "settings_labs_remoteAgents_description": "Remote-Rechner einrichten und neue Agenten darauf ausführen. Bestehende Remote-Sitzungen bleiben verfügbar, wenn dies ausgeschaltet ist.",
-  "settings_labs_cloudMachines_label": "E2B-Cloud-Maschinen",
-  "settings_labs_cloudMachines_description": "E2B einrichten und Agenten in einer neuen Cloud-Sandbox starten. Erfordert Remote-Agenten.",
   "settings_labs_plainFolders_label": "Arbeitsbereiche in einfachen Ordnern",
   "settings_labs_plainFolders_description": "Neue Arbeitsbereiche als einfache Ordner ohne Git erstellen. Bestehende Arbeitsbereiche in einfachen Ordnern funktionieren weiter, wenn dies ausgeschaltet ist.",
   "settings_labs_tabGroups_label": "Tab-Gruppen",

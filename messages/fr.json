@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "Les Labs sont des fonctionnalités expérimentales encore en cours de test. Elles peuvent changer, dysfonctionner ou être retirées à tout moment.",
   "settings_labs_remoteAgents_label": "Agents distants",
   "settings_labs_remoteAgents_description": "Configurez des ordinateurs distants et lancez-y de nouveaux agents. Les sessions distantes existantes restent disponibles lorsque cette option est désactivée.",
-  "settings_labs_cloudMachines_label": "Machines cloud E2B",
-  "settings_labs_cloudMachines_description": "Configurez E2B et lancez des agents dans un nouveau sandbox cloud. Nécessite les agents distants.",
   "settings_labs_plainFolders_label": "Espaces de travail dans des dossiers simples",
   "settings_labs_plainFolders_description": "Créez de nouveaux espaces de travail sous forme de dossiers simples sans Git. Les espaces existants continuent de fonctionner lorsque cette option est désactivée.",
   "settings_labs_tabGroups_label": "Groupes d’onglets",

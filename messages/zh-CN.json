@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "实验室是仍在测试中的实验性功能。它们可能随时更改、出现故障或被移除。",
   "settings_labs_remoteAgents_label": "远程智能体",
   "settings_labs_remoteAgents_description": "设置远程机器并在其上运行新的智能体。关闭后，现有的远程会话仍然可用。",
-  "settings_labs_cloudMachines_label": "E2B 云端机器",
-  "settings_labs_cloudMachines_description": "设置 E2B，并在新的云端沙盒中启动智能体。需要远程智能体。",
   "settings_labs_plainFolders_label": "普通文件夹工作区",
   "settings_labs_plainFolders_description": "将新工作区创建为不使用 Git 的普通文件夹。关闭后，现有的普通文件夹工作区仍可正常使用。",
   "settings_labs_tabGroups_label": "标签页分组",

@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "ラボはまだテスト中の実験的な機能です。いつでも変更、動作不良、または削除される可能性があります。",
   "settings_labs_remoteAgents_label": "リモートエージェント",
   "settings_labs_remoteAgents_description": "リモートマシンを設定し、新しいエージェントをそこで実行します。オフにしても既存のリモートセッションは引き続き利用できます。",
-  "settings_labs_cloudMachines_label": "E2B クラウドマシン",
-  "settings_labs_cloudMachines_description": "E2B を設定し、新しいクラウドサンドボックスでエージェントを開始します。リモートエージェントが必要です。",
   "settings_labs_plainFolders_label": "プレーンフォルダーのワークスペース",
   "settings_labs_plainFolders_description": "新しいワークスペースを Git なしのプレーンフォルダーとして作成します。オフにしても既存のプレーンフォルダーのワークスペースは引き続き動作します。",
   "settings_labs_tabGroups_label": "タブグループ",

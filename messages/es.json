@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "Labs son funciones experimentales que aún se están probando. Pueden cambiar, fallar o eliminarse en cualquier momento.",
   "settings_labs_remoteAgents_label": "Agentes remotos",
   "settings_labs_remoteAgents_description": "Configura equipos remotos y ejecuta nuevos agentes en ellos. Las sesiones remotas existentes siguen disponibles cuando esto está desactivado.",
-  "settings_labs_cloudMachines_label": "Máquinas en la nube E2B",
-  "settings_labs_cloudMachines_description": "Configura E2B e inicia agentes en un nuevo sandbox en la nube. Requiere agentes remotos.",
   "settings_labs_plainFolders_label": "Espacios de trabajo en carpetas simples",
   "settings_labs_plainFolders_description": "Crea nuevos espacios de trabajo como carpetas simples sin Git. Los existentes siguen funcionando cuando esto está desactivado.",
   "settings_labs_tabGroups_label": "Grupos de pestañas",

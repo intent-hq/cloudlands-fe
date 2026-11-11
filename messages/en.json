@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "Labs are experimental features that are still being tested. They may change, break, or be removed at any time.",
   "settings_labs_remoteAgents_label": "Remote agents",
   "settings_labs_remoteAgents_description": "Set up remote machines and run new agents on them. Existing remote sessions stay available when this is off.",
-  "settings_labs_cloudMachines_label": "E2B cloud machines",
-  "settings_labs_cloudMachines_description": "Set up E2B and start agents on a new cloud sandbox. Needs remote agents.",
   "settings_labs_plainFolders_label": "Plain-folder workspaces",
   "settings_labs_plainFolders_description": "Create new workspaces as plain folders without Git. Existing plain-folder workspaces keep working when this is off.",
   "settings_labs_tabGroups_label": "Tab groups",

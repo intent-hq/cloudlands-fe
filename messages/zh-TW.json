@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "實驗室是仍在測試中的實驗性功能。它們可能隨時變更、發生故障或被移除。",
   "settings_labs_remoteAgents_label": "遠端代理",
   "settings_labs_remoteAgents_description": "設定遠端電腦並在其上執行新的代理。關閉後，現有的遠端工作階段仍可使用。",
-  "settings_labs_cloudMachines_label": "E2B 雲端機器",
-  "settings_labs_cloudMachines_description": "設定 E2B，並在新的雲端沙箱中啟動代理。需要遠端代理。",
   "settings_labs_plainFolders_label": "一般資料夾工作區",
   "settings_labs_plainFolders_description": "將新工作區建立為不使用 Git 的一般資料夾。關閉後，現有的一般資料夾工作區仍可正常運作。",
   "settings_labs_tabGroups_label": "分頁群組",

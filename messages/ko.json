@@ -8403,8 +8403,6 @@
   "settings_labs_disclaimer_description": "랩은 아직 테스트 중인 실험적 기능입니다. 언제든지 변경, 중단 또는 제거될 수 있습니다.",
   "settings_labs_remoteAgents_label": "원격 에이전트",
   "settings_labs_remoteAgents_description": "원격 컴퓨터를 설정하고 새 에이전트를 실행합니다. 꺼도 기존 원격 세션은 계속 사용할 수 있습니다.",
-  "settings_labs_cloudMachines_label": "E2B 클라우드 머신",
-  "settings_labs_cloudMachines_description": "E2B를 설정하고 새 클라우드 샌드박스에서 에이전트를 시작합니다. 원격 에이전트가 필요합니다.",
   "settings_labs_plainFolders_label": "일반 폴더 작업 공간",
   "settings_labs_plainFolders_description": "새 작업 공간을 Git 없는 일반 폴더로 만듭니다. 꺼도 기존 일반 폴더 작업 공간은 계속 작동합니다.",
   "settings_labs_tabGroups_label": "탭 그룹",
