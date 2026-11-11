@@ -9,6 +9,7 @@ import {
   selectProviderCatalogDefaultRemoteIncompatibility,
   selectProviderCatalogProfiles,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { selectRemoteReadyProfilesSupported } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { remoteModelSwitchSupport, type RemoteModelSwitchSupport } from './remote-model-picker';
 import {
   cloudProfileBlockReason,
@@ -31,6 +32,15 @@ import {
 export const selectRemoteMachinesVisible = store.createSelector(
   (state) =>
     selectLabsRemoteAgentsEnabled.select(state) && state.remoteMachines?.supported === true,
+);
+
+/**
+ * Remote-ready marks, the Default's "Use on remote machines" option and naked
+ * mode: only with remote machines visible and a backend that stores them.
+ */
+export const selectRemoteReadyProfilesVisible = store.createSelector(
+  (state) =>
+    selectRemoteMachinesVisible.select(state) && selectRemoteReadyProfilesSupported.select(state),
 );
 
 /** The current backend's exposed machines, by name. */

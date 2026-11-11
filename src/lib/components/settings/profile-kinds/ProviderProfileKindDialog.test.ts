@@ -135,3 +135,70 @@ describe('profile-kind mock helpers', () => {
     expect(signInCommand('codex', true)).toBe('codex login --device-auth');
   });
 });
+
+describe('ProviderProfileKindDialog remote-ready marks', () => {
+  it('marks API key and Token as remote, Different login as this machine only', () => {
+    render(ProviderProfileKindDialog, { props: { ...claude, mode: 'add', remoteMarks: true } });
+    for (const kind of ['apiKey', 'token'])
+      expect(screen.getByTestId(`provider-profile-kind-remote-${kind}`).dataset.remote).toBe('true');
+    expect(
+      screen.getByTestId('provider-profile-kind-remote-differentLogin').dataset.remote,
+    ).toBe('false');
+    expect(screen.queryByTestId('provider-profile-kind-remote-advanced')).toBeNull();
+  });
+
+  it('shows no marks or toggle without remote-ready profiles', () => {
+    render(ProviderProfileKindDialog, {
+      props: { ...claude, mode: 'add', step: 'details', kind: 'advanced', name: 'Gateway' },
+    });
+    expect(screen.queryByTestId('provider-profile-remote')).toBeNull();
+  });
+
+  it('warns about settings that only work on this backend while the toggle is on', async () => {
+    render(ProviderProfileKindDialog, {
+      props: {
+        ...claude,
+        mode: 'add',
+        step: 'details',
+        kind: 'advanced',
+        name: 'Vertex',
+        remoteMarks: true,
+        envRows: [
+          { rowId: 'r1', key: 'AWS_PROFILE', mode: 'value', value: 'work' },
+          { rowId: 'r2', key: 'ANTHROPIC_BASE_URL', mode: 'value', value: 'http://localhost:4000' },
+        ],
+      },
+    });
+    const reasons = () =>
+      [...screen.queryAllByRole('listitem')].map((item) => item.dataset.reason);
+    expect(reasons()).toEqual(['aws-profile', 'local-url']);
+    await fireEvent.click(
+      screen.getByRole('switch', { name: m.settings_providerRemote_useOnRemote_label() }),
+    );
+    expect(screen.queryByTestId('provider-profile-remote-warnings')).toBeNull();
+  });
+
+  it('turns the toggle off and locks it when an account folder is set', async () => {
+    render(ProviderProfileKindDialog, {
+      props: {
+        ...codex,
+        mode: 'add',
+        step: 'details',
+        kind: 'advanced',
+        name: 'Second login',
+        remoteMarks: true,
+        envRows: [{ rowId: 'r1', key: 'CODEX_HOME', mode: 'value', value: '~/.codex-2' }],
+      },
+    });
+    const toggle = screen.getByRole('switch', {
+      name: m.settings_providerRemote_useOnRemote_label(),
+    });
+    await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+    expect(toggle.hasAttribute('disabled')).toBe(true);
+    expect(
+      screen.getByText(
+        m.settings_providerRemote_accountFolderBlocked_description({ keys: 'CODEX_HOME' }),
+      ),
+    ).toBeTruthy();
+  });
+});

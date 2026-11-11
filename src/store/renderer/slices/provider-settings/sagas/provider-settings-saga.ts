@@ -50,6 +50,7 @@ import {
 import { providerProfilesSaga } from './provider-profiles-saga';
 import { providerProfileSetupSaga } from './provider-profile-setup-saga';
 import { providerFastModeSaga } from './provider-fast-mode-saga';
+import { providerRemoteMachineSignInSaga } from './provider-remote-machine-sign-in-saga';
 
 const logger = createLogger('ProviderSettingsSaga');
 
@@ -386,6 +387,7 @@ export function* providerSettingsSaga() {
     yield* all([
       call(persistProviderSettingsQueue, updates),
       call(providerFastModeSaga),
+      call(providerRemoteMachineSignInSaga),
       call(providerProfilesSaga),
       call(providerProfileSetupSaga),
       takeEvery([setAtomicDefaultModel, setSelectedModel], queueModelWorker, updates),

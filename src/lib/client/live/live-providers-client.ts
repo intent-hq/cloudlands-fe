@@ -70,6 +70,9 @@ export class LiveProvidersClient implements ProvidersClient {
       name: params.name,
       ...(params.env ? { env: params.env } : {}),
       ...(params.backup !== undefined ? { backup: params.backup } : {}),
+      ...(params.remoteCompatible !== undefined
+        ? { remoteCompatible: params.remoteCompatible }
+        : {}),
     });
     return ProviderProfileCreateResponseSchema.parse(result);
   }
@@ -80,6 +83,9 @@ export class LiveProvidersClient implements ProvidersClient {
       ...(params.name !== undefined ? { name: params.name } : {}),
       ...(params.env ? { env: params.env } : {}),
       ...(params.backup !== undefined ? { backup: params.backup } : {}),
+      ...(params.remoteCompatible !== undefined
+        ? { remoteCompatible: params.remoteCompatible }
+        : {}),
     });
     return ProviderProfileUpdateResponseSchema.parse(result);
   }
@@ -89,6 +95,9 @@ export class LiveProvidersClient implements ProvidersClient {
       baseProviderId: params.baseProviderId,
       ...(params.name !== undefined ? { name: params.name } : {}),
       ...(params.env ? { env: params.env } : {}),
+      ...(params.remoteCompatible !== undefined
+        ? { remoteCompatible: params.remoteCompatible }
+        : {}),
     });
     return ProviderDefaultUpdateResponseSchema.parse(result);
   }

@@ -57,9 +57,28 @@ export const fastModeWriteSettled = createAction<[providerId: string, editId: nu
   'providerSettings/fastModeWriteSettled',
 );
 
+/**
+ * Naked mode (`providers.remoteMachineSignIn`): per base provider, on remote
+ * machines use the machine's own sign-in when nothing is marked for remote
+ * use. Reset with Fast mode on every settings hydration.
+ */
+export const remoteMachineSignInSupportReceived = createAction<[supported: boolean]>(
+  'providerSettings/remoteMachineSignInSupportReceived',
+);
+export const hydrateRemoteMachineSignIn = createAction<
+  [value: Record<string, boolean>, revision?: number]
+>('providerSettings/hydrateRemoteMachineSignIn');
+export const setRemoteMachineSignIn = createAction<[providerId: string, enabled: boolean]>(
+  'providerSettings/setRemoteMachineSignIn',
+);
+export const remoteMachineSignInWriteSettled = createAction<[providerId: string, editId: number]>(
+  'providerSettings/remoteMachineSignInWriteSettled',
+);
+
 export const initialState: ProviderSettingsState = {
   profiles: initialProfilesState,
   fastMode: emptyFastMode,
+  remoteMachineSignIn: emptyFastMode,
   enabledProviders: {},
   nonDisableableProviderIds: [],
   pendingEnablementOverrides: {},
@@ -324,7 +343,45 @@ providerSettingsReducer.with(hostExecutionConnectionChanged, () => initialState)
 providerSettingsReducer.with(fastModeHydrationStarted, (state) => ({
   ...state,
   fastMode: emptyFastMode,
+  remoteMachineSignIn: emptyFastMode,
 }));
+providerSettingsReducer.with(remoteMachineSignInSupportReceived, (state, { payload: [supported] }) => ({
+  ...state,
+  remoteMachineSignIn: { ...state.remoteMachineSignIn, supported },
+}));
+providerSettingsReducer.with(
+  hydrateRemoteMachineSignIn,
+  (state, { payload: [confirmed, revision] }) => {
+    const current = state.remoteMachineSignIn;
+    if (revision === undefined ? current.revision > 0 : revision < current.revision) return state;
+    return {
+      ...state,
+      remoteMachineSignIn: { ...current, confirmed, revision: revision ?? current.revision },
+    };
+  },
+);
+providerSettingsReducer.with(setRemoteMachineSignIn, (state, { payload: [providerId, enabled] }) => {
+  const current = state.remoteMachineSignIn;
+  if (!current.supported) return state;
+  const editId = current.nextEditId + 1;
+  return {
+    ...state,
+    remoteMachineSignIn: {
+      ...current,
+      nextEditId: editId,
+      pending: { ...current.pending, [providerId]: { enabled, editId } },
+    },
+  };
+});
+providerSettingsReducer.with(
+  remoteMachineSignInWriteSettled,
+  (state, { payload: [providerId, editId] }) => {
+    if (state.remoteMachineSignIn.pending[providerId]?.editId !== editId) return state;
+    const pending = { ...state.remoteMachineSignIn.pending };
+    delete pending[providerId];
+    return { ...state, remoteMachineSignIn: { ...state.remoteMachineSignIn, pending } };
+  },
+);
 providerSettingsReducer.with(fastModeSupportReceived, (state, { payload: [supported] }) => ({
   ...state,
   fastMode: { ...state.fastMode, supported },
@@ -383,12 +440,14 @@ export const providerProfileCreateRequested = createAction(
     name: string;
     env?: EnvEntryWrite[];
     backup?: boolean;
+    remoteCompatible?: boolean;
   }) => ({
     requestId: input.requestId,
     baseProviderId: input.baseProviderId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
     ...(input.backup !== undefined ? { backup: input.backup } : {}),
+    ...(input.remoteCompatible !== undefined ? { remoteCompatible: input.remoteCompatible } : {}),
   }),
 );
 export const providerProfileUpdateRequested = createAction(
@@ -399,25 +458,34 @@ export const providerProfileUpdateRequested = createAction(
     name?: string;
     env?: EnvEntryWrite[];
     backup?: boolean;
+    remoteCompatible?: boolean;
   }) => ({
     requestId: input.requestId,
     profileId: input.profileId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
     ...(input.backup !== undefined ? { backup: input.backup } : {}),
+    ...(input.remoteCompatible !== undefined ? { remoteCompatible: input.remoteCompatible } : {}),
   }),
 );
 /**
- * Save the Default configuration's name and/or env (`providers.profiles.updateDefault`).
+ * Save the Default configuration's name, env and/or remote mark (`providers.profiles.updateDefault`).
  * A blank name restores "Default"; omitted fields keep the saved value.
  */
 export const providerDefaultUpdateRequested = createAction(
   'providerProfiles/defaultUpdateRequested',
-  (input: { requestId: string; baseProviderId: string; name?: string; env?: EnvEntryWrite[] }) => ({
+  (input: {
+    requestId: string;
+    baseProviderId: string;
+    name?: string;
+    env?: EnvEntryWrite[];
+    remoteCompatible?: boolean;
+  }) => ({
     requestId: input.requestId,
     baseProviderId: input.baseProviderId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
+    ...(input.remoteCompatible !== undefined ? { remoteCompatible: input.remoteCompatible } : {}),
   }),
 );
 export const providerDefaultUpdateSucceeded = createAction<

@@ -71,6 +71,65 @@ export const preview = definePreview<ComponentProps<typeof ProviderProfileKindDi
         ],
       },
     },
+    // Remote-ready profiles: the toggle, on, with no warnings.
+    'remote-toggle': {
+      props: {
+        ...claudeBase,
+        mode: 'add',
+        step: 'details',
+        kind: 'advanced',
+        name: 'Gateway',
+        remoteMarks: true,
+        envRows: [
+          { rowId: 'row-1', key: 'ANTHROPIC_BASE_URL', mode: 'value', value: 'https://llm.example.com' },
+          { rowId: 'row-2', key: 'ANTHROPIC_AUTH_TOKEN', mode: 'value', value: 'sk-example' },
+        ],
+      },
+    },
+    // Settings that may only work on this backend.
+    'remote-warnings': {
+      props: {
+        ...claudeBase,
+        mode: 'add',
+        step: 'details',
+        kind: 'advanced',
+        name: 'Vertex',
+        remoteMarks: true,
+        envRows: [
+          { rowId: 'row-1', key: 'GOOGLE_APPLICATION_CREDENTIALS', mode: 'value', value: '~/gcp/key.json' },
+          { rowId: 'row-2', key: 'AWS_PROFILE', mode: 'value', value: 'work' },
+          { rowId: 'row-3', key: 'CLAUDE_CODE_API_KEY_HELPER_TTL_MS', mode: 'value', value: '60000' },
+          { rowId: 'row-4', key: 'ANTHROPIC_BASE_URL', mode: 'value', value: 'http://localhost:4000' },
+        ],
+      },
+    },
+    // Toggle off: no warnings.
+    'remote-off': {
+      props: {
+        ...claudeBase,
+        mode: 'add',
+        step: 'details',
+        kind: 'advanced',
+        name: 'Vertex',
+        remoteMarks: true,
+        remoteCompatible: false,
+        envRows: [
+          { rowId: 'row-1', key: 'GOOGLE_APPLICATION_CREDENTIALS', mode: 'value', value: '~/gcp/key.json' },
+        ],
+      },
+    },
+    // An account folder can't be marked: the toggle is off and unavailable.
+    'remote-account-folder': {
+      props: {
+        ...codexBase,
+        mode: 'add',
+        step: 'details',
+        kind: 'advanced',
+        name: 'Second login',
+        remoteMarks: true,
+        envRows: [{ rowId: 'row-1', key: 'CODEX_HOME', mode: 'value', value: '~/.codex-second' }],
+      },
+    },
     'switched-from-api-key': {
       props: { ...claudeApiKeyEdit, kind: 'advanced', name: 'Anthropic key (unsaved)' },
     },

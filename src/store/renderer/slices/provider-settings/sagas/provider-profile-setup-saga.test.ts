@@ -716,3 +716,75 @@ describe('Edit: replaced key and saved-folder sign-in', () => {
     expect(selectProviderProfileSetups.select(h.state()).e1.phase).toBe('failed');
   });
 });
+
+describe('remote-ready profiles: the create sends the kind’s remote choice', () => {
+  const claudeKeyEnv = [
+    { key: 'ANTHROPIC_API_KEY', kind: 'set' as const, value: 'sk-ant-secret' },
+    { key: 'ANTHROPIC_AUTH_TOKEN', kind: 'unset' as const },
+  ];
+  const storesChoice = (h: ReturnType<typeof harness>) =>
+    h.dispatch(
+      providerProfilesLoaded([], 1, [
+        {
+          baseProviderId: 'claude-code',
+          providerRef: 'claude-code',
+          name: 'Default',
+          env: [],
+          remoteCompatible: false,
+          remoteLaunch: 'machine-sign-in',
+        },
+      ]),
+    );
+  const created = (h: ReturnType<typeof harness>) =>
+    h.log.find((entry) => entry[0] === 'providers.profiles.create')?.[1] as Record<string, unknown>;
+
+  it('marks a key profile for remote machines', async () => {
+    const h = harness();
+    task = h.task;
+    storesChoice(h);
+    h.dispatch(
+      providerProfileSecretSetupRequested({
+        setupId: 's1',
+        baseProviderId: 'claude-code',
+        name: 'Key',
+        backup: false,
+        env: claudeKeyEnv,
+      }),
+    );
+    await settle();
+    expect(created(h).remoteCompatible).toBe(true);
+  });
+
+  it('leaves a Different login profile unmarked', async () => {
+    const h = harness();
+    task = h.task;
+    storesChoice(h);
+    h.dispatch(
+      providerProfileFolderSetupRequested({
+        setupId: 's1',
+        provider: 'claude',
+        name: 'Work',
+        backup: false,
+        suffix: 'k3f9',
+      }),
+    );
+    await settle();
+    expect(created(h).remoteCompatible).toBe(false);
+  });
+
+  it('sends nothing to a daemon without the saved choice', async () => {
+    const h = harness();
+    task = h.task;
+    h.dispatch(
+      providerProfileSecretSetupRequested({
+        setupId: 's1',
+        baseProviderId: 'claude-code',
+        name: 'Key',
+        backup: false,
+        env: claudeKeyEnv,
+      }),
+    );
+    await settle();
+    expect(created(h)).not.toHaveProperty('remoteCompatible');
+  });
+});

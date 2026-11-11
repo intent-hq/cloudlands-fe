@@ -176,6 +176,30 @@ export const selectProviderFastModeValues = store.createSelector(
   },
 );
 
+export const selectRemoteMachineSignInState = store.createSelector(
+  (state) => state.providerSettings.remoteMachineSignIn,
+);
+
+/** The backend stores the remote choice: its Default reads carry `remoteLaunch`. */
+export const selectRemoteReadyProfilesSupported = store.createSelector((state) =>
+  Object.values(profilesState(state).defaults).some((config) => config.remoteLaunch !== undefined),
+);
+
+/** `providers.remoteMachineSignIn` is in `settings.list`. */
+export const selectRemoteMachineSignInSupported = store.createSelector(
+  (state) => state.providerSettings.remoteMachineSignIn?.supported === true,
+);
+
+/** Machine sign-in per base provider, pending clicks applied. A missing key is on. */
+export const selectRemoteMachineSignInValues = store.createSelector(
+  (state): Record<string, boolean> => {
+    const current = state.providerSettings.remoteMachineSignIn;
+    const values = { ...current?.confirmed };
+    for (const [id, edit] of Object.entries(current?.pending ?? {})) values[id] = edit.enabled;
+    return values;
+  },
+);
+
 export const selectFastModeSupportedProviders = store.createSelector((state): string[] => {
   if (!state.providerSettings.fastMode?.supported) return [];
   return ['claude-code', 'codex'].filter(
@@ -202,6 +226,11 @@ export const selectProviderProfilesForBase = store.createSelector(
       (profile) => profile.baseProviderId === baseProviderId,
     ),
 );
+
+/** Base provider ids with at least one named profile. */
+export const selectBaseIdsWithProfiles = store.createSelector((state): string[] => [
+  ...new Set(getItems(profilesState(state).items).map((profile) => profile.baseProviderId)),
+]);
 
 /** Saved Default configurations by base provider id (§5.54); empty on older daemons. */
 export const selectProviderDefaultConfigs = store.createSelector(

@@ -2,6 +2,7 @@
 // Newly introduced availability keys settle to unavailable because no remove action exists.
 import { setupProviderFastModePreview } from '../../../test/provider-fast-mode-preview';
 import { setupProviderProfilesPreview } from '../../../test/provider-profiles-preview';
+import { setupRemoteReadyPreview } from '../../../test/remote-ready-preview';
 import type { ComponentProps } from 'svelte';
 import { definePreview } from '$lib/component-catalog/preview-definition';
 import { store as appStore } from '$store/renderer/store';
@@ -302,6 +303,41 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         const restoreProfiles = setupProviderProfilesPreview({ appOwned: false });
         return () => {
           restoreProfiles();
+          restoreProviders();
+        };
+      },
+    },
+    // Remote Ready pills: on the marked profile and the marked Default row.
+    'remote-ready': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreRemote = setupRemoteReadyPreview();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          remote: { markedProfileIds: ['pproxy0000001'], markedDefaults: ['claude-code'] },
+        });
+        return () => {
+          restoreProfiles();
+          restoreRemote();
+          restoreProviders();
+        };
+      },
+    },
+    // Only the Default, marked: the pill sits on the provider row after the CLI version.
+    'remote-ready-default-only': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreRemote = setupRemoteReadyPreview();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          withoutProfiles: true,
+          remote: { markedProfileIds: [], markedDefaults: ['claude-code'] },
+        });
+        return () => {
+          restoreProfiles();
+          restoreRemote();
           restoreProviders();
         };
       },

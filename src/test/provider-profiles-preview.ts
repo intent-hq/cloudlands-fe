@@ -108,6 +108,26 @@ const backupPreviewProfiles: ProviderProfile[] = [
 ];
 const BACKUP_PROFILE_IDS = new Set(['ppersonal0001', 'pspare0000001']);
 
+/** A remote-choice read: account folders can't be marked; the rest follow `marked`. */
+function remoteRead<T extends { env: EnvEntryRead[]; remoteIncompatibility?: unknown }>(
+  saved: T,
+  marked: boolean,
+) {
+  const { remoteIncompatibility: _previous, ...config } = saved;
+  const folders = config.env
+    .filter((entry) => entry.kind === 'set' && /^(CLAUDE_CONFIG_DIR|CODEX_HOME)$/i.test(entry.key))
+    .map((entry) => entry.key);
+  if (folders.length > 0)
+    return {
+      ...config,
+      remoteCompatible: false,
+      remoteIncompatibility: { reason: 'account-folder', keys: folders },
+    };
+  return marked
+    ? { ...config, remoteCompatible: true }
+    : { ...config, remoteCompatible: false, remoteIncompatibility: { reason: 'not-marked', keys: [] } };
+}
+
 const PREVIEW_AUTH: Record<string, boolean | undefined> = {
   'codex@pwork00000001': true,
   'codex@ppersonal0001': false,
@@ -117,18 +137,24 @@ const PREVIEW_AUTH: Record<string, boolean | undefined> = {
  * Run the production profiles saga against an isolated in-memory daemon:
  * masked reads, documented validation codes, and activation summaries.
  * `withBackups` adds a second Claude Code account and marks backup profiles;
- * `defaultNames` renames base providers' Default configurations.
+ * `defaultNames` renames base providers' Default configurations. `remote`
+ * makes the daemon store the remote choice: the listed profiles and base
+ * providers' Defaults are marked; `withoutProfiles` leaves only the Defaults.
  */
 export function setupProviderProfilesPreview({
   appOwned = true,
   runningProcesses = 1,
   withBackups = false,
   defaultNames = {},
+  remote,
+  withoutProfiles = false,
 }: {
   appOwned?: boolean;
   runningProcesses?: number;
   withBackups?: boolean;
   defaultNames?: Record<string, string>;
+  remote?: { markedProfileIds: string[]; markedDefaults: string[] };
+  withoutProfiles?: boolean;
 } = {}) {
   const providers = appClient.providers;
   const original = {
@@ -147,6 +173,9 @@ export function setupProviderProfilesPreview({
         backup: BACKUP_PROFILE_IDS.has(profile.id),
       }))
     : previewProfiles.map((profile) => ({ ...profile, backup: false }));
+  if (withoutProfiles) profiles = [];
+  if (remote)
+    profiles = profiles.map((profile) => remoteRead(profile, remote.markedProfileIds.includes(profile.id)));
   // Results older than the shown list are ignored, so continue from it.
   let revision = selectProviderProfilesRevision.select(appStore.state) + 1;
 
@@ -155,16 +184,28 @@ export function setupProviderProfilesPreview({
     providerRef: baseProviderId,
     name: defaultNames[baseProviderId] ?? 'Default',
     env: [],
+    ...(remote
+      ? {
+          ...remoteRead({ env: [] }, remote.markedDefaults.includes(baseProviderId)),
+          remoteLaunch: remote.markedDefaults.includes(baseProviderId) ? 'send' : 'machine-sign-in',
+        }
+      : {}),
   }));
 
   providers.listProfiles = async () => ({ profiles, revision, defaults });
-  providers.updateDefault = async ({ baseProviderId, name, env }) => {
+  providers.updateDefault = async ({ baseProviderId, name, env, remoteCompatible }) => {
     const current = defaults.find((d) => d.baseProviderId === baseProviderId)!;
-    const defaultConfig: ProviderDefaultConfig = {
+    let defaultConfig: ProviderDefaultConfig = {
       ...current,
       name: name === undefined ? current.name : name.trim() || 'Default',
       env: env ? maskEnv(env, current.env) : current.env,
     };
+    if (remote && remoteCompatible !== undefined) {
+      defaultConfig = {
+        ...remoteRead(defaultConfig, remoteCompatible),
+        remoteLaunch: remoteCompatible ? 'send' : 'machine-sign-in',
+      };
+    }
     defaults = defaults.map((d) => (d.baseProviderId === baseProviderId ? defaultConfig : d));
     return {
       defaultConfig,
@@ -172,7 +213,7 @@ export function setupProviderProfilesPreview({
       activation: { envChanged: false, runningProcesses: 0 },
     };
   };
-  providers.createProfile = async ({ baseProviderId, name, env = [], backup }) => {
+  providers.createProfile = async ({ baseProviderId, name, env = [], backup, remoteCompatible }) => {
     validate(
       name,
       env,
@@ -189,11 +230,12 @@ export function setupProviderProfilesPreview({
       createdAt: '2026-10-17T11:00:00Z',
       updatedAt: '2026-10-17T11:00:00Z',
       backup: backup === true,
+      ...(remote ? remoteRead({ env: maskEnv(env) }, remoteCompatible === true) : {}),
     };
     profiles = [...profiles, profile];
     return { profile, revision };
   };
-  providers.updateProfile = async ({ profileId, name, env, backup }) => {
+  providers.updateProfile = async ({ profileId, name, env, backup, remoteCompatible }) => {
     const current = profiles.find((profile) => profile.id === profileId);
     if (!current)
       throw Object.assign(new Error('not found'), { rpcCode: -32602, data: { code: 'not-found' } });
@@ -203,7 +245,7 @@ export function setupProviderProfilesPreview({
       profiles.filter((p) => p.baseProviderId === current.baseProviderId && p.id !== profileId),
     );
     const envChanged = env !== undefined && env.some((entry) => entry.kind !== 'keep');
-    const profile: ProviderProfile = {
+    let profile: ProviderProfile = {
       ...current,
       name: (name ?? current.name).trim(),
       env: env ? maskEnv(env, current.env) : current.env,
@@ -212,6 +254,7 @@ export function setupProviderProfilesPreview({
         : current.settingsFingerprint,
       ...(backup !== undefined ? { backup } : {}),
     };
+    if (remote && remoteCompatible !== undefined) profile = remoteRead(profile, remoteCompatible);
     profiles = profiles.map((p) => (p.id === profileId ? profile : p));
     return {
       profile,

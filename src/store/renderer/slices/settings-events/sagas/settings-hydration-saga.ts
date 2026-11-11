@@ -23,7 +23,9 @@ import { autoArchiveIdleAfterDaysCleared } from '../../sidebar-nav/sidebar-nav-s
 import {
   fastModeHydrationStarted,
   fastModeSupportReceived,
+  remoteMachineSignInSupportReceived,
 } from '../../provider-settings/provider-settings-slice';
+import { REMOTE_MACHINE_SIGN_IN_SETTING } from '$shared/provider-profiles';
 
 const logger = createLogger('SettingsHydrationSaga');
 
@@ -67,6 +69,9 @@ function* readSettingsSnapshotSaga() {
           fastModeSupported: settings.some(
             (s) => s.path === 'providers.fastMode' && s.type === 'object',
           ),
+          remoteMachineSignInSupported: settings.some(
+            (s) => s.path === REMOTE_MACHINE_SIGN_IN_SETTING && s.type === 'object',
+          ),
         };
       }
       logger.error('settings hydration returned an empty snapshot, retrying');
@@ -94,6 +99,7 @@ export function* hydrateSettingsOnceSaga() {
   if (snapshot) {
     yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
     yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
+    yield* put(remoteMachineSignInSupportReceived(snapshot.remoteMachineSignInSupported));
   }
 }
 
@@ -108,6 +114,7 @@ function* settingsSnapshotLoop() {
       yield* call(applySettingsChanges, snapshot.changes, snapshot.revision);
       for (const { path } of snapshot.changes) revisions.set(path, snapshot.revision);
       yield* put(fastModeSupportReceived(snapshot.fastModeSupported));
+      yield* put(remoteMachineSignInSupportReceived(snapshot.remoteMachineSignInSupported));
     }
     while (true) {
       const first = yield* take(channel);

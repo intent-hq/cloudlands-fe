@@ -57,14 +57,15 @@ export function remoteIncompatibilityFor(
   return defaultRemoteIncompatibility?.[providerRef] ?? null;
 }
 
-/** "Uses an account folder on {backend}, so it can't run on other machines". */
+/** Why a configuration can't run on another machine: account folder, not marked, or other. */
 export function remoteIncompatibilityMessage(
   incompatibility: RemoteIncompatibility,
   backend: string,
 ): string {
-  return incompatibility.reason === 'account-folder'
-    ? m.chat_modelPicker_remoteAccountFolder_description({ backend })
-    : m.chat_modelPicker_remoteIncompatible_description();
+  if (incompatibility.reason === 'account-folder')
+    return m.chat_modelPicker_remoteAccountFolder_description({ backend });
+  if (incompatibility.reason === 'not-marked') return m.chat_modelPicker_remoteNotMarked_description();
+  return m.chat_modelPicker_remoteIncompatible_description();
 }
 
 /** The machine report counts as old after a day. */

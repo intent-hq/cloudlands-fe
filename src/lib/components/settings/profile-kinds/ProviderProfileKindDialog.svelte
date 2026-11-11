@@ -17,6 +17,10 @@
    * key check ("Key works" / "Key was rejected"); Advanced reuses today's env
    * editor. Edit screens show the running-sessions warning once env changes,
    * and Switch to Advanced keeps the unsaved name and backup switch.
+   *
+   * With `remoteMarks` (remote-ready profiles), the picker marks each kind and
+   * Advanced shows "Use on remote machines" plus warnings for settings that
+   * may only work on this backend.
    */
   import { onDestroy } from 'svelte';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
@@ -49,6 +53,11 @@
     type ProfileSignInState,
   } from './profile-kind-mock';
   import { isJwtShaped, randomSuffix } from '$lib/provider-profile-kinds';
+  import {
+    accountFolderKeys,
+    remoteWarningMessage,
+    remoteWarningsForRows,
+  } from '$lib/provider-remote-ready';
 
   interface Props {
     open?: boolean;
@@ -97,6 +106,10 @@
     envRows?: EnvRow[];
     /** Advanced: field errors keyed like today's dialog (`<rowId>.key`, `env`, …). */
     envErrors?: Record<string, string>;
+    /** Mark kinds for remote machines and show Advanced's toggle. */
+    remoteMarks?: boolean;
+    /** Advanced: "Use on remote machines". */
+    remoteCompatible?: boolean;
     /** Different login create; the parent closes the dialog once the terminal opens. */
     onCreateAndSignIn?: () => void;
     /** API key / Token create (the parent then drives `signIn` through the key check). */
@@ -142,6 +155,8 @@
         : [newRow(() => crypto.randomUUID())],
     ),
     envErrors = {},
+    remoteMarks = false,
+    remoteCompatible = $bindable(true),
     onCreateAndSignIn,
     onCreate,
     onSave,
@@ -151,6 +166,16 @@
   }: Props = $props();
 
   const picking = $derived(mode === 'add' && step === 'pick');
+  /** Advanced: an account folder can't be marked for remote machines. */
+  const folderKeys = $derived(
+    remoteMarks && kind === 'advanced' ? accountFolderKeys(envRows) : [],
+  );
+  $effect(() => {
+    if (folderKeys.length > 0 && remoteCompatible) remoteCompatible = false;
+  });
+  const remoteWarnings = $derived(
+    remoteMarks && kind === 'advanced' && remoteCompatible ? remoteWarningsForRows(envRows) : [],
+  );
   const folderKind = $derived(kind === 'differentLogin');
   /** Claude API key and Token (both providers): a pasted secret plus the key check. */
   const secretKind = $derived(kind === 'apiKey' || kind === 'token' ? kind : null);
@@ -321,7 +346,7 @@
   onSubmit={submit}
 >
   {#if picking}
-    <ProfileKindPicker {provider} disabled={busy} onPick={pick} />
+    <ProfileKindPicker {provider} disabled={busy} {remoteMarks} onPick={pick} />
   {:else}
     <div class="space-y-5" data-testid="provider-profile-kind-details" data-kind={kind}>
       <FormField
@@ -389,6 +414,48 @@
           errors={envErrors}
           disabled={fieldsDisabled}
         />
+        {#if remoteMarks}
+          <div class="space-y-2" data-testid="provider-profile-remote">
+            <div class="flex items-start justify-between gap-4">
+              <div class="min-w-0 space-y-1">
+                <label for="provider-profile-remote-switch" class="type-body text-foreground">
+                  {m.settings_providerRemote_useOnRemote_label()}
+                </label>
+                <p
+                  id="provider-profile-remote-description"
+                  class="type-caption text-muted-foreground"
+                >
+                  {folderKeys.length > 0
+                    ? m.settings_providerRemote_accountFolderBlocked_description({
+                        keys: folderKeys.join(', '),
+                      })
+                    : m.settings_providerRemote_useOnRemote_description()}
+                </p>
+              </div>
+              <Switch
+                id="provider-profile-remote-switch"
+                bind:checked={remoteCompatible}
+                size="sm"
+                disabled={fieldsDisabled || folderKeys.length > 0}
+                ariaLabel={m.settings_providerRemote_useOnRemote_label()}
+                ariaDescribedby="provider-profile-remote-description"
+              />
+            </div>
+            {#if remoteWarnings.length > 0}
+              <ul class="space-y-1" data-testid="provider-profile-remote-warnings">
+                {#each remoteWarnings as warning (warning.reason)}
+                  <li
+                    class="flex items-start gap-2 type-caption text-warning-ink"
+                    data-reason={warning.reason}
+                  >
+                    <Fa icon={faTriangleExclamation} class="mt-0.5 size-3 shrink-0" />
+                    <span>{remoteWarningMessage(warning)}</span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+        {/if}
       {/if}
 
       {#if envChanged}
