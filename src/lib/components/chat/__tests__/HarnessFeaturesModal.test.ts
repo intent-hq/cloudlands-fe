@@ -25,7 +25,6 @@ import {
   humanizeHarnessFeatureKey,
 } from '../harness-feature-catalog';
 import { FEATURE_PATHS } from '$lib/components/settings/agent-feature-definitions';
-import { initAppStore, store } from '$store/renderer/store';
 
 afterEach(cleanup);
 
@@ -173,15 +172,7 @@ describe('HarnessFeaturesModal', () => {
 });
 
 describe('HarnessFeaturesModal starting context', () => {
-  let storeContext: ReturnType<typeof initAppStore> | undefined;
-  beforeEach(() => {
-    backendRequest.mockReset();
-    storeContext = initAppStore(store);
-  });
-  afterEach(() => {
-    storeContext?.dispose?.();
-    storeContext = undefined;
-  });
+  beforeEach(() => backendRequest.mockReset());
 
   const breakdown = {
     available: true,
@@ -261,11 +252,13 @@ describe('HarnessFeaturesModal starting context', () => {
     expect(backendRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('skips the session read for harnesses that cannot carry a breakdown', async () => {
-    renderModal({ version: '3.9', features: {}, agentId: 'agent-old' });
+  it('leaves the harness decision to the daemon for every version', async () => {
+    const answered = respondWith({ available: false, reason: 'harness-predates-breakdown' });
+    renderModal({ version: '3.11', features: {}, agentId: 'agent-older' });
 
     await screen.findByRole('dialog');
-    expect(backendRequest).not.toHaveBeenCalled();
+    await answered();
+    expect(backendRequest).toHaveBeenCalledWith('agent.getSession', { agentId: 'agent-older' });
     expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
   });
 });

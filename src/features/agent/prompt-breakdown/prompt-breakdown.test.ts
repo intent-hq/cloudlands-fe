@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { harnessMayRecordPromptBreakdown, parsePromptBreakdown } from './prompt-breakdown';
+import { parsePromptBreakdown } from './prompt-breakdown';
 
 function section(
   id: string,
@@ -145,23 +145,5 @@ describe('parsePromptBreakdown', () => {
       }),
     );
     expect(view?.hiddenSkills.map((skill) => skill.name)).toEqual(['memory', 'xcode']);
-  });
-});
-
-describe('harnessMayRecordPromptBreakdown', () => {
-  it('skips the session read for harnesses that never record a breakdown', () => {
-    expect(harnessMayRecordPromptBreakdown(undefined)).toBe(false);
-    expect(harnessMayRecordPromptBreakdown(null)).toBe(false);
-    expect(harnessMayRecordPromptBreakdown('3.9')).toBe(false);
-    expect(harnessMayRecordPromptBreakdown('3.11')).toBe(false);
-    expect(harnessMayRecordPromptBreakdown('2.14')).toBe(false);
-  });
-
-  it('reads the session for 3.10, 3.12 and later, and for versions it cannot parse', () => {
-    expect(harnessMayRecordPromptBreakdown('3.10')).toBe(true);
-    expect(harnessMayRecordPromptBreakdown('3.12')).toBe(true);
-    expect(harnessMayRecordPromptBreakdown('3.13')).toBe(true);
-    expect(harnessMayRecordPromptBreakdown('4.0')).toBe(true);
-    expect(harnessMayRecordPromptBreakdown('next')).toBe(true);
   });
 });

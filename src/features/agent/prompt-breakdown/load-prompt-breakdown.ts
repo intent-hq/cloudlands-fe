@@ -7,7 +7,7 @@ import { parsePromptBreakdown, type PromptBreakdownView } from './prompt-breakdo
 
 export async function loadPromptBreakdown(
   agentId: string,
-  workspaceId: string | undefined,
+  workspaceId?: string,
 ): Promise<PromptBreakdownView | null> {
   try {
     const result = await backendRequest<{ session?: { promptBreakdown?: unknown } }>(
