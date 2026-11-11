@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
-import { homeBulkTargets, toggleHomeSelection } from './home-multi-select';
+import { homeBulkTargets, rangeHomeSelection, toggleHomeSelection } from './home-multi-select';
 
 const row = (id: string, status = WorkspaceStatusEnum.Active) => ({ id, status }) as Workspace;
 
@@ -42,6 +42,33 @@ describe('toggleHomeSelection', () => {
       multi: [],
       selectedId: 'b',
     });
+  });
+});
+
+describe('rangeHomeSelection', () => {
+  const order = ['a', 'b', 'c', 'd', 'e'];
+
+  it('selects every row from the anchor to the clicked row, in screen order', () => {
+    expect(rangeHomeSelection(order, 'b', 'd')).toEqual({
+      multi: ['b', 'c', 'd'],
+      selectedId: null,
+    });
+  });
+
+  it('selects upward ranges in screen order too', () => {
+    expect(rangeHomeSelection(order, 'd', 'a')).toEqual({
+      multi: ['a', 'b', 'c', 'd'],
+      selectedId: null,
+    });
+  });
+
+  it('falls back to a single selection for a one-row range', () => {
+    expect(rangeHomeSelection(order, 'c', 'c')).toEqual({ multi: [], selectedId: 'c' });
+  });
+
+  it('acts like a plain click without an anchor, or when the anchor left the screen', () => {
+    expect(rangeHomeSelection(order, null, 'c')).toEqual({ multi: [], selectedId: 'c' });
+    expect(rangeHomeSelection(order, 'gone', 'c')).toEqual({ multi: [], selectedId: 'c' });
   });
 });
 

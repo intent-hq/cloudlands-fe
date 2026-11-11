@@ -15,7 +15,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
   import { openHomeWorkspaceFromEvent, type HomeDoubleClickOpener } from './home-workspace-opening';
-  import { isHomeSelectionToggle } from './home-multi-select';
+  import { isHomeRangeClick, isHomeSelectionToggle } from './home-multi-select';
 
   let {
     workspaces,
@@ -23,6 +23,7 @@
     selectedIds,
     onselect,
     ontoggleselect,
+    onrangeselect,
     onopen,
     doubleClick,
     oncontextmenu,
@@ -40,6 +41,7 @@
     selectedIds: readonly string[];
     onselect: (id: string) => void;
     ontoggleselect: (id: string) => void;
+    onrangeselect: (id: string) => void;
     onopen: (id: string) => void;
     /** Home's double-click opener; card clicks arm it. */
     doubleClick: HomeDoubleClickOpener;
@@ -206,6 +208,9 @@
       onpointerdown={() => {
         suppressClick = false;
       }}
+      onmousedown={(event) => {
+        if (isHomeRangeClick(event)) event.preventDefault();
+      }}
       onclick={(event) => {
         if (suppressClick) {
           event.preventDefault();
@@ -213,6 +218,7 @@
         }
         doubleClick.arm(event, workspace.id);
         if (isHomeSelectionToggle(event)) ontoggleselect(workspace.id);
+        else if (isHomeRangeClick(event)) onrangeselect(workspace.id);
         else onselect(workspace.id);
       }}
       oncontextmenu={(event) => oncontextmenu?.(event, workspace)}

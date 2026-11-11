@@ -23,6 +23,18 @@ export function toggleHomeSelection(selection: HomeSelection, id: string): HomeS
   return { multi: next, selectedId: null };
 }
 
+/** Shift-click on `id`: every row from `anchor` to `id`, in screen `order`. */
+export function rangeHomeSelection(
+  order: readonly string[],
+  anchor: string | null,
+  id: string,
+): HomeSelection {
+  const from = anchor === null ? -1 : order.indexOf(anchor);
+  const to = order.indexOf(id);
+  if (from < 0 || to < 0 || from === to) return { multi: [], selectedId: id };
+  return { multi: order.slice(Math.min(from, to), Math.max(from, to) + 1), selectedId: null };
+}
+
 function isNestedControl(event: MouseEvent): boolean {
   const control =
     event.target instanceof Element
@@ -41,6 +53,12 @@ export function isHomeRowClick(event: MouseEvent): boolean {
 /** A primary Cmd/Ctrl-click on the row itself. */
 export function isHomeSelectionToggle(event: MouseEvent): boolean {
   if (!isCmdClickModifier({ event }) || event.shiftKey || event.altKey) return false;
+  return isHomeRowClick(event);
+}
+
+/** A primary Shift-click on the row itself; also used to stop the text selection it starts. */
+export function isHomeRangeClick(event: MouseEvent): boolean {
+  if (!event.shiftKey || event.altKey || isCmdClickModifier({ event })) return false;
   return isHomeRowClick(event);
 }
 
