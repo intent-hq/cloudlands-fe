@@ -603,6 +603,7 @@
   "chat_failureRecovery_recorded_many": "기록된 실패 {count}건",
   "chat_failureRecovery_recorded_one": "기록된 실패 1건",
   "chat_failureRecovery_title_label": "이 응답을 완료하지 못했습니다",
+  "chat_harnessFeaturesModal_capabilities_title": "기능",
   "chat_harnessFeaturesModal_description": "이 에이전트 세션이 생성될 때 적용된 기능입니다. 이 스냅샷은 읽기 전용이며 세션이 유지되는 동안 변경되지 않습니다.",
   "chat_harnessFeaturesModal_title": "하네스 v{version}",
   "chat_hookWakeAttribution_fallbackName_label": "훅",

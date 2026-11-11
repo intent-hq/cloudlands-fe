@@ -603,6 +603,7 @@
   "chat_failureRecovery_recorded_many": "{count} 筆失敗記錄",
   "chat_failureRecovery_recorded_one": "1 筆失敗記錄",
   "chat_failureRecovery_title_label": "無法完成此回覆",
+  "chat_harnessFeaturesModal_capabilities_title": "功能",
   "chat_harnessFeaturesModal_description": "此智慧體工作階段建立時啟用的功能。此快照為唯讀，在工作階段存續期間保持不變。",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_hookWakeAttribution_fallbackName_label": "鉤子",

@@ -603,6 +603,7 @@
   "chat_failureRecovery_recorded_many": "{count} échecs enregistrés",
   "chat_failureRecovery_recorded_one": "1 échec enregistré",
   "chat_failureRecovery_title_label": "Impossible de terminer cette réponse",
+  "chat_harnessFeaturesModal_capabilities_title": "Capacités",
   "chat_harnessFeaturesModal_description": "Capacités avec lesquelles cette session d'agent a été créée. Cet instantané est en lecture seule et reste fixe pendant toute la durée de la session.",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_hookWakeAttribution_fallbackName_label": "Hook",

@@ -603,6 +603,7 @@
   "chat_failureRecovery_recorded_many": "{count} fallos registrados",
   "chat_failureRecovery_recorded_one": "1 fallo registrado",
   "chat_failureRecovery_title_label": "No se pudo completar esta respuesta",
+  "chat_harnessFeaturesModal_capabilities_title": "Capacidades",
   "chat_harnessFeaturesModal_description": "Capacidades con las que se creó esta sesión de agente. Esta instantánea es de solo lectura y permanece fija durante toda la sesión.",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_hookWakeAttribution_fallbackName_label": "Hook",
