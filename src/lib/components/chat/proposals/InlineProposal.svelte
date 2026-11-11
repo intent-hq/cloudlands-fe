@@ -98,6 +98,8 @@
     isApplied ? (lifecycleEntry?.result?.workspaceId ?? daemonCreatedWorkspaceId) : undefined,
   );
 
+  const launchError = $derived(isApplied ? lifecycleEntry?.result?.launchError : undefined);
+
   function flushDraft(): void {
     if (draftSaveTimer !== null) clearTimeout(draftSaveTimer);
     draftSaveTimer = null;
@@ -177,6 +179,7 @@
           {proposal}
           lifecycleId={localProposalId}
           resolvedCreatedWorkspaceId={daemonCreatedWorkspaceId}
+          proposer={$agentSession$}
           suppressLocalDiscard
           {initialDraft}
           onDraftChange={handleDraftChange}
@@ -196,13 +199,21 @@
       >
         <div class="min-w-0 flex-1">
           <p class="type-body truncate font-medium text-foreground">{proposal.preview.title}</p>
-          <p class={isApplied ? 'type-caption text-success' : 'type-caption text-muted-foreground'}>
-            {isApplied && proposal.kind === 'workspace-create'
-              ? m.chat_proposalCard_workspaceCreated_label()
-              : isApplied
-                ? m.chat_shared_appliedStatus_label()
-                : m.chat_shared_dismissedStatus_label()}
-          </p>
+          {#if launchError}
+            <p class="type-caption text-warning-ink" data-testid="proposal-launch-error">
+              {launchError}
+            </p>
+          {:else}
+            <p
+              class={isApplied ? 'type-caption text-success' : 'type-caption text-muted-foreground'}
+            >
+              {isApplied && proposal.kind === 'workspace-create'
+                ? m.chat_proposalCard_workspaceCreated_label()
+                : isApplied
+                  ? m.chat_shared_appliedStatus_label()
+                  : m.chat_shared_dismissedStatus_label()}
+            </p>
+          {/if}
         </div>
         {#if createdWorkspaceId}
           <a href={`/workspace/${createdWorkspaceId}`} onclick={handleOpenWorkspace}>

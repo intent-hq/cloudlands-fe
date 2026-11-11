@@ -60,6 +60,10 @@ function notifySubscribers(): void {
   for (const push of subscriptions) push();
 }
 
+// Start on reads the remote-machine store; its behavior is covered by proposal-start-on.ct.spec.ts.
+vi.mock('./ProposalStartOn.svelte', async () => ({
+  default: (await import('./__tests__/MockProposalStartOn.svelte')).default,
+}));
 vi.mock('$store/renderer/slices/agent-session/agent-session-selectors', () => ({
   selectAgentSession: vi.fn(() =>
     readable(() => ({

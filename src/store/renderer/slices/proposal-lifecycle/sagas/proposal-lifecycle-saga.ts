@@ -63,6 +63,7 @@ function isProposalApplyResult(value: unknown): value is ProposalApplyResult {
   const origin = candidate.proposalOrigin;
   return (
     (candidate.workspaceId === undefined || typeof candidate.workspaceId === 'string') &&
+    (candidate.launchError === undefined || typeof candidate.launchError === 'string') &&
     (origin === undefined ||
       (!!origin &&
         typeof origin === 'object' &&

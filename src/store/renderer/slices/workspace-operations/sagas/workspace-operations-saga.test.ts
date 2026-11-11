@@ -1264,6 +1264,44 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('applies a card whose first agent failed to start after the workspace committed', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: false,
+      error: 'Internal error',
+      errorCode: 'launch-failed',
+      launchFailure: {
+        workspaceId: 'ws-kept',
+        agentId: 'agent-kept',
+        cause: 'Mac mini went offline before the agent started.',
+      },
+    });
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-launch-failed') }));
+    await settle();
+    const entry = run.state().proposalLifecycle['create-launch-failed'];
+    expect(entry).toMatchObject({ status: 'applied', result: { workspaceId: 'ws-kept' } });
+    expect(entry?.result?.launchError).toContain('Mac mini went offline');
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a launch-failed card applied even when the error carries no workspace id', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: false,
+      error: 'first agent failed to start',
+      errorCode: 'launch-failed',
+    });
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-launch-bare') }));
+    await settle();
+    const entry = run.state().proposalLifecycle['create-launch-bare'];
+    expect(entry?.status).toBe('applied');
+    expect(entry?.result?.launchError).toContain('first agent failed to start');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('creates for a second id-less card whose payload matches an applied one', async () => {
     mocks.create
       .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-first') } })

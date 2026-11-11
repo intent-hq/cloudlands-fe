@@ -146,16 +146,24 @@ function backendHostPlatform(state: Parameters<typeof selectCurrentBackendLabel.
   return connection?.hostOs ? { os: connection.hostOs, arch: connection.hostArch } : undefined;
 }
 
-/** The backend first (by its label), then each machine available to it; empty while hidden. */
+/** The backend first (by its label), then each machine available to it, usable or not. */
+export const selectStartOnRows = store.createSelector((state): StartOnOption[] =>
+  startOnOptions({
+    backendLabel: selectCurrentBackendLabel.select(state),
+    backendPlatform: backendHostPlatform(state),
+    machines: selectRemoteMachines.select(state),
+    cloud: startOnCloud(state),
+  }),
+);
+
+/** `selectStartOnRows`; empty while hidden. */
 export const selectStartOnOptions = store.createSelector((state): StartOnOption[] =>
-  selectStartOnVisible.select(state)
-    ? startOnOptions({
-        backendLabel: selectCurrentBackendLabel.select(state),
-        backendPlatform: backendHostPlatform(state),
-        machines: selectRemoteMachines.select(state),
-        cloud: startOnCloud(state),
-      })
-    : [],
+  selectStartOnVisible.select(state) ? selectStartOnRows.select(state) : [],
+);
+
+/** The backend accepts `workspace.create.initialAgent.placement` (`remoteInitialAgent: 1`). */
+export const selectInitialAgentPlacementSupported = store.createSelector(
+  (state) => state.remoteMachines?.initialAgentPlacement === true,
 );
 
 /**

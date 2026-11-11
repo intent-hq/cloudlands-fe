@@ -159,6 +159,8 @@ export function reconcileAppliedProposals(input: {
     // replay naming another card) — resolving it here would undo that.
     // Only an older daemon (no report) needs this client-side fallback.
     if (applied.result?.proposalOrigin ?? local?.result?.proposalOrigin) continue;
+    // A `launch-failed` create is an error the daemon resolves itself; never resolve after one.
+    if (applied.result?.launchError ?? local?.result?.launchError) continue;
     const workspaceId = applied.result?.workspaceId ?? local?.result?.workspaceId;
     // i18n-ignore (wire detail appended to the model notice, not UI copy)
     const detail = workspaceId ? `Created workspace ${workspaceId}.` : undefined;

@@ -102,6 +102,11 @@ export function buildCreateWorkspaceRequestFromProposal(
   // returns it on the `workspace.create` result. Strip any id carried on the
   // proposal payload so it never reaches the wire.
   const { agentId: _droppedAgentId, ...initialAgentFields } = initialAgent ?? {};
+  // The card's Start on: a placement object, or null for the backend.
+  const placementEdit = editedFields?.placement;
+  if (placementEdit === null) delete initialAgentFields.placement;
+  else if (recordValue(placementEdit))
+    initialAgentFields.placement = placementEdit as InitialAgentRequest['placement'];
 
   const githubUrl = stringOverride(
     siblingScoped ? undefined : editedFields?.githubUrl,

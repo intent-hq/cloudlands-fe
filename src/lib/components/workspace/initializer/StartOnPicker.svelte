@@ -6,7 +6,7 @@
   import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import { faDesktop } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faDesktop } from '@fortawesome/free-solid-svg-icons';
   import { faCloud } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -18,13 +18,16 @@
    * rendered while another machine can take it (see `startOnVisible`).
    */
   interface Props {
-    presentation?: 'form' | 'footer';
+    /** `metadata`: a quiet row trigger under a visible label the host renders. */
+    presentation?: 'form' | 'footer' | 'metadata';
     /** Selected option id: a machine id, or '' for the current backend. */
     value: string;
     options: StartOnOption[];
     onChange: (machineId: string) => void;
     /** Why only the current backend can be used (shown under the value; the row is disabled). */
     lockedReason?: string;
+    /** Field name; `metadata` shows it, muted, before the value. */
+    label?: string;
     /** Whether the machine list is open (bindable; previews open it directly). */
     open?: boolean;
   }
@@ -35,6 +38,7 @@
     options,
     onChange,
     lockedReason,
+    label = m.workspace_initialAgentPicker_startOn_label(),
     open = $bindable(false),
   }: Props = $props();
 
@@ -68,7 +72,7 @@
   });
 </script>
 
-<div class={presentation === 'footer' ? 'min-w-0' : 'w-full'} data-testid="start-on-picker">
+<div class={presentation === 'footer' ? 'min-w-0' : 'w-full min-w-0'} data-testid="start-on-picker">
   <Popover.Root
     bind:open
     onOpenChange={(next) => {
@@ -80,21 +84,32 @@
         <Button
           {...props}
           bind:ref={trigger}
-          variant="ghost"
-          size="sm"
+          variant={presentation === 'metadata' ? 'plain' : 'ghost'}
+          size={presentation === 'metadata' ? undefined : 'sm'}
           type="button"
           wrapContent={false}
           disabled={!!lockedReason}
           aria-labelledby="{labelId} {valueId}"
           class={presentation === 'footer'
             ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
-            : workspacePickerStyles.fieldTrigger}
+            : presentation === 'metadata'
+              ? `${workspacePickerStyles.bareTrigger} w-full`
+              : workspacePickerStyles.fieldTrigger}
         >
           <span
-            class={presentation === 'footer' ? 'sr-only' : workspacePickerStyles.fieldLabel}
-            id={labelId}>{m.workspace_initialAgentPicker_startOn_label()}</span
+            class={presentation === 'form'
+              ? workspacePickerStyles.fieldLabel
+              : presentation === 'metadata'
+                ? 'shrink-0 text-muted-foreground'
+                : 'sr-only'}
+            id={labelId}>{label}</span
           >
-          <span class="min-w-0 flex-1 text-left" id={valueId}>
+          <span
+            class={presentation === 'metadata'
+              ? workspacePickerStyles.bareValue
+              : 'min-w-0 flex-1 text-left'}
+            id={valueId}
+          >
             <span class="block truncate">{selected?.label}</span>
             {#if lockedReason}
               <span class="block truncate text-xs text-subtle" data-testid="start-on-locked-reason"
@@ -102,16 +117,27 @@
               >
             {/if}
           </span>
+          {#if presentation === 'metadata' && !lockedReason}
+            <Fa icon={faChevronDown} class={workspacePickerStyles.bareChevron} />
+          {/if}
         </Button>
       {/snippet}
     </Popover.Trigger>
     <Popover.Content
       role="dialog"
       portalProps={{ to: dialogPortalTarget() }}
-      aria-label={m.workspace_initialAgentPicker_startOn_label()}
-      side={presentation === 'footer' ? 'top' : isMobile.current || menuBelow ? 'bottom' : 'left'}
-      align={presentation === 'footer' || isMobile.current || menuBelow ? 'end' : 'start'}
-      sideOffset={presentation === 'footer' || isMobile.current || menuBelow ? 4 : 24}
+      aria-label={label}
+      side={presentation === 'footer'
+        ? 'top'
+        : presentation === 'metadata' || isMobile.current || menuBelow
+          ? 'bottom'
+          : 'left'}
+      align={presentation === 'metadata'
+        ? 'start'
+        : presentation === 'footer' || isMobile.current || menuBelow
+          ? 'end'
+          : 'start'}
+      sideOffset={presentation !== 'form' || isMobile.current || menuBelow ? 4 : 24}
       strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
       preventScroll={false}
       class="flex min-h-0 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 {hasCloud
@@ -135,7 +161,7 @@
         options={machineOptions}
         {open}
         bind:inputRef={searchInput}
-        ariaLabel={m.workspace_initialAgentPicker_startOn_label()}
+        ariaLabel={label}
         placeholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
         searchPlaceholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
         staticPosition
