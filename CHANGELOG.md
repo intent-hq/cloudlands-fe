@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.320.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.319.0...v2.320.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **agent:** group starting context by owner in the harness dialog ([#4456](https://github.com/intent-hq/cloudlands-fe/issues/4456)) ([5229c20](https://github.com/intent-hq/cloudlands-fe/commit/5229c20c336d4021645cc63c8eb4acc1b1deb838))
+* **desktop:** ask macOS for permissions when desktop control is enabled ([#4452](https://github.com/intent-hq/cloudlands-fe/issues/4452)) ([5fa13cd](https://github.com/intent-hq/cloudlands-fe/commit/5fa13cd52086484dab453be3bde3a4d20f326b5b))
+
 ## [2.319.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.318.0...v2.319.0) (2026-11-11)
 
 
