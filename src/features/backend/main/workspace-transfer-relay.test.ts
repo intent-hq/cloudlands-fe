@@ -1040,8 +1040,9 @@ describe('workspace-transfer relay — cancel', () => {
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     const result = await startPromise;
 
-    expect(result).toMatchObject({ success: false, canceled: true });
-    // The commit landed: it must not be aborted, only surfaced as cancelled.
+    // The commit landed: report it so callers do not show the workspace as untransferred.
+    expect(result).toEqual({ success: false, canceled: true, importedOnTarget: true });
+    // It must not be aborted, only surfaced as cancelled.
     expect(target.calls.some((c) => c.method === 'workspace.import.abort')).toBe(false);
     expect(deps.logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('cancelled during target commit'),

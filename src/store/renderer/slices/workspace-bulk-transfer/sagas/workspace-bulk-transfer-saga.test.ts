@@ -414,4 +414,21 @@ describe('workspaceBulkTransferSaga — run', () => {
     expect(items(h).map((item) => item.sizeStatus)).toEqual(['loaded', 'loaded', 'loaded']);
     h.task.cancel();
   });
+
+  it('reports a cancelled start whose import landed on the destination as failed', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) =>
+      channel === 'transfer:start'
+        ? { success: false, canceled: true, importedOnTarget: true }
+        : { success: true },
+    );
+    const h = ready();
+    await settle();
+    h.put(bulkTransferStartRequested());
+    await settle();
+
+    expect(calls('transfer:start')).toHaveLength(1);
+    expect(calls('transfer:finalize')).toHaveLength(0);
+    expect(items(h).map((item) => item.status)).toEqual(['failed', 'skipped', 'skipped']);
+    h.task.cancel();
+  });
 });

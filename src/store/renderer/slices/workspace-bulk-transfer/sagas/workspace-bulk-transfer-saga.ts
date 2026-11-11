@@ -188,9 +188,9 @@ function* transferOne(
       }
       result = yield* join(started);
     }
-    if (result.canceled) return { cancelled: true, resumeFailed: 0 };
-    if (stopped) {
-      if (result.success) {
+    if (result.canceled && !result.importedOnTarget) return { cancelled: true, resumeFailed: 0 };
+    if (stopped || result.canceled) {
+      if (result.success || result.importedOnTarget) {
         yield* put(
           bulkTransferItemFailed({
             workspaceId,
