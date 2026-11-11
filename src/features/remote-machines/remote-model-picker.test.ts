@@ -6,6 +6,7 @@ import {
   isRemoteRefSignedOut,
   machineReportFreshness,
   MACHINE_REPORT_STALE_MS,
+  remoteAutoPickProfile,
   remoteIncompatibilityFor,
   remoteModelSwitchSupport,
 } from './remote-model-picker';
@@ -309,11 +310,22 @@ describe('buildMachineModelGroups', () => {
         cloud: { state: 'running' } as RemoteMachine['cloud'],
         capabilities: { providers: [{ id: 'claude-code', status: 'unknown', models: [] }] },
       });
+      // The plain Default auto-picks the marked profile; with none it is hidden.
       expect(
         Object.keys(
           build(['claude-code', 'claude-code@p-personal'], { 'claude-code': false }, e2b),
         ),
-      ).toEqual(['claude-code@p-personal']);
+      ).toEqual(['claude-code', 'claude-code@p-personal']);
+      expect(
+        buildMachineModelGroups({
+          machine: e2b,
+          providerRefs: ['claude-code'],
+          groupLabel: (ref) => ref,
+          catalogModels,
+          catalogProfiles: [work],
+          defaultHasOverrides: { 'claude-code': false },
+        }),
+      ).toEqual([]);
     });
 
     it('still skips a provider the machine reports as not installed', () => {
@@ -346,5 +358,78 @@ describe('buildMachineModelGroups', () => {
       label: '',
       options: [{ value: '__default__', label: 'Provider default' }],
     });
+  });
+});
+
+describe('remoteAutoPickProfile', () => {
+  const second: ProviderProfileSummary = {
+    ...apiKey,
+    id: 'p-key2',
+    providerRef: 'codex@p-key2',
+    name: 'Second',
+  };
+  const unmarked: ProviderProfileSummary = {
+    ...apiKey,
+    id: 'p-off',
+    providerRef: 'codex@p-off',
+    name: 'Off',
+    remoteCompatible: false,
+    remoteIncompatibility: { reason: 'not-marked', keys: [] },
+  };
+  const pick = (input: Partial<Parameters<typeof remoteAutoPickProfile>[0]>) =>
+    remoteAutoPickProfile({
+      machine: machine(),
+      providerRef: 'codex',
+      catalogProfiles: [unmarked, apiKey, second],
+      defaultHasOverrides: { codex: false },
+      ...input,
+    })?.name ?? null;
+
+  it('uses the first Remote Ready profile in saved order when the machine is signed out', () => {
+    expect(pick({})).toBe('API key');
+  });
+  it("tries the machine's own sign-in first when it is signed in or unknown", () => {
+    expect(pick({ providerRef: 'claude-code' })).toBeNull();
+    const unknown = machine({
+      capabilities: { providers: [{ id: 'codex', status: 'unknown', models: [] }] },
+    });
+    expect(pick({ machine: unknown })).toBeNull();
+  });
+  it('never replaces an explicitly chosen profile', () => {
+    expect(pick({ providerRef: 'codex@p-off' })).toBeNull();
+  });
+  it('sends a marked Default with credentials itself', () => {
+    expect(pick({ defaultHasOverrides: { codex: true } })).toBeNull();
+    expect(
+      pick({
+        defaultHasOverrides: { codex: true },
+        defaultRemoteIncompatibility: { codex: { reason: 'not-marked', keys: [] } },
+      }),
+    ).toBe('API key');
+  });
+  it('has nothing to pick without a Remote Ready profile', () => {
+    expect(pick({ catalogProfiles: [unmarked] })).toBeNull();
+  });
+  it('applies on an E2B sandbox, which has no sign-in', () => {
+    const e2b = machine({
+      cloud: { state: 'running' } as RemoteMachine['cloud'],
+      capabilities: { providers: [{ id: 'codex', status: 'unknown', models: [] }] },
+    });
+    expect(pick({ machine: e2b })).toBe('API key');
+  });
+  it('offers the plain Default when it auto-picks, with that profile’s models', () => {
+    const groups = buildMachineModelGroups({
+      machine: machine({
+        capabilities: { providers: [{ id: 'codex', status: 'signed-out', models: [] }] },
+      }),
+      providerRefs: ['codex'],
+      groupLabel: (ref) => ref,
+      catalogModels: { 'codex@p-key': [{ value: 'gpt-6', label: 'GPT-6' }] },
+      catalogProfiles: [apiKey],
+      defaultHasOverrides: { codex: false },
+    });
+    expect(groups).toEqual([
+      { key: 'codex', label: 'codex', options: [{ value: 'gpt-6', label: 'GPT-6' }] },
+    ]);
   });
 });

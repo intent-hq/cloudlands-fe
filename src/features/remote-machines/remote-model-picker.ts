@@ -93,3 +93,31 @@ export function isRemoteRefSignedOut(
   const provider = machine?.capabilities?.providers.find((row) => row.id === base);
   return !!provider && isMachineProviderSignedOut(provider.status);
 }
+
+/**
+ * The Remote Ready profile a remote launch of the plain Default uses instead
+ * (the daemon's auto-pick): the machine isn't signed in to the provider (an
+ * E2B sandbox never is), the Default itself has nothing to send, and the
+ * first marked profile of that provider in the saved order. Null otherwise;
+ * an explicitly chosen profile is never replaced.
+ */
+export function remoteAutoPickProfile(input: {
+  machine: RemoteMachine;
+  providerRef: string;
+  catalogProfiles: readonly ProviderProfileSummary[];
+  defaultRemoteIncompatibility?: Record<string, RemoteIncompatibility>;
+  defaultHasOverrides?: Record<string, boolean>;
+}): ProviderProfileSummary | null {
+  const { machine, providerRef } = input;
+  if (isProviderProfileRef(providerRef)) return null;
+  if (!machine.cloud && !isRemoteRefSignedOut(machine, providerRef)) return null;
+  const defaultSends =
+    !input.defaultRemoteIncompatibility?.[providerRef] &&
+    input.defaultHasOverrides?.[providerRef] !== false;
+  if (defaultSends) return null;
+  return (
+    input.catalogProfiles.find(
+      (profile) => profile.baseProviderId === providerRef && profile.remoteCompatible === true,
+    ) ?? null
+  );
+}

@@ -22,6 +22,7 @@ import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   MACHINE_PROVIDER_NOT_INSTALLED,
   isRemoteRefSignedOut,
+  remoteAutoPickProfile,
   remoteIncompatibilityFor,
 } from '$features/remote-machines/remote-model-picker';
 import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
@@ -256,7 +257,9 @@ interface BuildMachineModelGroupsParams {
  * machine's own sign-in when it has one (signed in, or unknown), and (b) a
  * remote-compatible configuration from this backend may be sent: a marked
  * profile, or the marked Default when it brings credentials. Anything else is
- * not offered. An E2B sandbox has no sign-in of its own, so only (b) applies.
+ * not offered, except that the plain Default on a machine without sign-in
+ * runs the first Remote Ready profile of its provider (auto-pick). An E2B
+ * sandbox has no sign-in of its own, so only (b) applies.
  * When the machine lists no models for a configuration that brings its own
  * credentials, the backend catalog's models stand in.
  */
@@ -283,19 +286,29 @@ export function buildMachineModelGroups({
     const bringsCredentials = isProviderProfileRef(ref) || defaultHasOverrides?.[base] !== false;
     const ownSignIn =
       !isProviderProfileRef(ref) && !machine.cloud && !isRemoteRefSignedOut(machine, ref);
-    if (!ownSignIn && !(sendable && bringsCredentials)) continue;
+    const autoPick = remoteAutoPickProfile({
+      machine,
+      providerRef: ref,
+      catalogProfiles,
+      defaultRemoteIncompatibility,
+      defaultHasOverrides,
+    });
+    if (!ownSignIn && !(sendable && bringsCredentials) && !autoPick) continue;
+    const modelSource = autoPick ? autoPick.providerRef : ref;
     const labelled = new Map(
-      (catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? []).map((option) => [
+      (catalogModels[modelSource] ?? catalogModels[base] ?? []).map((option) => [
         splitLegacyCompoundId(option.value).modelId,
         option,
       ]),
     );
-    const listsBackendModels = isProviderProfileRef(ref) || defaultHasOverrides?.[base] === true;
+    const listsBackendModels =
+      isProviderProfileRef(ref) || defaultHasOverrides?.[base] === true || autoPick !== null;
     // Only the configuration's own list: a profile can serve other models than its Default.
+    // An auto-picked profile serves its own list.
     const modelIds =
       provider.models.length > 0 || !listsBackendModels
         ? provider.models
-        : (catalogModels[ref] ?? [])
+        : (catalogModels[modelSource] ?? [])
             .filter((option) => !isDefaultPseudoModelId(option.value))
             .map((option) => splitLegacyCompoundId(option.value).modelId);
     const options = modelIds.map((modelId): DropdownOption => {

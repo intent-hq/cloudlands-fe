@@ -168,6 +168,7 @@
   } from '$features/remote-machines/remote-machines-slice';
   import {
     isRemoteRefSignedOut,
+    remoteAutoPickProfile,
     machineReportFreshness,
   } from '$features/remote-machines/remote-model-picker';
   import { formatDistanceToNow } from '$lib/utils/date';
@@ -636,8 +637,21 @@
   function remoteSignedOutCue(providerRef: string): boolean {
     return (
       isRemoteRefSignedOut($remoteMachine$, providerRef) &&
-      $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true
+      $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true &&
+      !remoteAutoPick(providerRef)
     );
+  }
+  /** The Remote Ready profile the plain Default uses on this machine instead, or null. */
+  function remoteAutoPick(providerRef: string) {
+    const machine = $remoteMachine$;
+    if (!machine) return null;
+    return remoteAutoPickProfile({
+      machine,
+      providerRef,
+      catalogProfiles: $providerProfiles$,
+      defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+      defaultHasOverrides: $defaultHasOverrides$,
+    });
   }
   const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocked);
 
@@ -2626,7 +2640,19 @@
           {group.label}
         </div>
       {/if}
-      {#if remoteSignedOutCue(group.key)}
+      {@const autoPick = remoteAutoPick(group.key)}
+      {#if autoPick}
+        <div
+          class="px-(--model-picker-row-gutter) pt-1 pb-1 text-xs text-subtle"
+          role="status"
+          data-testid="model-picker-remote-auto-pick"
+        >
+          {m.chat_modelPicker_remoteAutoPick_label({
+            profile: autoPick.name,
+            machine: remoteLocation.name,
+          })}
+        </div>
+      {:else if remoteSignedOutCue(group.key)}
         <div
           class="flex items-start gap-2 px-(--model-picker-row-gutter) pt-1 pb-1 text-xs"
           role="status"

@@ -971,6 +971,32 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(screen.queryByRole('tab', { name: /Claude Code/ })).toBeNull();
     });
 
+    it('names the Remote Ready profile the plain Default uses on a signed-out machine', async () => {
+      withMachine(
+        machineRow({
+          capabilities: {
+            providers: [
+              { id: 'codex', status: 'signed-out', models: ['gpt-5'] },
+              { id: 'claude-code', status: 'ready', models: ['opus'] },
+            ],
+          },
+        }),
+      );
+      mockProviderSettingsState.current = {
+        enabledProviders: { auggie: true, codex: true, 'claude-code': true },
+        profiles: {
+          loadStatus: 'success',
+          defaults: { codex: { baseProviderId: 'codex', name: 'Default', env: [] } },
+        },
+      };
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      const note = await screen.findByTestId('model-picker-remote-auto-pick');
+      expect(note.textContent).toContain('Key');
+      expect(note.textContent).toContain('Mac mini');
+      expect(screen.queryByTestId('model-picker-remote-signed-out')).toBeNull();
+    });
+
     it('warns when the report is more than a day old', async () => {
       withMachine(
         machineRow({ observedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString() }),

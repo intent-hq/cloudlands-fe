@@ -765,6 +765,7 @@
   "chat_modelPicker_remoteSignedOut_label": "Sin sesión iniciada en {machine}",
   "chat_modelPicker_remoteStale_description": "{machine} informó de sus modelos por última vez {time}. Un modelo que ya no esté disponible no podrá iniciarse.",
   "chat_modelPicker_remoteStale_title": "Esta lista puede estar desactualizada",
+  "chat_modelPicker_remoteAutoPick_label": "Usa {profile} en {machine}",
   "chat_modelPicker_remoteLocked_title": "El modelo de este agente no se puede cambiar mientras se ejecuta en {machine}. Crea un agente nuevo para usar otro modelo.",
   "chat_modelPicker_remoteMachine_ariaLabel": "{model} en {machine}",
   "chat_modelPicker_replacementProfileMissing_description": "Se eliminó el perfil de {provider} que usaba esta conversación. Elige un modelo antes de enviar otro mensaje.",

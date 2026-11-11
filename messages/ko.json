@@ -765,6 +765,7 @@
   "chat_modelPicker_remoteSignedOut_label": "{machine}에 로그인되어 있지 않음",
   "chat_modelPicker_remoteStale_description": "{machine}이(가) 마지막으로 모델을 보고한 시점은 {time}입니다. 그 이후 사라진 모델은 시작되지 않습니다.",
   "chat_modelPicker_remoteStale_title": "이 목록은 최신이 아닐 수 있습니다",
+  "chat_modelPicker_remoteAutoPick_label": "{machine}에서 {profile} 사용",
   "chat_modelPicker_remoteLocked_title": "이 에이전트가 {machine}에서 실행되는 동안에는 모델을 변경할 수 없습니다. 다른 모델을 사용하려면 새 에이전트를 만드세요.",
   "chat_modelPicker_remoteMachine_ariaLabel": "{machine}의 {model}",
   "chat_modelPicker_replacementProfileMissing_description": "이 대화에서 사용하던 {provider} 프로필이 삭제되었습니다. 다음 메시지를 보내기 전에 모델을 선택하세요.",
