@@ -2394,34 +2394,37 @@ describe('empty change set guard', () => {
     return { lines, options: { log: (line: string) => lines.push(line) } };
   }
 
-  async function expectNothingToVerify(root: string) {
+  const UNRESOLVED =
+    "verify:changed: nothing to verify — the worktree is clean; cannot compare HEAD with origin/main, pass --base <ref> to verify this branch's commits";
+  const NOT_AHEAD =
+    'verify:changed: nothing to verify — the worktree is clean and HEAD is not ahead of origin/main';
+
+  async function expectNothingToVerify(root: string, message: string) {
     for (const argv of [[], ['--dry-run']]) {
       const { lines, options } = capture();
       expect(await runCli(argv, root, options), argv.join(' ')).toBe(2);
-      expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain('nothing to verify');
-      expect(lines[0]).toContain('pass --base origin/main');
+      expect(lines).toEqual([message]);
     }
   }
 
   it('exits 2 with the --base hint when a clean worktree has no origin/main ref', async () => {
-    await expectNothingToVerify(gitRepository());
+    await expectNothingToVerify(gitRepository(), UNRESOLVED);
   });
 
-  it('exits 2 with the --base hint when a clean worktree is not ahead of origin/main', async () => {
+  it('exits 2 without a --base hint when a clean worktree is not ahead of origin/main', async () => {
     const root = gitRepository();
     trackOriginMain(root);
-    await expectNothingToVerify(root);
+    await expectNothingToVerify(root, NOT_AHEAD);
 
     branchWithCommit(root);
     trackOriginMain(root, 'refs/heads/feature');
-    await expectNothingToVerify(root);
+    await expectNothingToVerify(root, NOT_AHEAD);
   });
 
   it('exits 2 without throwing when a clean branch is ahead but origin/main is missing', async () => {
     const root = gitRepository();
     branchWithCommit(root);
-    await expectNothingToVerify(root);
+    await expectNothingToVerify(root, UNRESOLVED);
   });
 
   it('defaults to origin/main as the base on a clean branch that is ahead of it', async () => {
@@ -2450,16 +2453,89 @@ describe('empty change set guard', () => {
     }
   });
 
-  it('verifies the working-tree set without the fallback when changes are uncommitted', async () => {
+  // cloudlands-fe#4431: a dirty tree used to hide the branch's committed files.
+  it('adds the committed branch diff to uncommitted changes when HEAD is ahead', async () => {
     const root = gitRepository();
     const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    writeFileSync(join(root, 'src/base.ts'), 'edited');
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    for (const argv of [[], ['--dry-run']]) {
+      const { lines, options } = capture();
+      const planned: string[][] = [];
+      const gates = {
+        checkNode: () => ({ ok: true, reason: null }),
+        checkDeps: () => ({ ok: true, reason: null }),
+        ensureI18n: async () => ({ ok: true, reason: null }),
+        runPlan: async (plan: { files: string[] }) => {
+          planned.push(plan.files);
+        },
+      };
+      expect(await runCli(argv, root, { ...options, ...gates }), argv.join(' ')).toBe(0);
+      expect(lines[0]).toBe(
+        'verify:changed: verifying uncommitted changes plus commits since merge-base with origin/main',
+      );
+      expect(lines.some((line) => line.includes('worktree clean'))).toBe(false);
+      for (const file of [committed, 'src/base.ts', 'src/untracked.ts'])
+        expect(lines).toContain(`  - ${file}`);
+      expect(planned).toEqual(
+        argv.includes('--dry-run') ? [] : [[committed, 'src/base.ts', 'src/untracked.ts'].sort()],
+      );
+    }
+  });
+
+  it('verifies only uncommitted changes when HEAD is not ahead of origin/main', async () => {
+    const root = gitRepository();
     trackOriginMain(root);
     writeFileSync(join(root, 'src/untracked.ts'), '');
     const { lines, options } = capture();
     expect(await runCli(['--dry-run'], root, options)).toBe(0);
+    expect(lines[0]).toBe(
+      'verify:changed: verifying uncommitted changes only; HEAD is not ahead of origin/main',
+    );
+    expect(lines).toContain('  - src/untracked.ts');
+  });
+
+  it('verifies only uncommitted changes and says why when HEAD cannot be compared', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run'], root, options)).toBe(0);
+    expect(lines[0]).toBe(
+      'verify:changed: verifying uncommitted changes only; cannot compare HEAD with origin/main, pass --base <ref> to include commits',
+    );
     expect(lines).toContain('  - src/untracked.ts');
     expect(lines).not.toContain(`  - ${committed}`);
-    expect(lines.some((line) => line.includes('worktree clean'))).toBe(false);
+  });
+
+  it('reports the explicit --base mode', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run', '--base', 'main'], root, options)).toBe(0);
+    expect(lines[0]).toBe(
+      'verify:changed: verifying uncommitted changes plus commits since merge-base with main',
+    );
+    expect(lines).toContain(`  - ${committed}`);
+    expect(lines).toContain('  - src/untracked.ts');
+  });
+
+  it('rejects an explicit --base that cannot be resolved', async () => {
+    const root = gitRepository();
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { options } = capture();
+    await expect(runCli(['--dry-run', '--base', 'no-such-ref'], root, options)).rejects.toThrow(
+      /cannot resolve --base no-such-ref/,
+    );
+  });
+
+  it('reports explicit paths without reading git', async () => {
+    const root = gitRepository();
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run', 'src/base.ts'], root, options)).toBe(0);
+    expect(lines[0]).toBe('verify:changed: verifying the given paths');
   });
 
   it('omits the hint when --base was already supplied', async () => {

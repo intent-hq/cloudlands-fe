@@ -373,9 +373,10 @@ authorization; ending Intel support does not authorize stranding native Apple Si
 
 Use `pnpm run verify:changed -- <paths...>` during local work. With no paths it reads
 staged, unstaged, deleted, and untracked frontend files, plus the commits since
-`git merge-base <ref> HEAD` when `--base <ref>` is given. When that working-tree set is
-empty and `HEAD` is ahead of `origin/main`, it defaults to `--base origin/main`, so the bare
-command is correct on a committed PR branch; a change set empty either way exits 2.
+`git merge-base <ref> HEAD`. `<ref>` is `--base <ref>` when given, otherwise `origin/main`
+whenever `HEAD` is ahead of it, even with uncommitted edits, so the bare command also covers
+files already auto-committed on the branch (cloudlands-fe#4431 skipped one and failed CI).
+The first line names the mode used, also when an empty change set exits 2.
 `--dry-run` lists the commands. `--resolved-plan` runs prerequisites and Vitest discovery
 only, printing every selected unit-test file per lane; normal runs resolve the same plan
 first, and discovery failures stop before any check (fix the reported config or source
