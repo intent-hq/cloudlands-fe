@@ -6,6 +6,7 @@
   import { cn } from '$lib/utils';
   import Fa from 'svelte-fa';
   import { faChevronDown } from '@fortawesome/free-solid-svg-icons';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import {
@@ -78,7 +79,7 @@
       wrapContent={false}
       class={cn(
         variant === 'bare'
-          ? 'group inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-normal leading-5 text-foreground transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer'
+          ? workspacePickerStyles.bareTrigger
           : 'inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-full border border-border bg-background hover:bg-muted transition-colors cursor-pointer',
         className,
       )}
@@ -86,18 +87,12 @@
       {#if variant !== 'bare'}
         <AgentAvatar agentId="blank" variant="compact" specialist={value} icon={selectedIcon} />
       {/if}
-      <span
-        class={variant === 'bare'
-          ? 'min-w-0 flex-1 truncate text-left text-foreground font-normal'
-          : 'text-subtle'}
-      >
+      <span class={variant === 'bare' ? workspacePickerStyles.bareValue : 'text-subtle'}>
         {displayLabel}
       </span>
       <Fa
         icon={faChevronDown}
-        class={variant === 'bare'
-          ? 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70'
-          : 'text-ghost h-2.5 w-2.5'}
+        class={variant === 'bare' ? workspacePickerStyles.bareChevron : 'text-ghost h-2.5 w-2.5'}
       />
     </Button>
   {/snippet}

@@ -16,6 +16,12 @@ export const workspacePickerStyles = {
   metadataTrigger:
     'group/metadata-trigger min-w-0 px-2! py-1! text-sm leading-5 font-normal text-foreground',
   metadataChevron: 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70',
+  /** Quiet dropdown trigger: no surface, chevron at the far right (proposal card Specialist / Start on). */
+  bareTrigger:
+    // i18n-ignore (Tailwind class list)
+    'group inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-sm font-normal leading-5 text-foreground transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring cursor-pointer',
+  bareValue: 'min-w-0 flex-1 truncate text-left text-foreground font-normal',
+  bareChevron: 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70',
   /** Metadata-row field label (proposal card Project / Machine). */
   metadataLabel: 'type-caption block font-medium text-muted-foreground',
 } as const;

@@ -72,7 +72,7 @@
   });
 </script>
 
-<div class={presentation === 'form' ? 'w-full' : 'min-w-0'} data-testid="start-on-picker">
+<div class={presentation === 'footer' ? 'min-w-0' : 'w-full min-w-0'} data-testid="start-on-picker">
   <Popover.Root
     bind:open
     onOpenChange={(next) => {
@@ -84,8 +84,8 @@
         <Button
           {...props}
           bind:ref={trigger}
-          variant="ghost"
-          size="sm"
+          variant={presentation === 'metadata' ? 'plain' : 'ghost'}
+          size={presentation === 'metadata' ? undefined : 'sm'}
           type="button"
           wrapContent={false}
           disabled={!!lockedReason}
@@ -93,7 +93,7 @@
           class={presentation === 'footer'
             ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
             : presentation === 'metadata'
-              ? `h-auto max-w-full justify-start gap-1.5 ${workspacePickerStyles.metadataTrigger} ${workspacePickerStyles.metadataTriggerSurface}`
+              ? `${workspacePickerStyles.bareTrigger} w-full`
               : workspacePickerStyles.fieldTrigger}
         >
           <span
@@ -104,7 +104,12 @@
                 : 'sr-only'}
             id={labelId}>{label}</span
           >
-          <span class="min-w-0 flex-1 text-left" id={valueId}>
+          <span
+            class={presentation === 'metadata'
+              ? workspacePickerStyles.bareValue
+              : 'min-w-0 flex-1 text-left'}
+            id={valueId}
+          >
             <span class="block truncate">{selected?.label}</span>
             {#if lockedReason}
               <span class="block truncate text-xs text-subtle" data-testid="start-on-locked-reason"
@@ -113,7 +118,7 @@
             {/if}
           </span>
           {#if presentation === 'metadata' && !lockedReason}
-            <Fa icon={faChevronDown} size="10" class={workspacePickerStyles.metadataChevron} />
+            <Fa icon={faChevronDown} class={workspacePickerStyles.bareChevron} />
           {/if}
         </Button>
       {/snippet}

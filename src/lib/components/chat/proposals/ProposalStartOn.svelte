@@ -119,23 +119,21 @@
     >
       <Fa icon={startOnCloudMachineId(effective) ? faCloud : faDesktop} class="size-3.5" />
     </span>
-    <div class="min-w-0 flex-1">
-      <div class="flex min-w-0 items-center gap-1">
-        <StartOnPicker
-          presentation="metadata"
-          label={m.chat_proposalCard_startOn_label()}
-          value={effective}
-          options={choices.options}
-          onChange={(id) => (value = id)}
-          lockedReason={backendOnly
-            ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-                backend: choices.options[0]?.label ?? '',
-              })
-            : undefined}
-        />
-      </div>
+    <div class="flex min-w-0 flex-1 flex-col">
+      <StartOnPicker
+        presentation="metadata"
+        label={m.chat_proposalCard_startOn_label()}
+        value={effective}
+        options={choices.options}
+        onChange={(id) => (value = id)}
+        lockedReason={backendOnly
+          ? m.workspace_initialAgentPicker_startOnNewRepo_description({
+              backend: choices.options[0]?.label ?? '',
+            })
+          : undefined}
+      />
       {#if choices.unavailable}
-        <p class="type-caption mt-1 text-warning-ink" data-testid="proposal-start-on-warning">
+        <p class="type-caption px-2 text-warning-ink" data-testid="proposal-start-on-warning">
           {m.chat_proposalCard_startOnUnavailable_warning({ machine: choices.unavailable.label })}
         </p>
       {/if}
