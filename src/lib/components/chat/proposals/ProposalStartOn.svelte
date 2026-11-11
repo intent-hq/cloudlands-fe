@@ -6,6 +6,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { AgentSession } from '$shared/types';
   import StartOnPicker from '$lib/components/workspace/initializer/StartOnPicker.svelte';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import {
     initialAgentPlacement,
     START_ON_BACKEND,
@@ -110,20 +111,25 @@
     >
       <Fa icon={startOnCloudMachineId(effective) ? faCloud : faDesktop} class="size-3.5" />
     </span>
-    <span id={labelId} class="sr-only">{m.workspace_initialAgentPicker_startOn_label()}</span>
-    <div class="flex min-w-0 flex-1 flex-col ps-3">
-      <StartOnPicker
-        value={effective}
-        options={choices.options}
-        onChange={(id) => (value = id)}
-        lockedReason={backendOnly
-          ? m.workspace_initialAgentPicker_startOnNewRepo_description({
-              backend: choices.options[0]?.label ?? '',
-            })
-          : undefined}
-      />
+    <div class="min-w-0 flex-1">
+      <span id={labelId} class={workspacePickerStyles.metadataLabel} data-metadata-label>
+        {m.workspace_initialAgentPicker_startOn_label()}
+      </span>
+      <div class="flex min-w-0 items-center gap-1">
+        <StartOnPicker
+          presentation="metadata"
+          value={effective}
+          options={choices.options}
+          onChange={(id) => (value = id)}
+          lockedReason={backendOnly
+            ? m.workspace_initialAgentPicker_startOnNewRepo_description({
+                backend: choices.options[0]?.label ?? '',
+              })
+            : undefined}
+        />
+      </div>
       {#if choices.unavailable}
-        <p class="type-caption text-warning-ink" data-testid="proposal-start-on-warning">
+        <p class="type-caption mt-1 text-warning-ink" data-testid="proposal-start-on-warning">
           {m.chat_proposalCard_startOnUnavailable_warning({ machine: choices.unavailable.label })}
         </p>
       {/if}

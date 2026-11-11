@@ -70,6 +70,7 @@
   } from './proposal-repo-agent';
   import { store as appStore } from '$store/renderer/store';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
   import type { AgentSession } from '$shared/types';
@@ -1151,7 +1152,7 @@
               <div class="min-w-0 flex-1">
                 <span
                   id={`${metadataIdPrefix}-project-label`}
-                  class="type-caption block font-medium text-muted-foreground"
+                  class={workspacePickerStyles.metadataLabel}
                   data-metadata-label
                 >
                   {m.chat_proposalCard_project_label()}

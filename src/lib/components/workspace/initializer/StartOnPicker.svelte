@@ -6,7 +6,7 @@
   import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
   import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
   import { pushEscapeLayer } from '$lib/utils/escapeLayers';
-  import { faDesktop } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronDown, faDesktop } from '@fortawesome/free-solid-svg-icons';
   import { faCloud } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
@@ -18,7 +18,8 @@
    * rendered while another machine can take it (see `startOnVisible`).
    */
   interface Props {
-    presentation?: 'form' | 'footer';
+    /** `metadata`: a quiet row trigger under a visible label the host renders. */
+    presentation?: 'form' | 'footer' | 'metadata';
     /** Selected option id: a machine id, or '' for the current backend. */
     value: string;
     options: StartOnOption[];
@@ -68,7 +69,7 @@
   });
 </script>
 
-<div class={presentation === 'footer' ? 'min-w-0' : 'w-full'} data-testid="start-on-picker">
+<div class={presentation === 'form' ? 'w-full' : 'min-w-0'} data-testid="start-on-picker">
   <Popover.Root
     bind:open
     onOpenChange={(next) => {
@@ -88,10 +89,12 @@
           aria-labelledby="{labelId} {valueId}"
           class={presentation === 'footer'
             ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
-            : workspacePickerStyles.fieldTrigger}
+            : presentation === 'metadata'
+              ? `h-auto max-w-full justify-start gap-1.5 ${workspacePickerStyles.metadataTrigger} ${workspacePickerStyles.metadataTriggerSurface}`
+              : workspacePickerStyles.fieldTrigger}
         >
           <span
-            class={presentation === 'footer' ? 'sr-only' : workspacePickerStyles.fieldLabel}
+            class={presentation === 'form' ? workspacePickerStyles.fieldLabel : 'sr-only'}
             id={labelId}>{m.workspace_initialAgentPicker_startOn_label()}</span
           >
           <span class="min-w-0 flex-1 text-left" id={valueId}>
@@ -102,6 +105,9 @@
               >
             {/if}
           </span>
+          {#if presentation === 'metadata' && !lockedReason}
+            <Fa icon={faChevronDown} size="10" class={workspacePickerStyles.metadataChevron} />
+          {/if}
         </Button>
       {/snippet}
     </Popover.Trigger>
@@ -109,9 +115,17 @@
       role="dialog"
       portalProps={{ to: dialogPortalTarget() }}
       aria-label={m.workspace_initialAgentPicker_startOn_label()}
-      side={presentation === 'footer' ? 'top' : isMobile.current || menuBelow ? 'bottom' : 'left'}
-      align={presentation === 'footer' || isMobile.current || menuBelow ? 'end' : 'start'}
-      sideOffset={presentation === 'footer' || isMobile.current || menuBelow ? 4 : 24}
+      side={presentation === 'footer'
+        ? 'top'
+        : presentation === 'metadata' || isMobile.current || menuBelow
+          ? 'bottom'
+          : 'left'}
+      align={presentation === 'metadata'
+        ? 'start'
+        : presentation === 'footer' || isMobile.current || menuBelow
+          ? 'end'
+          : 'start'}
+      sideOffset={presentation !== 'form' || isMobile.current || menuBelow ? 4 : 24}
       strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
       preventScroll={false}
       class="flex min-h-0 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 {hasCloud
