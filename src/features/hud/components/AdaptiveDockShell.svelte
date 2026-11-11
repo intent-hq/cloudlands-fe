@@ -248,6 +248,8 @@
     (value) => onPlacementCommand(value),
   );
   let showOlder = $state(false);
+  // The index search survives opening a conversation and Back; a full close clears it.
+  let overviewQuery = $state('');
   const overviewWorkspaceCount = $derived(workspaces.length);
   const layout = $derived(
     getDockShellLayout(placement, {
@@ -348,6 +350,7 @@
       if (!live) contentVisible = false;
       surfaceExpanded = false;
       showOlder = false;
+      overviewQuery = '';
       stopHeight();
     });
   });
@@ -1230,6 +1233,7 @@
             {workspaces}
             {olderWorkspaces}
             bind:showOlder
+            bind:query={overviewQuery}
             {pending}
             {expanded}
             {reveal}

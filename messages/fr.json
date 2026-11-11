@@ -8468,5 +8468,6 @@
   "dock_linkedTab_current_ariaLabel": "Actuel : {context}",
   "dock_overview_search_ariaLabel": "Rechercher des espaces",
   "dock_overview_search_placeholder": "Rechercher",
-  "dock_overview_searchClear_ariaLabel": "Effacer la recherche"
+  "dock_overview_searchClear_ariaLabel": "Effacer la recherche",
+  "dock_overview_search_noMatches_label": "Aucun espace correspondant"
 }

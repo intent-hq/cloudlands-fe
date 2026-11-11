@@ -8462,11 +8462,12 @@
   "dock_linkedTab_thisTab_label": "このタブ",
   "dock_linkedTab_thisApp_label": "このアプリ",
   "dock_linkedTab_link_label": "リンク",
-  "dock_linkedTab_unlink_label": "リンク解除",
+  "dock_linkedTab_unlink_label": "解除",
   "dock_linkedTab_link_ariaLabel": "{context}を{workspace}にリンク",
   "dock_linkedTab_unlink_ariaLabel": "{context}と{workspace}のリンクを解除",
   "dock_linkedTab_current_ariaLabel": "現在: {context}",
   "dock_overview_search_ariaLabel": "スペースを検索",
   "dock_overview_search_placeholder": "検索",
-  "dock_overview_searchClear_ariaLabel": "検索をクリア"
+  "dock_overview_searchClear_ariaLabel": "検索をクリア",
+  "dock_overview_search_noMatches_label": "一致するスペースはありません"
 }

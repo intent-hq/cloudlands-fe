@@ -37,17 +37,20 @@
   const app = $derived(context?.identityKind === 'app');
   const ready = $derived(!!context && context.phase === 'ready');
   const linked = $derived(ready && context!.linkedWorkspaceId === workspaceId);
-  // An inferred (service-owned) target has no saved link to remove.
-  const canUnlink = $derived(linked && !!context!.linkKey);
+  // Only a saved link can be removed; an inferred (embedded tab / service owner) target
+  // has no saved record, so it shows the tag without an Unlink.
+  const canUnlink = $derived(linked && !!context!.linkKey && context!.linkRevision > 0);
   const canLink = $derived(ready && !linked && context!.linkable);
   const contextName = $derived(context?.label || '');
-  function link(): void {
-    const version = context?.contextVersion;
-    if (version) appStore.dispatch(dockContextLinkRequested(version, workspaceId));
-  }
-  function unlink(): void {
-    const version = context?.contextVersion;
-    if (version) appStore.dispatch(dockContextUnlinkRequested(version));
+  // The version the clicked button was rendered with, never a newer one: a stale click is
+  // rejected by the saga instead of silently applying to a different context.
+  function act(event: MouseEvent): void {
+    const button = event.currentTarget as HTMLElement;
+    const version = button.dataset.contextVersion;
+    if (!version) return;
+    if (button.dataset.dockRowAction === 'unlink')
+      appStore.dispatch(dockContextUnlinkRequested(version));
+    else appStore.dispatch(dockContextLinkRequested(version, workspaceId));
   }
 </script>
 
@@ -78,7 +81,8 @@
       aria-label={canUnlink
         ? m.dock_linkedTab_unlink_ariaLabel({ context: contextName, workspace: title })
         : m.dock_linkedTab_link_ariaLabel({ context: contextName, workspace: title })}
-      onclick={canUnlink ? unlink : link}
+      data-context-version={context?.contextVersion}
+      onclick={act}
     >
       {#snippet leadingIcon()}
         {#if canUnlink}
@@ -126,9 +130,9 @@
   .row-slot :global(.row-action) {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 2px;
     height: 22px;
-    padding: 0 6px;
+    padding: 0 4px;
     border-radius: 999px;
     background: hsl(var(--dock-hover, var(--muted)));
     color: hsl(var(--foreground));

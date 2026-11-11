@@ -8474,5 +8474,6 @@
   "dock_linkedTab_current_ariaLabel": "Current: {context}",
   "dock_overview_search_ariaLabel": "Search workspaces",
   "dock_overview_search_placeholder": "Search",
-  "dock_overview_searchClear_ariaLabel": "Clear search"
+  "dock_overview_searchClear_ariaLabel": "Clear search",
+  "dock_overview_search_noMatches_label": "No matching workspaces"
 }

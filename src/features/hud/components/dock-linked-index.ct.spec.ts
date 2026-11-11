@@ -1,4 +1,5 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import Harness from './DockComposerE2EHarness.svelte';
@@ -107,6 +108,8 @@ test('linked index: search, keys, link and unlink keep the layout still', async 
   const backFocus: string[] = [];
   const toIndex = async () => {
     const from = await open();
+    // The shell shows the conversation first (a real Back leaves a shown conversation).
+    await expect(page.locator('[data-dock-conversation-back]')).toBeVisible();
     await page.evaluate(() => (window as any).__dockComposerE2E.close());
     await expect.poll(open).toBeNull();
     await expect(page.getByTestId('dock-overview')).toBeVisible();
@@ -184,6 +187,37 @@ test('linked index: search, keys, link and unlink keep the layout still', async 
   expect(actionBox.x).toBeGreaterThanOrEqual(titleBox.x + titleBox.width);
   expect(await layout(page)).toEqual(beforeKeys);
   await page.screenshot({ path: info.outputPath('02-keyboard-link-focused.png') });
+  // The short labels against the pill's real font and chrome, every catalog (measured, not
+  // rendered): the pill must fit its slot or the label truncates (the aria-label is full).
+  const labels: [string, string, string][] = [];
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja', 'ko', 'zh-CN', 'zh-TW']) {
+    const catalog = JSON.parse(
+      await readFile(join(process.cwd(), 'messages', `${locale}.json`), 'utf8'),
+    );
+    for (const key of ['dock_linkedTab_link_label', 'dock_linkedTab_unlink_label'])
+      labels.push([locale, key, catalog[key]]);
+  }
+  const fit = await action('choice-1').evaluate((el, labels) => {
+    const label = el.querySelector('[data-slot="button-label"]')!;
+    const style = getComputedStyle(label);
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const slot = el.closest('[data-dock-row-slot]')!.getBoundingClientRect().width;
+    const chrome = el.getBoundingClientRect().width - label.getBoundingClientRect().width;
+    return labels.map(([locale, key, text]) => {
+      const width = context.measureText(text).width;
+      return {
+        locale,
+        key,
+        text,
+        pill: Math.ceil(width + chrome),
+        slot,
+        fits: width + chrome <= slot,
+      };
+    });
+  }, labels);
+  expect(fit.filter((row) => !row.fits)).toEqual([]);
+  receipts.labelFit = fit;
   await page.keyboard.press('Enter');
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');
   await expect.poll(tagged).toEqual(['choice-1']);
@@ -244,6 +278,38 @@ test('linked index: search, keys, link and unlink keep the layout still', async 
   expect(await layout(page)).toEqual(beforeHover);
   receipts.pointerRelink = { from: 'choice-1', to: target, scrollKept: true, orderKept: true };
 
+  // 5b. Search edge cases: zero results are announced and Enter opens nothing (never the
+  // Assistant); modified arrows stay native; Enter opens the first match; the query survives
+  // opening that conversation and coming Back.
+  await search.focus();
+  await page.keyboard.type('zzz');
+  await expect(page.locator('.overview-search [role="status"]')).toHaveText(
+    'No matching workspaces',
+  );
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Shift+ArrowDown');
+  await expect(search).toBeFocused();
+  expect(await open()).toBeNull();
+  await page.keyboard.press('Escape');
+  await expect(search).toHaveValue('');
+  await expect(page.locator('.overview-search [role="status"]')).toHaveText('');
+  await page.keyboard.type('workspace 4');
+  await page.keyboard.press('Enter');
+  await expect.poll(open).toBe('choice-4');
+  await toIndex();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('workspace 4');
+  await expect.poll(order).toEqual(['choice-4']);
+  await page.keyboard.press('Escape');
+  await expect(search).toHaveValue('');
+  receipts.search = {
+    zeroResultsAnnounced: true,
+    enterOnZeroOpensNothing: true,
+    modifiedArrowNative: true,
+    enterOpensFirstMatch: 'choice-4',
+    queryKeptAcrossConversation: true,
+  };
+
   // 6. The global "open related" (Ctrl+Shift+A) follows the new link; the source draft stays.
   await page.evaluate((url) => {
     const h = (window as any).__dockComposerE2E;
@@ -265,10 +331,22 @@ test('linked index: search, keys, link and unlink keep the layout still', async 
   await expect(search).toBeFocused();
   await row(target).hover();
   await expect(action(target)).toHaveAttribute('data-dock-row-action', 'unlink');
-  await action(target).click();
-  await expect.poll(() => read().then((s) => s?.linkKey ?? null)).toBeNull();
+  // A click the saga refuses (not settled yet) changes nothing and claims nothing: the
+  // button still says Unlink, so click it again, as a person would.
+  let unlinkClicks = 0;
+  await expect(async () => {
+    if ((await action(target).getAttribute('data-dock-row-action')) === 'unlink') {
+      await row(target).hover();
+      await action(target).click();
+      unlinkClicks += 1;
+    }
+    expect((await read())?.linkKey ?? null).toBeNull();
+  }).toPass({ intervals: [1000, 2000, 3000], timeout: 20_000 });
   await expect.poll(tagged).toEqual([]);
-  receipts.unlink = { linkedWorkspaceId: (await read())?.linkedWorkspaceId ?? null };
+  receipts.unlink = {
+    linkedWorkspaceId: (await read())?.linkedWorkspaceId ?? null,
+    clicks: unlinkClicks,
+  };
 
   // 8. A stale version and another machine's context change nothing.
   await page.evaluate(() =>
@@ -316,6 +394,19 @@ test('linked index: search, keys, link and unlink keep the layout still', async 
   expect(await layout(page)).toEqual(darkLayout);
   await page.screenshot({ path: info.outputPath('06-app-linked-light.png') });
   receipts.app = { label: 'Figma', tag: 'This app', themeLayoutEqual: true };
+
+  // 12. A full close (outside click collapses the dock) clears the search; the next
+  // intentional open starts empty.
+  await focusRequest();
+  await expect(search).toBeFocused();
+  await page.keyboard.type('workspace');
+  // eslint-disable-next-line intent/no-unarmed-outside-click-in-ct -- no bits-ui layer: the dock shell's own window pointerdown handler collapses it
+  await page.mouse.click(900, 700);
+  await expect(page.getByTestId('dock-shell')).toHaveAttribute('data-reveal', '0');
+  await focusRequest();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue('');
+  receipts.fullClose = { queryCleared: true };
 
   await writeFile(
     info.outputPath('linked-index-receipt.json'),

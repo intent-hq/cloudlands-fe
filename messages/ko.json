@@ -8468,5 +8468,6 @@
   "dock_linkedTab_current_ariaLabel": "현재: {context}",
   "dock_overview_search_ariaLabel": "스페이스 검색",
   "dock_overview_search_placeholder": "검색",
-  "dock_overview_searchClear_ariaLabel": "검색 지우기"
+  "dock_overview_searchClear_ariaLabel": "검색 지우기",
+  "dock_overview_search_noMatches_label": "일치하는 스페이스가 없습니다"
 }

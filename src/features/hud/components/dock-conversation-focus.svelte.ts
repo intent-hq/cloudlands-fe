@@ -37,14 +37,22 @@ export function useDockConversationFocus(state: DockConversationFocus) {
     untrack(() => {
       if (request === lastRequest) return;
       lastRequest = request;
-      void tick().then(() => {
-        if (!disposed && state.keyboardOpen && state.expanded && !state.workspaceId)
-          // The index search when it shows, else the first row.
-          (
-            state.surface?.querySelector<HTMLElement>('[data-dock-search]') ??
-            state.surface?.querySelector<HTMLElement>('[data-dock-row]')
-          )?.focus({ preventScroll: true });
-      });
+      // The index search when it shows, else the first row. Reopening after a full close
+      // reveals the content a few frames later (inert until then), so retry briefly while
+      // nothing else has taken focus and this is still the latest request.
+      const focusEntry = (attempt: number): void => {
+        if (disposed || request !== lastRequest) return;
+        if (!state.keyboardOpen || !state.expanded || state.workspaceId) return;
+        const owner = document.activeElement;
+        if (attempt > 0 && owner && owner !== document.body) return;
+        const target =
+          state.surface?.querySelector<HTMLElement>('[data-dock-search]') ??
+          state.surface?.querySelector<HTMLElement>('[data-dock-row]');
+        target?.focus({ preventScroll: true });
+        if (target && document.activeElement !== target && attempt < 30)
+          requestAnimationFrame(() => focusEntry(attempt + 1));
+      };
+      void tick().then(() => focusEntry(0));
     });
   });
   $effect(() => {

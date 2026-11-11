@@ -9,6 +9,7 @@
     workspaces,
     olderWorkspaces = [],
     showOlder = $bindable(false),
+    query = $bindable(''),
     pending,
     expanded,
     reveal,
@@ -27,6 +28,8 @@
     workspaces: DockWorkspaceView[];
     olderWorkspaces?: DockWorkspaceView[];
     showOlder?: boolean;
+    /** The index search text (kept by the shell across a conversation). */
+    query?: string;
     pending: boolean;
     expanded: boolean;
     reveal: number;
@@ -73,14 +76,7 @@
       {@render conversation()}
     </DockConversationSurface>
   {:else}
-    <DockOverview
-      {workspaces}
-      {olderWorkspaces}
-      bind:showOlder
-      {pending}
-      {onOpen}
-      active={expanded && reveal > 0}
-    />
+    <DockOverview {workspaces} {olderWorkspaces} bind:showOlder {pending} {onOpen} bind:query />
   {/if}
 </div>
 

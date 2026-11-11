@@ -6,7 +6,6 @@
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
   import DockLinkedRowSlot from './DockLinkedRowSlot.svelte';
-  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
   import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
   import {
@@ -27,20 +26,19 @@
     showOlder = $bindable(false),
     pending = false,
     onOpen,
-    active = true,
+    query = $bindable(''),
   }: {
     workspaces: DockWorkspaceView[];
     olderWorkspaces?: DockWorkspaceView[];
     showOlder?: boolean;
     pending?: boolean;
     onOpen: (id: string) => void;
-    /** The index is on screen; when the dock fully closes the search is cleared. */
-    active?: boolean;
+    /** The search text; the shell keeps it across a conversation and clears it on a full close. */
+    query?: string;
   } = $props();
   const rowsId = $props.id();
   const searchId = `${rowsId}-search`;
   // Search: title, repository label and owner; while searching, older rows are included.
-  let query = $state('');
   let searchInput = $state<HTMLElement | null>(null);
   const needle = $derived(query.trim().toLocaleLowerCase());
   const searching = $derived(needle.length > 0);
@@ -60,10 +58,6 @@
         ? [...workspaces, ...olderWorkspaces]
         : workspaces,
   );
-  // A full close (the index leaves the screen) starts the next open with an empty search.
-  $effect(() => {
-    if (!active) query = '';
-  });
   let rows = $state<HTMLDivElement>();
   let historyButton = $state<HTMLButtonElement | null>(null);
   let assistantButton = $state<HTMLButtonElement | null>(null);
@@ -115,15 +109,22 @@
       },
     };
   }
+  // While searching: the first matching workspace (never the Assistant entry).
+  const firstMatch = () =>
+    searching
+      ? rows?.querySelector<HTMLButtonElement>('.overview-row [data-workspace-id]:not(:disabled)')
+      : rows?.querySelector<HTMLButtonElement>('[data-dock-row]:not(:disabled)');
   function searchKey(event: KeyboardEvent): void {
-    if (event.isComposing) return;
+    // Composition, and modified keys, keep the field's native editing.
+    if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+      return;
     if (event.key === 'Escape' && query) {
       // Clear first; an empty search lets Escape close the dock as usual.
       event.preventDefault();
       event.stopPropagation();
       query = '';
     } else if (event.key === 'ArrowDown' || (event.key === 'Enter' && searching)) {
-      const first = rows?.querySelector<HTMLButtonElement>('[data-dock-row]:not(:disabled)');
+      const first = firstMatch();
       if (!first) return;
       event.preventDefault();
       if (event.key === 'Enter') first.click();
@@ -168,6 +169,12 @@
 >
   {#if dockIntro.open}<DockIntroCard />{/if}
   <div class="overview-search type-caption" role="search">
+    <!-- Always mounted so the zero-result message is announced politely. -->
+    <span class="sr-only" role="status" aria-live="polite"
+      >{searching && visibleWorkspaces.length === 0
+        ? m.dock_overview_search_noMatches_label()
+        : ''}</span
+    >
     <MagnifyingGlassIcon size={13} aria-hidden="true" />
     <Input
       bind:ref={searchInput}
@@ -225,22 +232,7 @@
           aria-describedby="dock-status-{id}"
           onclick={() => openRow(id)}
         >
-          {#if item.workspace.repositoryOwner}
-            <!-- The repository owner's avatar; the agent avatar when there is none or it fails. -->
-            <span class="repo-avatar" data-dock-repo-avatar
-              ><GitHubAvatar
-                identity={item.workspace.repositoryOwner}
-                size={32}
-                class="repo-avatar-img"
-                >{#snippet fallback()}<DockWorkspaceAvatar
-                    {item}
-                    variant="emphasized"
-                  />{/snippet}</GitHubAvatar
-              ></span
-            >
-          {:else}
-            <DockWorkspaceAvatar {item} variant="emphasized" />
-          {/if}
+          <DockWorkspaceAvatar {item} variant="emphasized" />
           <span class="row-copy">
             <span class="type-body font-medium truncate" {title}>{title}</span>
             <!-- The repo identifies the row; rows without one keep their status line. -->
@@ -365,18 +357,6 @@
   }
   .overview-search :global(.search-clear:focus-visible) {
     outline: 1px solid hsl(var(--dock-border, var(--border)));
-  }
-  .repo-avatar {
-    flex: none;
-    display: inline-flex;
-    width: 32px;
-    height: 32px;
-  }
-  .repo-avatar :global(.repo-avatar-img) {
-    width: 32px;
-    height: 32px;
-    border-radius: 9px;
-    object-fit: cover;
   }
   .overview-row {
     display: grid;
