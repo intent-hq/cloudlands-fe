@@ -57,18 +57,33 @@ function createChangedChannel(): EventChannel<MachineRailState> {
   }, buffers.sliding<MachineRailState>(1));
 }
 
-async function invokeRail(channel: string, params?: unknown): Promise<MachineRailState> {
+function requireApi(): NonNullable<Window['electronAPI']> {
   const api = getApi();
   if (!api) throw new Error('electronAPI is not available');
-  return (await api.invoke(channel, params)) as MachineRailState;
+  return api;
 }
 
-function* request(channel: string, params: unknown) {
+/** One function per request, each naming its channel, so the wire surface stays auditable. */
+const railRequests = {
+  getState: async () => (await requireApi().invoke(MACHINE_RAIL.GET_STATE, {})) as MachineRailState,
+  select: async (id: string) =>
+    (await requireApi().invoke(MACHINE_RAIL.SELECT, { id })) as MachineRailState,
+  add: async (id: string) =>
+    (await requireApi().invoke(MACHINE_RAIL.ADD, { id })) as MachineRailState,
+  remove: async (id: string) =>
+    (await requireApi().invoke(MACHINE_RAIL.REMOVE, { id })) as MachineRailState,
+  openMenu: async (id: string) =>
+    (await requireApi().invoke(MACHINE_RAIL.OPEN_MENU, { id })) as MachineRailState,
+  setEnabled: async (enabled: boolean) =>
+    (await requireApi().invoke(MACHINE_RAIL.SET_ENABLED, { enabled })) as MachineRailState,
+};
+
+function* request(send: () => Promise<MachineRailState>) {
   try {
-    const state = yield* call(invokeRail, channel, params);
+    const state = yield* call(send);
     yield* put(machineRailStateReceived(state));
   } catch (error) {
-    logger.warn('machine rail request failed', { channel, error });
+    logger.warn('machine rail request failed', error);
     yield* call(notify.error, m.machineRail_requestFailed_error());
   }
 }
@@ -227,19 +242,19 @@ export function* machineRailSaga() {
   yield* takeLatestFromSelector(selectIsRailMachineShown, shownWorker);
   yield* takeLatestFromSelector(selectMachineRailEnabled, enabledWorker);
   yield* takeEvery(selectRailMachineRequested, function* ({ payload: [id] }) {
-    yield* request(MACHINE_RAIL.SELECT, { id });
+    yield* request(() => railRequests.select(id));
   });
   yield* takeEvery(addRailMachineRequested, function* ({ payload: [id] }) {
-    yield* request(MACHINE_RAIL.ADD, { id });
+    yield* request(() => railRequests.add(id));
   });
   yield* takeEvery(removeRailMachineRequested, function* ({ payload: [id] }) {
-    yield* request(MACHINE_RAIL.REMOVE, { id });
+    yield* request(() => railRequests.remove(id));
   });
   yield* takeEvery(openRailMachineMenuRequested, function* ({ payload: [id] }) {
-    yield* request(MACHINE_RAIL.OPEN_MENU, { id });
+    yield* request(() => railRequests.openMenu(id));
   });
   yield* takeEvery(setMachineRailEnabledRequested, function* ({ payload: [enabled] }) {
-    yield* request(MACHINE_RAIL.SET_ENABLED, { enabled });
+    yield* request(() => railRequests.setEnabled(enabled));
   });
 
   // Subscribe before the first read so a push in between is not lost.
@@ -248,7 +263,7 @@ export function* machineRailSaga() {
   yield* fork(showForwardedToasts, createToastChannel());
   yield* fork(mirrorMenuRequests, createMenuRequestChannel());
   try {
-    const state = yield* call(invokeRail, MACHINE_RAIL.GET_STATE, {});
+    const state = yield* call(railRequests.getState);
     yield* put(machineRailStateReceived(state));
   } catch (error) {
     logger.warn('machine rail state read failed', error);

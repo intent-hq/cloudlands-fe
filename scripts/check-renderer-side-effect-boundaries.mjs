@@ -32,6 +32,8 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/store/renderer/seeders/host-bridge-seeder.ts', { registerMockIpcHandler: 16 }],
   ['src/store/renderer/seeders/integrations-bridge-seeder.ts', { registerMockIpcHandler: 33 }],
   ['src/store/renderer/seeders/invite-consent-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
+  // Machine rail (Labs): forwards `machine-rail:*` to main; answers "lab off" without a bridge.
+  ['src/store/renderer/seeders/machine-rail-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-notice-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/invite-progress-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   [

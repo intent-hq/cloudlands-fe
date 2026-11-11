@@ -17,7 +17,8 @@ export interface MachineRailItem {
 
 /** Whether the Labs setting is on (the rail shows, even with one machine). */
 export const selectMachineRailEnabled = store.createSelector(
-  (state): boolean => state.machineRail.enabled,
+  // Optional chaining: partial test stores mount shell components without this slice.
+  (state): boolean => state.machineRail?.enabled ?? false,
 );
 
 /** The window's machines in rail order, joined with their saved records. */
