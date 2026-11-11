@@ -93,9 +93,24 @@ async function reportShownWorkspace(): Promise<void> {
     .catch(() => {});
 }
 
+/**
+ * Tell main this renderer has painted since it became the shown one. Main
+ * keeps the previous machine's view up until then, so a switch has no blank frame.
+ */
+async function reportPainted(): Promise<void> {
+  const api = getApi();
+  if (!api || typeof requestAnimationFrame === 'undefined') return;
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  );
+  await api.invoke(MACHINE_RAIL.SHOWN, {}).catch(() => {});
+}
+
 function* shownWorker({ payload: shown }: SelectorChannelPayload<boolean>) {
   yield* call(toggleRootAttribute, MACHINE_HIDDEN_ATTRIBUTE, !shown);
-  if (shown && (yield* select(selectMachineRailEnabled.select))) yield* call(reportShownWorkspace);
+  if (!shown || !(yield* select(selectMachineRailEnabled.select))) return;
+  yield* call(reportShownWorkspace);
+  yield* call(reportPainted);
 }
 
 function* enabledWorker({ payload: enabled }: SelectorChannelPayload<boolean>) {

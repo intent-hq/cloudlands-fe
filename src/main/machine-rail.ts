@@ -183,6 +183,37 @@ function ensureView(window: BrowserWindowType, id: string): WebContentsView {
   return view;
 }
 
+/** Longest a view stays up waiting for the window's own renderer to paint. */
+const HOME_REVEAL_TIMEOUT_MS = 250;
+const homeReveals = new WeakMap<BrowserWindowType, NodeJS.Timeout>();
+
+function cancelHomeReveal(window: BrowserWindowType): void {
+  const timer = homeReveals.get(window);
+  if (timer) clearTimeout(timer);
+  homeReveals.delete(window);
+}
+
+function hideAllViews(window: BrowserWindowType): void {
+  cancelHomeReveal(window);
+  if (window.isDestroyed()) return;
+  for (const view of viewsOf(window).values()) view.setVisible(false);
+}
+
+function awaitHomeReveal(window: BrowserWindowType): void {
+  cancelHomeReveal(window);
+  if (![...viewsOf(window).values()].some((view) => view.getVisible())) return;
+  homeReveals.set(
+    window,
+    setTimeout(() => hideAllViews(window), HOME_REVEAL_TIMEOUT_MS),
+  );
+}
+
+/** The window's own renderer painted: finish a pending switch back to it. */
+function completeHomeReveal(window: BrowserWindowType, sender: Electron.WebContents): void {
+  if (sender !== window.webContents || !homeReveals.has(window)) return;
+  hideAllViews(window);
+}
+
 /** Show the selected machine's renderer and hide the others. */
 function applySelection(window: BrowserWindowType): void {
   if (window.isDestroyed()) return;
@@ -190,7 +221,14 @@ function applySelection(window: BrowserWindowType): void {
   const homeId = machineIds[0];
   const selected = selectedId === homeId ? null : ensureView(window, selectedId);
   setShownMachineView(window, selected ? selected.webContents : null);
-  for (const [id, view] of viewsOf(window)) view.setVisible(id === selectedId);
+  if (selected) {
+    cancelHomeReveal(window);
+    for (const [id, view] of viewsOf(window)) view.setVisible(id === selectedId);
+  } else {
+    // Back to the window's own renderer, which hid its page while a view was
+    // shown: keep the view up until that renderer says it has painted again.
+    awaitHomeReveal(window);
+  }
   const target = selected ? selected.webContents : window.webContents;
   if (window.isFocused() && !target.isDestroyed()) target.focus();
 }
@@ -361,6 +399,17 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
         return removeMachine(windowOf(event.sender), id);
       },
       MACHINE_RAIL.REMOVE,
+    ),
+  );
+  ipcMain.handle(
+    MACHINE_RAIL.SHOWN,
+    createValidatedHandler(
+      EmptySchema,
+      async (event) => {
+        completeHomeReveal(windowOf(event.sender), event.sender);
+        return { ok: true };
+      },
+      MACHINE_RAIL.SHOWN,
     ),
   );
   // The status menu of a machine lives in that machine's renderer: show the

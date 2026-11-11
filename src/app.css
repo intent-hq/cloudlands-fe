@@ -876,5 +876,8 @@ body.panel-resizing webview {
 }
 
 :root[data-machine-hidden] body {
-  visibility: hidden;
+  /* Opacity, not visibility: elements with their own transitions would keep
+     showing for a moment after a visibility change. */
+  opacity: 0;
+  pointer-events: none;
 }

@@ -1129,6 +1129,9 @@ export const IPC_CHANNELS = {
     TOAST: 'machine-rail:toast',
     // Select a machine and ask its renderer to open its status menu;
     // MENU_REQUESTED is the push to that renderer (also in EVENT_CHANNELS).
+    // A window's own renderer reports that it has painted after becoming the
+    // shown one, so main can take the previous machine's view away without a gap.
+    SHOWN: 'machine-rail:shown',
     OPEN_MENU: 'machine-rail:open-menu',
     MENU_REQUESTED: 'machine-rail:menu-requested',
   },
