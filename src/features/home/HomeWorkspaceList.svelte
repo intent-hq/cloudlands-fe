@@ -26,6 +26,7 @@
   import HomeWorkspaceRepositoryLabel from './HomeWorkspaceRepositoryLabel.svelte';
   import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
   import { HOME_SET_ASIDE_GROUP } from './home-set-aside';
+  import { isHomeRangeClick } from './home-multi-select';
 
   interface HomeListSection {
     id: string;
@@ -143,6 +144,9 @@
     class="home-list-row h-12 items-center border-b border-border px-3 py-1"
     data-home-workspace={item.id}
     onclick={(event) => onopen(event, item.id)}
+    onmousedown={(event) => {
+      if (isHomeRangeClick(event)) event.preventDefault();
+    }}
     oncontextmenu={(event) => onmenu(event, item)}
   >
     {#snippet leading()}

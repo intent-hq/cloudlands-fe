@@ -454,6 +454,7 @@
   const selection = createHomeSelection({
     visible: () => [...filteredWorkspaces, ...asideWorkspaces],
     previewId: () => selectedWorkspace?.id ?? null,
+    order: () => screenOrder(),
     select: (id) => updateView({ selectedId: id }),
   });
   // The shelf starts collapsed; a search opens it so matching work is never hidden.
@@ -641,26 +642,26 @@
     ],
     () => tab,
   );
-  // The hardware knob steps through the rows shown on screen. The board has no
-  // virtualization, so its card order is read from the page.
+  // Row ids as shown; the board has no virtualization, so its card order is read from the page.
+  function screenOrder(): string[] {
+    if ($view$.view === 'board')
+      return [
+        ...(homeElement?.querySelectorAll<HTMLElement>(
+          '[data-home-destination="workspaces"] [data-home-workspace]',
+        ) ?? []),
+      ].flatMap((node) => node.dataset.homeWorkspace ?? []);
+    return homeListOrder({
+      groups: listGroups,
+      workspaces: filteredWorkspaces,
+      aside: asideWorkspaces,
+      asideExpanded,
+    });
+  }
+  // The hardware knob steps through the rows shown on screen.
   $effect(() => {
     if (preview) return;
     return registerHomeEncoderTarget({
-      ids: () => {
-        if (destination !== 'workspaces' || tab !== 'workspaces') return null;
-        if ($view$.view === 'board')
-          return [
-            ...(homeElement?.querySelectorAll<HTMLElement>(
-              '[data-home-destination="workspaces"] [data-home-workspace]',
-            ) ?? []),
-          ].flatMap((node) => node.dataset.homeWorkspace ?? []);
-        return homeListOrder({
-          groups: listGroups,
-          workspaces: filteredWorkspaces,
-          aside: asideWorkspaces,
-          asideExpanded,
-        });
-      },
+      ids: () => (destination === 'workspaces' && tab === 'workspaces' ? screenOrder() : null),
       selectedId: () => selectedWorkspace?.id ?? null,
       select: (id) => {
         updateView({ selectedId: id });
@@ -1112,6 +1113,7 @@
                             selectedIds={selection.selectedIds}
                             onselect={selection.pickCard}
                             ontoggleselect={selection.toggle}
+                            onrangeselect={selection.range}
                             onopen={openWorkspace}
                             {doubleClick}
                             oncontextmenu={showWorkspaceMenu}

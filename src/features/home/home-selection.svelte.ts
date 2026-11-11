@@ -5,9 +5,12 @@ import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspa
 import { homeBulkActions } from './home-workspace-menu';
 import {
   homeBulkTargets,
+  isHomeRangeClick,
   isHomeRowClick,
   isHomeSelectionToggle,
+  rangeHomeSelection,
   toggleHomeSelection,
+  type HomeSelection,
 } from './home-multi-select';
 
 /**
@@ -19,9 +22,13 @@ export function createHomeSelection(options: {
   visible: () => readonly Workspace[];
   /** The previewed row when it is on screen. */
   previewId: () => string | null;
+  /** Row ids in screen order, for Shift-click ranges. */
+  order: () => readonly string[];
   select: (id: string | null) => void;
 }) {
   let multi = $state<string[]>([]);
+  // Where Shift-click ranges start: the last plain or Cmd/Ctrl-clicked row.
+  let anchor: string | null = null;
   const workspaces = $derived.by(() => {
     const visible = new Map<string, Workspace>(
       options.visible().map((workspace) => [workspace.id, workspace]),
@@ -46,14 +53,23 @@ export function createHomeSelection(options: {
     multi = [];
   }
   function selectOnly(id: string) {
+    anchor = id;
     multi = [];
     options.select(id);
   }
-  function toggle(id: string) {
+  function apply(next: HomeSelection) {
     const previewId = options.previewId();
-    const next = toggleHomeSelection({ multi: active ? ids : [], selectedId: previewId }, id);
     multi = [...next.multi];
     if (next.selectedId !== previewId) options.select(next.selectedId);
+  }
+  function toggle(id: string) {
+    anchor = id;
+    apply(toggleHomeSelection({ multi: active ? ids : [], selectedId: options.previewId() }, id));
+  }
+  function range(id: string) {
+    const next = rangeHomeSelection(options.order(), anchor ?? options.previewId(), id);
+    if (next.multi.length === 0) anchor = id;
+    apply(next);
   }
 
   return {
@@ -75,13 +91,16 @@ export function createHomeSelection(options: {
     clear,
     selectOnly,
     toggle,
+    range,
     /** List keyboard selection: always a single row. */
     pickRow(id: string | null) {
+      anchor = id;
       multi = [];
       options.select(id);
     },
     /** Board card click: ends a multi-selection, else toggles the preview. */
     pickCard(id: string) {
+      anchor = id;
       if (active) selectOnly(id);
       else options.select(options.previewId() === id ? null : id);
     },
@@ -94,10 +113,11 @@ export function createHomeSelection(options: {
     },
     /** List row click: true when the selection handled it (Cmd/Ctrl-click, or a click that ends it). */
     click(event: MouseEvent, id: string): boolean {
-      if (isHomeSelectionToggle(event)) {
+      if (isHomeSelectionToggle(event) || isHomeRangeClick(event)) {
         event.preventDefault();
         event.stopPropagation();
-        toggle(id);
+        if (event.shiftKey) range(id);
+        else toggle(id);
         return true;
       }
       if (!active || !isHomeRowClick(event)) return false;

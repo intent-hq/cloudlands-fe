@@ -163,3 +163,41 @@ test('Board cards multi-select; plain click, Escape and right-click elsewhere re
   await expect(bar(page)).toHaveCount(0);
   expect((await snapshot(page)).calls).toEqual([]);
 });
+
+const rangeTo = (page: Page, id: string) => item(page, id).click({ modifiers: ['Shift'] });
+const selectedText = (page: Page) => page.evaluate(() => window.getSelection()?.toString() ?? '');
+
+test('Shift-click selects a list range from the last clicked row', async ({ mount, page }) => {
+  await mount(Harness, { props: { height: 800 } });
+  await item(page, 'multi-a').click();
+  await rangeTo(page, 'multi-c');
+  for (const id of ['multi-a', 'multi-b', 'multi-c'])
+    await expect(option(page, id)).toHaveAttribute('aria-selected', 'true');
+  await expect(option(page, 'multi-d')).toHaveAttribute('aria-selected', 'false');
+  await expect(bar(page)).toContainText('3 selected');
+  expect(await selectedText(page)).toBe('');
+
+  // The anchor stays on the first row, so a second Shift-click re-ranges from it.
+  await rangeTo(page, 'multi-b');
+  await expect(option(page, 'multi-c')).toHaveAttribute('aria-selected', 'false');
+  await expect(bar(page)).toContainText('2 selected');
+
+  // Cmd/Ctrl-click moves the anchor; the next range starts there.
+  await toggle(page, 'multi-d');
+  await rangeTo(page, 'multi-c');
+  await expect(bar(page)).toContainText('2 selected');
+  for (const id of ['multi-c', 'multi-d'])
+    await expect(option(page, id)).toHaveAttribute('aria-selected', 'true');
+  await expect(option(page, 'multi-a')).toHaveAttribute('aria-selected', 'false');
+  expect((await snapshot(page)).calls).toEqual([]);
+});
+
+test('Shift-click selects a board range in card order', async ({ mount, page }) => {
+  await mount(Harness, { props: { view: 'board', height: 800 } });
+  await item(page, 'multi-d').click();
+  await rangeTo(page, 'multi-a');
+  for (const id of ['multi-a', 'multi-b', 'multi-c', 'multi-d'])
+    await expect(item(page, id)).toHaveAttribute('aria-pressed', 'true');
+  await expect(bar(page)).toContainText('4 selected');
+  expect(await selectedText(page)).toBe('');
+});
