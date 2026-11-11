@@ -170,8 +170,6 @@
   import {
     isRemoteRefSignedOut,
     machineReportFreshness,
-    remoteIncompatibilityFor,
-    remoteIncompatibilityMessage,
   } from '$features/remote-machines/remote-model-picker';
   import { formatDistanceToNow } from '$lib/utils/date';
   import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
@@ -642,21 +640,6 @@
       isRemoteRefSignedOut($remoteMachine$, providerRef) &&
       $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true
     );
-  }
-  /** Why the browsed configuration can't run on the agent's machine, or null. */
-  function remoteIncompatibleReason(providerRef: string): string | null {
-    const incompatibility = remoteIncompatibilityFor(
-      providerRef,
-      $providerProfiles$,
-      $defaultRemoteIncompatibility$,
-    );
-    return incompatibility
-      ? remoteIncompatibilityMessage(
-          incompatibility,
-          $backendLabel$,
-          !isProviderProfileRef(providerRef),
-        )
-      : null;
   }
   const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocked);
 
@@ -2637,7 +2620,6 @@
         onRefresh={handleRefreshProvider}
       />
     {:else if remoteScoped && remoteLocation && group.key !== 'default'}
-      {@const incompatibleReason = remoteIncompatibleReason(group.key)}
       {#if baseHasProfiles(group.key)}
         <div
           class="truncate px-(--model-picker-row-gutter) pt-1.5 pb-0.5 text-xs text-subtle"
@@ -2646,16 +2628,7 @@
           {group.label}
         </div>
       {/if}
-      {#if incompatibleReason}
-        <div
-          class="flex items-start gap-2 px-(--model-picker-row-gutter) pt-1 pb-1 text-xs text-subtle"
-          role="status"
-          data-testid="model-picker-remote-incompatible"
-        >
-          <Fa icon={faLock} class="mt-0.5 size-3! shrink-0" />
-          <span class="min-w-0 leading-tight">{incompatibleReason}</span>
-        </div>
-      {:else if remoteSignedOutCue(group.key)}
+      {#if remoteSignedOutCue(group.key)}
         <div
           class="flex items-start gap-2 px-(--model-picker-row-gutter) pt-1 pb-1 text-xs"
           role="status"

@@ -1,4 +1,3 @@
-import { m } from '$shared/paraglide/messages.js';
 import { describe, expect, it } from 'vitest';
 import type { ProviderProfileSummary } from '$shared/provider-catalog';
 import type { RemoteMachine } from '$shared/types/remote-machines';
@@ -8,7 +7,6 @@ import {
   machineReportFreshness,
   MACHINE_REPORT_STALE_MS,
   remoteIncompatibilityFor,
-  remoteIncompatibilityMessage,
   remoteModelSwitchSupport,
 } from './remote-model-picker';
 
@@ -124,25 +122,6 @@ describe('remoteIncompatibilityFor', () => {
     const bare = { ...work, remoteIncompatibility: undefined };
     expect(remoteIncompatibilityFor('claude-code@p-work', [bare])?.reason).toBe('unknown');
   });
-
-  it('names the backend for an account folder and stays generic for unknown reasons', () => {
-    expect(remoteIncompatibilityMessage({ reason: 'account-folder', keys: [] }, 'Studio')).toBe(
-      "Uses an account folder on Studio, so it can't run on other machines",
-    );
-    expect(remoteIncompatibilityMessage({ reason: 'future', keys: [] }, 'Studio')).toBe(
-      "This configuration can't run on other machines",
-    );
-  });
-
-  it('offers both Default options for a refused Default, only the mark for a profile', () => {
-    const notMarked = { reason: 'not-marked', keys: [] };
-    expect(remoteIncompatibilityMessage(notMarked, 'Studio', true)).toBe(
-      m.chat_modelPicker_remoteDefaultRefused_description(),
-    );
-    expect(remoteIncompatibilityMessage(notMarked, 'Studio')).toBe(
-      m.chat_modelPicker_remoteNotMarked_description(),
-    );
-  });
 });
 
 describe('machineReportFreshness', () => {
@@ -192,13 +171,8 @@ describe('buildMachineModelGroups', () => {
   });
   const byKey = Object.fromEntries(groups.map((group) => [group.key, group]));
 
-  it('lists only providers the machine reports as installed', () => {
-    expect(groups.map((group) => group.key)).toEqual([
-      'claude-code',
-      'claude-code@p-work',
-      'codex',
-      'codex@p-key',
-    ]);
+  it('lists installed providers it can run, hiding a profile that cannot be sent', () => {
+    expect(groups.map((group) => group.key)).toEqual(['claude-code', 'codex', 'codex@p-key']);
   });
 
   it("lists the machine's models with backend labels, falling back to the raw id", () => {
@@ -212,21 +186,12 @@ describe('buildMachineModelGroups', () => {
     expect(byKey['claude-code'].label).toBe('label:claude-code');
   });
 
-  it('greys out a configuration that cannot run on another machine', () => {
-    const options = byKey['claude-code@p-work'].options;
-    expect(options.map((option) => option.label)).toEqual([
-      'Opus 5.5',
-      'Sonnet 5',
-      'only-on-machine',
-    ]);
-    expect(options.every((option) => option.disabled)).toBe(true);
-    expect(options[0].data?.remoteUnavailable).toBe('incompatible');
-  });
-
-  it('keeps a signed-out Default selectable unless it is known to have no overrides', () => {
-    // Unknown (the profile list is admin-only): the daemon decides.
+  it('offers a signed-out Default only when it brings credentials (unknown counts as yes)', () => {
     expect(byKey.codex.options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
-    const build = (defaultHasOverrides: Record<string, boolean>) =>
+    const build = (
+      defaultHasOverrides: Record<string, boolean>,
+      defaultRemoteIncompatibility?: Record<string, { reason: string; keys: string[] }>,
+    ) =>
       buildMachineModelGroups({
         machine: machine(),
         providerRefs: ['codex'],
@@ -234,16 +199,30 @@ describe('buildMachineModelGroups', () => {
         catalogModels: {},
         catalogProfiles: [],
         defaultHasOverrides,
-      })[0].options;
-    // No overrides: only the machine's sign-in can run it.
-    expect(build({ codex: false })).toMatchObject([
-      { value: 'gpt-6', disabled: true, data: { remoteUnavailable: 'signed-out' } },
-    ]);
-    // An API key in the Default's overrides runs without the machine's sign-in.
-    expect(build({ codex: true })).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
+        defaultRemoteIncompatibility,
+      }).map((group) => group.key);
+    // No overrides: nothing to send, and the machine isn't signed in.
+    expect(build({ codex: false })).toEqual([]);
+    // An API key in a marked Default's overrides is sent.
+    expect(build({ codex: true })).toEqual(['codex']);
+    // An unmarked Default sends nothing.
+    expect(build({ codex: true }, { codex: { reason: 'not-marked', keys: [] } })).toEqual([]);
   });
 
-  it('never greys a profile with its own credentials for a signed-out machine', () => {
+  it("runs an unmarked Default with the machine's own sign-in when it has one", () => {
+    const keys = buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code'],
+      groupLabel: (ref) => ref,
+      catalogModels: {},
+      catalogProfiles: [],
+      defaultHasOverrides: { 'claude-code': false },
+      defaultRemoteIncompatibility: { 'claude-code': { reason: 'not-marked', keys: [] } },
+    }).map((group) => group.key);
+    expect(keys).toEqual(['claude-code']);
+  });
+
+  it('offers a marked profile on a signed-out machine', () => {
     expect(byKey['codex@p-key'].options).toEqual([{ value: 'gpt-6', label: 'gpt-6' }]);
   });
 
@@ -313,23 +292,28 @@ describe('buildMachineModelGroups', () => {
     });
 
     it("keeps a Default without overrides on the machine's own (empty) list", () => {
+      // Codex is signed out there and its Default has nothing to send: hidden.
       expect(build(['claude-code', 'codex'], { 'claude-code': false, codex: false })).toEqual({
         'claude-code': [],
-        codex: [],
       });
       // Unknown overrides: no evidence the Default brings credentials.
       expect(build(['claude-code'])).toEqual({ 'claude-code': [] });
     });
 
-    it('keeps a configuration that cannot run on another machine greyed out', () => {
-      expect(build(['claude-code@p-work'])['claude-code@p-work']).toEqual([
-        {
-          value: 'haiku',
-          label: 'Haiku 5',
-          disabled: true,
-          data: { remoteUnavailable: 'incompatible' },
-        },
-      ]);
+    it('hides a configuration that cannot be sent', () => {
+      expect(build(['claude-code@p-work'])).toEqual({});
+    });
+
+    it('offers only what can be sent on an E2B sandbox, which has no sign-in', () => {
+      const e2b = machine({
+        cloud: { state: 'running' } as RemoteMachine['cloud'],
+        capabilities: { providers: [{ id: 'claude-code', status: 'unknown', models: [] }] },
+      });
+      expect(
+        Object.keys(
+          build(['claude-code', 'claude-code@p-personal'], { 'claude-code': false }, e2b),
+        ),
+      ).toEqual(['claude-code@p-personal']);
     });
 
     it('still skips a provider the machine reports as not installed', () => {

@@ -115,8 +115,6 @@ export type ProviderProfileSetup = {
 export type ProviderSettingsState = {
   profiles: ProviderProfilesState;
   fastMode: ProviderFastModeState;
-  /** `providers.remoteMachineSignIn` (naked mode), same confirmed/pending shape; absent key = on. */
-  remoteMachineSignIn: ProviderFastModeState;
   enabledProviders: Record<string, boolean>;
   nonDisableableProviderIds: string[];
   /** Local intent awaiting confirmation from daemon hydration. */

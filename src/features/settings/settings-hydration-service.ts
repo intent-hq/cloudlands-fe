@@ -16,11 +16,10 @@
  */
 import type { AppliedSettingChange } from '$lib/client/app-client';
 import { store as appStore } from '$store/renderer/store';
-import { isFastModeSettingKey, REMOTE_MACHINE_SIGN_IN_SETTING } from '$shared/provider-profiles';
+import { isFastModeSettingKey } from '$shared/provider-profiles';
 import { settingsChanged } from '$store/renderer/slices/settings-events/settings-events-slice';
 import {
   hydrateProviderFastMode,
-  hydrateRemoteMachineSignIn,
   loadEnabledProvidersFromStorage,
 } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import {
@@ -70,13 +69,6 @@ function applyOne(change: AppliedSettingChange, revision?: number): void {
           ([id, enabled]) => isFastModeSettingKey(id) && typeof enabled === 'boolean',
         );
         appStore.dispatch(hydrateProviderFastMode(Object.fromEntries(entries), revision));
-      }
-      return;
-    }
-    case REMOTE_MACHINE_SIGN_IN_SETTING: {
-      if (value && typeof value === 'object' && !Array.isArray(value)) {
-        const entries = Object.entries(value).filter(([, enabled]) => typeof enabled === 'boolean');
-        appStore.dispatch(hydrateRemoteMachineSignIn(Object.fromEntries(entries), revision));
       }
       return;
     }

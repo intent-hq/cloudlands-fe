@@ -19,7 +19,7 @@
     | 'picker-missing'
     | 'picker-older-backend'
     | 'picker-machine-without-models'
-    | 'picker-not-marked'
+    | 'picker-hidden'
     | 'e2b-starting'
     | 'e2b-running'
     | 'e2b-paused'
@@ -64,8 +64,8 @@
       'picker-missing': sceneState('picker-missing'),
       'picker-older-backend': sceneState('picker-older-backend'),
       'picker-machine-without-models': sceneState('picker-machine-without-models'),
-      // Remote-ready profiles: an unmarked profile, and an unmarked Default with machine sign-in off.
-      'picker-not-marked': sceneState('picker-not-marked'),
+      // Hidden: an unmarked profile, and an unmarked Default on a machine not signed in to it.
+      'picker-hidden': sceneState('picker-hidden'),
       'e2b-starting': sceneState('e2b-starting'),
       'e2b-running': sceneState('e2b-running'),
       'e2b-paused': sceneState('e2b-paused'),
@@ -208,7 +208,7 @@
               remoteCompatible: true,
             },
             ...(s === 'picker-machine-without-models' ? [PERSONAL_PROFILE] : []),
-            ...(s === 'picker-not-marked'
+            ...(s === 'picker-hidden'
               ? [
                   {
                     ...PERSONAL_PROFILE,
@@ -218,7 +218,7 @@
                 ]
               : []),
           ],
-    ...(s === 'picker-not-marked'
+    ...(s === 'picker-hidden'
       ? { defaultRemoteIncompatibility: { codex: { reason: 'not-marked', keys: [] } } }
       : {}),
   });

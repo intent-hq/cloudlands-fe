@@ -35,8 +35,8 @@ export const selectRemoteMachinesVisible = store.createSelector(
 );
 
 /**
- * Remote-ready marks, the Default's "Use on remote machines" option and naked
- * mode: only with remote machines visible and a backend that stores them.
+ * Remote-ready marks and the Default's "Use on remote machines" option: only
+ * with remote machines visible and a backend that stores the choice.
  */
 export const selectRemoteReadyProfilesVisible = store.createSelector(
   (state) =>

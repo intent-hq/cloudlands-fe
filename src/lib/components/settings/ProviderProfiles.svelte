@@ -25,7 +25,7 @@
    *
    * With remote-ready profiles, every configuration marked for remote
    * machines carries a Remote Ready pill, and the Default row's ⋯ menu holds
-   * "Use on remote machines" and the machine's own sign-in (naked mode).
+   * "Use on remote machines".
    */
   import {
     faArrowsRotate,

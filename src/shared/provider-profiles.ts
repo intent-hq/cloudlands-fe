@@ -49,10 +49,8 @@ const RemoteCompatibilityFields = {
 };
 
 /**
- * What a remote launch of the bare reference does (§5.54 "Machine sign-in on
- * remote machines"): `send` (marked), `machine-sign-in` (unmarked, the
- * machine's own sign-in runs it) or `refused`. Open enum. Its presence means
- * the daemon stores the remote choice.
+ * What a remote launch of the bare reference does (§5.54). Open enum; the app
+ * reads only its presence: the daemon stores the remote choice.
  */
 const DefaultRemoteLaunchSchema = z.string();
 
@@ -173,13 +171,6 @@ export interface ProviderDefaultUpdateParams {
   /** The Default's "Use on remote machines". Omitted keeps the saved value. */
   remoteCompatible?: boolean;
 }
-
-/**
- * Machine sign-in per base provider (whole-value map like `providers.fastMode`):
- * an unmarked Default runs on remote machines with the machine's own sign-in.
- * An absent key is on.
- */
-export const REMOTE_MACHINE_SIGN_IN_SETTING = 'providers.remoteMachineSignIn';
 
 /** `providers.profiles.reorder`: the complete new order of one base provider's profiles. */
 export interface ProviderProfileReorderParams {

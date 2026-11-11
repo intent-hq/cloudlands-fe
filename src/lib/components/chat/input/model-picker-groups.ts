@@ -250,15 +250,15 @@ interface BuildMachineModelGroupsParams {
 }
 
 /**
- * One group per configuration whose base provider the machine reports as
- * installed, listing the machine's models (labels from the backend catalog,
- * else the raw id). A configuration that can't run on another machine, or a
- * Default with no overrides whose provider is signed out there, keeps its
- * models greyed out; the picker names the reason above them. Profiles and
- * Defaults with overrides may bring their own credentials (an API key), so
- * a signed-out machine login greys them only when that is known not to be so.
- * When the machine lists no models for such a configuration (an E2B sandbox
- * has no sign-in of its own), the backend catalog's models stand in.
+ * The configurations a remote machine can run, one group each, listing the
+ * machine's models (labels from the backend catalog, else the raw id). A
+ * provider must be installed there; then (a) its Default runs with the
+ * machine's own sign-in when it has one (signed in, or unknown), and (b) a
+ * remote-compatible configuration from this backend may be sent: a marked
+ * profile, or the marked Default when it brings credentials. Anything else is
+ * not offered. An E2B sandbox has no sign-in of its own, so only (b) applies.
+ * When the machine lists no models for a configuration that brings its own
+ * credentials, the backend catalog's models stand in.
  */
 export function buildMachineModelGroups({
   machine,
@@ -276,46 +276,31 @@ export function buildMachineModelGroups({
   const groups: DropdownGroup[] = [];
   if (useDefaultOption) groups.push({ key: 'default', label: '', options: [useDefaultOption] });
   for (const ref of providerRefs) {
-    const provider = reported.get(providerRefBaseId(ref));
+    const base = providerRefBaseId(ref);
+    const provider = reported.get(base);
     if (!provider || MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status)) continue;
-    const incompatibility = remoteIncompatibilityFor(
-      ref,
-      catalogProfiles,
-      defaultRemoteIncompatibility,
-    );
-    // Only a Default known to have no overrides needs the machine's sign-in;
-    // otherwise the picker names the sign-in state and the daemon decides.
-    const signedOut =
-      isRemoteRefSignedOut(machine, ref) && defaultHasOverrides?.[providerRefBaseId(ref)] === false;
+    const sendable = !remoteIncompatibilityFor(ref, catalogProfiles, defaultRemoteIncompatibility);
+    const bringsCredentials = isProviderProfileRef(ref) || defaultHasOverrides?.[base] !== false;
+    const ownSignIn =
+      !isProviderProfileRef(ref) && !machine.cloud && !isRemoteRefSignedOut(machine, ref);
+    if (!ownSignIn && !(sendable && bringsCredentials)) continue;
     const labelled = new Map(
       (catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? []).map((option) => [
         splitLegacyCompoundId(option.value).modelId,
         option,
       ]),
     );
-    const bringsCredentials =
-      isProviderProfileRef(ref) || defaultHasOverrides?.[providerRefBaseId(ref)] === true;
+    const listsBackendModels = isProviderProfileRef(ref) || defaultHasOverrides?.[base] === true;
     // Only the configuration's own list: a profile can serve other models than its Default.
     const modelIds =
-      provider.models.length > 0 || !bringsCredentials
+      provider.models.length > 0 || !listsBackendModels
         ? provider.models
         : (catalogModels[ref] ?? [])
             .filter((option) => !isDefaultPseudoModelId(option.value))
             .map((option) => splitLegacyCompoundId(option.value).modelId);
     const options = modelIds.map((modelId): DropdownOption => {
       const known = labelled.get(modelId);
-      const option: DropdownOption = known
-        ? { ...known, value: modelId }
-        : { value: modelId, label: modelId };
-      if (!incompatibility && !signedOut) return option;
-      return {
-        ...option,
-        disabled: true,
-        data: {
-          ...option.data,
-          remoteUnavailable: incompatibility ? 'incompatible' : 'signed-out',
-        },
-      };
+      return known ? { ...known, value: modelId } : { value: modelId, label: modelId };
     });
     groups.push({ key: ref, label: groupLabel(ref), options });
   }

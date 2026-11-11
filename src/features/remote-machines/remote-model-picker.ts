@@ -10,7 +10,6 @@
  * catalog's `defaultRemoteIncompatibility`, or the Default rows of
  * `providers.profiles.list` (present even without overrides).
  */
-import { m } from '$shared/paraglide/messages.js';
 import type { ProviderProfileSummary, RemoteIncompatibility } from '$shared/provider-catalog';
 import type { ProviderDefaultConfig } from '$shared/provider-profiles';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
@@ -55,25 +54,6 @@ export function remoteIncompatibilityFor(
     return profile.remoteIncompatibility ?? { reason: 'unknown', keys: [] };
   }
   return defaultRemoteIncompatibility?.[providerRef] ?? null;
-}
-
-/**
- * Why a configuration can't run on another machine: account folder, not
- * marked, or other. A refused Default (`isDefault`) is unmarked with machine
- * sign-in off, so either option fixes it.
- */
-export function remoteIncompatibilityMessage(
-  incompatibility: RemoteIncompatibility,
-  backend: string,
-  isDefault = false,
-): string {
-  if (incompatibility.reason === 'account-folder')
-    return m.chat_modelPicker_remoteAccountFolder_description({ backend });
-  if (incompatibility.reason === 'not-marked')
-    return isDefault
-      ? m.chat_modelPicker_remoteDefaultRefused_description()
-      : m.chat_modelPicker_remoteNotMarked_description();
-  return m.chat_modelPicker_remoteIncompatible_description();
 }
 
 /** The machine report counts as old after a day. */

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
 import { store } from '$store/renderer/store';
 import { providerDefaultUpdateRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import RemoteMenuPreview from './provider-remote-menu.preview.svelte';
@@ -18,7 +18,7 @@ afterEach(() => {
 
 const markItem = () => screen.getByTestId('provider-default-remote-item');
 
-describe("the Default's remote options", () => {
+describe("the Default's Use on remote machines", () => {
   it('toggling the mark saves only remoteCompatible, keeping the name and overrides', async () => {
     store.init();
     const dispatch = vi.spyOn(store, 'dispatch');
@@ -38,20 +38,5 @@ describe("the Default's remote options", () => {
     expect(
       markItem().getAttribute('aria-disabled') ?? markItem().getAttribute('data-disabled'),
     ).not.toBeNull();
-  });
-
-  it('shows machine sign-in only when the backend lists the setting; a missing entry reads on', async () => {
-    store.init();
-    const view = render(RemoteMenuPreview, { machineSignInSupported: false });
-    await waitFor(() =>
-      expect(screen.queryByTestId('provider-remote-machine-sign-in-item')).toBeNull(),
-    );
-    view.unmount();
-    render(RemoteMenuPreview, {});
-    await waitFor(() =>
-      expect(
-        screen.getByTestId('provider-remote-machine-sign-in-item').getAttribute('aria-checked'),
-      ).toBe('true'),
-    );
   });
 });

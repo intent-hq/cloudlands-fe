@@ -3,22 +3,17 @@
 
   interface Props {
     marked?: boolean;
-    machineSignIn?: boolean;
     accountFolder?: boolean;
-    machineSignInSupported?: boolean;
   }
 
   export const preview = definePreview<Props>({
     id: 'provider-remote-menu',
-    title: "Provider ⋯ menu: the Default's remote options",
+    title: "Provider ⋯ menu: the Default's Use on remote machines",
     defaultState: 'unmarked',
     states: {
       unmarked: { props: {} },
       marked: { props: { marked: true } },
-      'machine-sign-in-off': { props: { machineSignIn: false } },
       'account-folder': { props: { accountFolder: true } },
-      // A backend without the machine sign-in setting: only the mark.
-      'no-machine-sign-in': { props: { machineSignInSupported: false } },
     },
   });
 </script>
@@ -29,20 +24,11 @@
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import { m } from '$shared/paraglide/messages.js';
   import { store } from '$store/renderer/store';
-  import {
-    hydrateRemoteMachineSignIn,
-    providerProfilesLoaded,
-    remoteMachineSignInSupportReceived,
-  } from '$store/renderer/slices/provider-settings/provider-settings-slice';
+  import { providerProfilesLoaded } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import { selectProviderProfilesRevision } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import ProviderRemoteMenuItems from './ProviderRemoteMenuItems.svelte';
 
-  let {
-    marked = false,
-    machineSignIn = true,
-    accountFolder = false,
-    machineSignInSupported = true,
-  }: Props = $props();
+  let { marked = false, accountFolder = false }: Props = $props();
 
   $effect.pre(() => {
     const revision = selectProviderProfilesRevision.select(store.state) + 1;
@@ -63,12 +49,10 @@
                   ? { reason: 'account-folder', keys: ['CLAUDE_CONFIG_DIR'] }
                   : { reason: 'not-marked', keys: [] },
               }),
-          remoteLaunch: marked ? 'send' : machineSignIn ? 'machine-sign-in' : 'refused',
+          remoteLaunch: marked ? 'send' : 'machine-sign-in',
         },
       ]),
     );
-    store.dispatch(remoteMachineSignInSupportReceived(machineSignInSupported));
-    store.dispatch(hydrateRemoteMachineSignIn({ 'claude-code': machineSignIn }, revision));
   });
 </script>
 
