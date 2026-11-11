@@ -35,8 +35,12 @@
   const several: ConnectionRecord[] = [
     local,
     remote('build-box', 'Build box', { accent: 'emerald', deviceIcon: 'server' }),
-    remote('studio', 'Studio Mac', { accent: 'violet', deviceIcon: 'macStudio' }),
-    remote('cloud', 'Cloud VM', { accent: null, deviceIcon: 'cloudVm' }),
+    remote('studio', 'Studio Mac', {
+      accent: 'violet',
+      deviceIcon: 'macStudio',
+      status: 'connecting',
+    }),
+    remote('cloud', 'Cloud VM', { accent: null, deviceIcon: 'cloudVm', status: 'not-open' }),
   ];
 
   const many: ConnectionRecord[] = [

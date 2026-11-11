@@ -47,7 +47,6 @@
     WORKSPACE_TAB_MOTION_EASING,
     type WorkspaceTabBorderMaskBounds,
   } from './titlebar-geometry';
-  import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
@@ -168,10 +167,7 @@
   }
 </script>
 
-{#snippet titlebarUtilities(showDaemonStatus: boolean)}
-  {#if showDaemonStatus}
-    <DaemonStatusIndicator />
-  {/if}
+{#snippet titlebarUtilities()}
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>
     <Button
       variant="ghost"
@@ -249,7 +245,7 @@
 
     <!-- Right column: global status and settings -->
     <div class="app-no-drag flex items-center justify-end pr-4 gap-1">
-      {@render titlebarUtilities(true)}
+      {@render titlebarUtilities()}
     </div>
     {#if activeTabBounds}
       <div

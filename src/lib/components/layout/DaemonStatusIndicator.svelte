@@ -72,11 +72,7 @@
   // Re-exported for existing importers; the implementation lives in the
   // dependency-light util so non-layout consumers (e.g. Settings → Devices)
   // can share it without importing this component.
-  import {
-    formatConnectionLabel,
-    formatGuestSessionAddress,
-    formatGuestSessionLabel,
-  } from '$lib/utils/connection-label';
+  import { formatConnectionLabel, formatGuestSessionLabel } from '$lib/utils/connection-label';
   export { formatConnectionLabel };
 </script>
 
@@ -93,13 +89,7 @@
   import { cn } from '$lib/utils';
   import { formatTransportLabel } from '$lib/utils/daemon-status-format';
   import Fa from 'svelte-fa';
-  import {
-    faPlus,
-    faCheck,
-    faChevronRight,
-    faTriangleExclamation,
-    faUsers,
-  } from '@fortawesome/free-solid-svg-icons';
+  import { faChevronRight, faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import DropdownMenu from '$lib/components/ui/dropdown-menu.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import Header from '$lib/components/ui/Header.svelte';
@@ -128,12 +118,8 @@
     stopUnslothRequested,
   } from '$store/renderer/slices/daemon-health/daemon-health-slice';
   import {
-    selectBackendConnections,
-    selectCurrentConnectionId,
     selectCurrentConnection,
     selectConnectionCertMismatch,
-    selectCertWarningsByConnectionId,
-    selectActiveProtocolMismatch,
     selectProtocolMismatchModal,
   } from '$store/renderer/slices/connections/connections-selectors';
   import {
@@ -145,19 +131,10 @@
     connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import { LOCAL_CONNECTION_ID } from '$shared/types/connections';
-  import {
-    selectGuestSessions,
-    selectWindowGuestSession,
-    selectGuestSessionsConnectedIds,
-    selectGuestSessionsOpenIds,
-  } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
-  import {
-    CONNECTION_ACCENT_CLASSES,
-    resolveConnectionAccent,
-  } from '$lib/utils/connection-accents';
+  import { selectWindowGuestSession } from '$store/renderer/slices/guest-sessions/guest-sessions-selectors';
+
   import { store as appStore } from '$store/renderer/store';
-  import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
@@ -168,14 +145,19 @@
   const versionComparison$ = selectDaemonVersionComparison();
   const unslothStatus$ = selectUnslothStatus();
   const unslothStopping$ = selectUnslothStopping();
-  const connections$ = selectBackendConnections();
-  const currentConnectionId$ = selectCurrentConnectionId();
   const currentConnection$ = selectCurrentConnection();
   const windowGuestSession$ = selectWindowGuestSession();
   const certMismatch$ = selectConnectionCertMismatch();
-  const certWarningsById$ = selectCertWarningsByConnectionId();
-  const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
+
+  interface Props {
+    /** Replaces the default trigger (the connection rail's active tile). */
+    trigger?: Snippet<[{ props: Record<string, unknown> }]>;
+    side?: 'top' | 'right' | 'bottom' | 'left';
+    align?: 'start' | 'center' | 'end';
+  }
+
+  let { trigger: customTrigger, side = 'bottom', align = 'end' }: Props = $props();
 
   let dropdownOpen = $state(false);
   let menuBody = $state<HTMLDivElement | null>(null);
@@ -465,28 +447,6 @@
     appStore.dispatch(agentMemoryBreakdownClosed());
   }
 
-  // --- Multi-backend connect: menu actions -------------------------------
-
-  function openDevicesSettings() {
-    dropdownOpen = false;
-    void navigateToSettings({ tab: 'devices' });
-  }
-
-  // Hosts joined as a GUEST (multiplayer w4) — a separate block from the
-  // paired devices above: the only status a guest sees is whether its pooled
-  // client is live, so the row carries a connected dot / "not connected" and
-  // nothing else (no health, no version, no owner-only controls).
-  const guestSessions$ = selectGuestSessions();
-  const guestOpenIds$ = selectGuestSessionsOpenIds();
-  const guestConnectedIds$ = selectGuestSessionsConnectedIds();
-
-  function openGuestSessionsSettings() {
-    dropdownOpen = false;
-    void navigateToSettings({ tab: 'collaboration' });
-  }
-
-  const hasSavedRemoteConnections = $derived($connections$.some((conn) => !conn.isLocal));
-
   const recoveryConsumerId = $props.id();
   onDestroy(() => appStore.dispatch(connectionWorkflowCleared(recoveryConsumerId)));
 
@@ -502,11 +462,6 @@
     appStore.dispatch(
       connectionWorkflowRequested(recoveryConsumerId, { kind: 'open', id, recovery: 'settings' }),
     );
-  }
-
-  function handleOpenConnection(id: string) {
-    dropdownOpen = false;
-    openConnectionOrRecover(id);
   }
 
   // --- Cert-mismatch modal actions ---------------------------------------
@@ -540,8 +495,8 @@
 </script>
 
 <DropdownMenu
-  align="end"
-  side="bottom"
+  {align}
+  {side}
   alignIconColumn={false}
   bind:open={dropdownOpen}
   contentClass="px-0"
@@ -549,25 +504,29 @@
   portal={true}
 >
   {#snippet trigger({ props })}
-    <Button
-      {...props}
-      variant="ghost-light"
-      size={currentRemoteName ? 'compact' : 'icon-compact'}
-      wrapContent={false}
-      class={cn('hover:bg-muted/50 rounded', currentRemoteName && 'gap-1.5 px-1.5')}
-      aria-label={triggerAriaLabel}
-    >
-      {#if currentRemoteName}
-        <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
-      {/if}
-      <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
-        <DeviceIcon
-          record={$currentConnection$ ?? { os: $stats$?.os }}
-          size={16}
-          class={iconColorClass}
-        />
-      </span>
-    </Button>
+    {#if customTrigger}
+      {@render customTrigger({ props })}
+    {:else}
+      <Button
+        {...props}
+        variant="ghost-light"
+        size={currentRemoteName ? 'compact' : 'icon-compact'}
+        wrapContent={false}
+        class={cn('hover:bg-muted/50 rounded', currentRemoteName && 'gap-1.5 px-1.5')}
+        aria-label={triggerAriaLabel}
+      >
+        {#if currentRemoteName}
+          <span class="text-xs text-subtle truncate max-w-32">{currentRemoteName}</span>
+        {/if}
+        <span class="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <DeviceIcon
+            record={$currentConnection$ ?? { os: $stats$?.os }}
+            size={16}
+            class={iconColorClass}
+          />
+        </span>
+      </Button>
+    {/if}
   {/snippet}
 
   {#snippet content()}
@@ -585,7 +544,7 @@
         </div>
         <!-- This details panel aligns to the whole menu, not the triggering row. -->
         <Menu.SubContent
-          side="left"
+          side={side === 'right' ? 'right' : 'left'}
           align="start"
           alignOffset={0}
           customAnchor={menuAnchor}
@@ -970,168 +929,6 @@
           </section>
         </Menu.SubContent>
       </Menu.Sub>
-
-      <!-- Multi-backend devices list + final Devices CTA -->
-      <div class="h-px bg-border my-1"></div>
-      <div class="px-1 pb-1">
-        {#if $connections$.length > 0}
-          <Header class="px-2 pt-1.5 pb-0.5" size={6}
-            >{m.layout_daemonStatus_devices_header()}</Header
-          >
-          {#each $connections$ as conn (conn.id)}
-            {@const isCurrent = conn.id === $currentConnectionId$}
-            {@const accent = resolveConnectionAccent(conn.accent)}
-            <Menu.Item
-              class="w-full cursor-pointer text-xs px-2 py-1.5"
-              onSelect={() => handleOpenConnection(conn.id)}
-            >
-              {#snippet leading()}
-                <DeviceIcon record={conn} size={16} class="text-foreground" />
-              {/snippet}
-              <span class="min-w-0 flex-1 truncate">
-                {conn.isLocal
-                  ? m.layout_daemonStatus_localConnection_label()
-                  : formatConnectionLabel(conn)}
-              </span>
-              <span class="flex h-lh items-center gap-1.5 shrink-0">
-                {#if !conn.isLocal && accent !== null}
-                  <span
-                    class={cn('size-2 shrink-0 rounded-full', CONNECTION_ACCENT_CLASSES[accent])}
-                    aria-hidden="true"
-                    data-connection-accent={accent}
-                  ></span>
-                {/if}
-                {#if ($certWarningsById$[conn.id]?.length ?? 0) > 0}
-                  {@const certWarningHosts = $certWarningsById$[conn.id]
-                    .map((w) => w.host)
-                    .join(', ')}
-                  <Tooltip side="left" contentClass="z-[10001]">
-                    {#snippet content()}
-                      <span>{m.layout_daemonStatus_certWarnings_tooltip()}: {certWarningHosts}</span
-                      >
-                    {/snippet}
-                    <!--
-                        Passive per-host cert warnings (#1746 follow-up) —
-                        informative only, same aria-only pattern as the
-                        protocol-mismatch icon below.
-                      -->
-                    <span
-                      class="text-warning-ink"
-                      role="img"
-                      aria-label={`${m.layout_daemonStatus_certWarnings_tooltip()}: ${certWarningHosts}`}
-                      data-testid="daemon-status-cert-warnings-icon"
-                    >
-                      <Fa icon={faTriangleExclamation} />
-                    </span>
-                  </Tooltip>
-                {/if}
-                {#if $activeProtocolMismatch$?.id === conn.id}
-                  <Tooltip side="left" contentClass="z-[10001]">
-                    {#snippet content()}
-                      <span>{m.layout_daemonStatus_protocolMismatch_tooltip()}</span>
-                    {/snippet}
-                    <!--
-                        Same aria-only pattern as the Version-row warning icon:
-                        the full explanation is the icon's accessible name, and
-                        it flows into this menu item's name-from-contents
-                        so arrow-key navigation announces it with the row.
-                      -->
-                    <span
-                      class="text-warning-ink"
-                      role="img"
-                      aria-label={m.layout_daemonStatus_protocolMismatch_tooltip()}
-                    >
-                      <Fa icon={faTriangleExclamation} />
-                    </span>
-                  </Tooltip>
-                {/if}
-                {#if isCurrent}
-                  <!--
-                      role="img" so the span's aria-label reliably maps to an
-                      accessible name (same treatment as the warning icons).
-                    -->
-                  <span
-                    class="text-green-500"
-                    role="img"
-                    aria-label={m.layout_daemonStatus_connectionActive_label()}
-                  >
-                    <Fa icon={faCheck} />
-                  </span>
-                {/if}
-              </span>
-            </Menu.Item>
-          {/each}
-        {/if}
-        <Menu.Item class="w-full cursor-pointer text-xs px-2 py-1.5" onSelect={openDevicesSettings}>
-          {#snippet leading()}
-            <span class="text-subtle"><Fa icon={faPlus} /></span>
-          {/snippet}
-          {hasSavedRemoteConnections
-            ? m.layout_daemonStatus_manageDevices_action()
-            : m.layout_daemonStatus_connectAnotherDevice_action()}
-        </Menu.Item>
-      </div>
-
-      <!-- Guest sessions (hosts joined through an invite) — shown only once joined -->
-      {#if $guestSessions$.length > 0}
-        <div class="h-px bg-border my-1"></div>
-        <div class="px-1 pb-1" data-testid="daemon-status-guest-sessions">
-          <Header class="px-2 pt-1.5 pb-0.5" size={6}
-            >{m.layout_daemonStatus_guestSessions_header()}</Header
-          >
-          {#each $guestSessions$ as session (session.id)}
-            {@const isCurrent = session.id === $currentConnectionId$}
-            {@const open = $guestOpenIds$.includes(session.id)}
-            {@const connected = open && $guestConnectedIds$.includes(session.id)}
-            {@const guestAddress = formatGuestSessionAddress(session)}
-            <Menu.Item
-              class="w-full cursor-pointer text-xs px-2 py-1.5"
-              onSelect={() => handleOpenConnection(session.id)}
-            >
-              <span class="text-foreground shrink-0" aria-hidden="true"><Fa icon={faUsers} /></span>
-              <span class="min-w-0 flex-1 truncate">
-                {formatGuestSessionLabel(session)}
-                <!-- Mirrors the remote-connection `hostname (host:port)` shape:
-                     the dialled tc address / host stays visible once the
-                     captured machine name takes over as the primary label. -->
-                {#if guestAddress !== null}
-                  <span class="text-subtle" data-guest-address={guestAddress}>({guestAddress})</span
-                  >
-                {/if}
-              </span>
-              <span class="flex h-lh items-center gap-1.5 shrink-0">
-                <!-- Status only for a host with a window (pooled client); a
-                     joined host that was never opened has no status. -->
-                {#if connected}
-                  <span class="size-2 shrink-0 rounded-full bg-success" data-guest-connected="true">
-                    <span class="sr-only">
-                      {m.layout_daemonStatus_guestSession_connected_label()}
-                    </span>
-                  </span>
-                {:else if open}
-                  <span class="text-subtle" data-guest-connected="false">
-                    {m.layout_daemonStatus_guestSession_notConnected_label()}
-                  </span>
-                {/if}
-                {#if isCurrent}
-                  <span
-                    class="sr-only"
-                    role="img"
-                    aria-label={m.layout_daemonStatus_connectionActive_label()}
-                  ></span>
-                {/if}
-              </span>
-            </Menu.Item>
-          {/each}
-          <Menu.Item
-            class="w-full cursor-pointer text-xs px-2 py-1.5"
-            onSelect={openGuestSessionsSettings}
-          >
-            <span class="text-subtle" aria-hidden="true"><Fa icon={faUsers} /></span>
-            {m.layout_daemonStatus_manageGuestSessions_action()}
-          </Menu.Item>
-        </div>
-      {/if}
     </div>
   {/snippet}
 </DropdownMenu>
