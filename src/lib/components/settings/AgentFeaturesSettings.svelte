@@ -46,6 +46,15 @@
     selectSettingsFormOperation,
   } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import DesktopOsChecklist from '$features/desktop/renderer/DesktopOsChecklist.svelte';
+  import {
+    selectDesktopOsPermissions,
+    selectDesktopOsPermissionsChecking,
+  } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
+  import {
+    desktopOsPermissionsCleared,
+    desktopOsPermissionsRequested,
+  } from '$store/renderer/slices/desktop-control/desktop-control-slice';
 
   import {
     FEATURE_DEFAULTS,
@@ -111,6 +120,13 @@
   const editedMaxAgents = $derived(String($form$?.drafts[MAX_AGENTS_PATH] ?? persistedMaxAgents));
   const maxAgentsSaving = $derived($maxAgentsOperation$?.status === 'pending');
 
+  // This computer's missing OS grants for desktop control; set only while something is missing.
+  const osPermissions$ = selectDesktopOsPermissions();
+  const osPermissionsChecking$ = selectDesktopOsPermissionsChecking();
+  const osPermissions = $derived($osPermissions$);
+  const osPermissionsChecking = $derived($osPermissionsChecking$);
+  const requestOsPermissions = () => appStore.dispatch(desktopOsPermissionsRequested());
+
   onMount(() => {
     appStore.dispatch(settingsFormOpened(identity, 'agent-features'));
     appStore.dispatch(
@@ -140,6 +156,9 @@
         { path, value: checked },
       ]),
     );
+    if (path === 'agentFeatures.desktopControl') {
+      appStore.dispatch(checked ? desktopOsPermissionsRequested() : desktopOsPermissionsCleared());
+    }
   }
 
   function handleDebounceSave() {
@@ -223,6 +242,19 @@
         get: () => currentValue,
         set: (checked: boolean) => handleToggle(feature.path, checked),
       });
+      if (
+        feature.path === 'agentFeatures.desktopControl' &&
+        osPermissions &&
+        values['agentFeatures.desktopControl']
+      ) {
+        entries.push({
+          kind: 'custom',
+          id: 'desktop-os-permissions',
+          label: m.desktop_os_checklist_title(),
+          description: osPermissions.guidance,
+          busy: osPermissionsChecking,
+        });
+      }
       if (feature.path === 'agentFeatures.prMonitor') {
         entries.push({
           kind: 'custom',
@@ -291,6 +323,22 @@
   </div>
 {/snippet}
 
+{#snippet osPermissionsControl()}
+  {#if osPermissions}
+    <div class="flex w-64 max-w-full flex-col items-end gap-2">
+      <DesktopOsChecklist checklist={osPermissions.checklist} />
+      <Button
+        variant="secondary"
+        size="xs"
+        onclick={requestOsPermissions}
+        disabled={osPermissionsChecking}
+      >
+        {m.desktop_os_settings_checkAgain()}
+      </Button>
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet maxAgentsControl()}
   <!-- i18n-ignore (template expression, not user-facing text) -->
   {@const maxAgentsNum = Number(editedMaxAgents)}
@@ -335,5 +383,6 @@
   custom={defineSettingsCustomControls({
     'pr-monitor-debounce': debounceControl,
     'max-top-level-agents': maxAgentsControl,
+    'desktop-os-permissions': osPermissionsControl,
   })}
 />

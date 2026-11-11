@@ -8203,6 +8203,8 @@
   "desktop_overlay_status": "Intent 正在控制您的计算机",
   "desktop_overlay_stop_label": "停止",
   "desktop_os_setup_description": "控制尚未开始。macOS 现在会请求所有缺少的权限；你可以拒绝此请求以取消。如果没有出现对话框或访问被拒绝，请在“系统设置”→“隐私与安全性”中为每个尚未允许的项目启用 Intent。允许屏幕录制后，在 macOS 提示时退出并重新打开 Intent 一次，然后请求新会话并再次允许。",
+  "desktop_os_settings_description": "macOS 会请求每项缺少的权限。如果没有出现对话框，请在“系统设置”→“隐私与安全性”中允许 Intent。允许“屏幕录制”后，请退出并重新打开 Intent。",
+  "desktop_os_settings_checkAgain": "重新检查",
   "settings_agentFeatures_desktopControl_description": "为新的代理会话提供桌面控制工具。仍然需要您的许可。这不会更改已记住的权限，也不会停止正在进行的控制。",
   "desktop_consent_claimPrimary": "允许控制会将 {computer} 设为此工作区的主电脑。",
   "desktop_stopReportFailed_title": "桌面控制已停止",

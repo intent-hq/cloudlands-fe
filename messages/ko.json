@@ -8203,6 +8203,8 @@
   "desktop_overlay_status": "Intent가 컴퓨터를 제어하고 있습니다",
   "desktop_overlay_stop_label": "중지",
   "desktop_os_setup_description": "제어가 시작되지 않았습니다. macOS가 지금 누락된 모든 권한을 요청합니다. 취소하려면 이 요청을 거부하세요. 대화상자가 나타나지 않거나 접근이 거부된 경우 시스템 설정 → 개인정보 보호 및 보안에서 아직 허용되지 않은 각 항목의 Intent 항목을 활성화하세요. 화면 기록을 허용한 후 macOS가 요청하면 Intent를 한 번 종료했다가 다시 열고, 새 세션을 요청한 뒤 다시 허용하세요.",
+  "desktop_os_settings_description": "macOS가 누락된 각 권한을 요청합니다. 대화 상자가 나타나지 않으면 시스템 설정 → 개인정보 보호 및 보안에서 Intent를 허용하세요. 화면 기록을 허용한 후 Intent를 종료했다가 다시 여세요.",
+  "desktop_os_settings_checkAgain": "다시 확인",
   "settings_agentFeatures_desktopControl_description": "새 에이전트 세션에서 데스크톱 제어 도구를 사용할 수 있게 합니다. 사용자의 허가는 여전히 필요합니다. 기억된 권한을 변경하거나 진행 중인 제어를 중지하지 않습니다.",
   "desktop_consent_claimPrimary": "제어를 허용하면 {computer}이(가) 이 작업 공간의 기본 컴퓨터로 설정됩니다.",
   "desktop_stopReportFailed_title": "데스크톱 제어가 중지되었습니다",

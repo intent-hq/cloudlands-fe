@@ -21,7 +21,7 @@ const APPROVED_BRIDGE_REGISTRATIONS = new Map([
   ['src/lib/electron-bridge.ts', { addMockIpcListener: 2 }],
   ['src/store/renderer/seeders/agent-ipc-bridge-seeder.ts', { registerMockIpcHandler: 2 }],
   ['src/store/renderer/seeders/auto-update-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
-  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 8 }],
+  ['src/store/renderer/seeders/backend-status-bridge-seeder.ts', { registerMockIpcHandler: 9 }],
   ['src/store/renderer/seeders/browser-ipc-bridge-seeder.ts', { registerMockIpcHandler: 1 }],
   ['src/store/renderer/seeders/connections-bridge-seeder.ts', { registerMockIpcHandler: 12 }],
   // intent:// link delivery: drains the actions main queued for this window.

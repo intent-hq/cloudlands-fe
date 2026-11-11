@@ -346,6 +346,7 @@ describe('renderer side-effect boundary guard', () => {
       'backend:restart-orphaned-sidecar',
       'backend:get-sidecar-run-log',
       'backend:desktop-permissions',
+      'backend:desktop-os-permissions',
     ];
     const seeder = (names: string[]) => ({
       path: 'src/store/renderer/seeders/backend-status-bridge-seeder.ts',

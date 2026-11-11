@@ -8203,6 +8203,8 @@
   "desktop_overlay_status": "Intent contrôle votre ordinateur",
   "desktop_overlay_stop_label": "Arrêter",
   "desktop_os_setup_description": "Le contrôle n’a pas démarré. macOS demande maintenant toutes les autorisations manquantes ; vous pouvez refuser cette demande pour annuler. Si aucune boîte de dialogue n’apparaît ou si l’accès a été refusé, activez l’entrée Intent pour chaque élément pas encore autorisé dans Réglages Système → Confidentialité et sécurité. Après avoir autorisé l’enregistrement de l’écran, quittez et rouvrez Intent une fois lorsque macOS le demande, puis demandez une nouvelle session et autorisez à nouveau.",
+  "desktop_os_settings_description": "macOS demande chaque autorisation manquante. Si aucune boîte de dialogue n’apparaît, autorisez Intent dans Réglages Système → Confidentialité et sécurité. Après avoir autorisé l’enregistrement de l’écran, quittez puis rouvrez Intent.",
+  "desktop_os_settings_checkAgain": "Vérifier à nouveau",
   "settings_agentFeatures_desktopControl_description": "Rendre les outils de contrôle du bureau disponibles pour les nouvelles sessions de l’agent. Votre autorisation reste nécessaire. Cela ne modifie pas les autorisations mémorisées et n’arrête pas le contrôle en cours.",
   "desktop_consent_claimPrimary": "Autoriser le contrôle définit {computer} comme ordinateur principal de cet espace de travail.",
   "desktop_stopReportFailed_title": "Contrôle du bureau arrêté",

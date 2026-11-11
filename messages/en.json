@@ -8203,6 +8203,8 @@
   "desktop_overlay_status": "Intent is controlling your machine",
   "desktop_overlay_stop_label": "Stop",
   "desktop_os_setup_description": "Control has not started. macOS asks for every missing permission now; you can deny this request to cancel. If no dialog appears or access was denied, enable the Intent entry for each item not yet allowed in System Settings → Privacy & Security. After you allow Screen Recording, quit and reopen Intent once when macOS asks, then request a new session and Allow again.",
+  "desktop_os_settings_description": "macOS asks for each missing permission. If no dialog appears, allow Intent in System Settings → Privacy & Security. After you allow Screen Recording, quit and reopen Intent.",
+  "desktop_os_settings_checkAgain": "Check again",
   "settings_agentFeatures_desktopControl_description": "Make desktop control tools available to new agent sessions. Your permission is still required. This does not change remembered permission or stop active control.",
   "desktop_consent_claimPrimary": "Allowing control sets {computer} as this workspace’s primary computer.",
   "desktop_stopReportFailed_title": "Desktop control stopped",
