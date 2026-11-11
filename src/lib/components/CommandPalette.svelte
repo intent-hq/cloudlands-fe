@@ -108,7 +108,8 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import { isLabCommandHidden } from './command-palette-labs';
+  import { isLabCommandHidden, isMachineRailCommandHidden } from './command-palette-labs';
+  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -157,6 +158,7 @@
   const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
   const labsTabGroups$ = selectLabsTabGroupsEnabled();
+  const machineRailEnabled$ = selectMachineRailEnabled();
   const labsCloudMachines$ = selectLabsCloudMachinesEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
@@ -183,6 +185,7 @@
         !(!$canCreate$ && command.id === 'new-workspace') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
         !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
+        !isMachineRailCommandHidden(command.id, $machineRailEnabled$) &&
         !isLabCommandHidden(
           command.id,
           $dockLabEnabled,

@@ -1112,6 +1112,23 @@ export const IPC_CHANNELS = {
     CHANGED: 'guest-sessions:changed',
   },
 
+  // Machine rail (Labs): one window stays connected to several machines and a
+  // left rail switches which machine's renderer the window shows. Main owns
+  // the per-window list and selection; CHANGED is a main→renderer push (also
+  // in EVENT_CHANNELS). Types: `shared/types/machine-rail.ts`.
+  MACHINE_RAIL: {
+    GET_STATE: 'machine-rail:get-state',
+    SELECT: 'machine-rail:select',
+    ADD: 'machine-rail:add',
+    REMOVE: 'machine-rail:remove',
+    SET_ENABLED: 'machine-rail:set-enabled',
+    CHANGED: 'machine-rail:changed',
+    // A renderer whose machine is not shown hands a toast to main, which
+    // pushes TOAST to the renderer the window shows (also in EVENT_CHANNELS).
+    FORWARD_TOAST: 'machine-rail:forward-toast',
+    TOAST: 'machine-rail:toast',
+  },
+
   // Workspace presence (multiplayer w5). The daemon connection is pooled per
   // backend in main and `presence.update` replaces the CONNECTION's whole
   // focus set, so each window reports its own focus / typing here and main
@@ -1192,6 +1209,8 @@ export const EVENT_CHANNELS = [
   'window:dock-placement-changed',
   'window:dock-pointer-presence-changed',
   'window:dock-lab-changed',
+  'machine-rail:changed',
+  'machine-rail:toast',
   'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',

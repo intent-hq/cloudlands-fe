@@ -1,6 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { isFocusedWindowBrowserActive } from '../features/system/main/system.ipc';
 import { hasFixedZoom } from './fixed-zoom';
+import { getShownRendererWebContents } from './window-backend';
 
 type ZoomCommand = 'menu:zoom-in' | 'menu:zoom-out' | 'menu:reset-zoom';
 
@@ -23,7 +24,7 @@ export function handleMenuZoom(
     return;
   }
 
-  const contents = focusedWindow.webContents;
+  const contents = getShownRendererWebContents(focusedWindow);
   contents.setZoomLevel(
     command === 'menu:reset-zoom'
       ? 0

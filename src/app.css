@@ -865,3 +865,16 @@ body.panel-resizing webview {
   align-items: center;
   justify-content: center;
 }
+
+/* Machine rail (Labs). A window can host one renderer per machine; the rail
+   takes a strip at the left edge of each. `--machine-rail-inset` keeps the
+   per-machine reconnect overlay off that strip so another machine stays one
+   click away. A renderer whose machine is not shown hides its page so it
+   cannot show through another machine's translucent background. */
+:root[data-machine-rail] {
+  --machine-rail-inset: 3.5rem;
+}
+
+:root[data-machine-hidden] body {
+  visibility: hidden;
+}

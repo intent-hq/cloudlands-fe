@@ -17,7 +17,11 @@ import {
   type WindowHostChecker,
   type WindowHostScope,
 } from './window-workspace-tracking';
-import { getBackendIdForWindow } from '../../../main/window-backend';
+import {
+  getBackendIdForWebContents,
+  getBackendIdForWindow,
+  isShownRenderer,
+} from '../../../main/window-backend';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
   clearWindowBrowserFocusOwner,
@@ -1123,13 +1127,15 @@ export function setupSystemIPC() {
       async (event, validated) => {
         try {
           const window = BrowserWindow.fromWebContents(event.sender);
-          if (window) {
+          // A window with a machine rail hosts one renderer per machine; only
+          // the one it shows speaks for the window (it reports again when shown).
+          if (window && isShownRenderer(window, event.sender)) {
             const windowId = window.id;
             windowWorkspaceState.set(windowId, validated.inWorkspace);
             if (validated.workspaceId) {
               windowWorkspaceIds.set(windowId, {
                 workspaceId: validated.workspaceId,
-                backendId: getBackendIdForWindow(window),
+                backendId: getBackendIdForWebContents(event.sender),
               });
               lastKnownWindowWorkspaceIds.set(windowId, validated.workspaceId);
             } else if (!validated.inWorkspace) {
@@ -1166,10 +1172,10 @@ export function setupSystemIPC() {
       WindowSetOpenWorkspaceTabsSchema,
       async (event, validated) => {
         const window = BrowserWindow.fromWebContents(event.sender);
-        if (window) {
+        if (window && isShownRenderer(window, event.sender)) {
           windowOpenWorkspaceTabs.set(window.id, {
             workspaceIds: validated.workspaceIds,
-            backendId: getBackendIdForWindow(window),
+            backendId: getBackendIdForWebContents(event.sender),
           });
           app.emit('window-workspace-state-changed');
         }

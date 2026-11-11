@@ -768,6 +768,17 @@ export const WindowSetFullScreenSchema = z.object({
 
 export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict();
 
+export const MachineRailMachineSchema = z.object({ id: z.string().min(1).max(256) }).strict();
+
+export const MachineRailForwardToastSchema = z
+  .object({
+    kind: z.enum(['success', 'info', 'warning', 'error']),
+    message: z.string().min(1).max(2000),
+  })
+  .strict();
+
+export const MachineRailSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
+
 export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const BrowserAccessSetPortSchema = z

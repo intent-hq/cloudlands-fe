@@ -22,7 +22,16 @@ type StrictBinding = Readonly<{
   frame: Electron.WebFrameMain;
 }>;
 
+/**
+ * A machine view: a second renderer hosted inside `window` (machine rail lab),
+ * bound to its own backend. The window's own web contents keeps the window's
+ * stamp; a view's binding is read from here first.
+ */
+type MachineViewBinding = Readonly<{ window: BrowserWindowType; backendId: string }>;
+
 const strictBindings = new WeakMap<Electron.WebContents, StrictBinding>();
+const machineViewBindings = new WeakMap<Electron.WebContents, MachineViewBinding>();
+const machineViewsByWindow = new WeakMap<BrowserWindowType, Set<Electron.WebContents>>();
 const observedWindows = new WeakSet<BrowserWindowType>();
 const retirementListeners = new WeakMap<Electron.WebContents, Set<() => void>>();
 
@@ -53,8 +62,11 @@ function retireStrictBinding(sender: Electron.WebContents): void {
   }
 }
 
-function bindCurrentDocument(window: BrowserWindowType, backendId: string): void {
-  const sender = window.webContents;
+function bindCurrentDocument(
+  window: BrowserWindowType,
+  backendId: string,
+  sender: Electron.WebContents = window.webContents,
+): void {
   if (window.isDestroyed() || sender.isDestroyed() || !sender.mainFrame) return;
   retireStrictBinding(sender);
   strictBindings.set(
@@ -93,11 +105,118 @@ export function stampWindowWithBackend(
   window.once('closed', () => retireStrictBinding(sender));
 }
 
+/**
+ * Bind a machine view's web contents to `backendId` for as long as it lives
+ * inside `window`. Call before the view loads its first document.
+ */
+export function bindMachineViewToBackend(
+  window: BrowserWindowType,
+  sender: Electron.WebContents,
+  backendId: string,
+): void {
+  machineViewBindings.set(sender, Object.freeze({ window, backendId }));
+  let views = machineViewsByWindow.get(window);
+  if (!views) {
+    views = new Set();
+    machineViewsByWindow.set(window, views);
+  }
+  views.add(sender);
+  const release = (): void => {
+    retireStrictBinding(sender);
+    machineViewBindings.delete(sender);
+    machineViewsByWindow.get(window)?.delete(sender);
+  };
+  sender.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) retireStrictBinding(sender);
+  });
+  sender.on('dom-ready', () => {
+    if (machineViewBindings.get(sender)?.backendId === backendId) {
+      bindCurrentDocument(window, backendId, sender);
+    }
+  });
+  sender.on('render-process-gone', () => retireStrictBinding(sender));
+  sender.once('destroyed', release);
+  window.once('closed', release);
+}
+
+/**
+ * Every live renderer hosted by `window`: its own web contents first, then its
+ * machine views. Use it wherever a message must reach each renderer.
+ */
+export function getRendererWebContents(window: BrowserWindowType): Electron.WebContents[] {
+  if (window.isDestroyed()) return [];
+  const renderers = [window.webContents];
+  for (const view of machineViewsByWindow.get(window) ?? []) {
+    if (!view.isDestroyed()) renderers.push(view);
+  }
+  return renderers;
+}
+
+/** Whether `sender` is a machine view that main created inside `window`. */
+export function isMachineViewOf(window: BrowserWindowType, sender: Electron.WebContents): boolean {
+  return machineViewBindings.get(sender)?.window === window;
+}
+
+const shownMachineViews = new WeakMap<BrowserWindowType, Electron.WebContents>();
+
+/** Record which machine view `window` shows; `null` when it shows its own renderer. */
+export function setShownMachineView(
+  window: BrowserWindowType,
+  sender: Electron.WebContents | null,
+): void {
+  if (sender) shownMachineViews.set(window, sender);
+  else shownMachineViews.delete(window);
+}
+
+/**
+ * The renderer the user is looking at in `window`: the shown machine view, or
+ * the window's own web contents. Menu commands and input gestures go here.
+ */
+export function getShownRendererWebContents(window: BrowserWindowType): Electron.WebContents {
+  const shown = shownMachineViews.get(window);
+  return shown && !shown.isDestroyed() && machineViewBindings.get(shown)?.window === window
+    ? shown
+    : window.webContents;
+}
+
+/**
+ * Whether `sender` is the renderer `window` shows. Only that renderer speaks
+ * for the window (current workspace, open tabs) to the main process.
+ */
+export function isShownRenderer(window: BrowserWindowType, sender: Electron.WebContents): boolean {
+  const shown = shownMachineViews.get(window);
+  const showsView =
+    !!shown && !shown.isDestroyed() && machineViewBindings.get(shown)?.window === window;
+  return machineViewBindings.has(sender) ? showsView && shown === sender : !showsView;
+}
+
+function getStrictMachineViewBinding(
+  sender: Electron.WebContents,
+  binding: StrictBinding,
+): StrictBinding | null {
+  const view = machineViewBindings.get(sender);
+  if (
+    !view ||
+    sender.isDestroyed() ||
+    binding.window.isDestroyed() ||
+    view.window !== binding.window ||
+    view.backendId !== binding.backendId ||
+    sender.mainFrame !== binding.frame
+  ) {
+    retireStrictBinding(sender);
+    return null;
+  }
+  return binding;
+}
+
 /** Explicit live document binding only. Never consult focused or local fallback routing. */
 export function getStrictBackendBindingForWebContents(
   sender: Electron.WebContents,
 ): StrictBinding | null {
   const binding = strictBindings.get(sender);
+  if (binding && machineViewBindings.has(sender)) {
+    return getStrictMachineViewBinding(sender, binding);
+  }
   if (
     !binding ||
     sender.isDestroyed() ||
@@ -120,6 +239,8 @@ export function getBackendIdForWindow(window: BrowserWindowType): string {
 
 /** Resolve an IPC sender's backend, defaulting unbound windows to local. */
 export function getBackendIdForWebContents(webContents: Electron.WebContents): string {
+  const view = machineViewBindings.get(webContents);
+  if (view) return view.backendId;
   const window = BrowserWindow.fromWebContents(webContents) as BackendBoundWindow | null;
   return window ? getBackendIdForWindow(window) : LOCAL_CONNECTION_ID;
 }

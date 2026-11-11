@@ -1317,9 +1317,6 @@
     "src/lib/utils/code-highlighter.ts": [
       "clearHighlightCache"
     ],
-    "src/lib/utils/connection-label.ts": [
-      "formatLocalMachineLabel"
-    ],
     "src/lib/utils/date.ts": [
       "formatDate"
     ],
