@@ -803,7 +803,11 @@ function* bulkDelete(): SagaGenerator<void> {
   }
 }
 
-/** Retire (purge the folder of) each archived workspace that still has one, one at a time. */
+/**
+ * Retire (purge the folder of) each archived workspace that still has one, one at a time.
+ * Like `bulkDelete`, the batch belongs to the store, backend and admission that confirmed
+ * it: when any of them changes, it stops and stays silent.
+ */
 function* bulkRetire(): SagaGenerator<void> {
   if (yield* selectBulkOperationInFlight.effect()) return;
   const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
@@ -811,10 +815,30 @@ function* bulkRetire(): SagaGenerator<void> {
   const targets = workspacesForIds(workspaceIds, workspaces).filter(
     (workspace) => workspace.status === WorkspaceStatusEnum.Archived,
   );
-  yield* put(bulkOperationStarted({ kind: 'retire', workspaceIds: targets.map(({ id }) => id) }));
+  const dispatch = store.dispatch;
+  const backend = store.state.connections.windowBackendId;
+  const admission = selectPrincipalActionContext.select(store.state);
+  const reservedIds = targets.map(({ id }) => id);
+  const ownsBulk = () => {
+    try {
+      return (
+        store.dispatch === dispatch &&
+        store.state.connections.windowBackendId === backend &&
+        store.state.workspaceOperations.bulkReservedWorkspaceIds === reservedIds
+      );
+    } catch {
+      return false;
+    }
+  };
+  const current = () =>
+    ownsBulk() &&
+    admission !== null &&
+    selectPrincipalActionContext.select(store.state) === admission;
+  yield* put(bulkOperationStarted({ kind: 'retire', workspaceIds: reservedIds }));
   yield* put(closeBulkRetireConfirm());
   try {
     const notify = yield* call(getToast);
+    if (!current()) return;
     if (targets.length === 0) {
       notify.info(m.workspace_ops_noFoldersToPurge_message());
       return;
@@ -822,8 +846,10 @@ function* bulkRetire(): SagaGenerator<void> {
     let retiredCount = 0;
     let failCount = 0;
     for (const workspace of targets) {
+      if (!current()) return;
       try {
         const result = yield* call([workspaceClient, workspaceClient.retire], workspace.id);
+        if (!current()) return;
         if (!result.ok) {
           failCount++;
           continue;
@@ -836,6 +862,7 @@ function* bulkRetire(): SagaGenerator<void> {
           ...(result.data?.retiredAt ? { retiredAt: result.data.retiredAt } : {}),
         });
       } catch (error) {
+        if (!current()) return;
         logger.error('workspace.retire failed', { workspaceId: workspace.id, error });
         failCount++;
       }
@@ -855,7 +882,8 @@ function* bulkRetire(): SagaGenerator<void> {
       );
     }
   } finally {
-    yield* put(bulkOperationFinished());
+    // An obsolete admission may settle its own lock, never a replacement store's.
+    if (ownsBulk()) dispatch(bulkOperationFinished());
   }
 }
 

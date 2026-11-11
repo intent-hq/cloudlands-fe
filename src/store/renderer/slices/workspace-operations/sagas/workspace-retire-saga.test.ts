@@ -354,6 +354,32 @@ describe('bulk retire saga', () => {
     run.task.cancel();
   });
 
+  it('stops the batch, without toasts, when the connection changes mid-batch', async () => {
+    let finishFirst!: (value: unknown) => void;
+    mocks.retire.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    mocks.retire.mockImplementation(async (id: string) => ({ ok: true, data: retiredRow(id) }));
+    const run = harness([archivedRow('ws-1'), archivedRow('ws-2'), archivedRow('ws-3')]);
+    run.send(openBulkRetireConfirm({ workspaceIds: ['ws-1', 'ws-2', 'ws-3'] }));
+    run.send(confirmBulkRetire());
+    await settle();
+    expect(mocks.retire).toHaveBeenCalledTimes(1);
+
+    run.send(connectionStatusChanged('disconnected'));
+    finishFirst({ ok: true, data: retiredRow('ws-1') });
+    await settle();
+
+    expect(mocks.retire).toHaveBeenCalledTimes(1);
+    expect(run.row('ws-2')?.status).toBe(WorkspaceStatusEnum.Archived);
+    expect(mocks.notify.success).not.toHaveBeenCalled();
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    run.task.cancel();
+  });
+
   it('says there is nothing to purge and makes no call when no row is eligible', async () => {
     const run = harness([workspace('ws-active'), retiredRow('ws-purged')]);
     run.send(openBulkRetireConfirm({ workspaceIds: ['ws-active', 'ws-purged'] }));

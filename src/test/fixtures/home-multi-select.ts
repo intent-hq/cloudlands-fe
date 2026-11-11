@@ -7,7 +7,10 @@ import {
   updateHomeWorkspaceView,
 } from '$features/home/home-workspaces-slice';
 import { readHomePersistence } from '$features/home/home-workspaces-persistence';
-import { IPC_CHANNELS } from '$shared/ipc-registry';
+import {
+  setupHomeLifecycleBridge,
+  type HomeLifecycleCall,
+} from '$features/home/home-multi-select-browser-fixtures';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { WorkspaceStatus, type Workspace } from '$shared/types';
 import {
@@ -23,16 +26,11 @@ import {
 import { workspaceOperationsSaga } from '$store/renderer/slices/workspace-operations/sagas/workspace-operations-saga';
 import { admitLegacyPrincipal } from './principal-state';
 
-interface LifecycleCall {
-  method: string;
-  workspaceId: string;
-}
-
 declare global {
   interface Window {
     __homeMultiSelect?: {
       snapshot: () => {
-        calls: LifecycleCall[];
+        calls: HomeLifecycleCall[];
         selectedId: string | null;
         statuses: Record<string, string>;
       };
@@ -60,50 +58,10 @@ const base: Workspace = {
   conversationInfo: [],
 };
 
-const SCRIPTED = new Set([
-  'workspace.archive',
-  'workspace.retire',
-  'workspace.delete',
-  'workspace.members.list',
-  'workspace.list',
-  'hook.list',
-]);
-
-/**
- * Seeds Home with active, archived and purged workspaces and scripts the
- * lifecycle writes (`workspace.archive`, `workspace.retire`, `workspace.delete`)
- * plus the bulk preflight reads (`workspace.members.list`, `hook.list`). The Archived
- * filter's retired read (`workspace.list { includeRetired }`) finds no extra rows.
- */
+/** Seeds Home with active, archived and purged workspaces over a scripted lifecycle bridge. */
 export function setupHomeMultiSelectFixtures(view: 'list' | 'board') {
   const dispose = startHomePreviewFixtures({ homePreferences: false });
-  const previous = window.electronAPI;
-  if (!previous) throw new Error('Home preview bridge is unavailable');
-  const calls: LifecycleCall[] = [];
-  window.electronAPI = {
-    ...previous,
-    invoke: async (channel, payload) => {
-      const request = payload as { method?: string; params?: { workspaceId?: string } };
-      if (
-        channel !== IPC_CHANNELS.BACKEND.REQUEST ||
-        !request?.method ||
-        !SCRIPTED.has(request.method)
-      )
-        return previous.invoke(channel, payload);
-      const workspaceId = request.params?.workspaceId ?? '';
-      switch (request.method) {
-        case 'workspace.members.list':
-          return { ok: true, result: { members: [] } };
-        case 'hook.list':
-          return { ok: true, result: { hooks: [] } };
-        case 'workspace.list':
-          return { ok: true, result: { workspaces: [] } };
-        default:
-          calls.push({ method: request.method, workspaceId });
-          return { ok: true, result: { success: true } };
-      }
-    },
-  };
+  const bridge = setupHomeLifecycleBridge();
 
   store.dispatch(hydrateHomeWorkspaceSettings(null, readHomePersistence(undefined)));
   admitLegacyPrincipal();
@@ -167,7 +125,7 @@ export function setupHomeMultiSelectFixtures(view: 'list' | 'board') {
   store.dispatch(updateHomeWorkspaceView({ view }));
   window.__homeMultiSelect = {
     snapshot: () => ({
-      calls: [...calls],
+      calls: [...bridge.calls],
       selectedId: store.state.homeWorkspaces.selectedId,
       statuses: Object.fromEntries(
         getItems(store.state.workspace.workspaces).map((workspace) => [
@@ -180,7 +138,7 @@ export function setupHomeMultiSelectFixtures(view: 'list' | 'board') {
   return () => {
     stopOperations();
     stopHome();
-    window.electronAPI = previous;
+    bridge.dispose();
     delete window.__homeMultiSelect;
     dispose();
   };

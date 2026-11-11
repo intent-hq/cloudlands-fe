@@ -272,7 +272,6 @@
     getText={(workspace) =>
       workspace.title.trim() ? workspace.title : m.workspace_links_untitled_label()}
     selectable="single"
-    aria-multiselectable="true"
     selectedKeys={selectedIds}
     onSelectedKeysChange={(keys) => onselect(keys[0] ? String(keys[0]) : null)}
     ariaLabel={label}
