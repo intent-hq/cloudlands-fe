@@ -87,6 +87,9 @@
     /* The Assistant row closes the list; its own inset is the bottom margin. */
     padding: 8px 12px 8px;
   }
+  .overview-frame:not(.conversation-open) {
+    height: var(--dock-overview-height, auto);
+  }
   .floating-up {
     top: 0;
     bottom: var(--header-height);

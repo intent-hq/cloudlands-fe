@@ -17,7 +17,7 @@ interface DockShellLayoutInput {
   expandedHeight?: number | null;
   rowLimit: number;
   workspaceCount: number;
-  /** The overview's older-conversation disclosure is currently visible. */
+  /** Reserve history viewport room, including after the disclosure is removed. */
   hasOlderWorkspaces?: boolean;
   compactWingWidth: number;
   hasFeedback: boolean;

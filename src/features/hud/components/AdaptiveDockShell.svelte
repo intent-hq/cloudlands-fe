@@ -247,7 +247,7 @@
     (value) => onPlacementCommand(value),
   );
   let showOlder = $state(false);
-  const overviewWorkspaceCount = $derived(workspaces.length + (!edge && showOlder ? olderWorkspaces.length : 0));
+  const overviewWorkspaceCount = $derived(workspaces.length);
   const layout = $derived(
     getDockShellLayout(placement, {
       surfaceExpanded,
@@ -260,7 +260,7 @@
       workspaceCount: machineMenuOpen
         ? Math.max(overviewWorkspaceCount, Math.min(machines?.length ?? 0, 5))
         : overviewWorkspaceCount,
-      hasOlderWorkspaces: !showOlder && olderWorkspaces.length > 0,
+      hasOlderWorkspaces: olderWorkspaces.length > 0,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
       intro: dockIntro.open,
@@ -1082,6 +1082,7 @@
       <div
         class="companion-content"
         style:clip-path={contentClip}
+        style:--dock-overview-height={`${Math.max(0, shown.height - headerHeight)}px`}
         inert={machineSwitching !== null}
       >
         <!-- Pointer drag surface; its click shortcut to the field has keyboard parity via Tab. -->
