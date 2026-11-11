@@ -189,6 +189,14 @@ test('Shift-click selects a list range from the last clicked row', async ({ moun
   for (const id of ['multi-c', 'multi-d'])
     await expect(option(page, id)).toHaveAttribute('aria-selected', 'true');
   await expect(option(page, 'multi-a')).toHaveAttribute('aria-selected', 'false');
+
+  // With nothing selected, a Shift-click starts fresh instead of ranging from a stale anchor.
+  await page.keyboard.press('Escape');
+  await expect(bar(page)).toHaveCount(0);
+  await rangeTo(page, 'multi-b');
+  await expect(bar(page)).toHaveCount(0);
+  await expect.poll(async () => (await snapshot(page)).selectedId).toBe('multi-b');
+  await expect(option(page, 'multi-c')).toHaveAttribute('aria-selected', 'false');
   expect((await snapshot(page)).calls).toEqual([]);
 });
 

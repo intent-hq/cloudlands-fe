@@ -50,6 +50,7 @@ export function createHomeSelection(options: {
   });
 
   function clear() {
+    anchor = null;
     multi = [];
   }
   function selectOnly(id: string) {
@@ -67,7 +68,10 @@ export function createHomeSelection(options: {
     apply(toggleHomeSelection({ multi: active ? ids : [], selectedId: options.previewId() }, id));
   }
   function range(id: string) {
-    const next = rangeHomeSelection(options.order(), anchor ?? options.previewId(), id);
+    // With nothing selected (cleared, or the preview closed) a range starts fresh.
+    const previewId = options.previewId();
+    const start = active || previewId ? (anchor ?? previewId) : null;
+    const next = rangeHomeSelection(options.order(), start, id);
     if (next.multi.length === 0) anchor = id;
     apply(next);
   }
