@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.311.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.8...v2.311.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* run Antigravity through agy acp and remove guided setup ([#4424](https://github.com/intent-hq/cloudlands-fe/issues/4424)) ([201b5c9](https://github.com/intent-hq/cloudlands-fe/commit/201b5c9477c900ad9d350f0868314953a4867063))
+
 ## [2.310.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.7...v2.310.8) (2026-11-11)
 
 
