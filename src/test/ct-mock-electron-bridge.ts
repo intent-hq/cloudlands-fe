@@ -48,23 +48,51 @@ interface BackendRequestPayload {
   params?: unknown;
 }
 
-export function installMockElectronBridge(
-  methods: Record<string, MockBackendMethodHandler> | MockBackendRequestHandler,
-): () => void {
-  const previous = window.electronAPI;
+type MockBridgeListener = (...args: unknown[]) => void;
+
+/**
+ * The event half of the bridge: `on`/`off`/`offById`/`removeAllListeners`
+ * backed by the mock IPC router. A fixture that must keep its own `invoke`
+ * (e.g. one that reports a native platform) spreads these into its bridge so
+ * `emitMockIpcEvent` still reaches its listeners. `detachAll()` unsubscribes
+ * every listener it registered.
+ */
+export function createMockBridgeListeners() {
   let listenerIdCounter = 0;
-  type Listener = (...args: unknown[]) => void;
   const listeners = new Map<
     string,
-    { channel: string; callback: Listener; unsubscribe: () => void }
+    { channel: string; callback: MockBridgeListener; unsubscribe: () => void }
   >();
-  const remove = (match: (entry: { channel: string; callback: Listener }) => boolean) => {
+  const remove = (match: (entry: { channel: string; callback: MockBridgeListener }) => boolean) => {
     for (const [id, entry] of listeners) {
       if (!match(entry)) continue;
       entry.unsubscribe();
       listeners.delete(id);
     }
   };
+  return {
+    on: (channel: string, callback: MockBridgeListener) => {
+      const id = `ct-mock-bridge-${++listenerIdCounter}`;
+      const unsubscribe = subscribeMockIpcEvent(channel, (payload) => callback(payload));
+      listeners.set(id, { channel, callback, unsubscribe });
+      return id;
+    },
+    off: (channel: string, callback: MockBridgeListener) =>
+      remove((entry) => entry.channel === channel && entry.callback === callback),
+    offById: (_channel: string, id: string) => {
+      listeners.get(id)?.unsubscribe();
+      listeners.delete(id);
+    },
+    removeAllListeners: (channel: string) => remove((entry) => entry.channel === channel),
+    detachAll: () => remove(() => true),
+  };
+}
+
+export function installMockElectronBridge(
+  methods: Record<string, MockBackendMethodHandler> | MockBackendRequestHandler,
+): () => void {
+  const previous = window.electronAPI;
+  const { detachAll, ...listeners } = createMockBridgeListeners();
   const api = {
     versions: { electron: BROWSER_MOCK_ELECTRON_VERSION },
     invoke: async (channel: string, payload?: unknown): Promise<unknown> => {
@@ -96,25 +124,13 @@ export function installMockElectronBridge(
       return { ok: true, result: await handler(params) };
     },
     send: () => {},
-    on: (channel: string, callback: Listener) => {
-      const id = `ct-mock-bridge-${++listenerIdCounter}`;
-      const unsubscribe = subscribeMockIpcEvent(channel, (payload) => callback(payload));
-      listeners.set(id, { channel, callback, unsubscribe });
-      return id;
-    },
-    off: (channel: string, callback: Listener) =>
-      remove((entry) => entry.channel === channel && entry.callback === callback),
-    offById: (_channel: string, id: string) => {
-      listeners.get(id)?.unsubscribe();
-      listeners.delete(id);
-    },
-    removeAllListeners: (channel: string) => remove((entry) => entry.channel === channel),
+    ...listeners,
     devInstance: null,
     devPort: null,
   };
   window.electronAPI = api as unknown as Window['electronAPI'];
   return () => {
-    remove(() => true);
+    detachAll();
     window.electronAPI = previous;
   };
 }

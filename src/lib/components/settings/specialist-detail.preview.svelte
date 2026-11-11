@@ -31,6 +31,8 @@
 
 <script lang="ts">
   import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+  import { createMockBridgeListeners } from '../../../test/ct-mock-electron-bridge';
+  import { emitMockIpcEvent } from '$shared/ipc-mock-router';
   import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
@@ -142,11 +144,7 @@
 
   let catalogFailure = false;
   let liveCatalog: SpecialistCatalog = { specialists: [] };
-  const notificationListeners = new Map<
-    string,
-    { channel: string; handler: (payload: unknown) => void }
-  >();
-  let listenerSequence = 0;
+  const { detachAll: detachListeners, ...listeners } = createMockBridgeListeners();
   let stopCatalog: (() => void) | undefined;
 
   function refreshCatalog(empty = false, fail = false) {
@@ -163,10 +161,7 @@
           },
         ],
       };
-    for (const { channel, handler } of notificationListeners.values()) {
-      if (channel === 'backend:notification')
-        handler({ method: 'specialists:changed', params: {} });
-    }
+    emitMockIpcEvent('backend:notification', { method: 'specialists:changed', params: {} });
   }
 
   let launches = $state<Array<{ channel: string; args: unknown[] }>>([]);
@@ -187,12 +182,7 @@
     configurable: true,
     value: {
       versions: { electron: 'preview-native-controls' },
-      on: (channel: string, handler: (payload: unknown) => void) => {
-        const id = String(++listenerSequence);
-        notificationListeners.set(id, { channel, handler });
-        return id;
-      },
-      offById: (_channel: string, id: string) => notificationListeners.delete(id),
+      ...listeners,
       invoke: async (channel: string, ...args: unknown[]) => {
         if ((catalogFlow || creationFlow) && channel === 'backend:request') {
           const request = args[0] as { method: string; params?: { spec: SpecialistDef } };
@@ -309,9 +299,7 @@
           missingSkills: undefined,
         })),
       };
-      for (const { channel, handler } of notificationListeners.values()) {
-        if (channel === 'backend:notification') handler({ method: 'skills:changed', params: {} });
-      }
+      emitMockIpcEvent('backend:notification', { method: 'skills:changed', params: {} });
       return;
     }
     appStore.dispatch(
@@ -356,6 +344,7 @@
     releaseWrite?.();
     releaseCatalog?.();
     disposeLaunchHandlers();
+    detachListeners();
     appStore.dispatch(setSpecialistImportDiagnostics(previous.diagnostics));
     appStore.dispatch(setBundledSpecialists(previous.bundled));
     appStore.dispatch(setFileSpecialists(previous.files));
