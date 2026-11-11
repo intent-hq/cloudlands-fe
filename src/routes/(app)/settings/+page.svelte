@@ -72,9 +72,11 @@
     selectCodeFontOptions,
     selectIsNoteMonospace,
     selectLabsMultiplayerEnabled,
+    selectLabsSettingsVisible,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
+    selectUserPreferencesHydrated,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { isUpdateChannel } from '$features/auto-update/types';
 
@@ -85,6 +87,7 @@
   import SettingsSidebarBack from '$lib/components/settings/SettingsSidebarBack.svelte';
   import { isElectronPlatform } from '$lib/utils/platform-capabilities';
   import DockLabSettings from '$lib/components/settings/DockLabSettings.svelte';
+  import LabsSettings from '$lib/components/settings/LabsSettings.svelte';
   import { getNavigatorHid } from '$features/hardware-console/device/platform';
   import { watchSupportedDevicePresence } from '$features/hardware-console/device/presence';
   import { getHardwareConsoleManager } from '$features/hardware-console/instance';
@@ -110,6 +113,8 @@
   const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
+  const labsSettingsVisible$ = selectLabsSettingsVisible();
+  const userPreferencesHydrated$ = selectUserPreferencesHydrated();
   // intent-web serves this page and owns the machines list: there is no
   // keychain sync and no mobile pairing on that host.
   const hostManagesConnections$ = selectHostManagesConnections();
@@ -135,6 +140,7 @@
     'collaboration',
     'setup',
     'advanced',
+    'labs',
     'input',
     'specialists',
   ];
@@ -199,6 +205,7 @@
     reset: 'advanced',
     general: 'advanced',
     developer: 'advanced',
+    labs: 'labs',
   };
 
   function resolveHashTab(targetId: string): SettingsTab | undefined {
@@ -269,12 +276,17 @@
     const tabs: SettingsTab[] = $isCollaboratorOnlyClient$ ? ['providers', 'connections'] : [];
     if (!$labsMultiplayerEnabled$) tabs.push('collaboration');
     if ($hostManagesConnections$) tabs.push('mobile');
+    if (!$labsSettingsVisible$) tabs.push('labs');
     return tabs;
   });
   $effect(() => {
     if (
       hiddenTabs.includes(activeTab) &&
-      (activeTab === 'collaboration' || activeTab === 'mobile' || $hostAdministrationDenied$)
+      (activeTab === 'collaboration' ||
+        activeTab === 'mobile' ||
+        // Wait for saved preferences so a `?tab=labs` deep link survives boot.
+        (activeTab === 'labs' && $userPreferencesHydrated$) ||
+        $hostAdministrationDenied$)
     ) {
       setActiveTab('display');
     }
@@ -624,6 +636,10 @@
           <div id="collaboration" class="scroll-mt-20">
             {#key $collaborationContext$}<GuestSessionsSettings />{/key}
           </div>
+        {/if}
+
+        {#if activeTab === 'labs' && !hiddenTabs.includes('labs')}
+          <LabsSettings />
         {/if}
 
         <!-- Hidden specialist editor destination -->

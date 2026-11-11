@@ -24,8 +24,7 @@ const {
   paletteNoteSearch,
   collaboratorState,
   multiplayerState,
-  remoteAgentsState,
-  plainFolderState,
+  labsVisibleState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -148,8 +147,7 @@ const {
       subscribers: new Set<(value: boolean) => void>(),
     },
     multiplayerState: { enabled: false },
-    remoteAgentsState: { enabled: undefined as boolean | undefined },
-    plainFolderState: { enabled: undefined as boolean | undefined },
+    labsVisibleState: { visible: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
@@ -273,8 +271,7 @@ vi.mock('$store/renderer/store', async () => {
       workspaceAgents: { byWorkspaceId: {} },
       userPreferences: {
         labsMultiplayerEnabled: multiplayerState.enabled,
-        labsRemoteAgentsEnabled: remoteAgentsState.enabled,
-        labsPlainFolderWorkspacesEnabled: plainFolderState.enabled,
+        labsSettingsVisible: labsVisibleState.visible,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -417,8 +414,7 @@ describe('CommandPalette new actions', () => {
     collaboratorState.workspace = false;
     collaboratorState.client = false;
     multiplayerState.enabled = false;
-    remoteAgentsState.enabled = undefined;
-    plainFolderState.enabled = undefined;
+    labsVisibleState.visible = undefined;
   });
 
   it.each([
@@ -548,101 +544,64 @@ describe('CommandPalette new actions', () => {
     expect(screen.queryByRole('button', { name: /experimental GitLab/i })).toBeNull();
   });
 
-  it.each([undefined, false, true])(
-    'changes experimental remote agents from saved=%s without a workspace or an implicit preference change',
-    async (enabled) => {
-      remoteAgentsState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, { props: { isOpen: true, initialQuery: 'remote agents', onClose } });
-      const command = await screen.findByRole('button', {
-        name: enabled
-          ? /Disable experimental remote agents/i
-          : /Enable experimental remote agents/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled
-            ? /Enable experimental remote agents/i
-            : /Disable experimental remote agents/i,
-        }),
-      ).toBeNull();
-      expect(
-        reduxDispatchMock.mock.calls.filter(([action]) =>
-          action.type.startsWith('userPreferences/'),
-        ),
-      ).toEqual([]);
+  it('shows Labs in Settings and opens it without a workspace', async () => {
+    const onClose = vi.fn();
+    render(CommandPalette, { props: { isOpen: true, initialQuery: 'labs', onClose } });
+    const command = await screen.findByRole('button', { name: /Show Labs in Settings/i });
+    expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
+    reduxDispatchMock.mockClear();
 
-      reduxDispatchMock.mockClear();
-      if (enabled) await fireEvent.click(command);
-      else await fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' });
+    await fireEvent.click(command);
 
-      expect(
-        reduxDispatchMock.mock.calls
-          .map(([action]) => action)
-          .filter((action) => action.type.startsWith('userPreferences/')),
-      ).toEqual([{ type: 'userPreferences/setLabsRemoteAgentsEnabled', payload: [!enabled] }]);
-      expect(invokeMock).not.toHaveBeenCalled();
-      expect(backendRequestMock).not.toHaveBeenCalled();
-      expect(onClose).toHaveBeenCalledOnce();
-    },
-  );
+    expect(
+      reduxDispatchMock.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type.startsWith('userPreferences/')),
+    ).toEqual([{ type: 'userPreferences/setLabsSettingsVisible', payload: [true] }]);
+    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({ tab: 'labs' });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 
-  it.each([undefined, false, true])(
-    'changes experimental plain-folder workspaces from saved=%s',
-    async (enabled) => {
-      plainFolderState.enabled = enabled;
-      const onClose = vi.fn();
-      render(CommandPalette, { props: { isOpen: true, initialQuery: 'plain-folder', onClose } });
-      const command = await screen.findByRole('button', {
-        name: enabled
-          ? /Disable experimental plain-folder workspaces/i
-          : /Enable experimental plain-folder workspaces/i,
-      });
-      expect(
-        screen.queryByRole('button', {
-          name: enabled
-            ? /Enable experimental plain-folder workspaces/i
-            : /Disable experimental plain-folder workspaces/i,
-        }),
-      ).toBeNull();
+  it('hides Labs in Settings', async () => {
+    labsVisibleState.visible = true;
+    const onClose = vi.fn();
+    render(CommandPalette, { props: { isOpen: true, initialQuery: 'labs', onClose } });
+    const command = await screen.findByRole('button', { name: /Hide Labs in Settings/i });
+    expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull();
+    reduxDispatchMock.mockClear();
 
-      reduxDispatchMock.mockClear();
-      await fireEvent.click(command);
+    await fireEvent.click(command);
 
-      expect(
-        reduxDispatchMock.mock.calls
-          .map(([action]) => action)
-          .filter((action) => action.type.startsWith('userPreferences/')),
-      ).toEqual([
-        { type: 'userPreferences/setLabsPlainFolderWorkspacesEnabled', payload: [!enabled] },
-      ]);
-      expect(onClose).toHaveBeenCalledOnce();
-    },
-  );
+    expect(
+      reduxDispatchMock.mock.calls
+        .map(([action]) => action)
+        .filter((action) => action.type.startsWith('userPreferences/')),
+    ).toEqual([{ type: 'userPreferences/setLabsSettingsVisible', payload: [false] }]);
+    expect(navigateToSettingsMock).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 
-  it('offers no command to turn provider profiles on or off', async () => {
+  it('offers no per-feature experimental toggles', async () => {
     render(CommandPalette, {
       props: { isOpen: true, initialQuery: 'experimental', onClose: vi.fn() },
     });
-    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
-    expect(screen.queryByRole('button', { name: /experimental provider profiles/i })).toBeNull();
+    await screen.findByRole('textbox');
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /(Enable|Disable) experimental/i })).toBeNull(),
+    );
   });
 
-  it('updates the remote agents command after delayed hydration without changing the saved choice', async () => {
-    render(CommandPalette, {
-      props: { isOpen: true, initialQuery: 'remote agents', onClose: vi.fn() },
-    });
-    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
-    remoteAgentsState.enabled = true;
+  it('updates the Labs commands after delayed hydration without changing the saved choice', async () => {
+    render(CommandPalette, { props: { isOpen: true, initialQuery: 'labs', onClose: vi.fn() } });
+    await screen.findByRole('button', { name: /Show Labs in Settings/i });
+    labsVisibleState.visible = true;
     storeEvents.emit();
-    await screen.findByRole('button', { name: /Disable experimental remote agents/i });
-    expect(screen.queryByRole('button', { name: /Enable experimental remote agents/i })).toBeNull();
-    remoteAgentsState.enabled = false;
+    await screen.findByRole('button', { name: /Hide Labs in Settings/i });
+    expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull();
+    labsVisibleState.visible = false;
     storeEvents.emit();
-    await screen.findByRole('button', { name: /Enable experimental remote agents/i });
-    expect(
-      screen.queryByRole('button', { name: /Disable experimental remote agents/i }),
-    ).toBeNull();
+    await screen.findByRole('button', { name: /Show Labs in Settings/i });
+    expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
     expect(
       reduxDispatchMock.mock.calls.filter(([action]) => action.type.startsWith('userPreferences/')),
     ).toEqual([]);
@@ -678,7 +637,7 @@ describe('CommandPalette new actions', () => {
     const input = screen.getByRole('textbox') as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'my search' } });
 
-    remoteAgentsState.enabled = true;
+    labsVisibleState.visible = true;
     storeEvents.emit();
     await view.rerender({ workspaceId: 'ws-1' });
     expect(input.value).toBe('my search');
@@ -706,15 +665,13 @@ describe('CommandPalette new actions', () => {
       render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
       const input = screen.getByRole('textbox');
 
-      await fireEvent.input(input, { target: { value: 'experimental' } });
-      await screen.findByRole('button', { name: /Enable experimental remote agents/i });
+      await fireEvent.input(input, { target: { value: 'labs' } });
+      await screen.findByRole('button', { name: /Show Labs in Settings/i });
       expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
 
       await fireEvent.input(input, { target: { value: 'multiplayer' } });
       await waitFor(() =>
-        expect(
-          screen.queryByRole('button', { name: /Enable experimental remote agents/i }),
-        ).toBeNull(),
+        expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull(),
       );
       expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
     },

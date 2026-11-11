@@ -46,100 +46,16 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faCommentDots,
   },
   {
-    id: 'enable-experimental-remote-agents',
+    id: 'show-labs-in-settings',
     get label() {
-      return m.lib_commandPalette_enableExperimentalRemoteAgents_label();
+      return m.lib_commandPalette_showLabsInSettings_label();
     },
     icon: faFlask,
   },
   {
-    id: 'disable-experimental-remote-agents',
+    id: 'hide-labs-in-settings',
     get label() {
-      return m.lib_commandPalette_disableExperimentalRemoteAgents_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-plain-folders',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalPlainFolders_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-plain-folders',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalPlainFolders_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-tab-groups',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalTabGroups_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-tab-groups',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalTabGroups_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-machine-rail',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalMachineRail_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-machine-rail',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalMachineRail_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-cloud-machines',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalCloudMachines_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-cloud-machines',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalCloudMachines_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-browser-access',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalBrowserAccess_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-browser-access',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalBrowserAccess_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'enable-experimental-dock',
-    get label() {
-      return m.lib_commandPalette_enableExperimentalDock_label();
-    },
-    icon: faFlask,
-  },
-  {
-    id: 'disable-experimental-dock',
-    get label() {
-      return m.lib_commandPalette_disableExperimentalDock_label();
+      return m.lib_commandPalette_hideLabsInSettings_label();
     },
     icon: faFlask,
   },

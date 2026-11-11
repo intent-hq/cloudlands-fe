@@ -30,7 +30,7 @@
 </script>
 
 <!-- A row of the Appearance card (Settings › Display); desktop-only. While the lab is
-off the row is hidden; the Labs command palette entry turns it on. -->
+off the row is hidden; Settings › Labs turns it on. -->
 {#if isElectronPlatform() && $dockLabEnabled}
   <section
     id="notch-dock"
