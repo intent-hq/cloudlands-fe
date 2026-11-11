@@ -852,3 +852,68 @@ describe('AgentFeaturesSettings', () => {
     });
   });
 });
+
+describe('AgentFeaturesSettings tool approvals default (agents.permissionPolicy)', () => {
+  const LABEL = 'Default for chats';
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  function listWith(policy?: unknown) {
+    const entries: Record<string, unknown>[] = FEATURE_PATHS.map((path) => ({
+      path,
+      value: true,
+    }));
+    if (policy !== undefined) {
+      entries.push({
+        path: 'agents.permissionPolicy',
+        value: policy,
+        defaultValue: 'allow',
+        origin: 'default',
+      });
+    }
+    mocks.mockSettingsList.mockResolvedValue(entries);
+  }
+
+  it('hides the select when the daemon has no agents.permissionPolicy entry', async () => {
+    listWith();
+    await renderReady();
+    expect(screen.queryByRole('combobox', { name: LABEL })).toBeNull();
+    expect(screen.queryByText('Tool approvals')).toBeNull();
+  });
+
+  it.each([
+    ['interactive', 'Ask each time'],
+    ['allow', 'Allow all'],
+    ['auto', 'Allow reads only'],
+    ['deny', 'Deny all'],
+    ['bogus', 'Allow all'],
+  ])('shows the stored policy %s as %s', async (policy, label) => {
+    listWith(policy);
+    await renderReady();
+    const trigger = await screen.findByRole('combobox', { name: LABEL });
+    expect(trigger.textContent).toContain(label);
+  });
+
+  it('writes the chosen policy through settings.update', async () => {
+    listWith('allow');
+    mocks.mockSettingsUpdate.mockResolvedValueOnce([
+      { path: 'agents.permissionPolicy', value: 'interactive' },
+    ]);
+    await renderReady();
+    const trigger = await screen.findByRole('combobox', { name: LABEL });
+    trigger.focus();
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await screen.findByRole('option', { name: 'Ask each time' });
+    await fireEvent.keyDown(trigger, { key: 'ArrowUp' });
+    await fireEvent.keyDown(trigger, { key: 'Enter' });
+    await waitFor(() =>
+      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
+        { path: 'agents.permissionPolicy', value: 'interactive' },
+      ]),
+    );
+  });
+});
