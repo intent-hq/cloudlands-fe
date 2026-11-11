@@ -5,14 +5,11 @@
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { parsePromptBreakdown, type PromptBreakdownView } from './prompt-breakdown';
 
-export async function loadPromptBreakdown(
-  agentId: string,
-  workspaceId?: string,
-): Promise<PromptBreakdownView | null> {
+export async function loadPromptBreakdown(agentId: string): Promise<PromptBreakdownView | null> {
   try {
     const result = await backendRequest<{ session?: { promptBreakdown?: unknown } }>(
       'agent.getSession',
-      { agentId, ...(workspaceId ? { workspaceId } : {}) },
+      { agentId },
     );
     return parsePromptBreakdown(result?.session?.promptBreakdown);
   } catch {

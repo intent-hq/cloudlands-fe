@@ -234,6 +234,27 @@ describe('HarnessFeaturesModal starting context', () => {
     expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
   });
 
+  it('ignores a late answer for the previous agent after switching agents', async () => {
+    let answerFirst: (value: unknown) => void = () => {};
+    backendRequest.mockImplementationOnce(() => new Promise((resolve) => (answerFirst = resolve)));
+    const view = render(HarnessFeaturesModal, {
+      props: { open: true, version: '3.12', features: {}, agentId: 'agent-first' },
+    });
+    await screen.findByRole('dialog');
+
+    const secondAnswered = respondWith({ available: false, reason: 'not-recorded' });
+    await view.rerender({ agentId: 'agent-second' });
+    await secondAnswered();
+
+    answerFirst({ session: { promptBreakdown: breakdown } });
+    await tick();
+    await tick();
+    expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
+    expect(backendRequest).toHaveBeenLastCalledWith('agent.getSession', {
+      agentId: 'agent-second',
+    });
+  });
+
   it('reads again on reopen, so a later spawn shows its breakdown', async () => {
     const firstAnswered = respondWith({ available: false, reason: 'not-recorded' });
     const view = render(HarnessFeaturesModal, {
