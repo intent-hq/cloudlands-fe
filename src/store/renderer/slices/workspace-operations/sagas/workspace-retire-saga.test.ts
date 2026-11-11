@@ -38,8 +38,11 @@ import {
   workspaceReducer,
 } from '../../workspace/workspace-slice';
 import {
+  closeBulkRetireConfirm,
   closeRetireConfirm,
+  confirmBulkRetire,
   confirmRetireWorkspace,
+  openBulkRetireConfirm,
   initialState as operationsInitialState,
   loadRetiredWorkspacesRequested,
   requestRetireWorkspace,
@@ -262,6 +265,131 @@ describe('workspace retire saga', () => {
     run.send(loadRetiredWorkspacesRequested());
     await settle();
     expect(mocks.notify.error).toHaveBeenCalledWith(m.home_archived_loadFailed_error());
+    run.task.cancel();
+  });
+});
+
+describe('bulk retire saga', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+  afterEach(() => store.dispose());
+
+  const archivedRow = (id: string) =>
+    workspace(id, { status: WorkspaceStatusEnum.Archived, archived: true });
+
+  it('opening only shows the confirmation; cancelling clears it without retiring', async () => {
+    const run = harness([archivedRow('ws-1'), archivedRow('ws-2')]);
+    run.send(openBulkRetireConfirm({ workspaceIds: ['ws-1', 'ws-2'] }));
+    await settle();
+    expect(run.state().workspaceOperations).toMatchObject({
+      showBulkRetireConfirm: true,
+      pendingBulkWorkspaceIds: ['ws-1', 'ws-2'],
+    });
+    run.send(closeBulkRetireConfirm());
+    await settle();
+    expect(run.state().workspaceOperations).toMatchObject({
+      showBulkRetireConfirm: false,
+      pendingBulkWorkspaceIds: [],
+    });
+    expect(mocks.retire).not.toHaveBeenCalled();
+    run.task.cancel();
+  });
+
+  it('retires only archived rows that still have a folder, once each', async () => {
+    mocks.retire.mockImplementation(async (id: string) => ({ ok: true, data: retiredRow(id) }));
+    const run = harness([
+      archivedRow('ws-1'),
+      workspace('ws-active'),
+      retiredRow('ws-purged'),
+      archivedRow('ws-2'),
+    ]);
+    run.send(
+      openBulkRetireConfirm({
+        workspaceIds: ['ws-1', 'ws-active', 'ws-purged', 'ws-missing', 'ws-2'],
+      }),
+    );
+    run.send(confirmBulkRetire());
+    run.send(confirmBulkRetire());
+    await settle();
+
+    expect(mocks.retire.mock.calls.map(([id]) => id)).toEqual(['ws-1', 'ws-2']);
+    expect(run.row('ws-1')?.status).toBe(WorkspaceStatusEnum.Retired);
+    expect(run.row('ws-2')?.status).toBe(WorkspaceStatusEnum.Retired);
+    expect(run.row('ws-active')?.status).toBe(WorkspaceStatusEnum.Active);
+    expect(run.state().workspaceOperations).toMatchObject({
+      showBulkRetireConfirm: false,
+      bulkOperationInFlight: false,
+    });
+    expect(mocks.notify.success).toHaveBeenCalledExactlyOnceWith(
+      m.workspace_ops_purgedCount_many({ count: 2 }),
+    );
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    run.task.cancel();
+  });
+
+  it('keeps failed rows archived and reports successes and failures separately', async () => {
+    mocks.retire.mockImplementation(async (id: string) =>
+      id === 'ws-ok'
+        ? { ok: true, data: retiredRow(id) }
+        : id === 'ws-cow'
+          ? { ok: false, error: 'nope', errorCode: 'retire-unsupported' }
+          : Promise.reject(new Error('offline')),
+    );
+    const run = harness([archivedRow('ws-ok'), archivedRow('ws-cow'), archivedRow('ws-down')]);
+    run.send(openBulkRetireConfirm({ workspaceIds: ['ws-ok', 'ws-cow', 'ws-down'] }));
+    run.send(confirmBulkRetire());
+    await settle();
+
+    expect(run.row('ws-ok')?.status).toBe(WorkspaceStatusEnum.Retired);
+    expect(run.row('ws-cow')?.status).toBe(WorkspaceStatusEnum.Archived);
+    expect(run.row('ws-down')?.status).toBe(WorkspaceStatusEnum.Archived);
+    expect(mocks.notify.success).toHaveBeenCalledExactlyOnceWith(
+      m.workspace_ops_purgedCount_one({ count: 1 }),
+    );
+    expect(mocks.notify.error).toHaveBeenCalledExactlyOnceWith(
+      m.workspace_ops_purgeFailedCount_many({ count: 2 }),
+    );
+    expect(run.state().workspaceOperations.bulkOperationInFlight).toBe(false);
+    run.task.cancel();
+  });
+
+  it('stops the batch, without toasts, when the connection changes mid-batch', async () => {
+    let finishFirst!: (value: unknown) => void;
+    mocks.retire.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    mocks.retire.mockImplementation(async (id: string) => ({ ok: true, data: retiredRow(id) }));
+    const run = harness([archivedRow('ws-1'), archivedRow('ws-2'), archivedRow('ws-3')]);
+    run.send(openBulkRetireConfirm({ workspaceIds: ['ws-1', 'ws-2', 'ws-3'] }));
+    run.send(confirmBulkRetire());
+    await settle();
+    expect(mocks.retire).toHaveBeenCalledTimes(1);
+
+    run.send(connectionStatusChanged('disconnected'));
+    finishFirst({ ok: true, data: retiredRow('ws-1') });
+    await settle();
+
+    expect(mocks.retire).toHaveBeenCalledTimes(1);
+    expect(run.row('ws-2')?.status).toBe(WorkspaceStatusEnum.Archived);
+    expect(mocks.notify.success).not.toHaveBeenCalled();
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    run.task.cancel();
+  });
+
+  it('says there is nothing to purge and makes no call when no row is eligible', async () => {
+    const run = harness([workspace('ws-active'), retiredRow('ws-purged')]);
+    run.send(openBulkRetireConfirm({ workspaceIds: ['ws-active', 'ws-purged'] }));
+    run.send(confirmBulkRetire());
+    await settle();
+
+    expect(mocks.retire).not.toHaveBeenCalled();
+    expect(mocks.notify.info).toHaveBeenCalledExactlyOnceWith(
+      m.workspace_ops_noFoldersToPurge_message(),
+    );
     run.task.cancel();
   });
 });

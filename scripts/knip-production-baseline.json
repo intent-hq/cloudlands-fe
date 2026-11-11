@@ -620,9 +620,6 @@
     "src/features/remote-machines/remote-model-picker.ts": [
       "MACHINE_REPORT_STALE_MS"
     ],
-    "src/features/remote-machines/start-on.ts": [
-      "START_ON_E2B"
-    ],
     "src/features/scripts/detect-scripts.ts": [
       "classifyScriptHeuristic",
       "detectPackageManager",
@@ -2290,7 +2287,6 @@
       "PRINCIPAL_RETRY_DELAYS_MS"
     ],
     "src/store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice.ts": [
-      "clearProposalLifecycle",
       "initialState"
     ],
     "src/store/renderer/slices/proposal-lifecycle/sagas/proposal-lifecycle-saga.ts": [

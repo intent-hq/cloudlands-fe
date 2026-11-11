@@ -72,6 +72,10 @@ export const selectPendingBulkWorkspaces = store.createSelector((state) => {
   });
 });
 
+export const selectShowBulkRetireConfirm = store.createSelector((state) => {
+  return state.workspaceOperations.showBulkRetireConfirm;
+});
+
 export const selectPendingBulkGroupLabel = store.createSelector((state) => {
   return state.workspaceOperations.pendingBulkGroupLabel;
 });

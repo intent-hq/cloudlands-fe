@@ -102,6 +102,7 @@ describe('B2 caller metadata regression', () => {
         'src/lib/components/chat/ChatChangesPanel.svelte',
         'src/lib/components/chat/input/ContextPickerButton.svelte',
         'src/lib/components/chat/proposals/BulkProposalItems.svelte',
+        'src/lib/components/modals/BulkTransferModal.svelte',
         'src/lib/components/modals/InterruptedAgentsModal.svelte',
         'src/lib/components/modals/TransferWorkspaceModal.svelte',
         'src/lib/components/patterns/settings/custom-controls.ts',

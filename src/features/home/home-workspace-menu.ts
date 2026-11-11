@@ -7,6 +7,8 @@ import type {
   SidebarMenuItem,
 } from '$lib/components/ui/sidebar-context-menu/types';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
+import { formatInteger } from '$lib/i18n/format';
+import type { HomeBulkTargets } from './home-multi-select';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
 import {
@@ -25,11 +27,15 @@ import {
 import { isPinnedWorkspaceLabel } from '$store/renderer/slices/sidebar-nav/workspace-labels';
 import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
+  openBulkArchiveConfirm,
+  openBulkDeleteConfirm,
+  openBulkRetireConfirm,
   requestArchiveWorkspace,
   requestUnarchiveWorkspace,
   requestDeleteWorkspace,
   requestRetireWorkspace,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+import { openBulkTransferModal } from '$store/renderer/slices/workspace-bulk-transfer/workspace-bulk-transfer-slice';
 import {
   faThumbtack,
   faTag,
@@ -41,6 +47,7 @@ import {
   faArrowUp,
   faHardDrive,
   faHourglassHalf,
+  faRightLeft,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface HomeWorkspaceMenuOptions {
@@ -141,7 +148,7 @@ export function createHomeWorkspaceMenu(
       id: 'open',
       label: m.home_open_workspace(),
       icon: faArrowRight,
-      shortcut: `Cmd+${m.chat_toolClassifier_click_label().toLowerCase()}`,
+      shortcut: m.home_workspace_open_shortcut(),
       onClick: () => onOpen(workspace.id),
     },
   ];
@@ -246,4 +253,80 @@ export function createHomeWorkspaceMenu(
     );
   }
   return items;
+}
+
+export interface HomeBulkAction {
+  id: 'archive' | 'transfer' | 'purge' | 'delete';
+  label: string;
+  icon: SidebarMenuItem['icon'];
+  destructive?: boolean;
+  run: () => void;
+}
+
+/** Bulk actions for a Home multi-selection; an action with no eligible workspace is left out. */
+export function homeBulkActions(targets: HomeBulkTargets): HomeBulkAction[] {
+  const ids = (items: Workspace[]) => items.map((workspace) => workspace.id);
+  const actions: HomeBulkAction[] = [];
+  if (targets.archive.length)
+    actions.push({
+      id: 'archive',
+      label: m.workspace_card_archive_label(),
+      icon: faBoxArchive,
+      run: () => store.dispatch(openBulkArchiveConfirm({ workspaceIds: ids(targets.archive) })),
+    });
+  if (targets.transfer.length)
+    actions.push({
+      id: 'transfer',
+      label: m.home_selection_transfer_label(),
+      icon: faRightLeft,
+      run: () =>
+        store.dispatch(
+          openBulkTransferModal({
+            workspaces: targets.transfer.map((workspace) => ({
+              workspaceId: workspace.id,
+              title: workspace.title,
+            })),
+          }),
+        ),
+    });
+  if (targets.purge.length)
+    actions.push({
+      id: 'purge',
+      label: m.home_selection_purge_label(),
+      icon: faHardDrive,
+      run: () => store.dispatch(openBulkRetireConfirm({ workspaceIds: ids(targets.purge) })),
+    });
+  if (targets.delete.length)
+    actions.push({
+      id: 'delete',
+      label: m.home_selection_delete_label(),
+      icon: faTrash,
+      destructive: true,
+      run: () => store.dispatch(openBulkDeleteConfirm({ workspaceIds: ids(targets.delete) })),
+    });
+  return actions;
+}
+
+export function createHomeBulkMenu(
+  count: number,
+  actions: readonly HomeBulkAction[],
+  onClose: () => void,
+): SidebarMenuEntry[] {
+  const label =
+    count === 1
+      ? m.home_selection_count_one({ count: formatInteger(count) })
+      : m.home_selection_count_many({ count: formatInteger(count) });
+  return [
+    { type: 'label', id: 'selection', label },
+    ...actions.map((action) => ({
+      id: action.id,
+      label: action.label,
+      icon: action.icon,
+      destructive: action.destructive,
+      onClick: () => {
+        onClose();
+        action.run();
+      },
+    })),
+  ];
 }

@@ -39,13 +39,20 @@ const ProfileReadActivationSchema = z
  * agent. Absent on daemons that predate it; `remoteIncompatibility` is
  * present exactly when `remoteCompatible` is false.
  */
+const RemoteReasonSchema = z
+  .object({ reason: z.string(), keys: z.array(z.string()) })
+  .passthrough();
 const RemoteCompatibilityFields = {
+  /** The saved "Use on remote machines" choice (computed on daemons without `remoteLaunch`). */
   remoteCompatible: z.boolean().optional(),
-  remoteIncompatibility: z
-    .object({ reason: z.string(), keys: z.array(z.string()) })
-    .passthrough()
-    .optional(),
+  remoteIncompatibility: RemoteReasonSchema.optional(),
 };
+
+/**
+ * What a remote launch of the bare reference does (§5.54). Open enum; the app
+ * reads only its presence: the daemon stores the remote choice.
+ */
+const DefaultRemoteLaunchSchema = z.string();
 
 const ProviderProfileSchema = z
   .object({
@@ -82,6 +89,7 @@ const DefaultConfigSchema = z
     settingsFingerprint: z.string().optional(),
     activation: ProfileReadActivationSchema.optional(),
     ...RemoteCompatibilityFields,
+    remoteLaunch: DefaultRemoteLaunchSchema.optional(),
   })
   .passthrough();
 
@@ -121,6 +129,7 @@ export const ProviderProfileReorderResponseSchema = z
   .passthrough();
 
 export type EnvEntryRead = z.infer<typeof EnvEntryReadSchema>;
+export type RemoteReason = z.infer<typeof RemoteReasonSchema>;
 export type ProviderProfile = z.infer<typeof ProviderProfileSchema>;
 export type ProviderDefaultConfig = z.infer<typeof DefaultConfigSchema>;
 export type ProviderDefaultUpdateResult = z.infer<typeof ProviderDefaultUpdateResponseSchema>;
@@ -140,6 +149,8 @@ export interface ProviderProfileCreateParams {
   name: string;
   env?: EnvEntryWrite[];
   backup?: boolean;
+  /** Marked for remote machines. Send it whenever the daemon stores the choice. */
+  remoteCompatible?: boolean;
 }
 
 export interface ProviderProfileUpdateParams {
@@ -148,6 +159,8 @@ export interface ProviderProfileUpdateParams {
   env?: EnvEntryWrite[];
   /** Omitted keeps the saved value. */
   backup?: boolean;
+  /** Omitted keeps the saved value. */
+  remoteCompatible?: boolean;
 }
 
 /** `providers.profiles.updateDefault`: omitted fields keep the saved value; a blank name restores "Default". */
@@ -155,6 +168,8 @@ export interface ProviderDefaultUpdateParams {
   baseProviderId: string;
   name?: string;
   env?: EnvEntryWrite[];
+  /** The Default's "Use on remote machines". Omitted keeps the saved value. */
+  remoteCompatible?: boolean;
 }
 
 /** `providers.profiles.reorder`: the complete new order of one base provider's profiles. */

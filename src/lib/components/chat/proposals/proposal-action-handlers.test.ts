@@ -147,6 +147,19 @@ describe('reconcileAppliedProposals', () => {
     expect(resolveCalls()).toEqual([]);
   });
 
+  it('never resolves a card whose create returned launch-failed (intent#9074)', () => {
+    reconcileAppliedProposals({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      refs: [{ proposalId: 'card-launch-failed', messageId: 'm-1' }],
+      lifecycle: applied('card-launch-failed', {
+        workspaceId: 'ws-kept',
+        launchError: 'first agent failed to start',
+      }),
+    });
+    expect(resolveCalls()).toEqual([]);
+  });
+
   it('keeps the fallback for an older daemon that reports nothing', () => {
     reconcileAppliedProposals({
       agentId: 'agent-1',

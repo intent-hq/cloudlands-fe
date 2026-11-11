@@ -81,6 +81,33 @@ export const preview = definePreview<ComponentProps<typeof ProviderFailoverNotic
       },
       setup: setupProfiles,
     },
+    // A remote launch of the plain Default on a machine without sign-in.
+    'auto-selected': {
+      props: {
+        notice: {
+          kind: 'autoSelected',
+          fromProvider: 'claude-code',
+          toProvider: 'claude-code@pwork00000001',
+          model: 'opus',
+          reason: 'machine-signed-out',
+          machine: 'Mac mini',
+        },
+      },
+      setup: setupProfiles,
+    },
+    'auto-selected-sandbox': {
+      props: {
+        notice: {
+          kind: 'autoSelected',
+          fromProvider: 'claude-code',
+          toProvider: 'claude-code@pwork00000001',
+          model: 'opus',
+          reason: 'sandbox-no-sign-in',
+          machine: 'E2B sandbox',
+        },
+      },
+      setup: setupProfiles,
+    },
     fallback: {
       props: {
         notice: { model: null },

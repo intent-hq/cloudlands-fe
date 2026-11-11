@@ -4,6 +4,103 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.317.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.0...v2.317.1) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* hide the E2B profile hint when a configuration can be sent, and empty remote picker tabs ([#4450](https://github.com/intent-hq/cloudlands-fe/issues/4450)) ([76be9db](https://github.com/intent-hq/cloudlands-fe/commit/76be9db9d9f6467dd176150933e4f170b6986c0d))
+* **transfer:** translate transfer and import relay errors ([#4454](https://github.com/intent-hq/cloudlands-fe/issues/4454)) ([9bb5fd2](https://github.com/intent-hq/cloudlands-fe/commit/9bb5fd242bdb20dd0fa2272e2ce77f4d0b1b384b))
+
+## [2.317.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.316.1...v2.317.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **home:** bulk transfer selected workspaces to another machine ([#4447](https://github.com/intent-hq/cloudlands-fe/issues/4447)) ([fe8decd](https://github.com/intent-hq/cloudlands-fe/commit/fe8decd833acdb339ccd6d2904bdf5c4fc31d02d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.186 ([#4453](https://github.com/intent-hq/cloudlands-fe/issues/4453)) ([cf3effb](https://github.com/intent-hq/cloudlands-fe/commit/cf3effbfd8467f5fd6d9ec7b0ed302fc9e893625))
+
+## [2.316.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.316.0...v2.316.1) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.185 ([#4448](https://github.com/intent-hq/cloudlands-fe/issues/4448)) ([b7459f8](https://github.com/intent-hq/cloudlands-fe/commit/b7459f88389684bbb7c1f7e8e6a6867b0121d425))
+
+## [2.316.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.315.0...v2.316.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **proposals:** Start on choice on the workspace proposal card ([#4441](https://github.com/intent-hq/cloudlands-fe/issues/4441)) ([0edd2ef](https://github.com/intent-hq/cloudlands-fe/commit/0edd2ef61db9ef83b9e1f14a267e5f3fc2585244))
+
+## [2.315.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.314.0...v2.315.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **agent:** group harness features under a Capabilities heading ([#4439](https://github.com/intent-hq/cloudlands-fe/issues/4439)) ([a7b38c9](https://github.com/intent-hq/cloudlands-fe/commit/a7b38c92f2fcd593faee1520856e01e6d1471d0f))
+* **providers:** remote-ready profiles, the Default's remote option and machine sign-in ([#4433](https://github.com/intent-hq/cloudlands-fe/issues/4433)) ([0888580](https://github.com/intent-hq/cloudlands-fe/commit/0888580836e4bd2c6c129f2f6327a3204f73f32a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.184 ([#4444](https://github.com/intent-hq/cloudlands-fe/issues/4444)) ([3ba518c](https://github.com/intent-hq/cloudlands-fe/commit/3ba518c2c321027cd499f9c3b08293b5dd7b4cf8))
+
+## [2.314.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.313.1...v2.314.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **home:** Shift-click selects a range of workspaces ([#4437](https://github.com/intent-hq/cloudlands-fe/issues/4437)) ([20ee2b5](https://github.com/intent-hq/cloudlands-fe/commit/20ee2b5c11a4e86b48b0f436ebd25fdfcbed4122))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.183 ([#4442](https://github.com/intent-hq/cloudlands-fe/issues/4442)) ([14f2eff](https://github.com/intent-hq/cloudlands-fe/commit/14f2efff54a455711218ca5abbf77b124b7196c5))
+
+## [2.313.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.313.0...v2.313.1) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* **verify:** include committed branch diff in verify:changed when the worktree is dirty ([#4435](https://github.com/intent-hq/cloudlands-fe/issues/4435)) ([71ea351](https://github.com/intent-hq/cloudlands-fe/commit/71ea351f393417f0fd894b278145fd585cedfae9))
+
+## [2.313.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.312.0...v2.313.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **home:** multi-select workspaces with bulk archive, purge and delete ([#4431](https://github.com/intent-hq/cloudlands-fe/issues/4431)) ([4ad1a9f](https://github.com/intent-hq/cloudlands-fe/commit/4ad1a9f44da7923e08429f22db338cb5c5996f70))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.182 ([#4434](https://github.com/intent-hq/cloudlands-fe/issues/4434)) ([a975579](https://github.com/intent-hq/cloudlands-fe/commit/a9755798544509c5394c09fd27ed0af1b6f6de00))
+
+## [2.312.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.311.0...v2.312.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **agent:** show starting context breakdown in the harness dialog ([#4428](https://github.com/intent-hq/cloudlands-fe/issues/4428)) ([ca27a4e](https://github.com/intent-hq/cloudlands-fe/commit/ca27a4e5904f9eec0cbb39249c50a9e87410c5bf))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.181 ([#4430](https://github.com/intent-hq/cloudlands-fe/issues/4430)) ([ce82f3e](https://github.com/intent-hq/cloudlands-fe/commit/ce82f3e2997fffb7dff98bdf48fb3147298754b1))
+
+## [2.311.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.8...v2.311.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* run Antigravity through agy acp and remove guided setup ([#4424](https://github.com/intent-hq/cloudlands-fe/issues/4424)) ([201b5c9](https://github.com/intent-hq/cloudlands-fe/commit/201b5c9477c900ad9d350f0868314953a4867063))
+
 ## [2.310.8](https://github.com/intent-hq/cloudlands-fe/compare/v2.310.7...v2.310.8) (2026-11-11)
 
 

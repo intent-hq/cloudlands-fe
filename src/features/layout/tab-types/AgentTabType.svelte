@@ -430,6 +430,7 @@
     bind:open={harnessModalOpen}
     version={harnessVersion}
     features={harnessFeatures}
+    agentId={tab.agentId ?? undefined}
   />
 {/if}
 

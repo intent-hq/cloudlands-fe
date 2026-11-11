@@ -1062,6 +1062,7 @@
     bind:open={harnessModalOpen}
     version={$agent$.harnessVersion}
     features={$agent$?.harnessFeatures ?? null}
+    {agentId}
   />
 {/if}
 

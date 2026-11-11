@@ -89,7 +89,10 @@ export type SettingsChangeProposal = BaseProposal<
 export type WorkspaceCreateProposal = BaseProposal<
   'workspace-create',
   { operation: 'workspace.create'; params?: Record<string, unknown> }
->;
+> & {
+  /** Where the proposing agent ran; older backends stamp none. Read leniently. */
+  placement?: unknown;
+};
 
 export type WorkspaceTransferProposal = BaseProposal<
   'workspace-transfer',

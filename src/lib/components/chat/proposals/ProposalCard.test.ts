@@ -73,6 +73,10 @@ const electronBridgeMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
 }));
 
+// Start on reads the remote-machine store; its behavior is covered by proposal-start-on.ct.spec.ts.
+vi.mock('./ProposalStartOn.svelte', async () => ({
+  default: (await import('./__tests__/MockProposalStartOn.svelte')).default,
+}));
 vi.mock('$lib/electron-bridge', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/electron-bridge')>()),
   invoke: electronBridgeMocks.invoke,

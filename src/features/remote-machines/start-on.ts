@@ -44,6 +44,8 @@ export interface StartOnCloudEntry {
   label: string;
   /** Null when usable, else why not. */
   unavailableReason: string | null;
+  /** No configuration from here can be sent to it: show the profile hint. */
+  needsProfile?: boolean;
 }
 
 /** The E2B rows; null or empty when cloud machines are not configured. */
@@ -120,7 +122,9 @@ export function startOnOptions({
       disabled: entry.unavailableReason !== null,
       ...(entry.unavailableReason
         ? { reason: entry.unavailableReason }
-        : { hint: m.cloudMachines_startOn_hint() }),
+        : entry.needsProfile
+          ? { hint: m.cloudMachines_startOn_hint() }
+          : {}),
     });
   return options;
 }
@@ -166,13 +170,14 @@ export function resolveStartOn(
  * `workspace.create.initialAgent.placement` for a choice; absent for the
  * backend. The entry is named only to a backend that keeps entries.
  */
+export type StartOnPlacement =
+  | { target: 'remote'; checkout: 'isolated'; nodeId: string }
+  | { target: 'e2b'; checkout: 'isolated'; cloudMachineId?: string };
+
 export function initialAgentPlacement(
   machineId: string | undefined,
   { cloudEntries = false }: { cloudEntries?: boolean } = {},
-):
-  | { target: 'remote'; checkout: 'isolated'; nodeId: string }
-  | { target: 'e2b'; checkout: 'isolated'; cloudMachineId?: string }
-  | undefined {
+): StartOnPlacement | undefined {
   const cloudMachineId = startOnCloudMachineId(machineId);
   if (cloudMachineId)
     return cloudEntries

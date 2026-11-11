@@ -150,6 +150,7 @@ import { workspaceNotesSaga } from './slices/workspace-notes/sagas/workspace-not
 import { workspaceOperationsSaga } from './slices/workspace-operations/sagas/workspace-operations-saga';
 import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspace-settings-saga';
 import { workspaceTransferSaga } from './slices/workspace-transfer/sagas/workspace-transfer-saga';
+import { workspaceBulkTransferSaga } from './slices/workspace-bulk-transfer/sagas/workspace-bulk-transfer-saga';
 import { workspaceShareSaga } from './slices/workspace-share/sagas/workspace-share-saga';
 import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-import-saga';
 
@@ -218,6 +219,7 @@ export const sagas = [
   workspaceNavigationLayoutSaga,
   workspaceOperationsSaga,
   workspaceTransferSaga,
+  workspaceBulkTransferSaga,
   workspaceShareSaga,
   invitationAccountSearchSaga,
   hostMembershipSaga,

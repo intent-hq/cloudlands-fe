@@ -912,7 +912,9 @@ describe('ModelPicker guest / collaborator lock', () => {
       const labels = within(rail)
         .getAllByRole('tab')
         .map((tab) => tab.getAttribute('aria-label') ?? '');
-      expect(labels).toHaveLength(4);
+      // Default Codex, Key and Default Claude Code; Work can't be sent.
+      expect(labels).toHaveLength(3);
+      expect(labels.every((label) => !/Work/.test(label))).toBe(true);
       expect(labels.every((label) => !/Auggie/.test(label))).toBe(true);
       expect(labels.some((label) => /Claude Code.*not signed in/.test(label))).toBe(true);
 
@@ -929,26 +931,12 @@ describe('ModelPicker guest / collaborator lock', () => {
       );
     });
 
-    it('greys out a profile that uses an account folder, with the reason', async () => {
+    it('hides a profile that cannot be sent to the machine and keeps one that can', async () => {
       withMachine();
       renderAgentPicker('gpt-5');
       await fireEvent.click(screen.getByRole('button'));
-      await fireEvent.click(await screen.findByRole('tab', { name: /Work/ }));
-
-      const notice = await screen.findByTestId('model-picker-remote-incompatible');
-      // Names the backend the folder lives on.
-      expect(notice.textContent).toMatch(
-        /Uses an account folder on This machine \(local\), so it can't run on other machines/,
-      );
-      const options = screen.getAllByRole('option');
-      expect(options.length).toBeGreaterThan(0);
-      expect(options.every((option) => option.hasAttribute('data-disabled'))).toBe(true);
-
-      // A profile with its own key stays usable.
-      await fireEvent.click(screen.getByRole('tab', { name: /Key/ }));
-      await waitFor(() =>
-        expect(screen.queryByTestId('model-picker-remote-incompatible')).toBeNull(),
-      );
+      expect(await screen.findByRole('tab', { name: /Key/ })).toBeTruthy();
+      expect(screen.queryByRole('tab', { name: /Work/ })).toBeNull();
     });
 
     const withDefaultEnv = (env: unknown[]) => {
@@ -974,18 +962,39 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(screen.queryByTestId('model-picker-remote-signed-out')).toBeNull();
     });
 
-    it("greys out a provider that isn't signed in on the machine", async () => {
+    it("hides a Default with nothing to send when the machine isn't signed in", async () => {
       withMachine();
       withDefaultEnv([]);
       renderAgentPicker('gpt-5');
       await fireEvent.click(screen.getByRole('button'));
-      await fireEvent.click(await screen.findByRole('tab', { name: /Claude Code/ }));
+      expect(await screen.findByRole('tab', { name: /Key/ })).toBeTruthy();
+      expect(screen.queryByRole('tab', { name: /Claude Code/ })).toBeNull();
+    });
 
-      const notice = await screen.findByTestId('model-picker-remote-signed-out');
-      expect(notice.textContent).toContain('Not signed in on Mac mini');
-      expect(notice.textContent).toContain('Sign in on Mac mini to use these models here.');
-      const opus = screen.getByRole('option', { name: /opus/ });
-      expect(opus.hasAttribute('data-disabled')).toBe(true);
+    it("never offers auto-pick when switching a running agent's model", async () => {
+      withMachine(
+        machineRow({
+          capabilities: {
+            providers: [
+              { id: 'codex', status: 'signed-out', models: ['gpt-5'] },
+              { id: 'claude-code', status: 'ready', models: ['opus'] },
+            ],
+          },
+        }),
+      );
+      mockProviderSettingsState.current = {
+        enabledProviders: { auggie: true, codex: true, 'claude-code': true },
+        profiles: {
+          loadStatus: 'success',
+          defaults: { codex: { baseProviderId: 'codex', name: 'Default', env: [] } },
+        },
+      };
+      renderAgentPicker('gpt-5');
+      await fireEvent.click(screen.getByRole('button'));
+      // agent.setModel never auto-picks: the plain Codex Default can't run there.
+      expect(await screen.findByRole('tab', { name: /Key/ })).toBeTruthy();
+      expect(screen.queryByTestId('model-picker-remote-auto-pick')).toBeNull();
+      expect(screen.queryByRole('tab', { name: /Codex · Default/ })).toBeNull();
     });
 
     it('warns when the report is more than a day old', async () => {

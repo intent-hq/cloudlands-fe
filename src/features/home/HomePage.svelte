@@ -21,7 +21,9 @@
     createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
-  import { createHomeWorkspaceMenu } from './home-workspace-menu';
+  import { createHomeBulkMenu, createHomeWorkspaceMenu } from './home-workspace-menu';
+  import { createHomeSelection } from './home-selection.svelte';
+  import HomeSelectionBar from './HomeSelectionBar.svelte';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
@@ -81,6 +83,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import {
     getHomeTriageGroup,
+    homeTriageGroupLabel,
     matchesHomeFilter,
     needsAttention,
     type HomeFilter,
@@ -136,7 +139,10 @@
   const labelsSupported$ = selectLabelsSupported();
   let contextMenu = $state<
     | (SidebarContextPosition &
-        ({ workspace: Workspace; repo?: never } | { repo: RepositoryGroup; workspace?: never }))
+        (
+          | { workspace: Workspace; bulk: boolean; repo?: never }
+          | { repo: RepositoryGroup; workspace?: never; bulk?: never }
+        ))
     | null
   >(null);
   function openWorkspace(id: string) {
@@ -148,20 +154,22 @@
     openWorkspace(id);
   }
   const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
-  function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
-    if (event instanceof MouseEvent) doubleClick.arm(event, id);
-    openHomeWorkspaceFromEvent(event, id, openWorkspace);
+  function activateListRow(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof KeyboardEvent) {
+      openHomeWorkspaceFromEvent(event, id, openWorkspace);
+      return;
+    }
+    doubleClick.arm(event, id);
+    selection.click(event, id);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
-    contextMenu = {
-      ...position,
-      returnFocus:
-        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
-        position.returnFocus,
-      workspace,
-    };
+    const returnFocus =
+      position.returnFocus?.closest<HTMLElement>('[role="option"], button') ?? position.returnFocus;
+    const bulk = selection.includes(workspace.id);
+    if (!bulk) selection.clear();
+    contextMenu = { ...position, returnFocus, workspace, bulk };
   }
   function showListMenu(
     event: MouseEvent | KeyboardEvent,
@@ -443,6 +451,12 @@
     filteredWorkspaces.find((workspace) => workspace.id === selectedId) ??
       asideWorkspaces.find((workspace) => workspace.id === selectedId),
   );
+  const selection = createHomeSelection({
+    visible: () => [...filteredWorkspaces, ...asideWorkspaces],
+    previewId: () => selectedWorkspace?.id ?? null,
+    order: () => screenOrder(),
+    select: (id) => updateView({ selectedId: id }),
+  });
   // The shelf starts collapsed; a search opens it so matching work is never hidden.
   let asideCollapsedForQuery = $state<string | null>(null);
   const asideExpanded = $derived(
@@ -467,20 +481,6 @@
       ...(!expanded && holdsSelection ? { selectedId: null } : {}),
     });
   }
-  function groupLabel(group: string): string {
-    switch (group) {
-      case 'needs-you':
-        return m.home_filter_attention();
-      case 'running':
-        return m.home_filter_running();
-      case 'waiting':
-        return m.home_filter_waiting();
-      case 'blocked':
-        return m.home_filter_blocked();
-      default:
-        return m.home_board_done_idle();
-    }
-  }
   // Grouping is only meaningful on the unfiltered list; a status filter already
   // names the group, and archived rows have no live triage state.
   const triageGroups = $derived(
@@ -500,7 +500,7 @@
           const expanded =
             $view$.expandedGroups[id] !== false ||
             items.some((workspace) => workspace.id === selectedId);
-          return [{ id, label: groupLabel(id), items, expanded, collapsible: true }];
+          return [{ id, label: homeTriageGroupLabel(id), items, expanded, collapsible: true }];
         })
       : [],
   );
@@ -618,10 +618,12 @@
   });
   homeRetiredWorkspaces(() => ({ filter, preview }), workspaces$, admissionSelector());
   function chooseFilter(next: HomeFilter) {
+    selection.clear();
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
   }
   function chooseRepo(key: string | null) {
+    selection.clear();
     store.dispatch(closePanel());
     updateView({
       repoKey: key,
@@ -640,26 +642,26 @@
     ],
     () => tab,
   );
-  // The hardware knob steps through the rows shown on screen. The board has no
-  // virtualization, so its card order is read from the page.
+  // Row ids as shown; the board has no virtualization, so its card order is read from the page.
+  function screenOrder(): string[] {
+    if ($view$.view === 'board')
+      return [
+        ...(homeElement?.querySelectorAll<HTMLElement>(
+          '[data-home-destination="workspaces"] [data-home-workspace]',
+        ) ?? []),
+      ].flatMap((node) => node.dataset.homeWorkspace ?? []);
+    return homeListOrder({
+      groups: listGroups,
+      workspaces: filteredWorkspaces,
+      aside: asideWorkspaces,
+      asideExpanded,
+    });
+  }
+  // The hardware knob steps through the rows shown on screen.
   $effect(() => {
     if (preview) return;
     return registerHomeEncoderTarget({
-      ids: () => {
-        if (destination !== 'workspaces' || tab !== 'workspaces') return null;
-        if ($view$.view === 'board')
-          return [
-            ...(homeElement?.querySelectorAll<HTMLElement>(
-              '[data-home-destination="workspaces"] [data-home-workspace]',
-            ) ?? []),
-          ].flatMap((node) => node.dataset.homeWorkspace ?? []);
-        return homeListOrder({
-          groups: listGroups,
-          workspaces: filteredWorkspaces,
-          aside: asideWorkspaces,
-          asideExpanded,
-        });
-      },
+      ids: () => (destination === 'workspaces' && tab === 'workspaces' ? screenOrder() : null),
       selectedId: () => selectedWorkspace?.id ?? null,
       select: (id) => {
         updateView({ selectedId: id });
@@ -689,6 +691,7 @@
       })
     )
       return;
+    if (destination === 'workspaces' && tab === 'workspaces' && selection.escape(event)) return;
     if (
       event.key === 'Escape' &&
       !event.defaultPrevented &&
@@ -706,9 +709,15 @@
     x={contextMenu.x}
     y={contextMenu.y}
     returnFocus={contextMenu.returnFocus}
-    items={contextMenu.workspace
-      ? workspaceMenu(contextMenu.workspace)
-      : repositoryMenu(contextMenu.repo)}
+    items={contextMenu.bulk
+      ? createHomeBulkMenu(
+          selection.workspaces.length,
+          selection.actions,
+          () => (contextMenu = null),
+        )
+      : contextMenu.workspace
+        ? workspaceMenu(contextMenu.workspace)
+        : repositoryMenu(contextMenu.repo)}
     onClickOutside={() => (contextMenu = null)}
   />
 {/if}
@@ -971,6 +980,7 @@
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
                   tabFocus = { value };
+                  selection.clear();
                   updateView({ tab: value });
                 }
               }}
@@ -1030,7 +1040,7 @@
                       class:has-selection={!!selectedWorkspace}
                     >
                       <section
-                        class="workspace-list flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
+                        class="workspace-list relative flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
                         aria-label={m.home_tab_workspaces()}
                       >
                         {@render homeHeader()}
@@ -1100,9 +1110,10 @@
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
-                            {selectedId}
-                            onselect={(id) =>
-                              updateView({ selectedId: selectedId === id ? null : id })}
+                            selectedIds={selection.selectedIds}
+                            onselect={selection.pickCard}
+                            ontoggleselect={selection.toggle}
+                            onrangeselect={selection.range}
                             onopen={openWorkspace}
                             {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
@@ -1118,16 +1129,23 @@
                             aside={asideWorkspaces}
                             {asideExpanded}
                             pinnedIds={$pinnedIds$}
-                            selectedId={selectedWorkspace?.id ?? null}
+                            selectedIds={selection.selectedIds}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
                             menu={workspaceMenu}
-                            onopen={openModifiedWorkspace}
+                            onopen={activateListRow}
                             onmenu={showListMenu}
-                            onselect={(id) => updateView({ selectedId: id })}
+                            onselect={selection.pickRow}
                             ongroupexpanded={setGroupExpanded}
                             onasideexpanded={setAsideExpanded}
                             ontoggleaside={toggleAside}
+                          />
+                        {/if}
+                        {#if selection.active}
+                          <HomeSelectionBar
+                            count={selection.workspaces.length}
+                            actions={selection.actions}
+                            onclear={selection.clear}
                           />
                         {/if}
                       </section>

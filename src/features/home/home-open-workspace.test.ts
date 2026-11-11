@@ -48,13 +48,22 @@ afterEach(() => {
 });
 
 describe('Home opening a workspace', () => {
-  it('shows the workspace and opens its tab through the shared helper', async () => {
+  it('opens the workspace tab from Cmd/Ctrl+Enter through the shared helper', async () => {
+    render(HomePage);
+
+    const option = screen.getByRole('option', { name: /Closed space/ });
+    await fireEvent.keyDown(option, { key: 'Enter', metaKey: true, ctrlKey: true });
+
+    expect(mocks.show).toHaveBeenCalledExactlyOnceWith('closed-ws');
+  });
+
+  it('keeps Cmd/Ctrl-click for selection instead of opening', async () => {
     const { container } = render(HomePage);
 
-    expect(screen.getByRole('option', { name: /Closed space/ })).toBeTruthy();
     const row = container.querySelector<HTMLElement>('[data-home-workspace="closed-ws"]')!;
     await fireEvent.click(row, { metaKey: true, ctrlKey: true, button: 0 });
 
-    expect(mocks.show).toHaveBeenCalledExactlyOnceWith('closed-ws');
+    expect(mocks.show).not.toHaveBeenCalled();
+    expect(store.state.homeWorkspaces.selectedId).toBe('closed-ws');
   });
 });

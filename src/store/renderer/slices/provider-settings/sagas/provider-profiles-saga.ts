@@ -195,13 +195,14 @@ function* runReorder(action: ReturnType<typeof providerProfileReorderRequested>)
  * account status is the base provider's row, so an env change re-checks it.
  */
 function* runDefaultUpdate(action: ReturnType<typeof providerDefaultUpdateRequested>) {
-  const { requestId, baseProviderId, name, envRef } = action.payload;
+  const { requestId, baseProviderId, name, envRef, remoteCompatible } = action.payload;
   try {
     const env = takeEnv(envRef);
     const result = yield* call([appClient.providers, appClient.providers.updateDefault], {
       baseProviderId,
       ...(name !== undefined ? { name } : {}),
       ...(env ? { env } : {}),
+      ...(remoteCompatible !== undefined ? { remoteCompatible } : {}),
     });
     yield* put(
       providerDefaultUpdateSucceeded(requestId, {
@@ -238,7 +239,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
       ).payload.requestId;
   try {
     if (action.type === providerProfileCreateRequested.type) {
-      const { baseProviderId, name, envRef, backup } = (
+      const { baseProviderId, name, envRef, backup, remoteCompatible } = (
         action as ReturnType<typeof providerProfileCreateRequested>
       ).payload;
       const env = takeEnv(envRef);
@@ -247,6 +248,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
         name,
         ...(env ? { env } : {}),
         ...(backup !== undefined ? { backup } : {}),
+        ...(remoteCompatible !== undefined ? { remoteCompatible } : {}),
       });
       yield* put(
         providerProfileMutationSucceeded(requestId, {
@@ -256,7 +258,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
       );
       yield* fork(checkProfile, deps, result.profile, true);
     } else if (action.type === providerProfileUpdateRequested.type) {
-      const { profileId, name, envRef, backup } = (
+      const { profileId, name, envRef, backup, remoteCompatible } = (
         action as ReturnType<typeof providerProfileUpdateRequested>
       ).payload;
       const env = takeEnv(envRef);
@@ -265,6 +267,7 @@ function* runMutation(deps: ProviderProfilesSagaDeps, action: MutationAction) {
         ...(name !== undefined ? { name } : {}),
         ...(env ? { env } : {}),
         ...(backup !== undefined ? { backup } : {}),
+        ...(remoteCompatible !== undefined ? { remoteCompatible } : {}),
       });
       yield* put(
         providerProfileMutationSucceeded(requestId, {

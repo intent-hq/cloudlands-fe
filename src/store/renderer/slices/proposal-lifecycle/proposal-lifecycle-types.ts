@@ -26,6 +26,8 @@ export interface ProposalApplyResult {
    * so the client must not call `agent.resolveProposal` for it.
    */
   proposalOrigin?: WorkspaceCreateProposalOutcome;
+  /** A `launch-failed` create: the workspace exists, its first agent didn't start. */
+  launchError?: string;
   transfer?: {
     workspaceId: string;
     sourceWorkspacePath: string;

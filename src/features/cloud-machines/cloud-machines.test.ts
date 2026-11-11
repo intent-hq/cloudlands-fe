@@ -46,7 +46,12 @@ import {
   selectStartOnOptions,
 } from '$features/remote-machines/remote-machines-selectors';
 import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { cloudProfileBlockReason } from './cloud-machines-selectors';
+import {
+  providerProfilesLoaded,
+  setProviderEnabled,
+} from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { cloudProfileBlockReason, startOnCloud } from './cloud-machines-selectors';
 import {
   cloudErrorText,
   formatUptime,
@@ -170,8 +175,17 @@ describe('cost and uptime', () => {
 
 describe('Start On', () => {
   const machines = [{ ...E2B_SANDBOXES[0]!, id: 'd-mac', name: 'Mac', cloud: undefined }];
-  const entry = (cloudMachineId: string, unavailableReason: string | null = null) =>
-    ({ cloudMachineId, label: `E2B · ${cloudMachineId}`, unavailableReason }) as StartOnCloudEntry;
+  const entry = (
+    cloudMachineId: string,
+    unavailableReason: string | null = null,
+    needsProfile = true,
+  ) =>
+    ({
+      cloudMachineId,
+      label: `E2B · ${cloudMachineId}`,
+      unavailableReason,
+      needsProfile,
+    }) as StartOnCloudEntry;
 
   it('adds one row per entry after the machines, with the profile hint', () => {
     const options = startOnOptions({
@@ -188,7 +202,13 @@ describe('Start On', () => {
         reason: 'key rejected',
       },
     ]);
-    expect(options.at(-2)?.hint).toBeTruthy();
+    expect(options.at(-2)?.hint).toBe(m.cloudMachines_startOn_hint());
+    const ready = startOnOptions({
+      backendLabel: 'Box',
+      machines,
+      cloud: [entry('e2b', null, false)],
+    });
+    expect(ready.at(-1)?.hint).toBeUndefined();
     expect(
       startOnOptions({ backendLabel: 'Box', machines, cloud: [] }).some((o) => o.kind === 'cloud'),
     ).toBe(false);
@@ -260,6 +280,102 @@ describe('which configurations can run on E2B', () => {
   it('blocks a provider whose CLI the templates do not install', () => {
     seed({ loadStatus: 'success' });
     expect(cloudProfileBlockReason(store.state, 'gemini')).toBeTruthy();
+  });
+});
+
+describe('the Start On profile hint (intent#9101)', () => {
+  let restore: () => void = () => {};
+  afterEach(() => restore());
+
+  const T0 = '2026-11-11T00:00:00Z';
+  const keyed = [{ key: 'CLAUDE_CODE_OAUTH_TOKEN', kind: 'set' as const, value: '••••' }];
+  const marked = {
+    id: 'p-personal',
+    providerRef: 'claude-code@p-personal',
+    baseProviderId: 'claude-code',
+    name: 'clement@frkz.app',
+    remoteCompatible: true,
+  };
+
+  function seed({
+    defaultRemoteLaunch,
+    catalogProfiles = [],
+    profileEnv,
+    defaultEnv,
+    disabled = [],
+  }: {
+    defaultRemoteLaunch: Record<string, string>;
+    catalogProfiles?: (typeof marked)[];
+    profileEnv?: { key: string; kind: 'set' | 'unset'; value?: string }[];
+    /** The Default's saved overrides; omitted = not reported. */
+    defaultEnv?: typeof keyed;
+    disabled?: string[];
+  }) {
+    store.init();
+    restore = setupCloudMachinesFixture('connected');
+    store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
+    store.dispatch(
+      providerCatalogLoaded({ providers: [], profiles: catalogProfiles, defaultRemoteLaunch }),
+    );
+    for (const providerId of ['claude-code', 'codex'])
+      store.dispatch(setProviderEnabled({ providerId, enabled: !disabled.includes(providerId) }));
+    // Previous cases leave profiles behind; without defaults the list reports none.
+    const stamp = { settingsFingerprint: 'f', createdAt: T0, updatedAt: T0 };
+    store.dispatch(
+      providerProfilesLoaded(
+        profileEnv ? [{ ...marked, ...stamp, env: profileEnv }] : [],
+        1,
+        defaultEnv
+          ? [{ baseProviderId: 'claude-code', name: 'Default', env: defaultEnv }]
+          : undefined,
+      ),
+    );
+  }
+  const cloudHint = () =>
+    startOnOptions({ backendLabel: 'Box', machines: [], cloud: startOnCloud(store.state) }).find(
+      (option) => option.kind === 'cloud',
+    )?.hint;
+
+  it('is hidden when the marked Default sends its settings', () => {
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' },
+      defaultEnv: keyed,
+    });
+    expect(cloudHint()).toBeUndefined();
+  });
+
+  it("shows while the Default's overrides are unknown, as the picker offers nothing then", () => {
+    seed({ defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' } });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
+  });
+
+  it('ignores a provider turned off in Settings', () => {
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' },
+      defaultEnv: keyed,
+      disabled: ['claude-code'],
+    });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
+  });
+
+  it('is hidden when a marked profile sends a set variable', () => {
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' },
+      catalogProfiles: [marked],
+      profileEnv: keyed,
+    });
+    expect(cloudHint()).toBeUndefined();
+  });
+
+  it('shows when nothing marked can be sent', () => {
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'refused' },
+      catalogProfiles: [marked],
+      profileEnv: [{ key: 'X', kind: 'unset' }],
+    });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
+    seed({ defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' } });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
   });
 });
 

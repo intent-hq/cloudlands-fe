@@ -38,6 +38,25 @@
   }
 
   function setupStartOnFixture(scenario: string) {
+    if (scenario === 'start-on-auto-pick')
+      // Codex isn't signed in on the machine; the plain Default uses the Remote Ready profile.
+      return setupStartOnPreview(
+        [startOnPreviewMachine('d-mac', 'Mac mini', 'connected', ['fixture-model'], 'signed-out')],
+        {
+          catalog: {
+            profiles: [
+              {
+                id: 'pkey00000001',
+                providerRef: 'codex@pkey00000001',
+                baseProviderId: 'codex',
+                name: 'Team token',
+                remoteCompatible: true,
+              },
+            ],
+            defaultRemoteLaunch: { codex: 'machine-sign-in' },
+          },
+        },
+      );
     return setupStartOnPreview(
       scenario === 'start-on-none'
         ? []
@@ -63,7 +82,8 @@
       | 'start-on-none'
       | 'start-on-machine'
       | 'start-on-unreachable'
-      | 'start-on-open';
+      | 'start-on-open'
+      | 'start-on-auto-pick';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
@@ -81,6 +101,8 @@
       // New Workspace → Start On (remote initial agent).
       'start-on-none': { props: { state: 'start-on-none' } },
       'start-on-machine': { props: { state: 'start-on-machine' } },
+      // A machine not signed in to Codex: the plain Default auto-picks a Remote Ready profile.
+      'start-on-auto-pick': { props: { state: 'start-on-auto-pick' } },
       'start-on-unreachable': { props: { state: 'start-on-unreachable' } },
       // The open machine list: backend and machine rows both show their platform.
       'start-on-open': { props: { state: 'start-on-open' } },
@@ -120,7 +142,11 @@
   } as AgentSession);
   onDestroy(setupPickerProviders());
   const startOn = untrack(() => scenario.startsWith('start-on-'));
-  let startOnMachineId = $state(untrack(() => (scenario === 'start-on-machine' ? 'd-mac' : '')));
+  let startOnMachineId = $state(
+    untrack(() =>
+      scenario === 'start-on-machine' || scenario === 'start-on-auto-pick' ? 'd-mac' : '',
+    ),
+  );
   if (startOn) onDestroy(setupStartOnFixture(untrack(() => scenario)));
   const startOnOptions$ = selectStartOnOptions();
   // Enough rows to overflow the specialist menu's height cap.

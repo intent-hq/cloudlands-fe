@@ -63,6 +63,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/lib/components/file-explorer/file-explorer-layout.svelte',
     'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
     'src/lib/components/layout/sidebar-nav/cards/ChiefCard.svelte',
+    'src/lib/components/modals/BulkTransferModal.svelte',
     'src/lib/components/modals/InviteConsentModal.svelte',
     'src/lib/components/modals/InviteProgressModal.svelte',
     'src/lib/components/modals/SetupScriptModal.svelte',

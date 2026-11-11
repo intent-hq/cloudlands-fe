@@ -22,6 +22,10 @@
    * "Signed in", or after 10 minutes "Still waiting?" with Try again. Claude rows
    * show "Signed in as <email>" from the last check's `identity`. Removing a
    * Different-login profile names the folder that stays on disk.
+   *
+   * With remote-ready profiles, every configuration marked for remote
+   * machines carries a Remote Ready pill, and the Default row's ⋯ menu holds
+   * "Use on remote machines".
    */
   import {
     faArrowsRotate,
@@ -86,6 +90,9 @@
   import ProviderProfileEditDialog from './ProviderProfileEditDialog.svelte';
   import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
+  import ProviderRemoteMenuItems from './ProviderRemoteMenuItems.svelte';
+  import RemoteReadyPill from './RemoteReadyPill.svelte';
+  import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
   import ProfileDeleteConfirm from './profile-kinds/ProfileDeleteConfirm.svelte';
 
   interface Props {
@@ -112,6 +119,7 @@
   const fastModeProviders$ = selectFastModeSupportedProviders();
   const identity$ = selectProviderProfileIdentityMap();
   const setups$ = selectProviderProfileSetups();
+  const remoteReady$ = selectRemoteReadyProfilesVisible();
   // svelte-ignore state_referenced_locally
   const kindProvider = profileProviderFromBaseId(providerId);
   // Each profile has its own Fast mode / service tier, offered exactly when
@@ -526,6 +534,9 @@
                   {DEFAULT_NAME}
                 </span>
               {/if}
+              {#if $remoteReady$ && $defaultConfig$?.remoteCompatible === true}
+                <RemoteReadyPill />
+              {/if}
             </div>
             <div class="flex shrink-0 items-center gap-2 type-caption">
               {@render statusLabel(defaultStatus)}
@@ -548,9 +559,17 @@
                   align="end"
                   aria-label={m.settings_providerProfiles_actions_ariaLabel({ name: defaultName })}
                 >
-                  <div class={offersFastMode && providerId !== 'codex' ? 'w-64' : 'w-56'}>
+                  <div
+                    class={$remoteReady$ || (offersFastMode && providerId !== 'codex')
+                      ? 'w-64'
+                      : 'w-56'}
+                  >
                     {#if offersFastMode}
                       <ProviderFastModeMenuItems providerRef={providerId} />
+                      <Menu.Separator />
+                    {/if}
+                    {#if $remoteReady$}
+                      <ProviderRemoteMenuItems {providerId} />
                       <Menu.Separator />
                     {/if}
                     <Menu.Item class="cursor-pointer text-foreground" onSelect={onEditDefault}>
@@ -639,6 +658,9 @@
                       >
                         {m.settings_providerProfiles_backupBadge_label()}
                       </span>
+                    {/if}
+                    {#if $remoteReady$ && profile.remoteCompatible === true}
+                      <RemoteReadyPill />
                     {/if}
                   </div>
                   {#if email}

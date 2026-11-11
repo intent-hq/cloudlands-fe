@@ -331,3 +331,60 @@ describe('formatProviderFailoverLabel — returned home', () => {
     expect(formatProviderFailoverLabel(notice({ reason: 'quota-reset' }), FALLBACK)).toBe(FALLBACK);
   });
 });
+
+describe('provider_auto_selected rows (a Remote Ready profile on a machine without sign-in)', () => {
+  beforeEach(() => {
+    mockStoreState = catalogState();
+  });
+  const row = (metadata: Record<string, unknown>) => ({
+    role: 'system',
+    metadata: { type: 'provider_auto_selected', ...metadata },
+  });
+
+  it('parses the row, including the machine, and counts it as a switch row', () => {
+    const message = row({
+      fromProvider: 'claude-code',
+      toProvider: 'claude-code@pwork',
+      model: null,
+      reason: 'machine-signed-out',
+      machine: 'Mac mini',
+    });
+    expect(getProviderSwitchNotice(message)).toMatchObject({
+      kind: 'autoSelected',
+      toProvider: 'claude-code@pwork',
+      machine: 'Mac mini',
+    });
+    expect(getProviderFailoverNotice(message)).toBeNull();
+  });
+
+  it('names the profile and the machine for each reason', () => {
+    const notice = (reason: string): ProviderFailoverNoticeInfo => ({
+      kind: 'autoSelected',
+      fromProvider: 'claude-code',
+      toProvider: 'claude-code@pwork',
+      model: null,
+      reason,
+      machine: 'Mac mini',
+    });
+    const signedOut = formatProviderFailoverLabel(notice('machine-signed-out'), FALLBACK);
+    const sandbox = formatProviderFailoverLabel(notice('sandbox-no-sign-in'), FALLBACK);
+    for (const label of [signedOut, sandbox]) {
+      expect(label).toContain('Work');
+      expect(label).toContain('Mac mini');
+    }
+    expect(signedOut).not.toBe(sandbox);
+  });
+
+  it('falls back to the daemon text for an unknown reason or a missing machine', () => {
+    const base: ProviderFailoverNoticeInfo = {
+      kind: 'autoSelected',
+      toProvider: 'claude-code@pwork',
+      model: null,
+      reason: 'machine-signed-out',
+    };
+    expect(formatProviderFailoverLabel(base, FALLBACK)).toBe(FALLBACK);
+    expect(
+      formatProviderFailoverLabel({ ...base, machine: 'Mac mini', reason: 'future' }, FALLBACK),
+    ).toBe(FALLBACK);
+  });
+});

@@ -19,6 +19,7 @@
     | 'picker-missing'
     | 'picker-older-backend'
     | 'picker-machine-without-models'
+    | 'picker-hidden'
     | 'e2b-starting'
     | 'e2b-running'
     | 'e2b-paused'
@@ -63,6 +64,8 @@
       'picker-missing': sceneState('picker-missing'),
       'picker-older-backend': sceneState('picker-older-backend'),
       'picker-machine-without-models': sceneState('picker-machine-without-models'),
+      // Hidden: an unmarked profile, and an unmarked Default on a machine not signed in to it.
+      'picker-hidden': sceneState('picker-hidden'),
       'e2b-starting': sceneState('e2b-starting'),
       'e2b-running': sceneState('e2b-running'),
       'e2b-paused': sceneState('e2b-paused'),
@@ -161,6 +164,8 @@
     providers: [
       { id: 'claude-code', status: 'ready', models: ['opus', 'sonnet', 'haiku'] },
       { id: 'codex', status: 'signed-out', models: ['gpt-6', 'gpt-6-mini'] },
+      // Nothing to pick: no tab.
+      { id: 'droid', status: 'unknown', models: [] },
     ],
   };
   // A machine with no sign-in of its own (an E2B sandbox) lists no models;
@@ -205,7 +210,19 @@
               remoteCompatible: true,
             },
             ...(s === 'picker-machine-without-models' ? [PERSONAL_PROFILE] : []),
+            ...(s === 'picker-hidden'
+              ? [
+                  {
+                    ...PERSONAL_PROFILE,
+                    remoteCompatible: false,
+                    remoteIncompatibility: { reason: 'not-marked', keys: [] },
+                  },
+                ]
+              : []),
           ],
+    ...(s === 'picker-hidden'
+      ? { defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' } }
+      : {}),
   });
   const reportedAt = (s: Scene) =>
     new Date(catalogNow() - (s === 'picker-stale' ? 3 * 24 * 60 : 2) * 60 * 1000).toISOString();
@@ -509,7 +526,7 @@
     store.dispatch(setLabsRemoteAgentsEnabled(s !== 'labs-off'));
     if (isPickerScene(s)) {
       store.dispatch(providerCatalogLoaded(pickerCatalog(s)));
-      for (const providerId of ['claude-code', 'codex'])
+      for (const providerId of ['claude-code', 'codex', 'droid'])
         store.dispatch(setProviderEnabled({ providerId, enabled: true }));
       // This backend's labels for the machine's model ids.
       store.dispatch(
