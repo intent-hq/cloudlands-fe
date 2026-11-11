@@ -1,4 +1,5 @@
 import { isCmdClickModifier } from '$shared/utils/link-helpers';
+import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
 
 /**
@@ -66,6 +67,7 @@ export interface HomeBulkTargets {
   archive: Workspace[];
   purge: Workspace[];
   delete: Workspace[];
+  transfer: Workspace[];
 }
 
 /** The selected workspaces each bulk action applies to; `canManage` gates owner actions. */
@@ -82,5 +84,10 @@ export function homeBulkTargets(
     ),
     purge: managed.filter((workspace) => workspace.status === WorkspaceStatusEnum.Archived),
     delete: managed,
+    // Purged workspaces have no folder to export; plain folders have no git to bundle.
+    transfer: managed.filter(
+      (workspace) =>
+        workspace.status !== WorkspaceStatusEnum.Retired && !isPlainFolderWorkspace(workspace),
+    ),
   };
 }

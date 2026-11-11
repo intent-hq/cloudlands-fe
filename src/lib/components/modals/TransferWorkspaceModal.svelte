@@ -37,6 +37,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { formatBytesBinary, formatInteger } from '$lib/i18n/format';
   import { formatConnectionLabel } from '$lib/components/layout/DaemonStatusIndicator.svelte';
+  import { transferStageLabel } from '$features/workspace-transfer/utils/transfer-stage-label';
   import type { TransferFailurePhase } from '$shared/types/workspace-transfer';
   import type { ConnectionRecord } from '$store/renderer/slices/connections/connections-types';
   import type {
@@ -164,27 +165,7 @@
   });
 
   /** Human copy for the current build stage / relay phase (step 3). */
-  const progressLabel = $derived.by(() => {
-    if (!progress) return m.workspace_transfer_stage_building();
-    if (progress.phase === 'committing') return m.workspace_transfer_phase_committing();
-    if (progress.phase === 'relaying') {
-      return isDownload
-        ? m.workspace_transfer_phase_downloading()
-        : m.workspace_transfer_phase_relaying();
-    }
-    switch (progress.stage) {
-      case 'stopping-agents':
-        return m.workspace_transfer_stage_stoppingAgents();
-      case 'exporting-rows':
-        return m.workspace_transfer_stage_exportingRows();
-      case 'bundling-git':
-        return m.workspace_transfer_stage_bundlingGit();
-      case 'writing-archive':
-        return m.workspace_transfer_stage_writingArchive();
-      default:
-        return m.workspace_transfer_stage_building();
-    }
-  });
+  const progressLabel = $derived(transferStageLabel(progress, { download: isDownload }));
 
   /**
    * Progress fraction for the bar: relay bytes against the sealed archive
