@@ -9,7 +9,7 @@
  * @vitest-environment jsdom
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
 import { warmImport } from '../../../test/warm-import';
 
@@ -56,8 +56,6 @@ async function buildState(
   npxStatus: { resolvedPath: string | null; versionOk: boolean | null } | null = null,
   enabledProviders: Record<string, boolean> = { auggie: true },
 ) {
-  const { initialState: setupInitialState } =
-    await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
   const { initialState: specialistsInitialState } =
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
@@ -77,7 +75,6 @@ async function buildState(
     providerLoadingMap[entry.id] = providerStatusMap[entry.id] === undefined;
   }
   return {
-    antigravitySetup: { ...setupInitialState },
     providerCatalog: providerCatalogReducer(
       providerCatalogInitialState,
       providerCatalogLoaded(MOCK_PROVIDER_CATALOG),
@@ -109,177 +106,6 @@ warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'
 warmImport(() => import('./ProviderSelector.svelte'));
 
 describe('ProviderSelector progressive rendering', () => {
-  async function failedSetup() {
-    const {
-      antigravitySetupReducer,
-      antigravitySetupRequested,
-      antigravitySetupReceived,
-      initialState,
-    } = await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
-    const started = antigravitySetupReducer(initialState, antigravitySetupRequested('start'));
-    return antigravitySetupReducer(
-      started,
-      antigravitySetupReceived(started.generation, {
-        ok: true,
-        status: {
-          operationId: 'attempt-1',
-          supported: true,
-          cliDetected: true,
-          runtimeInstalled: true,
-          phase: 'failed',
-          code: 'modelsUnavailable',
-        },
-      }),
-    );
-  }
-
-  async function openAntigravityDialog(result: ReturnType<typeof render>) {
-    await fireEvent.click(
-      result.getByRole('button', { name: 'Provider actions for Google Antigravity' }),
-    );
-    await fireEvent.click(result.getByRole('menuitem', { name: 'Connect Antigravity' }));
-    return within(await result.findByRole('dialog', { name: 'Connect Antigravity' }));
-  }
-
-  it('requires confirmation in the dialog before starting Antigravity setup', async () => {
-    mocks.state.current = await buildState({ antigravity: { available: false } });
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-    expect(result.queryByRole('dialog')).toBeNull();
-    let dialog = await openAntigravityDialog(result);
-    expect(dialog.getByRole('status')).toBeTruthy();
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'antigravitySetup/requested', payload: ['start'] }),
-    );
-    await fireEvent.click(dialog.getByRole('button', { name: 'Cancel setup' }));
-    await waitFor(() => expect(result.queryByRole('dialog')).toBeNull());
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'antigravitySetup/requested', payload: ['start'] }),
-    );
-    dialog = await openAntigravityDialog(result);
-    await fireEvent.click(dialog.getByRole('button', { name: 'Connect Antigravity' }));
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'antigravitySetup/requested', payload: ['start'] }),
-    );
-  });
-
-  it.each(['downloading', 'signInRequired'] as const)(
-    'cancels setup when dismissing the dialog during %s',
-    async (phase) => {
-      mocks.state.current = await buildState({ antigravity: { available: false } });
-      mocks.state.current.antigravitySetup = {
-        ...mocks.state.current.antigravitySetup,
-        busy: phase === 'downloading',
-        attempted: true,
-        result: {
-          ok: true,
-          status: { phase, supported: true, cliDetected: true, runtimeInstalled: true },
-        },
-      };
-      const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-      const result = render(ProviderSelector);
-      const dialog = await openAntigravityDialog(result);
-      await fireEvent.click(dialog.getByRole('button', { name: 'Cancel setup' }));
-      expect(mocks.dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'antigravitySetup/requested', payload: ['cancel'] }),
-      );
-      await waitFor(() => expect(result.queryByRole('dialog')).toBeNull());
-    },
-  );
-
-  it('offers model failure retry in the dialog instead of allowing a ready provider to enable', async () => {
-    mocks.state.current = await buildState({
-      antigravity: { available: true, authenticated: true },
-    });
-    mocks.state.current.antigravitySetup = await failedSetup();
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-    const row = within(result.getByText('Google Antigravity').closest('.px-6') as HTMLElement);
-    expect(row.queryByRole('button', { name: 'Enable' })).toBeNull();
-    const dialog = await openAntigravityDialog(result);
-    await fireEvent.click(dialog.getByRole('button', { name: 'Try Again' }));
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'antigravitySetup/requested', payload: ['start'] }),
-    );
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'providerSettings/setProviderEnabled' }),
-    );
-  });
-
-  it('guards an existing Enable handler when a setup failure arrives before render', async () => {
-    mocks.state.current = await buildState({
-      antigravity: { available: true, authenticated: true },
-    });
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-    const row = within(result.getByText('Google Antigravity').closest('.px-6') as HTMLElement);
-    const enable = row.getByRole('button', { name: 'Enable' });
-    mocks.state.current.antigravitySetup = await failedSetup();
-    await fireEvent.click(enable);
-    expect(mocks.dispatch).not.toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'providerSettings/setProviderEnabled' }),
-    );
-  });
-
-  it('allows enabling after a retry verifies models without switching defaults', async () => {
-    const {
-      antigravitySetupReducer,
-      antigravitySetupRequested,
-      antigravitySetupReceived,
-      antigravitySetupVerified,
-    } = await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
-    let setup = antigravitySetupReducer(await failedSetup(), antigravitySetupRequested('start'));
-    setup = antigravitySetupReducer(setup, antigravitySetupVerified());
-    setup = antigravitySetupReducer(
-      setup,
-      antigravitySetupReceived(setup.generation, {
-        ok: true,
-        status: {
-          operationId: 'attempt-2',
-          supported: true,
-          cliDetected: true,
-          runtimeInstalled: true,
-          phase: 'connected',
-          modelCount: 1,
-        },
-      }),
-    );
-    mocks.state.current = await buildState({
-      antigravity: { available: true, authenticated: true },
-    });
-    mocks.state.current.antigravitySetup = setup;
-    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-    const result = render(ProviderSelector);
-    const row = within(result.getByText('Google Antigravity').closest('.px-6') as HTMLElement);
-    await fireEvent.click(row.getByRole('button', { name: 'Enable' }));
-    expect(mocks.dispatch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'providerSettings/setProviderEnabled',
-        payload: [
-          { providerId: 'antigravity', enabled: true },
-          { id: expect.any(String), sessionId: expect.any(String) },
-        ],
-      }),
-    );
-    expect(
-      mocks.dispatch.mock.calls.some(([action]) =>
-        /setActiveProvider|setAtomicDefaultModel|setModel/.test(action.type),
-      ),
-    ).toBe(false);
-  });
-
-  it.each([undefined, false, true])(
-    'keeps Antigravity opt-in with auth=%s',
-    async (authenticated) => {
-      mocks.state.current = await buildState({ antigravity: { available: true, authenticated } });
-      const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
-      const result = render(ProviderSelector);
-      const row = result.getByText('Google Antigravity').closest('.px-6')!;
-      expect(row.textContent?.includes('Enable')).toBe(authenticated === true);
-      expect(mocks.state.current.providerSettings.enabledProviders.antigravity).toBeUndefined();
-      expect(mocks.state.current.providerSettings.activeProviderId).toBe('auggie');
-    },
-  );
   beforeEach(() => {
     vi.clearAllMocks();
     // The aggregated GET_AVAILABILITY never settles: rows must not wait on it.

@@ -241,7 +241,6 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   selectActiveProviderId: () => activeProviderId$,
   selectEnabledProviders: () => readable({}),
   selectModelFetchProviderIds: () => enabledProviderIds$,
-  selectIsProviderModelAccessAllowed: () => readable(true),
   selectAvailableEnabledProviderIds: () => enabledProviderIds$,
 }));
 

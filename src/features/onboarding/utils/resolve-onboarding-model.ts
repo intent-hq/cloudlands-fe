@@ -149,7 +149,7 @@ function resolveUsableProvider(
     tryUse(preferred.specialistCodingAgent, 'specialist-coding-agent') ??
     tryUse(preferred.activeProvider, 'active-provider') ??
     tryUse(preferred.defaultProvider, 'default-provider') ??
-    usable.find((providerId) => providerId !== 'antigravity')
+    usable[0]
   );
 }
 

@@ -13,7 +13,6 @@ import { hostMembershipReducer } from './slices/host-membership/host-membership-
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
-import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
 import { agentModelReducer } from './slices/agent-model/agent-model-slice';
@@ -143,7 +142,6 @@ export const reducers = {
   repositoryCheckout: repositoryCheckoutReducer,
   providerSettings: providerSettingsReducer,
   settingsEvents: settingsEventsReducer,
-  antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
   providerModels: providerModelsReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,

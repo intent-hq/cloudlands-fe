@@ -32,6 +32,7 @@ export interface ProviderCliWarning {
 export const PROVIDER_CLI_UPDATE_COMMANDS: Readonly<Record<string, string>> = {
   codex: 'codex update',
   'claude-code': 'claude update',
+  antigravity: 'agy update',
 };
 
 /**

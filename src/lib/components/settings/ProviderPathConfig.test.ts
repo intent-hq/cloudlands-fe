@@ -70,7 +70,7 @@ describe('ProviderPathConfig', () => {
       props: {
         providerId: 'antigravity',
         providerName: 'Antigravity',
-        cliCommand: 'antigravity-acp',
+        cliCommand: 'agy',
         isInstalled: false,
       },
     });

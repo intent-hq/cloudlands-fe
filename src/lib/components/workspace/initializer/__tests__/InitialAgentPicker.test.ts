@@ -444,8 +444,8 @@ describe('InitialAgentPicker stale model override clearing', () => {
     await waitFor(() => expect(onModelChange).toHaveBeenCalledWith(undefined));
   });
 
-  it.each([false, undefined])(
-    'clears a restored Antigravity override without confirmed auth (%s)',
+  it.each([false])(
+    'clears a restored Antigravity override when sign-in is reported missing (%s)',
     async (authenticated) => {
       mocks.fileSpecialistsLoaded$.set(true);
       mocks.getProviderAvailability.mockResolvedValue({

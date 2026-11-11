@@ -49,8 +49,6 @@ async function buildState({
   cursorEnabled: boolean;
   cursor?: object;
 }) {
-  const { initialState: setupInitialState } =
-    await import('$store/renderer/slices/antigravity-setup/antigravity-setup-slice');
   const { initialState: specialistsInitialState } =
     await import('$store/renderer/slices/specialists/specialists-slice');
   const { initialState: modelInitialState } =
@@ -70,7 +68,6 @@ async function buildState({
     await import('$store/renderer/slices/daemon-health/daemon-health-slice');
   return {
     daemonHealth: { ...daemonHealthInitialState },
-    antigravitySetup: { ...setupInitialState },
     providerCatalog: providerCatalogReducer(
       providerCatalogInitialState,
       providerCatalogLoaded({

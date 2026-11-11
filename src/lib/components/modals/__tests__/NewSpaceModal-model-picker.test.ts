@@ -85,7 +85,6 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   selectActiveProviderId: () => mocks.readable('auggie'),
   selectEnabledProviders: () => mocks.readable({}),
   selectModelFetchProviderIds: () => mocks.readable(mocks.availableProviderIds),
-  selectIsProviderModelAccessAllowed: () => mocks.readable(true),
   selectAvailableEnabledProviderIds: () => mocks.readable(mocks.availableProviderIds),
 }));
 

@@ -396,15 +396,24 @@ function discoveryForVersions(): Promise<ProviderDiscoverySnapshot | undefined> 
   return (joinable ?? fetchProviderDiscovery()).catch(() => undefined);
 }
 
+/**
+ * Antigravity from discovery. An agy below the daemon's minimum is updated at
+ * the next launch, so the row warns with that status (or the failed update).
+ */
 function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
-  return withVersion(
-    {
-      available: discovery.providers.some((row) => row.id === 'antigravity' && row.installed),
-      hasNpxFallback: false,
-    },
+  const row = discovery.providers.find((provider) => provider.id === 'antigravity');
+  const status = withVersion(
+    { available: row?.installed === true, hasNpxFallback: false },
     discovery,
     'antigravity',
   );
+  if (status.available && row?.cliVersionOk === false && row.cliMinimumVersion) {
+    const minimum = row.cliMinimumVersion;
+    status.warning = row.cliUpdateError
+      ? m.settings_providers_agyUpdateFailed_warning({ reason: row.cliUpdateError })
+      : m.settings_providers_agyUpdatePending_warning({ minimum });
+  }
+  return status;
 }
 
 async function checkAntigravityAvailability(): Promise<ProviderStatus> {
@@ -582,6 +591,11 @@ interface ProviderDiscoveryEntry {
   cliVersion?: string;
   /** Why a resolved CLI is refused; the daemon then reports `installed: false` (Cursor). */
   unavailableReason?: string;
+  /** Daemon verdict against `cliMinimumVersion`; absent when the version is unknown. */
+  cliVersionOk?: boolean;
+  cliMinimumVersion?: string;
+  /** Recent automatic CLI update failure (Antigravity's `agy update`). */
+  cliUpdateError?: string;
 }
 
 /**

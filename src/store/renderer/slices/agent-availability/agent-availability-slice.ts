@@ -6,7 +6,6 @@ import { hostExecutionConnectionChanged } from '../host-execution/host-execution
  */
 
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
-import { antigravitySetupVerified } from '../antigravity-setup/antigravity-setup-slice';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import type { AgentAvailabilityState, ProviderStatus } from './agent-availability-types';
 import type { NpxStatus } from '$shared/types/provider-availability';
@@ -174,18 +173,6 @@ agentAvailabilityReducer.with(providerAvailabilityStopped, (state) => ({
   providerCheckEpochMap: Object.fromEntries(
     Object.entries(state.providerCheckEpochMap).map(([id, epoch]) => [id, epoch + 1]),
   ),
-}));
-agentAvailabilityReducer.with(antigravitySetupVerified, (state) => ({
-  ...state,
-  providerStatusMap: {
-    ...state.providerStatusMap,
-    antigravity: { available: true, authenticated: true },
-  },
-  providerLoadingMap: { ...state.providerLoadingMap, antigravity: false },
-  providerCheckEpochMap: {
-    ...state.providerCheckEpochMap,
-    antigravity: (state.providerCheckEpochMap.antigravity ?? 0) + 1,
-  },
 }));
 
 /** Whether a result carrying `epoch` is stale (a newer check started since). */
