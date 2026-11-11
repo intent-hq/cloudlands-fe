@@ -304,6 +304,12 @@
     padding-left: 8px; /* Minimal padding for Windows */
   }
 
+  /* Machine rail (Labs): without traffic lights the tabs would start above the
+     rail; start them where the content frame beside the rail starts. */
+  :global(:root[data-machine-rail]) .window-title-bar:global(.window-title-bar-windows) {
+    padding-left: calc(8px + 3rem);
+  }
+
   .titlebar-drag-handle {
     -webkit-app-region: drag;
   }

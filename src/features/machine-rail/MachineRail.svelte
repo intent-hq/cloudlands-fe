@@ -51,6 +51,11 @@
   // accessible label); the add button's shows only after a deliberate pause.
   const RAIL_TOOLTIP_DELAY_MS = 900;
 
+  // Rail buttons show keyboard focus as the hover background, not the app-wide
+  // focus outline (the Button paints its states on its surface element).
+  const RAIL_BUTTON_FOCUS_CLASS =
+    'focus-visible:outline-none [&:focus-visible>[data-slot=button-surface]]:bg-hover';
+
   let menuOpen = $state(false);
   // This machine's status menu (health, machines): opened by a context click on
   // its rail item here, or on another machine's rail from that machine's renderer.
@@ -107,6 +112,7 @@
             variant="ghost"
             size="icon"
             iconOnly
+            class={RAIL_BUTTON_FOCUS_CLASS}
             active={item.selected}
             aria-label={label}
             aria-current={item.selected ? 'true' : undefined}
@@ -146,6 +152,7 @@
             variant="ghost"
             size="icon"
             iconOnly
+            class={RAIL_BUTTON_FOCUS_CLASS}
             aria-label={m.machineRail_add_label()}
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
