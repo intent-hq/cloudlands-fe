@@ -9,7 +9,9 @@
     | 'removed'
     | 'legacy-remote'
     | 'launch-error'
-    | 'launch-failed';
+    | 'launch-failed'
+    | 'hidden'
+    | 'gone-hidden';
 
   interface Props {
     state?: Scene;
@@ -37,6 +39,10 @@
       'launch-error': scene('launch-error'),
       // The workspace was created, but its first agent failed to start.
       'launch-failed': scene('launch-failed'),
+      // No remote machine or E2B entry: no Machine field, the backend is used.
+      hidden: scene('hidden'),
+      // Nothing to choose and the proposed machine is gone: a one-line note.
+      'gone-hidden': scene('gone-hidden'),
     },
   });
 </script>
@@ -71,6 +77,8 @@
     unavailable: { target: 'remote', checkout: 'isolated', nodeId: 'd-lab' },
     removed: { target: 'remote', checkout: 'isolated', nodeId: 'd-old' },
     'launch-error': { target: 'remote', checkout: 'isolated', nodeId: 'd-mac' },
+    hidden: { target: 'local' },
+    'gone-hidden': { target: 'remote', nodeId: 'd-old' },
   };
   const proposer = {
     id: 'fixture-proposer',
@@ -80,7 +88,7 @@
           nodeName: 'Mac mini',
           placement: { target: 'remote', checkout: 'isolated', nodeId: 'd-mac' },
         }
-      : s === 'removed'
+      : s === 'removed' || s === 'gone-hidden'
         ? {
             nodeId: 'd-old',
             nodeName: 'Old box',
@@ -114,11 +122,16 @@
     ...(s in placements ? { placement: placements[s] } : {}),
   } as WorkspaceCreateProposal;
 
+  const noChoices = s === 'hidden' || s === 'gone-hidden';
   onDestroy(
-    setupStartOnPreview([
-      startOnPreviewMachine('d-mac', 'Mac mini', 'connected'),
-      startOnPreviewMachine('d-lab', 'Lab PC', 'unreachable'),
-    ]),
+    setupStartOnPreview(
+      noChoices
+        ? []
+        : [
+            startOnPreviewMachine('d-mac', 'Mac mini', 'connected'),
+            startOnPreviewMachine('d-lab', 'Lab PC', 'unreachable'),
+          ],
+    ),
   );
   const previousCloudLabs = store.state.userPreferences?.labsCloudMachinesEnabled === true;
   store.dispatch(setLabsCloudMachinesEnabled(true));
@@ -126,7 +139,7 @@
     cloudMachinesLoaded({
       supported: true,
       entries: true,
-      providers: [{ ...E2B_PROVIDER, id: 'e2b-team', name: 'Team' }],
+      providers: noChoices ? [] : [{ ...E2B_PROVIDER, id: 'e2b-team', name: 'Team' }],
       machines: [],
       readAt: 0,
     }),

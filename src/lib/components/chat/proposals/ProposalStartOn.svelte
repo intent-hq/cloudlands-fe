@@ -19,7 +19,6 @@
     selectRemoteMachinesVisible,
     selectStartOnCloud,
     selectStartOnRows,
-    selectStartOnVisible,
   } from '$features/remote-machines/remote-machines-selectors';
   import { selectCloudEntriesSupported } from '$features/cloud-machines/cloud-machines-selectors';
   import { proposalStartOnChoices, resolveImplicitE2b } from './proposal-start-on';
@@ -54,7 +53,6 @@
 
   const remoteVisible$ = selectRemoteMachinesVisible();
   const supported$ = selectInitialAgentPlacementSupported();
-  const anyUsable$ = selectStartOnVisible();
   const rows$ = selectStartOnRows();
   const providerRefStore = writable<string | undefined>(undefined);
   $effect(() => {
@@ -63,15 +61,25 @@
   const cloud$ = selectStartOnCloud(providerRefStore);
   const cloudEntries$ = selectCloudEntriesSupported();
 
-  const active = $derived(
-    $remoteVisible$ && $supported$ && ($anyUsable$ || defaultValue !== START_ON_BACKEND),
-  );
+  // Shown only while there is another place to choose: a remote machine or a saved E2B entry.
+  const enabled = $derived($remoteVisible$ && $supported$);
+  const active = $derived(enabled && $rows$.length > 1);
   const effective = $derived(backendOnly ? START_ON_BACKEND : resolveImplicitE2b(value, $rows$));
-  const missingLabel = $derived(
-    startOnCloudMachineId(effective)
+  function missingLabelFor(id: string): string {
+    return startOnCloudMachineId(id)
       ? m.cloudMachines_startOn_label()
-      : (effective === proposer?.nodeId && proposer?.nodeName?.trim()) ||
-          m.remoteAgent_location_unknownMachine(),
+      : (id === proposer?.nodeId && proposer?.nodeName?.trim()) ||
+          m.remoteAgent_location_unknownMachine();
+  }
+  const missingLabel = $derived(missingLabelFor(effective));
+  // Nothing to choose, yet the proposal named a place that is gone: it starts on the backend.
+  const goneNote = $derived(
+    enabled && !active && !backendOnly && defaultValue !== START_ON_BACKEND
+      ? m.chat_proposalCard_startOnGone_label({
+          machine: missingLabelFor(defaultValue),
+          backend: $rows$[0]?.label ?? '',
+        })
+      : null,
   );
   const choices = $derived(
     proposalStartOnChoices(
@@ -135,4 +143,9 @@
       {/if}
     </div>
   </div>
+{/if}
+{#if goneNote}
+  <p class="type-caption px-3 py-2.5 text-muted-foreground" data-testid="proposal-start-on-gone">
+    {goneNote}
+  </p>
 {/if}

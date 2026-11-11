@@ -895,6 +895,7 @@
   "chat_proposalCard_settingsQuestion_title": "Diese Einstellungsänderungen anwenden?",
   "chat_proposalCard_specialistQuestion_title": "Diesen Spezialisten aktualisieren?",
   "chat_proposalCard_specialist_label": "Spezialist",
+  "chat_proposalCard_startOnGone_label": "{machine} ist nicht mehr verfügbar, daher startet der erste Agent auf {backend}.",
   "chat_proposalCard_startOnRemoved_label": "Nicht mehr verfügbar",
   "chat_proposalCard_startOnUnavailable_warning": "{machine} ist nicht verfügbar. Wähle eine andere Maschine zum Starten.",
   "chat_proposalCard_task_label": "Aufgabe",

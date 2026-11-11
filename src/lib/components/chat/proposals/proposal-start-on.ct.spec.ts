@@ -72,3 +72,27 @@ test('a first agent that fails after the workspace exists shows on the card', as
   await expect(page.getByTestId('proposal-launch-error')).toContainText('Mac mini went offline');
   await expect(page.getByTestId('proposal-open-created-workspace')).toBeVisible();
 });
+
+test('with no remote machine or E2B entry the field is hidden and Apply uses the backend', async ({
+  mount,
+  page,
+}) => {
+  await mount(ProposalStartOnPreview, { props: { state: 'hidden' } });
+  await expect(create(page)).toBeEnabled();
+  await expect(machine(page)).toHaveCount(0);
+  await expect(page.getByTestId('proposal-start-on-gone')).toHaveCount(0);
+  await create(page).click();
+  expect(await applied(page)).toBeNull();
+});
+
+test('a gone machine with nothing else to choose hides the field and notes it', async ({
+  mount,
+  page,
+}) => {
+  await mount(ProposalStartOnPreview, { props: { state: 'gone-hidden' } });
+  await expect(create(page)).toBeEnabled();
+  await expect(machine(page)).toHaveCount(0);
+  await expect(page.getByTestId('proposal-start-on-gone')).toContainText('Old box');
+  await create(page).click();
+  expect(await applied(page)).toBeNull();
+});

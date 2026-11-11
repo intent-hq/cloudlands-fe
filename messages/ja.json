@@ -895,6 +895,7 @@
   "chat_proposalCard_settingsQuestion_title": "これらの設定変更を適用しますか？",
   "chat_proposalCard_specialistQuestion_title": "このスペシャリストを更新しますか？",
   "chat_proposalCard_specialist_label": "スペシャリスト",
+  "chat_proposalCard_startOnGone_label": "{machine} は利用できなくなったため、最初のエージェントは {backend} で開始します。",
   "chat_proposalCard_startOnRemoved_label": "利用できなくなりました",
   "chat_proposalCard_startOnUnavailable_warning": "{machine} は利用できません。開始する別のマシンを選んでください。",
   "chat_proposalCard_task_label": "タスク",
