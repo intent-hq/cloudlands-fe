@@ -5,6 +5,19 @@ vi.mock('$features/session-import/importable-sessions.client', () => ({
   listImportableSessions: vi.fn(),
 }));
 
+// The host capability is the gate; the rest of the principal selectors stay real.
+const capabilities = vi.hoisted(() => ({ value: { sessionImport: 1 } as Record<string, unknown> }));
+vi.mock('../../principal/principal-selectors', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../principal/principal-selectors')>();
+  return {
+    ...actual,
+    selectPrincipalSnapshot: {
+      ...actual.selectPrincipalSnapshot,
+      select: () => ({ capabilities: capabilities.value }),
+    },
+  };
+});
+
 import { listImportableSessions } from '$features/session-import/importable-sessions.client';
 import { store as appStore } from '$store/renderer/store';
 import {
@@ -52,6 +65,7 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
   });
   beforeEach(() => {
     vi.useFakeTimers();
+    capabilities.value = { sessionImport: 1 };
     appStore.dispatch(importableSessionsLoaded('', []));
   });
   afterEach(() => {
@@ -121,16 +135,30 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
     expect(state().available).toBe(true);
   });
 
-  it('hides the option on a daemon without the method', async () => {
-    list.mockResolvedValueOnce({ ok: false, unsupported: true, error: 'Method not found' });
+  it.each([{}, { sessionImport: 0 }, { sessionImport: true }, { sessionImport: 2 }])(
+    'never lists and hides the option without sessionImport: 1 (%j)',
+    async (bag) => {
+      capabilities.value = bag;
+      appStore.dispatch(importableSessionsRequested(''));
+      await flush();
+
+      expect(list).not.toHaveBeenCalled();
+      expect(state().available).toBe(false);
+    },
+  );
+
+  it('hides the option when the capability goes away after sessions loaded', async () => {
+    list.mockResolvedValueOnce({ ok: true, sessions: [session('a')], providers: [] });
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
+    expect(state().available).toBe(true);
 
-    expect(state()).toMatchObject({ status: 'unsupported', available: false });
+    capabilities.value = {};
+    expect(state().available).toBe(false);
   });
 
   it('keeps the option for a retry when the first page fails', async () => {
-    list.mockResolvedValueOnce({ ok: false, unsupported: false, error: 'boom' });
+    list.mockResolvedValueOnce({ ok: false, error: 'boom' });
     appStore.dispatch(importableSessionsRequested(''));
     await flush();
 

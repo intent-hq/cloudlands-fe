@@ -1,9 +1,15 @@
 import { store } from '../../store';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import type { ImportableSessionProvider } from '$features/session-import/importable-session';
+import { selectPrincipalSnapshot } from '../principal/principal-selectors';
 import type { ImportableSessionRow, ImportableSessionsStatus } from './importable-sessions-slice';
 
 // Partial-state stores (form test harnesses) may omit the slice; read it optionally.
+
+/** The host advertises session import (`server.capabilities.sessionImport === 1`). */
+export const selectSessionImportSupported = store.createSelector(
+  (state): boolean => selectPrincipalSnapshot.select(state)?.capabilities.sessionImport === 1,
+);
 
 /** Newest-first rows of the last loaded page. */
 export const selectImportableSessions = store.createSelector((state): ImportableSessionRow[] => {
@@ -24,12 +30,12 @@ export const selectImportableSessionsStatus = store.createSelector(
 );
 
 /**
- * Whether New Workspace offers "Import a session": the daemon supports the
- * method and has sessions (or a provider failed to list), or the first page
+ * Whether New Workspace offers "Import a session": the host advertises
+ * `sessionImport: 1` and has sessions (or a provider failed to list), or the first page
  * failed and can be retried.
  */
 export const selectImportableSessionsAvailable = store.createSelector((state): boolean => {
   const slice = state.importableSessions;
-  if (!slice || slice.status === 'unsupported') return false;
+  if (!slice || !selectSessionImportSupported.select(state)) return false;
   return slice.hasAny || (slice.status === 'error' && slice.query === '' && slice.provider === '');
 });

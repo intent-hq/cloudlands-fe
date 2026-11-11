@@ -1,5 +1,6 @@
 import { call, delay, put, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { selectPrincipalConnectionContext } from '../../principal/principal-selectors';
+import { selectSessionImportSupported } from '../importable-sessions-selectors';
 import { listImportableSessions } from '$features/session-import/importable-sessions.client';
 import {
   importableSessionsFailed,
@@ -16,6 +17,8 @@ export const IMPORTABLE_SESSIONS_PAGE_SIZE = 50;
 function* requestWorker(
   action: ReturnType<typeof importableSessionsRequested>,
 ): SagaGenerator<void> {
+  // A host without `sessionImport: 1` has nothing to list; the option stays hidden.
+  if (!(yield* selectSessionImportSupported.effect())) return;
   const connection = yield* selectPrincipalConnectionContext.effect();
   const query = action.payload[0].trim();
   const provider = action.payload[1] ?? '';
@@ -32,7 +35,7 @@ function* requestWorker(
   if (result.ok) {
     yield* put(importableSessionsLoaded(query, result.sessions, result.providers, provider));
   } else {
-    yield* put(importableSessionsFailed(query, result.error, result.unsupported, provider));
+    yield* put(importableSessionsFailed(query, result.error, provider));
   }
 }
 

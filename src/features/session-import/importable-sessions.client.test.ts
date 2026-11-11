@@ -36,22 +36,10 @@ describe('listImportableSessions', () => {
     });
   });
 
-  it('marks a daemon without the method as unsupported', async () => {
-    const request = vi
-      .fn()
-      .mockRejectedValue(Object.assign(new Error('Method not found'), { rpcCode: -32601 }));
-    expect(await listImportableSessions({}, request)).toEqual({
-      ok: false,
-      unsupported: true,
-      error: 'Method not found',
-    });
-  });
-
-  it('reports other failures as supported errors', async () => {
+  it('reports a failed request as an error result', async () => {
     const request = vi.fn().mockRejectedValue(new Error('boom'));
     expect(await listImportableSessions({}, request)).toEqual({
       ok: false,
-      unsupported: false,
       error: 'boom',
     });
   });

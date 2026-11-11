@@ -7,13 +7,10 @@
  * - `agent.importSession { workspaceId, provider, sessionId, name? }`
  *   → `{ agent: AgentLite }`.
  *
- * A daemon that predates the methods answers -32601; the list call folds that
- * into `unsupported: true` so the new-workspace form can hide the option.
+ * Callers gate both on the host's `sessionImport: 1` capability.
  */
 import { backendRequest } from '$lib/client/live/backend-transport';
 import type { ImportableSession, ImportableSessionProvider } from './importable-session';
-
-const METHOD_NOT_FOUND_RPC_CODE = -32601;
 
 export interface ImportableSessionsListParams {
   provider?: string;
@@ -29,7 +26,7 @@ export type ImportableSessionsListResult =
       providers: ImportableSessionProvider[];
       nextCursor?: string;
     }
-  | { ok: false; unsupported: boolean; error: string };
+  | { ok: false; error: string };
 
 export interface ImportSessionParams {
   workspaceId: string;
@@ -54,12 +51,6 @@ export interface ImportedSession {
 }
 
 type Request = <T>(method: string, params?: unknown) => Promise<T>;
-
-function rpcCode(error: unknown): number | undefined {
-  if (!error || typeof error !== 'object') return undefined;
-  const code = (error as { rpcCode?: unknown }).rpcCode;
-  return typeof code === 'number' ? code : undefined;
-}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -118,11 +109,7 @@ export async function listImportableSessions(
     const nextCursor = typeof result?.nextCursor === 'string' ? result.nextCursor : undefined;
     return { ok: true, sessions, providers, ...(nextCursor ? { nextCursor } : {}) };
   } catch (error) {
-    return {
-      ok: false,
-      unsupported: rpcCode(error) === METHOD_NOT_FOUND_RPC_CODE,
-      error: message(error),
-    };
+    return { ok: false, error: message(error) };
   }
 }
 

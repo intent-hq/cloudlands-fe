@@ -69,7 +69,7 @@
   // The first page shows the loading row; a typed search keeps the rows,
   // filtered locally, until the daemon's matches arrive.
   const listStatus = $derived(
-    $status$ === 'error' || $status$ === 'unsupported'
+    $status$ === 'error'
       ? 'error'
       : ($status$ === 'loading' || $status$ === 'idle') && $sessions$.length === 0
         ? 'loading'

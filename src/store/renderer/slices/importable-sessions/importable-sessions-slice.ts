@@ -4,8 +4,8 @@
  *
  * Components dispatch `importableSessionsRequested(query)` when the picker
  * mounts and as the user types; the saga debounces typed queries, calls the
- * daemon and stores the newest-first page. `unsupported` marks a daemon that
- * predates the method (-32601), so the form hides the option.
+ * daemon and stores the newest-first page. The saga lists only on a host that
+ * advertises `sessionImport: 1`.
  */
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
@@ -22,7 +22,7 @@ import { hostExecutionConnectionChanged } from '../host-execution/host-execution
 /** A session row keyed by provider and session id. */
 export type ImportableSessionRow = ImportableSession & { key: string };
 
-export type ImportableSessionsStatus = 'idle' | 'loading' | 'ready' | 'error' | 'unsupported';
+export type ImportableSessionsStatus = 'idle' | 'loading' | 'ready' | 'error';
 
 export type ImportableSessionsState = {
   sessions: Collection<ImportableSessionRow, 'key'>;
@@ -74,7 +74,7 @@ export const importableSessionsLoaded = createAction<
 
 /** Saga → reducer: the request for `query` failed. */
 export const importableSessionsFailed = createAction<
-  [query: string, error: string, unsupported: boolean, provider?: string]
+  [query: string, error: string, provider?: string]
 >('importableSessions/failed');
 
 export const importableSessionsReducer = createReducer<ImportableSessionsState>(initialState);
@@ -115,13 +115,12 @@ importableSessionsReducer.with(
 
 importableSessionsReducer.with(
   importableSessionsFailed,
-  (state, { payload: [query, error, unsupported, provider = ''] }) => ({
+  (state, { payload: [query, error, provider = ''] }) => ({
     ...state,
     provider,
-    status: unsupported ? 'unsupported' : 'error',
+    status: 'error',
     query,
     error,
-    hasAny: unsupported ? false : state.hasAny,
   }),
 );
 
