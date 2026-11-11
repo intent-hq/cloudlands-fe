@@ -6381,6 +6381,7 @@
   "ui_shortcuts_dockCapture_label": "화면 캡처",
   "ui_shortcuts_dockRecord_label": "화면 녹화",
   "ui_shortcuts_dockDictate_label": "받아쓰기",
+  "ui_shortcuts_dockRelated_label": "관련 스페이스 열기",
   "ui_shortcuts_maximizePanel_label": "패널 최대화",
   "ui_shortcuts_mentionContext_label": "컨텍스트 멘션",
   "ui_shortcuts_movePaneNextColumn_label": "창을 다음 열로 이동",

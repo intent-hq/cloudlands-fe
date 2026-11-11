@@ -6381,6 +6381,7 @@
   "ui_shortcuts_dockCapture_label": "Bildschirm aufnehmen",
   "ui_shortcuts_dockRecord_label": "Bildschirm aufzeichnen",
   "ui_shortcuts_dockDictate_label": "Diktieren",
+  "ui_shortcuts_dockRelated_label": "Verknüpften Bereich öffnen",
   "ui_shortcuts_maximizePanel_label": "Panel maximieren",
   "ui_shortcuts_mentionContext_label": "Kontext erwähnen",
   "ui_shortcuts_movePaneNextColumn_label": "Bereich in nächste Spalte verschieben",

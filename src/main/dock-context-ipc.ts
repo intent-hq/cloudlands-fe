@@ -5,6 +5,23 @@ import { getDockWindow } from './dock-window';
 import { getStrictBackendBindingForWebContents } from './window-backend';
 import { createDockContextFeed } from './dock-context-feed';
 import { readDockForegroundObservation } from './dock-foreground-observation';
+import type { DockForegroundObservation } from '../shared/dock-context-links';
+
+type Binding = NonNullable<ReturnType<typeof getStrictBackendBindingForWebContents>>;
+let admitSample:
+  | ((
+      binding: Binding,
+      value: Omit<DockForegroundObservation, 'contextVersion' | 'sequence'>,
+    ) => DockForegroundObservation | null)
+  | null = null;
+
+/** Feed-owned admission of a shortcut's pre-focus sample (same version and publication). */
+export function admitDockForegroundSample(
+  binding: Binding,
+  value: Omit<DockForegroundObservation, 'contextVersion' | 'sequence'>,
+): DockForegroundObservation | null {
+  return admitSample ? admitSample(binding, value) : null;
+}
 
 export function initializeDockContextFeed(): void {
   const scope = () => {
@@ -39,6 +56,7 @@ export function initializeDockContextFeed(): void {
       throw new Error('Dock context requires its live main document');
     return feed.read();
   });
+  admitSample = (binding, value) => feed.admit(binding, value);
   feed.start();
   app.once('will-quit', () => feed.stop());
 }

@@ -6381,6 +6381,7 @@
   "ui_shortcuts_dockCapture_label": "截取屏幕",
   "ui_shortcuts_dockRecord_label": "录制屏幕",
   "ui_shortcuts_dockDictate_label": "听写",
+  "ui_shortcuts_dockRelated_label": "打开关联空间",
   "ui_shortcuts_maximizePanel_label": "最大化面板",
   "ui_shortcuts_mentionContext_label": "提及上下文",
   "ui_shortcuts_movePaneNextColumn_label": "将窗格移到下一列",

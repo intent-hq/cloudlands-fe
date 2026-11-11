@@ -17,7 +17,11 @@ import { WINDOW_CHANNELS } from '$shared/ipc/channels';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { resolveDockDestination, type DockShortcutContext } from '$shared/dock-shortcuts';
 import { store as appStore } from '../../../store';
-import { selectDockShortcutWorkspaces } from '../dock-conversation-selectors';
+import {
+  selectDockLinkedContext,
+  selectDockShortcutWorkspaces,
+} from '../dock-conversation-selectors';
+import { selectWorkspaceListLoadedForBackend } from '../../workspace/workspace-selectors';
 import { dockSideDefaultWorkspaceId } from '../dock-side-default';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
@@ -31,6 +35,8 @@ import {
   dockEvidenceCaptureRequested,
   dockSpeechToggleRequested,
   closeDockConversationRequested,
+  dockContextFollowed,
+  dockLinkedContextChanged,
 } from '../dock-conversation-slice';
 import { getPrincipalActionContext } from '../../principal/principal-context';
 
@@ -61,6 +67,57 @@ function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void
     yield* put(dockSpeechToggleRequested(workspaceId, agentId));
 }
 
+/** How long a press waits for the feed-admitted context's linked snapshot to publish. */
+const RELATED_WAIT_MS = 1500;
+let relatedRequest = 0;
+
+/**
+ * Open related: the dock conversation of the workspace linked to the foreground tab or app the
+ * context feed admitted at the press, read from the same admitted linked-context snapshot as
+ * the UI. The snapshot may publish after this request (storage/service enrichment): wait,
+ * bounded, for exactly that version (wrapped with the current authority); an older version is
+ * not yet ours, a different one after ours means the context moved on (stale). Fenced by the
+ * latest request, principal and window backend. Needs a present link on a loaded workspace
+ * list and no live recording, annotation, dictation or send. A real follow is counted. Never
+ * the destination/media flow or the full-app workspace window; drafts are untouched.
+ */
+function* relatedAction(context: DockShortcutContext): SagaGenerator<void> {
+  const request = ++relatedRequest;
+  const authority = getPrincipalActionContext(appStore.state);
+  if (!authority || !context.contextVersion || !context.identityKey) return;
+  const expected = JSON.stringify([authority, context.contextVersion]);
+  const deadline = Date.now() + RELATED_WAIT_MS;
+  let seen = false;
+  while (true) {
+    const state = appStore.state;
+    if (
+      request !== relatedRequest ||
+      getPrincipalActionContext(state) !== authority ||
+      state.connections.windowBackendId !== context.backendId
+    )
+      return;
+    const snapshot = selectDockLinkedContext.select(state);
+    if (snapshot?.contextVersion === expected) {
+      seen = true;
+      if (snapshot.identityKey !== context.identityKey) return;
+      if (
+        snapshot.phase === 'ready' &&
+        snapshot.linkedWorkspaceId &&
+        selectWorkspaceListLoadedForBackend.select(state, context.backendId)
+      ) {
+        if (dockInputLive() || state.dockConversation.sending) return;
+        if (state.dockConversation.workspaceId === snapshot.linkedWorkspaceId) return;
+        yield* put(openDockConversationRequested(snapshot.linkedWorkspaceId));
+        yield* put(dockContextFollowed(snapshot.contextVersion));
+        return;
+      }
+    } else if (seen) return;
+    const left = deadline - Date.now();
+    if (left <= 0) return;
+    yield* race({ changed: take(dockLinkedContextChanged), timeout: delay(left) });
+  }
+}
+
 /**
  * The open shortcut with the dock on a screen side returns to a chat, ahead of any
  * foreground routing: the chat open in the dock, else the last one opened from it (same
@@ -77,7 +134,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   if (
     !context ||
     typeof context.id !== 'string' ||
-    !['focus', 'capture', 'record', 'dictate'].includes(context.action) ||
+    !['focus', 'capture', 'record', 'dictate', 'related'].includes(context.action) ||
     !valid(context)
   )
     return;
@@ -91,6 +148,11 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   // While a recording is live: only that recording's own pair, never routed.
   if (context.recordingOwnerOnly === true) {
     yield* recordingOwnerAction(context);
+    return;
+  }
+  // Open related is its own action: never the focus destination or media intent flow.
+  if (context.action === 'related') {
+    yield* relatedAction(context);
     return;
   }
   // Stop the already-active native owner before consulting a new foreground destination.

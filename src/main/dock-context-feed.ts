@@ -19,12 +19,8 @@ export function createDockContextFeed<Scope extends object>(deps: {
     owner = scope;
     current = null;
   }
-  async function sample() {
-    const scope = deps.scope();
-    if (scope !== owner) reset(scope);
-    if (stopped || !scope || !deps.visible()) return current;
-    const value = await deps.read();
-    if (stopped || scope !== deps.scope() || !deps.visible()) return null;
+  /** Version and publish one sample exactly as a poll would; a self sample keeps the current. */
+  function accept(value: Omit<DockForegroundObservation, 'contextVersion' | 'sequence'>) {
     // Focusing the dock must not replace the external context it is helping with.
     if (value.self) return current;
     const entry = current && current.identityKey === value.identityKey && current.url === value.url;
@@ -39,6 +35,14 @@ export function createDockContextFeed<Scope extends object>(deps: {
       deps.changed(next);
     }
     return current;
+  }
+  async function sample() {
+    const scope = deps.scope();
+    if (scope !== owner) reset(scope);
+    if (stopped || !scope || !deps.visible()) return current;
+    const value = await deps.read();
+    if (stopped || scope !== deps.scope() || !deps.visible()) return null;
+    return accept(value);
   }
   function read() {
     if (!pending)
@@ -58,6 +62,16 @@ export function createDockContextFeed<Scope extends object>(deps: {
   }
   return {
     read,
+    /**
+     * Admit an explicit pre-focus sample (a global shortcut press) through the same versioning
+     * and publication as a poll, even while the dock is hidden. Only for the caller's current
+     * scope; returns the admitted observation (null when stopped, out of scope or none).
+     */
+    admit(scope: Scope, value: Omit<DockForegroundObservation, 'contextVersion' | 'sequence'>) {
+      if (stopped || scope !== deps.scope()) return null;
+      if (scope !== owner) reset(scope);
+      return accept(value);
+    },
     start() {
       if (!stopped) return;
       stopped = false;

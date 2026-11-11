@@ -6381,6 +6381,7 @@
   "ui_shortcuts_dockCapture_label": "Capture the screen",
   "ui_shortcuts_dockRecord_label": "Record the screen",
   "ui_shortcuts_dockDictate_label": "Dictate",
+  "ui_shortcuts_dockRelated_label": "Open related workspace",
   "ui_shortcuts_maximizePanel_label": "Maximize Panel",
   "ui_shortcuts_mentionContext_label": "Mention Context",
   "ui_shortcuts_movePaneNextColumn_label": "Move Pane to Next Column",

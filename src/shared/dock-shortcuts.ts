@@ -1,4 +1,4 @@
-export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'dictate';
+export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'dictate' | 'related';
 /** Includes OS-local wildcard/loopback aliases; normalize WHATWG URL hostname first. */
 export function isDockLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, '');
@@ -21,6 +21,13 @@ export interface DockShortcutContext {
   workspaceId?: string;
   /** Ephemeral main-verified local/tunnel address on this backend. Never persisted. */
   serviceAddress?: string;
+  /**
+   * Set by main for `related` only: the context feed's raw version and identity for the
+   * pre-focus sample it admitted and published. The dock follows only its linked snapshot
+   * for exactly this version (never an older or a newer context).
+   */
+  identityKey?: string;
+  contextVersion?: string;
   /**
    * Set by main only, while a recording keeps the notch out of sight: act on that
    * recording's own pair (Stop, draw, dictate) and nothing else. Never focus, open,

@@ -6381,6 +6381,7 @@
   "ui_shortcuts_dockCapture_label": "Capturer l’écran",
   "ui_shortcuts_dockRecord_label": "Enregistrer l’écran",
   "ui_shortcuts_dockDictate_label": "Dicter",
+  "ui_shortcuts_dockRelated_label": "Ouvrir l’espace associé",
   "ui_shortcuts_maximizePanel_label": "Maximiser le panneau",
   "ui_shortcuts_mentionContext_label": "Mentionner le contexte",
   "ui_shortcuts_movePaneNextColumn_label": "Déplacer le volet vers la colonne suivante",

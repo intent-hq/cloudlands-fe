@@ -6381,6 +6381,7 @@
   "ui_shortcuts_dockCapture_label": "画面をキャプチャ",
   "ui_shortcuts_dockRecord_label": "画面を録画",
   "ui_shortcuts_dockDictate_label": "音声入力",
+  "ui_shortcuts_dockRelated_label": "関連するスペースを開く",
   "ui_shortcuts_maximizePanel_label": "パネルを最大化",
   "ui_shortcuts_mentionContext_label": "コンテキストをメンション",
   "ui_shortcuts_movePaneNextColumn_label": "ペインを次の列へ移動",

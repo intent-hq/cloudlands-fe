@@ -11,6 +11,7 @@ export const DOCK_SHORTCUT_IDS = [
   'dock.capture',
   'dock.record',
   'dock.dictate',
+  'dock.related',
 ] as const;
 export type DockShortcutId = (typeof DOCK_SHORTCUT_IDS)[number];
 export type DockShortcutOverrides = Partial<Record<DockShortcutId, string>>;

@@ -15,6 +15,7 @@ import {
 } from './local-prefs';
 import { registerDockShortcutSettingsHandlers } from './dock-shortcut-settings-ipc';
 import { readDockForegroundObservation } from './dock-foreground-observation';
+import { admitDockForegroundSample } from './dock-context-ipc';
 import { createDockShortcutRegistration } from './dock-shortcut-registration';
 import { app, globalShortcut } from 'electron';
 import { randomUUID } from 'node:crypto';
@@ -64,7 +65,10 @@ const preferences = createDockShortcutPreferences({
   changed(snapshot: DockShortcutSettingsSnapshot) {
     // A foreground read admitted under older bindings/capture ownership cannot act later.
     const admission = JSON.stringify([
-      snapshot.revision, snapshot.enabled, snapshot.capturing, snapshot.registered,
+      snapshot.revision,
+      snapshot.enabled,
+      snapshot.capturing,
+      snapshot.registered,
     ]);
     if (admission !== admissionSettings) {
       admissionSettings = admission;
@@ -106,6 +110,10 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
     getStrictBackendBindingForWebContents(window.webContents) !== binding
   )
     return;
+  // Open related acts only on a context the feed itself admitted and published (same version
+  // the dock's linked snapshot carries); nothing to follow means nothing happens.
+  const admitted = action === 'related' ? admitDockForegroundSample(binding, observed) : null;
+  if (action === 'related' && !admitted) return;
   const context: DockShortcutContext = {
     id: randomUUID(),
     backendId: binding.backendId,
@@ -115,6 +123,9 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
     ...(observed.url ? { url: observed.url } : {}),
     ...(observed.workspaceId ? { workspaceId: observed.workspaceId } : {}),
     ...(observed.serviceAddress ? { serviceAddress: observed.serviceAddress } : {}),
+    ...(admitted
+      ? { identityKey: admitted.identityKey, contextVersion: admitted.contextVersion }
+      : {}),
   };
   focusDockWindow(context);
 }

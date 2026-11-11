@@ -57,6 +57,7 @@ export const SHORTCUT_DEFAULTS = {
   'dock.capture': 'ctrl+shift+s',
   'dock.record': 'ctrl+shift+r',
   'dock.dictate': 'ctrl+shift+m',
+  'dock.related': 'ctrl+shift+a',
 } as const;
 
 export type ShortcutId = keyof typeof SHORTCUT_DEFAULTS;
