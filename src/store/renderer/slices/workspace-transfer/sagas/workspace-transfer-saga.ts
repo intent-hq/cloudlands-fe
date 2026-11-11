@@ -67,7 +67,7 @@ function failureMessage(result: { error?: string; code?: SessionOwnershipErrorCo
 
 async function invokeTransfer<T>(channel: string, params?: unknown): Promise<T> {
   const api = typeof window !== 'undefined' ? window.electronAPI : undefined;
-  if (!api?.invoke) throw new Error('transfer bridge unavailable');
+  if (!api?.invoke) throw new Error(m.workspace_transfer_bridgeUnavailable_error());
   return (await api.invoke(channel, params)) as T;
 }
 

@@ -8,6 +8,7 @@
 
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import { JsonRpcError } from './json-rpc-errors';
 import * as rpcErrors from './json-rpc-errors';
 import type { RelayRpcClient } from './workspace-transfer-relay';
@@ -423,7 +424,7 @@ describe('workspace import relay', () => {
       if (!commitStarted) throw new Error('commit not reached yet');
     });
     const second = await relay.start({}, client.client);
-    expect(second).toEqual({ success: false, error: 'an import is already in progress' });
+    expect(second).toEqual({ success: false, error: m.workspace_import_busy_error() });
 
     releaseCommit?.();
     await expect(first).resolves.toMatchObject({ success: true });
@@ -532,7 +533,7 @@ describe('workspace import relay — per-window session affinity (monorepo#3519)
       if (!client.commitReached()) throw new Error('commit not reached yet');
     });
     const second = await relay.start({}, client.client, OTHER);
-    expect(second).toMatchObject({ success: false, error: expect.stringContaining('already') });
+    expect(second).toMatchObject({ success: false, error: m.workspace_import_busy_error() });
 
     client.releaseCommit();
     await expect(first).resolves.toMatchObject({ success: true });
