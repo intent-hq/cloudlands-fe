@@ -296,7 +296,10 @@ function uncommittedFiles(root) {
 
 function committedFiles(ref, root) {
   const base = mergeBase(ref, root);
-  return gitNames(['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'], root);
+  return gitNames(
+    ['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'],
+    root,
+  );
 }
 
 export function collectChangedFiles(root = REPO_ROOT, options = {}) {
