@@ -11,9 +11,15 @@
  * revoked": the agent's `nodeState` only says `offline`.
  */
 import { m } from '$shared/paraglide/messages.js';
+import { isCloudTarget } from '$shared/types/agent-node';
 import { AgentStatus, type AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
-import { parseCloudMachineError, type CloudMachineErrorData } from '$shared/types/cloud-machines';
+import {
+  cloudProviderName,
+  cloudProviderOfEntryId,
+  parseCloudMachineError,
+  type CloudMachineErrorData,
+} from '$shared/types/cloud-machines';
 
 /** Where an agent on E2B is in its sandbox's life. */
 type AgentCloudState = 'starting' | 'running' | 'paused' | 'resuming' | 'pausing' | 'stopping';
@@ -55,7 +61,7 @@ export function machinePlatformLabel(os?: string, arch?: string): string | null 
 
 /** True when the agent is placed on another machine. */
 function isRemoteAgent(agent: AgentSession | null | undefined): boolean {
-  return agent?.placement?.target === 'remote' || agent?.placement?.target === 'e2b';
+  return agent?.placement?.target === 'remote' || isCloudTarget(agent?.placement?.target);
 }
 
 const CLOUD_STATES = new Set<string>(['running', 'paused', 'resuming', 'pausing', 'stopping']);
@@ -84,10 +90,15 @@ export function agentMachineLocation(
   if (!agent || !isRemoteAgent(agent)) return null;
   const nodeId = agent.nodeId ?? agent.placement?.nodeId ?? '';
   const listed = machine && machine.id === nodeId ? machine : null;
-  if (agent.placement?.target === 'e2b')
+  if (isCloudTarget(agent.placement?.target))
     return {
       nodeId,
-      name: agent.nodeName?.trim() || 'E2B', // i18n-ignore (product name)
+      // The resolved target is always "e2b"; the entry (or its row) names the provider.
+      name:
+        agent.nodeName?.trim() ||
+        cloudProviderName(
+          listed?.cloud?.provider ?? cloudProviderOfEntryId(agent.placement?.cloudMachineId),
+        ),
       platform: machinePlatformLabel(listed?.platform?.os, listed?.platform?.arch),
       // A paused sandbox drops its link on purpose: never "unreachable".
       state: 'ready',
@@ -267,7 +278,7 @@ export function agentCloudStartFailure(
   agent: AgentSession | null | undefined,
 ): PlacementFailure | null {
   if (
-    agent?.placement?.target !== 'e2b' ||
+    !isCloudTarget(agent?.placement?.target) ||
     !agent.placementError ||
     agent.status !== AgentStatus.Error
   )
@@ -324,7 +335,7 @@ export function remoteAttachmentFailure(text: string): string | null {
  */
 export function agentCloudStarting(agent: AgentSession | null | undefined): boolean {
   return (
-    agent?.placement?.target === 'e2b' &&
+    isCloudTarget(agent?.placement?.target) &&
     agentPlacementNoticeKind(agent, agentMachineLocation(agent)) === 'starting'
   );
 }
@@ -338,7 +349,7 @@ export function agentCloudWaking(
   agent: AgentSession | null | undefined,
   machine: RemoteMachine | null | undefined,
 ): boolean {
-  if (agent?.placement?.target !== 'e2b') return false;
+  if (!isCloudTarget(agent?.placement?.target)) return false;
   const location = agentMachineLocation(agent, machine);
   return (
     location?.cloud?.state === 'resuming' && agentPlacementNoticeKind(agent, location) === null

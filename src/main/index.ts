@@ -331,6 +331,7 @@ import {
 import { createDockMenuController } from './dock-menu-controller';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
 import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
+import { loadMachineRailEnabled, registerMachineRailHandlers } from './machine-rail';
 import {
   setupBrowserAccess,
   shutdownBrowserAccess,
@@ -349,6 +350,7 @@ import {
   registerBackendHandlers,
   connectBackendClient,
   disconnectBackendClient,
+  listMachineRailCandidateIds,
   disposeAllBackendClients,
   isSameHostBackendActive,
   getBackendClientForId,
@@ -432,7 +434,7 @@ import {
   disposeDevConsole,
 } from '../features/dev-console/main/dev-console-window';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
-import { getBackendIdForWindow } from './window-backend.js';
+import { getBackendIdForWindow, getShownRendererWebContents } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { buildNativeEditMenu, buildNativeViewMenu } from './native-menu-model.js';
 import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
@@ -887,7 +889,7 @@ const bootFlow = app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('navigate', '/workspace/new');
+            getShownRendererWebContents(focusedWindow).send('navigate', '/workspace/new');
           }
         },
       },
@@ -940,7 +942,7 @@ const bootFlow = app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow() ?? getMainWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:import-workspace');
+            getShownRendererWebContents(focusedWindow).send('menu:import-workspace');
           }
         },
       },
@@ -1004,9 +1006,17 @@ const bootFlow = app.whenReady().then(async () => {
     };
   };
 
+  // Menu commands act on the renderer the user is looking at: the window's
+  // own, or the machine view it shows (machine rail lab).
+  const shownRenderer = (window: BrowserWindowType | null) =>
+    window && {
+      isDestroyed: () => window.isDestroyed(),
+      webContents: getShownRendererWebContents(window),
+    };
+
   const sendWorkspaceCommand = (channel: string): void => {
     sendWorkspaceMenuCommand(
-      BrowserWindow.getFocusedWindow(),
+      shownRenderer(BrowserWindow.getFocusedWindow()),
       channel,
       getFocusedWindowWorkspaceId(),
     );
@@ -1437,9 +1447,11 @@ const bootFlow = app.whenReady().then(async () => {
       buildNativeViewMenu(isMacOS, {
         reload: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) focusedWindow.webContents.reload();
+          if (focusedWindow && !focusedWindow.isDestroyed()) {
+            getShownRendererWebContents(focusedWindow).reload();
+          }
         },
-        toggleDevTools: () => toggleWindowDevTools(BrowserWindow.getFocusedWindow()),
+        toggleDevTools: () => toggleWindowDevTools(shownRenderer(BrowserWindow.getFocusedWindow())),
         zoom: (channel) => handleMenuZoom(channel, sendWorkspaceCommand),
       }),
       {
@@ -1652,6 +1664,15 @@ const bootFlow = app.whenReady().then(async () => {
     hide: () => dockMenuController.dismiss(),
     onChange: () => void rebuildMenu(),
     isDock: (sender) => getDockWindow()?.webContents === sender,
+  });
+  // The machine rail lab is main-owned and off by default.
+  await loadMachineRailEnabled();
+  registerMachineRailHandlers({
+    listMachineIds: listMachineRailCandidateIds,
+    connect: connectBackendClient,
+    disconnect: (backendId) => {
+      if (!isShuttingDown) disconnectBackendClient(backendId);
+    },
   });
   markRendererWindowsAllowed();
   if (isDockLabEnabled()) await dockMenuController.restore();

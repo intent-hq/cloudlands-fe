@@ -1,6 +1,11 @@
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
-import { DEFAULT_CLOUD_MACHINE_ID, type CloudMachineProvider } from '$shared/types/cloud-machines';
+import {
+  DEFAULT_CLOUD_MACHINE_ID,
+  cloudProviderName,
+  type CloudMachineProvider,
+  type CloudProviderKind,
+} from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
 import { store } from '$store/renderer/store';
@@ -10,6 +15,13 @@ import {
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
+import { defaultRemoteSends } from '$features/remote-machines/remote-model-picker';
+import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+import {
+  selectProviderCatalogDefaultRemoteIncompatibility,
+  selectProviderCatalogDefaultRemoteLaunch,
+  selectProviderCatalogProfiles,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
 type State = typeof store.state;
 
@@ -25,6 +37,12 @@ export const selectCloudMachinesVisible = store.createSelector(
     state.remoteMachines?.supported === true &&
     state.cloudMachines?.supported === true,
 );
+
+/** The providers a new entry can use; Northflank needs named entries. */
+export const selectCloudProviderKinds = store.createSelector((state): CloudProviderKind[] => {
+  const kinds = state.cloudMachines?.providerKinds ?? ['e2b'];
+  return state.cloudMachines?.entries === true ? kinds : kinds.filter((kind) => kind === 'e2b');
+});
 
 /** `cloudMachineEntries: 1`: entries are named and listed under Nodes. */
 export const selectCloudEntriesSupported = store.createSelector(
@@ -124,14 +142,61 @@ export function startOnCloud(state: State): StartOnCloud | null {
   const named = state.cloudMachines?.entries === true;
   return entries.map((entry) => ({
     cloudMachineId: entry.id,
-    // One entry still called "E2B" needs no name; otherwise "E2B · <name>".
+    // One entry still called "E2B" needs no name; otherwise "<provider> · <name>".
     label:
-      named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
-        ? m.cloudMachines_startOn_entry_label({ name: entry.name })
-        : m.cloudMachines_startOn_label(),
+      entry.provider === 'northflank'
+        ? entry.name.trim().toLowerCase() === 'northflank'
+          ? cloudProviderName('northflank')
+          : m.cloudMachines_startOn_northflank_label({ name: entry.name })
+        : named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
+          ? m.cloudMachines_startOn_entry_label({ name: entry.name })
+          : m.cloudMachines_startOn_label(),
     unavailableReason:
-      entry.state === 'key-rejected' ? m.cloudMachines_state_keyRejected_label() : null,
+      entry.state !== 'key-rejected'
+        ? null
+        : entry.provider === 'northflank'
+          ? m.cloudMachines_northflank_state_tokenRejected_label()
+          : m.cloudMachines_state_keyRejected_label(),
+    needsProfile: !cloudEntrySendsConfig(state, entry),
   }));
+}
+
+/**
+ * Some configuration from here can run on the entry's sandboxes, by the
+ * remote model picker's rule: a Default the catalog sends
+ * (`defaultRemoteLaunch` "send") with overrides known to be saved, or a
+ * marked profile that sets a variable. Providers turned off in Settings
+ * don't count. A profile whose variables are unknown (the admin-only list
+ * not read) counts.
+ */
+function cloudEntrySendsConfig(state: State, entry: CloudMachineProvider): boolean {
+  const enabled = selectEnabledProviders.select(state);
+  const savedDefaults = state.providerSettings?.profiles?.defaults ?? {};
+  const defaults = {
+    defaultRemoteLaunch: selectProviderCatalogDefaultRemoteLaunch.select(state),
+    defaultRemoteIncompatibility: selectProviderCatalogDefaultRemoteIncompatibility.select(state),
+  };
+  const usable = (base: string) =>
+    enabled[base] !== false &&
+    (entry.agentProviders.length === 0 || entry.agentProviders.includes(base));
+  const bases = new Set([
+    ...entry.agentProviders,
+    ...Object.keys(defaults.defaultRemoteLaunch ?? {}),
+  ]);
+  for (const base of bases)
+    if (
+      usable(base) &&
+      (savedDefaults[base]?.env.length ?? 0) > 0 &&
+      defaultRemoteSends(base, defaults)
+    )
+      return true;
+  const profileItems = state.providerSettings?.profiles?.items;
+  const saved = profileItems ? getItems(profileItems) : [];
+  return selectProviderCatalogProfiles.select(state).some((profile) => {
+    if (profile.remoteCompatible !== true || !usable(profile.baseProviderId)) return false;
+    const row = saved.find((item) => item.providerRef === profile.providerRef);
+    return !row || row.env.some((variable) => variable.kind === 'set');
+  });
 }
 
 /**

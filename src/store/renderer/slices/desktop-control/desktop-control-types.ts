@@ -43,6 +43,9 @@ export interface DesktopControlState {
   generation: number;
   byKey: Record<string, DesktopEntry>;
   seenEvents: string[];
+  /** This computer's missing OS grants, observed from the settings switch. */
+  osPermissions?: { guidance: string; checklist: DesktopOsChecklist };
+  osPermissionsChecking?: boolean;
 }
 export function desktopKey(workspaceId: string, agentId: string): string {
   return JSON.stringify([workspaceId, agentId]);

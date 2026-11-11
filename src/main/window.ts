@@ -42,6 +42,8 @@ const logger = new Logger('Main');
 // hud-window.ts and other small modules can read stamps without this
 // module's graph); re-exported here for the existing import sites.
 import { getAppWindows } from './offscreen-window';
+import { getMachineRailSession, restoreMachineRailSession } from './machine-rail-state';
+import type { MachineRailSession } from '../shared/types/machine-rail';
 import {
   findExistingHudWindow,
   HUD_ROUTE_PREFIX,
@@ -114,6 +116,16 @@ function validateBounds(
   return bounds;
 }
 
+/** Web preferences of every app renderer: a window, or a machine view inside one. */
+export function buildRendererWebPreferences(): Electron.WebPreferences {
+  return {
+    preload: path.join(__dirname, '../preload-build/preload/index.js'),
+    contextIsolation: true,
+    nodeIntegration: false,
+    webviewTag: true,
+  };
+}
+
 /**
  * Build the standard BrowserWindowConstructorOptions used by all window creation functions.
  */
@@ -130,12 +142,7 @@ function buildWindowOptions(opts: {
     height: opts.bounds.height,
     minWidth: 800,
     minHeight: 600,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload-build/preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      webviewTag: true,
-    },
+    webPreferences: buildRendererWebPreferences(),
     ...getWindowTitleBarOptions(),
     title: opts.title,
     ...getWindowAppearanceOptions(isDarkMode),
@@ -201,10 +208,13 @@ const rendererConsoleLogger = new Logger('RendererConsole');
  * allowlist above, messages are truncated to a few KB, and consecutive
  * duplicates are counted instead of re-written, to keep the log file bounded.
  */
-export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void {
+export function forwardRendererConsoleToMainLog(
+  window: BrowserWindowType,
+  contents: Electron.WebContents = window.webContents,
+): void {
   let lastLine = '';
   let suppressed = 0;
-  window.webContents.on('console-message', (details) => {
+  contents.on('console-message', (details) => {
     const { level, message, sourceId, lineNumber } = details;
     const forwardedInfo = isForwardedInfoMessage(level, message);
     if (level !== 'warning' && level !== 'error' && !forwardedInfo) return;
@@ -243,7 +253,7 @@ export function forwardRendererConsoleToMainLog(window: BrowserWindowType): void
  */
 const DEFAULT_WINDOW_ROUTE = '/workspace/new';
 
-function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
+export function buildLoadUrl(route: string = DEFAULT_WINDOW_ROUTE): string {
   if (process.env.NODE_ENV === 'development') {
     const devPort = process.env.DEV_PORT || '5190';
     return `http://127.0.0.1:${devPort}${route}`;
@@ -262,6 +272,9 @@ export interface WindowSession {
   // Optional for backward compat: legacy session entries carry no flag
   // (missing → windowed restore, exactly as before).
   isFullScreen?: boolean;
+  // Machine rail (Labs): the other machines this window keeps connected and
+  // the one it showed. Missing → the window shows only its own machine.
+  rail?: MachineRailSession;
 }
 
 /**
@@ -444,6 +457,8 @@ function buildSessionsFromOpenWindows(backendId: string): WindowSession[] {
       // fullscreen returns that display's bounds, which is exactly what lets
       // restore land on the right monitor via getDisplayMatching().
       if (w.isFullScreen()) session.isFullScreen = true;
+      const rail = getMachineRailSession(w);
+      if (rail) session.rail = rail;
       return session;
     });
 }
@@ -679,6 +694,8 @@ export async function createWindowForSession(
   stampWindowWithBackend(window, backendId);
   if (session.route.startsWith(HUD_ROUTE_PREFIX)) {
     registerHudWindow(window);
+  } else {
+    restoreMachineRailSession(window, session.rail);
   }
   forwardRendererConsoleToMainLog(window);
 

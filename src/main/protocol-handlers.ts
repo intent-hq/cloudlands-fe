@@ -16,7 +16,7 @@ import {
   resolveWorkspaceBackendClientWithRetry,
   type WorkspaceOwnershipProber,
 } from './utils/workspace-backend-client';
-import { getBackendIdForWindow } from './window-backend';
+import { getBackendIdForWebContents, getShownBackendIdForWindow } from './window-backend';
 import { ANY_HOST } from '../features/system/main/window-workspace-tracking';
 import { LOCAL_CONNECTION_ID } from '../shared/types/connections';
 import { JsonRpcError } from '../features/backend/main/json-rpc-errors';
@@ -60,7 +60,9 @@ async function backendClientForWorkspace(workspaceId: string, backendIdHint: str
       getWindowIdsForWorkspace: (id) => getWindowIdsForWorkspace(id, ANY_HOST),
       getBackendIdForWindowId: (windowId) => {
         const window = BrowserWindow.fromId(windowId);
-        return window && !window.isDestroyed() ? getBackendIdForWindow(window) : null;
+        // The workspace entries behind this lookup are reported by the renderer
+        // the window shows, so the window's host is that renderer's backend.
+        return window && !window.isDestroyed() ? getShownBackendIdForWindow(window) : null;
       },
       getClientForBackend: getBackendClientForConnection,
       getPrimaryClient: getBackendClient,
@@ -366,9 +368,12 @@ export function workspaceMediaBackendRedirect(
   const contents = webContentsId === undefined ? null : webContents.fromId(webContentsId);
   const window =
     contents && !contents.isDestroyed() ? BrowserWindow.fromWebContents(contents) : null;
-  const redirectURL = window
-    ? withWorkspaceMediaBackendHint(url, getBackendIdForWindow(window))
-    : withoutWorkspaceMediaBackendHint(url);
+  // The requesting renderer's own binding: a machine view inside the window
+  // reads its machine's files, not the window's home machine's.
+  const redirectURL =
+    window && contents
+      ? withWorkspaceMediaBackendHint(url, getBackendIdForWebContents(contents))
+      : withoutWorkspaceMediaBackendHint(url);
   return redirectURL ? { redirectURL } : {};
 }
 

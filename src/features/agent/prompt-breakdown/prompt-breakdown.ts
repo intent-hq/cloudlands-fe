@@ -5,7 +5,7 @@
  * Rows that do not match the contract are left out rather than repaired.
  */
 
-export type PromptOwner = 'intent' | 'user';
+type PromptOwner = 'intent' | 'user';
 
 const PROMPT_OWNERS: readonly PromptOwner[] = ['intent', 'user'];
 const LOCATIONS = ['systemPrompt', 'toolDescription', 'provider'];
@@ -36,10 +36,23 @@ interface PromptHiddenSkill {
   fix: string;
 }
 
+/** `native` holds the rows the provider loads itself (`location: provider`). */
+export type PromptGroupKind = 'native' | PromptOwner;
+
+const GROUP_ORDER: readonly PromptGroupKind[] = ['native', 'user', 'intent'];
+
+interface PromptGroup {
+  kind: PromptGroupKind;
+  chars: number;
+  estTokens: number;
+  rows: PromptBreakdownRow[];
+}
+
 export interface PromptBreakdownView {
   totalChars: number;
   estTokens: number;
   rows: PromptBreakdownRow[];
+  groups: PromptGroup[];
   owners: PromptOwnerSummary[];
   hiddenSkills: PromptHiddenSkill[];
 }
@@ -100,10 +113,23 @@ export function parsePromptBreakdown(value: unknown): PromptBreakdownView | null
     };
   }).filter((summary) => summary.chars > 0);
 
+  const groups = GROUP_ORDER.map((kind) => {
+    const members = rows.filter((row) =>
+      kind === 'native' ? !row.counted : row.counted && row.owner === kind,
+    );
+    return {
+      kind,
+      chars: members.reduce((sum, row) => sum + row.chars, 0),
+      estTokens: members.reduce((sum, row) => sum + row.estTokens, 0),
+      rows: members,
+    };
+  }).filter((group) => group.rows.length > 0);
+
   return {
     totalChars,
     estTokens,
     rows,
+    groups,
     owners,
     hiddenSkills: hiddenSkills.map(parseHiddenSkill).filter((skill) => skill !== null),
   };

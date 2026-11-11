@@ -1,5 +1,5 @@
 <!--
-  Settings → an E2B entry: its live sandboxes, of everyone who runs agents on
+  Settings → an E2B or Northflank entry: its live sandboxes (services), of everyone who runs agents on
   this backend, grouped by workspace (running first), with who started each,
   uptime, Pause and Delete. Uptime advances locally between reads while a sandbox runs.
 -->
@@ -13,6 +13,7 @@
   import { faChevronDown, faPause, faTrash } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
   import type { RemoteMachine } from '$shared/types/remote-machines';
+  import type { CloudProviderKind } from '$shared/types/cloud-machines';
   import { store as appStore } from '$store/renderer/store';
   import {
     selectCloudFailures,
@@ -25,7 +26,7 @@
   import { navigateToDesktopAgent } from '$features/desktop/desktop-agent-navigation';
   import { cloudMachineDeleteRequested, cloudMachinePauseRequested } from './cloud-machines-slice';
   import {
-    E2B_DASHBOARD_URL,
+    cloudDashboardUrl,
     cloudErrorText,
     formatUptime,
     groupSandboxesByWorkspace,
@@ -38,11 +39,14 @@
     sandboxes: RemoteMachine[];
     /** The entry's name, which prefixes each row name. */
     entryName?: string;
+    /** The entry's provider: Northflank runs services, not sandboxes. */
+    provider?: CloudProviderKind;
     /** Fixed clock for previews and tests; live otherwise. */
     now?: number;
   }
 
-  let { sandboxes, entryName, now: fixedNow }: Props = $props();
+  let { sandboxes, entryName, provider = 'e2b', now: fixedNow }: Props = $props();
+  const northflank = $derived(provider === 'northflank');
 
   const readAt$ = selectCloudSandboxReadAt();
   const operations$ = selectCloudOperations();
@@ -98,26 +102,33 @@
     if (!failure) return null;
     if (failure.forbidden) return m.cloudMachines_error_starterOnly();
     if (failure.inUse) return m.cloudMachines_error_pauseBusy();
-    return failure.cloud ? cloudErrorText(failure.cloud).description : failure.message;
+    return failure.cloud ? cloudErrorText(failure.cloud, provider).description : failure.message;
   }
 </script>
 
 <section
   class="space-y-1 border-t border-border bg-muted/20 px-4 py-3 sm:px-5"
-  aria-label={m.cloudMachines_sandboxes_title()}
+  aria-label={northflank
+    ? m.cloudMachines_northflank_services_title()
+    : m.cloudMachines_sandboxes_title()}
   data-cloud-sandboxes
 >
   <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 pb-1">
     <p class="type-body text-muted-foreground">
-      {m.cloudMachines_sandboxes_summary({ running: String(running), paused: String(paused) })}
+      {(northflank
+        ? m.cloudMachines_northflank_services_summary
+        : m.cloudMachines_sandboxes_summary)({ running: String(running), paused: String(paused) })}
     </p>
     <Button
       variant="link"
       size="sm"
-      href={E2B_DASHBOARD_URL}
+      href={cloudDashboardUrl(provider)}
       target="_blank"
       rel="noopener noreferrer"
-      class="h-auto px-0">{m.cloudMachines_dashboard_label()}</Button
+      class="h-auto px-0"
+      >{northflank
+        ? m.cloudMachines_northflank_dashboard_label()
+        : m.cloudMachines_dashboard_label()}</Button
     >
   </div>
   {#each groups as group (group.key)}

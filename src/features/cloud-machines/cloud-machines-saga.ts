@@ -8,9 +8,12 @@
 import { call, put, takeEvery, takeLatest, type SagaGenerator } from 'typed-redux-saga';
 import { m } from '$shared/paraglide/messages.js';
 import {
+  isCloudProviderKind,
   parseCloudMachineError,
   parseCloudMachineProvider,
+  type CloudMachineConfigureInput,
   type CloudMachineProvider,
+  type CloudProviderKind,
 } from '$shared/types/cloud-machines';
 import { parseRemoteMachine, type RemoteMachine } from '$shared/types/remote-machines';
 import { backendRequest, observeBackendNodeCapabilities } from '$lib/client/live/backend-transport';
@@ -41,7 +44,24 @@ import {
 } from './cloud-machines-slice';
 import { sandboxLabel } from './cloud-machines-format';
 
-const PROVIDER = 'e2b';
+/** The key (E2B) or token (Northflank), pasted or copied, and Northflank's project. */
+function secretParams(
+  provider: CloudProviderKind,
+  input: CloudMachineConfigureInput,
+  entries: boolean,
+): Record<string, string> {
+  return {
+    ...(entries && input.apiKeyFrom && !input.apiKey ? { apiKeyFrom: input.apiKeyFrom } : {}),
+    ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+    ...(provider === 'northflank' && input.projectId ? { projectId: input.projectId } : {}),
+  };
+}
+
+/** The provider of an entry: its own when saved, else the one asked for. */
+function entryProvider(cloudMachineId: string | undefined, asked?: CloudProviderKind) {
+  const saved = cloudMachineId ? store.state.cloudMachines.providers[cloudMachineId] : undefined;
+  return saved?.provider ?? asked ?? 'e2b';
+}
 
 function generation(): number {
   return store.state.daemonHealth.connectionGeneration;
@@ -61,7 +81,11 @@ function cloudFailure(error: unknown): CloudMachineFailure {
   };
 }
 
-async function readCloudSupport(): Promise<{ supported: boolean; entries: boolean }> {
+async function readCloudSupport(): Promise<{
+  supported: boolean;
+  entries: boolean;
+  providers: boolean;
+}> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
       server?: {
@@ -69,25 +93,40 @@ async function readCloudSupport(): Promise<{ supported: boolean; entries: boolea
           remoteMachines?: unknown;
           cloudMachines?: unknown;
           cloudMachineEntries?: unknown;
+          cloudMachineProviders?: unknown;
         } | null;
       };
     } | null;
     const capabilities = hello?.server?.capabilities;
     const supported = capabilities?.remoteMachines === 1 && capabilities.cloudMachines === 1;
-    return { supported, entries: supported && capabilities.cloudMachineEntries === 1 };
+    const entries = supported && capabilities.cloudMachineEntries === 1;
+    return {
+      supported,
+      entries,
+      providers: entries && capabilities.cloudMachineProviders === 1,
+    };
   } catch {
-    return { supported: false, entries: false };
+    return { supported: false, entries: false, providers: false };
   }
 }
 
-async function readList(): Promise<{
+async function readList(withKinds: boolean): Promise<{
   providers: CloudMachineProvider[];
   machines: RemoteMachine[];
+  providerKinds: CloudProviderKind[];
 }> {
-  const result = await backendRequest<{ providers?: unknown; machines?: unknown }>(
-    'cloudMachines.list',
-  );
+  const result = await backendRequest<{
+    providers?: unknown;
+    machines?: unknown;
+    providerKinds?: unknown;
+  }>('cloudMachines.list');
+  // `providerKinds` counts only with `cloudMachineProviders: 1`; else E2B alone.
+  const kinds =
+    withKinds && Array.isArray(result?.providerKinds)
+      ? result.providerKinds.filter(isCloudProviderKind)
+      : [];
   return {
+    providerKinds: kinds.length > 0 ? kinds : ['e2b'],
     providers: Array.isArray(result?.providers)
       ? result.providers.flatMap((value) => parseCloudMachineProvider(value) ?? [])
       : [],
@@ -107,7 +146,7 @@ function* refresh(): SagaGenerator<void> {
     return;
   }
   const started = generation();
-  const { supported, entries } = yield* call(readCloudSupport);
+  const { supported, entries, providers } = yield* call(readCloudSupport);
   if (!supported) {
     if (started === generation())
       yield* put(cloudMachinesLoaded({ supported: false, providers: [], machines: [], readAt: 0 }));
@@ -115,7 +154,7 @@ function* refresh(): SagaGenerator<void> {
   }
   let list: Awaited<ReturnType<typeof readList>> | null = null;
   try {
-    list = yield* call(readList);
+    list = yield* call(readList, providers);
   } catch {
     list = null;
   }
@@ -132,16 +171,16 @@ function* configure(
   if (store.state.cloudMachines.pending[key]) return;
   // Entry fields go only to a backend that keeps entries (`cloudMachineEntries: 1`).
   const entries = store.state.cloudMachines.entries;
+  const kind = entryProvider(input.cloudMachineId, input.provider);
   const started = generation();
   yield* put(cloudMachineOperationStarted(key, validateOnly ? 'testing' : 'saving'));
   if (validateOnly) yield* put(cloudMachineValidated(formKey, null));
   try {
     const result = yield* call(backendRequest<{ provider?: unknown }>, 'cloudMachines.configure', {
-      provider: PROVIDER,
+      provider: kind,
       ...(entries && input.cloudMachineId ? { cloudMachineId: input.cloudMachineId } : {}),
       ...(entries && input.name ? { name: input.name } : {}),
-      ...(entries && input.apiKeyFrom && !input.apiKey ? { apiKeyFrom: input.apiKeyFrom } : {}),
-      ...(input.apiKey ? { apiKey: input.apiKey } : {}),
+      ...secretParams(kind, input, entries),
       ...(input.size ? { size: input.size } : {}),
       ...(input.idlePauseMinutes !== undefined ? { idlePauseMinutes: input.idlePauseMinutes } : {}),
       ...(input.pausedDeleteDays !== undefined ? { pausedDeleteDays: input.pausedDeleteDays } : {}),
@@ -152,7 +191,13 @@ function* configure(
     if (validateOnly) yield* put(cloudMachineValidated(formKey, provider));
     else if (provider) yield* put(cloudProviderChanged(provider));
     yield* put(cloudMachineOperationSettled(key, null));
-    if (!validateOnly) yield* call(notify.success, m.cloudMachines_saved_toast());
+    if (!validateOnly)
+      yield* call(
+        notify.success,
+        kind === 'northflank'
+          ? m.cloudMachines_northflank_saved_toast()
+          : m.cloudMachines_saved_toast(),
+      );
   } catch (error) {
     if (started !== generation()) return;
     yield* put(cloudMachineOperationSettled(key, cloudFailure(error)));
@@ -173,18 +218,23 @@ function* remove(action: ReturnType<typeof cloudMachinesRemoveRequested>): SagaG
   const { entries, providers } = store.state.cloudMachines;
   const sandboxes = entrySandboxIds(cloudMachineId).length;
   const name = providers[cloudMachineId]?.name;
+  const northflank = providers[cloudMachineId]?.provider === 'northflank';
   const accepted = yield* call(confirm, {
     title:
       entries && name
         ? m.cloudMachines_remove_entry_confirmTitle({ name })
         : m.cloudMachines_remove_confirmTitle(),
-    description: entries
+    description: northflank
       ? sandboxes > 0
-        ? m.cloudMachines_remove_entryWithSandboxes_description()
-        : m.cloudMachines_remove_entry_description()
-      : sandboxes > 0
-        ? m.cloudMachines_remove_confirmWithSandboxes_description()
-        : m.cloudMachines_remove_confirm_description(),
+        ? m.cloudMachines_northflank_remove_entryWithServices_description()
+        : m.cloudMachines_northflank_remove_entry_description()
+      : entries
+        ? sandboxes > 0
+          ? m.cloudMachines_remove_entryWithSandboxes_description()
+          : m.cloudMachines_remove_entry_description()
+        : sandboxes > 0
+          ? m.cloudMachines_remove_confirmWithSandboxes_description()
+          : m.cloudMachines_remove_confirm_description(),
     confirmLabel: m.cloudMachines_remove_label(),
     destructive: true,
   });
@@ -196,7 +246,7 @@ function* remove(action: ReturnType<typeof cloudMachinesRemoveRequested>): SagaG
       backendRequest<{ unconfirmedStops?: unknown }>,
       'cloudMachines.remove',
       {
-        provider: PROVIDER,
+        provider: entryProvider(cloudMachineId),
         ...(entries ? { cloudMachineId } : {}),
         ...(stopAgents || sandboxes > 0 ? { stopAgents: true } : {}),
       },
@@ -245,9 +295,15 @@ function* deleteSandbox(
   const machine = store.state.cloudMachines.machines[machineId];
   if (!machine) return;
   const entryName = store.state.cloudMachines.providers[machine.cloud?.cloudMachineId ?? '']?.name;
+  const agent = sandboxLabel(machine, entryName);
+  const northflank = machine.cloud?.provider === 'northflank';
   const accepted = yield* call(confirm, {
-    title: m.cloudMachines_delete_confirmTitle({ agent: sandboxLabel(machine, entryName) }),
-    description: m.cloudMachines_delete_confirm_description(),
+    title: northflank
+      ? m.cloudMachines_northflank_delete_confirmTitle({ agent })
+      : m.cloudMachines_delete_confirmTitle({ agent }),
+    description: northflank
+      ? m.cloudMachines_northflank_delete_confirm_description()
+      : m.cloudMachines_delete_confirm_description(),
     confirmLabel: m.cloudMachines_delete_label(),
     destructive: true,
   });

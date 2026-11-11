@@ -113,6 +113,15 @@ registerMockIpcHandler(BACKEND.GET_SIDECAR_RUN_LOG, async () => {
   };
 });
 
+registerMockIpcHandler(BACKEND.DESKTOP_OS_PERMISSIONS, async (payload?: unknown) => {
+  const win = typeof window !== 'undefined' ? window : undefined;
+  const bridge = win?.electronAPI;
+  if (win && detectPlatform(win) === 'electron' && typeof bridge?.invoke === 'function') {
+    return bridge.invoke(BACKEND.DESKTOP_OS_PERMISSIONS, payload);
+  }
+  return { ok: true, result: { platform: 'unsupported' } };
+});
+
 // OS authorization belongs to this computer's Electron main process. Browser
 // previews must neither recurse into their mock bridge nor fabricate a grant.
 registerMockIpcHandler(BACKEND.DESKTOP_PERMISSIONS, async (payload?: unknown) => {

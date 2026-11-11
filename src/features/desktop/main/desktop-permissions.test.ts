@@ -4,7 +4,7 @@ import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { DesktopNativeAdapter } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
-import { requestDesktopPermissions } from './desktop-permissions';
+import { requestDesktopPermissions, requestLocalDesktopPermissions } from './desktop-permissions';
 
 const selection = { workspaceId: 'w', agentId: 'a', requestId: 'r', decision: 'allow_once' };
 function setup() {
@@ -193,5 +193,70 @@ describe('helper permission response boundary', () => {
       computerId: 'local',
       requestId: 'request',
     });
+  });
+});
+
+describe('settings-initiated OS permission request', () => {
+  function native(platform: 'macos' | 'windows' = 'macos') {
+    return {
+      identity: vi.fn(async () => ({ computerId: 'local', computerName: 'Mac', platform })),
+      requestPermissions: vi.fn(async () => ({
+        accessibility: true,
+        screenRecording: false,
+        screenCapture: 'pending' as const,
+      })),
+    };
+  }
+  const id = '0b9f6a52-3c1e-4b8a-9d2f-6e5a4c3b2a10';
+  const run = (
+    n: ReturnType<typeof native>,
+    available = true,
+    value: unknown = { requestId: id },
+  ) => requestLocalDesktopPermissions(value, n as unknown as DesktopNativeAdapter, () => available);
+
+  it('reports unsupported without launching the helper when it is unavailable', async () => {
+    const n = native();
+    expect(await run(n, false)).toEqual({ platform: 'unsupported' });
+    expect(n.identity).not.toHaveBeenCalled();
+    expect(n.requestPermissions).not.toHaveBeenCalled();
+  });
+
+  it('needs no OS prompt on Windows', async () => {
+    const n = native('windows');
+    expect(await run(n)).toEqual({ platform: 'windows' });
+    expect(n.requestPermissions).not.toHaveBeenCalled();
+  });
+
+  it('reuses the caller request identity so a pending capture check can settle', async () => {
+    const n = native();
+    expect(await run(n)).toEqual({
+      platform: 'macos',
+      accessibility: true,
+      screenRecording: false,
+      screenCapture: 'pending',
+    });
+    await run(n);
+    const [first, second] = n.requestPermissions.mock.calls as unknown as [string, string][];
+    expect(first).toEqual(['local', `settings:${id}`]);
+    expect(second).toEqual(first);
+  });
+
+  it.each([null, {}, { requestId: 'x' }, { requestId: id, extra: 1 }])(
+    'rejects a malformed request %j before touching the helper',
+    async (value) => {
+      const n = native();
+      await expect(run(n, true, value)).rejects.toThrow();
+      expect(n.identity).not.toHaveBeenCalled();
+    },
+  );
+
+  it('serializes a native refusal as a JSON-RPC error', async () => {
+    const n = native();
+    n.requestPermissions.mockRejectedValueOnce(
+      desktopFailure('desktop-busy', 'Desktop control is already active', 'not_started'),
+    );
+    const error = await run(n).catch((e) => e);
+    expect(error).toBeInstanceOf(JsonRpcError);
+    expect(error.toErrorPayload()).toMatchObject({ code: 'desktop-busy' });
   });
 });

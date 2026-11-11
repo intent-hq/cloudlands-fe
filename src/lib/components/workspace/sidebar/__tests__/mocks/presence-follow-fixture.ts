@@ -20,44 +20,34 @@ import {
 import { presenceFollowSaga } from '$store/renderer/slices/presence-follow/sagas/presence-follow-saga';
 import { installMockElectronBridge } from '../../../../../../test/ct-mock-electron-bridge';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { HostRole } from '$shared/types/principal';
 import { WorkspaceStatus, type Workspace } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
 
 export function initializePresenceFollowFixture(hidden: boolean, role: HostRole): () => void {
-  const originalBridge = window.electronAPI;
-  const listeners = new Map<string, (event: unknown) => void>();
   let serial = 0;
-  installMockElectronBridge({
+  const restoreBridge = installMockElectronBridge({
     'presence.focus.subscribe': (params) => {
       const { workspaceId, principalId } = params as { workspaceId: string; principalId: string };
       const subscriptionId = `fixture-${++serial}`;
-      for (const fn of listeners.values())
-        fn({
-          method: 'subscription.push',
-          params: {
-            subscriptionId,
-            seq: 0,
-            kind: 'snapshot',
-            snapshot: {
-              workspaceId,
-              principalId,
-              target: hidden ? null : { workspaceId: 'destination', noteId: 'project-plan' },
-            },
+      emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, {
+        method: 'subscription.push',
+        params: {
+          subscriptionId,
+          seq: 0,
+          kind: 'snapshot',
+          snapshot: {
+            workspaceId,
+            principalId,
+            target: hidden ? null : { workspaceId: 'destination', noteId: 'project-plan' },
           },
-        });
+        },
+      });
       return { subscriptionId };
     },
     'presence.focus.unsubscribe': () => ({ success: true }),
   });
-  window.electronAPI!.on = (channel, handler) => {
-    const id = crypto.randomUUID();
-    if (channel === IPC_CHANNELS.BACKEND.NOTIFICATION) listeners.set(id, handler);
-    return id;
-  };
-  window.electronAPI!.offById = (id) => {
-    listeners.delete(id);
-  };
   store.dispatch(
     connectionsListReceived({ connections: [], activeId: 'local', windowBackendId: 'local' }),
   );
@@ -143,6 +133,6 @@ export function initializePresenceFollowFixture(hidden: boolean, role: HostRole)
 
   return () => {
     cancel();
-    window.electronAPI = originalBridge;
+    restoreBridge();
   };
 }

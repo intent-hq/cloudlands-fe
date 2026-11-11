@@ -19,11 +19,18 @@ export const AgentPlacementSchema = z
   .refine(
     (value) => !value.exclusive || (value.target === 'remote' && value.checkout === 'isolated'),
   );
+/** A target that starts a new cloud machine: `e2b`, or the provider-neutral `cloud`. */
+export function isCloudTarget(target: unknown): target is 'e2b' | 'cloud' {
+  return target === 'e2b' || target === 'cloud';
+}
+
 /** Prepared platform requests; an empty object is distinct from an omitted request. */
 const AgentPlacementRequestShape = z
   .object({
-    // `e2b` (cloud machines): a new sandbox; needs `cloudMachines: 1`.
-    target: z.enum(['local', 'remote', 'e2b']).optional(),
+    // `e2b` (cloud machines): a new E2B sandbox; needs `cloudMachines: 1`. `cloud`
+    // (`cloudMachineProviders: 1`): a new machine from an entry of any provider.
+    // A resolved placement always reads `e2b`; the entry names the provider.
+    target: z.enum(['local', 'remote', 'e2b', 'cloud']).optional(),
     checkout: z.enum(['shared', 'worktree', 'isolated']).optional(),
     os: z.enum(['linux', 'macos']).optional(),
     arch: z.enum(['x86_64', 'aarch64']).optional(),
@@ -33,7 +40,7 @@ const AgentPlacementRequestShape = z
       .refine((id) => new TextEncoder().encode(id).length <= 128)
       .optional(),
     exclusive: z.boolean().optional(),
-    // The E2B entry (`cloudMachineEntries: 1`); only with `target: "e2b"`.
+    // The cloud entry (`cloudMachineEntries: 1`); only with `target: "e2b"` or `"cloud"`.
     cloudMachineId: z
       .string()
       .min(1)
@@ -44,10 +51,10 @@ const AgentPlacementRequestShape = z
 export const AgentPlacementRequestSchema = AgentPlacementRequestShape.refine(
   (value) => value.target !== 'remote' || (value.checkout ?? 'isolated') === 'isolated',
 )
-  .refine((value) => value.cloudMachineId === undefined || value.target === 'e2b')
+  .refine((value) => value.cloudMachineId === undefined || isCloudTarget(value.target))
   .refine(
     (value) =>
-      value.target !== 'e2b' ||
+      !isCloudTarget(value.target) ||
       ((value.checkout ?? 'isolated') === 'isolated' &&
         !value.os &&
         !value.arch &&
@@ -66,7 +73,7 @@ export type AgentPlacementRequest = z.infer<typeof AgentPlacementRequestSchema>;
  * checkout. A cloud agent's projection is read as reported (no request rules).
  */
 const AgentResolvedPlacementSchema = AgentPlacementRequestShape.extend({
-  target: z.enum(['local', 'remote', 'e2b']),
+  target: z.enum(['local', 'remote', 'e2b', 'cloud']),
   checkout: z.enum(['shared', 'worktree', 'isolated']),
 })
   .refine((value) => value.target !== 'remote' || value.checkout === 'isolated')

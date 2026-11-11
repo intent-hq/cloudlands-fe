@@ -98,6 +98,7 @@ import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { powerSaga } from './slices/power/sagas/power-saga';
+import { machineRailSaga } from './slices/machine-rail/sagas/machine-rail-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
 import { secretRequestsSaga } from './slices/secret-requests/sagas/secret-requests-saga';
@@ -149,6 +150,7 @@ import { workspaceNotesSaga } from './slices/workspace-notes/sagas/workspace-not
 import { workspaceOperationsSaga } from './slices/workspace-operations/sagas/workspace-operations-saga';
 import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspace-settings-saga';
 import { workspaceTransferSaga } from './slices/workspace-transfer/sagas/workspace-transfer-saga';
+import { workspaceBulkTransferSaga } from './slices/workspace-bulk-transfer/sagas/workspace-bulk-transfer-saga';
 import { workspaceShareSaga } from './slices/workspace-share/sagas/workspace-share-saga';
 import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-import-saga';
 
@@ -217,6 +219,7 @@ export const sagas = [
   workspaceNavigationLayoutSaga,
   workspaceOperationsSaga,
   workspaceTransferSaga,
+  workspaceBulkTransferSaga,
   workspaceShareSaga,
   invitationAccountSearchSaga,
   hostMembershipSaga,
@@ -240,6 +243,7 @@ export const sagas = [
   dockConversationSaga,
   themeSaga,
   powerSaga,
+  machineRailSaga,
   autoUpdateSaga,
   specialistsSaga,
   workspaceCatalogSaga,

@@ -1,4 +1,5 @@
 import type { Component, ComponentProps } from 'svelte';
+import { forwardToastWhenHidden } from '$lib/utils/machine-toast-forward';
 import { toast, type ExternalToast } from 'svelte-sonner';
 import {
   loadAgentFailureToast,
@@ -75,9 +76,11 @@ function errorDetails(error: NotifyError): { message: string; details?: string }
 
 function showError(error: string | NotifyError, options: NotifyOptions = {}): NotifyId {
   if (typeof error === 'string') {
+    forwardToastWhenHidden('error', error);
     return toast.error(error, withPolicy('error', options));
   }
   const normalized = errorDetails(error);
+  forwardToastWhenHidden('error', normalized.message);
   if (!normalized.details) {
     return toast.error(normalized.message, withPolicy('error', options));
   }
@@ -179,12 +182,18 @@ function lazyCustom<T extends AnyComponent>(
 }
 
 export const notify = {
-  success: (message: string, options?: NotifyOptions) =>
-    toast.success(message, withPolicy('success', options)),
-  info: (message: string, options?: NotifyOptions) =>
-    toast.info(message, withPolicy('info', options)),
-  warning: (message: string, options?: NotifyOptions) =>
-    toast.warning(message, withPolicy('warning', options)),
+  success: (message: string, options?: NotifyOptions) => {
+    forwardToastWhenHidden('success', message);
+    return toast.success(message, withPolicy('success', options));
+  },
+  info: (message: string, options?: NotifyOptions) => {
+    forwardToastWhenHidden('info', message);
+    return toast.info(message, withPolicy('info', options));
+  },
+  warning: (message: string, options?: NotifyOptions) => {
+    forwardToastWhenHidden('warning', message);
+    return toast.warning(message, withPolicy('warning', options));
+  },
   error: showError,
   progress,
   undoable,

@@ -34,6 +34,7 @@ export const NODE_CAPABILITY_KEYS = [
   'cloudMachines',
   // Named E2B entries: gates entries under Nodes and `cloudMachineId` in placements.
   'cloudMachineEntries',
+  'cloudMachineProviders',
 ] as const;
 
 type NodeCapabilityKey = (typeof NODE_CAPABILITY_KEYS)[number];

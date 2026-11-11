@@ -5,7 +5,8 @@
  * the Details disclosure.
  */
 import { m } from '$shared/paraglide/messages.js';
-import type { CloudMachineErrorData } from '$shared/types/cloud-machines';
+import type { CloudMachineErrorData, CloudProviderKind } from '$shared/types/cloud-machines';
+import { cloudErrorText } from '$features/cloud-machines/cloud-machines-format';
 import type { PlacementFailure } from './agent-location';
 
 export type CloudStartFailureAction = 'retry' | 'settings';
@@ -17,12 +18,14 @@ export interface CloudStartFailureView {
   cause: string;
   /** Offered actions, primary first. Retry is dropped when the caller can't retry. */
   actions: CloudStartFailureAction[];
-  /** The E2B dashboard helps (plan limits, the API key). */
+  /** The provider's dashboard helps (plan limits, the API key or token). */
   dashboard: boolean;
+  /** Whose dashboard, and whose words. */
+  provider: CloudProviderKind;
   details: string;
 }
 
-type Copy = Omit<CloudStartFailureView, 'details'>;
+type Copy = Omit<CloudStartFailureView, 'details' | 'provider'>;
 
 const startFailed = (cause: string): Copy => ({
   tone: 'danger',
@@ -85,6 +88,15 @@ function copy(failure: PlacementFailure, cloud: CloudMachineErrorData): Copy {
             actions: ['settings'],
             dashboard: true,
           };
+        case 'project-missing':
+        case 'permission-denied':
+          return {
+            tone: 'warning',
+            title: m.cloudMachines_startFailure_notConfigured_title(),
+            cause: m.cloudMachines_error_notConfigured_description(),
+            actions: ['settings'],
+            dashboard: true,
+          };
         case 'not-configured':
           return {
             tone: 'warning',
@@ -121,6 +133,27 @@ function details(
   return lines.filter(Boolean).join('\n');
 }
 
+/**
+ * Northflank's words on the same tone and actions: its errors name services,
+ * tokens and projects, never E2B sandboxes.
+ */
+function northflankCopy(failure: PlacementFailure, cloud: CloudMachineErrorData): Copy {
+  const e2b = copy(failure, cloud);
+  if (cloud.code === 'cloud-machine-unavailable' && !failure.cloudDetailKnown)
+    return {
+      ...e2b,
+      title: m.cloudMachines_northflank_startFailure_title(),
+      cause: m.cloudMachines_northflank_startFailure_unknown_cause(),
+    };
+  const text = cloudErrorText(cloud, 'northflank');
+  const generic = e2b.title === m.cloudMachines_startFailure_title();
+  return {
+    ...e2b,
+    title: generic ? m.cloudMachines_northflank_startFailure_title() : text.title,
+    cause: text.description,
+  };
+}
+
 /** Null when the failure carries no cloud error. */
 export function cloudStartFailureView(
   failure: PlacementFailure,
@@ -128,9 +161,11 @@ export function cloudStartFailureView(
 ): CloudStartFailureView | null {
   const cloud = failure.cloud;
   if (!cloud) return null;
-  const view = copy(failure, cloud);
+  const provider = cloud.provider === 'northflank' ? 'northflank' : 'e2b';
+  const view = provider === 'northflank' ? northflankCopy(failure, cloud) : copy(failure, cloud);
   return {
     ...view,
+    provider,
     actions: options.canRetry ? view.actions : view.actions.filter((a) => a !== 'retry'),
     details: details(failure, cloud, options.turnError),
   };

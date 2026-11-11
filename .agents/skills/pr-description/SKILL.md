@@ -1,175 +1,126 @@
 ---
 name: pr-description
 description: >-
-  Write reviewer-ready pull request titles and bodies with semantic titles,
-  exact diff statistics, explicit verification, scope boundaries, and P0-P3
-  risk analysis.
+  Write short pull request titles and bodies in Simplified Technical English:
+  what changed and why, without text that repeats git or CI.
 triggers:
   - write PR description
   - create pull request body
   - semantic PR title
-  - PR risk analysis
 ---
 
 # Pull Request Description
 
-Use this skill when writing or revising a pull request title and body. The
-description is a review artifact: state the exact scope, evidence, and risk.
-Do not invent results, counts, commands, or affected areas.
+The reviewer reads the diff. The body gives only what the diff cannot show: the
+change in behavior and the reason for it. Text that repeats git or CI hides
+those two facts. Do not write it.
 
-## Semantic title
+The monorepo guide `docs/fe/PR_DESCRIPTION_GUIDE.md` (intent-hq/intent) has the
+same rules. Change the two files together.
 
-Use this form:
+## Title
 
 `type(scope): imperative subject`
 
-The scope is optional. The subject must be concise, specific, and imperative;
-do not end it with a period. Use one of the exact types accepted by CI:
+- CI accepts only these types: `feat`, `fix`, `chore`, `docs`, `refactor`,
+  `test`, `ci`, `perf`. The scope is optional.
+- Name the result in 5 to 10 words. Do not end with a period.
+- Use `docs` only when the diff changes documentation and nothing else.
 
-`feat` · `fix` · `chore` · `docs` · `refactor` · `test` · `ci` · `perf`
+Example: `fix(agent): keep deleted agents out of the sidebar`
 
-Keep the title to roughly 5–10 words after the type/scope, describe the main
-user-facing or engineering outcome, and do not include an issue number unless
-the request supplies one.
+## Body
 
-### Title examples
+Write two parts. No other part is mandatory.
 
-Valid:
+1. **What changed.** State the new behavior that a user or a developer sees.
+2. **Why.** State the problem and its cause. If a reviewer can expect a
+   different solution, state why you did not use it.
 
-- `feat(agent): Add undo for pending deletions`
-- `fix: Prevent stale session resurrection`
-- `docs: Document IPC contract testing`
-- `test(renderer): Cover tool result pairing`
-- `ci: Retry transient PR title validation`
-- `chore: address PR 1184 follow-ups` — valid when the request explicitly supplies the issue number.
+- A small change needs one to three sentences and no headings.
+- A large change gets one bullet for each change in behavior.
 
-Invalid:
+## Add only when it applies
 
-- `feature: Add undo` — `feature` is not an accepted type; use `feat`.
-- `feat: Added undo` — use an imperative subject: `Add undo`.
-- `fix Fix stale sessions` — missing the required colon.
-- `chore: Various improvements and fixes` — vague; name the outcome.
-- `feat: Add undo.` — do not end the subject with punctuation.
-- `Feat: add undo` — type must be lowercase and the subject must be
-  imperative.
+| Condition                                 | Add                                                     |
+| ----------------------------------------- | ------------------------------------------------------- |
+| The PR fixes a filed issue                | `Fixes intent-hq/intent#N`                              |
+| The PR changes UI                         | Before and after screenshots, in a table                |
+| The PR changes what a user sees or does   | The assistant app guide section, or why none applies    |
+| The PR claims a performance result        | The measured before and after table, and its command    |
+| The PR depends on another PR              | The link and the merge order                            |
+| You ran a check that CI does not run      | One line: the check and its result                      |
+| You did not run a check that is necessary | One line: the check and the reason                      |
+| The reviewer must make a decision         | One line: the question and the option that you prefer   |
 
-## Required body
+Omit a row that does not apply. Do not write "None" or "N/A".
 
-Use every section below, in this order. `Results` is optional only when there
-is no meaningful before/after metric; all other sections are required.
+## Screenshots
 
-### Summary
+A PR that changes UI shows the change in a table. The reviewer can then compare
+the two states directly.
 
-Write one paragraph explaining what the PR does and why it exists. Include the
-exact diff-statistics line in this section, using this format:
+- Put the `Before` image and the `After` image in the same row.
+- Use one row for each state that the PR changes: default, hover, empty, error,
+  long text, narrow width, dark theme. Name the state in the first column.
+- Capture the two images of a row with the same size, theme, and data.
+- Capture the component, not the full window, unless the PR changes the layout.
+- Use `pnpm sandbox:shot` when the component has a sandbox scene.
+- New UI has no `Before` image. Use one column for each theme or width.
+- Do not add a screenshot for a change that has no visible result.
 
-`**N files changed, +X / −Y**`
+```markdown
+| State   | Before  | After   |
+| ------- | ------- | ------- |
+| Default | (image) | (image) |
+| Error   | (image) | (image) |
+```
 
-Obtain the values from the final diff, not estimation. Run `git diff --stat`
-and, when needed to verify insertion/deletion totals, `git diff --numstat`.
-Include the exact numbers from those commands, including zeroes where
-applicable.
+## Do not write
 
-### Results (optional)
+- Diff statistics, file counts, or lists of changed, new, or deleted files.
+- Lists of commits, symbols, modules, or components.
+- Results of checks that CI runs: lint, type checks, unit tests, builds.
+- An explanation of how the code works. Put that in the code or in `docs/`.
+- A list of things that the PR does not change.
+- Risk levels, risk tables, or checklists.
+- Empty sections, placeholders, or a summary of the body.
+- The steps that you took, or the solutions that you tried and removed.
+- Claims that you did not verify.
+- The literal breaking-change footer token, unless the change is a breaking
+  change (see `AGENTS.md`).
 
-Add a before/after table when the PR has measurable impact, such as line
-counts, IPC calls, render counts, bundle size, latency, or memory. Omit this
-section when no meaningful metric exists; do not manufacture metrics.
+## Language: Simplified Technical English
 
-### What Changed
+Write the title and the body in Simplified Technical English (ASD-STE100).
+These rules are mandatory:
 
-List all changes grouped by category. Cover new, modified, deleted, and
-renamed files; slices, modules, components, utilities, handlers, migrations,
-and documentation updates. Name every new module, slice, component, utility,
-or handler and give each a one-line description.
+- Write one idea in each sentence. Use a maximum of 20 words.
+- Use the active voice. Name the thing that does the action.
+- Use the present tense for the new behavior and the past tense for the old.
+- Use one word for one thing. Do not change the word to prevent repetition.
+- Use the specific name: the control, the setting, the method, the error.
+- Use a verb for an action: "the saga retries the call", not "retry logic was
+  implemented".
+- Remove each word that gives no fact: "comprehensive", "robust", "seamless",
+  "leverage", "This PR", "in order to".
+- Do not use idioms or metaphors.
 
-### Architecture
+Identifiers, commands, and names from the app stay as they are, in code format.
 
-Explain how the changes fit existing architecture, ownership boundaries, and
-data flow. Identify the source of truth and relevant process or module
-boundaries. Link to relevant `docs/` material when it helps reviewers.
+| Do not write                                                                                        | Write                                                      |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| This PR introduces comprehensive improvements to the robustness of the session handling layer.      | The agent list drops rows that carry `pendingDeleteAt`.    |
+| Retry logic with exponential backoff has been implemented in order to handle transient failures.    | The saga retries a failed `agent.list` call three times.   |
+| All tests pass.                                                                                     | (nothing: CI shows this)                                   |
 
-### Testing
+## Example
 
-List exactly what was run and the result of each command. Use the exact command
-text, not “all tests pass.” Select the commands appropriate to the changed
-surface; do not claim commands that were not run. Typical repository commands
-include:
+```markdown
+A deleted agent came back in the sidebar after the workspace list refreshed.
 
-- `pnpm vitest run <targeted-test-files>`
-- `pnpm run check`
-- `pnpm run lint`
-- `pnpm tsc -p tsconfig.json --noEmit`
-- `pnpm tsc -p tsconfig.main.json --noEmit`
-- `pnpm run generate:ipc-channels && pnpm tsc -p tsconfig.preload.json --noEmit`
-- `pnpm run build`
-- `pnpm exec playwright test <targeted-spec> --reporter=line`
+The refresh read rows that the daemon had not removed yet. The agent list now
+drops rows that carry `pendingDeleteAt`.
 
-Also record manual validation steps, environment details when relevant, and
-any intentionally skipped check with its reason.
-
-### What's NOT Changed
-
-State the intentional out-of-scope boundaries. Call out adjacent systems,
-APIs, files, migrations, platforms, or user flows that this PR does not alter
-so reviewers do not infer unsupported behavior.
-
-### Risk Analysis
-
-Every PR body must include this section. Map every modified component, IPC
-handler, state migration, or other meaningful change to a user-facing feature
-or operational area. Each listed risk item must include at least one concrete
-automated or manual test step. P0 items must be tested before marking the PR
-ready for review.
-
-Use the following levels and keep the test step specific:
-
-#### 🔴 P0 — Critical (core user flows affected)
-
-- **Feature or area** — explain what changed and why failure would block a
-  core user flow.
-  - [ ] Test: exact command, scenario, expected result, and environment.
-
-#### 🟠 P1 — High (important flows affected)
-
-- **Feature or area** — explain the important-flow impact.
-  - [ ] Test: exact command or manual scenario and expected result.
-
-#### 🟡 P2 — Medium (secondary flows affected)
-
-- **Feature or area** — explain the secondary-flow impact.
-  - [ ] Test: exact command or manual scenario and expected result.
-
-#### 🟢 P3 — Low (minor or cosmetic changes)
-
-- **Feature or area** — explain the limited impact.
-  - [ ] Test: exact command or manual scenario and expected result.
-
-If a level has no applicable risks, write `None identified` and explain why.
-For fewer than 20 changed files, a simplified list of affected features is
-acceptable. For 20 or more changed files, provide the full mapping. For 50 or
-more changed files, if the section exceeds roughly 100 lines, put the complete
-analysis in a separate pinned PR comment and link it from the body, for
-example: `See [Risk Analysis](#issuecomment-XXXX)`.
-
-End the section with this summary table, preserving all four levels:
-
-| Risk Level | Areas | Items |
-| --- | --- | --- |
-| P0 | Core flows | N |
-| P1 | Important flows | N |
-| P2 | Secondary flows | N |
-| P3 | Minor or cosmetic changes | N |
-
-Replace every `N` with the exact number of risk items in that level.
-
-## Final checks
-
-- Verify the title uses exactly one accepted semantic type and an imperative
-  subject.
-- Verify the summary's `N`, `+X`, and `−Y` came from the final diff.
-- Verify every required body section is present, including `What's NOT
-  Changed` and the P0-P3 table.
-- Verify every claimed test command was actually run and its result is stated.
-- Verify every risk item has a concrete test step and the table counts match.
-- Verify no placeholder text, approximate counts, or unverified claims remain.
+Fixes intent-hq/intent#N
+```

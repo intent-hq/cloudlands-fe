@@ -35,6 +35,7 @@ import {
   requestDeleteWorkspace,
   requestRetireWorkspace,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+import { openBulkTransferModal } from '$store/renderer/slices/workspace-bulk-transfer/workspace-bulk-transfer-slice';
 import {
   faThumbtack,
   faTag,
@@ -46,6 +47,7 @@ import {
   faArrowUp,
   faHardDrive,
   faHourglassHalf,
+  faRightLeft,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface HomeWorkspaceMenuOptions {
@@ -254,7 +256,7 @@ export function createHomeWorkspaceMenu(
 }
 
 export interface HomeBulkAction {
-  id: 'archive' | 'purge' | 'delete';
+  id: 'archive' | 'transfer' | 'purge' | 'delete';
   label: string;
   icon: SidebarMenuItem['icon'];
   destructive?: boolean;
@@ -271,6 +273,21 @@ export function homeBulkActions(targets: HomeBulkTargets): HomeBulkAction[] {
       label: m.workspace_card_archive_label(),
       icon: faBoxArchive,
       run: () => store.dispatch(openBulkArchiveConfirm({ workspaceIds: ids(targets.archive) })),
+    });
+  if (targets.transfer.length)
+    actions.push({
+      id: 'transfer',
+      label: m.home_selection_transfer_label(),
+      icon: faRightLeft,
+      run: () =>
+        store.dispatch(
+          openBulkTransferModal({
+            workspaces: targets.transfer.map((workspace) => ({
+              workspaceId: workspace.id,
+              title: workspace.title,
+            })),
+          }),
+        ),
     });
   if (targets.purge.length)
     actions.push({

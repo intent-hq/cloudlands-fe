@@ -6,7 +6,11 @@
   } from '../../test/cloud-machines-preview';
 
   type Scene =
-    CloudMachinesPreviewState | 'start-on' | 'start-on-needs-profile' | 'start-on-entries';
+    | CloudMachinesPreviewState
+    | 'start-on'
+    | 'start-on-needs-profile'
+    | 'start-on-entries'
+    | 'start-on-providers';
   interface Props {
     scene?: Scene;
   }
@@ -17,7 +21,7 @@
   });
   export const preview = definePreview<Props>({
     id: 'cloud-machines',
-    title: 'E2B cloud machines in Settings (Machines, or Nodes with named entries)',
+    title: 'Cloud machines (E2B, Northflank) in Settings (Machines, or Nodes with named entries)',
     defaultState: 'connected',
     states: {
       'add-menu': sceneState('add-menu'),
@@ -38,6 +42,15 @@
       'entries-rename-taken': sceneState('entries-rename-taken'),
       'entries-single': sceneState('entries-single'),
       'entries-edit': sceneState('entries-edit'),
+      'add-cloud-menu': sceneState('add-cloud-menu'),
+      'northflank-setup': sceneState('northflank-setup'),
+      'northflank-setup-filled': sceneState('northflank-setup-filled'),
+      'northflank-setup-error': sceneState('northflank-setup-error'),
+      providers: sceneState('providers'),
+      'start-on-providers': {
+        props: { scene: 'start-on-providers' },
+        setup: () => setup('providers'),
+      },
       'start-on-entries': {
         props: { scene: 'start-on-entries' },
         setup: () => setup('entries'),
@@ -59,7 +72,7 @@
   import StartOnPicker from '$lib/components/workspace/initializer/StartOnPicker.svelte';
   import { m } from '$shared/paraglide/messages.js';
   import { startOnOptions } from '$features/remote-machines/start-on';
-  import { E2B_SANDBOXES, TEAM_ENTRY } from '../../test/cloud-machines-preview';
+  import { E2B_SANDBOXES, NORTHFLANK_ENTRY, TEAM_ENTRY } from '../../test/cloud-machines-preview';
 
   let { scene = 'connected' }: Props = $props();
   const connectionId$ = selectCurrentConnectionId();
@@ -80,34 +93,50 @@
         },
       ],
       cloud:
-        scene === 'start-on-entries'
+        scene === 'start-on-providers'
           ? [
               {
                 cloudMachineId: 'e2b',
                 label: m.cloudMachines_startOn_entry_label({ name: 'E2B' }),
                 unavailableReason: null,
+                needsProfile: true,
               },
               {
-                cloudMachineId: TEAM_ENTRY.id,
-                label: m.cloudMachines_startOn_entry_label({ name: TEAM_ENTRY.name }),
+                cloudMachineId: NORTHFLANK_ENTRY.id,
+                label: m.cloudMachines_startOn_northflank_label({ name: NORTHFLANK_ENTRY.name }),
                 unavailableReason: null,
-              },
-              {
-                cloudMachineId: 'e2b-0c1d2e3f4a5b',
-                label: m.cloudMachines_startOn_entry_label({ name: 'Old project' }),
-                unavailableReason: m.cloudMachines_state_keyRejected_label(),
+                needsProfile: true,
               },
             ]
-          : [
-              {
-                cloudMachineId: 'e2b',
-                label: m.cloudMachines_startOn_label(),
-                unavailableReason:
-                  scene === 'start-on-needs-profile'
-                    ? m.cloudMachines_startOn_needsProfile()
-                    : null,
-              },
-            ],
+          : scene === 'start-on-entries'
+            ? [
+                {
+                  cloudMachineId: 'e2b',
+                  label: m.cloudMachines_startOn_entry_label({ name: 'E2B' }),
+                  unavailableReason: null,
+                },
+                {
+                  cloudMachineId: TEAM_ENTRY.id,
+                  label: m.cloudMachines_startOn_entry_label({ name: TEAM_ENTRY.name }),
+                  unavailableReason: null,
+                  needsProfile: true,
+                },
+                {
+                  cloudMachineId: 'e2b-0c1d2e3f4a5b',
+                  label: m.cloudMachines_startOn_entry_label({ name: 'Old project' }),
+                  unavailableReason: m.cloudMachines_state_keyRejected_label(),
+                },
+              ]
+            : [
+                {
+                  cloudMachineId: 'e2b',
+                  label: m.cloudMachines_startOn_label(),
+                  unavailableReason:
+                    scene === 'start-on-needs-profile'
+                      ? m.cloudMachines_startOn_needsProfile()
+                      : null,
+                },
+              ],
     }),
   );
 
@@ -133,9 +162,20 @@
     </div>
   {:else if $connectionId$ === 'build-box'}
     <DevicesSettings
-      initialCloudSetup={scene.startsWith('setup') || scene === 'entries-add'}
+      initialCloudSetup={scene.startsWith('setup') ||
+        scene === 'entries-add' ||
+        scene.startsWith('northflank-setup')}
+      initialCloudProvider={scene.startsWith('northflank-setup') ? 'northflank' : 'e2b'}
+      initialCloudDraft={scene === 'northflank-setup-filled' || scene === 'northflank-setup-error'
+        ? {
+            name: 'Agents EU',
+            apiKey: 'preview-token-not-real',
+            projectId: 'intent-agents',
+          }
+        : undefined}
       initialCloudEdit={scene === 'entries-edit' ? 'e2b' : undefined}
-      initialAddMenuOpen={scene === 'add-menu'}
+      initialAddMenuOpen={scene === 'add-menu' || scene === 'add-cloud-menu'}
+      initialAddCloudOpen={scene === 'add-cloud-menu'}
     />
   {/if}
 </div>

@@ -1,4 +1,5 @@
 import { BrowserWindow, session } from 'electron';
+import { isMachineViewOf } from './window-backend';
 import type { IpcMainInvokeEvent } from 'electron';
 
 const trustedBrowserBridgeBrand = Symbol('trusted-browser-bridge-ipc-context');
@@ -78,7 +79,13 @@ function assertAuthorizedIpcContext(context: PrivilegedIpcContext, channel: stri
   }
 
   const owner = BrowserWindow.fromWebContents(sender);
-  if (!owner || owner.isDestroyed() || owner.webContents !== sender) {
+  // An app renderer is a window's own web contents, or a machine view main
+  // created inside that window (machine rail lab).
+  if (
+    !owner ||
+    owner.isDestroyed() ||
+    (owner.webContents !== sender && !isMachineViewOf(owner, sender))
+  ) {
     throw new IpcAuthorizationError(channel, 'sender is not an app window');
   }
   if (!isTrustedRendererUrl(senderFrame.url)) {

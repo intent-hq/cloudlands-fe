@@ -8,12 +8,13 @@
 import { m } from '$shared/paraglide/messages.js';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { RemoteMachine, RemoteMachineState } from '$shared/types/remote-machines';
+import type { CloudProviderKind } from '$shared/types/cloud-machines';
 import { machinePlatformLabel } from './agent-location';
 
 /** The current backend: no placement. */
 export const START_ON_BACKEND = '';
 const CLOUD_PREFIX = 'cloud:';
-/** The Start On id of a new sandbox from an E2B entry (`target: "e2b"`); never a daemon id. */
+/** The Start On id of a new machine from a cloud entry; never a daemon id. */
 export function startOnCloudId(cloudMachineId: string): string {
   return `${CLOUD_PREFIX}${cloudMachineId}`;
 }
@@ -44,6 +45,8 @@ export interface StartOnCloudEntry {
   label: string;
   /** Null when usable, else why not. */
   unavailableReason: string | null;
+  /** No configuration from here can be sent to it: show the profile hint. */
+  needsProfile?: boolean;
 }
 
 /** The E2B rows; null or empty when cloud machines are not configured. */
@@ -120,7 +123,9 @@ export function startOnOptions({
       disabled: entry.unavailableReason !== null,
       ...(entry.unavailableReason
         ? { reason: entry.unavailableReason }
-        : { hint: m.cloudMachines_startOn_hint() }),
+        : entry.needsProfile
+          ? { hint: m.cloudMachines_startOn_hint() }
+          : {}),
     });
   return options;
 }
@@ -168,17 +173,27 @@ export function resolveStartOn(
  */
 export type StartOnPlacement =
   | { target: 'remote'; checkout: 'isolated'; nodeId: string }
-  | { target: 'e2b'; checkout: 'isolated'; cloudMachineId?: string };
+  | { target: 'e2b' | 'cloud'; checkout: 'isolated'; cloudMachineId?: string };
 
 export function initialAgentPlacement(
   machineId: string | undefined,
-  { cloudEntries = false }: { cloudEntries?: boolean } = {},
+  {
+    cloudEntries = false,
+    providerOf,
+  }: {
+    cloudEntries?: boolean;
+    /** The provider of a saved entry; a Northflank entry takes the provider-neutral target. */
+    providerOf?: (cloudMachineId: string) => CloudProviderKind | undefined;
+  } = {},
 ): StartOnPlacement | undefined {
   const cloudMachineId = startOnCloudMachineId(machineId);
-  if (cloudMachineId)
+  if (cloudMachineId) {
+    if (cloudEntries && providerOf?.(cloudMachineId) === 'northflank')
+      return { target: 'cloud', checkout: 'isolated', cloudMachineId };
     return cloudEntries
       ? { target: 'e2b', checkout: 'isolated', cloudMachineId }
       : { target: 'e2b', checkout: 'isolated' };
+  }
   return machineId ? { target: 'remote', checkout: 'isolated', nodeId: machineId } : undefined;
 }
 

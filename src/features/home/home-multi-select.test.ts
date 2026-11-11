@@ -78,12 +78,13 @@ describe('homeBulkTargets', () => {
     row('archived', WorkspaceStatusEnum.Archived),
     row('purged', WorkspaceStatusEnum.Retired),
     row('shared'),
+    { ...row('folder'), plainFolder: true } as Workspace,
   ];
   const targets = homeBulkTargets(rows, (workspace) => workspace.id !== 'shared');
   const ids = (items: Workspace[]) => items.map((workspace) => workspace.id);
 
   it('archives only live rows the user manages', () => {
-    expect(ids(targets.archive)).toEqual(['live']);
+    expect(ids(targets.archive)).toEqual(['live', 'folder']);
   });
 
   it('purges only archived rows that still have a folder', () => {
@@ -91,6 +92,10 @@ describe('homeBulkTargets', () => {
   });
 
   it('deletes every row the user manages, archived or purged', () => {
-    expect(ids(targets.delete)).toEqual(['live', 'archived', 'purged']);
+    expect(ids(targets.delete)).toEqual(['live', 'archived', 'purged', 'folder']);
+  });
+
+  it('transfers managed rows that still have a git checkout', () => {
+    expect(ids(targets.transfer)).toEqual(['live', 'archived']);
   });
 });

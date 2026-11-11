@@ -4,6 +4,59 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.319.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.318.0...v2.319.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **machine-rail:** Add a Labs rail to switch machines in one window ([#4463](https://github.com/intent-hq/cloudlands-fe/issues/4463)) ([e06de09](https://github.com/intent-hq/cloudlands-fe/commit/e06de09695d8d7197d7f691c90ff66590e1d28ea))
+
+## [2.318.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.2...v2.318.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **cloud-machines:** add Northflank beside E2B with an Add cloud menu ([#4445](https://github.com/intent-hq/cloudlands-fe/issues/4445)) ([a33e7cb](https://github.com/intent-hq/cloudlands-fe/commit/a33e7cb93d285906c20f2e407c0cfa33ecc4f4f8))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.188 ([#4464](https://github.com/intent-hq/cloudlands-fe/issues/4464)) ([5be42c9](https://github.com/intent-hq/cloudlands-fe/commit/5be42c9dfadc8f907e521448a29cbf7fb7e4c528))
+
+## [2.317.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.1...v2.317.2) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.187 ([#4459](https://github.com/intent-hq/cloudlands-fe/issues/4459)) ([7943be3](https://github.com/intent-hq/cloudlands-fe/commit/7943be32c642bf64591371a192005d3d1639f119))
+
+## [2.317.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.0...v2.317.1) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* hide the E2B profile hint when a configuration can be sent, and empty remote picker tabs ([#4450](https://github.com/intent-hq/cloudlands-fe/issues/4450)) ([76be9db](https://github.com/intent-hq/cloudlands-fe/commit/76be9db9d9f6467dd176150933e4f170b6986c0d))
+* **transfer:** translate transfer and import relay errors ([#4454](https://github.com/intent-hq/cloudlands-fe/issues/4454)) ([9bb5fd2](https://github.com/intent-hq/cloudlands-fe/commit/9bb5fd242bdb20dd0fa2272e2ce77f4d0b1b384b))
+
+## [2.317.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.316.1...v2.317.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **home:** bulk transfer selected workspaces to another machine ([#4447](https://github.com/intent-hq/cloudlands-fe/issues/4447)) ([fe8decd](https://github.com/intent-hq/cloudlands-fe/commit/fe8decd833acdb339ccd6d2904bdf5c4fc31d02d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.186 ([#4453](https://github.com/intent-hq/cloudlands-fe/issues/4453)) ([cf3effb](https://github.com/intent-hq/cloudlands-fe/commit/cf3effbfd8467f5fd6d9ec7b0ed302fc9e893625))
+
+## [2.316.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.316.0...v2.316.1) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.185 ([#4448](https://github.com/intent-hq/cloudlands-fe/issues/4448)) ([b7459f8](https://github.com/intent-hq/cloudlands-fe/commit/b7459f88389684bbb7c1f7e8e6a6867b0121d425))
+
 ## [2.316.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.315.0...v2.316.0) (2026-11-11)
 
 

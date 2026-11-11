@@ -1,5 +1,5 @@
 <!--
-  The chat's failure card for an agent on E2B that couldn't start, in the
+  The chat's failure card for an agent on E2B or Northflank that couldn't start, in the
   standard turn-failure layout: plain title and cause, what happens to the
   queued message, the most helpful action filled and the rest quiet, and the
   backend's detail under Details.
@@ -12,7 +12,7 @@
   import FailureDetails from '$lib/components/chat/FailureDetails.svelte';
   import { faArrowUpRightFromSquare } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
-  import { E2B_DASHBOARD_URL } from '$features/cloud-machines/cloud-machines-format';
+  import { cloudDashboardUrl } from '$features/cloud-machines/cloud-machines-format';
   import type { CloudStartFailureAction, CloudStartFailureView } from './cloud-start-failure';
 
   let {
@@ -92,10 +92,12 @@
     {#if view.dashboard}
       <a
         class="ml-auto inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
-        href={E2B_DASHBOARD_URL}
+        href={cloudDashboardUrl(view.provider)}
         target="_blank"
         rel="noopener noreferrer"
-        >{m.cloudMachines_dashboardOpen_label()}
+        >{view.provider === 'northflank'
+          ? m.cloudMachines_northflank_dashboardOpen_label()
+          : m.cloudMachines_dashboardOpen_label()}
         <Fa icon={faArrowUpRightFromSquare} class="size-2.5" /></a
       >
     {/if}

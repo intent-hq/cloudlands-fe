@@ -144,7 +144,10 @@ import {
   type SelfPairingInfo,
 } from './self-publish';
 import { registerBrowserExecReverseHandler } from '../../browser/main/browser-exec-reverse';
-import { requestDesktopPermissions } from '../../desktop/main/desktop-permissions';
+import {
+  requestDesktopPermissions,
+  requestLocalDesktopPermissions,
+} from '../../desktop/main/desktop-permissions';
 import { registerDesktopExecReverseHandler } from '../../desktop/main/desktop-exec-reverse';
 import {
   LOCAL_CONNECTION_ID,
@@ -214,6 +217,7 @@ import {
 } from '../../../main/ipc-schemas';
 import { createValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { getBackendIdForWebContents, getFocusedWindowBackendId } from '../../../main/window';
+import { getRendererWebContents } from '../../../main/window-backend';
 import { PresenceAggregator } from './presence-aggregator';
 import type { PresenceReportResult, PresenceUpdateResult } from '$shared/types/presence';
 
@@ -1315,6 +1319,10 @@ const defaultWindowHooks: BackendWindowHooks = {
       closeWindowsForBackend: (id: string) => void;
     };
     mod.closeWindowsForBackend(backendId);
+    const rail = (await import('../../../main/machine-rail')) as unknown as {
+      removeMachineFromAllRails: (id: string) => void;
+    };
+    rail.removeMachineFromAllRails(backendId);
   },
 };
 let windowHooks: BackendWindowHooks = defaultWindowHooks;
@@ -2424,16 +2432,19 @@ function broadcast<C extends string>(
 /** Delivery for {@link broadcast} and {@link broadcastBackendStatus}; do not call it directly. */
 function sendToWindows(channel: string, payload: unknown, backendId?: string): void {
   for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    if (backendId && getBackendIdForWebContents(win.webContents) !== backendId) continue;
-    try {
-      win.webContents.send(channel, payload);
-    } catch (error) {
-      logger.warn('Failed to broadcast backend message', {
-        channel,
-        windowId: win.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    // A window's own renderer plus its machine views (machine rail lab), each
+    // bound to its own backend.
+    for (const renderer of getRendererWebContents(win)) {
+      if (backendId && getBackendIdForWebContents(renderer) !== backendId) continue;
+      try {
+        renderer.send(channel, payload);
+      } catch (error) {
+        logger.warn('Failed to broadcast backend message', {
+          channel,
+          windowId: win.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }
@@ -3565,26 +3576,27 @@ async function broadcastConnectionsChangedOriginal(owner?: PoolOwner): Promise<v
   app.emit('connections-changed');
   const payload = await listConnectionsOwned(undefined, owner);
   for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    const windowBackendId = getBackendIdForWebContents(win.webContents);
-    // Re-derive the per-backend sticky replay for THIS window's backend — the
-    // shared payload was computed for the local default.
-    const windowPayload: ConnectionsChangedEvent = {
-      ...payload,
-      windowBackendId,
-      protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
-      authRejected: authRejectedById.get(windowBackendId) ?? null,
-      certMismatch: certMismatchById.get(windowBackendId) ?? null,
-      certWarnings: getCertWarningsEvent(windowBackendId),
-    };
-    try {
-      win.webContents.send(CONNECTIONS.CHANGED, windowPayload);
-    } catch (error) {
-      recordPoolError(owner, error);
-      logger.warn('Failed to broadcast connections change', {
-        windowId: win.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const renderer of getRendererWebContents(win)) {
+      const windowBackendId = getBackendIdForWebContents(renderer);
+      // Re-derive the per-backend sticky replay for THIS renderer's backend —
+      // the shared payload was computed for the local default.
+      const windowPayload: ConnectionsChangedEvent = {
+        ...payload,
+        windowBackendId,
+        protocolMismatch: protocolMismatchById.get(windowBackendId) ?? null,
+        authRejected: authRejectedById.get(windowBackendId) ?? null,
+        certMismatch: certMismatchById.get(windowBackendId) ?? null,
+        certWarnings: getCertWarningsEvent(windowBackendId),
+      };
+      try {
+        renderer.send(CONNECTIONS.CHANGED, windowPayload);
+      } catch (error) {
+        recordPoolError(owner, error);
+        logger.warn('Failed to broadcast connections change', {
+          windowId: win.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
   }
 }
@@ -4474,6 +4486,18 @@ async function forgetConnectionLockedOriginal(
   await broadcastConnectionsChangedOwned(owner);
 }
 
+/**
+ * Ids of the saved machines a window may show in its machine rail: every
+ * saved connection except this machine's own published entry and nodes, which
+ * never open a window.
+ */
+export async function listMachineRailCandidateIds(): Promise<string[]> {
+  const { connections } = await listConnections();
+  return connections
+    .filter((connection) => connection.daemonMode !== 'node')
+    .map((connection) => connection.id);
+}
+
 /** Register the backend bridge IPC handlers (idempotent). */
 export function registerBackendHandlers(): void {
   if (handlersRegistered) return;
@@ -4484,6 +4508,13 @@ export function registerBackendHandlers(): void {
     try {
       const { client } = getBackendClientForIpcEvent(event);
       return { ok: true, result: await requestDesktopPermissions(client, params) };
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  });
+  ipcMain.handle(BACKEND.DESKTOP_OS_PERMISSIONS, async (_event, params: unknown) => {
+    try {
+      return { ok: true, result: await requestLocalDesktopPermissions(params) };
     } catch (error) {
       return { ok: false, error: toErrorPayload(error) };
     }
