@@ -172,7 +172,10 @@
     machineReportFreshness,
   } from '$features/remote-machines/remote-model-picker';
   import { formatDistanceToNow } from '$lib/utils/date';
-  import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectProviderCatalogDefaultRemoteIncompatibility,
+    selectProviderCatalogDefaultRemoteLaunch,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import Fa from 'svelte-fa';
 
@@ -581,6 +584,7 @@
   const remoteSwitchSupport$ = selectRemoteModelSwitchSupport(workspaceIdStore);
   const defaultRemoteIncompatibility$ =
     selectProviderCatalogDefaultRemoteIncompatibility(workspaceIdStore);
+  const defaultRemoteLaunch$ = selectProviderCatalogDefaultRemoteLaunch(workspaceIdStore);
   const remoteMachinesPending$ = selectRemoteMachineOperations();
   const defaultHasOverrides$ = selectDefaultHasOverrides();
   const remoteLocation = $derived(
@@ -650,6 +654,7 @@
       providerRef,
       catalogProfiles: $providerProfiles$,
       defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+      defaultRemoteLaunch: $defaultRemoteLaunch$,
       defaultHasOverrides: $defaultHasOverrides$,
     });
   }
@@ -1550,6 +1555,7 @@
         catalogModels: { ...remoteCatalogModels, ...allProviderModels },
         catalogProfiles: $providerProfiles$,
         defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+        defaultRemoteLaunch: $defaultRemoteLaunch$,
         defaultHasOverrides: $defaultHasOverrides$,
         useDefaultOption: showDefaultOption ? useDefaultOption : undefined,
       });

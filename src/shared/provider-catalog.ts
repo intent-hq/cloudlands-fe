@@ -96,6 +96,9 @@ export const ProviderCatalogResponseSchema = z
     // Default configurations that can't run on another machine, by base id;
     // omitted when every Default can (§5.54 "Remote compatibility").
     defaultRemoteIncompatibility: z.record(z.string(), RemoteIncompatibilitySchema).optional(),
+    // What a remote launch of each base provider's Default does (§5.54):
+    // "send" (marked), "machine-sign-in" or "refused". Open enum.
+    defaultRemoteLaunch: z.record(z.string(), z.string()).optional(),
   })
   .passthrough();
 

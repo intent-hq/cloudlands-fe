@@ -35,6 +35,8 @@ export interface ProviderCatalogState {
     string,
     import('$shared/provider-catalog').RemoteIncompatibility
   >;
+  /** What a remote launch of each Default does (§5.54 catalog `defaultRemoteLaunch`). */
+  defaultRemoteLaunch?: Record<string, string>;
 }
 
 export interface WorkspaceCatalogSnapshot {

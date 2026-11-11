@@ -219,7 +219,7 @@
               : []),
           ],
     ...(s === 'picker-hidden'
-      ? { defaultRemoteIncompatibility: { codex: { reason: 'not-marked', keys: [] } } }
+      ? { defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' } }
       : {}),
   });
   const reportedAt = (s: Scene) =>

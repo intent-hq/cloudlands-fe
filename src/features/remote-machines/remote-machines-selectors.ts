@@ -7,6 +7,7 @@ import { store } from '$store/renderer/store';
 import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   selectProviderCatalogDefaultRemoteIncompatibility,
+  selectProviderCatalogDefaultRemoteLaunch,
   selectProviderCatalogProfiles,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 import { selectRemoteReadyProfilesSupported } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
@@ -105,6 +106,7 @@ export const selectRemoteModelSwitchSupport = store.createSelector(
         state,
         workspaceId,
       ),
+      defaultRemoteLaunch: selectProviderCatalogDefaultRemoteLaunch.select(state, workspaceId),
       profileDefaults: Object.values(profiles?.defaults ?? {}),
       profilesLoadStatus: profiles?.loadStatus ?? 'idle',
     });

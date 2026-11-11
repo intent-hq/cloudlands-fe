@@ -48,6 +48,7 @@ providerCatalogReducer.with(providerCatalogLoaded, (state, { payload: [catalog] 
   profiles: createCollection<ProviderProfileSummary, 'id'>('id', catalog.profiles ?? []),
   defaultNames: catalog.defaultNames ?? {},
   defaultRemoteIncompatibility: catalog.defaultRemoteIncompatibility,
+  defaultRemoteLaunch: catalog.defaultRemoteLaunch,
   loaded: true,
 }));
 

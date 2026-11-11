@@ -21,7 +21,8 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   MACHINE_PROVIDER_NOT_INSTALLED,
-  isRemoteRefSignedOut,
+  defaultRemoteOwnSignIn,
+  defaultRemoteSends,
   remoteAutoPickProfile,
   remoteIncompatibilityFor,
 } from '$features/remote-machines/remote-model-picker';
@@ -241,6 +242,8 @@ interface BuildMachineModelGroupsParams {
   catalogModels: Record<string, DropdownOption[] | undefined>;
   catalogProfiles: readonly ProviderProfileSummary[];
   defaultRemoteIncompatibility?: Record<string, RemoteIncompatibility>;
+  /** Catalog `defaultRemoteLaunch` (what each Default does on a remote machine). */
+  defaultRemoteLaunch?: Record<string, string>;
   /**
    * Whether each base provider's Default saves env overrides (an API key
    * runs without the machine's sign-in), from the admin-only profile list.
@@ -270,9 +273,11 @@ export function buildMachineModelGroups({
   catalogModels,
   catalogProfiles,
   defaultRemoteIncompatibility,
+  defaultRemoteLaunch,
   defaultHasOverrides,
   useDefaultOption,
 }: BuildMachineModelGroupsParams): DropdownGroup[] {
+  const defaults = { defaultRemoteLaunch, defaultRemoteIncompatibility, defaultHasOverrides };
   const reported = new Map(
     (machine.capabilities?.providers ?? []).map((provider) => [provider.id, provider]),
   );
@@ -282,18 +287,18 @@ export function buildMachineModelGroups({
     const base = providerRefBaseId(ref);
     const provider = reported.get(base);
     if (!provider || MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status)) continue;
-    const sendable = !remoteIncompatibilityFor(ref, catalogProfiles, defaultRemoteIncompatibility);
-    const bringsCredentials = isProviderProfileRef(ref) || defaultHasOverrides?.[base] !== false;
-    const ownSignIn =
-      !isProviderProfileRef(ref) && !machine.cloud && !isRemoteRefSignedOut(machine, ref);
+    const isProfile = isProviderProfileRef(ref);
+    const sendable = isProfile
+      ? !remoteIncompatibilityFor(ref, catalogProfiles)
+      : defaultRemoteSends(base, defaults);
+    const ownSignIn = !isProfile && defaultRemoteOwnSignIn(machine, base, defaults);
     const autoPick = remoteAutoPickProfile({
       machine,
       providerRef: ref,
       catalogProfiles,
-      defaultRemoteIncompatibility,
-      defaultHasOverrides,
+      ...defaults,
     });
-    if (!ownSignIn && !(sendable && bringsCredentials) && !autoPick) continue;
+    if (!ownSignIn && !sendable && !autoPick) continue;
     const modelSource = autoPick ? autoPick.providerRef : ref;
     const labelled = new Map(
       (catalogModels[modelSource] ?? catalogModels[base] ?? []).map((option) => [
@@ -302,7 +307,7 @@ export function buildMachineModelGroups({
       ]),
     );
     const listsBackendModels =
-      isProviderProfileRef(ref) || defaultHasOverrides?.[base] === true || autoPick !== null;
+      isProfile || defaultHasOverrides?.[base] === true || autoPick !== null;
     // Only the configuration's own list: a profile can serve other models than its Default.
     // An auto-picked profile serves its own list.
     const modelIds =

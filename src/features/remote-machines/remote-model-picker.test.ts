@@ -6,6 +6,7 @@ import {
   isRemoteRefSignedOut,
   machineReportFreshness,
   MACHINE_REPORT_STALE_MS,
+  defaultRemoteSends,
   remoteAutoPickProfile,
   remoteIncompatibilityFor,
   remoteModelSwitchSupport,
@@ -430,6 +431,68 @@ describe('remoteAutoPickProfile', () => {
     });
     expect(groups).toEqual([
       { key: 'codex', label: 'codex', options: [{ value: 'gpt-6', label: 'GPT-6' }] },
+    ]);
+  });
+});
+
+describe('the Default on a remote machine (catalog defaultRemoteLaunch)', () => {
+  it('sends only when marked ("send") and not known to have nothing to send', () => {
+    const launch = { codex: 'send', 'claude-code': 'machine-sign-in' };
+    expect(defaultRemoteSends('codex', { defaultRemoteLaunch: launch })).toBe(true);
+    expect(
+      defaultRemoteSends('codex', {
+        defaultRemoteLaunch: launch,
+        defaultHasOverrides: { codex: false },
+      }),
+    ).toBe(false);
+    // Absent from the old incompatibility map no longer means marked.
+    expect(defaultRemoteSends('claude-code', { defaultRemoteLaunch: launch })).toBe(false);
+  });
+
+  it('falls back to the incompatibility map on a daemon without defaultRemoteLaunch', () => {
+    expect(defaultRemoteSends('codex', {})).toBe(true);
+    expect(
+      defaultRemoteSends('codex', {
+        defaultRemoteIncompatibility: { codex: { reason: 'account-folder', keys: [] } },
+      }),
+    ).toBe(false);
+  });
+
+  const keys = (
+    defaultRemoteLaunch: Record<string, string>,
+    catalogProfiles = [] as ProviderProfileSummary[],
+  ) =>
+    buildMachineModelGroups({
+      machine: machine(),
+      providerRefs: ['claude-code', 'codex'],
+      groupLabel: (ref) => ref,
+      catalogModels: {},
+      catalogProfiles,
+      defaultRemoteLaunch,
+    }).map((group) => group.key);
+
+  it("runs an unmarked Default with the machine's sign-in, and hides it when signed out", () => {
+    // claude-code is ready on the machine, codex is signed out.
+    expect(keys({ 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' })).toEqual([
+      'claude-code',
+    ]);
+  });
+
+  it('offers a marked Default on a signed-out machine', () => {
+    expect(keys({ 'claude-code': 'machine-sign-in', codex: 'send' })).toEqual([
+      'claude-code',
+      'codex',
+    ]);
+  });
+
+  it('hides a refused Default even where the machine is signed in', () => {
+    expect(keys({ 'claude-code': 'refused', codex: 'machine-sign-in' })).toEqual([]);
+  });
+
+  it('auto-picks a Remote Ready profile for an unmarked Default on a signed-out machine', () => {
+    expect(keys({ 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' }, [apiKey])).toEqual([
+      'claude-code',
+      'codex',
     ]);
   });
 });
