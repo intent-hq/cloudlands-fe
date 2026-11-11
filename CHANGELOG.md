@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.313.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.313.0...v2.313.1) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* **verify:** include committed branch diff in verify:changed when the worktree is dirty ([#4435](https://github.com/intent-hq/cloudlands-fe/issues/4435)) ([71ea351](https://github.com/intent-hq/cloudlands-fe/commit/71ea351f393417f0fd894b278145fd585cedfae9))
+
 ## [2.313.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.312.0...v2.313.0) (2026-11-11)
 
 
