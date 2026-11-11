@@ -238,7 +238,9 @@
     confirmText={m.modals_bulkPurge_confirm_label()}
     variant="destructive"
     initialFocus="cancel"
-    onConfirm={() => appStore.dispatch(confirmBulkRetire())}
+    onConfirm={() => {
+      appStore.dispatch(confirmBulkRetire());
+    }}
     onCancel={() => appStore.dispatch(closeBulkRetireConfirm())}
   >
     {#snippet body()}

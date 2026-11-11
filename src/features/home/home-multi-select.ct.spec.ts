@@ -11,12 +11,10 @@ const rerun =
   'corepack pnpm run test:ct -- src/features/home/home-multi-select.ct.spec.ts --workers=1';
 
 const item = (page: Page, id: string) => page.locator(`[data-home-workspace="${id}"]`);
-const option = (page: Page, id: string) =>
-  page.getByRole('option').filter({ has: item(page, id) });
+const option = (page: Page, id: string) => page.getByRole('option').filter({ has: item(page, id) });
 const bar = (page: Page) => page.getByRole('toolbar', { name: 'Selected workspaces' });
 const snapshot = (page: Page) => page.evaluate(() => window.__homeMultiSelect!.snapshot());
-const toggle = (page: Page, id: string) =>
-  item(page, id).click({ modifiers: ['ControlOrMeta'], position: { x: 160, y: 20 } });
+const toggle = (page: Page, id: string) => item(page, id).click({ modifiers: ['ControlOrMeta'] });
 const errors = new WeakMap<Page, string[]>();
 
 async function capture(page: Page, testInfo: TestInfo, name: string) {
@@ -63,7 +61,7 @@ test('Cmd/Ctrl-click builds a list selection and archives it in one step', async
   page,
 }, testInfo) => {
   await mount(Harness, { props: { height: 800 } });
-  await item(page, 'multi-a').click({ position: { x: 160, y: 20 } });
+  await item(page, 'multi-a').click();
   await expect.poll(async () => (await snapshot(page)).selectedId).toBe('multi-a');
   await expect(bar(page)).toHaveCount(0);
 
@@ -116,7 +114,7 @@ test('Archived workspaces can be purged and deleted together from the context me
   await expect(bar(page)).toContainText('2 selected');
   await expect(bar(page).getByRole('button', { name: 'Archive' })).toHaveCount(0);
 
-  await item(page, 'multi-purged').click({ button: 'right', position: { x: 160, y: 20 } });
+  await item(page, 'multi-purged').click({ button: 'right' });
   const menu = page.getByRole('menu');
   await expect(menu.getByRole('menuitem', { name: 'Purge folders' })).toBeVisible();
   await expect(menu.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
@@ -133,13 +131,16 @@ test('Archived workspaces can be purged and deleted together from the context me
     .poll(async () => (await snapshot(page)).calls)
     .toEqual([{ method: 'workspace.retire', workspaceId: 'multi-archived' }]);
   await expect.poll(async () => (await snapshot(page)).statuses['multi-archived']).toBe('Retired');
+  await expect(dialog).toHaveCount(0);
 
   await expect(bar(page)).toContainText('2 selected');
   await bar(page).getByRole('button', { name: 'Delete' }).click();
   await expect(dialog).toContainText('Delete 2 workspaces?');
   await dialog.getByRole('button', { name: 'Delete all' }).click();
   await expect
-    .poll(async () => (await snapshot(page)).calls.filter((call) => call.method === 'workspace.delete'))
+    .poll(async () =>
+      (await snapshot(page)).calls.filter((call) => call.method === 'workspace.delete'),
+    )
     .toEqual([
       { method: 'workspace.delete', workspaceId: 'multi-archived' },
       { method: 'workspace.delete', workspaceId: 'multi-purged' },

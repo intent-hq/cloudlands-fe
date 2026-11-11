@@ -9,7 +9,7 @@ const nativePlatform =
       : 'Linux x86_64';
 const nativeModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-test(`Home opens a row with the native primary modifier (${nativeModifier}) while normal clicks keep the preview`, async ({
+test(`Home ${nativeModifier}-click toggles selection instead of opening, while normal clicks keep the preview`, async ({
   mount,
   page,
 }, testInfo) => {
@@ -26,16 +26,15 @@ test(`Home opens a row with the native primary modifier (${nativeModifier}) whil
   await row.click();
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+  // The primary-modifier click is multi-select: on the previewed row it deselects it.
   await row.click({ modifiers: [nativeModifier] });
-  await expect
-    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-    .toBe('home-review');
-  await expect(page).toHaveURL(/\/workspace\/home-review$/);
-  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'false');
+  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
+  await row.click({ modifiers: [nativeModifier] });
   await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
-  const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
-  expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
-  await testInfo.attach(`home-open-${nativeModifier}`, {
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+  await testInfo.attach(`home-select-${nativeModifier}`, {
     body: await page.screenshot(),
     contentType: 'image/png',
   });
@@ -118,15 +117,21 @@ test('Home title remains operable with a long title in a narrow preview', async 
   });
 });
 
-test('Home board supports modifier click and keyboard opening', async ({ mount, page }) => {
+test('Home board selects on modifier click and opens from the keyboard', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(Preview, { props: { scenario: 'board' } });
   const modifier = await page.evaluate(() =>
     navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control',
   );
-  await component.locator('[data-home-workspace="home-review"]').click({ modifiers: [modifier] });
-  await expect
-    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-    .toBe('home-review');
+  const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
+  const card = component.locator('[data-home-workspace="home-review"]');
+  await card.click({ modifiers: [modifier] });
+  await expect(card).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+  await card.click({ modifiers: [modifier] });
+  await expect(card).toHaveAttribute('aria-pressed', 'false');
   await expect(component.locator('[data-home-detail]')).toHaveCount(0);
   await component.locator('[data-home-workspace="home-running"]').focus();
   await page.keyboard.press(`${modifier}+Enter`);
@@ -176,7 +181,7 @@ test('Home double-click on a row menu button does not open the workspace', async
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
 });
 
-test('Home Cmd/Ctrl double-click opens once through the modifier path without selecting', async ({
+test('Home Cmd/Ctrl double-click selects once and does not open the workspace', async ({
   mount,
   page,
 }) => {
@@ -184,13 +189,11 @@ test('Home Cmd/Ctrl double-click opens once through the modifier path without se
   const modifier = await page.evaluate(() =>
     navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control',
   );
+  const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
   const row = component.locator('[data-home-workspace="home-review"]');
   await row.dblclick({ modifiers: [modifier] });
-  await expect
-    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-    .toBe('home-review');
-  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
-  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'false');
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
 });
 
 test('Home board opens a card on double-click', async ({ mount, page }) => {

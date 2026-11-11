@@ -28,10 +28,7 @@
       : m.home_selection_count_many({ count: formatInteger(count) })}</span
   >
   {#each actions as action (action.id)}
-    <Button
-      variant="ghost"
-      size="sm"
-      onclick={action.run}
+    <Button variant="ghost" size="sm" onclick={action.run}
       >{#snippet leadingIcon()}<Fa icon={action.icon!} />{/snippet}{action.label}</Button
     >
   {/each}

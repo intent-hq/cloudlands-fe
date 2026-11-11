@@ -65,13 +65,15 @@ const SCRIPTED = new Set([
   'workspace.retire',
   'workspace.delete',
   'workspace.members.list',
+  'workspace.list',
   'hook.list',
 ]);
 
 /**
  * Seeds Home with active, archived and purged workspaces and scripts the
  * lifecycle writes (`workspace.archive`, `workspace.retire`, `workspace.delete`)
- * plus the bulk preflight reads (`workspace.members.list`, `hook.list`).
+ * plus the bulk preflight reads (`workspace.members.list`, `hook.list`). The Archived
+ * filter's retired read (`workspace.list { includeRetired }`) finds no extra rows.
  */
 export function setupHomeMultiSelectFixtures(view: 'list' | 'board') {
   const dispose = startHomePreviewFixtures({ homePreferences: false });
@@ -94,6 +96,8 @@ export function setupHomeMultiSelectFixtures(view: 'list' | 'board') {
           return { ok: true, result: { members: [] } };
         case 'hook.list':
           return { ok: true, result: { hooks: [] } };
+        case 'workspace.list':
+          return { ok: true, result: { workspaces: [] } };
         default:
           calls.push({ method: request.method, workspaceId });
           return { ok: true, result: { success: true } };

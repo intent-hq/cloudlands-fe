@@ -21,17 +21,8 @@
     createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
-  import {
-    createHomeBulkMenu,
-    createHomeWorkspaceMenu,
-    homeBulkActions,
-  } from './home-workspace-menu';
-  import {
-    homeBulkTargets,
-    isHomeRowClick,
-    isHomeSelectionToggle,
-    toggleHomeSelection,
-  } from './home-multi-select';
+  import { createHomeBulkMenu, createHomeWorkspaceMenu } from './home-workspace-menu';
+  import { createHomeSelection } from './home-selection.svelte';
   import HomeSelectionBar from './HomeSelectionBar.svelte';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
@@ -63,7 +54,6 @@
     selectWorkspaceById,
     selectWorkspaceHasLoaded,
     selectIsCollaboratorOnlyClient,
-    selectHidesOwnerWorkspaceActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectKnownRepos,
@@ -93,6 +83,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import {
     getHomeTriageGroup,
+    homeTriageGroupLabel,
     matchesHomeFilter,
     needsAttention,
     type HomeFilter,
@@ -149,9 +140,8 @@
   let contextMenu = $state<
     | (SidebarContextPosition &
         (
-          | { workspace: Workspace; repo?: never; bulk?: never }
+          | { workspace: Workspace; bulk: boolean; repo?: never }
           | { repo: RepositoryGroup; workspace?: never; bulk?: never }
-          | { bulk: true; workspace?: never; repo?: never }
         ))
     | null
   >(null);
@@ -164,50 +154,22 @@
     openWorkspace(id);
   }
   const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
-  // Cmd/Ctrl-click builds a multi-selection; it is component-local and replaces the preview.
-  let multiSelection = $state<string[]>([]);
-  function toggleSelection(id: string) {
-    const next = toggleHomeSelection(
-      { multi: bulkActive ? bulkIds : [], selectedId: selectedWorkspace?.id ?? null },
-      id,
-    );
-    multiSelection = next.multi;
-    if (next.selectedId !== selectedId) updateView({ selectedId: next.selectedId });
-  }
-  function clearSelection() {
-    multiSelection = [];
-  }
-  function selectOnly(id: string) {
-    multiSelection = [];
-    updateView({ selectedId: id });
-  }
   function activateListRow(event: MouseEvent | KeyboardEvent, id: string) {
     if (event instanceof KeyboardEvent) {
       openHomeWorkspaceFromEvent(event, id, openWorkspace);
       return;
     }
     doubleClick.arm(event, id);
-    if (isHomeSelectionToggle(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleSelection(id);
-    } else if (bulkActive && isHomeRowClick(event)) {
-      event.stopPropagation();
-      selectOnly(id);
-    }
+    selection.click(event, id);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
     const returnFocus =
-      position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
-      position.returnFocus;
-    if (bulkActive && bulkIds.includes(workspace.id)) {
-      contextMenu = { ...position, returnFocus, bulk: true };
-      return;
-    }
-    clearSelection();
-    contextMenu = { ...position, returnFocus, workspace };
+      position.returnFocus?.closest<HTMLElement>('[role="option"], button') ?? position.returnFocus;
+    const bulk = selection.includes(workspace.id);
+    if (!bulk) selection.clear();
+    contextMenu = { ...position, returnFocus, workspace, bulk };
   }
   function showListMenu(
     event: MouseEvent | KeyboardEvent,
@@ -489,29 +451,11 @@
     filteredWorkspaces.find((workspace) => workspace.id === selectedId) ??
       asideWorkspaces.find((workspace) => workspace.id === selectedId),
   );
-  // Rows that leave the view (archived, deleted, filtered out) drop out of the selection.
-  const bulkWorkspaces = $derived.by(() => {
-    const visible = new Map(
-      [...filteredWorkspaces, ...asideWorkspaces].map((workspace) => [workspace.id, workspace]),
-    );
-    return multiSelection.flatMap((id) => visible.get(id) ?? []);
+  const selection = createHomeSelection({
+    visible: () => [...filteredWorkspaces, ...asideWorkspaces],
+    previewId: () => selectedWorkspace?.id ?? null,
+    select: (id) => updateView({ selectedId: id }),
   });
-  const bulkActive = $derived(bulkWorkspaces.length >= 2);
-  const bulkIds = $derived(bulkWorkspaces.map((workspace) => workspace.id));
-  $effect(() => {
-    if (!bulkActive && multiSelection.length) untrack(clearSelection);
-  });
-  const bulkActions = $derived(
-    homeBulkActions(
-      homeBulkTargets(
-        bulkWorkspaces,
-        (workspace) => !selectHidesOwnerWorkspaceActions.select(store.state, workspace.id),
-      ),
-    ),
-  );
-  const selectedIds = $derived(
-    bulkActive ? bulkIds : selectedWorkspace ? [selectedWorkspace.id] : [],
-  );
   // The shelf starts collapsed; a search opens it so matching work is never hidden.
   let asideCollapsedForQuery = $state<string | null>(null);
   const asideExpanded = $derived(
@@ -536,20 +480,6 @@
       ...(!expanded && holdsSelection ? { selectedId: null } : {}),
     });
   }
-  function groupLabel(group: string): string {
-    switch (group) {
-      case 'needs-you':
-        return m.home_filter_attention();
-      case 'running':
-        return m.home_filter_running();
-      case 'waiting':
-        return m.home_filter_waiting();
-      case 'blocked':
-        return m.home_filter_blocked();
-      default:
-        return m.home_board_done_idle();
-    }
-  }
   // Grouping is only meaningful on the unfiltered list; a status filter already
   // names the group, and archived rows have no live triage state.
   const triageGroups = $derived(
@@ -569,7 +499,7 @@
           const expanded =
             $view$.expandedGroups[id] !== false ||
             items.some((workspace) => workspace.id === selectedId);
-          return [{ id, label: groupLabel(id), items, expanded, collapsible: true }];
+          return [{ id, label: homeTriageGroupLabel(id), items, expanded, collapsible: true }];
         })
       : [],
   );
@@ -687,12 +617,12 @@
   });
   homeRetiredWorkspaces(() => ({ filter, preview }), workspaces$, admissionSelector());
   function chooseFilter(next: HomeFilter) {
-    clearSelection();
+    selection.clear();
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
   }
   function chooseRepo(key: string | null) {
-    clearSelection();
+    selection.clear();
     store.dispatch(closePanel());
     updateView({
       repoKey: key,
@@ -760,17 +690,7 @@
       })
     )
       return;
-    if (
-      event.key === 'Escape' &&
-      !event.defaultPrevented &&
-      bulkActive &&
-      destination === 'workspaces' &&
-      tab === 'workspaces'
-    ) {
-      event.preventDefault();
-      clearSelection();
-      return;
-    }
+    if (destination === 'workspaces' && tab === 'workspaces' && selection.escape(event)) return;
     if (
       event.key === 'Escape' &&
       !event.defaultPrevented &&
@@ -789,7 +709,11 @@
     y={contextMenu.y}
     returnFocus={contextMenu.returnFocus}
     items={contextMenu.bulk
-      ? createHomeBulkMenu(bulkWorkspaces.length, bulkActions, () => (contextMenu = null))
+      ? createHomeBulkMenu(
+          selection.workspaces.length,
+          selection.actions,
+          () => (contextMenu = null),
+        )
       : contextMenu.workspace
         ? workspaceMenu(contextMenu.workspace)
         : repositoryMenu(contextMenu.repo)}
@@ -1055,7 +979,7 @@
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
                   tabFocus = { value };
-                  clearSelection();
+                  selection.clear();
                   updateView({ tab: value });
                 }
               }}
@@ -1185,12 +1109,9 @@
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
-                            {selectedIds}
-                            onselect={(id) =>
-                              bulkActive
-                                ? selectOnly(id)
-                                : updateView({ selectedId: selectedId === id ? null : id })}
-                            ontoggleselect={toggleSelection}
+                            selectedIds={selection.selectedIds}
+                            onselect={selection.pickCard}
+                            ontoggleselect={selection.toggle}
                             onopen={openWorkspace}
                             {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
@@ -1206,26 +1127,23 @@
                             aside={asideWorkspaces}
                             {asideExpanded}
                             pinnedIds={$pinnedIds$}
-                            {selectedIds}
+                            selectedIds={selection.selectedIds}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
                             menu={workspaceMenu}
                             onopen={activateListRow}
                             onmenu={showListMenu}
-                            onselect={(id) => {
-                              clearSelection();
-                              updateView({ selectedId: id });
-                            }}
+                            onselect={selection.pickRow}
                             ongroupexpanded={setGroupExpanded}
                             onasideexpanded={setAsideExpanded}
                             ontoggleaside={toggleAside}
                           />
                         {/if}
-                        {#if bulkActive}
+                        {#if selection.active}
                           <HomeSelectionBar
-                            count={bulkWorkspaces.length}
-                            actions={bulkActions}
-                            onclear={clearSelection}
+                            count={selection.workspaces.length}
+                            actions={selection.actions}
+                            onclear={selection.clear}
                           />
                         {/if}
                       </section>
