@@ -763,7 +763,6 @@ function* setPermissionPolicy(
   // the effective policy; a `null` reset waits for the daemon default on the
   // `agent:updated` refetch, so only the override is patched then.
   const previous = yield* selectAgentSession.effect(agentId);
-  const previousPolicy = previous?.permissionPolicy;
   const previousEffective = previous?.effectivePermissionPolicy;
   const optimisticEffective =
     permissionPolicy !== null && previousEffective !== undefined
@@ -790,21 +789,11 @@ function* setPermissionPolicy(
     settled = true;
   } catch (error) {
     const failure = mutationError(error, m.agent_mutation_setPermissionPolicyFailed_error());
-    // Roll back only while the optimistic value is still the live one, so a
-    // push that landed meanwhile is not overwritten.
-    const current = yield* selectAgentSession.effect(agentId);
-    if (
-      previous !== undefined &&
-      current?.permissionPolicy === permissionPolicy &&
-      current?.effectivePermissionPolicy === optimisticEffective
-    ) {
-      yield* put(
-        updateSession(agentId, {
-          permissionPolicy: previousPolicy,
-          effectivePermissionPolicy: previousEffective,
-        }),
-      );
-    }
+    // Reconcile against the daemon instead of restoring a captured snapshot:
+    // with `takeEvery`, overlapping flips that both fail would otherwise
+    // restore another flip's optimistic value (allow → interactive → allow
+    // could leave the switch ON while the daemon still allows tools).
+    if (previous !== undefined) yield* spawn(refreshAgentSessionAfterEvent, agentId, wsId);
     yield* call(showError, failure.message);
     yield* put(action.failure(failure));
     settled = true;

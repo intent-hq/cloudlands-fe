@@ -1215,8 +1215,60 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
-  it('rolls back the optimistic permission policy and surfaces the daemon failure', async () => {
+  it('reconciles a failed permission policy write from agent.get instead of a snapshot', async () => {
+    vi.useRealTimers();
+    const { admitLegacyPrincipal } = await import('../../../../../test/fixtures/principal-state');
+    const { createMockWorkspace } = await import('../../../../../test/factories/workspace.factory');
+    const { setWorkspaceEntity } = await import('../../workspace/workspace-slice');
+    const { refreshAgentSessionAfterEvent } = await import('$features/agent/agent-read-service');
+    admitLegacyPrincipal();
+    appStore.dispatch(setWorkspaceEntity(createMockWorkspace({ id: WS, myRole: 'owner' })));
+    const prior = session(A1, { permissionPolicy: null, effectivePermissionPolicy: 'allow' });
+    appStore.dispatch(bulkUpsertSessions([prior]));
+    const failures: Array<(result: { success: false; error: string }) => void> = [];
+    mocks.setPermissionPolicy.mockImplementation(
+      () => new Promise((resolve) => failures.push(resolve)),
+    );
+    mocks.get.mockResolvedValue({ ...prior });
+    const cancel = appStore.runSaga(agentMutationSaga);
+    try {
+      // allow → interactive → allow in quick succession; both writes fail.
+      const toOn = setAgentPermissionPolicyRequested(WS, A1, 'interactive');
+      const toOnFailed = expect(toOn.promise).rejects.toThrow('policy rejected');
+      appStore.dispatch(toOn);
+      expect(appStore.state.agentSessions.byAgentId[A1].effectivePermissionPolicy).toBe(
+        'interactive',
+      );
+      const toOff = setAgentPermissionPolicyRequested(WS, A1, 'allow');
+      const toOffFailed = expect(toOff.promise).rejects.toThrow('policy rejected');
+      appStore.dispatch(toOff);
+      await vi.waitFor(() => expect(failures).toHaveLength(2));
+
+      failures[0]!({ success: false, error: 'policy rejected' });
+      await toOnFailed;
+      failures[1]!({ success: false, error: 'policy rejected' });
+      await toOffFailed;
+
+      // The switch ends on the daemon's value, not the first flip's snapshot.
+      await vi.waitFor(() => {
+        const stored = appStore.state.agentSessions.byAgentId[A1];
+        expect(mocks.get).toHaveBeenCalled();
+        expect(stored.permissionPolicy).toBeNull();
+        expect(stored.effectivePermissionPolicy).toBe('allow');
+      });
+      expect(mocks.error).toHaveBeenCalledWith('policy rejected');
+      // Drain the trailing read so no hydration outlives this test.
+      await refreshAgentSessionAfterEvent(A1, WS);
+    } finally {
+      cancel();
+      mocks.get.mockReset();
+      mocks.setPermissionPolicy.mockReset();
+    }
+  });
+
+  it('does not restore a captured permission policy snapshot on failure', async () => {
     mocks.setPermissionPolicy.mockResolvedValue({ success: false, error: 'policy rejected' });
+    mocks.get.mockResolvedValueOnce(null);
     const { channel, dispatched, task } = start(
       { [A1]: session(A1, { permissionPolicy: null, effectivePermissionPolicy: 'interactive' }) },
       { live: true },
@@ -1228,7 +1280,6 @@ describe('agentMutationSaga', () => {
     const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
     expect(updates).toEqual([
       updateSession(A1, { permissionPolicy: 'allow', effectivePermissionPolicy: 'allow' }),
-      updateSession(A1, { permissionPolicy: null, effectivePermissionPolicy: 'interactive' }),
     ]);
     expect(mocks.error).toHaveBeenCalledWith('policy rejected');
     await stop(task);
