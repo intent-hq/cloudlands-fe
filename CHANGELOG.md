@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.314.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.313.1...v2.314.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **home:** Shift-click selects a range of workspaces ([#4437](https://github.com/intent-hq/cloudlands-fe/issues/4437)) ([20ee2b5](https://github.com/intent-hq/cloudlands-fe/commit/20ee2b5c11a4e86b48b0f436ebd25fdfcbed4122))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.183 ([#4442](https://github.com/intent-hq/cloudlands-fe/issues/4442)) ([14f2eff](https://github.com/intent-hq/cloudlands-fe/commit/14f2efff54a455711218ca5abbf77b124b7196c5))
+
 ## [2.313.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.313.0...v2.313.1) (2026-11-11)
 
 
