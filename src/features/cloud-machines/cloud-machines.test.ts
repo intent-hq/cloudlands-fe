@@ -4,7 +4,6 @@
  * agent on E2B and its errors read.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { m } from '$shared/paraglide/messages.js';
 import {
   estimateCloudCost,
@@ -47,8 +46,12 @@ import {
   selectStartOnOptions,
 } from '$features/remote-machines/remote-machines-selectors';
 import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
-import { cloudProfileBlockReason } from './cloud-machines-selectors';
+import {
+  providerProfilesLoaded,
+  setProviderEnabled,
+} from '$store/renderer/slices/provider-settings/provider-settings-slice';
+import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
+import { cloudProfileBlockReason, startOnCloud } from './cloud-machines-selectors';
 import {
   cloudErrorText,
   formatUptime,
@@ -284,6 +287,7 @@ describe('the Start On profile hint (intent#9101)', () => {
   let restore: () => void = () => {};
   afterEach(() => restore());
 
+  const T0 = '2026-11-11T00:00:00Z';
   const keyed = [{ key: 'CLAUDE_CODE_OAUTH_TOKEN', kind: 'set' as const, value: '••••' }];
   const marked = {
     id: 'p-personal',
@@ -303,40 +307,34 @@ describe('the Start On profile hint (intent#9101)', () => {
     defaultRemoteLaunch: Record<string, string>;
     catalogProfiles?: (typeof marked)[];
     profileEnv?: { key: string; kind: 'set' | 'unset'; value?: string }[];
-    /** The Default's saved overrides; omitted = not read (non-admin). */
+    /** The Default's saved overrides; omitted = not reported. */
     defaultEnv?: typeof keyed;
     disabled?: string[];
   }) {
     store.init();
     restore = setupCloudMachinesFixture('connected');
     store.dispatch(remoteMachinesLoaded({ ...remoteSnapshot(), initialAgentPlacement: true }));
-    const state = store.state as unknown as {
-      providerCatalog: Record<string, unknown>;
-      providerSettings: { profiles: ProviderProfilesState };
-    };
-    state.providerCatalog.defaultRemoteLaunch = defaultRemoteLaunch;
-    state.providerCatalog.profiles = createCollection('id', catalogProfiles);
-    for (const providerId of disabled)
-      store.dispatch(setProviderEnabled({ providerId, enabled: false }));
-    if (defaultEnv)
-      state.providerSettings.profiles = {
-        ...state.providerSettings.profiles,
-        loadStatus: 'success',
-        defaults: {
-          'claude-code': { baseProviderId: 'claude-code', name: 'Default', env: defaultEnv },
-        },
-      };
-    if (profileEnv)
-      state.providerSettings.profiles = {
-        ...state.providerSettings.profiles,
-        loadStatus: 'success',
-        items: createCollection('id', [
-          { ...marked, env: profileEnv },
-        ]) as unknown as ProviderProfilesState['items'],
-      };
+    store.dispatch(
+      providerCatalogLoaded({ providers: [], profiles: catalogProfiles, defaultRemoteLaunch }),
+    );
+    for (const providerId of ['claude-code', 'codex'])
+      store.dispatch(setProviderEnabled({ providerId, enabled: !disabled.includes(providerId) }));
+    // Previous cases leave profiles behind; without defaults the list reports none.
+    const stamp = { settingsFingerprint: 'f', createdAt: T0, updatedAt: T0 };
+    store.dispatch(
+      providerProfilesLoaded(
+        profileEnv ? [{ ...marked, ...stamp, env: profileEnv }] : [],
+        1,
+        defaultEnv
+          ? [{ baseProviderId: 'claude-code', name: 'Default', env: defaultEnv }]
+          : undefined,
+      ),
+    );
   }
   const cloudHint = () =>
-    selectStartOnOptions.select(store.state).find((option) => option.kind === 'cloud')?.hint;
+    startOnOptions({ backendLabel: 'Box', machines: [], cloud: startOnCloud(store.state) }).find(
+      (option) => option.kind === 'cloud',
+    )?.hint;
 
   it('is hidden when the marked Default sends its settings', () => {
     seed({
