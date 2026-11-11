@@ -376,7 +376,7 @@ staged, unstaged, deleted, and untracked frontend files, plus the commits since
 `git merge-base <ref> HEAD`. `<ref>` is `--base <ref>` when given, otherwise `origin/main`
 whenever `HEAD` is ahead of it, even with uncommitted edits, so the bare command also covers
 files already auto-committed on the branch (cloudlands-fe#4431 skipped one and failed CI).
-The first line names the mode used; an empty change set exits 2.
+The first line names the mode used, also when an empty change set exits 2.
 `--dry-run` lists the commands. `--resolved-plan` runs prerequisites and Vitest discovery
 only, printing every selected unit-test file per lane; normal runs resolve the same plan
 first, and discovery failures stop before any check (fix the reported config or source

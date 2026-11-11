@@ -273,9 +273,9 @@ function mergeBase(ref, root) {
   }
 }
 
-// 'ahead' when HEAD has commits that `ref` does not; 'unresolved' when `ref`
-// cannot be resolved (no remote-tracking ref, detached fixture), so the caller
-// falls back to the working-tree set instead of throwing.
+// 'ahead' when HEAD has commits that `ref` does not; 'unresolved' when git
+// cannot compare them (missing ref, shallow clone without the merge-base), so
+// the caller falls back to the uncommitted set instead of throwing.
 function aheadState(ref, root) {
   try {
     return mergeBase(ref, root) === gitRevision(['rev-parse', 'HEAD'], root)
@@ -1525,23 +1525,24 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
       "  Each check's output is saved to <record>/logs/<check id>.log; a failure prints its log path and last lines.",
     );
     log(
-      `  With no paths: verifies the uncommitted changes plus, when HEAD is ahead of ${DEFAULT_BASE}, the commits since its merge-base (as --base ${DEFAULT_BASE}). The first line names the mode used.`,
+      `  With no paths: verifies the uncommitted changes plus, when HEAD is ahead of ${DEFAULT_BASE}, the commits since its merge-base (as --base ${DEFAULT_BASE}). The first line names the mode used, also when nothing is left to verify (exit 2).`,
     );
     return 0;
   }
   let base = args.base;
+  let ahead = null;
   let mode;
   if (args.paths.length) mode = 'verifying the given paths';
   else if (base) mode = `verifying uncommitted changes plus commits since merge-base with ${base}`;
   else {
-    const ahead = aheadState(DEFAULT_BASE, root);
+    ahead = aheadState(DEFAULT_BASE, root);
     if (ahead === 'ahead') {
       base = DEFAULT_BASE;
       mode = `verifying uncommitted changes plus commits since merge-base with ${base}`;
     } else if (ahead === 'not-ahead') {
       mode = `verifying uncommitted changes only; HEAD is not ahead of ${DEFAULT_BASE}`;
     } else {
-      mode = `verifying uncommitted changes only; ${DEFAULT_BASE} cannot be resolved, pass --base <ref> to include commits`;
+      mode = `verifying uncommitted changes only; cannot compare HEAD with ${DEFAULT_BASE}, pass --base <ref> to include commits`;
     }
   }
   const uncommitted = args.paths.length ? [] : uncommittedFiles(root);
@@ -1551,7 +1552,9 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   if (!args.paths.length && files.length === 0) {
     const hint = base
       ? ` and no files changed relative to the merge-base with ${base}`
-      : `; pass --base ${DEFAULT_BASE} to verify this branch's commits against main`;
+      : ahead === 'not-ahead'
+        ? ` and HEAD is not ahead of ${DEFAULT_BASE}`
+        : `; cannot compare HEAD with ${DEFAULT_BASE}, pass --base <ref> to verify this branch's commits`;
     log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
     return 2;
   }
