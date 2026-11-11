@@ -109,11 +109,15 @@ const backupPreviewProfiles: ProviderProfile[] = [
 const BACKUP_PROFILE_IDS = new Set(['ppersonal0001', 'pspare0000001']);
 
 /** A remote-choice read: account folders can't be marked; the rest follow `marked`. */
-function remoteRead<T extends { env: EnvEntryRead[]; remoteIncompatibility?: unknown }>(
-  saved: T,
-  marked: boolean,
-) {
-  const { remoteIncompatibility: _previous, ...config } = saved;
+function remoteRead<
+  T extends {
+    env: EnvEntryRead[];
+    remoteCompatible?: boolean;
+    remoteIncompatibility?: { reason: string; keys: string[] };
+  },
+>(saved: T, marked: boolean): T {
+  const config: T = { ...saved };
+  delete config.remoteIncompatibility;
   const folders = config.env
     .filter((entry) => entry.kind === 'set' && /^(CLAUDE_CONFIG_DIR|CODEX_HOME)$/i.test(entry.key))
     .map((entry) => entry.key);
@@ -123,9 +127,12 @@ function remoteRead<T extends { env: EnvEntryRead[]; remoteIncompatibility?: unk
       remoteCompatible: false,
       remoteIncompatibility: { reason: 'account-folder', keys: folders },
     };
-  return marked
-    ? { ...config, remoteCompatible: true }
-    : { ...config, remoteCompatible: false, remoteIncompatibility: { reason: 'not-marked', keys: [] } };
+  if (marked) return { ...config, remoteCompatible: true };
+  return {
+    ...config,
+    remoteCompatible: false,
+    remoteIncompatibility: { reason: 'not-marked', keys: [] },
+  };
 }
 
 const PREVIEW_AUTH: Record<string, boolean | undefined> = {
@@ -175,7 +182,9 @@ export function setupProviderProfilesPreview({
     : previewProfiles.map((profile) => ({ ...profile, backup: false }));
   if (withoutProfiles) profiles = [];
   if (remote)
-    profiles = profiles.map((profile) => remoteRead(profile, remote.markedProfileIds.includes(profile.id)));
+    profiles = profiles.map((profile) =>
+      remoteRead(profile, remote.markedProfileIds.includes(profile.id)),
+    );
   // Results older than the shown list are ignored, so continue from it.
   let revision = selectProviderProfilesRevision.select(appStore.state) + 1;
 
@@ -213,7 +222,13 @@ export function setupProviderProfilesPreview({
       activation: { envChanged: false, runningProcesses: 0 },
     };
   };
-  providers.createProfile = async ({ baseProviderId, name, env = [], backup, remoteCompatible }) => {
+  providers.createProfile = async ({
+    baseProviderId,
+    name,
+    env = [],
+    backup,
+    remoteCompatible,
+  }) => {
     validate(
       name,
       env,

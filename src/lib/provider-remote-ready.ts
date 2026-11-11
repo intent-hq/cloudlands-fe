@@ -20,18 +20,17 @@ export function kindRemoteSupport(kind: ProfileKind): KindRemoteSupport {
   return 'choice';
 }
 
-export type RemoteWarningReason =
-  | 'file-path'
-  | 'aws-profile'
-  | 'api-key-helper'
-  | 'local-url';
+type RemoteWarningReason = 'file-path' | 'aws-profile' | 'api-key-helper' | 'local-url';
 
 const ACCOUNT_FOLDER_KEYS = new Set(['CLAUDE_CONFIG_DIR', 'CODEX_HOME']);
 const FILE_KEYS = new Set(['GOOGLE_APPLICATION_CREDENTIALS', 'AWS_SHARED_CREDENTIALS_FILE']);
 const PATH_VALUE = /^(?:~|\.{1,2})?[/\\]|^[A-Za-z]:[/\\]/;
 const LOCAL_URL = /(?:^|[/@:])(?:localhost|127(?:\.\d{1,3}){3}|0\.0\.0\.0|\[::1\])(?:[:/]|$)/i;
 
-/** Reasons one env row triggers, from its key and (when typed) its value. Account folders: none. */
+/**
+ * Reasons one env row triggers, from its key and (when typed) its value. Account folders: none.
+ * @internal
+ */
 export function rowRemoteWarnings(key: string, value: string | undefined): RemoteWarningReason[] {
   const upper = key.trim().toUpperCase();
   if (!upper) return [];

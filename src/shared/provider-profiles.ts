@@ -54,7 +54,7 @@ const RemoteCompatibilityFields = {
  * machine's own sign-in runs it) or `refused`. Open enum. Its presence means
  * the daemon stores the remote choice.
  */
-export const DefaultRemoteLaunchSchema = z.string();
+const DefaultRemoteLaunchSchema = z.string();
 
 const ProviderProfileSchema = z
   .object({
@@ -132,7 +132,6 @@ export const ProviderProfileReorderResponseSchema = z
 
 export type EnvEntryRead = z.infer<typeof EnvEntryReadSchema>;
 export type RemoteReason = z.infer<typeof RemoteReasonSchema>;
-export type DefaultRemoteLaunch = z.infer<typeof DefaultRemoteLaunchSchema>;
 export type ProviderProfile = z.infer<typeof ProviderProfileSchema>;
 export type ProviderDefaultConfig = z.infer<typeof DefaultConfigSchema>;
 export type ProviderDefaultUpdateResult = z.infer<typeof ProviderDefaultUpdateResponseSchema>;

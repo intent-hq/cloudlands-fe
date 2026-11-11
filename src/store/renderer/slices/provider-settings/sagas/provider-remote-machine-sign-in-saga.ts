@@ -37,7 +37,9 @@ function* persistEdits(edits: Channel<Edit>) {
             applied: yield* call([appClient.settings, appClient.settings.update], changes),
             revision: undefined,
           };
-      const applied = result.applied.find((change) => change.path === REMOTE_MACHINE_SIGN_IN_SETTING);
+      const applied = result.applied.find(
+        (change) => change.path === REMOTE_MACHINE_SIGN_IN_SETTING,
+      );
       const value = applied?.value;
       if (!value || typeof value !== 'object' || Array.isArray(value))
         throw new Error(`Missing ${REMOTE_MACHINE_SIGN_IN_SETTING} write acknowledgement`);
@@ -55,7 +57,10 @@ export function* providerRemoteMachineSignInSaga() {
     const edits = channel<Edit>(buffers.expanding());
     try {
       yield* race({
-        writes: all([call(persistEdits, edits), takeEvery(setRemoteMachineSignIn, queueEdit, edits)]),
+        writes: all([
+          call(persistEdits, edits),
+          takeEvery(setRemoteMachineSignIn, queueEdit, edits),
+        ]),
         reconnect: take(fastModeHydrationStarted),
       });
     } finally {

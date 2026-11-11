@@ -140,10 +140,12 @@ describe('ProviderProfileKindDialog remote-ready marks', () => {
   it('marks API key and Token as remote, Different login as this machine only', () => {
     render(ProviderProfileKindDialog, { props: { ...claude, mode: 'add', remoteMarks: true } });
     for (const kind of ['apiKey', 'token'])
-      expect(screen.getByTestId(`provider-profile-kind-remote-${kind}`).dataset.remote).toBe('true');
-    expect(
-      screen.getByTestId('provider-profile-kind-remote-differentLogin').dataset.remote,
-    ).toBe('false');
+      expect(screen.getByTestId(`provider-profile-kind-remote-${kind}`).dataset.remote).toBe(
+        'true',
+      );
+    expect(screen.getByTestId('provider-profile-kind-remote-differentLogin').dataset.remote).toBe(
+      'false',
+    );
     expect(screen.queryByTestId('provider-profile-kind-remote-advanced')).toBeNull();
   });
 
@@ -170,7 +172,11 @@ describe('ProviderProfileKindDialog remote-ready marks', () => {
       },
     });
     const reasons = () =>
-      [...screen.queryAllByRole('listitem')].map((item) => item.dataset.reason);
+      [
+        ...screen
+          .getByTestId('provider-profile-remote-warnings')
+          .querySelectorAll<HTMLElement>('[data-reason]'),
+      ].map((item) => item.dataset.reason);
     expect(reasons()).toEqual(['aws-profile', 'local-url']);
     await fireEvent.click(
       screen.getByRole('switch', { name: m.settings_providerRemote_useOnRemote_label() }),

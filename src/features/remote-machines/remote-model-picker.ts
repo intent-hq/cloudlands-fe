@@ -64,7 +64,8 @@ export function remoteIncompatibilityMessage(
 ): string {
   if (incompatibility.reason === 'account-folder')
     return m.chat_modelPicker_remoteAccountFolder_description({ backend });
-  if (incompatibility.reason === 'not-marked') return m.chat_modelPicker_remoteNotMarked_description();
+  if (incompatibility.reason === 'not-marked')
+    return m.chat_modelPicker_remoteNotMarked_description();
   return m.chat_modelPicker_remoteIncompatible_description();
 }
 

@@ -10,7 +10,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
   import Fa from 'svelte-fa';
-  import { faGlobe, faUserCheck } from '@fortawesome/free-solid-svg-icons';
+  import { faGlobe, faUser } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -111,18 +111,18 @@
     : m.settings_providerRemote_defaultUseOnRemote_description()}
 </p>
 {#if $machineSignInSupported$}
-<Menu.CheckboxItem
-  class="text-foreground"
-  indicator="switch"
-  checked={machineSignIn}
-  onSelect={toggleMachineSignIn}
-  aria-describedby={machineSignInDescriptionId}
-  data-testid="provider-remote-machine-sign-in-item"
->
-  {@render icon(faUserCheck)}
-  {m.settings_providerRemote_machineSignIn_label()}
-</Menu.CheckboxItem>
-<p id={machineSignInDescriptionId} class="py-1.5 ps-9 pe-2.5 type-caption {Menu.menuDescription}">
-  {m.settings_providerRemote_machineSignIn_description()}
-</p>
+  <Menu.CheckboxItem
+    class="text-foreground"
+    indicator="switch"
+    checked={machineSignIn}
+    onSelect={toggleMachineSignIn}
+    aria-describedby={machineSignInDescriptionId}
+    data-testid="provider-remote-machine-sign-in-item"
+  >
+    {@render icon(faUser)}
+    {m.settings_providerRemote_machineSignIn_label()}
+  </Menu.CheckboxItem>
+  <p id={machineSignInDescriptionId} class="py-1.5 ps-9 pe-2.5 type-caption {Menu.menuDescription}">
+    {m.settings_providerRemote_machineSignIn_description()}
+  </p>
 {/if}

@@ -345,10 +345,13 @@ providerSettingsReducer.with(fastModeHydrationStarted, (state) => ({
   fastMode: emptyFastMode,
   remoteMachineSignIn: emptyFastMode,
 }));
-providerSettingsReducer.with(remoteMachineSignInSupportReceived, (state, { payload: [supported] }) => ({
-  ...state,
-  remoteMachineSignIn: { ...state.remoteMachineSignIn, supported },
-}));
+providerSettingsReducer.with(
+  remoteMachineSignInSupportReceived,
+  (state, { payload: [supported] }) => ({
+    ...state,
+    remoteMachineSignIn: { ...state.remoteMachineSignIn, supported },
+  }),
+);
 providerSettingsReducer.with(
   hydrateRemoteMachineSignIn,
   (state, { payload: [confirmed, revision] }) => {
@@ -360,19 +363,22 @@ providerSettingsReducer.with(
     };
   },
 );
-providerSettingsReducer.with(setRemoteMachineSignIn, (state, { payload: [providerId, enabled] }) => {
-  const current = state.remoteMachineSignIn;
-  if (!current.supported) return state;
-  const editId = current.nextEditId + 1;
-  return {
-    ...state,
-    remoteMachineSignIn: {
-      ...current,
-      nextEditId: editId,
-      pending: { ...current.pending, [providerId]: { enabled, editId } },
-    },
-  };
-});
+providerSettingsReducer.with(
+  setRemoteMachineSignIn,
+  (state, { payload: [providerId, enabled] }) => {
+    const current = state.remoteMachineSignIn;
+    if (!current.supported) return state;
+    const editId = current.nextEditId + 1;
+    return {
+      ...state,
+      remoteMachineSignIn: {
+        ...current,
+        nextEditId: editId,
+        pending: { ...current.pending, [providerId]: { enabled, editId } },
+      },
+    };
+  },
+);
 providerSettingsReducer.with(
   remoteMachineSignInWriteSettled,
   (state, { payload: [providerId, editId] }) => {

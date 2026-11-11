@@ -20,7 +20,10 @@ export function setupRemoteReadyPreview(machineSignIn: Record<string, boolean> =
   const previousSignIn = selectRemoteMachineSignInState.select(before);
   const update = appClient.settings.updateSnapshot;
   let revision = previousSignIn.revision + 1;
-  appClient.settings.updateSnapshot = async (changes) => ({ applied: changes, revision: ++revision });
+  appClient.settings.updateSnapshot = async (changes) => ({
+    applied: changes,
+    revision: ++revision,
+  });
   appStore.dispatch(setLabsRemoteAgentsEnabled(true));
   appStore.dispatch(
     remoteMachinesLoaded({
@@ -45,7 +48,9 @@ export function setupRemoteReadyPreview(machineSignIn: Record<string, boolean> =
         executorBackends: previousRemote.executorBackends ?? null,
       }),
     );
-      appStore.dispatch(remoteMachineSignInSupportReceived(previousSignIn.supported));
-    appStore.dispatch(hydrateRemoteMachineSignIn(previousSignIn.confirmed, previousSignIn.revision));
+    appStore.dispatch(remoteMachineSignInSupportReceived(previousSignIn.supported));
+    appStore.dispatch(
+      hydrateRemoteMachineSignIn(previousSignIn.confirmed, previousSignIn.revision),
+    );
   };
 }
