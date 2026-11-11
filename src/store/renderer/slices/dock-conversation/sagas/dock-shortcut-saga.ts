@@ -119,10 +119,18 @@ function* relatedAction(context: DockShortcutContext): SagaGenerator<void> {
         // it is open and loaded (a cached reopen may not announce a load), unless something
         // newer took over meanwhile.
         for (let waited = 0; waited < 10_000; waited += 100) {
-          const dock = appStore.state.dockConversation;
-          if (request !== shortcutRequest || dock.workspaceId !== target || dock.error) break;
+          const now = appStore.state;
+          const dock = now.dockConversation;
+          if (
+            request !== shortcutRequest ||
+            getPrincipalActionContext(now) !== authority ||
+            now.connections.windowBackendId !== context.backendId ||
+            dock.workspaceId !== target ||
+            dock.error
+          )
+            break;
           if (!dock.loading && dock.agentId) {
-            yield* put(dockFocusRequested());
+            if (dock.authority === authority) yield* put(dockFocusRequested());
             break;
           }
           yield* race({ loaded: take(dockConversationLoaded), tick: delay(100) });
