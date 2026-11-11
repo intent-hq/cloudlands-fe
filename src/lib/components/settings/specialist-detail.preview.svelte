@@ -144,7 +144,11 @@
 
   let catalogFailure = false;
   let liveCatalog: SpecialistCatalog = { specialists: [] };
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock bridge transport for preview events; never fetches domain data.
   const { detachAll: detachListeners, ...listeners } = createMockBridgeListeners();
+  const notifyBackend = (method: string) =>
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock bridge transport for preview events; never fetches domain data.
+    emitMockIpcEvent('backend:notification', { method, params: {} });
   let stopCatalog: (() => void) | undefined;
 
   function refreshCatalog(empty = false, fail = false) {
@@ -161,7 +165,7 @@
           },
         ],
       };
-    emitMockIpcEvent('backend:notification', { method: 'specialists:changed', params: {} });
+    notifyBackend('specialists:changed');
   }
 
   let launches = $state<Array<{ channel: string; args: unknown[] }>>([]);
@@ -299,7 +303,7 @@
           missingSkills: undefined,
         })),
       };
-      emitMockIpcEvent('backend:notification', { method: 'skills:changed', params: {} });
+      notifyBackend('skills:changed');
       return;
     }
     appStore.dispatch(

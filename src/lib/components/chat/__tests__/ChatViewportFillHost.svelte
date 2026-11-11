@@ -296,6 +296,7 @@
     const finish = complete;
     untrack(() => {
       const push = (kind: string, payload: object) =>
+        // eslint-disable-next-line intent/no-component-async-data-fetch -- Test fixture drives the mock notification transport, not domain data.
         emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, {
           method: 'subscription.push',
           params: {
