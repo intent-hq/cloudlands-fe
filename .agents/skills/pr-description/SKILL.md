@@ -55,12 +55,25 @@ Write two parts. No other part is mandatory.
 
 Omit a row that does not apply. Do not write "None" or "N/A".
 
-Screenshot table:
+## Screenshots
+
+A PR that changes UI shows the change in a table. The reviewer can then compare
+the two states directly.
+
+- Put the `Before` image and the `After` image in the same row.
+- Use one row for each state that the PR changes: default, hover, empty, error,
+  long text, narrow width, dark theme. Name the state in the first column.
+- Capture the two images of a row with the same size, theme, and data.
+- Capture the component, not the full window, unless the PR changes the layout.
+- Use `pnpm sandbox:shot` when the component has a sandbox scene.
+- New UI has no `Before` image. Use one column for each theme or width.
+- Do not add a screenshot for a change that has no visible result.
 
 ```markdown
-| Before         | After         |
-| -------------- | ------------- |
-| ![](<url>)     | ![](<url>)    |
+| State   | Before  | After   |
+| ------- | ------- | ------- |
+| Default | (image) | (image) |
+| Error   | (image) | (image) |
 ```
 
 ## Do not write
