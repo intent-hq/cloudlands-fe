@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.317.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.316.1...v2.317.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **home:** bulk transfer selected workspaces to another machine ([#4447](https://github.com/intent-hq/cloudlands-fe/issues/4447)) ([fe8decd](https://github.com/intent-hq/cloudlands-fe/commit/fe8decd833acdb339ccd6d2904bdf5c4fc31d02d))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.186 ([#4453](https://github.com/intent-hq/cloudlands-fe/issues/4453)) ([cf3effb](https://github.com/intent-hq/cloudlands-fe/commit/cf3effbfd8467f5fd6d9ec7b0ed302fc9e893625))
+
 ## [2.316.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.316.0...v2.316.1) (2026-11-11)
 
 
