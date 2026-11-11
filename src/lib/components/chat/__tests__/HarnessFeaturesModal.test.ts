@@ -9,8 +9,14 @@
  * humanized fallback for unknown snapshot keys) and the dialog shell
  * (version in the title, scrollable body, standard dismissal).
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
+
+const backendRequest = vi.fn();
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: (...args: unknown[]) => backendRequest(...args),
+}));
 
 import HarnessFeaturesModal from '../HarnessFeaturesModal.svelte';
 import {
@@ -19,10 +25,15 @@ import {
   humanizeHarnessFeatureKey,
 } from '../harness-feature-catalog';
 import { FEATURE_PATHS } from '$lib/components/settings/agent-feature-definitions';
+import { initAppStore, store } from '$store/renderer/store';
 
 afterEach(cleanup);
 
-function renderModal(props: { version: string; features?: Record<string, boolean> | null }) {
+function renderModal(props: {
+  version: string;
+  features?: Record<string, boolean> | null;
+  agentId?: string;
+}) {
   return render(HarnessFeaturesModal, { props: { open: true, ...props } });
 }
 
@@ -98,7 +109,7 @@ describe('HarnessFeaturesModal', () => {
     expect(state.dataset.enabled).toBe(enabled);
   });
 
-  it('shows the version in the title and settings-page labels with descriptions', async () => {
+  it('shows the version in the title and settings-page labels', async () => {
     renderModal({ version: '1.0', features: { structuredQuestions: true } });
 
     const dialog = await screen.findByRole('dialog', { name: 'Harness v1.0' }); // protocol-version-ok: agent-harness product version fixture
@@ -106,9 +117,6 @@ describe('HarnessFeaturesModal', () => {
     // Settings-page pretty labels, not raw camelCase keys.
     expect(screen.getByText('Structured questions')).toBeTruthy();
     expect(screen.queryByText('structuredQuestions')).toBeNull();
-    expect(
-      screen.getByText('Let agents ask structured clarifying questions with predefined options'),
-    ).toBeTruthy();
   });
 
   it('marks snapshot-on features On and everything else Off', async () => {
@@ -161,5 +169,103 @@ describe('HarnessFeaturesModal', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+});
+
+describe('HarnessFeaturesModal starting context', () => {
+  let storeContext: ReturnType<typeof initAppStore> | undefined;
+  beforeEach(() => {
+    backendRequest.mockReset();
+    storeContext = initAppStore(store);
+  });
+  afterEach(() => {
+    storeContext?.dispose?.();
+    storeContext = undefined;
+  });
+
+  const breakdown = {
+    available: true,
+    harnessVersion: '3.12',
+    recordedAt: '2026-11-10T12:00:00Z',
+    systemPromptChars: 4_000,
+    toolDescriptionChars: 0,
+    totalChars: 4_000,
+    estTokens: 1_000,
+    sections: [
+      {
+        id: 'repo-rules',
+        label: 'Repo rules',
+        owner: 'user',
+        location: 'systemPrompt',
+        chars: 4_000,
+        estTokens: 1_000,
+      },
+    ],
+    hiddenSkills: [
+      {
+        name: 'memory',
+        reason: 'mcp-server-missing',
+        detail: 'needs mcp__memory__',
+        fix: 'Add it',
+      },
+    ],
+  };
+
+  it('reads agent.getSession for the agent and lists its sections and hidden skills', async () => {
+    backendRequest.mockResolvedValue({ session: { promptBreakdown: breakdown } });
+    renderModal({ version: '3.12', features: {}, agentId: 'agent-modal' });
+
+    const panel = await screen.findByTestId('prompt-breakdown');
+    expect(backendRequest).toHaveBeenCalledWith('agent.getSession', { agentId: 'agent-modal' });
+    expect(panel.textContent).toContain('Repo rules');
+    expect(panel.textContent).toContain('memory');
+  });
+
+  function respondWith(promptBreakdown: unknown) {
+    let settled = false;
+    backendRequest.mockImplementationOnce(async () => {
+      settled = true;
+      return { session: { promptBreakdown } };
+    });
+    return async () => {
+      await waitFor(() => expect(settled).toBe(true));
+      await tick();
+      await tick();
+    };
+  }
+
+  it('shows no starting context when the session has none', async () => {
+    const answered = respondWith({ available: false, reason: 'not-recorded' });
+    renderModal({ version: '3.12', features: {}, agentId: 'agent-none' });
+
+    await screen.findByRole('dialog');
+    await answered();
+    expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
+  });
+
+  it('reads again on reopen, so a later spawn shows its breakdown', async () => {
+    const firstAnswered = respondWith({ available: false, reason: 'not-recorded' });
+    const view = render(HarnessFeaturesModal, {
+      props: { open: true, version: '3.12', features: {}, agentId: 'agent-respawn' },
+    });
+    await screen.findByRole('dialog');
+    await firstAnswered();
+    expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
+
+    await view.rerender({ open: false });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    respondWith(breakdown);
+    await view.rerender({ open: true });
+
+    expect(await screen.findByTestId('prompt-breakdown')).toBeTruthy();
+    expect(backendRequest).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the session read for harnesses that cannot carry a breakdown', async () => {
+    renderModal({ version: '3.9', features: {}, agentId: 'agent-old' });
+
+    await screen.findByRole('dialog');
+    expect(backendRequest).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
   });
 });
