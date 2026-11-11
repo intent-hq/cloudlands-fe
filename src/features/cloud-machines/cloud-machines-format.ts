@@ -9,11 +9,18 @@ import {
   estimateCloudCost,
   utf8Length,
   type CloudMachineErrorData,
+  type CloudProviderKind,
 } from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 
 /** The E2B project dashboard, where the owner manages plan limits and spend. */
-export const E2B_DASHBOARD_URL = 'https://e2b.dev/dashboard';
+const E2B_DASHBOARD_URL = 'https://e2b.dev/dashboard';
+/** The Northflank dashboard, where the owner manages projects, tokens and limits. */
+const NORTHFLANK_DASHBOARD_URL = 'https://app.northflank.com';
+
+export function cloudDashboardUrl(provider: CloudProviderKind = 'e2b'): string {
+  return provider === 'northflank' ? NORTHFLANK_DASHBOARD_URL : E2B_DASHBOARD_URL;
+}
 
 const NAME_PREFIX = /^E2B\s*·\s*/u; // i18n-ignore (backend row name prefix)
 
@@ -123,11 +130,73 @@ export function groupSandboxesByWorkspace(
   );
 }
 
-/** Title and description of a cloud error, for notices and form errors. */
-export function cloudErrorText(error: CloudMachineErrorData): {
+/** A Northflank error in its own words; E2B's copy names E2B and its sandboxes. */
+function northflankErrorText(error: CloudMachineErrorData): { title: string; description: string } {
+  switch (error.code) {
+    case 'cloud-profile-required':
+      return {
+        title: m.cloudMachines_northflank_error_profileRequired_title(),
+        description: m.cloudMachines_northflank_error_profileRequired_description(),
+      };
+    case 'cloud-quota':
+      return {
+        title: m.cloudMachines_northflank_error_quota_title(),
+        description:
+          error.limit === 'plan'
+            ? m.cloudMachines_northflank_error_quotaPlan_description()
+            : error.limit === 'rate'
+              ? m.cloudMachines_northflank_error_quotaRate_description()
+              : m.cloudMachines_northflank_error_quotaConcurrency_description(),
+      };
+    case 'cloud-machine-unavailable': {
+      const unavailable = (description: string) => ({
+        title: m.cloudMachines_northflank_error_unavailable_title(),
+        description,
+      });
+      switch (error.reason) {
+        case 'not-configured':
+          return unavailable(m.cloudMachines_northflank_error_notConfigured_description());
+        case 'key-rejected':
+          return {
+            title: m.cloudMachines_northflank_error_tokenRejected_title(),
+            description: m.cloudMachines_northflank_error_tokenRejected_description(),
+          };
+        case 'project-missing':
+          return unavailable(m.cloudMachines_northflank_error_projectMissing_description());
+        case 'permission-denied':
+          return {
+            title: m.cloudMachines_northflank_error_permissionDenied_title(),
+            description: m.cloudMachines_northflank_error_permissionDenied_description(),
+          };
+        case 'template-missing':
+          return unavailable(m.cloudMachines_northflank_error_imageMissing_description());
+        case 'sandbox-lost':
+          return {
+            title: m.cloudMachines_northflank_error_serviceLost_title(),
+            description: m.cloudMachines_northflank_error_serviceLost_description(),
+          };
+        case 'bootstrap-failed':
+          return unavailable(m.cloudMachines_northflank_error_bootstrapFailed_description());
+        default:
+          return unavailable(m.cloudMachines_northflank_error_apiError_description());
+      }
+    }
+  }
+}
+
+/**
+ * Title and description of a cloud error, for notices and form errors. The
+ * error's own `provider` wins; else `provider`, the entry the caller shows.
+ */
+export function cloudErrorText(
+  error: CloudMachineErrorData,
+  provider?: CloudProviderKind,
+): {
   title: string;
   description: string;
 } {
+  const kind = error.provider ?? provider;
+  if (kind === 'northflank') return northflankErrorText(error);
   switch (error.code) {
     case 'cloud-profile-required':
       return {

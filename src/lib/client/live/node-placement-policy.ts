@@ -1,4 +1,4 @@
-import { AgentPlacementRequestSchema } from '$shared/types/agent-node';
+import { AgentPlacementRequestSchema, isCloudTarget } from '$shared/types/agent-node';
 import {
   NodeExecutionClient,
   assertPlacementSupported,
@@ -41,8 +41,11 @@ async function remoteInitialAgentPlacement(
     return false;
   const checked = AgentPlacementRequestSchema.parse(placement);
   if (checked.exclusive === true) throw new Error(m.agent_placement_unavailable());
-  // A new E2B sandbox needs the cloud machines contract as well.
-  if (checked.target === 'e2b' && caps.cloudMachines !== 1)
+  // A new cloud machine needs the cloud machines contract as well.
+  if (isCloudTarget(checked.target) && caps.cloudMachines !== 1)
+    throw new Error(m.agent_placement_unavailable());
+  // The provider-neutral target needs `cloudMachineProviders: 1`.
+  if (checked.target === 'cloud' && caps.cloudMachineProviders !== 1)
     throw new Error(m.agent_placement_unavailable());
   // A named E2B entry needs a backend that keeps entries.
   if (checked.cloudMachineId !== undefined && caps.cloudMachineEntries !== 1)
@@ -158,7 +161,7 @@ export async function prepareNodeRequest(
   const checked = placement == null ? undefined : AgentPlacementRequestSchema.parse(placement);
   if (
     !remoteEnabled() &&
-    (checked?.target === 'remote' || checked?.target === 'e2b' || checked?.exclusive === true)
+    (checked?.target === 'remote' || isCloudTarget(checked?.target) || checked?.exclusive === true)
   )
     throw new Error(m.agent_placement_labsRequired());
   if (readDefaults) capabilities = await client.capabilities();
@@ -168,7 +171,7 @@ export async function prepareNodeRequest(
   // Known remote intent remains explicit and must never be converted to a local fallback.
   if (
     !remoteEnabled() &&
-    (checked?.target === 'remote' || checked?.target === 'e2b' || checked?.exclusive === true)
+    (checked?.target === 'remote' || isCloudTarget(checked?.target) || checked?.exclusive === true)
   )
     throw new Error(m.agent_placement_labsRequired());
   if (!checked) return input;
@@ -191,7 +194,7 @@ export function assertRemoteRequestEnabled(method: string, input: unknown, enabl
     placements.some(
       (placement) =>
         object(placement).target === 'remote' ||
-        object(placement).target === 'e2b' ||
+        isCloudTarget(object(placement).target) ||
         object(placement).exclusive === true,
     )
   )

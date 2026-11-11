@@ -318,6 +318,7 @@ export function* prepareCompactWorkspaceInitialization(
   const prompt = s.prompt.trim();
   const startOnPlacement = initialAgentPlacement(s.agent.startOnMachineId, {
     cloudEntries: state.cloudMachines?.entries === true,
+    providerOf: (id) => state.cloudMachines?.providers[id]?.provider,
   });
   const initialAgent = {
     // General uses the daemon placeholder so naming does not depend on UI locale.

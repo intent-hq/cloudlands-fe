@@ -19,7 +19,11 @@
     selectStartOnCloud,
     selectStartOnRows,
   } from '$features/remote-machines/remote-machines-selectors';
-  import { selectCloudEntriesSupported } from '$features/cloud-machines/cloud-machines-selectors';
+  import {
+    selectCloudEntries,
+    selectCloudEntriesSupported,
+  } from '$features/cloud-machines/cloud-machines-selectors';
+  import { cloudProviderName, cloudProviderOfEntryId } from '$shared/types/cloud-machines';
   import { proposalStartOnChoices, resolveImplicitE2b } from './proposal-start-on';
 
   interface Props {
@@ -57,14 +61,18 @@
   });
   const cloud$ = selectStartOnCloud(providerRefStore);
   const cloudEntries$ = selectCloudEntriesSupported();
+  const savedEntries$ = selectCloudEntries();
 
   // Shown only while there is another place to choose: a remote machine or a saved E2B entry.
   const enabled = $derived($remoteVisible$ && $supported$);
   const active = $derived(enabled && $rows$.length > 1);
   const effective = $derived(backendOnly ? START_ON_BACKEND : resolveImplicitE2b(value, $rows$));
   function missingLabelFor(id: string): string {
-    return startOnCloudMachineId(id)
-      ? m.cloudMachines_startOn_label()
+    const entryId = startOnCloudMachineId(id);
+    return entryId
+      ? cloudProviderOfEntryId(entryId) === 'northflank'
+        ? cloudProviderName('northflank')
+        : m.cloudMachines_startOn_label()
       : (id === proposer?.nodeId && proposer?.nodeName?.trim()) ||
           m.remoteAgent_location_unknownMachine();
   }
@@ -98,6 +106,7 @@
     placement = active
       ? (initialAgentPlacement(effective, {
           cloudEntries: $cloudEntries$,
+          providerOf: (id) => $savedEntries$.find((entry) => entry.id === id)?.provider,
         }) ?? null)
       : enabled
         ? null

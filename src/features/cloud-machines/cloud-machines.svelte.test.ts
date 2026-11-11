@@ -53,14 +53,14 @@ describe('Add machine', () => {
     seed('unsupported');
     const view = render(DevicesSettings, { initialAddMenuOpen: true });
     await view.findByTestId('add-machine-paste-link');
-    expect(view.queryByTestId('add-cloud-machine')).toBeNull();
+    expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
   });
 
   it('hides E2B setup, the E2B row and its sandboxes while the Labs flag is off', async () => {
     seed('labs-off');
     const view = render(DevicesSettings, { initialAddMenuOpen: true });
     await view.findByTestId('add-machine-paste-link');
-    expect(view.queryByTestId('add-cloud-machine')).toBeNull();
+    expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
     expect(view.container.querySelector('[data-cloud-machine-row]')).toBeNull();
     expect(view.container.querySelector('[data-cloud-sandboxes]')).toBeNull();
   });
@@ -69,7 +69,7 @@ describe('Add machine', () => {
     seed('connected');
     const view = render(DevicesSettings, { initialAddMenuOpen: true });
     await view.findByTestId('add-machine-paste-link');
-    expect(view.queryByTestId('add-cloud-machine')).toBeNull();
+    expect(view.queryByTestId('add-cloud-e2b')).toBeNull();
     expect(view.container.querySelector('[data-cloud-machine-row]')).not.toBeNull();
   });
 });
@@ -310,7 +310,7 @@ describe('named E2B entries under Nodes', () => {
   it('still offers E2B in Add machine to add another entry', async () => {
     seed('entries');
     const view = render(DevicesSettings, { initialAddMenuOpen: true });
-    expect(await view.findByTestId('add-cloud-machine')).toBeTruthy();
+    expect(await view.findByTestId('add-cloud-e2b')).toBeTruthy();
   });
 
   it('asks a new entry for a free name, then sends it with the key', async () => {
@@ -412,7 +412,7 @@ describe('named E2B entries under Nodes', () => {
   it('adds a second entry from Add machine next to the only one, without its id', async () => {
     seed('entries-single');
     const view = render(DevicesSettings, { initialAddMenuOpen: true });
-    await fireEvent.click(await view.findByTestId('add-cloud-machine'));
+    await fireEvent.click(await view.findByTestId('add-cloud-e2b'));
     const form = await vi.waitFor(() => {
       const found = view.container.querySelector(
         '[data-cloud-machine-row="new"] form[data-cloud-machine-form]',
@@ -462,5 +462,93 @@ describe('named E2B entries under Nodes', () => {
     await fireEvent.click(await view.findByRole('menuitem', { name: 'Remove' }));
     const remove = dispatched().find((action) => action.type === 'cloudMachines/removeRequested');
     expect(remove?.payload).toEqual([TEAM_ENTRY.id]);
+  });
+});
+
+describe('Add cloud', () => {
+  it('offers E2B and Northflank when the backend has both', async () => {
+    seed('add-cloud-menu');
+    const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
+    expect(await view.findByTestId('add-cloud-e2b')).toBeTruthy();
+    expect(view.getByTestId('add-cloud-northflank')).toBeTruthy();
+  });
+
+  it('offers E2B directly, without a submenu, to a backend without Northflank', async () => {
+    seed('add-menu');
+    const view = render(DevicesSettings, { initialAddMenuOpen: true });
+    expect(await view.findByTestId('add-cloud-e2b')).toBeTruthy();
+    expect(view.queryByTestId('add-cloud-machine')).toBeNull();
+    expect(view.queryByTestId('add-cloud-northflank')).toBeNull();
+  });
+
+  it('opens the Northflank form from the menu', async () => {
+    seed('add-cloud-menu');
+    const view = render(DevicesSettings, { initialAddMenuOpen: true, initialAddCloudOpen: true });
+    await fireEvent.click(await view.findByTestId('add-cloud-northflank'));
+    await vi.waitFor(() =>
+      expect(view.container.querySelector('form[data-cloud-provider="northflank"]')).not.toBeNull(),
+    );
+  });
+});
+
+describe('Northflank form', () => {
+  function renderForm() {
+    seed('northflank-setup');
+    return render(CloudMachineRow, {
+      entry: null,
+      newProvider: 'northflank',
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+  }
+
+  it('needs a token and project, shows the region read-only, then sends them', async () => {
+    const view = renderForm();
+    const form = view.container.querySelector('form[data-cloud-machine-form]') as HTMLFormElement;
+    const save = within(form).getByRole('button', { name: 'Save' }) as HTMLButtonElement;
+    const token = form.querySelector('input[type="password"]') as HTMLInputElement;
+    const project = form.querySelector('input[data-cloud-project]');
+    expect(project).toBeTruthy();
+    expect(form.querySelector('input[data-cloud-region]')).toBeNull();
+    expect(form.querySelector('[data-cloud-region]')).not.toBeNull();
+    await fireEvent.input(token, { target: { value: 'nf_test' } });
+    expect(save.disabled).toBe(true);
+    await fireEvent.input(project!, { target: { value: 'intent-agents' } });
+    expect(save.disabled).toBe(false);
+    await fireEvent.submit(form);
+    const configure = dispatched().find(
+      (action) => action.type === 'cloudMachines/configureRequested',
+    );
+    expect(configure?.payload[0]).toMatchObject({
+      provider: 'northflank',
+      apiKey: 'nf_test',
+      projectId: 'intent-agents',
+    });
+    expect(configure?.payload[0]).not.toHaveProperty('region');
+  });
+
+  it('names Northflank in a rejected token', () => {
+    seed('northflank-setup-error');
+    const view = render(CloudMachineRow, {
+      entry: null,
+      newProvider: 'northflank',
+      editing: true,
+      onEdit: () => {},
+      onClose: () => {},
+    });
+    const error = view.container.querySelector('[data-cloud-key-error]');
+    expect(error?.textContent).toContain('Northflank');
+  });
+
+  it('shows each entry provider in the list', () => {
+    seed('providers');
+    const view = render(DevicesSettings);
+    const rows = [...view.container.querySelectorAll('[data-cloud-machine-row]')];
+    expect(rows.map((row) => row.getAttribute('data-cloud-provider'))).toEqual([
+      'e2b',
+      'northflank',
+    ]);
+    expect(rows[1]?.textContent).toContain('Northflank');
   });
 });
