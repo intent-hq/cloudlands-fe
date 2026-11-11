@@ -645,10 +645,13 @@
       !remoteAutoPick(providerRef)
     );
   }
-  /** The Remote Ready profile the plain Default uses on this machine instead, or null. */
+  /**
+   * The Remote Ready profile the plain Default uses on this machine instead,
+   * or null. Only when starting an agent: a model switch never auto-picks.
+   */
   function remoteAutoPick(providerRef: string) {
     const machine = $remoteMachine$;
-    if (!machine) return null;
+    if (!machine || agentId) return null;
     return remoteAutoPickProfile({
       machine,
       providerRef,
@@ -1558,6 +1561,7 @@
         defaultRemoteLaunch: $defaultRemoteLaunch$,
         defaultHasOverrides: $defaultHasOverrides$,
         useDefaultOption: showDefaultOption ? useDefaultOption : undefined,
+        allowAutoPick: !agentId,
       });
     }
     return buildGroupedModelOptions({

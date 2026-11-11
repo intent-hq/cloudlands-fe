@@ -971,7 +971,7 @@ describe('ModelPicker guest / collaborator lock', () => {
       expect(screen.queryByRole('tab', { name: /Claude Code/ })).toBeNull();
     });
 
-    it('names the Remote Ready profile the plain Default uses on a signed-out machine', async () => {
+    it("never offers auto-pick when switching a running agent's model", async () => {
       withMachine(
         machineRow({
           capabilities: {
@@ -991,10 +991,10 @@ describe('ModelPicker guest / collaborator lock', () => {
       };
       renderAgentPicker('gpt-5');
       await fireEvent.click(screen.getByRole('button'));
-      const note = await screen.findByTestId('model-picker-remote-auto-pick');
-      expect(note.textContent).toContain('Key');
-      expect(note.textContent).toContain('Mac mini');
-      expect(screen.queryByTestId('model-picker-remote-signed-out')).toBeNull();
+      // agent.setModel never auto-picks: the plain Codex Default can't run there.
+      expect(await screen.findByRole('tab', { name: /Key/ })).toBeTruthy();
+      expect(screen.queryByTestId('model-picker-remote-auto-pick')).toBeNull();
+      expect(screen.queryByRole('tab', { name: /Codex · Default/ })).toBeNull();
     });
 
     it('warns when the report is more than a day old', async () => {

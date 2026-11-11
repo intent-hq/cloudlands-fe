@@ -311,22 +311,24 @@ describe('buildMachineModelGroups', () => {
         cloud: { state: 'running' } as RemoteMachine['cloud'],
         capabilities: { providers: [{ id: 'claude-code', status: 'unknown', models: [] }] },
       });
-      // The plain Default auto-picks the marked profile; with none it is hidden.
       expect(
         Object.keys(
           build(['claude-code', 'claude-code@p-personal'], { 'claude-code': false }, e2b),
         ),
-      ).toEqual(['claude-code', 'claude-code@p-personal']);
-      expect(
+      ).toEqual(['claude-code@p-personal']);
+      // Starting an agent: the plain Default auto-picks the marked profile; with none it is hidden.
+      const starting = (catalogProfiles: ProviderProfileSummary[]) =>
         buildMachineModelGroups({
           machine: e2b,
           providerRefs: ['claude-code'],
           groupLabel: (ref) => ref,
           catalogModels,
-          catalogProfiles: [work],
+          catalogProfiles,
           defaultHasOverrides: { 'claude-code': false },
-        }),
-      ).toEqual([]);
+          allowAutoPick: true,
+        }).map((group) => group.key);
+      expect(starting([personal])).toEqual(['claude-code']);
+      expect(starting([work])).toEqual([]);
     });
 
     it('still skips a provider the machine reports as not installed', () => {
@@ -428,6 +430,7 @@ describe('remoteAutoPickProfile', () => {
       catalogModels: { 'codex@p-key': [{ value: 'gpt-6', label: 'GPT-6' }] },
       catalogProfiles: [apiKey],
       defaultHasOverrides: { codex: false },
+      allowAutoPick: true,
     });
     expect(groups).toEqual([
       { key: 'codex', label: 'codex', options: [{ value: 'gpt-6', label: 'GPT-6' }] },
@@ -461,6 +464,7 @@ describe('the Default on a remote machine (catalog defaultRemoteLaunch)', () => 
   const keys = (
     defaultRemoteLaunch: Record<string, string>,
     catalogProfiles = [] as ProviderProfileSummary[],
+    allowAutoPick = false,
   ) =>
     buildMachineModelGroups({
       machine: machine(),
@@ -469,6 +473,7 @@ describe('the Default on a remote machine (catalog defaultRemoteLaunch)', () => 
       catalogModels: {},
       catalogProfiles,
       defaultRemoteLaunch,
+      allowAutoPick,
     }).map((group) => group.key);
 
   it("runs an unmarked Default with the machine's sign-in, and hides it when signed out", () => {
@@ -489,10 +494,15 @@ describe('the Default on a remote machine (catalog defaultRemoteLaunch)', () => 
     expect(keys({ 'claude-code': 'refused', codex: 'machine-sign-in' })).toEqual([]);
   });
 
-  it('auto-picks a Remote Ready profile for an unmarked Default on a signed-out machine', () => {
+  it('never auto-picks for a model switch', () => {
     expect(keys({ 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' }, [apiKey])).toEqual([
       'claude-code',
-      'codex',
     ]);
+  });
+
+  it('auto-picks a Remote Ready profile for an unmarked Default on a signed-out machine', () => {
+    expect(
+      keys({ 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' }, [apiKey], true),
+    ).toEqual(['claude-code', 'codex']);
   });
 });

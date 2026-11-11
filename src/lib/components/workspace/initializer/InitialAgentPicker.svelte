@@ -279,6 +279,7 @@
       catalogProfiles: $providerProfiles$,
       defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
       defaultRemoteLaunch: $defaultRemoteLaunch$,
+      allowAutoPick: true,
       defaultHasOverrides: $defaultHasOverrides$,
     });
     const fallback = machineModelFallback({

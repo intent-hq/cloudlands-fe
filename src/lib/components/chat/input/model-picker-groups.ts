@@ -245,6 +245,11 @@ interface BuildMachineModelGroupsParams {
   /** Catalog `defaultRemoteLaunch` (what each Default does on a remote machine). */
   defaultRemoteLaunch?: Record<string, string>;
   /**
+   * The picker starts an agent, so the plain Default may auto-pick a Remote
+   * Ready profile. A model switch (`agent.setModel`) never auto-picks.
+   */
+  allowAutoPick?: boolean;
+  /**
    * Whether each base provider's Default saves env overrides (an API key
    * runs without the machine's sign-in), from the admin-only profile list.
    * Absent when unknown.
@@ -260,8 +265,9 @@ interface BuildMachineModelGroupsParams {
  * machine's own sign-in when it has one (signed in, or unknown), and (b) a
  * remote-compatible configuration from this backend may be sent: a marked
  * profile, or the marked Default when it brings credentials. Anything else is
- * not offered, except that the plain Default on a machine without sign-in
- * runs the first Remote Ready profile of its provider (auto-pick). An E2B
+ * not offered, except that when starting an agent (`allowAutoPick`) the plain
+ * Default on a machine without sign-in runs the first Remote Ready profile of
+ * its provider (auto-pick). An E2B
  * sandbox has no sign-in of its own, so only (b) applies.
  * When the machine lists no models for a configuration that brings its own
  * credentials, the backend catalog's models stand in.
@@ -276,6 +282,7 @@ export function buildMachineModelGroups({
   defaultRemoteLaunch,
   defaultHasOverrides,
   useDefaultOption,
+  allowAutoPick = false,
 }: BuildMachineModelGroupsParams): DropdownGroup[] {
   const defaults = { defaultRemoteLaunch, defaultRemoteIncompatibility, defaultHasOverrides };
   const reported = new Map(
@@ -292,12 +299,9 @@ export function buildMachineModelGroups({
       ? !remoteIncompatibilityFor(ref, catalogProfiles)
       : defaultRemoteSends(base, defaults);
     const ownSignIn = !isProfile && defaultRemoteOwnSignIn(machine, base, defaults);
-    const autoPick = remoteAutoPickProfile({
-      machine,
-      providerRef: ref,
-      catalogProfiles,
-      ...defaults,
-    });
+    const autoPick = allowAutoPick
+      ? remoteAutoPickProfile({ machine, providerRef: ref, catalogProfiles, ...defaults })
+      : null;
     if (!ownSignIn && !sendable && !autoPick) continue;
     const modelSource = autoPick ? autoPick.providerRef : ref;
     const labelled = new Map(
