@@ -30,6 +30,7 @@
   import {
     selectMachineRailCandidates,
     selectMachineRailEnabled,
+    selectIsRailMachineShown,
     selectMachineRailItems,
     selectRailMenuRequests,
   } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
@@ -49,6 +50,17 @@
 
   // The names are a fallback, not something to read on every pass of the pointer.
   const RAIL_TOOLTIP_DELAY_MS = 900;
+
+  // After a switch the pointer is still resting on the rail in the machine that
+  // just appeared; its name tooltip would pop up unasked. Tooltips stay off from
+  // a click or a switch until the pointer has left the rail.
+  const shown$ = selectIsRailMachineShown();
+  let tooltipsSuppressed = $state(false);
+  let wasShown = true;
+  $effect(() => {
+    if ($shown$ && !wasShown) tooltipsSuppressed = true;
+    wasShown = $shown$;
+  });
 
   let menuOpen = $state(false);
   // This machine's status menu (health, machines): opened by a context click on
@@ -86,6 +98,7 @@
     class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-1"
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
+    onpointerleave={() => (tooltipsSuppressed = false)}
   >
     <div class="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto">
       {#each $items$ as item (item.id)}
@@ -112,10 +125,14 @@
             tooltip={label}
             tooltipSide="right"
             tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+            tooltipDisabled={tooltipsSuppressed}
             data-testid="machine-rail-item"
             data-machine-id={item.id}
             data-offline={item.offline || undefined}
-            onclick={() => appStore.dispatch(selectRailMachineRequested(item.id))}
+            onclick={() => {
+              tooltipsSuppressed = true;
+              appStore.dispatch(selectRailMachineRequested(item.id));
+            }}
             oncontextmenu={(event: MouseEvent) => openStatusMenu(event, item.id, item.own)}
           >
             {#if item.record}
@@ -152,6 +169,7 @@
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
             tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+            tooltipDisabled={tooltipsSuppressed}
             data-testid="machine-rail-add"
           >
             <Fa icon={faPlus} size="sm" />
