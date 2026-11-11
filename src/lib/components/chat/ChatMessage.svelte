@@ -405,7 +405,8 @@
   // Daemon-persisted provider re-home transcript row (metadata type "provider_rehomed")
   let providerRehomedNotice = $derived(getProviderRehomedNotice(message));
 
-  // Daemon-persisted quota failover transcript row (metadata type "provider_failover")
+  // Daemon-persisted automatic provider switch rows (provider_failover,
+  // provider_returned, provider_auto_selected)
   let providerFailoverNotice = $derived(getProviderSwitchNotice(message));
 
   // Daemon-persisted attention-request row (meta.kind "discussion-request"/"blocker-report")
