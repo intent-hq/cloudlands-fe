@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.315.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.314.0...v2.315.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **agent:** group harness features under a Capabilities heading ([#4439](https://github.com/intent-hq/cloudlands-fe/issues/4439)) ([a7b38c9](https://github.com/intent-hq/cloudlands-fe/commit/a7b38c92f2fcd593faee1520856e01e6d1471d0f))
+* **providers:** remote-ready profiles, the Default's remote option and machine sign-in ([#4433](https://github.com/intent-hq/cloudlands-fe/issues/4433)) ([0888580](https://github.com/intent-hq/cloudlands-fe/commit/0888580836e4bd2c6c129f2f6327a3204f73f32a))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.184 ([#4444](https://github.com/intent-hq/cloudlands-fe/issues/4444)) ([3ba518c](https://github.com/intent-hq/cloudlands-fe/commit/3ba518c2c321027cd499f9c3b08293b5dd7b4cf8))
+
 ## [2.314.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.313.1...v2.314.0) (2026-11-11)
 
 
