@@ -21,7 +21,9 @@ import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   MACHINE_PROVIDER_NOT_INSTALLED,
-  isRemoteRefSignedOut,
+  defaultRemoteOwnSignIn,
+  defaultRemoteSends,
+  remoteAutoPickProfile,
   remoteIncompatibilityFor,
 } from '$features/remote-machines/remote-model-picker';
 import { formatProviderLoadError, type ProviderLoadError } from './model-picker-provider-errors';
@@ -240,6 +242,13 @@ interface BuildMachineModelGroupsParams {
   catalogModels: Record<string, DropdownOption[] | undefined>;
   catalogProfiles: readonly ProviderProfileSummary[];
   defaultRemoteIncompatibility?: Record<string, RemoteIncompatibility>;
+  /** Catalog `defaultRemoteLaunch` (what each Default does on a remote machine). */
+  defaultRemoteLaunch?: Record<string, string>;
+  /**
+   * The picker starts an agent, so the plain Default may auto-pick a Remote
+   * Ready profile. A model switch (`agent.setModel`) never auto-picks.
+   */
+  allowAutoPick?: boolean;
   /**
    * Whether each base provider's Default saves env overrides (an API key
    * runs without the machine's sign-in), from the admin-only profile list.
@@ -250,15 +259,18 @@ interface BuildMachineModelGroupsParams {
 }
 
 /**
- * One group per configuration whose base provider the machine reports as
- * installed, listing the machine's models (labels from the backend catalog,
- * else the raw id). A configuration that can't run on another machine, or a
- * Default with no overrides whose provider is signed out there, keeps its
- * models greyed out; the picker names the reason above them. Profiles and
- * Defaults with overrides may bring their own credentials (an API key), so
- * a signed-out machine login greys them only when that is known not to be so.
- * When the machine lists no models for such a configuration (an E2B sandbox
- * has no sign-in of its own), the backend catalog's models stand in.
+ * The configurations a remote machine can run, one group each, listing the
+ * machine's models (labels from the backend catalog, else the raw id). A
+ * provider must be installed there; then (a) its Default runs with the
+ * machine's own sign-in when it has one (signed in, or unknown), and (b) a
+ * remote-compatible configuration from this backend may be sent: a marked
+ * profile, or the marked Default when it brings credentials. Anything else is
+ * not offered, except that when starting an agent (`allowAutoPick`) the plain
+ * Default on a machine without sign-in runs the first Remote Ready profile of
+ * its provider (auto-pick). An E2B
+ * sandbox has no sign-in of its own, so only (b) applies.
+ * When the machine lists no models for a configuration that brings its own
+ * credentials, the backend catalog's models stand in.
  */
 export function buildMachineModelGroups({
   machine,
@@ -267,55 +279,50 @@ export function buildMachineModelGroups({
   catalogModels,
   catalogProfiles,
   defaultRemoteIncompatibility,
+  defaultRemoteLaunch,
   defaultHasOverrides,
   useDefaultOption,
+  allowAutoPick = false,
 }: BuildMachineModelGroupsParams): DropdownGroup[] {
+  const defaults = { defaultRemoteLaunch, defaultRemoteIncompatibility, defaultHasOverrides };
   const reported = new Map(
     (machine.capabilities?.providers ?? []).map((provider) => [provider.id, provider]),
   );
   const groups: DropdownGroup[] = [];
   if (useDefaultOption) groups.push({ key: 'default', label: '', options: [useDefaultOption] });
   for (const ref of providerRefs) {
-    const provider = reported.get(providerRefBaseId(ref));
+    const base = providerRefBaseId(ref);
+    const provider = reported.get(base);
     if (!provider || MACHINE_PROVIDER_NOT_INSTALLED.has(provider.status)) continue;
-    const incompatibility = remoteIncompatibilityFor(
-      ref,
-      catalogProfiles,
-      defaultRemoteIncompatibility,
-    );
-    // Only a Default known to have no overrides needs the machine's sign-in;
-    // otherwise the picker names the sign-in state and the daemon decides.
-    const signedOut =
-      isRemoteRefSignedOut(machine, ref) && defaultHasOverrides?.[providerRefBaseId(ref)] === false;
+    const isProfile = isProviderProfileRef(ref);
+    const sendable = isProfile
+      ? !remoteIncompatibilityFor(ref, catalogProfiles)
+      : defaultRemoteSends(base, defaults);
+    const ownSignIn = !isProfile && defaultRemoteOwnSignIn(machine, base, defaults);
+    const autoPick = allowAutoPick
+      ? remoteAutoPickProfile({ machine, providerRef: ref, catalogProfiles, ...defaults })
+      : null;
+    if (!ownSignIn && !sendable && !autoPick) continue;
+    const modelSource = autoPick ? autoPick.providerRef : ref;
     const labelled = new Map(
-      (catalogModels[ref] ?? catalogModels[providerRefBaseId(ref)] ?? []).map((option) => [
+      (catalogModels[modelSource] ?? catalogModels[base] ?? []).map((option) => [
         splitLegacyCompoundId(option.value).modelId,
         option,
       ]),
     );
-    const bringsCredentials =
-      isProviderProfileRef(ref) || defaultHasOverrides?.[providerRefBaseId(ref)] === true;
+    const listsBackendModels =
+      isProfile || defaultHasOverrides?.[base] === true || autoPick !== null;
     // Only the configuration's own list: a profile can serve other models than its Default.
+    // An auto-picked profile serves its own list.
     const modelIds =
-      provider.models.length > 0 || !bringsCredentials
+      provider.models.length > 0 || !listsBackendModels
         ? provider.models
-        : (catalogModels[ref] ?? [])
+        : (catalogModels[modelSource] ?? [])
             .filter((option) => !isDefaultPseudoModelId(option.value))
             .map((option) => splitLegacyCompoundId(option.value).modelId);
     const options = modelIds.map((modelId): DropdownOption => {
       const known = labelled.get(modelId);
-      const option: DropdownOption = known
-        ? { ...known, value: modelId }
-        : { value: modelId, label: modelId };
-      if (!incompatibility && !signedOut) return option;
-      return {
-        ...option,
-        disabled: true,
-        data: {
-          ...option.data,
-          remoteUnavailable: incompatibility ? 'incompatible' : 'signed-out',
-        },
-      };
+      return known ? { ...known, value: modelId } : { value: modelId, label: modelId };
     });
     groups.push({ key: ref, label: groupLabel(ref), options });
   }

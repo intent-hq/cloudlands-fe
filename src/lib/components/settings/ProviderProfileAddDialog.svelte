@@ -52,9 +52,12 @@
     selectProviderProfileMutations,
     selectProviderProfilesForBase,
     selectProviderProfileSetups,
+    selectRemoteReadyProfilesSupported,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import type { ProviderProfileSetup } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
+  import { advancedCreateRemoteChoice } from '$lib/provider-remote-ready';
   import ProviderProfileKindDialog from './profile-kinds/ProviderProfileKindDialog.svelte';
   import type {
     ProfileKindStep,
@@ -83,6 +86,8 @@
   const setups$ = selectProviderProfileSetups();
   const mutations$ = selectProviderProfileMutations();
   const appOwned$ = selectIsDaemonAppOwned();
+  const remoteReady$ = selectRemoteReadyProfilesVisible();
+  const remoteChoiceSupported$ = selectRemoteReadyProfilesSupported();
   // svelte-ignore state_referenced_locally
   const profiles$ = selectProviderProfilesForBase(providerId);
   const newId = () => crypto.randomUUID();
@@ -91,6 +96,7 @@
   let kind = $state<ProfileKind>('differentLogin');
   let name = $state('');
   let backup = $state(false);
+  let remoteCompatible = $state(true);
   let folderSuffix = $state(randomSuffix());
   let secret = $state('');
   let baseUrl = $state('');
@@ -111,6 +117,7 @@
     kind = 'differentLogin';
     name = '';
     backup = false;
+    remoteCompatible = true;
     folderSuffix = randomSuffix();
     secret = '';
     baseUrl = '';
@@ -284,9 +291,20 @@
         name,
         ...(built.env ? { env: built.env } : {}),
         ...(backup ? { backup } : {}),
+        ...remoteChoice(
+          advancedCreateRemoteChoice({
+            supported: $remoteChoiceSupported$,
+            visible: $remoteReady$,
+            toggle: remoteCompatible,
+            rows: envRows,
+          }),
+        ),
       }),
     );
   }
+
+  const remoteChoice = (value: boolean | undefined) =>
+    value === undefined ? {} : { remoteCompatible: value };
 
   function retry() {
     if (!setup) return;
@@ -329,6 +347,8 @@
   bind:customEndpointOpen
   bind:envRows
   envErrors={errors}
+  remoteMarks={$remoteReady$}
+  bind:remoteCompatible
   onCreateAndSignIn={createAndSignIn}
   onCreate={create}
   onRetry={retry}

@@ -100,6 +100,17 @@ export const selectProviderCatalogDefaultRemoteIncompatibility = store.createSel
       : state.providerCatalog?.defaultRemoteIncompatibility,
 );
 
+/**
+ * What a remote launch of each base provider's Default does (§5.54 catalog
+ * `defaultRemoteLaunch`). Undefined on daemons that predate it.
+ */
+export const selectProviderCatalogDefaultRemoteLaunch = store.createSelector(
+  (state, workspaceId?: string): Record<string, string> | undefined =>
+    workspaceId
+      ? state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.defaultRemoteLaunch
+      : state.providerCatalog?.defaultRemoteLaunch,
+);
+
 /** All provider ids in registry order. */
 export const selectAllCatalogProviderIds = store.createSelector(
   (state, workspaceId?: string): string[] =>

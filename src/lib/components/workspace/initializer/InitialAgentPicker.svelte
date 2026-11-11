@@ -78,7 +78,10 @@
   import { writable } from 'svelte/store';
   import { buildMachineModelGroups } from '$lib/components/chat/input/model-picker-groups';
   import { expandProviderIdsWithProfiles } from '$shared/provider-profiles';
-  import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectProviderCatalogDefaultRemoteIncompatibility,
+    selectProviderCatalogDefaultRemoteLaunch,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import {
     selectDefaultHasOverrides,
     selectRemoteMachines,
@@ -239,6 +242,7 @@
   const remoteMachinesVisible$ = selectRemoteMachinesVisible();
   const remoteSwitchSupport$ = selectRemoteModelSwitchSupport();
   const defaultRemoteIncompatibility$ = selectProviderCatalogDefaultRemoteIncompatibility();
+  const defaultRemoteLaunch$ = selectProviderCatalogDefaultRemoteLaunch();
   const defaultHasOverrides$ = selectDefaultHasOverrides();
   onMount(() => {
     // Machine states change without an event; read them fresh for the row.
@@ -274,6 +278,8 @@
       ),
       catalogProfiles: $providerProfiles$,
       defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+      defaultRemoteLaunch: $defaultRemoteLaunch$,
+      allowAutoPick: true,
       defaultHasOverrides: $defaultHasOverrides$,
     });
     const fallback = machineModelFallback({

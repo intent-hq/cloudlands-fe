@@ -14,6 +14,7 @@ export function startOnPreviewMachine(
   name: string,
   state: RemoteMachineState,
   models: string[] = ['fixture-model'],
+  codexStatus = 'ready',
 ): RemoteMachine {
   return {
     id,
@@ -24,7 +25,7 @@ export function startOnPreviewMachine(
     fingerprint: `fp-${id}`,
     state,
     runningAgents: 0,
-    capabilities: { providers: [{ id: 'codex', status: 'ready', models }] },
+    capabilities: { providers: [{ id: 'codex', status: codexStatus, models }] },
     observedAt: new Date(catalogNow()).toISOString(),
     addedAt: '2026-11-01T00:00:00Z',
   };
@@ -35,7 +36,17 @@ export function startOnPreviewMachine(
  * `remoteBackend` swaps the connection for a named remote backend; scenes that
  * need the preview's own admitted connection keep it.
  */
-export function setupStartOnPreview(machines: RemoteMachine[], { remoteBackend = true } = {}) {
+export function setupStartOnPreview(
+  machines: RemoteMachine[],
+  {
+    remoteBackend = true,
+    catalog = {},
+  }: {
+    remoteBackend?: boolean;
+    /** Extra catalog fields (profiles, `defaultRemoteLaunch`). */
+    catalog?: Partial<Parameters<typeof providerCatalogLoaded>[0]>;
+  } = {},
+) {
   const before = store.state;
   const previousLabs = before.userPreferences?.labsRemoteAgentsEnabled === true;
   const previousConnections = selectConnections.select(before);
@@ -66,6 +77,7 @@ export function setupStartOnPreview(machines: RemoteMachine[], { remoteBackend =
     providerCatalogLoaded({
       providers: selectProviderCatalogEntries.select(store.state),
       defaultRemoteIncompatibility: {},
+      ...catalog,
     }),
   );
   store.dispatch(

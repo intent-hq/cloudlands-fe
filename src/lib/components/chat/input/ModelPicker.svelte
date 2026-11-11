@@ -156,7 +156,6 @@
     machineLocation,
   } from '$features/remote-machines/agent-location';
   import {
-    selectCurrentBackendLabel,
     selectDefaultHasOverrides,
     selectRemoteMachine,
     selectRemoteMachineOperations,
@@ -169,12 +168,14 @@
   } from '$features/remote-machines/remote-machines-slice';
   import {
     isRemoteRefSignedOut,
+    remoteAutoPickProfile,
     machineReportFreshness,
-    remoteIncompatibilityFor,
-    remoteIncompatibilityMessage,
   } from '$features/remote-machines/remote-model-picker';
   import { formatDistanceToNow } from '$lib/utils/date';
-  import { selectProviderCatalogDefaultRemoteIncompatibility } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+  import {
+    selectProviderCatalogDefaultRemoteIncompatibility,
+    selectProviderCatalogDefaultRemoteLaunch,
+  } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import Fa from 'svelte-fa';
 
@@ -583,7 +584,7 @@
   const remoteSwitchSupport$ = selectRemoteModelSwitchSupport(workspaceIdStore);
   const defaultRemoteIncompatibility$ =
     selectProviderCatalogDefaultRemoteIncompatibility(workspaceIdStore);
-  const backendLabel$ = selectCurrentBackendLabel();
+  const defaultRemoteLaunch$ = selectProviderCatalogDefaultRemoteLaunch(workspaceIdStore);
   const remoteMachinesPending$ = selectRemoteMachineOperations();
   const defaultHasOverrides$ = selectDefaultHasOverrides();
   const remoteLocation = $derived(
@@ -640,17 +641,25 @@
   function remoteSignedOutCue(providerRef: string): boolean {
     return (
       isRemoteRefSignedOut($remoteMachine$, providerRef) &&
-      $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true
+      $defaultHasOverrides$[providerRefBaseId(providerRef)] !== true &&
+      !remoteAutoPick(providerRef)
     );
   }
-  /** Why the browsed configuration can't run on the agent's machine, or null. */
-  function remoteIncompatibleReason(providerRef: string): string | null {
-    const incompatibility = remoteIncompatibilityFor(
+  /**
+   * The Remote Ready profile the plain Default uses on this machine instead,
+   * or null. Only when starting an agent: a model switch never auto-picks.
+   */
+  function remoteAutoPick(providerRef: string) {
+    const machine = $remoteMachine$;
+    if (!machine || agentId) return null;
+    return remoteAutoPickProfile({
+      machine,
       providerRef,
-      $providerProfiles$,
-      $defaultRemoteIncompatibility$,
-    );
-    return incompatibility ? remoteIncompatibilityMessage(incompatibility, $backendLabel$) : null;
+      catalogProfiles: $providerProfiles$,
+      defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+      defaultRemoteLaunch: $defaultRemoteLaunch$,
+      defaultHasOverrides: $defaultHasOverrides$,
+    });
   }
   const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocked);
 
@@ -1549,8 +1558,10 @@
         catalogModels: { ...remoteCatalogModels, ...allProviderModels },
         catalogProfiles: $providerProfiles$,
         defaultRemoteIncompatibility: $defaultRemoteIncompatibility$,
+        defaultRemoteLaunch: $defaultRemoteLaunch$,
         defaultHasOverrides: $defaultHasOverrides$,
         useDefaultOption: showDefaultOption ? useDefaultOption : undefined,
+        allowAutoPick: !agentId,
       });
     }
     return buildGroupedModelOptions({
@@ -2631,7 +2642,6 @@
         onRefresh={handleRefreshProvider}
       />
     {:else if remoteScoped && remoteLocation && group.key !== 'default'}
-      {@const incompatibleReason = remoteIncompatibleReason(group.key)}
       {#if baseHasProfiles(group.key)}
         <div
           class="truncate px-(--model-picker-row-gutter) pt-1.5 pb-0.5 text-xs text-subtle"
@@ -2640,14 +2650,17 @@
           {group.label}
         </div>
       {/if}
-      {#if incompatibleReason}
+      {@const autoPick = remoteAutoPick(group.key)}
+      {#if autoPick}
         <div
-          class="flex items-start gap-2 px-(--model-picker-row-gutter) pt-1 pb-1 text-xs text-subtle"
+          class="px-(--model-picker-row-gutter) pt-1 pb-1 text-xs text-subtle"
           role="status"
-          data-testid="model-picker-remote-incompatible"
+          data-testid="model-picker-remote-auto-pick"
         >
-          <Fa icon={faLock} class="mt-0.5 size-3! shrink-0" />
-          <span class="min-w-0 leading-tight">{incompatibleReason}</span>
+          {m.chat_modelPicker_remoteAutoPick_label({
+            profile: autoPick.name,
+            machine: remoteLocation.name,
+          })}
         </div>
       {:else if remoteSignedOutCue(group.key)}
         <div

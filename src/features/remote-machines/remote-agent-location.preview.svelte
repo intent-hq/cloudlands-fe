@@ -19,6 +19,7 @@
     | 'picker-missing'
     | 'picker-older-backend'
     | 'picker-machine-without-models'
+    | 'picker-hidden'
     | 'e2b-starting'
     | 'e2b-running'
     | 'e2b-paused'
@@ -63,6 +64,8 @@
       'picker-missing': sceneState('picker-missing'),
       'picker-older-backend': sceneState('picker-older-backend'),
       'picker-machine-without-models': sceneState('picker-machine-without-models'),
+      // Hidden: an unmarked profile, and an unmarked Default on a machine not signed in to it.
+      'picker-hidden': sceneState('picker-hidden'),
       'e2b-starting': sceneState('e2b-starting'),
       'e2b-running': sceneState('e2b-running'),
       'e2b-paused': sceneState('e2b-paused'),
@@ -205,7 +208,19 @@
               remoteCompatible: true,
             },
             ...(s === 'picker-machine-without-models' ? [PERSONAL_PROFILE] : []),
+            ...(s === 'picker-hidden'
+              ? [
+                  {
+                    ...PERSONAL_PROFILE,
+                    remoteCompatible: false,
+                    remoteIncompatibility: { reason: 'not-marked', keys: [] },
+                  },
+                ]
+              : []),
           ],
+    ...(s === 'picker-hidden'
+      ? { defaultRemoteLaunch: { 'claude-code': 'machine-sign-in', codex: 'machine-sign-in' } }
+      : {}),
   });
   const reportedAt = (s: Scene) =>
     new Date(catalogNow() - (s === 'picker-stale' ? 3 * 24 * 60 : 2) * 60 * 1000).toISOString();

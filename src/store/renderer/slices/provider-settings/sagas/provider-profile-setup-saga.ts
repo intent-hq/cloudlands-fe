@@ -73,7 +73,11 @@ import {
   providerProfileStatusChanged,
   providerProfileUpdateRequested,
 } from '../provider-settings-slice';
-import { selectProviderProfile, selectProviderProfileSetups } from '../provider-settings-selectors';
+import {
+  selectProviderProfile,
+  selectProviderProfileSetups,
+  selectRemoteReadyProfilesSupported,
+} from '../provider-settings-selectors';
 import { takeStagedProfileEnv } from '../provider-profiles-state';
 import { selectIsDaemonAppOwned } from '../../daemon-health/daemon-health-selectors';
 import { closeTerminalOverlay, openTerminalOverlay } from '../../terminals/terminals-slice';
@@ -298,6 +302,7 @@ function* runFolderSetup(
     return;
   }
   const payload = buildCreatePayload('differentLogin', provider, { name, backup, folder });
+  const sendsRemoteChoice = yield* selectRemoteReadyProfilesSupported.effect();
   yield* put(
     providerProfileCreateRequested({
       requestId: setupId,
@@ -305,6 +310,8 @@ function* runFolderSetup(
       name: payload.name,
       env: payload.env,
       ...(backup ? { backup } : {}),
+      // Its account folder is signed in on this backend only.
+      ...(sendsRemoteChoice ? { remoteCompatible: false } : {}),
     }),
   );
   const saved = yield* call(awaitMutation, setupId);
@@ -355,6 +362,7 @@ function* runSecretSetup(
     return;
   }
   yield* put(changed(setupId, { phase: 'saving' }));
+  const sendsRemoteChoice = yield* selectRemoteReadyProfilesSupported.effect();
   yield* put(
     providerProfileCreateRequested({
       requestId: setupId,
@@ -362,6 +370,8 @@ function* runSecretSetup(
       name,
       env,
       ...(backup ? { backup } : {}),
+      // A key or token works on any machine.
+      ...(sendsRemoteChoice ? { remoteCompatible: true } : {}),
     }),
   );
   const saved = yield* call(awaitMutation, setupId);

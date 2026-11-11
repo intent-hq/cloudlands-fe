@@ -7,8 +7,10 @@ import { store } from '$store/renderer/store';
 import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import {
   selectProviderCatalogDefaultRemoteIncompatibility,
+  selectProviderCatalogDefaultRemoteLaunch,
   selectProviderCatalogProfiles,
 } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+import { selectRemoteReadyProfilesSupported } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
 import { remoteModelSwitchSupport, type RemoteModelSwitchSupport } from './remote-model-picker';
 import {
   cloudProfileBlockReason,
@@ -31,6 +33,15 @@ import {
 export const selectRemoteMachinesVisible = store.createSelector(
   (state) =>
     selectLabsRemoteAgentsEnabled.select(state) && state.remoteMachines?.supported === true,
+);
+
+/**
+ * Remote-ready marks and the Default's "Use on remote machines" option: only
+ * with remote machines visible and a backend that stores the choice.
+ */
+export const selectRemoteReadyProfilesVisible = store.createSelector(
+  (state) =>
+    selectRemoteMachinesVisible.select(state) && selectRemoteReadyProfilesSupported.select(state),
 );
 
 /** The current backend's exposed machines, by name. */
@@ -95,6 +106,7 @@ export const selectRemoteModelSwitchSupport = store.createSelector(
         state,
         workspaceId,
       ),
+      defaultRemoteLaunch: selectProviderCatalogDefaultRemoteLaunch.select(state, workspaceId),
       profileDefaults: Object.values(profiles?.defaults ?? {}),
       profilesLoadStatus: profiles?.loadStatus ?? 'idle',
     });

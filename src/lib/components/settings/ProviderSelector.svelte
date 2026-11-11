@@ -39,6 +39,7 @@
   import {
     selectIsProviderEnabled,
     selectProviderDefaultConfigs,
+    selectBaseIdsWithProfiles,
     selectProviderProfilesLoadStatus,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
@@ -71,6 +72,9 @@
   import ProviderProfileAddDialog from './ProviderProfileAddDialog.svelte';
   import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
+  import ProviderRemoteMenuItems from './ProviderRemoteMenuItems.svelte';
+  import RemoteReadyPill from './RemoteReadyPill.svelte';
+  import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
@@ -223,6 +227,10 @@
   // The dialog seeds its form only once the saved list has loaded, so a save
   // can never replace overrides it has not seen.
   const defaultConfigs$ = selectProviderDefaultConfigs();
+  // With no named profiles there is no Default row: its remote options and
+  // Remote Ready pill move to the provider row.
+  const remoteReady$ = selectRemoteReadyProfilesVisible();
+  const baseIdsWithProfiles$ = selectBaseIdsWithProfiles();
   const profilesLoadStatus$ = selectProviderProfilesLoadStatus();
   let defaultTarget = $state<{ providerId: string; providerName: string } | null>(null);
   let defaultOpen = $state(false);
@@ -320,6 +328,8 @@
             {@const canInstall = !provider.available && !provider.unavailableReason}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
+            {@const defaultOnlyRemote =
+              $remoteReady$ && canAddProfile && !$baseIdsWithProfiles$.includes(provider.id)}
             {@const hasNodeMissing =
               !provider.statusPending &&
               provider.hasNpxFallback &&
@@ -352,6 +362,9 @@
                     </span>
                     {#if provider.available && provider.version}
                       <span class="type-caption text-muted-foreground">{provider.version}</span>
+                    {/if}
+                    {#if defaultOnlyRemote && $defaultConfigs$[provider.id]?.remoteCompatible === true}
+                      <RemoteReadyPill />
                     {/if}
                   </div>
                 </div>
@@ -453,6 +466,10 @@
                         >
                           {#if $fastModeProviders$.includes(provider.id)}
                             <ProviderFastModeMenuItems providerRef={provider.id} />
+                            <Menu.Separator />
+                          {/if}
+                          {#if defaultOnlyRemote}
+                            <ProviderRemoteMenuItems providerId={provider.id} />
                             <Menu.Separator />
                           {/if}
                           {#if hasWarning}

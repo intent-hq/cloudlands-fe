@@ -71,6 +71,26 @@ export const preview = definePreview<ComponentProps<typeof ProviderProfileKindDi
         ],
       },
     },
+    // Remote-ready profiles: the toggle, on, with no warnings.
+    'remote-toggle': {
+      props: {
+        ...claudeBase,
+        mode: 'add',
+        step: 'details',
+        kind: 'advanced',
+        name: 'Gateway',
+        remoteMarks: true,
+        envRows: [
+          {
+            rowId: 'row-1',
+            key: 'ANTHROPIC_BASE_URL',
+            mode: 'value',
+            value: 'https://llm.example.com',
+          },
+          { rowId: 'row-2', key: 'ANTHROPIC_AUTH_TOKEN', mode: 'value', value: 'sk-example' },
+        ],
+      },
+    },
     'switched-from-api-key': {
       props: { ...claudeApiKeyEdit, kind: 'advanced', name: 'Anthropic key (unsaved)' },
     },
