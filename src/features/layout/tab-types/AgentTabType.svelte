@@ -55,6 +55,12 @@
   } from '@fortawesome/free-solid-svg-icons';
   import { faNote } from '$lib/icons/faNote';
   import HarnessFeaturesModal from '$lib/components/chat/HarnessFeaturesModal.svelte';
+  import PromptBreakdownIndicator from '$features/agent/prompt-breakdown/PromptBreakdownIndicator.svelte';
+  import { loadPromptBreakdown } from '$features/agent/prompt-breakdown/load-prompt-breakdown';
+  import {
+    harnessMayRecordPromptBreakdown,
+    type PromptBreakdownView,
+  } from '$features/agent/prompt-breakdown/prompt-breakdown';
   import RetireAgentModal from '$lib/components/modals/RetireAgentModal.svelte';
   import ReplaceAgentModal from '$lib/components/modals/ReplaceAgentModal.svelte';
   import { formatAgentMessagesForClipboard } from '$lib/utils/clipboard-formatters';
@@ -188,6 +194,28 @@
   const harnessFeatures = $derived($agent$?.harnessFeatures ?? null);
   let harnessModalOpen = $state(false);
 
+  // Starting-context breakdown: served on agent.getSession only, for harness 3.10+.
+  let promptBreakdown = $state<PromptBreakdownView | null>(null);
+  let promptBreakdownKey = '';
+  const breakdownModel = $derived($agent$?.model);
+  $effect(() => {
+    const agentId = tab.agentId;
+    const model = breakdownModel;
+    const key = `${agentId}:${model}:${harnessVersion}`;
+    if (key !== promptBreakdownKey) {
+      promptBreakdownKey = key;
+      promptBreakdown = null;
+    }
+    if (!agentId || !isActive || !harnessMayRecordPromptBreakdown(harnessVersion)) return;
+    let current = true;
+    void loadPromptBreakdown(agentId, workspaceId, model).then((view) => {
+      if (current) promptBreakdown = view;
+    });
+    return () => {
+      current = false;
+    };
+  });
+
   // "Replace Agent" (peer-agent hand-off) — hidden unless every session-derived
   // eligibility gate passes: harnessFeatures.peerAgents snapshot true,
   // top-level, non-background, not retired. Mirrors the AgentCard context menu.
@@ -311,12 +339,14 @@
       ($retirementSupported$ && $agent$ && !$agent$.retiredAt) ||
       !$hidesAgentLifecycleActions$;
     const hasMetadata = !!(agentSpecialistName || harnessVersion);
+    const indicator = promptBreakdown ? agentPromptBreakdown : undefined;
     untrack(() => {
       headerContext.registerActions({
         display: agentDisplayActions,
         conversation: agentConversationActions,
         lifecycle: hasLifecycleActions ? agentLifecycleActions : undefined,
         footer: hasMetadata ? agentMetadata : undefined,
+        indicator,
       });
       headerContext.registerState({ subtitle });
     });
@@ -403,6 +433,12 @@
       disabled={isAgentDeleting}
       destructive
     />
+  {/if}
+{/snippet}
+
+{#snippet agentPromptBreakdown()}
+  {#if promptBreakdown}
+    <PromptBreakdownIndicator breakdown={promptBreakdown} />
   {/if}
 {/snippet}
 

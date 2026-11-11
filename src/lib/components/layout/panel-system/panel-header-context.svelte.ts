@@ -29,6 +29,8 @@ export interface PanelHeaderState {
 }
 
 export interface PanelHeaderActions {
+  /** Compact status control shown in the header, before the actions menu. */
+  indicator?: Snippet;
   /** Conversation navigation, following the panel-owned inline Rename command. */
   conversation?: Snippet<[menuOpen: boolean]>;
   /** Agent lifecycle commands, separate from conversation and settings. */
