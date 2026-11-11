@@ -194,6 +194,18 @@ export function getPageForBackend(
   return getPanelContents(window).find((panel) => contentsBackends.get(panel) === backendId);
 }
 
+/** Every backend with a live page in `window`: its own page's, then its panels'. */
+export function getBackendIdsForWindow(window: BrowserWindowType): Set<string> {
+  const ids = new Set<string>();
+  if (isGone(window)) return ids;
+  ids.add((window as BackendBoundWindow).backendId ?? LOCAL_CONNECTION_ID);
+  for (const panel of getPanelContents(window)) {
+    const id = contentsBackends.get(panel);
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
 /** The page the user sees in `window`. */
 export function getActiveContents(window: BrowserWindowType): Electron.WebContents {
   const panel = activePanels.get(window);

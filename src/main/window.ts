@@ -54,6 +54,8 @@ import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
   getAllRendererContents,
+  getBackendIdsForWindow,
+  getPageForBackend,
   registerPanelSwitcher,
   setActivePanel,
   stampPanelWithBackend,
@@ -490,38 +492,42 @@ export function captureWindowSessionsSnapshot(this: BrowserWindowType | void): v
       typeof this.isDestroyed === 'function' &&
       !isTransientCaptureWindow(this)
     ) {
-      const closingBackendId = getBackendIdForWindow(this);
-      const isLastForBackend =
-        liveWindows.filter((window) => getBackendIdForWindow(window) === closingBackendId)
-          .length === 1;
-      const hasSurvivingBackend = liveWindows.some(
-        (window) => getBackendIdForWindow(window) !== closingBackendId,
+      // A window can hold pages for several backends (connection panels):
+      // a backend is "last" only when no surviving window has any page for it.
+      const survivingBackends = new Set(
+        liveWindows
+          .filter((window) => window !== this)
+          .flatMap((window) => [...getBackendIdsForWindow(window)]),
       );
       const hasSurvivingDock = allLiveWindows.some(
         (window) => window !== this && isTransientCaptureWindow(window),
       );
-      const hasSurvivingDockForBackend = allLiveWindows.some(
-        (window) =>
-          window !== this &&
-          isTransientCaptureWindow(window) &&
-          getBackendIdForWindow(window) === closingBackendId,
-      );
-      if (isLastForBackend && (hasSurvivingBackend || hasSurvivingDock)) {
-        closedBackendSessions.add(closingBackendId);
-        delete lastKnownSessions[closingBackendId];
-        // The tombstone is process-local: prune the on-disk bucket now so a
-        // crash/force-quit before the next aggregate save cannot resurrect the
-        // explicitly closed backend's windows at the next boot-wide restore.
-        pruneSessionsBucketFromDisk(closingBackendId);
-        // Explicit last-window close for this backend: dispose its pooled
-        // client so no socket or reconnect timer keeps dialing a daemon with
-        // no windows left ("Open" reconnects on demand). Local is exempt —
-        // the sidecar management must stay alive.
-        if (closingBackendId !== LOCAL_CONNECTION_ID && !hasSurvivingDockForBackend) {
-          try {
-            onLastWindowClosedForBackend?.(closingBackendId);
-          } catch (err) {
-            logger.warn('Failed to dispose backend client on last window close:', err);
+      for (const closingBackendId of getBackendIdsForWindow(this)) {
+        const isLastForBackend = !survivingBackends.has(closingBackendId);
+        const hasSurvivingBackend = [...survivingBackends].some((id) => id !== closingBackendId);
+        const hasSurvivingDockForBackend = allLiveWindows.some(
+          (window) =>
+            window !== this &&
+            isTransientCaptureWindow(window) &&
+            getBackendIdForWindow(window) === closingBackendId,
+        );
+        if (isLastForBackend && (hasSurvivingBackend || hasSurvivingDock)) {
+          closedBackendSessions.add(closingBackendId);
+          delete lastKnownSessions[closingBackendId];
+          // The tombstone is process-local: prune the on-disk bucket now so a
+          // crash/force-quit before the next aggregate save cannot resurrect the
+          // explicitly closed backend's windows at the next boot-wide restore.
+          pruneSessionsBucketFromDisk(closingBackendId);
+          // Explicit last-window close for this backend: dispose its pooled
+          // client so no socket or reconnect timer keeps dialing a daemon with
+          // no windows left ("Open" reconnects on demand). Local is exempt —
+          // the sidecar management must stay alive.
+          if (closingBackendId !== LOCAL_CONNECTION_ID && !hasSurvivingDockForBackend) {
+            try {
+              onLastWindowClosedForBackend?.(closingBackendId);
+            } catch (err) {
+              logger.warn('Failed to dispose backend client on last window close:', err);
+            }
           }
         }
       }
@@ -861,11 +867,17 @@ function findAppWindowForBackend(backendId: string): BrowserWindowType | undefin
       !isTrackedHudWindow(window) &&
       !isHudWindow(window),
   );
-  // Prefer a window showing the backend; then one whose own page is it.
+  // Prefer a window showing the backend, then one holding a page for it
+  // (its own page or a hidden panel). Callers reveal that page before use.
   return (
     windows.find((window) => getBackendIdForWindow(window) === backendId) ??
-    windows.find((window) => getBackendIdForWebContents(window.webContents) === backendId)
+    windows.find((window) => getPageForBackend(window, backendId) !== undefined)
   );
+}
+
+/** Make `window` show `backendId`'s page before focusing it or routing to it. */
+function revealBackendInWindow(window: BrowserWindowType, backendId: string): void {
+  if (getBackendIdForWindow(window) !== backendId) switchWindowToBackend(window, backendId);
 }
 
 // ---- Connection panels ----
@@ -1000,20 +1012,7 @@ export function switchWindowToBackend(window: BrowserWindowType, backendId: stri
 
 registerPanelSwitcher(switchWindowToBackend);
 
-/** The window holding a live connection panel for `backendId`, if any. */
-function findWindowWithPageForBackend(backendId: string): BrowserWindowType | undefined {
-  return getAppWindows().find((window) => {
-    const view = panelViews.get(window)?.get(backendId);
-    return !window.isDestroyed() && !!view && !view.webContents.isDestroyed();
-  });
-}
-
 export async function openOrFocusWindowsForBackend(backendId: string): Promise<void> {
-  const host = findWindowWithPageForBackend(backendId);
-  if (host) {
-    switchWindowToBackend(host, backendId);
-    return;
-  }
   const findAppWindow = () => findAppWindowForBackend(backendId);
   let existing = findAppWindow();
   if (!existing) {
@@ -1021,6 +1020,7 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
     existing = findAppWindow();
   }
   if (existing) {
+    revealBackendInWindow(existing, backendId);
     if (existing.isMinimized()) existing.restore();
     existing.show();
     existing.focus();
@@ -1037,13 +1037,12 @@ export async function openOrFocusWindowsForBackend(backendId: string): Promise<v
  * bound to the backend.
  */
 export function showWorkspaceInBackendWindow(backendId: string, workspaceId: string): boolean {
-  const host = findWindowWithPageForBackend(backendId);
-  if (host && getBackendIdForWindow(host) !== backendId) switchWindowToBackend(host, backendId);
   const window = findAppWindowForBackend(backendId);
   if (!window) {
     logger.warn('No window for backend to show workspace in', { backendId, workspaceId });
     return false;
   }
+  revealBackendInWindow(window, backendId);
   queueDeepLinkForWindow(window, { type: 'open', params: { id: workspaceId } });
   if (window.isMinimized()) window.restore();
   window.show();
