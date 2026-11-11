@@ -5,12 +5,20 @@ import {
   type CloudMachineConfigureInput,
   type CloudMachineErrorData,
   type CloudMachineProvider,
+  type CloudProviderKind,
 } from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
 
 /** One pending operation per key: an entry operation (below) or a machine id. */
 export type CloudMachineOperation = 'saving' | 'testing' | 'removing' | 'pausing' | 'deleting';
+
+/** Field values a preview's setup form starts from; never a real secret. */
+export interface CloudFormDraft {
+  name?: string;
+  apiKey?: string;
+  projectId?: string;
+}
 
 /** The form key of an entry that is not saved yet. */
 export const NEW_CLOUD_ENTRY = 'new';
@@ -39,6 +47,8 @@ export interface CloudMachinesState {
   loaded: boolean;
   /** `cloudMachineEntries: 1`: the backend keeps several named entries. */
   entries: boolean;
+  /** `cloudMachineProviders`: the providers a new entry can use; `["e2b"]` when not listed. */
+  providerKinds: CloudProviderKind[];
   /** Saved entries by id; without `entries`, only "e2b". */
   providers: Record<string, CloudMachineProvider>;
   /** Live sandboxes (machine rows with `cloud`), by machine id. */
@@ -55,6 +65,7 @@ const initialCloudMachinesState: CloudMachinesState = {
   supported: false,
   loaded: false,
   entries: false,
+  providerKinds: ['e2b'],
   providers: {},
   machines: {},
   readAt: {},
@@ -69,6 +80,7 @@ export const cloudMachinesLoaded = createAction<
     snapshot: {
       supported: boolean;
       entries?: boolean;
+      providerKinds?: CloudProviderKind[];
       providers: CloudMachineProvider[];
       machines: RemoteMachine[];
       readAt: number;
@@ -129,6 +141,7 @@ cloudMachinesReducer.with(cloudMachinesLoaded, (state, { payload: [snapshot] }) 
   supported: snapshot.supported,
   loaded: snapshot.supported,
   entries: snapshot.supported && snapshot.entries === true,
+  providerKinds: snapshot.providerKinds?.length ? snapshot.providerKinds : ['e2b'],
   providers: Object.fromEntries(
     snapshot.providers
       .filter((provider) => keepEntry(snapshot.entries === true, provider.id))

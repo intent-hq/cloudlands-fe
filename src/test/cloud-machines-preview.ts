@@ -21,7 +21,7 @@ import {
 } from '$features/agent/utils/pending-agent-deletions';
 import { WorkspaceStatus } from '$shared/types';
 import { WorkspaceId } from '$shared/types/branded-ids';
-import type { CloudMachineProvider } from '$shared/types/cloud-machines';
+import type { CloudMachineProvider, CloudProviderKind } from '$shared/types/cloud-machines';
 import type { RemoteMachine } from '$shared/types/remote-machines';
 import {
   collapsedSandboxGroups,
@@ -46,7 +46,21 @@ export type CloudMachinesPreviewState =
   | 'entries-single'
   | 'entries-edit'
   | 'sandboxes-grouped'
-  | 'sandboxes-collapsed';
+  | 'sandboxes-collapsed'
+  | 'add-cloud-menu'
+  | 'northflank-setup'
+  | 'northflank-setup-filled'
+  | 'northflank-setup-error'
+  | 'providers';
+
+/** Scenes of a backend that offers Northflank as well as E2B. */
+const NORTHFLANK_SCENES: readonly CloudMachinesPreviewState[] = [
+  'add-cloud-menu',
+  'northflank-setup',
+  'northflank-setup-filled',
+  'northflank-setup-error',
+  'providers',
+];
 
 /** Scenes where the backend keeps named entries (`cloudMachineEntries: 1`). */
 const ENTRY_SCENES: readonly CloudMachinesPreviewState[] = [
@@ -56,6 +70,7 @@ const ENTRY_SCENES: readonly CloudMachinesPreviewState[] = [
   'entries-rename-taken',
   'entries-single',
   'entries-edit',
+  ...NORTHFLANK_SCENES,
 ];
 
 export const E2B_PROVIDER: CloudMachineProvider = {
@@ -90,6 +105,34 @@ export const TEAM_ENTRY: CloudMachineProvider = {
   configuredAt: '2026-11-07T08:00:00.000Z',
 };
 
+/** A Northflank entry: services in one project (and its region), a plan per size. */
+export const NORTHFLANK_ENTRY: CloudMachineProvider = {
+  id: 'northflank-7c2e91a0b3d4',
+  provider: 'northflank',
+  name: 'Agents EU',
+  state: 'ready',
+  template: 'ghcr.io/intent-hq/intent-node:0.212.0',
+  templateProject: '',
+  agentProviders: ['claude-code', 'codex'],
+  sizes: [
+    { id: '2x4', vcpu: 2, memoryMiB: 4096, deploymentPlan: 'nf-compute-200' },
+    { id: '4x8', vcpu: 4, memoryMiB: 8192, deploymentPlan: 'nf-compute-400' },
+    { id: '8x16', vcpu: 8, memoryMiB: 16384, deploymentPlan: 'nf-compute-800-16' },
+  ],
+  size: '4x8',
+  idlePauseMinutes: 15,
+  pausedDeleteDays: 7,
+  configuredAt: '2026-11-08T08:00:00.000Z',
+  checkedAt: '2026-11-08T09:00:00.000Z',
+  northflank: {
+    projectId: 'intent-agents',
+    region: 'europe-west',
+    image: 'ghcr.io/intent-hq/intent-node',
+    plans: { '2x4': 'nf-compute-200', '4x8': 'nf-compute-400', '8x16': 'nf-compute-800-16' },
+    diskGiB: 20,
+  },
+};
+
 const WORKSPACES = [
   { id: 'ws-ci', title: 'Fix flaky CI' },
   { id: 'ws-docs', title: 'Protocol docs' },
@@ -118,7 +161,7 @@ function sandbox(
     runningAgents: 1,
     addedAt: '2026-11-06T10:00:00.000Z',
     cloud: {
-      provider: 'e2b',
+      provider: entry.provider,
       cloudMachineId: entry.id,
       sandboxId: `i${id}`,
       state,
@@ -137,6 +180,11 @@ export const E2B_SANDBOXES: RemoteMachine[] = [
   sandbox('sb-1', 'iOS build fixer', 'ws-ci', 'Clément', 'running', 42 * 60),
   sandbox('sb-2', 'Docs sweeper', 'ws-docs', 'Sam', 'running', 72 * 60),
   sandbox('sb-3', 'Perf profiler', 'ws-perf', 'Clément', 'paused', 17 * 60),
+];
+
+export const NORTHFLANK_SANDBOXES: RemoteMachine[] = [
+  sandbox('nf-1', 'Migration runner', 'ws-perf', 'Clément', 'running', 25 * 60, NORTHFLANK_ENTRY),
+  sandbox('nf-2', 'Flaky test hunter', 'ws-ci', 'Sam', 'paused', 9 * 60, NORTHFLANK_ENTRY),
 ];
 
 export const TEAM_SANDBOXES: RemoteMachine[] = [
@@ -210,26 +258,37 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
   const entries = ENTRY_SCENES.includes(state);
   const team =
     state === 'entries-key-rejected' ? { ...TEAM_ENTRY, state: 'key-rejected' } : TEAM_ENTRY;
+  const northflank = NORTHFLANK_SCENES.includes(state);
+  // The menu and setup scenes start from E2B alone, so Northflank is the one added.
+  const northflankProviders =
+    state === 'providers' ? [E2B_PROVIDER, NORTHFLANK_ENTRY] : [E2B_PROVIDER];
   store.dispatch(
     cloudMachinesLoaded({
       supported: state !== 'unsupported',
       entries,
-      providers: entries
-        ? state === 'entries-single' || state === 'entries-edit'
-          ? [E2B_PROVIDER]
-          : [E2B_PROVIDER, team]
-        : configured
-          ? [state === 'key-rejected' ? { ...E2B_PROVIDER, state: 'key-rejected' } : E2B_PROVIDER]
-          : [],
-      machines: entries
-        ? state === 'entries-single' || state === 'entries-edit'
-          ? E2B_SANDBOXES
-          : [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
-        : state === 'sandboxes-grouped' || state === 'sandboxes-collapsed'
-          ? GROUPED_SANDBOXES
-          : configured && state !== 'connected-no-sandboxes'
-            ? E2B_SANDBOXES
+      ...(northflank ? { providerKinds: ['e2b', 'northflank'] satisfies CloudProviderKind[] } : {}),
+      providers: northflank
+        ? northflankProviders
+        : entries
+          ? state === 'entries-single' || state === 'entries-edit'
+            ? [E2B_PROVIDER]
+            : [E2B_PROVIDER, team]
+          : configured
+            ? [state === 'key-rejected' ? { ...E2B_PROVIDER, state: 'key-rejected' } : E2B_PROVIDER]
             : [],
+      machines: northflank
+        ? state === 'providers'
+          ? [...E2B_SANDBOXES.slice(0, 1), ...NORTHFLANK_SANDBOXES]
+          : []
+        : entries
+          ? state === 'entries-single' || state === 'entries-edit'
+            ? E2B_SANDBOXES
+            : [...E2B_SANDBOXES, ...TEAM_SANDBOXES]
+          : state === 'sandboxes-grouped' || state === 'sandboxes-collapsed'
+            ? GROUPED_SANDBOXES
+            : configured && state !== 'connected-no-sandboxes'
+              ? E2B_SANDBOXES
+              : [],
       // Read now: uptime then matches the fixture until the next 30 s tick.
       readAt: Date.now(),
     }),
@@ -242,6 +301,22 @@ export function setupCloudMachinesFixture(state: CloudMachinesPreviewState) {
       cloudMachineOperationSettled(cloudValidateKey(NEW_CLOUD_ENTRY), {
         message: 'E2B rejected the API key',
         cloud: { code: 'cloud-machine-unavailable', reason: 'key-rejected', retryable: false },
+      }),
+    );
+  }
+  if (state === 'northflank-setup-filled')
+    store.dispatch(cloudMachineValidated(NEW_CLOUD_ENTRY, { ...NORTHFLANK_ENTRY, id: '' }));
+  if (state === 'northflank-setup-error') {
+    store.dispatch(cloudMachineOperationStarted(cloudValidateKey(NEW_CLOUD_ENTRY), 'testing'));
+    store.dispatch(
+      cloudMachineOperationSettled(cloudValidateKey(NEW_CLOUD_ENTRY), {
+        message: 'Northflank rejected the API token',
+        cloud: {
+          code: 'cloud-machine-unavailable',
+          reason: 'key-rejected',
+          retryable: false,
+          provider: 'northflank',
+        },
       }),
     );
   }

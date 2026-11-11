@@ -1,5 +1,5 @@
 <!--
-  Settings → one E2B entry. Before setup it holds the inline setup form; after,
+  Settings → one E2B or Northflank entry; the meta line names its provider. Before setup it holds the inline setup form; after,
   it names the template and size, and lists the entry's live sandboxes under
   it. With named entries (Nodes), the name renames in place. Editing reopens
   the form; Remove deletes the entry's key and every sandbox it started.
@@ -13,7 +13,11 @@
   import { faCloud, faPen, faTrash } from '$lib/icons/phosphor-icons';
   import { cn } from '$lib/utils';
   import { m } from '$shared/paraglide/messages.js';
-  import type { CloudMachineProvider } from '$shared/types/cloud-machines';
+  import {
+    cloudProviderName,
+    type CloudMachineProvider,
+    type CloudProviderKind,
+  } from '$shared/types/cloud-machines';
   import { store as appStore } from '$store/renderer/store';
   import { selectCurrentBackendLabel } from '$features/remote-machines/remote-machines-selectors';
   import {
@@ -25,6 +29,7 @@
   } from './cloud-machines-selectors';
   import {
     NEW_CLOUD_ENTRY,
+    type CloudFormDraft,
     cloudConfigureKey,
     cloudMachineFailureDismissed,
     cloudMachinesConfigureRequested,
@@ -43,6 +48,10 @@
   interface Props {
     /** The saved entry; null while a new one is set up. */
     entry: CloudMachineProvider | null;
+    /** The provider of a new entry. */
+    newProvider?: CloudProviderKind;
+    /** Previews: the setup form's starting values. */
+    initialDraft?: CloudFormDraft;
     /** The setup/edit form is open. */
     editing: boolean;
     onEdit: () => void;
@@ -53,7 +62,17 @@
     now?: number;
   }
 
-  let { entry, editing, onEdit, onClose, first = false, now }: Props = $props();
+  let {
+    entry,
+    newProvider = 'e2b',
+    initialDraft,
+    editing,
+    onEdit,
+    onClose,
+    first = false,
+    now,
+  }: Props = $props();
+  const kind = $derived(entry?.provider ?? newProvider);
 
   const named$ = selectCloudEntriesSupported();
   const entries$ = selectCloudEntries();
@@ -62,7 +81,13 @@
   const operations$ = selectCloudOperations();
   const failures$ = selectCloudFailures();
 
-  const name = $derived(entry?.name ?? 'E2B'); // i18n-ignore (product name)
+  const name = $derived(entry?.name ?? cloudProviderName(kind));
+  // The provider, unless the name already says it.
+  const providerLabel = $derived(
+    name.trim().toLowerCase() === cloudProviderName(kind).toLowerCase()
+      ? null
+      : cloudProviderName(kind),
+  );
   const sandboxes = $derived(
     entry ? $sandboxes$.filter((machine) => machine.cloud?.cloudMachineId === entry.id) : [],
   );
@@ -88,13 +113,19 @@
         };
       case 'key-rejected':
         return {
-          label: m.cloudMachines_state_keyRejected_label(),
+          label:
+            kind === 'northflank'
+              ? m.cloudMachines_northflank_state_tokenRejected_label()
+              : m.cloudMachines_state_keyRejected_label(),
           color: 'red',
           dot: 'bg-danger',
         };
       default:
         return {
-          label: m.cloudMachines_state_unreachable_label(),
+          label:
+            kind === 'northflank'
+              ? m.cloudMachines_northflank_state_unreachable_label()
+              : m.cloudMachines_state_unreachable_label(),
           color: 'amber',
           dot: 'bg-warning',
         };
@@ -130,8 +161,11 @@
   }
 
   function failureText(failure: NonNullable<typeof removeFailure>) {
-    if (failure.forbidden) return m.cloudMachines_error_ownerOnly();
-    return failure.cloud ? cloudErrorText(failure.cloud).description : failure.message;
+    if (failure.forbidden)
+      return kind === 'northflank'
+        ? m.cloudMachines_northflank_error_ownerOnly()
+        : m.cloudMachines_error_ownerOnly();
+    return failure.cloud ? cloudErrorText(failure.cloud, kind).description : failure.message;
   }
 </script>
 
@@ -140,6 +174,7 @@
   aria-label={name}
   aria-busy={removing}
   data-cloud-machine-row={entry?.id ?? NEW_CLOUD_ENTRY}
+  data-cloud-provider={kind}
 >
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet leading()}
@@ -175,7 +210,13 @@
       <span class="inline-flex h-[1lh] items-center gap-1.5 align-top">
         {#if status}
           <Badge variant="dot" color={status.color}>{status.label}</Badge>
-          {#if templateLabel}<span>{templateLabel}</span>{/if}
+          {#if providerLabel}<span data-cloud-provider-label>{providerLabel}</span>{/if}
+          {#if entry?.northflank?.region}<span aria-hidden="true">·</span><span
+              >{entry.northflank.region}</span
+            >{/if}
+          {#if templateLabel}{#if providerLabel || entry?.northflank?.region}<span
+                aria-hidden="true">·</span
+              >{/if}<span>{templateLabel}</span>{/if}
           <span aria-hidden="true">·</span>
           <span>{cloudSizeLabel(entry?.size ?? '')}</span>
         {:else}
@@ -227,8 +268,14 @@
   {/if}
 
   {#if editing || !entry}
-    <CloudMachineSetupForm {entry} backendLabel={$backendLabel$} {onClose} />
+    <CloudMachineSetupForm
+      {entry}
+      newProvider={kind}
+      {initialDraft}
+      backendLabel={$backendLabel$}
+      {onClose}
+    />
   {:else if sandboxes.length > 0}
-    <CloudSandboxList {sandboxes} entryName={entry.name} {now} />
+    <CloudSandboxList {sandboxes} entryName={entry.name} provider={kind} {now} />
   {/if}
 </article>
