@@ -47,6 +47,9 @@
 
   const menuRequests$ = selectRailMenuRequests();
 
+  // The names are a fallback, not something to read on every pass of the pointer.
+  const RAIL_TOOLTIP_DELAY_MS = 900;
+
   let menuOpen = $state(false);
   // This machine's status menu (health, machines): opened by a context click on
   // its rail item here, or on another machine's rail from that machine's renderer.
@@ -108,6 +111,7 @@
             aria-current={item.selected ? 'true' : undefined}
             tooltip={label}
             tooltipSide="right"
+            tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
             data-testid="machine-rail-item"
             data-machine-id={item.id}
             data-offline={item.offline || undefined}
@@ -147,6 +151,7 @@
             aria-label={m.machineRail_add_label()}
             tooltip={m.machineRail_add_label()}
             tooltipSide="right"
+            tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
             data-testid="machine-rail-add"
           >
             <Fa icon={faPlus} size="sm" />
