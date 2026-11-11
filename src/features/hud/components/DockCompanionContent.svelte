@@ -90,6 +90,9 @@
   .overview-frame:not(.conversation-open) {
     height: var(--dock-overview-height, auto);
   }
+  .floating-up:not(.conversation-open) {
+    top: auto;
+  }
   .floating-up {
     top: 0;
     bottom: var(--header-height);
