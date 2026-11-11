@@ -43,6 +43,7 @@
     agentId,
     breakdown,
   }: Props = $props();
+  const id = $props.id();
 
   // Read on every open: the daemon replaces the breakdown on each respawn. The last
   // result stays on screen while the dialog closes and until the next read lands.
@@ -86,7 +87,6 @@
   bind:open
   static={staticPosition}
   title={m.chat_harnessFeaturesModal_title({ version })}
-  description={m.chat_harnessFeaturesModal_description()}
   size="wide"
 >
   <div class="@container">
@@ -95,39 +95,47 @@
         <PromptBreakdownPanel breakdown={shownBreakdown} />
       </div>
     {/if}
-    <div
-      class="grid grid-cols-1 gap-6 @min-[28rem]:grid-cols-2"
-      data-testid="harness-features-list"
-    >
-      {#each groups as group (group.enabled)}
-        <section class="min-w-0" aria-label={group.label}>
-          <h3 class="text-sm font-medium mb-3">{group.label}</h3>
-          <div role="list" class="space-y-2">
-            {#each group.rows as row (row.key)}
-              <ListRow
-                role="listitem"
-                class="min-h-0 px-0 py-0 [&_.truncate]:whitespace-normal"
-                data-testid="harness-feature-state"
-                data-feature={row.key}
-                data-enabled={row.enabled}
-              >
-                {#snippet title()}
-                  {#if row.description}
-                    <Tooltip content={row.description} side="top" size="sm">
-                      <span>{row.label}</span>
-                    </Tooltip>
-                    <span class="sr-only">{row.description}</span>
-                  {:else}
-                    {row.label}
-                  {/if}
-                {/snippet}
-              </ListRow>
-            {:else}
-              <div role="listitem" class="text-xs text-subtle" aria-hidden="true">—</div>
-            {/each}
-          </div>
-        </section>
-      {/each}
-    </div>
+    <section aria-labelledby={`${id}-capabilities`}>
+      <h3 id={`${id}-capabilities`} class="text-sm font-medium">
+        {m.chat_harnessFeaturesModal_capabilities_title()}
+      </h3>
+      <p class="mb-4 mt-1 text-sm text-muted-foreground">
+        {m.chat_harnessFeaturesModal_description()}
+      </p>
+      <div
+        class="grid grid-cols-1 gap-6 @min-[28rem]:grid-cols-2"
+        data-testid="harness-features-list"
+      >
+        {#each groups as group (group.enabled)}
+          <section class="min-w-0" aria-label={group.label}>
+            <h4 class="text-sm font-medium mb-3">{group.label}</h4>
+            <div role="list" class="space-y-2">
+              {#each group.rows as row (row.key)}
+                <ListRow
+                  role="listitem"
+                  class="min-h-0 px-0 py-0 [&_.truncate]:whitespace-normal"
+                  data-testid="harness-feature-state"
+                  data-feature={row.key}
+                  data-enabled={row.enabled}
+                >
+                  {#snippet title()}
+                    {#if row.description}
+                      <Tooltip content={row.description} side="top" size="sm">
+                        <span>{row.label}</span>
+                      </Tooltip>
+                      <span class="sr-only">{row.description}</span>
+                    {:else}
+                      {row.label}
+                    {/if}
+                  {/snippet}
+                </ListRow>
+              {:else}
+                <div role="listitem" class="text-xs text-subtle" aria-hidden="true">—</div>
+              {/each}
+            </div>
+          </section>
+        {/each}
+      </div>
+    </section>
   </div>
 </ContentDialog>

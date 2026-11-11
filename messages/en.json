@@ -603,6 +603,7 @@
   "chat_failureRecovery_recorded_many": "{count} recorded failures",
   "chat_failureRecovery_recorded_one": "1 recorded failure",
   "chat_failureRecovery_title_label": "Couldn't complete this response",
+  "chat_harnessFeaturesModal_capabilities_title": "Capabilities",
   "chat_harnessFeaturesModal_description": "Capabilities this agent session was created with. This snapshot is read-only and fixed for the session's lifetime.",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_hookWakeAttribution_fallbackName_label": "Hook",

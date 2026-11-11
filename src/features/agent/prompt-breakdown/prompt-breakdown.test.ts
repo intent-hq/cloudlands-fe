@@ -23,7 +23,7 @@ function available(overrides: Record<string, unknown> = {}) {
     sections: [
       section('doctrine', 'intent', 4_000),
       section('repo-rules', 'user', 3_000, 'systemPrompt', {
-        controlHint: { kind: 'edit-repo-rules', text: 'Edit AGENTS.md' },
+        controlHint: { kind: 'edit-repo-rules', text: 'Includes AGENTS.md' },
       }),
       section('specialist-prompt', 'user', 2_000),
       section('ws-reference', 'intent', 3_000, 'toolDescription'),
@@ -88,7 +88,7 @@ describe('parsePromptBreakdown', () => {
   it('carries the control hint text', () => {
     const view = parsePromptBreakdown(available());
     const counted = view?.rows.find((row) => row.id === 'repo-rules' && row.counted);
-    expect(counted?.hint).toBe('Edit AGENTS.md');
+    expect(counted?.hint).toBe('Includes AGENTS.md');
     expect(view?.rows.find((row) => row.id === 'doctrine')?.hint).toBeUndefined();
   });
 

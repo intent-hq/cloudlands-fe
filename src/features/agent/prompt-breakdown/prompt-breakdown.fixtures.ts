@@ -40,7 +40,7 @@ function wire(rows: Row[], hiddenSkills: unknown[] = []) {
 const shared: Row[] = [
   ['ws-reference', 'Workspace API reference', 'intent', 'toolDescription', 21_400],
   ['doctrine', 'Intent instructions', 'intent', 'systemPrompt', 14_800],
-  ['specialist-prompt', 'Specialist prompt', 'user', 'systemPrompt', 4_300, 'Change specialist'],
+  ['specialist-prompt', 'Specialist prompt', 'user', 'systemPrompt', 4_300],
   ['skills', 'Skills', 'user', 'systemPrompt', 3_100],
   ['repo-config', 'Repo config instructions', 'user', 'systemPrompt', 1_900],
   ['suggested-next-steps', 'Suggested next steps', 'intent', 'systemPrompt', 1_200],
@@ -67,7 +67,7 @@ export const promptBreakdownFixtures = {
         'user',
         'provider',
         18_500,
-        'Edit AGENTS.md',
+        'Includes AGENTS.md',
       ],
     ],
     [
@@ -86,7 +86,7 @@ export const promptBreakdownFixtures = {
     ],
   ),
   'large-repo-rules': wire([
-    ['repo-rules', 'Repo rules', 'user', 'systemPrompt', 96_000, 'Edit AGENTS.md'],
+    ['repo-rules', 'Repo rules', 'user', 'systemPrompt', 96_000, 'Includes AGENTS.md'],
     ...shared,
   ]),
   unavailable: { available: false, reason: 'harness-predates-breakdown' },

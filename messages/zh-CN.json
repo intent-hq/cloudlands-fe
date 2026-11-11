@@ -603,6 +603,7 @@
   "chat_failureRecovery_recorded_many": "{count} 条失败记录",
   "chat_failureRecovery_recorded_one": "1 条失败记录",
   "chat_failureRecovery_title_label": "无法完成此回复",
+  "chat_harnessFeaturesModal_capabilities_title": "功能",
   "chat_harnessFeaturesModal_description": "此智能体会话创建时启用的功能。此快照为只读，在会话生命周期内保持不变。",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_hookWakeAttribution_fallbackName_label": "钩子",

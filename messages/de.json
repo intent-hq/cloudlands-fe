@@ -603,6 +603,7 @@
   "chat_failureRecovery_recorded_many": "{count} aufgezeichnete Fehler",
   "chat_failureRecovery_recorded_one": "1 aufgezeichneter Fehler",
   "chat_failureRecovery_title_label": "Diese Antwort konnte nicht abgeschlossen werden",
+  "chat_harnessFeaturesModal_capabilities_title": "Funktionen",
   "chat_harnessFeaturesModal_description": "Funktionen, mit denen diese Agentensitzung erstellt wurde. Diese Momentaufnahme ist schreibgeschützt und für die Lebensdauer der Sitzung festgelegt.",
   "chat_harnessFeaturesModal_title": "Harness v{version}",
   "chat_hookWakeAttribution_fallbackName_label": "Hook",
