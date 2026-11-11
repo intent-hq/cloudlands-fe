@@ -5624,7 +5624,7 @@
   "settings_providerRemote_defaultUseOnRemote_description": "Envía las anulaciones del Predeterminado a las máquinas remotas. Si no hay ninguna, no se envía nada.",
   "settings_providerRemote_machineSignIn_description": "En máquinas remotas, usa el inicio de sesión de la propia máquina cuando aquí no hay nada marcado para uso remoto.",
   "settings_providerRemote_machineSignIn_error": "No se pudo guardar el ajuste de inicio de sesión remoto. Se restauró tu preferencia guardada.",
-  "settings_providerRemote_machineSignIn_label": "Usar el inicio de sesión de la máquina",
+  "settings_providerRemote_machineSignIn_label": "Usar sesión de la máquina",
   "settings_providerRemote_pill_label": "Listo para remoto",
   "settings_providerRemote_thisMachineOnly_label": "Solo esta máquina",
   "settings_providerRemote_useOnRemote_description": "Envía estos ajustes a cualquier máquina en la que este backend ejecute agentes.",

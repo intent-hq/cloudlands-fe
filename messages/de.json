@@ -5624,7 +5624,7 @@
   "settings_providerRemote_defaultUseOnRemote_description": "Sendet die Überschreibungen des Standards an entfernte Rechner. Ohne gespeicherte wird nichts gesendet.",
   "settings_providerRemote_machineSignIn_description": "Auf entfernten Rechnern deren eigene Anmeldung verwenden, wenn hier nichts für die Remote-Nutzung markiert ist.",
   "settings_providerRemote_machineSignIn_error": "Die Remote-Anmeldeeinstellung konnte nicht gespeichert werden. Deine gespeicherte Einstellung wurde wiederhergestellt.",
-  "settings_providerRemote_machineSignIn_label": "Eigene Anmeldung des Rechners verwenden",
+  "settings_providerRemote_machineSignIn_label": "Rechner-Anmeldung verwenden",
   "settings_providerRemote_pill_label": "Remote-bereit",
   "settings_providerRemote_thisMachineOnly_label": "Nur dieser Rechner",
   "settings_providerRemote_useOnRemote_description": "Sendet diese Einstellungen an jeden Rechner, auf dem dieses Backend Agenten ausführt.",

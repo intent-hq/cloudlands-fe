@@ -5624,7 +5624,7 @@
   "settings_providerRemote_defaultUseOnRemote_description": "将默认配置的覆盖项发送到远程机器。未保存任何覆盖项时不发送任何内容。",
   "settings_providerRemote_machineSignIn_description": "此处没有标记为远程使用的配置时，在远程机器上使用该机器自己的登录。",
   "settings_providerRemote_machineSignIn_error": "无法保存远程登录设置。已恢复你保存的偏好设置。",
-  "settings_providerRemote_machineSignIn_label": "使用机器自己的登录",
+  "settings_providerRemote_machineSignIn_label": "使用机器登录",
   "settings_providerRemote_pill_label": "可远程使用",
   "settings_providerRemote_thisMachineOnly_label": "仅限此机器",
   "settings_providerRemote_useOnRemote_description": "将这些设置发送到此后端运行智能体的任何机器。",

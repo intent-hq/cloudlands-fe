@@ -5624,7 +5624,7 @@
   "settings_providerRemote_defaultUseOnRemote_description": "기본값의 재정의를 원격 컴퓨터로 보냅니다. 저장된 것이 없으면 아무것도 보내지 않습니다.",
   "settings_providerRemote_machineSignIn_description": "여기에서 원격 사용으로 표시된 것이 없으면 원격 컴퓨터에서 해당 컴퓨터의 로그인을 사용합니다.",
   "settings_providerRemote_machineSignIn_error": "원격 로그인 설정을 저장하지 못했습니다. 저장된 기본 설정이 복원되었습니다.",
-  "settings_providerRemote_machineSignIn_label": "컴퓨터 자체 로그인 사용",
+  "settings_providerRemote_machineSignIn_label": "컴퓨터 로그인 사용",
   "settings_providerRemote_pill_label": "원격 사용 가능",
   "settings_providerRemote_thisMachineOnly_label": "이 컴퓨터만",
   "settings_providerRemote_useOnRemote_description": "이 백엔드가 에이전트를 실행하는 모든 컴퓨터로 이 설정을 보냅니다.",

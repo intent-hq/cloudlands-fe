@@ -5624,7 +5624,7 @@
   "settings_providerRemote_defaultUseOnRemote_description": "將預設設定的覆寫項目傳送到遠端機器。未儲存任何覆寫項目時不傳送任何內容。",
   "settings_providerRemote_machineSignIn_description": "此處沒有標記為遠端使用的設定時，在遠端機器上使用該機器自己的登入。",
   "settings_providerRemote_machineSignIn_error": "無法儲存遠端登入設定。已還原你儲存的偏好設定。",
-  "settings_providerRemote_machineSignIn_label": "使用機器自己的登入",
+  "settings_providerRemote_machineSignIn_label": "使用機器登入",
   "settings_providerRemote_pill_label": "可遠端使用",
   "settings_providerRemote_thisMachineOnly_label": "僅限此機器",
   "settings_providerRemote_useOnRemote_description": "將這些設定傳送到此後端執行代理的任何機器。",

@@ -5624,7 +5624,7 @@
   "settings_providerRemote_defaultUseOnRemote_description": "デフォルトの上書き設定をリモートマシンに送信します。保存されていない場合は何も送信されません。",
   "settings_providerRemote_machineSignIn_description": "ここでリモート用にマークされたものがない場合、リモートマシンではそのマシン自身のサインインを使用します。",
   "settings_providerRemote_machineSignIn_error": "リモートのサインイン設定を保存できませんでした。保存済みの設定に戻しました。",
-  "settings_providerRemote_machineSignIn_label": "マシン自身のサインインを使用",
+  "settings_providerRemote_machineSignIn_label": "マシンのサインインを使用",
   "settings_providerRemote_pill_label": "リモート対応",
   "settings_providerRemote_thisMachineOnly_label": "このマシンのみ",
   "settings_providerRemote_useOnRemote_description": "このバックエンドがエージェントを実行するすべてのマシンにこの設定を送信します。",

@@ -5624,7 +5624,7 @@
   "settings_providerRemote_defaultUseOnRemote_description": "Envoie les remplacements du Défaut aux machines distantes. S'il n'y en a aucun, rien n'est envoyé.",
   "settings_providerRemote_machineSignIn_description": "Sur les machines distantes, utiliser la connexion de la machine quand rien ici n'est marqué pour un usage distant.",
   "settings_providerRemote_machineSignIn_error": "Impossible d'enregistrer le réglage de connexion distante. Votre préférence enregistrée a été restaurée.",
-  "settings_providerRemote_machineSignIn_label": "Utiliser la connexion de la machine",
+  "settings_providerRemote_machineSignIn_label": "Connexion de la machine",
   "settings_providerRemote_pill_label": "Prêt pour le distant",
   "settings_providerRemote_thisMachineOnly_label": "Cette machine uniquement",
   "settings_providerRemote_useOnRemote_description": "Envoie ces réglages à toute machine sur laquelle ce backend exécute des agents.",
