@@ -79,16 +79,20 @@ let shortcutRequest = 0;
  * is no other fallback (no side, last, retained or guessed workspace).
  *
  * The snapshot may publish after the press (storage/service enrichment): wait, bounded, for
- * exactly that version (wrapped with the current authority); an older version is not yet ours,
- * a different identity or a newer version means the context moved on (stale: index). Fenced by
- * the latest press, principal and window backend. Following needs a linked workspace on a
- * loaded list and no live recording, annotation, dictation or send; while input is live the
- * dock is left as it is. A real follow is counted. Drafts are untouched.
+ * exactly that version (wrapped with the current authority). Only a current, settled context
+ * shows the index (unlinked, unknown, or its version never published): a different identity
+ * for that version, or a newer context after it was seen, means the press is stale and nothing
+ * changes. Every dispatch is fenced by the latest press, principal, window backend, the open
+ * conversation and live input (recording, annotation, dictation, send). An unresolved media
+ * chooser (a Window-menu capture/record/dictate) is never taken over. A real follow is
+ * counted. Drafts are untouched.
  */
 function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
   const request = shortcutRequest;
   const authority = getPrincipalActionContext(appStore.state);
   if (!authority) return;
+  const pending = appStore.state.dockConversation.shortcut;
+  if (pending && pending.context.action !== 'focus' && pending.destination === null) return;
   // A conversation opened meanwhile (by the person or another flow) is never replaced.
   const startedOn = appStore.state.dockConversation.workspaceId;
   const current = (): boolean => {
@@ -134,7 +138,11 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
     const snapshot = selectDockLinkedContext.select(state);
     if (snapshot?.contextVersion === expected) {
       seen = true;
-      if (snapshot.identityKey !== context.identityKey) break;
+      if (snapshot.identityKey !== context.identityKey) {
+        // Stale: this version names another context. Nothing changes.
+        if (ours()) yield* put(dockShortcutChanged(null));
+        return;
+      }
       if (
         snapshot.phase === 'ready' &&
         snapshot.linkedWorkspaceId &&
@@ -172,12 +180,16 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
         return;
       }
       if (snapshot.phase === 'ready') break;
-    } else if (seen) break;
+    } else if (seen) {
+      // Stale: the context moved on after this press's version was seen.
+      if (ours()) yield* put(dockShortcutChanged(null));
+      return;
+    }
     const left = deadline - Date.now();
     if (left <= 0) break;
     yield* race({ changed: take(dockLinkedContextChanged), timeout: delay(left) });
   }
-  // Unlinked, not ready in time, or the context moved on: the index.
+  // Unlinked, or its version never published in time (unknown): the index.
   yield* showIndex();
 }
 

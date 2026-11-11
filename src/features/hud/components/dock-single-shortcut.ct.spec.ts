@@ -282,6 +282,48 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   receipts.stale = { index: true, opened: null, followsUnchanged: true };
   await leaveIndex();
 
+  // 6b. Stale after seen: the press's version publishes for another tab. Nothing changes:
+  // no index, no follow.
+  await press({ version: 'v5', url: A });
+  await observe('v5', 'https://github.com/example/elsewhere/issues/5');
+  await expect.poll(() => read().then((s) => s?.contextVersion ?? '')).toContain('v5');
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a stale press must not show the index or open anything
+  await page.waitForTimeout(1800);
+  expect(await shortcutState()).toBeNull();
+  expect(await open()).toBe(origin);
+  await expect(back).toBeVisible();
+
+  // 6c. A pending media chooser (Window-menu Capture waiting for a workspace) is not taken over.
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.store.dispatch({
+      type: 'dockConversation/shortcutChanged',
+      payload: [
+        {
+          context: {
+            id: 'menu-capture',
+            backendId: h.store.state.connections.windowBackendId,
+            action: 'capture',
+          },
+          destination: null,
+          error: null,
+          authority: null,
+          resolving: false,
+        },
+      ],
+    });
+  });
+  await press();
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: the press must leave the media chooser as it is
+  await page.waitForTimeout(600);
+  expect(
+    await page.evaluate(
+      () => (window as any).__dockComposerE2E.store.state.dockConversation.shortcut?.context.id,
+    ),
+  ).toBe('menu-capture');
+  await leaveIndex();
+  receipts.staleAndChooser = { staleAfterSeen: 'no change', mediaChooserKept: true };
+
   // 7. An inferred owner (embedded tab of choice-2): pressing follows it; in the index its row
   // shows the tag and offers Link, which saves the association.
   const C = 'https://github.com/example/embedded/pull/3';
