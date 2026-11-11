@@ -335,6 +335,8 @@ export function addMockIpcListener(
 /**
  * Subscribe without the unemitted-listener guard. For test bridges standing in
  * for the preload `window.electronAPI`, whose channels the main process emits.
+ *
+ * @internal
  */
 export function subscribeMockIpcEvent(
   channel: string,
