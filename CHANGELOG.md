@@ -4,6 +4,14 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.317.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.0...v2.317.1) (2026-11-11)
+
+
+### 🐛 Bug Fixes
+
+* hide the E2B profile hint when a configuration can be sent, and empty remote picker tabs ([#4450](https://github.com/intent-hq/cloudlands-fe/issues/4450)) ([76be9db](https://github.com/intent-hq/cloudlands-fe/commit/76be9db9d9f6467dd176150933e4f170b6986c0d))
+* **transfer:** translate transfer and import relay errors ([#4454](https://github.com/intent-hq/cloudlands-fe/issues/4454)) ([9bb5fd2](https://github.com/intent-hq/cloudlands-fe/commit/9bb5fd242bdb20dd0fa2272e2ce77f4d0b1b384b))
+
 ## [2.317.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.316.1...v2.317.0) (2026-11-11)
 
 
