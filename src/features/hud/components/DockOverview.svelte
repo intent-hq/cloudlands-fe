@@ -48,11 +48,17 @@
   });
   let recentScrollTop = 0;
   async function toggleOlder(): Promise<void> {
+    const hadFocus = document.activeElement === historyButton;
     if (!showOlder) recentScrollTop = rows?.scrollTop ?? 0;
     showOlder = !showOlder;
-    if (!showOlder) {
-      await tick();
-      if (!showOlder && rows) rows.scrollTop = recentScrollTop;
+    await tick();
+    if (!showOlder && rows) rows.scrollTop = recentScrollTop;
+    if (hadFocus && document.activeElement === historyButton) {
+      const target = showOlder
+        ? rows?.querySelectorAll<HTMLButtonElement>('[data-workspace-id]')[workspaces.length]
+        : historyButton;
+      target?.focus({ preventScroll: true });
+      if (target) revealDockItem(target);
     }
   }
   // Opening a workspace or the Assistant ends the intro's hold on the open notch.
@@ -114,7 +120,7 @@
     class:more-below={moreBelow}
     data-dock-scroll
     use:keepDockFocusVisible
-    use:trackOverflow={visibleWorkspaces.length}
+    use:trackOverflow={visibleWorkspaces.length + Number(olderWorkspaces.length > 0)}
   >
     {#each visibleWorkspaces as item (item.workspace.id)}
       {@const id = String(item.workspace.id)}
@@ -155,25 +161,29 @@
         </span>
       </div>
     {/each}
-  </div>
-  {#if olderWorkspaces.length > 0}
-    <div class="overview-history" style:height={`${DOCK_OVERVIEW_HISTORY_HEIGHT}px`}>
-      <Button
-        bind:ref={historyButton}
-        variant="plain"
-        size="sm"
-        class="overview-history-control"
-        disabled={pending}
-        data-dock-row
-        aria-controls={rowsId}
-        aria-expanded={showOlder}
-        onclick={toggleOlder}
-        >{showOlder
-          ? m.dock_overview_showRecent_label()
-          : m.dock_overview_showOlder_label()}</Button
+    {#if olderWorkspaces.length > 0}
+      <div
+        class="overview-history"
+        data-dock-scroll-item
+        style:height={`${DOCK_OVERVIEW_HISTORY_HEIGHT}px`}
       >
-    </div>
-  {/if}
+        <Button
+          bind:ref={historyButton}
+          variant="plain"
+          size="sm"
+          class="overview-history-control"
+          disabled={pending}
+          data-dock-row
+          aria-controls={rowsId}
+          aria-expanded={showOlder}
+          onclick={toggleOlder}
+          >{showOlder
+            ? m.dock_overview_showRecent_label()
+            : m.dock_overview_showOlder_label()}</Button
+        >
+      </div>
+    {/if}
+  </div>
   <!-- The Assistant is set apart below the workspaces, always in view. -->
   <div class="assistant-divider" role="presentation"></div>
   <div class="overview-row assistant-row">
