@@ -3,8 +3,9 @@ import { runSaga, stdChannel } from 'redux-saga';
 
 const notifyError = vi.hoisted(() => vi.fn());
 const notifyWarning = vi.hoisted(() => vi.fn());
+const notifyDismiss = vi.hoisted(() => vi.fn());
 vi.mock('$lib/components/patterns/notify', () => ({
-  notify: { error: notifyError, warning: notifyWarning },
+  notify: { error: notifyError, warning: notifyWarning, dismiss: notifyDismiss },
 }));
 
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
@@ -176,22 +177,36 @@ describe('machineRailSaga', () => {
     task.cancel();
   });
 
-  it('shows a toast forwarded from another machine under its name, and its action switches to it', async () => {
+  it('shows a toast forwarded from another machine under its name; activating it switches there', async () => {
     const main = installMain(railState({ machineIds: ['local', 'b'] }));
     const { task } = createHarness();
     await settle();
+    notifyWarning.mockReturnValueOnce('toast-7');
     main.pushToast({ kind: 'warning', message: 'Agent needs you', machineId: 'b' });
     await settle();
     expect(notifyWarning).toHaveBeenCalledTimes(1);
-    const [text, options] = notifyWarning.mock.calls[0] as [
-      string,
-      { action: { onClick(): void } },
-    ];
+    const [text, options] = notifyWarning.mock.calls[0] as [string, { class: string }];
     expect(text).toContain('Build box');
     expect(text).toContain('Agent needs you');
-    options.action.onClick();
-    await settle();
-    expect(main.invoke).toHaveBeenLastCalledWith('machine-rail:select', { id: 'b' });
+
+    // The toast host renders the toast with the classes it was given.
+    const rendered = document.createElement('li');
+    rendered.className = options.class;
+    const close = document.createElement('button');
+    const body = document.createElement('span');
+    rendered.append(body, close);
+    document.body.append(rendered);
+    try {
+      close.click();
+      await settle();
+      expect(main.invoke).not.toHaveBeenCalledWith('machine-rail:select', { id: 'b' });
+      body.click();
+      await settle();
+      expect(main.invoke).toHaveBeenLastCalledWith('machine-rail:select', { id: 'b' });
+      expect(notifyDismiss).toHaveBeenCalledWith('toast-7');
+    } finally {
+      rendered.remove();
+    }
     task.cancel();
   });
 

@@ -2664,7 +2664,6 @@
   "lib_commandPalette_machineRailTestToast_label": "マシンレール: 5 秒後にテスト通知を送信",
   "machineRail_testToast_message": "このマシンからのテスト通知",
   "machineRail_toast_message": "{machine}: {message}",
-  "machineRail_toast_show_label": "表示",
   "onboarding_creationError_baseRefresh_accessDenied_description": "Intent が動作しているマシンのアカウントはリポジトリに到達できますが、fetch する権限がありません。",
   "onboarding_creationError_baseRefresh_accessDenied_title": "{remote} によりアクセスが拒否されました",
   "onboarding_creationError_baseRefresh_authRequiredHttps_description": "Intent が動作しているマシンに、このホストの保存済み認証情報がありません。Git の認証情報ヘルパーなどを使って、そのマシンに保存してください。Intent がリモートマシンで動作している場合は、このコンピューターではなくそのマシンに保存してください。",

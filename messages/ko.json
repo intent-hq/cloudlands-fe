@@ -2664,7 +2664,6 @@
   "lib_commandPalette_machineRailTestToast_label": "컴퓨터 레일: 5초 후 테스트 알림 보내기",
   "machineRail_testToast_message": "이 컴퓨터에서 보낸 테스트 알림",
   "machineRail_toast_message": "{machine}: {message}",
-  "machineRail_toast_show_label": "보기",
   "onboarding_creationError_baseRefresh_accessDenied_description": "Intent가 실행 중인 머신의 계정은 저장소에 연결할 수 있지만 가져올 권한이 없습니다.",
   "onboarding_creationError_baseRefresh_accessDenied_title": "{remote}에서 액세스를 거부했습니다",
   "onboarding_creationError_baseRefresh_authRequiredHttps_description": "Intent가 실행 중인 머신에 이 호스트의 저장된 자격 증명이 없습니다. Git 자격 증명 도우미 등으로 그 머신에 저장하세요. Intent가 원격 머신에서 실행 중이라면 이 컴퓨터가 아니라 그 머신에 저장하세요.",

@@ -2664,7 +2664,6 @@
   "lib_commandPalette_machineRailTestToast_label": "Machine rail: send a test toast in 5 seconds",
   "machineRail_testToast_message": "Test toast from this machine",
   "machineRail_toast_message": "{machine}: {message}",
-  "machineRail_toast_show_label": "Show",
   "onboarding_creationError_baseRefresh_accessDenied_description": "The account on the machine Intent runs on can reach the repository but isn't allowed to fetch it.",
   "onboarding_creationError_baseRefresh_accessDenied_title": "Access denied by {remote}",
   "onboarding_creationError_baseRefresh_authRequiredHttps_description": "The machine Intent runs on has no saved credential for this host. Save one there, for example with a Git credential helper. If Intent runs on a remote machine, save it there, not on this computer.",

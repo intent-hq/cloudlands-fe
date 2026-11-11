@@ -8,7 +8,7 @@
  */
 
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
-import { buffers, channel as sagaChannel, eventChannel, type EventChannel } from 'redux-saga';
+import { buffers, eventChannel, type EventChannel } from 'redux-saga';
 import { call, fork, put, select, take, takeEvery } from 'typed-redux-saga';
 
 import { notify } from '$lib/components/patterns/notify';
@@ -110,17 +110,55 @@ function createToastChannel(): EventChannel<MachineRailToastEvent> {
   }, buffers.expanding<MachineRailToastEvent>());
 }
 
+/** Marks a forwarded toast; a numbered variant of it identifies which one was activated. */
+const FORWARDED_TOAST_CLASS = 'machine-rail-toast';
+
+/**
+ * Activations of forwarded toasts: a click or Enter anywhere on the toast
+ * except its own buttons (the close button keeps its meaning).
+ */
+function createToastActivationChannel(): EventChannel<number> {
+  return eventChannel<number>((emit) => {
+    if (typeof document === 'undefined') return () => {};
+    const onActivate = (event: Event): void => {
+      if (event instanceof KeyboardEvent && event.key !== 'Enter') return;
+      const target = event.target instanceof Element ? event.target : null;
+      const toast = target?.closest(`.${FORWARDED_TOAST_CLASS}`);
+      if (!toast || target?.closest('button')) return;
+      for (const name of toast.classList) {
+        const serial = Number(name.slice(FORWARDED_TOAST_CLASS.length + 1));
+        if (name.startsWith(`${FORWARDED_TOAST_CLASS}-`) && Number.isInteger(serial)) emit(serial);
+      }
+    };
+    document.addEventListener('click', onActivate);
+    document.addEventListener('keydown', onActivate);
+    return () => {
+      document.removeEventListener('click', onActivate);
+      document.removeEventListener('keydown', onActivate);
+    };
+  }, buffers.sliding<number>(1));
+}
+
 /**
  * Show a toast another machine raised while it was not shown, named after
- * that machine, with an action that switches the window to it.
+ * that machine. Activating the toast switches the window to that machine.
  */
 function* showForwardedToasts(channel: EventChannel<MachineRailToastEvent>) {
-  // Toast actions run outside the saga; they ask for a switch through this channel.
-  const switchRequests = sagaChannel<string>(buffers.sliding<string>(1));
+  const shown = new Map<number, { machineId: string; toastId: string | number }>();
+  let nextSerial = 1;
   yield* fork(function* () {
-    while (true) {
-      const id = yield* take(switchRequests);
-      yield* put(selectRailMachineRequested(id));
+    const activations = createToastActivationChannel();
+    try {
+      while (true) {
+        const serial = yield* take(activations);
+        const entry = shown.get(serial);
+        if (!entry) continue;
+        shown.delete(serial);
+        yield* call(notify.dismiss, entry.toastId);
+        yield* put(selectRailMachineRequested(entry.machineId));
+      }
+    } finally {
+      activations.close();
     }
   });
   while (true) {
@@ -131,16 +169,13 @@ function* showForwardedToasts(channel: EventChannel<MachineRailToastEvent>) {
       : connection.isLocal
         ? formatLocalMachineLabel(connection)
         : formatConnectionLabel(connection);
-    yield* call(
+    const serial = nextSerial++;
+    const toastId = yield* call(
       notify[toast.kind],
       m.machineRail_toast_message({ machine, message: toast.message }),
-      {
-        action: {
-          label: m.machineRail_toast_show_label(),
-          onClick: () => switchRequests.put(toast.machineId),
-        },
-      },
+      { class: `cursor-pointer ${FORWARDED_TOAST_CLASS} ${FORWARDED_TOAST_CLASS}-${serial}` },
     );
+    shown.set(serial, { machineId: toast.machineId, toastId });
   }
 }
 
