@@ -30,7 +30,10 @@
   import { dockRailPreview } from './dock-rail.preview-fixtures';
   import { selectDockShortcut } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
-  import { selectDockCloseRequest } from '$store/renderer/slices/hud/hud-selectors';
+  import {
+    selectDockCloseRequest,
+    selectDockFocusRequest,
+  } from '$store/renderer/slices/hud/hud-selectors';
   import { selectDockSideDefaultWorkspaceId } from '$store/renderer/slices/dock-conversation/dock-side-default';
   import { WorkspaceStatus } from '$shared/types';
   import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
@@ -83,6 +86,8 @@
   }
   let ready = $state(false);
   let request = $state(0);
+  // Like the dock route: the store's focus request also reaches the shell.
+  const storeFocusRequest$ = selectDockFocusRequest();
   let caption = $state('');
 
   onMount(() => {
@@ -265,7 +270,7 @@
     {@const props = shell ?? dockRailPreview.states.notch.props}
     <DockRailPreview
       {...props}
-      focusRequest={request}
+      focusRequest={request + $storeFocusRequest$}
       closeRequest={$closeRequest$}
       sideDefaultWorkspaceId={$sideDefaultWorkspaceId$}
       workspaces={$workspaces$.map((workspace) => ({ ...props.workspaces[0], workspace }))}

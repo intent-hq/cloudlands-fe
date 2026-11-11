@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { expect, test } from '../../../test/ct-test';
 import Harness from './DockComposerE2EHarness.svelte';
+import { dockRailPreview } from './dock-rail.preview-fixtures';
 import type { DockLinkedContextSnapshot } from '$shared/dock-context-links';
 
 /**
@@ -11,7 +12,9 @@ import type { DockLinkedContextSnapshot } from '$shared/dock-context-links';
  */
 test('open related follows only the admitted linked context', async ({ mount, page }, info) => {
   test.setTimeout(120_000);
-  await mount(Harness);
+  // The real notch shell (rail, companion, conversation surface, focus requests).
+  await page.setViewportSize({ width: 1000, height: 740 });
+  await mount(Harness, { props: { shell: dockRailPreview.states.notch.props } });
   await expect.poll(() => page.evaluate(() => !!(window as any).__dockComposerE2E)).toBe(true);
   await expect
     .poll(() =>
@@ -85,6 +88,17 @@ test('open related follows only the admitted linked context', async ({ mount, pa
   const B = 'https://github.com/example/held/issues/2';
   const C = 'https://github.com/example/unlinked/issues/3';
   const receipts: Record<string, unknown> = { origin };
+  const draftLength = (workspaceId: string) =>
+    page.evaluate((id) => {
+      const map = (window as any).__dockComposerE2E.store.state.dockConversation.drafts?.map ?? {};
+      const entry = Object.entries(map).find(([key]) => JSON.parse(key)[0] === id);
+      return ((entry?.[1] as { text?: string } | undefined)?.text ?? '').length;
+    }, workspaceId);
+  const DRAFT = 'Keep this draft';
+  // A draft in the source conversation (the fixture conversation has a real agent and composer).
+  await page.locator('.tiptap-editor').first().click();
+  await page.keyboard.type(DRAFT);
+  await expect.poll(() => draftLength(origin)).toBe(DRAFT.length);
 
   // Link A to choice-0 on its own context first.
   await observe('v0', A);
@@ -101,8 +115,14 @@ test('open related follows only the admitted linked context', async ({ mount, pa
   await expect.poll(open).toBe('choice-0');
   await expect.poll(() => read().then((row) => row?.policy.follows)).toBe(1);
   expect(await destination()).toBeNull();
+  expect(await draftLength(origin)).toBe(DRAFT.length);
   await page.screenshot({ path: info.outputPath('related-first-publication.png') });
-  receipts.firstPublication = { open: 'choice-0', follows: 1, chooserUsed: false };
+  receipts.firstPublication = {
+    open: 'choice-0',
+    follows: 1,
+    chooserUsed: false,
+    sourceDraftKept: true,
+  };
 
   // 2. Held publication: the same version republishes with a link made after the press.
   await back();
@@ -164,6 +184,74 @@ test('open related follows only the admitted linked context', async ({ mount, pa
   expect(await destination()).toBeNull();
   receipts.alreadyOpen = { followsBefore: follows, followsAfter: after };
   await page.screenshot({ path: info.outputPath('related-final.png') });
+
+  // 7. A valid destination with a real agent: the press opens it, its composer renders and
+  // takes focus, and the draft written there earlier is still there.
+  const D = 'https://github.com/example/fixture/issues/7';
+  await observe('v7', D);
+  await expect.poll(() => read().then((row) => row?.url)).toBe(D);
+  await page.evaluate((id) => (window as any).__dockComposerE2E.contextAction('link', id), origin);
+  await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe(origin);
+  await related('v7', D);
+  await expect.poll(open).toBe(origin);
+  const composer = page.locator('.tiptap-editor').first();
+  await expect(composer).toBeVisible();
+  await expect(composer).toContainText(DRAFT);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        // Same composer-focus check as the side shortcut spec.
+        const active = document.activeElement as HTMLElement | null;
+        return (
+          !!active?.closest('.tiptap-editor') || active?.getAttribute('contenteditable') === 'true'
+        );
+      }),
+    )
+    .toBe(true);
+  expect(await draftLength(origin)).toBe(DRAFT.length);
+  await page.screenshot({ path: info.outputPath('related-valid-destination.png') });
+  receipts.validDestination = { open: origin, composerFocused: true, draftKept: true };
+
+  // 8. Live input (push-to-talk recording): no selection change, no media intent.
+  await observe('v8', A);
+  await expect.poll(() => read().then((row) => row?.linkedWorkspaceId)).toBe('choice-0');
+  const before = await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.store.dispatch({ type: 'hardwareConsole/pttRecordingStarted', payload: [] });
+    const s = h.store.state;
+    return {
+      ptt: s.hardwareConsole.pttRecording,
+      speech: s.dockConversation.nativeSpeech.activeId ?? null,
+      follows: h.contextSnapshot()?.policy.follows ?? null,
+    };
+  });
+  expect(before.ptt).toBe(true);
+  await related('v8', A);
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: nothing may happen during or after the bounded related wait
+  await page.waitForTimeout(1800);
+  const during = await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    const s = h.store.state;
+    return {
+      open: s.dockConversation.workspaceId,
+      shortcut: s.dockConversation.shortcut ?? null,
+      ptt: s.hardwareConsole.pttRecording,
+      speech: s.dockConversation.nativeSpeech.activeId ?? null,
+      follows: h.contextSnapshot()?.policy.follows ?? null,
+    };
+  });
+  expect(during.open).toBe(origin);
+  expect(during.shortcut).toBeNull();
+  expect(during.ptt).toBe(true);
+  expect(during.speech).toBe(before.speech);
+  expect(during.follows).toBe(before.follows);
+  await page.evaluate(() =>
+    (window as any).__dockComposerE2E.store.dispatch({
+      type: 'hardwareConsole/pttRecordingStopped',
+      payload: [],
+    }),
+  );
+  receipts.liveInput = { before, during };
 
   await writeFile(
     info.outputPath('related-shortcut-receipt.json'),

@@ -3,6 +3,7 @@ import {
   hudDeactivated,
   dockPlacementCommandRequested,
   dockCloseRequested,
+  dockFocusRequested,
 } from '../../hud/hud-slice';
 import { selectPrincipalActionContext } from '../../principal/principal-selectors';
 import { takeLatestFromSelector } from '@themislib/themis/saga';
@@ -69,7 +70,8 @@ function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void
 
 /** How long a press waits for the feed-admitted context's linked snapshot to publish. */
 const RELATED_WAIT_MS = 1500;
-let relatedRequest = 0;
+/** Every dock shortcut press (any action) supersedes a pending related wait. */
+let shortcutRequest = 0;
 
 /**
  * Open related: the dock conversation of the workspace linked to the foreground tab or app the
@@ -82,8 +84,10 @@ let relatedRequest = 0;
  * the destination/media flow or the full-app workspace window; drafts are untouched.
  */
 function* relatedAction(context: DockShortcutContext): SagaGenerator<void> {
-  const request = ++relatedRequest;
+  const request = shortcutRequest;
   const authority = getPrincipalActionContext(appStore.state);
+  // A conversation opened meanwhile (by the person or another flow) is never replaced.
+  const startedOn = appStore.state.dockConversation.workspaceId;
   if (!authority || !context.contextVersion || !context.identityKey) return;
   const expected = JSON.stringify([authority, context.contextVersion]);
   const deadline = Date.now() + RELATED_WAIT_MS;
@@ -91,7 +95,8 @@ function* relatedAction(context: DockShortcutContext): SagaGenerator<void> {
   while (true) {
     const state = appStore.state;
     if (
-      request !== relatedRequest ||
+      request !== shortcutRequest ||
+      state.dockConversation.workspaceId !== startedOn ||
       getPrincipalActionContext(state) !== authority ||
       state.connections.windowBackendId !== context.backendId
     )
@@ -107,8 +112,21 @@ function* relatedAction(context: DockShortcutContext): SagaGenerator<void> {
       ) {
         if (dockInputLive() || state.dockConversation.sending) return;
         if (state.dockConversation.workspaceId === snapshot.linkedWorkspaceId) return;
-        yield* put(openDockConversationRequested(snapshot.linkedWorkspaceId));
+        const target = snapshot.linkedWorkspaceId;
+        yield* put(openDockConversationRequested(target));
         yield* put(dockContextFollowed(snapshot.contextVersion));
+        // The press asked for composer focus before this conversation existed: ask again once
+        // it is open and loaded (a cached reopen may not announce a load), unless something
+        // newer took over meanwhile.
+        for (let waited = 0; waited < 10_000; waited += 100) {
+          const dock = appStore.state.dockConversation;
+          if (request !== shortcutRequest || dock.workspaceId !== target || dock.error) break;
+          if (!dock.loading && dock.agentId) {
+            yield* put(dockFocusRequested());
+            break;
+          }
+          yield* race({ loaded: take(dockConversationLoaded), tick: delay(100) });
+        }
         return;
       }
     } else if (seen) return;
@@ -138,6 +156,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     !valid(context)
   )
     return;
+  shortcutRequest++;
   // The open shortcut again, while the dock has the keyboard: close as Escape would,
   // unless a recording, an annotate session or dictation is live (then nothing changes).
   if (context.toggleClose === true) {
