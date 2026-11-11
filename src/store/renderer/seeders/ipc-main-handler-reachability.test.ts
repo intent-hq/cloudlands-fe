@@ -94,6 +94,15 @@ const KNOWN_BRIDGE_WRAPPERS: ReadonlyMap<string, KnownBridgeWrapper> = new Map([
     },
   ],
   [
+    'src/store/renderer/slices/workspace-bulk-transfer/sagas/workspace-bulk-transfer-saga.ts',
+    {
+      reason: '`invokeTransfer(channel, params)` sends transfer channels to main.',
+      channelFiles: [
+        'src/store/renderer/slices/workspace-bulk-transfer/sagas/workspace-bulk-transfer-saga.ts',
+      ],
+    },
+  ],
+  [
     'src/store/renderer/slices/workspace-transfer/sagas/workspace-transfer-saga.ts',
     {
       reason: '`invokeTransfer(channel, params)` sends transfer channels to main.',

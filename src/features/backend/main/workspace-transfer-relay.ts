@@ -468,6 +468,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     };
     session = current;
     const isCancelled = (): boolean => current.cancelled;
+    let importedOnTarget = false;
 
     // Download destination: pick the file BEFORE stopping agents/building, so
     // a dismissed dialog costs nothing.
@@ -551,6 +552,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
             'transfer cancelled during target commit; imported workspace remains on the target',
             { workspaceId },
           );
+          importedOnTarget = true;
           throw new Error('cancelled');
         }
         current.committed = true;
@@ -583,7 +585,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       // An orphaned run released by a takeover must not clear its successor.
       if (session === current) session = null;
       return cancelled
-        ? { success: false, canceled: true }
+        ? { success: false, canceled: true, ...(importedOnTarget ? { importedOnTarget } : {}) }
         : {
             success: false,
             error: message,

@@ -131,6 +131,7 @@ import { hostRequirementsReducer } from './slices/host-requirements/host-require
 import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
+import { workspaceBulkTransferReducer } from './slices/workspace-bulk-transfer/workspace-bulk-transfer-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
@@ -263,6 +264,7 @@ export const reducers = {
   hud: hudReducer,
   setupPrompt: setupPromptReducer,
   workspaceTransfer: workspaceTransferReducer,
+  workspaceBulkTransfer: workspaceBulkTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
   invitationAccountSearch: invitationAccountSearchReducer,

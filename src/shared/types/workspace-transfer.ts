@@ -65,6 +65,8 @@ export interface TransferStartResult {
   success: boolean;
   /** True when the user dismissed the save dialog (download destination). */
   canceled?: boolean;
+  /** With `canceled`: the cancel lost a race with the target commit, so the workspace is on the target. */
+  importedOnTarget?: boolean;
   error?: string;
   /** Present on failure so the renderer can describe source-agent impact accurately. */
   failurePhase?: TransferFailurePhase;
