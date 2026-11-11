@@ -70,7 +70,7 @@ export function getProviderReturnedNotice(
 }
 
 /** The info for a daemon-persisted `provider_auto_selected` row, else null. */
-export function getProviderAutoSelectedNotice(
+function getProviderAutoSelectedNotice(
   message: MessageLike | null | undefined,
 ): ProviderFailoverNoticeInfo | null {
   return parseSwitchRow(message, 'provider_auto_selected', 'autoSelected');

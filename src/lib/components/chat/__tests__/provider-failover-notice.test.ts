@@ -8,7 +8,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import {
   formatProviderFailoverLabel,
-  getProviderAutoSelectedNotice,
   getProviderFailoverNotice,
   getProviderReturnedNotice,
   getProviderSwitchNotice,
@@ -350,12 +349,11 @@ describe('provider_auto_selected rows (a Remote Ready profile on a machine witho
       reason: 'machine-signed-out',
       machine: 'Mac mini',
     });
-    expect(getProviderAutoSelectedNotice(message)).toMatchObject({
+    expect(getProviderSwitchNotice(message)).toMatchObject({
       kind: 'autoSelected',
       toProvider: 'claude-code@pwork',
       machine: 'Mac mini',
     });
-    expect(getProviderSwitchNotice(message)?.kind).toBe('autoSelected');
     expect(getProviderFailoverNotice(message)).toBeNull();
   });
 
