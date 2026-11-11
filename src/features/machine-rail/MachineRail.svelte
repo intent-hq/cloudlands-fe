@@ -73,7 +73,6 @@
             variant="ghost"
             size="icon"
             iconOnly
-            active={item.selected}
             aria-label={label}
             aria-current={item.selected ? 'true' : undefined}
             tooltip={label}
@@ -85,8 +84,9 @@
           >
             <span
               class={cn(
-                'flex size-7 items-center justify-center rounded-md',
+                'flex size-full items-center justify-center rounded-[inherit]',
                 accent === null && 'bg-muted',
+                item.selected && 'ring-2 ring-foreground/70',
                 item.offline && 'opacity-40 grayscale',
               )}
               style:background-color={accent === null
