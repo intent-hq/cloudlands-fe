@@ -123,9 +123,10 @@
             {/if}
           </Button>
           {#if item.own}
-            <!-- Zero-size anchor at the item's right edge: the menu opens beside the item. -->
+            <!-- Zero-size anchor whose hidden trigger ends at the item's right edge, so the
+                 menu opens right beside the item whatever the trigger's width. -->
             <span
-              class="absolute top-0 right-0 size-0 overflow-hidden"
+              class="absolute top-0 right-0 flex size-0 justify-end overflow-hidden"
               aria-hidden={!statusMenuOpen}
             >
               <DaemonStatusIndicator railAnchor bind:open={statusMenuOpen} />
