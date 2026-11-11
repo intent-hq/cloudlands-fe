@@ -16,7 +16,10 @@
   import Header from '$lib/components/ui/Header.svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { cn } from '$lib/utils';
-  import { CONNECTION_ACCENT_COLORS, resolveConnectionAccent } from '$lib/utils/connection-accents';
+  import {
+    CONNECTION_ACCENT_CLASSES,
+    resolveConnectionAccent,
+  } from '$lib/utils/connection-accents';
   import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
   import { m } from '$shared/paraglide/messages.js';
   import type { ConnectionRecord } from '$shared/types/connections';
@@ -65,14 +68,19 @@
         <div class="relative flex">
           {#if item.selected}
             <span
-              class="absolute top-1/2 -left-1.5 h-4 w-0.5 -translate-y-1/2 rounded-full bg-foreground"
+              class={cn(
+                'absolute top-1/2 -left-1.5 h-4 w-0.5 -translate-y-1/2 rounded-full',
+                accent === null ? 'bg-foreground' : CONNECTION_ACCENT_CLASSES[accent],
+              )}
               aria-hidden="true"
+              data-connection-accent={accent ?? undefined}
             ></span>
           {/if}
           <Button
             variant="ghost"
             size="icon"
             iconOnly
+            active={item.selected}
             aria-label={label}
             aria-current={item.selected ? 'true' : undefined}
             tooltip={label}
@@ -82,22 +90,13 @@
             data-offline={item.offline || undefined}
             onclick={() => appStore.dispatch(selectRailMachineRequested(item.id))}
           >
-            <span
-              class={cn(
-                'flex size-full items-center justify-center rounded-[inherit]',
-                accent === null && 'bg-muted',
-                item.selected && 'ring-2 ring-foreground/70',
-                item.offline && 'opacity-40 grayscale',
-              )}
-              style:background-color={accent === null
-                ? undefined
-                : `color-mix(in srgb, ${CONNECTION_ACCENT_COLORS[accent]} 28%, transparent)`}
-              data-connection-accent={accent ?? undefined}
-            >
-              {#if item.record}
-                <DeviceIcon record={item.record} size={16} class="text-foreground" />
-              {/if}
-            </span>
+            {#if item.record}
+              <DeviceIcon
+                record={item.record}
+                size={18}
+                class={cn('text-foreground', item.offline && 'opacity-40')}
+              />
+            {/if}
           </Button>
         </div>
       {/each}
