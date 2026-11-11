@@ -95,13 +95,6 @@ export const COMMAND_PALETTE_COMMANDS = [
     icon: faFlask,
   },
   {
-    id: 'machine-rail-test-toast',
-    get label() {
-      return m.lib_commandPalette_machineRailTestToast_label();
-    },
-    icon: faFlask,
-  },
-  {
     id: 'disable-experimental-machine-rail',
     get label() {
       return m.lib_commandPalette_disableExperimentalMachineRail_label();

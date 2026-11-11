@@ -2661,8 +2661,6 @@
   "machineRail_add_header": "Añadir a esta ventana",
   "machineRail_remove_header": "Quitar de esta ventana",
   "machineRail_requestFailed_error": "No se pudieron actualizar los equipos de esta ventana.",
-  "lib_commandPalette_machineRailTestToast_label": "Barra de equipos: enviar un aviso de prueba en 5 segundos",
-  "machineRail_testToast_message": "Aviso de prueba desde este equipo",
   "machineRail_toast_message": "{machine}: {message}",
   "onboarding_creationError_baseRefresh_accessDenied_description": "La cuenta de la máquina en la que se ejecuta Intent puede llegar al repositorio, pero no tiene permiso para obtenerlo.",
   "onboarding_creationError_baseRefresh_accessDenied_title": "Acceso denegado por {remote}",

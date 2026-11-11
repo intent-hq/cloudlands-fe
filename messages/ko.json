@@ -2661,8 +2661,6 @@
   "machineRail_add_header": "이 창에 추가",
   "machineRail_remove_header": "이 창에서 제거",
   "machineRail_requestFailed_error": "이 창의 컴퓨터를 업데이트할 수 없습니다.",
-  "lib_commandPalette_machineRailTestToast_label": "컴퓨터 레일: 5초 후 테스트 알림 보내기",
-  "machineRail_testToast_message": "이 컴퓨터에서 보낸 테스트 알림",
   "machineRail_toast_message": "{machine}: {message}",
   "onboarding_creationError_baseRefresh_accessDenied_description": "Intent가 실행 중인 머신의 계정은 저장소에 연결할 수 있지만 가져올 권한이 없습니다.",
   "onboarding_creationError_baseRefresh_accessDenied_title": "{remote}에서 액세스를 거부했습니다",

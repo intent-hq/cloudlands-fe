@@ -2661,8 +2661,6 @@
   "machineRail_add_header": "新增至此視窗",
   "machineRail_remove_header": "從此視窗移除",
   "machineRail_requestFailed_error": "無法更新此視窗中的電腦。",
-  "lib_commandPalette_machineRailTestToast_label": "電腦側欄:5 秒後傳送測試通知",
-  "machineRail_testToast_message": "來自此電腦的測試通知",
   "machineRail_toast_message": "{machine}: {message}",
   "onboarding_creationError_baseRefresh_accessDenied_description": "執行 Intent 的機器上的帳戶可以連到該儲存庫，但無權擷取。",
   "onboarding_creationError_baseRefresh_accessDenied_title": "{remote} 拒絕存取",

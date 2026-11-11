@@ -2661,8 +2661,6 @@
   "machineRail_add_header": "Add to this window",
   "machineRail_remove_header": "Remove from this window",
   "machineRail_requestFailed_error": "Could not update the machines in this window.",
-  "lib_commandPalette_machineRailTestToast_label": "Machine rail: send a test toast in 5 seconds",
-  "machineRail_testToast_message": "Test toast from this machine",
   "machineRail_toast_message": "{machine}: {message}",
   "onboarding_creationError_baseRefresh_accessDenied_description": "The account on the machine Intent runs on can reach the repository but isn't allowed to fetch it.",
   "onboarding_creationError_baseRefresh_accessDenied_title": "Access denied by {remote}",
