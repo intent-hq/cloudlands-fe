@@ -292,6 +292,17 @@ export interface WorkspaceInitializationRequest {
   completion?: WorkspaceInitializationCompletion;
   /** Set on a Continue create (`skipBaseRefresh`): warn on this computer once it succeeds. */
   staleBase?: WorkspaceInitializationStaleBase;
+  /**
+   * Import this existing session as the first agent (`agent.importSession`)
+   * once the workspace exists, instead of creating an initial agent.
+   */
+  importSession?: WorkspaceInitializationImportSession;
+}
+
+interface WorkspaceInitializationImportSession {
+  provider: string;
+  sessionId: string;
+  name?: string;
 }
 
 export interface WorkspaceInitializationSetupScriptRecord {
@@ -406,6 +417,12 @@ export interface CompactWorkspaceInitializationSubmission extends WorkspaceIniti
   setupScriptProbeKey: string | null;
   setupScriptRepoKey: string | null;
   formPersistence: boolean;
+  /** New Workspace → Import a session: the picked session, else absent. */
+  importSession?: {
+    provider: string;
+    sessionId: string;
+    title: string;
+  } | null;
 }
 
 export interface OnboardingWorkspaceInitializationSubmission extends WorkspaceInitializationSubmissionBase {

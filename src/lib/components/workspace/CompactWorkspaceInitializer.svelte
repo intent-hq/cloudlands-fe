@@ -132,6 +132,15 @@
   import WorkspaceCreateButton from './initializer/WorkspaceCreateButton.svelte';
   import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
+  import ImportSessionPicker from '$features/session-import/ImportSessionPicker.svelte';
+  import type { SessionImportSelection } from '$features/session-import/importable-session';
+  import {
+    gitRootFromSubdirectory,
+    matchSessionRepository,
+    sessionBaseBranch,
+  } from '$features/session-import/utils/session-import-match';
+  import { appClient } from '$lib/client';
+  import { selectProviderDisplayName } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import IssueSuggestions, {
     preloadIssues,
     type IssueSelectionData,
@@ -2250,6 +2259,63 @@
     }
   }
 
+  // New Workspace → Import a session: the picked session becomes the first agent.
+  let importSessionPick = $state<SessionImportSelection | null>(null);
+  let importSessionRevision = 0;
+
+  /** The git root holding `cwd` on the daemon host, else null. */
+  async function sessionRepositoryRoot(cwd: string): Promise<string | null> {
+    const recent = matchSessionRepository(cwd, [
+      ...(repoPath && repoType === 'local' ? [{ path: repoPath, type: 'local' as const }] : []),
+      ...$recentRepos$,
+    ]);
+    if (recent) return recent.path;
+    try {
+      const result = await invoke<{
+        success?: boolean;
+        data?: {
+          exists?: boolean;
+          isGitRepo?: boolean;
+          isSubdirectoryOfGitRepo?: boolean;
+          relativePathFromGitRoot?: string;
+        };
+      }>('file:getDirectoryStatus', { path: cwd });
+      const status = result?.success ? result.data : undefined;
+      if (!status?.exists) return null;
+      if (status.isGitRepo) return cwd;
+      if (status.isSubdirectoryOfGitRepo && status.relativePathFromGitRoot)
+        return gitRootFromSubdirectory(cwd, status.relativePathFromGitRoot);
+    } catch (err) {
+      logger.debug('Could not check the imported session folder', err);
+    }
+    return null;
+  }
+
+  /**
+   * Pick (or clear) a session to import. Preselects the repository holding the
+   * session's cwd and, when it still exists there, its last branch as the base.
+   */
+  async function selectImportSession(pick: SessionImportSelection | null) {
+    const revision = ++importSessionRevision;
+    importSessionPick = pick;
+    if (!pick) return;
+    const root = await sessionRepositoryRoot(pick.cwd);
+    if (!mounted || revision !== importSessionRevision || !root) return;
+    if (repoType !== 'local' || repoPath !== root) {
+      const detail = { path: root, type: 'local' as const, isValidPath: true };
+      handleRepoChange({ detail } as CustomEvent<typeof detail>);
+    }
+    if (!pick.gitBranch) return;
+    const listing = await appClient.git.getBranches(root, true);
+    if (!mounted || revision !== importSessionRevision || repoPath !== root) return;
+    const base = sessionBaseBranch(pick.gitBranch, listing);
+    if (base) handleBranchChange(new CustomEvent('branch', { detail: { branch: base } }));
+  }
+
+  function importProviderLabel(provider: string): string {
+    return selectProviderDisplayName.select(appStore.state, provider);
+  }
+
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
     logger.debug('handleBranchChange called', { branch: event.detail.branch });
     branch = event.detail.branch;
@@ -2596,6 +2662,13 @@
         setupScriptProbeKey: setupScriptProbeKey ?? null,
         setupScriptRepoKey: setupScriptRepoKey ?? null,
         formPersistence: debugConfig.get('enableFormPersistence'),
+        importSession: importSessionPick
+          ? {
+              provider: importSessionPick.provider,
+              sessionId: importSessionPick.sessionId,
+              title: importSessionPick.title,
+            }
+          : null,
         ...(continueFromLastFetched ? { continueFromLastFetched } : {}),
       };
       if (!preparationCurrent()) return;
@@ -2770,6 +2843,8 @@
       scope = '';
     }
     remoteSetup = null;
+    importSessionRevision++;
+    importSessionPick = null;
     // A late drafts.get or its delayed editor update must not refill the form.
     draftRestoreCancelled = true;
     initialPrompt = '';
@@ -3800,27 +3875,35 @@
         {/if}
 
         <div class="mt-3 border-t border-border pt-3">
-          <InitialAgentPicker
-            presentation="form"
-            {onNavigateAway}
-            bind:selectedSpecialist
-            {selectedModel}
-            onModelChange={(model, automatic) => {
-              selectedModel = model;
-              // An explicit pick pins the model for this form session so late
-              // hydration cannot overwrite it (intent-hq/monorepo#2678). A
-              // model chosen for the Start On machine is not a user pick.
-              if (model && !automatic) modelPickedThisSession = true;
-            }}
-            bind:startOnMachineId
-            {startOnBackendOnly}
-            bind:selectedReasoningEffort
-            onReasoningEffortChange={() => (effortPickedThisSession = true)}
-            onSetupPick={() => (setupPickedThisSession = true)}
-            bind:modelWasOverridden
-            bind:isTeamMode
-            bind:selectedProvider
+          <ImportSessionPicker
+            selected={importSessionPick}
+            onSelect={(pick) => void selectImportSession(pick)}
+            disabled={isCreating}
+            providerLabel={importProviderLabel}
           />
+          {#if !importSessionPick}
+            <InitialAgentPicker
+              presentation="form"
+              {onNavigateAway}
+              bind:selectedSpecialist
+              {selectedModel}
+              onModelChange={(model, automatic) => {
+                selectedModel = model;
+                // An explicit pick pins the model for this form session so late
+                // hydration cannot overwrite it (intent-hq/monorepo#2678). A
+                // model chosen for the Start On machine is not a user pick.
+                if (model && !automatic) modelPickedThisSession = true;
+              }}
+              bind:startOnMachineId
+              {startOnBackendOnly}
+              bind:selectedReasoningEffort
+              onReasoningEffortChange={() => (effortPickedThisSession = true)}
+              onSetupPick={() => (setupPickedThisSession = true)}
+              bind:modelWasOverridden
+              bind:isTeamMode
+              bind:selectedProvider
+            />
+          {/if}
         </div>
 
         <!-- Error message -->
