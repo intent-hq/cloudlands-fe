@@ -2661,6 +2661,8 @@
   "machineRail_add_header": "このウィンドウに追加",
   "machineRail_remove_header": "このウィンドウから削除",
   "machineRail_requestFailed_error": "このウィンドウのマシンを更新できませんでした。",
+  "lib_commandPalette_machineRailTestToast_label": "マシンレール: 5 秒後にテスト通知を送信",
+  "machineRail_testToast_message": "このマシンからのテスト通知",
   "machineRail_toast_message": "{machine}: {message}",
   "machineRail_toast_show_label": "表示",
   "onboarding_creationError_baseRefresh_accessDenied_description": "Intent が動作しているマシンのアカウントはリポジトリに到達できますが、fetch する権限がありません。",

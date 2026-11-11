@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { setDockLabEnabled } from '$lib/dock-lab';
 import { store as appStore } from '$store/renderer/store';
 import { setBrowserAccessEnabledRequested } from '$store/renderer/slices/browser-access/browser-access-slice';
@@ -12,6 +13,8 @@ import {
 
 const ENABLE_MACHINE_RAIL = 'enable-experimental-machine-rail';
 const DISABLE_MACHINE_RAIL = 'disable-experimental-machine-rail';
+const MACHINE_RAIL_TEST_TOAST = 'machine-rail-test-toast';
+const MACHINE_RAIL_TEST_TOAST_DELAY_MS = 5_000;
 const ENABLE_DOCK = 'enable-experimental-dock';
 const DISABLE_DOCK = 'disable-experimental-dock';
 const ENABLE_PLAIN_FOLDERS = 'enable-experimental-plain-folders';
@@ -47,12 +50,23 @@ export function isLabCommandHidden(
  * the setting is.
  */
 export function isMachineRailCommandHidden(commandId: string, railEnabled: boolean): boolean {
+  // Prototype aid: raise a toast here after a delay, to switch machines and see it forwarded.
+  if (commandId === MACHINE_RAIL_TEST_TOAST) return !isElectronPlatform() || !railEnabled;
   if (commandId !== ENABLE_MACHINE_RAIL && commandId !== DISABLE_MACHINE_RAIL) return false;
   if (!isElectronPlatform()) return true;
   return commandId === (railEnabled ? ENABLE_MACHINE_RAIL : DISABLE_MACHINE_RAIL);
 }
 
 export function runLabCommand(commandId: string): boolean {
+  if (commandId === MACHINE_RAIL_TEST_TOAST) {
+    // Loaded on demand: the toast module pulls in the toast host and its store.
+    setTimeout(() => {
+      void import('$lib/components/patterns/notify').then(({ notify }) =>
+        notify.info(m.machineRail_testToast_message()),
+      );
+    }, MACHINE_RAIL_TEST_TOAST_DELAY_MS);
+    return true;
+  }
   if (commandId === ENABLE_MACHINE_RAIL || commandId === DISABLE_MACHINE_RAIL) {
     appStore.dispatch(setMachineRailEnabledRequested(commandId === ENABLE_MACHINE_RAIL));
     return true;

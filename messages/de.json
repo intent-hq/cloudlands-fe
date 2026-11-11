@@ -2661,6 +2661,8 @@
   "machineRail_add_header": "Zu diesem Fenster hinzufügen",
   "machineRail_remove_header": "Aus diesem Fenster entfernen",
   "machineRail_requestFailed_error": "Die Rechner in diesem Fenster konnten nicht aktualisiert werden.",
+  "lib_commandPalette_machineRailTestToast_label": "Rechnerleiste: Test-Hinweis in 5 Sekunden senden",
+  "machineRail_testToast_message": "Test-Hinweis von diesem Rechner",
   "machineRail_toast_message": "{machine}: {message}",
   "machineRail_toast_show_label": "Anzeigen",
   "onboarding_creationError_baseRefresh_accessDenied_description": "Das Konto auf dem Rechner, auf dem Intent läuft, erreicht das Repository, darf es aber nicht abrufen.",

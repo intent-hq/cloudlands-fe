@@ -2661,6 +2661,8 @@
   "machineRail_add_header": "添加到此窗口",
   "machineRail_remove_header": "从此窗口移除",
   "machineRail_requestFailed_error": "无法更新此窗口中的计算机。",
+  "lib_commandPalette_machineRailTestToast_label": "计算机侧栏:5 秒后发送测试通知",
+  "machineRail_testToast_message": "来自此计算机的测试通知",
   "machineRail_toast_message": "{machine}: {message}",
   "machineRail_toast_show_label": "显示",
   "onboarding_creationError_baseRefresh_accessDenied_description": "运行 Intent 的机器上的账户可以访问该仓库，但无权获取。",
