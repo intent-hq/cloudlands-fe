@@ -198,7 +198,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
           fn();
         };
         const timer = setTimeout(() => {
-          settle(() => reject(new Error('Timed out connecting to the transfer destination')));
+          settle(() => reject(new Error(m.workspace_transfer_destinationTimeout_error())));
         }, TARGET_PREFLIGHT_TIMEOUT_MS);
         signalCancel = () => settle(() => reject(new Error('cancelled')));
         current.signalCancel = signalCancel;
@@ -253,7 +253,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
     try {
       const ready = await new Promise<TransferReadyData>((resolve, reject) => {
         const timer = setTimeout(() => {
-          reject(new Error('Timed out waiting for the source to build the archive'));
+          reject(new Error(m.workspace_transfer_buildTimeout_error()));
         }, BUILD_TIMEOUT_MS);
         const settle = (fn: () => void): void => {
           clearTimeout(timer);
@@ -431,7 +431,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       if (!deps.isOwnerGone(session.ownerId)) {
         return {
           success: false,
-          error: 'a transfer is already in progress',
+          error: m.workspace_transfer_busy_error(),
           failurePhase: session.sourceExportStarted ? 'post-export' : 'preflight',
         };
       }
@@ -516,7 +516,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
       }
 
       // Server destination: reuse the preflighted target client for staged import.
-      if (!target) throw new Error('transfer destination client unavailable');
+      if (!target) throw new Error(m.workspace_transfer_destinationUnavailable_error());
       const begin = await target.request<{ importId: string }>('workspace.import.begin', {
         manifest: ready.manifest,
         archiveSizeBytes: ready.archiveSizeBytes,
@@ -693,7 +693,7 @@ export function createWorkspaceTransferRelay(deps: TransferRelayDeps): Workspace
         success: false,
         error: params.proposalId
           ? m.chat_transfer_sessionLost_error()
-          : 'no committed transfer to finalize',
+          : m.workspace_transfer_noSession_error(),
       };
     }
     if (current.proposalId !== params.proposalId) {

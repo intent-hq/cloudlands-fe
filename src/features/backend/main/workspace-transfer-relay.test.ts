@@ -8,6 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import { m } from '$shared/paraglide/messages.js';
 import { JsonRpcError } from './json-rpc-errors';
 import * as rpcErrors from './json-rpc-errors';
 import {
@@ -488,6 +489,33 @@ describe('workspace-transfer relay — server destination', () => {
     expect(target.dispose).toHaveBeenCalledOnce();
   });
 
+  it('reports a localized timeout when the source never finishes building the archive', async () => {
+    vi.useFakeTimers();
+    try {
+      const source = makeSource();
+      const target = makeTarget();
+      const { deps } = makeDeps(source, target);
+      const relay = makeRelay(deps);
+
+      const startPromise = relay.start(
+        { workspaceId: 'ws-1', destination: { kind: 'server', connectionId: 'conn-1' } },
+        source.client,
+      );
+      await vi.waitFor(() => {
+        if (!source.started()) throw new Error('not started yet');
+      });
+      await vi.advanceTimersByTimeAsync(600_001);
+
+      expect(await startPromise).toMatchObject({
+        success: false,
+        error: m.workspace_transfer_buildTimeout_error(),
+        failurePhase: 'post-export',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('bounds a target preflight that never connects and disposes the target client', async () => {
     vi.useFakeTimers();
     try {
@@ -509,7 +537,7 @@ describe('workspace-transfer relay — server destination', () => {
 
       expect(result).toEqual({
         success: false,
-        error: 'Timed out connecting to the transfer destination',
+        error: m.workspace_transfer_destinationTimeout_error(),
         failurePhase: 'preflight',
       });
       expect(source.calls).toEqual([]);
@@ -628,7 +656,7 @@ describe('workspace-transfer relay — server destination', () => {
       { workspaceId: 'ws-2', destination: { kind: 'server', connectionId: 'conn-1' } },
       source.client,
     );
-    expect(second).toMatchObject({ success: false, error: expect.stringContaining('already') });
+    expect(second).toMatchObject({ success: false, error: m.workspace_transfer_busy_error() });
 
     await emitWhenStarted(source, 'workspace:transfer:ready', READY_DATA);
     await first;
@@ -921,10 +949,7 @@ describe('workspace-transfer relay — finalize', () => {
     const { deps } = makeDeps(source);
     const relay = makeRelay(deps);
     const result = await relay.finalize({ archiveSource: true });
-    expect(result).toMatchObject({
-      success: false,
-      error: expect.stringContaining('no committed'),
-    });
+    expect(result).toMatchObject({ success: false, error: m.workspace_transfer_noSession_error() });
   });
 
   it('start and finalize use the per-invocation source client, not a shared one', async () => {
