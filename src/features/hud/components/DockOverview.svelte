@@ -222,7 +222,7 @@
         ? m.dock_overview_search_noMatches_label()
         : ''}</span
     >
-    <MagnifyingGlassIcon size={15} aria-hidden="true" />
+    <span class="search-lead" aria-hidden="true"><MagnifyingGlassIcon size={15} /></span>
     <Input
       bind:ref={searchInput}
       bind:value={query}
@@ -407,6 +407,10 @@
     overflow: auto;
     min-height: 0;
     overscroll-behavior: contain;
+    /* The viewport extends through the frame's right gutter (scrollbar at the dock's edge);
+       the rows keep their width and inset. */
+    margin-right: calc(-1 * var(--dock-overview-gutter, 0px));
+    padding-right: var(--dock-overview-gutter, 0px);
   }
   .overview-history {
     box-sizing: border-box;
@@ -420,16 +424,25 @@
     padding-inline: 6px;
     color: hsl(var(--muted-foreground));
   }
-  /* Plain search above the rows, no surface (DOCK_OVERVIEW_SEARCH_HEIGHT budgets it). */
+  /* Plain search above the rows, no surface (DOCK_OVERVIEW_SEARCH_HEIGHT budgets it). It
+     shares a row's leading column (padding, avatar-wide icon cell, gap) so the typed text
+     starts where the titles do. */
   .overview-search {
     flex: none;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     height: 32px;
-    margin: 0 6px 8px;
-    padding: 0 8px;
+    margin: 0 0 8px;
+    padding: 0 6px;
     color: hsl(var(--muted-foreground));
+  }
+  .search-lead {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
   }
   .overview-search :global(input.search-input) {
     flex: 1;

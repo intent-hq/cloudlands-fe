@@ -87,8 +87,10 @@
     bottom: 0;
     left: 0;
     right: 0;
-    /* The Assistant row closes the list; its own inset is the bottom margin. */
-    padding: 8px 12px 8px;
+    /* The Assistant row closes the list; its own inset is the bottom margin. The overview's
+       scroll viewport reaches through the inline gutter so its scrollbar sits at the edge. */
+    --dock-overview-gutter: 12px;
+    padding: 8px var(--dock-overview-gutter) 8px;
   }
   .overview-frame:not(.conversation-open) {
     height: var(--dock-overview-height, auto);

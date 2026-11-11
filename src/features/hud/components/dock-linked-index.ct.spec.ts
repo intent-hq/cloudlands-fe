@@ -932,3 +932,86 @@ test('linked index palette: active result, GitHub avatars, plain search', async 
     JSON.stringify(receipts, null, 2),
   );
 });
+
+/**
+ * Layout: the search text starts where the workspace titles start, and the list's scroll
+ * viewport reaches the dock's inner right edge (its scrollbar at the edge) while the rows keep
+ * their inset; normal and narrow frames.
+ */
+test('linked index layout: search text lines up, scrollbar at the edge', async ({
+  mount,
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1000, height: 740 });
+  await page.route('https://github.com/**', (route) => route.fulfill({ status: 404, body: '' }));
+  await mount(Harness, { props: { shell: dockRailPreview.states.notch.props } });
+  await expect.poll(() => page.evaluate(() => !!(window as any).__dockComposerE2E)).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__dockComposerE2E.store.state.dockConversation.loading),
+    )
+    .toBe(false);
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.seedChoices(8);
+    h.contextReady();
+    h.close();
+    h.store.dispatch({ type: 'hud/dockFocusRequested', payload: [] });
+  });
+  await expect(page.locator('[data-dock-search]')).toBeFocused();
+  await page.keyboard.type('syn');
+  const measure = () =>
+    page.evaluate(() => {
+      const box = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
+      const input = document.querySelector('[data-dock-search]') as HTMLInputElement;
+      const rows = document.querySelector(
+        '[data-testid="dock-overview"] [data-dock-scroll]',
+      ) as HTMLElement;
+      const frame = box('.overview-frame');
+      const titles = Array.from(document.querySelectorAll('.overview-row .row-copy')).map(
+        (el) => el.getBoundingClientRect().left,
+      );
+      const firstRow = box('.overview-row[role="row"]');
+      const inputStyle = getComputedStyle(input);
+      return {
+        textLeft: input.getBoundingClientRect().left + parseFloat(inputStyle.paddingLeft),
+        titleLefts: [...new Set(titles.map((x) => Math.round(x * 10) / 10))],
+        viewportRight: rows.getBoundingClientRect().right,
+        frameRight: frame.right,
+        rowRight: firstRow.right,
+        scrollbar: rows.offsetWidth - rows.clientWidth,
+        scrolls: rows.scrollHeight > rows.clientHeight,
+        horizontalOverflow: rows.scrollWidth > rows.clientWidth,
+      };
+    });
+  const check = (m: Awaited<ReturnType<typeof measure>>) => {
+    expect(m.titleLefts).toHaveLength(1);
+    expect(Math.abs(m.textLeft - m.titleLefts[0]!)).toBeLessThan(0.5);
+    expect(Math.abs(m.viewportRight - m.frameRight)).toBeLessThan(0.5);
+    // Rows keep the 12px gutter inside the viewport (beside a classic scrollbar, if any).
+    expect(Math.abs(m.viewportRight - 12 - m.scrollbar - m.rowRight)).toBeLessThan(0.5);
+    expect(m.horizontalOverflow).toBe(false);
+  };
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.press('Backspace');
+  const normal = await measure();
+  expect(normal.scrolls).toBe(true);
+  check(normal);
+  await page.screenshot({ path: info.outputPath('14-layout-normal.png') });
+  await page.locator('.overview-frame').evaluate((el) => {
+    (el as HTMLElement).style.right = 'auto';
+    (el as HTMLElement).style.width = '300px';
+  });
+  const narrow = await measure();
+  check(narrow);
+  await page.screenshot({ path: info.outputPath('15-layout-narrow-300.png') });
+  await writeFile(
+    info.outputPath('linked-index-layout-receipt.json'),
+    JSON.stringify(
+      { normal, narrow, narrowNote: 'frame constrained to 300px in the page' },
+      null,
+      2,
+    ),
+  );
+});
