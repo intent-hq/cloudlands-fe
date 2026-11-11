@@ -53,6 +53,7 @@
   import type { ProviderProfileSetup } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
+  import { advancedEditRemoteChange } from '$lib/provider-remote-ready';
   import ProviderProfileKindDialog from './profile-kinds/ProviderProfileKindDialog.svelte';
   import type { BaseUrlAction, ProfileSignInState } from './profile-kinds/profile-kind-mock';
   import { advancedRowsFromEdit, editEnvChanges, editScreenFacts } from './provider-profile-edit';
@@ -254,11 +255,16 @@
     const nameChanged = name !== profile.name;
     const backupChanged = backup !== (profile.backup === true);
     // Only Advanced has the toggle; the other kinds keep their saved mark.
-    const remoteChanged =
-      $remoteReady$ &&
-      kind === 'advanced' &&
-      remoteCompatible !== (profile.remoteCompatible !== false);
-    if (!nameChanged && !backupChanged && !remoteChanged && !env) {
+    const remoteChange =
+      kind === 'advanced'
+        ? advancedEditRemoteChange({
+            visible: $remoteReady$,
+            toggle: remoteCompatible,
+            rows: envRows,
+            saved: profile.remoteCompatible !== false,
+          })
+        : undefined;
+    if (!nameChanged && !backupChanged && remoteChange === undefined && !env) {
       open = false;
       return;
     }
@@ -272,7 +278,7 @@
         ...(nameChanged ? { name } : {}),
         ...(env ? { env } : {}),
         ...(backupChanged ? { backup } : {}),
-        ...(remoteChanged ? { remoteCompatible } : {}),
+        ...(remoteChange !== undefined ? { remoteCompatible: remoteChange } : {}),
       }),
     );
   }

@@ -57,7 +57,7 @@
   import type { ProviderProfileSetup } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
   import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
-  import { accountFolderKeys } from '$lib/provider-remote-ready';
+  import { advancedCreateRemoteChoice } from '$lib/provider-remote-ready';
   import ProviderProfileKindDialog from './profile-kinds/ProviderProfileKindDialog.svelte';
   import type {
     ProfileKindStep,
@@ -291,17 +291,20 @@
         name,
         ...(built.env ? { env: built.env } : {}),
         ...(backup ? { backup } : {}),
-        // The daemon stores the choice: always send it (hidden toggle: the migration rule).
-        ...($remoteChoiceSupported$
-          ? {
-              remoteCompatible: $remoteReady$
-                ? remoteCompatible
-                : accountFolderKeys(envRows).length === 0,
-            }
-          : {}),
+        ...remoteChoice(
+          advancedCreateRemoteChoice({
+            supported: $remoteChoiceSupported$,
+            visible: $remoteReady$,
+            toggle: remoteCompatible,
+            rows: envRows,
+          }),
+        ),
       }),
     );
   }
+
+  const remoteChoice = (value: boolean | undefined) =>
+    value === undefined ? {} : { remoteCompatible: value };
 
   function retry() {
     if (!setup) return;

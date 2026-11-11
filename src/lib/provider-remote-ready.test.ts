@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { EnvRow } from '$features/settings/profile-env-form';
 import {
   accountFolderKeys,
+  advancedCreateRemoteChoice,
+  advancedEditRemoteChange,
   kindRemoteSupport,
   remoteWarningsForRows,
   rowRemoteWarnings,
@@ -75,5 +77,69 @@ describe('accountFolderKeys', () => {
         row('ANTHROPIC_MODEL', 'opus'),
       ]),
     ).toEqual(['codex_home']);
+  });
+});
+
+describe('advancedCreateRemoteChoice', () => {
+  const folder = row('CLAUDE_CONFIG_DIR', '~/.claude-2');
+  const unsetFolder = row('CLAUDE_CONFIG_DIR', '', { mode: 'unset' });
+  it.each([
+    [
+      'no saved choice on the daemon',
+      { supported: false, visible: true, toggle: true, rows: [] },
+      undefined,
+    ],
+    [
+      'hidden toggle, no folder',
+      { supported: true, visible: false, toggle: false, rows: [] },
+      true,
+    ],
+    [
+      'hidden toggle, a set folder',
+      { supported: true, visible: false, toggle: true, rows: [folder] },
+      false,
+    ],
+    [
+      'hidden toggle, an unset folder',
+      { supported: true, visible: false, toggle: false, rows: [unsetFolder] },
+      true,
+    ],
+    ['visible toggle off', { supported: true, visible: true, toggle: false, rows: [] }, false],
+    ['visible toggle on', { supported: true, visible: true, toggle: true, rows: [] }, true],
+    [
+      'visible toggle on with a folder',
+      { supported: true, visible: true, toggle: true, rows: [folder] },
+      false,
+    ],
+  ])('%s', (_name, input, expected) => {
+    expect(advancedCreateRemoteChoice(input)).toBe(expected);
+  });
+});
+
+describe('advancedEditRemoteChange', () => {
+  const folder = row('CODEX_HOME', '~/.codex-2');
+  it('sends nothing while the toggle is hidden', () => {
+    expect(advancedEditRemoteChange({ visible: false, toggle: false, rows: [], saved: true })).toBe(
+      undefined,
+    );
+  });
+  it('sends only a change of the effective choice', () => {
+    expect(advancedEditRemoteChange({ visible: true, toggle: true, rows: [], saved: true })).toBe(
+      undefined,
+    );
+    expect(advancedEditRemoteChange({ visible: true, toggle: false, rows: [], saved: true })).toBe(
+      false,
+    );
+    expect(advancedEditRemoteChange({ visible: true, toggle: true, rows: [], saved: false })).toBe(
+      true,
+    );
+  });
+  it('an added account folder unmarks; removing it again restores the saved choice', () => {
+    expect(
+      advancedEditRemoteChange({ visible: true, toggle: true, rows: [folder], saved: true }),
+    ).toBe(false);
+    expect(advancedEditRemoteChange({ visible: true, toggle: true, rows: [], saved: true })).toBe(
+      undefined,
+    );
   });
 });

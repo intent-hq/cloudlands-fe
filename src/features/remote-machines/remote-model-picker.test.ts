@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { describe, expect, it } from 'vitest';
 import type { ProviderProfileSummary } from '$shared/provider-catalog';
 import type { RemoteMachine } from '$shared/types/remote-machines';
@@ -130,6 +131,16 @@ describe('remoteIncompatibilityFor', () => {
     );
     expect(remoteIncompatibilityMessage({ reason: 'future', keys: [] }, 'Studio')).toBe(
       "This configuration can't run on other machines",
+    );
+  });
+
+  it('offers both Default options for a refused Default, only the mark for a profile', () => {
+    const notMarked = { reason: 'not-marked', keys: [] };
+    expect(remoteIncompatibilityMessage(notMarked, 'Studio', true)).toBe(
+      m.chat_modelPicker_remoteDefaultRefused_description(),
+    );
+    expect(remoteIncompatibilityMessage(notMarked, 'Studio')).toBe(
+      m.chat_modelPicker_remoteNotMarked_description(),
     );
   });
 });

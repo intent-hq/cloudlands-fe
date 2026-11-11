@@ -2,7 +2,8 @@
   /**
    * Advanced profiles: "Use on remote machines", with warnings for settings
    * that may only work on this backend while it is on. An account folder
-   * can't be marked, so the toggle turns off and locks while one is set.
+   * can't be marked, so the toggle reads off and locks while one is set; the
+   * bound choice is kept, so removing the folder restores it.
    */
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
@@ -24,10 +25,8 @@
   let { rows, checked = $bindable(true), disabled = false }: Props = $props();
 
   const folderKeys = $derived(accountFolderKeys(rows));
-  $effect(() => {
-    if (folderKeys.length > 0 && checked) checked = false;
-  });
-  const warnings = $derived(checked ? remoteWarningsForRows(rows) : []);
+  const shown = $derived(checked && folderKeys.length === 0);
+  const warnings = $derived(shown ? remoteWarningsForRows(rows) : []);
 </script>
 
 <div class="space-y-2" data-testid="provider-profile-remote">
@@ -46,7 +45,8 @@
     </div>
     <Switch
       id="provider-profile-remote-switch"
-      bind:checked
+      checked={shown}
+      onCheckedChange={(next) => (checked = next)}
       size="sm"
       disabled={disabled || folderKeys.length > 0}
       ariaLabel={m.settings_providerRemote_useOnRemote_label()}

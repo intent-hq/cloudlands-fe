@@ -57,15 +57,22 @@ export function remoteIncompatibilityFor(
   return defaultRemoteIncompatibility?.[providerRef] ?? null;
 }
 
-/** Why a configuration can't run on another machine: account folder, not marked, or other. */
+/**
+ * Why a configuration can't run on another machine: account folder, not
+ * marked, or other. A refused Default (`isDefault`) is unmarked with machine
+ * sign-in off, so either option fixes it.
+ */
 export function remoteIncompatibilityMessage(
   incompatibility: RemoteIncompatibility,
   backend: string,
+  isDefault = false,
 ): string {
   if (incompatibility.reason === 'account-folder')
     return m.chat_modelPicker_remoteAccountFolder_description({ backend });
   if (incompatibility.reason === 'not-marked')
-    return m.chat_modelPicker_remoteNotMarked_description();
+    return isDefault
+      ? m.chat_modelPicker_remoteDefaultRefused_description()
+      : m.chat_modelPicker_remoteNotMarked_description();
   return m.chat_modelPicker_remoteIncompatible_description();
 }
 

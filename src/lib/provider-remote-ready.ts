@@ -76,6 +76,42 @@ export function accountFolderKeys(rows: readonly EnvRow[]): string[] {
     .map((row) => row.key.trim());
 }
 
+/** An Advanced profile is marked when its toggle is on and it sets no account folder. */
+function advancedMarked(toggle: boolean, rows: readonly EnvRow[]): boolean {
+  return toggle && accountFolderKeys(rows).length === 0;
+}
+
+/**
+ * `remoteCompatible` for an Advanced create. Clients that know the field always
+ * send it to a daemon that stores the choice (`supported`); with the toggle
+ * hidden (`visible` false) that is the migration rule: no account folder.
+ */
+export function advancedCreateRemoteChoice(input: {
+  supported: boolean;
+  visible: boolean;
+  toggle: boolean;
+  rows: readonly EnvRow[];
+}): boolean | undefined {
+  if (!input.supported) return undefined;
+  return advancedMarked(input.visible ? input.toggle : true, input.rows);
+}
+
+/**
+ * `remoteCompatible` for an Advanced update: sent only from the visible toggle,
+ * and only when the effective choice differs from the saved one. With the
+ * toggle hidden the saved choice stays (the daemon unmarks on a new folder).
+ */
+export function advancedEditRemoteChange(input: {
+  visible: boolean;
+  toggle: boolean;
+  rows: readonly EnvRow[];
+  saved: boolean;
+}): boolean | undefined {
+  if (!input.visible) return undefined;
+  const marked = advancedMarked(input.toggle, input.rows);
+  return marked === input.saved ? undefined : marked;
+}
+
 /** One sentence per warning; unknown reasons get the generic wording. */
 export function remoteWarningMessage(warning: RemoteReason): string {
   const keys = warning.keys.join(', ');

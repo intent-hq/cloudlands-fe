@@ -650,7 +650,13 @@
       $providerProfiles$,
       $defaultRemoteIncompatibility$,
     );
-    return incompatibility ? remoteIncompatibilityMessage(incompatibility, $backendLabel$) : null;
+    return incompatibility
+      ? remoteIncompatibilityMessage(
+          incompatibility,
+          $backendLabel$,
+          !isProviderProfileRef(providerRef),
+        )
+      : null;
   }
   const effectiveLocked = $derived(isLocked || isGuestLocked || remoteLocked);
 
