@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.313.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.312.0...v2.313.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **home:** multi-select workspaces with bulk archive, purge and delete ([#4431](https://github.com/intent-hq/cloudlands-fe/issues/4431)) ([4ad1a9f](https://github.com/intent-hq/cloudlands-fe/commit/4ad1a9f44da7923e08429f22db338cb5c5996f70))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.182 ([#4434](https://github.com/intent-hq/cloudlands-fe/issues/4434)) ([a975579](https://github.com/intent-hq/cloudlands-fe/commit/a9755798544509c5394c09fd27ed0af1b6f6de00))
+
 ## [2.312.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.311.0...v2.312.0) (2026-11-11)
 
 
