@@ -20,8 +20,8 @@
     selectStartOnRows,
     selectStartOnVisible,
   } from '$features/remote-machines/remote-machines-selectors';
-  import { store as appStore } from '$store/renderer/store';
-  import { proposalStartOnChoices } from './proposal-start-on';
+  import { selectCloudEntriesSupported } from '$features/cloud-machines/cloud-machines-selectors';
+  import { proposalStartOnChoices, resolveImplicitE2b } from './proposal-start-on';
 
   interface Props {
     /** Selected Start on id (`''` = the backend). */
@@ -60,11 +60,12 @@
     providerRefStore.set(providerRef);
   });
   const cloud$ = selectStartOnCloud(providerRefStore);
+  const cloudEntries$ = selectCloudEntriesSupported();
 
   const active = $derived(
     $remoteVisible$ && $supported$ && ($anyUsable$ || defaultValue !== START_ON_BACKEND),
   );
-  const effective = $derived(backendOnly ? START_ON_BACKEND : value);
+  const effective = $derived(backendOnly ? START_ON_BACKEND : resolveImplicitE2b(value, $rows$));
   const missingLabel = $derived(
     startOnCloudMachineId(effective)
       ? m.cloudMachines_startOn_label()
@@ -89,7 +90,7 @@
     unavailable = active && choices.unavailable !== null;
     placement = active
       ? (initialAgentPlacement(effective, {
-          cloudEntries: appStore.state.cloudMachines?.entries === true,
+          cloudEntries: $cloudEntries$,
         }) ?? null)
       : undefined;
   });

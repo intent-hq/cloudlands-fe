@@ -53,6 +53,16 @@ export function proposalStartOnDefault(
 }
 
 /**
+ * An E2B stamp without `cloudMachineId` means the only saved entry, else the
+ * legacy "e2b" entry (PROTOCOL workspace.md "Proposer placement").
+ */
+export function resolveImplicitE2b(value: string, options: readonly StartOnOption[]): string {
+  if (value !== START_ON_E2B || options.some((option) => option.id === START_ON_E2B)) return value;
+  const entries = options.filter((option) => option.kind === 'cloud');
+  return entries.length === 1 ? entries[0].id : value;
+}
+
+/**
  * The rows to offer for `value`, and the chosen row when it can't start an
  * agent. A choice that is no longer listed is added as a disabled row so the
  * card still shows it.

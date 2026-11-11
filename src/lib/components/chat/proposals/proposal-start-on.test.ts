@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { WorkspaceCreateProposal } from '$shared/types/proposal';
 import type { StartOnOption } from '$features/remote-machines/start-on';
-import { proposalStartOnChoices, proposalStartOnDefault } from './proposal-start-on';
+import {
+  proposalStartOnChoices,
+  proposalStartOnDefault,
+  resolveImplicitE2b,
+} from './proposal-start-on';
 
 function proposal(placement?: unknown): WorkspaceCreateProposal {
   return {
@@ -85,5 +89,35 @@ describe('proposalStartOnChoices', () => {
   it('marks a gone E2B entry as a cloud row', () => {
     const choices = proposalStartOnChoices([backend], 'cloud:e2b-old', 'E2B');
     expect(choices.unavailable).toMatchObject({ kind: 'cloud', disabled: true });
+  });
+});
+
+describe('resolveImplicitE2b', () => {
+  const row = (id: string): StartOnOption => ({
+    id,
+    label: id,
+    platform: null,
+    disabled: false,
+    kind: 'cloud',
+  });
+  const backend: StartOnOption = { id: '', label: 'intent1', platform: null, disabled: false };
+
+  it('uses the only saved entry for an E2B stamp that names none', () => {
+    expect(resolveImplicitE2b('cloud:e2b', [backend, row('cloud:e2b-team')])).toBe(
+      'cloud:e2b-team',
+    );
+  });
+
+  it('keeps the legacy entry when it is listed', () => {
+    expect(resolveImplicitE2b('cloud:e2b', [backend, row('cloud:e2b'), row('cloud:e2b-x')])).toBe(
+      'cloud:e2b',
+    );
+  });
+
+  it('leaves an ambiguous or explicit choice alone', () => {
+    const two = [backend, row('cloud:e2b-a'), row('cloud:e2b-b')];
+    expect(resolveImplicitE2b('cloud:e2b', two)).toBe('cloud:e2b');
+    expect(resolveImplicitE2b('cloud:e2b-a', two)).toBe('cloud:e2b-a');
+    expect(resolveImplicitE2b('d-mac', two)).toBe('d-mac');
   });
 });

@@ -938,7 +938,7 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
       origin,
     });
     const result = yield* call([workspaceClient, workspaceClient.create], request);
-    if (!result.ok && result.errorCode === 'launch-failed' && result.launchFailure) {
+    if (!result.ok && result.errorCode === 'launch-failed') {
       // The workspace committed and the daemon resolved the card applied; only
       // its first agent failed to start (PROTOCOL nodes.md "Placement subset").
       yield* applyLaunchFailedProposal(proposalId, result.launchFailure, result.error);
@@ -989,12 +989,12 @@ async function readKeptWorkspace(workspaceId: string): Promise<Workspace | null>
 
 function* applyLaunchFailedProposal(
   proposalId: string,
-  launch: { workspaceId: string; cause?: string },
+  launch: { workspaceId: string; cause?: string } | undefined,
   error: string,
 ): SagaGenerator<void> {
-  const workspaceId = launch.workspaceId as WorkspaceId;
-  const workspace = yield* call(readKeptWorkspace, workspaceId);
-  if (workspace) {
+  const workspaceId = launch?.workspaceId as WorkspaceId | undefined;
+  const workspace = workspaceId ? yield* call(readKeptWorkspace, workspaceId) : null;
+  if (workspace && workspaceId) {
     yield* put(setWorkspaceEntity(workspace));
     yield* put(restoreWorkspaceTab(workspaceId));
   }
@@ -1003,8 +1003,8 @@ function* applyLaunchFailedProposal(
       proposalId,
       completedAt: Date.now(),
       result: {
-        workspaceId,
-        launchError: m.chat_proposalCard_launchFailed_label({ cause: launch.cause || error }),
+        ...(workspaceId ? { workspaceId } : {}),
+        launchError: m.chat_proposalCard_launchFailed_label({ cause: launch?.cause || error }),
       },
     }),
   );

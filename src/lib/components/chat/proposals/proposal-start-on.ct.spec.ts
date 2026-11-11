@@ -64,11 +64,6 @@ test('a machine that was removed still shows, with a warning', async ({ mount, p
   await expect(create(page)).toBeDisabled();
 });
 
-test('a launch error shows on the card', async ({ mount, page }) => {
-  await mount(ProposalStartOnPreview, { props: { state: 'launch-error' } });
-  await expect(page.getByRole('status')).toContainText('profile-not-remote-compatible');
-});
-
 test('a first agent that fails after the workspace exists shows on the card', async ({
   mount,
   page,

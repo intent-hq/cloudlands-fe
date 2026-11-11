@@ -1286,6 +1286,22 @@ describe('workspaceOperationsSaga', () => {
     await run.task.toPromise();
   });
 
+  it('keeps a launch-failed card applied even when the error carries no workspace id', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: false,
+      error: 'first agent failed to start',
+      errorCode: 'launch-failed',
+    });
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-launch-bare') }));
+    await settle();
+    const entry = run.state().proposalLifecycle['create-launch-bare'];
+    expect(entry?.status).toBe('applied');
+    expect(entry?.result?.launchError).toContain('first agent failed to start');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('creates for a second id-less card whose payload matches an applied one', async () => {
     mocks.create
       .mockResolvedValueOnce({ ok: true, data: { workspace: workspace('ws-first') } })
