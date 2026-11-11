@@ -5627,7 +5627,7 @@
   "settings_providerProfiles_variableN_label": "variable n.º {n}",
   "settings_providerRemote_accountFolderBlocked_description": "Define una carpeta de cuenta ({keys}) con sesión iniciada en este backend, así que solo puede ejecutarse aquí.",
   "settings_providerRemote_defaultSaveFailed_error": "No se pudo guardar Usar en máquinas remotas.",
-  "settings_providerRemote_defaultUseOnRemote_description": "Cuando una máquina remota no ha iniciado sesión en este proveedor, envía desde aquí los ajustes del Predeterminado.",
+  "settings_providerRemote_defaultUseOnRemote_description": "Envía los ajustes del Predeterminado a las máquinas remotas, incluso a las que ya iniciaron sesión en este proveedor.",
   "settings_providerRemote_pill_label": "Listo para remoto",
   "settings_providerRemote_thisMachineOnly_label": "Solo esta máquina",
   "settings_providerRemote_useOnRemote_description": "Envía estos ajustes a cualquier máquina en la que este backend ejecute agentes.",

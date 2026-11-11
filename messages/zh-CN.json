@@ -5627,7 +5627,7 @@
   "settings_providerProfiles_variableN_label": "变量 {n}",
   "settings_providerRemote_accountFolderBlocked_description": "设置了在此后端登录的账户文件夹（{keys}），因此只能在这里运行。",
   "settings_providerRemote_defaultSaveFailed_error": "无法保存“在远程机器上使用”。",
-  "settings_providerRemote_defaultUseOnRemote_description": "远程机器未登录此提供方时，从这里发送默认配置的设置。",
+  "settings_providerRemote_defaultUseOnRemote_description": "将默认配置的设置发送到远程机器，即使该机器已登录此提供方。",
   "settings_providerRemote_pill_label": "可远程使用",
   "settings_providerRemote_thisMachineOnly_label": "仅限此机器",
   "settings_providerRemote_useOnRemote_description": "将这些设置发送到此后端运行智能体的任何机器。",

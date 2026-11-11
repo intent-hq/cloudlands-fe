@@ -5627,7 +5627,7 @@
   "settings_providerProfiles_variableN_label": "변수 {n}",
   "settings_providerRemote_accountFolderBlocked_description": "이 백엔드에서 로그인된 계정 폴더({keys})를 설정하므로 여기에서만 실행할 수 있습니다.",
   "settings_providerRemote_defaultSaveFailed_error": "원격 컴퓨터에서 사용을 저장하지 못했습니다.",
-  "settings_providerRemote_defaultUseOnRemote_description": "원격 컴퓨터가 이 제공자에 로그인되어 있지 않으면 여기에서 기본값의 설정을 보냅니다.",
+  "settings_providerRemote_defaultUseOnRemote_description": "기본값의 설정을 원격 컴퓨터로 보냅니다. 이 제공자에 로그인된 컴퓨터에도 보냅니다.",
   "settings_providerRemote_pill_label": "원격 사용 가능",
   "settings_providerRemote_thisMachineOnly_label": "이 컴퓨터만",
   "settings_providerRemote_useOnRemote_description": "이 백엔드가 에이전트를 실행하는 모든 컴퓨터로 이 설정을 보냅니다.",

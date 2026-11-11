@@ -270,7 +270,8 @@ interface BuildMachineModelGroupsParams {
  * its provider (auto-pick). An E2B
  * sandbox has no sign-in of its own, so only (b) applies.
  * When the machine lists no models for a configuration that brings its own
- * credentials, the backend catalog's models stand in.
+ * credentials, the backend catalog's models stand in. A configuration with
+ * no models is left out.
  */
 export function buildMachineModelGroups({
   machine,
@@ -324,6 +325,8 @@ export function buildMachineModelGroups({
       const known = labelled.get(modelId);
       return known ? { ...known, value: modelId } : { value: modelId, label: modelId };
     });
+    // Nothing to pick: no tab.
+    if (options.length === 0) continue;
     groups.push({ key: ref, label: groupLabel(ref), options });
   }
   return groups;

@@ -5627,7 +5627,7 @@
   "settings_providerProfiles_variableN_label": "変数 {n}",
   "settings_providerRemote_accountFolderBlocked_description": "このバックエンドでサインイン済みのアカウントフォルダー ({keys}) を設定しているため、ここでのみ実行できます。",
   "settings_providerRemote_defaultSaveFailed_error": "「リモートマシンで使用」を保存できませんでした。",
-  "settings_providerRemote_defaultUseOnRemote_description": "リモートマシンがこのプロバイダーにサインインしていない場合、ここからデフォルトの設定を送信します。",
+  "settings_providerRemote_defaultUseOnRemote_description": "デフォルトの設定をリモートマシンに送信します。このプロバイダーにサインイン済みのマシンにも送信します。",
   "settings_providerRemote_pill_label": "リモート対応",
   "settings_providerRemote_thisMachineOnly_label": "このマシンのみ",
   "settings_providerRemote_useOnRemote_description": "このバックエンドがエージェントを実行するすべてのマシンにこの設定を送信します。",

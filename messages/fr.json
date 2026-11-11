@@ -5627,7 +5627,7 @@
   "settings_providerProfiles_variableN_label": "variable n° {n}",
   "settings_providerRemote_accountFolderBlocked_description": "Définit un dossier de compte ({keys}) connecté sur ce backend : il ne peut donc s'exécuter qu'ici.",
   "settings_providerRemote_defaultSaveFailed_error": "Impossible d'enregistrer Utiliser sur les machines distantes.",
-  "settings_providerRemote_defaultUseOnRemote_description": "Quand une machine distante n'est pas connectée à ce fournisseur, envoyer les réglages du Défaut depuis ici.",
+  "settings_providerRemote_defaultUseOnRemote_description": "Envoyer les réglages du Défaut aux machines distantes, même à celles connectées à ce fournisseur.",
   "settings_providerRemote_pill_label": "Prêt pour le distant",
   "settings_providerRemote_thisMachineOnly_label": "Cette machine uniquement",
   "settings_providerRemote_useOnRemote_description": "Envoie ces réglages à toute machine sur laquelle ce backend exécute des agents.",

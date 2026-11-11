@@ -44,6 +44,8 @@ export interface StartOnCloudEntry {
   label: string;
   /** Null when usable, else why not. */
   unavailableReason: string | null;
+  /** No configuration from here can be sent to it: show the profile hint. */
+  needsProfile?: boolean;
 }
 
 /** The E2B rows; null or empty when cloud machines are not configured. */
@@ -120,7 +122,9 @@ export function startOnOptions({
       disabled: entry.unavailableReason !== null,
       ...(entry.unavailableReason
         ? { reason: entry.unavailableReason }
-        : { hint: m.cloudMachines_startOn_hint() }),
+        : entry.needsProfile
+          ? { hint: m.cloudMachines_startOn_hint() }
+          : {}),
     });
   return options;
 }

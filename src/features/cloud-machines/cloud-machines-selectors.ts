@@ -10,6 +10,12 @@ import {
 } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
 import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
 import type { StartOnCloud } from '$features/remote-machines/start-on';
+import { defaultRemoteSends } from '$features/remote-machines/remote-model-picker';
+import {
+  selectProviderCatalogDefaultRemoteIncompatibility,
+  selectProviderCatalogDefaultRemoteLaunch,
+  selectProviderCatalogProfiles,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
 type State = typeof store.state;
 
@@ -131,7 +137,43 @@ export function startOnCloud(state: State): StartOnCloud | null {
         : m.cloudMachines_startOn_label(),
     unavailableReason:
       entry.state === 'key-rejected' ? m.cloudMachines_state_keyRejected_label() : null,
+    needsProfile: !cloudEntrySendsConfig(state, entry),
   }));
+}
+
+/**
+ * Some configuration from here can run on the entry's sandboxes, by the
+ * remote model picker's rule: a Default the catalog sends
+ * (`defaultRemoteLaunch` "send"), or a marked profile that sets a variable.
+ * A profile whose variables are unknown (the admin-only list not read) counts.
+ */
+function cloudEntrySendsConfig(state: State, entry: CloudMachineProvider): boolean {
+  const defaults = {
+    defaultRemoteLaunch: selectProviderCatalogDefaultRemoteLaunch.select(state),
+    defaultRemoteIncompatibility: selectProviderCatalogDefaultRemoteIncompatibility.select(state),
+    defaultHasOverrides: Object.fromEntries(
+      Object.values(state.providerSettings?.profiles?.defaults ?? {}).map((config) => [
+        config.baseProviderId,
+        config.env.length > 0,
+      ]),
+    ),
+  };
+  const installs = (base: string) =>
+    entry.agentProviders.length === 0 || entry.agentProviders.includes(base);
+  const profileItems = state.providerSettings?.profiles?.items;
+  const saved = profileItems ? getItems(profileItems) : [];
+  const catalogProfiles = selectProviderCatalogProfiles.select(state);
+  const bases = new Set([
+    ...entry.agentProviders,
+    ...Object.keys(defaults.defaultRemoteLaunch ?? {}),
+  ]);
+  for (const base of bases)
+    if (installs(base) && defaultRemoteSends(base, defaults)) return true;
+  return catalogProfiles.some((profile) => {
+    if (profile.remoteCompatible !== true || !installs(profile.baseProviderId)) return false;
+    const row = saved.find((item) => item.providerRef === profile.providerRef);
+    return !row || row.env.some((variable) => variable.kind === 'set');
+  });
 }
 
 /**
