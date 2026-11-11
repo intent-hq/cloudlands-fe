@@ -218,6 +218,10 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await headerLink.click();
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');
   await expect(headerLink).toHaveAttribute('aria-pressed', 'true');
+  await expect(headerLink).toHaveAttribute(
+    'aria-label',
+    /Unlink github\.com from Synthetic workspace 1/,
+  );
   await page.screenshot({ path: info.outputPath('12-d-header-linked.png') });
   await page.evaluate(
     (id) =>

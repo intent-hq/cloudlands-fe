@@ -29,6 +29,12 @@
   );
   const shown = $derived(ready && (saved || context!.linkable));
   const contextName = $derived(context?.label || '');
+  // The name says what a press does: unlink the saved link here, else link this context here.
+  const operation = $derived(
+    saved
+      ? m.dock_linkedTab_unlink_ariaLabel({ context: contextName, workspace: title })
+      : m.dock_linkedTab_link_ariaLabel({ context: contextName, workspace: title }),
+  );
   /**
    * A held gesture acts on what was on screen when it started. Pointer down or an Enter /
    * Space key down captures the rendered {version, workspace, operation}; if the context or
@@ -92,11 +98,9 @@
     data-dock-link-action={saved ? 'unlink' : 'link'}
     data-context-version={context?.contextVersion}
     aria-pressed={saved}
-    aria-label={m.dock_linkedTab_link_ariaLabel({ context: contextName, workspace: title })}
+    aria-label={operation}
     tooltipContentClass="dock-chrome-tooltip"
-    tooltip={saved
-      ? m.dock_linkedTab_unlink_ariaLabel({ context: contextName, workspace: title })
-      : m.dock_linkedTab_link_ariaLabel({ context: contextName, workspace: title })}
+    tooltip={operation}
     onpointerdown={hold}
     onpointercancel={release}
     onblur={release}
