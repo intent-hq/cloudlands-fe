@@ -58,6 +58,7 @@
   "agent_contextBreakdown_tokens_label": "~{tokens} 토큰",
   "agent_contextBreakdown_owner_intent_label": "Intent",
   "agent_contextBreakdown_owner_user_label": "사용자",
+  "agent_contextBreakdown_owner_native_label": "네이티브",
   "agent_contextBreakdown_ownerShare_label": "{owner}: {tokens}",
   "agent_contextBreakdown_notCounted_label": "합계에서 제외",
   "agent_contextBreakdown_hiddenSkills_title": "숨겨진 스킬",

@@ -58,6 +58,7 @@
   "agent_contextBreakdown_tokens_label": "~{tokens} Token",
   "agent_contextBreakdown_owner_intent_label": "Intent",
   "agent_contextBreakdown_owner_user_label": "Benutzer",
+  "agent_contextBreakdown_owner_native_label": "Nativ",
   "agent_contextBreakdown_ownerShare_label": "{owner}: {tokens}",
   "agent_contextBreakdown_notCounted_label": "Nicht in der Summe",
   "agent_contextBreakdown_hiddenSkills_title": "Ausgeblendete Skills",

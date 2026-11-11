@@ -58,6 +58,7 @@
   "agent_contextBreakdown_tokens_label": "~{tokens} トークン",
   "agent_contextBreakdown_owner_intent_label": "Intent",
   "agent_contextBreakdown_owner_user_label": "ユーザー",
+  "agent_contextBreakdown_owner_native_label": "ネイティブ",
   "agent_contextBreakdown_ownerShare_label": "{owner}：{tokens}",
   "agent_contextBreakdown_notCounted_label": "合計に含まれません",
   "agent_contextBreakdown_hiddenSkills_title": "非表示のスキル",
