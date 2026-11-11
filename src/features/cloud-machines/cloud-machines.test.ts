@@ -47,6 +47,7 @@ import {
   selectStartOnOptions,
 } from '$features/remote-machines/remote-machines-selectors';
 import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { setProviderEnabled } from '$store/renderer/slices/provider-settings/provider-settings-slice';
 import { cloudProfileBlockReason } from './cloud-machines-selectors';
 import {
   cloudErrorText,
@@ -296,10 +297,15 @@ describe('the Start On profile hint (intent#9101)', () => {
     defaultRemoteLaunch,
     catalogProfiles = [],
     profileEnv,
+    defaultEnv,
+    disabled = [],
   }: {
     defaultRemoteLaunch: Record<string, string>;
     catalogProfiles?: (typeof marked)[];
     profileEnv?: { key: string; kind: 'set' | 'unset'; value?: string }[];
+    /** The Default's saved overrides; omitted = not read (non-admin). */
+    defaultEnv?: typeof keyed;
+    disabled?: string[];
   }) {
     store.init();
     restore = setupCloudMachinesFixture('connected');
@@ -310,6 +316,16 @@ describe('the Start On profile hint (intent#9101)', () => {
     };
     state.providerCatalog.defaultRemoteLaunch = defaultRemoteLaunch;
     state.providerCatalog.profiles = createCollection('id', catalogProfiles);
+    for (const providerId of disabled)
+      store.dispatch(setProviderEnabled({ providerId, enabled: false }));
+    if (defaultEnv)
+      state.providerSettings.profiles = {
+        ...state.providerSettings.profiles,
+        loadStatus: 'success',
+        defaults: {
+          'claude-code': { baseProviderId: 'claude-code', name: 'Default', env: defaultEnv },
+        },
+      };
     if (profileEnv)
       state.providerSettings.profiles = {
         ...state.providerSettings.profiles,
@@ -323,8 +339,25 @@ describe('the Start On profile hint (intent#9101)', () => {
     selectStartOnOptions.select(store.state).find((option) => option.kind === 'cloud')?.hint;
 
   it('is hidden when the marked Default sends its settings', () => {
-    seed({ defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' } });
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' },
+      defaultEnv: keyed,
+    });
     expect(cloudHint()).toBeUndefined();
+  });
+
+  it("shows while the Default's overrides are unknown, as the picker offers nothing then", () => {
+    seed({ defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' } });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
+  });
+
+  it('ignores a provider turned off in Settings', () => {
+    seed({
+      defaultRemoteLaunch: { 'claude-code': 'send', codex: 'machine-sign-in' },
+      defaultEnv: keyed,
+      disabled: ['claude-code'],
+    });
+    expect(cloudHint()).toBe(m.cloudMachines_startOn_hint());
   });
 
   it('is hidden when a marked profile sends a set variable', () => {
