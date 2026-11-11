@@ -52,39 +52,54 @@ type MockBridgeListener = (...args: unknown[]) => void;
 
 /**
  * The event half of the bridge: `on`/`off`/`offById`/`removeAllListeners`
- * backed by the mock IPC router. A fixture that must keep its own `invoke`
+ * backed by the mock IPC router, with the preload bridge's semantics: ids are
+ * unique across bridges and scoped to their channel, `off` drops one
+ * registration, and a throwing listener is logged without stopping delivery. A fixture that must keep its own `invoke`
  * (e.g. one that reports a native platform) spreads these into its bridge so
  * `emitMockIpcEvent` still reaches its listeners. `detachAll()` unsubscribes
  * every listener it registered.
  */
+let listenerIdCounter = 0;
+
 export function createMockBridgeListeners() {
-  let listenerIdCounter = 0;
   const listeners = new Map<
     string,
     { channel: string; callback: MockBridgeListener; unsubscribe: () => void }
   >();
-  const remove = (match: (entry: { channel: string; callback: MockBridgeListener }) => boolean) => {
-    for (const [id, entry] of listeners) {
-      if (!match(entry)) continue;
-      entry.unsubscribe();
-      listeners.delete(id);
-    }
+  const detach = (id: string) => {
+    listeners.get(id)?.unsubscribe();
+    listeners.delete(id);
+  };
+  const removeWhere = (
+    match: (entry: { channel: string; callback: MockBridgeListener }) => boolean,
+  ) => {
+    for (const [id, entry] of listeners) if (match(entry)) detach(id);
   };
   return {
     on: (channel: string, callback: MockBridgeListener) => {
       const id = `ct-mock-bridge-${++listenerIdCounter}`;
-      const unsubscribe = subscribeMockIpcEvent(channel, (payload) => callback(payload));
+      const unsubscribe = subscribeMockIpcEvent(channel, (payload) => {
+        try {
+          callback(payload);
+        } catch (error) {
+          console.error(`[CT mock bridge] Error in event handler for ${channel}:`, error);
+        }
+      });
       listeners.set(id, { channel, callback, unsubscribe });
       return id;
     },
-    off: (channel: string, callback: MockBridgeListener) =>
-      remove((entry) => entry.channel === channel && entry.callback === callback),
-    offById: (_channel: string, id: string) => {
-      listeners.get(id)?.unsubscribe();
-      listeners.delete(id);
+    off: (channel: string, callback: MockBridgeListener) => {
+      for (const [id, entry] of listeners) {
+        if (entry.channel !== channel || entry.callback !== callback) continue;
+        detach(id);
+        return;
+      }
     },
-    removeAllListeners: (channel: string) => remove((entry) => entry.channel === channel),
-    detachAll: () => remove(() => true),
+    offById: (channel: string, id: string) => {
+      if (listeners.get(id)?.channel === channel) detach(id);
+    },
+    removeAllListeners: (channel: string) => removeWhere((entry) => entry.channel === channel),
+    detachAll: () => removeWhere(() => true),
   };
 }
 

@@ -31,7 +31,7 @@ describe('CT mock electron bridge events', () => {
     expect(other).not.toHaveBeenCalled();
   });
 
-  it('offById removes only the listener with that id', () => {
+  it('offById removes only the listener with that id on that channel', () => {
     installMockElectronBridge({});
     const first = vi.fn();
     const second = vi.fn();
@@ -39,6 +39,7 @@ describe('CT mock electron bridge events', () => {
     const secondId = window.electronAPI.on(PROGRESS, second);
     expect(firstId).not.toBe(secondId);
 
+    window.electronAPI.offById(OTHER, secondId);
     window.electronAPI.offById(PROGRESS, firstId);
     window.electronAPI.offById(PROGRESS, 'unknown-id');
     emitMockIpcEvent(PROGRESS, 1);
@@ -66,6 +67,47 @@ describe('CT mock electron bridge events', () => {
     expect(rest).toHaveBeenCalledExactlyOnceWith('a');
     expect(other).toHaveBeenCalledExactlyOnceWith('c');
     expect(mockIpcListenerCount(PROGRESS)).toBe(0);
+  });
+
+  it('a stale offById after a nested bridge restores cannot remove an outer listener', () => {
+    installMockElectronBridge({});
+    const outer = vi.fn();
+    window.electronAPI.on(PROGRESS, outer);
+    const restore = installMockElectronBridge({});
+    const innerId = window.electronAPI.on(PROGRESS, vi.fn());
+
+    restore();
+    window.electronAPI.offById(PROGRESS, innerId);
+    emitMockIpcEvent(PROGRESS, 1);
+
+    expect(outer).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('off removes one registration of a callback, like the preload bridge', () => {
+    installMockElectronBridge({});
+    const listener = vi.fn();
+    window.electronAPI.on(PROGRESS, listener);
+    window.electronAPI.on(PROGRESS, listener);
+
+    window.electronAPI.off(PROGRESS, listener);
+    emitMockIpcEvent(PROGRESS, 1);
+
+    expect(listener).toHaveBeenCalledExactlyOnceWith(1);
+  });
+
+  it('logs a throwing listener without stopping delivery or throwing into the emitter', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    installMockElectronBridge({});
+    const after = vi.fn();
+    window.electronAPI.on(PROGRESS, () => {
+      throw new Error('listener failed');
+    });
+    window.electronAPI.on(PROGRESS, after);
+
+    expect(() => emitMockIpcEvent(PROGRESS, 1)).not.toThrow();
+
+    expect(after).toHaveBeenCalledExactlyOnceWith(1);
+    expect(error).toHaveBeenCalledOnce();
   });
 
   it('does not report main-process channels as unemitted mock listeners', () => {
