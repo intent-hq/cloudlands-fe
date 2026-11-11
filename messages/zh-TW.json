@@ -8159,6 +8159,8 @@
   "desktop_overlay_status": "Intent 正在控制您的電腦",
   "desktop_overlay_stop_label": "停止",
   "desktop_os_setup_description": "控制尚未開始。macOS 現在會要求所有缺少的權限；你可以拒絕此要求以取消。如果沒有出現對話框或存取遭拒，請在「系統設定」→「隱私權與安全性」中為每個尚未允許的項目啟用 Intent。允許螢幕錄製後，在 macOS 提示時結束並重新開啟 Intent 一次，然後要求新的工作階段並再次允許。",
+  "desktop_os_settings_description": "macOS 會要求每項缺少的權限。如果沒有出現對話框，請在「系統設定」→「隱私權與安全性」中允許 Intent。允許「螢幕錄製」後，請結束並重新開啟 Intent。",
+  "desktop_os_settings_checkAgain": "重新檢查",
   "settings_agentFeatures_desktopControl_description": "為新的代理工作階段提供桌面控制工具。仍然需要您的許可。這不會變更已記住的權限，也不會停止正在進行的控制。",
   "desktop_consent_claimPrimary": "允許控制會將 {computer} 設為此工作區的主要電腦。",
   "desktop_stopReportFailed_title": "桌面控制已停止",

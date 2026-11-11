@@ -8159,6 +8159,8 @@
   "desktop_overlay_status": "Intent está controlando tu equipo",
   "desktop_overlay_stop_label": "Detener",
   "desktop_os_setup_description": "El control no ha comenzado. macOS solicita ahora todos los permisos que faltan; puedes rechazar esta solicitud para cancelar. Si no aparece ningún cuadro de diálogo o se denegó el acceso, activa la entrada de Intent para cada elemento aún no permitido en Ajustes del Sistema → Privacidad y seguridad. Después de permitir Grabación de pantalla, sal de Intent y vuelve a abrirlo una vez cuando macOS lo pida; luego solicita una nueva sesión y vuelve a permitir.",
+  "desktop_os_settings_description": "macOS solicita cada permiso que falta. Si no aparece ningún cuadro de diálogo, permite Intent en Ajustes del Sistema → Privacidad y seguridad. Después de permitir la grabación de pantalla, cierra Intent y vuelve a abrirlo.",
+  "desktop_os_settings_checkAgain": "Comprobar de nuevo",
   "settings_agentFeatures_desktopControl_description": "Habilitar herramientas de control del escritorio para nuevas sesiones del agente. Tu permiso sigue siendo necesario. Esto no cambia los permisos guardados ni detiene el control activo.",
   "desktop_consent_claimPrimary": "Permitir el control establece {computer} como ordenador principal de este espacio de trabajo.",
   "desktop_stopReportFailed_title": "Control del escritorio detenido",

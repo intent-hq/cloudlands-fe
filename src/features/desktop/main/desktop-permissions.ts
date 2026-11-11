@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { isoDateTime } from '$shared/zod-compat';
 import { ReverseRpcHandlerError, type JsonRpcClient } from '../../backend/main/json-rpc-client';
-import { getDesktopNativeAdapter } from './desktop-native';
+import { randomUUID } from 'node:crypto';
+import { desktopNativeAvailable, getDesktopNativeAdapter } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
 import { JsonRpcError } from '../../backend/main/json-rpc-errors';
 
@@ -83,5 +84,24 @@ export async function requestDesktopPermissions(
     throw error;
   } finally {
     client.removeListener('status', changedConnection);
+  }
+}
+
+/** Settings gesture: turning desktop control on asks this computer's OS for any
+ * missing permission up front. It only prompts and reports observed grants; it
+ * creates no lease, capture or daemon decision. */
+export async function requestLocalDesktopPermissions(
+  native = getDesktopNativeAdapter(),
+  available: () => boolean = desktopNativeAvailable,
+) {
+  if (!available()) return { platform: 'unsupported' as const };
+  try {
+    const identity = await native.identity();
+    if (identity.platform === 'windows') return { platform: 'windows' as const };
+    const result = await native.requestPermissions(identity.computerId, `settings:${randomUUID()}`);
+    return { platform: 'macos' as const, ...result };
+  } catch (error) {
+    if (error instanceof ReverseRpcHandlerError) throw new JsonRpcError(error);
+    throw error;
   }
 }

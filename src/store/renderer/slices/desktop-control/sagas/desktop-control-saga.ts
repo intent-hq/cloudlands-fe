@@ -1,4 +1,13 @@
-import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  fork,
+  put,
+  take,
+  takeEvery,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { desktopClient } from '$features/desktop/renderer/desktop-client';
 import {
   dismissDesktopPrompt,
@@ -22,6 +31,8 @@ import {
   desktopDecisionRequested,
   desktopEntryPatched,
   desktopEventReceived,
+  desktopOsPermissionsReceived,
+  desktopOsPermissionsRequested,
   desktopPermissionRequested,
   desktopReadRequested,
   desktopRequestExpired,
@@ -178,6 +189,15 @@ function* setPermission(
       yield* put(desktopReadRequested(ws, agent));
   }
 }
+function* requestOsPermissions(): SagaGenerator<void> {
+  try {
+    yield* put(desktopOsPermissionsReceived(yield* call(desktopClient.requestOsPermissions)));
+  } catch (error) {
+    yield* put(desktopOsPermissionsReceived(undefined));
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (code !== 'desktop-unsupported') yield* call(showDesktopError, errorDetail(error));
+  }
+}
 function* expire(ws: string, agent: string, requestId: string, expiresAt: string) {
   yield* delay(Math.max(0, Math.min(300_000, Date.parse(expiresAt) - Date.now())));
   yield* put(desktopRequestExpired(ws, agent, requestId));
@@ -253,4 +273,5 @@ export function* desktopControlSaga(): SagaGenerator<void> {
   });
   yield* takeEvery(desktopDecisionRequested, decide);
   yield* takeEvery(desktopPermissionRequested, setPermission);
+  yield* takeLeading(desktopOsPermissionsRequested, requestOsPermissions);
 }

@@ -21,6 +21,13 @@ export const desktopDecisionRequested = createAction<
 export const desktopPermissionRequested = createAction<
   [workspaceId: string, agentId: string, computerId: string, allowed: boolean]
 >('desktopControl/permissionRequested');
+export const desktopOsPermissionsRequested = createAction<[]>(
+  'desktopControl/osPermissionsRequested',
+);
+export const desktopOsPermissionsReceived = createAction<
+  [result: DesktopControlState['osPermissions']]
+>('desktopControl/osPermissionsReceived');
+export const desktopOsPermissionsCleared = createAction<[]>('desktopControl/osPermissionsCleared');
 export const desktopEventReceived = createAction<[event: DesktopEvent]>(
   'desktopControl/eventReceived',
 );
@@ -80,6 +87,19 @@ function invalidate(state: DesktopControlState): DesktopControlState {
   };
 }
 desktopControlReducer.with(daemonEventsSubscribing, invalidate);
+desktopControlReducer.with(desktopOsPermissionsRequested, (state) => ({
+  ...state,
+  osPermissionsChecking: true,
+}));
+desktopControlReducer.with(desktopOsPermissionsReceived, (state, { payload: [result] }) => ({
+  ...state,
+  osPermissions: result,
+  osPermissionsChecking: false,
+}));
+desktopControlReducer.with(desktopOsPermissionsCleared, (state) => ({
+  ...state,
+  osPermissions: undefined,
+}));
 desktopControlReducer.with(connectionStatusChanged, (state, { payload: [status] }) =>
   status === 'connected' ? state : invalidate(state),
 );

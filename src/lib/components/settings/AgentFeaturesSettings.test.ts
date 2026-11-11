@@ -7,6 +7,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/sv
 import AgentFeaturesSettings from './AgentFeaturesSettings.svelte';
 import { store } from '$store/renderer/store';
 import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { desktopControlSaga } from '$store/renderer/slices/desktop-control/sagas/desktop-control-saga';
 import { settingsFormSaveRequested } from '$store/renderer/slices/settings-events/settings-events-slice';
 import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 
@@ -14,7 +15,12 @@ let stop: () => void;
 beforeEach(() => {
   store.init();
   admitLegacyPrincipal();
-  stop = store.runSaga(settingsFormSaga);
+  const stopForm = store.runSaga(settingsFormSaga);
+  const stopDesktop = store.runSaga(desktopControlSaga);
+  stop = () => {
+    stopForm();
+    stopDesktop();
+  };
 });
 afterEach(() => {
   cleanup();
@@ -55,6 +61,11 @@ const mockToast = vi.hoisted(() => ({
 
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: mockToast,
+}));
+
+const desktopMocks = vi.hoisted(() => ({ requestOsPermissions: vi.fn() }));
+vi.mock('$features/desktop/renderer/desktop-client', () => ({
+  desktopClient: { requestOsPermissions: desktopMocks.requestOsPermissions },
 }));
 
 const FEATURE_PATHS = [
@@ -300,6 +311,98 @@ describe('AgentFeaturesSettings', () => {
       ]),
     );
     await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+  });
+
+  describe('desktop control OS permissions', () => {
+    const missing = {
+      guidance: 'Allow Intent in System Settings.',
+      checklist: { accessibility: true, screenRecording: false, screenCapture: 'pending' },
+    };
+    function listWithDesktop(enabled: boolean) {
+      mocks.mockSettingsList.mockResolvedValue(
+        FEATURE_PATHS.map((path) => ({
+          path,
+          value: path === 'agentFeatures.desktopControl' ? enabled : true,
+        })),
+      );
+    }
+
+    it('asks the OS for permissions as soon as desktop control is turned on', async () => {
+      listWithDesktop(false);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agentFeatures.desktopControl', value: true },
+      ]);
+      desktopMocks.requestOsPermissions.mockResolvedValueOnce(missing);
+      await renderReady();
+      const toggle = await screen.findByRole('switch', { name: 'Desktop control' });
+      expect(desktopMocks.requestOsPermissions).not.toHaveBeenCalled();
+      await fireEvent.click(toggle);
+      expect(desktopMocks.requestOsPermissions).toHaveBeenCalledOnce();
+      const checklist = await screen.findByRole('list', { name: 'macOS permissions' });
+      expect(checklist.textContent).toContain('Screen Recording');
+      expect(screen.getByText('Allow Intent in System Settings.')).toBeTruthy();
+    });
+
+    it('checks again on request and hides the checklist once everything is allowed', async () => {
+      listWithDesktop(false);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agentFeatures.desktopControl', value: true },
+      ]);
+      desktopMocks.requestOsPermissions
+        .mockResolvedValueOnce(missing)
+        .mockResolvedValueOnce(undefined);
+      await renderReady();
+      await fireEvent.click(await screen.findByRole('switch', { name: 'Desktop control' }));
+      await fireEvent.click(await screen.findByRole('button', { name: 'Check again' }));
+      expect(desktopMocks.requestOsPermissions).toHaveBeenCalledTimes(2);
+      await waitFor(() =>
+        expect(screen.queryByRole('list', { name: 'macOS permissions' })).toBeNull(),
+      );
+    });
+
+    it('does not ask the OS when desktop control is turned off', async () => {
+      listWithDesktop(true);
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agentFeatures.desktopControl', value: false },
+      ]);
+      await renderReady();
+      await fireEvent.click(await screen.findByRole('switch', { name: 'Desktop control' }));
+      await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalled());
+      expect(desktopMocks.requestOsPermissions).not.toHaveBeenCalled();
+    });
+
+    it('stays quiet where native desktop control is unsupported and reports other refusals', async () => {
+      listWithDesktop(false);
+      mocks.mockSettingsUpdate.mockResolvedValue([
+        { path: 'agentFeatures.desktopControl', value: true },
+      ]);
+      desktopMocks.requestOsPermissions
+        .mockRejectedValueOnce(
+          Object.assign(new Error('unsupported'), { code: 'desktop-unsupported' }),
+        )
+        .mockRejectedValueOnce(
+          Object.assign(new Error('The Mac session is locked'), {
+            code: 'desktop-unsupported-operation',
+          }),
+        );
+      await renderReady();
+      const toggle = await screen.findByRole('switch', { name: 'Desktop control' });
+      await fireEvent.click(toggle);
+      await waitFor(() => expect(desktopMocks.requestOsPermissions).toHaveBeenCalledOnce());
+      expect(mockToast.error).not.toHaveBeenCalled();
+      mocks.mockSettingsUpdate.mockResolvedValueOnce([
+        { path: 'agentFeatures.desktopControl', value: false },
+      ]);
+      await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('true'));
+      await fireEvent.click(toggle);
+      await waitFor(() => expect(toggle.getAttribute('aria-checked')).toBe('false'));
+      await fireEvent.click(toggle);
+      await waitFor(() =>
+        expect(mockToast.error).toHaveBeenCalledWith('Desktop control could not start', {
+          description: 'The Mac session is locked',
+        }),
+      );
+    });
   });
 
   it('renders a feature off when the daemon reports value false', async () => {

@@ -8159,6 +8159,8 @@
   "desktop_overlay_status": "Intent steuert Ihren Computer",
   "desktop_overlay_stop_label": "Stopp",
   "desktop_os_setup_description": "Die Steuerung wurde nicht gestartet. macOS fragt jetzt nach allen fehlenden Berechtigungen; diese Anfrage kann zum Abbrechen abgelehnt werden. Wenn kein Dialog erscheint oder der Zugriff abgelehnt wurde, in Systemeinstellungen → Datenschutz & Sicherheit den Intent-Eintrag für jeden noch nicht erlaubten Punkt aktivieren. Nach dem Erlauben der Bildschirmaufnahme Intent einmal beenden und erneut öffnen, wenn macOS dazu auffordert, dann eine neue Sitzung anfordern und erneut erlauben.",
+  "desktop_os_settings_description": "macOS fragt nach jeder fehlenden Berechtigung. Wenn kein Dialog erscheint, erlaube Intent unter Systemeinstellungen → Datenschutz & Sicherheit. Nachdem du die Bildschirmaufnahme erlaubt hast, beende Intent und öffne es erneut.",
+  "desktop_os_settings_checkAgain": "Erneut prüfen",
   "settings_agentFeatures_desktopControl_description": "Desktop-Steuerungswerkzeuge für neue Agentensitzungen bereitstellen. Ihre Zustimmung ist weiterhin erforderlich. Dies ändert weder gespeicherte Berechtigungen noch beendet es eine aktive Steuerung.",
   "desktop_consent_claimPrimary": "Wenn Sie die Steuerung erlauben, wird {computer} zum primären Computer dieses Arbeitsbereichs.",
   "desktop_stopReportFailed_title": "Desktopsteuerung gestoppt",

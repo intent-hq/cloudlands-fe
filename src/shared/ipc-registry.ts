@@ -979,6 +979,7 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     DESKTOP_PERMISSIONS: 'backend:desktop-permissions',
+    DESKTOP_OS_PERMISSIONS: 'backend:desktop-os-permissions',
     REQUEST: 'backend:request',
     PR_MONITOR: {
       READY: 'backend:pr-monitor:ready',

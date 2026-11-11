@@ -8159,6 +8159,8 @@
   "desktop_overlay_status": "Intent がコンピューターを操作しています",
   "desktop_overlay_stop_label": "停止",
   "desktop_os_setup_description": "操作はまだ開始していません。macOS が不足しているすべての権限を今すぐ要求します。キャンセルするにはこのリクエストを拒否してください。ダイアログが表示されない場合やアクセスが拒否された場合は、システム設定 → プライバシーとセキュリティで、未許可の各項目の Intent を有効にしてください。画面収録を許可したら、macOS の指示に従って Intent を一度終了して再度開き、新しいセッションをリクエストしてもう一度許可してください。",
+  "desktop_os_settings_description": "macOS は不足している各権限を要求します。ダイアログが表示されない場合は、システム設定 → プライバシーとセキュリティで Intent を許可してください。画面収録を許可したら、Intent を終了して再度開いてください。",
+  "desktop_os_settings_checkAgain": "再確認",
   "settings_agentFeatures_desktopControl_description": "新しいエージェントセッションでデスクトップ操作ツールを利用できるようにします。引き続き許可が必要です。記憶された許可は変更されず、実行中の操作も停止しません。",
   "desktop_consent_claimPrimary": "操作を許可すると、{computer} がこのワークスペースのプライマリコンピューターになります。",
   "desktop_stopReportFailed_title": "デスクトップ操作を停止しました",
