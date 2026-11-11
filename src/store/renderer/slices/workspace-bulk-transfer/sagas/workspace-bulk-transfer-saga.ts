@@ -11,6 +11,8 @@
 import {
   all,
   call,
+  fork,
+  join,
   put,
   race,
   take,
@@ -86,14 +88,25 @@ function* loadSize(workspaceId: string): SagaGenerator<void> {
   }
 }
 
+/** Resolves once a close actually closes the dialog (the reducer ignores it mid-run). */
+function* waitForClose(): SagaGenerator<void> {
+  while (true) {
+    yield* take(closeBulkTransferModal);
+    const { open } = yield* selectBulkTransferState.effect();
+    if (!open) return;
+  }
+}
+
 function* loadSizes(action: ReturnType<typeof openBulkTransferModal>): SagaGenerator<void> {
+  // An open dispatched mid-run is ignored by the reducer; keep its ids out of the run.
+  if ((yield* selectBulkTransferState.effect()).step !== 'setup') return;
   const ids = action.payload[0].workspaces.map((workspace) => workspace.workspaceId);
   function* loadAll(): SagaGenerator<void> {
     for (let index = 0; index < ids.length; index += PLAN_CONCURRENCY) {
       yield* all(ids.slice(index, index + PLAN_CONCURRENCY).map((id) => call(loadSize, id)));
     }
   }
-  yield* race([call(loadAll), take(closeBulkTransferModal)]);
+  yield* race([call(loadAll), call(waitForClose)]);
 }
 
 function* destinationLabel(connectionId: string): SagaGenerator<string> {
@@ -120,47 +133,109 @@ async function showResumeFailedToast(count: number): Promise<void> {
   }
 }
 
-/** Transfer one workspace; returns the agents the destination could not resume. */
+/**
+ * Best-effort cleanup of the relay session: cancels a running export, or
+ * unwinds the source staging of a committed transfer that was not finalized.
+ */
+function* releaseRelaySession(): SagaGenerator<void> {
+  try {
+    yield* call(invokeTransfer, TRANSFER.CANCEL);
+  } catch (error) {
+    logger.warn('transfer:cancel failed (best-effort)', { error });
+  }
+}
+
+/** `transfer:start`; a thrown bridge error becomes a failed result so the task never aborts. */
+function* startTransfer(
+  workspaceId: string,
+  connectionId: string,
+): SagaGenerator<TransferStartResult> {
+  try {
+    return yield* call(invokeTransfer<TransferStartResult>, TRANSFER.START, {
+      workspaceId,
+      destination: { kind: 'server', connectionId },
+    });
+  } catch (error) {
+    return { success: false, error: toMessage(error) };
+  }
+}
+
+/**
+ * Transfer one workspace. Stop cancels the relay unless the destination is
+ * already importing; either way the start result decides the row, so a
+ * workspace that reached the destination is never reported as skipped.
+ */
 function* transferOne(
   workspaceId: string,
   connectionId: string,
   options: { restartAgents: boolean; archiveSource: boolean; finalStatusMessage?: string },
 ): SagaGenerator<{ cancelled: boolean; resumeFailed: number }> {
   yield* put(bulkTransferItemStarted(workspaceId));
+  const started = yield* fork(startTransfer, workspaceId, connectionId);
+  let stopped = false;
+  let imported = false;
   try {
     const outcome = yield* race({
-      result: call(invokeTransfer<TransferStartResult>, TRANSFER.START, {
-        workspaceId,
-        destination: { kind: 'server', connectionId },
-      }),
+      result: join(started),
       cancelled: take(bulkTransferCancelRequested),
     });
-    if (outcome.cancelled || !outcome.result) {
-      try {
-        yield* call(invokeTransfer, TRANSFER.CANCEL);
-      } catch (error) {
-        logger.warn('transfer:cancel failed (best-effort)', { error });
+    let result = outcome.result;
+    if (!result) {
+      const { progress } = yield* selectBulkTransferState.effect();
+      if (progress?.phase !== 'committing') {
+        stopped = true;
+        yield* call(releaseRelaySession);
+      }
+      result = yield* join(started);
+    }
+    if (result.canceled) return { cancelled: true, resumeFailed: 0 };
+    if (stopped) {
+      if (result.success) {
+        yield* put(
+          bulkTransferItemFailed({
+            workspaceId,
+            error: m.workspace_bulkTransfer_stoppedAfterImport_error(),
+          }),
+        );
       }
       return { cancelled: true, resumeFailed: 0 };
     }
-    if (!outcome.result.success) {
-      yield* put(bulkTransferItemFailed({ workspaceId, error: failureMessage(outcome.result) }));
+    if (!result.success) {
+      yield* put(bulkTransferItemFailed({ workspaceId, error: failureMessage(result) }));
       return { cancelled: false, resumeFailed: 0 };
     }
+    imported = true;
     const finalized = yield* call(invokeTransfer<TransferFinalizeResult>, TRANSFER.FINALIZE, {
       archiveSource: options.archiveSource,
       restartAgents: options.restartAgents,
       ...(options.finalStatusMessage ? { finalStatusMessage: options.finalStatusMessage } : {}),
     });
     if (!finalized.success) {
-      yield* put(bulkTransferItemFailed({ workspaceId, error: failureMessage(finalized) }));
+      yield* call(releaseRelaySession);
+      yield* put(
+        bulkTransferItemFailed({
+          workspaceId,
+          error: m.workspace_bulkTransfer_finalizeFailed_error({
+            error: failureMessage(finalized),
+          }),
+        }),
+      );
       return { cancelled: false, resumeFailed: 0 };
     }
     yield* put(bulkTransferItemSucceeded(workspaceId));
     return { cancelled: false, resumeFailed: finalized.resumeFailed?.length ?? 0 };
   } catch (error) {
     logger.error('bulk transfer failed', { workspaceId, error });
-    yield* put(bulkTransferItemFailed({ workspaceId, error: toMessage(error) }));
+    if (stopped) return { cancelled: true, resumeFailed: 0 };
+    if (imported) yield* call(releaseRelaySession);
+    yield* put(
+      bulkTransferItemFailed({
+        workspaceId,
+        error: imported
+          ? m.workspace_bulkTransfer_finalizeFailed_error({ error: toMessage(error) })
+          : toMessage(error),
+      }),
+    );
     return { cancelled: false, resumeFailed: 0 };
   }
 }

@@ -15,6 +15,7 @@ import type { ConnectionRecord, ConnectionsState } from '../../connections/conne
 import {
   bulkTransferCancelRequested,
   bulkTransferStartRequested,
+  closeBulkTransferModal,
   openBulkTransferModal,
   selectBulkTransferTarget,
   setBulkTransferArchiveSource,
@@ -207,7 +208,7 @@ describe('workspaceBulkTransferSaga — run', () => {
     expect(calls('transfer:finalize')).toHaveLength(2);
     expect(items(h).map((item) => [item.status, item.error])).toEqual([
       ['failed', 'destination unavailable'],
-      ['failed', 'source busy'],
+      ['failed', expect.stringContaining('source busy')],
       ['done', null],
     ]);
     expect(h.state().step).toBe('result');
@@ -301,6 +302,116 @@ describe('workspaceBulkTransferSaga — run', () => {
 
     await vi.waitFor(() => expect(mocks.toastWarning).toHaveBeenCalledTimes(1));
     expect(mocks.toastWarning.mock.calls[0]?.[0]).toContain('3');
+    h.task.cancel();
+  });
+
+  it('cleans up the source after a failed finalize before the next workspace starts', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === 'transfer:finalize' && calls('transfer:finalize').length === 1)
+        return { success: false, error: 'source busy' };
+      return { success: true };
+    });
+    const h = ready();
+    await settle();
+    h.put(bulkTransferStartRequested());
+    await settle();
+
+    expect(mocks.invoke.mock.calls.slice(0, 4).map(([channel]) => channel)).toEqual([
+      'transfer:start',
+      'transfer:finalize',
+      'transfer:cancel',
+      'transfer:start',
+    ]);
+    expect(items(h)[0]?.status).toBe('failed');
+    h.task.cancel();
+  });
+
+  it('lets a transfer that is importing on the destination finish when Stop arrives', async () => {
+    let resolveStart: (value: unknown) => void = () => {};
+    mocks.invoke.mockImplementation((channel: string) => {
+      if (channel === 'transfer:start') return new Promise((resolve) => (resolveStart = resolve));
+      return Promise.resolve({ success: true });
+    });
+    const h = ready();
+    await settle();
+    h.put(bulkTransferStartRequested());
+    await settle();
+    mocks.listeners.get('transfer:progress')?.({
+      workspaceId: 'ws-1',
+      phase: 'committing',
+      bytesTotal: 10,
+      bytesDown: 10,
+      bytesUp: 10,
+      chunksDone: 1,
+    });
+    await settle();
+
+    h.put(bulkTransferCancelRequested());
+    await settle();
+    resolveStart({ success: true });
+    await settle();
+
+    expect(calls('transfer:cancel')).toHaveLength(0);
+    expect(calls('transfer:finalize')).toHaveLength(1);
+    expect(items(h).map((item) => item.status)).toEqual(['done', 'skipped', 'skipped']);
+    h.task.cancel();
+  });
+
+  it('reports a stopped workspace whose import still landed as failed, not skipped', async () => {
+    let resolveStart: (value: unknown) => void = () => {};
+    mocks.invoke.mockImplementation((channel: string) => {
+      if (channel === 'transfer:start') return new Promise((resolve) => (resolveStart = resolve));
+      return Promise.resolve({ success: true });
+    });
+    const h = ready();
+    await settle();
+    h.put(bulkTransferStartRequested());
+    await settle();
+    h.put(bulkTransferCancelRequested());
+    await settle();
+    resolveStart({ success: true });
+    await settle();
+
+    expect(calls('transfer:cancel')).toHaveLength(1);
+    expect(calls('transfer:finalize')).toHaveLength(0);
+    expect(items(h).map((item) => item.status)).toEqual(['failed', 'skipped', 'skipped']);
+    h.task.cancel();
+  });
+
+  it('treats a start the relay reports as cancelled as skipped and stops the run', async () => {
+    mocks.invoke.mockImplementation(async (channel: string) =>
+      channel === 'transfer:start' ? { success: false, canceled: true } : { success: true },
+    );
+    const h = ready();
+    await settle();
+    h.put(bulkTransferStartRequested());
+    await settle();
+
+    expect(calls('transfer:start')).toHaveLength(1);
+    expect(items(h).map((item) => item.status)).toEqual(['skipped', 'skipped', 'skipped']);
+    h.task.cancel();
+  });
+
+  it('keeps loading size estimates when a close is ignored during the run', async () => {
+    const pending: Array<() => void> = [];
+    mocks.request.mockImplementation(
+      () =>
+        new Promise((resolve) => pending.push(() => resolve({ plan: { totalSizeBytes: 100 } }))),
+    );
+    mocks.invoke.mockImplementation(() => new Promise(() => {}));
+    const h = harness();
+    h.put(openBulkTransferModal({ workspaces }));
+    h.put(selectBulkTransferTarget('conn-1'));
+    h.put(bulkTransferStartRequested());
+    await settle();
+    h.put(closeBulkTransferModal());
+    for (const resolve of pending.splice(0)) resolve();
+    await settle();
+    for (const resolve of pending.splice(0)) resolve();
+    await settle();
+
+    expect(h.state().open).toBe(true);
+    expect(items(h).map((item) => item.sizeStatus)).toEqual(['loaded', 'loaded', 'loaded']);
     h.task.cancel();
   });
 });

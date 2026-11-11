@@ -81,23 +81,24 @@ function patchItem(
 }
 
 export const workspaceBulkTransferReducer = createReducer<WorkspaceBulkTransferState>(initialState);
-workspaceBulkTransferReducer.with(
-  openBulkTransferModal,
-  (_state, { payload: [{ workspaces }] }) => ({
-    ...initialState,
-    open: true,
-    items: createCollection<BulkTransferItem, 'workspaceId'>(
-      'workspaceId',
-      workspaces.map(({ workspaceId, title }) => ({
-        workspaceId,
-        title,
-        sizeStatus: 'loading',
-        sizeBytes: null,
-        status: 'pending',
-        error: null,
-      })),
-    ),
-  }),
+workspaceBulkTransferReducer.with(openBulkTransferModal, (state, { payload: [{ workspaces }] }) =>
+  state.step === 'transferring'
+    ? state
+    : {
+        ...initialState,
+        open: true,
+        items: createCollection<BulkTransferItem, 'workspaceId'>(
+          'workspaceId',
+          workspaces.map(({ workspaceId, title }) => ({
+            workspaceId,
+            title,
+            sizeStatus: 'loading',
+            sizeBytes: null,
+            status: 'pending',
+            error: null,
+          })),
+        ),
+      },
 );
 workspaceBulkTransferReducer.with(closeBulkTransferModal, (state) =>
   state.step === 'transferring' ? state : initialState,

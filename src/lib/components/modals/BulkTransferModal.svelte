@@ -273,7 +273,7 @@
     {:else}
       {#if running}
         <div class="space-y-2">
-          <p class="truncate text-sm" data-testid="bulk-transfer-current">
+          <p class="truncate text-sm" aria-live="polite" data-testid="bulk-transfer-current">
             {current
               ? m.workspace_bulkTransfer_current_label({
                   index: formatInteger(currentIndex + 1),
@@ -310,7 +310,7 @@
           </div>
         </div>
       {:else}
-        <p class="flex items-start gap-2 text-sm" data-testid="bulk-transfer-result">
+        <p class="flex items-start gap-2 text-sm" role="status" data-testid="bulk-transfer-result">
           <span class="first-line-icon"
             ><Fa
               icon={allDone ? faCircleCheck : faCircleXmark}
@@ -354,7 +354,7 @@
       <Button
         variant="ghost"
         onclick={() => onStop?.()}
-        disabled={cancelling}
+        disabled={cancelling || progress?.phase === 'committing'}
         data-testid="bulk-transfer-stop-button"
       >
         {m.workspace_bulkTransfer_stop_label()}
