@@ -6,16 +6,26 @@ import {
   type ShortcutOverrides,
 } from './keyboard-shortcut-bindings';
 import type { DockShortcutAction } from './dock-shortcuts';
-export const DOCK_SHORTCUT_IDS = [
-  'dock.focus',
+/** The dock has one global shortcut: open the linked conversation, else the index. */
+export const DOCK_SHORTCUT_IDS = ['dock.focus'] as const;
+/**
+ * Former global dock shortcuts. A saved override for one is neither applied nor an error,
+ * and it is kept as saved (never reset or deleted) when the dock shortcuts are written.
+ */
+export const LEGACY_DOCK_SHORTCUT_IDS = [
   'dock.capture',
   'dock.record',
   'dock.dictate',
   'dock.related',
 ] as const;
+export function isLegacyDockShortcutId(id: string): boolean {
+  return (LEGACY_DOCK_SHORTCUT_IDS as readonly string[]).includes(id);
+}
 export type DockShortcutId = (typeof DOCK_SHORTCUT_IDS)[number];
 export type DockShortcutOverrides = Partial<Record<DockShortcutId, string>>;
-export type DockShortcutBindings = Record<DockShortcutAction, string>;
+/** The action the one global shortcut drives (the others are menu commands only). */
+export type DockGlobalShortcutAction = 'focus';
+export type DockShortcutBindings = Record<DockGlobalShortcutAction, string>;
 export type DockShortcutIssueCode =
   | 'invalid'
   | 'duplicate'
@@ -41,8 +51,8 @@ export interface DockShortcutSettingsSnapshot {
 export function isDockShortcutId(id: string): id is DockShortcutId {
   return (DOCK_SHORTCUT_IDS as readonly string[]).includes(id);
 }
-export function dockShortcutAction(id: DockShortcutId): DockShortcutAction {
-  return id.slice(5) as DockShortcutAction;
+export function dockShortcutAction(id: DockShortcutId): DockGlobalShortcutAction {
+  return id.slice(5) as DockGlobalShortcutAction;
 }
 export function dockShortcutBindings(overrides: DockShortcutOverrides = {}): DockShortcutBindings {
   return Object.fromEntries(

@@ -1086,10 +1086,10 @@ const bootFlow = app.whenReady().then(async () => {
           dictate: m.dock_shortcut_dictate_label(),
           unavailable: m.dock_shortcut_unavailable(),
         },
-        hint: (action) => ({
-          available: dockShortcutAvailable(action),
-          key: dockShortcutMenuKey(action),
-        }),
+        hint: (action) => {
+          const key = dockShortcutMenuKey(action);
+          return key ? { available: dockShortcutAvailable(action), key } : null;
+        },
         setNotchDock: changeDockLabEnabled,
         requestShortcut: (action) => void requestDockShortcut(action),
         warn: (error) => logger.warn('Failed to change the dock', { error }),

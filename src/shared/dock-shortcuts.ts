@@ -1,4 +1,5 @@
-export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'dictate' | 'related';
+/** `focus` is the global shortcut; the others are Window-menu commands only. */
+export type DockShortcutAction = 'focus' | 'capture' | 'record' | 'dictate';
 /** Includes OS-local wildcard/loopback aliases; normalize WHATWG URL hostname first. */
 export function isDockLoopbackHostname(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/\.$/, '');
@@ -22,9 +23,9 @@ export interface DockShortcutContext {
   /** Ephemeral main-verified local/tunnel address on this backend. Never persisted. */
   serviceAddress?: string;
   /**
-   * Set by main for `related` only: the context feed's raw version and identity for the
-   * pre-focus sample it admitted and published. The dock follows only its linked snapshot
-   * for exactly this version (never an older or a newer context).
+   * Set by main for `focus` when the context feed admitted and published the pre-focus
+   * sample: its raw version and identity. The dock follows only its linked snapshot for
+   * exactly this version (never an older or a newer context); otherwise it shows the index.
    */
   identityKey?: string;
   contextVersion?: string;

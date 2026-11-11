@@ -118,7 +118,8 @@ export function createDockShortcutRegistration(
       return [];
     },
     available(name: DockShortcutAction) {
-      const key = dockShortcutAccelerator(bindings[name], platform);
+      // Only the global action has a key; menu-only commands are never registered.
+      const key = name === 'focus' ? dockShortcutAccelerator(bindings.focus, platform) : null;
       return enabled && !suspended && !!key && owned.has(key);
     },
   };

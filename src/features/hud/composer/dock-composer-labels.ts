@@ -1,6 +1,5 @@
-import { resolveShortcut, type ShortcutOverrides } from '$shared/keyboard-shortcut-bindings';
+import type { ShortcutOverrides } from '$shared/keyboard-shortcut-bindings';
 import { m } from '$shared/paraglide/messages.js';
-import { formatShortcut } from '$lib/utils/shortcuts';
 import { formatInteger } from '$lib/i18n/format';
 import type { DockComposerMediaLabels } from '../components/dock-composer-media-presentation';
 import type { FileAttachmentPolicy } from '$lib/components/chat/input/file-attachment-policy';
@@ -12,36 +11,30 @@ export type DockComposerLabels = DockComposerMediaLabels & {
 
 /** Keep platform shortcut formatting and locale lookup at the presentation boundary. */
 export function createDockComposerLabels(
-  overrides: ShortcutOverrides | (() => ShortcutOverrides) = {},
+  // Accepted for existing callers; the media actions no longer have global keys to show.
+  _overrides: ShortcutOverrides | (() => ShortcutOverrides) = {},
 ): DockComposerLabels {
-  const binding = (id: 'dock.capture' | 'dock.record' | 'dock.dictate') =>
-    resolveShortcut(id, typeof overrides === 'function' ? overrides() : overrides);
-  const key = (id: 'dock.capture' | 'dock.record' | 'dock.dictate') =>
-    formatShortcut(binding(id));
   return {
     actionHints: {
       get capture() {
-        return {
-          label: m.dock_composer_screenshotAction_label(),
-          shortcut: binding('dock.capture'),
-        };
+        return { label: m.dock_composer_screenshotAction_label() };
       },
       get record() {
-        return { label: m.ui_shortcuts_dockRecord_label(), shortcut: binding('dock.record') };
+        return { label: m.ui_shortcuts_dockRecord_label() };
       },
       get dictate() {
-        return { label: m.dock_shortcut_dictate_label(), shortcut: binding('dock.dictate') };
+        return { label: m.dock_shortcut_dictate_label() };
       },
     },
     get capture() {
-      return m.dock_composer_capture_tooltip({ shortcut: key('dock.capture') });
+      return m.dock_composer_screenshotAction_label();
     },
     captureMode: {
       get window() {
-        return m.dock_composer_captureWindow_tooltip({ shortcut: key('dock.capture') });
+        return m.dock_composer_captureWindow_label();
       },
       get region() {
-        return m.dock_composer_captureRegion_tooltip({ shortcut: key('dock.capture') });
+        return m.dock_composer_captureRegion_label();
       },
     },
     captureModes: {
@@ -55,7 +48,7 @@ export function createDockComposerLabels(
       limit: formatInteger(DOCK_EVIDENCE_LIMITS.clips),
     }),
     get record() {
-      return m.dock_composer_record_tooltip({ shortcut: key('dock.record') });
+      return m.ui_shortcuts_dockRecord_label();
     },
     stopRecording: m.dock_composer_stopRecording_tooltip(),
     annotationTools: m.annotation_toolbar_ariaLabel(),
@@ -67,7 +60,7 @@ export function createDockComposerLabels(
       arrow: m.annotation_arrow_label(),
     },
     get dictate() {
-      return m.dock_composer_dictate_tooltip({ shortcut: key('dock.dictate') });
+      return m.dock_shortcut_dictate_label();
     },
     stopDictating: m.dock_composer_stopDictating_tooltip(),
     annotating: m.dock_composer_annotating_status(),

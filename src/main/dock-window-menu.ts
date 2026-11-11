@@ -14,7 +14,8 @@ export function dockWindowMenuItems(deps: {
   /** Whether a dock window exists. */
   dockShown: boolean;
   labels: Record<'show' | DockMenuAction | 'unavailable', string>;
-  hint: (action: DockMenuAction) => { available: boolean; key: string };
+  /** Null for a menu command without a global key (no hint shown). */
+  hint: (action: DockMenuAction) => { available: boolean; key: string } | null;
   setNotchDock: (enabled: boolean) => Promise<unknown>;
   requestShortcut: (action: DockMenuAction) => void;
   warn: (error: unknown) => void;
@@ -38,7 +39,7 @@ export function dockWindowMenuItems(deps: {
     return {
       label: deps.labels[action],
       // Global shortcuts own these keys; keep menu hints display-only.
-      sublabel: hint.available ? hint.key : deps.labels.unavailable,
+      sublabel: !hint ? undefined : hint.available ? hint.key : deps.labels.unavailable,
       enabled: deps.dockShown,
       click: () => deps.requestShortcut(action),
     };

@@ -5,6 +5,7 @@ import {
   dockShortcutAction,
   DOCK_SHORTCUT_IDS,
   isDockShortcutId,
+  isLegacyDockShortcutId,
   normalizeDockShortcut,
   type DockShortcutOverrides,
   type DockShortcutSettingsSnapshot,
@@ -27,6 +28,8 @@ export function createDockShortcutPreferences(deps: {
   ): DockShortcutIssue[];
 }) {
   let overrides: DockShortcutOverrides = {},
+    // Saved values of former dock shortcuts: not applied, written back unchanged.
+    legacy: Record<string, unknown> = {},
     revision = 0,
     loaded = false,
     loadFailed = false;
@@ -83,6 +86,10 @@ export function createDockShortcutPreferences(deps: {
           if (!value || typeof value !== 'object' || Array.isArray(value))
             throw new Error('Invalid saved dock shortcuts');
           for (const [id, key] of Object.entries(value)) {
+            if (isLegacyDockShortcutId(id)) {
+              legacy[id] = key;
+              continue;
+            }
             if (!isDockShortcutId(id) || typeof key !== 'string' || !normalizeDockShortcut(key))
               throw new Error('Invalid saved dock shortcut');
             const normalized = normalizeDockShortcut(key);
@@ -182,7 +189,7 @@ export function createDockShortcutPreferences(deps: {
         }
         const failure = await deps.registrar.update(
           dockShortcutBindings(next),
-          () => deps.write(next),
+          () => deps.write({ ...legacy, ...next } as DockShortcutOverrides),
           problems.flatMap((issue) => (issue.id ? [dockShortcutAction(issue.id)] : [])),
         );
         if (failure.length) {

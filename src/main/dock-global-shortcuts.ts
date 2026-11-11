@@ -84,8 +84,10 @@ export async function initializeDockShortcutSettings(): Promise<void> {
   await preferences.load();
   registerDockShortcutSettingsHandlers(preferences);
 }
-export function dockShortcutMenuKey(action: DockShortcutContext['action']): string {
-  const key = dockShortcutBindings(preferences.snapshot().overrides)[action];
+/** The menu hint for an action's global key; null when the action has none. */
+export function dockShortcutMenuKey(action: DockShortcutContext['action']): string | null {
+  if (action !== 'focus') return null;
+  const key = dockShortcutBindings(preferences.snapshot().overrides).focus;
   return dockShortcutAccelerator(key, process.platform) ?? key;
 }
 
@@ -110,10 +112,9 @@ export async function requestDockShortcut(action: DockShortcutContext['action'])
     getStrictBackendBindingForWebContents(window.webContents) !== binding
   )
     return;
-  // Open related acts only on a context the feed itself admitted and published (same version
-  // the dock's linked snapshot carries); nothing to follow means nothing happens.
-  const admitted = action === 'related' ? admitDockForegroundSample(binding, observed) : null;
-  if (action === 'related' && !admitted) return;
+  // The open shortcut follows a link only on a context the feed itself admitted and published
+  // (the version the dock's linked snapshot carries). Without one the dock shows its index.
+  const admitted = action === 'focus' ? admitDockForegroundSample(binding, observed) : null;
   const context: DockShortcutContext = {
     id: randomUUID(),
     backendId: binding.backendId,

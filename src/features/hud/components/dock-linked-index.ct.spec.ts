@@ -317,7 +317,7 @@ test('linked index: search, keys, link and unlink keep the layout still', async 
     h.shortcut({
       id: crypto.randomUUID(),
       backendId: h.store.state.connections.windowBackendId,
-      action: 'related',
+      action: 'focus',
       url,
       identityKey: `url:${url}`,
       contextVersion: 'v1',

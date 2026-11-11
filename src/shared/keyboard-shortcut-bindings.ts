@@ -52,12 +52,8 @@ export const SHORTCUT_DEFAULTS = {
   'leader.equalize-sizes': '=',
   'leader.jump-to-panel': 'q + 1-9',
   'leader.cycle-layout': 'space',
-  // Registered system-wide by main; explicit Control remains Control on macOS.
+  // The one system-wide dock shortcut, registered by main; explicit Control stays Control on macOS.
   'dock.focus': 'ctrl+shift+d',
-  'dock.capture': 'ctrl+shift+s',
-  'dock.record': 'ctrl+shift+r',
-  'dock.dictate': 'ctrl+shift+m',
-  'dock.related': 'ctrl+shift+a',
 } as const;
 
 export type ShortcutId = keyof typeof SHORTCUT_DEFAULTS;

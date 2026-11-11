@@ -23,7 +23,6 @@ import {
   selectDockShortcutWorkspaces,
 } from '../dock-conversation-selectors';
 import { selectWorkspaceListLoadedForBackend } from '../../workspace/workspace-selectors';
-import { dockSideDefaultWorkspaceId } from '../dock-side-default';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
 import {
   dockShortcutChanged,
@@ -69,50 +68,85 @@ function* recordingOwnerAction(context: DockShortcutContext): SagaGenerator<void
 }
 
 /** How long a press waits for the feed-admitted context's linked snapshot to publish. */
-const RELATED_WAIT_MS = 1500;
-/** Every dock shortcut press (any action) supersedes a pending related wait. */
+const LINKED_WAIT_MS = 1500;
+/** Every dock shortcut press (any action) supersedes a pending linked-context wait. */
 let shortcutRequest = 0;
 
 /**
- * Open related: the dock conversation of the workspace linked to the foreground tab or app the
- * context feed admitted at the press, read from the same admitted linked-context snapshot as
- * the UI. The snapshot may publish after this request (storage/service enrichment): wait,
- * bounded, for exactly that version (wrapped with the current authority); an older version is
- * not yet ours, a different one after ours means the context moved on (stale). Fenced by the
- * latest request, principal and window backend. Needs a present link on a loaded workspace
- * list and no live recording, annotation, dictation or send. A real follow is counted. Never
- * the destination/media flow or the full-app workspace window; drafts are untouched.
+ * The global dock shortcut: the dock conversation of the workspace linked to the foreground tab
+ * or app the context feed admitted at the press, read from the same admitted linked-context
+ * snapshot as the UI; otherwise the searchable index (where that context can be linked). There
+ * is no other fallback (no side, last, retained or guessed workspace).
+ *
+ * The snapshot may publish after the press (storage/service enrichment): wait, bounded, for
+ * exactly that version (wrapped with the current authority); an older version is not yet ours,
+ * a different identity or a newer version means the context moved on (stale: index). Fenced by
+ * the latest press, principal and window backend. Following needs a linked workspace on a
+ * loaded list and no live recording, annotation, dictation or send; while input is live the
+ * dock is left as it is. A real follow is counted. Drafts are untouched.
  */
-function* relatedAction(context: DockShortcutContext): SagaGenerator<void> {
+function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
   const request = shortcutRequest;
   const authority = getPrincipalActionContext(appStore.state);
+  if (!authority) return;
   // A conversation opened meanwhile (by the person or another flow) is never replaced.
   const startedOn = appStore.state.dockConversation.workspaceId;
-  if (!authority || !context.contextVersion || !context.identityKey) return;
+  const current = (): boolean => {
+    const state = appStore.state;
+    return (
+      request === shortcutRequest &&
+      getPrincipalActionContext(state) === authority &&
+      state.connections.windowBackendId === context.backendId
+    );
+  };
+  const ours = (): boolean => appStore.state.dockConversation.shortcut?.context.id === context.id;
+  function* showIndex(): SagaGenerator<void> {
+    if (!current() || appStore.state.dockConversation.workspaceId !== startedOn) return;
+    if (dockInputLive() || appStore.state.dockConversation.sending) {
+      if (ours()) yield* put(dockShortcutChanged(null));
+      return;
+    }
+    yield* put(
+      dockShortcutChanged({ context, destination: null, error: null, authority, resolving: false }),
+    );
+    // The press's own focus request reached the conversation; the index takes it now (search).
+    yield* put(dockFocusRequested());
+  }
+  if (!context.contextVersion || !context.identityKey) {
+    // No admitted context (unknown app, Intent itself, nothing sampled): the index.
+    yield* showIndex();
+    return;
+  }
+  // Hold the current view while the linked snapshot publishes, so the index does not flash.
+  yield* put(
+    dockShortcutChanged({ context, destination: null, error: null, authority, resolving: true }),
+  );
   const expected = JSON.stringify([authority, context.contextVersion]);
-  const deadline = Date.now() + RELATED_WAIT_MS;
+  const deadline = Date.now() + LINKED_WAIT_MS;
   let seen = false;
   while (true) {
     const state = appStore.state;
-    if (
-      request !== shortcutRequest ||
-      state.dockConversation.workspaceId !== startedOn ||
-      getPrincipalActionContext(state) !== authority ||
-      state.connections.windowBackendId !== context.backendId
-    )
+    if (!current()) return;
+    if (state.dockConversation.workspaceId !== startedOn) {
+      if (ours()) yield* put(dockShortcutChanged(null));
       return;
+    }
     const snapshot = selectDockLinkedContext.select(state);
     if (snapshot?.contextVersion === expected) {
       seen = true;
-      if (snapshot.identityKey !== context.identityKey) return;
+      if (snapshot.identityKey !== context.identityKey) break;
       if (
         snapshot.phase === 'ready' &&
         snapshot.linkedWorkspaceId &&
         selectWorkspaceListLoadedForBackend.select(state, context.backendId)
       ) {
-        if (dockInputLive() || state.dockConversation.sending) return;
-        if (state.dockConversation.workspaceId === snapshot.linkedWorkspaceId) return;
+        if (dockInputLive() || state.dockConversation.sending) {
+          if (ours()) yield* put(dockShortcutChanged(null));
+          return;
+        }
+        if (ours()) yield* put(dockShortcutChanged(null));
         const target = snapshot.linkedWorkspaceId;
+        if (state.dockConversation.workspaceId === target) return;
         yield* put(openDockConversationRequested(target));
         yield* put(dockContextFollowed(snapshot.contextVersion));
         // The press asked for composer focus before this conversation existed: ask again once
@@ -137,30 +171,21 @@ function* relatedAction(context: DockShortcutContext): SagaGenerator<void> {
         }
         return;
       }
-    } else if (seen) return;
+      if (snapshot.phase === 'ready') break;
+    } else if (seen) break;
     const left = deadline - Date.now();
-    if (left <= 0) return;
+    if (left <= 0) break;
     yield* race({ changed: take(dockLinkedContextChanged), timeout: delay(left) });
   }
-}
-
-/**
- * The open shortcut with the dock on a screen side returns to a chat, ahead of any
- * foreground routing: the chat open in the dock, else the last one opened from it (same
- * machine and authority, still present), else the first workspace the side shows. The
- * side has no home row to choose from; null (no workspace) keeps the existing flow.
- */
-function sideDockFallback(context: DockShortcutContext): string | null {
-  const state = appStore.state;
-  if (context.action !== 'focus' || state.hud.dockPlacement?.shape !== 'edge') return null;
-  return dockSideDefaultWorkspaceId(state);
+  // Unlinked, not ready in time, or the context moved on: the index.
+  yield* showIndex();
 }
 
 function* receive(context?: DockShortcutContext): SagaGenerator<void> {
   if (
     !context ||
     typeof context.id !== 'string' ||
-    !['focus', 'capture', 'record', 'dictate', 'related'].includes(context.action) ||
+    !['focus', 'capture', 'record', 'dictate'].includes(context.action) ||
     !valid(context)
   )
     return;
@@ -177,9 +202,10 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     yield* recordingOwnerAction(context);
     return;
   }
-  // Open related is its own action: never the focus destination or media intent flow.
-  if (context.action === 'related') {
-    yield* relatedAction(context);
+  // The global shortcut: the linked conversation, else the index. Never the destination or
+  // media intent flow, which only the Window-menu capture/record/dictate commands use.
+  if (context.action === 'focus') {
+    yield* openFromShortcut(context);
     return;
   }
   // Stop the already-active native owner before consulting a new foreground destination.
@@ -223,16 +249,13 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     selection &&
     !(context.appId && selection.appId && context.appId !== selection.appId) &&
     !(context.url && selection.url && context.url !== selection.url);
-  // On a side, the open shortcut returns to the chat (open, last, else first workspace)
-  // before any foreground routing.
-  const side = sideDockFallback(context);
   const retained = sameContext ? (selection?.workspaceId ?? null) : null;
   const resolved = resolveDockDestination(context, ids, {});
   const owned =
     context.workspaceId && ids.includes(context.workspaceId) ? context.workspaceId : null;
-  const explicit = side ? null : yield* call(readDockSavedDestination, context, ids);
+  const explicit = yield* call(readDockSavedDestination, context, ids);
   const destination =
-    side ?? explicit ?? owned ?? (context.url && retained ? null : (retained ?? resolved));
+    explicit ?? owned ?? (context.url && retained ? null : (retained ?? resolved));
   yield* put(
     dockShortcutChanged({
       context,

@@ -99,7 +99,7 @@ describe('dock shortcut async admission', () => {
       if (change === 'bindings changed') {
         const snapshot = fixture.service!.snapshot();
         await fixture.service!.update({
-          id: 'dock.record',
+          id: 'dock.focus',
           key: 'ctrl+alt+9',
           expectedRevision: snapshot.revision,
         });

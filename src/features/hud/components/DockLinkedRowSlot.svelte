@@ -37,10 +37,10 @@
   const app = $derived(context?.identityKind === 'app');
   const ready = $derived(!!context && context.phase === 'ready');
   const linked = $derived(ready && context!.linkedWorkspaceId === workspaceId);
-  // Only a saved link can be removed; an inferred (embedded tab / service owner) target
-  // has no saved record, so it shows the tag without an Unlink.
+  // Only a saved link can be removed. An inferred (embedded tab / service owner) target has
+  // no saved record: it shows the tag, and Link saves it when the context can be saved.
   const canUnlink = $derived(linked && !!context!.linkKey && context!.linkRevision > 0);
-  const canLink = $derived(ready && !linked && context!.linkable);
+  const canLink = $derived(ready && !canUnlink && context!.linkable);
   const contextName = $derived(context?.label || '');
   /**
    * A held gesture acts on what was on screen when it started. Pointer down or an Enter /
