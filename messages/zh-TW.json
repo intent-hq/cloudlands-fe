@@ -58,6 +58,7 @@
   "agent_contextBreakdown_tokens_label": "~{tokens} 個 Token",
   "agent_contextBreakdown_owner_intent_label": "Intent",
   "agent_contextBreakdown_owner_user_label": "使用者",
+  "agent_contextBreakdown_owner_native_label": "原生",
   "agent_contextBreakdown_ownerShare_label": "{owner}：{tokens}",
   "agent_contextBreakdown_notCounted_label": "不計入總數",
   "agent_contextBreakdown_hiddenSkills_title": "隱藏的技能",

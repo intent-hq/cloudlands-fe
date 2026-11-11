@@ -1,11 +1,12 @@
 <script lang="ts">
   /**
-   * An agent's starting context by section (agent.getSession `promptBreakdown`):
-   * total, an owner strip (Intent, user), sections largest first, and hidden skills.
+   * An agent's starting context (agent.getSession `promptBreakdown`): total, an owner
+   * strip, Native/User/Intent groups that expand to their sections, and hidden skills.
    */
-  import { formatCompactNumber } from '$lib/i18n/format';
+  import * as Accordion from '$lib/components/ui/accordion';
+  import { formatCompactNumber, formatInteger } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import type { PromptBreakdownView, PromptOwner } from './prompt-breakdown';
+  import type { PromptBreakdownView, PromptGroupKind } from './prompt-breakdown';
 
   interface Props {
     breakdown: PromptBreakdownView;
@@ -14,12 +15,15 @@
   let { breakdown }: Props = $props();
   const id = $props.id();
 
+  const trigger = 'type-body font-normal text-foreground data-[state=open]:font-normal';
+
   function tokens(value: number): string {
     return formatCompactNumber(value, { maximumFractionDigits: value < 10_000 ? 1 : 0 });
   }
 
-  function ownerLabel(owner: PromptOwner): string {
-    return owner === 'intent'
+  function groupLabel(kind: PromptGroupKind): string {
+    if (kind === 'native') return m.agent_contextBreakdown_owner_native_label();
+    return kind === 'intent'
       ? m.agent_contextBreakdown_owner_intent_label()
       : m.agent_contextBreakdown_owner_user_label();
   }
@@ -28,7 +32,7 @@
     breakdown.owners
       .map((summary) =>
         m.agent_contextBreakdown_ownerShare_label({
-          owner: ownerLabel(summary.owner),
+          owner: groupLabel(summary.owner),
           tokens: tokens(summary.estTokens),
         }),
       )
@@ -44,7 +48,7 @@
     </span>
   </div>
   <div
-    class="owner-strip mb-3 flex h-1.5 w-full overflow-hidden"
+    class="owner-strip mb-2 flex h-1.5 w-full overflow-hidden"
     role="img"
     aria-label={ownerSummary}
   >
@@ -56,64 +60,82 @@
       ></span>
     {/each}
   </div>
-  <dl class="section-list">
-    {#each breakdown.rows as row (row.key)}
-      <div class="section-row py-0.5" data-counted={row.counted}>
-        <dt class="flex min-w-0 items-start gap-2 text-sm text-foreground">
-          <span class="owner-key mt-1.5 size-1.5 shrink-0 rounded-full" data-owner={row.owner}
-          ></span>
-          <span class="min-w-0 wrap-anywhere">{row.label}</span>
-        </dt>
-        <dd class="text-xs text-muted-foreground">{ownerLabel(row.owner)}</dd>
-        <dd
-          class="text-right text-sm tabular-nums {row.counted
-            ? 'text-foreground'
-            : 'text-muted-foreground'}"
-        >
-          {tokens(row.estTokens)}
-        </dd>
-        {#if row.hint || !row.counted}
-          <dd class="section-note pl-3.5 text-xs text-muted-foreground wrap-anywhere">
-            {[row.counted ? '' : m.agent_contextBreakdown_notCounted_label(), row.hint ?? '']
-              .filter(Boolean)
-              .join(' · ')}
-          </dd>
-        {/if}
-      </div>
+  <Accordion.Root type="multiple">
+    {#each breakdown.groups as group (group.kind)}
+      <Accordion.Item value={group.kind} data-prompt-group={group.kind}>
+        <Accordion.Header level={4}>
+          <Accordion.Trigger inset={false} class={trigger}>
+            <span class="flex items-center gap-2">
+              <span class="group-key size-1.5 shrink-0 rounded-full" data-kind={group.kind}></span>
+              <span class="min-w-0 flex-1">{groupLabel(group.kind)}</span>
+              {#if group.kind === 'native'}
+                <span class="shrink-0 text-xs text-muted-foreground">
+                  {m.agent_contextBreakdown_notCounted_label()}
+                </span>
+              {/if}
+              <span
+                class="shrink-0 tabular-nums {group.kind === 'native'
+                  ? 'text-muted-foreground'
+                  : ''}"
+              >
+                {tokens(group.estTokens)}
+              </span>
+            </span>
+          </Accordion.Trigger>
+        </Accordion.Header>
+        <Accordion.Content inset={false}>
+          <dl class="ml-3.5 text-foreground">
+            {#each group.rows as row (row.key)}
+              <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 py-0.5 text-sm">
+                <dt
+                  class="relative min-w-0 pl-[1.125rem] wrap-anywhere before:absolute before:top-2 before:left-0 before:size-1 before:rounded-full before:bg-muted-foreground before:content-['']"
+                >
+                  {row.label}
+                </dt>
+                <dd class="tabular-nums {row.counted ? '' : 'text-muted-foreground'}">
+                  {tokens(row.estTokens)}
+                </dd>
+                {#if row.hint}
+                  <dd class="col-span-2 pl-[1.125rem] text-xs text-muted-foreground wrap-anywhere">
+                    {row.hint}
+                  </dd>
+                {/if}
+              </div>
+            {/each}
+          </dl>
+        </Accordion.Content>
+      </Accordion.Item>
     {/each}
-  </dl>
-  {#if breakdown.hiddenSkills.length > 0}
-    <h4 id={`${id}-hidden`} class="mb-2 mt-4 text-xs font-normal text-muted-foreground">
-      {m.agent_contextBreakdown_hiddenSkills_title()}
-    </h4>
-    <dl class="flex flex-col gap-2" aria-labelledby={`${id}-hidden`}>
-      {#each breakdown.hiddenSkills as skill (skill.name)}
-        <div class="min-w-0">
-          <dt class="truncate text-sm text-foreground">{skill.name}</dt>
-          <dd class="text-xs text-muted-foreground wrap-anywhere">
-            {[skill.detail, skill.fix].filter(Boolean).join(' · ')}
-          </dd>
-        </div>
-      {/each}
-    </dl>
-  {/if}
+    {#if breakdown.hiddenSkills.length > 0}
+      <Accordion.Item value="hidden-skills" class="mt-1">
+        <Accordion.Header level={4}>
+          <Accordion.Trigger inset={false} class={trigger}>
+            <span class="flex items-center gap-2">
+              <span class="min-w-0 flex-1">{m.agent_contextBreakdown_hiddenSkills_title()}</span>
+              <span class="shrink-0 tabular-nums text-muted-foreground">
+                {formatInteger(breakdown.hiddenSkills.length)}
+              </span>
+            </span>
+          </Accordion.Trigger>
+        </Accordion.Header>
+        <Accordion.Content inset={false}>
+          <dl class="ml-3.5 flex flex-col gap-2">
+            {#each breakdown.hiddenSkills as skill (skill.name)}
+              <div class="min-w-0">
+                <dt class="truncate text-sm text-foreground">{skill.name}</dt>
+                <dd class="text-xs text-muted-foreground wrap-anywhere">
+                  {[skill.detail, skill.fix].filter(Boolean).join(' · ')}
+                </dd>
+              </div>
+            {/each}
+          </dl>
+        </Accordion.Content>
+      </Accordion.Item>
+    {/if}
+  </Accordion.Root>
 </section>
 
 <style>
-  .section-list {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) max-content 3rem;
-    column-gap: 0.75rem;
-  }
-  .section-row {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    align-items: baseline;
-  }
-  .section-note {
-    grid-column: 1 / -1;
-  }
   .owner-strip {
     gap: 1px;
     border-radius: 2px;
@@ -122,16 +144,15 @@
   .owner-fill {
     flex-basis: 0;
   }
-  .owner-key[data-owner='intent'],
+  .group-key[data-kind='intent'],
   .owner-fill[data-owner='intent'] {
     background: hsl(var(--token-usage-input) / 84%);
   }
-  .owner-key[data-owner='user'],
+  .group-key[data-kind='user'],
   .owner-fill[data-owner='user'] {
     background: hsl(var(--warning) / 88%);
   }
-  .section-row[data-counted='false'] .owner-key {
-    background: transparent;
+  .group-key[data-kind='native'] {
     box-shadow: inset 0 0 0 1px hsl(var(--muted-foreground));
   }
 </style>
