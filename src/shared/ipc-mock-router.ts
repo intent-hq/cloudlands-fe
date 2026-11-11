@@ -329,6 +329,19 @@ export function addMockIpcListener(
         `src/shared/ipc-mock-router.ts.`,
     );
   }
+  return subscribeMockIpcEvent(channel, handler);
+}
+
+/**
+ * Subscribe without the unemitted-listener guard. For test bridges standing in
+ * for the preload `window.electronAPI`, whose channels the main process emits.
+ *
+ * @internal
+ */
+export function subscribeMockIpcEvent(
+  channel: string,
+  handler: MockIpcEventHandler,
+): MockIpcUnsubscribe {
   let handlers = eventHandlers.get(channel);
   if (!handlers) {
     handlers = new Set();

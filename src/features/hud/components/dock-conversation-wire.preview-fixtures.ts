@@ -8,7 +8,8 @@ import { ThemeManager, type Theme } from '$lib/utils/theme';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { store } from '$store/renderer/store';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { mockInvoke, overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import { emitMockIpcEvent, overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { initRendererStoreBridge } from '$store/renderer/renderer-store-bridge';
@@ -90,8 +91,6 @@ export function setupConversationWire(
     root.dataset.auxiliaryWindow = 'dock';
     ThemeManager.resetInstance();
   }
-  const previous = window.electronAPI;
-  const listeners = new Map<string, { channel: string; handler: (payload: unknown) => void }>();
   const subscriptions = new Map<string, { agentId: string; seq: number }>();
   const drafts = createChatDraftFixture().client;
   const placements = new Map<string, PlaceAttachmentResult>();
@@ -240,8 +239,7 @@ export function setupConversationWire(
         snapshot: transcript(entry.agentId),
       },
     };
-    for (const { channel, handler } of listeners.values())
-      if (channel === IPC_CHANNELS.BACKEND.NOTIFICATION) handler(notification);
+    emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, notification);
   }
   async function request(method: string, params: Record<string, unknown>) {
     record({ method, params: structuredClone(params) });
@@ -393,35 +391,9 @@ export function setupConversationWire(
         throw new Error(`Unscripted conversation wire method: ${method}`);
     }
   }
-  const api = {
-    versions: { electron: '0.0.0-browser' },
-    invoke: async (channel: string, payload?: unknown) => {
-      if (channel !== IPC_CHANNELS.BACKEND.REQUEST) return mockInvoke(channel, payload);
-      const { method, params = {} } = payload as {
-        method: string;
-        params?: Record<string, unknown>;
-      };
-      try {
-        return { ok: true, result: await request(method, params) };
-      } catch (error) {
-        return { ok: false, error: { code: 'MOCK_UNHANDLED_METHOD', message: String(error) } };
-      }
-    },
-    on: (channel: string, handler: (payload: unknown) => void) => {
-      const id = `wire-listener-${++nextId}`;
-      listeners.set(id, { channel, handler });
-      return id;
-    },
-    offById: (_channel: string, id: string) => {
-      listeners.delete(id);
-    },
-    off: () => {},
-    send: () => {},
-    removeAllListeners: () => {},
-    devInstance: null,
-    devPort: null,
-  };
-  window.electronAPI = api as unknown as Window['electronAPI'];
+  const restoreBridge = installMockElectronBridge((method, params) =>
+    request(method, (params ?? {}) as Record<string, unknown>),
+  );
   initRendererStoreBridge(store);
   admitLegacyPrincipal();
   const principal = store.state.principal;
@@ -527,11 +499,10 @@ export function setupConversationWire(
         else root.setAttribute('data-theme-override', previousOverride);
         if (themeColor && previousThemeColor !== undefined) themeColor.content = previousThemeColor;
       }
-      listeners.clear();
       subscriptions.clear();
       restoreModels();
       restoreClaudeModels();
-      window.electronAPI = previous;
+      restoreBridge();
     },
   };
 }

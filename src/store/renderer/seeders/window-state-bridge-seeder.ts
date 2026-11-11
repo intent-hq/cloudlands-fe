@@ -34,6 +34,7 @@
  * bridge-less build). The dock machine selector treats that absent response
  * as a failed switch; the remaining callers are fire-and-forget or guarded.
  */
+import { expectsElectronPreloadBridge } from '$lib/utils/platform-capabilities';
 import { emitMockIpcEvent, registerMockIpcHandler } from '$shared/ipc-mock-router';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
 
@@ -125,7 +126,9 @@ export function registerWindowFullScreenBridge(): void {
  */
 export function registerWindowFullScreenEventRelay(): void {
   if (typeof window === 'undefined') return;
-  const bridge = window.electronAPI;
+  // A non-preload bridge (browser dev mock, CT fixture bridge) already listens
+  // on the mock router, so relaying through it would re-emit forever.
+  const bridge = expectsElectronPreloadBridge() ? window.electronAPI : undefined;
   if (bridge && typeof bridge.on === 'function') {
     bridge.on('window:fullscreen', (fullScreen: boolean) => {
       emitMockIpcEvent('window:fullscreen', fullScreen);
