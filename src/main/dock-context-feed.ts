@@ -15,11 +15,15 @@ export function createDockContextFeed<Scope extends object>(deps: {
   let pending: Promise<DockForegroundObservation | null> | null = null;
   let owner: Scope | null = null;
   let current: DockForegroundObservation | null = null;
-  /** Bumped by each explicit admission: a poll read started before it can never publish after it. */
-  let admissions = 0;
+  /**
+   * Bumped by each explicit admission and by reset/stop: a poll read started before it can never
+   * publish after it (later polls publish normally).
+   */
+  let epoch = 0;
   function reset(scope: Scope | null) {
     owner = scope;
     current = null;
+    epoch++;
   }
   /** Version and publish one sample exactly as a poll would; a self sample keeps the current. */
   function accept(value: Omit<DockForegroundObservation, 'contextVersion' | 'sequence'>) {
@@ -42,11 +46,11 @@ export function createDockContextFeed<Scope extends object>(deps: {
     const scope = deps.scope();
     if (scope !== owner) reset(scope);
     if (stopped || !scope || !deps.visible()) return current;
-    const epoch = admissions;
+    const started = epoch;
     const value = await deps.read();
     if (stopped || scope !== deps.scope() || !deps.visible()) return null;
     // An explicit admission happened while this read was in flight: it is the newer sample.
-    if (epoch !== admissions) return current;
+    if (started !== epoch) return current;
     return accept(value);
   }
   function read() {
@@ -75,7 +79,7 @@ export function createDockContextFeed<Scope extends object>(deps: {
     admit(scope: Scope, value: Omit<DockForegroundObservation, 'contextVersion' | 'sequence'>) {
       if (stopped || scope !== deps.scope()) return null;
       if (scope !== owner) reset(scope);
-      admissions++;
+      epoch++;
       return accept(value);
     },
     start() {

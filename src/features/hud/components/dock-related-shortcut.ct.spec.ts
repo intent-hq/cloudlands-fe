@@ -253,6 +253,30 @@ test('open related follows only the admitted linked context', async ({ mount, pa
   );
   receipts.liveInput = { before, during };
 
+  // 9. A newer accepted press supersedes a held related wait: the related context publishes
+  // only after a plain focus press (no foreground context, so it cannot route there itself).
+  const followsBefore = (await read())?.policy.follows;
+  await related('v9', A);
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.shortcut({
+      id: crypto.randomUUID(),
+      backendId: h.store.state.connections.windowBackendId,
+      action: 'focus',
+    });
+  });
+  await observe('v9', A);
+  await expect.poll(() => read().then((row) => row?.contextVersion ?? '')).toContain('v9');
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: nothing may happen during or after the bounded related wait
+  await page.waitForTimeout(1800);
+  expect(await open()).not.toBe('choice-0');
+  expect((await read())?.policy.follows).toBe(followsBefore);
+  receipts.supersededByNewerFocus = {
+    open: await open(),
+    followsBefore,
+    followsAfter: followsBefore,
+  };
+
   await writeFile(
     info.outputPath('related-shortcut-receipt.json'),
     JSON.stringify(
