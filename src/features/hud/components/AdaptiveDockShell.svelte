@@ -260,7 +260,7 @@
       workspaceCount: machineMenuOpen
         ? Math.max(overviewWorkspaceCount, Math.min(machines?.length ?? 0, 5))
         : overviewWorkspaceCount,
-      hasOlderWorkspaces: olderWorkspaces.length > 0,
+      hasOlderWorkspaces: !showOlder && olderWorkspaces.length > 0,
       compactWingWidth,
       hasFeedback: actionFeedback !== null,
       intro: dockIntro.open,
@@ -346,6 +346,7 @@
     untrack(() => {
       if (!live) contentVisible = false;
       surfaceExpanded = false;
+      showOlder = false;
       stopHeight();
     });
   });

@@ -17,7 +17,7 @@ interface DockShellLayoutInput {
   expandedHeight?: number | null;
   rowLimit: number;
   workspaceCount: number;
-  /** The overview's local older-conversation disclosure stays above the Assistant. */
+  /** The overview's older-conversation disclosure is currently visible. */
   hasOlderWorkspaces?: boolean;
   compactWingWidth: number;
   hasFeedback: boolean;
@@ -27,7 +27,7 @@ interface DockShellLayoutInput {
 
 /** DockIntroCard's fixed height plus its gap below; keep in step with its styles. */
 export const DOCK_INTRO_HEIGHT = 130;
-export const DOCK_OVERVIEW_HISTORY_HEIGHT = 32;
+export const DOCK_OVERVIEW_HISTORY_HEIGHT = 44;
 
 /** Width of the compact notch wing that shows one dot per status group. */
 export function dockCompactWingWidth(statusGroups: number): number {

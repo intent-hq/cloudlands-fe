@@ -46,17 +46,13 @@
       });
     }
   });
-  let recentScrollTop = 0;
-  async function toggleOlder(): Promise<void> {
-    const hadFocus = document.activeElement === historyButton;
-    if (!showOlder) recentScrollTop = rows?.scrollTop ?? 0;
-    showOlder = !showOlder;
+  async function revealOlder(): Promise<void> {
+    const previous = historyButton;
+    const hadFocus = document.activeElement === previous;
+    showOlder = true;
     await tick();
-    if (!showOlder && rows) rows.scrollTop = recentScrollTop;
-    if (hadFocus && document.activeElement === historyButton) {
-      const target = showOlder
-        ? rows?.querySelectorAll<HTMLButtonElement>('[data-workspace-id]')[workspaces.length]
-        : historyButton;
+    if (hadFocus && previous && !previous.isConnected && document.activeElement === document.body) {
+      const target = rows?.querySelectorAll<HTMLButtonElement>('[data-workspace-id]')[workspaces.length];
       target?.focus({ preventScroll: true });
       if (target) revealDockItem(target);
     }
@@ -120,7 +116,7 @@
     class:more-below={moreBelow}
     data-dock-scroll
     use:keepDockFocusVisible
-    use:trackOverflow={visibleWorkspaces.length + Number(olderWorkspaces.length > 0)}
+    use:trackOverflow={visibleWorkspaces.length + Number(!showOlder && olderWorkspaces.length > 0)}
   >
     {#each visibleWorkspaces as item (item.workspace.id)}
       {@const id = String(item.workspace.id)}
@@ -161,7 +157,7 @@
         </span>
       </div>
     {/each}
-    {#if olderWorkspaces.length > 0}
+    {#if !showOlder && olderWorkspaces.length > 0}
       <div
         class="overview-history"
         data-dock-scroll-item
@@ -176,10 +172,8 @@
           data-dock-row
           aria-controls={rowsId}
           aria-expanded={showOlder}
-          onclick={toggleOlder}
-          >{showOlder
-            ? m.dock_overview_showRecent_label()
-            : m.dock_overview_showOlder_label()}</Button
+          onclick={revealOlder}
+          >{m.dock_overview_showOlder_label()}</Button
         >
       </div>
     {/if}
@@ -221,6 +215,8 @@
     overscroll-behavior: contain;
   }
   .overview-history {
+    box-sizing: border-box;
+    padding-bottom: 12px;
     display: flex;
     flex: none;
   }
