@@ -422,3 +422,197 @@ test('linked index: search, keys, link and unlink keep the layout still', async 
     ),
   );
 });
+
+/**
+ * Follow-up: repository tiles (repo name, no image fetch) with the workspace-avatar fallback,
+ * plain-key-only row navigation, held gestures that refuse to complete after the context
+ * changes under them, a gesture-less (assistive technology) click, and a narrow index.
+ */
+test('linked index follow-up: repo tiles, held gestures, modified keys, narrow', async ({
+  mount,
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1000, height: 740 });
+  await mount(Harness, { props: { shell: dockRailPreview.states.notch.props } });
+  await expect.poll(() => page.evaluate(() => !!(window as any).__dockComposerE2E)).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__dockComposerE2E.store.state.dockConversation.loading),
+    )
+    .toBe(false);
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.seedChoices(4);
+    h.contextReady();
+    const collection = h.store.state.workspace.workspaces;
+    const rows: any[] = Object.values(collection.map ?? collection.entities ?? collection);
+    const base = (id: string) => rows.find((row) => row?.id === id);
+    h.seedWorkspace({
+      ...base('choice-0'),
+      repositoryOwner: 'intent-hq',
+      repositoryName: 'cloudlands-fe',
+    });
+    h.seedWorkspace({
+      ...base('choice-1'),
+      repositoryOwner: undefined,
+      repositoryName: undefined,
+      repositoryPath: '/work/scratchpad',
+    });
+  });
+  const receipts: Record<string, unknown> = {};
+  const read = () =>
+    page.evaluate(() =>
+      (window as any).__dockComposerE2E.contextSnapshot(),
+    ) as Promise<DockLinkedContextSnapshot | null>;
+  let sequence = 0;
+  const observe = (version: string, url: string) =>
+    page.evaluate(
+      ({ version, url, sequence }) => {
+        const h = (window as any).__dockComposerE2E;
+        h.context({
+          sequence,
+          contextVersion: version,
+          backendId: h.store.state.connections.windowBackendId,
+          identityKey: `url:${url}`,
+          identityKind: 'url',
+          self: false,
+          appId: 'com.apple.Safari',
+          appName: 'Synthetic Safari',
+          url,
+          icon: null,
+        });
+      },
+      { version, url, sequence: ++sequence },
+    );
+  const row = (id: string) =>
+    page.locator('.overview-row', { has: page.locator(`[data-workspace-id="${id}"]`) });
+  const action = (id: string) => row(id).locator('[data-dock-row-action]');
+  const rowButton = (id: string) => row(id).locator('[data-workspace-id]');
+  await page.evaluate(() => (window as any).__dockComposerE2E.close());
+  await expect(page.getByTestId('dock-overview')).toBeVisible();
+  await page.evaluate(() =>
+    (window as any).__dockComposerE2E.store.dispatch({
+      type: 'hud/dockFocusRequested',
+      payload: [],
+    }),
+  );
+  await expect(page.getByRole('searchbox')).toBeFocused();
+
+  // 1. Repository tiles: initials from the repo name, no image request; no repo → fallback.
+  await expect(
+    row('choice-0').locator('[data-dock-repo-avatar="intent-hq/cloudlands-fe"]'),
+  ).toHaveText('C');
+  await expect(row('choice-1').locator('[data-dock-repo-avatar="scratchpad"]')).toHaveText('S');
+  await expect(row('choice-2').locator('[data-dock-repo-avatar]')).toHaveCount(0);
+  await expect(page.locator('[data-dock-repo-avatar] img')).toHaveCount(0);
+  const tile = await row('choice-0')
+    .locator('[data-dock-repo-avatar] > *')
+    .evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { width: style.width, height: style.height, radius: style.borderRadius };
+    });
+  expect(tile).toEqual({ width: '32px', height: '32px', radius: '9px' });
+  await page.screenshot({ path: info.outputPath('07-repo-tiles-and-fallback.png') });
+  receipts.repoTiles = {
+    'choice-0': 'intent-hq/cloudlands-fe → C',
+    'choice-1': 'repositoryPath scratchpad → S',
+    'choice-2': 'no repository → workspace avatar',
+    images: 0,
+    tile,
+  };
+
+  // 2. Modified arrow / Home / End on a row stay native; plain keys still move.
+  await page.keyboard.press('ArrowDown');
+  const first = page.locator('[data-dock-row]:focus');
+  const firstId = await first.getAttribute('data-workspace-id');
+  for (const key of ['Alt+ArrowDown', 'Shift+ArrowDown', 'Meta+End', 'Control+Home']) {
+    await page.keyboard.press(key);
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute('data-workspace-id')),
+    ).toBe(firstId);
+  }
+  await page.keyboard.press('ArrowDown');
+  expect(
+    await page.evaluate(() => document.activeElement?.getAttribute('data-workspace-id')),
+  ).not.toBe(firstId);
+  receipts.modifiedRowKeys = {
+    native: ['Alt+ArrowDown', 'Shift+ArrowDown', 'Meta+End', 'Control+Home'],
+    plainMoves: true,
+  };
+
+  // 3. Held pointer gesture: press Link, the context changes, release → nothing is saved.
+  await observe('v1', 'https://github.com/example/one/issues/1');
+  await expect.poll(() => read().then((s) => s?.contextVersion ?? '')).toContain('v1');
+  await row('choice-1').hover();
+  const box = (await action('choice-1').boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await observe('v2', 'https://github.com/example/two/issues/2');
+  await expect.poll(() => read().then((s) => s?.contextVersion ?? '')).toContain('v2');
+  await page.mouse.up();
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a cancelled gesture must not save anything afterwards
+  await page.waitForTimeout(600);
+  expect((await read())?.linkKey ?? null).toBeNull();
+  expect((await read())?.linkedWorkspaceId ?? null).toBeNull();
+
+  // 4. Held keyboard gesture: Space down on Link, the context changes, Space up → nothing.
+  await rowButton('choice-1').focus();
+  await page.keyboard.press('Tab');
+  await expect(action('choice-1')).toBeFocused();
+  await page.keyboard.down(' ');
+  await observe('v3', 'https://github.com/example/three/issues/3');
+  await expect.poll(() => read().then((s) => s?.contextVersion ?? '')).toContain('v3');
+  await page.keyboard.up(' ');
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a cancelled gesture must not save anything afterwards
+  await page.waitForTimeout(600);
+  expect((await read())?.linkKey ?? null).toBeNull();
+  receipts.heldGesture = { pointerCancelled: true, keyboardCancelled: true };
+
+  // 5. Controls: an undisturbed Enter links; a gesture-less click (assistive tech) relinks.
+  await expect(action('choice-1')).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');
+  await action('choice-2').evaluate((el) => (el as HTMLElement).click());
+  await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-2');
+  receipts.controls = { keyboardLink: 'choice-1', assistiveClickRelink: 'choice-2' };
+
+  // 6. Narrow index (overview constrained to 260px): the fixed slot keeps its width, the
+  // action stays inside it, titles truncate before it, Unlink still fits.
+  await page.locator('[data-testid="dock-overview"]').evaluate((el) => {
+    (el as HTMLElement).style.width = '260px';
+    (el as HTMLElement).style.maxWidth = '260px';
+  });
+  await row('choice-2').hover();
+  await expect(action('choice-2')).toHaveAttribute('data-dock-row-action', 'unlink');
+  const narrow = await row('choice-2').evaluate((el) => {
+    const r = (sel: string) => el.querySelector(sel)!.getBoundingClientRect();
+    const slot = r('[data-dock-row-slot]');
+    const copy = r('.row-copy');
+    const pill = r('[data-dock-row-action]');
+    const label = el.querySelector('[data-dock-row-action] [data-slot="button-label"]')!;
+    return {
+      rowWidth: Math.round(el.getBoundingClientRect().width),
+      slotWidth: Math.round(slot.width),
+      pillInside: pill.left >= slot.left - 0.5 && pill.right <= slot.right + 0.5,
+      titleBeforeSlot: copy.right <= slot.left + 0.5,
+      labelClipped: label.scrollWidth > label.clientWidth,
+    };
+  });
+  expect(narrow).toMatchObject({
+    slotWidth: 72,
+    pillInside: true,
+    titleBeforeSlot: true,
+    labelClipped: false,
+  });
+  await page.screenshot({ path: info.outputPath('08-narrow-260.png') });
+  receipts.narrow = {
+    ...narrow,
+    note: 'overview width constrained in the page; the shell fixture width is fixed',
+  };
+
+  await writeFile(
+    info.outputPath('linked-index-followup-receipt.json'),
+    JSON.stringify(receipts, null, 2),
+  );
+});

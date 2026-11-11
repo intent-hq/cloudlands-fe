@@ -5,6 +5,7 @@
   import { Input } from '$lib/components/ui/input';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
+  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import DockLinkedRowSlot from './DockLinkedRowSlot.svelte';
   import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
@@ -116,7 +117,14 @@
       : rows?.querySelector<HTMLButtonElement>('[data-dock-row]:not(:disabled)');
   function searchKey(event: KeyboardEvent): void {
     // Composition, and modified keys, keep the field's native editing.
-    if (event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    )
       return;
     if (event.key === 'Escape' && query) {
       // Clear first; an empty search lets Escape close the dock as usual.
@@ -135,6 +143,16 @@
     }
   }
   function navigate(event: KeyboardEvent): void {
+    // Plain keys only: modified, composing or already-handled keys stay native.
+    if (
+      event.defaultPrevented ||
+      event.isComposing ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey
+    )
+      return;
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     if (event.target === searchInput) return;
     const root = event.currentTarget as HTMLElement;
@@ -232,7 +250,21 @@
           aria-describedby="dock-status-{id}"
           onclick={() => openRow(id)}
         >
-          <DockWorkspaceAvatar {item} variant="emphasized" />
+          {@const repository = item.workspace.plainFolder
+            ? ''
+            : workspaceRepositoryLabel(item.workspace)}
+          {#if repository}
+            <!-- A repository tile from the repo name alone: no image fetch, any host. -->
+            <span class="repo-avatar" data-dock-repo-avatar={repository}
+              ><PrincipalAvatar
+                label={item.workspace.repositoryName || repository}
+                size={32}
+                class="rounded-[9px] type-body font-medium"
+              /></span
+            >
+          {:else}
+            <DockWorkspaceAvatar {item} variant="emphasized" />
+          {/if}
           <span class="row-copy">
             <span class="type-body font-medium truncate" {title}>{title}</span>
             <!-- The repo identifies the row; rows without one keep their status line. -->
@@ -357,6 +389,12 @@
   }
   .overview-search :global(.search-clear:focus-visible) {
     outline: 1px solid hsl(var(--dock-border, var(--border)));
+  }
+  .repo-avatar {
+    flex: none;
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
   }
   .overview-row {
     display: grid;

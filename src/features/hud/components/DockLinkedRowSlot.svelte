@@ -42,15 +42,57 @@
   const canUnlink = $derived(linked && !!context!.linkKey && context!.linkRevision > 0);
   const canLink = $derived(ready && !linked && context!.linkable);
   const contextName = $derived(context?.label || '');
-  // The version the clicked button was rendered with, never a newer one: a stale click is
-  // rejected by the saga instead of silently applying to a different context.
-  function act(event: MouseEvent): void {
-    const button = event.currentTarget as HTMLElement;
+  /**
+   * A held gesture acts on what was on screen when it started. Pointer down or an Enter /
+   * Space key down captures the rendered {version, workspace, operation}; if the context
+   * or the button's role changes before the click, the gesture is cancelled and the click
+   * does nothing (no fallback to the new context). A click without a held gesture (assistive
+   * technology) acts on what is rendered at that moment.
+   */
+  type Tuple = { version: string; workspaceId: string; operation: 'link' | 'unlink' };
+  let held: Tuple | 'cancelled' | null = null;
+  const rendered = (button: HTMLElement): Tuple | null => {
     const version = button.dataset.contextVersion;
-    if (!version) return;
-    if (button.dataset.dockRowAction === 'unlink')
-      appStore.dispatch(dockContextUnlinkRequested(version));
-    else appStore.dispatch(dockContextLinkRequested(version, workspaceId));
+    const operation = button.dataset.dockRowAction;
+    return version && (operation === 'link' || operation === 'unlink')
+      ? { version, workspaceId, operation }
+      : null;
+  };
+  const current = $derived(
+    context?.contextVersion && (canLink || canUnlink)
+      ? `${context.contextVersion}\u0000${workspaceId}\u0000${canUnlink ? 'unlink' : 'link'}`
+      : null,
+  );
+  $effect(() => {
+    void current;
+    // Anything the held gesture captured changed: it may not complete.
+    if (held && held !== 'cancelled') held = 'cancelled';
+  });
+  function hold(event: PointerEvent | KeyboardEvent): void {
+    if (event instanceof KeyboardEvent) {
+      if (event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    } else if (event.button !== 0) return;
+    held = rendered(event.currentTarget as HTMLElement);
+  }
+  function release(): void {
+    held = null;
+  }
+  function act(event: MouseEvent): void {
+    const gesture = held;
+    held = null;
+    if (gesture === 'cancelled') return;
+    const now = rendered(event.currentTarget as HTMLElement);
+    if (!now) return;
+    if (
+      gesture &&
+      (gesture.version !== now.version ||
+        gesture.workspaceId !== now.workspaceId ||
+        gesture.operation !== now.operation)
+    )
+      return;
+    if (now.operation === 'unlink') appStore.dispatch(dockContextUnlinkRequested(now.version));
+    else appStore.dispatch(dockContextLinkRequested(now.version, now.workspaceId));
   }
 </script>
 
@@ -82,6 +124,10 @@
         ? m.dock_linkedTab_unlink_ariaLabel({ context: contextName, workspace: title })
         : m.dock_linkedTab_link_ariaLabel({ context: contextName, workspace: title })}
       data-context-version={context?.contextVersion}
+      onpointerdown={hold}
+      onpointercancel={release}
+      onblur={release}
+      onkeydown={hold}
       onclick={act}
     >
       {#snippet leadingIcon()}
@@ -118,7 +164,7 @@
   .slot-rest {
     display: flex;
     justify-content: flex-end;
-    transition: opacity 120ms ease;
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
   }
   .row-tag {
     display: inline-flex;
@@ -138,7 +184,7 @@
     color: hsl(var(--foreground));
     opacity: 0;
     pointer-events: none;
-    transition: opacity 120ms ease;
+    transition: opacity var(--spring-fast) var(--spring-fast-ease);
   }
   /* Revealed by the row's hover or keyboard focus; the rest state fades in its place. */
   :global(.overview-row:hover) .row-slot :global(.row-action),
