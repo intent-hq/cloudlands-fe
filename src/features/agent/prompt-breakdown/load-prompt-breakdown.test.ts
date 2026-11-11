@@ -35,40 +35,31 @@ const available = {
 describe('loadPromptBreakdown', () => {
   beforeEach(() => backendRequest.mockReset());
 
-  it('reads agent.getSession with the agent and workspace ids', async () => {
+  it('reads agent.getSession for the agent', async () => {
     backendRequest.mockResolvedValue(sessionWith(available));
-    const view = await loadPromptBreakdown('agent-wire', 'ws-1');
-    expect(backendRequest).toHaveBeenCalledWith('agent.getSession', {
-      agentId: 'agent-wire',
-      workspaceId: 'ws-1',
-    });
+    const view = await loadPromptBreakdown('agent-wire');
+    expect(backendRequest).toHaveBeenCalledWith('agent.getSession', { agentId: 'agent-wire' });
     expect(view?.estTokens).toBe(100);
     expect(view?.rows.map((row) => row.id)).toEqual(['doctrine']);
-  });
-
-  it('omits the workspace id when it is unknown', async () => {
-    backendRequest.mockResolvedValue(sessionWith(available));
-    await loadPromptBreakdown('agent-no-ws', undefined);
-    expect(backendRequest).toHaveBeenCalledWith('agent.getSession', { agentId: 'agent-no-ws' });
   });
 
   it('resolves null for the unavailable arm', async () => {
     backendRequest.mockResolvedValue(
       sessionWith({ available: false, reason: 'harness-predates-breakdown' }),
     );
-    await expect(loadPromptBreakdown('agent-old', 'ws-1')).resolves.toBeNull();
+    await expect(loadPromptBreakdown('agent-old')).resolves.toBeNull();
   });
 
   it('reads again on every call, so a respawn shows the new breakdown', async () => {
     backendRequest.mockResolvedValueOnce(sessionWith({ available: false, reason: 'not-recorded' }));
-    await expect(loadPromptBreakdown('agent-respawn', 'ws-1')).resolves.toBeNull();
+    await expect(loadPromptBreakdown('agent-respawn')).resolves.toBeNull();
     backendRequest.mockResolvedValueOnce(sessionWith(available));
-    await expect(loadPromptBreakdown('agent-respawn', 'ws-1')).resolves.not.toBeNull();
+    await expect(loadPromptBreakdown('agent-respawn')).resolves.not.toBeNull();
     expect(backendRequest).toHaveBeenCalledTimes(2);
   });
 
   it('resolves null when the read fails', async () => {
     backendRequest.mockRejectedValueOnce(new Error('offline'));
-    await expect(loadPromptBreakdown('agent-offline', 'ws-1')).resolves.toBeNull();
+    await expect(loadPromptBreakdown('agent-offline')).resolves.toBeNull();
   });
 });

@@ -108,18 +108,3 @@ export function parsePromptBreakdown(value: unknown): PromptBreakdownView | null
     hiddenSkills: hiddenSkills.map(parseHiddenSkill).filter((skill) => skill !== null),
   };
 }
-
-/**
- * Whether a session stamped `version` can carry a breakdown, so other agents skip the
- * (up to ~480 KB) `agent.getSession` read. Released 3.11 records none. Later or unparsable
- * versions are read so the daemon decides.
- */
-export function harnessMayRecordPromptBreakdown(version: string | null | undefined): boolean {
-  if (!version) return false;
-  const match = /^(\d+)\.(\d+)/.exec(version);
-  if (!match) return true;
-  const major = Number(match[1]);
-  const minor = Number(match[2]);
-  if (major === 3 && minor === 11) return false;
-  return major > 3 || (major === 3 && minor >= 10);
-}

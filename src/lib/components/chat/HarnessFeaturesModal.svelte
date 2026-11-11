@@ -15,15 +15,10 @@
    */
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import { ListRow } from '$lib/components/patterns/collection';
-  import { store as appStore } from '$store/renderer/store';
-  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { Tooltip } from '$lib/components/ui/tooltip';
   import PromptBreakdownPanel from '$features/agent/prompt-breakdown/PromptBreakdownPanel.svelte';
   import { loadPromptBreakdown } from '$features/agent/prompt-breakdown/load-prompt-breakdown';
-  import {
-    harnessMayRecordPromptBreakdown,
-    type PromptBreakdownView,
-  } from '$features/agent/prompt-breakdown/prompt-breakdown';
+  import type { PromptBreakdownView } from '$features/agent/prompt-breakdown/prompt-breakdown';
   import { m } from '$shared/paraglide/messages.js';
   import { buildHarnessFeatureRows } from './harness-feature-catalog';
 
@@ -52,15 +47,12 @@
   // Read on every open: the daemon replaces the breakdown on each respawn. The last
   // result stays on screen while the dialog closes and until the next read lands.
   let loaded = $state<{ agentId: string; view: PromptBreakdownView | null } | null>(null);
-  const readsBreakdown = $derived(
-    breakdown === undefined && !!agentId && harnessMayRecordPromptBreakdown(version),
-  );
+  const readsBreakdown = $derived(breakdown === undefined && !!agentId);
   $effect(() => {
     if (!open || !readsBreakdown || !agentId) return;
     const id = agentId;
-    const workspaceId = selectAgentSession.select(appStore.state, id)?.workspaceId;
     let current = true;
-    void loadPromptBreakdown(id, workspaceId).then((view) => {
+    void loadPromptBreakdown(id).then((view) => {
       if (current) loaded = { agentId: id, view };
     });
     return () => {
