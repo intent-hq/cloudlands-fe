@@ -886,6 +886,7 @@
   "chat_proposalCard_editField_ariaLabel": "編輯{label}",
   "chat_proposalCard_initialAgent_label": "初始代理",
   "chat_proposalCard_initialPrompt_placeholder": "你想做點什麼？",
+  "chat_proposalCard_launchFailed_label": "工作區已建立，但其第一個代理無法啟動：{cause}",
   "chat_proposalCard_notSet_label": "（未設定）",
   "chat_proposalCard_openWorkspace_label": "開啟工作區",
   "chat_proposalCard_project_label": "專案",

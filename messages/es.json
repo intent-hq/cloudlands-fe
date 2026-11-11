@@ -886,6 +886,7 @@
   "chat_proposalCard_editField_ariaLabel": "Editar {label}",
   "chat_proposalCard_initialAgent_label": "Agente inicial",
   "chat_proposalCard_initialPrompt_placeholder": "¿En qué le gustaría trabajar?",
+  "chat_proposalCard_launchFailed_label": "Se creó el espacio de trabajo, pero su primer agente no pudo iniciarse: {cause}",
   "chat_proposalCard_notSet_label": "(sin establecer)",
   "chat_proposalCard_openWorkspace_label": "Abrir espacio de trabajo",
   "chat_proposalCard_project_label": "Proyecto",

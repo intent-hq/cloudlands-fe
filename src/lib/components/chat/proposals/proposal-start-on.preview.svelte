@@ -8,7 +8,8 @@
     | 'unavailable'
     | 'removed'
     | 'legacy-remote'
-    | 'launch-error';
+    | 'launch-error'
+    | 'launch-failed';
 
   interface Props {
     state?: Scene;
@@ -34,6 +35,8 @@
       'legacy-remote': scene('legacy-remote'),
       // workspace.create refused the launch.
       'launch-error': scene('launch-error'),
+      // The workspace was created, but its first agent failed to start.
+      'launch-failed': scene('launch-failed'),
     },
   });
 </script>
@@ -42,6 +45,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { store } from '$store/renderer/store';
   import type { AgentSession } from '$shared/types';
+  import type { WorkspaceId } from '$shared/types/branded-ids';
   import type { ProposalActionDetail, WorkspaceCreateProposal } from '$shared/types/proposal';
   import {
     setupStartOnPreview,
@@ -51,6 +55,7 @@
   import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import {
     clearProposalLifecycle,
+    proposalApplySucceeded,
     proposalFailed,
   } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice';
   import { E2B_PROVIDER } from '../../../../test/cloud-machines-preview';
@@ -135,6 +140,18 @@
         errorCode: 'profile-not-remote-compatible',
         completedAt: 0,
         lastAction: 'apply',
+      }),
+    );
+  if (s === 'launch-failed')
+    store.dispatch(
+      proposalApplySucceeded({
+        proposalId: lifecycleId,
+        completedAt: 0,
+        result: {
+          workspaceId: 'fixture-kept-workspace' as WorkspaceId,
+          launchError:
+            "The workspace was created, but its first agent couldn't start: Mac mini went offline before the agent started.",
+        },
       }),
     );
   onDestroy(() => {

@@ -1026,6 +1026,12 @@
             </h3>
           </div>
 
+          {#if $lifecycleResult?.launchError}
+            <p class="type-caption text-warning-ink" role="status" data-testid="proposal-launch-error">
+              {$lifecycleResult.launchError}
+            </p>
+          {/if}
+
           {#if workspaceInitialPrompt}
             <p class="type-body line-clamp-3 whitespace-pre-wrap text-muted-foreground">
               {workspaceInitialPrompt}
