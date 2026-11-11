@@ -179,7 +179,8 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
         }
         return;
       }
-      if (snapshot.phase === 'ready') break;
+      // Ready without a link (or the list not loaded yet) is not final: a service owner can
+      // still enrich this version. Keep waiting, bounded, then the index.
     } else if (seen) {
       // Stale: the context moved on after this press's version was seen.
       if (ours()) yield* put(dockShortcutChanged(null));
@@ -189,7 +190,7 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
     if (left <= 0) break;
     yield* race({ changed: take(dockLinkedContextChanged), timeout: delay(left) });
   }
-  // Unlinked, or its version never published in time (unknown): the index.
+  // Still unlinked when the wait ends, or its version never published (unknown): the index.
   yield* showIndex();
 }
 

@@ -264,6 +264,28 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await expect.poll(open).toBe('choice-1');
   receipts.latePublication = { heldWhileResolving: true, opened: 'choice-1' };
 
+  // 5b. Ready but not yet linked at the press, then linked during the wait (as a late
+  // service owner would): followed, never the index first.
+  await page.evaluate(
+    (id) =>
+      (window as any).__dockComposerE2E.store.dispatch({
+        type: 'dockConversation/open',
+        payload: [id],
+      }),
+    origin,
+  );
+  await expect.poll(open).toBe(origin);
+  const L = 'https://github.com/example/late/issues/6';
+  await observe('v6', L);
+  await expect.poll(() => read().then((s) => s?.url)).toBe(L);
+  await press({ version: 'v6', url: L });
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- the press is still waiting for a link on its version
+  await page.waitForTimeout(300);
+  expect(await shortcutState()).toEqual({ destination: null, resolving: true });
+  await page.evaluate(() => (window as any).__dockComposerE2E.contextAction('link', 'choice-0'));
+  await expect.poll(open).toBe('choice-0');
+  receipts.lateLink = { heldWhileUnlinked: true, followed: 'choice-0' };
+
   // 6. A press for a version that never publishes (stale or moved on): the index, no follow.
   const follows = (await read())?.policy.follows;
   await page.evaluate(
