@@ -21,7 +21,18 @@
     createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
-  import { createHomeWorkspaceMenu } from './home-workspace-menu';
+  import {
+    createHomeBulkMenu,
+    createHomeWorkspaceMenu,
+    homeBulkActions,
+  } from './home-workspace-menu';
+  import {
+    homeBulkTargets,
+    isHomeRowClick,
+    isHomeSelectionToggle,
+    toggleHomeSelection,
+  } from './home-multi-select';
+  import HomeSelectionBar from './HomeSelectionBar.svelte';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
@@ -52,6 +63,7 @@
     selectWorkspaceById,
     selectWorkspaceHasLoaded,
     selectIsCollaboratorOnlyClient,
+    selectHidesOwnerWorkspaceActions,
   } from '$store/renderer/slices/workspace/workspace-selectors';
   import {
     selectKnownRepos,
@@ -136,7 +148,11 @@
   const labelsSupported$ = selectLabelsSupported();
   let contextMenu = $state<
     | (SidebarContextPosition &
-        ({ workspace: Workspace; repo?: never } | { repo: RepositoryGroup; workspace?: never }))
+        (
+          | { workspace: Workspace; repo?: never; bulk?: never }
+          | { repo: RepositoryGroup; workspace?: never; bulk?: never }
+          | { bulk: true; workspace?: never; repo?: never }
+        ))
     | null
   >(null);
   function openWorkspace(id: string) {
@@ -148,20 +164,50 @@
     openWorkspace(id);
   }
   const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
-  function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
-    if (event instanceof MouseEvent) doubleClick.arm(event, id);
-    openHomeWorkspaceFromEvent(event, id, openWorkspace);
+  // Cmd/Ctrl-click builds a multi-selection; it is component-local and replaces the preview.
+  let multiSelection = $state<string[]>([]);
+  function toggleSelection(id: string) {
+    const next = toggleHomeSelection(
+      { multi: bulkActive ? bulkIds : [], selectedId: selectedWorkspace?.id ?? null },
+      id,
+    );
+    multiSelection = next.multi;
+    if (next.selectedId !== selectedId) updateView({ selectedId: next.selectedId });
+  }
+  function clearSelection() {
+    multiSelection = [];
+  }
+  function selectOnly(id: string) {
+    multiSelection = [];
+    updateView({ selectedId: id });
+  }
+  function activateListRow(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof KeyboardEvent) {
+      openHomeWorkspaceFromEvent(event, id, openWorkspace);
+      return;
+    }
+    doubleClick.arm(event, id);
+    if (isHomeSelectionToggle(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleSelection(id);
+    } else if (bulkActive && isHomeRowClick(event)) {
+      event.stopPropagation();
+      selectOnly(id);
+    }
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
-    contextMenu = {
-      ...position,
-      returnFocus:
-        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
-        position.returnFocus,
-      workspace,
-    };
+    const returnFocus =
+      position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
+      position.returnFocus;
+    if (bulkActive && bulkIds.includes(workspace.id)) {
+      contextMenu = { ...position, returnFocus, bulk: true };
+      return;
+    }
+    clearSelection();
+    contextMenu = { ...position, returnFocus, workspace };
   }
   function showListMenu(
     event: MouseEvent | KeyboardEvent,
@@ -443,6 +489,29 @@
     filteredWorkspaces.find((workspace) => workspace.id === selectedId) ??
       asideWorkspaces.find((workspace) => workspace.id === selectedId),
   );
+  // Rows that leave the view (archived, deleted, filtered out) drop out of the selection.
+  const bulkWorkspaces = $derived.by(() => {
+    const visible = new Map(
+      [...filteredWorkspaces, ...asideWorkspaces].map((workspace) => [workspace.id, workspace]),
+    );
+    return multiSelection.flatMap((id) => visible.get(id) ?? []);
+  });
+  const bulkActive = $derived(bulkWorkspaces.length >= 2);
+  const bulkIds = $derived(bulkWorkspaces.map((workspace) => workspace.id));
+  $effect(() => {
+    if (!bulkActive && multiSelection.length) untrack(clearSelection);
+  });
+  const bulkActions = $derived(
+    homeBulkActions(
+      homeBulkTargets(
+        bulkWorkspaces,
+        (workspace) => !selectHidesOwnerWorkspaceActions.select(store.state, workspace.id),
+      ),
+    ),
+  );
+  const selectedIds = $derived(
+    bulkActive ? bulkIds : selectedWorkspace ? [selectedWorkspace.id] : [],
+  );
   // The shelf starts collapsed; a search opens it so matching work is never hidden.
   let asideCollapsedForQuery = $state<string | null>(null);
   const asideExpanded = $derived(
@@ -618,10 +687,12 @@
   });
   homeRetiredWorkspaces(() => ({ filter, preview }), workspaces$, admissionSelector());
   function chooseFilter(next: HomeFilter) {
+    clearSelection();
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
   }
   function chooseRepo(key: string | null) {
+    clearSelection();
     store.dispatch(closePanel());
     updateView({
       repoKey: key,
@@ -692,6 +763,17 @@
     if (
       event.key === 'Escape' &&
       !event.defaultPrevented &&
+      bulkActive &&
+      destination === 'workspaces' &&
+      tab === 'workspaces'
+    ) {
+      event.preventDefault();
+      clearSelection();
+      return;
+    }
+    if (
+      event.key === 'Escape' &&
+      !event.defaultPrevented &&
       selectedWorkspace &&
       tab === 'workspaces'
     ) {
@@ -706,9 +788,11 @@
     x={contextMenu.x}
     y={contextMenu.y}
     returnFocus={contextMenu.returnFocus}
-    items={contextMenu.workspace
-      ? workspaceMenu(contextMenu.workspace)
-      : repositoryMenu(contextMenu.repo)}
+    items={contextMenu.bulk
+      ? createHomeBulkMenu(bulkWorkspaces.length, bulkActions, () => (contextMenu = null))
+      : contextMenu.workspace
+        ? workspaceMenu(contextMenu.workspace)
+        : repositoryMenu(contextMenu.repo)}
     onClickOutside={() => (contextMenu = null)}
   />
 {/if}
@@ -971,6 +1055,7 @@
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
                   tabFocus = { value };
+                  clearSelection();
                   updateView({ tab: value });
                 }
               }}
@@ -1030,7 +1115,7 @@
                       class:has-selection={!!selectedWorkspace}
                     >
                       <section
-                        class="workspace-list flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
+                        class="workspace-list relative flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
                         aria-label={m.home_tab_workspaces()}
                       >
                         {@render homeHeader()}
@@ -1100,9 +1185,12 @@
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
-                            {selectedId}
+                            {selectedIds}
                             onselect={(id) =>
-                              updateView({ selectedId: selectedId === id ? null : id })}
+                              bulkActive
+                                ? selectOnly(id)
+                                : updateView({ selectedId: selectedId === id ? null : id })}
+                            ontoggleselect={toggleSelection}
                             onopen={openWorkspace}
                             {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
@@ -1118,16 +1206,26 @@
                             aside={asideWorkspaces}
                             {asideExpanded}
                             pinnedIds={$pinnedIds$}
-                            selectedId={selectedWorkspace?.id ?? null}
+                            {selectedIds}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
                             menu={workspaceMenu}
-                            onopen={openModifiedWorkspace}
+                            onopen={activateListRow}
                             onmenu={showListMenu}
-                            onselect={(id) => updateView({ selectedId: id })}
+                            onselect={(id) => {
+                              clearSelection();
+                              updateView({ selectedId: id });
+                            }}
                             ongroupexpanded={setGroupExpanded}
                             onasideexpanded={setAsideExpanded}
                             ontoggleaside={toggleAside}
+                          />
+                        {/if}
+                        {#if bulkActive}
+                          <HomeSelectionBar
+                            count={bulkWorkspaces.length}
+                            actions={bulkActions}
+                            onclear={clearSelection}
                           />
                         {/if}
                       </section>

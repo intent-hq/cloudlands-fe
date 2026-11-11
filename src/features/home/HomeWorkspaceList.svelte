@@ -40,7 +40,7 @@
     aside,
     asideExpanded,
     pinnedIds,
-    selectedId,
+    selectedIds,
     showRepository,
     showRepositoryOwner,
     menu,
@@ -58,11 +58,12 @@
     aside: Workspace[];
     asideExpanded: boolean;
     pinnedIds: readonly string[];
-    selectedId: string | null;
+    /** The previewed row, or every row of a Cmd/Ctrl-click multi-selection. */
+    selectedIds: readonly string[];
     showRepository: boolean;
     showRepositoryOwner: boolean;
     menu: (workspace: Workspace) => SidebarMenuEntry[];
-    /** Click or keyboard activation; opens only for modified events. */
+    /** Row click or keyboard activation; Home decides whether it opens or selects. */
     onopen: (event: MouseEvent | KeyboardEvent, id: string) => void;
     /** Context menu request; `option` anchors the keyboard (ContextMenu, Shift+F10) case. */
     onmenu: (event: MouseEvent | KeyboardEvent, workspace: Workspace, option?: HTMLElement) => void;
@@ -271,7 +272,8 @@
     getText={(workspace) =>
       workspace.title.trim() ? workspace.title : m.workspace_links_untitled_label()}
     selectable="single"
-    selectedKeys={selectedId ? [selectedId] : []}
+    aria-multiselectable="true"
+    selectedKeys={selectedIds}
     onSelectedKeysChange={(keys) => onselect(keys[0] ? String(keys[0]) : null)}
     ariaLabel={label}
     class={scroll ? 'min-h-0 flex-1 overflow-y-auto px-5 pb-4' : 'overflow-visible'}

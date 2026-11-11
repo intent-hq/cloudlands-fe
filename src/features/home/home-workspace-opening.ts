@@ -10,14 +10,13 @@ function isNestedControl(event: MouseEvent | KeyboardEvent): boolean {
   return Boolean(control && control !== event.currentTarget);
 }
 
+/** Cmd/Ctrl+Enter on a row opens it; Cmd/Ctrl-click is multi-select (`home-multi-select`). */
 export function openHomeWorkspaceFromEvent(
-  event: MouseEvent | KeyboardEvent,
+  event: KeyboardEvent,
   id: string,
   onopen: (id: string) => void,
 ): boolean {
-  if (!isCmdClickModifier({ event })) return false;
-  if (event instanceof MouseEvent && event.button !== 0) return false;
-  if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return false;
+  if (!isCmdClickModifier({ event }) || event.key !== 'Enter') return false;
   if (isNestedControl(event)) return false;
   event.preventDefault();
   event.stopPropagation();
