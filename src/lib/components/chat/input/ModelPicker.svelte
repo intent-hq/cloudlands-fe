@@ -156,7 +156,6 @@
     machineLocation,
   } from '$features/remote-machines/agent-location';
   import {
-    selectCurrentBackendLabel,
     selectDefaultHasOverrides,
     selectRemoteMachine,
     selectRemoteMachineOperations,
@@ -581,7 +580,6 @@
   const remoteSwitchSupport$ = selectRemoteModelSwitchSupport(workspaceIdStore);
   const defaultRemoteIncompatibility$ =
     selectProviderCatalogDefaultRemoteIncompatibility(workspaceIdStore);
-  const backendLabel$ = selectCurrentBackendLabel();
   const remoteMachinesPending$ = selectRemoteMachineOperations();
   const defaultHasOverrides$ = selectDefaultHasOverrides();
   const remoteLocation = $derived(
