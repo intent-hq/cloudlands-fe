@@ -7,10 +7,7 @@ import {
   updateHomeWorkspaceView,
 } from '$features/home/home-workspaces-slice';
 import { readHomePersistence } from '$features/home/home-workspaces-persistence';
-import {
-  setupHomeLifecycleBridge,
-  type HomeLifecycleCall,
-} from '$features/home/home-multi-select-browser-fixtures';
+import { setupHomeLifecycleBridge, type HomeLifecycleCall } from './home-lifecycle-bridge';
 import { WorkspaceId } from '$shared/types/branded-ids';
 import { WorkspaceStatus, type Workspace } from '$shared/types';
 import {
