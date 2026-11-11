@@ -1905,7 +1905,6 @@
     <!-- Panel Actions (on tab bar) -->
     <div class="shrink-0 h-full flex items-center">
       <div class="panel-actions flex items-center gap-0.5 px-1 z-20" data-panel-header-actions>
-        {@render contentActions?.indicator?.()}
         {@render panelActionsDropdown('tabBar')}
         {@render panelCloseButton(activeTab)}
       </div>
@@ -1939,7 +1938,6 @@
 
       <!-- Right: all actions at the far edge in stable order. -->
       <div class="flex shrink-0 items-center gap-0.5" data-panel-header-actions>
-        {@render contentActions?.indicator?.()}
         {@render panelActionsDropdown('compact')}
         {@render panelCloseButton(activeTab)}
       </div>

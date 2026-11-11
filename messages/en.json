@@ -54,7 +54,6 @@
   "agent_chatSend_uncertainRetry_description": "Delivery is unconfirmed. Sending again may deliver this message twice.",
   "agent_chatSend_workspaceNotFound_error": "Workspace not found: {id}",
   "agent_client_unknown_error": "Unknown error",
-  "agent_contextBreakdown_trigger_ariaLabel": "Starting context, about {tokens} tokens",
   "agent_contextBreakdown_title": "Starting context",
   "agent_contextBreakdown_tokens_label": "~{tokens} tokens",
   "agent_contextBreakdown_owner_intent_label": "Intent",

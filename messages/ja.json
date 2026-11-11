@@ -54,7 +54,6 @@
   "agent_chatSend_uncertainRetry_description": "配信は確認できていません。再送すると、このメッセージが重複して届く可能性があります。",
   "agent_chatSend_workspaceNotFound_error": "ワークスペースが見つかりません: {id}",
   "agent_client_unknown_error": "不明なエラー",
-  "agent_contextBreakdown_trigger_ariaLabel": "開始時のコンテキスト、約 {tokens} トークン",
   "agent_contextBreakdown_title": "開始時のコンテキスト",
   "agent_contextBreakdown_tokens_label": "~{tokens} トークン",
   "agent_contextBreakdown_owner_intent_label": "Intent",

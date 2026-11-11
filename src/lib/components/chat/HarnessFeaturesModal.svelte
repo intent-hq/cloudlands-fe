@@ -5,14 +5,25 @@
    * monorepo#2459). Opened from the agent tab ⋯ menu and the AgentCard
    * context menu.
    *
-   * Features are grouped into On/Off columns (stacked on narrow screens),
-   * and are informational only — the
+   * The agent's starting context breakdown (agent.getSession `promptBreakdown`)
+   * leads when the session recorded one. Features are grouped into On/Off
+   * columns (stacked on narrow screens), descriptions in tooltips, and are
+   * informational only — the
    * snapshot is immutable for the session's lifetime. The canonical dialog
    * primitive provides overlay, focus trap, escape/outside dismissal, the
    * X close button, and body scrolling when the list exceeds the viewport.
    */
   import { ContentDialog } from '$lib/components/patterns/confirm';
   import { ListRow } from '$lib/components/patterns/collection';
+  import { store as appStore } from '$store/renderer/store';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { Tooltip } from '$lib/components/ui/tooltip';
+  import PromptBreakdownPanel from '$features/agent/prompt-breakdown/PromptBreakdownPanel.svelte';
+  import { loadPromptBreakdown } from '$features/agent/prompt-breakdown/load-prompt-breakdown';
+  import {
+    harnessMayRecordPromptBreakdown,
+    type PromptBreakdownView,
+  } from '$features/agent/prompt-breakdown/prompt-breakdown';
   import { m } from '$shared/paraglide/messages.js';
   import { buildHarnessFeatureRows } from './harness-feature-catalog';
 
@@ -23,6 +34,10 @@
     version: string;
     /** Session `harnessFeatures` snapshot; null/absent renders all catalog rows OFF. */
     features?: Record<string, boolean> | null;
+    /** Session to read the starting context breakdown for, when the modal opens. */
+    agentId?: string;
+    /** A breakdown to show instead of reading one. */
+    breakdown?: PromptBreakdownView | null;
   }
 
   let {
@@ -30,7 +45,25 @@
     static: staticPosition = false,
     version,
     features = null,
+    agentId,
+    breakdown,
   }: Props = $props();
+
+  let loaded = $state<PromptBreakdownView | null>(null);
+  $effect(() => {
+    loaded = null;
+    if (!open || breakdown !== undefined || !agentId) return;
+    if (!harnessMayRecordPromptBreakdown(version)) return;
+    const agent = selectAgentSession.select(appStore.state, agentId);
+    let current = true;
+    void loadPromptBreakdown(agentId, agent?.workspaceId, agent?.model).then((view) => {
+      if (current) loaded = view;
+    });
+    return () => {
+      current = false;
+    };
+  });
+  const shownBreakdown = $derived(breakdown === undefined ? loaded : breakdown);
 
   const rows = $derived(buildHarnessFeatureRows(features));
   const groups = $derived([
@@ -55,6 +88,11 @@
   size="wide"
 >
   <div class="@container">
+    {#if shownBreakdown}
+      <div class="mb-6 border-b border-border pb-6">
+        <PromptBreakdownPanel breakdown={shownBreakdown} />
+      </div>
+    {/if}
     <div
       class="grid grid-cols-1 gap-6 @min-[28rem]:grid-cols-2"
       data-testid="harness-features-list"
@@ -62,7 +100,7 @@
       {#each groups as group (group.enabled)}
         <section class="min-w-0" aria-label={group.label}>
           <h3 class="text-sm font-medium mb-3">{group.label}</h3>
-          <div role="list" class="space-y-4">
+          <div role="list" class="space-y-2">
             {#each group.rows as row (row.key)}
               <ListRow
                 role="listitem"
@@ -71,8 +109,15 @@
                 data-feature={row.key}
                 data-enabled={row.enabled}
               >
-                {#snippet title()}{row.label}{/snippet}
-                {#snippet description()}{row.description}{/snippet}
+                {#snippet title()}
+                  {#if row.description}
+                    <Tooltip content={row.description} side="top" size="sm">
+                      <span>{row.label}</span>
+                    </Tooltip>
+                  {:else}
+                    {row.label}
+                  {/if}
+                {/snippet}
               </ListRow>
             {:else}
               <div role="listitem" class="text-xs text-subtle" aria-hidden="true">—</div>

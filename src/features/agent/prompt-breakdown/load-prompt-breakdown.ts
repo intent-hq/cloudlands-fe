@@ -27,6 +27,7 @@ export function loadPromptBreakdown(
       return null;
     });
   cache.set(key, load);
-  if (cache.size > MAX_CACHED) cache.delete(cache.keys().next().value!);
+  const oldest = cache.keys().next().value;
+  if (cache.size > MAX_CACHED && oldest !== undefined) cache.delete(oldest);
   return load;
 }

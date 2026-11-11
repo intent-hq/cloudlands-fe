@@ -54,7 +54,6 @@
   "agent_chatSend_uncertainRetry_description": "La réception du message n’est pas confirmée. Un nouvel envoi pourrait le livrer deux fois.",
   "agent_chatSend_workspaceNotFound_error": "Espace de travail introuvable : {id}",
   "agent_client_unknown_error": "Erreur inconnue",
-  "agent_contextBreakdown_trigger_ariaLabel": "Contexte initial, environ {tokens} jetons",
   "agent_contextBreakdown_title": "Contexte initial",
   "agent_contextBreakdown_tokens_label": "~{tokens} jetons",
   "agent_contextBreakdown_owner_intent_label": "Intent",

@@ -54,7 +54,6 @@
   "agent_chatSend_uncertainRetry_description": "尚未确认消息是否已送达。再次发送可能导致此消息重复送达。",
   "agent_chatSend_workspaceNotFound_error": "未找到工作区：{id}",
   "agent_client_unknown_error": "未知错误",
-  "agent_contextBreakdown_trigger_ariaLabel": "初始上下文，约 {tokens} 个令牌",
   "agent_contextBreakdown_title": "初始上下文",
   "agent_contextBreakdown_tokens_label": "~{tokens} 个令牌",
   "agent_contextBreakdown_owner_intent_label": "Intent",
