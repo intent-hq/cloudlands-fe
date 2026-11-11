@@ -301,7 +301,7 @@ describe('buildMachineModelGroups', () => {
       });
     });
 
-    it("hides a Default without overrides when the machine lists no models", () => {
+    it('hides a Default without overrides when the machine lists no models', () => {
       // Codex is signed out there and its Default has nothing to send: hidden.
       expect(build(['claude-code', 'codex'], { 'claude-code': false, codex: false })).toEqual({});
       // Unknown overrides: no evidence the Default brings credentials.

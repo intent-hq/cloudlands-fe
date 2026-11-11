@@ -167,8 +167,7 @@ function cloudEntrySendsConfig(state: State, entry: CloudMachineProvider): boole
     ...entry.agentProviders,
     ...Object.keys(defaults.defaultRemoteLaunch ?? {}),
   ]);
-  for (const base of bases)
-    if (installs(base) && defaultRemoteSends(base, defaults)) return true;
+  for (const base of bases) if (installs(base) && defaultRemoteSends(base, defaults)) return true;
   return catalogProfiles.some((profile) => {
     if (profile.remoteCompatible !== true || !installs(profile.baseProviderId)) return false;
     const row = saved.find((item) => item.providerRef === profile.providerRef);

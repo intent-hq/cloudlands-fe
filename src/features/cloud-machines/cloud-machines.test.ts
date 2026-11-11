@@ -199,7 +199,11 @@ describe('Start On', () => {
       },
     ]);
     expect(options.at(-2)?.hint).toBe(m.cloudMachines_startOn_hint());
-    const ready = startOnOptions({ backendLabel: 'Box', machines, cloud: [entry('e2b', null, false)] });
+    const ready = startOnOptions({
+      backendLabel: 'Box',
+      machines,
+      cloud: [entry('e2b', null, false)],
+    });
     expect(ready.at(-1)?.hint).toBeUndefined();
     expect(
       startOnOptions({ backendLabel: 'Box', machines, cloud: [] }).some((o) => o.kind === 'cloud'),
