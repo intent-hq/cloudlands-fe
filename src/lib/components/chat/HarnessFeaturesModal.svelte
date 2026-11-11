@@ -49,21 +49,31 @@
     breakdown,
   }: Props = $props();
 
-  let loaded = $state<PromptBreakdownView | null>(null);
+  // Read on every open: the daemon replaces the breakdown on each respawn. The last
+  // result stays on screen while the dialog closes and until the next read lands.
+  let loaded = $state<{ agentId: string; view: PromptBreakdownView | null } | null>(null);
+  const readsBreakdown = $derived(
+    breakdown === undefined && !!agentId && harnessMayRecordPromptBreakdown(version),
+  );
   $effect(() => {
-    loaded = null;
-    if (!open || breakdown !== undefined || !agentId) return;
-    if (!harnessMayRecordPromptBreakdown(version)) return;
-    const agent = selectAgentSession.select(appStore.state, agentId);
+    if (!open || !readsBreakdown || !agentId) return;
+    const id = agentId;
+    const workspaceId = selectAgentSession.select(appStore.state, id)?.workspaceId;
     let current = true;
-    void loadPromptBreakdown(agentId, agent?.workspaceId, agent?.model).then((view) => {
-      if (current) loaded = view;
+    void loadPromptBreakdown(id, workspaceId).then((view) => {
+      if (current) loaded = { agentId: id, view };
     });
     return () => {
       current = false;
     };
   });
-  const shownBreakdown = $derived(breakdown === undefined ? loaded : breakdown);
+  const shownBreakdown = $derived(
+    breakdown !== undefined
+      ? breakdown
+      : readsBreakdown && loaded && loaded.agentId === agentId
+        ? loaded.view
+        : null,
+  );
 
   const rows = $derived(buildHarnessFeatureRows(features));
   const groups = $derived([
@@ -114,6 +124,7 @@
                     <Tooltip content={row.description} side="top" size="sm">
                       <span>{row.label}</span>
                     </Tooltip>
+                    <span class="sr-only">{row.description}</span>
                   {:else}
                     {row.label}
                   {/if}

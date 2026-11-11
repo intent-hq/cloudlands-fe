@@ -11,6 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { tick } from 'svelte';
 
 const backendRequest = vi.fn();
 vi.mock('$lib/client/live/backend-transport', () => ({
@@ -220,15 +221,44 @@ describe('HarnessFeaturesModal starting context', () => {
     expect(panel.textContent).toContain('memory');
   });
 
-  it('shows no starting context when the session has none', async () => {
-    backendRequest.mockResolvedValue({
-      session: { promptBreakdown: { available: false, reason: 'not-recorded' } },
+  function respondWith(promptBreakdown: unknown) {
+    let settled = false;
+    backendRequest.mockImplementationOnce(async () => {
+      settled = true;
+      return { session: { promptBreakdown } };
     });
+    return async () => {
+      await waitFor(() => expect(settled).toBe(true));
+      await tick();
+      await tick();
+    };
+  }
+
+  it('shows no starting context when the session has none', async () => {
+    const answered = respondWith({ available: false, reason: 'not-recorded' });
     renderModal({ version: '3.12', features: {}, agentId: 'agent-none' });
 
     await screen.findByRole('dialog');
-    await waitFor(() => expect(backendRequest).toHaveBeenCalledTimes(1));
+    await answered();
     expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
+  });
+
+  it('reads again on reopen, so a later spawn shows its breakdown', async () => {
+    const firstAnswered = respondWith({ available: false, reason: 'not-recorded' });
+    const view = render(HarnessFeaturesModal, {
+      props: { open: true, version: '3.12', features: {}, agentId: 'agent-respawn' },
+    });
+    await screen.findByRole('dialog');
+    await firstAnswered();
+    expect(screen.queryByTestId('prompt-breakdown')).toBeNull();
+
+    await view.rerender({ open: false });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    respondWith(breakdown);
+    await view.rerender({ open: true });
+
+    expect(await screen.findByTestId('prompt-breakdown')).toBeTruthy();
+    expect(backendRequest).toHaveBeenCalledTimes(2);
   });
 
   it('skips the session read for harnesses that cannot carry a breakdown', async () => {

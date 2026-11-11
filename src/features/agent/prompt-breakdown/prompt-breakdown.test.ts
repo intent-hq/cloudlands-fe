@@ -3,9 +3,9 @@ import { harnessMayRecordPromptBreakdown, parsePromptBreakdown } from './prompt-
 
 function section(
   id: string,
-  owner: string,
+  owner: 'intent' | 'user',
   chars: number,
-  location = 'systemPrompt',
+  location: 'systemPrompt' | 'toolDescription' | 'provider' = 'systemPrompt',
   extra: Record<string, unknown> = {},
 ) {
   return { id, label: id, owner, location, chars, estTokens: Math.ceil(chars / 4), ...extra };
@@ -37,22 +37,23 @@ function available(overrides: Record<string, unknown> = {}) {
 }
 
 describe('parsePromptBreakdown', () => {
-  it('hides the indicator when the daemon predates the field', () => {
+  it('hides the section when the daemon predates the field', () => {
     expect(parsePromptBreakdown(undefined)).toBeNull();
     expect(parsePromptBreakdown(null)).toBeNull();
-    expect(parsePromptBreakdown('available')).toBeNull();
   });
 
-  it('hides the indicator for both unavailable reasons', () => {
+  it('hides the section for both unavailable reasons', () => {
     expect(
       parsePromptBreakdown({ available: false, reason: 'harness-predates-breakdown' }),
     ).toBeNull();
     expect(parsePromptBreakdown({ available: false, reason: 'not-recorded' })).toBeNull();
   });
 
-  it('hides the indicator when the totals are malformed', () => {
-    expect(parsePromptBreakdown(available({ totalChars: 'lots' }))).toBeNull();
-    expect(parsePromptBreakdown(available({ sections: 'none' }))).toBeNull();
+  it('hides the section when a required total or list is missing', () => {
+    expect(parsePromptBreakdown(available({ totalChars: undefined }))).toBeNull();
+    expect(parsePromptBreakdown(available({ estTokens: undefined }))).toBeNull();
+    expect(parsePromptBreakdown(available({ sections: undefined }))).toBeNull();
+    expect(parsePromptBreakdown(available({ hiddenSkills: undefined }))).toBeNull();
   });
 
   it('lists sections largest first, provider rows included but not counted', () => {
@@ -69,32 +70,18 @@ describe('parsePromptBreakdown', () => {
 
   it('keeps the wire order for equal sizes', () => {
     const view = parsePromptBreakdown(
-      available({
-        sections: [section('b', 'intent', 10), section('a', 'intent', 10)],
-        totalChars: 20,
-      }),
+      available({ sections: [section('b', 'intent', 10), section('a', 'intent', 10)] }),
     );
     expect(view?.rows.map((row) => row.id)).toEqual(['b', 'a']);
   });
 
-  it('separates repo-owned user text from other user text', () => {
-    const view = parsePromptBreakdown(
-      available({
-        sections: [
-          section('doctrine', 'intent', 1),
-          section('repo-rules', 'user', 2),
-          section('repo-config', 'user', 3),
-          section('skills', 'user', 4),
-          section('future', 'repo', 5),
-        ],
-      }),
-    );
-    expect(Object.fromEntries(view!.rows.map((row) => [row.id, row.group]))).toEqual({
+  it('keeps the owner the daemon sends', () => {
+    const view = parsePromptBreakdown(available());
+    expect(Object.fromEntries(view!.rows.map((row) => [row.id, row.owner]))).toEqual({
       doctrine: 'intent',
-      'repo-rules': 'repo',
-      'repo-config': 'repo',
-      skills: 'user',
-      future: 'repo',
+      'repo-rules': 'user',
+      'specialist-prompt': 'user',
+      'ws-reference': 'intent',
     });
   });
 
@@ -105,23 +92,22 @@ describe('parsePromptBreakdown', () => {
     expect(view?.rows.find((row) => row.id === 'doctrine')?.hint).toBeUndefined();
   });
 
-  it('drops malformed section rows and fills a missing token estimate', () => {
+  it('leaves out rows that do not match the contract instead of repairing them', () => {
+    const { estTokens: _omitted, ...noEstimate } = section('no-estimate', 'user', 9);
     const view = parsePromptBreakdown(
       available({
         sections: [
           section('doctrine', 'intent', 10),
-          { id: 'broken', label: 'Broken', owner: 'intent', location: 'systemPrompt' },
-          { id: 'no-estimate', label: 'No estimate', owner: 'user', location: 'x', chars: 9 },
+          noEstimate,
+          { ...section('other-owner', 'intent', 8), owner: 'team' },
+          { ...section('other-location', 'intent', 7), location: 'elsewhere' },
         ],
       }),
     );
-    expect(view?.rows.map((row) => [row.id, row.estTokens])).toEqual([
-      ['doctrine', 3],
-      ['no-estimate', 3],
-    ]);
+    expect(view?.rows.map((row) => row.id)).toEqual(['doctrine']);
   });
 
-  it('summarizes counted chars by owner in a fixed order and omits empty owners', () => {
+  it('sums counted sections by owner and leaves out provider rows and empty owners', () => {
     const view = parsePromptBreakdown(
       available({
         sections: [
@@ -133,12 +119,17 @@ describe('parsePromptBreakdown', () => {
       }),
     );
     expect(view?.owners).toEqual([
-      { group: 'intent', chars: 600, estTokens: 150, share: 600 / 900 },
-      { group: 'user', chars: 300, estTokens: 75, share: 300 / 900 },
+      { owner: 'intent', chars: 600, estTokens: 150, share: 600 / 900 },
+      { owner: 'user', chars: 300, estTokens: 75, share: 300 / 900 },
     ]);
+
+    const intentOnly = parsePromptBreakdown(
+      available({ sections: [section('doctrine', 'intent', 600)], totalChars: 600 }),
+    );
+    expect(intentOnly?.owners.map((summary) => summary.owner)).toEqual(['intent']);
   });
 
-  it('keeps valid hidden skills in daemon order', () => {
+  it('keeps complete hidden skills in daemon order', () => {
     const view = parsePromptBreakdown(
       available({
         hiddenSkills: [
@@ -148,7 +139,7 @@ describe('parsePromptBreakdown', () => {
             detail: 'needs mcp__memory__',
             fix: 'Add it',
           },
-          { name: 42 },
+          { name: 'no-fix', reason: 'compatibility', detail: 'macOS only' },
           { name: 'xcode', reason: 'compatibility', detail: 'macOS only', fix: 'Use a Mac' },
         ],
       }),
@@ -158,16 +149,18 @@ describe('parsePromptBreakdown', () => {
 });
 
 describe('harnessMayRecordPromptBreakdown', () => {
-  it('skips the session read for harnesses that cannot carry a breakdown', () => {
+  it('skips the session read for harnesses that never record a breakdown', () => {
     expect(harnessMayRecordPromptBreakdown(undefined)).toBe(false);
     expect(harnessMayRecordPromptBreakdown(null)).toBe(false);
     expect(harnessMayRecordPromptBreakdown('3.9')).toBe(false);
+    expect(harnessMayRecordPromptBreakdown('3.11')).toBe(false);
     expect(harnessMayRecordPromptBreakdown('2.14')).toBe(false);
   });
 
-  it('reads the session for 3.10 and later, and for versions it cannot parse', () => {
+  it('reads the session for 3.10, 3.12 and later, and for versions it cannot parse', () => {
     expect(harnessMayRecordPromptBreakdown('3.10')).toBe(true);
     expect(harnessMayRecordPromptBreakdown('3.12')).toBe(true);
+    expect(harnessMayRecordPromptBreakdown('3.13')).toBe(true);
     expect(harnessMayRecordPromptBreakdown('4.0')).toBe(true);
     expect(harnessMayRecordPromptBreakdown('next')).toBe(true);
   });

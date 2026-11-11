@@ -1,11 +1,11 @@
 <script lang="ts">
   /**
    * An agent's starting context by section (agent.getSession `promptBreakdown`):
-   * total, an owner strip (Intent, repo, user), sections largest first, and hidden skills.
+   * total, an owner strip (Intent, user), sections largest first, and hidden skills.
    */
   import { formatCompactNumber } from '$lib/i18n/format';
   import { m } from '$shared/paraglide/messages.js';
-  import type { PromptBreakdownView, PromptOwnerGroup } from './prompt-breakdown';
+  import type { PromptBreakdownView, PromptOwner } from './prompt-breakdown';
 
   interface Props {
     breakdown: PromptBreakdownView;
@@ -18,11 +18,22 @@
     return formatCompactNumber(value, { maximumFractionDigits: value < 10_000 ? 1 : 0 });
   }
 
-  function ownerLabel(group: PromptOwnerGroup): string {
-    if (group === 'intent') return m.agent_contextBreakdown_owner_intent_label();
-    if (group === 'repo') return m.agent_contextBreakdown_owner_repo_label();
-    return m.agent_contextBreakdown_owner_user_label();
+  function ownerLabel(owner: PromptOwner): string {
+    return owner === 'intent'
+      ? m.agent_contextBreakdown_owner_intent_label()
+      : m.agent_contextBreakdown_owner_user_label();
   }
+
+  const ownerSummary = $derived(
+    breakdown.owners
+      .map((summary) =>
+        m.agent_contextBreakdown_ownerShare_label({
+          owner: ownerLabel(summary.owner),
+          tokens: tokens(summary.estTokens),
+        }),
+      )
+      .join(', '),
+  );
 </script>
 
 <section class="min-w-0" aria-labelledby={`${id}-title`} data-testid="prompt-breakdown">
@@ -32,9 +43,16 @@
       {m.agent_contextBreakdown_tokens_label({ tokens: tokens(breakdown.estTokens) })}
     </span>
   </div>
-  <div class="owner-strip mb-3 flex h-1.5 w-full overflow-hidden" aria-hidden="true">
-    {#each breakdown.owners as owner (owner.group)}
-      <span class="owner-fill block h-full" data-owner={owner.group} style:flex-grow={owner.share}
+  <div
+    class="owner-strip mb-3 flex h-1.5 w-full overflow-hidden"
+    role="img"
+    aria-label={ownerSummary}
+  >
+    {#each breakdown.owners as summary (summary.owner)}
+      <span
+        class="owner-fill block h-full"
+        data-owner={summary.owner}
+        style:flex-grow={summary.share}
       ></span>
     {/each}
   </div>
@@ -42,11 +60,11 @@
     {#each breakdown.rows as row (row.key)}
       <div class="section-row py-0.5" data-counted={row.counted}>
         <dt class="flex min-w-0 items-start gap-2 text-sm text-foreground">
-          <span class="owner-key mt-1.5 size-1.5 shrink-0 rounded-full" data-owner={row.group}
+          <span class="owner-key mt-1.5 size-1.5 shrink-0 rounded-full" data-owner={row.owner}
           ></span>
           <span class="min-w-0 wrap-anywhere">{row.label}</span>
         </dt>
-        <dd class="text-xs text-muted-foreground">{ownerLabel(row.group)}</dd>
+        <dd class="text-xs text-muted-foreground">{ownerLabel(row.owner)}</dd>
         <dd
           class="text-right text-sm tabular-nums {row.counted
             ? 'text-foreground'
@@ -107,10 +125,6 @@
   .owner-key[data-owner='intent'],
   .owner-fill[data-owner='intent'] {
     background: hsl(var(--token-usage-input) / 84%);
-  }
-  .owner-key[data-owner='repo'],
-  .owner-fill[data-owner='repo'] {
-    background: hsl(var(--info) / 82%);
   }
   .owner-key[data-owner='user'],
   .owner-fill[data-owner='user'] {

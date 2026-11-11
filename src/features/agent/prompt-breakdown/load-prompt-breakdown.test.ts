@@ -37,7 +37,7 @@ describe('loadPromptBreakdown', () => {
 
   it('reads agent.getSession with the agent and workspace ids', async () => {
     backendRequest.mockResolvedValue(sessionWith(available));
-    const view = await loadPromptBreakdown('agent-wire', 'ws-1', 'opus');
+    const view = await loadPromptBreakdown('agent-wire', 'ws-1');
     expect(backendRequest).toHaveBeenCalledWith('agent.getSession', {
       agentId: 'agent-wire',
       workspaceId: 'ws-1',
@@ -48,7 +48,7 @@ describe('loadPromptBreakdown', () => {
 
   it('omits the workspace id when it is unknown', async () => {
     backendRequest.mockResolvedValue(sessionWith(available));
-    await loadPromptBreakdown('agent-no-ws', undefined, undefined);
+    await loadPromptBreakdown('agent-no-ws', undefined);
     expect(backendRequest).toHaveBeenCalledWith('agent.getSession', { agentId: 'agent-no-ws' });
   });
 
@@ -56,26 +56,19 @@ describe('loadPromptBreakdown', () => {
     backendRequest.mockResolvedValue(
       sessionWith({ available: false, reason: 'harness-predates-breakdown' }),
     );
-    await expect(loadPromptBreakdown('agent-old', 'ws-1', 'opus')).resolves.toBeNull();
+    await expect(loadPromptBreakdown('agent-old', 'ws-1')).resolves.toBeNull();
   });
 
-  it('reads once per agent and model, and again after a model switch', async () => {
-    backendRequest.mockResolvedValue(sessionWith(available));
-    await Promise.all([
-      loadPromptBreakdown('agent-cache', 'ws-1', 'opus'),
-      loadPromptBreakdown('agent-cache', 'ws-1', 'opus'),
-    ]);
-    await loadPromptBreakdown('agent-cache', 'ws-1', 'opus');
-    expect(backendRequest).toHaveBeenCalledTimes(1);
-    await loadPromptBreakdown('agent-cache', 'ws-1', 'sonnet');
+  it('reads again on every call, so a respawn shows the new breakdown', async () => {
+    backendRequest.mockResolvedValueOnce(sessionWith({ available: false, reason: 'not-recorded' }));
+    await expect(loadPromptBreakdown('agent-respawn', 'ws-1')).resolves.toBeNull();
+    backendRequest.mockResolvedValueOnce(sessionWith(available));
+    await expect(loadPromptBreakdown('agent-respawn', 'ws-1')).resolves.not.toBeNull();
     expect(backendRequest).toHaveBeenCalledTimes(2);
   });
 
-  it('retries on the next call after a failed read', async () => {
+  it('resolves null when the read fails', async () => {
     backendRequest.mockRejectedValueOnce(new Error('offline'));
-    await expect(loadPromptBreakdown('agent-retry', 'ws-1', 'opus')).resolves.toBeNull();
-    backendRequest.mockResolvedValue(sessionWith(available));
-    await expect(loadPromptBreakdown('agent-retry', 'ws-1', 'opus')).resolves.not.toBeNull();
-    expect(backendRequest).toHaveBeenCalledTimes(2);
+    await expect(loadPromptBreakdown('agent-offline', 'ws-1')).resolves.toBeNull();
   });
 });
