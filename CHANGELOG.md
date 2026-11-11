@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.319.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.318.0...v2.319.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **machine-rail:** Add a Labs rail to switch machines in one window ([#4463](https://github.com/intent-hq/cloudlands-fe/issues/4463)) ([e06de09](https://github.com/intent-hq/cloudlands-fe/commit/e06de09695d8d7197d7f691c90ff66590e1d28ea))
+
 ## [2.318.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.317.2...v2.318.0) (2026-11-11)
 
 
