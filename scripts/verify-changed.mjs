@@ -273,32 +273,35 @@ function mergeBase(ref, root) {
   }
 }
 
-// True when HEAD has commits that `ref` does not; false when `ref` cannot be
-// resolved (no remote-tracking ref, detached fixture), so the caller can fall
-// back to the plain "nothing to verify" exit instead of throwing.
-function isAheadOf(ref, root) {
+// 'ahead' when HEAD has commits that `ref` does not; 'unresolved' when `ref`
+// cannot be resolved (no remote-tracking ref, detached fixture), so the caller
+// falls back to the working-tree set instead of throwing.
+function aheadState(ref, root) {
   try {
-    return mergeBase(ref, root) !== gitRevision(['rev-parse', 'HEAD'], root);
+    return mergeBase(ref, root) === gitRevision(['rev-parse', 'HEAD'], root)
+      ? 'not-ahead'
+      : 'ahead';
   } catch {
-    return false;
+    return 'unresolved';
   }
 }
 
-export function collectChangedFiles(root = REPO_ROOT, options = {}) {
-  const files = [
+function uncommittedFiles(root) {
+  return [
     ...gitNames(['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', 'HEAD', '--'], root),
     ...gitNames(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRTUXBD', '--'], root),
     ...gitNames(['ls-files', '--others', '--exclude-standard', '-z'], root),
   ];
-  if (options.base) {
-    const base = mergeBase(options.base, root);
-    files.push(
-      ...gitNames(
-        ['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'],
-        root,
-      ),
-    );
-  }
+}
+
+function committedFiles(ref, root) {
+  const base = mergeBase(ref, root);
+  return gitNames(['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'], root);
+}
+
+export function collectChangedFiles(root = REPO_ROOT, options = {}) {
+  const files = uncommittedFiles(root);
+  if (options.base) files.push(...committedFiles(options.base, root));
   return [...new Set(files)].sort();
 }
 
@@ -1519,19 +1522,29 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
       "  Each check's output is saved to <record>/logs/<check id>.log; a failure prints its log path and last lines.",
     );
     log(
-      `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
+      `  With no paths: verifies the uncommitted changes plus, when HEAD is ahead of ${DEFAULT_BASE}, the commits since its merge-base (as --base ${DEFAULT_BASE}). The first line names the mode used.`,
     );
     return 0;
   }
   let base = args.base;
-  let files = args.paths.length
-    ? expandInputPaths(args.paths, root)
-    : collectChangedFiles(root, { base });
-  if (!args.paths.length && !base && files.length === 0 && isAheadOf(DEFAULT_BASE, root)) {
-    base = DEFAULT_BASE;
-    log(`verify:changed: worktree clean; verifying commits since merge-base with ${base}`);
-    files = collectChangedFiles(root, { base });
+  let mode;
+  if (args.paths.length) mode = 'verifying the given paths';
+  else if (base) mode = `verifying uncommitted changes plus commits since merge-base with ${base}`;
+  else {
+    const ahead = aheadState(DEFAULT_BASE, root);
+    if (ahead === 'ahead') {
+      base = DEFAULT_BASE;
+      mode = `verifying uncommitted changes plus commits since merge-base with ${base}`;
+    } else if (ahead === 'not-ahead') {
+      mode = `verifying uncommitted changes only; HEAD is not ahead of ${DEFAULT_BASE}`;
+    } else {
+      mode = `verifying uncommitted changes only; ${DEFAULT_BASE} cannot be resolved, pass --base <ref> to include commits`;
+    }
   }
+  const uncommitted = args.paths.length ? [] : uncommittedFiles(root);
+  const files = args.paths.length
+    ? expandInputPaths(args.paths, root)
+    : [...new Set([...uncommitted, ...(base ? committedFiles(base, root) : [])])].sort();
   if (!args.paths.length && files.length === 0) {
     const hint = base
       ? ` and no files changed relative to the merge-base with ${base}`
@@ -1539,6 +1552,10 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
     return 2;
   }
+  if (!args.base && base && uncommitted.length === 0) {
+    mode = `worktree clean; verifying commits since merge-base with ${base}`;
+  }
+  log(`verify:changed: ${mode}`);
   const plan = createVerificationPlan(files, { root });
   printPlan(plan, args.dryRun, log);
   if (args.dryRun || plan.checks.length === 0) return 0;
