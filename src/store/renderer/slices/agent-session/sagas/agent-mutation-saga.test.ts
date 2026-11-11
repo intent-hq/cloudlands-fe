@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   setNotificationsMuted: vi.fn(),
   setPinned: vi.fn(),
+  setPermissionPolicy: vi.fn(),
   setBackground: vi.fn(),
   stop: vi.fn(),
   cancelSubscriptions: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('$lib/client', () => ({
       rename: mocks.rename,
       setNotificationsMuted: mocks.setNotificationsMuted,
       setPinned: mocks.setPinned,
+      setPermissionPolicy: mocks.setPermissionPolicy,
       setBackground: mocks.setBackground,
       stop: mocks.stop,
       cancelSubscriptions: mocks.cancelSubscriptions,
@@ -101,6 +103,7 @@ import {
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
   setAgentPinnedRequested,
+  setAgentPermissionPolicyRequested,
   setAgentBackgroundRequested,
   undoAgentDeletionRequested,
   undoAgentDeletionsRequested,
@@ -1186,6 +1189,48 @@ describe('agentMutationSaga', () => {
       updateSession(A1, { pinned: false }),
     ]);
     expect(mocks.error).toHaveBeenCalledWith('pin rejected');
+    await stop(task);
+  });
+
+  it('applies a permission policy optimistically and forwards exact agent.update params', async () => {
+    mocks.setPermissionPolicy.mockResolvedValue({ success: true });
+    const { channel, dispatched, task } = start({
+      [A1]: session(A1, { permissionPolicy: null, effectivePermissionPolicy: 'allow' }),
+    });
+    const action = setAgentPermissionPolicyRequested(WS, A1, 'interactive');
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.setPermissionPolicy).toHaveBeenCalledWith({
+      agentId: A1,
+      workspaceId: WS,
+      permissionPolicy: 'interactive',
+    });
+    expect(dispatched).toContainEqual(
+      updateSession(A1, {
+        permissionPolicy: 'interactive',
+        effectivePermissionPolicy: 'interactive',
+      }),
+    );
+    await stop(task);
+  });
+
+  it('rolls back the optimistic permission policy and surfaces the daemon failure', async () => {
+    mocks.setPermissionPolicy.mockResolvedValue({ success: false, error: 'policy rejected' });
+    const { channel, dispatched, task } = start(
+      { [A1]: session(A1, { permissionPolicy: null, effectivePermissionPolicy: 'interactive' }) },
+      { live: true },
+    );
+    const action = setAgentPermissionPolicyRequested(WS, A1, 'allow');
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('policy rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates).toEqual([
+      updateSession(A1, { permissionPolicy: 'allow', effectivePermissionPolicy: 'allow' }),
+      updateSession(A1, { permissionPolicy: null, effectivePermissionPolicy: 'interactive' }),
+    ]);
+    expect(mocks.error).toHaveBeenCalledWith('policy rejected');
     await stop(task);
   });
 

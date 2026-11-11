@@ -1,11 +1,13 @@
 <script lang="ts">
   import DesktopPermissionMenu from '$features/desktop/renderer/DesktopPermissionMenu.svelte';
   import Fa from 'svelte-fa';
+  import { toStore } from 'svelte/store';
   import { faSliders, faFont } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import {
     faArrowsInLineVertical,
     faArrowsOutLineHorizontal,
+    faShield,
     faSparkle,
   } from '$lib/icons/phosphor-icons';
   import * as Menu from '$lib/components/ui/menu';
@@ -22,6 +24,8 @@
     setCollapseToolRuns,
     type AgentFontStyle,
   } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+  import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
+  import { setAgentPermissionPolicyRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
   import { store as appStore } from '$store/renderer/store';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -34,6 +38,15 @@
   const chatContentWidth = selectChatContentWidth();
   const chatAuroraEnabled = selectChatAuroraEnabled();
   const collapseToolRuns = selectCollapseToolRuns();
+  const agentSession = selectAgentSession(toStore(() => agentId));
+  // Hidden on daemons without the per-chat override (`permissionPolicy`
+  // absent) and for remote agents (`effectivePermissionPolicy` omitted).
+  const askBeforeTools = $derived.by(() => {
+    const session = $agentSession;
+    if (!workspaceId || !session || session.permissionPolicy === undefined) return undefined;
+    const effective = session.effectivePermissionPolicy;
+    return typeof effective === 'string' ? effective === 'interactive' : undefined;
+  });
   let open = $state(false);
   const fontLabel = $derived(
     $fontStyle === 'sans' ? m.settings_fontStyle_sans() : m.settings_fontStyle_mono(),
@@ -86,6 +99,27 @@
   </Menu.CheckboxItem>
 {/snippet}
 
+{#snippet permissionPolicyItem()}
+  {#if askBeforeTools !== undefined && workspaceId && agentId}
+    <Menu.CheckboxItem
+      indicator="switch"
+      icon={faShield}
+      checked={askBeforeTools}
+      closeOnSelect={false}
+      onCheckedChange={(enabled) =>
+        appStore.dispatch(
+          setAgentPermissionPolicyRequested(
+            workspaceId,
+            agentId,
+            enabled ? 'interactive' : 'allow',
+          ),
+        )}
+    >
+      {m.ui_viewSettings_askBeforeTools_label()}
+    </Menu.CheckboxItem>
+  {/if}
+{/snippet}
+
 {#snippet desktopPermission()}
   {#if workspaceId && agentId}
     {#key `${workspaceId}:${agentId}`}
@@ -105,6 +139,7 @@
     </Menu.SubContent>
   </Menu.Sub>
   {@render chatAppearanceItems()}
+  {@render permissionPolicyItem()}
   {@render desktopPermission()}
 {:else}
   <Menu.Root bind:open>
@@ -128,6 +163,7 @@
       {@render fontItems()}
       <Menu.Separator />
       {@render chatAppearanceItems()}
+      {@render permissionPolicyItem()}
       {@render desktopPermission()}
     </Menu.Content>
   </Menu.Root>

@@ -6557,6 +6557,31 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-keep');
   });
 
+  it('agent:updated carrying permissionPolicy re-reads so the effective policy converges', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: 'backend-1',
+          workspaceId: WS,
+          name: 'A',
+          status: AgentStatus.Active,
+          messages: [],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        } as AgentSession,
+      ]),
+    );
+    refreshAgentSessionAfterEventSpy.mockClear();
+
+    capturedHandlers[0]!(
+      notification('agent:updated', { agentId: AGENT, permissionPolicy: 'interactive' }),
+    );
+    await flush();
+
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
+  });
+
   it('forwards an agent:updated event that arrives while the prior refresh is in flight', async () => {
     let resolveFirst!: () => void;
     refreshAgentSessionAfterEventSpy.mockImplementationOnce(

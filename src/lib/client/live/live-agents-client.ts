@@ -21,7 +21,7 @@ import type {
   AgentSession,
   ContentBlock,
 } from '$shared/types';
-import type { QueuedMessage } from '$shared/types/agent-session';
+import type { AgentPermissionPolicy, QueuedMessage } from '$shared/types/agent-session';
 import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type {
   AgentCancelDeleteResult,
@@ -123,6 +123,14 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   session.providerReplacementRequired = readProviderReplacementRequired(
     raw.providerReplacementRequired,
   );
+  // Permission policy (§5.5) is presence-detected and must clear when omitted
+  // (older daemon / remote agent), so a merge of this row drops stale values.
+  session.permissionPolicy =
+    typeof raw.permissionPolicy === 'string' || raw.permissionPolicy === null
+      ? (raw.permissionPolicy as AgentSession['permissionPolicy'])
+      : undefined;
+  session.effectivePermissionPolicy =
+    typeof raw.effectivePermissionPolicy === 'string' ? raw.effectivePermissionPolicy : undefined;
   // Canonical booleans override stale metadata, including a persisted false.
   if (typeof raw.isBackground === 'boolean') {
     session.metadata = { ...session.metadata, isBackground: raw.isBackground };
@@ -987,6 +995,20 @@ export class LiveAgentsClient implements AgentsClient {
       agentId: params.agentId,
       workspaceId: params.workspaceId,
       changes: { pinned: params.pinned },
+    });
+  }
+  async setPermissionPolicy(params: {
+    agentId: string;
+    workspaceId: string;
+    permissionPolicy: AgentPermissionPolicy | null;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) partial writer; `null` is forwarded verbatim (it
+    // means "use the daemon default", not "omit"). The daemon rejects unknown
+    // values and remote agents with -32602 and emits `agent:updated`.
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { permissionPolicy: params.permissionPolicy },
     });
   }
   async setBackground(params: {

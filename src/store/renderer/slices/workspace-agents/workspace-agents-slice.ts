@@ -10,6 +10,7 @@ import type {
   AgentScopeCounts,
 } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
+import type { AgentPermissionPolicy } from '$shared/types/agent-session';
 import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
@@ -591,6 +592,16 @@ export const setAgentPinnedRequested = createAsyncAction<
   [wsId: string, agentId: string, pinned: boolean],
   void
 >('workspaceAgents/setAgentPinned', 'workspaceAgents/setAgentPinnedRequested');
+/**
+ * Set or clear the per-chat permission policy override
+ * (`agent.update { changes: { permissionPolicy } }`, §5.5; `null` = daemon
+ * default). The saga applies it optimistically, reverts on a daemon failure,
+ * and lets the `agent:updated` refetch converge `effectivePermissionPolicy`.
+ */
+export const setAgentPermissionPolicyRequested = createAsyncAction<
+  [wsId: string, agentId: string, permissionPolicy: AgentPermissionPolicy | null],
+  void
+>('workspaceAgents/setAgentPermissionPolicy', 'workspaceAgents/setAgentPermissionPolicyRequested');
 /** Persist mode before reconciling the session and scoped agent list. */
 export const setAgentBackgroundRequested = createAsyncAction<
   [wsId: string, agentId: string, isBackground: boolean],
