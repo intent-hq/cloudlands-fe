@@ -63,7 +63,7 @@ function isImportableSession(value: unknown): value is ImportableSession {
     typeof row.provider === 'string' &&
     typeof row.sessionId === 'string' &&
     typeof row.cwd === 'string' &&
-    typeof row.updatedAt === 'string'
+    (typeof row.updatedAt === 'string' || row.updatedAt === null)
   );
 }
 
@@ -77,11 +77,6 @@ function isProvider(value: unknown): value is ImportableSessionProvider {
   );
 }
 
-/** Newest first; the daemon already orders them, this keeps a merged page stable. */
-function sortSessionsNewestFirst(sessions: ImportableSession[]): ImportableSession[] {
-  return [...sessions].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-}
-
 export async function listImportableSessions(
   params: ImportableSessionsListParams = {},
   request: Request = backendRequest,
@@ -92,12 +87,11 @@ export async function listImportableSessions(
       params,
     );
     const rows = Array.isArray(result?.sessions) ? result.sessions : [];
-    const sessions = sortSessionsNewestFirst(
-      rows.filter(isImportableSession).map((row) => ({
-        ...row,
-        title: typeof row.title === 'string' ? row.title : '',
-      })),
-    );
+    // The daemon orders the page (newest first, undated last); keep its order.
+    const sessions = rows.filter(isImportableSession).map((row) => ({
+      ...row,
+      title: typeof row.title === 'string' ? row.title : '',
+    }));
     const providers = (Array.isArray(result?.providers) ? result.providers : [])
       .filter(isProvider)
       .map((provider) => ({

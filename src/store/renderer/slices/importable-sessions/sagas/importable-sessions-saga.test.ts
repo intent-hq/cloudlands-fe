@@ -82,6 +82,21 @@ describe('importableSessionsSaga (fake seam, real store)', () => {
     expect(state()).toEqual({ status: 'ready', available: true, ids: ['a', 'b'] });
   });
 
+  it('offers the option when every session is undated', async () => {
+    list.mockResolvedValueOnce({
+      ok: true,
+      sessions: [
+        { ...session('a'), updatedAt: null },
+        { ...session('b'), updatedAt: null },
+      ],
+      providers: [],
+    });
+    appStore.dispatch(importableSessionsRequested(''));
+    await flush();
+
+    expect(state()).toEqual({ status: 'ready', available: true, ids: ['a', 'b'] });
+  });
+
   it('hides the option when the daemon has no sessions', async () => {
     list.mockResolvedValueOnce({ ok: true, sessions: [] });
     appStore.dispatch(importableSessionsRequested(''));

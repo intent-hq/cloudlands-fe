@@ -5,8 +5,8 @@ export interface ImportableSession {
   title: string;
   /** Absolute working directory the session ran in, on the daemon host. */
   cwd: string;
-  /** ISO time of the last write. */
-  updatedAt: string;
+  /** ISO time of the last write; null when the provider reports none (listed last). */
+  updatedAt: string | null;
   gitBranch?: string;
   messageCount?: number;
 }

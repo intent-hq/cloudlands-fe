@@ -78,14 +78,11 @@
   }
   let query = $state('');
 
-  function updatedLabel(session: ImportableSession): string {
+  /** The session's last write, or null for an undated session (no date shown). */
+  function updatedDate(session: ImportableSession): Date | null {
+    if (session.updatedAt === null) return null;
     const date = new Date(session.updatedAt);
-    return Number.isNaN(date.getTime()) ? '' : formatCompactRelativeTime(date);
-  }
-
-  function updatedTitle(session: ImportableSession): string {
-    const date = new Date(session.updatedAt);
-    return Number.isNaN(date.getTime()) ? '' : formatFullDateTime(date);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 </script>
 
@@ -162,15 +159,18 @@
       {/snippet}
       {#snippet optionDescription(option)}
         {@const session = option.data as ImportableSession}
+        {@const updated = updatedDate(session)}
         <span
           class="type-caption order-last flex min-w-0 basis-full items-center gap-1.5 ps-6 text-muted-foreground"
           data-testid="import-session-meta"
         >
           <span class="shrink-0">{labelFor(session.provider)}</span>
-          <span aria-hidden="true">·</span>
-          <time class="shrink-0" datetime={session.updatedAt} title={updatedTitle(session)}
-            >{updatedLabel(session)}</time
-          >
+          {#if updated && session.updatedAt}
+            <span aria-hidden="true">·</span>
+            <time class="shrink-0" datetime={session.updatedAt} title={formatFullDateTime(updated)}
+              >{formatCompactRelativeTime(updated)}</time
+            >
+          {/if}
           <span aria-hidden="true">·</span>
           <span class="min-w-0 truncate" title={session.cwd}>{cwdBasename(session.cwd)}</span>
           {#if session.gitBranch}

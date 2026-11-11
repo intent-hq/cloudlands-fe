@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { importSession, listImportableSessions } from './importable-sessions.client';
 
-const row = (sessionId: string, updatedAt: string) => ({
+const row = (sessionId: string, updatedAt: string | null) => ({
   provider: 'claude-code',
   sessionId,
   title: `Session ${sessionId}`,
@@ -10,9 +10,14 @@ const row = (sessionId: string, updatedAt: string) => ({
 });
 
 describe('listImportableSessions', () => {
-  it('sends the params and returns sessions newest first', async () => {
+  it('sends the params and keeps the daemon order, undated sessions included', async () => {
     const request = vi.fn().mockResolvedValue({
-      sessions: [row('old', '2026-01-01T00:00:00Z'), row('new', '2026-02-01T00:00:00Z'), {}],
+      sessions: [
+        row('new', '2026-02-01T00:00:00Z'),
+        row('old', '2026-01-01T00:00:00Z'),
+        row('undated', null),
+        {},
+      ],
       providers: [
         { id: 'claude-code', label: 'Claude Code', status: 'ok' },
         { id: 'codex', label: 'Codex', status: 'error', error: 'timed out' },
@@ -27,7 +32,11 @@ describe('listImportableSessions', () => {
     });
     expect(result).toEqual({
       ok: true,
-      sessions: [row('new', '2026-02-01T00:00:00Z'), row('old', '2026-01-01T00:00:00Z')],
+      sessions: [
+        row('new', '2026-02-01T00:00:00Z'),
+        row('old', '2026-01-01T00:00:00Z'),
+        row('undated', null),
+      ],
       providers: [
         { id: 'claude-code', label: 'Claude Code', status: 'ok' },
         { id: 'codex', label: 'Codex', status: 'error', error: 'timed out' },

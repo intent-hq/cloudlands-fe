@@ -23,7 +23,8 @@
     states: {
       // First page still loading.
       loading: { props: { state: 'loading' } },
-      // Newest first: provider icon and name, relative time, folder and branch on each row.
+      // Newest first: provider icon and name, relative time, folder and branch on each row;
+      // an undated session comes last without a date.
       list: { props: { state: 'list' } },
       // Several providers list sessions: the provider filter shows above the search.
       'multi-provider': { props: { state: 'multi-provider' } },
@@ -98,6 +99,15 @@
       updatedAt: ago(40 * 24 * 60 * minute),
       gitBranch: 'feature/a-branch-name-that-is-also-quite-long',
     },
+    // No provider timestamp: the daemon lists it last and the row shows no date.
+    {
+      provider: 'claude-code',
+      sessionId: '5c4b3a29-1807-4f6e-9d5c-4b3a2f1e0d9c',
+      title: 'Sketch the onboarding copy',
+      cwd: '/Users/sam/Projects/onboarding',
+      updatedAt: null,
+      gitBranch: 'main',
+    },
   ];
   const otherSessions: ImportableSession[] = [
     {
@@ -127,9 +137,16 @@
   const multi = untrack(() => scenario === 'multi-provider');
   const sessions = untrack(() =>
     multi
-      ? [...claudeSessions, ...otherSessions].sort(
-          (a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-        )
+      ? // The daemon's order: newest first, undated last.
+        [
+          claudeSessions[0],
+          otherSessions[0],
+          claudeSessions[1],
+          otherSessions[1],
+          claudeSessions[2],
+          claudeSessions[3],
+          claudeSessions[4],
+        ]
       : claudeSessions,
   );
   const providers = untrack(() =>
