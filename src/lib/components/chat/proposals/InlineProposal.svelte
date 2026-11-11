@@ -177,6 +177,7 @@
           {proposal}
           lifecycleId={localProposalId}
           resolvedCreatedWorkspaceId={daemonCreatedWorkspaceId}
+          proposer={$agentSession$}
           suppressLocalDiscard
           {initialDraft}
           onDraftChange={handleDraftChange}

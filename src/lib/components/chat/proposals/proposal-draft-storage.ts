@@ -13,6 +13,8 @@ export interface ProposalCardDraft {
     initialPrompt: string;
     branch: string;
     specialist: string | null;
+    /** Start on id; absent in drafts saved before the row existed. */
+    startOn?: string;
   };
 }
 
@@ -53,7 +55,8 @@ function isCardDraft(value: unknown): value is ProposalCardDraft {
     typeof workspace.title === 'string' &&
     typeof workspace.initialPrompt === 'string' &&
     typeof workspace.branch === 'string' &&
-    (workspace.specialist === null || typeof workspace.specialist === 'string')
+    (workspace.specialist === null || typeof workspace.specialist === 'string') &&
+    (workspace.startOn === undefined || typeof workspace.startOn === 'string')
   );
 }
 

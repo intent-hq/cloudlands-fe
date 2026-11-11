@@ -482,4 +482,47 @@ describe('buildCreateWorkspaceRequestFromProposal', () => {
         .idempotencyKey,
     ).toBe('card-key');
   });
+
+  describe('Start on placement', () => {
+    const remote = { target: 'remote', checkout: 'isolated', nodeId: 'd-mac' } as const;
+
+    it('sends the card choice as initialAgent.placement', () => {
+      const request = buildCreateWorkspaceRequestFromProposal(
+        makeProposal({ title: 'T', initialAgent: { prompt: 'go' } }),
+        { placement: remote },
+      );
+      expect(request.initialAgent?.placement).toEqual(remote);
+    });
+
+    it('replaces a payload placement with the card choice', () => {
+      const request = buildCreateWorkspaceRequestFromProposal(
+        makeProposal({ title: 'T', initialAgent: { placement: remote } }),
+        { placement: { target: 'e2b', checkout: 'isolated', cloudMachineId: 'e2b-1' } },
+      );
+      expect(request.initialAgent?.placement).toEqual({
+        target: 'e2b',
+        checkout: 'isolated',
+        cloudMachineId: 'e2b-1',
+      });
+    });
+
+    it('drops any payload placement when the card picks the backend', () => {
+      const request = buildCreateWorkspaceRequestFromProposal(
+        makeProposal({ title: 'T', initialAgent: { placement: remote } }),
+        { placement: null },
+      );
+      expect(request.initialAgent).not.toHaveProperty('placement');
+    });
+
+    it('keeps the payload as sent when the card has no Start on row', () => {
+      const request = buildCreateWorkspaceRequestFromProposal(
+        makeProposal({ title: 'T', initialAgent: { placement: remote } }),
+        {},
+      );
+      expect(request.initialAgent?.placement).toEqual(remote);
+      expect(
+        buildCreateWorkspaceRequestFromProposal(makeProposal({ title: 'T' }), {}).initialAgent,
+      ).not.toHaveProperty('placement');
+    });
+  });
 });

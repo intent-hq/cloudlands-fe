@@ -166,13 +166,14 @@ export function resolveStartOn(
  * `workspace.create.initialAgent.placement` for a choice; absent for the
  * backend. The entry is named only to a backend that keeps entries.
  */
+export type StartOnPlacement =
+  | { target: 'remote'; checkout: 'isolated'; nodeId: string }
+  | { target: 'e2b'; checkout: 'isolated'; cloudMachineId?: string };
+
 export function initialAgentPlacement(
   machineId: string | undefined,
   { cloudEntries = false }: { cloudEntries?: boolean } = {},
-):
-  | { target: 'remote'; checkout: 'isolated'; nodeId: string }
-  | { target: 'e2b'; checkout: 'isolated'; cloudMachineId?: string }
-  | undefined {
+): StartOnPlacement | undefined {
   const cloudMachineId = startOnCloudMachineId(machineId);
   if (cloudMachineId)
     return cloudEntries

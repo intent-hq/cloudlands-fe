@@ -894,6 +894,8 @@
   "chat_proposalCard_settingsQuestion_title": "套用這些設定變更？",
   "chat_proposalCard_specialistQuestion_title": "更新此專家？",
   "chat_proposalCard_specialist_label": "專家",
+  "chat_proposalCard_startOnRemoved_label": "已無法使用",
+  "chat_proposalCard_startOnUnavailable_warning": "{machine} 無法使用。請選擇另一台機器來啟動。",
   "chat_proposalCard_task_label": "任務",
   "chat_proposalCard_usingDefault_label": "——使用預設的「{branch}」",
   "chat_proposalCard_workspaceCreated_label": "工作區已建立。",

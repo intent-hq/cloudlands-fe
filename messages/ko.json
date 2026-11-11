@@ -894,6 +894,8 @@
   "chat_proposalCard_settingsQuestion_title": "이 설정 변경을 적용할까요?",
   "chat_proposalCard_specialistQuestion_title": "이 스페셜리스트를 업데이트할까요?",
   "chat_proposalCard_specialist_label": "스페셜리스트",
+  "chat_proposalCard_startOnRemoved_label": "더 이상 사용할 수 없음",
+  "chat_proposalCard_startOnUnavailable_warning": "{machine}을(를) 사용할 수 없습니다. 시작할 다른 머신을 선택하세요.",
   "chat_proposalCard_task_label": "작업",
   "chat_proposalCard_usingDefault_label": "— 기본값 '{branch}' 사용",
   "chat_proposalCard_workspaceCreated_label": "작업 공간이 생성되었습니다.",

@@ -894,6 +894,8 @@
   "chat_proposalCard_settingsQuestion_title": "Appliquer ces modifications de paramètres ?",
   "chat_proposalCard_specialistQuestion_title": "Mettre à jour ce spécialiste ?",
   "chat_proposalCard_specialist_label": "Spécialiste",
+  "chat_proposalCard_startOnRemoved_label": "N'est plus disponible",
+  "chat_proposalCard_startOnUnavailable_warning": "{machine} n'est pas disponible. Choisissez une autre machine pour démarrer.",
   "chat_proposalCard_task_label": "Tâche",
   "chat_proposalCard_usingDefault_label": "— utilisation de '{branch}' par défaut",
   "chat_proposalCard_workspaceCreated_label": "Espace de travail créé.",
