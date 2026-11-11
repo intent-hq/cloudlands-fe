@@ -56,6 +56,7 @@ vi.mock('electron', () => ({
 
 vi.mock('../../../../main/window-backend', () => ({
   getBackendIdForWindow: (window: { backendId?: string }) => window.backendId ?? 'local',
+  getShownBackendIdForWindow: (window: { backendId?: string }) => window.backendId ?? 'local',
   // These windows host no machine views: the reporting renderer is the window's own.
   getBackendIdForWebContents: (sender: object) =>
     (electronMocks.fromWebContents(sender) as { backendId?: string } | null)?.backendId ?? 'local',

@@ -180,6 +180,17 @@ export function getShownRendererWebContents(window: BrowserWindowType): Electron
 }
 
 /**
+ * The backend of the renderer `window` shows: the shown machine view's, or the
+ * window's own. Use it wherever "the window's backend" means what the user is
+ * looking at (current workspace, open tabs).
+ */
+export function getShownBackendIdForWindow(window: BrowserWindowType): string {
+  const shown = shownMachineViews.get(window);
+  const view = shown && !shown.isDestroyed() ? machineViewBindings.get(shown) : undefined;
+  return view?.window === window ? view.backendId : getBackendIdForWindow(window);
+}
+
+/**
  * Whether `sender` is the renderer `window` shows. Only that renderer speaks
  * for the window (current workspace, open tabs) to the main process.
  */

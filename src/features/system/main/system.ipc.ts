@@ -20,6 +20,7 @@ import {
 import {
   getBackendIdForWebContents,
   getBackendIdForWindow,
+  getShownBackendIdForWindow,
   isShownRenderer,
 } from '../../../main/window-backend';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
@@ -251,7 +252,9 @@ const liveWindowHostChecker: WindowHostChecker = {
   },
   backendIdOf(windowId: number) {
     const win = BrowserWindow.fromId(windowId);
-    return win && !win.isDestroyed() ? getBackendIdForWindow(win) : null;
+    // Workspace and open-tab entries are reported by the renderer the window
+    // shows (a machine view, or the window's own), with that renderer's backend.
+    return win && !win.isDestroyed() ? getShownBackendIdForWindow(win) : null;
   },
 };
 
