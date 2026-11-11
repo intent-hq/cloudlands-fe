@@ -86,15 +86,17 @@
         <Accordion.Content inset={false}>
           <dl class="ml-3.5 text-foreground">
             {#each group.rows as row (row.key)}
-              <div class="grid grid-cols-[0.375rem_1fr_auto] items-baseline gap-x-3 py-0.5 text-sm">
-                <span class="size-1 self-center rounded-full bg-muted-foreground" aria-hidden="true"
-                ></span>
-                <dt class="min-w-0 wrap-anywhere">{row.label}</dt>
+              <div class="grid grid-cols-[1fr_auto] items-baseline gap-x-3 py-0.5 text-sm">
+                <dt
+                  class="relative min-w-0 pl-[1.125rem] wrap-anywhere before:absolute before:top-2 before:left-0 before:size-1 before:rounded-full before:bg-muted-foreground before:content-['']"
+                >
+                  {row.label}
+                </dt>
                 <dd class="tabular-nums {row.counted ? '' : 'text-muted-foreground'}">
                   {tokens(row.estTokens)}
                 </dd>
                 {#if row.hint}
-                  <dd class="col-start-2 col-end-4 text-xs text-muted-foreground wrap-anywhere">
+                  <dd class="col-span-2 pl-[1.125rem] text-xs text-muted-foreground wrap-anywhere">
                     {row.hint}
                   </dd>
                 {/if}
