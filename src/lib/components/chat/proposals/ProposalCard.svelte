@@ -1272,7 +1272,6 @@
               {proposer}
               providerRef={adoptedAgentSetup?.provider ?? proposalProviderRef()}
               backendOnly={workspaceIsNewRepo}
-              labelId={`${metadataIdPrefix}-start-on-label`}
             />
           </div>
 

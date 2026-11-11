@@ -898,6 +898,7 @@
   "chat_proposalCard_startOnGone_label": "{machine} ya no está disponible, así que el primer agente se inicia en {backend}.",
   "chat_proposalCard_startOnRemoved_label": "Ya no está disponible",
   "chat_proposalCard_startOnUnavailable_warning": "{machine} no está disponible. Elige otra máquina para empezar.",
+  "chat_proposalCard_startOn_label": "Iniciar en",
   "chat_proposalCard_task_label": "Tarea",
   "chat_proposalCard_usingDefault_label": "— usando la predeterminada '{branch}'",
   "chat_proposalCard_workspaceCreated_label": "Espacio de trabajo creado.",

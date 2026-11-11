@@ -898,6 +898,7 @@
   "chat_proposalCard_startOnGone_label": "{machine} 已無法使用，因此第一個代理將在 {backend} 上啟動。",
   "chat_proposalCard_startOnRemoved_label": "已無法使用",
   "chat_proposalCard_startOnUnavailable_warning": "{machine} 無法使用。請選擇另一台機器來啟動。",
+  "chat_proposalCard_startOn_label": "啟動於",
   "chat_proposalCard_task_label": "任務",
   "chat_proposalCard_usingDefault_label": "——使用預設的「{branch}」",
   "chat_proposalCard_workspaceCreated_label": "工作區已建立。",

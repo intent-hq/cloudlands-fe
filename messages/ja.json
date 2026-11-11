@@ -898,6 +898,7 @@
   "chat_proposalCard_startOnGone_label": "{machine} は利用できなくなったため、最初のエージェントは {backend} で開始します。",
   "chat_proposalCard_startOnRemoved_label": "利用できなくなりました",
   "chat_proposalCard_startOnUnavailable_warning": "{machine} は利用できません。開始する別のマシンを選んでください。",
+  "chat_proposalCard_startOn_label": "開始先",
   "chat_proposalCard_task_label": "タスク",
   "chat_proposalCard_usingDefault_label": "— デフォルトの「{branch}」を使用します",
   "chat_proposalCard_workspaceCreated_label": "ワークスペースを作成しました。",

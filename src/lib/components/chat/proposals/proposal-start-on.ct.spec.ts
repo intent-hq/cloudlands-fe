@@ -3,7 +3,7 @@ import ProposalStartOnPreview from './proposal-start-on.preview.svelte';
 
 type Page = Parameters<Parameters<typeof test.beforeEach>[1]>[0]['page'];
 
-const machine = (page: Page) => page.getByRole('button', { name: /^Machine / });
+const machine = (page: Page) => page.getByRole('button', { name: /^Start on / });
 const create = (page: Page) => page.getByRole('button', { name: /^Create workspace/ });
 const applied = async (page: Page) =>
   JSON.parse((await page.getByTestId('applied-placement').textContent()) ?? 'undefined');
@@ -49,7 +49,7 @@ test('an unavailable default warns, blocks Apply, and another pick clears it', a
   await expect(create(page)).toBeDisabled();
 
   await machine(page).click();
-  const popup = page.getByRole('dialog', { name: 'Machine', exact: true });
+  const popup = page.getByRole('dialog', { name: 'Start on', exact: true });
   await popup.getByRole('option', { name: /^Mac mini/ }).click();
   await expect(machine(page)).toContainText('Mac mini');
   await expect(page.getByTestId('proposal-start-on-warning')).toHaveCount(0);

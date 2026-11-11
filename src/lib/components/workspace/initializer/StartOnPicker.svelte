@@ -26,6 +26,8 @@
     onChange: (machineId: string) => void;
     /** Why only the current backend can be used (shown under the value; the row is disabled). */
     lockedReason?: string;
+    /** Field name; `metadata` shows it, muted, before the value. */
+    label?: string;
     /** Whether the machine list is open (bindable; previews open it directly). */
     open?: boolean;
   }
@@ -36,6 +38,7 @@
     options,
     onChange,
     lockedReason,
+    label = m.workspace_initialAgentPicker_startOn_label(),
     open = $bindable(false),
   }: Props = $props();
 
@@ -94,8 +97,12 @@
               : workspacePickerStyles.fieldTrigger}
         >
           <span
-            class={presentation === 'form' ? workspacePickerStyles.fieldLabel : 'sr-only'}
-            id={labelId}>{m.workspace_initialAgentPicker_startOn_label()}</span
+            class={presentation === 'form'
+              ? workspacePickerStyles.fieldLabel
+              : presentation === 'metadata'
+                ? 'shrink-0 text-muted-foreground'
+                : 'sr-only'}
+            id={labelId}>{label}</span
           >
           <span class="min-w-0 flex-1 text-left" id={valueId}>
             <span class="block truncate">{selected?.label}</span>
@@ -114,7 +121,7 @@
     <Popover.Content
       role="dialog"
       portalProps={{ to: dialogPortalTarget() }}
-      aria-label={m.workspace_initialAgentPicker_startOn_label()}
+      aria-label={label}
       side={presentation === 'footer'
         ? 'top'
         : presentation === 'metadata' || isMobile.current || menuBelow
@@ -149,7 +156,7 @@
         options={machineOptions}
         {open}
         bind:inputRef={searchInput}
-        ariaLabel={m.workspace_initialAgentPicker_startOn_label()}
+        ariaLabel={label}
         placeholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
         searchPlaceholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
         staticPosition
