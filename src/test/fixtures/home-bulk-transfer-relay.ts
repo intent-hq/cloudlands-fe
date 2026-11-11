@@ -1,4 +1,5 @@
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { emitMockIpcEvent } from '$shared/ipc-mock-router';
 import type { TransferProgressEvent } from '$shared/types/workspace-transfer';
 
 const MiB = 1024 * 1024;
@@ -28,8 +29,8 @@ declare global {
 }
 
 /**
- * Scripts `workspace.transfer.plan`, the `transfer:*` relay channels and
- * `transfer:progress` delivery (install before the saga subscribes). Each
+ * Scripts `workspace.transfer.plan` and the `transfer:*` relay channels, and
+ * emits `transfer:progress` through the mock IPC router. Each
  * `transfer:start` reports half its archive relayed, then holds until
  * `release()` so tests can inspect the running state.
  */
@@ -40,23 +41,11 @@ export function setupBulkTransferRelay(): () => void {
   let held = true;
   let waiting: Array<(result: unknown) => void> = [];
 
-  const progressListeners = new Map<string, (event: TransferProgressEvent) => void>();
-  let listenerId = 0;
-  const progress = (event: TransferProgressEvent) => {
-    for (const listener of progressListeners.values()) listener(event);
-  };
+  const progress = (event: TransferProgressEvent) =>
+    emitMockIpcEvent(IPC_CHANNELS.TRANSFER.PROGRESS, event);
 
   window.electronAPI = {
     ...previous,
-    on: (channel, listener) => {
-      if (channel !== IPC_CHANNELS.TRANSFER.PROGRESS) return previous.on(channel, listener);
-      const id = `bulk-transfer-progress-${++listenerId}`;
-      progressListeners.set(id, listener as (event: TransferProgressEvent) => void);
-      return id;
-    },
-    offById: (channel, id) => {
-      if (!progressListeners.delete(id)) previous.offById(channel, id);
-    },
     invoke: async (channel, payload) => {
       if (channel === IPC_CHANNELS.BACKEND.REQUEST) {
         const request = payload as { method?: string; params?: { workspaceId?: string } };

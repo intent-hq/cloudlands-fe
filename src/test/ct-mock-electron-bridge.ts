@@ -1,5 +1,5 @@
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { mockInvoke } from '$shared/ipc-mock-router';
+import { mockInvoke, subscribeMockIpcEvent } from '$shared/ipc-mock-router';
 
 /**
  * Browser-side `window.electronAPI` stand-in for Playwright CT host fixtures
@@ -18,7 +18,10 @@ import { mockInvoke } from '$shared/ipc-mock-router';
  * error naming it, so a fixture that reaches an unscripted daemon method fails
  * loudly (via the caller's error log) instead of resolving `undefined`. Every
  * other invoke channel is routed to the in-memory mock IPC router, exactly like
- * the dev browser mock does. The bridge keeps the dev-mock version sentinel so
+ * the dev browser mock does. Event listeners (`on`/`off`/`offById`/
+ * `removeAllListeners`) subscribe to the same router, so a spec or fixture
+ * delivers a main-process event with `emitMockIpcEvent(channel, payload)`.
+ * The bridge keeps the dev-mock version sentinel so
  * `getPlatform()` still reports `web` — the fixture renders as before, only the
  * daemon seam is scripted.
  *
@@ -39,6 +42,18 @@ interface BackendRequestPayload {
 
 export function installMockElectronBridge(methods: Record<string, MockBackendMethodHandler>): void {
   let listenerIdCounter = 0;
+  type Listener = (...args: unknown[]) => void;
+  const listeners = new Map<
+    string,
+    { channel: string; callback: Listener; unsubscribe: () => void }
+  >();
+  const remove = (match: (entry: { channel: string; callback: Listener }) => boolean) => {
+    for (const [id, entry] of listeners) {
+      if (!match(entry)) continue;
+      entry.unsubscribe();
+      listeners.delete(id);
+    }
+  };
   const api = {
     versions: { electron: BROWSER_MOCK_ELECTRON_VERSION },
     invoke: async (channel: string, payload?: unknown): Promise<unknown> => {
@@ -63,10 +78,19 @@ export function installMockElectronBridge(methods: Record<string, MockBackendMet
       return { ok: true, result: await handler(params) };
     },
     send: () => {},
-    on: () => `ct-mock-bridge-${++listenerIdCounter}`,
-    off: () => {},
-    offById: () => {},
-    removeAllListeners: () => {},
+    on: (channel: string, callback: Listener) => {
+      const id = `ct-mock-bridge-${++listenerIdCounter}`;
+      const unsubscribe = subscribeMockIpcEvent(channel, (payload) => callback(payload));
+      listeners.set(id, { channel, callback, unsubscribe });
+      return id;
+    },
+    off: (channel: string, callback: Listener) =>
+      remove((entry) => entry.channel === channel && entry.callback === callback),
+    offById: (_channel: string, id: string) => {
+      listeners.get(id)?.unsubscribe();
+      listeners.delete(id);
+    },
+    removeAllListeners: (channel: string) => remove((entry) => entry.channel === channel),
     devInstance: null,
     devPort: null,
   };
