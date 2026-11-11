@@ -7,6 +7,9 @@
    * rail from the same main-owned state, so the strip looks continuous while
    * the page beside it changes. Selecting, adding and removing are requests to
    * main; nothing is decided here.
+   *
+   * Items are the plain ghost icon button; the selected machine uses its
+   * active state and a bar in the machine's accent colour.
    */
   import { faPlus } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
