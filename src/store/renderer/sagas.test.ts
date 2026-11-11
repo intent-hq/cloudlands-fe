@@ -108,6 +108,7 @@ describe('renderer app saga registry', () => {
       'settingsProposalHistorySaga',
       'specialistProposalHistorySaga',
       'githubRepoSearchSaga',
+      'importableSessionsSaga',
       'githubUserSearchSaga',
       'sentryAuthSaga',
       'linearAuthSaga',
