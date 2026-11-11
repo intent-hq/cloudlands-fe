@@ -7,7 +7,6 @@
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
   import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
   import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
-  import DockLinkedRowSlot from './DockLinkedRowSlot.svelte';
   import MagnifyingGlassIcon from 'phosphor-svelte/lib/MagnifyingGlassIcon';
   import XIcon from 'phosphor-svelte/lib/XIcon';
   import {
@@ -337,15 +336,9 @@
           </Button>
         </div>
         <div role="gridcell" class="grid-cell">
-          <DockLinkedRowSlot
-            workspaceId={id}
-            {title}
-            disabled={pending}
-            time={item.workspace.updatedAt
-              ? formatCompactRelativeTime(item.workspace.updatedAt)
-              : ''}
-            timeTitle={item.workspace.updatedAt}
-          />
+          <span class="row-time type-caption" title={item.workspace.updatedAt}>
+            {item.workspace.updatedAt ? formatCompactRelativeTime(item.workspace.updatedAt) : ''}
+          </span>
         </div>
       </div>
     {/each}
@@ -487,7 +480,7 @@
   }
   .overview-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 72px;
+    grid-template-columns: minmax(0, 1fr) 56px;
     align-items: center;
     column-gap: 8px;
     min-height: 52px;

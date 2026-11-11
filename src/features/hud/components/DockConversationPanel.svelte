@@ -98,6 +98,7 @@
   import { extractAllContent } from '$shared/types';
   import AgentAvatar from '$features/agent/components/agent-avatar/AgentAvatar.svelte';
   import DockWorkspaceAvatar from './DockWorkspaceAvatar.svelte';
+  import DockHeaderLinkButton from './DockHeaderLinkButton.svelte';
   import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
   import { m } from '$shared/paraglide/messages.js';
 
@@ -373,7 +374,10 @@
           <span class="dock-media-status-dot" aria-hidden="true"></span>
           <span class="truncate">{mediaStatus.label}</span>
         </span>
-      {:else}<Button
+      {:else}{#if !isAssistant && workspace}<DockHeaderLinkButton
+            workspaceId={String(workspace.id)}
+            title={workspace.title?.trim() || workspaceTitle || m.workspace_links_untitled_label()}
+          />{/if}<Button
           variant="ghost"
           size="icon-sm"
           onclick={onOpenWorkspace}

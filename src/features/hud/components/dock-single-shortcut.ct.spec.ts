@@ -1,5 +1,5 @@
 import { writeFile } from 'node:fs/promises';
-import { activateHoverAction, expect, test } from '../../../test/ct-test';
+import { expect, test } from '../../../test/ct-test';
 import Harness from './DockComposerE2EHarness.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 import type { DockLinkedContextSnapshot } from '$shared/dock-context-links';
@@ -187,7 +187,13 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await expect(search).toBeFocused();
   expect(await open()).toBe(origin);
   expect(await shortcutState()).toEqual({ destination: null, resolving: false });
-  await expect(page.locator('[data-dock-row-action]')).toHaveCount(0);
+  // The list has timestamps only: no link controls or tags in rows.
+  await expect(
+    page.locator('.overview-row [data-dock-row-action], [data-dock-linked-tag]'),
+  ).toHaveCount(0);
+  expect(await page.locator('.overview-row[role="row"] .row-time').count()).toBe(
+    await page.locator('.overview-row[role="row"]').count(),
+  );
   await page.screenshot({ path: info.outputPath('11-d-unknown-index.png') });
   receipts.unknown = { index: true, searchFocused: true, opened: null, linkControls: 0 };
   await leaveIndex();
@@ -200,17 +206,28 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await expect(overview).toBeVisible();
   await expect(search).toBeFocused();
   expect(await open()).toBe(origin);
-  await row('choice-1').hover();
-  await activateHoverAction(
-    row('choice-1').locator('[data-dock-row-action="link"]'),
-    row('choice-1'),
-    {
-      requireChange: false,
-    },
+  // Open the workspace from the index; its header offers Link for this tab.
+  await row('choice-1').locator('[data-workspace-id]').click();
+  await expect.poll(open).toBe('choice-1');
+  const headerLink = page.locator('[data-dock-header-link]');
+  await expect(headerLink).toHaveAttribute('aria-pressed', 'false');
+  await expect(headerLink).toHaveAttribute(
+    'aria-label',
+    /Link github\.com to Synthetic workspace 1/,
   );
+  await headerLink.click();
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');
-  await page.screenshot({ path: info.outputPath('12-d-index-linked.png') });
-  await leaveIndex();
+  await expect(headerLink).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: info.outputPath('12-d-header-linked.png') });
+  await page.evaluate(
+    (id) =>
+      (window as any).__dockComposerE2E.store.dispatch({
+        type: 'dockConversation/open',
+        payload: [id],
+      }),
+    origin,
+  );
+  await expect.poll(open).toBe(origin);
   await press({ version: 'v1', url: A });
   await expect.poll(open).toBe('choice-1');
   await expect(back).toBeVisible();
@@ -346,14 +363,44 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await leaveIndex();
   receipts.staleAndChooser = { staleAfterSeen: 'no change', mediaChooserKept: true };
 
-  // 7. An inferred owner (embedded tab of choice-2): pressing follows it; in the index its row
-  // shows the tag and offers Link, which saves the association.
+  // 7. An inferred owner (embedded tab of choice-2): pressing follows it; its header offers
+  // Link (not pressed: nothing saved), which saves it; pressed, a click unlinks again.
   const C = 'https://github.com/example/embedded/pull/3';
   await observe('v3', C, 'choice-2');
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-2');
   expect((await read())?.linkKey ?? null).toBeNull();
   await press({ version: 'v3', url: C });
   await expect.poll(open).toBe('choice-2');
+  const link = page.locator('[data-dock-header-link]');
+  await expect(link).toHaveAttribute('aria-pressed', 'false');
+  await link.click();
+  await expect.poll(() => read().then((s) => s?.linkKey ?? null)).not.toBeNull();
+  await expect(link).toHaveAttribute('aria-pressed', 'true');
+  await page.screenshot({ path: info.outputPath('13-d-header-saved.png') });
+  await link.click();
+  await expect.poll(() => read().then((s) => s?.linkKey ?? null)).toBeNull();
+  await expect(link).toHaveAttribute('aria-pressed', 'false');
+  // The inferred owner remains (unlink removes only the saved record).
+  expect((await read())?.linkedWorkspaceId).toBe('choice-2');
+  receipts.inferred = {
+    followedInferred: 'choice-2',
+    savedFromHeader: true,
+    unlinkedFromHeader: true,
+  };
+
+  // 7b. A held press whose context changes before release does nothing.
+  const box = (await link.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  const D2 = 'https://github.com/example/other/issues/77';
+  await observe('v7', D2);
+  await expect.poll(() => read().then((s) => s?.url)).toBe(D2);
+  await page.mouse.up();
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a cancelled press must not save anything afterwards
+  await page.waitForTimeout(600);
+  expect((await read())?.linkKey ?? null).toBeNull();
+  expect((await read())?.linkedWorkspaceId ?? null).toBeNull();
+  receipts.heldGesture = { cancelledOnContextChange: true };
   await page.evaluate(
     (id) =>
       (window as any).__dockComposerE2E.store.dispatch({
@@ -363,18 +410,6 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
     origin,
   );
   await expect.poll(open).toBe(origin);
-  await press();
-  await expect(overview).toBeVisible();
-  await expect(row('choice-2').locator('[data-dock-linked-tag]')).toBeVisible();
-  await row('choice-2').hover();
-  const inferredAction = row('choice-2').locator('[data-dock-row-action]');
-  await expect(inferredAction).toHaveAttribute('data-dock-row-action', 'link');
-  await activateHoverAction(inferredAction, row('choice-2'), { requireChange: false });
-  await expect.poll(() => read().then((s) => s?.linkKey ?? null)).not.toBeNull();
-  await expect(inferredAction).toHaveAttribute('data-dock-row-action', 'unlink');
-  await page.screenshot({ path: info.outputPath('13-d-inferred-saved.png') });
-  receipts.inferred = { followedInferred: 'choice-2', linkOfferedOnInferredRow: true, saved: true };
-  await leaveIndex();
 
   // 8. Live input (push-to-talk recording): a press opens nothing and shows no index.
   await page.evaluate(() =>
