@@ -16,7 +16,9 @@ import { mockInvoke, subscribeMockIpcEvent } from '$shared/ipc-mock-router';
  * name, in the `{ ok, result }` envelope the transport unwraps. A method
  * without a handler answers `{ ok: false }` with a `MOCK_UNHANDLED_METHOD`
  * error naming it, so a fixture that reaches an unscripted daemon method fails
- * loudly (via the caller's error log) instead of resolving `undefined`. Every
+ * loudly (via the caller's error log) instead of resolving `undefined`. A
+ * fixture that scripts the daemon as one `(method, params)` function passes it
+ * instead; an error it throws answers `MOCK_UNHANDLED_METHOD` the same way. Every
  * other invoke channel is routed to the in-memory mock IPC router, exactly like
  * the dev browser mock does. Event listeners (`on`/`off`/`offById`/
  * `removeAllListeners`) subscribe to the same router, so a spec or fixture
@@ -28,9 +30,15 @@ import { mockInvoke, subscribeMockIpcEvent } from '$shared/ipc-mock-router';
  * Specs reach it through the `mockBackend` `hooksConfig` of `mount()` (see
  * `playwright/index.ts`), which installs the bridge before the component
  * mounts; the harness page is reloaded per test, so nothing needs disposing.
+ * A fixture that installs it for part of a page's life calls the returned
+ * `restore()`, which detaches its listeners and reinstates the previous bridge.
  */
 
 export type MockBackendMethodHandler = (params: unknown) => unknown | Promise<unknown>;
+export type MockBackendRequestHandler = (
+  method: string,
+  params: unknown,
+) => unknown | Promise<unknown>;
 
 /** Mirrors `BROWSER_MOCK_ELECTRON_VERSION` in `$lib/utils/platform-capabilities`. */
 const BROWSER_MOCK_ELECTRON_VERSION = '0.0.0-browser';
@@ -40,7 +48,10 @@ interface BackendRequestPayload {
   params?: unknown;
 }
 
-export function installMockElectronBridge(methods: Record<string, MockBackendMethodHandler>): void {
+export function installMockElectronBridge(
+  methods: Record<string, MockBackendMethodHandler> | MockBackendRequestHandler,
+): () => void {
+  const previous = window.electronAPI;
   let listenerIdCounter = 0;
   type Listener = (...args: unknown[]) => void;
   const listeners = new Map<
@@ -60,11 +71,18 @@ export function installMockElectronBridge(methods: Record<string, MockBackendMet
       // The scripted daemon acknowledges a hello: a `client.hello` handler supplies
       // its capabilities, otherwise none (no node authority, no truncated reads).
       if (channel === IPC_CHANNELS.BACKEND.NODE_CAPABILITIES) {
-        const hello = methods['client.hello'];
+        const hello = typeof methods === 'function' ? undefined : methods['client.hello'];
         return { ok: true, result: hello ? await hello({}) : { server: { capabilities: {} } } };
       }
       if (channel !== IPC_CHANNELS.BACKEND.REQUEST) return mockInvoke(channel, payload);
       const { method, params } = payload as BackendRequestPayload;
+      if (typeof methods === 'function') {
+        try {
+          return { ok: true, result: await methods(method, params) };
+        } catch (error) {
+          return { ok: false, error: { code: 'MOCK_UNHANDLED_METHOD', message: String(error) } };
+        }
+      }
       const handler = methods[method];
       if (!handler) {
         return {
@@ -95,4 +113,8 @@ export function installMockElectronBridge(methods: Record<string, MockBackendMet
     devPort: null,
   };
   window.electronAPI = api as unknown as Window['electronAPI'];
+  return () => {
+    remove(() => true);
+    window.electronAPI = previous;
+  };
 }

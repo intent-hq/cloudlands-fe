@@ -88,3 +88,36 @@ describe('CT mock electron bridge events', () => {
     expect(mockIpcListenerCount(PROGRESS)).toBe(0);
   });
 });
+
+describe('CT mock electron bridge daemon requests', () => {
+  const request = (method: string, params?: unknown) =>
+    window.electronAPI.invoke(IPC_CHANNELS.BACKEND.REQUEST, { method, params });
+
+  it('answers through a request function and reports its errors as unhandled', async () => {
+    installMockElectronBridge((method, params) => {
+      if (method === 'echo') return params;
+      throw new Error(`Unscripted: ${method}`);
+    });
+
+    await expect(request('echo', { a: 1 })).resolves.toEqual({ ok: true, result: { a: 1 } });
+    await expect(request('missing')).resolves.toEqual({
+      ok: false,
+      error: { code: 'MOCK_UNHANDLED_METHOD', message: 'Error: Unscripted: missing' },
+    });
+  });
+
+  it('restore detaches its listeners and reinstates the previous bridge', () => {
+    const previous = { marker: true } as unknown as Window['electronAPI'];
+    window.electronAPI = previous;
+    const restore = installMockElectronBridge({});
+    const listener = vi.fn();
+    window.electronAPI.on(PROGRESS, listener);
+
+    restore();
+    emitMockIpcEvent(PROGRESS, 1);
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(mockIpcListenerCount(PROGRESS)).toBe(0);
+    expect(window.electronAPI).toBe(previous);
+  });
+});
