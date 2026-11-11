@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.316.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.315.0...v2.316.0) (2026-11-11)
+
+
+### 🚀 Features
+
+* **proposals:** Start on choice on the workspace proposal card ([#4441](https://github.com/intent-hq/cloudlands-fe/issues/4441)) ([0edd2ef](https://github.com/intent-hq/cloudlands-fe/commit/0edd2ef61db9ef83b9e1f14a267e5f3fc2585244))
+
 ## [2.315.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.314.0...v2.315.0) (2026-11-11)
 
 
