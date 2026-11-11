@@ -3651,8 +3651,6 @@
   "lib_commandPalette_resultsCount_status": "{count} resultados",
   "lib_commandPalette_select_label": "Seleccionar",
   "lib_commandPalette_settings_command": "Configuración",
-  "lib_commandPalette_showLabsInSettings_label": "Mostrar Labs en Configuración",
-  "lib_commandPalette_hideLabsInSettings_label": "Ocultar Labs en Configuración",
   "lib_commandPalette_showMoreAgents_label": "Mostrar {count} agentes más...",
   "lib_commandPalette_showMoreBrowsers_label": "Mostrar {count} navegadores más...",
   "lib_commandPalette_showMoreChanges_label": "Mostrar {count} cambios más...",

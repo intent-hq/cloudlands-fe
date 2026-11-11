@@ -24,7 +24,6 @@ const {
   paletteNoteSearch,
   collaboratorState,
   multiplayerState,
-  labsVisibleState,
   storeEvents,
 } = vi.hoisted(() => {
   const createSelectorReadable = <TArg, TValue>(arg: TArg, resolver: (value: any) => TValue) => ({
@@ -147,7 +146,6 @@ const {
       subscribers: new Set<(value: boolean) => void>(),
     },
     multiplayerState: { enabled: false },
-    labsVisibleState: { visible: undefined as boolean | undefined },
     storeEvents: { emit: () => {} },
   };
 });
@@ -271,7 +269,6 @@ vi.mock('$store/renderer/store', async () => {
       workspaceAgents: { byWorkspaceId: {} },
       userPreferences: {
         labsMultiplayerEnabled: multiplayerState.enabled,
-        labsSettingsVisible: labsVisibleState.visible,
       },
     }),
     dispatch: reduxDispatchMock,
@@ -414,7 +411,6 @@ describe('CommandPalette new actions', () => {
     collaboratorState.workspace = false;
     collaboratorState.client = false;
     multiplayerState.enabled = false;
-    labsVisibleState.visible = undefined;
   });
 
   it.each([
@@ -429,6 +425,7 @@ describe('CommandPalette new actions', () => {
     ['input shortcuts', /Input and shortcuts/i, 'input'],
     ['workspace setup', /Workspace setup/i, 'setup'],
     ['advanced', /Advanced/i, 'advanced'],
+    ['labs', /Advanced/i, 'advanced'],
     ['specialists', /Specialists/i, 'specialists'],
     ['Linear', /Connections/i, 'connections'],
     ['settings linear', /Connections/i, 'connections'],
@@ -544,46 +541,6 @@ describe('CommandPalette new actions', () => {
     expect(screen.queryByRole('button', { name: /experimental GitLab/i })).toBeNull();
   });
 
-  it('shows Labs in Settings and opens it under Advanced without a workspace', async () => {
-    const onClose = vi.fn();
-    render(CommandPalette, { props: { isOpen: true, initialQuery: 'labs', onClose } });
-    const command = await screen.findByRole('button', { name: /Show Labs in Settings/i });
-    expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
-    reduxDispatchMock.mockClear();
-
-    await fireEvent.click(command);
-
-    expect(
-      reduxDispatchMock.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action.type.startsWith('userPreferences/')),
-    ).toEqual([{ type: 'userPreferences/setLabsSettingsVisible', payload: [true] }]);
-    expect(navigateToSettingsMock).toHaveBeenCalledExactlyOnceWith({
-      tab: 'advanced',
-      hash: 'labs',
-    });
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it('hides Labs in Settings', async () => {
-    labsVisibleState.visible = true;
-    const onClose = vi.fn();
-    render(CommandPalette, { props: { isOpen: true, initialQuery: 'labs', onClose } });
-    const command = await screen.findByRole('button', { name: /Hide Labs in Settings/i });
-    expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull();
-    reduxDispatchMock.mockClear();
-
-    await fireEvent.click(command);
-
-    expect(
-      reduxDispatchMock.mock.calls
-        .map(([action]) => action)
-        .filter((action) => action.type.startsWith('userPreferences/')),
-    ).toEqual([{ type: 'userPreferences/setLabsSettingsVisible', payload: [false] }]);
-    expect(navigateToSettingsMock).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
   it('offers no per-feature experimental toggles', async () => {
     render(CommandPalette, {
       props: { isOpen: true, initialQuery: 'experimental', onClose: vi.fn() },
@@ -592,22 +549,6 @@ describe('CommandPalette new actions', () => {
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: /(Enable|Disable) experimental/i })).toBeNull(),
     );
-  });
-
-  it('updates the Labs commands after delayed hydration without changing the saved choice', async () => {
-    render(CommandPalette, { props: { isOpen: true, initialQuery: 'labs', onClose: vi.fn() } });
-    await screen.findByRole('button', { name: /Show Labs in Settings/i });
-    labsVisibleState.visible = true;
-    storeEvents.emit();
-    await screen.findByRole('button', { name: /Hide Labs in Settings/i });
-    expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull();
-    labsVisibleState.visible = false;
-    storeEvents.emit();
-    await screen.findByRole('button', { name: /Show Labs in Settings/i });
-    expect(screen.queryByRole('button', { name: /Hide Labs in Settings/i })).toBeNull();
-    expect(
-      reduxDispatchMock.mock.calls.filter(([action]) => action.type.startsWith('userPreferences/')),
-    ).toEqual([]);
   });
 
   it.each(['GitLab', ':'])(
@@ -640,7 +581,7 @@ describe('CommandPalette new actions', () => {
     const input = screen.getByRole('textbox') as HTMLInputElement;
     await fireEvent.input(input, { target: { value: 'my search' } });
 
-    labsVisibleState.visible = true;
+    multiplayerState.enabled = true;
     storeEvents.emit();
     await view.rerender({ workspaceId: 'ws-1' });
     expect(input.value).toBe('my search');
@@ -668,14 +609,12 @@ describe('CommandPalette new actions', () => {
       render(CommandPalette, { props: { isOpen: true, onClose: vi.fn() } });
       const input = screen.getByRole('textbox');
 
-      await fireEvent.input(input, { target: { value: 'labs' } });
-      await screen.findByRole('button', { name: /Show Labs in Settings/i });
+      await fireEvent.input(input, { target: { value: 'experimental' } });
+      await screen.findByRole('button', { name: /Advanced/i });
       expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
 
       await fireEvent.input(input, { target: { value: 'multiplayer' } });
-      await waitFor(() =>
-        expect(screen.queryByRole('button', { name: /Show Labs in Settings/i })).toBeNull(),
-      );
+      await waitFor(() => expect(screen.queryByRole('button', { name: /Advanced/i })).toBeNull());
       expect(screen.queryByRole('button', { name: /experimental multiplayer/i })).toBeNull();
     },
   );

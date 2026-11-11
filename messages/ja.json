@@ -3651,8 +3651,6 @@
   "lib_commandPalette_resultsCount_status": "{count} 件の結果",
   "lib_commandPalette_select_label": "選択",
   "lib_commandPalette_settings_command": "設定",
-  "lib_commandPalette_showLabsInSettings_label": "設定にラボを表示",
-  "lib_commandPalette_hideLabsInSettings_label": "設定のラボを非表示",
   "lib_commandPalette_showMoreAgents_label": "他 {count} 件のエージェントを表示...",
   "lib_commandPalette_showMoreBrowsers_label": "他 {count} 件のブラウザーを表示...",
   "lib_commandPalette_showMoreChanges_label": "他 {count} 件の変更を表示...",

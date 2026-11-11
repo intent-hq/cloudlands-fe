@@ -72,7 +72,6 @@
     selectCodeFontOptions,
     selectIsNoteMonospace,
     selectLabsMultiplayerEnabled,
-    selectLabsSettingsVisible,
     selectNoteFontStyle,
     selectShellTransparencyEnabled,
     selectUpdateChannel,
@@ -112,7 +111,6 @@
   const collaborationContext$ = selectPrincipalActionContext();
   const hostAdministrationDenied$ = selectHostAdministrationDenied();
   const labsMultiplayerEnabled$ = selectLabsMultiplayerEnabled();
-  const labsSettingsVisible$ = selectLabsSettingsVisible();
   // intent-web serves this page and owns the machines list: there is no
   // keychain sync and no mobile pairing on that host.
   const hostManagesConnections$ = selectHostManagesConnections();
@@ -992,9 +990,7 @@
 
         <!-- Advanced -->
         {#if activeTab === 'advanced'}
-          {#if $labsSettingsVisible$}
-            <LabsSettings />
-          {/if}
+          <LabsSettings />
 
           <!-- Agent Backend -->
           <div id="agent-backend" data-highlight-id="agent-backend" use:highlightTarget>

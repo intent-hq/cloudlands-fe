@@ -3651,8 +3651,6 @@
   "lib_commandPalette_resultsCount_status": "결과 {count}개",
   "lib_commandPalette_select_label": "선택",
   "lib_commandPalette_settings_command": "설정",
-  "lib_commandPalette_showLabsInSettings_label": "설정에 랩 표시",
-  "lib_commandPalette_hideLabsInSettings_label": "설정에서 랩 숨기기",
   "lib_commandPalette_showMoreAgents_label": "에이전트 {count}개 더 표시...",
   "lib_commandPalette_showMoreBrowsers_label": "브라우저 {count}개 더 표시...",
   "lib_commandPalette_showMoreChanges_label": "변경 사항 {count}개 더 표시...",
