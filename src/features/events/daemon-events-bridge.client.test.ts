@@ -960,6 +960,62 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     expect(selectEnabledProviderIds.select(appStore.state)).toContain('codex');
   });
 
+  describe('agents.permissionPolicy default change', () => {
+    const settingsChanged = (id: string, path: string, value: unknown) => ({
+      method: 'events.event',
+      params: {
+        event: {
+          id,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'settings:changed',
+          actor: { type: 'system' },
+          data: { changes: [{ path, value }] },
+        },
+      },
+    });
+
+    function seedPolicySessions(): void {
+      seedSession({
+        id: 'policy-default',
+        permissionPolicy: null,
+        effectivePermissionPolicy: 'interactive',
+      });
+      seedSession({
+        id: 'policy-override',
+        permissionPolicy: 'interactive',
+        effectivePermissionPolicy: 'interactive',
+      });
+      // Older daemon / remote agent: no permissionPolicy field at all.
+      seedSession({ id: 'policy-absent' });
+    }
+
+    it('refetches only loaded sessions without a per-chat override', async () => {
+      await primeBridge();
+      seedPolicySessions();
+      refreshAgentSessionAfterEventSpy.mockClear();
+
+      capturedHandlers[0]!(settingsChanged('evt-policy-1', 'agents.permissionPolicy', 'allow'));
+      await flush();
+
+      const refreshed = refreshAgentSessionAfterEventSpy.mock.calls.map(
+        (call) => (call as unknown[])[0],
+      );
+      expect(refreshed).toEqual(['policy-default']);
+      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith('policy-default', WS);
+    });
+
+    it('refetches nothing for an unrelated settings key', async () => {
+      await primeBridge();
+      seedPolicySessions();
+      refreshAgentSessionAfterEventSpy.mockClear();
+
+      capturedHandlers[0]!(settingsChanged('evt-policy-2', 'mcp.enableUserServers', true));
+      await flush();
+
+      expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+    });
+  });
+
   it('invalidates existing model catalogs on host settings invalidation without another reader', async () => {
     const { providerModelsLoaded, providerModelsObserved, providerModelsReleased } =
       await import('$store/renderer/slices/provider-models/provider-models-slice');
