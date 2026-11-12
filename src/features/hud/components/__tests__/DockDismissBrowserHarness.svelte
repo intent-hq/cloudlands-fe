@@ -46,7 +46,6 @@
         }
       : null,
   );
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- synthetic native menu lifetime for browser proof
   const restore = overrideMockIpcHandler(WINDOW_CHANNELS.SHOW_DOCK_MENU, () => {
     menuOpen = true;
     return new Promise((resolve) => {

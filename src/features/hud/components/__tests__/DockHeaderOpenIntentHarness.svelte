@@ -9,7 +9,6 @@
   import ConversationWireHarness from '../DockConversationWireHarness.svelte';
 
   let activations = $state(0);
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- test harness standing in for main at the IPC boundary
   const restore = overrideMockIpcHandler(WINDOW_CHANNELS.ACTIVATE_APP, () => {
     activations += 1;
     return { activated: true };

@@ -59,7 +59,6 @@
   }) as typeof fetch;
 
   const restore = [
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- test harness standing in for main at the IPC boundary
     overrideMockIpcHandler(DOCK_MEDIA_CHANNELS.CLIPBOARD_WRITE, async (payload) => {
       const request = payload as DockMediaClipboardWrite;
       if (failWrites) return { ok: false, error: 'failed' };
@@ -96,14 +95,12 @@
             : null;
       return { ok: true };
     }),
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- test harness standing in for main at the IPC boundary
     overrideMockIpcHandler(DOCK_MEDIA_CHANNELS.CLIPBOARD_READ, async () => {
       reads += 1;
       if (holdReads) await new Promise<void>((resolve) => heldReads.push(resolve));
       answered += 1;
       return content;
     }),
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- test harness standing in for main at the IPC boundary
     overrideMockIpcHandler(DOCK_MEDIA_CHANNELS.MENU, () => ({ action: menu })),
   ];
 
