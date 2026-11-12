@@ -42,7 +42,7 @@ test('editable global dock keys use the confirmed registrar, persist, reset and 
           enforce: 'pre',
           resolveId(id) {
             if (id.endsWith('/ipc-debug-tracker')) return '\0quiet-ipc-debug';
-            if (id.endsWith('shared/logger') || id === '$shared/logger') return '\0quiet-logger';
+            if (id.endsWith('shared/logger')) return '\0quiet-logger';
           },
           load(id) {
             // Diagnostics are outside this contract; validation and the native IPC handlers stay real.
