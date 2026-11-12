@@ -8,6 +8,8 @@ export const SHORTCUT_DEFAULTS = {
   'global.search': 'mod+f',
   'global.next-space': 'ctrl+tab',
   'global.previous-space': 'ctrl+shift+tab',
+  'global.next-space-alt': 'mod+shift+]',
+  'global.previous-space-alt': 'mod+shift+[',
   'navigation.go-to-tab': 'mod+1-9',
   'navigation.new-tab': 'mod+t',
   'navigation.close-tab': 'mod+w',
@@ -35,9 +37,9 @@ export const SHORTCUT_DEFAULTS = {
   'editor.select-all': 'mod+a',
   'panel.toggle-sidebar': 'mod+b',
   'panel.create-column-right': 'mod+\\',
-  'panel.focus-next-column': 'mod+shift+]',
+  'panel.focus-next-column': 'mod+alt+right',
   'panel.maximize': 'mod+shift+m',
-  'panel.focus-previous-column': 'mod+shift+[',
+  'panel.focus-previous-column': 'mod+alt+left',
   'panel.next-pane': 'mod+]',
   'panel.previous-pane': 'mod+[',
   'panel.move-pane-next-column': 'mod+alt+pagedown',
@@ -344,4 +346,24 @@ export function sanitizeShortcutOverrides(value: unknown): ShortcutOverrides {
 
 export function resolveShortcut(id: ShortcutId, overrides: ShortcutOverrides): string {
   return overrides[id] ?? SHORTCUT_DEFAULTS[id];
+}
+
+/**
+ * True when the user explicitly rebound another action to the chord in `event` while `id`
+ * still uses its default. Default-only handlers call this so the user's binding wins instead of
+ * both actions firing. Leader actions are skipped: they only match after the leader key.
+ */
+export function isEventClaimedByCustomBinding(
+  id: ShortcutId,
+  event: ShortcutKeyboardEvent,
+  resolve: (id: ShortcutId) => string,
+  mac: boolean,
+): boolean {
+  if (resolve(id) !== SHORTCUT_DEFAULTS[id]) return false;
+  return (Object.keys(SHORTCUT_DEFAULTS) as ShortcutId[]).some((other) => {
+    if (other === id || other.startsWith('leader.')) return false;
+    const binding = resolve(other);
+    if (binding === SHORTCUT_DEFAULTS[other]) return false;
+    return matchesShortcutPattern(event, binding, mac) >= 0;
+  });
 }

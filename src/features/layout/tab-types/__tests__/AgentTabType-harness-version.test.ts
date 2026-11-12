@@ -6,7 +6,7 @@
  * protocol-version-ok-file: "Harness v1.0" fixtures are `harnessVersion` values.
  *
  * Mirrors AgentCard-harness-version.test.ts for the tab menu: renders the
- * agentActions snippet through the real panel-header context and real Menu
+ * conversation, settings, lifecycle, and footer snippets through the real panel-header context and Menu
  * components, and asserts the item's visibility, that selecting it opens
  * the read-only harness-features modal, and that legacy/absent shapes
  * render sensibly.
@@ -126,6 +126,15 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
   selectAgentFontStyle: () => ({
     subscribe: (run: (value: string) => void) => (run('sans'), () => {}),
   }),
+  selectChatContentWidth: () => ({
+    subscribe: (run: (value: string) => void) => (run('full'), () => {}),
+  }),
+  selectChatAuroraEnabled: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(true), () => {}),
+  }),
+  selectCollapseToolRuns: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
+  }),
   selectAgentFontStyleLabel: () => ({
     subscribe: (run: (value: string) => void) => (run('Default'), () => {}),
   }),
@@ -221,9 +230,6 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     // Enabled, plain command item (no flyout).
     expect(menuItem!.getAttribute('aria-disabled')).not.toBe('true');
     expect(menuItem!.getAttribute('aria-haspopup')).not.toBe('menu');
-    const actionIcons = screen.getByRole('menu').querySelectorAll('svg[data-icon]');
-    expect(actionIcons.length).toBeGreaterThan(0);
-    for (const icon of actionIcons) expect(icon.getAttribute('data-weight')).toBe('regular');
 
     await fireEvent.click(menuItem!);
 
@@ -243,10 +249,17 @@ describe('AgentTabType harness version panel-actions menu item', () => {
     expect(stateFor('backgroundHooks')!.dataset.enabled).toBe('false');
   });
 
-  it('opens the modal for a legacy session without a features snapshot (all OFF)', async () => {
+  it('opens Font settings and the modal for a legacy session without a features snapshot (all OFF)', async () => {
     seedSession({ harnessVersion: '1.0' });
     renderTab();
     await openPanelActionsMenu();
+
+    const fontTrigger = screen.getByRole('menuitem', { name: /^Font / });
+    await fireEvent.keyDown(fontTrigger, { key: 'ArrowRight' });
+    const sans = await screen.findByRole('menuitemradio', { name: 'Sans-serif' });
+    expect(sans.getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('menuitemradio', { name: /Mono/ })).toBeTruthy();
+    await fireEvent.keyDown(sans, { key: 'ArrowLeft' });
 
     const item = await screen.findByText('Harness v1.0');
     const menuItem = item.closest('[role="menuitem"]');
@@ -307,17 +320,6 @@ describe('AgentTabType harness version panel-actions menu item', () => {
 });
 
 describe('AgentTabType specialist panel-actions menu item', () => {
-  // The harness and the embedded view-settings snippet render their own
-  // separators above the actions, so count only separators after Delete —
-  // i.e. the info section's shared separator.
-  function separatorsAfterDelete(): number {
-    const menu = screen.getByRole('menu');
-    const deleteItem = screen.getByText('Delete agent').closest('[role="menuitem"]')!;
-    return Array.from(menu.querySelectorAll('[data-slot="menu-separator"]')).filter(
-      (sep) => deleteItem.compareDocumentPosition(sep) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).length;
-  }
-
   beforeEach(() => {
     mockState.dispatch.mockClear();
     mockState.agents.set({});
@@ -328,36 +330,25 @@ describe('AgentTabType specialist panel-actions menu item', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders a disabled info item before the harness entry, with one shared separator', async () => {
+  it('combines specialist and harness metadata into an action that opens details', async () => {
     seedSession({ harnessVersion: '1.0', metadata: { specialist: 'implementor' } });
     renderTab();
     await openPanelActionsMenu();
 
-    const item = await screen.findByText('Specialist: Implementor');
-    const menuItem = item.closest('[role="menuitem"]');
-    expect(menuItem).not.toBeNull();
-    // Read-only informational entry: disabled, no flyout.
-    expect(menuItem!.getAttribute('aria-disabled')).toBe('true');
-    expect(menuItem!.getAttribute('aria-haspopup')).not.toBe('menu');
-
-    // Specialist precedes the harness version entry (AgentCard ordering).
-    const harnessItem = screen.getByText('Harness v1.0').closest('[role="menuitem"]');
-    expect(
-      menuItem!.compareDocumentPosition(harnessItem!) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-
-    // Single shared separator for the info section, no double separator.
-    expect(separatorsAfterDelete()).toBe(1);
+    const item = await screen.findByRole('menuitem', { name: 'Implementor · Harness v1.0' });
+    expect(item.getAttribute('aria-disabled')).not.toBe('true');
+    await fireEvent.click(item);
+    expect(await screen.findByRole('dialog', { name: 'Harness v1.0' })).toBeTruthy();
   });
 
-  it('shows the item (and the separator) when only the specialist is present', async () => {
+  it('shows passive specialist metadata when no harness version is present', async () => {
     seedSession({ metadata: { specialist: 'implementor' } });
     renderTab();
     await openPanelActionsMenu();
 
-    expect(await screen.findByText('Specialist: Implementor')).toBeTruthy();
+    const item = await screen.findByText('Implementor');
+    expect(item.closest('[role="menuitem"]')).toBeNull();
     expect(screen.queryByText(/^Harness v/)).toBeNull();
-    expect(separatorsAfterDelete()).toBe(1);
   });
 
   it('falls back to the raw specialist id when the display-name lookup misses (AgentCard parity)', async () => {
@@ -365,10 +356,8 @@ describe('AgentTabType specialist panel-actions menu item', () => {
     renderTab();
     await openPanelActionsMenu();
 
-    const item = await screen.findByText('Specialist: mystery-specialist');
-    const menuItem = item.closest('[role="menuitem"]');
-    expect(menuItem).not.toBeNull();
-    expect(menuItem!.getAttribute('aria-disabled')).toBe('true');
+    const item = await screen.findByText('mystery-specialist');
+    expect(item.closest('[role="menuitem"]')).toBeNull();
   });
 
   it('omits the item entirely when the agent has no specialist', async () => {
@@ -377,17 +366,19 @@ describe('AgentTabType specialist panel-actions menu item', () => {
     await openPanelActionsMenu();
 
     expect(await screen.findByText('Harness v1.0')).toBeTruthy();
-    expect(screen.queryByText(/^Specialist:/)).toBeNull();
+    expect(screen.queryByText('Implementor')).toBeNull();
+    expect(screen.queryByText('mystery-specialist')).toBeNull();
   });
 
-  it('omits the item and the separator when neither specialist nor harness version exists', async () => {
+  it('omits metadata when neither specialist nor harness version exists', async () => {
     seedSession();
     renderTab();
     await openPanelActionsMenu();
 
     expect(await screen.findByText('Delete agent')).toBeTruthy();
-    expect(screen.queryByText(/^Specialist:/)).toBeNull();
-    expect(separatorsAfterDelete()).toBe(0);
+    expect(screen.queryByText('Implementor')).toBeNull();
+    expect(screen.queryByText('mystery-specialist')).toBeNull();
+    expect(screen.queryByText(/Harness v/)).toBeNull();
   });
 });
 
@@ -404,16 +395,14 @@ describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', (
     document.body.innerHTML = '';
   });
 
-  it('offers "Mute notifications" for an unmuted agent and dispatches the mute', async () => {
+  it('shows Notifications checked for an unmuted agent and dispatches the mute', async () => {
     seedSession();
     renderTab();
     await openPanelActionsMenu();
 
-    expect(screen.queryByText('Unmute notifications')).toBeNull();
-    const item = await screen.findByText('Mute notifications');
-    const menuItem = item.closest('[role="menuitem"]');
-    expect(menuItem).not.toBeNull();
-    await fireEvent.click(menuItem!);
+    const item = await screen.findByRole('menuitemcheckbox', { name: 'Notifications' });
+    expect(item.getAttribute('aria-checked')).toBe('true');
+    await fireEvent.click(item);
 
     const dispatchedAction = mockState.dispatch.mock.calls
       .map(([action]) => action)
@@ -422,14 +411,14 @@ describe('AgentTabType notification mute (PROTOCOL §5.5 notificationsMuted)', (
     expect(dispatchedAction.payload).toEqual(['ws-1', 'agent-1', true]);
   });
 
-  it('offers "Unmute notifications" for a muted agent and dispatches the unmute', async () => {
+  it('shows Notifications unchecked for a muted agent and dispatches the unmute', async () => {
     seedSession({ notificationsMuted: true });
     renderTab();
     await openPanelActionsMenu();
 
-    expect(screen.queryByText('Mute notifications')).toBeNull();
-    const item = await screen.findByText('Unmute notifications');
-    await fireEvent.click(item.closest('[role="menuitem"]')!);
+    const item = await screen.findByRole('menuitemcheckbox', { name: 'Notifications' });
+    expect(item.getAttribute('aria-checked')).toBe('false');
+    await fireEvent.click(item);
 
     const dispatchedAction = mockState.dispatch.mock.calls
       .map(([action]) => action)

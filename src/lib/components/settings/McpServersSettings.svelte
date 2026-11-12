@@ -135,7 +135,9 @@
   // Rebuild the advanced editor's JSON from the daemon-backed slice state
   // (PROTOCOL §5.22 structured config — no raw settings-file IPC).
   function loadSettingsFile() {
-    const servers = selectMcpServersWithStatus.select(appStore.state);
+    const servers = selectMcpServersWithStatus
+      .select(appStore.state)
+      .filter((server) => !server.plugin);
     const configs = servers.map((server) => {
       const {
         name,

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   setNotificationsMuted: vi.fn(),
   setPinned: vi.fn(),
+  setPermissionPolicy: vi.fn(),
   setBackground: vi.fn(),
   stop: vi.fn(),
   cancelSubscriptions: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock('$lib/client', () => ({
       rename: mocks.rename,
       setNotificationsMuted: mocks.setNotificationsMuted,
       setPinned: mocks.setPinned,
+      setPermissionPolicy: mocks.setPermissionPolicy,
       setBackground: mocks.setBackground,
       stop: mocks.stop,
       cancelSubscriptions: mocks.cancelSubscriptions,
@@ -91,16 +93,20 @@ import {
   agentRetirementSupportRequested,
   agentRetirementSupportReceived,
   deleteAgentWithUndoRequested,
+  deleteAgentsWithUndoRequested,
   deleteAgentSessionRequested,
   renameAgentSessionRequested,
   restoreAgentSessionRequested,
   restoreRetiredAgentRequested,
   retireAgentRequested,
+  retireAgentsRequested,
   saveAgentSessionRequested,
   setAgentNotificationsMutedRequested,
   setAgentPinnedRequested,
+  setAgentPermissionPolicyRequested,
   setAgentBackgroundRequested,
   undoAgentDeletionRequested,
+  undoAgentDeletionsRequested,
   initialState as workspaceAgentsInitialState,
   workspaceAgentsReducer,
 } from '../../workspace-agents/workspace-agents-slice';
@@ -1186,6 +1192,99 @@ describe('agentMutationSaga', () => {
     await stop(task);
   });
 
+  it('applies a permission policy optimistically and forwards exact agent.update params', async () => {
+    mocks.setPermissionPolicy.mockResolvedValue({ success: true });
+    const { channel, dispatched, task } = start({
+      [A1]: session(A1, { permissionPolicy: null, effectivePermissionPolicy: 'allow' }),
+    });
+    const action = setAgentPermissionPolicyRequested(WS, A1, 'interactive');
+    channel.put(action);
+
+    await expect(action.promise).resolves.toBeUndefined();
+    expect(mocks.setPermissionPolicy).toHaveBeenCalledWith({
+      agentId: A1,
+      workspaceId: WS,
+      permissionPolicy: 'interactive',
+    });
+    expect(dispatched).toContainEqual(
+      updateSession(A1, {
+        permissionPolicy: 'interactive',
+        effectivePermissionPolicy: 'interactive',
+      }),
+    );
+    await stop(task);
+  });
+
+  it('reconciles a failed permission policy write from agent.get instead of a snapshot', async () => {
+    vi.useRealTimers();
+    const { admitLegacyPrincipal } = await import('../../../../../test/fixtures/principal-state');
+    const { createMockWorkspace } = await import('../../../../../test/factories/workspace.factory');
+    const { setWorkspaceEntity } = await import('../../workspace/workspace-slice');
+    const { refreshAgentSessionAfterEvent } = await import('$features/agent/agent-read-service');
+    admitLegacyPrincipal();
+    appStore.dispatch(setWorkspaceEntity(createMockWorkspace({ id: WS, myRole: 'owner' })));
+    const prior = session(A1, { permissionPolicy: null, effectivePermissionPolicy: 'allow' });
+    appStore.dispatch(bulkUpsertSessions([prior]));
+    const failures: Array<(result: { success: false; error: string }) => void> = [];
+    mocks.setPermissionPolicy.mockImplementation(
+      () => new Promise((resolve) => failures.push(resolve)),
+    );
+    mocks.get.mockResolvedValue({ ...prior });
+    const cancel = appStore.runSaga(agentMutationSaga);
+    try {
+      // allow → interactive → allow in quick succession; both writes fail.
+      const toOn = setAgentPermissionPolicyRequested(WS, A1, 'interactive');
+      const toOnFailed = expect(toOn.promise).rejects.toThrow('policy rejected');
+      appStore.dispatch(toOn);
+      expect(appStore.state.agentSessions.byAgentId[A1].effectivePermissionPolicy).toBe(
+        'interactive',
+      );
+      const toOff = setAgentPermissionPolicyRequested(WS, A1, 'allow');
+      const toOffFailed = expect(toOff.promise).rejects.toThrow('policy rejected');
+      appStore.dispatch(toOff);
+      await vi.waitFor(() => expect(failures).toHaveLength(2));
+
+      failures[0]!({ success: false, error: 'policy rejected' });
+      await toOnFailed;
+      failures[1]!({ success: false, error: 'policy rejected' });
+      await toOffFailed;
+
+      // The switch ends on the daemon's value, not the first flip's snapshot.
+      await vi.waitFor(() => {
+        const stored = appStore.state.agentSessions.byAgentId[A1];
+        expect(mocks.get).toHaveBeenCalled();
+        expect(stored.permissionPolicy).toBeNull();
+        expect(stored.effectivePermissionPolicy).toBe('allow');
+      });
+      expect(mocks.error).toHaveBeenCalledWith('policy rejected');
+      // Drain the trailing read so no hydration outlives this test.
+      await refreshAgentSessionAfterEvent(A1, WS);
+    } finally {
+      cancel();
+      mocks.get.mockReset();
+      mocks.setPermissionPolicy.mockReset();
+    }
+  });
+
+  it('does not restore a captured permission policy snapshot on failure', async () => {
+    mocks.setPermissionPolicy.mockResolvedValue({ success: false, error: 'policy rejected' });
+    mocks.get.mockResolvedValueOnce(null);
+    const { channel, dispatched, task } = start(
+      { [A1]: session(A1, { permissionPolicy: null, effectivePermissionPolicy: 'interactive' }) },
+      { live: true },
+    );
+    const action = setAgentPermissionPolicyRequested(WS, A1, 'allow');
+    channel.put(action);
+
+    await expect(action.promise).rejects.toThrow('policy rejected');
+    const updates = dispatched.filter((candidate) => candidate.type === updateSession.type);
+    expect(updates).toEqual([
+      updateSession(A1, { permissionPolicy: 'allow', effectivePermissionPolicy: 'allow' }),
+    ]);
+    expect(mocks.error).toHaveBeenCalledWith('policy rejected');
+    await stop(task);
+  });
+
   it('rolls back the optimistic mute and surfaces the daemon failure', async () => {
     mocks.setNotificationsMuted.mockResolvedValue({ success: false, error: 'mute rejected' });
     const unread = session(A1, {
@@ -2004,5 +2103,122 @@ describe('agentMutationSaga', () => {
     expect(listPendingAgentDeletions()).toHaveLength(1);
     await vi.advanceTimersByTimeAsync(15_000 + AGENT_DELETION_TOMBSTONE_TTL_MS);
     expect(listPendingAgentDeletions()).toEqual([]);
+  });
+
+  describe('bulk list actions', () => {
+    const A2 = 'agent-2';
+    const scheduled = {
+      success: true,
+      scheduled: true,
+      deleteAt: '2026-08-11T00:00:15.000Z',
+    } as const;
+
+    it('retires every agent and reports refusals in one error toast', async () => {
+      mocks.retire.mockImplementation(async (agentId: string) =>
+        agentId === A1
+          ? { success: true, retiredAt: '2026-09-28T08:00:00Z' }
+          : { success: false, error: 'cannot retire: last agent' },
+      );
+      const { channel, dispatched, task } = start({ [A1]: session(), [A2]: session(A2) });
+      channel.put(retireAgentsRequested(WS, [A1, A2]));
+      await vi.waitFor(() => expect(mocks.error).toHaveBeenCalled());
+      expect(mocks.retire).toHaveBeenCalledTimes(2);
+      expect(mocks.retire).toHaveBeenCalledWith(A1, WS);
+      expect(mocks.retire).toHaveBeenCalledWith(A2, WS);
+      expect(mocks.error).toHaveBeenCalledExactlyOnceWith('cannot retire: last agent');
+      const patches = dispatched.filter((candidate) => candidate.type === updateSession.type);
+      expect(patches.map((patch) => patch.payload)).toEqual([
+        [A1, { retiredAt: '2026-09-28T08:00:00Z' }],
+      ]);
+      await stop(task);
+    });
+
+    it('shows no error toast when every retirement succeeds', async () => {
+      mocks.retire.mockResolvedValue({ success: true, retiredAt: '2026-09-28T08:00:00Z' });
+      const { channel, dispatched, task } = start({ [A1]: session(), [A2]: session(A2) });
+      channel.put(retireAgentsRequested(WS, [A1, A2]));
+      await vi.waitFor(() =>
+        expect(dispatched.filter((a) => a.type === updateSession.type)).toHaveLength(2),
+      );
+      await settle();
+      expect(mocks.error).not.toHaveBeenCalled();
+      await stop(task);
+    });
+
+    it('deletes several agents in one grace window with a single Undo toast', async () => {
+      mocks.deleteAgent.mockResolvedValue(scheduled);
+      const { channel, task } = start({ [A1]: session(), [A2]: session(A2) });
+      channel.put(
+        deleteAgentsWithUndoRequested(WS, [
+          { agentId: A1, name: 'First' },
+          { agentId: A2, name: 'Second' },
+        ]),
+      );
+      await vi.waitFor(() => expect(mocks.warning).toHaveBeenCalled());
+      await settle();
+      expect(mocks.deleteAgent).toHaveBeenCalledTimes(2);
+      expect(mocks.deleteAgent).toHaveBeenCalledWith(A1, WS, { undoDelayMs: 15_000 });
+      expect(mocks.deleteAgent).toHaveBeenCalledWith(A2, WS, { undoDelayMs: 15_000 });
+      expect(mocks.warning).toHaveBeenCalledTimes(1);
+      expect(mocks.warning.mock.calls[0][1]).toMatchObject({
+        duration: 15_000,
+        action: { onClick: expect.any(Function) },
+      });
+      expect(
+        listPendingAgentDeletions()
+          .map((entry) => entry.agentId)
+          .sort(),
+      ).toEqual([A1, A2]);
+      await stop(task);
+    });
+
+    it('falls back to the single-agent Undo toast when only one delete was scheduled', async () => {
+      mocks.deleteAgent.mockImplementation(async (agentId: string) =>
+        agentId === A1 ? scheduled : { success: false, error: 'delete rejected' },
+      );
+      const { channel, task } = start({ [A1]: session(), [A2]: session(A2) });
+      channel.put(
+        deleteAgentsWithUndoRequested(WS, [
+          { agentId: A1, name: 'First' },
+          { agentId: A2, name: 'Second' },
+        ]),
+      );
+      await vi.waitFor(() => expect(mocks.warning).toHaveBeenCalled());
+      await settle();
+      expect(mocks.warning).toHaveBeenCalledTimes(1);
+      expect(mocks.error).toHaveBeenCalledWith('delete rejected');
+      expect(listPendingAgentDeletions().map((entry) => entry.agentId)).toEqual([A1]);
+      await stop(task);
+    });
+
+    it('undoes several deletions and reports failures in one error toast', async () => {
+      mocks.deleteAgent.mockResolvedValue(scheduled);
+      mocks.cancelDelete.mockResolvedValue({ success: true, cancelled: false });
+      const { channel, task } = start({ [A1]: session(), [A2]: session(A2) });
+      channel.put(deleteAgentsWithUndoRequested(WS, [{ agentId: A1 }, { agentId: A2 }]));
+      await vi.waitFor(() => expect(listPendingAgentDeletions()).toHaveLength(2));
+      await settle();
+      channel.put(undoAgentDeletionsRequested(WS, [A1, A2]));
+      await vi.waitFor(() => expect(mocks.cancelDelete).toHaveBeenCalledTimes(2));
+      await vi.waitFor(() => expect(mocks.error).toHaveBeenCalled());
+      await settle();
+      expect(mocks.error).toHaveBeenCalledTimes(1);
+      expect(listPendingAgentDeletions()).toHaveLength(2);
+      await stop(task);
+    });
+
+    it('restores every deletion on a bulk undo without an error toast', async () => {
+      mocks.deleteAgent.mockResolvedValue(scheduled);
+      mocks.cancelDelete.mockResolvedValue({ success: true, cancelled: true });
+      const { channel, dispatched, task } = start({ [A1]: session(), [A2]: session(A2) });
+      channel.put(deleteAgentsWithUndoRequested(WS, [{ agentId: A1 }, { agentId: A2 }]));
+      await vi.waitFor(() => expect(listPendingAgentDeletions()).toHaveLength(2));
+      await settle();
+      channel.put(undoAgentDeletionsRequested(WS, [A1, A2]));
+      await vi.waitFor(() => expect(listPendingAgentDeletions()).toEqual([]));
+      expect(dispatched).toContainEqual(refreshWorkspaceSubscriptionEntriesRequested(WS));
+      expect(mocks.error).not.toHaveBeenCalled();
+      await stop(task);
+    });
   });
 });

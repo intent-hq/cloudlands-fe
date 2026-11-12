@@ -51,26 +51,23 @@ export const ENFORCED_DIRS = [
   'src/features/debug',
   'src/features/debug-export',
   'src/lib/services',
-  // agent feature: renderer services + browser/services/utils and the two
-  // user-facing main-process files. testing/ (harness) and agent-launch-core
-  // (prompt building) are intentionally not enforced.
+  // agent feature: renderer services + browser/services/utils and the
+  // user-facing main-process file. testing/ (harness) is intentionally not
+  // enforced.
   'src/features/agent/browser',
   'src/features/agent/services',
   'src/features/agent/utils',
   'src/features/agent/errors',
-  'src/features/agent/config',
   'src/features/agent/agent-context-registry.ts',
   'src/features/agent/agent-context.ipc.ts',
   'src/features/agent/agent-context.ts',
   'src/features/agent/agent-failure-registry.ts',
   'src/features/agent/agent-read-service.ts',
   'src/features/agent/agent-send.ts',
-  'src/features/agent/agent-types.ts',
   'src/features/agent/agent.client.ts',
   'src/features/agent/chat-read-service.ts',
   'src/features/agent/interrupted-agents-service.ts',
   'src/features/agent/main/agent-missing.ipc.ts',
-  'src/features/agent/main/stream-manager.ts',
   // provider integrations. acp-official main/server, parsers, and plans emit
   // agent-facing wire content; cortex/cortex-acp is a standalone stdio adapter
   // subprocess — both intentionally not enforced.
@@ -87,7 +84,7 @@ export const ENFORCED_DIRS = [
   'src/features/pi',
   'src/features/providers',
   'src/features/antigravity',
-  // remaining feature dirs (final flip). agent/testing, agent/agent-launch-core,
+  // remaining feature dirs (final flip). agent/testing,
   // acp-official main/server + parsers/plans, and cortex/cortex-acp emit
   // agent-facing prompt/wire content — intentionally not enforced.
   'src/features/accept-changes',
@@ -97,7 +94,6 @@ export const ENFORCED_DIRS = [
   'src/features/config',
   'src/features/context',
   'src/features/deeplink',
-  'src/features/diffs',
   'src/features/events',
   'src/features/export',
   'src/features/external-editors',
@@ -119,7 +115,6 @@ export const ENFORCED_DIRS = [
   'src/features/rules',
   'src/features/scripts',
   'src/features/setup-scripts',
-  'src/features/specialists',
   'src/features/system',
   'src/features/tasks',
   'src/features/token-usage',
@@ -131,7 +126,6 @@ export const ENFORCED_DIRS = [
   // now (recorded coordinator scope exception in the spec); shared/errors/
   // recovery.ts is a known follow-up.
   'src/shared/errors/index.ts',
-  'src/shared/errors/localization.ts',
   'src/shared/errors/messages.ts',
   'src/store/renderer/seeders/provider-status-bridge-seeder.ts',
 ];

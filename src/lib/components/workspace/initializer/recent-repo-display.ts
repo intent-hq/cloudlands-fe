@@ -51,6 +51,17 @@ export function getRecentRepoIdentity(
     : null;
 }
 
+/** Where a known repo entry starts a workspace from: a local path, a Labs plain folder, or a forge. */
+export type RecentRepoSource = 'local' | 'folder' | 'github' | 'gitlab';
+
+export function getRecentRepoSource(
+  repo: RecentRepoEntry & { plainFolder?: true },
+  gitlabInstance?: string,
+): RecentRepoSource {
+  if (repo.type === 'local') return repo.plainFolder ? 'folder' : 'local';
+  return getRecentRepoIdentity(repo, gitlabInstance)?.provider === 'gitlab' ? 'gitlab' : 'github';
+}
+
 export interface RecentRepoLabel {
   /** Dimmed "owner /" prefix, GitHub entries only */
   ownerPrefix?: string;

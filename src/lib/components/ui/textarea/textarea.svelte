@@ -7,6 +7,7 @@
     textEntryCaretFocusClasses,
     textEntryControlClasses,
     textEntryFocusResetClasses,
+    textEntryInlineClasses,
   } from '../text-entry';
 
   interface Props extends HTMLTextareaAttributes {
@@ -17,6 +18,7 @@
     minHeight?: number;
     maxHeight?: number;
     noFocusStyle?: boolean;
+    variant?: 'default' | 'inline';
     size?: UiSize;
     message?: string;
     error?: string;
@@ -37,6 +39,7 @@
     minHeight = 80,
     maxHeight = 400,
     noFocusStyle = false,
+    variant = 'default',
     size,
     message,
     error,
@@ -90,16 +93,21 @@
   {id}
   data-slot="textarea"
   data-size={resolvedSize}
+  data-variant={variant === 'inline' ? 'inline' : undefined}
   bind:value
   oninput={shouldAutoResize ? adjustHeight : undefined}
   aria-describedby={describedBy}
   aria-invalid={invalid}
   class={cn(
-    'type-caption text-foreground placeholder:text-muted-foreground flex w-full rounded-(--radius-medium) border px-3',
-    textEntryControlClasses,
-    textEntryCaretFocusClasses,
-    resolvedSize === 'compact' ? 'py-1.5' : 'py-2',
-    shouldAutoResize ? 'resize-none overflow-hidden' : 'min-h-20',
+    variant === 'inline'
+      ? textEntryInlineClasses
+      : [
+          'type-caption text-foreground placeholder:text-muted-foreground flex w-full rounded-(--radius-medium) border px-3',
+          textEntryControlClasses,
+          textEntryCaretFocusClasses,
+          resolvedSize === 'compact' ? 'py-1.5' : 'py-2',
+          shouldAutoResize ? 'resize-none overflow-hidden' : 'min-h-20',
+        ],
     noFocusStyle && textEntryFocusResetClasses,
     className,
   )}

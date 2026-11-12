@@ -106,10 +106,6 @@ vi.mock('$store/renderer/slices/workspace-notes/workspace-notes-selectors', () =
 vi.mock('$store/renderer/slices/principal/principal-selectors', () => ({
   selectPrincipalConnectionContext: () => mockState.principalConnectionContext,
 }));
-vi.mock('$features/notes/notes-write-service', () => ({
-  createNote: vi.fn(),
-  deleteNote: vi.fn(),
-}));
 vi.mock('$store/renderer/slices/workspace-agents/workspace-agents-selectors', () => ({
   selectIsInitialSpecWriteInProgress: () => mockState.initialSpecWriteInProgress,
   selectInitialAgentId: { select: () => null },

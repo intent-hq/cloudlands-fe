@@ -22,6 +22,7 @@
   import { formatInteger } from '$lib/i18n/format';
   import { openExternalUrl } from '$lib/utils/open-external';
   import type { OpenPrWarningItem } from '$lib/utils/delete-warning-utils';
+  import { outstandingWork } from '$store/renderer/slices/workspace-operations/outstanding-work';
   import type {
     GuestsWarning,
     LocalChangesRoot,
@@ -36,7 +37,7 @@
     agents?: WarningAgent[];
     hookNames?: string[];
     openPrs?: OpenPrWarningItem[];
-    /** `workspace.localChanges` result; null when unavailable (fail-open). */
+    /** Delete only: `workspace.localChanges` result; null when unavailable (fail-open). */
     localChanges?: LocalChangesWarning | null;
     /** Collaborators and open invites the operation removes; null when unknown. */
     guests?: GuestsWarning | null;
@@ -58,18 +59,24 @@
   }: Props = $props();
 
   const isArchive = $derived(mode === 'archive');
-  const hasRunningWork = $derived(agents.length > 0 || hookNames.length > 0);
-  const hasLocalChanges = $derived(
-    localChanges != null && (localChanges.hasUnpushedCommits || localChanges.hasUncommittedChanges),
+  // Same rule the saga gates on, so every reason to open has a section below.
+  const outstanding = $derived(
+    outstandingWork(mode, {
+      agentCount: agents.length,
+      hookCount: hookNames.length,
+      openPrCount: openPrs.length,
+      localChanges,
+      guests,
+    }),
   );
+  const hasRunningWork = $derived(outstanding.running);
+  const hasLocalChanges = $derived(outstanding.localChanges);
   const collaboratorCount = $derived(guests?.collaboratorCount ?? 0);
   const openInviteCount = $derived(guests?.openInviteCount ?? 0);
-  const hasGuests = $derived(collaboratorCount + openInviteCount > 0);
-  const hasActiveWork = $derived(
-    agents.length > 0 || hookNames.length > 0 || openPrs.length > 0 || hasLocalChanges,
-  );
+  const hasGuests = $derived(outstanding.guests);
+  const hasActiveWork = $derived(outstanding.work);
   // Guests are the only reason for the dialog: no work is stopped, so the copy must not claim it.
-  const guestsOnly = $derived(hasGuests && !hasActiveWork);
+  const guestsOnly = $derived(outstanding.guestsOnly);
   // Roots with local work; rows the daemon could not read carry `error` and are skipped.
   const localChangeRoots = $derived(
     hasLocalChanges
@@ -111,10 +118,7 @@
           ? m.modals_deleteWarning_combinedChanges_label({ commits })
           : commits
         : m.modals_deleteWarning_localChanges_uncommitted_label();
-    const params = { changes, branch: rootLabel(root) };
-    return isArchive
-      ? m.modals_archiveWarning_branchChanges_description(params)
-      : m.modals_deleteWarning_branchChanges_description(params);
+    return m.modals_deleteWarning_branchChanges_description({ changes, branch: rootLabel(root) });
   }
 
   function handleDeleteAnyway() {
@@ -283,7 +287,7 @@
               {/each}
             </ul>
           {/if}
-          {#if hasLocalChanges && !isArchive}
+          {#if hasLocalChanges}
             <div
               class="space-y-2 type-body text-foreground"
               class:mt-4={agents.length > 0 || hookNames.length > 0 || openPrs.length > 0}
@@ -291,11 +295,7 @@
               {#each localChangeRoots as root (root.gitRootId ?? root.path)}
                 <p class="break-words">{localChangesSentence(root)}</p>
               {:else}
-                <p>
-                  {isArchive
-                    ? m.modals_archiveWarning_localChanges_description()
-                    : m.modals_deleteWarning_localChanges_description()}
-                </p>
+                <p>{m.modals_deleteWarning_localChanges_description()}</p>
               {/each}
             </div>
           {/if}

@@ -47,9 +47,7 @@
   import {
     faBoxArchive,
     faBell,
-    faBellSlash,
     faCheck,
-    faCircleInfo,
     faCopy,
     faRightLeft,
     faTrash,
@@ -308,11 +306,17 @@
     if (delegatedByName)
       subtitleParts.push(m.layout_panelTabBar_delegatedBy_label({ name: delegatedByName }));
     const subtitle = subtitleParts.length > 0 ? subtitleParts.join(' · ') : undefined;
+    const hasLifecycleActions =
+      canReplaceAgent ||
+      ($retirementSupported$ && $agent$ && !$agent$.retiredAt) ||
+      !$hidesAgentLifecycleActions$;
+    const hasMetadata = !!(agentSpecialistName || harnessVersion);
     untrack(() => {
       headerContext.registerActions({
         display: agentDisplayActions,
-        actions: agentActions,
-        additional: agentAdditionalActions,
+        conversation: agentConversationActions,
+        lifecycle: hasLifecycleActions ? agentLifecycleActions : undefined,
+        footer: hasMetadata ? agentMetadata : undefined,
       });
       headerContext.registerState({ subtitle });
     });
@@ -321,9 +325,19 @@
 
 {#snippet agentDisplayActions()}
   <AgentViewSettingsDropdown embedded {workspaceId} agentId={tab.agentId} />
+  {#if $agent$}
+    <Menu.CheckboxItem
+      indicator="switch"
+      icon={faBell}
+      checked={!isNotificationsMuted}
+      onCheckedChange={handleToggleNotificationsMuted}
+    >
+      {m.settings_section_notifications()}
+    </Menu.CheckboxItem>
+  {/if}
 {/snippet}
 
-{#snippet agentActions()}
+{#snippet agentConversationActions(menuOpen: boolean)}
   <Menu.CommandItem
     icon={agentCopyFeedback ? faCheck : faCopy}
     iconWeight="regular"
@@ -331,6 +345,39 @@
     onclick={handleCopyAgentConversation}
     disabled={agentMessages.length === 0}
   />
+  <TaskProgressControl
+    tasks={taskProgressItems}
+    {workspaceId}
+    isActive={isActive && menuOpen}
+    embedded
+  />
+  <ChatMessageNavigator
+    embedded
+    messages={chatNavigationState.userMessages}
+    isAtBottom={chatNavigationState.isAtBottom}
+    isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
+    onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
+    onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
+    onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
+  />
+
+  {#if agentTaskNoteId}
+    <Menu.CommandItem
+      icon={faNote}
+      iconWeight="regular"
+      label={m.layout_agentTab_goToTaskNote_tooltip()}
+      onclick={(event) => handleGoToTaskNote(event)}
+    />
+  {/if}
+  {#if tab.agentId}
+    <BrowserTabsMenu {workspaceId} agentId={tab.agentId} embedded />
+  {/if}
+  {#each $presencePeople$ as person (person.principalId)}
+    <Menu.CommandItem icon={faUserTie} label={presencePersonLabel(person)} disabled />
+  {/each}
+{/snippet}
+
+{#snippet agentLifecycleActions()}
   {#if canReplaceAgent}
     <Menu.CommandItem
       icon={faRightLeft}
@@ -359,66 +406,23 @@
   {/if}
 {/snippet}
 
-{#snippet agentAdditionalActions(menuOpen: boolean)}
-  {#each $presencePeople$ as person (person.principalId)}
-    <Menu.CommandItem icon={faUserTie} label={presencePersonLabel(person)} disabled />
-  {/each}
-  <TaskProgressControl
-    tasks={taskProgressItems}
-    {workspaceId}
-    isActive={isActive && menuOpen}
-    embedded
-  />
-  {#if tab.agentId}
-    <BrowserTabsMenu {workspaceId} agentId={tab.agentId} embedded />
-  {/if}
-  <ChatMessageNavigator
-    embedded
-    messages={chatNavigationState.userMessages}
-    isAtBottom={chatNavigationState.isAtBottom}
-    isLoadingIndex={chatNavigationState.isLoadingUserMessageIndex}
-    onSelectMessage={(messageId) => chatPanelRef?.navigateToUserMessage(messageId) ?? false}
-    onScrollToBottom={() => chatPanelRef?.scrollToBottom()}
-    onOpen={() => chatPanelRef?.refreshUserMessageIndex()}
-  />
-
-  {#if agentTaskNoteId}
-    <Menu.CommandItem
-      icon={faNote}
-      iconWeight="regular"
-      label={m.layout_agentTab_goToTaskNote_tooltip()}
-      onclick={(event) => handleGoToTaskNote(event)}
-    />
-  {/if}
-  {#if $agent$}
-    <Menu.CommandItem
-      icon={isNotificationsMuted ? faBell : faBellSlash}
-      iconWeight="regular"
-      label={isNotificationsMuted
-        ? m.chat_agentCard_menu_unmuteNotifications_label()
-        : m.chat_agentCard_menu_muteNotifications_label()}
-      onclick={handleToggleNotificationsMuted}
-    />
-  {/if}
-  {#if agentSpecialistName || harnessVersion}
-    <Menu.Separator />
-    {#if agentSpecialistName}
-      <Menu.CommandItem
-        icon={faUserTie}
-        iconWeight="regular"
-        label={m.chat_agentCard_menu_specialist_label({ name: agentSpecialistName })}
-        disabled
-      />
-    {/if}
+{#snippet agentMetadata()}
+  <Menu.Footer>
     {#if harnessVersion}
       <Menu.CommandItem
-        icon={faCircleInfo}
-        iconWeight="regular"
-        label={m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion })}
+        class="min-h-0 px-0 py-0"
+        label={[
+          agentSpecialistName,
+          m.chat_agentCard_menu_harnessVersion_label({ version: harnessVersion }),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         onclick={() => (harnessModalOpen = true)}
       />
+    {:else if agentSpecialistName}
+      <span class="block min-w-0 truncate">{agentSpecialistName}</span>
     {/if}
-  {/if}
+  </Menu.Footer>
 {/snippet}
 
 {#if harnessVersion}
@@ -426,6 +430,7 @@
     bind:open={harnessModalOpen}
     version={harnessVersion}
     features={harnessFeatures}
+    agentId={tab.agentId ?? undefined}
   />
 {/if}
 

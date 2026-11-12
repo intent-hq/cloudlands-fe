@@ -149,7 +149,7 @@ function resolveUsableProvider(
     tryUse(preferred.specialistCodingAgent, 'specialist-coding-agent') ??
     tryUse(preferred.activeProvider, 'active-provider') ??
     tryUse(preferred.defaultProvider, 'default-provider') ??
-    usable.find((providerId) => providerId !== 'antigravity')
+    usable[0]
   );
 }
 
@@ -175,6 +175,10 @@ export async function resolveOnboardingModel(
   const specialists = selectSpecialists.select(state);
   const specialistId = resolveOnboardingSpecialistId(specialists);
   const specialist = specialistId ? specialists.find((s) => s.id === specialistId) : undefined;
+  // The prompt is fixed at creation; never start the agent from a placeholder.
+  if (specialist?.promptUnavailable) {
+    throw new Error(m.specialists_catalogLoading_error());
+  }
   const specialistName = specialistId
     ? (specialist?.name ?? getSpecialistById(specialistId)?.name ?? specialistId)
     : undefined;

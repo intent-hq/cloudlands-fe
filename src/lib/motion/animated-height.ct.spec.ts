@@ -1,11 +1,11 @@
 import { expect, test } from '../../test/ct-test';
-import AnimatedHeightHost from './AnimatedHeightHost.svelte';
+import AnimatedHeightTestHost from './AnimatedHeightTestHost.svelte';
 
 test('mounts hundreds of closed wrappers without per-row geometry reads or layouts', async ({
   mount,
   page,
 }, testInfo) => {
-  const component = await mount(AnimatedHeightHost, { props: { count: 0, empty: true } });
+  const component = await mount(AnimatedHeightTestHost, { props: { count: 0, empty: true } });
   await page.evaluate(() => {
     const state = window as typeof window & { heightReads: number };
     state.heightReads = 0;
@@ -60,7 +60,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     page,
   }) => {
     await page.emulateMedia({ reducedMotion });
-    const component = await mount(AnimatedHeightHost);
+    const component = await mount(AnimatedHeightTestHost);
     const wrapper = component.locator('[data-height-probe]');
     const height = () => wrapper.evaluate((node) => node.getBoundingClientRect().height);
     const contentHeight = () =>
@@ -80,7 +80,7 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 test('keeps an initially open sidebar action visible and usable after deferred sizing', async ({
   mount,
 }) => {
-  const component = await mount(AnimatedHeightHost, { props: { sidebar: true } });
+  const component = await mount(AnimatedHeightTestHost, { props: { sidebar: true } });
   const button = component.getByRole('button', { name: 'Sidebar action' });
   await button.click();
   await expect(button).toBeFocused();

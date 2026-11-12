@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createConnectionsHarness } =
-    await import('$store/renderer/slices/connections/test-harness');
+    await import('$store/renderer/slices/connections/connections.test-helpers');
   const harness = createConnectionsHarness(
     () => ({ keychainSync: mocks.syncState.value }),
     (action) => mocks.dispatched.push(action),

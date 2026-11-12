@@ -36,6 +36,8 @@ export interface MatchGitHubPrefillRepoInput {
   candidates: GitHubPrefillRepoCandidate[];
   /** Resolve a local repo's GitHub remote; null when none is detected. */
   probeRemote: (repoPath: string) => Promise<{ owner: string; repo: string } | null>;
+  /** Select the GitHub repo itself (a saved GitHub entry or the URL), never a local clone. */
+  exactRemote?: boolean;
 }
 
 /** Cap remote probes so a long recent-repos list cannot fan out IPC calls. */
@@ -86,6 +88,7 @@ export async function matchGitHubPrefillRepo({
   repo,
   candidates,
   probeRemote,
+  exactRemote = false,
 }: MatchGitHubPrefillRepoInput): Promise<GitHubPrefillRepoSelection> {
   const cleanRepoName = repo.replace(/\.git$/i, '');
   const githubUrl = `https://github.com/${owner}/${cleanRepoName}`;
@@ -97,6 +100,7 @@ export async function matchGitHubPrefillRepo({
     // Pass 1: candidates with conclusive stored metadata — no IPC needed.
     for (const candidate of candidates) {
       if (!candidate.path || seen.has(candidate.path)) continue;
+      if (exactRemote && candidate.type !== 'github') continue;
       seen.add(candidate.path);
       const meta = candidateMetadataOwnerRepo(candidate);
       if (meta) {

@@ -124,17 +124,26 @@ function generation(): number {
 async function readSupported(): Promise<{
   supported: boolean;
   initialAgentPlacement: boolean;
+  claimInvites: boolean;
 } | null> {
   try {
     const hello = (await observeBackendNodeCapabilities()) as {
       server?: {
-        capabilities?: { remoteMachines?: unknown; remoteInitialAgent?: unknown } | null;
+        capabilities?: {
+          remoteMachines?: unknown;
+          remoteInitialAgent?: unknown;
+          remoteMachineClaim?: unknown;
+        } | null;
       };
     } | null;
     const capabilities = hello?.server?.capabilities;
     if (!capabilities) return null;
     const supported = capabilities.remoteMachines === 1;
-    return { supported, initialAgentPlacement: supported && capabilities.remoteInitialAgent === 1 };
+    return {
+      supported,
+      initialAgentPlacement: supported && capabilities.remoteInitialAgent === 1,
+      claimInvites: supported && capabilities.remoteMachineClaim === 1,
+    };
   } catch {
     return null;
   }
@@ -186,6 +195,7 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
   }
   const supported = known?.supported === true;
   const initialAgentPlacement = known?.initialAgentPlacement === true;
+  const claimInvites = known?.claimInvites === true;
   let machines: RemoteMachine[] = [];
   let localFingerprint: string | null = null;
   if (supported) {
@@ -197,7 +207,14 @@ function* readSnapshot(): SagaGenerator<Parameters<typeof remoteMachinesLoaded>[
     localFingerprint = yield* call(readLocalFingerprint);
   }
   const executorBackends = yield* call(readExecutorBackends);
-  return { supported, initialAgentPlacement, machines, localFingerprint, executorBackends };
+  return {
+    supported,
+    initialAgentPlacement,
+    claimInvites,
+    machines,
+    localFingerprint,
+    executorBackends,
+  };
 }
 
 /**
@@ -221,11 +238,11 @@ function* refresh(): SagaGenerator<void> {
 
 function* expose(action: ReturnType<typeof remoteMachineExposeRequested>): SagaGenerator<void> {
   if (!labsEnabled()) return;
-  const [connectionId, enableListener] = action.payload;
+  const [connectionId, enableListener, confirmed] = action.payload;
   if (store.state.remoteMachines.pending[connectionId]) return;
   const machine = selectConnectionLabel.select(store.state, connectionId);
   const backend = selectCurrentBackendLabel.select(store.state);
-  if (!enableListener) {
+  if (!enableListener && !confirmed) {
     const accepted = yield* call(confirm, {
       title: m.remoteMachines_expose_confirmTitle({ machine, backend }),
       description: m.remoteMachines_expose_warning({ machine, backend }),
@@ -293,7 +310,7 @@ function* unexpose(action: ReturnType<typeof remoteMachineUnexposeRequested>): S
   yield* put(remoteMachineRemoved(machineId));
   yield* put(remoteMachineOperationSettled(machineId, null));
   if (result.revoked)
-    yield* call(notify.success, m.remoteMachines_unexpose_success({ machine: name }));
+    yield* call(notify.success, m.remoteMachines_unexpose_success({ machine: name, backend }));
   else yield* call(notify.warning, m.remoteMachines_unexpose_unrevoked_warning({ machine: name }));
 }
 

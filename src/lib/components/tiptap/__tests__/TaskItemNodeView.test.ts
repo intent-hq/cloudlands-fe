@@ -243,7 +243,7 @@ describe('TaskItemNodeView - Basic Rendering', () => {
 
     const dependencyChip = await waitFor(() => getByText('Waits on 1'));
     const conflictChip = getByText('Conflicts 1');
-    // Chips render with correct counts (tooltip content tested separately)
+    // Chips render with correct counts
     expect(dependencyChip).toBeTruthy();
     expect(conflictChip).toBeTruthy();
   });

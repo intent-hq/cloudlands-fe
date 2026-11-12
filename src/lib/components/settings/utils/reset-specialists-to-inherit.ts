@@ -13,7 +13,6 @@
  * **delete** instead of a clearing save — leaving the redundant file
  * behind would keep the built-in reading as "Modified" (monorepo#1450).
  */
-import type { Specialist } from '$lib/constants/specialists';
 import type {
   FileSpecialist,
   FileSpecialistReference,
@@ -43,7 +42,6 @@ export function hasExplicitModelPin(fileSpecialists: FileSpecialist[]): boolean 
  */
 export function buildResetToInheritPayloads(
   fileSpecialists: FileSpecialist[],
-  bundledSpecialists: Specialist[],
   getWorkspacePath: () => string | undefined,
 ): ResetToInheritPayloads {
   const saves: FileSpecialistWritePayload[] = [];
@@ -55,7 +53,7 @@ export function buildResetToInheritPayloads(
       workspacePath = getWorkspacePath();
       if (!workspacePath) continue;
     }
-    if (isRedundantBuiltInOverride(fileSpec, bundledSpecialists, { ignoreModelPin: true })) {
+    if (isRedundantBuiltInOverride(fileSpec, { ignoreModelPin: true })) {
       deletes.push({ id: fileSpec.id, scope: fileSpec.source });
       continue;
     }

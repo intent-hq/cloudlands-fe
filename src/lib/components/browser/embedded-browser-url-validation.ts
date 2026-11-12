@@ -26,13 +26,20 @@ export function normalizeBrowserAddressInput(input: string): string | null {
   }
 }
 
+/** Whether the mirror webview may load `targetUrl`; `about:blank` stays local (see `isForwardableBrowserUrl`). */
 export function isValidBrowserUrl(
   targetUrl: string,
   appOrigin = typeof window !== 'undefined' ? window.location.origin : '',
 ): boolean {
-  if (targetUrl === 'about:blank') return true;
-  if (!targetUrl) return false;
+  return targetUrl === 'about:blank' || isForwardableBrowserUrl(targetUrl, appOrigin);
+}
 
+/** Whether a host accepts `targetUrl` as a navigation (`browser.navigateTab`). */
+export function isForwardableBrowserUrl(
+  targetUrl: string,
+  appOrigin = typeof window !== 'undefined' ? window.location.origin : '',
+): boolean {
+  if (!targetUrl) return false;
   try {
     const parsedUrl = new URL(targetUrl);
     return (

@@ -9,7 +9,7 @@ const nativePlatform =
       : 'Linux x86_64';
 const nativeModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-test(`Home opens a row with the native primary modifier (${nativeModifier}) while normal clicks keep the preview`, async ({
+test(`Home ${nativeModifier}-click toggles selection instead of opening, while normal clicks keep the preview`, async ({
   mount,
   page,
 }, testInfo) => {
@@ -26,16 +26,15 @@ test(`Home opens a row with the native primary modifier (${nativeModifier}) whil
   await row.click();
   await expect(component.locator('[data-home-detail]')).toBeVisible();
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+  // The primary-modifier click is multi-select: on the previewed row it deselects it.
   await row.click({ modifiers: [nativeModifier] });
-  await expect
-    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-    .toBe('home-review');
-  await expect(page).toHaveURL(/\/workspace\/home-review$/);
-  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'false');
+  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
+  await row.click({ modifiers: [nativeModifier] });
   await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
-  const tabs = await page.evaluate(() => window.__homeWorkspacePreview?.navigation().tabOrder);
-  expect(tabs?.filter((id) => id === 'home-review')).toHaveLength(1);
-  await testInfo.attach(`home-open-${nativeModifier}`, {
+  await expect(component.locator('[data-home-detail]')).toBeVisible();
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+  await testInfo.attach(`home-select-${nativeModifier}`, {
     body: await page.screenshot(),
     contentType: 'image/png',
   });
@@ -118,15 +117,21 @@ test('Home title remains operable with a long title in a narrow preview', async 
   });
 });
 
-test('Home board supports modifier click and keyboard opening', async ({ mount, page }) => {
+test('Home board selects on modifier click and opens from the keyboard', async ({
+  mount,
+  page,
+}) => {
   const component = await mount(Preview, { props: { scenario: 'board' } });
   const modifier = await page.evaluate(() =>
     navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control',
   );
-  await component.locator('[data-home-workspace="home-review"]').click({ modifiers: [modifier] });
-  await expect
-    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-    .toBe('home-review');
+  const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
+  const card = component.locator('[data-home-workspace="home-review"]');
+  await card.click({ modifiers: [modifier] });
+  await expect(card).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
+  await card.click({ modifiers: [modifier] });
+  await expect(card).toHaveAttribute('aria-pressed', 'false');
   await expect(component.locator('[data-home-detail]')).toHaveCount(0);
   await component.locator('[data-home-workspace="home-running"]').focus();
   await page.keyboard.press(`${modifier}+Enter`);
@@ -176,7 +181,7 @@ test('Home double-click on a row menu button does not open the workspace', async
   expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
 });
 
-test('Home Cmd/Ctrl double-click opens once through the modifier path without selecting', async ({
+test('Home Cmd/Ctrl double-click selects once and does not open the workspace', async ({
   mount,
   page,
 }) => {
@@ -184,13 +189,11 @@ test('Home Cmd/Ctrl double-click opens once through the modifier path without se
   const modifier = await page.evaluate(() =>
     navigator.platform.toUpperCase().includes('MAC') ? 'Meta' : 'Control',
   );
+  const before = await page.evaluate(() => window.__homeWorkspacePreview?.navigation());
   const row = component.locator('[data-home-workspace="home-review"]');
   await row.dblclick({ modifiers: [modifier] });
-  await expect
-    .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-    .toBe('home-review');
-  await expect(component.locator('[data-home-detail]')).toHaveCount(0);
-  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'false');
+  await expect(row.locator('..')).toHaveAttribute('aria-selected', 'true');
+  expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
 });
 
 test('Home board opens a card on double-click', async ({ mount, page }) => {
@@ -221,7 +224,7 @@ test('Home board double-click on an already selected card keeps it selected', as
 });
 
 for (const scenario of ['list', 'board'] as const) {
-  test(`Home ${scenario} double-click opens the workspace in a narrow window where the preview replaces the list`, async ({
+  test(`Home ${scenario} preview replaces the list in a narrow window and Escape returns to it`, async ({
     mount,
     page,
   }) => {
@@ -237,46 +240,5 @@ for (const scenario of ['list', 'board'] as const) {
     expect(await page.evaluate(() => window.__homeWorkspacePreview?.navigation())).toEqual(before);
     await page.keyboard.press('Escape');
     await expect(target).toBeVisible();
-    await humanDoubleClick(page, target, () => expect(target).toBeHidden());
-    await expect
-      .poll(() => page.evaluate(() => window.__homeWorkspacePreview?.navigation().currentTabId))
-      .toBe('home-review');
-    await expect(component.locator('[data-home-detail]')).toBeVisible();
   });
-}
-
-/** A person's double-click: the second press lands after the first click re-rendered Home. */
-async function humanDoubleClick(
-  page: import('@playwright/test').Page,
-  target: import('@playwright/test').Locator,
-  afterFirstClick: () => Promise<void>,
-) {
-  // A person clicks where the card is once Home has finished moving it: closing
-  // the narrow preview animates the list back in, and a box measured mid-way
-  // would aim the click at where the card was, not where it is.
-  let previous: Awaited<ReturnType<typeof target.boundingBox>> = null;
-  await expect
-    .poll(async () => {
-      const current = await target.boundingBox();
-      const settled =
-        !!current &&
-        !!previous &&
-        current.x === previous.x &&
-        current.y === previous.y &&
-        current.width === previous.width &&
-        current.height === previous.height;
-      previous = current;
-      return settled;
-    })
-    .toBe(true);
-  const box = await target.boundingBox();
-  if (!box) throw new Error('double-click target is not visible');
-  const x = box.x + Math.min(24, box.width / 2);
-  const y = box.y + box.height / 2;
-  await page.mouse.move(x, y);
-  await page.mouse.down({ clickCount: 1 });
-  await page.mouse.up({ clickCount: 1 });
-  await afterFirstClick();
-  await page.mouse.down({ clickCount: 2 });
-  await page.mouse.up({ clickCount: 2 });
 }

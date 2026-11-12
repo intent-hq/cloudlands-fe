@@ -169,19 +169,18 @@
       ? 'block w-full min-w-0 text-sm text-foreground'
       : 'flex items-center flex-wrap gap-x-0.5 gap-y-1 [&>div]:min-w-0 [&>div]:max-w-full',
   );
-  const metadataTriggerSurfaceClass =
-    'rounded-md bg-muted/40! shadow-none! outline-none! hover:bg-muted/60! active:bg-muted/70! data-[state=open]:bg-muted/70! data-[state=open]:text-foreground focus-visible:bg-muted/70! focus-visible:text-foreground focus-visible:outline-none! focus-visible:outline-offset-0! focus-visible:ring-0! focus-visible:ring-offset-0! focus-visible:shadow-none! disabled:bg-muted/50! disabled:text-muted-foreground disabled:hover:bg-muted/50! forced-colors:border forced-colors:border-[ButtonText] forced-colors:bg-[ButtonFace] forced-colors:text-[ButtonText]'; // i18n-ignore (Tailwind class list)
+  const metadataTriggerSurfaceClass = workspacePickerStyles.metadataTriggerSurface;
   const repoTriggerClass = $derived(
     isMetadataPresentation
-      ? `group/metadata-trigger min-w-0 px-2! py-1! text-sm leading-5 font-normal text-foreground ${metadataTriggerSurfaceClass}`
+      ? `${workspacePickerStyles.metadataTrigger} ${metadataTriggerSurfaceClass}`
       : 'px-1 font-medium text-sm bg-transparent h-auto min-h-(--control-height-compact) py-0.5 rounded-(--radius-medium)', // i18n-ignore (Tailwind class list)
   );
   const branchTriggerClass = $derived(
     isMetadataPresentation
-      ? `group/metadata-trigger w-full min-w-0 px-2! py-1! text-sm leading-5 font-normal text-foreground overflow-hidden ${metadataTriggerSurfaceClass}`
+      ? `${workspacePickerStyles.metadataTrigger} w-full overflow-hidden ${metadataTriggerSurfaceClass}`
       : 'px-1 font-medium text-sm bg-transparent h-auto min-h-(--control-height-compact) py-0.5 rounded-(--radius-medium) overflow-hidden', // i18n-ignore (Tailwind class list)
   );
-  const metadataChevronClass = 'h-2.5 w-2.5 shrink-0 text-ghost opacity-70';
+  const metadataChevronClass = workspacePickerStyles.metadataChevron;
   const metadataValueClass = 'text-foreground font-normal';
   // Match the branch trigger's explicit color (BranchSelector sets text-muted-foreground)
   // so the repo name renders with the same brightness as the branch name.
@@ -298,7 +297,6 @@
       value={repoOnlyValue}
       onchange={handleRepoChange}
       rowLabel={m.workspace_compactInitializer_repository_label()}
-      emptyLabel={m.workspace_repoSelector_addRepository_label()}
       triggerClass={workspacePickerStyles.fieldTrigger}
       displayValue={metadataRepoName || undefined}
       triggerValueClass="text-foreground"

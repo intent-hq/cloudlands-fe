@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 
 const protectedAgentCallers = [
   'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
-  'src/lib/components/code-review/CodeReviewPanel.svelte',
   'src/lib/components/notes/primitives/CliBlock.svelte',
   'src/lib/components/notes/primitives/DiagramBlock.svelte',
   'src/lib/components/notes/primitives/ReferenceBlock.svelte',

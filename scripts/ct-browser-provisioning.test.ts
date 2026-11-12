@@ -99,28 +99,22 @@ ${command}`,
           : ['self-hosted', 'linux', 'x64', 'intent-cache'],
       ),
       'needs.release-fast-path.outputs.fast_path': 'false',
-      'needs.release-fast-path.outputs.ct_required': event === 'merge_group' ? 'true' : '',
       // The caller's route `cloud` map: CT never takes a self-hosted slot, whatever linux_burst says.
       'inputs.cloud': JSON.stringify({ 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] }),
     };
     expect(evaluate(ctJob.match(/^    if: (.*)$/m)![1], context)).toBe(event !== 'pull_request');
     if (event === 'pull_request') return;
-    // runs-on reads the caller's slots input per shard, then its cloud map, then WarpBuild 8x.
+    // runs-on reads the caller's cloud map, then WarpBuild 8x.
     const runsOn = ctJob.match(/^    runs-on: (.*)$/m)![1];
     expect(runsOn).toBe(
-      "${{ fromJSON(inputs.slots || '{}')[format('ct-{0}', matrix.shard)] || fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
+      "${{ fromJSON(inputs.cloud || '{}')['gh-linux-8x'] || fromJSON('[\"warp-ubuntu-2404-x64-8x\"]') }}",
     );
-    const shardRunner = (
-      slots: Record<string, string[]>,
-      cloud: Record<string, string[]>,
-      shard: number,
-    ) => slots[`ct-${shard}`] ?? cloud['gh-linux-8x'] ?? ['warp-ubuntu-2404-x64-8x'];
-    const warp = { 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] };
-    expect.soft(shardRunner({}, warp, 1)).toEqual(['warp-ubuntu-2404-x64-8x']);
-    expect.soft(shardRunner({}, {}, 1)).toEqual(['warp-ubuntu-2404-x64-8x']);
+    const shardRunner = (cloud: Record<string, string[]>) =>
+      cloud['gh-linux-8x'] ?? ['warp-ubuntu-2404-x64-8x'];
     expect
-      .soft(shardRunner({ 'ct-2': ['self-hosted', 'linux', 'x64', 'intent-cache'] }, warp, 2))
-      .toEqual(['self-hosted', 'linux', 'x64', 'intent-cache']);
+      .soft(shardRunner({ 'gh-linux-8x': ['warp-ubuntu-2404-x64-8x'] }))
+      .toEqual(['warp-ubuntu-2404-x64-8x']);
+    expect.soft(shardRunner({})).toEqual(['warp-ubuntu-2404-x64-8x']);
     // The pnpm store is restored by the backend-selecting cache action (WarpBuild or GitHub).
     expect.soft(step('Setup Node.js')).not.toMatch(/^          cache:/m);
     expect.soft(step('Cache pnpm store')).toContain('uses: ./.github/actions/pnpm-store-cache');

@@ -15,12 +15,15 @@
   import { m } from '$shared/paraglide/messages.js';
   import { getHomeTriageGroup } from './home-model';
   import { openHomeWorkspaceFromEvent, type HomeDoubleClickOpener } from './home-workspace-opening';
+  import { isHomeRangeClick, isHomeSelectionToggle } from './home-multi-select';
 
   let {
     workspaces,
     pinnedIds = [],
-    selectedId,
+    selectedIds,
     onselect,
+    ontoggleselect,
+    onrangeselect,
     onopen,
     doubleClick,
     oncontextmenu,
@@ -34,8 +37,11 @@
   }: {
     workspaces: Workspace[];
     pinnedIds?: readonly string[];
-    selectedId: string | null;
+    /** The previewed card, or every card of a Cmd/Ctrl-click multi-selection. */
+    selectedIds: readonly string[];
     onselect: (id: string) => void;
+    ontoggleselect: (id: string) => void;
+    onrangeselect: (id: string) => void;
     onopen: (id: string) => void;
     /** Home's double-click opener; card clicks arm it. */
     doubleClick: HomeDoubleClickOpener;
@@ -161,7 +167,7 @@
       })),
   );
   const displayColumns = $derived(
-    archived
+    archived || (aside.length === 0 && !draggedWorkspace)
       ? activeColumns
       : [
           ...activeColumns,
@@ -192,8 +198,8 @@
     <Button
       data-home-workspace={workspace.id}
       variant="outline"
-      active={selectedId === workspace.id}
-      aria-pressed={selectedId === workspace.id}
+      active={selectedIds.includes(workspace.id)}
+      aria-pressed={selectedIds.includes(workspace.id)}
       wrapContent={false}
       class="h-auto min-w-0 w-full shrink-0 flex-col items-stretch whitespace-normal rounded-xl border-border bg-background gap-0 p-3 text-left shadow-xs"
       draggable={canDrag(workspace)}
@@ -202,13 +208,18 @@
       onpointerdown={() => {
         suppressClick = false;
       }}
+      onmousedown={(event) => {
+        if (isHomeRangeClick(event)) event.preventDefault();
+      }}
       onclick={(event) => {
         if (suppressClick) {
           event.preventDefault();
           return;
         }
         doubleClick.arm(event, workspace.id);
-        if (!openHomeWorkspaceFromEvent(event, workspace.id, onopen)) onselect(workspace.id);
+        if (isHomeSelectionToggle(event)) ontoggleselect(workspace.id);
+        else if (isHomeRangeClick(event)) onrangeselect(workspace.id);
+        else onselect(workspace.id);
       }}
       oncontextmenu={(event) => oncontextmenu?.(event, workspace)}
       onkeydown={(event) => {

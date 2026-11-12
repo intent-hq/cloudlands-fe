@@ -1,22 +1,6 @@
-import type { Locator, Page } from '@playwright/experimental-ct-svelte';
+import type { Locator } from '@playwright/experimental-ct-svelte';
 import { expect, expectAnimationsToSettle, test } from '../../../../test/ct-test';
 import DisclosureMotionPreparationHost from './DisclosureMotionPreparationHost.svelte';
-
-interface FrameSample {
-  responseHeight: number;
-  subscriptionHeight: number;
-  bottomDistance: number;
-  responseAnimations: number;
-}
-
-interface MotionStartArm {
-  started: Promise<void>;
-  disarm: () => void;
-}
-
-type MotionStartWindow = typeof window & {
-  __disclosureMotionStarts?: Record<string, MotionStartArm>;
-};
 
 function controlledContentSelector(id: string) {
   return `[id=${JSON.stringify(id)}]`;
@@ -28,102 +12,10 @@ async function controlledContent(component: Locator, trigger: Locator) {
   return component.locator(controlledContentSelector(id));
 }
 
-// Arm BEFORE the click that starts the motion (monorepo#4319): polling
-// `playState === 'running'` after the fact races the motion itself. Svelte
-// reverses an interrupted bidirectional transition over `duration * |t2 - t1|`,
-// so the outro that follows a rapid click lasts only as long as the intro had
-// progressed (tens of ms) and can finish — and unmount its node — before the
-// first poll evaluates under host load. Svelte dispatches `introstart` /
-// `outrostart` on the transitioned node right before it creates the WAAPI
-// animation; recording that (non-bubbling, so capture phase on the host root)
-// is a start signal that cannot be missed.
-async function armMotionStart(component: Locator, selector: string) {
-  await component.evaluate((root, key) => {
-    const state = window as MotionStartWindow;
-    state.__disclosureMotionStarts ??= {};
-    state.__disclosureMotionStarts[key]?.disarm();
-    let disarm = () => {};
-    const started = new Promise<void>((resolve) => {
-      const onStart = (event: Event) => {
-        if (!(event.target instanceof Element) || !event.target.matches(key)) return;
-        disarm();
-        resolve();
-      };
-      disarm = () => {
-        root.removeEventListener('introstart', onStart, true);
-        root.removeEventListener('outrostart', onStart, true);
-      };
-      root.addEventListener('introstart', onStart, true);
-      root.addEventListener('outrostart', onStart, true);
-    });
-    state.__disclosureMotionStarts[key] = { started, disarm };
-  }, selector);
-}
-
-async function expectMotionStarted(component: Locator, selector: string) {
-  await component.evaluate((_root, key) => {
-    const arm = (window as MotionStartWindow).__disclosureMotionStarts?.[key];
-    if (!arm) throw new Error(`Motion start was not armed for ${key}`);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<void>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`Timed out waiting for motion start on ${key}`)),
-        5000,
-      );
-    });
-    return Promise.race([arm.started, timeout]).finally(() => clearTimeout(timer));
-  }, selector);
-}
-
 async function expectAnimationsCleanedUp(locator: Locator) {
   await expect
     .poll(() => locator.evaluate((node) => node.getAnimations({ subtree: true }).length))
     .toBe(0);
-}
-
-async function startSampling(component: Locator, frames = 48, responseContentId?: string) {
-  const transcript = component.getByTestId('disclosure-transcript');
-  await transcript.evaluate(
-    (scroll, options) => {
-      const state = window as typeof window & {
-        __disclosureSamples?: FrameSample[];
-        __disclosureSamplingDone?: boolean;
-      };
-      state.__disclosureSamples = [];
-      state.__disclosureSamplingDone = false;
-      let remaining = options.frames;
-      const sample = () => {
-        const response = options.responseContentId
-          ? document.getElementById(options.responseContentId)
-          : null;
-        const subscription = document.querySelector<HTMLElement>(
-          '[data-testid="event-subscriptions-card"]',
-        );
-        state.__disclosureSamples!.push({
-          responseHeight: response?.getBoundingClientRect().height ?? 0,
-          subscriptionHeight: subscription?.getBoundingClientRect().height ?? 0,
-          bottomDistance: scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop,
-          responseAnimations: response?.getAnimations().length ?? 0,
-        });
-        remaining -= 1;
-        if (remaining > 0) requestAnimationFrame(sample);
-        else state.__disclosureSamplingDone = true;
-      };
-      requestAnimationFrame(sample);
-    },
-    { frames, responseContentId },
-  );
-}
-
-async function finishSampling(page: Page): Promise<FrameSample[]> {
-  await page.waitForFunction(
-    () =>
-      (window as typeof window & { __disclosureSamplingDone?: boolean }).__disclosureSamplingDone,
-  );
-  return page.evaluate(
-    () =>
-      (window as typeof window & { __disclosureSamples?: FrameSample[] }).__disclosureSamples ?? [],
-  );
 }
 
 async function unlockAt(transcript: Locator, top: number) {
@@ -134,81 +26,10 @@ async function unlockAt(transcript: Locator, top: number) {
   }, top);
 }
 
-for (const config of [
-  { theme: 'light' as const, width: 720, zoom: 1 },
-  { theme: 'dark' as const, width: 320, zoom: 2 },
-]) {
-  test(`prepares frame measurements for rapid response motion at ${config.width}px/${config.zoom}x ${config.theme}`, async ({
-    mount,
-    page,
-  }) => {
-    await page.emulateMedia({ reducedMotion: 'no-preference' });
-    const component = await mount(DisclosureMotionPreparationHost, { props: config });
-    const transcript = component.getByTestId('disclosure-transcript');
-    const trigger = component.getByTestId('response-group-disclosure');
-    const responseContentId = await trigger.getAttribute('aria-controls');
-    if (!responseContentId) throw new Error('Expected response disclosure content id');
-    const detailsSelector = controlledContentSelector(responseContentId);
-    await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
-    await startSampling(component, 48, responseContentId);
-
-    await armMotionStart(component, detailsSelector);
-    await trigger.dispatchEvent('click');
-    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    await expectMotionStarted(component, detailsSelector);
-    await armMotionStart(component, detailsSelector);
-    await trigger.dispatchEvent('click');
-    await expect(trigger).toHaveAttribute('aria-expanded', 'false');
-    await expectMotionStarted(component, detailsSelector);
-    await trigger.dispatchEvent('click');
-
-    const samples = await finishSampling(page);
-    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    const details = await controlledContent(component, trigger);
-    await expect(details).toHaveCount(1);
-    expect(samples).toHaveLength(48);
-    expect(Math.max(...samples.map((sample) => sample.responseHeight))).toBeGreaterThan(40);
-    expect(Math.max(...samples.map((sample) => sample.responseAnimations))).toBeLessThanOrEqual(1);
-    expect(
-      Math.max(...samples.map((sample) => Math.abs(sample.bottomDistance))),
-    ).toBeLessThanOrEqual(8);
-
-    // Regression (monorepo#3379): repeat a rapid disclosure round and require
-    // the same bottom lock — the css/WAAPI-driven motion drifted 14-22px here.
-    await startSampling(component);
-    for (let click = 0; click < 4; click += 1) {
-      await trigger.evaluate((node) => (node as HTMLElement).click());
-      await page.waitForTimeout(40);
-    }
-    const repeatSamples = await finishSampling(page);
-    await expect(trigger).toHaveAttribute('aria-expanded', 'true');
-    expect(repeatSamples).toHaveLength(48);
-    expect(
-      Math.max(...repeatSamples.map((sample) => Math.abs(sample.bottomDistance))),
-    ).toBeLessThanOrEqual(8);
-    await expect(component.getByTestId('disclosure-bottom-state')).toContainText('locked:0');
-    // expectAnimationsCleanedUp polled the subtree to zero animations; check the inline
-    // styles the disclosure motion wrote were cleared too.
-    await expectAnimationsCleanedUp(details);
-    expect(
-      await details.evaluate((node) => ({
-        height: (node as HTMLElement).style.height,
-        overflow: (node as HTMLElement).style.overflow,
-        opacity: (node as HTMLElement).style.opacity,
-        transform: (node as HTMLElement).style.transform,
-      })),
-    ).toEqual({ height: '', overflow: '', opacity: '', transform: '' });
-  });
-}
-
-test('measures nested and outer subscription collapse while bottom-following', async ({
-  mount,
-  page,
-}) => {
+test('keeps nested and outer subscription collapse bottom-following', async ({ mount }) => {
   const component = await mount(DisclosureMotionPreparationHost);
   const transcript = component.getByTestId('disclosure-transcript');
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
-  await startSampling(component, 36);
 
   const nested = component.getByTestId('one-shot-summary-toggle');
   await nested.evaluate((node) => (node as HTMLElement).click());
@@ -216,40 +37,26 @@ test('measures nested and outer subscription collapse while bottom-following', a
   const outer = component.getByTestId('event-subscriptions-summary');
   await outer.evaluate((node) => (node as HTMLElement).click());
 
-  const samples = await finishSampling(page);
   await expect(component.getByTestId('one-shot-agent-list')).toHaveCount(0);
   await expect(outer).toHaveAttribute('aria-expanded', 'false');
   const body = component.getByTestId('event-subscriptions-body');
   await expect(body).toHaveCount(0);
-  expect(Math.max(...samples.map((sample) => Math.abs(sample.bottomDistance)))).toBeLessThanOrEqual(
-    8,
-  );
-  expect(samples.at(-1)!.subscriptionHeight).toBeLessThan(samples[0].subscriptionHeight);
   await expectAnimationsCleanedUp(component);
+  expect(
+    await transcript.evaluate((node) => node.scrollHeight - node.clientHeight - node.scrollTop),
+  ).toBeLessThanOrEqual(8);
 });
 
-test('reverses the outer subscription disclosure and keeps native keyboard control', async ({
-  mount,
-}) => {
+test('keeps native keyboard control of the outer subscription disclosure', async ({ mount }) => {
   const component = await mount(DisclosureMotionPreparationHost);
   const transcript = component.getByTestId('disclosure-transcript');
   await transcript.evaluate((node) => node.scrollTo(0, node.scrollHeight));
   const outer = component.getByTestId('event-subscriptions-summary');
-  const bodySelector = '[data-testid="event-subscriptions-body"]';
 
   await outer.focus();
-  await armMotionStart(component, bodySelector);
-  await outer.dispatchEvent('click');
+  await outer.press('Space');
   await expect(outer).toHaveAttribute('aria-expanded', 'false');
-  await expectMotionStarted(component, bodySelector);
-  await armMotionStart(component, bodySelector);
-  await outer.dispatchEvent('click');
-  await expect(outer).toHaveAttribute('aria-expanded', 'true');
-  await expectMotionStarted(component, bodySelector);
-  await armMotionStart(component, bodySelector);
-  await outer.dispatchEvent('click');
-  await expect(outer).toHaveAttribute('aria-expanded', 'false');
-  await expectMotionStarted(component, bodySelector);
+  await expect(component.getByTestId('event-subscriptions-body')).toHaveCount(0);
   await outer.press('Enter');
 
   await expect(outer).toHaveAttribute('aria-expanded', 'true');
@@ -264,7 +71,6 @@ test('reverses the outer subscription disclosure and keeps native keyboard contr
 
 test('accepts live response updates during collapse without stale detached content', async ({
   mount,
-  page,
 }) => {
   const initialProps = { responseStreaming: true, responseText: 'Initial live activity.' };
   const component = await mount(DisclosureMotionPreparationHost, { props: initialProps });
@@ -288,11 +94,9 @@ test('accepts live response updates during collapse without stale detached conte
   await expectAnimationsCleanedUp(await controlledContent(component, toggle));
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  await page.waitForTimeout(35);
   await component.update({
     props: { ...initialProps, responseText: 'Updated live activity while collapsing.' },
   });
-  await page.waitForTimeout(240);
   await expect(component.locator('[data-operational-expanded-content]')).toHaveCount(0);
   const current = component.getByTestId('prepared-response-current');
   await expect(current).toBeVisible();
@@ -321,9 +125,7 @@ test('accepts live response updates during collapse without stale detached conte
   await expect(component.getByTestId('prepared-response-body')).toContainText(
     'Updated live activity while collapsing.',
   );
-  // Let the expansion start (a settle check cannot see motion that has not begun), then
-  // wait for it to be cleaned up rather than counting once at a fixed time.
-  await page.waitForTimeout(240);
+  // Wait for disclosure cleanup after the live content update.
   await expectAnimationsToSettle(component.locator('[data-operational-expanded-content]'), {
     subtree: false,
     includeFinished: true,

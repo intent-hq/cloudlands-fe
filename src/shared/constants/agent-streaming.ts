@@ -4,37 +4,6 @@
  * Keep this browser-safe and importable from both renderer and main process.
  */
 
-export const AGENT_STREAMING_CONFIG = {
-  /**
-   * How long (ms) to treat a persisted active stream as reconnectable after a reload.
-   * After this, we consider metadata stale and clear it.
-   */
-  ACTIVE_STREAM_MAX_AGE_MS: 24 * 60 * 60 * 1000, // 24 hours
-
-  /**
-   * Interval (ms) between GC passes over completed / marked-for-cleanup stream
-   * sessions in the main-process stream manager (consumed as
-   * `STREAM_CONFIG.CLEANUP_INTERVAL`). This is a periodic cleanup cadence for
-   * reclaiming resources — it does NOT enforce turn lifetime. The daemon
-   * (intentd) owns turn lifetime (PROMPT_TIMEOUT); the frontend does not
-   * force-terminate in-flight streams on wall-clock grounds. Informational
-   * stall detection remains a separate, non-terminal UI concern.
-   */
-  STREAM_MANAGER_GC_INTERVAL_MS: 60 * 60 * 1000, // 1 hour
-
-  /**
-   * Interval (ms) for saving session state to disk during streaming.
-   * More frequent saves prevent data loss on refresh.
-   */
-  SAVE_INTERVAL_MS: 5000, // 5 seconds
-
-  /**
-   * Maximum number of stall recovery attempts before forcing completion.
-   * Set to 10 to allow more recovery attempts for long-running tasks.
-   */
-  MAX_STALL_RETRIES: 10,
-} as const;
-
 /**
  * Retry configuration for agent operations
  */

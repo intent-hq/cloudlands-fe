@@ -20,7 +20,7 @@ const MAX_NAME_LENGTH = 80;
  *   - First "Coordinator" → "Coordinator"
  *   - Second "Coordinator" → "Coordinator 2"
  *   - Third "Coordinator" → "Coordinator 3"
- *   - No specialist → "Agent", "Agent 2", etc.
+ *   - Default → "Agent", "Agent 2", etc.
  *
  * @param baseName - The specialist display name (e.g., "Coordinator", "Implementor") or "Agent" for non-specialist agents
  * @param existingNames - Array of existing agent names in the workspace to check for conflicts

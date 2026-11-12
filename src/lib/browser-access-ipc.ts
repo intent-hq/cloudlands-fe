@@ -4,7 +4,7 @@
  * main owns the setting and the server.
  */
 import { BROWSER_ACCESS_CHANNELS } from '$shared/ipc/channels';
-import type { BrowserAccessState } from '$shared/types/browser-access';
+import type { BrowserAccessSignInCode, BrowserAccessState } from '$shared/types/browser-access';
 
 interface BrowserAccessIpcLike {
   invoke(channel: string, ...args: unknown[]): Promise<unknown>;
@@ -62,6 +62,25 @@ export async function setBrowserAccessPort(port: number): Promise<BrowserAccessS
   const bridge = getBridge();
   if (!bridge) throw missingBridge();
   return expectState(await bridge.invoke(BROWSER_ACCESS_CHANNELS.SET_PORT, { port }));
+}
+
+function expectSignInCode(payload: unknown): BrowserAccessSignInCode {
+  const value = payload as Partial<BrowserAccessSignInCode> | null | undefined;
+  if (
+    !value ||
+    typeof value.code !== 'string' ||
+    typeof value.expiresAt !== 'number' ||
+    (value.link !== null && typeof value.link !== 'string')
+  ) {
+    throw new Error('Malformed browser access sign-in code');
+  }
+  return { code: value.code, expiresAt: value.expiresAt, link: value.link };
+}
+
+export async function createBrowserAccessSignInCode(): Promise<BrowserAccessSignInCode> {
+  const bridge = getBridge();
+  if (!bridge) throw missingBridge();
+  return expectSignInCode(await bridge.invoke(BROWSER_ACCESS_CHANNELS.CREATE_SIGN_IN_CODE, {}));
 }
 
 export async function resetBrowserAccessKey(): Promise<BrowserAccessState> {

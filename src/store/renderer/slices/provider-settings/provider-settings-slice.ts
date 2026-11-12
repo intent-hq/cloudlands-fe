@@ -383,12 +383,14 @@ export const providerProfileCreateRequested = createAction(
     name: string;
     env?: EnvEntryWrite[];
     backup?: boolean;
+    remoteCompatible?: boolean;
   }) => ({
     requestId: input.requestId,
     baseProviderId: input.baseProviderId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
     ...(input.backup !== undefined ? { backup: input.backup } : {}),
+    ...(input.remoteCompatible !== undefined ? { remoteCompatible: input.remoteCompatible } : {}),
   }),
 );
 export const providerProfileUpdateRequested = createAction(
@@ -399,25 +401,34 @@ export const providerProfileUpdateRequested = createAction(
     name?: string;
     env?: EnvEntryWrite[];
     backup?: boolean;
+    remoteCompatible?: boolean;
   }) => ({
     requestId: input.requestId,
     profileId: input.profileId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
     ...(input.backup !== undefined ? { backup: input.backup } : {}),
+    ...(input.remoteCompatible !== undefined ? { remoteCompatible: input.remoteCompatible } : {}),
   }),
 );
 /**
- * Save the Default configuration's name and/or env (`providers.profiles.updateDefault`).
+ * Save the Default configuration's name, env and/or remote mark (`providers.profiles.updateDefault`).
  * A blank name restores "Default"; omitted fields keep the saved value.
  */
 export const providerDefaultUpdateRequested = createAction(
   'providerProfiles/defaultUpdateRequested',
-  (input: { requestId: string; baseProviderId: string; name?: string; env?: EnvEntryWrite[] }) => ({
+  (input: {
+    requestId: string;
+    baseProviderId: string;
+    name?: string;
+    env?: EnvEntryWrite[];
+    remoteCompatible?: boolean;
+  }) => ({
     requestId: input.requestId,
     baseProviderId: input.baseProviderId,
     name: input.name,
     envRef: stageProfileEnv(input.env),
+    ...(input.remoteCompatible !== undefined ? { remoteCompatible: input.remoteCompatible } : {}),
   }),
 );
 export const providerDefaultUpdateSucceeded = createAction<

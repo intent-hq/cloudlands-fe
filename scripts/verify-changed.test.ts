@@ -33,6 +33,7 @@ import {
   verificationLockKey,
   vitestExcludePatterns,
 } from './verify-changed.mjs';
+import { SKIP_WORKFLOW_LINT_ENV } from './check-workflows.mjs';
 import { HELD_LOCK_ENV, lockOwner, worktreeCtPort } from './verification-lock.mjs';
 import { createCtGateFixture } from './test-fixtures/ct-gate.mjs';
 import { loadTransferSelectionFixtures } from './transfer-selection-fixtures.mjs';
@@ -173,6 +174,7 @@ describe('verify-changed arguments and paths', () => {
       base: null,
       dryRun: true,
       help: false,
+      keepGoing: false,
       paths: ['src/a.ts'],
       resume: false,
     });
@@ -189,6 +191,15 @@ describe('verify-changed arguments and paths', () => {
       resume: true,
     });
     expect(() => parseArgs(['--dry-run', '--resume'])).toThrow(/--resolved-plan --resume/);
+  });
+
+  it('parses --keep-going, off by default and combinable with --resume', () => {
+    expect(parseArgs([])).toMatchObject({ keepGoing: false });
+    expect(parseArgs(['--keep-going', '--resume', 'src/a.ts'])).toMatchObject({
+      keepGoing: true,
+      resume: true,
+      paths: ['src/a.ts'],
+    });
   });
 
   it('parses --base in both spellings and requires a value', () => {
@@ -639,7 +650,7 @@ describe('verification planning', () => {
       'src/hooks.client.ts',
       'src/routes/(app)/+layout.svelte',
       'src/features/settings/labels.ts',
-      'src/features/agent/main/stream-manager.ts',
+      'src/features/agent/main/agent-missing.ipc.ts',
       'src/shared/errors/messages.ts',
       'src/store/renderer/seeders/provider-status-bridge-seeder.ts',
       'src/lib/components/chat/streaming-status.preview-fixtures.svelte',
@@ -1320,12 +1331,64 @@ describe('verification planning', () => {
     expect(otherScript.checks.map((check) => check.id)).not.toContain('architecture');
   });
 
-  it('runs the architecture gates (actionlint) when a workflow or its lint config changes', () => {
+  it('runs the architecture gates when an Electron helper or its tsconfig changes', () => {
+    const changed = [
+      'test/electron-browser-capture.fixture.ts',
+      'test/fixtures/dock-placement-native/harness.ts',
+      'tsconfig.electron-tests.json',
+    ];
+    const root = fixtureRoot({
+      ...Object.fromEntries(changed.map((file) => [file, ''])),
+      'test/catalog-shell.spec.ts': '',
+    });
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      expect(
+        plan.checks.map((check) => check.id),
+        file,
+      ).toContain('architecture');
+    }
+    const spec = createVerificationPlan(['test/catalog-shell.spec.ts'], { root, ctTests: [] });
+    expect(spec.checks.map((check) => check.id)).not.toContain('architecture');
+  });
+
+  // actionlint can hang on a loaded host (rhysd/actionlint#702) and failed the
+  // architecture lane of a change with no workflow edits (cloudlands-fe#4332).
+  const dryRun = (files: string[], root: string) => {
+    const lines: string[] = [];
+    printPlan(createVerificationPlan(files, { root, ctTests: [] }), true, (line: string) =>
+      lines.push(line),
+    );
+    return lines.join('\n');
+  };
+
+  it('runs actionlint in its own lane only when a workflow lint input changes', () => {
     const changed = [
       '.github/workflows/promote-beta.yml',
       '.github/workflows/example.yaml',
       '.github/actionlint.yaml',
       '.github/actionlint.yml',
+      '.github/actions/checkout-pinned/action.yml',
+      'scripts/check-workflows.mjs',
+    ];
+    const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, ''])));
+    for (const file of changed) {
+      const plan = createVerificationPlan([file], { root, ctTests: [] });
+      const workflows = plan.checks.find((check) => check.id === 'workflows');
+      expect(workflows?.args, file).toEqual(['run', 'lint:workflows']);
+      expect(workflows?.env, file).toEqual({ [SKIP_WORKFLOW_LINT_ENV]: '0' });
+      expect(dryRun([file], root), file).toContain('pnpm run lint:workflows');
+    }
+  });
+
+  it('skips actionlint for changes that touch no workflow lint input', () => {
+    const changed = [
+      'src/main/index.ts',
+      'AGENTS.md',
+      'scripts/check-saga-watcher-ownership.mjs',
+      'package.json',
+      'unknown.toml',
+      '.github/dependabot.yml',
     ];
     const root = fixtureRoot(Object.fromEntries(changed.map((file) => [file, ''])));
     for (const file of changed) {
@@ -1333,7 +1396,13 @@ describe('verification planning', () => {
       expect(
         plan.checks.map((check) => check.id),
         file,
-      ).toContain('architecture');
+      ).not.toContain('workflows');
+      const architecture = plan.checks.find((check) => check.id === 'architecture');
+      if (architecture) {
+        expect(architecture.args, file).toEqual(['run', 'lint:architecture']);
+        expect(architecture.env, file).toEqual({ [SKIP_WORKFLOW_LINT_ENV]: '1' });
+      }
+      expect(dryRun([file], root), file).not.toContain('lint:workflows');
     }
   });
 
@@ -1718,9 +1787,9 @@ describe('verification planning', () => {
 
     const lines: string[] = [];
     printPlan(plan, true, (line: string) => lines.push(line));
-    const commandLines = lines.filter((line) => /: pnpm (?:exec|run) /.test(line));
+    const commandLines = lines.filter((line) => /: (?:[A-Z_]+=\S+ )*pnpm (?:exec|run) /.test(line));
     expect(commandLines).toHaveLength(plan.checks.length);
-    for (const line of commandLines) expect(line).toMatch(/: pnpm (?:exec|run) /);
+    for (const line of commandLines) expect(line).toMatch(/: (?:[A-Z_]+=\S+ )*pnpm (?:exec|run) /);
   });
 
   it('selects a component test that directly imports a changed Svelte component', () => {
@@ -2325,34 +2394,37 @@ describe('empty change set guard', () => {
     return { lines, options: { log: (line: string) => lines.push(line) } };
   }
 
-  async function expectNothingToVerify(root: string) {
+  const UNRESOLVED =
+    "verify:changed: nothing to verify — the worktree is clean; cannot compare HEAD with origin/main, pass --base <ref> to verify this branch's commits";
+  const NOT_AHEAD =
+    'verify:changed: nothing to verify — the worktree is clean and HEAD is not ahead of origin/main';
+
+  async function expectNothingToVerify(root: string, message: string) {
     for (const argv of [[], ['--dry-run']]) {
       const { lines, options } = capture();
       expect(await runCli(argv, root, options), argv.join(' ')).toBe(2);
-      expect(lines).toHaveLength(1);
-      expect(lines[0]).toContain('nothing to verify');
-      expect(lines[0]).toContain('pass --base origin/main');
+      expect(lines).toEqual([message]);
     }
   }
 
   it('exits 2 with the --base hint when a clean worktree has no origin/main ref', async () => {
-    await expectNothingToVerify(gitRepository());
+    await expectNothingToVerify(gitRepository(), UNRESOLVED);
   });
 
-  it('exits 2 with the --base hint when a clean worktree is not ahead of origin/main', async () => {
+  it('exits 2 without a --base hint when a clean worktree is not ahead of origin/main', async () => {
     const root = gitRepository();
     trackOriginMain(root);
-    await expectNothingToVerify(root);
+    await expectNothingToVerify(root, NOT_AHEAD);
 
     branchWithCommit(root);
     trackOriginMain(root, 'refs/heads/feature');
-    await expectNothingToVerify(root);
+    await expectNothingToVerify(root, NOT_AHEAD);
   });
 
   it('exits 2 without throwing when a clean branch is ahead but origin/main is missing', async () => {
     const root = gitRepository();
     branchWithCommit(root);
-    await expectNothingToVerify(root);
+    await expectNothingToVerify(root, UNRESOLVED);
   });
 
   it('defaults to origin/main as the base on a clean branch that is ahead of it', async () => {
@@ -2381,16 +2453,89 @@ describe('empty change set guard', () => {
     }
   });
 
-  it('verifies the working-tree set without the fallback when changes are uncommitted', async () => {
+  // cloudlands-fe#4431: a dirty tree used to hide the branch's committed files.
+  it('adds the committed branch diff to uncommitted changes when HEAD is ahead', async () => {
     const root = gitRepository();
     const committed = branchWithCommit(root);
+    trackOriginMain(root);
+    writeFileSync(join(root, 'src/base.ts'), 'edited');
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    for (const argv of [[], ['--dry-run']]) {
+      const { lines, options } = capture();
+      const planned: string[][] = [];
+      const gates = {
+        checkNode: () => ({ ok: true, reason: null }),
+        checkDeps: () => ({ ok: true, reason: null }),
+        ensureI18n: async () => ({ ok: true, reason: null }),
+        runPlan: async (plan: { files: string[] }) => {
+          planned.push(plan.files);
+        },
+      };
+      expect(await runCli(argv, root, { ...options, ...gates }), argv.join(' ')).toBe(0);
+      expect(lines[0]).toBe(
+        'verify:changed: verifying uncommitted changes plus commits since merge-base with origin/main',
+      );
+      expect(lines.some((line) => line.includes('worktree clean'))).toBe(false);
+      for (const file of [committed, 'src/base.ts', 'src/untracked.ts'])
+        expect(lines).toContain(`  - ${file}`);
+      expect(planned).toEqual(
+        argv.includes('--dry-run') ? [] : [[committed, 'src/base.ts', 'src/untracked.ts'].sort()],
+      );
+    }
+  });
+
+  it('verifies only uncommitted changes when HEAD is not ahead of origin/main', async () => {
+    const root = gitRepository();
     trackOriginMain(root);
     writeFileSync(join(root, 'src/untracked.ts'), '');
     const { lines, options } = capture();
     expect(await runCli(['--dry-run'], root, options)).toBe(0);
+    expect(lines[0]).toBe(
+      'verify:changed: verifying uncommitted changes only; HEAD is not ahead of origin/main',
+    );
+    expect(lines).toContain('  - src/untracked.ts');
+  });
+
+  it('verifies only uncommitted changes and says why when HEAD cannot be compared', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run'], root, options)).toBe(0);
+    expect(lines[0]).toBe(
+      'verify:changed: verifying uncommitted changes only; cannot compare HEAD with origin/main, pass --base <ref> to include commits',
+    );
     expect(lines).toContain('  - src/untracked.ts');
     expect(lines).not.toContain(`  - ${committed}`);
-    expect(lines.some((line) => line.includes('worktree clean'))).toBe(false);
+  });
+
+  it('reports the explicit --base mode', async () => {
+    const root = gitRepository();
+    const committed = branchWithCommit(root);
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run', '--base', 'main'], root, options)).toBe(0);
+    expect(lines[0]).toBe(
+      'verify:changed: verifying uncommitted changes plus commits since merge-base with main',
+    );
+    expect(lines).toContain(`  - ${committed}`);
+    expect(lines).toContain('  - src/untracked.ts');
+  });
+
+  it('rejects an explicit --base that cannot be resolved', async () => {
+    const root = gitRepository();
+    writeFileSync(join(root, 'src/untracked.ts'), '');
+    const { options } = capture();
+    await expect(runCli(['--dry-run', '--base', 'no-such-ref'], root, options)).rejects.toThrow(
+      /cannot resolve --base no-such-ref/,
+    );
+  });
+
+  it('reports explicit paths without reading git', async () => {
+    const root = gitRepository();
+    const { lines, options } = capture();
+    expect(await runCli(['--dry-run', 'src/base.ts'], root, options)).toBe(0);
+    expect(lines[0]).toBe('verify:changed: verifying the given paths');
   });
 
   it('omits the hint when --base was already supplied', async () => {
@@ -2492,10 +2637,10 @@ describe('dependency freshness gate', () => {
     expect(calls).toEqual([`checkNode:${root}`]);
   });
 
-  it('runs the dependency-free Node preflight before this module resolves node_modules', () => {
+  it('runs the dependency-free Node and install-presence preflight before this module resolves node_modules', () => {
     const scripts = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8')).scripts;
     expect(scripts['verify:changed']).toMatch(
-      /^node scripts\/check-node\.mjs && node scripts\/verify-changed\.mjs\b/,
+      /^node scripts\/check-deps-fresh\.mjs --installed-only && node scripts\/verify-changed\.mjs\b/,
     );
   });
 
@@ -2814,6 +2959,139 @@ describe('expensive-check coordination', () => {
     expect(started).toEqual(expect.arrayContaining(['vitest', 'ct']));
     gate.resolve();
     await Promise.all(runs);
+  });
+});
+
+// A slow or flaky lane must not hide later checks: with --keep-going one run
+// reports every failure (an i18n timeout hid a real type error for three runs
+// on cloudlands-fe#4115).
+describe('keep-going runs', () => {
+  function failing(ids: string[]) {
+    const ran: string[] = [];
+    const runCheck = async (check: ReturnType<typeof testCheck>) => {
+      ran.push(check.id);
+      if (ids.includes(check.id))
+        throw Object.assign(new Error(`${check.label} failed with exit code 1\ndetails`), {
+          exitCode: 1,
+        });
+    };
+    return { ran, runCheck };
+  }
+  const plan = () =>
+    testPlan(
+      testCheck('vitest-related', null),
+      testCheck('tsc-renderer', null),
+      testCheck('ct-related', null),
+      testCheck('playwright-related', null),
+    );
+
+  it('stops at the first failing check by default', async () => {
+    const { ran, runCheck } = failing(['vitest-related']);
+    await expect(
+      runVerificationPlan(plan(), temporaryDirectory(), { runCheck, log: () => {} }),
+    ).rejects.toThrow(/^vitest-related failed with exit code 1/);
+    expect(ran).toEqual(['vitest-related']);
+  });
+
+  it('runs every selected check after a failure, then lists all failures', async () => {
+    const { ran, runCheck } = failing(['vitest-related', 'ct-related']);
+    const lines: string[] = [];
+    const run = runVerificationPlan(plan(), temporaryDirectory(), {
+      runCheck,
+      keepGoing: true,
+      log: (line: string) => lines.push(line),
+    });
+    await expect(run).rejects.toThrow(
+      /2 of 4 check\(s\) failed:\n {2}- vitest-related failed with exit code 1\n {2}- ct-related failed with exit code 1\n/,
+    );
+    expect(ran).toEqual(['vitest-related', 'tsc-renderer', 'ct-related', 'playwright-related']);
+    // Each failure's full message is logged when it happens, before later checks start.
+    expect(lines).toContain(
+      '[verify:changed] vitest-related failed with exit code 1\ndetails\n[verify:changed] --keep-going: continuing with the remaining checks',
+    );
+  });
+
+  // Ctrl+C reaches the running check and the parent together; the child's exit can
+  // be handled before the parent's own signal handler runs, so the loop must not
+  // treat an interrupted check as an ordinary failure and start the next one.
+  it.each([
+    ['killed by SIGINT', { signal: 'SIGINT', exitCode: null }],
+    ['killed by SIGTERM', { signal: 'SIGTERM', exitCode: null }],
+    ['exiting 130 after Ctrl+C', { signal: null, exitCode: 130 }],
+    ['exiting 143 after SIGTERM', { signal: null, exitCode: 143 }],
+  ])('stops instead of continuing when a check was %s', async (_name, fields) => {
+    const ran: string[] = [];
+    const runCheck = async (check: ReturnType<typeof testCheck>) => {
+      ran.push(check.id);
+      if (check.id === 'tsc-renderer')
+        throw Object.assign(new Error(`${check.label} interrupted`), fields);
+    };
+    await expect(
+      runVerificationPlan(plan(), temporaryDirectory(), {
+        runCheck,
+        keepGoing: true,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/^tsc-renderer interrupted/);
+    expect(ran).toEqual(['vitest-related', 'tsc-renderer']);
+  });
+
+  it('names the check when its failure message does not, as for a lock timeout', async () => {
+    const runCheck = async (check: ReturnType<typeof testCheck>) => {
+      if (check.id === 'ct-related')
+        throw new Error('verification lock /tmp/ct-3100.lock: held by pid 1; waited 5ms');
+    };
+    await expect(
+      runVerificationPlan(plan(), temporaryDirectory(), {
+        runCheck,
+        keepGoing: true,
+        log: () => {},
+      }),
+    ).rejects.toThrow(
+      /1 of 4 check\(s\) failed:\n {2}- ct-related: verification lock \/tmp\/ct-3100\.lock: held by pid 1; waited 5ms\n/,
+    );
+  });
+
+  it('passes when every check passes', async () => {
+    const { ran, runCheck } = failing([]);
+    await runVerificationPlan(plan(), temporaryDirectory(), {
+      runCheck,
+      keepGoing: true,
+      log: () => {},
+    });
+    expect(ran).toHaveLength(4);
+  });
+
+  it('still stops on a failed prerequisite, which every dependent lane needs', async () => {
+    const { ran, runCheck } = failing(['generated-build-config']);
+    const withPrerequisite = {
+      ...plan(),
+      prerequisites: [testCheck('generated-build-config', null)],
+      checks: plan().checks.map((check) => ({ ...check, dependsOn: ['generated-build-config'] })),
+    };
+    await expect(
+      runVerificationPlan(withPrerequisite, temporaryDirectory(), {
+        runCheck,
+        keepGoing: true,
+        log: () => {},
+      }),
+    ).rejects.toThrow(/^generated-build-config failed/);
+    expect(ran).toEqual(['generated-build-config']);
+  });
+
+  it('forwards --keep-going from the command line to the plan runner', async () => {
+    const root = fixtureRoot({ 'src/lib/utils.ts': '' });
+    const seen: Array<Record<string, unknown>> = [];
+    await runCli(['--keep-going', 'src/lib/utils.ts'], root, {
+      log: () => {},
+      checkNode: () => ({ ok: true }),
+      checkDeps: () => ({ ok: true }),
+      ensureI18n: async () => ({ ok: true }),
+      runPlan: async (_plan: unknown, _root: string, options: Record<string, unknown>) => {
+        seen.push(options);
+      },
+    });
+    expect(seen).toEqual([expect.objectContaining({ keepGoing: true })]);
   });
 });
 

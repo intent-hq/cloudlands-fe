@@ -1,35 +1,21 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import Fa from 'svelte-fa';
-  import { faCheck, faXmark } from '@fortawesome/free-solid-svg-icons';
+  import * as Popover from '$lib/components/ui/popover';
   import { m } from '$shared/paraglide/messages.js';
+  import type { SuggestionDetails } from './Suggestion';
 
   interface Props {
-    suggestion: {
-      id: string;
-      type: 'addition' | 'deletion' | 'modification';
-      author?: string;
-      reason?: string;
-      originalText?: string;
-    };
-    x?: number;
-    y?: number;
+    suggestion: SuggestionDetails | null;
+    anchor: HTMLElement | null;
     onAccept?: (id: string) => void;
     onReject?: (id: string) => void;
+    onClose?: () => void;
   }
 
-  let { suggestion, x = 0, y = 0, onAccept, onReject }: Props = $props();
+  let { suggestion, anchor, onAccept, onReject, onClose }: Props = $props();
 
-  function handleAccept() {
-    onAccept?.(suggestion.id);
-  }
-
-  function handleReject() {
-    onReject?.(suggestion.id);
-  }
-
-  function getTypeLabel(type: string) {
-    switch (type) {
+  const typeLabel = $derived.by(() => {
+    switch (suggestion?.type) {
       case 'addition':
         return m.tiptap_suggestionTooltip_addition_label();
       case 'deletion':
@@ -39,40 +25,52 @@
       default:
         return m.tiptap_suggestionTooltip_suggestion_label();
     }
-  }
+  });
 </script>
 
-<div class="suggestion-tooltip" style="left: {x}px; top: {y}px;">
-  <div class="flex justify-between items-center mb-2">
-    <span class="font-semibold text-xs">{getTypeLabel(suggestion.type)}</span>
-    {#if suggestion.author}
-      <span class="suggestion-tooltip-author"
-        >{m.tiptap_suggestionTooltip_byAuthor_label({ author: suggestion.author })}</span
-      >
+<Popover.Root
+  open={suggestion !== null && anchor !== null}
+  onOpenChange={(open) => {
+    if (!open) onClose?.();
+  }}
+>
+  <Popover.Content
+    customAnchor={anchor}
+    side="top"
+    align="start"
+    preventScroll={false}
+    class="flex w-max max-w-72 min-w-56 flex-col gap-1 p-3"
+    data-suggestion-popover
+    onOpenAutoFocus={(event) => event.preventDefault()}
+    onCloseAutoFocus={(event) => event.preventDefault()}
+  >
+    {#if suggestion}
+      {@const id = suggestion.id}
+      <div class="flex min-w-0 items-baseline gap-2">
+        <span class="shrink-0 font-medium text-foreground">{typeLabel}</span>
+        {#if suggestion.author}
+          <span class="truncate text-muted-foreground">
+            {m.tiptap_suggestionTooltip_byAuthor_label({ author: suggestion.author })}
+          </span>
+        {/if}
+      </div>
+      {#if suggestion.reason}
+        <p class="text-muted-foreground">{suggestion.reason}</p>
+      {/if}
+      {#if suggestion.originalText && suggestion.type === 'modification'}
+        <p class="min-w-0 break-words text-foreground">
+          <span class="text-muted-foreground">{m.tiptap_suggestionTooltip_original_label()}</span>
+          {suggestion.originalText}
+        </p>
+      {/if}
+      <div class="mt-2 flex justify-end gap-1">
+        <Button variant="ghost" size="sm" onclick={() => onReject?.(id)}>
+          {m.tiptap_suggestionTooltip_reject_label()}
+        </Button>
+        <Button variant="secondary" size="sm" onclick={() => onAccept?.(id)}>
+          {m.tiptap_suggestionTooltip_accept_label()}
+        </Button>
+      </div>
     {/if}
-  </div>
-
-  {#if suggestion.reason}
-    <div class="suggestion-tooltip-reason">
-      {suggestion.reason}
-    </div>
-  {/if}
-
-  {#if suggestion.originalText && suggestion.type === 'modification'}
-    <div class="mt-2 py-1 px-2 bg-muted rounded text-xs">
-      <span class="font-semibold mr-1">{m.tiptap_suggestionTooltip_original_label()}</span>
-      <span class="italic">{suggestion.originalText}</span>
-    </div>
-  {/if}
-
-  <div class="suggestion-tooltip-actions">
-    <Button variant="ghost" class="accept" onclick={handleAccept}>
-      <Fa icon={faCheck} size="xs" class="inline mr-1" />
-      {m.tiptap_suggestionTooltip_accept_label()}
-    </Button>
-    <Button variant="ghost" class="reject" onclick={handleReject}>
-      <Fa icon={faXmark} size="xs" class="inline mr-1" />
-      {m.tiptap_suggestionTooltip_reject_label()}
-    </Button>
-  </div>
-</div>
+  </Popover.Content>
+</Popover.Root>

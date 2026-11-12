@@ -41,6 +41,23 @@ import { isPlainFolderWorkspace } from '$lib/utils/plain-folder-workspace';
 /** Workspace entity changes observed by independent UI projections. */
 export const selectWorkspaceEntities = store.createSelector((state) => state.workspace.workspaces);
 
+// Recomputed only when the workspace collection changes.
+let titlesSource: unknown;
+let titlesById: Record<string, string> = {};
+
+/** Workspace titles keyed by id, for views that label rows by workspace id. */
+export const selectWorkspaceTitlesById = store.createSelector<[], Record<string, string>>(
+  (state) => {
+    if (state.workspace.workspaces !== titlesSource) {
+      titlesSource = state.workspace.workspaces;
+      titlesById = Object.fromEntries(
+        getItems(state.workspace.workspaces).map((workspace) => [workspace.id, workspace.title]),
+      );
+    }
+    return titlesById;
+  },
+);
+
 export const selectWorkspaceLoading = store.createSelector((state) => {
   return state.workspace.loading;
 });
@@ -289,6 +306,17 @@ export const selectWorkspaceItems = store.createSelector<[], Workspace[]>((state
     (workspace) => workspace.id !== CHIEF_WORKSPACE_ID,
   );
 });
+
+/**
+ * True when the loaded workspace list belongs to this window's backend and
+ * has at least one workspace. Rows from a previous backend never count.
+ */
+export const selectWindowBackendListedWorkspaces = store.createSelector(
+  (state) =>
+    state.connections?.hasReceivedList === true &&
+    state.workspace.loadedBackendId === state.connections.windowBackendId &&
+    selectWorkspaceItems.select(state).length > 0,
+);
 
 export const selectWorkspaceIsEmpty = store.createSelector((state) => {
   return state.workspace.workspaces.ids.length === 0;

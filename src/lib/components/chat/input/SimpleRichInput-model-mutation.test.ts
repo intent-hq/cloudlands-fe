@@ -863,10 +863,6 @@ describe('real composer authoritative provider identity', () => {
           expect((await screen.findByTestId('effort-picker-trigger')).textContent).toContain(
             target === 'codex' ? 'Medium' : 'High',
           );
-          const titles = [...document.querySelectorAll('[title]')]
-            .map((element) => element.getAttribute('title'))
-            .join(' ');
-          expect(titles).not.toMatch(/is disabled in Settings/);
           expect(session()).toEqual(original);
           expect(fixture.setModel).not.toHaveBeenCalled();
           expect(fixture.setEffort).not.toHaveBeenCalled();

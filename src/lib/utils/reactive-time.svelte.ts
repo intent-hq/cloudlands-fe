@@ -57,7 +57,7 @@ export function createReactiveRelativeTime(targetDate: Date | string | number) {
  * (e.g., "now", "2m", "3h", "5d", then a short date).
  * Pure function - no side effects
  */
-export function calculateCompactTime(target: Date): string {
+function calculateCompactTime(target: Date): string {
   return formatCompactRelativeTime(target);
 }
 

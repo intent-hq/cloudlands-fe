@@ -165,6 +165,15 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
   selectAgentFontStyle: () => ({
     subscribe: (run: (value: string) => void) => (run('sans'), () => {}),
   }),
+  selectChatContentWidth: () => ({
+    subscribe: (run: (value: string) => void) => (run('full'), () => {}),
+  }),
+  selectChatAuroraEnabled: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(true), () => {}),
+  }),
+  selectCollapseToolRuns: () => ({
+    subscribe: (run: (value: boolean) => void) => (run(false), () => {}),
+  }),
   selectAgentFontStyleLabel: () => ({
     subscribe: (run: (value: string) => void) => (run('Default'), () => {}),
   }),

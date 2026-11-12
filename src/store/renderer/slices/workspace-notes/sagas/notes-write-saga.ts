@@ -150,19 +150,17 @@ type WorkspaceCleanupAction = ReturnType<typeof workspaceUnmounted>;
 type ObservedAction = { type: string; payload?: unknown };
 
 const pendingContent = new Map<string, PendingContent>();
-// Sequence number of the most recent local edit per key (mirrors
-// `notes-write-service.ts`): a save's echo is authoritative only when no later
-// local edit exists — debounced, queued behind it, or in flight.
+// Sequence number of the most recent local edit per key: a save's echo is
+// authoritative only when no later local edit exists — debounced, queued
+// behind it, or in flight.
 const latestEditSeq = new Map<string, number>();
-// Every draft not yet acknowledged by the daemon, per key, in edit order
-// (mirrors `notes-write-service.ts`): the debounced one plus those queued or
-// in flight. A superseded save's echo rebases the later drafts in place, so a
+// Every draft not yet acknowledged by the daemon, per key, in edit order: the
+// debounced one plus those queued or in flight. A superseded save's echo rebases the later drafts in place, so a
 // queued command's content is the rebased text by the time it is sent.
 const unackedDrafts = new Map<string, PendingContent[]>();
-// Rev of the daemon text the current local edit chain is based on (mirrors
-// `notes-write-service.ts`): set when a chain starts from a clean state,
-// advanced to each echo's rev as the pending drafts are rebased onto it, and
-// sent as `expectedVersion`.
+// Rev of the daemon text the current local edit chain is based on: set when a
+// chain starts from a clean state, advanced to each echo's rev as the pending
+// drafts are rebased onto it, and sent as `expectedVersion`.
 const draftBaseRev = new Map<string, number>();
 // The daemon text at `draftBaseRev` (see `note-daemon-text.ts`), or `null` when
 // it is unknown. Its UTF-8 size is the truncated-read write guard's
@@ -328,9 +326,8 @@ function* advanceRevision(workspaceId: string, noteId: string, sentRev: number) 
 }
 
 /**
- * A superseded save's echo has landed (mirrors `notes-write-service.ts`):
- * replay the later drafts' edits (relative to the sent text) onto the echoed
- * text so the next save neither re-applies persisted intent nor swallows a
+ * A superseded save's echo has landed: replay the later drafts' edits
+ * (relative to the sent text) onto the echoed text so the next save neither re-applies persisted intent nor swallows a
  * local undo, re-base the chain on the echo's rev, and show the newest
  * (rebased) draft in the store — unless a refetch already landed a rev newer
  * than the echo (`storeIsNewer`), whose content must stay visible rather than
@@ -364,7 +361,7 @@ function* rebasePendingDrafts(
 
 /**
  * Apply the daemon's `note.setContent` response as the authoritative local
- * state (mirrors `notes-write-service.ts`): the merged `newContent` replaces
+ * state: the merged `newContent` replaces
  * the store content and the rev comes from the echoed `rev` when present, else
  * `sentRev + 1` (older daemons). When a newer local edit exists the echo is
  * not applied verbatim; the later drafts are rebased onto it instead

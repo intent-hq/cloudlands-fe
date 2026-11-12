@@ -1408,6 +1408,45 @@ describe('LiveAgentsClient mutations (fake transport)', () => {
     ]);
   });
 
+  it('setPermissionPolicy forwards agent.update with the policy, including a null reset (§5.5)', async () => {
+    backend.onRequest('agent.update', () => ({ success: true }));
+    const client = new LiveAgentsClient();
+
+    for (const permissionPolicy of ['interactive', 'allow', null] as const) {
+      expect(
+        await client.setPermissionPolicy({
+          agentId: 'agent-1',
+          workspaceId: 'ws-1',
+          permissionPolicy,
+        }),
+      ).toEqual({ success: true });
+    }
+    expect(backend.requests.map((request) => request.params)).toEqual([
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { permissionPolicy: 'interactive' } },
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { permissionPolicy: 'allow' } },
+      { agentId: 'agent-1', workspaceId: 'ws-1', changes: { permissionPolicy: null } },
+    ]);
+  });
+
+  it('setPermissionPolicy folds a remote-agent rejection (-32602) into {success:false,error}', async () => {
+    backend.onRequest('agent.update', () => {
+      throw new BackendError(
+        buildErrorPayload('BACKEND_ERROR', 'agent.update: permissionPolicy not supported', {
+          rpcCode: -32602,
+        }),
+      );
+    });
+    const client = new LiveAgentsClient();
+
+    const result = await client.setPermissionPolicy({
+      agentId: 'agent-1',
+      workspaceId: 'ws-1',
+      permissionPolicy: 'interactive',
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('permissionPolicy not supported');
+  });
+
   it('setPinned folds a daemon rejection (older daemon, -32602) into {success:false,error}', async () => {
     backend.onRequest('agent.update', () => {
       throw new BackendError(
@@ -1804,6 +1843,51 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
   });
   afterEach(() => {
     resetMockBackend();
+  });
+
+  it('list reads the permission policy pair and drops non-contract shapes', async () => {
+    backend.onRequest('agent.list', () => ({
+      agents: [
+        {
+          id: 'override',
+          workspaceId: 'ws-1',
+          name: 'A',
+          status: 'active',
+          permissionPolicy: 'interactive',
+          effectivePermissionPolicy: 'interactive',
+        },
+        {
+          id: 'default',
+          workspaceId: 'ws-1',
+          name: 'B',
+          status: 'active',
+          permissionPolicy: null,
+          effectivePermissionPolicy: 'allow',
+        },
+        { id: 'remote', workspaceId: 'ws-1', name: 'C', status: 'active', permissionPolicy: null },
+        { id: 'older', workspaceId: 'ws-1', name: 'D', status: 'active' },
+        {
+          id: 'malformed',
+          workspaceId: 'ws-1',
+          name: 'E',
+          status: 'active',
+          permissionPolicy: 7,
+          effectivePermissionPolicy: false,
+        },
+      ],
+    }));
+    const client = new LiveAgentsClient();
+
+    const agents = await client.list('ws-1');
+    expect(
+      agents.map((agent) => [agent.permissionPolicy, agent.effectivePermissionPolicy]),
+    ).toEqual([
+      ['interactive', 'interactive'],
+      [null, 'allow'],
+      [null, undefined],
+      [undefined, undefined],
+      [undefined, undefined],
+    ]);
   });
 
   it('list carries isResponding/isWaitingOnTool/isWaitingForOtherAgents verbatim', async () => {
@@ -2740,6 +2824,24 @@ describe('LiveAgentsClient reads thread daemon activity flags (PROTOCOL §5.5)',
       encoding: 'text',
       totalBytes: 3_200_000,
       nextOffset: 479_900,
+    });
+  });
+
+  it('getMessageBlockPage sends offset for a later page', async () => {
+    backend.onRequest('agent.getMessageBlock', () => ({
+      block: { type: 'text', id: 'msg-1:0', text: 'tail' },
+      truncated: true,
+      field: 'text',
+      encoding: 'text',
+      totalBytes: 600_000,
+      nextOffset: null,
+    }));
+    const client = new LiveAgentsClient();
+
+    await client.getMessageBlockPage('agent-1', 'msg-1', 'msg-1:0', undefined, 479_990);
+    expect(backend.requests[0]).toEqual({
+      method: 'agent.getMessageBlock',
+      params: { agentId: 'agent-1', messageId: 'msg-1', blockId: 'msg-1:0', offset: 479_990 },
     });
   });
 

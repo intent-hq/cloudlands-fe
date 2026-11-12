@@ -10,6 +10,8 @@
       path?: string;
       workspaceName?: string;
       repoLabel?: string;
+      /** Repo rows: where the repo starts from ("GitHub", "GitLab"), in place of a folder path. */
+      sourceLabel?: string;
       isArchivedWorkspace?: boolean;
       isRetiredWorkspace?: boolean;
       _time?: string;
@@ -18,11 +20,13 @@
 
   let { item }: Props = $props();
   const context = $derived(
-    item.type === 'note' && item.breadcrumbs
-      ? item.breadcrumbs
-      : item.type === 'change' || item.type === 'file'
-        ? item.path || item.description
-        : item.description,
+    item.sourceLabel
+      ? item.sourceLabel
+      : item.type === 'note' && item.breadcrumbs
+        ? item.breadcrumbs
+        : item.type === 'change' || item.type === 'file'
+          ? item.path || item.description
+          : item.description,
   );
   const detail = $derived(
     [

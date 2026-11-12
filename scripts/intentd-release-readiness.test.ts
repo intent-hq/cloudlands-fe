@@ -1,6 +1,6 @@
-// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh, scripts/ci-gate-state.mjs, scripts/rolling-pr.mjs
+// @verify-changed-triggers: .github/workflows/auto-cut-alpha.yml, scripts/intentd-release-readiness.mjs, scripts/intentd-skew-evidence.mjs, scripts/release-pr-fast-path.mjs, scripts/intentd-pin-advance.sh, scripts/ci-gate-state.mjs, scripts/rolling-pr.mjs
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { confirmedIntentdNoop } from './intentd-release-readiness.mjs';
+import { spawnWorkflowBash } from './workflow-shell-fixture';
 
 const builderRequire = createRequire(createRequire(import.meta.url).resolve('electron-builder'));
 const { load } = createRequire(builderRequire.resolve('app-builder-lib'))('js-yaml');
@@ -135,6 +136,19 @@ function fixture() {
     missingHelper: false,
     missingGuardHelper: '',
     fetchFail: false,
+    // Exact-endpoint responses for the dependency-evidence helper and the
+    // in-flight build lookup; anything absent is an unexpected call.
+    extra: {} as Record<string, unknown>,
+    // fe PR bodies served to the evidence helper's batched GraphQL read.
+    prBodies: null as Record<number, string> | null,
+    // The Release PR head for the missing-CI restart: its workflow-run
+    // count, commit date, last reopen, and close/reopen failures.
+    headRuns: 1,
+    headCommitted: '2026-09-26T05:00:00Z',
+    reopened: '',
+    prState: 'OPEN',
+    closeFail: false,
+    reopenFail: false,
   };
 }
 
@@ -178,6 +192,7 @@ function runCut(
     'ci-gate-state.mjs',
     'rolling-pr.mjs',
     'intentd-release-readiness.mjs',
+    'intentd-skew-evidence.mjs',
     'release-pr-fast-path.mjs',
     'intentd-pin-advance.sh',
   ])
@@ -214,15 +229,28 @@ appendFileSync(process.env.READINESS_CALLS, JSON.stringify(a) + '\\n');
 const endpoint = a[0] === 'api' ? a.slice(1).find(x => !x.startsWith('--')) : '';
 if (f.fail && endpoint.includes(f.fail)) process.exit(1);
 let value;
-if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : f.extraPr ? [f.pr, {...f.pr, number: 100}] : [f.pr];
-else if (a[0] === 'pr' && a[1] === 'view') value = f.detail;
+if (endpoint && Object.hasOwn(f.extra, endpoint)) value = f.extra[endpoint];
+else if (a[0] === 'pr' && a[1] === 'list') value = a.includes('--head') ? f.pinPr : f.noPr ? [] : f.extraPr ? [f.pr, {...f.pr, number: 100}] : [f.pr];
+else if (a[0] === 'pr' && a[1] === 'view') value = {...f.detail, state: f.prState};
+else if (a[0] === 'pr' && (a[1] === 'close' || a[1] === 'reopen')) process.exit(f[a[1] + 'Fail'] ? 1 : 0);
 else if (a[0] === 'pr' && a[1] === 'merge') {
   const expected = a[a.indexOf('--match-head-commit') + 1];
   if (expected !== (f.liveHead || f.detail.headRefOid)) process.exit(1);
   process.exit(0);
 }
 else if (endpoint === 'graphql') {
-  if (a.some(x => x.includes('viewer'))) value = { data: { viewer: { login: 'releaser' } } };
+  const skew = a.find(x => x.includes('skewEvidence'));
+  if (skew) {
+    if (!f.prBodies) process.exit(1);
+    const repository = {};
+    for (const [, n] of skew.matchAll(/p(\\d+): pullRequest/g))
+      if (n in f.prBodies) repository['p' + n] = { number: Number(n), body: f.prBodies[n] };
+    value = { data: { repository } };
+  }
+  else if (a.some(x => x.includes('ReopenedEvent'))) value = { data: { repository: { pullRequest: {
+    commits: { nodes: [{ commit: { oid: f.detail.headRefOid, committedDate: f.headCommitted } }] },
+    timelineItems: { nodes: f.reopened ? [{ createdAt: f.reopened }] : [] } } } } };
+  else if (a.some(x => x.includes('viewer'))) value = { data: { viewer: { login: 'releaser' } } };
   else { process.stdout.write(String(f.unresolved)); process.exit(0); }
 }
 else if (endpoint.includes('/contents/intentd.version')) value = {content: Buffer.from((f.pins[endpoint.split('?ref=')[1]] ?? f.pin) + '\\n').toString('base64')};
@@ -240,6 +268,7 @@ else if (endpoint.includes('/actions/workflows/release-plz.yml/runs?')) value = 
 else if (endpoint === 'repos/${BE}/actions/runs/100') value = f.proof.run;
 else if (endpoint.includes('/actions/runs/100/attempts/1/jobs?')) value = {total_count: f.proof.jobs.length, jobs: f.proof.jobs};
 else if (endpoint.includes('/pulls?')) value = f.proof.prs;
+else if (endpoint.includes('/actions/runs?head_sha=')) value = {total_count: f.headRuns, workflow_runs: []};
 else { process.stderr.write('Unexpected gh: ' + JSON.stringify(a)); process.exit(2); }
 let payload = JSON.stringify(value);
 if (endpoint.startsWith('repos/${FE}/compare/') && f.paginateCommits) {
@@ -302,7 +331,7 @@ process.stdout.write(String(Math.floor(epoch / 1000)) + '\\n');
       }),
     ]),
   );
-  const result = spawnSync('bash', ['-c', step.run!], {
+  const result = spawnWorkflowBash(['-c', step.run!], {
     cwd: directory,
     encoding: 'utf8',
     timeout: 15_000,
@@ -458,6 +487,85 @@ describe('auto-cut intentd dependency guard', () => {
       expect(runCut(data).cut).toBe(true);
     },
   );
+
+  const METHODS = 'crates/intent-transport/tests/goldens/method_catalog.txt';
+  const EVENTS = 'crates/intent-core/tests/goldens/event_types.json';
+  const goldens = (data: ReturnType<typeof fixture>, mainMethods = ['agent.list']) => {
+    const content = (text: string) => ({ content: Buffer.from(text).toString('base64') });
+    for (const [ref, names] of [
+      [BASE, ['agent.list']],
+      ['main', mainMethods],
+    ] as const) {
+      data.extra[`repos/${BE}/contents/${METHODS}?ref=${ref}`] = content(
+        names.map((name) => `method ${name}`).join('\n'),
+      );
+      data.extra[`repos/${BE}/contents/${EVENTS}?ref=${ref}`] = content(
+        JSON.stringify({ version: 1, types: ['agent:completed'] }),
+      );
+    }
+  };
+
+  // 2026-11-09: intentd main and fe main both moved after v0.11.160, so the
+  // time-overlap guard held every cut for hours although nothing depended
+  // on unpublished intentd work.
+  it('cuts overlapping fe and intentd work without dependency evidence', () => {
+    const data = fixture();
+    data.fail = '/actions/';
+    goldens(data);
+    const result = runCut(data, 'schedule', MERGE_STEP, '', false);
+    expect(result.decision, result.output).toEqual(['merge', 'direct-merge']);
+    expect(result.output).toContain('no fresh fe commit names unpublished intentd runtime work');
+  });
+
+  it('defers and names a declared intentd dependency the pin lacks', () => {
+    const data = fixture();
+    data.fail = '/actions/';
+    goldens(data);
+    data.commits[0].commit.message = 'feat(browser): agent tabs (#4331)';
+    data.prBodies = { 4331: 'Companion: intent-hq/intentd#3184' };
+    const merge = 'f'.repeat(40);
+    Object.assign(data.extra, {
+      [`repos/${BE}/pulls/3184`]: { merged_at: '2026-09-26T05:30:00Z', merge_commit_sha: merge },
+      [`repos/${BE}/compare/${BASE}...${merge}`]: { status: 'ahead' },
+      [`repos/${BE}/pulls/3184/files?per_page=100&page=1`]: [{ filename: 'crates/browser.rs' }],
+    });
+    const result = runCut(data, 'schedule', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'intentd-skew']);
+    expect(result.output).toContain('fe #4331 names intentd#3184');
+  });
+
+  it('defers when the fe diff calls a method only intentd main has', () => {
+    const data = fixture();
+    data.fail = '/actions/';
+    goldens(data, ['agent.list', 'browser.pinTab']);
+    const sha = 'e'.repeat(40);
+    Object.assign(data.commits[0], { sha });
+    data.extra[`repos/${FE}/commits/${sha}`] = {
+      files: [{ filename: 'src/lib/tabs.ts', changes: 1, patch: "+rpc('browser.pinTab')" }],
+    };
+    const result = runCut(data, 'schedule', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'intentd-skew']);
+    expect(result.output).toContain('"browser.pinTab"');
+  });
+
+  const IN_FLIGHT = 'Check for an in-flight intentd release build';
+  const RUNS = `repos/${BE}/actions/workflows/v-release.yml/runs?event=push&branch=v0.9.111&per_page=1`;
+  it.each([
+    ['failed', { head_branch: 'v0.9.111', status: 'completed', conclusion: 'failure' }, 'false'],
+    [
+      'cancelled',
+      { head_branch: 'v0.9.111', status: 'completed', conclusion: 'cancelled' },
+      'false',
+    ],
+    ['running', { head_branch: 'v0.9.111', status: 'in_progress', conclusion: null }, 'true'],
+    ['re-run', { head_branch: 'v0.9.111', status: 'queued', conclusion: 'failure' }, 'true'],
+    ['other tag', { head_branch: 'v0.9.110', status: 'completed', conclusion: 'failure' }, 'true'],
+  ])('ends the in-flight deferral only for a finished, failed build: %s', (_name, run, defer) => {
+    const data = fixture();
+    data.extra[RUNS] = { workflow_runs: [run] };
+    const result = runCut(data, 'schedule', IN_FLIGHT);
+    expect(result.outputs.trim().split('\n').at(-1)).toBe(`defer=${defer}`);
+  });
 });
 
 describe('auto-cut direct release merge', () => {
@@ -1329,7 +1437,7 @@ describe('auto-cut decision line', () => {
     const step = steps.find((s) => s.name === 'Check release token')!;
     const directory = mkdtempSync(join(tmpdir(), 'auto-cut-token-'));
     directories.push(directory);
-    const result = spawnSync('bash', ['-e', '-c', step.run!], {
+    const result = spawnWorkflowBash(['-e', '-c', step.run!], {
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -1353,5 +1461,92 @@ describe('auto-cut decision line', () => {
       .filter((line) => /(?<![-\w])exit\b/.test(line))
       .map((line) => line.trim());
     expect(exits).toEqual(['exit "${4:-0}"']);
+  });
+});
+
+describe('auto-cut missing-CI restart', () => {
+  // GitHub sometimes starts no workflow for a Release PR push: the head has
+  // no run at all and CI Gate never reports (cloudlands-fe#4336 head
+  // c5118d91, intentd#3185 head 3276c2c, both on 2026-11-09).
+  type Data = ReturnType<typeof pinFixture>;
+  function noCiRuns() {
+    const data = pinFixture();
+    data.detail.statusCheckRollup = [];
+    data.headRuns = 0;
+    return data;
+  }
+  const restarts = (calls: string[][]) =>
+    calls
+      .filter((args) => args[0] === 'pr' && (args[1] === 'close' || args[1] === 'reopen'))
+      .map((args) => args.slice(0, 3));
+
+  it('closes and reopens a head that has had no workflow run for ten minutes', () => {
+    const result = runCut(noCiRuns(), 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-restarted']);
+    expect(restarts(result.calls)).toEqual([
+      ['pr', 'close', '99'],
+      ['pr', 'reopen', '99'],
+    ]);
+    expect(result.output).toContain('no workflow runs for 60 min');
+  });
+
+  it('counts only a reopen after the head commit as an earlier restart', () => {
+    const data = noCiRuns();
+    data.reopened = '2026-09-26T04:00:00Z';
+    expect(runCut(data, 'workflow_dispatch', MERGE_STEP, '', false).decision).toEqual([
+      'defer',
+      'ci-restarted',
+    ]);
+  });
+
+  it.each<[string, (data: Data) => void]>([
+    ['a head under ten minutes old', (d) => (d.headCommitted = '2026-09-26T05:55:00Z')],
+    ['a head that has runs', (d) => (d.headRuns = 1)],
+    ['a PR already reopened for this head', (d) => (d.reopened = '2026-09-26T05:30:00Z')],
+    ['an unreadable run count', (d) => (d.fail = '/actions/runs?')],
+  ])('leaves the PR alone for %s', (name, setup) => {
+    const data = noCiRuns();
+    setup(data);
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls)).toEqual([]);
+    if (name.includes('already reopened')) expect(result.output).toContain('already restarted');
+  });
+
+  it('only describes the restart on a dry run', () => {
+    const result = runCut(noCiRuns(), 'workflow_dispatch', MERGE_STEP);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls)).toEqual([]);
+    expect(result.output).toContain('would close and reopen');
+  });
+
+  it('keeps the PR open and the missing-gate deferral when the close fails', () => {
+    const data = noCiRuns();
+    data.closeFail = true;
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls)).toEqual([['pr', 'close', '99']]);
+  });
+
+  it('reopens a PR whose failed close took effect', () => {
+    const data = noCiRuns();
+    data.closeFail = true;
+    data.prState = 'CLOSED';
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false);
+    expect(result.decision).toEqual(['defer', 'ci-gate-missing']);
+    expect(restarts(result.calls).map((args) => args[1])).toEqual(['close', 'reopen']);
+    data.reopenFail = true;
+    expect(runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1).decision).toEqual([
+      'error',
+      'ci-restart-failed',
+    ]);
+  });
+
+  it('fails loudly when the closed PR cannot be reopened', () => {
+    const data = noCiRuns();
+    data.reopenFail = true;
+    const result = runCut(data, 'workflow_dispatch', MERGE_STEP, '', false, 1);
+    expect(result.decision).toEqual(['error', 'ci-restart-failed']);
+    expect(restarts(result.calls).map((args) => args[1])).toEqual(['close', 'reopen', 'reopen']);
   });
 });

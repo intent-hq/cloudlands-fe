@@ -6,7 +6,8 @@ import { tick } from 'svelte';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import type { HardwareConsoleManager, HardwareConsoleStatus } from '../../device/device-manager';
-import type { HardwareDeviceModel } from '../../input/types';
+import type { HardwareDeviceModel, PhysicalKnobDirection } from '../../input/types';
+import { PHYSICAL_KNOB_TURN } from '../../input/input-decoder';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { CURRENT_PROTOCOL_VERSION } from '../../../../test/current-protocol-version';
 
@@ -108,7 +109,7 @@ function makeState() {
   return withLegacyPrincipal({
     agentModel: agentModelReducer(undefined, { type: 'init' }),
     hardwareConsole: { ...hardwareInitial },
-    tabState: { currentTabId: 'ws-1' as string | null },
+    tabState: { currentTabId: 'ws-1' as string | null, workspaceStacks: [['ws-1', 'ws-2']] },
     agentSessions: {
       byAgentId: {
         'agent-1': session('agent-1'),
@@ -248,11 +249,11 @@ export function manager(model: HardwareDeviceModel = 'codex-micro') {
     emit(message: unknown) {
       for (const listener of raw) listener(message);
     },
-    turn(direction: 'cw' | 'ccw' = 'cw') {
-      // Simulate physical effort turns, calibrated from the CM2 user report
-      // in intent-hq/intent#5947. Raw routing is asserted independently in
-      // encoder-direction.test.ts; workspace tests emit explicit wire events.
-      fake.emit({ m: 'v.oai.hid', p: { k: direction === 'cw' ? 'ENC_CC' : 'ENC_CW', act: 2 } });
+    /** One physical detent; encoder-direction.test.ts pins the raw mapping. */
+    turn(direction: PhysicalKnobDirection = 'clockwise') {
+      const turns = Object.entries(PHYSICAL_KNOB_TURN[model]);
+      const [k] = turns.find(([, physical]) => physical === direction)!;
+      fake.emit({ m: 'v.oai.hid', p: { k, act: 2 } });
     },
     statusChanged(status: HardwareConsoleStatus) {
       fake.status = status;

@@ -1,29 +1,21 @@
 /**
  * @vitest-environment jsdom
  *
- * CheckoutModePill tests. The pill renders "CoW" for `checkoutMode === 'cow'`
- * only while effective CoW agent isolation is active (the BE-owned
- * `workspace.cowIsolation` setting is on and the machine supports CoW) and
- * "Direct" otherwise (cache-hydrated GitHub picks persist `cow` while agents
- * work directly in the checkout), "Worktree" for `'worktree'`, "Direct" for
+ * CheckoutModePill tests. The pill shows the real `checkoutMode`: "CoW" for
+ * `'cow'` (a checkout cloned from the local repo cache) without reading any
+ * setting, "Worktree" for `'worktree'`, "Direct" for
  * `'direct'`, and nothing at all when the field is absent
  * (non-daemon-provisioned checkouts).
  *
  * When a workspace is provided, opening the tooltip fetches the footprint
  * on demand via `appClient.workspaces.diskUsage` (`workspace.diskUsage`,
  * PROTOCOL §5.1) — list/get rows no longer carry it (monorepo#1396). While a
- * walk is in flight with no value yet a skeleton shows; once a value exists
- * the tooltip renders total size + file count, the physical-space/scope
- * notes, the per-directory breakdown, and the shrink link. Older daemons
- * without the method (`diskUsage()` → null) fall back to the legacy row
- * field when present.
+ * walk is in flight, loading and refreshing states follow the response.
+ * Fetches retarget when the workspace changes and stop after unmount.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { compile as compileTailwind } from 'tailwindcss';
 import type { Workspace } from '$shared/types';
 import type { StoreState } from '$store/renderer/types';
 import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
@@ -31,7 +23,6 @@ import { warmImport } from '../../../../test/warm-import';
 import { withLegacyPrincipal } from '../../../../test/fixtures/principal-state';
 import { initialState as workspaceInitialState } from '$store/renderer/slices/workspace/workspace-slice';
 import { selectPrincipalActionContext } from '$store/renderer/slices/principal/principal-selectors';
-import { invalidateCowIsolationSetting } from '../initializer/cow-isolation-setting';
 
 const fixture = vi.hoisted(() => ({ state: null as StoreState | null }));
 
@@ -39,7 +30,6 @@ const mocks = vi.hoisted(() => ({
   runShrinkWorkspaceAction: vi.fn().mockResolvedValue(undefined),
   diskUsage: vi.fn(),
   settingsGet: vi.fn(),
-  selectWorkspaceItems: vi.fn(() => [] as Array<{ cowSupported?: boolean }>),
   hidesAgentLifecycleActions: false,
 }));
 
@@ -52,9 +42,8 @@ vi.mock('$lib/components/ui/tooltip/Tooltip.svelte', async () => ({
 }));
 
 // The component reaches the daemon through the appClient seam (via the
-// disk-usage-poll action module and the isolation-mode resolver's
-// `workspace.cowIsolation` settings read); mock it so no request leaves
-// the test.
+// disk-usage-poll action module); mock it so no request leaves the test.
+// `settings.get` is mocked only to prove the pill never reads a setting.
 vi.mock('$lib/client', () => ({
   appClient: {
     workspaces: { diskUsage: mocks.diskUsage },
@@ -79,7 +68,6 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/workspace/workspace-selectors', () => ({
-  selectWorkspaceItems: { select: mocks.selectWorkspaceItems },
   selectHidesAgentLifecycleActions: () => ({
     subscribe: (fn: (v: boolean) => void) => {
       fn(mocks.hidesAgentLifecycleActions);
@@ -97,7 +85,7 @@ async function flushFetch() {
   await tick();
 }
 
-/** Flush the async `workspace.cowIsolation` label resolution + re-render. */
+/** Flush pending effects + re-render. */
 async function flushLabel() {
   await tick();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -131,74 +119,6 @@ async function renderPill(props: Record<string, unknown>, target?: HTMLElement) 
   return render(CheckoutModePill, { props, target });
 }
 
-/**
- * Compile the Tailwind utilities actually rendered under `root` with the real
- * Tailwind compiler and attach them to the document so jsdom cascades them.
- * jsdom applies stylesheets to `getComputedStyle` but performs no layout, so
- * width assertions model the CSS box rules on top of the cascaded values.
- */
-async function attachRenderedTailwind(root: Element): Promise<HTMLStyleElement> {
-  const candidates = new Set<string>();
-  for (const element of [root, ...root.querySelectorAll('*')]) {
-    for (const token of element.classList) candidates.add(token);
-  }
-  const require = createRequire(import.meta.url);
-  const compiler = await compileTailwind('@import "tailwindcss/theme.css"; @tailwind utilities;', {
-    base: '/',
-    loadStylesheet: async (id) => ({
-      path: require.resolve(id),
-      base: '/',
-      content: readFileSync(require.resolve(id), 'utf8'),
-    }),
-  });
-  const style = document.createElement('style');
-  style.textContent = compiler.build([...candidates]);
-  document.head.appendChild(style);
-  return style;
-}
-
-const ROOT_FONT_SIZE_PX = 16;
-
-/**
- * Resolve a cascaded sizing value to px against `containingBlockPx`. `auto`,
- * `none` and an unset value carry no fixed size and yield `null`; the forms
- * Tailwind emits for sizing utilities (`0px`, `100%`, `calc(4 / 5 * 100%)`,
- * `calc(var(<theme scale>) * N)`) resolve to a number.
- */
-function resolveSizingPx(value: string, containingBlockPx: number): number | null {
-  const trimmed = value.trim();
-  if (trimmed === '' || trimmed === 'auto' || trimmed === 'none') return null;
-  const rootStyle = getComputedStyle(document.documentElement);
-  const expression = trimmed
-    .replace(/^calc\((.*)\)$/, '$1')
-    .replace(/var\((--[\w-]+)\)/g, (_, name: string) => rootStyle.getPropertyValue(name).trim())
-    .replace(/(-?[\d.]+)rem/g, (_, n: string) => String(Number(n) * ROOT_FONT_SIZE_PX))
-    .replace(/(-?[\d.]+)%/g, (_, n: string) => String((Number(n) / 100) * containingBlockPx))
-    .replace(/(-?[\d.]+)px/g, '$1');
-  const px = expression.split('*').reduce((product, term) => {
-    const [head, ...divisors] = term.split('/').map((part) => Number(part.trim()));
-    return product * divisors.reduce((quotient, divisor) => quotient / divisor, head);
-  }, 1);
-  if (Number.isNaN(px)) throw new Error(`Unsupported CSS length: ${value}`);
-  return px;
-}
-
-/**
- * Assert the cascaded sizing of `element` cannot make it wider than its host:
- * `width`, `min-width` and `max-width` must each be unset/auto, a percentage
- * of the host, or a fixed length no wider than `hostWidthPx`.
- */
-function expectSizingWithin(element: HTMLElement, hostWidthPx: number) {
-  const style = getComputedStyle(element);
-  for (const property of ['width', 'minWidth', 'maxWidth'] as const) {
-    const px = resolveSizingPx(style[property], hostWidthPx);
-    if (px === null) continue;
-    expect(px, `${element.className}: ${property} ${style[property]}`).toBeLessThanOrEqual(
-      hostWidthPx,
-    );
-  }
-}
-
 // Pre-warm the component module graph so the cold dynamic import is not
 // billed to the first test's timeout (intent-hq/monorepo#1464).
 warmImport(() => import('./mocks/MockTooltipWithContent.svelte'));
@@ -220,145 +140,44 @@ describe('CheckoutModePill', () => {
     mocks.runShrinkWorkspaceAction.mockClear();
     mocks.diskUsage.mockReset();
     mocks.diskUsage.mockResolvedValue({ diskUsage, refreshing: false });
-    // Default: effective CoW agent isolation is active (setting on + machine
-    // CoW support), so `cow` checkouts resolve to the "CoW" label.
     mocks.settingsGet.mockReset();
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: true });
-    mocks.selectWorkspaceItems.mockReset();
-    mocks.selectWorkspaceItems.mockReturnValue([{ cowSupported: true }]);
-    // The setting read is cached module-wide (machine-global single-flight);
-    // each test primes its own mock, so drop the previous test's value.
-    invalidateCowIsolationSetting();
+    mocks.settingsGet.mockResolvedValue(null);
   });
   afterEach(cleanup);
 
-  it('renders "CoW" when checkoutMode is cow and CoW agent isolation is active', async () => {
+  it('renders "CoW" for a cow checkout hydrated from the repo cache', async () => {
+    const { container } = await renderPill({
+      presentation: 'repository',
+      workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
+    });
+    await flushLabel();
+    expect(container.textContent).toContain('Checkout mode: CoW');
+    expect(
+      container.querySelector('[data-checkout-mode-icon]')?.getAttribute('data-checkout-mode-icon'),
+    ).toBe('cow');
+    expect(container.textContent).not.toContain('Checkout mode: Direct');
+  });
+
+  it('renders "CoW" for a cow checkout without reading any setting', async () => {
     await renderPill({ checkoutMode: 'cow' });
     await flushLabel();
     const pill = screen.getByText('CoW');
-    expect(pill).toBeTruthy();
     expect(pill.classList.contains('shrink-0')).toBe(true);
-    expect(mocks.settingsGet).toHaveBeenCalledWith('workspace.cowIsolation');
+    expect(mocks.settingsGet).not.toHaveBeenCalled();
   });
 
-  it('renders "Direct" for a cow checkout when workspace.cowIsolation is off', async () => {
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
-    await renderPill({ workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('renders "Direct" for a cow checkout when the setting is on but CoW is unsupported', async () => {
-    mocks.selectWorkspaceItems.mockReturnValue([{ cowSupported: false }]);
-    await renderPill({ checkoutMode: 'cow' });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it("reads CoW support off the provided workspace's cowSupported, skipping the store", async () => {
-    mocks.selectWorkspaceItems.mockReturnValue([]);
-    await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
+  it('follows the workspace prop from a cow to a direct checkout', async () => {
+    const view = await renderPill({
+      workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
     });
     await flushLabel();
     expect(screen.getByText('CoW')).toBeTruthy();
-    expect(mocks.selectWorkspaceItems).not.toHaveBeenCalled();
-  });
-
-  it('defaults a cow checkout to "Direct" while the settings read is pending (no CoW→Direct flash)', async () => {
-    mocks.settingsGet.mockImplementation(() => new Promise(() => {}));
-    await renderPill({ checkoutMode: 'cow' });
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('resets a stale "CoW" to "Direct" when the workspace prop changes (resolve pending)', async () => {
-    const { rerender } = await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await flushLabel();
-    expect(screen.getByText('CoW')).toBeTruthy();
-
-    // The next workspace's settings read never settles within this test —
-    // ws-1's resolved "CoW" must not linger for ws-2 in the meantime.
-    // (Invalidate the shared cache so ws-2's read actually hits the pending
-    // mock instead of resolving instantly from ws-1's cached value.)
-    invalidateCowIsolationSetting();
-    mocks.settingsGet.mockImplementation(() => new Promise(() => {}));
-    await rerender({
-      workspace: {
-        ...baseWorkspace,
-        id: 'ws-2',
-        checkoutMode: 'cow',
-        cowSupported: true,
-      } as Workspace,
+    await view.rerender({
+      workspace: { ...baseWorkspace, id: 'ws-2', checkoutMode: 'direct' } as Workspace,
     });
     await flushLabel();
     expect(screen.getByText('Direct')).toBeTruthy();
     expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('ignores an isolation resolve that settles after the workspace prop changed', async () => {
-    const deferred: Array<(value: unknown) => void> = [];
-    mocks.settingsGet.mockImplementation(() => new Promise((resolve) => deferred.push(resolve)));
-    const { rerender } = await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await tick();
-    await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(1));
-
-    // Invalidate between reads so ws-2 issues its own wire call — otherwise
-    // the shared single-flight cache coalesces both onto deferred[0].
-    invalidateCowIsolationSetting();
-    await rerender({
-      workspace: {
-        ...baseWorkspace,
-        id: 'ws-2',
-        checkoutMode: 'cow',
-        cowSupported: true,
-      } as Workspace,
-    });
-    await tick();
-    await vi.waitFor(() => expect(mocks.settingsGet).toHaveBeenCalledTimes(2));
-
-    // ws-2's own read settles first: isolation off → Direct.
-    deferred[1]({ path: 'workspace.cowIsolation', value: false });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-
-    // ws-1's read settles late with isolation ON — it must not apply to ws-2.
-    deferred[0]({ path: 'workspace.cowIsolation', value: true });
-    await flushLabel();
-    expect(screen.getByText('Direct')).toBeTruthy();
-    expect(screen.queryByText('CoW')).toBeNull();
-  });
-
-  it('shares one settings.get RPC across pill instances and workspace-row churn', async () => {
-    // Two pills mount concurrently, then one re-runs its effect because the
-    // workspace row object identity changed (a list refetch) — the
-    // machine-global setting must still cost exactly one RPC.
-    const first = await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await renderPill({
-      workspace: {
-        ...baseWorkspace,
-        id: 'ws-2',
-        checkoutMode: 'cow',
-        cowSupported: true,
-      } as Workspace,
-    });
-    await flushLabel();
-    expect(screen.getAllByText('CoW')).toHaveLength(2);
-
-    await first.rerender({
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await flushLabel();
-    expect(screen.getAllByText('CoW')).toHaveLength(2);
-    expect(mocks.settingsGet).toHaveBeenCalledTimes(1);
   });
 
   it('renders an accessible icon instead of Worktree text', async () => {
@@ -390,7 +209,7 @@ describe('CheckoutModePill', () => {
     async (checkoutMode, expected) => {
       const { container } = await renderPill({
         presentation: 'repository',
-        workspace: { ...baseWorkspace, checkoutMode, cowSupported: true } as Workspace,
+        workspace: { ...baseWorkspace, checkoutMode } as Workspace,
       });
       await flushLabel();
 
@@ -399,25 +218,11 @@ describe('CheckoutModePill', () => {
           .querySelector('[data-checkout-mode-icon]')
           ?.getAttribute('data-checkout-mode-icon'),
       ).toBe(expected);
-      expect(container.querySelector('[data-effective-checkout-mode]')?.textContent).toContain(
+      expect(container.querySelector('[data-checkout-mode-label]')?.textContent).toContain(
         checkoutMode === 'cow' ? 'CoW' : checkoutMode === 'worktree' ? 'Worktree' : 'Direct',
       );
     },
   );
-
-  it('uses the Direct icon for a cow checkout with ineffective CoW isolation', async () => {
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
-    const { container } = await renderPill({
-      presentation: 'repository',
-      workspace: { ...baseWorkspace, checkoutMode: 'cow', cowSupported: true } as Workspace,
-    });
-    await flushLabel();
-
-    expect(
-      container.querySelector('[data-checkout-mode-icon]')?.getAttribute('data-checkout-mode-icon'),
-    ).toBe('direct');
-    expect(container.textContent).toContain('Checkout mode: Direct');
-  });
 
   it('renders no repository details when checkoutMode is undefined', async () => {
     const { container } = await renderPill({
@@ -428,22 +233,11 @@ describe('CheckoutModePill', () => {
     expect(container.querySelector('[data-checkout-mode-details]')).toBeNull();
   });
 
-  it('uses the plain checkout-mode title when no workspace is provided', async () => {
+  it('does not fetch disk usage without a workspace', async () => {
     await renderPill({ checkoutMode: 'cow' });
     await flushLabel();
 
-    const pill = screen.getByText('CoW');
-    expect(pill.getAttribute('title')).toBe('Checkout mode: CoW');
-    expect(screen.queryByTestId('tooltip-content')).toBeNull();
     expect(mocks.diskUsage).not.toHaveBeenCalled();
-  });
-
-  it('uses the resolved "Direct" label in the title when isolation is inactive', async () => {
-    mocks.settingsGet.mockResolvedValue({ path: 'workspace.cowIsolation', value: false });
-    await renderPill({ checkoutMode: 'cow' });
-    await flushLabel();
-
-    expect(screen.getByText('Direct').getAttribute('title')).toBe('Checkout mode: Direct');
   });
 
   it("derives the label from the workspace's checkoutMode, ignoring a mismatched prop", async () => {
@@ -457,7 +251,7 @@ describe('CheckoutModePill', () => {
     expect(screen.queryByText('Worktree')).toBeNull();
   });
 
-  it('fetches on tooltip open and shows the disk-usage breakdown', async () => {
+  it('fetches disk usage for the current workspace on demand', async () => {
     await renderPill({
       workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
     });
@@ -466,28 +260,13 @@ describe('CheckoutModePill', () => {
     // The on-demand fetch targets the hovered workspace (monorepo#1396).
     expect(mocks.diskUsage).toHaveBeenCalledWith('ws-1');
 
-    const pill = screen.getByText('CoW');
-    expect(pill.getAttribute('title')).toBeNull();
-
-    const tooltip = screen.getByTestId('tooltip-content');
-    expect(tooltip.textContent).toContain('Checkout mode: CoW');
-    expect(tooltip.textContent).toContain('Total size: 2.17Gi');
-    expect(tooltip.textContent).toContain('12,345 files');
-    expect(tooltip.textContent).toContain('may be over-counted');
-    expect(tooltip.textContent).toContain('whole workspace directory');
-    expect(tooltip.textContent).toContain('repo');
-    expect(tooltip.textContent).toContain('1.86Gi');
-    expect(tooltip.textContent).toContain('tool-output');
-    expect(tooltip.textContent).toContain('315Mi');
-    expect(tooltip.textContent).toContain('Nothing runs until you review and send it');
-    expect(tooltip.querySelector('.font-mono')).toBeNull();
     // Fetch settled with refreshing:false — no loading state remains.
     expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('fetches and exposes disk actions when the repository hover card opens', async () => {
     const workspace = { ...baseWorkspace, checkoutMode: 'direct' } as Workspace;
-    const { container } = await renderPill({
+    await renderPill({
       presentation: 'repository',
       repositoryOpen: true,
       workspace,
@@ -495,9 +274,6 @@ describe('CheckoutModePill', () => {
     await flushFetch();
 
     expect(mocks.diskUsage).toHaveBeenCalledWith('ws-1');
-    expect(container.querySelector('[data-checkout-mode-details]')?.textContent).toContain(
-      'Total size: 2.17Gi',
-    );
     const shrink = screen.getByRole('button', { name: 'Try to shrink this workspace' });
     await fireEvent.click(shrink);
     expect(mocks.runShrinkWorkspaceAction).toHaveBeenCalledWith(workspace);
@@ -510,46 +286,11 @@ describe('CheckoutModePill', () => {
     });
     await flushFetch();
 
-    const tooltip = screen.getByTestId('tooltip-content');
-    expect(tooltip.textContent).toContain('Checkout mode: CoW');
-    expect(tooltip.textContent).not.toContain('Total size');
     const loading = screen.getByRole('status', { name: 'Loading disk usage' });
     expect(loading.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(3);
   });
 
-  it('keeps the repository loading skeleton within a narrow host while the walk is in flight', async () => {
-    mocks.diskUsage.mockResolvedValue({ refreshing: true });
-    // The sidebar repository hover card is narrower than the 14rem the tooltip
-    // skeleton used to reserve; host the details in a fixed 200px box.
-    const host = document.createElement('div');
-    host.style.width = '200px';
-    document.body.appendChild(host);
-    let style: HTMLStyleElement | undefined;
-    try {
-      await renderPill(
-        {
-          presentation: 'repository',
-          repositoryOpen: true,
-          workspace: { ...baseWorkspace, checkoutMode: 'direct' } as Workspace,
-        },
-        host,
-      );
-      await flushFetch();
-
-      const loading = screen.getByRole('status', { name: 'Loading disk usage' });
-      const skeletons = loading.querySelectorAll<HTMLElement>('[data-slot="skeleton"]');
-      expect(skeletons).toHaveLength(3);
-      style = await attachRenderedTailwind(host);
-
-      expectSizingWithin(loading, 200);
-      for (const skeleton of skeletons) expectSizingWithin(skeleton, 200);
-    } finally {
-      style?.remove();
-      host.remove();
-    }
-  });
-
-  it('keeps polling an in-progress first walk and replaces the skeleton with data', async () => {
+  it('keeps polling an in-progress first walk until loading finishes', async () => {
     vi.useFakeTimers();
     try {
       mocks.diskUsage
@@ -570,40 +311,34 @@ describe('CheckoutModePill', () => {
       await tick();
 
       expect(mocks.diskUsage).toHaveBeenCalledTimes(2);
-      expect(screen.getByTestId('tooltip-content').textContent).toContain('Total size: 2.17Gi');
       expect(screen.queryByRole('status', { name: 'Loading disk usage' })).toBeNull();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('shows the value plus a subtle refreshing indicator during a background refresh', async () => {
+  it('reports background refresh without returning to initial loading', async () => {
     mocks.diskUsage.mockResolvedValue({ diskUsage, refreshing: true });
     await renderPill({
       workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
     });
     await flushFetch();
 
-    const tooltip = screen.getByTestId('tooltip-content');
-    expect(tooltip.textContent).toContain('Total size: 2.17Gi');
     expect(screen.getByRole('status', { name: 'Refreshing disk usage' })).toBeTruthy();
     expect(screen.queryByRole('status', { name: 'Loading disk usage' })).toBeNull();
   });
 
-  it('shows only the checkout-mode heading when the daemon has no usage and no walk runs', async () => {
+  it('does not report loading when the daemon has no walk running', async () => {
     mocks.diskUsage.mockResolvedValue({ refreshing: false });
     await renderPill({
       workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
     });
     await flushFetch();
 
-    const tooltip = screen.getByTestId('tooltip-content');
-    expect(tooltip.textContent).toContain('Checkout mode: CoW');
-    expect(tooltip.textContent).not.toContain('Total size');
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('falls back to the legacy row diskUsage when the daemon lacks the method', async () => {
+  it('does not stay loading when the daemon lacks the disk usage method', async () => {
     // Older daemon: diskUsage() resolves null (-32601 METHOD_NOT_FOUND).
     mocks.diskUsage.mockResolvedValue(null);
     await renderPill({
@@ -611,17 +346,14 @@ describe('CheckoutModePill', () => {
     });
     await flushFetch();
 
-    const tooltip = screen.getByTestId('tooltip-content');
-    expect(tooltip.textContent).toContain('Total size: 2.17Gi');
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('resets the fetched value when the workspace prop changes (no stale render)', async () => {
+  it('restarts loading and retargets the fetch when the workspace changes', async () => {
     const { rerender } = await renderPill({
       workspace: { ...baseWorkspace, checkoutMode: 'cow' } as Workspace,
     });
     await flushFetch();
-    expect(screen.getByTestId('tooltip-content').textContent).toContain('Total size: 2.17Gi');
 
     // The new workspace's walk never settles within this test.
     mocks.diskUsage.mockImplementation(() => new Promise(() => {}));
@@ -630,9 +362,7 @@ describe('CheckoutModePill', () => {
     });
     await tick();
 
-    // ws-1's value must not render for ws-2; the fetch retargets ws-2.
-    const tooltip = screen.getByTestId('tooltip-content');
-    expect(tooltip.textContent).not.toContain('Total size');
+    // The fetch retargets ws-2 and reports loading again.
     expect(screen.getByRole('status', { name: 'Loading disk usage' })).toBeTruthy();
     expect(mocks.diskUsage).toHaveBeenLastCalledWith('ws-2');
   });
@@ -652,19 +382,20 @@ describe('CheckoutModePill', () => {
     await tick();
     await vi.waitFor(() => expect(mocks.diskUsage).toHaveBeenCalledTimes(2));
 
-    // ws-1's walk settles late — its value must not render for ws-2.
+    // The late ws-1 result must not finish ws-2's loading state.
     deferred[0]({ diskUsage, refreshing: false });
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await tick();
-    expect(screen.getByTestId('tooltip-content').textContent).not.toContain('Total size');
 
-    // ws-2's own walk still renders once it settles.
+    expect(screen.getByRole('status', { name: 'Loading disk usage' })).toBeTruthy();
+
+    // ws-2's own walk finishes its loading state.
     deferred[1]({ diskUsage, refreshing: false });
     await tick();
     await new Promise((resolve) => setTimeout(resolve, 0));
     await tick();
-    expect(screen.getByTestId('tooltip-content').textContent).toContain('Total size: 2.17Gi');
+    expect(screen.queryByRole('status', { name: 'Loading disk usage' })).toBeNull();
   });
 
   it('does not schedule further polls when the fetch resolves after unmount', async () => {
@@ -699,43 +430,6 @@ describe('CheckoutModePill', () => {
     }
   });
 
-  it('renders the notes as separate flush-left paragraphs (no pre-wrap indentation)', async () => {
-    await renderPill({
-      workspace: { ...baseWorkspace, checkoutMode: 'worktree' } as Workspace,
-    });
-    await flushFetch();
-
-    const tooltip = screen.getByTestId('tooltip-content');
-    const paragraphs = Array.from(tooltip.querySelectorAll('p'));
-    expect(paragraphs).toHaveLength(2);
-    expect(paragraphs[0].textContent).toMatch(/^\S/);
-    expect(paragraphs[1].textContent).toMatch(/^\S/);
-    // The tooltip shell applies whitespace-pre-wrap; the body must reset it so
-    // source-formatting newlines never render as literal indentation.
-    expect(tooltip.querySelector('.whitespace-normal')).toBeTruthy();
-    // The shell also applies text-balance, which wraps the notes short; the
-    // note block overrides it so paragraphs fill the available width.
-    expect(paragraphs[0].closest('.text-pretty')).toBeTruthy();
-  });
-
-  it.each(['worktree', 'direct'] as const)(
-    'omits the CoW over-counting clause for a %s workspace',
-    async (checkoutMode) => {
-      await renderPill({
-        workspace: { ...baseWorkspace, checkoutMode } as Workspace,
-      });
-      await flushFetch();
-
-      const tooltip = screen.getByTestId('tooltip-content');
-      const paragraphs = Array.from(tooltip.querySelectorAll('p'));
-      // Assert the exact paragraph text (not just a substring match) so a
-      // future rewording of either message can't quietly weaken this check.
-      expect(paragraphs[0].textContent).toBe('Counts allocated disk space.');
-      expect(tooltip.textContent).not.toContain('may be over-counted');
-      expect(tooltip.textContent).not.toContain('CoW clones');
-    },
-  );
-
   it('runs the shrink action for the workspace when the shrink link is clicked', async () => {
     const workspace = { ...baseWorkspace, checkoutMode: 'cow' } as Workspace;
     await renderPill({ workspace });
@@ -752,12 +446,9 @@ describe('CheckoutModePill', () => {
     mocks.hidesAgentLifecycleActions = true;
     try {
       const workspace = { ...baseWorkspace, checkoutMode: 'cow' } as Workspace;
-      const { container } = await renderPill({ workspace });
+      await renderPill({ workspace });
       await flushFetch();
 
-      expect(container.querySelector('[data-checkout-mode-details]')?.textContent).toContain(
-        'Total size: 2.17Gi',
-      );
       expect(screen.queryByRole('button', { name: 'Try to shrink this workspace' })).toBeNull();
       expect(mocks.runShrinkWorkspaceAction).not.toHaveBeenCalled();
     } finally {

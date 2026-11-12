@@ -22,6 +22,12 @@
  * group. Whenever the group has been signalled, the wrapper waits for every member
  * to exit, up to the grace period, then SIGKILLs any survivors.
  *
+ * Before stopping a stalled build the wrapper logs its process tree (pid, elapsed
+ * time, state and redacted command line of every process), folded into a log group,
+ * so the next hang names the process it was stuck in: the earlier stalls had to be
+ * attributed from electron-builder's dying error output (`xcrun actool` in
+ * beforePack, electron-builder's own `security import`).
+ *
  * The marker relies on notarization happening in the afterSign hook. electron-builder's
  * own notarization (enabled by APPLE_ID / APPLE_API_KEY / APPLE_KEYCHAIN_PROFILE env
  * vars) would run before afterSign, so CI sets only the CLOUDLANDS_APPLE_* names.
@@ -31,6 +37,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { constants, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { formatProcessTree, listProcesses } from './process-tree.mjs';
 
 export const MARKER_ENV = 'INTENT_NOTARIZE_STARTED_FILE';
 export const STALL_EXIT_CODE = 124;
@@ -79,6 +86,8 @@ export function runUntilNotarizing({
   log = (line) => console.log(line),
   // Where cancellation signals come from (the CLI passes `process`).
   signalSource = null,
+  // Lines describing the build's process tree, logged when it stalls.
+  describeProcessTree = (pid) => formatProcessTree(pid, listProcesses()),
   // Test seam: schedules the stall check; returns a cancel function.
   armDeadline = (callback, ms) => {
     const timer = setTimeout(callback, ms);
@@ -146,6 +155,18 @@ export function runUntilNotarizing({
     const markerTime = () =>
       existsSync(marker) ? readFileSync(marker, 'utf8').trim() || 'marker present' : null;
 
+    // Diagnostics only: a failure here must never keep the stalled build alive.
+    const logProcessTree = () => {
+      log(`::group::Process tree at the stall deadline (packaging pid ${child.pid})`);
+      try {
+        const lines = describeProcessTree(child.pid);
+        for (const line of lines.length ? lines : ['(no processes listed)']) log(line);
+      } catch (error) {
+        log(`(could not list processes: ${error.message})`);
+      }
+      log('::endgroup::');
+    };
+
     log(`Stall deadline: notarization must start within ${budgetMinutes} min.`);
     // One check at the deadline is enough: the marker only ever appears, so a build
     // that reached notarization in time still has it then.
@@ -163,6 +184,7 @@ export function runUntilNotarizing({
           `re-run the job. Signed builds normally reach notarization after 9-13 min ` +
           `(unsigned builds never notarize, so for them this bounds the whole build).`,
       );
+      logProcessTree();
       terminate('SIGTERM');
     }, budgetMs);
     cleanups.push(cancelDeadline);

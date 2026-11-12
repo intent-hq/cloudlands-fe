@@ -313,7 +313,7 @@
   mediaStatus={$view$.workspaceId && $view$.agentId
     ? mediaFor($view$.workspaceId, $view$.agentId)?.media.mediaStatus
     : undefined}
-  {composer}
+  composer={$composer$.workspace && $composer$.agentId ? composer : undefined}
   {...$view$}
   conversationKey={JSON.stringify([$view$.workspaceId, $view$.agentId])}
   onDraftChange={changeDraft}

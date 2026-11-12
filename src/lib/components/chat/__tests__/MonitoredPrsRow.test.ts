@@ -621,8 +621,6 @@ describe('MonitoredPrsRow', () => {
       '0 of 1 required approvals received.',
       '2 unresolved threads.',
     ]);
-
-    expect(document.querySelector('[data-tooltip-trigger]')).toBeNull();
   });
 
   it('prefers localized blocker fragments over the raw wire merge-blocked reason', async () => {

@@ -78,7 +78,7 @@ const connectionState = vi.hoisted(() => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createConnectionsHarness } =
-    await import('$store/renderer/slices/connections/test-harness');
+    await import('$store/renderer/slices/connections/connections.test-helpers');
   const harness = createConnectionsHarness(
     () => ({ windowBackendId: connectionState.activeId }),
     (action) => connectionState.dispatched.push(action),
@@ -494,32 +494,6 @@ describe('WebSocketApiSettings', () => {
     await waitFor(() => {
       expect(screen.queryByText('Save')).toBeNull();
     });
-  });
-
-  it('renders the TLS fingerprint truncated with the full value on the title tooltip', async () => {
-    // User decision reversing cloudlands-fe#1979: the fingerprint shows as a
-    // truncated single line; the full value stays reachable via the tooltip.
-    const fullFingerprint =
-      'AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89';
-    mocks.mockSettingsList.mockResolvedValue([
-      { path: 'server.wsApi.enabled', value: true },
-      { path: 'server.wsApi.port', value: 5181 },
-    ]);
-    mocks.mockPairingInfo.mockResolvedValue({
-      token: 'tok-1234567890',
-      port: 5181,
-      certFingerprint: fullFingerprint,
-      localIps: ['192.168.1.2'],
-      hostname: 'my-mac',
-    });
-
-    await renderExpandedSettings();
-
-    await waitFor(() => {
-      expect(screen.getByText(`${fullFingerprint.slice(0, 23)}…`)).toBeTruthy();
-    });
-    expect(screen.getByTitle(fullFingerprint)).toBeTruthy();
-    expect(screen.queryByText(fullFingerprint)).toBeNull();
   });
 
   describe('self-entry refresh triggers (token rotation, port change)', () => {

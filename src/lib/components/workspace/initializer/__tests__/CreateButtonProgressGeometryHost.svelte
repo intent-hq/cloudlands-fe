@@ -10,8 +10,7 @@
    */
   import { onMount } from 'svelte';
   import { m } from '$shared/paraglide/messages.js';
-  import Button from '$lib/components/ui/button/button.svelte';
-  import IntentMarkLoader from '$lib/components/ui/indicators/IntentMarkLoader.svelte';
+  import WorkspaceCreateButton from '../WorkspaceCreateButton.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
     beginWorkspaceCreateProgress,
@@ -19,7 +18,7 @@
     workspaceCreateProgressReceived,
   } from '$store/renderer/slices/workspace-create-progress/workspace-create-progress-slice';
   import CreateButtonProgress from '../CreateButtonProgress.svelte';
-  import { createProgressLabel, formatCreateProgressPercent } from '../create-progress-label';
+  import { createProgressLabel } from '../create-progress-label';
 
   let { percent }: { percent: number } = $props();
 
@@ -29,10 +28,7 @@
   // Same text the wrapped button shows once live, so the reference button's
   // footprint is comparable; the spec asserts the two labels match.
   const referenceLabel = $derived(
-    m.workspace_compactInitializer_progressWithPercent_label({
-      label: createProgressLabel({ phase, percent, sawFrame: true, done: false }),
-      percent: formatCreateProgressPercent(percent),
-    }),
+    createProgressLabel({ phase, percent, sawFrame: true, done: false }),
   );
 
   onMount(() => {
@@ -44,18 +40,12 @@
   });
 </script>
 
-<div class="flex flex-col items-start gap-6 bg-background p-6 text-foreground">
-  <CreateButtonProgress {progressId} {fallbackLabel}>
+<div class="flex w-80 flex-col items-start gap-6 bg-background p-6 text-foreground">
+  <CreateButtonProgress class="w-full" {progressId} {fallbackLabel}>
     {#snippet children(label)}
-      <Button variant="primary" disabled data-testid="wrapped-button">
-        <IntentMarkLoader size={14} />
-        <span class="min-w-[160px] text-left">{@render label()}</span>
-      </Button>
+      <WorkspaceCreateButton creating {label} data-testid="wrapped-button" />
     {/snippet}
   </CreateButtonProgress>
 
-  <Button variant="primary" disabled data-testid="reference-button">
-    <IntentMarkLoader size={14} />
-    <span class="min-w-[160px] text-left">{referenceLabel}</span>
-  </Button>
+  <WorkspaceCreateButton creating label={referenceLabel} data-testid="reference-button" />
 </div>

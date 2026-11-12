@@ -5,7 +5,6 @@
   import { menuOverlay } from '../menu/menu-recipes';
   import { cn } from '$lib/utils';
   import { clampSurface, setSurface, useSurface } from '$lib/components/ui/surface-context';
-  import { OPTION_LIST_CONTAINER_CLASS } from '$lib/styles/option-list-row';
   import { OVERLAY_VIEWPORT_GUTTER } from '$lib/components/ui/overlay-positioning';
   import {
     createOwnedPopupRegistration,
@@ -66,9 +65,7 @@
 </script>
 
 {#snippet contentBody()}
-  <SelectPrimitive.Viewport
-    class="{OPTION_LIST_CONTAINER_CLASS} relative min-h-0 flex-1 overflow-y-auto {wrapperClass}"
-  >
+  <SelectPrimitive.Viewport class="relative min-h-0 flex-1 overflow-y-auto p-1.5 {wrapperClass}">
     {#snippet child({ props: viewportProps })}
       <div
         {...viewportProps}
@@ -107,7 +104,7 @@
     data-slot="select-content"
     data-static-position
     data-surface-level={surface}
-    class={cn(menuOverlay(), 'w-full max-h-60 rounded-(--radius-medium)', className)}
+    class={cn(menuOverlay(), 'w-full max-h-60', className)}
     style="max-width: calc(100vw - var(--space-4));"
     child={staticContentChild}
   />
@@ -126,11 +123,7 @@
       side={dropUp ? 'top' : 'bottom'}
       sideOffset={4}
       collisionPadding={OVERLAY_VIEWPORT_GUTTER}
-      class={cn(
-        menuOverlay(),
-        'w-(--bits-select-anchor-width) max-h-60 rounded-(--radius-medium)',
-        className,
-      )}
+      class={cn(menuOverlay(), 'w-(--bits-select-anchor-width) max-h-60', className)}
       style="max-width: calc(100vw - var(--space-4));"
       child={contentChild}
     />

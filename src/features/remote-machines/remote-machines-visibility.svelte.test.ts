@@ -14,7 +14,13 @@ import type { ExecutorBackend, RemoteMachine } from '$shared/types/remote-machin
 import BackendsWithAccessSection from './BackendsWithAccessSection.svelte';
 import RemoteMachinesSection from './RemoteMachinesSection.svelte';
 import { remoteMachinesLoaded } from './remote-machines-slice';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
 import { selectRemoteMachinesVisible } from './remote-machines-selectors';
+import { parsePrincipalSnapshot } from '$shared/types/principal';
+import {
+  principalContextChanged,
+  principalReceived,
+} from '$store/renderer/slices/principal/principal-slice';
 
 const MACHINE: RemoteMachine = {
   id: 'd-mac',
@@ -50,6 +56,23 @@ function seed(labs: boolean, supported: boolean) {
 beforeEach(() => {
   store.init();
   store.dispatch(backendReconnected());
+  // A saved connection to the machine: without one it is listed under Nodes.
+  store.dispatch(
+    connectionsListReceived({
+      connections: [
+        {
+          id: 'studio-mac',
+          label: 'Studio Mac',
+          host: '192.0.2.4',
+          port: 5179,
+          fingerprint: 'AA:BB',
+          isLocal: false,
+        },
+      ],
+      activeId: 'local',
+      windowBackendId: 'local',
+    }),
+  );
 });
 
 describe.each([
@@ -73,4 +96,46 @@ it('hides on flag off without dropping the saved machines (nothing is revoked)',
   store.dispatch(setLabsRemoteAgentsEnabled(false));
   expect(selectRemoteMachinesVisible.select(store.state)).toBe(false);
   expect(store.state.remoteMachines.machines['d-mac']).toBeDefined();
+});
+
+describe('machine too old for remote scripts', () => {
+  function seedScripts(remoteScripts: boolean, nodeProtocol?: number) {
+    store.dispatch(setLabsRemoteAgentsEnabled(true));
+    store.dispatch(principalContextChanged('ctx'));
+    const { invalidation, presentationVersion } = store.state.principal;
+    const snapshot = parsePrincipalSnapshot(
+      { server: { capabilities: remoteScripts ? { remoteScripts: 1 } : {} } },
+      { id: 'me', login: null, displayName: null, avatarUrl: null, isAdministrator: true },
+    )!;
+    store.dispatch(
+      principalReceived({ context: 'ctx', invalidation, presentationVersion }, snapshot),
+    );
+    store.dispatch(
+      remoteMachinesLoaded({
+        supported: true,
+        machines: [{ ...MACHINE, ...(nodeProtocol !== undefined ? { nodeProtocol } : {}) }],
+        localFingerprint: null,
+        executorBackends: [],
+      }),
+    );
+  }
+  const notice = (container: HTMLElement) =>
+    container.querySelector('[data-machine-scripts-update]');
+
+  it('asks for an update when the machine bound below link version 8', () => {
+    seedScripts(true, 7);
+    expect(notice(render(RemoteMachinesSection).container)).not.toBeNull();
+  });
+
+  it.each([
+    { remoteScripts: true, nodeProtocol: 8 },
+    { remoteScripts: true, nodeProtocol: undefined },
+    { remoteScripts: false, nodeProtocol: 7 },
+  ])(
+    'says nothing for $nodeProtocol on remoteScripts $remoteScripts',
+    ({ remoteScripts, nodeProtocol }) => {
+      seedScripts(remoteScripts, nodeProtocol);
+      expect(notice(render(RemoteMachinesSection).container)).toBeNull();
+    },
+  );
 });

@@ -4,7 +4,11 @@ import { startAppStoreLifecycle, type AppStoreHmrData } from './app-store-lifecy
 import { startRootStoreLifecycle } from './root-store-lifecycle';
 import { store as appStore } from './store';
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
-import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
+import { AgentId, CHIEF_WORKSPACE_ID, WorkspaceId } from '$shared/types/branded-ids';
+import { CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
+import { selectContextSelectedModel } from './slices/provider-catalog/workspace-catalog-selectors';
+import { selectEffectiveDefaultProviderId } from './slices/provider-catalog/provider-catalog-selectors';
+import { agentSessionLaunchAgentRequested } from './slices/agent-session/agent-session-slice';
 import { AgentStatus, type AgentSession, type Workspace } from '$shared/types';
 import { backendRequest } from '$lib/client/live/backend-transport';
 import { rememberNoteWorkspace } from '$lib/client/live/live-support';
@@ -576,5 +580,77 @@ describe('agent lifecycle production composition', () => {
       ['agent.stop', { agentId: OTHER_AGENT, workspaceId: OTHER_WS }],
     ]);
     expect(appStore.state.agentSessions.byAgentId[AGENT]).toBeUndefined();
+  });
+});
+
+describe('blank model and provider are treated as no choice (intent#8621)', () => {
+  function createParams(): Record<string, unknown>[] {
+    return request.mock.calls
+      .filter(([method]) => method === 'agent.create')
+      .map(([, params]) => params as Record<string, unknown>);
+  }
+
+  it('omits a blank model and provider from the Assistant starter request on an unloaded catalog', async () => {
+    const model = selectContextSelectedModel.select(appStore.state, CHIEF_WORKSPACE_ID);
+    const provider = selectEffectiveDefaultProviderId.select(appStore.state, CHIEF_WORKSPACE_ID);
+    expect({ model, provider }).toEqual({ model: '', provider: '' });
+    appStore.dispatch(
+      createAgentFromConfigRequested(
+        CHIEF_WORKSPACE_ID,
+        {
+          workspaceId: CHIEF_WORKSPACE_ID,
+          name: 'New chat',
+          nameExplicitlySet: false,
+          model,
+          provider,
+          source: 'chief-card',
+          metadata: {
+            source: 'chief-card',
+            chiefWorkspace: true,
+            specialist: CHIEF_SPECIALIST_ID,
+          },
+        },
+        { openAgent: false },
+      ),
+    );
+    await vi.waitFor(() => expect(createParams()).toHaveLength(1));
+    const [params] = createParams();
+    expect(params).toMatchObject({
+      workspaceId: CHIEF_WORKSPACE_ID,
+      specialistId: CHIEF_SPECIALIST_ID,
+    });
+    expect('model' in params).toBe(false);
+    expect('provider' in params).toBe(false);
+  });
+
+  it('omits a blank model from launchAgent', async () => {
+    appStore.dispatch(
+      agentSessionLaunchAgentRequested(WS, {
+        name: 'Launched agent',
+        model: '',
+        provider: 'claude-code',
+        source: 'api',
+      }),
+    );
+    await vi.waitFor(() => expect(createParams()).toHaveLength(1));
+    const [params] = createParams();
+    expect(params).toMatchObject({ workspaceId: WS, provider: 'claude-code' });
+    expect('model' in params).toBe(false);
+  });
+
+  it('omits a blank model from createAgentFromConfigRequested and keeps an explicit provider', async () => {
+    appStore.dispatch(
+      createAgentFromConfigRequested(WS, {
+        workspaceId: WorkspaceId(WS),
+        name: 'Config agent',
+        model: '',
+        provider: 'codex',
+        source: 'api',
+      }),
+    );
+    await vi.waitFor(() => expect(createParams()).toHaveLength(1));
+    const [params] = createParams();
+    expect(params).toMatchObject({ workspaceId: WS, provider: 'codex' });
+    expect('model' in params).toBe(false);
   });
 });

@@ -21,7 +21,7 @@ import type {
   AgentSession,
   ContentBlock,
 } from '$shared/types';
-import type { QueuedMessage } from '$shared/types/agent-session';
+import type { AgentPermissionPolicy, QueuedMessage } from '$shared/types/agent-session';
 import type { MessageBlockImageReference } from '$shared/types/wire-image-block';
 import type {
   AgentCancelDeleteResult,
@@ -123,6 +123,14 @@ export function normalizeAgent(raw: Record<string, unknown>): AgentSession {
   session.providerReplacementRequired = readProviderReplacementRequired(
     raw.providerReplacementRequired,
   );
+  // Permission policy (§5.5) is presence-detected and must clear when omitted
+  // (older daemon / remote agent), so a merge of this row drops stale values.
+  session.permissionPolicy =
+    typeof raw.permissionPolicy === 'string' || raw.permissionPolicy === null
+      ? (raw.permissionPolicy as AgentSession['permissionPolicy'])
+      : undefined;
+  session.effectivePermissionPolicy =
+    typeof raw.effectivePermissionPolicy === 'string' ? raw.effectivePermissionPolicy : undefined;
   // Canonical booleans override stale metadata, including a persisted false.
   if (typeof raw.isBackground === 'boolean') {
     session.metadata = { ...session.metadata, isBackground: raw.isBackground };
@@ -416,6 +424,7 @@ export class LiveAgentsClient implements AgentsClient {
     messageId: string,
     blockId: string,
     workspaceId?: string,
+    offset?: number,
   ): Promise<MessageBlockPage> {
     const result = await backendRequest<{
       block?: unknown;
@@ -429,6 +438,7 @@ export class LiveAgentsClient implements AgentsClient {
       messageId,
       blockId,
       ...(workspaceId !== undefined ? { workspaceId } : {}),
+      ...(offset !== undefined ? { offset } : {}),
     });
     const block = result?.block;
     if (!isContentBlock(block)) {
@@ -450,9 +460,11 @@ export class LiveAgentsClient implements AgentsClient {
 
   // User-message index (`agent.listUserMessages`, §5.5): user-role rows as
   // lightweight `{ id, preview, createdAt, metadata? }` items,
-  // oldest→newest — the whole index unless `page` asks for the newest rows
-  // only. `previewChars` and the page params only ride along when supplied
-  // so the daemon defaults apply otherwise.
+  // oldest→newest — one newest-first page (daemon default 100 rows, max
+  // 500, byte-bounded); follow `nextToken` for older rows. Daemons that
+  // predate paging return the whole index without `nextToken`.
+  // `previewChars` and the page params only ride along when supplied so the
+  // daemon defaults apply otherwise.
   // Failures fold into a typed result instead of throwing so the navigator
   // can silently degrade to its tail-derived items: -32601 (older daemon
   // lacking the method) is marked `unsupported: true`; any other failure
@@ -983,6 +995,20 @@ export class LiveAgentsClient implements AgentsClient {
       agentId: params.agentId,
       workspaceId: params.workspaceId,
       changes: { pinned: params.pinned },
+    });
+  }
+  async setPermissionPolicy(params: {
+    agentId: string;
+    workspaceId: string;
+    permissionPolicy: AgentPermissionPolicy | null;
+  }): Promise<MutationResult> {
+    // `agent.update` (§5.5) partial writer; `null` is forwarded verbatim (it
+    // means "use the daemon default", not "omit"). The daemon rejects unknown
+    // values and remote agents with -32602 and emits `agent:updated`.
+    return runMutation('agent.update', {
+      agentId: params.agentId,
+      workspaceId: params.workspaceId,
+      changes: { permissionPolicy: params.permissionPolicy },
     });
   }
   async setBackground(params: {

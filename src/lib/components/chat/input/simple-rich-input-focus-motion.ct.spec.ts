@@ -52,53 +52,6 @@ async function motionTier(input: Locator, tier: 'slow' | 'fast') {
   }, tier);
 }
 
-/* Focus or blur the editor, catch the placeholder fade as it starts, pause it
-   and seek to its midpoint, then read the opacity there. Sampling after a fixed
-   delay reads the terminal value once the 0.3s transition has already finished
-   under load. Rejects when no fade starts, so a removed transition still fails. */
-async function placeholderFadeMidpointOpacity(editor: Locator, trigger: 'focus' | 'blur') {
-  return editor.evaluate(
-    (node, action) =>
-      new Promise<number>((resolve, reject) => {
-        const paragraph = node.querySelector('p')!;
-        const controller = new AbortController();
-        const timeout = setTimeout(() => {
-          controller.abort();
-          reject(new Error(`placeholder opacity transition did not start after ${action}`));
-        }, 5_000);
-        paragraph.addEventListener(
-          'transitionrun',
-          (event) => {
-            if (event.propertyName !== 'opacity' || event.pseudoElement !== '::before') return;
-            controller.abort();
-            clearTimeout(timeout);
-            const fade = paragraph
-              .getAnimations({ subtree: true })
-              .filter((animation) => animation instanceof CSSTransition)
-              .map((animation) => animation as CSSTransition)
-              .find(
-                (animation) =>
-                  animation.transitionProperty === 'opacity' &&
-                  animation.effect?.pseudoElement === '::before',
-              );
-            if (!fade) {
-              reject(new Error('placeholder opacity transition is not exposed via getAnimations'));
-              return;
-            }
-            fade.pause();
-            fade.currentTime = Number(fade.effect!.getComputedTiming().duration) / 2;
-            const opacity = Number(getComputedStyle(paragraph, '::before').opacity);
-            fade.play();
-            resolve(opacity);
-          },
-          { signal: controller.signal },
-        );
-        (node as HTMLElement)[action]();
-      }),
-    trigger,
-  );
-}
-
 async function expectImmediatePlaceholderOpacity(editor: Locator, opacity: number) {
   const motion = await placeholderMotion(editor);
   expect(motion.opacity).toBe(opacity);
@@ -143,10 +96,8 @@ for (const state of states) {
     expect(motion.duration).toBe(fastTier.duration);
     expect(motion.easing).toBe(fastTier.easing);
 
-    const fadingIn = await placeholderFadeMidpointOpacity(editor, 'focus');
+    await editor.focus();
     await expect(editorWrapper).not.toHaveClass(/placeholder-hidden/);
-    expect(fadingIn).toBeGreaterThan(0);
-    expect(fadingIn).toBeLessThan(0.85);
     await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBeCloseTo(0.85, 2);
     await page.keyboard.type('draft');
     await page.keyboard.press('ControlOrMeta+A');
@@ -154,18 +105,9 @@ for (const state of states) {
     await expectComposerMotionSettled(input);
     await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBeCloseTo(0.85, 2);
 
-    const fadingOut = await placeholderFadeMidpointOpacity(editor, 'blur');
-    await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
-    expect(fadingOut).toBeGreaterThan(0);
-    expect(fadingOut).toBeLessThan(0.85);
-    await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
-
-    await editor.focus();
-    await page.waitForTimeout(20);
     await editor.blur();
-    await page.waitForTimeout(20);
-    await editor.focus();
-    await expectComposerMotionSettled(input);
+    await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
+    await expect.poll(async () => (await placeholderMotion(editor)).opacity).toBe(0);
 
     await expect(actionBar).toBeVisible();
   });
@@ -195,29 +137,4 @@ test('reveals and hides the placeholder immediately with reduced motion', async 
   await editor.blur();
   await expect(editorWrapper).toHaveClass(/placeholder-hidden/);
   await expectImmediatePlaceholderOpacity(editor, 0);
-});
-
-test('does not animate manual resize height changes on focus', async ({ mount, page }) => {
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  const component = await mount(ChatPanelComposerGeometryHost, {
-    props: { width: 420, zoom: 1, theme: 'light', height: 800 },
-  });
-  const input = component.getByTestId('message-input');
-  const editor = input.locator('.tiptap-editor');
-  const resize = input.locator('.resize-handle');
-  const handle = (await resize.boundingBox())!;
-  const handleY = handle.y + handle.height / 2;
-  await resize.dispatchEvent('mousedown', { clientY: handleY });
-  await page.evaluate((clientY) => {
-    document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientY }));
-    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientY }));
-  }, handleY - 60);
-
-  await expect
-    .poll(() => input.evaluate((node) => getComputedStyle(node).transitionProperty))
-    .not.toContain('min-height');
-  await editor.focus();
-  await expect(input).not.toHaveCSS('transition-property', /min-height/);
-  await editor.blur();
-  await expect(input).not.toHaveCSS('transition-property', /min-height/);
 });

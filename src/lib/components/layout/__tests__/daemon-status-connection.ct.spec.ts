@@ -81,7 +81,6 @@ for (const { state, fullValue } of scenarios) {
       expect(geometry.textLines.at(-1)!.bottom).toBeLessThanOrEqual(geometry.value.bottom + 1);
     } else {
       expect(geometry.textLines.length).toBeGreaterThan(visibleLines.length);
-      await expect(value).toHaveAttribute('title', (await value.textContent())!);
     }
   });
 }

@@ -10,7 +10,6 @@
  * initializing, and this module never statically pulls in `$app/*` navigation.
  */
 import { store as appStore } from '$store/renderer/store';
-import { resolveEmptyWindowDestination } from './utils/empty-window-destination';
 import { currentRoutePath, isWorkspaceRoutePath } from '$lib/utils/workspace-route-path';
 
 function isViewingWorkspace(workspaceId: string): boolean {
@@ -30,15 +29,14 @@ export async function navigateAwayIfViewing(workspaceId: string): Promise<void> 
   const { closeWorkspaceTab } = await import('$store/renderer/slices/tab-state/tab-state-slice');
   const { selectCurrentWorkspaceTabId } =
     await import('$store/renderer/slices/tab-state/tab-state-selectors');
-  const { selectWorkspaceItems } =
-    await import('$store/renderer/slices/workspace/workspace-selectors');
+  const { resolveWindowEmptyDestination } = await import('./utils/window-empty-destination');
 
   appStore.dispatch(closeWorkspaceTab(workspaceId));
   const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
   const target =
     typeof nextTabId === 'string' && nextTabId.length > 0 && nextTabId !== workspaceId
       ? `/workspace/${nextTabId}`
-      : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state), workspaceId);
+      : resolveWindowEmptyDestination(appStore.state, workspaceId);
 
   const goto = (window as unknown as { __app_goto?: (route: string) => unknown }).__app_goto;
   if (goto) await goto(target);
@@ -57,14 +55,13 @@ export async function closeWorkspaceTabAndNavigateAway(workspaceId: string): Pro
   if (!isViewingWorkspace(workspaceId)) return;
   const { selectCurrentWorkspaceTabId } =
     await import('$store/renderer/slices/tab-state/tab-state-selectors');
-  const { selectWorkspaceItems } =
-    await import('$store/renderer/slices/workspace/workspace-selectors');
+  const { resolveWindowEmptyDestination } = await import('./utils/window-empty-destination');
 
   const nextTabId = selectCurrentWorkspaceTabId.select(appStore.state);
   const target =
     typeof nextTabId === 'string' && nextTabId.length > 0 && nextTabId !== workspaceId
       ? `/workspace/${nextTabId}`
-      : resolveEmptyWindowDestination(selectWorkspaceItems.select(appStore.state), workspaceId);
+      : resolveWindowEmptyDestination(appStore.state, workspaceId);
 
   const goto = (window as unknown as { __app_goto?: (route: string) => unknown }).__app_goto;
   if (goto) await goto(target);

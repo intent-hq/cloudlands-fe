@@ -1,8 +1,11 @@
 /**
  * IPC Request Validation
  *
- * Provides Zod schemas for validating IPC requests at runtime.
- * Ensures all IPC payloads conform to their contracts before processing.
+ * Zod schemas for IPC request contracts. Contract tests use them to assert that
+ * renderer requests match the documented wire shape (see AGENTS.md); no
+ * production code validates through this module.
+ *
+ * @internal
  *
  * Usage:
  *   const validated = validateIpcRequest('agent:create', request);
@@ -65,8 +68,8 @@ export const AgentCreateRequestSchema = z.object({
   instruction: z.string().optional(), // Used to derive name if not provided
   contextReferences: z.array(z.any()).optional(),
   contextRefs: z.array(z.any()).optional(), // Alias for contextReferences
-  config: z.record(z.any()).optional(), // Nested config object from frontend
-  metadata: z.record(z.any()).optional(),
+  config: z.record(z.string(), z.any()).optional(), // Nested config object from frontend
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const AgentGetRequestSchema = z.object({
@@ -78,7 +81,7 @@ export const AgentSendMessageRequestSchema = z.object({
   agentId: AgentIdSchema,
   content: z.string().min(1, 'Message content is required'),
   contextReferences: z.array(z.any()).optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const AgentListRequestSchema = z.object({
@@ -124,7 +127,7 @@ export const WorkspaceCreateRequestSchema = z.object({
   title: z.string().optional(), // Title is optional - workspaces can start with blank titles
   path: z.string().optional(),
   template: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const WorkspaceGetRequestSchema = z.object({

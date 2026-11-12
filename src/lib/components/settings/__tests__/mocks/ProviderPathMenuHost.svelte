@@ -2,9 +2,7 @@
   import { MOCK_PROVIDER_CATALOG } from '../../../../../test/fixtures/provider-catalog.fixture';
 
   const catalog = {
-    providers: MOCK_PROVIDER_CATALOG.providers.filter(
-      (provider) => provider.id === 'auggie' || provider.id === 'antigravity',
-    ),
+    providers: MOCK_PROVIDER_CATALOG.providers.filter((provider) => provider.id === 'auggie'),
   };
 </script>
 
@@ -35,7 +33,6 @@
   appStore.dispatch(loadEnabledProvidersFromStorage({ auggie: true }));
   appStore.dispatch(hydrateDefaultProvider('auggie'));
   appStore.dispatch(checkSingleProviderSuccess('auggie', { available: true, authenticated: true }));
-  appStore.dispatch(checkSingleProviderSuccess('antigravity', { available: false }));
 
   let outsideClicks = $state(0);
 </script>

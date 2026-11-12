@@ -1,3 +1,4 @@
+/** @internal Loaded at runtime from the packaged app (dist/main/isolated-test-inspection.js) by scripts/verify-isolated-macos-package.mjs. */
 import assert from 'node:assert/strict';
 import type { App } from 'electron';
 import { getBackendClient } from '../features/backend/main/backend.ipc';

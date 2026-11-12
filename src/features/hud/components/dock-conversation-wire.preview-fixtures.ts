@@ -3,19 +3,20 @@ import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import type { ResourceBlockContents } from '$shared/types/resource-block-identity';
 import { QUESTION_RESOURCE_MIME_TYPE } from '$shared/types/question-resource';
 import { updateSession } from '$store/renderer/slices/agent-session/agent-session-slice';
-import { questionUiPersistenceSaga } from '$store/renderer/slices/question-ui/sagas/question-ui-persistence-saga';
 import { chatScrollbackSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
 import { ThemeManager, type Theme } from '$lib/utils/theme';
 import { themeSaga } from '$store/renderer/slices/theme/sagas/theme-saga';
 import { store } from '$store/renderer/store';
 import { getItem } from '@themislib/themis/utils/collections/collection-utils';
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { mockInvoke, overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import { emitMockIpcEvent, overrideMockIpcHandler } from '$shared/ipc-mock-router';
+import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
 import { admitLegacyPrincipal } from '../../../test/fixtures/principal-state';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { initRendererStoreBridge } from '$store/renderer/renderer-store-bridge';
 import { dockConversationSaga } from '$store/renderer/slices/dock-conversation/sagas/dock-conversation-saga';
-import { chatDraftsSaga } from '$store/renderer/slices/chat-drafts/sagas/chat-drafts-saga';
+import { appClient } from '$lib/client';
+import { startChatFixtureSagas } from '../../../test/chat-fixture-sagas';
 import { chatReadSaga } from '$store/renderer/slices/chat-state/sagas/chat-read-saga';
 import { chatSubscribeSaga } from '$store/renderer/slices/chat-state/sagas/chat-subscribe-saga';
 import { chatSendSaga } from '$store/renderer/slices/chat-state/sagas/chat-send-saga';
@@ -75,8 +76,14 @@ export function setupConversationWire(
     /** Exercise the real composer's model/profile trigger at constrained widths. */
     modelLabel?: string;
     profileName?: string;
+    /** Workspace the synthetic agents belong to (e.g. the virtual Assistant workspace). */
+    workspaceId?: string;
+    /** List no agents until `publishAgents()`. */
+    withoutAgents?: boolean;
   } = {},
 ) {
+  const wireWorkspace = options.workspaceId ?? conversationWireWorkspace;
+  let agentsListed = !options.withoutAgents;
   const root = document.documentElement;
   const previousWindow = root.dataset.auxiliaryWindow;
   const previousClass = root.className;
@@ -88,8 +95,6 @@ export function setupConversationWire(
     root.dataset.auxiliaryWindow = 'dock';
     ThemeManager.resetInstance();
   }
-  const previous = window.electronAPI;
-  const listeners = new Map<string, { channel: string; handler: (payload: unknown) => void }>();
   const subscriptions = new Map<string, { agentId: string; seq: number }>();
   const drafts = createChatDraftFixture().client;
   const placements = new Map<string, PlaceAttachmentResult>();
@@ -177,7 +182,7 @@ export function setupConversationWire(
   }
   /** Session fields accepted through `agent.update` (provider choice only). */
   const agentChanges = new Map<string, Record<string, unknown>>();
-  function agent(id: string, workspaceId = conversationWireWorkspace) {
+  function agent(id: string, workspaceId = wireWorkspace) {
     const main = id === 'wire-main' || id.endsWith(':wire-main');
     return {
       id,
@@ -197,7 +202,7 @@ export function setupConversationWire(
       ...(!main
         ? {
             parentAgentId:
-              workspaceId === conversationWireWorkspace ? 'wire-main' : `${workspaceId}:wire-main`,
+              workspaceId === wireWorkspace ? 'wire-main' : `${workspaceId}:wire-main`,
           }
         : {}),
       createdAt: timestamp,
@@ -250,8 +255,7 @@ export function setupConversationWire(
         snapshot: transcript(entry.agentId),
       },
     };
-    for (const { channel, handler } of listeners.values())
-      if (channel === IPC_CHANNELS.BACKEND.NOTIFICATION) handler(notification);
+    emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, notification);
   }
   let serviceRows: import('$features/scripts/types').ScriptListEntry[] = [];
   let statusOverride: import('$features/scripts/types').ScriptRuntimeState | null = null;
@@ -310,11 +314,11 @@ export function setupConversationWire(
       case 'workspace.get':
         return {
           workspace: {
-            id: String(params.workspaceId ?? conversationWireWorkspace),
+            id: String(params.workspaceId ?? wireWorkspace),
             title:
               getItem(
                 store.state.workspace.workspaces,
-                WorkspaceId(String(params.workspaceId ?? conversationWireWorkspace)),
+                WorkspaceId(String(params.workspaceId ?? wireWorkspace)),
               )?.title ?? 'Connected companion fixture',
             status: 'active',
             myRole: 'owner',
@@ -326,13 +330,14 @@ export function setupConversationWire(
         };
       case 'agent.list':
         return {
-          agents:
-            params.scope === 'background'
+          agents: !agentsListed
+            ? []
+            : params.scope === 'background'
               ? []
               : params.scope === 'delegated'
                 ? [
                     agent(
-                      params.workspaceId === conversationWireWorkspace
+                      params.workspaceId === wireWorkspace
                         ? 'wire-sub'
                         : `${params.workspaceId}:wire-sub`,
                       String(params.workspaceId),
@@ -340,7 +345,7 @@ export function setupConversationWire(
                   ]
                 : ['wire-sub', 'wire-main'].map((id) =>
                     agent(
-                      params.workspaceId === conversationWireWorkspace
+                      params.workspaceId === wireWorkspace
                         ? id
                         : `${params.workspaceId}:${id}`,
                       String(params.workspaceId),
@@ -348,7 +353,7 @@ export function setupConversationWire(
                   ),
         };
       case 'agent.get':
-        return { agent: agent(agentId, String(params.workspaceId ?? conversationWireWorkspace)) };
+        return { agent: agent(agentId, String(params.workspaceId ?? wireWorkspace)) };
       case 'agent.update':
       case 'agent.setModel': {
         if (!options.providerChoice)
@@ -402,7 +407,7 @@ export function setupConversationWire(
       case 'drafts.clear':
         return drafts.clear(String(params.workspaceId), agentId);
       case 'file.placeAttachment': {
-        if (params.workspaceId !== conversationWireWorkspace || typeof params.data !== 'string')
+        if (params.workspaceId !== wireWorkspace || typeof params.data !== 'string')
           throw new Error('Fixture accepts only in-memory attachment bytes for its workspace');
         if (rejectPlacement) {
           rejectPlacement = false;
@@ -454,35 +459,9 @@ export function setupConversationWire(
         throw new Error(`Unscripted conversation wire method: ${method}`);
     }
   }
-  const api = {
-    versions: { electron: '0.0.0-browser' },
-    invoke: async (channel: string, payload?: unknown) => {
-      if (channel !== IPC_CHANNELS.BACKEND.REQUEST) return mockInvoke(channel, payload);
-      const { method, params = {} } = payload as {
-        method: string;
-        params?: Record<string, unknown>;
-      };
-      try {
-        return { ok: true, result: await request(method, params) };
-      } catch (error) {
-        return { ok: false, error: { code: 'MOCK_UNHANDLED_METHOD', message: String(error) } };
-      }
-    },
-    on: (channel: string, handler: (payload: unknown) => void) => {
-      const id = `wire-listener-${++nextId}`;
-      listeners.set(id, { channel, handler });
-      return id;
-    },
-    offById: (_channel: string, id: string) => {
-      listeners.delete(id);
-    },
-    off: () => {},
-    send: () => {},
-    removeAllListeners: () => {},
-    devInstance: null,
-    devPort: null,
-  };
-  window.electronAPI = api as unknown as Window['electronAPI'];
+  const restoreBridge = installMockElectronBridge((method, params) =>
+    request(method, (params ?? {}) as Record<string, unknown>),
+  );
   initRendererStoreBridge(store);
   admitLegacyPrincipal();
   const principal = store.state.principal;
@@ -505,16 +484,17 @@ export function setupConversationWire(
     providerModelsSaga,
     agentModelSaga,
     lifecycleReadSaga,
-    chatDraftsSaga,
     chatReadSaga,
     chatScrollbackSaga,
-    questionUiPersistenceSaga,
     chatSubscribeSaga,
     chatSendSaga,
     agentMutationSaga,
     dockConversationSaga,
     ...(options.dockAppearance ? [themeSaga] : []),
   ].map((saga) => store.runSaga(saga));
+  // Drafts go through the mock backend. The shared helper replaces the CT
+  // bootstrap's draft saga instead of running a second one beside it.
+  stops.push(...startChatFixtureSagas(store, appClient.drafts));
   return {
     setServices(
       rows: import('$features/scripts/types').ScriptListEntry[],
@@ -537,6 +517,9 @@ export function setupConversationWire(
       if (!recover) messages.get('wire-main')?.push(questionRow);
       setQuestionMarker(conversationWireQuestionId);
       for (const [id, entry] of subscriptions) if (entry.agentId === 'wire-main') publish(id);
+    },
+    publishAgents() {
+      agentsListed = true;
     },
     failNextDismissal() {
       failDismiss = true;
@@ -598,11 +581,10 @@ export function setupConversationWire(
         else root.setAttribute('data-theme-override', previousOverride);
         if (themeColor && previousThemeColor !== undefined) themeColor.content = previousThemeColor;
       }
-      listeners.clear();
       subscriptions.clear();
       restoreModels();
       restoreClaudeModels();
-      window.electronAPI = previous;
+      restoreBridge();
     },
   };
 }

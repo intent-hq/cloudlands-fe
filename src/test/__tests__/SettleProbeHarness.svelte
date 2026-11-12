@@ -17,7 +17,6 @@
   let cssExpanded = $state(false);
   let scroller: HTMLDivElement;
   let wobbling = $state(false);
-  let nextClicks = $state(0);
   // A click that re-renders the region as a new, same-size element 50 ms later, then
   // animates it after `startDelayMs`.
   let generation = $state(0);
@@ -90,9 +89,6 @@
   <div style="height: {OPEN_HEIGHT}px;">CSS content</div>
 </div>
 
-<button type="button" data-testid="next" data-clicks={nextClicks} onclick={() => nextClicks++}>
-  Next
-</button>
 <button type="button" data-testid="noop">No-op</button>
 <button type="button" data-testid="replace" onclick={replaceThenGrow}>Replace</button>
 {#key generation}

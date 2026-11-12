@@ -196,33 +196,6 @@ const semanticSelectors: Record<string, SemanticSelector[]> = {
     ),
     selector(['pointer'], 'runs enhancement from the menu'),
   ],
-  'WORKSPACE-01': [
-    selector(
-      [...visualStates],
-      'affirms the latest activity preview in every required visual state',
-      [...visualStates],
-    ),
-    selector(['empty'], 'strictly caps a non-expandable preview'),
-  ],
-  'WORKSPACE-02': [
-    selector(
-      [
-        'mounted',
-        'runtime-success',
-        'runtime-error',
-        'cleanup',
-        'resolvable',
-        'internal',
-        'unresolvable',
-      ],
-      'routes mounted file, note, and agent rows only through their exact callbacks',
-    ),
-    selector(
-      ['keyboard'],
-      'renders the agent avatar action as a keyboard-accessible sibling control',
-      ['keyboard'],
-    ),
-  ],
   'WORKSPACE-08': [
     selector(
       [...visualStates],

@@ -6,6 +6,7 @@
   import NoteVersionHistory from '$lib/components/workspace/NoteVersionHistory.svelte';
   import RawNoteCodeEditor from '$lib/components/workspace/RawNoteCodeEditor.svelte';
   import SuggestionTooltip from '$lib/components/tiptap/SuggestionTooltip.svelte';
+  import type { SuggestionDetails } from '$lib/components/tiptap/Suggestion';
   import { Skeleton } from '$lib/components/ui/skeleton';
   import { PanelFindBar } from '$lib/components/ui/panel-find-bar';
   import { getSelectedTextWithinSurface } from '$lib/utils/selected-text';
@@ -491,8 +492,8 @@
 
   let editor: Editor = $state(null!);
   let editorInitializationPromise: Promise<void> | null = null;
-  let selectedSuggestion: any = $state(null);
-  let tooltipPosition = $state({ x: 0, y: 0 });
+  let selectedSuggestion = $state<SuggestionDetails | null>(null);
+  let suggestionAnchor = $state<HTMLElement | null>(null);
   // Task menu state - track discovered task buttons
   let taskMenuData = $state<TaskMenuPopoverData[]>([]);
   let cleanupFn: (() => void) | null = null;
@@ -776,7 +777,7 @@
 
     wasRawNoteViewEnabled = true;
     showCommentDialog = false;
-    selectedSuggestion = null;
+    closeSuggestion();
     taskMenuData = [];
     cleanupCommentClickHandler?.();
     cleanupCommentClickHandler = null;
@@ -926,23 +927,34 @@
     }
   }
 
-  // Handle suggestion click
-  function handleSuggestionClick(suggestion: any) {
+  function handleSuggestionClick(suggestion: SuggestionDetails, suggestionElement: HTMLElement) {
+    suggestionAnchor = suggestionElement;
     selectedSuggestion = suggestion;
-    if (editor && editor.view) {
-      const { from } = editor.state.selection;
-      const rect = editor.view.coordsAtPos(from);
-      tooltipPosition = { x: rect.left, y: rect.top };
-    }
+  }
+
+  function closeSuggestion() {
+    selectedSuggestion = null;
+    suggestionAnchor = null;
+  }
+
+  function closeDetachedSuggestion() {
+    if (suggestionAnchor && !suggestionAnchor.isConnected) closeSuggestion();
   }
 
   async function handleSuggestionDecision(decision: SuggestionDecision) {
     const suggestionId = selectedSuggestion?.id;
     if (!editor || !suggestionId) return;
-    const applied = await applySuggestionDecision(editor, suggestionId, decision, () =>
-      saveEditorContent(true),
-    );
-    if (applied) selectedSuggestion = null;
+    try {
+      const applied = await applySuggestionDecision(editor, suggestionId, decision, () =>
+        saveEditorContent(true),
+      );
+      if (!applied)
+        logger.warn('[NoteWithComments] Suggestion no longer in note', { suggestionId });
+    } catch (error) {
+      logger.error('[NoteWithComments] Failed to apply suggestion decision', error);
+    } finally {
+      closeSuggestion();
+    }
   }
 
   function syncTaskAgentAssociations() {
@@ -1299,6 +1311,7 @@
     });
 
     editor = new Editor(config);
+    editor.on('transaction', closeDetachedSuggestion);
 
     logger.debug('[NoteWithComments] Editor created successfully', {
       noteId,
@@ -1460,6 +1473,7 @@
 
   // Cleanup
   function cleanup() {
+    closeSuggestion();
     // Flush any pending save BEFORE destroying the editor
     // This prevents data loss when switching to version view or navigating away
     // Must happen before cleanupFn() which destroys the editor
@@ -2280,16 +2294,13 @@
           ondragover={handleDragOver}
         ></div>
 
-        <!-- Suggestion Tooltip -->
-        {#if selectedSuggestion && !shouldShowRawNoteView}
-          <SuggestionTooltip
-            suggestion={selectedSuggestion}
-            x={tooltipPosition.x}
-            y={tooltipPosition.y}
-            onAccept={() => void handleSuggestionDecision('accept')}
-            onReject={() => void handleSuggestionDecision('reject')}
-          />
-        {/if}
+        <SuggestionTooltip
+          suggestion={shouldShowRawNoteView ? null : selectedSuggestion}
+          anchor={suggestionAnchor}
+          onAccept={() => void handleSuggestionDecision('accept')}
+          onReject={() => void handleSuggestionDecision('reject')}
+          onClose={closeSuggestion}
+        />
 
         <!-- Bubble Menu for formatting and comments -->
         {#if editor && !shouldShowRawNoteView}

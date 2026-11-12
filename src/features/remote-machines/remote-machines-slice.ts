@@ -12,6 +12,7 @@ import type { RemoteMachineOperation, RemoteMachinesState } from './remote-machi
 export const initialState: RemoteMachinesState = {
   supported: false,
   initialAgentPlacement: false,
+  claimInvites: false,
   machines: {},
   localFingerprint: null,
   executorBackends: null,
@@ -32,6 +33,8 @@ export const remoteMachinesLoaded = createAction<
       supported: boolean;
       /** `remoteInitialAgent: 1`; absent counts as unsupported. */
       initialAgentPlacement?: boolean;
+      /** Node-invite claim capability; absent counts as unsupported. */
+      claimInvites?: boolean;
       machines: RemoteMachine[];
       localFingerprint: string | null;
       executorBackends: ExecutorBackend[] | null;
@@ -44,11 +47,14 @@ export const remoteMachineChanged = createAction<[machine: RemoteMachine]>(
 export const remoteMachineRemoved = createAction<[machineId: string]>(
   'remoteMachines/machineRemoved',
 );
-/** Owner action on a saved machine row: make it available to the current backend. */
+/**
+ * Owner action on a saved machine row: make it available to the current
+ * backend. `confirmed` skips the confirmation when the node prompt already asked.
+ */
 export const remoteMachineExposeRequested = createAction<
-  [connectionId: string, enableListener?: RemoteMachineListener]
+  [connectionId: string, enableListener?: RemoteMachineListener, confirmed?: boolean]
 >('remoteMachines/exposeRequested');
-/** "Stop making available": remove from the backend, revoke on the machine. */
+/** "Stop letting <backend> run agents on this machine": remove from the backend, revoke on the machine. */
 export const remoteMachineUnexposeRequested = createAction<
   [machineId: string, connectionId: string | null, stopAgents?: boolean]
 >('remoteMachines/unexposeRequested');
@@ -82,6 +88,7 @@ remoteMachinesReducer.with(remoteMachinesLoaded, (state, { payload: [snapshot] }
   ...state,
   supported: snapshot.supported,
   initialAgentPlacement: snapshot.supported && snapshot.initialAgentPlacement === true,
+  claimInvites: snapshot.supported && snapshot.claimInvites === true,
   machines: Object.fromEntries(snapshot.machines.map((machine) => [machine.id, machine])),
   localFingerprint: snapshot.localFingerprint,
   executorBackends: snapshot.executorBackends,

@@ -136,23 +136,22 @@ export async function __drainLocalPrefsWriteChainForTesting(): Promise<void> {
 }
 
 /**
- * The dock is on for everyone by default; only an explicit opt-out turns it off.
- * A missing file is "never chose" (on), but an unreadable or malformed file is an
- * error, not an empty one: reading corruption as unset would turn the dock on over
- * a saved opt-out. The startup caller keeps the dock off when this rejects.
+ * The dock is off by default; only an explicit opt-in turns it on. A missing file
+ * or key is "never chose" (off). An unreadable or malformed file is an error; the
+ * startup caller keeps the dock off when this rejects.
  */
 export async function getDockLabEnabledLocalPref(): Promise<boolean> {
   let raw: string;
   try {
     raw = await fs.readFile(filePath(), 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
     throw error;
   }
   const parsed = JSON.parse(raw) as unknown;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
     throw new Error('local-prefs is not a JSON object');
-  return (parsed as Record<string, unknown>).dockLabEnabled !== false;
+  return (parsed as Record<string, unknown>).dockLabEnabled === true;
 }
 
 export async function setDockLabEnabledLocalPref(enabled: boolean): Promise<void> {

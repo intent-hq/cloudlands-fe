@@ -33,6 +33,8 @@
  *                 CLI directly — presence requires BOTH `opencode` and
  *                 `unsloth` to resolve; local-only — no login surface, so
  *                 available ⇒ authenticated.
+ *  - cursor:      daemon discovery's installed and gatedOff verdict (the
+ *                 daemon resolves the `cursor-agent` CLI).
  *  - auth (all):  `host.providerAuthStatus` — `true`/`false` verdicts attach
  *                 to available providers; the wire `null` (unknown) folds to
  *                 undefined so no indicator renders.
@@ -180,7 +182,12 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
     const statuses = Object.fromEntries(
       Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID).map(([key, id]) => [
         key,
-        withAuth(providerStatusFromDiscovery(discovery, id), auth[id]),
+        withAuth(
+          id === 'cursor'
+            ? cursorStatusFromDiscovery(discovery)
+            : withVersion(providerStatusFromDiscovery(discovery, id), discovery, id),
+          auth[id],
+        ),
       ]),
     ) as ProviderAvailabilityResult['providers'];
     return {
@@ -217,6 +224,7 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   const auggie: ProviderStatus = { available: auggieCheck.available === true };
   const claudeCode = claudeCodeStatusFromDiscovery(discovery);
   const antigravity = antigravityFromDiscovery(discovery);
+  const cursor = cursorStatusFromDiscovery(discovery);
   const codex: ProviderStatus = { available: tool(PROVIDER_BINARIES.codex).available === true };
   // cortex: presence of the `cortex` CLI; no auth surface probed (the
   // daemon's providerAuthStatus sweep does not cover cortex).
@@ -253,6 +261,25 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
   withAuth(droid, authVerdicts['droid']);
   withAuth(grok, authVerdicts['grok']);
   withAuth(antigravity, authVerdicts['antigravity']);
+  withAuth(cursor, authVerdicts['cursor']);
+
+  const providers = {
+    auggie,
+    claudeCode,
+    codex,
+    cortex,
+    mock,
+    opencode,
+    pi,
+    droid,
+    grok,
+    unsloth,
+    antigravity,
+    cursor,
+  };
+  for (const [key, id] of Object.entries(PROVIDER_AVAILABILITY_KEY_TO_ID)) {
+    withVersion(providers[key as keyof typeof providers], discovery, id);
+  }
 
   return {
     hasAnyProvider:
@@ -266,20 +293,9 @@ async function getProviderAvailability(): Promise<ProviderAvailabilityResult> {
       droid.available ||
       grok.available ||
       unsloth.available ||
-      antigravity.available,
-    providers: {
-      auggie,
-      claudeCode,
-      codex,
-      cortex,
-      mock,
-      opencode,
-      pi,
-      droid,
-      grok,
-      unsloth,
-      antigravity,
-    },
+      antigravity.available ||
+      cursor.available,
+    providers,
     hiddenProviders,
   };
 }
@@ -294,10 +310,42 @@ function providerStatusFromDiscovery(
   return { available: row?.installed === true && !row.gatedOff };
 }
 
+/** Attach the discovered CLI version (display-only) to an available provider. */
+function withVersion(
+  status: ProviderStatus,
+  discovery: ProviderDiscoverySnapshot | undefined,
+  providerId: string,
+): ProviderStatus {
+  const version = discovery?.providers.find((row) => row.id === providerId)?.cliVersion;
+  if (status.available && version && status.version === undefined) status.version = version;
+  return status;
+}
+
+/**
+ * Cursor from discovery, plus its CLI version and, for a refused binary (the Grok
+ * agent host), the daemon's reason as row guidance instead of "not installed".
+ */
+function cursorStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
+  const row = discovery.providers.find((provider) => provider.id === 'cursor');
+  const status = providerStatusFromDiscovery(discovery, 'cursor');
+  if (row?.cliVersion) status.version = row.cliVersion;
+  if (row?.unavailableReason && !row.gatedOff) {
+    status.unavailableReason = row.unavailableReason;
+    status.warning = m.settings_providers_cursorUnsupported_warning({
+      reason: row.unavailableReason,
+    });
+  }
+  return status;
+}
+
 /** Preserve missing-runner guidance only when discovery confirms the cause. */
 function claudeCodeStatusFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
   const row = discovery.providers.find((provider) => provider.id === 'claude-code');
-  const status = providerStatusFromDiscovery(discovery, 'claude-code');
+  const status = withVersion(
+    providerStatusFromDiscovery(discovery, 'claude-code'),
+    discovery,
+    'claude-code',
+  );
   if (row && !row.installed && !row.gatedOff && discovery.npx?.resolvedPath === null) {
     status.warning = CLAUDE_CODE_NPX_MISSING_WARNING;
   }
@@ -321,15 +369,51 @@ async function readProviderStatus<T>(read: () => Promise<T>): Promise<T> {
   return result;
 }
 
+let inFlightDiscovery:
+  { connection: unknown; request: Promise<ProviderDiscoverySnapshot> } | undefined;
+
 function fetchProviderDiscovery(): Promise<ProviderDiscoverySnapshot> {
-  return backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
+  const request = backendRequest<ProviderDiscoverySnapshot>('host.providerDiscovery', {});
+  const entry = { connection: selectPrincipalConnectionContext.select(appStore.state), request };
+  inFlightDiscovery = entry;
+  const settle = () => {
+    if (inFlightDiscovery === entry) inFlightDiscovery = undefined;
+  };
+  request.then(settle, settle);
+  return request;
 }
 
+/**
+ * Discovery for display versions only: joins an in-flight request on the
+ * same connection so a full sweep's per-provider checks share one probe.
+ * Failures yield none.
+ */
+function discoveryForVersions(): Promise<ProviderDiscoverySnapshot | undefined> {
+  const joinable =
+    inFlightDiscovery?.connection === selectPrincipalConnectionContext.select(appStore.state)
+      ? inFlightDiscovery.request
+      : undefined;
+  return (joinable ?? fetchProviderDiscovery()).catch(() => undefined);
+}
+
+/**
+ * Antigravity from discovery. An agy below the daemon's minimum is updated at
+ * the next launch, so the row warns with that status (or the failed update).
+ */
 function antigravityFromDiscovery(discovery: ProviderDiscoverySnapshot): ProviderStatus {
-  return {
-    available: discovery.providers.some((row) => row.id === 'antigravity' && row.installed),
-    hasNpxFallback: false,
-  };
+  const row = discovery.providers.find((provider) => provider.id === 'antigravity');
+  const status = withVersion(
+    { available: row?.installed === true, hasNpxFallback: false },
+    discovery,
+    'antigravity',
+  );
+  if (status.available && row?.cliVersionOk === false && row.cliMinimumVersion) {
+    const minimum = row.cliMinimumVersion;
+    status.warning = row.cliUpdateError
+      ? m.settings_providers_agyUpdateFailed_warning({ reason: row.cliUpdateError })
+      : m.settings_providers_agyUpdatePending_warning({ minimum });
+  }
+  return status;
 }
 
 async function checkAntigravityAvailability(): Promise<ProviderStatus> {
@@ -373,11 +457,36 @@ async function checkMockProvider(): Promise<ProviderStatus> {
  * the daemon's auth cache. Passive bulk loads pass `force: false` and ride
  * the daemon's cache instead. */
 async function checkSingleProvider(providerId: string, force = true): Promise<ProviderStatus> {
+  if (
+    selectHostRole.select(appStore.state) === 'member' ||
+    DISCOVERY_STATUS_PROVIDERS.has(providerId)
+  ) {
+    return checkSingleProviderStatus(providerId, force);
+  }
+  const [status, discovery] = await Promise.all([
+    checkSingleProviderStatus(providerId, force),
+    discoveryForVersions(),
+  ]);
+  return withVersion(status, discovery, providerId);
+}
+
+/** Providers whose single check already reads discovery (and its version). */
+const DISCOVERY_STATUS_PROVIDERS = new Set(['claude-code', 'antigravity', 'cursor', 'mock']);
+
+async function checkSingleProviderStatus(
+  providerId: string,
+  force: boolean,
+): Promise<ProviderStatus> {
   const checkAuth = async (): Promise<ProviderAuthVerdict | undefined> =>
     (await getAuthVerdicts({ providerId, force }))[providerId];
 
   if (selectHostRole.select(appStore.state) === 'member') {
-    const status = providerStatusFromDiscovery(await fetchProviderDiscovery(), providerId);
+    const discovery = await fetchProviderDiscovery();
+    const status = withVersion(
+      providerStatusFromDiscovery(discovery, providerId),
+      discovery,
+      providerId,
+    );
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
@@ -388,6 +497,11 @@ async function checkSingleProvider(providerId: string, force = true): Promise<Pr
 
   if (providerId === 'antigravity') {
     const status = await checkAntigravityAvailability();
+    return status.available ? withAuth(status, await checkAuth()) : status;
+  }
+
+  if (providerId === 'cursor') {
+    const status = cursorStatusFromDiscovery(await fetchProviderDiscovery());
     return status.available ? withAuth(status, await checkAuth()) : status;
   }
 
@@ -473,6 +587,15 @@ interface ProviderDiscoveryEntry {
   secondaryCommand?: string;
   secondaryResolved?: boolean;
   secondaryResolvedPath?: string;
+  /** Raw `--version` line of the resolved CLI, when the daemon probed it. */
+  cliVersion?: string;
+  /** Why a resolved CLI is refused; the daemon then reports `installed: false` (Cursor). */
+  unavailableReason?: string;
+  /** Daemon verdict against `cliMinimumVersion`; absent when the version is unknown. */
+  cliVersionOk?: boolean;
+  cliMinimumVersion?: string;
+  /** Recent automatic CLI update failure (Antigravity's `agy update`). */
+  cliUpdateError?: string;
 }
 
 /**

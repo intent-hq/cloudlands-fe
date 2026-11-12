@@ -93,7 +93,9 @@
           <Menu.Item>Open workspace</Menu.Item>
           <Menu.Item>Duplicate</Menu.Item>
           <Menu.Separator />
-          <Menu.CheckboxItem checked closeOnSelect={false}>Show metadata</Menu.CheckboxItem>
+          <Menu.CheckboxItem indicator="switch" checked closeOnSelect={false}
+            >Show metadata</Menu.CheckboxItem
+          >
           <Menu.Item destructive>Delete workspace</Menu.Item>
         </Menu.Content>
       </Menu.Root>

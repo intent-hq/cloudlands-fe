@@ -326,6 +326,16 @@ after`,
     expect(processHTMLToMarkdown(invalid)).toBe(String.raw`before $\frac{$ after`);
   });
 
+  it('renders a glyph without KaTeX font metrics through the sanitized pipelines', async () => {
+    const markdown = String.raw`smile $\text{\char"263A}$ ok`;
+    for (const html of await mainAndWorkerHtml(markdown, true)) {
+      const container = containerFor(html);
+      expect(container.querySelector('.katex-error')).toBeNull();
+      expect(container.querySelector('.math-inline .katex-html')?.textContent).toContain('☺');
+      expect(processHTMLToMarkdown(html)).toBe(markdown);
+    }
+  });
+
   it.each([[String.raw`before $$\frac{1}{2}$$ after`], [String.raw`before \[\frac{1}{2}\] after`]])(
     'keeps misplaced display delimiters literal without partial inline math',
     async (markdown) => {

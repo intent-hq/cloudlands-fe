@@ -4,6 +4,7 @@
     selectScriptWorkflowOutcome,
     selectWorkspaceScriptsInitialized,
     selectScriptDetectionOperation,
+    selectRemoteScriptsSupported,
   } from '$store/renderer/slices/scripts/scripts-selectors';
   import { loadMoreScripts, refreshScripts } from '$store/renderer/slices/scripts/scripts-slice';
   import { Input } from '$lib/components/ui/input';
@@ -11,6 +12,8 @@
   import { prefersReducedMotion, spring } from '$lib/motion';
   import type { ScriptMode, ScriptListEntry } from '$features/scripts/types';
   import { getScriptStatusKind, isLiveScriptStatus } from '$features/scripts/utils/script-status';
+  import { isLostRun, scriptMachineRuns } from '$features/scripts/utils/script-location';
+  import MachineRunRow from '$features/scripts/components/MachineRunRow.svelte';
 
   import { selectScriptEntries } from '$store/renderer/slices/scripts/scripts-selectors';
   import {
@@ -55,10 +58,23 @@
     workspaceId: string;
     selectedScriptId?: string | null;
     onSelectScript?: (scriptId: string | null) => void;
+    /** The selected remote agent's run of `selectedScriptId` (`remoteScripts: 1`). */
+    selectedRemoteAgentId?: string | null;
+    onSelectMachineRun?: (scriptId: string, remoteAgentId: string) => void;
     class?: string;
   }
 
-  let { workspaceId, selectedScriptId = null, onSelectScript, class: className }: Props = $props();
+  let {
+    workspaceId,
+    selectedScriptId = null,
+    onSelectScript,
+    selectedRemoteAgentId = null,
+    onSelectMachineRun,
+    class: className,
+  }: Props = $props();
+
+  // Remote agents' runs on their machines, listed under each script.
+  const remoteScriptsSupported$ = selectRemoteScriptsSupported();
 
   const workspaceIdStore = writable('');
   $effect(() => workspaceIdStore.set(workspaceId));
@@ -312,7 +328,7 @@
   }
 
   // ---- Status dot helpers ----
-  function getStatusColor(script: ScriptListEntry): string {
+  function getStatusColor(script: Pick<ScriptListEntry, 'runtime'>): string {
     const kind = getScriptStatusKind(script.runtime);
     if (kind === 'running' || kind === 'succeeded') return 'bg-green-500';
     if (kind === 'restarting') return 'bg-warning';
@@ -796,7 +812,7 @@
                     selectedScriptIds.has(script.id) && 'bg-accent/50! hover:bg-accent/60!',
                   )}
                   title={editingScriptId === script.id ? '' : script.name}
-                  active={selectedScriptId === script.id}
+                  active={selectedScriptId === script.id && !selectedRemoteAgentId}
                   onclick={(e) => handleSelectScript(script.id, e as MouseEvent)}
                   ondblclick={() => startEditingScript(script.id, script.name)}
                   oncontextmenu={(e) => handleScriptContextMenu(script.id, e as MouseEvent)}
@@ -822,6 +838,7 @@
                     >
                       {#if editingScriptId === script.id}
                         <Input
+                          variant="inline"
                           type="text"
                           data-edit-script={script.id}
                           bind:value={editingScriptName}
@@ -836,14 +853,27 @@
                       <span
                         aria-hidden="true"
                         data-script-rename-decoration={script.id}
-                        class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingScriptId ===
+                        class="pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {editingScriptId ===
                         script.id
-                          ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
-                          : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+                          ? '-inset-x-2 -inset-y-0.5 bg-hover dark:bg-surface-1'
+                          : '-inset-x-1 -inset-y-0.5 bg-transparent'}"
                       ></span>
                     </div>
                   {/snippet}
                 </ListItem>
+                {#if $remoteScriptsSupported$}
+                  {#each scriptMachineRuns(script) as run (run.remoteAgentId)}
+                    <MachineRunRow
+                      {workspaceId}
+                      scriptId={script.id}
+                      {run}
+                      dotClass={isLostRun(run.runtime) ? 'bg-warning' : getStatusColor(run)}
+                      active={selectedScriptId === script.id &&
+                        selectedRemoteAgentId === run.remoteAgentId}
+                      onSelect={() => onSelectMachineRun?.(script.id, run.remoteAgentId)}
+                    />
+                  {/each}
+                {/if}
               </div>
             {/each}
             {#if showScriptListToggle}

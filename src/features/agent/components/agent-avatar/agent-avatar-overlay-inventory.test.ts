@@ -5,7 +5,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const consumerFiles = [
-  'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
+  'src/features/agent/components/agent-avatar/AgentAvatarCatalogHarness.svelte',
   'src/features/agent/components/agent-avatar/AgentAvatarWithState.svelte',
   'src/features/agent/components/agent-avatar/__tests__/AgentAvatarWaitingHost.svelte',
   'src/features/file-tracking/components/diff/PatchBlockContent.svelte',
@@ -15,7 +15,6 @@ const consumerFiles = [
   'src/lib/components/agent-overview/BackgroundAgentCard.svelte',
   'src/lib/components/chat/AgentCard.svelte',
   'src/lib/components/chat/AgentMessageAttributionHeader.svelte',
-  'src/lib/components/chat/AgentsList.svelte',
   'src/lib/components/chat/ChatChangesPanel.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
@@ -39,12 +38,10 @@ const consumerFiles = [
   'src/lib/components/workspace/WorkspaceHoverCard.svelte',
   'src/lib/components/workspace/initializer/InitialAgentPicker.svelte',
   'src/lib/components/workspace/initializer/SetupScriptAgent.svelte',
-  'src/lib/components/workspace/sidebar/ActivityLogPreview.svelte',
   'src/lib/components/workspace/sidebar/CommitsTimeline.svelte',
   'src/lib/components/workspace/sidebar/FileChangesSection.svelte',
   'src/lib/components/workspace/sidebar/NotesPanel.svelte',
   'src/lib/components/workspace/sidebar/SecondaryRootChangesView.svelte',
-  'src/lib/components/workspace/sidebar/SidebarActivityPanel.svelte',
   'src/lib/components/workspace/sidebar/SidebarSectionTabs.svelte',
 ] as const;
 
@@ -54,7 +51,7 @@ const overflowFiles = [
 ] as const;
 
 const canonicalStackConsumers = [
-  'src/features/agent/components/agent-avatar/AgentAvatarCatalog.svelte',
+  'src/features/agent/components/agent-avatar/AgentAvatarCatalogHarness.svelte',
   'src/lib/components/chat/AgentSubscriptions.svelte',
   'src/lib/components/chat/DelegationGroupSection.svelte',
   'src/lib/components/chat/EventWakeupBanner.svelte',
@@ -76,7 +73,7 @@ function productionSvelteFiles(directory = 'src'): string[] {
 
 describe('agent avatar overlay inventory', () => {
   it('keeps every audited consumer on the icon-free canonical avatar surface', () => {
-    expect(consumerFiles).toHaveLength(41);
+    expect(consumerFiles).toHaveLength(38);
     for (const path of consumerFiles) {
       const contents = source(path);
       expect(contents, path).not.toContain('/auggie-avatar/');

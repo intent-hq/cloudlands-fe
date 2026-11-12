@@ -109,6 +109,16 @@
     class: className = '',
   }: Props = $props();
 
+  // Collapsing keeps the details mounted until the height animation reaches zero;
+  // unmounting them at once would shrink an empty box instead of the content.
+  let detailsRetained = $state(false);
+  $effect(() => {
+    if (expanded) detailsRetained = true;
+  });
+  function releaseDetails() {
+    if (!expanded) detailsRetained = false;
+  }
+
   // Delegates to the consumer transition when provided; the zero-duration
   // fallback keeps removal synchronous for rows without preview motion.
   function previewContentTransition(
@@ -221,9 +231,9 @@
       data-response-group-motion="animated-height"
       inert={!expanded || detailsInert}
       aria-hidden={detailsAriaHidden ?? !expanded}
-      use:animatedHeight={expanded}
+      use:animatedHeight={{ open: expanded, onClosed: releaseDetails }}
     >
-      {#if expanded}
+      {#if expanded || detailsRetained}
         <div class={detailsClass}>{@render details()}</div>
       {/if}
     </div>

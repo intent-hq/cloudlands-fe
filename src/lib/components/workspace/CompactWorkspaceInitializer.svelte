@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { ShortcutChip } from '$lib/components/ui/kbd';
   import {
     selectWorkspaceCreationVisible,
     selectPrincipalActionContext,
@@ -14,7 +13,7 @@
     readSkipIsolation,
     resolveSidebarRepositoryDefault,
   } from './initializer/sidebar-repository-default';
-  import { tick, untrack, onMount, onDestroy, type Snippet } from 'svelte';
+  import { tick, untrack, onMount, onDestroy } from 'svelte';
   import {
     type InitialRepoInfo,
     getLastSelectedRepoHydrationAction,
@@ -75,8 +74,11 @@
     WorkspaceInitializationOutcome,
     WorkspaceInitializerAgentSettings,
     WorkspaceInitializationStagedItem,
+    WorkspaceInitializationStaleBase,
     WorkspaceInitializerRepoSelection,
   } from '$store/renderer/slices/workspace-initializer/workspace-initializer-types';
+  import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
+  import WorkspaceCreationError from '$features/onboarding/steps/WorkspaceCreationError.svelte';
   import RichTextarea from '$lib/components/ui/RichTextarea.svelte';
   import { Input } from '$lib/components/ui/input';
   import { debugConfig } from '$lib/config/debug';
@@ -127,6 +129,7 @@
   import Button from '../ui/button/button.svelte';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import CreateButtonProgress from './initializer/CreateButtonProgress.svelte';
+  import WorkspaceCreateButton from './initializer/WorkspaceCreateButton.svelte';
   import { selectEffectiveStartOn } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './initializer/InitialAgentPicker.svelte';
   import IssueSuggestions, {
@@ -398,6 +401,12 @@
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
         else if (data.repoPath) {
+          const repositoryChanged = repositorySelectionChanged({
+            repoPath: data.repoPath,
+            repoType: 'local',
+            githubUrl: '',
+            isNewRepo: false,
+          });
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -411,7 +420,7 @@
           // checkout or a branch that doesn't exist in the local repo. An
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
-          branch = '';
+          if (repositoryChanged) branch = '';
         } else if (data.githubUrl) {
           // A GitHub repo from a deep link (clone, "Fix in Intent"): select it
           // the same way the Home GitHub prefill does — a local checkout of
@@ -425,7 +434,13 @@
             );
           if (match) {
             try {
-              await preselectGitHubPrefillRepo({ owner: match[1], repo: match[2] });
+              // The command palette's GitHub rows ask for the remote itself
+              // (`exactRemote`); other links may resolve to a local clone.
+              await preselectGitHubPrefillRepo(
+                { owner: match[1], repo: match[2] },
+                undefined,
+                data.exactRemote === true,
+              );
             } catch (e) {
               logger.warn('Failed to select the GitHub repo from prefill', { error: e });
             }
@@ -435,6 +450,12 @@
         // A link for a folder with no workspace (the `intent` CLI) asks for
         // no worktree: the workspace works in the folder itself.
         if (!hasCheckoutDraft && data.repoPath && data.skipIsolation === true) skipIsolation = true;
+        // A plain-folder prefill (the palette's Folder rows) runs the picker's
+        // folder check, so a non-git folder opens as a plain folder (Labs).
+        if (!hasCheckoutDraft && data.repoPath && data.plainFolder === true) {
+          folderSelectionRevision++;
+          void restoreRememberedPlainFolder(data.repoPath, true);
+        }
 
         // Apply remote environment settings
         if (!hasCheckoutDraft && data.environmentType === 'remote' && data.sshConfig) {
@@ -540,6 +561,20 @@
   let branch = $state(savedState?.branch ?? '');
   let isNewRepo = $state(savedState?.isNewRepo ?? false);
   let isValidPath = $state(savedState?.isValidPath ?? false);
+
+  function repositorySelectionChanged(
+    next: Pick<
+      CompactWorkspaceInitializerFormState,
+      'repoPath' | 'repoType' | 'githubUrl' | 'isNewRepo'
+    >,
+  ): boolean {
+    return (
+      (next.repoPath ?? repoPath) !== repoPath ||
+      (next.repoType ?? repoType) !== repoType ||
+      (next.githubUrl ?? githubUrl) !== githubUrl ||
+      (next.isNewRepo ?? isNewRepo) !== isNewRepo
+    );
+  }
   // Plain-folder workspaces (Labs). The pick is bound to its path, so any other
   // repo change (restore, prefill, new pick) drops it.
   const initializeGitChoice = createInitializeGitChoice();
@@ -705,16 +740,9 @@
   // non-image files (path-only until placed at workspace.create redemption)
   let contextItems = $state<ContextItem[]>([]);
   // Start On: a remote agent starts from the workspace's last commit, which a
-  // new repository or a plain folder lacks, and takes no image or file
-  // attachments, so in those cases the first agent stays here.
-  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | 'attachments' | null>(
-    plainFolder !== null
-      ? 'plain-folder'
-      : isNewRepo
-        ? 'new-repo'
-        : contextItems.some((item) => item.type !== 'folder' && isPreviewableAttachment(item))
-          ? 'attachments'
-          : null,
+  // new repository or a plain folder lacks, so then the first agent stays here.
+  const startOnBackendOnly = $derived<'new-repo' | 'plain-folder' | null>(
+    plainFolder !== null ? 'plain-folder' : isNewRepo ? 'new-repo' : null,
   );
   // Use saved state first, then fall back to last submitted values, then defaults
   // NOTE: selectedSpecialist can be null (meaning "General / no specialist").
@@ -888,6 +916,14 @@
   // workspace diffs/merges against the PR's merge target (PROTOCOL §5.1)
   let selectedPRTargetBranch = $state<string>('');
 
+  function usePrBranch() {
+    if (!selectedPRBranch) return;
+    branch = selectedPRBranch;
+    document.dispatchEvent(
+      new CustomEvent('initializer-branch-updated', { detail: { branch: selectedPRBranch } }),
+    );
+  }
+
   let didApplyHydratedCompactState = $state(false);
   let didApplyHydratedLastSelectedRepo = $state(false);
   let hasInitialPrefillData = $state(hasWorkspacePrefillData());
@@ -962,10 +998,12 @@
    * existing plain folder with the git switch off. The folder is checked
    * first: one that has become a git repository opens as a git repo, and a
    * missing or unreadable one, or Labs off, preselects nothing.
+   * With `prefilled`, `path` is already selected as a local repo (a palette
+   * Folder row): the same check then only upgrades it to a plain folder.
    */
   let folderSelectionRevision = 0;
 
-  async function restoreRememberedPlainFolder(path: string) {
+  async function restoreRememberedPlainFolder(path: string, prefilled = false) {
     const revision = folderSelectionRevision;
     let status: {
       exists: boolean;
@@ -981,7 +1019,8 @@
       logger.warn('Failed to check the remembered plain folder', err);
     }
     // Anything picked while the folder was checked wins.
-    if (!mounted || revision !== folderSelectionRevision || repoPath || repoType === 'gitlab')
+    const selectionTaken = prefilled ? repoPath !== path || repoType !== 'local' : !!repoPath;
+    if (!mounted || revision !== folderSelectionRevision || selectionTaken || repoType === 'gitlab')
       return;
     if (!status?.exists || !status.isDirectory) return;
     if (status.isGitRepo || status.isSubdirectoryOfGitRepo) {
@@ -1319,6 +1358,12 @@
         const checkoutDraft = readRepositoryCheckoutDraft(data.repositoryCheckoutDraft);
         if (hasCheckoutDraft) restoreCheckout(checkoutDraft, !checkoutDraft);
         else if (data.repoPath) {
+          const repositoryChanged = repositorySelectionChanged({
+            repoPath: data.repoPath,
+            repoType: 'local',
+            githubUrl: '',
+            isNewRepo: false,
+          });
           repoPath = data.repoPath;
           repoType = 'local';
           githubUrl = '';
@@ -1332,7 +1377,7 @@
           // checkout or a branch that doesn't exist in the local repo. An
           // explicit data.branch (applied below) still wins.
           remoteSetup = null;
-          branch = '';
+          if (repositoryChanged) branch = '';
         }
         if (!hasCheckoutDraft && data.branch) branch = data.branch;
         // A link for a folder with no workspace (the `intent` CLI) asks for
@@ -1453,6 +1498,7 @@
   async function preselectGitHubPrefillRepo(
     target: { owner: string; repo: string },
     isStale?: () => boolean,
+    exactRemote = false,
   ) {
     const candidates: GitHubPrefillRepoCandidate[] = [];
     if (repoPath && repoType !== 'remote' && repoType !== 'gitlab') {
@@ -1470,6 +1516,7 @@
     const selection = await matchGitHubPrefillRepo({
       owner: target.owner,
       repo: target.repo,
+      exactRemote,
       candidates,
       probeRemote: async (path) => {
         if (typeof window === 'undefined' || !window.electronAPI) return null;
@@ -1562,6 +1609,7 @@
       queueMicrotask(() => {
         lastAppliedInitialRepoKey = repoKey;
         const formState = mapInitialRepoToFormState(repo);
+        const repositoryChanged = repositorySelectionChanged(formState);
         if (formState.repoType === 'gitlab')
           restoreCheckout(formState.repositoryCheckoutDraft, formState.invalidCheckoutDraft);
 
@@ -1569,7 +1617,8 @@
         if (formState.isValidPath !== undefined) isValidPath = formState.isValidPath;
         if (formState.isNewRepo !== undefined) isNewRepo = formState.isNewRepo;
         if (formState.scope !== undefined) scope = formState.scope;
-        if (formState.branch !== undefined) branch = formState.branch;
+        if (formState.branch !== undefined && (repositoryChanged || formState.branch !== ''))
+          branch = formState.branch;
         if (formState.repoType !== undefined) repoType = formState.repoType;
         if (formState.githubUrl !== undefined) githubUrl = formState.githubUrl;
         if (formState.remoteSetup) remoteSetup = formState.remoteSetup;
@@ -1785,6 +1834,30 @@
   // on the Create button; null when no create is running.
   let activeCreateProgressId: string | null = $state(null);
   let error: string | null = $state(null);
+  // The create failure behind `error`, shown in the shared creation error box
+  // (cause, guidance, Try again, and Continue for `base-refresh-failed`). It
+  // applies only while `error` still holds its message, so every existing
+  // `error = null` reset also hides the box.
+  let createFailure: {
+    message: string;
+    errorCode: string | null;
+    baseRefreshFailure: BaseRefreshFailure | null;
+    /** The repository and base the failed create used; see `createFormKey`. */
+    formKey: string;
+  } | null = $state(null);
+  // Repository and base of the latest submitted create. Continue re-sends the
+  // same create, so it is offered only while the form still matches it.
+  let submittedFormKey = '';
+  const createFormKey = $derived(
+    JSON.stringify([
+      repoType,
+      repoPath,
+      githubUrl,
+      branch,
+      selectedPRBranch,
+      selectedPRTargetBranch,
+    ]),
+  );
   let controlsContainer: HTMLDivElement | null = $state(null);
   let richTextarea: RichTextarea | null = $state(null);
 
@@ -2116,6 +2189,13 @@
       plainFolder?: 'existing' | 'new';
     }>,
   ) {
+    const repositoryChanged =
+      repositorySelectionChanged({
+        repoPath: event.detail.path,
+        repoType: event.detail.type,
+        githubUrl: event.detail.githubUrl || '',
+        isNewRepo: !!event.detail.isNewRepo,
+      }) || plainFolderPick?.kind !== event.detail.plainFolder;
     appStore.dispatch(checkoutClosed(checkoutFormId));
     folderSelectionRevision++;
     repoPath = event.detail.path;
@@ -2129,11 +2209,13 @@
     isValidPath = event.detail.isValidPath ?? false;
     scope = event.detail.scope || '';
     githubUrl = event.detail.githubUrl || '';
-    branch = isNewRepo
-      ? 'main'
-      : event.detail.type === 'remote'
-        ? event.detail.remoteSetup?.branch || 'main'
-        : '';
+    if (repositoryChanged || event.detail.type === 'remote') {
+      branch = isNewRepo
+        ? 'main'
+        : event.detail.type === 'remote'
+          ? event.detail.remoteSetup?.branch || 'main'
+          : '';
+    }
 
     // Handle remote setup from repo selector
     if (event.detail.type === 'remote' && event.detail.remoteSetup) {
@@ -2158,14 +2240,14 @@
       if (next !== null) skipIsolation = next;
     }
 
-    // Reset GitHub auth state when repo changes - will be updated by BranchSelector
-    githubAuthNeeded = 'none';
-
-    // Reset branch status state when repo changes
-    branchBehind = 0;
-    pullError = null;
-    selectedPRBranch = '';
-    selectedPRTargetBranch = '';
+    // Reselecting the same repository does not reload BranchSelector.
+    if (repositoryChanged) {
+      githubAuthNeeded = 'none';
+      branchBehind = 0;
+      pullError = null;
+      selectedPRBranch = '';
+      selectedPRTargetBranch = '';
+    }
   }
 
   function handleBranchChange(event: CustomEvent<{ branch: string }>) {
@@ -2214,7 +2296,31 @@
     await submitWorkspace();
   }
 
-  async function submitWorkspace(continuation?: () => boolean) {
+  /** Continue from last-fetched: the same create, without refreshing its base (PROTOCOL §9.2). */
+  async function handleContinueFromLastFetched() {
+    const failure =
+      createFailure?.message === error && createFailure.formKey === createFormKey
+        ? createFailure.baseRefreshFailure
+        : null;
+    if (!failure) return;
+    await submitWorkspace(undefined, { baseRef: failure.baseRef, remote: failure.remote });
+  }
+
+  /**
+   * The cause of a failed create as the daemon sent it: never rewritten into
+   * generic git text. Only the client-side transport timeout keeps its
+   * "may still be finishing" wording.
+   */
+  function createFailureMessage(failureMessage: string): string {
+    return failureMessage.toLowerCase().includes('json-rpc request timed out: workspace.create') // i18n-ignore (transport error text)
+      ? getGitErrorMessage(failureMessage)
+      : failureMessage;
+  }
+
+  async function submitWorkspace(
+    continuation?: () => boolean,
+    continueFromLastFetched?: WorkspaceInitializationStaleBase,
+  ) {
     if (continuation && !continuation()) return;
     if (selectWorkspaceInitializationResume.select(appStore.state, initializationConsumerId)) {
       await retryPendingFirstMessage();
@@ -2282,6 +2388,7 @@
     pullContinuation = null;
     isCreating = true;
     error = null;
+    submittedFormKey = createFormKey;
 
     const initializationResourceId = `${admission}:${generation}`;
     let handedOff = false;
@@ -2480,7 +2587,7 @@
           // A new repository or a plain folder has no commit for a remote agent to start from.
           startOnMachineId: startOnBackendOnly
             ? ''
-            : selectEffectiveStartOn.select(appStore.state, startOnMachineId),
+            : selectEffectiveStartOn.select(appStore.state, startOnMachineId, selectedProvider),
         },
         rememberAgentRepoKey,
         setupScriptExplicit,
@@ -2489,6 +2596,7 @@
         setupScriptProbeKey: setupScriptProbeKey ?? null,
         setupScriptRepoKey: setupScriptRepoKey ?? null,
         formPersistence: debugConfig.get('enableFormPersistence'),
+        ...(continueFromLastFetched ? { continueFromLastFetched } : {}),
       };
       if (!preparationCurrent()) return;
       const initialization = workspaceInitializationSubmitted(submission, {
@@ -2580,6 +2688,17 @@
         appStore.dispatch(refetchSpecialistsRequested());
         resetUnavailableSpecialist();
         error = m.workspace_compactInitializer_specialistUnavailable_error();
+      } else if (outcome.stage === 'create') {
+        const message = failureMessage
+          ? createFailureMessage(failureMessage)
+          : m.workspace_compactInitializer_createFailed_error();
+        error = message;
+        createFailure = {
+          message,
+          errorCode: outcome.errorCode ?? null,
+          baseRefreshFailure: outcome.baseRefreshFailure ?? null,
+          formKey: submittedFormKey,
+        };
       } else {
         error = failureMessage
           ? getGitErrorMessage(failureMessage)
@@ -3390,7 +3509,10 @@
         <!-- Attachment previews: image thumbnails plus staged non-image file
          chips (placed at workspace.create; failed pills show retry) -->
         {#if contextItems.some(isPreviewableAttachment)}
-          <div class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2 items-center">
+          <div
+            class="px-2.5 pt-2 pb-1 flex flex-wrap gap-2 items-center"
+            data-testid="new-workspace-attachments"
+          >
             {#each contextItems.filter(isPreviewableAttachment) as item (item.id)}
               <AttachmentPreview
                 id={item.id}
@@ -3457,7 +3579,7 @@
               >
                 <Fa icon={faPaperclip} />
               </Button>
-              <div class="ml-auto flex items-center">
+              <div class="flex items-center">
                 <!-- Mic latch button: click starts dictation, click again (Esc
              cancels) stops and transcribes into this prompt at the caret. -->
                 {#if micTranscribing}
@@ -3507,6 +3629,25 @@
                   </Button>
                 {/if}
               </div>
+              {#if repoType !== 'gitlab' && selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
+                <div class="pr-branch-slot" transition:fade={{ tier: 'moderate' }}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="compact"
+                    class="max-w-full shrink rounded-full text-primary-ink"
+                    tooltip={selectedPRBranch}
+                    tooltipSide="top"
+                    tooltipClass="min-w-0 max-w-full"
+                    data-testid="initializer-use-pr-branch"
+                    onclick={usePrBranch}
+                  >
+                    <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
+                    <span class="shrink-0">{m.workspace_branchSelector_usePrBranch_label()}</span>
+                    <strong class="min-w-0 truncate font-semibold">{selectedPRBranch}</strong>
+                  </Button>
+                </div>
+              {/if}
             </div>
           </div>
         {/if}
@@ -3683,19 +3824,31 @@
         </div>
 
         <!-- Error message -->
-        {#if error}
+        {#if error && createFailure?.message === error}
+          <div class="mt-3 mb-3 px-4.5" transition:slide={{ axis: 'y', tier: 'moderate' }}>
+            <WorkspaceCreationError
+              message={createFailure.message}
+              errorCode={createFailure.errorCode}
+              baseRefreshFailure={createFailure.baseRefreshFailure}
+              onRetry={isCreating ? undefined : handleSubmit}
+              onContinue={isCreating || createFailure.formKey !== createFormKey
+                ? undefined
+                : handleContinueFromLastFetched}
+            />
+          </div>
+        {:else if error}
           <div
             class="mt-3 mb-3 px-4.5 py-2 text-sm bg-danger-background text-danger"
             transition:slide={{ axis: 'y', tier: 'moderate' }}
           >
             {error}
           </div>
-          {#if repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
-            <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
-            <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
-              >{m.collaboration_host_refresh_label()}</Button
-            >
-          {/if}
+        {/if}
+        {#if error && repoType === 'gitlab' && $checkoutForm$?.status === 'ready' && !isCreating}
+          <p class="text-sm text-subtle">{m.gitlabCheckout_createRecovery_description()}</p>
+          <Button variant="plain" onclick={() => recoverCheckout(checkoutScope)}
+            >{m.collaboration_host_refresh_label()}</Button
+          >
         {/if}
         <!-- Validation hint -->
         {#if repoType !== 'gitlab' && isExpanded && !isValid && !isCreating && !error && (gitNoticeAvailability !== true || !repoPath || !isValidPath || (repoType === 'github' && githubAuthNeeded !== 'none'))}
@@ -3716,96 +3869,26 @@
             {/if}
           </div>
         {/if}
-        <!-- Use PR branch suggestion - show when a PR is selected but branch doesn't match -->
-        {#if repoType !== 'gitlab' && selectedPRBranch && branch !== selectedPRBranch && !isNewRepo}
-          <div class="mt-2" transition:slide={{ axis: 'y', tier: 'moderate' }}>
-            <Button
-              variant="plain"
-              class="flex items-center gap-2 mt-2 mb-1 px-1 text-sm text-primary-ink hover:text-primary-ink/80 cursor-pointer"
-              onclick={() => {
-                branch = selectedPRBranch;
-                // Dispatch branch change event to update the UI
-                document.dispatchEvent(
-                  new CustomEvent('initializer-branch-updated', {
-                    detail: { branch: selectedPRBranch },
-                  }),
-                );
-              }}
-            >
-              <Fa icon={faCodeBranch} size="sm" class="shrink-0" />
-              <span
-                >{m.workspace_branchSelector_usePrBranch_label()}
-                <strong>{selectedPRBranch}</strong></span
-              >
-            </Button>
-          </div>
-        {/if}
-
         <div class="settings-footer mt-auto pt-6">
           <!-- Create button -->
-          {#snippet createButton(progressLabel?: Snippet)}
-            <Button
-              variant="primary"
-              wrapContent={false}
-              class="w-full h-auto min-h-11 justify-start gap-3 py-2 type-body font-medium"
-              data-dialog-primary-action
-              onclick={handleSubmit}
-              disabled={!isValid || isCreating || isEnhancing || isProcessingImages}
-            >
-              {#if isCreating}
-                <IntentMarkLoader size={14} />
-                <span class="min-w-0 flex-1 text-left">
-                  {#if isPulling}
-                    {m.workspace_compactInitializer_pullingLatest_label()}
-                  {:else if progressLabel}
-                    {@render progressLabel()}
-                  {:else}
-                    {CREATION_STAGES[creationStage]}
-                  {/if}
-                </span>
-              {:else}
-                <span class="min-w-0 flex-1 whitespace-normal text-left"
-                  >{m.workspace_compactInitializer_createWorkspace_label()}</span
-                >
-                <!-- Always rendered so the button never resizes when validity flips;
-                   `invisible` reserves the space while hiding it (incl. from AT). -->
-                <span
-                  class="inline-flex shrink-0 items-center gap-0.5 font-normal text-primary-foreground/75"
-                  class:invisible={!isValid}
-                  aria-hidden={!isValid ? 'true' : undefined}
-                >
-                  <ShortcutChip
-                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
-                    >{navigator.userAgent?.includes('Mac') ? '⌘' : 'Ctrl'}</ShortcutChip
-                  >
-                  <ShortcutChip
-                    class="flex items-center justify-center px-0.5 text-primary-foreground/60"
-                    >↵</ShortcutChip
-                  >
-                </span>
-              {/if}
-            </Button>
-          {/snippet}
           <div class="w-full">
-            {#if isCreating && !isPulling && activeCreateProgressId}
-              <!-- Key on the progressId: the component binds its selector at
-                 init, so a new create must destroy/recreate it. It wraps the
-                 Button so the bottom-edge bar is a sibling overlay of the
-                 button rather than a child of its content slot. -->
-              {#key activeCreateProgressId}
-                <CreateButtonProgress
-                  class="w-full"
-                  progressId={activeCreateProgressId}
-                  fallbackLabel={CREATION_STAGES[creationStage]}
-                >
-                  {#snippet children(label)}
-                    {@render createButton(label)}
-                  {/snippet}
-                </CreateButtonProgress>
-              {/key}
-            {:else}
-              {@render createButton()}
-            {/if}
+            <CreateButtonProgress
+              class="w-full"
+              progressId={isCreating && !isPulling ? activeCreateProgressId : null}
+              fallbackLabel={CREATION_STAGES[creationStage]}
+            >
+              {#snippet children(progressLabel)}
+                <WorkspaceCreateButton
+                  creating={isCreating}
+                  valid={isValid}
+                  onclick={handleSubmit}
+                  disabled={isEnhancing || isProcessingImages}
+                  label={isPulling
+                    ? m.workspace_compactInitializer_pullingLatest_label()
+                    : progressLabel}
+                />
+              {/snippet}
+            </CreateButtonProgress>
           </div>
         </div>
       </div>
@@ -3846,8 +3929,8 @@
 
     // If resolveConflicts flag is set, configure agent for conflict resolution
     if (options?.resolveConflicts) {
-      // Override to use implementor specialist in single agent mode with appropriate prompt
-      selectedSpecialist = 'implementor';
+      // Use a general agent with the conflict-resolution prompt
+      selectedSpecialist = null;
       isTeamMode = false;
 
       // Generate appropriate prompt based on error type
@@ -3972,6 +4055,13 @@
 
   .prompt-context {
     display: contents;
+  }
+
+  .pr-branch-slot {
+    display: flex;
+    flex: 1 1 0;
+    justify-content: flex-end;
+    min-width: 9rem;
   }
 
   .prompt-footer :global(.context-picker-trigger) {

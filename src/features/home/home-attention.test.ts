@@ -2,13 +2,12 @@ import { describe, expect, it } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import { AgentStatus } from '$shared/types/agent.types';
 import { getHomeAttentionRequests, getHomeStatusCause } from './home-attention';
-import { homeDismissQuestionAction, homeRetryAgentAction } from './home-attention-actions';
 import { getHomeTriageGroup, type HomeTriageInput } from './home-model';
 
-// Failure cases: dismissed questions reappear; stale confirmation dismisses a new
-// set; unrelated agents/workspaces are targeted; deleted/delegated/muted requests
-// leak into top-level triage; old prose fabricates attention; retry starts a live
-// turn; workspace review is treated as approval; status cause contradicts triage.
+// Failure cases: dismissed questions reappear; unrelated agents/workspaces are
+// targeted; deleted/delegated/muted requests leak into top-level triage; old prose
+// fabricates attention; workspace review is treated as approval; status cause
+// contradicts triage.
 const agent = (changes: Partial<AgentSession> = {}) =>
   ({
     id: 'agent-1',
@@ -92,34 +91,6 @@ describe('Home actionable attention', () => {
     expect(getHomeAttentionRequests('ws-1', [agent(changes)])).toEqual([]);
   });
 
-  it('rechecks the exact current question before constructing the dismissal action', () => {
-    const action = homeDismissQuestionAction('ws-1', agent(), 'question-1');
-    expect(action?.type).toBe('agentSessions/dismissQuestionsRequested');
-    expect(action?.payload).toEqual(['agent-1', 'ws-1', 'question-1']);
-    expect(homeDismissQuestionAction('ws-1', agent(), 'question-old')).toBeNull();
-    expect(homeDismissQuestionAction('other', agent(), 'question-1')).toBeNull();
-    expect(
-      homeDismissQuestionAction(
-        'ws-1',
-        agent({
-          metadata: {
-            pendingQuestionsMessageId: 'question-1',
-            dismissedQuestionsMessageId: 'question-1',
-          },
-        }),
-        'question-1',
-      ),
-    ).toBeNull();
-  });
-
-  it('retries only the requested failed agent, never a running turn or discussion', () => {
-    const failed = agent({ status: AgentStatus.Error, metadata: {}, stopReason: 'provider_error' });
-    expect(homeRetryAgentAction('ws-1', failed)?.payload).toEqual(['agent-1', 'ws-1']);
-    expect(homeRetryAgentAction('ws-1', agent())).toBeNull();
-    expect(homeRetryAgentAction('ws-1', { ...failed, isResponding: true })).toBeNull();
-    expect(homeRetryAgentAction('other', failed)).toBeNull();
-  });
-
   it('explains structured causes with the same precedence as Home grouping', () => {
     expect(getHomeStatusCause({ displayStatus: 'failed', attention: 'review_required' })).toBe(
       'failed',
@@ -147,7 +118,7 @@ describe('Home actionable attention', () => {
       }),
     ).toBe('running');
     expect(getHomeStatusCause({ displayStatus: 'pr_ready', scriptsRunning: true })).toBe(
-      'pr_ready',
+      'scripts_running',
     );
     expect(getHomeStatusCause({ displayStatus: 'complete', backgroundTasksRunning: true })).toBe(
       'background_tasks_running',
@@ -178,9 +149,7 @@ describe('Home PR status precedence', () => {
         { pr_open: 'idle', pr_ready: 'needs-you', pr_queued: 'waiting' }[displayStatus],
       );
       expect(getHomeStatusCause({ displayStatus, attention: 'review_required' })).toBe('review');
-      expect(getHomeStatusCause({ displayStatus, activity: 'agent_running' })).toBe(
-        displayStatus === 'pr_ready' ? 'pr_ready' : 'running',
-      );
+      expect(getHomeStatusCause({ displayStatus, activity: 'agent_running' })).toBe('running');
       expect(getHomeStatusCause({ displayStatus, attention: 'unread' })).toBe(
         displayStatus === 'pr_ready' ? 'pr_ready' : 'unread',
       );

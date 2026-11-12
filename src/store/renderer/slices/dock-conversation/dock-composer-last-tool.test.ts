@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { readDockLastTool, rememberDockLastTool } from './dock-composer-last-tool';
 import {
   dockConversationReducer as reduce,
@@ -10,13 +10,6 @@ import {
 // foreign stored value becomes a tool; a remembered tool counts as "used" (the
 // annotate button must keep its pencil until a tool is chosen this session).
 describe('dock annotate tool memory', () => {
-  let stored: Map<string, string>;
-  beforeEach(() => {
-    stored = new Map();
-    vi.mocked(localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
-    vi.mocked(localStorage.setItem).mockImplementation((key, value) => stored.set(key, value));
-  });
-
   it('remembers the last tool per backend and workspace, first use falling back to none', () => {
     expect(readDockLastTool('backend-1', 'ws-a')).toBeNull();
     rememberDockLastTool('backend-1', 'ws-a', 'box');
@@ -28,9 +21,9 @@ describe('dock annotate tool memory', () => {
   });
 
   it('ignores corrupt storage and values that are not annotate tools', () => {
-    stored.set('dock:lastToolByWorkspace', '{not json');
+    localStorage.setItem('dock:lastToolByWorkspace', '{not json');
     expect(readDockLastTool('backend-1', 'ws-a')).toBeNull();
-    stored.set(
+    localStorage.setItem(
       'dock:lastToolByWorkspace',
       JSON.stringify({ [JSON.stringify(['backend-1', 'ws-a'])]: 'rectangle' }),
     );

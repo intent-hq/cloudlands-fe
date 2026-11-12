@@ -72,17 +72,3 @@ export function conversationMessageUrl(
  * Use this when you need to match any ID format (e.g., for validation)
  */
 export const TASK_LINK_REGEX_FLEXIBLE = /\[([^\]]+)\]\(intent:\/\/local\/task\/([^)]+)\)/g;
-
-// ============================================================================
-// UUID Validation
-// ============================================================================
-
-/**
- * UUID pattern for validating proper UUIDs
- */
-export const UUID_REGEX = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
-
-/**
- * Reserved note IDs that are valid but not UUIDs (e.g., "spec")
- */
-export const RESERVED_NOTE_IDS = new Set(['spec']);

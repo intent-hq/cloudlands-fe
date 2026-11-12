@@ -15,7 +15,6 @@ const mermaidMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('mermaid', () => ({ default: mermaidMocks }));
-vi.mock('mermaid-layout-elk', () => ({ default: vi.fn() }));
 
 import MermaidRenderer from '../MermaidRenderer.svelte';
 

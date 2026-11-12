@@ -1,9 +1,16 @@
 import type { Note } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
 import { notesReadSaga } from '$store/renderer/slices/workspace-notes/sagas/notes-read-saga';
-import { installMockElectronBridge } from '../ct-mock-electron-bridge';
+import {
+  installMockElectronBridge,
+  type MockBackendMethodHandler,
+} from '../ct-mock-electron-bridge';
 
-export function setupPaletteNoteSearch(notes: Note[] = []) {
+/** `methods` replace the default daemon answers (e.g. a held `search.fileNames`). */
+export function setupPaletteNoteSearch(
+  notes: Note[] = [],
+  methods: Record<string, MockBackendMethodHandler> = {},
+) {
   const previousBridge = window.electronAPI;
   installMockElectronBridge({
     'search.notes': (raw) => {
@@ -29,6 +36,7 @@ export function setupPaletteNoteSearch(notes: Note[] = []) {
     },
     'search.messages': () => ({ matches: [] }),
     'search.fileNames': () => ({ files: [] }),
+    ...methods,
   });
   const fixtureBridge = window.electronAPI;
   const stopNotes = appStore.runSaga(notesReadSaga);

@@ -30,7 +30,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { IPC_CHANNELS } from '$shared/ipc-registry';
-import { addMockIpcListener, mockInvoke, resetMockIpcRouter } from '$shared/ipc-mock-router';
+import {
+  addMockIpcListener,
+  emitMockIpcEvent,
+  mockInvoke,
+  resetMockIpcRouter,
+} from '$shared/ipc-mock-router';
 import {
   registerAppVersionBridge,
   registerWindowCloseBridge,
@@ -51,6 +56,14 @@ const INVOKE_CHANNELS = [
 ];
 
 const originalElectronAPI = (window as any).electronAPI;
+
+const ELECTRON_UA =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Cloudlands/2.3.0 Chrome/136.0.7103.115 Electron/36.4.0 Safari/537.36';
+
+function simulateElectronRuntime() {
+  Object.defineProperty(navigator, 'userAgent', { value: ELECTRON_UA, configurable: true });
+  vi.stubEnv('INTENT_BUILD_TARGET', 'electron');
+}
 
 describe('window-state-bridge-seeder', () => {
   beforeEach(() => {
@@ -273,6 +286,8 @@ describe('window full-screen bridge (HUD)', () => {
 
   afterEach(() => {
     (window as any).electronAPI = originalElectronAPI;
+    delete (navigator as any).userAgent;
+    vi.unstubAllEnvs();
     resetMockIpcRouter();
   });
 
@@ -323,6 +338,7 @@ describe('window full-screen bridge (HUD)', () => {
   });
 
   it('relays main-process window:fullscreen events onto the mock event channel', () => {
+    simulateElectronRuntime();
     let bridgeListener: ((fullScreen: boolean) => void) | undefined;
     (window as any).electronAPI = {
       ...(originalElectronAPI || {}),
@@ -341,6 +357,23 @@ describe('window full-screen bridge (HUD)', () => {
     bridgeListener!(true);
     bridgeListener!(false);
     expect(received).toEqual([true, false]);
+    dispose();
+  });
+
+  it('does not relay through a non-preload bridge that already listens on the mock router', () => {
+    const on = vi.fn((channel: string, cb: (payload: unknown) => void) => {
+      addMockIpcListener(channel, cb);
+      return 'listener-1';
+    });
+    (window as any).electronAPI = { ...(originalElectronAPI || {}), on };
+    registerWindowFullScreenEventRelay();
+
+    const received: unknown[] = [];
+    const dispose = addMockIpcListener('window:fullscreen', (payload) => received.push(payload));
+    emitMockIpcEvent('window:fullscreen', true);
+
+    expect(on).not.toHaveBeenCalled();
+    expect(received).toEqual([true]);
     dispose();
   });
 });

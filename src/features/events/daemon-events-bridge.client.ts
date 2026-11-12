@@ -1,3 +1,4 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
 import {
   selectCanReadScriptDefinition,
   selectUsesGuestScriptScope,
@@ -7,6 +8,13 @@ import {
   remoteMachineChanged,
   remoteMachineRemoved,
 } from '$features/remote-machines/remote-machines-slice';
+import { parseCloudMachineProvider } from '$shared/types/cloud-machines';
+import {
+  cloudMachineChanged,
+  cloudMachineRemoved,
+  cloudProviderChanged,
+  cloudProviderRemoved,
+} from '$features/cloud-machines/cloud-machines-slice';
 import type { Note, WorkspaceTask, WorkspaceTaskStats } from '$shared/types';
 import { workspaceTasksPushed } from '$store/renderer/slices/workspace-tasks/workspace-tasks-slice';
 import { workspaceTaskStatsPushed } from '$store/renderer/slices/workspace/workspace-slice';
@@ -1797,6 +1805,21 @@ function handleQueueUpdatedEvent(event: WorkspaceEvent): void {
  * Queue snapshots and enqueue acknowledgements cannot override that authority.
  * Legacy events without the array retain turn-based best-effort promotion.
  */
+/**
+ * A processing/terminal edge can outlive a dropped queue snapshot. Re-read the
+ * daemon rather than inferring membership from persisted transcript IDs: a
+ * partially persisted batch may be restored under those same IDs. The shared
+ * reader coalesces bursts and fences late reads against newer snapshots/owners.
+ */
+function reconcileQueueAfterLifecycle(event: WorkspaceEvent, agentId: string): void {
+  const ownerWorkspace = appStore.state.agentSessions?.byAgentId[agentId]?.workspaceId;
+  if (event.workspaceId && ownerWorkspace && event.workspaceId !== ownerWorkspace) return;
+  if (!isAgentReadWorkspaceCurrent(agentId, event.workspaceId)) return;
+  const entry = appStore.state.agentQueue?.byAgentId[agentId];
+  if (!entry || getItems(entry.messages).length === 0) return;
+  void hydrateAgentQueue(agentId, event.workspaceId ?? ownerWorkspace);
+}
+
 function handleQueueProcessingEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -1828,6 +1851,7 @@ function handleQueueProcessingEvent(event: WorkspaceEvent): void {
     appStore.dispatch(chatQueueProcessingReceived(agentId, turnId, rows as QueuedMessage[]));
   } else appStore.dispatch(chatQueueProcessingReceived(agentId, turnId));
   openDrainedTurn(event, agentId);
+  reconcileQueueAfterLifecycle(event, agentId);
 }
 
 /**
@@ -1941,12 +1965,14 @@ function handleTokenUsageChangedEvent(event: WorkspaceEvent): void {
 /**
  * `presence:changed` (§5.46) carries the workspace's whole online roster —
  * a full replacement, never a diff — so it is mirrored straight into the
- * presence slice; a payload off the documented shape is dropped.
+ * presence slice; a payload off the documented shape is dropped. A focus
+ * change can also move the workspace's unpinned browser route.
  */
 function handlePresenceChangedEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: unknown }).data;
   if (!isPresenceRoster(data)) return;
   appStore.dispatch(presenceRosterReceived(data));
+  appStore.dispatch(browserRouteInputChanged(data.workspaceId, { kind: 'presence' }));
 }
 
 /**
@@ -2258,9 +2284,9 @@ function handleTaskStatusChangedEvent(event: WorkspaceEvent, workspaceId: string
 /**
  * `comment:added` (§6.5, `{ noteId, commentId }`) and `comment:resolved`
  * (`{ noteId, threadId, resolved }`) are wire pings — the payload only carries
- * identifiers, so the actual comment/thread is refetched via
- * `applyCommentFromEvent`. That helper diffs the affected note's fresh comment
- * list against the global slice and dispatches per-comment
+ * identifiers, so the actual comment/thread is refetched by the
+ * workspace-notes saga on `commentEventReceived`. It diffs the affected note's
+ * fresh comment list against the global slice and dispatches per-comment
  * add/update/remove actions so other notes' comments stay untouched.
  */
 function handleCommentEvent(
@@ -3391,6 +3417,28 @@ function handleSettingsChangedEvent(
   const revision = typeof data.revision === 'number' ? data.revision : undefined;
   if (onSettingsChanges) onSettingsChanges(changes, revision);
   else applySettingsChanges(changes);
+  if (changes.some((change) => change.path === PERMISSION_POLICY_SETTING_PATH)) {
+    refreshSessionsFollowingPermissionPolicyDefault();
+  }
+}
+
+const PERMISSION_POLICY_SETTING_PATH = 'agents.permissionPolicy';
+
+/**
+ * A daemon-wide `agents.permissionPolicy` change emits only `settings:changed`
+ * (no `agent:updated`), yet it moves `effectivePermissionPolicy` for every chat
+ * without a per-chat override (`permissionPolicy === null`). Refetch those
+ * loaded sessions so the chat menu's "Ask before using tools" switch matches
+ * the policy the next turn runs under. The value is never derived client-side:
+ * `INTENTD_PERMISSION_POLICY` on the daemon can override the setting.
+ */
+function refreshSessionsFollowingPermissionPolicyDefault(): void {
+  const byAgentId = appStore.state.agentSessions?.byAgentId;
+  if (!byAgentId) return;
+  for (const [agentId, session] of Object.entries(byAgentId)) {
+    if (session?.permissionPolicy !== null) continue;
+    void refreshAgentSessionAfterEvent(agentId, session.workspaceId);
+  }
 }
 
 /**
@@ -3586,6 +3634,30 @@ function handleRemoteMachineChangedEvent(event: WorkspaceEvent): void {
   }
   const machine = parseRemoteMachine(data?.machine);
   if (machine) appStore.dispatch(remoteMachineChanged(machine));
+}
+
+/**
+ * `cloudMachine:changed` carries one of `{ provider }`, `{ providerId, removed }`,
+ * `{ machine }` or `{ machineId, removed }` (PROTOCOL `methods/nodes.md` →
+ * "Cloud machine rows"). Global; owner and member connections only.
+ */
+function handleCloudMachineChangedEvent(event: WorkspaceEvent): void {
+  const data = (event as { data?: Record<string, unknown> }).data;
+  if (!data) return;
+  if (data.removed === true) {
+    if (typeof data.machineId === 'string' && data.machineId)
+      appStore.dispatch(cloudMachineRemoved(data.machineId));
+    else if (typeof data.providerId === 'string' && data.providerId)
+      appStore.dispatch(cloudProviderRemoved(data.providerId));
+    return;
+  }
+  const provider = parseCloudMachineProvider(data.provider);
+  if (provider) {
+    appStore.dispatch(cloudProviderChanged(provider));
+    return;
+  }
+  const machine = parseRemoteMachine(data.machine);
+  if (machine?.cloud) appStore.dispatch(cloudMachineChanged(machine, Date.now()));
 }
 
 function handlePrincipalIdentityChangedEvent(event: WorkspaceEvent): void {
@@ -3984,6 +4056,10 @@ export function routeDaemonEventsNotification(
   // added, removed, changed state or reported new capabilities.
   if (type === 'remoteMachine:changed') {
     handleRemoteMachineChangedEvent(event);
+    return;
+  }
+  if (type === 'cloudMachine:changed') {
+    handleCloudMachineChangedEvent(event);
     return;
   }
 
@@ -4589,6 +4665,8 @@ export function routeDaemonEventsNotification(
       observeSubmissionLifecycle(submissionAgentId, workspaceId, false);
     if (type === 'agent:stream:start')
       observeSubmissionLifecycle(submissionAgentId, workspaceId, true);
+    if (type === 'agent:idle' || type === 'agent:failed' || type === 'agent:stream:end')
+      reconcileQueueAfterLifecycle(event, submissionAgentId);
   }
   if (type === 'agent:stream:start') {
     handleStreamStartEvent(event, workspaceId);
@@ -4909,6 +4987,8 @@ export const DAEMON_EVENTS_SUBSCRIBE_TYPES = [
   // `remoteMachine:changed` — the current backend's exposed machines
   // (`{ machine }` or `{ machineId, removed: true }`); owner connections only.
   'remoteMachine:changed',
+  // `cloudMachine:changed` — the E2B provider and live sandboxes; owner and members.
+  'cloudMachine:changed',
   // REV-2 browser-client routing (§5.17): global logical-client transitions
   // (re-read `client.list`) and the workspace-scoped daemon tab-registry
   // change events (`{ tab, changes? }`, patched into the browser-clients

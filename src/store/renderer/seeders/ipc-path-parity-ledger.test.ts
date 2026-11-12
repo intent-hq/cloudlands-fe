@@ -72,7 +72,6 @@ const PARITY_SUITES: ReadonlyMap<string, string> = new Map([
 
 /** Shared channels whose paths differ on purpose; each reason says why that is safe. */
 const DIVERGENT: ReadonlyMap<string, string> = new Map([
-  ['antigravity:close-setup', 'Forwards to main without the payload; the main handler takes none.'],
   ['notification:test', 'Forwards to main without the payload; the main handler takes none.'],
   [
     'notification:requestPermission',

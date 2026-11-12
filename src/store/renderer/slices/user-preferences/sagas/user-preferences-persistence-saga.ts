@@ -8,6 +8,7 @@ import { isElectron } from '$lib/electron-bridge';
 import { applyLanguagePreference } from '$lib/i18n/locale';
 import { SYSTEM_CHANNELS } from '$shared/ipc/channels';
 import { isGithubLinkDefaultAction } from '$shared/utils/link-helpers';
+import { isChatContentWidth } from '$shared/chat-content-width';
 import {
   namespaceBackendKey,
   selectActiveBackendId,
@@ -21,6 +22,7 @@ import {
   selectActivityLogPresets,
   selectAgentFontStyle,
   selectChatAuroraEnabled,
+  selectChatContentWidth,
   selectCollapseToolRuns,
   selectCodeFontFamily,
   selectGroupByRepo,
@@ -30,6 +32,8 @@ import {
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
   selectLabsBrowserAccessEnabled,
+  selectLabsTabGroupsEnabled,
+  selectLabsCloudMachinesEnabled,
   selectLanguagePreference,
   selectNoteFontStyle,
   selectPauseAnimationsWhenUnfocused,
@@ -52,6 +56,7 @@ import {
   saveActivityLogPreset,
   setAgentFontStyle,
   setChatAuroraEnabled,
+  setChatContentWidth,
   setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
@@ -62,6 +67,8 @@ import {
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
   setLabsBrowserAccessEnabled,
+  setLabsTabGroupsEnabled,
+  setLabsCloudMachinesEnabled,
   setLanguagePreference,
   setNoteFontStyle,
   setPauseAnimationsWhenUnfocused,
@@ -80,6 +87,8 @@ import {
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
   toggleLabsBrowserAccess,
+  toggleLabsTabGroups,
+  toggleLabsCloudMachines,
   togglePauseAnimationsWhenUnfocused,
   toggleReduceMotionOnBattery,
   toggleShowArchived,
@@ -97,6 +106,7 @@ const GROUP_BY_REPO_STORAGE_KEY = 'workspace-list:groupByRepo';
 const COMPLETED_PROVIDER_SETUP_STORAGE_KEY = 'workspace-list:completedProviderSetup';
 const SHOW_REASONING_BLOCKS_STORAGE_KEY = 'chat:showReasoningBlocks';
 const CHAT_AURORA_STORAGE_KEY = 'chat:auroraEnabled';
+const CHAT_CONTENT_WIDTH_STORAGE_KEY = 'chat:contentWidth';
 const COLLAPSE_TOOL_RUNS_STORAGE_KEY = 'chat:collapseToolRuns';
 const SHELL_TRANSPARENCY_STORAGE_KEY = 'appearance:shellTransparencyEnabled';
 const REDUCE_MOTION_ON_BATTERY_STORAGE_KEY = 'appearance:reduceMotionOnBattery';
@@ -105,6 +115,8 @@ const LABS_SETTINGS_VISIBLE_STORAGE_KEY = 'labs:settingsVisible';
 const LABS_REMOTE_AGENTS_STORAGE_KEY = 'labs:remoteAgentsEnabled';
 const LABS_PLAIN_FOLDER_WORKSPACES_STORAGE_KEY = 'labs:plainFolderWorkspacesEnabled';
 const LABS_BROWSER_ACCESS_STORAGE_KEY = 'labs:browserAccessEnabled';
+const LABS_TAB_GROUPS_STORAGE_KEY = 'labs:tabGroupsEnabled';
+const LABS_CLOUD_MACHINES_STORAGE_KEY = 'labs:cloudMachinesEnabled';
 const AGENT_STORAGE_KEY = 'agent-font-settings';
 const NOTE_STORAGE_KEY = 'note-font-settings';
 const CODE_STORAGE_KEY = 'code-font-settings';
@@ -201,6 +213,11 @@ export function* hydrateUserPreferencesWorker() {
     yield* put(setChatAuroraEnabled(chatAuroraEnabled));
   }
 
+  const chatContentWidth = yield* getLocalStorageJSON<unknown>(CHAT_CONTENT_WIDTH_STORAGE_KEY);
+  if (isChatContentWidth(chatContentWidth)) {
+    yield* put(setChatContentWidth(chatContentWidth));
+  }
+
   const collapseToolRuns = yield* getLocalStorageJSON<boolean>(COLLAPSE_TOOL_RUNS_STORAGE_KEY);
   if (typeof collapseToolRuns === 'boolean') {
     yield* put(setCollapseToolRuns(collapseToolRuns));
@@ -257,6 +274,18 @@ export function* hydrateUserPreferencesWorker() {
   );
   if (typeof labsBrowserAccessEnabled === 'boolean') {
     yield* put(setLabsBrowserAccessEnabled(labsBrowserAccessEnabled));
+  }
+
+  const labsTabGroupsEnabled = yield* getLocalStorageJSON<boolean>(LABS_TAB_GROUPS_STORAGE_KEY);
+  if (typeof labsTabGroupsEnabled === 'boolean') {
+    yield* put(setLabsTabGroupsEnabled(labsTabGroupsEnabled));
+  }
+
+  const labsCloudMachinesEnabled = yield* getLocalStorageJSON<boolean>(
+    LABS_CLOUD_MACHINES_STORAGE_KEY,
+  );
+  if (typeof labsCloudMachinesEnabled === 'boolean') {
+    yield* put(setLabsCloudMachinesEnabled(labsCloudMachinesEnabled));
   }
 
   const agentFont = yield* getLocalStorageJSON<unknown>(AGENT_STORAGE_KEY);
@@ -355,6 +384,13 @@ function* persistChatAuroraWorker() {
   yield* setLocalStorageJSON(CHAT_AURORA_STORAGE_KEY, yield* selectChatAuroraEnabled.effect());
 }
 
+function* persistChatContentWidthWorker() {
+  yield* setLocalStorageJSON(
+    CHAT_CONTENT_WIDTH_STORAGE_KEY,
+    yield* selectChatContentWidth.effect(),
+  );
+}
+
 function* persistCollapseToolRunsWorker() {
   yield* setLocalStorageJSON(
     COLLAPSE_TOOL_RUNS_STORAGE_KEY,
@@ -401,6 +437,20 @@ function* persistLabsBrowserAccessWorker() {
   yield* setLocalStorageJSON(
     LABS_BROWSER_ACCESS_STORAGE_KEY,
     yield* selectLabsBrowserAccessEnabled.effect(),
+  );
+}
+
+function* persistLabsCloudMachinesWorker() {
+  yield* setLocalStorageJSON(
+    LABS_CLOUD_MACHINES_STORAGE_KEY,
+    yield* selectLabsCloudMachinesEnabled.effect(),
+  );
+}
+
+function* persistLabsTabGroupsWorker() {
+  yield* setLocalStorageJSON(
+    LABS_TAB_GROUPS_STORAGE_KEY,
+    yield* selectLabsTabGroupsEnabled.effect(),
   );
 }
 
@@ -503,6 +553,7 @@ function* watchUserPreferenceWrites() {
     persistShowReasoningBlocksWorker,
   );
   yield* takeEvery([setChatAuroraEnabled, toggleChatAurora], persistChatAuroraWorker);
+  yield* takeEvery(setChatContentWidth, persistChatContentWidthWorker);
   yield* takeEvery([setCollapseToolRuns, toggleCollapseToolRuns], persistCollapseToolRunsWorker);
   yield* takeEvery(
     [setShellTransparencyEnabled, toggleShellTransparency],
@@ -531,6 +582,11 @@ function* watchUserPreferenceWrites() {
   yield* takeEvery(
     [setLabsBrowserAccessEnabled, toggleLabsBrowserAccess],
     persistLabsBrowserAccessWorker,
+  );
+  yield* takeEvery([setLabsTabGroupsEnabled, toggleLabsTabGroups], persistLabsTabGroupsWorker);
+  yield* takeEvery(
+    [setLabsCloudMachinesEnabled, toggleLabsCloudMachines],
+    persistLabsCloudMachinesWorker,
   );
   yield* takeEvery([setAgentFontStyle], persistAgentFontWorker);
   yield* takeEvery([setNoteFontStyle, cycleNoteFontStyle], persistNoteFontWorker);

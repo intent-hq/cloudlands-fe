@@ -10,6 +10,14 @@
   import { faSliders } from '@fortawesome/free-solid-svg-icons';
   import { Button } from '$lib/components/ui/button';
   import * as Menu from '$lib/components/ui/menu';
+  import {
+    faArrowUDownLeft,
+    faArrowsInLineVertical,
+    faArrowsOutLineVertical,
+    faColumns,
+    faEye,
+    faPlusMinus,
+  } from '$lib/icons/phosphor-icons';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -81,6 +89,8 @@
 {#snippet settingsItems()}
   {#if showPreview}
     <Menu.CheckboxItem
+      indicator="switch"
+      icon={faEye}
       checked={previewEnabled}
       closeOnSelect={false}
       onCheckedChange={onTogglePreview}
@@ -89,27 +99,57 @@
     </Menu.CheckboxItem>
   {/if}
   {#if showExpand}
-    <Menu.CheckboxItem checked={expanded} closeOnSelect={false} onCheckedChange={onToggleExpand}>
+    <Menu.CheckboxItem
+      indicator="switch"
+      icon={faArrowsOutLineVertical}
+      checked={expanded}
+      closeOnSelect={false}
+      onCheckedChange={onToggleExpand}
+    >
       {m.ui_viewSettings_allFilesExpanded_label()}
     </Menu.CheckboxItem>
   {/if}
   {#if showFold}
-    <Menu.CheckboxItem checked={foldEnabled} closeOnSelect={false} onCheckedChange={onToggleFold}>
+    <Menu.CheckboxItem
+      indicator="switch"
+      icon={faArrowsInLineVertical}
+      checked={foldEnabled}
+      closeOnSelect={false}
+      onCheckedChange={onToggleFold}
+    >
       {m.ui_viewSettings_foldUnchanged_label()}
     </Menu.CheckboxItem>
   {/if}
   {#if showWrap}
-    <Menu.CheckboxItem checked={wrapEnabled} closeOnSelect={false} onCheckedChange={onToggleWrap}>
+    <Menu.CheckboxItem
+      indicator="switch"
+      icon={faArrowUDownLeft}
+      checked={wrapEnabled}
+      closeOnSelect={false}
+      onCheckedChange={onToggleWrap}
+    >
       {m.ui_viewSettings_wrapLines_label()}
     </Menu.CheckboxItem>
   {/if}
   {#if showSplit}
-    <Menu.CheckboxItem checked={splitEnabled} closeOnSelect={false} onCheckedChange={onToggleSplit}>
+    <Menu.CheckboxItem
+      indicator="switch"
+      icon={faColumns}
+      checked={splitEnabled}
+      closeOnSelect={false}
+      onCheckedChange={onToggleSplit}
+    >
       {m.ui_viewSettings_splitView_label()}
     </Menu.CheckboxItem>
   {/if}
   {#if showDiff}
-    <Menu.CheckboxItem checked={diffEnabled} closeOnSelect={false} onCheckedChange={onToggleDiff}>
+    <Menu.CheckboxItem
+      indicator="switch"
+      icon={faPlusMinus}
+      checked={diffEnabled}
+      closeOnSelect={false}
+      onCheckedChange={onToggleDiff}
+    >
       {m.ui_viewSettings_diffIndicators_label()}
     </Menu.CheckboxItem>
   {/if}

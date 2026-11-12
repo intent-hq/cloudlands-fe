@@ -76,22 +76,8 @@ test('preserves edit, selection, reorder, save, cancel, removal, and scroll owne
   await expect.poll(() => transcript.evaluate((node) => node.scrollTop)).toBe(beforeTop);
 });
 
-test('leaves no stale shell after removal, transition reversal, or reduced motion', async ({
-  mount,
-  page,
-}) => {
+test('leaves no stale shell after removal with reduced motion', async ({ mount, page }) => {
   const component = await mount(QueuedMessageBottomGapHost, { props: { queueCount: 1 } });
-  await settle(component, page);
-  await component.update({ props: { queueCount: 0 } });
-  await page.waitForTimeout(40);
-  await component.update({ props: { queueCount: 1 } });
-  await settle(component, page);
-  await expect(component.getByTestId('queued-message-utility-area')).toHaveCount(1);
-  await expect(component.getByTestId('queued-messages-container')).toHaveCount(1);
-  await expect
-    .poll(() => component.evaluate((node) => node.getAnimations({ subtree: true }).length))
-    .toBe(0);
-
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await component.getByTestId('queued-message-row').hover();
   await component

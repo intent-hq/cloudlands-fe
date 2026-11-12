@@ -2,6 +2,8 @@
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
 
+  import { providerErrorText } from './model-picker-provider-errors';
+
   interface Props {
     providerId: string;
     providerLabel: string;
@@ -10,9 +12,9 @@
     compact?: boolean;
   }
 
-  let { providerLabel, error, hint, compact = false }: Props = $props();
+  let { providerId, providerLabel, error, hint, compact = false }: Props = $props();
 
-  const displayText = $derived(`${providerLabel}: ${error}`);
+  const displayText = $derived(providerErrorText(providerId, providerLabel, error));
 </script>
 
 <span

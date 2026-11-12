@@ -1,0 +1,13 @@
+diff --git a/dist/commonjs/index.js b/dist/commonjs/index.js
+index 48cf0d3..c584d38 100644
+--- a/dist/commonjs/index.js
++++ b/dist/commonjs/index.js
+@@ -330,4 +330,7 @@ function expand_(str, max, maxLength, maxDepth, depth, maxRewrites, isTop) {
+     }
+     return acc;
+ }
++// Preserve the callable CommonJS API expected by minimatch 3–5 while keeping
++// the named exports used by current minimatch releases.
++module.exports = Object.assign(expand, exports);
+ //# sourceMappingURL=index.js.map
+\ No newline at end of file

@@ -20,7 +20,7 @@ export async function prepare() {
     await runFile(process.execPath, [resolve('scripts/build-dock-helper.cjs')]);
   codeRoot = await mkdtemp(join(tmpdir(), 'intent-placement-code-'));
   await mkdir(join(codeRoot, 'main'), { recursive: true });
-  await mkdir(join(codeRoot, 'preload'));
+  await mkdir(join(codeRoot, 'preload-build/preload'), { recursive: true });
   const entry = join(codeRoot, 'entry.ts');
   await writeFile(
     entry,
@@ -80,7 +80,7 @@ export async function prepare() {
     logLevel: 'error',
     build: {
       ssr: resolve('src/preload/index.ts'),
-      outDir: join(codeRoot, 'preload'),
+      outDir: join(codeRoot, 'preload-build/preload'),
       emptyOutDir: false,
       minify: false,
       rollupOptions: {
@@ -90,7 +90,7 @@ export async function prepare() {
     },
   });
   // The dock window constructor keeps its production relative preload path
-  // (main/../preload/index.js), entirely inside the isolated code root.
+  // (main/../preload-build/preload/index.js), entirely inside the isolated code root.
   server = await createServer({
     configFile: false,
     root: process.cwd(),
@@ -241,7 +241,7 @@ export async function launch(
 let pointerBuilt = false;
 export const nativePointerInputs: Array<{ command: string; point?: { x: number; y: number } }> = [];
 export async function nativePointer(
-  command: 'move' | 'down' | 'drag' | 'up' | 'escape',
+  command: 'move' | 'down' | 'up',
   point?: { x: number; y: number },
 ) {
   if (process.platform !== 'darwin')

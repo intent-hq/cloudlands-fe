@@ -2,8 +2,10 @@
  * @vitest-environment jsdom
  *
  * AgentCard — legacy sandbox reveal retirement and node hub replacement.
- * Uses the real store and component; legacy sandbox/node paths must never
- * reach the local shell, while supported isolated work remains manageable.
+ * Uses the real store and component; node paths, and a `sandboxPath` that an
+ * older daemon may still put in session metadata (per-agent CoW sandboxes are
+ * retired, so the FE type no longer declares it), must never reach the local
+ * shell, while supported isolated work remains manageable.
  */
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -40,6 +42,9 @@ const mockedInvoke = vi.mocked(invoke);
 const defaultInvokeImpl = mockedInvoke.getMockImplementation();
 
 const SANDBOX_PATH = '/Users/dev/.dev/intentd/sandboxes/agent-abc/monorepo';
+
+/** Session metadata as an older daemon still sends it for a CoW-sandboxed agent. */
+const legacySandboxMetadata = { sandboxPath: SANDBOX_PATH } as AgentSession['metadata'];
 
 // Distinct agent id per test: the configured store is a process singleton and
 // the upsert no-op guard (`isSessionEquivalent`) does not compare `metadata`,
@@ -129,11 +134,9 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
     appStore.dispatch(removeWorkspaceEntity('ws-1'));
   });
 
-  it('retires legacy reveal even for a local sandboxPath', async () => {
+  it('ignores a legacy sandboxPath from an older daemon (no reveal)', async () => {
     seedLocality('local');
-    appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
-    );
+    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]));
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -145,7 +148,7 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
     );
   });
 
-  it('hides the reveal item when the agent has no sandboxPath', async () => {
+  it('shows no reveal item for an agent without legacy metadata', async () => {
     seedLocality('local');
     appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: {} })]));
 
@@ -164,7 +167,6 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
         makeSession({
           placement: { target: 'remote', checkout: 'isolated' },
           nodePath: '/node/private/checkout',
-          metadata: { sandboxPath: '/node/private/checkout' },
         }),
       ]),
     );
@@ -179,9 +181,7 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
 
   it('hides the reveal item when the daemon is remote', async () => {
     seedLocality('remote');
-    appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
-    );
+    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]));
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -193,9 +193,7 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
   it('hides the reveal item for a remote (SSH) workspace even when the daemon is local (monorepo#2171)', async () => {
     seedLocality('local');
     seedRemoteWorkspace();
-    appStore.dispatch(
-      bulkUpsertSessions([makeSession({ metadata: { sandboxPath: SANDBOX_PATH } })]),
-    );
+    appStore.dispatch(bulkUpsertSessions([makeSession({ metadata: legacySandboxMetadata })]));
 
     render(AgentCard, { props: { agentId } });
     await openContextMenu();
@@ -215,7 +213,6 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
             placement: { target: 'remote', checkout: 'isolated' },
             effectiveIsolation: 'isolated',
             nodePath: '/node/private/checkout',
-            metadata: { sandboxPath: SANDBOX_PATH },
             checkpoint: {
               id: 'checkpoint',
               assignmentEpoch: '1',
@@ -255,7 +252,6 @@ describe('AgentCard legacy sandbox retirement and hub management', () => {
         makeSession({
           nodeId: 'remote-node',
           effectiveIsolation: 'isolated',
-          metadata: { sandboxPath: SANDBOX_PATH },
         }),
       ]),
     );

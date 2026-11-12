@@ -210,6 +210,8 @@ const REDACTED_TRAFFIC_METHODS: ReadonlySet<string> = new Set([
   'desktop.revoke',
   'secret.provide',
   'remoteMachines.add',
+  // `uri` is an `intent://node` link carrying the invite secret.
+  'remoteMachines.claim',
 ]);
 
 /** Request methods whose results never reach traffic observers: `executor.mint` returns the executor token. */
@@ -314,6 +316,11 @@ export class JsonRpcClient extends EventEmitter {
   private startupState: DaemonStartupState | null = null;
   /** The socket whose hello was answered with daemon-not-ready, while it is polled. */
   private startupIncarnation: object | null = null;
+  /**
+   * The hello attempt the daemon answered successfully: it is ready, though
+   * the starting state only clears once that hello is confirmed.
+   */
+  private readyHelloAttempt: object | null = null;
   /** Polls the bootstrap socket; stopped whenever that socket is torn down. */
   private readonly startupPoller = new StartupPoller({
     request: () => this.sendNow(STARTUP_STATUS_METHOD, undefined, STARTUP_POLL_TIMEOUT_MS),
@@ -678,6 +685,10 @@ export class JsonRpcClient extends EventEmitter {
     return this.sendNow<T>(method, params, timeout);
   }
 
+  private isReadyHelloPending(): boolean {
+    return this.readyHelloAttempt !== null && this.readyHelloAttempt === this.helloAttempt;
+  }
+
   private beginHello(): object {
     this.helloSnapshot = undefined;
     this.helloRevision++;
@@ -923,7 +934,9 @@ export class JsonRpcClient extends EventEmitter {
     // same structured error instead of queueing it for minutes. Callers recover
     // on `reconnected`, which fires once the daemon is ready. After a failed
     // start, requests still wait for (or start) the next connect attempt.
-    if (this.startupState?.state === 'starting')
+    // Once the current hello is answered the daemon is ready: requests its
+    // `onHelloResult` makes wait for `connected` like on any other connect.
+    if (this.startupState?.state === 'starting' && !this.isReadyHelloPending())
       return Promise.reject(new JsonRpcError(startupErrorShape(this.startupState)));
     if (
       [
@@ -1217,6 +1230,7 @@ export class JsonRpcClient extends EventEmitter {
       const result = await this.sendNow(HELLO_METHOD, params, this.handshakeTimeoutMs());
       if (this.disposed || this.socket !== socket || this.helloAttempt !== attempt) return;
       this.helloTimeoutStreak = 0;
+      this.readyHelloAttempt = attempt;
       this.own('hello-result', () =>
         this.originalCallback(this.connectionOwner, (parent) =>
           parent === undefined

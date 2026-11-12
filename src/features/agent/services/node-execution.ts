@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   AgentPlacementSchema,
   AgentPlacementRequestSchema,
+  isCloudTarget,
   type AgentPlacementRequest,
 } from '$shared/types/agent-node';
 
@@ -30,7 +31,7 @@ const hubTarget = z
   .object({
     workspaceId: z.string().min(1),
     agentId: z.string().min(1),
-    requestId: z.string().uuid(),
+    requestId: z.guid(),
   })
   .strict();
 const hubMerge = hubTarget.extend({ checkpointId: z.string().min(1) });
@@ -77,7 +78,9 @@ export class NodeExecutionClient {
     const placement = AgentPlacementRequestSchema.parse(input);
     const checkLabs = () => {
       if (
-        (placement.target === 'remote' || placement.exclusive === true) &&
+        (placement.target === 'remote' ||
+          isCloudTarget(placement.target) ||
+          placement.exclusive === true) &&
         !this.remoteEnabled()
       ) {
         throw new Error(m.agent_placement_labsRequired());

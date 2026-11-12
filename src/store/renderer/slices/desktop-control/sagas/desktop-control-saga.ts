@@ -1,4 +1,14 @@
-import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  fork,
+  put,
+  race,
+  take,
+  takeEvery,
+  takeLeading,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import { desktopClient } from '$features/desktop/renderer/desktop-client';
 import {
   dismissDesktopPrompt,
@@ -22,6 +32,9 @@ import {
   desktopDecisionRequested,
   desktopEntryPatched,
   desktopEventReceived,
+  desktopOsPermissionsCleared,
+  desktopOsPermissionsReceived,
+  desktopOsPermissionsRequested,
   desktopPermissionRequested,
   desktopReadRequested,
   desktopRequestExpired,
@@ -178,6 +191,33 @@ function* setPermission(
       yield* put(desktopReadRequested(ws, agent));
   }
 }
+// Re-ask with the same id while anything is missing: the capture check settles
+// per id, and a grant made in System Settings shows up without another click.
+function* pollOsPermissions(): SagaGenerator<void> {
+  const requestId = crypto.randomUUID();
+  for (let attempt = 0; attempt < 120; attempt++) {
+    let result: Awaited<ReturnType<typeof desktopClient.requestOsPermissions>>;
+    try {
+      result = yield* call(desktopClient.requestOsPermissions, requestId);
+    } catch (error) {
+      // Only the user-started first call reports; later refusals keep the last checklist.
+      if (attempt === 0) throw error;
+      return;
+    }
+    yield* put(desktopOsPermissionsReceived(result));
+    if (!result || result.checklist.screenCapture === 'unavailable') return;
+    yield* delay(1000);
+  }
+}
+function* requestOsPermissions(): SagaGenerator<void> {
+  try {
+    yield* race({ poll: call(pollOsPermissions), cleared: take(desktopOsPermissionsCleared) });
+  } catch (error) {
+    yield* put(desktopOsPermissionsReceived(undefined));
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+    if (code !== 'desktop-unsupported') yield* call(showDesktopError, errorDetail(error));
+  }
+}
 function* expire(ws: string, agent: string, requestId: string, expiresAt: string) {
   yield* delay(Math.max(0, Math.min(300_000, Date.parse(expiresAt) - Date.now())));
   yield* put(desktopRequestExpired(ws, agent, requestId));
@@ -253,4 +293,5 @@ export function* desktopControlSaga(): SagaGenerator<void> {
   });
   yield* takeEvery(desktopDecisionRequested, decide);
   yield* takeEvery(desktopPermissionRequested, setPermission);
+  yield* takeLeading(desktopOsPermissionsRequested, requestOsPermissions);
 }

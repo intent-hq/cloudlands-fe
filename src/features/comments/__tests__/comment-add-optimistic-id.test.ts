@@ -86,7 +86,7 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 // FAKE seam: appClient.comments.add is stubbed so no mutation reaches a
-// daemon; the REAL comments-write-service runs so the optimistic dispatch,
+// daemon; the REAL comment manager runs so the optimistic dispatch,
 // param passthrough, and rollback are the genuine code paths.
 vi.mock('$lib/client', () => ({
   appClient: {
@@ -96,14 +96,6 @@ vi.mock('$lib/client', () => ({
       delete: vi.fn(async () => ({ success: true })),
     },
   },
-}));
-
-// Passthrough for the note-rev mutation queue: rev bookkeeping is exercised by
-// comments-write-service.test.ts and is out of scope here.
-vi.mock('../../notes/notes-write-service', () => ({
-  enqueueRevBumpingNoteMutation: vi.fn(
-    async (_workspaceId: string, _noteId: string, fn: () => Promise<unknown>) => fn(),
-  ),
 }));
 
 // FAKE the toast seam so the failure path runs without $lib/components/patterns/notify.

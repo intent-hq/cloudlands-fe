@@ -70,8 +70,13 @@
   } from './proposal-repo-agent';
   import { store as appStore } from '$store/renderer/store';
   import RepoAndBranchPicker from '$lib/components/workspace/initializer/RepoAndBranchPicker.svelte';
+  import { workspacePickerStyles } from '$lib/components/workspace/initializer/workspace-picker-styles';
   import type { BranchListInfo } from '$lib/components/workspace/initializer/BranchSelector.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
+  import type { AgentSession } from '$shared/types';
+  import ProposalStartOn from './ProposalStartOn.svelte';
+  import { proposalStartOnDefault } from './proposal-start-on';
+  import type { StartOnPlacement } from '$features/remote-machines/start-on';
   import { m } from '$shared/paraglide/messages.js';
 
   interface Props {
@@ -103,6 +108,8 @@
      * restart).
      */
     resolvedCreatedWorkspaceId?: string;
+    /** The proposing agent: its location is the Start on default when the proposal has none. */
+    proposer?: AgentSession | null;
   }
 
   type EditorHandle = {
@@ -125,6 +132,7 @@
     suppressLocalDiscard = false,
     lifecycleId,
     resolvedCreatedWorkspaceId,
+    proposer = null,
   }: Props = $props();
 
   // Captured once at init (tray remounts per proposal via {#key}), so a
@@ -156,6 +164,10 @@
   let workspaceIsValidPath = $state(false);
   let workspaceScope = $state('');
   let workspaceSpecialist = $state<string | null>(null);
+  let workspaceStartOn = $state('');
+  let startOnDefault = $state('');
+  let startOnPlacement = $state<StartOnPlacement | null | undefined>();
+  let startOnUnavailable = $state(false);
   let prBranchLookupKey = $state('');
   let prBranchLookupRequest = $state<PrBranchLookupRequest | undefined>();
   let prBranchUserEdited = $state(false);
@@ -287,6 +299,7 @@
   const actionDisabled = $derived(
     disabled || isApplying || isUndoing || isApplied || isAwaitingPrBranchLookup || prBranchLoading,
   );
+  const applyDisabled = $derived(actionDisabled || (isWorkspaceCreate && startOnUnavailable));
   const showWorkspaceShortcutHint = $derived(
     isSiblingWorkspaceCreate && workspaceShortcutEditorFocused && !actionDisabled,
   );
@@ -354,6 +367,7 @@
               initialPrompt: workspaceInitialPrompt,
               branch: workspaceBranch,
               specialist: workspaceSpecialist,
+              startOn: workspaceStartOn,
             },
           }
         : {}),
@@ -397,6 +411,11 @@
     workspaceSpecialist = specialistIsModalDefault
       ? readDefaultSpecialist()
       : (workspaceCreate.specialist ?? null);
+    startOnDefault = proposalStartOnDefault(
+      proposal,
+      untrack(() => proposer),
+    );
+    workspaceStartOn = startOnDefault;
     prBranchUserEdited = false;
     prBranchLookupKey = '';
     prBranchLookupRequest = undefined;
@@ -409,6 +428,7 @@
       workspaceInitialPrompt = draft.initialPrompt;
       workspaceSpecialist = draft.specialist;
       specialistIsModalDefault = false;
+      if (draft.startOn !== undefined) workspaceStartOn = draft.startOn;
       if (draft.branch && draft.branch !== workspaceBranch) {
         // Restored user-chosen branch: suppress the PR-head lookup override.
         workspaceBranch = draft.branch;
@@ -619,6 +639,11 @@
 
   function toDomId(value: string): string {
     return value.replace(/[^a-zA-Z0-9_-]+/g, '-');
+  }
+
+  function proposalProviderRef(): string | undefined {
+    const provider = getInitialAgentValue('provider');
+    return typeof provider === 'string' && provider ? provider : undefined;
   }
 
   function stringParam(key: string): string | undefined {
@@ -849,6 +874,7 @@
     addPopulatedField(editedFields, 'branch', workspaceBranch);
     addPopulatedField(editedFields, 'specialist', workspaceSpecialist);
     if (adoptedAgentSetup) editedFields.agentSetup = { ...adoptedAgentSetup };
+    if (startOnPlacement !== undefined) editedFields.placement = startOnPlacement;
     return editedFields;
   }
 
@@ -923,7 +949,7 @@
   }
 
   function handleApply() {
-    if (actionDisabled) return;
+    if (applyDisabled) return;
     const detail = buildDetail();
     onApply?.(detail);
     emitAction('proposalapply', detail);
@@ -1000,6 +1026,16 @@
               {workspaceHeading}
             </h3>
           </div>
+
+          {#if $lifecycleResult?.launchError}
+            <p
+              class="type-caption text-warning-ink"
+              role="status"
+              data-testid="proposal-launch-error"
+            >
+              {$lifecycleResult.launchError}
+            </p>
+          {/if}
 
           {#if workspaceInitialPrompt}
             <p class="type-body line-clamp-3 whitespace-pre-wrap text-muted-foreground">
@@ -1116,7 +1152,7 @@
               <div class="min-w-0 flex-1">
                 <span
                   id={`${metadataIdPrefix}-project-label`}
-                  class="type-caption block font-medium text-muted-foreground"
+                  class={workspacePickerStyles.metadataLabel}
                   data-metadata-label
                 >
                   {m.chat_proposalCard_project_label()}
@@ -1227,6 +1263,16 @@
                 />
               </div>
             </div>
+
+            <ProposalStartOn
+              bind:value={workspaceStartOn}
+              bind:placement={startOnPlacement}
+              bind:unavailable={startOnUnavailable}
+              defaultValue={startOnDefault}
+              {proposer}
+              providerRef={adoptedAgentSetup?.provider ?? proposalProviderRef()}
+              backendOnly={workspaceIsNewRepo}
+            />
           </div>
 
           {#if proposal.preview.warnings?.length}
@@ -1260,7 +1306,7 @@
           <Button
             variant="primary"
             size="sm"
-            disabled={actionDisabled}
+            disabled={applyDisabled}
             onclick={handleApply}
             aria-keyshortcuts="Enter"
           >

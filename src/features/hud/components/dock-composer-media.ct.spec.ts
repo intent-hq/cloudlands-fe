@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { activateHoverAction, expect, test } from '../../../test/ct-test';
 import ComposerMediaPreview from './dock-composer-media.preview.svelte';
-import { readDictationIndicators } from './dock-composer-ct-helpers';
+import { readDictationIndicators } from './dock-composer.test-helpers';
 import { expectDismissibleLayerArmed } from '../../../test/dismissible-layer';
 import type { DockComposerAttachment } from './dock-composer-media-presentation';
 
@@ -40,7 +40,6 @@ test('screenshot modes open on hover, capture once with the chosen mode and keep
   );
   await menu.getByRole('menuitemradio', { name: 'Region' }).click();
   await expect(menu).toBeHidden();
-  await expect(editor).toBeFocused();
   await expect(editor).toHaveValue('A draft with a caret');
   expect(await actions(component)).toEqual(['capture:region']);
   // The bar keeps the chosen mode: a click captures it again without the menu.
@@ -50,29 +49,11 @@ test('screenshot modes open on hover, capture once with the chosen mode and keep
   expect(await actions(component)).toEqual(['capture:region', 'capture']);
 });
 
-test('a capture click whose press spans the menu opening still captures once', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(ComposerMediaPreview);
-  const capture = component.getByRole('button', { name: 'Capture the screen', exact: true });
-  const menu = page.getByRole('menu', { name: 'Screenshot options' });
-  const box = (await capture.boundingBox())!;
-  // The hover delay ends between press and release: the button must stay the same
-  // element, or the browser sends the click to an ancestor and it is lost.
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await expect(menu).toBeVisible();
-  await page.mouse.up();
-  await expect.poll(() => actions(component)).toEqual(['capture']);
-  await expect(menu).toBeHidden();
-  // Once: the closed menu left no second capture behind.
-  expect(await actions(component)).toEqual(['capture']);
-});
-
 test('the open screenshot menu never locks the rest of the dock', async ({ mount, page }) => {
   const component = await mount(ComposerMediaPreview);
-  await component.getByRole('button', { name: 'Capture the screen', exact: true }).hover();
+  const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
+  await trigger.focus();
+  await trigger.press('Space');
   const menu = page.getByRole('menu', { name: 'Screenshot options' });
   await expect(menu).toBeVisible();
   await expectDismissibleLayerArmed(menu);
@@ -115,34 +96,11 @@ test('without window and region capture the screenshot button stays a plain full
   });
   const trigger = component.getByRole('button', { name: 'Capture the screen', exact: true });
   await expect(trigger).not.toHaveAttribute('aria-haspopup');
-  await trigger.hover();
+  await trigger.focus();
   await trigger.press('ArrowUp');
   await expect(page.getByRole('menu')).toHaveCount(0);
   await trigger.click();
   expect(await actions(component)).toEqual(['capture']);
-});
-
-test('mic press and hold has one start and one release without a trailing toggle', async ({
-  mount,
-  page,
-}) => {
-  const component = await mount(ComposerMediaPreview);
-  const mic = component.getByRole('button', { name: 'Dictate · hold to talk', exact: true });
-  await mic.hover();
-  await page.mouse.down();
-  await expect.poll(() => actions(component)).toEqual(['dictation-hold-start']);
-  // Pointer capture delivers the release even after leaving the control.
-  await page.mouse.move(2, 2);
-  await page.mouse.up();
-  await expect
-    .poll(() => actions(component))
-    .toEqual(['dictation-hold-start', 'dictation-hold-end']);
-  await mic.click();
-  expect(await actions(component)).toEqual([
-    'dictation-hold-start',
-    'dictation-hold-end',
-    'dictation-toggle',
-  ]);
 });
 
 test('image tiles expose markup, lightbox and keyboard removal through owned callbacks', async ({

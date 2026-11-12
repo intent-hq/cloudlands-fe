@@ -209,8 +209,9 @@ describe('diagram prop lifecycle', () => {
     expect(focus).toHaveBeenCalledWith({ preventScroll: true });
     await fireEvent.keyDown(buttons[1], { key: 'Home' });
     result.unmount();
-    expect(frames.size).toBe(0);
+    // Leftover frames (an empty shared layout flush) must do no work.
     await deliverFrames();
+    expect(frames.size).toBe(0);
     expect(document.activeElement).not.toBe(buttons[0]);
   });
 
@@ -410,8 +411,8 @@ describe('fit frame ownership', () => {
     Object.defineProperty(scroller, 'clientWidth', { configurable: true, get: readWidth });
     result.unmount();
     scrollTo.mockClear();
-    expect(frames.size).toBe(0);
     await deliverFrames();
+    expect(frames.size).toBe(0);
     expect(readWidth).not.toHaveBeenCalled();
     expect(scrollTo).not.toHaveBeenCalled();
   });

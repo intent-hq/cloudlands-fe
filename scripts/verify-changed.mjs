@@ -1,12 +1,25 @@
 #!/usr/bin/env node
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  statSync,
+  writeSync,
+} from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 import { escape as escapeGlob, globSync } from 'glob';
 import { CT_TEST_DIR, hasCtSpecSuffix, isCtSpec } from '../playwright/ct-spec-pattern.mjs';
 import { isIgnoredRootSpec, isRootSpec, ROOT_TEST_DIR } from '../playwright/root-spec-pattern.mjs';
 import { checkDepsFresh, checkNodeSupport, ensureI18nFresh } from './check-deps-fresh.mjs';
+import { isElectronTestPathInput } from './check-electron-test-paths.mjs';
+import { SKIP_WORKFLOW_LINT_ENV } from './check-workflows.mjs';
 import { isCtContractPath } from './ct-contract-paths.mjs';
 import { gitignoreDirExcludes } from './gitignore-dir-excludes.mjs';
 import { isEnforcedFile } from './hardcoded-strings-scope.mjs';
@@ -162,13 +175,21 @@ function assertCanonicalPathInsideRoot(path, root, displayPath) {
 }
 
 export function parseArgs(argv) {
-  const result = { base: null, dryRun: false, help: false, paths: [], resume: false };
+  const result = {
+    base: null,
+    dryRun: false,
+    help: false,
+    keepGoing: false,
+    paths: [],
+    resume: false,
+  };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') result.dryRun = true;
     else if (arg === '--resolved-plan') result.resolvedPlan = true;
     else if (arg === '--resume') result.resume = true;
+    else if (arg === '--keep-going') result.keepGoing = true;
     else if (arg === '--max-unit-files' || arg.startsWith('--max-unit-files=')) {
       const value =
         arg === '--max-unit-files' ? argv[(index += 1)] : arg.slice('--max-unit-files='.length);
@@ -252,32 +273,38 @@ function mergeBase(ref, root) {
   }
 }
 
-// True when HEAD has commits that `ref` does not; false when `ref` cannot be
-// resolved (no remote-tracking ref, detached fixture), so the caller can fall
-// back to the plain "nothing to verify" exit instead of throwing.
-function isAheadOf(ref, root) {
+// 'ahead' when HEAD has commits that `ref` does not; 'unresolved' when git
+// cannot compare them (missing ref, shallow clone without the merge-base), so
+// the caller falls back to the uncommitted set instead of throwing.
+function aheadState(ref, root) {
   try {
-    return mergeBase(ref, root) !== gitRevision(['rev-parse', 'HEAD'], root);
+    return mergeBase(ref, root) === gitRevision(['rev-parse', 'HEAD'], root)
+      ? 'not-ahead'
+      : 'ahead';
   } catch {
-    return false;
+    return 'unresolved';
   }
 }
 
-export function collectChangedFiles(root = REPO_ROOT, options = {}) {
-  const files = [
+function uncommittedFiles(root) {
+  return [
     ...gitNames(['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', 'HEAD', '--'], root),
     ...gitNames(['diff', '--cached', '--name-only', '-z', '--diff-filter=ACMRTUXBD', '--'], root),
     ...gitNames(['ls-files', '--others', '--exclude-standard', '-z'], root),
   ];
-  if (options.base) {
-    const base = mergeBase(options.base, root);
-    files.push(
-      ...gitNames(
-        ['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'],
-        root,
-      ),
-    );
-  }
+}
+
+function committedFiles(ref, root) {
+  const base = mergeBase(ref, root);
+  return gitNames(
+    ['diff', '--name-only', '-z', '--diff-filter=ACMRTUXBD', base, 'HEAD', '--'],
+    root,
+  );
+}
+
+export function collectChangedFiles(root = REPO_ROOT, options = {}) {
+  const files = uncommittedFiles(root);
+  if (options.base) files.push(...committedFiles(options.base, root));
   return [...new Set(files)].sort();
 }
 
@@ -439,9 +466,15 @@ function isKnownNonCode(file) {
   );
 }
 
-// `lint:workflows` (actionlint) inputs: the workflows and their lint config.
+// `lint:workflows` (actionlint) inputs: the workflows, the local actions they
+// use, the lint config and the gate itself. Only these select its lane.
 function isWorkflowLintInput(file) {
-  return /^\.github\/(?:workflows\/[^/]+|actionlint)\.ya?ml$/.test(file);
+  return (
+    file.startsWith('.github/workflows/') ||
+    /^\.github\/actions\/.+\/action\.ya?ml$/.test(file) ||
+    /^\.github\/actionlint\.ya?ml$/.test(file) ||
+    file === 'scripts/check-workflows.mjs'
+  );
 }
 
 function isArchitectureSource(file) {
@@ -449,7 +482,8 @@ function isArchitectureSource(file) {
     (file.startsWith('src/') && CODE_EXTENSIONS.has(extname(file))) ||
     /^scripts\/check-[^/]+\.mjs$/.test(file) ||
     file === 'scripts/type-check.ts' ||
-    isWorkflowLintInput(file) ||
+    // Electron helpers run only in the merge queue; lint:electron-test-paths checks them.
+    isElectronTestPathInput(file) ||
     basename(file) === 'AGENTS.md'
   );
 }
@@ -540,6 +574,7 @@ export function createVerificationPlan(files, options = {}) {
     (suite) => !directUnit.some((direct) => suite === direct || suite.startsWith(`${direct}/`)),
   );
   let architecture = files.some(isArchitectureSource);
+  const workflowLint = files.some(isWorkflowLintInput);
   const typeCheckWrapper = files.includes('scripts/type-check.ts');
   const deadCode = files.some(
     (file) =>
@@ -565,7 +600,7 @@ export function createVerificationPlan(files, options = {}) {
     else if (file === 'tsconfig.preload.json') boundaries.add('preload');
     else if (ROOT_PLAYWRIGHT_CONFIG_FILES.has(file)) fullPlaywright = true;
     else if (file === 'vitest.config.ts') fullUnit = true;
-    // Shared with the pull_request workflow's test-ct relevance step.
+    // The one CT-contract list (scripts/ct-contract-paths.mjs).
     if (isCtContractPath(file)) fullCt = true;
 
     const known =
@@ -599,13 +634,22 @@ export function createVerificationPlan(files, options = {}) {
     );
   if (lintFiles.length)
     checks.push(command('eslint', 'ESLint (changed files)', ['exec', 'eslint', ...lintFiles]));
+  // actionlint can hang on a loaded host (rhysd/actionlint#702; cloudlands-fe#4332),
+  // so the architecture lane skips it and it runs only for its own inputs.
   if (architecture)
-    checks.push(
-      command('architecture', 'Architecture gates (repo-wide static scans)', [
+    checks.push({
+      ...command('architecture', 'Architecture gates (repo-wide static scans)', [
         'run',
         'lint:architecture',
       ]),
-    );
+      env: { [SKIP_WORKFLOW_LINT_ENV]: '1' },
+    });
+  if (workflowLint)
+    checks.push({
+      ...command('workflows', 'Workflow lint (actionlint)', ['run', 'lint:workflows']),
+      // An inherited skip from the caller's shell must not pass this lane unlinted.
+      env: { [SKIP_WORKFLOW_LINT_ENV]: '0' },
+    });
   if (typeCheckWrapper)
     checks.push(
       command('type-check-validate', 'Type check (validate wrapper)', [
@@ -913,6 +957,55 @@ export function checkEnvironment(check, { heldLock = null, baseEnv = process.env
 /** Retained tail of a captured check's output, enough to explain a failure. */
 const CAPTURED_OUTPUT_LIMIT = 256 * 1024;
 const CAPTURE_DRAIN_MS = 2_000;
+const EXCERPT_LINES = 15;
+const EXCERPT_LINE_WIDTH = 240;
+const PENDING_LINE_LIMIT = 64 * 1024;
+
+/** Terminal text as it reads on screen: no escape codes, and only the last redraw of a `\r` line. */
+function plainLines(text) {
+  return text
+    .split('\n')
+    .map((line) => stripVTControlCharacters(line.replace(/\r$/, '')).split('\r').pop());
+}
+
+/** The last non-blank lines of a failed check's output, for the failure summary. */
+export function failureExcerpt(output, limit = EXCERPT_LINES) {
+  return plainLines(output ?? '')
+    .filter((line) => line.trim() && !/\bELIFECYCLE\b/.test(line))
+    .slice(-limit)
+    .map((line) =>
+      line.length > EXCERPT_LINE_WIDTH ? `${line.slice(0, EXCERPT_LINE_WIDTH - 1)}…` : line,
+    );
+}
+
+/** Appends a check's output to its log as plain text, one complete line at a time per stream. */
+function openCheckLog(path, header) {
+  mkdirSync(dirname(path), { recursive: true });
+  let fd = openSync(path, 'a');
+  writeSync(fd, header);
+  const pending = new Map();
+  const put = (text) => writeSync(fd, `${plainLines(text).join('\n')}\n`);
+  return {
+    write(stream, chunk) {
+      if (fd === null) return;
+      const lines = `${pending.get(stream) ?? ''}${chunk}`.split('\n');
+      let rest = lines.pop();
+      // A redraw-only stream never ends a line; do not hold it in memory unbounded.
+      if (rest.length > PENDING_LINE_LIMIT) {
+        lines.push(rest.split('\r').pop());
+        rest = '';
+      }
+      pending.set(stream, rest);
+      if (lines.length) put(lines.join('\n'));
+    },
+    close() {
+      if (fd === null) return;
+      for (const rest of pending.values()) if (rest) put(rest);
+      closeSync(fd);
+      fd = null;
+    },
+  };
+}
 
 /**
  * How a check's child process writes its output. Real runs stream it to the
@@ -925,8 +1018,17 @@ export function checkOutputMode(env = process.env) {
   return env.VITEST ? 'capture' : 'inherit';
 }
 
-async function runCheck(check, root, { heldLock = null, output = checkOutputMode() } = {}) {
+/**
+ * Runs one check. With `logPath`, its stdout and stderr are also written to that
+ * file, so a failure can be read later without rerunning the check.
+ */
+async function runCheck(
+  check,
+  root,
+  { heldLock = null, output = checkOutputMode(), logPath = null } = {},
+) {
   const capture = output === 'capture';
+  const piped = capture || !!logPath;
   if (!capture) console.log(`\n[verify:changed] ${check.label}`);
   const launcher =
     check.executable === 'pnpm'
@@ -936,29 +1038,44 @@ async function runCheck(check, root, { heldLock = null, output = checkOutputMode
   // lock for direct runs; tell it the lock is already held so it does not
   // wait on its own parent.
   const env = checkEnvironment(check, { heldLock });
+  // A piped child no longer sees a terminal; keep the colors the terminal showed.
+  if (piped && !capture && process.stdout.isTTY && env.NO_COLOR === undefined)
+    env.FORCE_COLOR ??= '1';
+  const checkLog = logPath
+    ? openCheckLog(logPath, `$ ${[check.executable, ...check.args].map(shellQuote).join(' ')}\n\n`)
+    : null;
   await new Promise((resolveRun, reject) => {
     const child = spawn(launcher.executable, launcher.args, {
       cwd: root,
-      stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+      stdio: capture ? ['ignore', 'pipe', 'pipe'] : piped ? ['inherit', 'pipe', 'pipe'] : 'inherit',
       shell: launcher.shell,
       env,
     });
     let captured = '';
-    const collect = (chunk) => {
-      captured = (captured + chunk).slice(-CAPTURED_OUTPUT_LIMIT);
-    };
-    for (const stream of [child.stdout, child.stderr]) {
+    for (const [stream, terminal] of [
+      [child.stdout, process.stdout],
+      [child.stderr, process.stderr],
+    ]) {
       // Decode per stream so a multibyte character split across chunks survives.
       stream?.setEncoding('utf8');
-      stream?.on('data', collect);
+      stream?.on('data', (chunk) => {
+        captured = (captured + chunk).slice(-CAPTURED_OUTPUT_LIMIT);
+        checkLog?.write(stream, chunk);
+        if (!capture) terminal.write(chunk);
+      });
     }
     activeChildren.add(child);
     child.on('error', (error) => {
       activeChildren.delete(child);
+      checkLog?.close();
       reject(error);
     });
+    let settled = false;
     const settle = (code, signal) => {
+      if (settled) return;
+      settled = true;
       activeChildren.delete(child);
+      checkLog?.close();
       if (code === 0) resolveRun();
       else {
         const reason = `${check.label} failed${signal ? ` with ${signal}` : ` with exit code ${code ?? 1}`}`;
@@ -969,13 +1086,14 @@ async function runCheck(check, root, { heldLock = null, output = checkOutputMode
           Object.assign(new Error(reason + details), {
             exitCode: code,
             signal,
-            ...(capture ? { output: captured } : {}),
+            ...(piped ? { output: captured } : {}),
+            ...(logPath ? { logPath } : {}),
           }),
         );
       }
     };
     child.on('exit', (code, signal) => {
-      if (!capture) return settle(code, signal);
+      if (!piped) return settle(code, signal);
       // Let the pipes drain, but never wait on a grandchild (a CT server, a
       // Playwright worker) that inherited them and outlives the check.
       const drained = setTimeout(() => {
@@ -1159,6 +1277,25 @@ function describeCoverage(coverage) {
   return `checks ${part(coverage.counts.checks)}; unit files ${part(coverage.counts.unitFiles)}`;
 }
 
+/** A failed check's log path and the last lines of its output, as indented summary lines. */
+function failureDetails(error, root) {
+  if (!error?.logPath) return [];
+  return [
+    `  log: ${slash(relative(root, error.logPath))}`,
+    ...failureExcerpt(error.output).map((line) => `    | ${line}`),
+  ];
+}
+
+/** Whether a check ended because it was interrupted (Ctrl+C or SIGTERM), not because it failed. */
+function isInterruption(error) {
+  return (
+    error?.signal === 'SIGINT' ||
+    error?.signal === 'SIGTERM' ||
+    error?.exitCode === 130 ||
+    error?.exitCode === 143
+  );
+}
+
 export async function runVerificationPlan(plan, root, options = {}) {
   const env = options.env ?? process.env;
   const run = options.runCheck ?? runCheck;
@@ -1261,6 +1398,10 @@ export async function runVerificationPlan(plan, root, options = {}) {
   options.onAttempt?.({ attempt, finish });
   if (attempt) log(`verify:changed: record: ${attempt.path}`);
 
+  // With keepGoing a failed check is recorded and the remaining checks still run,
+  // so one attempt reports (and records) every failure instead of the first.
+  const failures = [];
+  let executed = 0;
   try {
     for (const check of plan.checks) {
       if (terminating) throw new Error('verification interrupted');
@@ -1271,6 +1412,7 @@ export async function runVerificationPlan(plan, root, options = {}) {
         continue;
       }
       const command = commandIdentity(check);
+      executed += 1;
       attempt?.append({
         type: 'check-start',
         id: check.id,
@@ -1278,9 +1420,10 @@ export async function runVerificationPlan(plan, root, options = {}) {
         command,
         executed: { executable: execution.check.executable, args: execution.check.args },
       });
+      const logPath = attempt ? join(attempt.directory, 'logs', `${check.id}.log`) : null;
       try {
         const lockKey = verificationLockKey(check, env);
-        if (!lockKey) await run(execution.check, root);
+        if (!lockKey) await run(execution.check, root, { logPath });
         else {
           const timeoutMs = lockTimeout(lockKey, env.VERIFY_CHANGED_LOCK_TIMEOUT_MS);
           log(`\n[verify:changed] waiting up to ${timeoutMs}ms for ${lockKey} lock`);
@@ -1290,23 +1433,37 @@ export async function runVerificationPlan(plan, root, options = {}) {
             cwd: root,
           });
           try {
-            await run(execution.check, root, { heldLock: lockKey });
+            await run(execution.check, root, { heldLock: lockKey, logPath });
           } finally {
             releaseLock();
           }
         }
       } catch (error) {
+        // Ctrl+C reaches the check and this process together, and the check's
+        // exit can be handled before our own signal handler sets `terminating`.
+        const interrupted = terminating || isInterruption(error);
         attempt?.append({
           type: 'check-end',
           id: check.id,
           invocation,
           command,
           // A check stopped by a termination signal is unfinished, not failed.
-          status: terminating ? 'interrupted' : 'failed',
+          status: interrupted ? 'interrupted' : 'failed',
           exitCode: error?.exitCode ?? null,
           signal: error?.signal ?? null,
         });
-        throw error;
+        if (interrupted) throw error;
+        if (!options.keepGoing) {
+          const where = failureDetails(error, root);
+          if (where.length && error instanceof Error)
+            error.message = `${error.message}\n${where.join('\n')}`;
+          throw error;
+        }
+        failures.push({ check, error });
+        log(
+          `[verify:changed] ${error instanceof Error ? error.message : error}\n[verify:changed] --keep-going: continuing with the remaining checks`,
+        );
+        continue;
       }
       attempt?.append({
         type: 'check-end',
@@ -1319,6 +1476,22 @@ export async function runVerificationPlan(plan, root, options = {}) {
     }
   } finally {
     finish();
+  }
+  if (failures.length) {
+    const lines = failures.map(({ check, error }) => {
+      const reason = String(error instanceof Error ? error.message : error).split('\n')[0];
+      // A lock timeout, for one, does not name the check it was waiting for.
+      return [
+        `  - ${reason.startsWith(check.label) ? reason : `${check.label}: ${reason}`}`,
+        ...failureDetails(error, root).map((line) => `  ${line}`),
+      ].join('\n');
+    });
+    const next = attempt
+      ? `See ${attempt.path}/coverage.json; rerun with --resume to run only what did not pass.`
+      : 'Rerun to verify again.';
+    throw new Error(
+      `${failures.length} of ${executed} check(s) failed:\n${lines.join('\n')}\n${next}`,
+    );
   }
   if (coverage && !coverage.complete) {
     const missing = [...coverage.checks, ...coverage.unitFiles].filter(
@@ -1340,32 +1513,55 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
   const args = parseArgs(argv);
   if (args.help) {
     log(
-      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--resume] [--max-unit-files N] [--base <ref>] [paths...]',
+      'Usage: pnpm run verify:changed -- [--dry-run | --resolved-plan] [--resume] [--keep-going] [--max-unit-files N] [--base <ref>] [paths...]',
     );
     log(
       '  --resume: reuse compatible passing receipts from earlier attempts and run only what remains; completes only when every current check and unit file is covered.',
     );
     log(
-      `  With no paths: verifies the working-tree changes; when the worktree is clean and HEAD is ahead of ${DEFAULT_BASE}, defaults to --base ${DEFAULT_BASE}.`,
+      '  --keep-going: after a failed check, still run (and record) every remaining check, then fail listing all failed checks; prerequisites still stop the run.',
+    );
+    log(
+      "  Each check's output is saved to <record>/logs/<check id>.log; a failure prints its log path and last lines.",
+    );
+    log(
+      `  With no paths: verifies the uncommitted changes plus, when HEAD is ahead of ${DEFAULT_BASE}, the commits since its merge-base (as --base ${DEFAULT_BASE}). The first line names the mode used, also when nothing is left to verify (exit 2).`,
     );
     return 0;
   }
   let base = args.base;
-  let files = args.paths.length
-    ? expandInputPaths(args.paths, root)
-    : collectChangedFiles(root, { base });
-  if (!args.paths.length && !base && files.length === 0 && isAheadOf(DEFAULT_BASE, root)) {
-    base = DEFAULT_BASE;
-    log(`verify:changed: worktree clean; verifying commits since merge-base with ${base}`);
-    files = collectChangedFiles(root, { base });
+  let ahead = null;
+  let mode;
+  if (args.paths.length) mode = 'verifying the given paths';
+  else if (base) mode = `verifying uncommitted changes plus commits since merge-base with ${base}`;
+  else {
+    ahead = aheadState(DEFAULT_BASE, root);
+    if (ahead === 'ahead') {
+      base = DEFAULT_BASE;
+      mode = `verifying uncommitted changes plus commits since merge-base with ${base}`;
+    } else if (ahead === 'not-ahead') {
+      mode = `verifying uncommitted changes only; HEAD is not ahead of ${DEFAULT_BASE}`;
+    } else {
+      mode = `verifying uncommitted changes only; cannot compare HEAD with ${DEFAULT_BASE}, pass --base <ref> to include commits`;
+    }
   }
+  const uncommitted = args.paths.length ? [] : uncommittedFiles(root);
+  const files = args.paths.length
+    ? expandInputPaths(args.paths, root)
+    : [...new Set([...uncommitted, ...(base ? committedFiles(base, root) : [])])].sort();
   if (!args.paths.length && files.length === 0) {
     const hint = base
       ? ` and no files changed relative to the merge-base with ${base}`
-      : `; pass --base ${DEFAULT_BASE} to verify this branch's commits against main`;
+      : ahead === 'not-ahead'
+        ? ` and HEAD is not ahead of ${DEFAULT_BASE}`
+        : `; cannot compare HEAD with ${DEFAULT_BASE}, pass --base <ref> to verify this branch's commits`;
     log(`verify:changed: nothing to verify — the worktree is clean${hint}`);
     return 2;
   }
+  if (!args.base && base && uncommitted.length === 0) {
+    mode = `worktree clean; verifying commits since merge-base with ${base}`;
+  }
+  log(`verify:changed: ${mode}`);
   const plan = createVerificationPlan(files, { root });
   printPlan(plan, args.dryRun, log);
   if (args.dryRun || plan.checks.length === 0) return 0;
@@ -1380,6 +1576,7 @@ export async function runCli(argv = process.argv.slice(2), root = REPO_ROOT, opt
     resolvedPlan: args.resolvedPlan,
     maxUnitFiles: args.maxUnitFiles,
     resume: args.resume,
+    keepGoing: args.keepGoing,
     record: true,
     argv,
     onAttempt: options.onAttempt,

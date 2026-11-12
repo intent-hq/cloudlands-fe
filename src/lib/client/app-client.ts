@@ -3,6 +3,8 @@ import type { MessageBlockImageReference } from '$shared/types/wire-image-block'
 import type { MergeQueueEntry } from '$lib/utils/merge-queue';
 import type { SubmissionCorrelation } from '$shared/types/agent-message';
 import type { AgentPlacement } from '$shared/types/agent-node';
+import type { AgentPermissionPolicy } from '$shared/types/agent-session';
+import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import type { SecretAnswerResult, SecretListing } from '$shared/types/secret-request-resource';
 import type {
   ScriptArchiveFilter,
@@ -78,7 +80,7 @@ import type {
   WorkspaceScript,
 } from '$store/renderer/slices/scripts/scripts-types';
 import type { ScriptMode, ScriptPurpose } from '$features/scripts/types';
-import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+import type { AgentSkills, SkillInfo } from '$store/renderer/slices/skills/skills-types';
 import type { AuggieModel } from '$features/auggie/auggie-models.client';
 import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import type {
@@ -327,10 +329,10 @@ export type UserMessageIndexResult =
       items: UserMessageIndexItem[];
       total: number;
       /**
-       * Paged reads only (`limit` / `nextToken` supplied): the opaque cursor
-       * for the next older page, `null` once none remain. Absent on unpaged
-       * reads and from daemons that predate paging (which ignore `limit`
-       * and return the whole index), so absent means "complete".
+       * The opaque cursor for the next older page, `null` once none remain.
+       * Current daemons page every read; absent only from daemons that
+       * predate default paging (which return the whole index unless `limit`
+       * or `nextToken` is sent), so absent means "complete".
        */
       nextToken?: string | null;
     }
@@ -417,6 +419,8 @@ export interface WorkspaceCreateResult extends MutationResult {
   errorCode?: string;
   /** Set with `errorCode: "launch-failed"`: the workspace was created anyway. */
   launchFailure?: WorkspaceCreateLaunchFailure;
+  /** Set with `errorCode: "base-refresh-failed"` (PROTOCOL §9.2): the base fetch failed. */
+  baseRefreshFailure?: BaseRefreshFailure;
 }
 
 /**
@@ -808,15 +812,17 @@ export interface AgentsClient {
   /**
    * The capped `agent.getMessageBlock` read with its page fields (PROTOCOL
    * §5.5 "Capped and paged block reads"). Call only when the daemon
-   * advertises `server.capabilities.messageBlockPages === 1`; the first page
-   * (offset 0, default 480,000-byte cap) is all the app reads. Errors
-   * propagate as rejections.
+   * advertises `server.capabilities.messageBlockPages === 1`. Without
+   * `offset` it reads the first page (default 480,000-byte cap); `offset`
+   * (a previous page's `nextOffset`) reads the next slice of a paged text
+   * body. Errors propagate as rejections.
    */
   getMessageBlockPage(
     agentId: string,
     messageId: string,
     blockId: string,
     workspaceId?: string,
+    offset?: number,
   ): Promise<MessageBlockPage>;
   /**
    * The user-message index of one agent (`agent.listUserMessages`, §5.5):
@@ -1077,6 +1083,18 @@ export interface AgentsClient {
     agentId: string;
     workspaceId: string;
     pinned: boolean;
+  }): Promise<MutationResult>;
+  /**
+   * Set or clear the per-chat permission policy override
+   * (`agent.update { changes: { permissionPolicy } }`, §5.5). `null` resets to
+   * the daemon default. The daemon persists it without advancing `updatedAt`,
+   * applies it on the next turn, and emits `agent:updated`. Transport / daemon
+   * errors fold into `{ success: false, error }`.
+   */
+  setPermissionPolicy(params: {
+    agentId: string;
+    workspaceId: string;
+    permissionPolicy: AgentPermissionPolicy | null;
   }): Promise<MutationResult>;
   /** Persist foreground/background mode through the partial agent.update writer. */
   setBackground(params: {
@@ -2067,6 +2085,11 @@ export interface ScriptRunResult {
   warning?: string;
 }
 
+/** A remote agent's run of a saved script on its machine (`remoteAgentId`, PROTOCOL `methods/scripts.md`). */
+export interface ScriptRunTarget {
+  remoteAgentId: string;
+}
+
 export interface ScriptsClient {
   supportsLifecycle?(): Promise<boolean>;
   /** capabilityVerified is only for a caller that just negotiated and revalidated its connection/authority. */
@@ -2094,12 +2117,17 @@ export interface ScriptsClient {
   create(workspaceId: string, input: ScriptCreateInput): Promise<ScriptCreateResult>;
   /** `script.start`. */
   start(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.stop`. */
-  stop(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.restart`. */
-  restart(workspaceId: string, scriptId: string): Promise<MutationResult>;
-  /** `script.output` — historical output-buffer text. */
-  output(workspaceId: string, scriptId: string, maxLines?: number): Promise<string>;
+  /** `script.stop`; `run` addresses a remote agent's machine run (`remoteScripts: 1`). */
+  stop(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult>;
+  /** `script.restart`; `run` restarts a machine run on its machine. */
+  restart(workspaceId: string, scriptId: string, run?: ScriptRunTarget): Promise<MutationResult>;
+  /** `script.output` — historical output-buffer text; `run` reads a machine run's buffer. */
+  output(
+    workspaceId: string,
+    scriptId: string,
+    maxLines?: number,
+    run?: ScriptRunTarget,
+  ): Promise<string>;
   /** `script.status` — the script's runtime state, or null when unavailable. */
   status(workspaceId: string, scriptId: string): Promise<ScriptRuntimeState | null>;
   /** `script.run` — run a command-mode script to completion. */
@@ -2132,6 +2160,8 @@ export interface SetupScriptsClient {
 
 export interface SkillsClient {
   list(workspaceId: string): Promise<SkillInfo[]>;
+  /** A remote agent's machine skills (`skill.list` with `agentId`, §5.34). */
+  listForAgent(workspaceId: string, agentId: string): Promise<AgentSkills>;
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe;
 }
 
@@ -2144,6 +2174,16 @@ export interface SkillsClient {
  * `behaviorPrompt` mirrors `prompt` (the markdown body). `hidden: true`
  * excludes the specialist from picker surfaces (absent ⇒ not hidden).
  */
+/** PROTOCOL §5.11 `SpecialistBaseline`: a built-in's content, never its model pin. */
+export interface SpecialistBaseline {
+  name: string;
+  description: string;
+  behaviorPrompt: string;
+  roleReminder?: string;
+  reasoningEffort?: string;
+  modelOptions?: { provider?: string; model: string; hint: string; reasoningEffort?: string }[];
+}
+
 export interface SpecialistDef {
   runsOn?: AgentPlacement;
   /** Original Claude definition; read-only in Intent. */
@@ -2173,7 +2213,7 @@ export interface SpecialistDef {
    */
   reasoningEffort?: string;
   /**
-   * Orchestration role (additive, PROTOCOL §5.11): 'orchestrator' powers the
+   * Orchestration role (additive, PROTOCOL §5.11): 'orchestrator' power the
    * New Workspace modal's team card; 'internal' is excluded from the modal's
    * single-agent dropdown only. Omitted for standard specialists.
    */
@@ -2201,6 +2241,13 @@ export interface SpecialistDef {
   source: 'project' | 'user' | 'bundled';
   isCustomized?: boolean;
   path?: string;
+  /**
+   * The base-tier (`bundled`) definition of the same id, on a user/project
+   * override of a built-in (additive, PROTOCOL §5.11 `bundled` baseline).
+   */
+  bundled?: SpecialistBaseline;
+  /** Set when a paged `specialist.list` dropped an oversized row's `bundled`. */
+  bundledOmitted?: boolean;
   /**
    * Daemon-computed default-model preview (additive, PROTOCOL §5.11): the
    * model a no-model `agent.create` with this specialist would pin, resolved
@@ -2632,16 +2679,8 @@ export interface IntegrationsClient {
   subscribe(handler: SubscriptionHandler<{ githubUser: GitHubUser | null }>): Unsubscribe;
 }
 
-/** Machine-level daemon capabilities (`system.capabilities`, PROTOCOL §5.7). */
-export interface SystemCapabilities {
-  /** CoW capability of the workspaces-root filesystem; undefined when the probe could not run. */
-  cowSupported?: boolean;
-}
-
 export interface SystemClient {
   status(): Promise<SystemStatusState>;
-  /** `system.capabilities` (§5.7) — machine capabilities independent of any workspace. */
-  capabilities(workspaceId?: string): Promise<SystemCapabilities>;
   releaseNotes(): Promise<ReleaseNotes | null>;
   autoUpdate(): Promise<AutoUpdateState | null>;
   subscribe(handler: SubscriptionHandler<SystemStatusState>): Unsubscribe;

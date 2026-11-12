@@ -58,6 +58,7 @@
     cardSeamMessages,
     liveMessages,
     pendingProposals,
+    proposalResolutions,
     chiefWorkspace = false,
     failureRecovery,
     initializeStore = true,
@@ -81,6 +82,7 @@
     cardSeamMessages?: AgentMessage[];
     liveMessages?: AgentMessage[];
     pendingProposals?: PendingProposalRef[];
+    proposalResolutions?: Record<string, 'applied' | 'dismissed'>;
     chiefWorkspace?: boolean;
     initializeStore?: boolean;
     failureRecovery?: {
@@ -94,6 +96,7 @@
   const cardSeamFixture = untrack(() => cardSeamMessages);
   const liveFixture = untrack(() => liveMessages);
   const pendingProposalFixture = untrack(() => pendingProposals);
+  const proposalResolutionsFixture = untrack(() => proposalResolutions);
   const workspaceId = untrack(() => chiefWorkspace)
     ? '__chief__'
     : 'chat-panel-operational-geometry';
@@ -641,7 +644,12 @@
     metadata: setupCardFixture
       ? { isInitialAgent: true }
       : pendingProposalFixture
-        ? { pendingProposals: pendingProposalFixture }
+        ? {
+            pendingProposals: pendingProposalFixture,
+            ...(proposalResolutionsFixture
+              ? { proposalResolutions: proposalResolutionsFixture }
+              : {}),
+          }
         : undefined,
     messages,
     createdAt: timestamp,

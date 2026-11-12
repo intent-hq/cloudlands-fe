@@ -22,11 +22,7 @@ const ALLOWED = new Set([
 ]);
 
 /** Files that match a guard pattern without reading mentions back, with why. */
-const EXEMPT: Record<string, string> = {
-  // Drops any bracketed attachment-like token (`@file[...]`, `@url[...]`, …)
-  // before picking words for a workspace slug; it never renders or opens one.
-  'features/workspace/main/local-slug-generator.ts': 'slug words skip bracketed tokens',
-};
+const EXEMPT: Record<string, string> = {};
 
 /**
  * `@`-led escaped token heads as they appear in a regex (`@member\[`,

@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { UiComponentInventory } from '../src/lib/components/ui/component-metadata';
+import { isTestOnlySvelteFile } from './test-only-svelte-files.mjs';
 import { uiComponentGuardrails } from './ui-component-guardrails';
 import { buildUiComponentInventory } from './ui-component-inventory';
 
@@ -44,7 +45,7 @@ function productionSource(file: string): boolean {
     !internalRoute &&
     !file.includes('/__tests__/') &&
     !/\.(?:test|spec)\.ts$/.test(file) &&
-    !/(?:test-harness|Harness|TestWrapper)\.svelte$/.test(file) &&
+    !isTestOnlySvelteFile(file) &&
     !normalized.endsWith(`${UI_ROOT}/index.ts`) &&
     !normalized.endsWith(`${UI_ROOT}/manifest.ts`)
   );

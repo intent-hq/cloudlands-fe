@@ -102,7 +102,7 @@ describe('RegularAgentWelcome specialist picker', () => {
 
   async function openOptionIds(): Promise<string[]> {
     await fireEvent.click(screen.getByTestId('specialist-picker-trigger'));
-    await screen.findByRole('menuitemradio', { name: /General/ });
+    await screen.findByRole('menuitemradio', { name: /^None/ });
     return screen
       .getAllByRole('menuitemradio')
       .map((item) => item.getAttribute('data-specialist-option') ?? '');
@@ -112,11 +112,11 @@ describe('RegularAgentWelcome specialist picker', () => {
     render(RegularAgentWelcome, { props: { session: session(), onSpecialistChange: vi.fn() } });
 
     expect(await openOptionIds()).toEqual([
-      'general',
       'spec-writer',
       'implementor',
       'verifier',
       'ui-designer',
+      'general',
     ]);
   });
 
@@ -125,11 +125,11 @@ describe('RegularAgentWelcome specialist picker', () => {
     render(RegularAgentWelcome, { props: { session: session(), onSpecialistChange: vi.fn() } });
 
     expect(await openOptionIds()).toEqual([
-      'general',
       'ui-designer',
       'verifier',
       'spec-writer',
       'implementor',
+      'general',
     ]);
   });
 

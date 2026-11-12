@@ -73,11 +73,13 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(json).toHaveCSS('background-color', background);
     await autosave.fill('  Updated prompt  ');
     await expect(autosave).toHaveCSS('background-color', background);
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- AutoSaveField hard-codes Mod+S to save; it is not editor.save
     await autosave.press('Control+s');
     await expect(root.getByTestId('saved-setting')).toHaveText('Updated prompt');
     const value = '{"fixture":{"command":"echo","args":["fixture"]}}';
     await json.fill(value);
     await expect(json).toHaveCSS('background-color', background);
+    // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- McpJsonImport hard-codes Mod+Enter to import; it is not chat.force-send
     await json.press('Control+Enter');
     await expect(root.getByTestId('imported-setting')).toHaveText(value);
     await expect(autosave).toHaveCSS('background-color', background);

@@ -15,8 +15,7 @@ A comprehensive diagram system for the Intent app that enables agents and users 
 
 - **layout-engine.ts** - Layout algorithms (layered, force-directed, circular, tree)
 - **types.ts** - Grammar configurations and computed types
-- **diagram-validator.ts** - Validation utilities with helpful error messages
-- **diagram-templates.ts** - Template generators for each grammar type
+- **`__tests__/diagram-templates.ts`** - Test fixture builders for each grammar type
 
 ### Integration
 
@@ -76,20 +75,6 @@ Link diagram elements to workspace entities. Both nodes and edges can have bindi
 
 See `docs/DIAGRAM_PRIMITIVES.md` for comprehensive agent documentation.
 
-Quick example:
-
-```typescript
-import { createArchitectureDiagram } from '$lib/components/diagrams/diagram-templates';
-
-const diagram = createArchitectureDiagram(
-  [
-    { id: 'client', label: 'Client', kind: 'actor' },
-    { id: 'api', label: 'API', kind: 'service' },
-  ],
-  [{ from: 'client', to: 'api', label: 'HTTP Request' }],
-);
-```
-
 ### For Users
 
 Diagrams appear as interactive blocks in notes. Use the controls to:
@@ -113,8 +98,7 @@ src/lib/components/diagrams/
 ├── DiagramControls.svelte      # Controls UI
 ├── layout-engine.ts            # Layout algorithms
 ├── types.ts                    # Type definitions
-├── diagram-validator.ts        # Validation
-├── diagram-templates.ts        # Templates
+├── __tests__/diagram-templates.ts  # Test fixture builders
 └── README.md                   # This file
 
 src/lib/utils/tiptap-primitives/

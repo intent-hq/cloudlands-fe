@@ -3,6 +3,8 @@ import { desktopControlReducer } from './slices/desktop-control/desktop-control-
 import { homeWorkspacesReducer } from '$features/home/home-workspaces-slice';
 import { homeIntegrationsReducer } from '$features/home/home-integrations-slice';
 import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
+import { nodesReducer } from '$features/nodes/nodes-slice';
+import { cloudMachinesReducer } from '$features/cloud-machines/cloud-machines-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
 import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
 import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
@@ -11,7 +13,6 @@ import { hostMembershipReducer } from './slices/host-membership/host-membership-
 import { hostExecutionReducer } from './slices/host-execution/host-execution-slice';
 import { providerSettingsReducer } from './slices/provider-settings/provider-settings-slice';
 import { settingsEventsReducer } from './slices/settings-events/settings-events-slice';
-import { antigravitySetupReducer } from './slices/antigravity-setup/antigravity-setup-slice';
 import { providerCatalogReducer } from './slices/provider-catalog/provider-catalog-slice';
 import { providerModelsReducer } from './slices/provider-models/provider-models-slice';
 import { agentModelReducer } from './slices/agent-model/agent-model-slice';
@@ -28,9 +29,11 @@ import { multiPanelContextReducer } from './slices/multi-panel-context/multi-pan
 import { permissionReducer } from './slices/permission/permission-slice';
 import { pipReducer } from './slices/pip/pip-slice';
 import { powerReducer } from './slices/power/power-slice';
+import { machineRailReducer } from './slices/machine-rail/machine-rail-slice';
 import { featureCodesReducer } from './slices/feature-codes/feature-codes-slice';
 import { globalModalsReducer } from './slices/global-modals/global-modals-slice';
 import { knownReposReducer } from './slices/known-repos/known-repos-slice';
+import { pluginsSettingsReducer } from './slices/plugins-settings/plugins-settings-slice';
 import { deepLinksReducer } from './slices/deep-links/deep-links-slice';
 import { modelReducer } from './slices/model/model-slice';
 import { specialistsReducer } from './slices/specialists/specialists-slice';
@@ -129,6 +132,7 @@ import { hostRequirementsReducer } from './slices/host-requirements/host-require
 import { hudReducer } from './slices/hud/hud-slice';
 import { setupPromptReducer } from './slices/setup-prompt/setup-prompt-slice';
 import { workspaceTransferReducer } from './slices/workspace-transfer/workspace-transfer-slice';
+import { workspaceBulkTransferReducer } from './slices/workspace-bulk-transfer/workspace-bulk-transfer-slice';
 import { workspaceImportReducer } from './slices/workspace-import/workspace-import-slice';
 import { workspaceShareReducer } from './slices/workspace-share/workspace-share-slice';
 
@@ -140,7 +144,6 @@ export const reducers = {
   repositoryCheckout: repositoryCheckoutReducer,
   providerSettings: providerSettingsReducer,
   settingsEvents: settingsEventsReducer,
-  antigravitySetup: antigravitySetupReducer,
   providerCatalog: providerCatalogReducer,
   providerModels: providerModelsReducer,
   backgroundAgentSettings: backgroundAgentSettingsReducer,
@@ -155,12 +158,14 @@ export const reducers = {
   featureCodes: featureCodesReducer,
   globalModals: globalModalsReducer,
   knownRepos: knownReposReducer,
+  pluginsSettings: pluginsSettingsReducer,
   deepLinks: deepLinksReducer,
   model: modelReducer,
   agentModel: agentModelReducer,
   pip: pipReducer,
   dockConversation: dockConversationReducer,
   power: powerReducer,
+  machineRail: machineRailReducer,
   specialists: specialistsReducer,
   systemStatus: systemStatusReducer,
   transientUi: transientUiReducer,
@@ -261,9 +266,12 @@ export const reducers = {
   hud: hudReducer,
   setupPrompt: setupPromptReducer,
   workspaceTransfer: workspaceTransferReducer,
+  workspaceBulkTransfer: workspaceBulkTransferReducer,
   workspaceImport: workspaceImportReducer,
   workspaceShare: workspaceShareReducer,
   invitationAccountSearch: invitationAccountSearchReducer,
   hostMembership: hostMembershipReducer,
   remoteMachines: remoteMachinesReducer,
+  nodes: nodesReducer,
+  cloudMachines: cloudMachinesReducer,
 } as const;

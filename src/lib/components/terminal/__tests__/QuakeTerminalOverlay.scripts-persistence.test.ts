@@ -104,16 +104,6 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn(),
-    start: vi.fn().mockResolvedValue({ success: true }),
-    stop: vi.fn(),
-    restart: vi.fn(),
-    remove: vi.fn(),
-    update: vi.fn(),
-  },
-}));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));

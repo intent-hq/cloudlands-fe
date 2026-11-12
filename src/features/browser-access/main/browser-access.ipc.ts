@@ -48,10 +48,12 @@ function createController(): BrowserAccessController {
     prefs: { get: (key) => getLocalPref(key), set: (key, value) => setLocalPref(key, value) },
     webRoot: resolveWebRoot(),
     log,
-    createServer: (getAccessKey) =>
+    createServer: (getAccessKey, signIn) =>
       createBrowserAccessServer({
         webRoot: resolveWebRoot(),
         getAccessKey,
+        consumeSignInCode: signIn.consumeSignInCode,
+        onPageOrigin: signIn.onPageOrigin,
         log,
         listConnections: (backendId) => listConnectionsForBrowserAccess(backendId),
         openUpstream: async (connectionId) => {
@@ -61,10 +63,12 @@ function createController(): BrowserAccessController {
         loginText: () => ({
           lang: getMainActiveLocale(),
           title: m.browserAccess_login_title(),
-          prompt: m.browserAccess_login_prompt(),
-          keyLabel: m.browserAccess_login_key_label(),
+          prompt: m.browserAccess_login_desktopPrompt_description(),
+          keyLabel: m.browserAccess_login_credential_label(),
           submit: m.browserAccess_login_submit_label(),
-          invalidKey: m.browserAccess_login_invalidKey_error(),
+          invalidKey: m.browserAccess_login_invalidCredential_error(),
+          codeUsed: m.browserAccess_login_codeUsed_error(),
+          codeReady: m.browserAccess_login_codeReady_description(),
           tooManyAttempts: m.browserAccess_login_tooManyAttempts_error(),
         }),
       }),
@@ -113,6 +117,14 @@ export async function setupBrowserAccess(): Promise<void> {
       EmptySchema,
       async () => current.resetKey(),
       BROWSER_ACCESS_CHANNELS.RESET_KEY,
+    ),
+  );
+  ipcMain.handle(
+    BROWSER_ACCESS_CHANNELS.CREATE_SIGN_IN_CODE,
+    createSafeValidatedHandler(
+      EmptySchema,
+      async () => current.createSignInCode(),
+      BROWSER_ACCESS_CHANNELS.CREATE_SIGN_IN_CODE,
     ),
   );
   await loaded;

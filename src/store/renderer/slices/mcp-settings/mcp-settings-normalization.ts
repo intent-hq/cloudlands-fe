@@ -207,5 +207,6 @@ export function copyServerForState(source: McpServerConfig): McpServerConfig {
   if (source.authType !== undefined) server.authType = source.authType;
   if (source.disabled !== undefined) server.disabled = source.disabled;
   if (source.workspaceDisabled !== undefined) server.workspaceDisabled = source.workspaceDisabled;
+  if (source.plugin !== undefined) server.plugin = source.plugin;
   return server;
 }

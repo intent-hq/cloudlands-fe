@@ -243,6 +243,7 @@
       checked={action.checked}
       leading={action.icon ? leading : undefined}
       indeterminate={action.kind === 'checkbox' && action.indeterminate}
+      indicator={action.kind === 'checkbox' ? action.indicator : undefined}
       {disabled}
       aria-describedby={descriptionId}
       closeOnSelect={action.closeOnSelect ?? false}

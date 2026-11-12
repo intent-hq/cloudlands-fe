@@ -20,7 +20,6 @@
   import { resolveOnboardingSelectedProvider } from '../utils/resolve-onboarding-selected-provider';
   import { isOnboardingProviderVisible } from '../utils/is-onboarding-provider-visible';
   import { orderOnboardingProviders } from '../utils/order-onboarding-providers';
-  import { stableShuffleOrder, type StableShuffleCache } from '../utils/stable-shuffle-order';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
 
   import { selectIsFeatureEnabled } from '$store/renderer/slices/feature-codes/feature-codes-selectors';
@@ -95,6 +94,7 @@
     grok: { color1: '#000000', color2: '#252525' },
     unsloth: { color1: '#0FA47F', color2: '#106B55' },
     cortex: { color1: '#FFA2A3', color2: '#FFA2A3' },
+    cursor: { color1: '#14120B', color2: '#26251E' },
   };
 
   const DEFAULT_BRAND: ProviderBrandColors = { color1: '#555', color2: '#555' };
@@ -140,6 +140,10 @@
       installCommand: 'curl -fsSL https://opencode.ai/install | bash',
       docsUrl: 'https://docs.unsloth.ai',
     },
+    cursor: {
+      installCommand: 'curl https://cursor.com/install -fsS | bash',
+      docsUrl: 'https://cursor.com/docs/cli/installation',
+    },
     cortex: {
       installCommand: 'curl -LsS https://ai.snowflake.com/static/cc-scripts/install.sh | sh',
       docsUrl: 'https://docs.snowflake.com/en/user-guide/cortex-code/cortex-code-cli',
@@ -150,26 +154,10 @@
   const enabledProviders$ = selectEnabledProviders();
   const defaultProviderId$ = selectEffectiveDefaultProviderId();
 
-  /** Cache carrying the per-mount shuffled id order across catalog
-   *  re-emissions. Deliberately non-reactive: it is bookkeeping for
-   *  `stableShuffleOrder`, not render state. */
-  let shuffleCache: StableShuffleCache | null = null;
-
-  /** Randomized provider order — shuffled once per catalog id set. The
-   *  catalog selector emits fresh array references (and fully re-hydrates on
-   *  every daemon reconnect), so the shuffle is keyed on the id set: same-id
-   *  re-emissions map the current entry objects into the cached shuffled
-   *  order; only an added/removed provider id draws a new shuffle. */
-  const randomizedProviderOrder = $derived.by(() => {
-    const result = stableShuffleOrder($catalogEntries$, shuffleCache);
-    shuffleCache = result.cache;
-    return result.entries;
-  });
-
   /** Visible providers (not hidden by env var / feature code gates),
    *  tier-ordered (confirmed-logged-in → installed-not-logged-in-or-unknown →
-   *  not-installed) from the last-known statuses, preserving the mount-time
-   *  shuffle within each tier. Tier 1 requires `authenticated === true` — a
+   *  not-installed) from the last-known statuses, then Claude Code, Codex
+   *  and the rest in catalog order within each tier. Tier 1 requires `authenticated === true` — a
    *  stricter bar than `isProviderReady`, which counts unknown auth as ready. */
   const visibleProviders = $derived.by(() => {
     const state = appStore.state;
@@ -177,7 +165,7 @@
     const statusMap = $providerStatusMap$;
     const loadingMap = $providerLoadingMap$;
     const hasCheckedOnce = $hasCheckedOnce$;
-    return orderOnboardingProviders(randomizedProviderOrder, statusMap)
+    return orderOnboardingProviders($catalogEntries$, statusMap)
       .filter((p) =>
         // Feature-code gate + env-var gate (via availability status, default-deny)
         isOnboardingProviderVisible({
@@ -210,13 +198,15 @@
            */
           authDetails: status?.authDetails,
           docsUrl: meta?.docsUrl ?? p.loginDocsUrl ?? '',
-          installCommand: meta?.installCommand ?? '',
+          // A refused CLI (status.unavailableReason) is present: show its warning, not install steps.
+          installCommand: status?.unavailableReason ? '' : (meta?.installCommand ?? ''),
           /** Catalog-provided login command (PROTOCOL §5.38 loginCommandHint);
            *  rendered as copyable guidance when the provider needs login. */
           loginCommandHint: p.loginCommandHint,
           hasNpxFallback: status?.hasNpxFallback ?? false,
           /** Status warning surfaced by the availability check (e.g. npx missing). */
           warning: status?.warning,
+          unavailableReason: status?.unavailableReason,
         };
       });
   });

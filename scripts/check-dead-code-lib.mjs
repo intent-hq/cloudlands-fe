@@ -32,6 +32,197 @@ export const CANARY_FILES = Object.freeze([
 
 export const CANARY_PATHS = Object.freeze(CANARY_FILES.map((file) => file.path));
 
+// The production pass must report a file whose only importer is a test. Old workspace-naming
+// code (intent-slug-generator.ts) survived months that way because tests count as entries in
+// the default pass (cloudlands-fe#4329). Vitest excludes the canary directory, so the stub
+// test is never run.
+const TEST_ONLY_STEM = 'knip-canary-test-only-a-b';
+export const TEST_ONLY_CANARY_FILES = Object.freeze([
+  Object.freeze({
+    path: `${CANARY_DIR}/${TEST_ONLY_STEM}.ts`,
+    content:
+      '// knip gate canary — imported only by a test; the production pass must report it.\nexport const knipTestOnlyCanary = true;\n',
+  }),
+  Object.freeze({
+    path: `${CANARY_DIR}/${TEST_ONLY_STEM}.test.ts`,
+    content: `import { knipTestOnlyCanary } from './${TEST_ONLY_STEM}';\n\nvoid knipTestOnlyCanary;\n`,
+  }),
+]);
+export const PRODUCTION_CANARY_PATHS = Object.freeze([TEST_ONLY_CANARY_FILES[0].path]);
+export const ALL_CANARY_FILES = Object.freeze([...CANARY_FILES, ...TEST_ONLY_CANARY_FILES]);
+
+// Generated modules that source imports resolve through. Without them knip reports more
+// than a thousand unresolved `$shared/paraglide/messages.js` imports that read as dead code.
+// Each output is required only in a root that has its generator input, so knip fixture
+// roots in tests are unaffected.
+export const GENERATED_FILES = Object.freeze([
+  Object.freeze({
+    output: 'src/shared/paraglide/messages.js',
+    input: 'project.inlang/settings.json',
+    command: 'pnpm run generate:i18n',
+  }),
+  Object.freeze({
+    output: 'src/main/build-config.generated.ts',
+    input: 'scripts/generate-build-config.cjs',
+    command: 'pnpm run generate:build-config',
+  }),
+]);
+
+/** Generated files whose input exists but whose output does not; `exists` takes a root-relative path. */
+export function findMissingGeneratedFiles(exists) {
+  return GENERATED_FILES.filter((file) => exists(file.input) && !exists(file.output));
+}
+
+export function formatMissingGeneratedFiles(missing) {
+  return (
+    `Dead-code check not run: generated file(s) missing (${missing.map((file) => file.output).join(', ')}). ` +
+    `Run ${missing.map((file) => file.command).join(' && ')}, or use pnpm run lint:dead-code, which generates them.`
+  );
+}
+
+// Issue types of the production pass. Dependencies, unresolved imports and duplicates stay
+// with the default pass, which already fails on them.
+export const PRODUCTION_ISSUE_TYPES = Object.freeze([
+  'files',
+  'exports',
+  'nsExports',
+  'types',
+  'nsTypes',
+  'enumMembers',
+  'namespaceMembers',
+]);
+
+export const PRODUCTION_BASELINE_PATH = 'scripts/knip-production-baseline.json';
+export const PRODUCTION_BASELINE_PRUNE_COMMAND =
+  'node scripts/check-dead-code.mjs --prune-baseline';
+
+function symbolName(entry) {
+  return entry.namespace ? `${entry.namespace}.${entry.name}` : entry.name;
+}
+
+/** Stable `type\tfile[\tsymbol]` keys for production-pass issues (no line numbers). */
+export function productionIssueKeys(issues) {
+  const keys = new Set();
+  for (const row of issues) {
+    for (const type of PRODUCTION_ISSUE_TYPES) {
+      for (const entry of row[type] ?? []) {
+        keys.add(
+          type === 'files' ? `files\t${row.file}` : `${type}\t${row.file}\t${symbolName(entry)}`,
+        );
+      }
+    }
+  }
+  return keys;
+}
+
+/** Baseline JSON → key set. A missing baseline (null) is empty. */
+export function parseProductionBaseline(text) {
+  if (text === null) return new Set();
+  const parsed = JSON.parse(text);
+  if (parsed?.version !== 1) throw new Error(`${PRODUCTION_BASELINE_PATH}: expected version 1`);
+  const keys = new Set();
+  for (const file of parsed.files ?? []) keys.add(`files\t${file}`);
+  for (const type of PRODUCTION_ISSUE_TYPES) {
+    if (type === 'files') continue;
+    for (const [file, symbols] of Object.entries(parsed[type] ?? {})) {
+      for (const symbol of symbols) keys.add(`${type}\t${file}\t${symbol}`);
+    }
+  }
+  return keys;
+}
+
+/** Key set → deterministic baseline JSON text (sorted, one symbol per line). */
+export function serializeProductionBaseline(keys) {
+  const out = {
+    version: 1,
+    note: `Known code used only by tests. Shrink-only: delete entries as the code is removed or gains a production caller (${PRODUCTION_BASELINE_PRUNE_COMMAND}). Never add entries.`,
+  };
+  const sorted = [...keys].sort();
+  const files = sorted.filter((key) => key.startsWith('files\t')).map((key) => key.slice(6));
+  if (files.length) out.files = files;
+  for (const type of PRODUCTION_ISSUE_TYPES) {
+    if (type === 'files') continue;
+    const byFile = {};
+    for (const key of sorted) {
+      const [keyType, file, symbol] = key.split('\t');
+      if (keyType === type) (byFile[file] ??= []).push(symbol);
+    }
+    if (Object.keys(byFile).length) out[type] = byFile;
+  }
+  return `${JSON.stringify(out, null, 2)}\n`;
+}
+
+const fileOf = (key) => key.split('\t')[1];
+
+// A baselined unused file covers every finding inside it: once the file gains a production
+// caller, its leftover unused exports are the same debt, not new debt.
+function coveredByBaselinedFile(key, baseline) {
+  return !key.startsWith('files\t') && baseline.has(`files\t${fileOf(key)}`);
+}
+
+/** New findings fail the gate; baselined findings that disappeared must be pruned. */
+export function compareToBaseline(current, baseline) {
+  return {
+    added: [...current]
+      .filter((key) => !baseline.has(key) && !coveredByBaselinedFile(key, baseline))
+      .sort(),
+    stale: [...baseline].filter((key) => !current.has(key)).sort(),
+  };
+}
+
+const KEY_TYPE_LABEL = Object.freeze({
+  files: 'file',
+  exports: 'export',
+  nsExports: 'namespace export',
+  types: 'type',
+  nsTypes: 'namespace type',
+  enumMembers: 'enum member',
+  namespaceMembers: 'namespace member',
+});
+
+function describeKey(key) {
+  const [type, file, symbol] = key.split('\t');
+  return symbol === undefined
+    ? `${file}  (${KEY_TYPE_LABEL[type]})`
+    : `${file}  ${symbol}  (${KEY_TYPE_LABEL[type] ?? type})`;
+}
+
+/** Report for the production pass; empty string when it passes. */
+export function renderProductionResult({ added, stale }) {
+  const lines = [];
+  if (added.length) {
+    lines.push(
+      `Code used only by tests (${added.length}) — knip --production finds no production caller:`,
+      ...added.map((key) => `  ${describeKey(key)}`),
+      '',
+      'Delete it, or move a test-only helper under __tests__/, src/test/ or a *.fixture.ts /',
+      '*Harness.svelte name (see knip.jsonc "project"). Tag a deliberate test seam `/** @internal */`.',
+      `Do not add entries to ${PRODUCTION_BASELINE_PATH}; it is shrink-only.`,
+      '',
+    );
+  }
+  if (stale.length) {
+    lines.push(
+      `${PRODUCTION_BASELINE_PATH} lists ${stale.length} finding(s) knip no longer reports:`,
+      ...stale.map((key) => `  ${describeKey(key)}`),
+      '',
+      `Shrink the baseline with: ${PRODUCTION_BASELINE_PRUNE_COMMAND}`,
+      '',
+    );
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Baseline after pruning: entries still reported, plus the findings inside a baselined file
+ * that is now used (they replace its file entry). Never admits a finding from another file.
+ */
+export function pruneBaseline(current, baseline) {
+  return new Set(
+    [...current].filter((key) => baseline.has(key) || coveredByBaselinedFile(key, baseline)),
+  );
+}
+
 export const MASK_REFERENCE = 'https://github.com/intent-hq/cloudlands-fe/pull/2695';
 
 // Mirrors knip's ISSUE_TYPE_TITLE, in its report order.
@@ -234,5 +425,15 @@ export function formatCanaryFailure(missing) {
     '  2. no import.meta.glob over src/**/*.svelte (or src/lib/components/**) in tests/entries',
     '  3. .gitignore patterns must not match source files (e.g. an unanchored *-*-*-*-*/ rule; knip honours .gitignore)',
     `See ${MASK_REFERENCE} for how each mask hid ~100 dead files.`,
+  ].join('\n');
+}
+
+export function formatProductionCanaryFailure(missing) {
+  return [
+    'lint:dead-code production canary FAILED — knip --production no longer reports a file only a test imports:',
+    ...missing.map((path) => `  - ${path}`),
+    '',
+    'Production entries must carry the `!` suffix in knip.jsonc and test files must not; a',
+    'test pattern marked `!`, or src/** losing its `!` in "project", hides test-only code.',
   ].join('\n');
 }

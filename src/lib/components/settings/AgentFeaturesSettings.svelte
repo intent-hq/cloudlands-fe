@@ -23,6 +23,11 @@
    * carries a companion numeric input for `agents.maxTopLevelAgents` (min 1,
    * no max, default 20; the runaway-spawn guard on the peer-spawn path,
    * disabled while the feature is off).
+   *
+   * `agents.permissionPolicy` (daemon default for tool approvals) renders as
+   * its own select section, hidden when settings.list has no entry for it
+   * (older daemon). Unlike the feature toggles it applies on each agent's
+   * next turn; a chat's own override wins over it.
    */
   import { onMount } from 'svelte';
   import {
@@ -30,6 +35,7 @@
     defineSettings,
     defineSettingsCustomControls,
     type SettingEntry,
+    type SettingsSectionSchema,
   } from '$lib/components/patterns/settings';
   import { Button, Input } from '$lib/components/patterns/settings/custom-controls';
   import { store as appStore } from '$store/renderer/store';
@@ -46,6 +52,15 @@
     selectSettingsFormOperation,
   } from '$store/renderer/slices/settings-events/settings-events-selectors';
   import { m } from '$shared/paraglide/messages.js';
+  import DesktopOsChecklist from '$features/desktop/renderer/DesktopOsChecklist.svelte';
+  import {
+    selectDesktopOsPermissions,
+    selectDesktopOsPermissionsChecking,
+  } from '$store/renderer/slices/desktop-control/desktop-control-selectors';
+  import {
+    desktopOsPermissionsCleared,
+    desktopOsPermissionsRequested,
+  } from '$store/renderer/slices/desktop-control/desktop-control-slice';
 
   import {
     FEATURE_DEFAULTS,
@@ -65,6 +80,22 @@
   // Daemon-side registered bound for agents.maxTopLevelAgents (min 1, no max).
   const MIN_MAX_TOP_LEVEL_AGENTS = 1;
   const DEFAULT_MAX_TOP_LEVEL_AGENTS = 20;
+
+  // i18n-ignore (wire setting path, not user-facing text)
+  const PERMISSION_POLICY_PATH = 'agents.permissionPolicy';
+  const PERMISSION_POLICIES = ['interactive', 'allow', 'auto', 'deny'] as const;
+  type PermissionPolicy = (typeof PERMISSION_POLICIES)[number];
+  // i18n-ignore (wire enum value, not user-facing text)
+  const DEFAULT_PERMISSION_POLICY: PermissionPolicy = 'allow';
+  const PERMISSION_POLICY_LABELS: Record<PermissionPolicy, () => string> = {
+    interactive: m.settings_toolApprovals_interactive_label,
+    allow: m.settings_toolApprovals_allow_label,
+    auto: m.settings_toolApprovals_auto_label,
+    deny: m.settings_toolApprovals_deny_label,
+  };
+  function isPermissionPolicy(value: unknown): value is PermissionPolicy {
+    return typeof value === 'string' && (PERMISSION_POLICIES as readonly string[]).includes(value);
+  }
 
   // Coerce values to daemon defaults; peer-agent support is checked separately.
   function coerceValue(path: FeaturePath, value: unknown): boolean {
@@ -111,6 +142,23 @@
   const editedMaxAgents = $derived(String($form$?.drafts[MAX_AGENTS_PATH] ?? persistedMaxAgents));
   const maxAgentsSaving = $derived($maxAgentsOperation$?.status === 'pending');
 
+  // Daemon-wide tool approval default; hidden when the daemon has no entry.
+  const permissionPolicyOperation$ = selectSettingsFormOperation(identity, PERMISSION_POLICY_PATH);
+  const permissionPolicySupported = $derived($entries$[PERMISSION_POLICY_PATH] !== undefined);
+  const permissionPolicy = $derived.by((): PermissionPolicy => {
+    const value =
+      $form$?.drafts[PERMISSION_POLICY_PATH] ?? $entries$[PERMISSION_POLICY_PATH]?.value;
+    return isPermissionPolicy(value) ? value : DEFAULT_PERMISSION_POLICY;
+  });
+  const permissionPolicySaving = $derived($permissionPolicyOperation$?.status === 'pending');
+
+  // This computer's missing OS grants for desktop control; set only while something is missing.
+  const osPermissions$ = selectDesktopOsPermissions();
+  const osPermissionsChecking$ = selectDesktopOsPermissionsChecking();
+  const osPermissions = $derived($osPermissions$);
+  const osPermissionsChecking = $derived($osPermissionsChecking$);
+  const requestOsPermissions = () => appStore.dispatch(desktopOsPermissionsRequested());
+
   onMount(() => {
     appStore.dispatch(settingsFormOpened(identity, 'agent-features'));
     appStore.dispatch(
@@ -139,6 +187,28 @@
       settingsFormSaveRequested({ ...identity, resource: path, requestId: crypto.randomUUID() }, [
         { path, value: checked },
       ]),
+    );
+    if (path === 'agentFeatures.desktopControl') {
+      appStore.dispatch(checked ? desktopOsPermissionsRequested() : desktopOsPermissionsCleared());
+    }
+  }
+
+  function handlePermissionPolicyChange(value: string) {
+    const form = selectSettingsForm.select(appStore.state, identity);
+    const entries = selectSettingsFormEntries.select(appStore.state, identity);
+    if (
+      !selectCanAdministerHost.select(appStore.state) ||
+      !form?.loaded ||
+      !entries[PERMISSION_POLICY_PATH] ||
+      !isPermissionPolicy(value)
+    )
+      return;
+    appStore.dispatch(settingsFormDraftChanged(identity, PERMISSION_POLICY_PATH, value));
+    appStore.dispatch(
+      settingsFormSaveRequested(
+        { ...identity, resource: PERMISSION_POLICY_PATH, requestId: crypto.randomUUID() },
+        [{ path: PERMISSION_POLICY_PATH, value }],
+      ),
     );
   }
 
@@ -223,6 +293,19 @@
         get: () => currentValue,
         set: (checked: boolean) => handleToggle(feature.path, checked),
       });
+      if (
+        feature.path === 'agentFeatures.desktopControl' &&
+        osPermissions &&
+        values['agentFeatures.desktopControl']
+      ) {
+        entries.push({
+          kind: 'custom',
+          id: 'desktop-os-permissions',
+          label: m.desktop_os_checklist_title(),
+          description: osPermissions.guidance,
+          busy: osPermissionsChecking,
+        });
+      }
       if (feature.path === 'agentFeatures.prMonitor') {
         entries.push({
           kind: 'custom',
@@ -242,8 +325,32 @@
         });
       }
     }
+    const sections: SettingsSectionSchema[] = [];
+    if (permissionPolicySupported) {
+      sections.push({
+        id: 'tool-approvals',
+        title: m.settings_section_toolApprovals(),
+        description: m.settings_toolApprovals_description(),
+        entries: [
+          {
+            kind: 'select',
+            id: PERMISSION_POLICY_PATH,
+            label: m.settings_toolApprovals_default_label(),
+            disabled: loading || permissionPolicySaving,
+            busy: permissionPolicySaving,
+            options: PERMISSION_POLICIES.map((value) => ({
+              value,
+              label: PERMISSION_POLICY_LABELS[value](),
+            })),
+            get: () => permissionPolicy,
+            set: handlePermissionPolicyChange,
+          },
+        ],
+      });
+    }
     return defineSettings({
       sections: [
+        ...sections,
         {
           id: 'agent-features',
           title: m.settings_section_agentFeatures(),
@@ -291,6 +398,22 @@
   </div>
 {/snippet}
 
+{#snippet osPermissionsControl()}
+  {#if osPermissions}
+    <div class="flex w-64 max-w-full flex-col items-end gap-2">
+      <DesktopOsChecklist checklist={osPermissions.checklist} />
+      <Button
+        variant="secondary"
+        size="xs"
+        onclick={requestOsPermissions}
+        disabled={osPermissionsChecking}
+      >
+        {m.desktop_os_settings_checkAgain()}
+      </Button>
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet maxAgentsControl()}
   <!-- i18n-ignore (template expression, not user-facing text) -->
   {@const maxAgentsNum = Number(editedMaxAgents)}
@@ -335,5 +458,6 @@
   custom={defineSettingsCustomControls({
     'pr-monitor-debounce': debounceControl,
     'max-top-level-agents': maxAgentsControl,
+    'desktop-os-permissions': osPermissionsControl,
   })}
 />

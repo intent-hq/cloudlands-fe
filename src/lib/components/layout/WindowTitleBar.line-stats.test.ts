@@ -52,6 +52,9 @@ vi.mock('$store/renderer/slices/user-preferences/user-preferences-selectors', ()
 vi.mock('$store/renderer/slices/sidebar-nav/sidebar-nav-selectors', () => ({
   selectOnboardingActive: () => readable(false),
 }));
+vi.mock('$store/renderer/slices/machine-rail/machine-rail-selectors', () => ({
+  selectMachineRailEnabled: () => readable(false),
+}));
 vi.mock('$lib/utils/workspace-navigation', () => ({
   navigateBackFromSettings: vi.fn(),
   navigateToSettings: vi.fn(),

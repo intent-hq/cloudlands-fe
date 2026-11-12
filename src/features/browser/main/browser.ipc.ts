@@ -266,7 +266,7 @@ const ClearAgentTabsSchema = z.object({
 });
 
 const ExecSchema = z.object({
-  actions: z.array(z.record(z.unknown())),
+  actions: z.array(z.record(z.string(), z.unknown())),
   tabId: z.string().optional(),
   // i18n-ignore (agent-facing IPC validation message, not user-facing)
   workspaceId: z.string().refine((value) => value.trim().length > 0, 'Workspace ID is required'),

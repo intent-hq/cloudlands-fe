@@ -11,7 +11,7 @@
 import { m } from '$shared/paraglide/messages.js';
 import type { ProviderCatalogEntry } from '$shared/provider-catalog';
 
-const ONBOARDING_TEST_PROMPT_PROVIDERS = new Set(['claude-code']);
+const ONBOARDING_TEST_PROMPT_PROVIDERS = new Set(['claude-code', 'cursor']);
 
 /**
  * Whether onboarding should test an allowlisted provider. The capability

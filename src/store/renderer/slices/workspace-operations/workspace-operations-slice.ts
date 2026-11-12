@@ -26,11 +26,13 @@ export type WorkspaceOperationsState = {
   runningAgentNamesForArchive: string[];
   activeHookNamesForArchive: string[];
   openPrsForArchive: Collection<OpenPrWarningItem, 'number'>;
-  localChangesForArchive: LocalChangesWarning | null;
   guestsForArchive: GuestsWarning | null;
   showBulkArchiveConfirm: boolean;
   showBulkDeleteConfirm: boolean;
+  /** Bulk retire (purge folders) confirmation; it needs no active-work preflight. */
+  showBulkRetireConfirm: boolean;
   pendingBulkWorkspaceIds: string[];
+  /** `null` titles the bulk dialog by count (a Home selection) instead of by group. */
   pendingBulkGroupLabel: string | null;
   bulkActiveAgentCount: number;
   bulkActiveHookCount: number;
@@ -40,7 +42,7 @@ export type WorkspaceOperationsState = {
   /** Monotonic token; only the compute matching the latest open folds its counts. */
   bulkComputeToken: number;
   bulkOperationInFlight: boolean;
-  bulkOperationKind: 'archive' | 'delete' | null;
+  bulkOperationKind: BulkOperationKind | null;
   bulkReservedWorkspaceIds: string[];
   showRemoveRepoConfirm: boolean;
   pendingRemoveRepoPath: string | null;
@@ -48,6 +50,8 @@ export type WorkspaceOperationsState = {
   showRetireConfirm: boolean;
   pendingRetireWorkspaceId: string | null;
 };
+
+export type BulkOperationKind = 'archive' | 'delete' | 'retire';
 
 const emptyOpenPrs = () => createCollection<OpenPrWarningItem, 'number'>('number');
 
@@ -64,10 +68,10 @@ export const initialState: WorkspaceOperationsState = {
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
-  localChangesForArchive: null,
   guestsForArchive: null,
   showBulkArchiveConfirm: false,
   showBulkDeleteConfirm: false,
+  showBulkRetireConfirm: false,
   pendingBulkWorkspaceIds: [],
   pendingBulkGroupLabel: null,
   bulkActiveAgentCount: 0,
@@ -143,7 +147,6 @@ export const openArchiveWarning = createAction<
       agentNames: string[];
       hookNames: string[];
       openPrs: OpenPrWarningItem[];
-      localChanges?: LocalChangesWarning | null;
       guests?: GuestsWarning | null;
     },
   ]
@@ -154,7 +157,7 @@ export const closeArchiveWarning = createAction('workspaceOperations/closeArchiv
 export const confirmArchiveWorkspace = createAction('workspaceOperations/confirmArchiveWorkspace');
 
 export const openBulkArchiveConfirm = createAction<
-  [payload: { workspaceIds: string[]; groupLabel: string }]
+  [payload: { workspaceIds: string[]; groupLabel?: string }]
 >('workspaceOperations/openBulkArchiveConfirm');
 
 export const closeBulkArchiveConfirm = createAction('workspaceOperations/closeBulkArchiveConfirm');
@@ -162,12 +165,21 @@ export const closeBulkArchiveConfirm = createAction('workspaceOperations/closeBu
 export const confirmBulkArchive = createAction('workspaceOperations/confirmBulkArchive');
 
 export const openBulkDeleteConfirm = createAction<
-  [payload: { workspaceIds: string[]; groupLabel: string }]
+  [payload: { workspaceIds: string[]; groupLabel?: string }]
 >('workspaceOperations/openBulkDeleteConfirm');
 
 export const closeBulkDeleteConfirm = createAction('workspaceOperations/closeBulkDeleteConfirm');
 
 export const confirmBulkDelete = createAction('workspaceOperations/confirmBulkDelete');
+
+/** Open the bulk retire (purge folders) confirmation; nothing is retired until confirmed. */
+export const openBulkRetireConfirm = createAction<[payload: { workspaceIds: string[] }]>(
+  'workspaceOperations/openBulkRetireConfirm',
+);
+
+export const closeBulkRetireConfirm = createAction('workspaceOperations/closeBulkRetireConfirm');
+
+export const confirmBulkRetire = createAction('workspaceOperations/confirmBulkRetire');
 
 export const bulkActiveWorkComputed = createAction<
   [
@@ -183,7 +195,7 @@ export const bulkActiveWorkComputed = createAction<
 >('workspaceOperations/bulkActiveWorkComputed');
 
 export const bulkOperationStarted = createAction<
-  [payload: { kind: 'archive' | 'delete'; workspaceIds: string[] }]
+  [payload: { kind: BulkOperationKind; workspaceIds: string[] }]
 >('workspaceOperations/bulkOperationStarted');
 
 export const bulkOperationFinished = createAction('workspaceOperations/bulkOperationFinished');
@@ -225,17 +237,13 @@ workspaceOperationsReducer.with(closeDeleteWarning, (state) => ({
 }));
 workspaceOperationsReducer.with(
   openArchiveWarning,
-  (
-    state,
-    { payload: [{ workspaceId, agentNames, hookNames, openPrs, localChanges, guests }] },
-  ) => ({
+  (state, { payload: [{ workspaceId, agentNames, hookNames, openPrs, guests }] }) => ({
     ...state,
     showArchiveWarning: true,
     pendingArchiveWorkspaceId: workspaceId,
     runningAgentNamesForArchive: agentNames,
     activeHookNamesForArchive: hookNames,
     openPrsForArchive: createCollection<OpenPrWarningItem, 'number'>('number', openPrs),
-    localChangesForArchive: localChanges ?? null,
     guestsForArchive: guests ?? null,
   }),
 );
@@ -246,7 +254,6 @@ workspaceOperationsReducer.with(closeArchiveWarning, (state) => ({
   runningAgentNamesForArchive: [],
   activeHookNamesForArchive: [],
   openPrsForArchive: emptyOpenPrs(),
-  localChangesForArchive: null,
   guestsForArchive: null,
 }));
 workspaceOperationsReducer.with(
@@ -258,8 +265,9 @@ workspaceOperationsReducer.with(
           ...state,
           showBulkArchiveConfirm: true,
           showBulkDeleteConfirm: false,
+          showBulkRetireConfirm: false,
           pendingBulkWorkspaceIds: workspaceIds,
-          pendingBulkGroupLabel: groupLabel,
+          pendingBulkGroupLabel: groupLabel ?? null,
           bulkActiveAgentCount: 0,
           bulkActiveHookCount: 0,
           bulkOpenPrCount: 0,
@@ -288,8 +296,9 @@ workspaceOperationsReducer.with(
           ...state,
           showBulkArchiveConfirm: false,
           showBulkDeleteConfirm: true,
+          showBulkRetireConfirm: false,
           pendingBulkWorkspaceIds: workspaceIds,
-          pendingBulkGroupLabel: groupLabel,
+          pendingBulkGroupLabel: groupLabel ?? null,
           bulkActiveAgentCount: 0,
           bulkActiveHookCount: 0,
           bulkOpenPrCount: 0,
@@ -308,6 +317,24 @@ workspaceOperationsReducer.with(closeBulkDeleteConfirm, (state) => ({
   bulkOpenPrCount: 0,
   bulkGuestCount: 0,
   bulkPreflightReady: false,
+}));
+workspaceOperationsReducer.with(openBulkRetireConfirm, (state, { payload: [{ workspaceIds }] }) =>
+  state.bulkOperationInFlight
+    ? state
+    : {
+        ...state,
+        showBulkArchiveConfirm: false,
+        showBulkDeleteConfirm: false,
+        showBulkRetireConfirm: true,
+        pendingBulkWorkspaceIds: workspaceIds,
+        pendingBulkGroupLabel: null,
+      },
+);
+workspaceOperationsReducer.with(closeBulkRetireConfirm, (state) => ({
+  ...state,
+  showBulkRetireConfirm: false,
+  pendingBulkWorkspaceIds: [],
+  pendingBulkGroupLabel: null,
 }));
 workspaceOperationsReducer.with(
   bulkActiveWorkComputed,

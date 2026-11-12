@@ -524,6 +524,7 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
   'browser-access:set-enabled',
   'browser-access:set-port',
   'browser-access:reset-key',
+  'browser-access:create-sign-in-code',
   // Dock composer native sessions (capture, annotate, record, pick): main owns
   // the screen capture, overlay window and helper processes. Both callers
   // (dock-evidence-native.ts, dock-annotation-overlay-bridge.ts) invoke only
@@ -563,8 +564,9 @@ const LIVE_TRANSPORT_CHANNELS: ReadonlySet<string> = new Set([
  * — the snake_case workspace family, changes:*, mcp:*, and 8 ssh:* channels;
  * features/layout/panel-layout-history.client.ts — panel-layout:*; and the
  * uncalled workspaceClient get/close/duplicate/renameBranch/
- * preflightCloneCheck methods, retiring workspace:close / workspace:duplicate
- * / workspace:preflight-clone-check).
+ * preflightCloneCheck methods, retiring workspace:close and
+ * workspace:preflight-clone-check; the duplicate channel itself went with the
+ * daemon's duplicate method).
  */
 const KNOWN_UNBRIDGED_CHANNELS: ReadonlySet<string> = new Set([]);
 

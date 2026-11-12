@@ -7,14 +7,9 @@ import { tick } from 'svelte';
 import type { Note } from '$shared/types';
 import { ContentType, NoteVisibility } from '$shared/types';
 import {
-  flushNoteContent,
-  hasPendingNoteContent,
-  settleNoteContent,
-  updateNoteContent,
-} from '$features/notes/notes-write-service';
-import {
   restoreNoteVersion,
   settleNoteContentRequested,
+  type AppliedNoteContent,
 } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 
 const {
@@ -59,10 +54,24 @@ const {
   >();
   const editorWorkspaceIds: string[] = [];
   const editorInstances: any[] = [];
-  const mockUpdateNoteContent = vi.fn();
-  const mockHasPendingNoteContent = vi.fn(() => false);
-  const mockFlushNoteContent = vi.fn(async () => undefined);
-  const mockSettleNoteContent = vi.fn(async () => undefined);
+  const mockUpdateNoteContent =
+    vi.fn<
+      (
+        workspaceId: string,
+        noteId: string,
+        content: string,
+        options?: { immediate?: boolean; baseRev?: number; baseContent?: string },
+      ) => void
+    >();
+  const mockHasPendingNoteContent = vi.fn<(workspaceId: string, noteId: string) => boolean>(
+    () => false,
+  );
+  const mockFlushNoteContent = vi.fn<
+    (workspaceId: string, noteId: string) => Promise<AppliedNoteContent | undefined>
+  >(async () => undefined);
+  const mockSettleNoteContent = vi.fn<(workspaceId: string, noteId: string) => Promise<void>>(
+    async () => undefined,
+  );
   let routePersistenceToSaga = false;
 
   const dispatchAction = (action: any) => {
@@ -318,13 +327,6 @@ vi.mock('$lib/components/tiptap/TaskAgentStatus.svelte', async () => {
   return { default: MockSimple };
 });
 
-vi.mock('$lib/components/tiptap/TaskNotePreview.svelte', async () => {
-  const MockSimple = (
-    await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
-  ).default;
-  return { default: MockSimple };
-});
-
 vi.mock('$lib/components/tiptap/TaskStatusIcon.svelte', async () => {
   const MockSimple = (
     await import('$lib/components/workspace/sidebar/__tests__/mocks/MockSimple.svelte')
@@ -413,13 +415,6 @@ vi.mock('$store/renderer/slices/workspace-navigation/workspace-navigation-select
   selectWorkspaceNavigationHistory: {
     select: () => ({ history: [], currentIndex: -1 }),
   },
-}));
-
-vi.mock('$features/notes/notes-write-service', () => ({
-  updateNoteContent: mockUpdateNoteContent,
-  hasPendingNoteContent: mockHasPendingNoteContent,
-  flushNoteContent: mockFlushNoteContent,
-  settleNoteContent: mockSettleNoteContent,
 }));
 
 // Real action creators (incl. `restoreNoteVersion`) so a test can run the
@@ -793,12 +788,12 @@ describe('NoteWithComments task conversion regression', () => {
       let pending = false;
       let draft = '';
       const flushed: string[] = [];
-      vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text) => {
+      mockUpdateNoteContent.mockImplementation((_ws, _id, text) => {
         pending = true;
         draft = text;
       });
-      vi.mocked(hasPendingNoteContent).mockImplementation(() => pending);
-      vi.mocked(flushNoteContent).mockImplementation(async () => {
+      mockHasPendingNoteContent.mockImplementation(() => pending);
+      mockFlushNoteContent.mockImplementation(async () => {
         pending = false;
         flushed.push(draft);
         const merged = `${draft} second`;
@@ -850,8 +845,8 @@ describe('NoteWithComments task conversion regression', () => {
 
     it('folds and re-saves a keystroke when staging it queued nothing in the write-service', async () => {
       const editor = await renderAppliedNote();
-      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
-      vi.mocked(hasPendingNoteContent).mockReturnValue(false);
+      mockUpdateNoteContent.mockImplementation(() => undefined);
+      mockHasPendingNoteContent.mockReturnValue(false);
 
       await applyExternal('agent base', 5);
       await vi.advanceTimersByTimeAsync(150);
@@ -861,13 +856,13 @@ describe('NoteWithComments task conversion regression', () => {
       await applyExternal('agent base second', 6);
       await vi.advanceTimersByTimeAsync(75);
       editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' X');
-      vi.mocked(updateNoteContent).mockClear();
+      mockUpdateNoteContent.mockClear();
       await vi.advanceTimersByTimeAsync(75);
 
       expect(editor.getText()).toBe('agent base X second');
 
       await vi.advanceTimersByTimeAsync(1100);
-      const saved = vi.mocked(updateNoteContent).mock.calls.map((call) => call[2]);
+      const saved = mockUpdateNoteContent.mock.calls.map((call) => call[2]);
       expect(saved.at(-1)).toBe('agent base X second');
     });
   });
@@ -881,10 +876,10 @@ describe('NoteWithComments task conversion regression', () => {
   // the rev the editor text was derived from.
   describe('draft base revision', () => {
     /**
-     * Daemon model behind the mocked write-service (the service's own
+     * Daemon model behind the mocked note writes (the write saga's own
      * contract — first staging fixes the chain's base, immediate or 800 ms
-     * debounced flush — is modelled; the real service is covered in
-     * notes-write-service.test.ts). `expectedVersion === rev` writes the draft
+     * debounced flush — is modelled; the real saga is covered in
+     * notes-write-saga.test.ts). `expectedVersion === rev` writes the draft
      * verbatim; a stale rev three-way merges it from that rev's text (results
      * per the production `three_way_merge` oracle).
      */
@@ -919,15 +914,15 @@ describe('NoteWithComments task conversion regression', () => {
         return { content: merged, rev: daemon.rev };
       };
 
-      vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text, options) => {
+      mockUpdateNoteContent.mockImplementation((_ws, _id, text, options) => {
         pending = pending
           ? { ...pending, text }
           : { text, baseRev: options?.baseRev ?? getNoteById('spec')?.rev };
         if (timer) clearTimeout(timer);
         timer = setTimeout(() => void flush(), options?.immediate ? 0 : 800);
       });
-      vi.mocked(hasPendingNoteContent).mockImplementation(() => pending !== null);
-      vi.mocked(flushNoteContent).mockImplementation(flush);
+      mockHasPendingNoteContent.mockImplementation(() => pending !== null);
+      mockFlushNoteContent.mockImplementation(flush);
 
       const agentWrites = async (text: string) => {
         daemon.rev += 1;
@@ -951,7 +946,7 @@ describe('NoteWithComments task conversion regression', () => {
       vi.useFakeTimers();
       await vi.advanceTimersByTimeAsync(1200);
       const { daemon, sent, agentWrites } = modelExactWriteDaemon('base', 4);
-      vi.mocked(updateNoteContent).mockClear();
+      mockUpdateNoteContent.mockClear();
 
       // Continuous typing: two keystrokes 100 ms apart, both inside the
       // component's 1 s save debounce, so nothing has been staged yet.
@@ -959,12 +954,12 @@ describe('NoteWithComments task conversion regression', () => {
       await vi.advanceTimersByTimeAsync(100);
       editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' x2');
       await vi.advanceTimersByTimeAsync(100);
-      expect(updateNoteContent).not.toHaveBeenCalled();
+      expect(mockUpdateNoteContent).not.toHaveBeenCalled();
 
       await agentWrites('agent base');
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'base x1 x2', {
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'base x1 x2', {
         immediate: false,
         baseRev: 4,
         baseContent: 'base',
@@ -1000,17 +995,17 @@ describe('NoteWithComments task conversion regression', () => {
         await vi.advanceTimersByTimeAsync(1200);
 
         let pending = false;
-        vi.mocked(hasPendingNoteContent).mockImplementation(() => pending);
-        vi.mocked(updateNoteContent).mockImplementation((_ws, _id, text) => {
+        mockHasPendingNoteContent.mockImplementation(() => pending);
+        mockUpdateNoteContent.mockImplementation((_ws, _id, text) => {
           pending = true;
           replaceNotes([createNote('spec', 'Spec', text, { rev: 4 })]);
         });
-        vi.mocked(flushNoteContent).mockImplementation(async () => undefined);
-        vi.mocked(updateNoteContent).mockClear();
+        mockFlushNoteContent.mockImplementation(async () => undefined);
+        mockUpdateNoteContent.mockClear();
 
         editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' first');
         await vi.advanceTimersByTimeAsync(1000);
-        expect(updateNoteContent).toHaveBeenLastCalledWith('ws-1', 'spec', 'body first', {
+        expect(mockUpdateNoteContent).toHaveBeenLastCalledWith('ws-1', 'spec', 'body first', {
           immediate: false,
           baseRev: 4,
           baseContent: 'body',
@@ -1023,7 +1018,7 @@ describe('NoteWithComments task conversion regression', () => {
         await vi.advanceTimersByTimeAsync(3000);
         expect(editor.getText()).toBe('body first');
 
-        vi.mocked(updateNoteContent).mockClear();
+        mockUpdateNoteContent.mockClear();
         if (mode === 'undo') editor.commands.deleteRange({ from: 5, to: 11 });
         else editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' plus typing');
         const expectedDraft = mode === 'undo' ? 'body' : 'body first plus typing';
@@ -1033,7 +1028,7 @@ describe('NoteWithComments task conversion regression', () => {
         replaceNotes([createNote('spec', 'Spec', 'AGENT body first', { rev: 6 })]);
         await tick();
 
-        expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', expectedDraft, {
+        expect(mockUpdateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', expectedDraft, {
           immediate: false,
           baseRev: 5,
           baseContent: 'body first',
@@ -1062,23 +1057,23 @@ describe('NoteWithComments task conversion regression', () => {
       const saved = new Promise<{ content: string; rev: number }>((resolve) => {
         resolveSave = resolve;
       });
-      vi.mocked(hasPendingNoteContent).mockImplementation((_ws, id) => id === 'spec' && pending);
-      vi.mocked(updateNoteContent).mockImplementation((_ws, id, text) => {
+      mockHasPendingNoteContent.mockImplementation((_ws, id) => id === 'spec' && pending);
+      mockUpdateNoteContent.mockImplementation((_ws, id, text) => {
         if (id !== 'spec') return;
         pending = true;
         noteA = { ...noteA, content: text };
         replaceNotes([noteA, noteB]);
       });
-      vi.mocked(flushNoteContent).mockImplementation((_ws, id) =>
+      mockFlushNoteContent.mockImplementation((_ws, id) =>
         id === 'spec' ? saved : Promise.resolve(undefined),
       );
-      vi.mocked(flushNoteContent).mockClear();
+      mockFlushNoteContent.mockClear();
 
       editor.commands.insertContentAt(editor.state.doc.content.size - 1, ' local');
       noteA = { ...noteA, content: 'AGENT note A', rev: 5 };
       replaceNotes([noteA, noteB]);
       await tick();
-      expect(flushNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
+      expect(mockFlushNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
 
       const switchToB = async () => {
         await view.rerender({
@@ -1241,14 +1236,14 @@ describe('NoteWithComments task conversion regression', () => {
     const settled = new Promise<void>((resolve) => {
       resolveSettled = resolve;
     });
-    vi.mocked(hasPendingNoteContent).mockImplementation((_ws, id) => id === 'spec' && pending);
-    vi.mocked(updateNoteContent).mockImplementation((_ws, id) => {
+    mockHasPendingNoteContent.mockImplementation((_ws, id) => id === 'spec' && pending);
+    mockUpdateNoteContent.mockImplementation((_ws, id) => {
       if (id === 'spec') pending = true;
     });
-    vi.mocked(settleNoteContent).mockImplementation((_ws, id) =>
+    mockSettleNoteContent.mockImplementation((_ws, id) =>
       id === 'spec' ? settled : Promise.resolve(),
     );
-    vi.mocked(settleNoteContent).mockClear();
+    mockSettleNoteContent.mockClear();
     mockDispatch.mockClear();
     const restoreDispatched = () =>
       mockDispatch.mock.calls.some(
@@ -1261,12 +1256,12 @@ describe('NoteWithComments task conversion regression', () => {
       const restore = versionHistory.props!.onRestore!('version-1');
       await tick();
 
-      expect(updateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'note A local', {
+      expect(mockUpdateNoteContent).toHaveBeenCalledWith('ws-1', 'spec', 'note A local', {
         immediate: false,
         baseRev: 4,
         baseContent: 'note A',
       });
-      expect(settleNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
+      expect(mockSettleNoteContent).toHaveBeenCalledWith('ws-1', 'spec');
       expect(restoreDispatched()).toBe(false);
 
       pending = false;
@@ -1278,9 +1273,9 @@ describe('NoteWithComments task conversion regression', () => {
       // The suite's beforeEach only clears call history; a failure before
       // `pending` is reset would otherwise leak a stuck pending flag into
       // later `spec` tests through the unmount-time save.
-      vi.mocked(hasPendingNoteContent).mockImplementation(() => false);
-      vi.mocked(updateNoteContent).mockImplementation(() => undefined);
-      vi.mocked(settleNoteContent).mockImplementation(async () => undefined);
+      mockHasPendingNoteContent.mockImplementation(() => false);
+      mockUpdateNoteContent.mockImplementation(() => undefined);
+      mockSettleNoteContent.mockImplementation(async () => undefined);
     }
   });
 

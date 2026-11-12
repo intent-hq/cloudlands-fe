@@ -251,7 +251,6 @@
       store,
       close: () => store.dispatch(closeDockConversationRequested()),
       reopen: () => store.dispatch(openDockConversationRequested(conversationWireWorkspace)),
-      setCaption: (text: string) => (caption = text),
     };
     store.dispatch(openDockConversationRequested(conversationWireWorkspace));
     ready = true;
@@ -315,14 +314,5 @@
     background: var(--color-background);
     min-height: 100vh;
     box-sizing: border-box;
-  }
-  .caption {
-    margin: 0;
-    width: 420px;
-    font:
-      500 13px/1.4 Inter,
-      system-ui,
-      sans-serif;
-    color: var(--color-muted-foreground);
   }
 </style>

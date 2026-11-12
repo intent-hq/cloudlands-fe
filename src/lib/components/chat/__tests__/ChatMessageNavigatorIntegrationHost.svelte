@@ -10,12 +10,11 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { store } from '$store/renderer/store';
   import { previousUserMessageLoadSaga } from '$store/renderer/slices/chat-state/sagas/chat-scrollback-saga';
+  import { startChatFixtureSagas } from '../../../../test/chat-fixture-sagas';
   import {
     addMessage,
-    updateMessage,
     bulkUpsertSessions,
     prependHistoryMessages,
-    replaceMessages,
     seedHistoryAround,
     setHistoryOldestReached,
     setAgentStreaming,
@@ -35,8 +34,14 @@
   const workspaceId = 'message-navigator-integration';
   const agentId = 'message-navigator-agent';
   const timestamp = '2026-08-16T04:00:00.000Z';
+  // The draft saga answers the composer's draft restore. Without it the draft gate
+  // stays up until its 5 s fallback, then the composer shrinks and every row pinned to
+  // the bottom drops by the gate's height, under whatever the test is pointing at.
   const disposeStore = startRootStoreLifecycle(store, {
-    startSagas: (target) => [target.runSaga(previousUserMessageLoadSaga)],
+    startSagas: (target) => [
+      target.runSaga(previousUserMessageLoadSaga),
+      ...startChatFixtureSagas(target),
+    ],
   });
   let {
     theme = 'light',
@@ -227,16 +232,6 @@
     );
   }
 
-  function growStreamingTail() {
-    // Bounded synthetic stream update: grow the existing tail, not a new turn.
-    store.dispatch(setAgentStreaming(agentId, true));
-    store.dispatch(
-      updateMessage(agentId, 'assistant-25', {
-        contentBlocks: [{ type: 'text', text: 'Assistant response 25. '.repeat(18) }],
-      }),
-    );
-  }
-
   const navigationState$ = store.createSelector((state) => ({
     historyIds:
       state.agentSessions?.historySegmentsByAgentId?.[agentId]?.messages.map((m) => m.id) ?? [],
@@ -273,12 +268,6 @@
       return structuredClone(page);
     };
   }
-  function truncateNavigationTarget() {
-    const currentMessages = fixtureMessages ?? messages;
-    const targetIndex = currentMessages.findIndex((message) => message.id === 'user-23');
-    store.dispatch(replaceMessages(agentId, currentMessages.slice(0, targetIndex)));
-  }
-
   function discardTranscript(replayed?: true) {
     store.dispatch(
       chatTranscriptSnapshotApplied(
@@ -307,11 +296,6 @@
   <button class="sr-only" data-testid="release-page" onclick={() => pendingPages.shift()?.()}
     >Release page</button
   >
-  <button
-    class="sr-only"
-    data-testid="truncate-navigation-target"
-    onclick={truncateNavigationTarget}>Truncate navigation target</button
-  >
   <button class="sr-only" data-testid="discard-transcript" onclick={() => discardTranscript()}
     >Discard transcript</button
   >
@@ -327,9 +311,6 @@
     >Toggle panel</button
   >
   {#if panelMounted}<PanelLayout {workspaceId} layoutId={workspaceId} contained />{/if}
-  <button class="sr-only" data-testid="grow-streaming-tail" onclick={growStreamingTail}
-    >Grow streaming tail</button
-  >
   <button
     type="button"
     class="sr-only"

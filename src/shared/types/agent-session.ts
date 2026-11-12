@@ -203,6 +203,9 @@ interface ProviderReplacementRequired {
   reason: 'profile-missing' | 'provider-disabled';
 }
 
+/** Values accepted by `agent.update { changes: { permissionPolicy } }` (§5.5). */
+export type AgentPermissionPolicy = 'interactive' | 'allow' | 'auto' | 'deny';
+
 export interface AgentSession extends AgentNodeFields {
   // ========== Primary Identifiers ==========
   /** The agent's unique identifier */
@@ -348,6 +351,22 @@ export interface AgentSession extends AgentNodeFields {
    * daemon cannot pin, so the menu hides the action.
    */
   pinned?: boolean;
+
+  /**
+   * Per-chat permission policy override (`permissionPolicy`, §5.5 AgentLite).
+   * Set via `agent.update { changes: { permissionPolicy } }`; `null` means the
+   * daemon default applies. A daemon that supports the override always sends
+   * the field (possibly `null`); absent means it cannot, so the chat settings
+   * menu hides the "Ask before using tools" toggle.
+   */
+  permissionPolicy?: AgentPermissionPolicy | null;
+
+  /**
+   * The policy the next turn runs under (`effectivePermissionPolicy`, §5.5
+   * AgentLite): the override, else the daemon default. Omitted for remote
+   * agents, which use `remoteAgents.permission` instead.
+   */
+  effectivePermissionPolicy?: string;
 
   /** Current turn number for this session */
   currentTurnNumber?: number;

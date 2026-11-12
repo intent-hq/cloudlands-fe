@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createArchitectureDiagram } from '../diagram-templates';
+import { createArchitectureDiagram } from './diagram-templates';
 import { CUSTOM_WORKBENCH_CASES } from '../diagram-workbench.preview-fixtures';
 import { computeLayout } from '../layout-engine';
 

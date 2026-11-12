@@ -1,7 +1,7 @@
 name: Nightly Shifted-Clock Unit Tests
 
 # Runs the unit suite with the real clock moved to an odd UTC time of day
-# (src/shifted-test-clock.ts). A test that pins a fake clock and then falls back
+# (src/test/shifted-test-clock.ts). A test that pins a fake clock and then falls back
 # to the real one passes or fails depending on when CI runs: cloudlands-fe#3574
 # passed its PR checks in the morning and failed 20/20 in the merge queue after
 # 08:00 UTC (merge_group run 39583441525). The intent/no-fake-clock-reset-before-assertion
@@ -62,13 +62,10 @@ jobs:
         with:
           python-version: '3.12'
       - name: Checkout shared transfer-selection fixtures
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: main
           path: .cache/transfer-selection-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/transfer-selection/
             /scripts/
@@ -88,13 +85,10 @@ jobs:
         id: backend-keychain-fixtures
         run: node scripts/backend-keychain-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned backend Keychain contract
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: ${{ steps.backend-keychain-fixtures.outputs.sourceCommit }}
           path: .cache/backend-keychain-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/backend-keychain/v1/
             /scripts/backend-keychain-contract.mjs
@@ -110,13 +104,10 @@ jobs:
         id: suggested-prompts-cases
         run: node scripts/suggested-prompts-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned suggested-prompts cases
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: ${{ steps.suggested-prompts-cases.outputs.sourceCommit }}
           path: .cache/suggested-prompts-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/suggested-prompts/v1/
             /scripts/suggested-prompts-contract.mjs
@@ -134,13 +125,10 @@ jobs:
         shell: bash
         run: node scripts/turn-start-fixtures.mjs | tee -a "$GITHUB_OUTPUT"
       - name: Checkout pinned turn-start events
-        uses: actions/checkout@v7
+        uses: ./.github/actions/checkout-pinned
         with:
-          repository: intent-hq/intent
           ref: ${{ steps.turn-start-events.outputs.sourceCommit }}
           path: .cache/turn-start-contract
-          persist-credentials: false
-          sparse-checkout-cone-mode: false
           sparse-checkout: |
             /docs/protocol/fixtures/turn-start/turn-start-events.json
             /scripts/turn-start-contract.mjs

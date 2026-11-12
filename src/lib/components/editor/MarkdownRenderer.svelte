@@ -17,6 +17,7 @@
   import { withSyntheticDiffHeaders } from '$lib/utils/diff-patch-utils';
   import { handleLink } from '$features/navigation/link-handler';
   import { getWorkspaceRouteContext } from '$lib/utils/workspace-route-context';
+  import { sanitizeMarkdownHTML } from '$lib/utils/html-sanitizer';
 
   const logger = createLogger('MarkdownRenderer');
   const workspaceId = getWorkspaceRouteContext()?.workspaceId ?? undefined;
@@ -226,9 +227,12 @@
         if (i % 2 === 0) {
           // HTML content
           if (parts[i].trim()) {
+            // Tool results rendered here (note reads, agent conversations,
+            // task content) carry text authored by collaborators and agents,
+            // and marked keeps raw HTML: sanitize before it reaches {@html}.
             newBlocks.push({
               type: 'html',
-              content: parts[i],
+              content: sanitizeMarkdownHTML(parts[i], workspaceId),
             });
           }
         } else {
@@ -245,7 +249,7 @@
       blocks = [
         {
           type: 'html',
-          content: content,
+          content: sanitizeMarkdownHTML(content, workspaceId),
         },
       ];
     }

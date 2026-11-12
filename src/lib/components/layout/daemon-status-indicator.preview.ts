@@ -17,6 +17,17 @@ import type {
   DaemonStatusCheckFailureKind,
   SystemStatusWirePayload,
 } from '$store/renderer/slices/daemon-health/daemon-health-types';
+import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
+import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
+import type { ConnectionRecord } from '$shared/types/connections';
+import {
+  removeWorkspaceEntity,
+  setWorkspaceEntity,
+} from '$store/renderer/slices/workspace/workspace-slice';
+import { WorkspaceStatus } from '$shared/types';
+import { WorkspaceId } from '$shared/types/branded-ids';
+import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
+import { E2B_SANDBOXES } from '../../../test/cloud-machines-preview';
 import DaemonStatusIndicator from './DaemonStatusIndicator.svelte';
 import { catalogNow } from '$lib/component-catalog/catalog-clock';
 
@@ -170,6 +181,20 @@ const remoteAgentMemoryUsage = {
   ],
 } satisfies AgentMemoryUsageWirePayload;
 
+// Hosted rows from a backend whose launch carries the agent name and its
+// workspace title; the second hosted row keeps the older shape. Local rows
+// carry no title: the scene stores one local workspace for the client to
+// resolve, and leaves the other unresolved.
+const labeledAgentMemoryUsage = {
+  ...remoteAgentMemoryUsage,
+  agents: remoteAgentMemoryUsage.agents.map((agent) => {
+    if (agent.workspaceId === 'ws-remote-docs') {
+      return { ...agent, agentName: 'Write release notes', workspaceTitle: 'Docs refresh' };
+    }
+    return agent;
+  }),
+} satisfies AgentMemoryUsageWirePayload;
+
 const generation = () => selectDaemonConnectionGeneration.select(store.state);
 
 // Live uptime is base uptime plus time elapsed since the last successful
@@ -183,9 +208,13 @@ interface Scenario {
   /** Report agent-attributed memory and seed the breakdown the row opens. */
   agentMemory?: boolean;
   /** Seed the breakdown with agents run for other backends (needs `agentMemory`). */
-  remoteAgents?: boolean;
+  remoteAgents?: boolean | 'labeled';
   /** `system.status.remoteLinks`; omitted models an older daemon. */
   remoteLinks?: { backends: number; machines: number };
+  /** Seed saved machines so the menu shows its Machines list. */
+  machines?: boolean;
+  /** Paused E2B sandboxes seeded into the cloud-machine rows. */
+  pausedSandboxes?: number;
   failures?:
     | { kind: DaemonStatusCheckFailureKind; count: number }
     | DaemonStatusCheckFailureKind[]
@@ -200,6 +229,36 @@ function failureKinds(
     : Array.from({ length: failures.count }, () => failures.kind);
 }
 
+const savedMachines: ConnectionRecord[] = [
+  {
+    id: 'local',
+    label: 'This machine',
+    host: null,
+    port: null,
+    fingerprint: null,
+    isLocal: true,
+    status: 'connected',
+  },
+  {
+    id: 'studio-mac',
+    label: 'Studio Mac',
+    host: '192.0.2.4',
+    port: 5179,
+    fingerprint: 'AA:BB',
+    isLocal: false,
+    status: 'connected',
+  },
+  {
+    id: 'build-box',
+    label: 'Build box',
+    host: '192.0.2.10',
+    port: 5179,
+    fingerprint: 'BB:01',
+    isLocal: false,
+    status: 'disconnected',
+  },
+];
+
 // The store is shared, so two live scenes would render the same merged
 // state. Refuse the overlap (`state=all`) rather than show a misleading grid.
 let liveScenes = 0;
@@ -213,6 +272,8 @@ function setup({
   remoteAgents = false,
   remoteLinks,
   failures,
+  machines = false,
+  pausedSandboxes = 0,
 }: Scenario) {
   return () => {
     if (liveScenes > 0) {
@@ -222,6 +283,17 @@ function setup({
     }
     liveScenes += 1;
     store.dispatch(connectionStatusChanged('connected', transport ?? nextTransport()));
+    const before = store.state.connections;
+    const previousConnections = selectConnections.select(store.state);
+    if (machines) {
+      store.dispatch(
+        connectionsListReceived({
+          connections: savedMachines,
+          activeId: 'local',
+          windowBackendId: 'local',
+        }),
+      );
+    }
     if (stats) {
       store.dispatch(
         systemStatusSuccess(
@@ -234,12 +306,46 @@ function setup({
         ),
       );
     }
+    if (pausedSandboxes > 0) {
+      store.dispatch(
+        cloudMachinesLoaded({
+          supported: true,
+          providers: [],
+          machines: Array.from({ length: pausedSandboxes }, (_, i) => ({
+            ...E2B_SANDBOXES[2],
+            id: `paused-${i}`,
+          })),
+          readAt: 0,
+        }),
+      );
+    }
+    if (remoteAgents === 'labeled') {
+      store.dispatch(
+        setWorkspaceEntity({
+          id: WorkspaceId('ws-dark-mode'),
+          title: 'Dark mode toggle',
+          repositoryName: 'intent',
+          branch: 'feat/dark-mode',
+          status: WorkspaceStatus.Active,
+          changesets: [],
+          timeline: [],
+          conversationInfo: [],
+          ...PREVIEW_FIXTURE_TIMESTAMPS,
+        }),
+      );
+    }
     if (agentMemory) {
       // No saga runs in the preview, so the breakdown's first open shows this
       // seeded sample instead of waiting on agent.memoryUsage.
       store.dispatch(agentMemoryUsageRequested());
       store.dispatch(
-        agentMemoryUsageSucceeded(remoteAgents ? remoteAgentMemoryUsage : agentMemoryUsage),
+        agentMemoryUsageSucceeded(
+          remoteAgents === 'labeled'
+            ? labeledAgentMemoryUsage
+            : remoteAgents
+              ? remoteAgentMemoryUsage
+              : agentMemoryUsage,
+        ),
       );
     }
     if (failures === 'heartbeat') {
@@ -256,8 +362,23 @@ function setup({
     }
     return () => {
       liveScenes -= 1;
+      if (pausedSandboxes > 0) {
+        store.dispatch(
+          cloudMachinesLoaded({ supported: false, providers: [], machines: [], readAt: 0 }),
+        );
+      }
       if (agentMemory) store.dispatch(agentMemoryBreakdownClosed());
+      if (remoteAgents === 'labeled') store.dispatch(removeWorkspaceEntity('ws-dark-mode'));
       store.dispatch(connectionStatusChanged('disconnected'));
+      if (machines) {
+        store.dispatch(
+          connectionsListReceived({
+            connections: previousConnections,
+            activeId: before.activeId,
+            windowBackendId: before.windowBackendId,
+          }),
+        );
+      }
     };
   };
 }
@@ -268,6 +389,7 @@ export const preview = definePreview<Record<string, never>>({
   defaultState: 'degraded-timeout',
   states: {
     healthy: { props: {}, setup: setup({}) },
+    'saved-machines': { props: {}, setup: setup({ machines: true }) },
     'remote-route': {
       props: {},
       setup: setup({
@@ -293,6 +415,14 @@ export const preview = definePreview<Record<string, never>>({
         remoteLinks: { backends: 2, machines: 1 },
       }),
     },
+    'remote-agents-labeled': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteAgents: 'labeled',
+        remoteLinks: { backends: 2, machines: 1 },
+      }),
+    },
     'remote-agents-no-links': {
       props: {},
       setup: setup({
@@ -304,6 +434,30 @@ export const preview = definePreview<Record<string, never>>({
     'connected-daemons': {
       props: {},
       setup: setup({ agentMemory: true, remoteLinks: { backends: 0, machines: 1 } }),
+    },
+    'links-backends-only': {
+      props: {},
+      setup: setup({ agentMemory: true, remoteLinks: { backends: 1, machines: 0 } }),
+    },
+    'links-both': {
+      props: {},
+      setup: setup({ agentMemory: true, remoteLinks: { backends: 2, machines: 3 } }),
+    },
+    'links-paused-only': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteLinks: { backends: 0, machines: 0 },
+        pausedSandboxes: 1,
+      }),
+    },
+    'links-live-and-paused': {
+      props: {},
+      setup: setup({
+        agentMemory: true,
+        remoteLinks: { backends: 2, machines: 2 },
+        pausedSandboxes: 1,
+      }),
     },
     'degraded-timeout': {
       props: {},

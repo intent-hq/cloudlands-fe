@@ -86,56 +86,27 @@ function formatSingleKey(key: string): string {
   return key.toUpperCase();
 }
 
+function defaultShortcut(id: ShortcutId, label: () => string) {
+  return {
+    key: SHORTCUT_DEFAULTS[id] as string,
+    get label() {
+      return label();
+    },
+  };
+}
+
 /**
- * All application keyboard shortcuts
- * Organized by category for easy reference
+ * Shortcuts that code refers to by name for tooltips and handler descriptions.
+ * Keys of configurable shortcuts come from SHORTCUT_DEFAULTS.
  */
 export const SHORTCUTS = {
-  // ============================================================================
-  // Global / Navigation
-  // ============================================================================
-  COMMAND_PALETTE: {
-    key: 'mod+shift+p',
-    get label() {
-      return m.ui_shortcuts_commandPalette_label();
-    },
-  },
-  SETTINGS: {
-    key: 'mod+,',
-    get label() {
-      return m.ui_shortcuts_settings_label();
-    },
-  },
-  NEW_SPACE_TAB: {
-    key: 'mod+n',
-    get label() {
-      return m.workspace_page_newSpace_title();
-    },
-  },
-  NEW_TAB: {
-    key: 'mod+t',
-    get label() {
-      return m.ui_shortcuts_newTab_label();
-    },
-  },
-  REOPEN_TAB: {
-    key: 'mod+shift+t',
-    get label() {
-      return m.ui_shortcuts_reopenTab_label();
-    },
-  },
-  CLOSE_TAB: {
-    key: 'mod+w',
-    get label() {
-      return m.workspace_shortcuts_closePanelTab_description();
-    },
-  },
-  CLOSE_WORKSPACE_TAB: {
-    key: 'mod+shift+w',
-    get label() {
-      return m.workspace_shortcuts_closeSpaceTab_description();
-    },
-  },
+  NEW_TAB: defaultShortcut('navigation.new-tab', () => m.ui_shortcuts_newTab_label()),
+  CLOSE_TAB: defaultShortcut('navigation.close-tab', () =>
+    m.workspace_shortcuts_closePanelTab_description(),
+  ),
+  CLOSE_WORKSPACE_TAB: defaultShortcut('navigation.close-space-tab', () =>
+    m.workspace_shortcuts_closeSpaceTab_description(),
+  ),
   GO_BACK: {
     key: 'mod+←',
     get label() {
@@ -148,380 +119,54 @@ export const SHORTCUTS = {
       return m.ui_shortcuts_goForward_label();
     },
   },
-  TAB_1_9: {
-    key: 'mod+1-9',
-    get label() {
-      return m.ui_shortcuts_goToTab_label();
-    },
-  },
-  NEXT_SPACE: {
-    key: 'ctrl+tab',
-    get label() {
-      return m.ui_shortcuts_nextSpace_label();
-    },
-  },
-  PREVIOUS_SPACE: {
-    key: 'ctrl+shift+tab',
-    get label() {
-      return m.ui_shortcuts_prevSpace_label();
-    },
-  },
-  MOVE_SPACE_TAB_LEFT: {
-    key: 'mod+alt+shift+left',
-    get label() {
-      return m.ui_shortcuts_moveSpaceTabLeft_label();
-    },
-  },
-  MOVE_SPACE_TAB_RIGHT: {
-    key: 'mod+alt+shift+right',
-    get label() {
-      return m.ui_shortcuts_moveSpaceTabRight_label();
-    },
-  },
-  SEARCH: {
-    key: 'mod+f',
-    get label() {
-      return m.ui_shortcuts_search_label();
-    },
-  },
-  // ============================================================================
-  // Dock / Agent Navigation
-  // ============================================================================
-  NEW_AGENT: {
-    key: 'mod+alt+a',
-    get label() {
-      return m.ui_shortcuts_newAgent_label();
-    },
-  },
-  NEW_NOTE: {
-    key: 'mod+alt+n',
-    get label() {
-      return m.layout_panelEmptyState_newItem_tooltip({
-        label: m.layout_panelEmptyState_note_label(),
-      });
-    },
-  },
-  NEW_TERMINAL: {
-    key: 'mod+alt+t',
-    get label() {
-      return m.layout_panelEmptyState_newItem_tooltip({
-        label: m.layout_panelEmptyState_terminal_label(),
-      });
-    },
-  },
-  NEW_BROWSER: {
-    key: 'mod+alt+b',
-    get label() {
-      return m.layout_panelEmptyState_newItem_tooltip({
-        label: m.layout_panelEmptyState_browser_label(),
-      });
-    },
-  },
-
-  // ============================================================================
-  // Chat / Input
-  // ============================================================================
-  SEND: {
-    key: 'enter',
-    get label() {
-      return m.ui_shortcuts_sendMessage_label();
-    },
-  },
-  FORCE_SEND: {
-    key: 'mod+enter',
-    get label() {
-      return m.ui_shortcuts_forceSend_label();
-    },
-  },
-  NEW_LINE: {
-    key: 'shift+enter',
-    get label() {
-      return m.ui_shortcuts_newLine_label();
-    },
-  },
-  FOCUS_INPUT: {
-    key: '/',
-    get label() {
-      return m.ui_shortcuts_focusInput_label();
-    },
-  },
-
-  // ============================================================================
-  // Message Actions
-  // ============================================================================
-  COPY: {
-    key: 'mod+c',
-    get label() {
-      return m.ui_shortcuts_copy_label();
-    },
-  },
-  EDIT: {
-    key: 'e',
-    get label() {
-      return m.ui_shortcuts_edit_label();
-    },
-  },
-  REGENERATE: {
-    key: 'r',
-    get label() {
-      return m.ui_shortcuts_regenerate_label();
-    },
-  },
-
-  // ============================================================================
-  // File / Editor
-  // ============================================================================
-  GO_TO_LINE: {
-    key: 'mod+g',
-    get label() {
-      return m.ui_shortcuts_goToLine_label();
-    },
-  },
-  SAVE: {
-    key: 'mod+s',
-    get label() {
-      return m.ui_shortcuts_save_label();
-    },
-  },
-  UNDO: {
-    key: 'mod+z',
-    get label() {
-      return m.ui_shortcuts_undo_label();
-    },
-  },
-  REDO: {
-    key: 'mod+shift+z',
-    get label() {
-      return m.ui_shortcuts_redo_label();
-    },
-  },
-  TOGGLE_TASK_LIST: {
-    key: 'mod+shift+9',
-    get label() {
-      return m.ui_shortcuts_toggleTaskList_label();
-    },
-  },
-  TOGGLE_WORD_WRAP: {
-    key: 'alt+z',
-    get label() {
-      return m.ui_shortcuts_toggleWordWrap_label();
-    },
-  },
-
-  // ============================================================================
-  // Follow Mode
-  // ============================================================================
-  TOGGLE_FOLLOW: {
-    key: 'mod+shift+f',
-    get label() {
-      return m.ui_shortcuts_toggleFollow_label();
-    },
-  },
-  NEXT_AGENT_FOLLOW: {
-    key: 'mod+shift+right',
-    get label() {
-      return m.ui_shortcuts_followNextAgent_label();
-    },
-  },
-  PREV_AGENT_FOLLOW: {
-    key: 'mod+shift+left',
-    get label() {
-      return m.ui_shortcuts_followPrevAgent_label();
-    },
-  },
-  EXIT_FOLLOW: {
-    key: 'esc',
-    get label() {
-      return m.ui_shortcuts_exitFollow_label();
-    },
-  },
-
-  // ============================================================================
-  // Miscellaneous
-  // ============================================================================
-  CANCEL: {
-    key: 'esc',
-    get label() {
-      return m.ui_shortcuts_cancel_label();
-    },
-  },
+  MOVE_SPACE_TAB_LEFT: defaultShortcut('navigation.move-space-tab-left', () =>
+    m.ui_shortcuts_moveSpaceTabLeft_label(),
+  ),
+  MOVE_SPACE_TAB_RIGHT: defaultShortcut('navigation.move-space-tab-right', () =>
+    m.ui_shortcuts_moveSpaceTabRight_label(),
+  ),
+  NEW_AGENT: defaultShortcut('workspace.new-agent', () => m.ui_shortcuts_newAgent_label()),
+  NEW_NOTE: defaultShortcut('workspace.new-note', () =>
+    m.layout_panelEmptyState_newItem_tooltip({ label: m.layout_panelEmptyState_note_label() }),
+  ),
+  NEW_TERMINAL: defaultShortcut('workspace.new-terminal', () =>
+    m.layout_panelEmptyState_newItem_tooltip({
+      label: m.layout_panelEmptyState_terminal_label(),
+    }),
+  ),
+  NEW_BROWSER: defaultShortcut('workspace.new-browser', () =>
+    m.layout_panelEmptyState_newItem_tooltip({ label: m.layout_panelEmptyState_browser_label() }),
+  ),
+  SEND: defaultShortcut('chat.send', () => m.ui_shortcuts_sendMessage_label()),
+  TOGGLE_TASK_LIST: defaultShortcut('editor.toggle-task-list', () =>
+    m.ui_shortcuts_toggleTaskList_label(),
+  ),
   CONFIRM: {
     key: 'enter',
     get label() {
       return m.ui_shortcuts_confirm_label();
     },
   },
-  SELECT_ALL: {
-    key: 'mod+a',
-    get label() {
-      return m.ui_shortcuts_selectAll_label();
-    },
-  },
-
-  // ============================================================================
-  // Panel Navigation (VS Code-inspired)
-  // ============================================================================
-  // Note: Cmd+0 is reserved for native browser zoom reset
-  FOCUS_MAIN_CONTENT: {
-    key: 'mod+1',
-    get label() {
-      return m.ui_shortcuts_focusMainContent_label();
-    },
-  },
-  FOCUS_DRAWER: {
-    key: 'mod+2',
-    get label() {
-      return m.ui_shortcuts_focusDrawer_label();
-    },
-  },
-  FOCUS_DOCK: {
-    key: 'mod+3',
-    get label() {
-      return m.ui_shortcuts_focusDock_label();
-    },
-  },
-
-  // ============================================================================
-  // Panel Visibility
-  // ============================================================================
-  TOGGLE_SIDEBAR: {
-    key: 'mod+b',
-    get label() {
-      return m.ui_shortcuts_toggleSidebar_label();
-    },
-  },
-  TOGGLE_DRAWER: {
-    key: 'mod+shift+d',
-    get label() {
-      return m.ui_shortcuts_toggleDrawer_label();
-    },
-  },
-
-  // ============================================================================
-  // Quick Panel Focus (VS Code Activity Bar style)
-  // ============================================================================
-  FOCUS_EXPLORER: {
-    key: 'mod+shift+e',
-    get label() {
-      return m.ui_shortcuts_focusExplorer_label();
-    },
-  },
-  FOCUS_GIT: {
-    key: 'mod+shift+g',
-    get label() {
-      return m.ui_shortcuts_focusGit_label();
-    },
-  },
-  FOCUS_NOTES: {
-    key: 'mod+shift+n',
-    get label() {
-      return m.ui_shortcuts_focusNotes_label();
-    },
-  },
-  FOCUS_ACTIVITY: {
-    key: 'mod+shift+a',
-    get label() {
-      return m.ui_shortcuts_focusActivity_label();
-    },
-  },
-
-  // ============================================================================
-  // Panel Manipulation
-  // ============================================================================
-  MAXIMIZE_PANEL: {
-    key: 'mod+shift+m',
-    get label() {
-      return m.ui_shortcuts_maximizePanel_label();
-    },
-  },
-  EQUALIZE_PANELS: {
-    key: 'mod+alt+=',
-    get label() {
-      return m.ui_shortcuts_equalizePanels_label();
-    },
-  },
-  RESIZE_PANEL_LEFT: {
-    key: 'mod+alt+left',
-    get label() {
-      return m.ui_shortcuts_shrinkPanel_label();
-    },
-  },
-  RESIZE_PANEL_RIGHT: {
-    key: 'mod+alt+right',
-    get label() {
-      return m.ui_shortcuts_growPanel_label();
-    },
-  },
-  PREVIOUS_PANE: {
-    key: 'mod+[',
-    get label() {
-      return m.ui_shortcuts_prevTab_label();
-    },
-  },
-  NEXT_PANE: {
-    key: 'mod+]',
-    get label() {
-      return m.ui_shortcuts_nextTab_label();
-    },
-  },
-  FOCUS_PREVIOUS_COLUMN: {
-    key: 'mod+shift+[',
-    get label() {
-      return m.ui_shortcuts_prevPanel_label();
-    },
-  },
-  FOCUS_NEXT_COLUMN: {
-    key: 'mod+shift+]',
-    get label() {
-      return m.ui_shortcuts_nextPanel_label();
-    },
-  },
-  MOVE_PANE_PREVIOUS_COLUMN: {
-    key: 'mod+alt+pageup',
-    get label() {
-      return m.ui_shortcuts_movePanePreviousColumn_label();
-    },
-  },
-  MOVE_PANE_NEXT_COLUMN: {
-    key: 'mod+alt+pagedown',
-    get label() {
-      return m.ui_shortcuts_movePaneNextColumn_label();
-    },
-  },
-  CREATE_COLUMN_RIGHT: {
-    key: 'mod+\\',
-    get label() {
-      return m.ui_shortcuts_splitPanelHorizontal_label();
-    },
-  },
-  COPY_BROWSER_URL: {
-    key: 'mod+shift+c',
-    get label() {
-      return m.ui_shortcuts_copyBrowserUrl_label();
-    },
-  },
-
-  // ============================================================================
-  // Layout Presets
-  // ============================================================================
-  LAYOUT_FOCUS: {
-    key: 'mod+alt+1',
-    get label() {
-      return m.ui_shortcuts_layoutFocus_label();
-    },
-  },
-  LAYOUT_SPLIT: {
-    key: 'mod+alt+2',
-    get label() {
-      return m.ui_shortcuts_layoutSplit_label();
-    },
-  },
-  LAYOUT_FULL: {
-    key: 'mod+alt+3',
-    get label() {
-      return m.ui_shortcuts_layoutFull_label();
-    },
-  },
+  TOGGLE_SIDEBAR: defaultShortcut('panel.toggle-sidebar', () =>
+    m.ui_shortcuts_toggleSidebar_label(),
+  ),
+  PREVIOUS_PANE: defaultShortcut('panel.previous-pane', () => m.ui_shortcuts_prevTab_label()),
+  NEXT_PANE: defaultShortcut('panel.next-pane', () => m.ui_shortcuts_nextTab_label()),
+  FOCUS_PREVIOUS_COLUMN: defaultShortcut('panel.focus-previous-column', () =>
+    m.ui_shortcuts_prevPanel_label(),
+  ),
+  FOCUS_NEXT_COLUMN: defaultShortcut('panel.focus-next-column', () =>
+    m.ui_shortcuts_nextPanel_label(),
+  ),
+  MOVE_PANE_PREVIOUS_COLUMN: defaultShortcut('panel.move-pane-previous-column', () =>
+    m.ui_shortcuts_movePanePreviousColumn_label(),
+  ),
+  MOVE_PANE_NEXT_COLUMN: defaultShortcut('panel.move-pane-next-column', () =>
+    m.ui_shortcuts_movePaneNextColumn_label(),
+  ),
+  CREATE_COLUMN_RIGHT: defaultShortcut('panel.create-column-right', () =>
+    m.ui_shortcuts_splitPanelHorizontal_label(),
+  ),
 } as const;
 
 export function getShortcutChord(
@@ -550,82 +195,24 @@ export function isMacPlatform(): boolean {
  * Shortcut entry with display information
  */
 export interface ShortcutEntry {
+  id: ShortcutId;
   key: string;
   label: string;
   contexts?: ShortcutContext[];
 }
 
-const SHORTCUT_IDS_BY_CATEGORY: Record<ShortcutCategory, readonly ShortcutId[]> = {
-  global: [
-    'global.command-palette',
-    'global.settings',
-    'global.keyboard-shortcuts',
-    'global.command-palette-alt',
-    'global.toggle-spaces',
-    'global.new-space',
-    'global.search',
-    'global.next-space',
-    'global.previous-space',
-  ],
-  navigation: [
-    'navigation.go-to-tab',
-    'navigation.new-tab',
-    'navigation.close-tab',
-    'navigation.close-space-tab',
-    'navigation.reopen-tab',
-    'navigation.move-space-tab-left',
-    'navigation.move-space-tab-right',
-    'workspace.new-agent',
-    'workspace.new-note',
-    'workspace.new-terminal',
-    'workspace.new-browser',
-    'workspace.set-aside',
-  ],
-  chat: [
-    'chat.send',
-    'chat.force-send',
-    'chat.new-line',
-    'chat.focus-input',
-    'chat.mention-context',
-  ],
-  editor: [
-    'editor.go-to-line',
-    'editor.save',
-    'editor.undo',
-    'editor.redo',
-    'editor.toggle-task-list',
-    'editor.toggle-word-wrap',
-    'editor.copy',
-    'editor.select-all',
-  ],
-  panel: [
-    'panel.toggle-sidebar',
-    'panel.create-column-right',
-    'panel.focus-next-column',
-    'panel.maximize',
-    'panel.focus-previous-column',
-    'panel.next-pane',
-    'panel.previous-pane',
-    'panel.move-pane-next-column',
-    'panel.move-pane-previous-column',
-    'panel.copy-browser-url',
-  ],
-  leader: [
-    'leader.navigate-panels',
-    'leader.resize-panels',
-    'leader.split-right',
-    'leader.toggle-zoom',
-    'leader.close-panel',
-    'leader.next-previous-panel',
-    'leader.equalize-sizes',
-    'leader.jump-to-panel',
-    'leader.cycle-layout',
-  ],
-  dock: ['dock.focus', 'dock.capture', 'dock.record'],
-};
+function entry(id: ShortcutId, label: () => string, contexts?: ShortcutContext[]): ShortcutEntry {
+  return {
+    id,
+    key: SHORTCUT_DEFAULTS[id],
+    get label() {
+      return label();
+    },
+    ...(contexts && { contexts }),
+  };
+}
 
 export interface ShortcutDefinition extends ShortcutEntry {
-  id: ShortcutId;
   category: ShortcutCategory;
   defaultKey: string;
 }
@@ -642,69 +229,19 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_globalCategory_title();
     },
     shortcuts: [
-      {
-        key: 'mod+shift+p',
-        get label() {
-          return m.ui_shortcuts_commandPalette_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+,',
-        get label() {
-          return m.ui_shortcuts_settings_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+?',
-        get label() {
-          return m.ui_shortcuts_keyboardShortcuts_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+k',
-        get label() {
-          return m.ui_shortcuts_commandPalette_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+o',
-        get label() {
-          return m.home_navigation_description();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+n',
-        get label() {
-          return m.workspace_page_newSpace_title();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+f',
-        get label() {
-          return m.ui_shortcuts_search_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'ctrl+tab',
-        get label() {
-          return m.ui_shortcuts_nextSpace_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'ctrl+shift+tab',
-        get label() {
-          return m.ui_shortcuts_prevSpace_label();
-        },
-        contexts: ['global'],
-      },
+      entry('global.command-palette', () => m.ui_shortcuts_commandPalette_label(), ['global']),
+      entry('global.settings', () => m.ui_shortcuts_settings_label(), ['global']),
+      entry('global.keyboard-shortcuts', () => m.ui_shortcuts_keyboardShortcuts_label(), [
+        'global',
+      ]),
+      entry('global.command-palette-alt', () => m.ui_shortcuts_commandPalette_label(), ['global']),
+      entry('global.toggle-spaces', () => m.home_navigation_description(), ['global']),
+      entry('global.new-space', () => m.workspace_page_newSpace_title(), ['global']),
+      entry('global.search', () => m.ui_shortcuts_search_label(), ['global']),
+      entry('global.next-space', () => m.ui_shortcuts_nextSpace_label(), ['global']),
+      entry('global.previous-space', () => m.ui_shortcuts_prevSpace_label(), ['global']),
+      entry('global.next-space-alt', () => m.ui_shortcuts_nextSpace_label(), ['global']),
+      entry('global.previous-space-alt', () => m.ui_shortcuts_prevSpace_label(), ['global']),
     ],
   },
   navigation: {
@@ -712,53 +249,22 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_navigationCategory_title();
     },
     shortcuts: [
-      {
-        key: 'mod+1-9',
-        get label() {
-          return m.ui_shortcuts_goToTab_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+t',
-        get label() {
-          return m.ui_shortcuts_newTab_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.CLOSE_TAB.key,
-        get label() {
-          return SHORTCUTS.CLOSE_TAB.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.CLOSE_WORKSPACE_TAB.key,
-        get label() {
-          return SHORTCUTS.CLOSE_WORKSPACE_TAB.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+shift+t',
-        get label() {
-          return m.ui_shortcuts_reopenTab_label();
-        },
-        contexts: ['global'],
-      },
-      { ...SHORTCUTS.MOVE_SPACE_TAB_LEFT, contexts: ['global'] },
-      { ...SHORTCUTS.MOVE_SPACE_TAB_RIGHT, contexts: ['global'] },
-      { ...SHORTCUTS.NEW_AGENT, contexts: ['global'] },
-      { ...SHORTCUTS.NEW_NOTE, contexts: ['global'] },
-      { ...SHORTCUTS.NEW_TERMINAL, contexts: ['global'] },
-      { ...SHORTCUTS.NEW_BROWSER, contexts: ['global'] },
-      {
-        key: SHORTCUT_DEFAULTS['workspace.set-aside'],
-        get label() {
-          return m.home_setAside_shortcut_label();
-        },
-      },
+      entry('navigation.go-to-tab', () => m.ui_shortcuts_goToTab_label(), ['global']),
+      entry('navigation.new-tab', () => SHORTCUTS.NEW_TAB.label, ['global']),
+      entry('navigation.close-tab', () => SHORTCUTS.CLOSE_TAB.label, ['global']),
+      entry('navigation.close-space-tab', () => SHORTCUTS.CLOSE_WORKSPACE_TAB.label, ['global']),
+      entry('navigation.reopen-tab', () => m.ui_shortcuts_reopenTab_label(), ['global']),
+      entry('navigation.move-space-tab-left', () => SHORTCUTS.MOVE_SPACE_TAB_LEFT.label, [
+        'global',
+      ]),
+      entry('navigation.move-space-tab-right', () => SHORTCUTS.MOVE_SPACE_TAB_RIGHT.label, [
+        'global',
+      ]),
+      entry('workspace.new-agent', () => SHORTCUTS.NEW_AGENT.label, ['global']),
+      entry('workspace.new-note', () => SHORTCUTS.NEW_NOTE.label, ['global']),
+      entry('workspace.new-terminal', () => SHORTCUTS.NEW_TERMINAL.label, ['global']),
+      entry('workspace.new-browser', () => SHORTCUTS.NEW_BROWSER.label, ['global']),
+      entry('workspace.set-aside', () => m.home_setAside_shortcut_label()),
     ],
   },
   chat: {
@@ -766,41 +272,11 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_chatCategory_title();
     },
     shortcuts: [
-      {
-        key: 'enter',
-        get label() {
-          return m.ui_shortcuts_sendMessage_label();
-        },
-        contexts: ['chat'],
-      },
-      {
-        key: 'mod+enter',
-        get label() {
-          return m.ui_shortcuts_forceSend_label();
-        },
-        contexts: ['chat'],
-      },
-      {
-        key: 'shift+enter',
-        get label() {
-          return m.ui_shortcuts_newLine_label();
-        },
-        contexts: ['chat'],
-      },
-      {
-        key: '/',
-        get label() {
-          return m.ui_shortcuts_focusInput_label();
-        },
-        contexts: ['chat'],
-      },
-      {
-        key: '@',
-        get label() {
-          return m.ui_shortcuts_mentionContext_label();
-        },
-        contexts: ['chat'],
-      },
+      entry('chat.send', () => SHORTCUTS.SEND.label, ['chat']),
+      entry('chat.force-send', () => m.ui_shortcuts_forceSend_label(), ['chat']),
+      entry('chat.new-line', () => m.ui_shortcuts_newLine_label(), ['chat']),
+      entry('chat.focus-input', () => m.ui_shortcuts_focusInput_label(), ['chat']),
+      entry('chat.mention-context', () => m.ui_shortcuts_mentionContext_label(), ['chat']),
     ],
   },
   editor: {
@@ -808,62 +284,14 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_editorCategory_title();
     },
     shortcuts: [
-      {
-        key: 'mod+g',
-        get label() {
-          return m.ui_shortcuts_goToLine_label();
-        },
-        contexts: ['editor'],
-      },
-      {
-        key: 'mod+s',
-        get label() {
-          return m.ui_shortcuts_save_label();
-        },
-        contexts: ['editor'],
-      },
-      {
-        key: 'mod+z',
-        get label() {
-          return m.ui_shortcuts_undo_label();
-        },
-        contexts: ['editor'],
-      },
-      {
-        key: 'mod+shift+z',
-        get label() {
-          return m.ui_shortcuts_redo_label();
-        },
-        contexts: ['editor'],
-      },
-      {
-        key: 'mod+shift+9',
-        get label() {
-          return m.ui_shortcuts_toggleTaskList_label();
-        },
-        contexts: ['editor'],
-      },
-      {
-        key: 'alt+z',
-        get label() {
-          return m.ui_shortcuts_toggleWordWrap_label();
-        },
-        contexts: ['editor'],
-      },
-      {
-        key: 'mod+c',
-        get label() {
-          return m.ui_shortcuts_copy_label();
-        },
-        contexts: ['editor'],
-      },
-      {
-        key: 'mod+a',
-        get label() {
-          return m.ui_shortcuts_selectAll_label();
-        },
-        contexts: ['editor'],
-      },
+      entry('editor.go-to-line', () => m.ui_shortcuts_goToLine_label(), ['editor']),
+      entry('editor.save', () => m.ui_shortcuts_save_label(), ['editor']),
+      entry('editor.undo', () => m.ui_shortcuts_undo_label(), ['editor']),
+      entry('editor.redo', () => m.ui_shortcuts_redo_label(), ['editor']),
+      entry('editor.toggle-task-list', () => SHORTCUTS.TOGGLE_TASK_LIST.label, ['editor']),
+      entry('editor.toggle-word-wrap', () => m.ui_shortcuts_toggleWordWrap_label(), ['editor']),
+      entry('editor.copy', () => m.ui_shortcuts_copy_label(), ['editor']),
+      entry('editor.select-all', () => m.ui_shortcuts_selectAll_label(), ['editor']),
     ],
   },
   panel: {
@@ -871,76 +299,18 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_panelCategory_title();
     },
     shortcuts: [
-      {
-        key: 'mod+b',
-        get label() {
-          return m.ui_shortcuts_toggleSidebar_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: SHORTCUTS.CREATE_COLUMN_RIGHT.key,
-        get label() {
-          return SHORTCUTS.CREATE_COLUMN_RIGHT.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.FOCUS_NEXT_COLUMN.key,
-        get label() {
-          return SHORTCUTS.FOCUS_NEXT_COLUMN.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+shift+m',
-        get label() {
-          return m.ui_shortcuts_maximizePanel_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.FOCUS_PREVIOUS_COLUMN.key,
-        get label() {
-          return SHORTCUTS.FOCUS_PREVIOUS_COLUMN.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.NEXT_PANE.key,
-        get label() {
-          return SHORTCUTS.NEXT_PANE.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.PREVIOUS_PANE.key,
-        get label() {
-          return SHORTCUTS.PREVIOUS_PANE.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.MOVE_PANE_NEXT_COLUMN.key,
-        get label() {
-          return SHORTCUTS.MOVE_PANE_NEXT_COLUMN.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.key,
-        get label() {
-          return SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.label;
-        },
-        contexts: ['global'],
-      },
-      {
-        key: 'mod+shift+c',
-        get label() {
-          return m.ui_shortcuts_copyBrowserUrl_label();
-        },
-        contexts: ['panel'],
-      },
+      entry('panel.toggle-sidebar', () => SHORTCUTS.TOGGLE_SIDEBAR.label, ['panel']),
+      entry('panel.create-column-right', () => SHORTCUTS.CREATE_COLUMN_RIGHT.label, ['global']),
+      entry('panel.focus-next-column', () => SHORTCUTS.FOCUS_NEXT_COLUMN.label, ['global']),
+      entry('panel.maximize', () => m.ui_shortcuts_maximizePanel_label(), ['global']),
+      entry('panel.focus-previous-column', () => SHORTCUTS.FOCUS_PREVIOUS_COLUMN.label, ['global']),
+      entry('panel.next-pane', () => SHORTCUTS.NEXT_PANE.label, ['global']),
+      entry('panel.previous-pane', () => SHORTCUTS.PREVIOUS_PANE.label, ['global']),
+      entry('panel.move-pane-next-column', () => SHORTCUTS.MOVE_PANE_NEXT_COLUMN.label, ['global']),
+      entry('panel.move-pane-previous-column', () => SHORTCUTS.MOVE_PANE_PREVIOUS_COLUMN.label, [
+        'global',
+      ]),
+      entry('panel.copy-browser-url', () => m.ui_shortcuts_copyBrowserUrl_label(), ['panel']),
     ],
   },
   leader: {
@@ -948,69 +318,15 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_leaderCategory_title();
     },
     shortcuts: [
-      {
-        key: 'h/j/k/l',
-        get label() {
-          return m.ui_shortcuts_navigatePanels_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: 'H/J/K/L',
-        get label() {
-          return m.ui_shortcuts_resizePanels_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: '%',
-        get label() {
-          return m.ui_shortcuts_splitRight_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: 'z',
-        get label() {
-          return m.ui_shortcuts_toggleZoom_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: 'x',
-        get label() {
-          return m.ui_shortcuts_closePanel_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: 'o/p',
-        get label() {
-          return m.ui_shortcuts_nextPrevPanel_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: '=',
-        get label() {
-          return m.ui_shortcuts_equalizeSizes_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: 'q + 1-9',
-        get label() {
-          return m.ui_shortcuts_jumpToPanel_label();
-        },
-        contexts: ['panel'],
-      },
-      {
-        key: 'space',
-        get label() {
-          return m.ui_shortcuts_cycleLayout_label();
-        },
-        contexts: ['panel'],
-      },
+      entry('leader.navigate-panels', () => m.ui_shortcuts_navigatePanels_label(), ['panel']),
+      entry('leader.resize-panels', () => m.ui_shortcuts_resizePanels_label(), ['panel']),
+      entry('leader.split-right', () => m.ui_shortcuts_splitRight_label(), ['panel']),
+      entry('leader.toggle-zoom', () => m.ui_shortcuts_toggleZoom_label(), ['panel']),
+      entry('leader.close-panel', () => m.ui_shortcuts_closePanel_label(), ['panel']),
+      entry('leader.next-previous-panel', () => m.ui_shortcuts_nextPrevPanel_label(), ['panel']),
+      entry('leader.equalize-sizes', () => m.ui_shortcuts_equalizeSizes_label(), ['panel']),
+      entry('leader.jump-to-panel', () => m.ui_shortcuts_jumpToPanel_label(), ['panel']),
+      entry('leader.cycle-layout', () => m.ui_shortcuts_cycleLayout_label(), ['panel']),
     ],
   },
   // System-wide: they work with any app in front, not only inside Intent.
@@ -1019,27 +335,9 @@ export const SHORTCUT_CATEGORIES: Record<
       return m.ui_shortcuts_dockCategory_title();
     },
     shortcuts: [
-      {
-        key: SHORTCUT_DEFAULTS['dock.focus'],
-        get label() {
-          return m.ui_shortcuts_dockFocus_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUT_DEFAULTS['dock.capture'],
-        get label() {
-          return m.ui_shortcuts_dockCapture_label();
-        },
-        contexts: ['global'],
-      },
-      {
-        key: SHORTCUT_DEFAULTS['dock.record'],
-        get label() {
-          return m.ui_shortcuts_dockRecord_label();
-        },
-        contexts: ['global'],
-      },
+      entry('dock.focus', () => m.ui_shortcuts_dockFocus_label(), ['global']),
+      entry('dock.capture', () => m.ui_shortcuts_dockCapture_label(), ['global']),
+      entry('dock.record', () => m.ui_shortcuts_dockRecord_label(), ['global']),
     ],
   },
 };
@@ -1050,24 +348,16 @@ export const SHORTCUT_REGISTRY: readonly ShortcutDefinition[] = (
     { title: string; shortcuts: ShortcutEntry[] },
   ][]
 ).flatMap(([category, data]) =>
-  data.shortcuts.map((entry, index) => {
-    const id = SHORTCUT_IDS_BY_CATEGORY[category][index];
-    if (!id || SHORTCUT_DEFAULTS[id] !== entry.key) {
-      throw new Error(`Shortcut registry mismatch for ${category} entry ${index}`);
-    }
-    return {
-      id,
-      category,
-      defaultKey: SHORTCUT_DEFAULTS[id],
-      get key() {
-        return entry.key;
-      },
-      get label() {
-        return entry.label;
-      },
-      contexts: entry.contexts,
-    };
-  }),
+  data.shortcuts.map((entry) => ({
+    id: entry.id,
+    category,
+    defaultKey: entry.key,
+    key: entry.key,
+    get label() {
+      return entry.label;
+    },
+    contexts: entry.contexts,
+  })),
 );
 
 /**
@@ -1110,9 +400,9 @@ export function getAllShortcutCategories(
       category,
       {
         title: data.title,
-        shortcuts: data.shortcuts.map((shortcut, index) => ({
+        shortcuts: data.shortcuts.map((shortcut) => ({
           ...shortcut,
-          key: resolveShortcut(SHORTCUT_IDS_BY_CATEGORY[category][index], overrides),
+          key: resolveShortcut(shortcut.id, overrides),
         })),
       },
     ]),

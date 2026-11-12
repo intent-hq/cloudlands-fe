@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
 import ComposerBarrierHarness from './DockComposerBarrierHarness.svelte';
-import { readDictationIndicators } from './dock-composer-ct-helpers';
+import { readDictationIndicators } from './dock-composer.test-helpers';
 
 const editorSelector = '[data-testid="message-input"] [contenteditable="true"]';
 

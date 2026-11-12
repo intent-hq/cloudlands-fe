@@ -244,7 +244,7 @@ describe('CatalogFixtureList real previews', () => {
     expect(container.querySelector('[data-catalog-portal-target="dialog"]')).not.toBeNull();
   });
 
-  it('mounts Dialog and Tooltip capture fixtures open and preserves trigger focus on close', async () => {
+  it('mounts Dialog capture fixtures open and preserves trigger focus on close', async () => {
     const dialogRender = await renderEntry('dialog');
     const dialogTrigger = screen.getByRole('button', { name: 'Open-state dialog trigger' });
     await waitFor(() =>
@@ -256,34 +256,11 @@ describe('CatalogFixtureList real previews', () => {
     );
     expect(document.activeElement).toBe(dialogTrigger);
     dialogRender.unmount();
-
-    const originalResizeObserver = window.ResizeObserver;
-    window.ResizeObserver = class ResizeObserverMock {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    };
-    const tooltipRender = await renderEntry('tooltip');
-    const tooltipFixture = tooltipRender.container.querySelector(
-      '[data-catalog-fixture-id="tooltip-open-state"]',
-    );
-    if (!(tooltipFixture instanceof HTMLElement)) throw new Error('Tooltip fixture did not render');
-    const tooltipPreview = within(tooltipFixture);
-    const tooltipTrigger = tooltipPreview.getByRole('button', {
-      name: 'Open-state tooltip trigger',
-    });
-    await waitFor(() => expect(tooltipPreview.getByRole('tooltip', { hidden: true })).toBeTruthy());
-    expect(document.activeElement).toBe(tooltipTrigger);
-    await fireEvent.keyDown(tooltipTrigger, { key: 'Escape' });
-    await waitFor(() => expect(tooltipPreview.queryByRole('tooltip', { hidden: true })).toBeNull());
-    expect(document.activeElement).toBe(tooltipTrigger);
-    tooltipRender.unmount();
-    window.ResizeObserver = originalResizeObserver;
   });
 
-  it('renders all fourteen Toast catalog states', async () => {
+  it('renders all thirteen Toast catalog states', async () => {
     const { container } = await renderEntry('toast');
-    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(14);
+    expect(container.querySelectorAll('[data-toast-preview]')).toHaveLength(13);
   });
 
   it('operates the canonical Menu, Sheet, and Accordion previews', async () => {

@@ -353,7 +353,16 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script, so each ref runs its own version of it
+          # (refs before intentd#3156 lack the download-outage fallback); a
+          # ref that predates the script builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -413,6 +422,15 @@ jobs:
           KEYCHAINS=()
           while IFS= read -r kc; do KEYCHAINS+=("$kc"); done < "$RUNNER_TEMP/keychain-list.orig"
           security list-keychains -d user -s "$KEYCHAIN_PATH" "${KEYCHAINS[@]}"
+          # electron-builder signs from this keychain (CSC_KEYCHAIN on the build
+          # step) and accepts only a valid identity, so fail here, within seconds,
+          # rather than minutes into packaging if the import did not produce one.
+          IDENTITIES="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" 2>&1)" || true
+          if [[ "$IDENTITIES" != *'"Developer ID Application:'* ]]; then
+            echo "::error title=Signing identity missing::No valid Developer ID Application identity in the signing keychain."
+            echo "$IDENTITIES"
+            exit 1
+          fi
 
       # Stage the Developer ID provisioning profile for the keychain-sync
       # helper (dev.intentapp.cloudlands-fe.keychain-helper). scripts/
@@ -490,9 +508,9 @@ jobs:
         id: build
         run: |
           if [ "${{ inputs.sign }}" != "true" ]; then
-            # Empty CSC_LINK is treated as the project directory by electron-builder.
-            # Remove signing inputs entirely for an unsigned package.
-            unset CSC_LINK CSC_KEY_PASSWORD
+            # Remove signing inputs entirely for an unsigned package (an empty
+            # CSC_LINK would be treated as the project directory by electron-builder).
+            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
           fi
           if [ "${{ inputs.isolated_test }}" = true ]; then
             export INTENT_ISOLATED_TEST_BUILD_ID="manual-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
@@ -520,15 +538,15 @@ jobs:
           # Signing env is removed by the command when sign=false, and
           # auto-discovery is disabled so no stray keychain identity is used.
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ inputs.sign && 'true' || 'false' }}
-          # CSC_LINK/CSC_KEY_PASSWORD make electron-builder import the cert
-          # into its own temporary keychain, independent of the one imported
-          # above (which is still load-bearing: scripts/sign-sidecar.js
-          # resolves the identity via the search list). electron-builder's
-          # keychain is not covered by this job's always() cleanup — a crash
-          # mid-build can leave it behind. Consolidating both onto the manual
-          # keychain via CSC_KEYCHAIN is a tracked follow-up.
-          CSC_LINK: ${{ inputs.sign && secrets.CLOUDLANDS_MACOS_CERTIFICATE || '' }}
-          CSC_KEY_PASSWORD: ${{ inputs.sign && secrets.CLOUDLANDS_MACOS_CERTIFICATE_PWD || '' }}
+          # electron-builder signs from the keychain created and unlocked by
+          # "Import code signing certificate" (CSC_KEYCHAIN), the same one
+          # scripts/sign-sidecar.js resolves its identity from. Do not give it
+          # CSC_LINK/CSC_KEY_PASSWORD: it would then import the certificate into
+          # a second temporary keychain of its own, and that `security import`
+          # hung until the pre-notarization deadline on WarpBuild runners
+          # (release-alpha job 127729821081); its keychain also escaped the
+          # always() cleanup.
+          CSC_KEYCHAIN: ${{ inputs.sign && format('{0}/app-signing.keychain-db', runner.temp) || '' }}
           CLOUDLANDS_APPLE_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_ID || '' }}
           CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_APP_SPECIFIC_PASSWORD || '' }}
           CLOUDLANDS_APPLE_TEAM_ID: ${{ inputs.sign && secrets.CLOUDLANDS_APPLE_TEAM_ID || '' }}
@@ -721,7 +739,7 @@ jobs:
           node-version: '22'
 
       - name: Setup native desktop helper SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
 
@@ -790,10 +808,7 @@ jobs:
           rustup target add x86_64-pc-windows-msvc
           rustup show active-toolchain
 
-      # Keyed per target so a cache saved by another leg's target can never
-      # be restored here; cache-on-failure keeps the compiled deps when a
-      # later step fails after a completed cold cargo build (see the macOS
-      # leg for the full rationale).
+      # Share compiler outputs through the self-hosted cache (see the macOS leg).
       - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash
@@ -801,7 +816,16 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script, so each ref runs its own version of it
+          # (refs before intentd#3156 lack the download-outage fallback); a
+          # ref that predates the script builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -1109,10 +1133,7 @@ jobs:
           rustup target add ${{ matrix.intentd_target }}
           rustup show active-toolchain
 
-      # Keyed per target so a cache saved by another leg's target can never
-      # be restored here; cache-on-failure keeps the compiled deps when a
-      # later step fails after a completed cold cargo build (see the macOS
-      # leg for the full rationale).
+      # Share compiler outputs through the self-hosted cache (see the macOS leg).
       - name: Configure the self-hosted compiler cache
         if: ${{ inputs.intentd_ref != '' }}
         shell: bash
@@ -1120,7 +1141,16 @@ jobs:
           INTENT_SCCACHE_ENDPOINT: ${{ vars.INTENT_SCCACHE_ENDPOINT }}
           INTENT_SCCACHE_TOKEN: ${{ secrets.INTENT_SCCACHE_TOKEN }}
           INTENT_SCCACHE_MODE: ${{ vars.INTENT_SCCACHE_MODE }}
-        run: python3 scripts/setup-sccache.py
+        run: |
+          # intentd owns this script, so each ref runs its own version of it
+          # (refs before intentd#3156 lack the download-outage fallback); a
+          # ref that predates the script builds uncached.
+          script=intentd-src/scripts/setup-sccache.py
+          if [ -f "$script" ]; then
+            python3 "$script"
+          else
+            echo "::warning::$script is missing at this intentd ref; Rust compilation is uncached."
+          fi
       # Native build on the matrix host (no --target), so the binary lands at
       # target/release/intentd.
       # Native build on the x64 MSVC host (no --target), so the binary lands
@@ -1306,7 +1336,7 @@ jobs:
         with:
           node-version: '22'
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           name: manual-macos-dmg-${{ matrix.arch }}
           path: isolated-package

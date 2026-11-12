@@ -2,7 +2,7 @@
  * "Try to shrink this workspace" action for the disk-usage tooltip on the
  * checkout-mode pill.
  *
- * Creates an idle implementor-specialist chat agent (no initial message — the
+ * Creates an idle general chat agent (no initial message — the
  * agent does NOT start working), persists the canned shrink prompt as the
  * composer draft via the daemon drafts API (PROTOCOL §5.16), then opens the
  * agent's tab. ChatPanel restores the draft on mount, so the user reviews or
@@ -12,14 +12,8 @@ import type { Workspace } from '$shared/types';
 import { createAgentTypeId } from '$shared/types/agent.types';
 import { store as appStore } from '$store/renderer/store';
 import { agentSessionLaunchAgentRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
-import {
-  selectEffectiveBehaviorPrompt,
-  selectEffectiveCodingAgent,
-  selectEffectiveModel,
-} from '$store/renderer/slices/specialists/specialists-selectors';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import { appClient } from '$lib/client';
-import { SPECIALISTS } from '$lib/constants/specialists';
 import { m } from '$shared/paraglide/messages.js';
 import { createLogger } from '$lib/utils/client-logger';
 
@@ -36,20 +30,10 @@ export const SHRINK_WORKSPACE_PROMPT =
   'When done, report what was removed and how much space was freed.';
 
 /**
- * Launch the idle implementor agent, prefill its composer draft with the
+ * Launch the idle general agent, prefill its composer draft with the
  * canned shrink prompt, and open its tab.
  */
 export async function runShrinkWorkspaceAction(workspace: Workspace): Promise<void> {
-  const state = appStore.state;
-  const provider = selectEffectiveCodingAgent.select(state, 'implementor') || undefined;
-  let model = selectEffectiveModel.select(state, 'implementor') || undefined;
-  let behaviorPrompt = selectEffectiveBehaviorPrompt.select(state, 'implementor') || undefined;
-  if (!behaviorPrompt) {
-    const implementorSpec = SPECIALISTS.find((s) => s.id === 'implementor');
-    behaviorPrompt = implementorSpec?.defaultBehaviorPrompt;
-    if (!model) model = implementorSpec?.defaultModel;
-  }
-
   try {
     // No initial message: the agent session is created idle so nothing runs
     // until the user sends the prefilled prompt.
@@ -58,11 +42,8 @@ export async function runShrinkWorkspaceAction(workspace: Workspace): Promise<vo
       // Generated name — keep the session self-renameable.
       nameExplicitlySet: false,
       agentType: createAgentTypeId('chat'),
-      model,
-      provider,
-      behaviorPrompt,
       source: 'shrink-workspace',
-      metadata: { specialist: 'implementor', source: 'shrink-workspace' },
+      metadata: { source: 'shrink-workspace' },
     });
     const session = await appStore.dispatch(launchAction);
 

@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { runSaga } from 'redux-saga';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -53,6 +54,7 @@ import {
   setupSystemIPC,
 } from '../system.ipc';
 import { WINDOW_CHANNELS } from '../../../../shared/ipc/channels';
+import { bindMachineViewToBackend, setShownMachineView } from '../../../../main/window-backend';
 import { handleMenuZoom } from '../../../../main/menu-zoom';
 import { fixWebContentsZoom } from '../../../../main/fixed-zoom';
 import { sendWorkspaceCommand } from '../../../../main/menu-workspace-command';
@@ -175,6 +177,39 @@ describe('WINDOW_CHANNELS.SET_IN_WORKSPACE workspace tracking', () => {
     await handle(event, { inWorkspace: true, workspaceId: 'ws-a' });
     expect(getViewedWorkspaceIdForWindow(window.id)).toBe('ws-a');
     expect(getWindowIdsForWorkspace('ws-a', 'remote-1')).toEqual([window.id]);
+  });
+
+  it('tracks the workspace of the machine view a window shows, on that view backend', async () => {
+    // A window whose own renderer serves `local` and hosts a view for `remote-b`.
+    const home = {};
+    const host = Object.assign(new EventEmitter(), {
+      id: 916,
+      isDestroyed: () => false,
+      backendId: 'local',
+      webContents: home,
+    });
+    const view = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false });
+    electronMocks.fromWebContents.mockReturnValue(host);
+    electronMocks.fromId.mockImplementation((id: number) => (id === host.id ? host : null));
+    electronMocks.getFocusedWindow.mockReturnValue(host);
+    bindMachineViewToBackend(host as never, view as never, 'remote-b');
+    setShownMachineView(host as never, view as never);
+    const handle = handlerFor(WINDOW_CHANNELS.SET_IN_WORKSPACE);
+
+    await handle({ sender: view }, { inWorkspace: true, workspaceId: 'ws-b' });
+    expect(getFocusedWindowWorkspaceId()).toBe('ws-b');
+    expect(getWindowIdsForWorkspace('ws-b', 'remote-b')).toEqual([host.id]);
+    expect(getWindowIdsForWorkspace('ws-b', 'local')).toEqual([]);
+
+    // The home renderer is not the one shown: its report does not speak for the window.
+    await handle({ sender: home }, { inWorkspace: true, workspaceId: 'ws-home' });
+    expect(getFocusedWindowWorkspaceId()).toBe('ws-b');
+
+    // Back on the home machine, the view's entry no longer applies until home re-reports.
+    setShownMachineView(host as never, null);
+    expect(getFocusedWindowWorkspaceId()).toBeUndefined();
+    await handle({ sender: home }, { inWorkspace: true, workspaceId: 'ws-home' });
+    expect(getFocusedWindowWorkspaceId()).toBe('ws-home');
   });
 });
 

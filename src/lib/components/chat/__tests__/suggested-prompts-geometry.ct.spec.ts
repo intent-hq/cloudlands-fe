@@ -51,10 +51,7 @@ for (const scenario of scenarios) {
     await expect(component.getByTestId('selected-prompt')).toHaveText('Review the change.');
   });
 
-  test(`keeps edit actions usable with pointer and keyboard in ${scenario.name}`, async ({
-    mount,
-    page,
-  }) => {
+  test(`keeps edit actions usable with keyboard in ${scenario.name}`, async ({ mount, page }) => {
     const component = await mount(SuggestedPromptsGeometryHost, { props: scenario });
     const rows = component.locator('[data-suggested-prompt-row]');
     await expect(rows).toHaveCount(2);
@@ -65,8 +62,6 @@ for (const scenario of scenarios) {
       const edit = row.getByRole('button', { name: 'Edit in input' });
       const send = row.locator('[data-suggested-prompt-text]');
       const prompt = await send.textContent();
-      await page.mouse.move(0, 0);
-      await expect(edit).toHaveCSS('opacity', '0');
       const controls = await row.evaluate((element) => ({
         hintRight: element.querySelector('[data-suggested-prompt-hint]')!.getBoundingClientRect()
           .right,
@@ -74,28 +69,19 @@ for (const scenario of scenarios) {
       }));
       expect(controls.hintRight).toBeLessThanOrEqual(controls.buttonLeft);
 
-      await row.hover();
-      await expect(edit).toHaveCSS('opacity', '1');
-      await edit.hover();
-      await expect(page.getByRole('tooltip')).toBeVisible();
-      await edit.click();
-      await expect(component.getByTestId('edited-prompt')).toHaveText(prompt!);
-      await expect(component.getByTestId('edit-count')).toHaveText(String(index * 2 + 1));
-      await expect(component.getByTestId('selection-count')).toHaveText(String(index));
-
-      await page.mouse.move(0, 0);
       await send.focus();
       await send.press('Tab');
       await expect(edit).toBeFocused();
       await expect(edit).toHaveCSS('opacity', '1');
       await edit.press('Space');
-      await expect(component.getByTestId('edit-count')).toHaveText(String(index * 2 + 2));
+      await expect(component.getByTestId('edited-prompt')).toHaveText(prompt!);
+      await expect(component.getByTestId('edit-count')).toHaveText(String(index + 1));
       await expect(component.getByTestId('selection-count')).toHaveText(String(index));
       await send.focus();
       await send.press('Enter');
       await expect(component.getByTestId('selected-prompt')).toHaveText(prompt!);
       await expect(component.getByTestId('selection-count')).toHaveText(String(index + 1));
-      await expect(component.getByTestId('edit-count')).toHaveText(String(index * 2 + 2));
+      await expect(component.getByTestId('edit-count')).toHaveText(String(index + 1));
     }
   });
 }

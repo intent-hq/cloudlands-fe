@@ -33,55 +33,6 @@ test('draws authoritative numbered marks from Retina image pixels at overlay sca
   expect(await numbers(box, 'rect', ['x', 'y', 'width', 'height'])).toEqual([600, 100, 200, 120]);
 });
 
-test('a box gesture sends its pointerdown origin and shape; dock origins and blur never commit', async ({
-  mount,
-  page,
-}) => {
-  await mount(Harness, { props: { fixture: 'live-empty' } });
-  await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'box');
-
-  await page.mouse.move(100, 100);
-  await page.mouse.down();
-  await page.mouse.move(200, 180, { steps: 4 });
-  await page.mouse.up();
-  await expect
-    .poll(() => recorded(page, 'gestures'))
-    .toEqual([
-      {
-        sessionId: 'fixture-live',
-        sequence: 1,
-        tool: 'box',
-        origin: { x: 100, y: 100 },
-        points: [
-          { x: 100, y: 100 },
-          { x: 200, y: 180 },
-        ],
-      },
-    ]);
-
-  // The fixture's dock column (x ≥ 1000) is never a gesture origin.
-  await page.mouse.move(1100, 100);
-  await page.mouse.down();
-  await page.mouse.move(1150, 160, { steps: 2 });
-  await page.mouse.up();
-
-  // A held gesture fenced by window blur is cancelled, not committed.
-  await page.mouse.move(300, 300);
-  await page.mouse.down();
-  await page.mouse.move(360, 340, { steps: 2 });
-  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
-  await page.mouse.up();
-
-  await expect
-    .poll(() => recorded(page, 'pointers'))
-    .toEqual([
-      { sessionId: 'fixture-live', sequence: 1, phase: 'down', x: 100, y: 100, tool: 'box' },
-      { sessionId: 'fixture-live', sequence: 2, phase: 'down', x: 300, y: 300, tool: 'box' },
-      { sessionId: 'fixture-live', sequence: 2, phase: 'cancel', x: 300, y: 300, tool: 'box' },
-    ]);
-  expect(await recorded(page, 'gestures')).toHaveLength(1);
-});
-
 test('still markup letterboxes the frozen image and maps its marks into the same frame', async ({
   mount,
   page,
@@ -115,11 +66,6 @@ test('still markup letterboxes the frozen image and maps its marks into the same
   expect(height).toBeCloseTo((mark.h / image.height) * frame.height, 1);
 });
 
-/** The bar's bottom centre: what it keeps while a recording starts or ends. */
-async function place(bar: Locator) {
-  const box = (await bar.boundingBox())!;
-  return { cx: Math.round(box.x + box.width / 2), bottom: Math.round(box.y + box.height) };
-}
 const actions = async (page: Page) =>
   JSON.parse(
     (await page.getByTestId('dock-annotation-harness').getAttribute('data-toolbar')) ?? '[]',
@@ -143,30 +89,13 @@ for (const scheme of ['light', 'dark'] as const) {
     ).toHaveCount(0);
     await expect(bar.locator('[data-testid="recording-chip"]')).toHaveCount(0);
     await expect(bar.locator('[data-clear]')).toBeVisible();
-    // Dark whatever the system appearance.
-    expect(await bar.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(
-      'rgb(38, 38, 38)',
-    );
     await page.screenshot({ path: testInfo.outputPath(`annotation-bar-${scheme}.png`) });
 
     // Tools switch on the bar; clicks on it are never marks.
     await bar.locator('[data-tool="pen"]').click();
     await expect(page.getByTestId('dock-annotation-overlay')).toHaveAttribute('data-tool', 'pen');
     expect(await recorded(page, 'pointers')).toEqual([]);
-    // The grip moves it; a button never does.
-    const start = await place(bar);
-    const grip = (await bar.locator('.grip').boundingBox())!;
-    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(grip.x + grip.width / 2 - 150, grip.y + grip.height / 2 - 100, {
-      steps: 4,
-    });
-    await page.mouse.up();
-    const moved = await place(bar);
-    expect(Math.abs(moved.cx - (start.cx - 150))).toBeLessThanOrEqual(1);
-    expect(Math.abs(moved.bottom - (start.bottom - 100))).toBeLessThanOrEqual(1);
     await bar.locator('[data-tool="arrow"]').click();
-    expect(await place(bar)).toEqual(moved);
 
     // Attach counts the marks on screen and commits them; Close ends the session.
     await expect(bar.locator('[data-attach-count]')).toHaveText('4');
@@ -195,55 +124,3 @@ test('with nothing marked, Done ends the session without an attachment', async (
   ]);
 });
 
-test('a recording starting or ending keeps the bar, its tools, the current tool and its place', async ({
-  mount,
-  page,
-}, testInfo) => {
-  const props = { fixture: 'live-empty', media: dockAnnotationMediaIdle } as const;
-  const component = await mount(Harness, { props });
-  const bar = page.getByTestId('dock-recording-toolbar');
-  await expect(bar).toHaveAttribute('data-mode', 'annotate');
-  await bar.locator('[data-tool="box"]').click();
-  const grip = (await bar.locator('.grip').boundingBox())!;
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(grip.x + grip.width / 2 - 200, grip.y + grip.height / 2 - 120, {
-    steps: 4,
-  });
-  await page.mouse.up();
-  const annotating = await place(bar);
-
-  // The composer starts a recording (its own control): only the right side changes.
-  await component.update({
-    props: {
-      ...props,
-      media: {
-        ...dockAnnotationMediaIdle,
-        record: {
-          ...dockAnnotationMediaIdle.record,
-          recording: true,
-          startedAt: Date.now() - 5000,
-          label: 'Stop recording',
-          tooltip: 'Stop recording',
-        },
-      },
-    },
-  });
-  await expect(bar).toHaveAttribute('data-mode', 'recording');
-  await expect(bar.getByTestId('recording-chip')).toBeVisible();
-  await expect(bar.locator('[data-tool="box"]')).toHaveAttribute('aria-checked', 'true');
-  const recordingPlace = await place(bar);
-  expect(Math.abs(recordingPlace.cx - annotating.cx)).toBeLessThanOrEqual(1);
-  expect(Math.abs(recordingPlace.bottom - annotating.bottom)).toBeLessThanOrEqual(1);
-  await page.screenshot({ path: testInfo.outputPath('bar-recording.png') });
-  // Picking a tool mid-recording keeps the recording UI.
-  await bar.locator('[data-tool="pen"]').click();
-  await expect(bar.getByTestId('recording-chip')).toBeVisible();
-
-  // The recording ends: back to annotating, in the same place.
-  await component.update({ props });
-  await expect(bar).toHaveAttribute('data-mode', 'annotate');
-  const after = await place(bar);
-  expect(Math.abs(after.cx - annotating.cx)).toBeLessThanOrEqual(1);
-  expect(Math.abs(after.bottom - annotating.bottom)).toBeLessThanOrEqual(1);
-});

@@ -43,11 +43,11 @@ describe('decodeVendorMessage', () => {
     it('decodes encoder rotation (act=2, one event per detent)', () => {
       expect(decodeVendorMessage({ m: 'v.oai.hid', p: { k: 'ENC_CW', act: 2 } })).toEqual({
         kind: 'encoder-rotate',
-        direction: 'cw',
+        control: 'ENC_CW',
       });
       expect(decodeVendorMessage({ m: 'v.oai.hid', p: { k: 'ENC_CC', act: 2 } })).toEqual({
         kind: 'encoder-rotate',
-        direction: 'ccw',
+        control: 'ENC_CC',
       });
     });
 

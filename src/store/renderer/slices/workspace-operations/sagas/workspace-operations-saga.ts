@@ -67,11 +67,13 @@ import {
   closeArchiveWarning,
   closeBulkArchiveConfirm,
   closeBulkDeleteConfirm,
+  closeBulkRetireConfirm,
   closeDeleteWarning,
   closeRemoveRepoConfirm,
   confirmArchiveWorkspace,
   confirmBulkArchive,
   confirmBulkDelete,
+  confirmBulkRetire,
   confirmDeleteWorkspace,
   confirmRemoveRepo,
   closeRetireConfirm,
@@ -96,6 +98,7 @@ import {
   selectPendingRetireWorkspaceId,
 } from '../workspace-operations-selectors';
 import { buildCreateWorkspaceRequestFromProposal } from '../utils/workspace-create-proposal';
+import { outstandingWork, type WorkspaceRemovalKind } from '../outstanding-work';
 
 const logger = createLogger('WorkspaceOperationsSaga');
 export const WORKSPACE_OPERATION_UNDO_DURATION_MS = 15_000;
@@ -128,32 +131,28 @@ function workspacesForIds(workspaceIds: string[], workspaces: Workspace[]): Work
   });
 }
 
-// Single-workspace gating: guests alone (collaborators or open invites) open
-// the warning too, since archive/delete removes them from the workspace.
-function hasActiveWork({
-  agentNames,
-  hookNames,
-  openPrs,
-  localChanges,
-  guests,
-}: ActiveWorkNames): boolean {
-  return (
-    agentNames.length > 0 ||
-    hookNames.length > 0 ||
-    openPrs.length > 0 ||
-    Boolean(localChanges?.hasUnpushedCommits || localChanges?.hasUncommittedChanges) ||
-    guests.collaboratorCount + guests.openInviteCount > 0
-  );
+// Single-workspace gating shares the dialog's rule, so the warning never opens empty.
+function needsConfirmation(kind: WorkspaceRemovalKind, work: ActiveWorkNames): boolean {
+  return outstandingWork(kind, {
+    agentCount: work.agentNames.length,
+    hookCount: work.hookNames.length,
+    openPrCount: work.openPrs.length,
+    localChanges: work.localChanges,
+    guests: work.guests,
+  }).needsConfirmation;
 }
 
-// Single-workspace gating: the only path that fetches `workspace.localChanges`.
+// Single-workspace gating: the only path that fetches `workspace.localChanges` (delete only).
 function* getSingleWorkspaceActiveWork(
   workspaceId: string,
-  kind: 'archive' | 'delete',
+  kind: WorkspaceRemovalKind,
 ): SagaGenerator<ActiveWorkNames | null> {
   const context = yield* selectPrincipalActionContext.effect();
   if (!context) return null;
-  const result = yield* call(getActiveWorkNames, workspaceId, { includeLocalChanges: true });
+  // Archive keeps local changes on disk, so only delete checks for them.
+  const result = yield* call(getActiveWorkNames, workspaceId, {
+    includeLocalChanges: kind === 'delete',
+  });
   if ((yield* selectPrincipalActionContext.effect()) !== context) return null;
   if (!result) {
     const notify = yield* call(getToast);
@@ -302,7 +301,7 @@ function* requestDelete(action: ReturnType<typeof requestDeleteWorkspace>): Saga
   if (!operation) return;
   const activeWork = yield* getSingleWorkspaceActiveWork(workspaceId, 'delete');
   if (!activeWork || !operation.current()) return;
-  if (hasActiveWork(activeWork)) {
+  if (needsConfirmation('delete', activeWork)) {
     yield* put(openDeleteWarning({ workspaceId, ...activeWork }));
     return;
   }
@@ -363,8 +362,9 @@ function* archive(action: ReturnType<typeof requestArchiveWorkspace>): SagaGener
   if (!workspace) return;
   const activeWork = yield* getSingleWorkspaceActiveWork(workspaceId, 'archive');
   if (!activeWork) return;
-  if (hasActiveWork(activeWork)) {
-    yield* put(openArchiveWarning({ workspaceId, ...activeWork }));
+  if (needsConfirmation('archive', activeWork)) {
+    const { agentNames, hookNames, openPrs, guests } = activeWork;
+    yield* put(openArchiveWarning({ workspaceId, agentNames, hookNames, openPrs, guests }));
     return;
   }
   yield* call(archiveWorkspaceById, workspaceId);
@@ -803,6 +803,90 @@ function* bulkDelete(): SagaGenerator<void> {
   }
 }
 
+/**
+ * Retire (purge the folder of) each archived workspace that still has one, one at a time.
+ * Like `bulkDelete`, the batch belongs to the store, backend and admission that confirmed
+ * it: when any of them changes, it stops and stays silent.
+ */
+function* bulkRetire(): SagaGenerator<void> {
+  if (yield* selectBulkOperationInFlight.effect()) return;
+  const workspaceIds = yield* selectPendingBulkWorkspaceIds.effect();
+  const workspaces = yield* selectWorkspaceItems.effect();
+  const targets = workspacesForIds(workspaceIds, workspaces).filter(
+    (workspace) => workspace.status === WorkspaceStatusEnum.Archived,
+  );
+  const dispatch = store.dispatch;
+  const backend = store.state.connections.windowBackendId;
+  const admission = selectPrincipalActionContext.select(store.state);
+  const reservedIds = targets.map(({ id }) => id);
+  const ownsBulk = () => {
+    try {
+      return (
+        store.dispatch === dispatch &&
+        store.state.connections.windowBackendId === backend &&
+        store.state.workspaceOperations.bulkReservedWorkspaceIds === reservedIds
+      );
+    } catch {
+      return false;
+    }
+  };
+  const current = () =>
+    ownsBulk() &&
+    admission !== null &&
+    selectPrincipalActionContext.select(store.state) === admission;
+  yield* put(bulkOperationStarted({ kind: 'retire', workspaceIds: reservedIds }));
+  yield* put(closeBulkRetireConfirm());
+  try {
+    const notify = yield* call(getToast);
+    if (!current()) return;
+    if (targets.length === 0) {
+      notify.info(m.workspace_ops_noFoldersToPurge_message());
+      return;
+    }
+    let retiredCount = 0;
+    let failCount = 0;
+    for (const workspace of targets) {
+      if (!current()) return;
+      try {
+        const result = yield* call([workspaceClient, workspaceClient.retire], workspace.id);
+        if (!current()) return;
+        if (!result.ok) {
+          failCount++;
+          continue;
+        }
+        retiredCount++;
+        yield* applyWorkspaceChanges(workspace.id, {
+          status: WorkspaceStatusEnum.Retired,
+          archived: true,
+          ...(result.data?.archivedAt ? { archivedAt: result.data.archivedAt } : {}),
+          ...(result.data?.retiredAt ? { retiredAt: result.data.retiredAt } : {}),
+        });
+      } catch (error) {
+        if (!current()) return;
+        logger.error('workspace.retire failed', { workspaceId: workspace.id, error });
+        failCount++;
+      }
+    }
+    if (retiredCount > 0) {
+      notify.success(
+        retiredCount === 1
+          ? m.workspace_ops_purgedCount_one({ count: retiredCount })
+          : m.workspace_ops_purgedCount_many({ count: retiredCount }),
+      );
+    }
+    if (failCount > 0) {
+      notify.error(
+        failCount === 1
+          ? m.workspace_ops_purgeFailedCount_one({ count: failCount })
+          : m.workspace_ops_purgeFailedCount_many({ count: failCount }),
+      );
+    }
+  } finally {
+    // An obsolete admission may settle its own lock, never a replacement store's.
+    if (ownsBulk()) dispatch(bulkOperationFinished());
+  }
+}
+
 function* removeRepoFromRegistry(): SagaGenerator<void> {
   const repoPath = yield* selectPendingRemoveRepoPath.effect();
   yield* put(closeRemoveRepoConfirm());
@@ -854,6 +938,12 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
       origin,
     });
     const result = yield* call([workspaceClient, workspaceClient.create], request);
+    if (!result.ok && result.errorCode === 'launch-failed') {
+      // The workspace committed and the daemon resolved the card applied; only
+      // its first agent failed to start (PROTOCOL nodes.md "Placement subset").
+      yield* applyLaunchFailedProposal(proposalId, result.launchFailure, result.error);
+      return;
+    }
     if (!result.ok) {
       yield* failProposal(proposalId, result.error, result.errorCode);
       return;
@@ -887,6 +977,37 @@ function* applyCreateProposal(payload: WorkspaceProposalApplyPayload): SagaGener
   } catch (error) {
     yield* failProposal(proposalId, error instanceof Error ? error.message : String(error));
   }
+}
+
+async function readKeptWorkspace(workspaceId: string): Promise<Workspace | null> {
+  try {
+    return (await appClient.workspaces.get(workspaceId)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function* applyLaunchFailedProposal(
+  proposalId: string,
+  launch: { workspaceId: string; cause?: string } | undefined,
+  error: string,
+): SagaGenerator<void> {
+  const workspaceId = launch?.workspaceId as WorkspaceId | undefined;
+  const workspace = workspaceId ? yield* call(readKeptWorkspace, workspaceId) : null;
+  if (workspace && workspaceId) {
+    yield* put(setWorkspaceEntity(workspace));
+    yield* put(restoreWorkspaceTab(workspaceId));
+  }
+  yield* put(
+    proposalApplySucceeded({
+      proposalId,
+      completedAt: Date.now(),
+      result: {
+        ...(workspaceId ? { workspaceId } : {}),
+        launchError: m.chat_proposalCard_launchFailed_label({ cause: launch?.cause || error }),
+      },
+    }),
+  );
 }
 
 function* applyBulkProposal(payload: WorkspaceProposalApplyPayload): SagaGenerator<void> {
@@ -1006,6 +1127,7 @@ export function* workspaceOperationsSaga(): SagaGenerator<void> {
     takeLatest(loadRetiredWorkspacesRequested, loadRetiredWorkspaces),
     takeLeading(confirmBulkArchive, bulkArchive),
     takeLeading(confirmBulkDelete, bulkDelete),
+    takeLeading(confirmBulkRetire, bulkRetire),
     takeEvery(confirmRemoveRepo, removeRepoFromRegistry),
     takeEvery(applyWorkspaceProposal, applyProposal),
   ]);

@@ -37,18 +37,14 @@ test('equal handles stay distinct when keyboard and mouse choose different forge
   });
   await expect(page.getByRole('listbox')).toHaveCount(0);
   await expect(editor).toBeFocused();
-  await chip.hover();
-  await expect(page.getByRole('tooltip')).toContainText('GitLab · code.example:8443');
   await chip.click();
   await expect(chip).toHaveAttribute('data-type', 'member');
   // Chip clicks restore editor focus on the next frame. Select through the editor's
   // keyboard handling so that restore cannot overwrite fill()'s temporary DOM range.
   await expect(editor).toBeFocused();
-  await expect(page.getByRole('tooltip')).toContainText('GitLab · code.example:8443');
   await editor.press('ControlOrMeta+a');
   await editor.press('Backspace');
   await expect(chip).toHaveCount(0);
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
   await editor.pressSequentially('@alex');
   await expect(editor).toHaveText('@alex');
   await github.click();
@@ -61,9 +57,6 @@ test('equal handles stay distinct when keyboard and mouse choose different forge
   });
   await expect(editor).toBeFocused();
   await expect(page.getByRole('listbox')).toHaveCount(0);
-  await chip.hover();
-  await expect(page.getByRole('tooltip')).toContainText('GitHub · github.com');
-  await expect(page.getByRole('tooltip')).not.toContainText('GitLab');
   await page.screenshot({ path: testInfo.outputPath('github-selected.png') });
 });
 
@@ -196,10 +189,6 @@ test('a member with no forge metadata stays neutral through selection and submis
   await expect(row).toBeVisible();
   await expect(row).not.toContainText('GitHub');
   await editor.press('Enter');
-  const chip = editor.locator('[data-type="member"]');
-  await chip.hover();
-  await expect(page.getByRole('tooltip')).toContainText('@legacy.dev');
-  await expect(page.getByRole('tooltip')).not.toContainText('GitHub');
   await editor.press('Enter');
   await expect(page.getByTestId('submitted-chat')).toContainText('@legacy.dev');
   await expect(page.getByTestId('submitted-comment').locator('[data-type="member"]')).toHaveText(

@@ -465,10 +465,8 @@ export interface Workspace {
   taskStats?: WorkspaceTaskStats;
   /** @deprecated High-frequency data — fetch on demand via WORKSPACE_CHANNELS.GET_GIT_SUMMARY. Excluded from WorkspaceMetadata payloads. */
   gitSummary?: WorkspaceGitSummary; // Git status for list views (commits ahead/behind)
-  /** Copy-on-Write filesystem capability of the workspaces root (a machine capability, independent of the workspace or checkout mode). */
-  cowSupported?: boolean;
-  /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
   defaultAgentPlacement?: AgentPlacementRequest;
+  /** How the daemon provisioned this workspace's checkout (PROTOCOL §5.1). Immutable; omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
   checkoutMode?: 'cow' | 'worktree' | 'direct';
   /** Cached physical disk usage of the workspace directory (PROTOCOL §5.1); omitted until the daemon's first computation completes. */
   diskUsage?: WorkspaceDiskUsage;
@@ -1248,11 +1246,6 @@ export interface AgentMetadata {
   originalAgentId?: string; // Original agent ID if this is a restored/migrated agent
   triggerType?: string; // Type of trigger (e.g., 'commit', 'pr', 'review')
   taskNoteId?: NoteId; // Phase 1C: Task note this agent is working on
-  // Agent sandbox (CoW workspace clone) fields — set by the daemon on
-  // sandboxed agents (agent.list / agent.get carry them in `metadata`).
-  sandboxPath?: string; // Absolute daemon-host path of the sandbox directory
-  sandboxId?: string; // Sandbox identifier
-  sandboxBranch?: string; // Git branch checked out inside the sandbox
   // Question-hold dismissal marker (PROTOCOL §5.5, `agent.dismissQuestions`):
   // id of the question-bearing assistant message the user dismissed. Persisted
   // by the daemon in session metadata so the dismissed question set never
@@ -1756,6 +1749,12 @@ export interface CreateWorkspaceRequest {
    */
   plainFolder?: true;
   skipIsolation?: boolean; // If true, skip the isolated checkout (worktree or CoW clone) and work directly in the repo folder (wire: canonical for the deprecated skipWorktree alias)
+  /**
+   * Skip the daemon's base fetch and start the checkout at the existing
+   * `refs/remotes/<remote>/<baseRef>` (PROTOCOL §5.1). Sent only by Continue
+   * after a `base-refresh-failed` error (§9.2); older daemons ignore it.
+   */
+  skipBaseRefresh?: boolean;
   progressId?: string; // FE-minted correlation id echoed on git:clone:progress/done frames emitted during this create (PROTOCOL §5.1)
   contextLinks?: ContextLink[]; // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1); omitted when there are none — older daemons ignore the field
   /**

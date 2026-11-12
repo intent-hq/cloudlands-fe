@@ -21,6 +21,7 @@ import { TC_ADDRESS } from '../../../../test/fixtures/tc-address.fixture';
 
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NODE_REFUSED_MARKER } from '$shared/types/pair-link';
 
 const desktopPermissions = vi.hoisted(() => vi.fn());
 vi.mock('../../../desktop/main/desktop-permissions', () => ({
@@ -175,10 +176,18 @@ vi.mock('../backend-connection', async (importActual) => {
   };
 });
 
-const importedPrincipal = vi.hoisted(() => ({ inspect: vi.fn() }));
+const importedPrincipal = vi.hoisted(() => ({
+  inspect: vi.fn(),
+  daemonMode: null as 'regular' | 'node' | null,
+}));
 vi.mock('../invited-principal', async (actual) => ({
   ...(await actual<typeof import('../invited-principal')>()),
   inspectPersonalCredential: importedPrincipal.inspect,
+  inspectPairCredential: async (candidate: unknown) => ({
+    snapshot: await importedPrincipal.inspect(candidate),
+    daemonMode: importedPrincipal.daemonMode,
+    name: null,
+  }),
 }));
 // Connections store: in-test doubles for the CRUD + active-id surface.
 const store = vi.hoisted(() => ({
@@ -193,6 +202,7 @@ const store = vi.hoisted(() => ({
   setHostname: vi.fn(),
   setDetectedDeviceKind: vi.fn(),
   setDaemonVersion: vi.fn(),
+  setDaemonMode: vi.fn(),
   setUpdateSupported: vi.fn(),
   setTcAddress: vi.fn(),
   setHosts: vi.fn(),
@@ -211,6 +221,7 @@ vi.mock('../desktop-connections-store', () => ({
   setHostname: store.setHostname,
   setDetectedDeviceKind: store.setDetectedDeviceKind,
   setDaemonVersion: store.setDaemonVersion,
+  setDaemonMode: store.setDaemonMode,
   setUpdateSupported: store.setUpdateSupported,
   setTcAddress: store.setTcAddress,
   setHosts: store.setHosts,
@@ -2015,6 +2026,73 @@ describe('connections:* IPC handlers', () => {
     expect(send.mock.calls.some(([c]) => c === 'connections:changed')).toBe(true);
   });
 
+  describe('connections:add for a node', () => {
+    const params = {
+      label: 'GPU rig',
+      host: '10.0.0.9',
+      port: 7443,
+      fingerprint: 'AA:BB:CC:DD',
+      token: 'secret-token',
+    };
+    afterEach(() => {
+      importedPrincipal.daemonMode = null;
+    });
+
+    it.each(['labs-off', 'backend-unsupported'] as const)(
+      'refuses a node before saving anything when the backend cannot use it (%s)',
+      async (refuseNode) => {
+        importedPrincipal.daemonMode = 'node';
+        installWindow();
+        const { mod } = await loadModule();
+        mod.registerBackendHandlers();
+        const handler = findHandler('connections:add');
+
+        await expect(handler!({}, { ...params, refuseNode })).rejects.toThrow(
+          `${NODE_REFUSED_MARKER}:${refuseNode}`,
+        );
+        // Neither a new record nor the credential of an already saved node changes.
+        expect(store.add).not.toHaveBeenCalled();
+      },
+    );
+
+    it('saves nothing when the mode stays unknown while nodes are refused', async () => {
+      importedPrincipal.daemonMode = null;
+      installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:add');
+
+      await expect(handler!({}, { ...params, refuseNode: 'labs-off' })).rejects.toThrow(
+        `${NODE_REFUSED_MARKER}:unknown`,
+      );
+      expect(store.add).not.toHaveBeenCalled();
+    });
+
+    it('saves an allowed node with its detected mode', async () => {
+      importedPrincipal.daemonMode = 'node';
+      store.add.mockResolvedValue({ ...REMOTE, daemonMode: 'node' });
+      installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:add');
+
+      await handler!({}, params);
+      expect(store.add).toHaveBeenCalledWith({ ...params, daemonMode: 'node' });
+    });
+
+    it('saves a full daemon even when nodes would be refused', async () => {
+      importedPrincipal.daemonMode = 'regular';
+      store.add.mockResolvedValue(REMOTE);
+      installWindow();
+      const { mod } = await loadModule();
+      mod.registerBackendHandlers();
+      const handler = findHandler('connections:add');
+
+      await handler!({}, { ...params, refuseNode: 'labs-off' });
+      expect(store.add).toHaveBeenCalledWith({ ...params, daemonMode: 'regular' });
+    });
+  });
+
   it('connections:add passes the detectHosts option through to the store (#1746)', async () => {
     store.add.mockResolvedValue(REMOTE);
     installWindow();
@@ -2785,13 +2863,18 @@ describe('connections:* IPC handlers', () => {
         ]),
       });
     });
-    // Only the self-fingerprint probe and the reconnect-hello hostname +
-    // updateSupported re-captures may hit the wire here — never a
-    // fingerprint capture.
+    // Only the self-fingerprint probe, the reconnect-hello hostname,
+    // updateSupported and provider re-captures, and the daemon-mode probe of a
+    // hello without `daemonMode` may hit the wire here — never a fingerprint capture.
     expect(
       rpc.calls.every(
         (method) =>
-          method === 'server.pairingInfo' || method === 'host.status' || method === 'system.status',
+          method === 'server.pairingInfo' ||
+          method === 'host.status' ||
+          method === 'system.status' ||
+          method === 'host.providerDiscovery' ||
+          method === 'host.executionContext' ||
+          method === 'workspace.get',
       ),
     ).toBe(true);
     expect(mockCaptureFingerprint).not.toHaveBeenCalled();
@@ -2804,6 +2887,204 @@ describe('connections:* IPC handlers', () => {
       expect(record).toMatchObject({ status: 'disconnected' });
       expect(record).not.toHaveProperty('intentdVersion');
     });
+  });
+
+  it("carries a connected remote's host OS and installed providers only while it is connected", async () => {
+    const send = installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'host.status') return { os: 'linux', arch: 'x86_64', hostname: 'intent1' };
+      if (method === 'host.providerDiscovery')
+        return {
+          providers: [
+            { id: 'claude-code', displayName: 'Claude Code', installed: true },
+            { id: 'pi', displayName: 'Pi', installed: false },
+          ],
+        };
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+    const remoteRecord = () => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      return payload?.connections.find((connection) => connection.id === REMOTE.id);
+    };
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() =>
+      expect(remoteRecord()).toMatchObject({
+        status: 'connected',
+        hostOs: 'linux',
+        hostArch: 'x86_64',
+        providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+      }),
+    );
+    expect(rpc.payloads).toContainEqual(['host.providerDiscovery', {}]);
+
+    remote.emit('status', 'disconnected');
+    await vi.waitFor(() => expect(remoteRecord()).toMatchObject({ status: 'disconnected' }));
+    expect(remoteRecord()).not.toHaveProperty('hostOs');
+    expect(remoteRecord()).not.toHaveProperty('hostArch');
+    expect(remoteRecord()).not.toHaveProperty('providers');
+  });
+
+  it("hides a connected daemon's installed-but-disabled providers and shows them again when re-enabled", async () => {
+    const send = installWindow();
+    let enabledProviderIds = ['claude-code'];
+    rpc.handler = async (method) => {
+      if (method === 'host.status') return { os: 'linux', arch: 'x86_64', hostname: 'intent1' };
+      if (method === 'host.providerDiscovery')
+        return {
+          providers: [
+            { id: 'claude-code', displayName: 'Claude Code', installed: true },
+            { id: 'codex', displayName: 'Codex', installed: true },
+          ],
+        };
+      if (method === 'host.executionContext')
+        return { defaultProviderId: null, defaultModelId: null, enabledProviderIds };
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+    const remoteRecord = () => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      return payload?.connections.find((connection) => connection.id === REMOTE.id);
+    };
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() =>
+      expect(remoteRecord()).toMatchObject({
+        status: 'connected',
+        providers: [{ id: 'claude-code', displayName: 'Claude Code' }],
+      }),
+    );
+    expect(rpc.payloads).toContainEqual(['host.executionContext', {}]);
+
+    enabledProviderIds = ['claude-code', 'codex'];
+    remote.emit('notification', {
+      jsonrpc: '2.0',
+      method: 'events.event',
+      params: {
+        subscriptionId: 'renderer-sub',
+        event: { type: 'host:execution-context-changed', data: { enabledProviderIds } },
+      },
+    });
+    await vi.waitFor(() =>
+      expect(remoteRecord()?.providers).toEqual([
+        { id: 'claude-code', displayName: 'Claude Code' },
+        { id: 'codex', displayName: 'Codex' },
+      ]),
+    );
+  });
+
+  it('drops an enabled-providers read that an execution-context change overtook', async () => {
+    const send = installWindow();
+    let releaseStale: (value: unknown) => void = () => {};
+    let contextReads = 0;
+    rpc.handler = async (method) => {
+      if (method === 'host.providerDiscovery')
+        return {
+          providers: [
+            { id: 'claude-code', displayName: 'Claude Code', installed: true },
+            { id: 'codex', displayName: 'Codex', installed: true },
+          ],
+        };
+      if (method === 'host.executionContext') {
+        contextReads += 1;
+        if (contextReads === 1) return new Promise((resolve) => (releaseStale = resolve));
+        return { enabledProviderIds: ['claude-code', 'codex'] };
+      }
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+    const remoteRecord = () => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      return payload?.connections.find((connection) => connection.id === REMOTE.id);
+    };
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => expect(contextReads).toBe(1));
+    remote.emit('notification', {
+      jsonrpc: '2.0',
+      method: 'events.event',
+      params: { subscriptionId: 's', event: { type: 'host:execution-context-changed' } },
+    });
+    await vi.waitFor(() => expect(remoteRecord()?.providers).toHaveLength(2));
+
+    releaseStale({ enabledProviderIds: ['claude-code'] });
+    for (let tick = 0; tick < 10; tick++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(remoteRecord()?.providers).toEqual([
+      { id: 'claude-code', displayName: 'Claude Code' },
+      { id: 'codex', displayName: 'Codex' },
+    ]);
+  });
+
+  it('keeps showing installed providers when an older host has no enablement projection', async () => {
+    const send = installWindow();
+    rpc.handler = async (method) => {
+      if (method === 'host.providerDiscovery')
+        return { providers: [{ id: 'codex', displayName: 'Codex', installed: true }] };
+      if (method === 'host.executionContext') throw new Error('Method not found');
+      return {};
+    };
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => {
+      const changed = send.mock.calls.filter(([channel]) => channel === 'connections:changed');
+      const payload = changed.at(-1)?.[1] as ConnectionsListResult | undefined;
+      const record = payload?.connections.find((connection) => connection.id === REMOTE.id);
+      expect(record?.providers).toEqual([{ id: 'codex', displayName: 'Codex' }]);
+    });
+  });
+
+  it('does not ask a guest session for its installed providers', async () => {
+    guestStore.findById.mockImplementation(async (id: string) =>
+      id === REMOTE.id ? { id } : null,
+    );
+    installWindow();
+    const { mod } = await loadModule();
+    mod.getBackendClient();
+    const remote = (await mod.connectBackendClient(REMOTE.id)) as unknown as {
+      emit(event: string, arg: unknown): void;
+      hello(result: unknown): void;
+    };
+    mod.registerBackendHandlers();
+
+    remote.hello({ server: { version: '6.8.0' } });
+    remote.emit('status', 'connected');
+    await vi.waitFor(() => expect(guestStore.findById).toHaveBeenCalledWith(REMOTE.id));
+    for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(rpc.calls).not.toContain('host.providerDiscovery');
+    expect(rpc.calls).not.toContain('host.executionContext');
   });
 
   it('connections:add upserting a NON-active connection does not reconnect', async () => {
@@ -2922,6 +3203,39 @@ describe('connections:* IPC handlers', () => {
     expect(mod.getBackendClientForConnection('local')).toBe(local);
     expect(openOrFocus).toHaveBeenCalledWith('remote-1');
     expect(store.setActiveId).not.toHaveBeenCalled();
+  });
+
+  it('connections:open never opens a window for a node (refusal probe on an older daemon)', async () => {
+    const { JsonRpcError } = await import('../json-rpc-errors');
+    rpc.handler = async (method) => {
+      if (method === 'workspace.get')
+        throw new JsonRpcError({ code: -32003, message: 'node', data: { code: 'node-mode' } });
+      return {};
+    };
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'node',
+      id: 'remote-1',
+    });
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(store.setDaemonMode).toHaveBeenCalledWith('remote-1', 'node');
+  });
+
+  it('connections:open trusts a stored node mode without probing', async () => {
+    store.list.mockResolvedValue([LOCAL, { ...REMOTE, daemonMode: 'node' }]);
+    const { mod, openOrFocus } = await loadModule();
+    mod.registerBackendHandlers();
+    const handler = findHandler('connections:open');
+
+    await expect(handler!({}, { id: 'remote-1' })).resolves.toEqual({
+      status: 'node',
+      id: 'remote-1',
+    });
+    expect(openOrFocus).not.toHaveBeenCalled();
+    expect(rpc.calls).not.toContain('workspace.get');
   });
 
   it('connections:open opens the window and retains the client when the remote rejects requests', async () => {

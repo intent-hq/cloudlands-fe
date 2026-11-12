@@ -44,6 +44,8 @@ import {
   selectHasCompletedProviderSetup,
   selectLabsRemoteAgentsEnabled,
   selectLabsPlainFolderWorkspacesEnabled,
+  selectLabsTabGroupsEnabled,
+  selectLabsCloudMachinesEnabled,
   selectLanguagePreference,
   selectNotificationEnabled,
   selectNotificationVolume,
@@ -101,6 +103,8 @@ import {
   setHasCompletedProviderSetup,
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
+  setLabsTabGroupsEnabled,
+  setLabsCloudMachinesEnabled,
   setLanguagePreference,
   setNotificationEnabled,
   setNoteFontStyle,
@@ -325,6 +329,10 @@ async function readCurrentSettingValue(
       return selectLabsRemoteAgentsEnabled.select(state);
     case 'labs.plainFolderWorkspaces':
       return selectLabsPlainFolderWorkspacesEnabled.select(state);
+    case 'labs.tabGroups':
+      return selectLabsTabGroupsEnabled.select(state);
+    case 'labs.cloudMachines':
+      return selectLabsCloudMachinesEnabled.select(state);
     case 'workspaceList.showArchived':
       return selectShowArchived.select(state);
     case 'workspaceList.groupByRepo':
@@ -445,6 +453,14 @@ function dispatchReduxAction(path: string, value: unknown): boolean {
     case 'labs.plainFolderWorkspaces':
       if (typeof value !== 'boolean') return false;
       appStore.dispatch(setLabsPlainFolderWorkspacesEnabled(value));
+      return true;
+    case 'labs.tabGroups':
+      if (typeof value !== 'boolean') return false;
+      appStore.dispatch(setLabsTabGroupsEnabled(value));
+      return true;
+    case 'labs.cloudMachines':
+      if (typeof value !== 'boolean') return false;
+      appStore.dispatch(setLabsCloudMachinesEnabled(value));
       return true;
     case 'workspaceList.showArchived':
       appStore.dispatch(setShowArchived(Boolean(value)));

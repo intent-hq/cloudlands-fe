@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel } from 'redux-saga';
 import { createCollection, getItem } from '@themislib/themis/utils/collections/collection-utils';
@@ -953,6 +954,35 @@ describe('chatSendSaga', () => {
       providerRef: 'codex@pwork',
       reason: 'profile-missing',
     });
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it.each([
+    [
+      'remote-agent-unsupported: attachments need a newer backend',
+      () => m.remoteAgent_attachmentsUnsupported_error(),
+    ],
+    [
+      "attachments-too-large-for-machine: agent.sendMessage: this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images",
+      () => m.remoteAgent_attachmentsTooLargeSized_error({ size: '9', limit: '8' }),
+    ],
+  ])('reads a remote agent attachment refusal in plain words: %s', async (message, expected) => {
+    const { BackendError } = await import('$lib/client/live/backend-transport-types');
+    mocks.send.mockRejectedValue(
+      new BackendError({ code: 'invalid_params', rpcCode: -32602, message }),
+    );
+    const run = harness();
+    run.channel.put(
+      sendMessage(AGENT, {
+        wsId: WS,
+        text: 'see attached',
+        imageBlocks: [{ type: 'image', attachmentId: 'att-1', mimeType: 'image/png' }],
+      }),
+    );
+    await settle();
+
+    expect(run.dispatch).toHaveBeenCalledWith(chatSendFailed(AGENT, expected()));
     run.task.cancel();
     await run.task.toPromise();
   });

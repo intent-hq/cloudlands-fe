@@ -33,6 +33,7 @@
   import StatsOverlay from '$features/stats/StatsOverlay.svelte';
   import DaemonStoppedOverlay from '$features/daemon-status/DaemonStoppedOverlay.svelte';
   import NoBackendScreen from '$features/intent-web/components/NoBackendScreen.svelte';
+  import WebExperimentalNoticeHost from '$features/intent-web/components/WebExperimentalNoticeHost.svelte';
   import { showsNoBackendScreen } from '$features/intent-web/utils/no-backend-gate';
   import { selectNoBackendBound } from '$store/renderer/slices/connections/connections-selectors';
   import DaemonUpdatingOverlay from '$features/daemon-status/DaemonUpdatingOverlay.svelte';
@@ -46,9 +47,11 @@
   import GitCredentialsModal from '$lib/components/GitCredentialsModal.svelte';
   import GitHubAuthModal from '$lib/components/GitHubAuthModal.svelte';
   import KeyboardShortcutsCheatSheet from '$lib/components/layout/KeyboardShortcutsCheatSheet.svelte';
+  import MachineRail from '$features/machine-rail/MachineRail.svelte';
   import WindowTitleBar from '$lib/components/layout/WindowTitleBar.svelte';
   import WorkspaceWarningDialogs from '$lib/components/modals/WorkspaceWarningDialogs.svelte';
   import TransferWorkspaceModalHost from '$lib/components/modals/TransferWorkspaceModalHost.svelte';
+  import BulkTransferModalHost from '$lib/components/modals/BulkTransferModalHost.svelte';
   import ImportWorkspaceModalHost from '$lib/components/modals/ImportWorkspaceModalHost.svelte';
   import ShareWorkspaceDialogHost from '$lib/components/modals/ShareWorkspaceDialogHost.svelte';
   import SetupPromptDialog from '$lib/components/modals/SetupPromptDialog.svelte';
@@ -98,6 +101,7 @@
     selectHidesAgentCreationActions,
     selectIsCollaboratorOnlyClient,
     selectIsWorkspaceCollaborator,
+    selectWindowBackendListedWorkspaces,
     selectWorkspaceHasLoaded,
     selectWorkspaceItems,
     selectWorkspaceLoading,
@@ -114,6 +118,11 @@
   import { selectShellTransparencyEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { connectionShellTint } from '$lib/utils/connection-accents';
   import {
+    isOnboardingSkippedForWindow,
+    recordOnboardingSkipMark,
+  } from '$features/onboarding/utils/onboarding-skip-mark';
+  import { getActiveBackendId } from '$store/renderer/utils/backend-storage-namespace';
+  import {
     BOOT_ROUTE_HOLD_TIMEOUT_MS,
     decideBootRoute,
     getBootRoutePathname,
@@ -125,6 +134,7 @@
   import { createLogger } from '$lib/utils/client-logger';
   import { preloadDiffHighlighter } from '$lib/utils/diff-highlighter-preloader';
   import { isFocusInEditableElement, KeyboardShortcutManager } from '$lib/utils/keyboardShortcuts';
+  import { createAppShortcutRegistrar } from '$lib/utils/app-shortcut-registrar';
   import { registerGlobalSearchShortcuts } from '$lib/utils/global-search-shortcuts';
   import { configureMonacoWorkers } from '$lib/utils/monaco-workers';
   import { hasCapability } from '$lib/utils/platform-capabilities';
@@ -141,11 +151,13 @@
   import RootQuakeTerminalOverlay from '$lib/components/terminal/RootQuakeTerminalOverlay.svelte';
   import FeatureCodeDialog from '$lib/components/modals/FeatureCodeDialog.svelte';
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-  import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+  import {
+    selectCreateModalPrefillRequest,
+    selectShowCreateModal,
+  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
-  import type { ShortcutId } from '$lib/utils/shortcut-bindings';
   // Installs production bridge handlers before the app sagas and route startup use them.
   import '$store/renderer/seeders';
   import { startAppStoreLifecycle } from '$store/renderer/app-store-lifecycle';
@@ -183,6 +195,7 @@
   const workspaceId = $derived(workspaceIdFromRoute(routePathname, routeWorkspaceId) ?? undefined);
   const workspaceItems = selectWorkspaceItems();
   const workspaceHasLoaded = selectWorkspaceHasLoaded();
+  const windowBackendListedWorkspaces$ = selectWindowBackendListedWorkspaces();
   // Workspace creation (repo picker) is administrator-only (multiplayer w3).
   const isCollaboratorOnlyClient$ = selectIsCollaboratorOnlyClient();
   const noBackendBound$ = selectNoBackendBound();
@@ -196,6 +209,7 @@
   const showReleaseNotesModal$ = selectShowReleaseNotesModal();
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
+  const createModalPrefillRequest$ = selectCreateModalPrefillRequest();
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
   const panelLayouts = selectPanelLayoutWorkspaces();
@@ -298,7 +312,17 @@
     }, BOOT_ROUTE_HOLD_TIMEOUT_MS);
     return () => clearTimeout(timer);
   });
+  // Once this backend lists any workspace, permanently skip the full-page
+  // onboarding for it: later boots and empty windows fall back to Home.
   $effect(() => {
+    if (!$windowBackendListedWorkspaces$) return;
+    untrack(() => recordOnboardingSkipMark(getActiveBackendId(appStore.state)));
+  });
+  $effect(() => {
+    // Unknown (null) until the window is bound to its backend.
+    const onboardingSkipped = $connectionsLoaded$
+      ? untrack(() => isOnboardingSkippedForWindow(appStore.state))
+      : null;
     const decision = decideBootRoute({
       bootPathname: getBootRoutePathname(),
       currentPathname: window.location.pathname,
@@ -309,6 +333,7 @@
       tabsHydrated: $workspaceTabsHydrated,
       currentTabId: $currentWorkspaceTabId,
       holdTimedOut: bootHoldTimedOut,
+      onboardingSkipped,
     });
     if (decision.kind !== 'resolve') return;
     untrack(() => {
@@ -505,38 +530,7 @@
     paletteShortcuts = new KeyboardShortcutManager();
     const isMac =
       typeof navigator !== 'undefined' && navigator.platform.toUpperCase().includes('MAC');
-    const register = (opts: {
-      key: string;
-      meta?: boolean;
-      ctrl?: boolean;
-      shift?: boolean;
-      alt?: boolean;
-      description: string;
-      skipInEditableElements?: boolean;
-      global?: boolean;
-      ignoreRepeat?: boolean;
-      enabled?: () => boolean;
-      action: () => void;
-      shortcutId?: ShortcutId;
-      binding?: () => string;
-    }) => {
-      paletteShortcuts!.register({
-        key: opts.key,
-        meta: !!opts.meta,
-        ctrl: !!opts.ctrl,
-        shift: !!opts.shift,
-        alt: !!opts.alt,
-        description: opts.description,
-        skipInEditableElements: opts.skipInEditableElements,
-        global: opts.global,
-        ignoreRepeat: opts.ignoreRepeat,
-        enabled: opts.enabled,
-        action: opts.action,
-        binding:
-          opts.binding ??
-          (opts.shortcutId ? () => getEffectiveShortcut(opts.shortcutId!) : undefined),
-      });
-    };
+    const register = createAppShortcutRegistrar(paletteShortcuts, getEffectiveShortcut);
     const openCmd = () => appStore.dispatch(openPalette());
     const openFile = () => appStore.dispatch(openPalette());
     const openSearch = () => appStore.dispatch(openPalette());
@@ -1004,6 +998,7 @@
     <!-- Main Content Area -->
     <ErrorBoundary componentName="MainLayout">
       <div class="workspace-frame-row flex flex-1 min-h-0 bg-transparent pb-2 pl-2">
+        <MachineRail />
         <!-- Workspace content area -->
         <div class="workspace-frame relative mr-2 flex min-h-0 min-w-0 flex-1 bg-transparent">
           <main
@@ -1063,6 +1058,8 @@
 
   <Toast />
   <ConfirmHost />
+  <!-- Web build only: experimental notice at each start (Browser access hosts). -->
+  <WebExperimentalNoticeHost />
 
   <!-- Session-scoped daemon-host tool warnings (render nothing themselves) -->
   <NodeVersionToast />
@@ -1114,6 +1111,7 @@
   <!-- Create Workspace Modal (opened from sidebar nav + button) -->
   <NewSpaceModal
     open={$showCreateModal$ && $canCreateWorkspace$}
+    prefillRequest={$createModalPrefillRequest$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 
@@ -1122,6 +1120,7 @@
 
   <!-- Redux-owned Transfer/Download wizard host (global for all workspace entrypoints) -->
   <TransferWorkspaceModalHost />
+  <BulkTransferModalHost />
 
   <!-- Redux-owned Import-from-file wizard host (opened from the File menu) -->
   <ImportWorkspaceModalHost />

@@ -102,8 +102,6 @@ for (const theme of ['light', 'dark'] as const) {
             };
           });
         const restingState = await captureDisclosureState();
-        await disclosure.hover();
-        expect(await captureDisclosureState()).toEqual(restingState);
         await disclosure.focus();
         const focusedState = await captureDisclosureState();
         expect({ ...focusedState, focusIndicator: restingState.focusIndicator }).toEqual(

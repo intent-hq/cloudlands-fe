@@ -3,6 +3,8 @@
   /**
    * Compact token disclosure with on-demand composition and agent/model details.
    * Reasoning tokens are display-only; accounting remains daemon-owned.
+   * Cached tokens are excluded from every total, share, and comparison; the
+   * composition list reports them as one separate row.
    * Renders nothing until tokens have been used.
    */
   import { onMount, tick } from 'svelte';
@@ -90,13 +92,7 @@
   const titleId = $derived(`workspace-token-usage-title-${workspaceId}`);
   const processedId = $derived(`workspace-token-usage-processed-${workspaceId}`);
   function tokenCount(entry: TokenUsageTotals): number {
-    return (
-      entry.inputTokens +
-      entry.outputTokens +
-      entry.cacheReadTokens +
-      entry.cacheCreationTokens +
-      (entry.thoughtTokens ?? 0)
-    );
+    return entry.inputTokens + entry.outputTokens + (entry.thoughtTokens ?? 0);
   }
   function share(value: number, total: number): number {
     return total > 0 ? value / total : 0;
@@ -372,12 +368,7 @@
 
   function compositionFor(entry: TokenUsageTotals) {
     const entryProcessedTokens = tokenCount(entry);
-    return [
-      {
-        id: 'cached' as const,
-        label: m.workspace_tokenUsage_cachedContext_label(),
-        tokens: entry.cacheReadTokens + entry.cacheCreationTokens,
-      },
+    const sharedRows = [
       {
         id: 'output' as const,
         label: m.workspace_tokenUsage_modelOutput_label(),
@@ -393,11 +384,27 @@
         label: m.workspace_tokenUsage_inputContext_label(),
         tokens: entry.inputTokens,
       },
-    ].map((row) => ({ ...row, share: share(row.tokens, entryProcessedTokens) }));
+    ].map((row) => ({
+      ...row,
+      share: share(row.tokens, entryProcessedTokens) as number | undefined,
+    }));
+    return [
+      ...sharedRows,
+      {
+        id: 'cached' as const,
+        label: m.workspace_tokenUsage_cachedContext_label(),
+        tokens: entry.cacheReadTokens + entry.cacheCreationTokens,
+        share: undefined,
+      },
+    ];
   }
 
   const compositionRows = $derived(compositionFor(previewTotals));
-  const visibleCompositionRows = $derived(compositionRows.filter((row) => row.tokens > 0));
+  const visibleCompositionRows = $derived(
+    compositionRows.filter(
+      (row): row is typeof row & { share: number } => row.share !== undefined && row.tokens > 0,
+    ),
+  );
   const compositionSummary = $derived(
     visibleCompositionRows
       .map((row) =>
@@ -754,19 +761,16 @@
                     {m.workspace_tokenUsage_tokenSuffix_label()}
                   </dd>
                 {/if}
-                <dd
-                  class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
-                >
-                  <AnimatedNumber
-                    value={row.share}
-                    format={shareLabel}
-                    pulse={false}
-                    class="block w-full text-right"
-                  />
-                </dd>
-                {#if row.id === 'cached'}
-                  <dd class="composition-context-suffix hidden">
-                    {m.workspace_tokenUsage_shareSuffix_label()}
+                {#if row.share !== undefined}
+                  <dd
+                    class="composition-context text-right text-xs font-normal tabular-nums text-muted-foreground"
+                  >
+                    <AnimatedNumber
+                      value={row.share}
+                      format={shareLabel}
+                      pulse={false}
+                      class="block w-full text-right"
+                    />
                   </dd>
                 {/if}
               </div>
@@ -1017,9 +1021,6 @@
   .composition-context {
     grid-column: 4;
   }
-  .composition-context-suffix {
-    grid-column: 5;
-  }
   .message-composition-metric {
     grid-column: 1 / -1;
     padding-inline-start: 0.875rem;
@@ -1051,7 +1052,6 @@
   .composition-strip-segment {
     flex: 0 0 auto;
   }
-  .composition-strip-segment[data-metric='cached'],
   .composition-key[data-metric='cached'] {
     background: hsl(var(--muted-foreground) / 82%);
   }

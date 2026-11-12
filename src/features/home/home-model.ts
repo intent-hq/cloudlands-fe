@@ -1,5 +1,6 @@
 import type { Workspace } from '$shared/types';
 import { WorkspaceStatusEnum } from '$shared/types';
+import { m } from '$shared/paraglide/messages.js';
 
 export type HomeFilter =
   'all' | 'attention' | 'running' | 'waiting' | 'blocked' | 'unread' | 'archived';
@@ -46,20 +47,35 @@ export function getHomeBaseTriageGroup(
   if (workspace.displayStatus === 'blocked' || workspace.displayStatus === 'failed') {
     return 'blocked';
   }
-  if (
-    workspace.attention === 'review_required' ||
-    workspace.displayStatus === 'needs_attention' ||
-    workspace.displayStatus === 'pr_ready'
-  ) {
+  if (workspace.attention === 'review_required' || workspace.displayStatus === 'needs_attention') {
     return 'needs-you';
   }
   if (isHomeRunning(workspace)) {
     return 'running';
   }
+  if (workspace.displayStatus === 'pr_ready') {
+    return 'needs-you';
+  }
   if (workspace.displayStatus === 'complete' || workspace.displayStatus === 'pr_merged') {
     return 'done';
   }
   return 'idle';
+}
+
+/** Label of a Home Activity group (`needs-you`, `running`, `waiting`, `blocked`, else Done & idle). */
+export function homeTriageGroupLabel(group: string): string {
+  switch (group) {
+    case 'needs-you':
+      return m.home_filter_attention();
+    case 'running':
+      return m.home_filter_running();
+    case 'waiting':
+      return m.home_filter_waiting();
+    case 'blocked':
+      return m.home_filter_blocked();
+    default:
+      return m.home_board_done_idle();
+  }
 }
 
 export function needsAttention(workspace: HomeTriageInput): boolean {

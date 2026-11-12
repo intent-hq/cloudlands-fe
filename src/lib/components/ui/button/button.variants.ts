@@ -28,16 +28,18 @@ export const buttonCompatibilityAliases = [
   { prop: 'size', alias: 'icon-xs', replacement: 'icon-compact' },
 ] as const;
 
-// All sizes and states share the medium radius; surfaces inherit the same curve.
+const outlineButtonClasses = 'border border-border text-foreground hover:bg-hover active:bg-active';
+
+// Bordered controls paint their state on the root so native clipping follows every corner.
 export const buttonVariants = tv({
-  base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border-0 bg-transparent font-normal transition-[color,opacity] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  base: 'type-caption group/button relative isolate inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-(--radius-medium) border-0 bg-transparent font-normal transition-[color,opacity,background-color] duration-spring-fast ease-spring-fast disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-invalid:ring-1 aria-invalid:ring-danger motion-reduce:transition-none [&_svg]:pointer-events-none [&_svg]:shrink-0',
   variants: {
     variant: {
       primary: 'text-primary-foreground',
       default: 'text-secondary-foreground',
       destructive: 'bg-danger text-danger-background',
-      outline: 'border border-border text-foreground',
-      tertiary: 'border border-border text-foreground',
+      outline: outlineButtonClasses,
+      tertiary: outlineButtonClasses,
       secondary: 'text-secondary-foreground',
       ghost: 'text-foreground',
       'ghost-light': 'text-muted-foreground hover:text-foreground',
@@ -45,7 +47,7 @@ export const buttonVariants = tv({
         'text-muted-foreground underline decoration-border underline-offset-3 hover:text-foreground',
       plain: 'text-inherit font-inherit',
       link: 'text-primary-ink underline-offset-4 hover:underline',
-      neumorphic: 'border border-border text-foreground',
+      neumorphic: outlineButtonClasses,
     },
     size: {
       default: 'h-(--control-height-medium) px-4 [--button-icon-padding:0.75rem]',
@@ -76,6 +78,14 @@ export type ButtonSize = VariantProps<typeof buttonVariants>['size'];
 
 type ConcreteButtonVariant = Exclude<ButtonVariant, null | undefined>;
 
+const activeOutlineButtonClasses = 'bg-active hover:bg-active active:bg-active';
+
+export const activeButtonRootVariants: Partial<Record<ConcreteButtonVariant, string>> = {
+  outline: activeOutlineButtonClasses,
+  tertiary: activeOutlineButtonClasses,
+  neumorphic: activeOutlineButtonClasses,
+};
+
 export const buttonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
   primary:
     'bg-primary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
@@ -85,10 +95,9 @@ export const buttonSurfaceVariants: Record<ConcreteButtonVariant, string> = {
     'bg-secondary shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
   destructive:
     'bg-danger shadow-(--elevation-raised) group-hover/button:brightness-95 group-active/button:brightness-90 group-active/button:shadow-none',
-  outline: 'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
-  tertiary: 'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
-  neumorphic:
-    'bg-transparent shadow-none group-hover/button:bg-hover group-active/button:bg-active',
+  outline: 'bg-transparent shadow-none',
+  tertiary: 'bg-transparent shadow-none',
+  neumorphic: 'bg-transparent shadow-none',
   ghost:
     'bg-transparent shadow-[0_0_0_1px_transparent] group-hover/button:bg-hover group-hover/button:shadow-[0_0_0_1px_var(--hover)] group-active/button:bg-active group-active/button:shadow-[0_0_0_0_var(--active)]',
   'ghost-light':
@@ -104,9 +113,6 @@ export const activeButtonSurfaceVariants: Record<ConcreteButtonVariant, string> 
   default: 'bg-secondary brightness-90 shadow-none',
   secondary: 'bg-secondary brightness-90 shadow-none',
   destructive: 'bg-danger brightness-90 shadow-none',
-  outline: 'bg-active shadow-none',
-  tertiary: 'bg-active shadow-none',
-  neumorphic: 'bg-active shadow-none',
   ghost:
     'bg-active shadow-[0_0_0_1px_var(--active)] group-active/button:shadow-[0_0_0_0_var(--active)]',
   'ghost-light':

@@ -11,14 +11,18 @@ import { Spring, type SpringTierName } from './springs';
 interface AnimatedHeightOptions {
   open?: boolean;
   tier?: SpringTierName;
+  /** Fires once a collapse settles at zero, so callers can unmount retained content. */
+  onClosed?: () => void;
 }
 
 type AnimatedHeightParameter = boolean | AnimatedHeightOptions | undefined;
 
-function resolveOptions(parameter: AnimatedHeightParameter): Required<AnimatedHeightOptions> {
+function resolveOptions(
+  parameter: AnimatedHeightParameter,
+): Required<Omit<AnimatedHeightOptions, 'onClosed'>> & Pick<AnimatedHeightOptions, 'onClosed'> {
   return typeof parameter === 'object'
-    ? { open: parameter.open ?? true, tier: parameter.tier ?? 'slow' }
-    : { open: parameter ?? true, tier: 'slow' };
+    ? { open: parameter.open ?? true, tier: parameter.tier ?? 'slow', onClosed: parameter.onClosed }
+    : { open: parameter ?? true, tier: 'slow', onClosed: undefined };
 }
 
 function measuredHeight(node: HTMLElement): number {
@@ -46,7 +50,7 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
   node,
   parameter = true,
 ) => {
-  let { open } = resolveOptions(parameter);
+  let { open, onClosed } = resolveOptions(parameter);
   const { tier } = resolveOptions(parameter);
   // Initially open content retains its natural layout until the first read phase.
   // Historical mounts snap to that measurement rather than animating from zero.
@@ -86,9 +90,15 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
       cancelTarget = scheduleLayoutWrite(() => {
         cancelTarget = undefined;
         if (destroyed) return;
-        void height.set(target, { instant: !initialized || prefersReducedMotion() });
+        const settled = height.set(target, { instant: !initialized || prefersReducedMotion() });
         initialized = true;
+        if (!open) {
+          void settled.then(() => {
+            if (!destroyed && !open && height.current === 0) onClosed?.();
+          });
+        }
         cancelStyle?.();
+        cancelStyle = undefined;
         writeHeight();
       });
     };
@@ -134,7 +144,7 @@ export const animatedHeight: Action<HTMLElement, AnimatedHeightParameter> = (
 
   return {
     update(nextParameter = true) {
-      open = resolveOptions(nextParameter).open;
+      ({ open, onClosed } = resolveOptions(nextParameter));
       retarget();
     },
     destroy() {

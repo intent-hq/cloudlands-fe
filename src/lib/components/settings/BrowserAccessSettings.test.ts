@@ -28,12 +28,16 @@ const OFF: BrowserAccessState = {
 const ON: BrowserAccessState = { ...OFF, enabled: true, running: true };
 
 let current: BrowserAccessState;
+let signInCode: { code: string; link: string | null };
+let signInCodeError = false;
 let invoke: ReturnType<typeof vi.fn>;
 let stopStore: (() => void) | undefined;
 let stopSaga: (() => void) | undefined;
 
 beforeEach(() => {
   current = OFF;
+  signInCode = { code: 'ABC-DEF', link: 'https://box.ts.net/__browser-access/login?code=ABCDEF' };
+  signInCodeError = false;
   invoke = vi.fn(async (channel: string, params?: { enabled?: boolean; port?: number }) => {
     if (channel === 'browser-access:get-state') return current;
     if (channel === 'browser-access:set-enabled') {
@@ -43,6 +47,10 @@ beforeEach(() => {
     if (channel === 'browser-access:set-port') {
       current = { ...current, port: params?.port ?? current.port };
       return current;
+    }
+    if (channel === 'browser-access:create-sign-in-code') {
+      if (signInCodeError) throw new Error('not running');
+      return { ...signInCode, expiresAt: Date.now() + 10 * 60 * 1000 };
     }
     if (channel === 'browser-access:reset-key') {
       current = { ...current, accessKey: 'key-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' };
@@ -150,5 +158,64 @@ describe('BrowserAccessSettings', () => {
       await screen.findByText(m.settings_browserAccess_unavailable_description()),
     ).toBeTruthy();
     expect((toggle() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  function createLink(): Promise<HTMLElement> {
+    return screen.findByRole('button', { name: m.settings_browserAccess_createSignInLink_label() });
+  }
+
+  it('creates a sign-in link and shows its code, link and time remaining', async () => {
+    current = ON;
+    render(BrowserAccessSettings);
+    expect(screen.queryByTestId('browser-access-sign-in-code')).toBeNull();
+    await fireEvent.click(await createLink());
+    await waitFor(() => expect(screen.getByText('ABC-DEF')).toBeTruthy());
+    expect(invoke).toHaveBeenCalledWith('browser-access:create-sign-in-code', {});
+    expect(screen.getByText(signInCode.link!)).toBeTruthy();
+    expect(screen.getByTestId('browser-access-sign-in-code-expiry').textContent).not.toBe(
+      m.settings_browserAccess_signInCodeExpired_description(),
+    );
+  });
+
+  it('explains where to enter the code when no link is known', async () => {
+    current = ON;
+    signInCode = { code: 'XYZ-234', link: null };
+    render(BrowserAccessSettings);
+    await fireEvent.click(await createLink());
+    await waitFor(() => expect(screen.getByText('XYZ-234')).toBeTruthy());
+    expect(screen.queryByTestId('browser-access-sign-in-link')).toBeNull();
+    expect(screen.getByText(m.settings_browserAccess_signInCodeNoLink_description())).toBeTruthy();
+  });
+
+  it('marks the code expired once its time runs out', async () => {
+    current = ON;
+    render(BrowserAccessSettings);
+    await fireEvent.click(await createLink());
+    await waitFor(() => expect(screen.getByText('ABC-DEF')).toBeTruthy());
+    const realNow = Date.now();
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(realNow + 11 * 60 * 1000);
+    try {
+      await waitFor(() =>
+        expect(screen.getByTestId('browser-access-sign-in-code-expiry').textContent?.trim()).toBe(
+          m.settings_browserAccess_signInCodeExpired_description(),
+        ),
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('hides the code after the key is reset and reports a failed creation', async () => {
+    current = ON;
+    render(BrowserAccessSettings);
+    await fireEvent.click(await createLink());
+    await waitFor(() => expect(screen.getByText('ABC-DEF')).toBeTruthy());
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_browserAccess_resetKey_label() }),
+    );
+    await waitFor(() => expect(screen.queryByText('ABC-DEF')).toBeNull());
+    signInCodeError = true;
+    await fireEvent.click(await createLink());
+    expect(await screen.findByText(m.settings_browserAccess_signInCode_error())).toBeTruthy();
   });
 });

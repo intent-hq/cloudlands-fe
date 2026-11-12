@@ -3,6 +3,7 @@ import type { QueuedMessage } from '$shared/types';
 import {
   advanceQueueDrainPrediction,
   initialQueueDrainPredictorState,
+  latestDirectSendAt,
   predictDrainedQueueIds,
   QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
   type QueueDrainPredictorInput,
@@ -23,6 +24,7 @@ function step(
     busy: false,
     blocked: false,
     interrupted: false,
+    directSendAt: null,
     delivered: none,
     now: 1_000,
     ...input,
@@ -62,6 +64,13 @@ describe('predictDrainedQueueIds', () => {
     });
     expect(predictDrainedQueueIds([queued('a'), wake, queued('b')], 0)).toEqual(['a']);
     expect(predictDrainedQueueIds([wake, queued('a')], 0)).toEqual([]);
+  });
+
+  it('drains a machine-run wake with the batch: it has no stored notification', () => {
+    const wake = queued('wake', {
+      messageMetadata: { type: 'script_monitor_wake', monitorId: 'm1', remoteAgentId: 'a1' },
+    });
+    expect(predictDrainedQueueIds([queued('a'), wake, queued('b')], 0)).toEqual(['a', 'wake', 'b']);
   });
 });
 
@@ -105,6 +114,62 @@ describe('advanceQueueDrainPrediction', () => {
   it('does not predict when the turn was stopped or preempted', () => {
     const state = step(busyWith([queued('a')]), { queue: [queued('a')], interrupted: true });
     expect(state.prediction).toBeNull();
+  });
+
+  it('does not predict when a force-sent message preempts the turn', () => {
+    // busyWith starts the turn at 0; the force-send is admitted at 500.
+    const state = step(busyWith([queued('a')]), { queue: [queued('a')], directSendAt: 500 });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('does not predict when the forced message is acknowledged before the turn ends', () => {
+    let state = step(busyWith([queued('a')]), {
+      queue: [queued('a')],
+      busy: true,
+      directSendAt: 500,
+      now: 600,
+    });
+    state = step(state, { queue: [queued('a')], now: 1_000 });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('predicts when the forced turn ends on its own', () => {
+    let state = step(busyWith([queued('a')]), { queue: [queued('a')], directSendAt: 500 });
+    state = step(state, { queue: [queued('a')], busy: true, directSendAt: 500, now: 2_000 });
+    state = step(state, { queue: [queued('a')], busy: true, now: 2_500 });
+    state = step(state, { queue: [queued('a')], now: 3_000 });
+    expect(state.prediction).toEqual({ ids: ['a'], startedAt: 3_000 });
+  });
+
+  it('predicts after a send made while the agent was idle', () => {
+    // Admitted at 900, before this view saw the turn start at 1_000.
+    let state = step(initialQueueDrainPredictorState, {
+      queue: [],
+      busy: true,
+      directSendAt: 900,
+      now: 1_000,
+    });
+    state = step(state, { queue: [queued('a')], busy: true, directSendAt: 900, now: 1_500 });
+    state = step(state, { queue: [queued('a')], now: 2_000 });
+    expect(state.prediction).toEqual({ ids: ['a'], startedAt: 2_000 });
+  });
+
+  it('does not predict the forced turn when no idle edge separates it from the preempted one', () => {
+    let state = step(busyWith([queued('a')]), {
+      queue: [queued('a')],
+      busy: true,
+      directSendAt: 500,
+      now: 600,
+    });
+    state = step(state, { queue: [queued('a')], busy: true, now: 2_000 });
+    state = step(state, { queue: [queued('a')], now: 3_000 });
+    expect(state.prediction).toBeNull();
+  });
+
+  it('keeps a running prediction when a later message is sent directly', () => {
+    let state = step(busyWith([queued('a')]), { queue: [queued('a')] });
+    state = step(state, { queue: [queued('a')], directSendAt: 1_100, now: 1_200 });
+    expect(state.prediction?.ids).toEqual(['a']);
   });
 
   it('ends an idle prediction when the interruption is reported after the turn ends', () => {
@@ -160,5 +225,19 @@ describe('advanceQueueDrainPrediction', () => {
   it('returns the same state object when nothing changed', () => {
     const state = step(busyWith([queued('a')]), { queue: [queued('a')] });
     expect(step(state, { queue: [queued('a')], now: 1_200 })).toBe(state);
+  });
+});
+
+describe('latestDirectSendAt', () => {
+  it('returns the newest send still in flight', () => {
+    expect(
+      latestDirectSendAt([
+        { createdAt: 1, status: 'preparing' },
+        { createdAt: 3, status: 'sending' },
+        { createdAt: 5, status: 'accepted' },
+        { createdAt: 7, status: 'uncertain' },
+      ]),
+    ).toBe(3);
+    expect(latestDirectSendAt([{ createdAt: 5, status: 'accepted' }])).toBeNull();
   });
 });

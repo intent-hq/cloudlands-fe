@@ -1,0 +1,3097 @@
+{
+  "version": 1,
+  "note": "Known code used only by tests. Shrink-only: delete entries as the code is removed or gains a production caller (node scripts/check-dead-code.mjs --prune-baseline). Never add entries.",
+  "files": [
+    "src/lib/components/ui/dropdown/dropdown-caller-ledger.ts",
+    "src/lib/notes/text-rebase-bench.ts",
+    "src/lib/notes/text-rebase-shapes.ts",
+    "src/main/isolated-test-inspection.ts",
+    "src/main/utils/logger.ts",
+    "src/shared/ipc/request-validation.ts"
+  ],
+  "exports": {
+    "src/features/acp-official/main/server/handlers/terminal.ts": [
+      "isLikelyLongRunningCommand"
+    ],
+    "src/features/acp-official/permissions/permission-manager.ts": [
+      "PermissionManager"
+    ],
+    "src/features/agent/agent-attention-toast-service.ts": [
+      "agentAttentionToastId",
+      "switchToAttentionAgent"
+    ],
+    "src/features/agent/agent-failure-registry.ts": [
+      "clearAgentFailureRegistry"
+    ],
+    "src/features/agent/browser/error-boundary.service.ts": [
+      "withErrorBoundary"
+    ],
+    "src/features/agent/browser/index.ts": [
+      "notifyAgentSubscribers"
+    ],
+    "src/features/agent/components/agent-avatar/avatar-design.ts": [
+      "builtinAgentAvatarDesigns",
+      "builtinSpecialistAvatarDesigns",
+      "fallbackAgentAvatarDesigns",
+      "getFallbackAgentAvatarDesign",
+      "isBuiltinAgentAvatarDesign"
+    ],
+    "src/features/agent/components/agent-avatar/avatar-size.ts": [
+      "agentAvatarVariants"
+    ],
+    "src/features/agent/components/agent-avatar/avatar-state.ts": [
+      "AVATAR_STATE_PRECEDENCE",
+      "getAvatarStateFromStore",
+      "isAgentActivelyWorking",
+      "isAgentStreamingFromStore"
+    ],
+    "src/features/agent/interrupted-agents-service.ts": [
+      "INTERRUPTED_RECONCILE_DEBOUNCE_MS"
+    ],
+    "src/features/agent/mark-agent-seen.ts": [
+      "MARK_AGENT_SEEN_DEDUPE_LIMIT",
+      "cancelPendingMarkAgentSeen"
+    ],
+    "src/features/agent/services/agent-factory.ts": [
+      "UnifiedAgentFactory"
+    ],
+    "src/features/agent/services/error-handler.ts": [
+      "errorHandler"
+    ],
+    "src/features/agent/services/performance-optimizer.ts": [
+      "PerformanceOptimizer"
+    ],
+    "src/features/agent/utils/chat-interest-leases.ts": [
+      "chatInterestLeaseCount",
+      "clearAllChatInterestLeases"
+    ],
+    "src/features/agent/utils/chat-subscription-registry.ts": [
+      "clearAllStandingChatSubscriptions"
+    ],
+    "src/features/agent/utils/pending-agent-deletions.ts": [
+      "clearPendingAgentDeletions",
+      "listPendingAgentDeletions"
+    ],
+    "src/features/agent/utils/reasoning-effort-protocol.ts": [
+      "supportsReasoningEffortProtocol"
+    ],
+    "src/features/auggie/auggie-models.client.ts": [
+      "getModelIcon"
+    ],
+    "src/features/auggie/main/auggie-path.ts": [
+      "findAuggieInEnhancedPath",
+      "getEnhancedPath"
+    ],
+    "src/features/auto-update/main/cancellable-feed-provider.ts": [
+      "CancellableGenericProvider"
+    ],
+    "src/features/auto-update/main/update-telemetry.ts": [
+      "buildTelemetryFeedUrl",
+      "isAllowedUpdateUrl",
+      "isDoNotTrack"
+    ],
+    "src/features/backend/main/backend-connection.ts": [
+      "CONNECTION_LIMIT_RETRY_DEFAULT_MS",
+      "CONNECTION_LIMIT_RETRY_MAX_MS",
+      "CONNECTION_LIMIT_RETRY_MIN_MS",
+      "TUNNEL_RACE_HOST",
+      "WebSocketDuplex",
+      "parseRetryAfterMs",
+      "raceDuplexSockets",
+      "tunnelRaceAttempt"
+    ],
+    "src/features/backend/main/client-identity.ts": [
+      "DESKTOP_CLIENT_NAME",
+      "__resetLocalHostIdentityForTesting",
+      "getClientHostIdentity"
+    ],
+    "src/features/backend/main/connections-store.ts": [
+      "connectionsStore.LOCAL_CONNECTION_LABEL"
+    ],
+    "src/features/backend/main/desktop-connections-store.ts": [
+      "connectionsStore.LOCAL_CONNECTION_LABEL",
+      "connectionsStore.__drainWriteChainForTesting",
+      "connectionsStore.setActiveId"
+    ],
+    "src/features/backend/main/guest-sessions-store.ts": [
+      "guestSessionsStore.findMatching"
+    ],
+    "src/features/backend/main/intentd-orphan.ts": [
+      "getProcessExecutablePath",
+      "isExecutableInsideResources",
+      "isProcessAlive",
+      "readDaemonPidFromPidfile"
+    ],
+    "src/features/backend/main/intentd-pipe-name.ts": [
+      "windowsPipeName"
+    ],
+    "src/features/backend/main/intentd-sidecar.ts": [
+      "buildSidecarSpawnEnv",
+      "healthCheckProbe",
+      "resolveIntentdBinaryPath",
+      "shouldSpawnSidecar"
+    ],
+    "src/features/backend/main/intentd-version-pin.ts": [
+      "parseVersionPin",
+      "resolvePinFilePath"
+    ],
+    "src/features/backend/main/json-rpc-errors.ts": [
+      "mapErrorCode"
+    ],
+    "src/features/backend/main/keychain-sync-lifecycle.ts": [
+      "storeSyncAdapter"
+    ],
+    "src/features/backend/main/keychain-sync.ts": [
+      "KEYCHAIN_PAYLOAD_VERSION",
+      "MAX_HELPER_OUTPUT_BYTES",
+      "migrateLegacyGroupItems"
+    ],
+    "src/features/backend/main/tailcat-tunnel.ts": [
+      "TUNNEL_CONNECT_TIMEOUT_MS"
+    ],
+    "src/features/backend/main/transfer-connections.ts": [
+      "MAX_TRANSFER_CONNECTIONS",
+      "SESSION_LEASE_IDLE_TTL_MS",
+      "TRANSFER_REQUEST_TIMEOUT_MS",
+      "acquireTransferConnection",
+      "disposeAllTransferConnections",
+      "isTransferMethod"
+    ],
+    "src/features/backend/main/tunnel-manager.ts": [
+      "FrameDecodeError",
+      "HEADER_LEN",
+      "MAX_DATA_PAYLOAD_BYTES",
+      "OP_CREDIT",
+      "OP_DATA",
+      "decodeFrame",
+      "encodeFrame",
+      "isConnectionRefusedOpenErr"
+    ],
+    "src/features/backend/main/zip-manifest.ts": [
+      "readZipEntry"
+    ],
+    "src/features/backend/splash-gate.ts": [
+      "SPLASH_FALLBACK_TIMEOUT_MS",
+      "startSplashGate"
+    ],
+    "src/features/browser-access/main/browser-access-auth.ts": [
+      "SESSION_COOKIE",
+      "SESSION_MAX_AGE_SECONDS",
+      "deriveSessionToken",
+      "isLoopbackHost",
+      "parseCookies",
+      "sessionCookieName",
+      "sessionCookieValue"
+    ],
+    "src/features/browser-access/main/browser-access-controller.ts": [
+      "PREF_ACCESS_KEY",
+      "PREF_ENABLED",
+      "PREF_PAGE_ORIGIN",
+      "PREF_PORT"
+    ],
+    "src/features/browser-access/main/browser-access-server.ts": [
+      "CONNECTIONS_PATH",
+      "runtimeConfigSource"
+    ],
+    "src/features/browser-access/main/browser-access-sign-in-codes.ts": [
+      "SIGN_IN_CODE_ALPHABET",
+      "SIGN_IN_CODE_MAX_ACTIVE",
+      "generateSignInCode"
+    ],
+    "src/features/browser/main/browser-exec-reverse.ts": [
+      "BROWSER_EXEC_METHOD"
+    ],
+    "src/features/browser/main/embedded-browser-cdp-service.ts": [
+      "AGENT_DRAWING_IDLE_MS"
+    ],
+    "src/features/browser/main/workspace-forward-cleanup.service.ts": [
+      "__resetWorkspaceForwardCleanupForTesting"
+    ],
+    "src/features/codex/main/codex-resolver.ts": [
+      "CODEX_CLI_NPX_PACKAGE",
+      "resolveCodexMcpCommand"
+    ],
+    "src/features/comments/comment-types-v2.ts": [
+      "convertBackendCommentToV2"
+    ],
+    "src/features/debug-export/main/debug-files-collector.ts": [
+      "INTENTD_LOG_FILE_COUNT",
+      "INTENTD_LOG_TAIL_BYTES",
+      "MEMORY_METRICS_SCHEMA_VERSION",
+      "resolveIntentdDataDir"
+    ],
+    "src/features/debug-export/main/stack-sample.service.ts": [
+      "SAMPLE_DURATION_MS",
+      "SAMPLE_FREQUENCY_HZ",
+      "SAMPLE_TIMEOUT_MS",
+      "captureStackSample"
+    ],
+    "src/features/deeplink/main/pending-deep-links.ts": [
+      "__resetPendingDeepLinksForTesting"
+    ],
+    "src/features/desktop/main/desktop-overlay.ts": [
+      "DESKTOP_AGENT_SWITCH_GRACE_MS",
+      "DesktopControlOverlay"
+    ],
+    "src/features/desktop/renderer/desktop-test-fixtures.ts": [
+      "permission",
+      "request"
+    ],
+    "src/features/dev-console/main/daemon-links.ts": [
+      "parseCaptureStatus",
+      "toLinkRow"
+    ],
+    "src/features/dev-console/main/dev-console-window.ts": [
+      "DevConsoleWindows",
+      "registerDevConsoleIPC"
+    ],
+    "src/features/dev-console/traffic-fixture.ts": [
+      "nestedRequestText",
+      "nestedResponseText"
+    ],
+    "src/features/discussions/discussion-references.ts": [
+      "discussionBodyParts"
+    ],
+    "src/features/events/daemon-events-bridge.client.ts": [
+      "__resetDaemonEventsBridgeForTests"
+    ],
+    "src/features/events/main/agent-subscription-state.service.ts": [
+      "agentSubscriptionState"
+    ],
+    "src/features/events/main/events.ipc.ts": [
+      "cleanupEventsIPC"
+    ],
+    "src/features/events/main/renderer-subscription-registry.ts": [
+      "deliverEventToSubscriptions"
+    ],
+    "src/features/events/types.ts": [
+      "createWorkspaceEvent",
+      "generateEventId",
+      "isAgentCreatedEvent",
+      "isAgentIdleEvent",
+      "isAgentInteractionEvent",
+      "isAgentMessageEvent",
+      "isAgentToolCallEvent",
+      "isBuildEvent",
+      "isFileChangedEvent",
+      "isGitOperationEvent",
+      "isNoteChangedEvent",
+      "isReadyTasksChangedEvent",
+      "isTaskStatusChangedEvent",
+      "isTerminalCommandEvent",
+      "isTestEvent",
+      "normalizeActor"
+    ],
+    "src/features/file-tracking/components/diff/line-staging.ts": [
+      "generateLinePatchFromContent"
+    ],
+    "src/features/file-tracking/file-tracking.client.ts": [
+      "hydrateAgentLocks"
+    ],
+    "src/features/file-tracking/utils/tracking-excludes.ts": [
+      "DEFAULT_FILE_TRACKING_EXCLUDED_PATH_SEGMENTS",
+      "partitionDefaultFileTrackingExcludes",
+      "shouldExcludeFromDefaultFileTracking",
+      "summarizeDefaultFileTrackingExcludes"
+    ],
+    "src/features/git-roots/git-roots-service.ts": [
+      "foldGitRootEvent",
+      "listGitRoots"
+    ],
+    "src/features/git-tracking/types.ts": [
+      "GitCommitSchema",
+      "GitFileChangeSchema"
+    ],
+    "src/features/github-auth/renderer/github-auth-status.client.ts": [
+      "GITHUB_AUTH_STATUS_TTL_MS",
+      "__resetGitHubAuthStatusForTests"
+    ],
+    "src/features/hardware-console/actions/action-key-registry.ts": [
+      "resetActionKeyCycleCursors"
+    ],
+    "src/features/hardware-console/actions/action-key-service.ts": [
+      "COMPOSER_FOCUS_DELAYS_MS",
+      "handleActionKeyPress",
+      "handleActionKeyRelease"
+    ],
+    "src/features/hardware-console/actions/action-mapping.ts": [
+      "ACTION_KEY_ACTION_IDS",
+      "ACTION_KEY_COUNT",
+      "DEFAULT_ACTION_MAPPING",
+      "DEFAULT_ACTION_MAPPINGS",
+      "LEGACY_CM2_DEFAULT_ACTION_MAPPING",
+      "PREVIOUS_CM2_DEFAULT_ACTION_MAPPING",
+      "PRE_CLOSE_TAB_CM2_DEFAULT_ACTION_MAPPING",
+      "PRE_PTT_CM2_DEFAULT_ACTION_MAPPING",
+      "PRE_PTT_CODEX_DEFAULT_ACTION_MAPPING",
+      "PRE_WINDOW_CYCLE_CM2_DEFAULT_ACTION_MAPPING",
+      "isActionKeyActionId"
+    ],
+    "src/features/hardware-console/actions/agent-cycle.ts": [
+      "getLastIdleTime",
+      "pickLastActivePerWorkspace"
+    ],
+    "src/features/hardware-console/actions/cycle-scope.ts": [
+      "DEFAULT_CYCLE_SCOPES"
+    ],
+    "src/features/hardware-console/assignment/key-assignment.ts": [
+      "AGENT_KEY_IDS"
+    ],
+    "src/features/hardware-console/assignment/key-switch-service.ts": [
+      "focusWorkspaceSlot",
+      "handleAgentKeyEvent"
+    ],
+    "src/features/hardware-console/device/frame.ts": [
+      "MAX_PAYLOAD",
+      "REPORT_BODY_SIZE"
+    ],
+    "src/features/hardware-console/input/decode.ts": [
+      "isVendorControlId"
+    ],
+    "src/features/hardware-console/input/input-decoder.ts": [
+      "PHYSICAL_KNOB_TURN"
+    ],
+    "src/features/hardware-console/led/clear-lighting.ts": [
+      "clearHardwareConsoleLighting"
+    ],
+    "src/features/hardware-console/led/engine.ts": [
+      "BACKOFF_BASE_MS",
+      "BACKOFF_CAP_MS"
+    ],
+    "src/features/hardware-console/led/frames.ts": [
+      "LED_EFFECT_BREATH",
+      "LED_EFFECT_OFF",
+      "LED_EFFECT_SNAKE",
+      "LED_EFFECT_SOLID",
+      "SLOT_TO_LED_ID"
+    ],
+    "src/features/hardware-console/main/clear-lighting-shutdown.ts": [
+      "CLEAR_LIGHTING_CHANNEL",
+      "CLEAR_LIGHTING_DONE_CHANNEL"
+    ],
+    "src/features/hardware-console/main/console-owner.ts": [
+      "GET_OWNER_STATUS_CHANNEL",
+      "OWNER_CHANGED_CHANNEL"
+    ],
+    "src/features/hardware-console/prompt-picker/curation.ts": [
+      "COUNT_RESCALE_THRESHOLD",
+      "MAX_TRACKED_PROMPTS",
+      "MAX_TRACKED_PROMPT_LENGTH",
+      "rankPromptUsage"
+    ],
+    "src/features/hardware-console/prompt-picker/prompt-picker-service.ts": [
+      "DEFAULT_CENTER_DWELL_MS"
+    ],
+    "src/features/hardware-console/prompt-picker/radial-layout.ts": [
+      "radialArcWidth"
+    ],
+    "src/features/hardware-console/voice/composer-dictation-target.ts": [
+      "hasComposerDictationTarget"
+    ],
+    "src/features/hardware-console/voice/composer-mic-controller.ts": [
+      "resetComposerMic"
+    ],
+    "src/features/hardware-console/voice/gesture-decoder.ts": [
+      "VOICE_DOUBLE_PRESS_WINDOW_MS",
+      "VOICE_HOLD_THRESHOLD_MS"
+    ],
+    "src/features/hardware-console/voice/prompt-dictation-target.ts": [
+      "hasPromptDictationTarget"
+    ],
+    "src/features/hardware-console/voice/prompt-mic-controller.ts": [
+      "resetPromptMic"
+    ],
+    "src/features/hardware-console/voice/ptt-controller.ts": [
+      "PTT_MIN_RECORDING_MS",
+      "resetPttRecording"
+    ],
+    "src/features/hardware-console/voice/transcript-insertion.ts": [
+      "padTranscriptForInsertion"
+    ],
+    "src/features/hardware-console/voice/transcription-cancellation.ts": [
+      "resetTranscriptionCancellation"
+    ],
+    "src/features/hardware-console/voice/transcription-service.ts": [
+      "gatherTranscriptionContext",
+      "handleFinishedRecording",
+      "mergeOsContextualStrings",
+      "resolveTargetAgentId"
+    ],
+    "src/features/hardware-console/voice/voice-recorder.ts": [
+      "PTT_MAX_RECORDING_MS",
+      "buildRecorderConstraints",
+      "pickRecorderMimeType"
+    ],
+    "src/features/home/assistant-note-diagrams-fixtures.ts": [
+      "ASSISTANT_MERMAID_SOURCE",
+      "ASSISTANT_NATIVE_DIAGRAM"
+    ],
+    "src/features/home/home-model.ts": [
+      "hasRetiredWorkspaces",
+      "isArchivedOrPurged",
+      "shouldReloadRetiredWorkspaces"
+    ],
+    "src/features/home/home-workspaces-persistence.ts": [
+      "HOME_HIDDEN_REPOS_CAPACITY"
+    ],
+    "src/features/home/home-workspaces-saga.ts": [
+      "homeWorkspacePersistenceSaga"
+    ],
+    "src/features/hud/components/dock-conversation-popup-owner.ts": [
+      "visiblePopupRect"
+    ],
+    "src/features/hud/components/dock-shell-geometry.ts": [
+      "DOCK_INTRO_HEIGHT"
+    ],
+    "src/features/hud/composer/dock-composer-presentation.ts": [
+      "dockClipPlaybackUrl"
+    ],
+    "src/features/hud/composer/dock-evidence-placement.ts": [
+      "DockEvidencePlacementError",
+      "DockPlacementBackendChangedError",
+      "DockRawRetentionContractError",
+      "__resetDockRetentionProbesForTests"
+    ],
+    "src/features/hud/composer/dock-evidence-render.ts": [
+      "layoutDockBurn"
+    ],
+    "src/features/hud/grid/hud-card-visibility.ts": [
+      "CARD_VISIBILITY_ROOT_MARGIN"
+    ],
+    "src/features/hud/grid/hud-grid-filter.ts": [
+      "EMPTY_HUD_GRID_FILTER",
+      "toggleState"
+    ],
+    "src/features/hud/hud-question-capture.ts": [
+      "HUD_QUESTION_MIME"
+    ],
+    "src/features/hud/main/dock-element-pick.ts": [
+      "parseDockHitReply"
+    ],
+    "src/features/hud/main/dock-evidence-session.ts": [
+      "DockEvidenceSessions"
+    ],
+    "src/features/hud/main/dock-speech.ts": [
+      "DOCK_SPEECH_STOP_TIMEOUT_MS"
+    ],
+    "src/features/hud/sound/hud-sound-cues.ts": [
+      "HUD_ATTENTION_SIGNAL_CUES",
+      "HUD_SOUND_CUES",
+      "HUD_TAKEOVER_KIND_CUES",
+      "cueForTakeoverTrigger"
+    ],
+    "src/features/hud/sound/hud-sound-player.ts": [
+      "resetHudSoundServiceForTests"
+    ],
+    "src/features/hud/sound/hud-sound-state.ts": [
+      "HUD_SOUND_DEFAULT_VOLUME",
+      "HUD_SOUND_ENABLED_STORAGE_KEY",
+      "HUD_SOUND_VOLUME_STORAGE_KEY",
+      "setHudSoundEnabled"
+    ],
+    "src/features/hud/takeover/hud-takeover-edges.ts": [
+      "takeoverEdgeColorIndex",
+      "takeoverEdgePulse"
+    ],
+    "src/features/hud/takeover/hud-takeover-layout.ts": [
+      "HUD_TAKEOVER_GUTTER_MIN_PX",
+      "takeoverGutterPx"
+    ],
+    "src/features/hud/takeover/hud-takeover-queue.ts": [
+      "HUD_TAKEOVER_ATTENTION_DWELL_BASE_MS",
+      "HUD_TAKEOVER_ATTENTION_DWELL_MAX_MS",
+      "HUD_TAKEOVER_ATTENTION_DWELL_MIN_MS",
+      "HUD_TAKEOVER_ATTENTION_DWELL_PER_CHAR_MS",
+      "HUD_TAKEOVER_BLINK_MS",
+      "HUD_TAKEOVER_CLOSE_MS",
+      "HUD_TAKEOVER_DWELL_BASE_MS",
+      "HUD_TAKEOVER_DWELL_MAX_MS",
+      "HUD_TAKEOVER_DWELL_MIN_MS",
+      "HUD_TAKEOVER_DWELL_PER_CHAR_MS",
+      "HUD_TAKEOVER_KINDS",
+      "HUD_TAKEOVER_MAX_PENDING",
+      "HUD_TAKEOVER_MAX_TRIGGERS",
+      "HUD_TAKEOVER_OPEN_MS"
+    ],
+    "src/features/hud/takeover/hud-takeover-routing.ts": [
+      "HUD_TAKEOVER_CELL_HALF_LATTICE"
+    ],
+    "src/features/hud/takeover/hud-takeover-triggers.ts": [
+      "HUD_TAKEOVER_TRIGGER_KINDS"
+    ],
+    "src/features/hud/utils/dock-recency.ts": [
+      "DOCK_INDEX_MAX_PAGES",
+      "DOCK_INDEX_PAGE_LIMIT",
+      "latestDockHumanMessage"
+    ],
+    "src/features/ide/main/diff-temp-files.service.ts": [
+      "cleanupDiffTempFiles",
+      "createDiffTempFiles"
+    ],
+    "src/features/intent-web/main/intent-web-sign-in-store.ts": [
+      "SIGN_IN_FILE"
+    ],
+    "src/features/intent-web/utils/web-unavailable-features.ts": [
+      "CAPABILITY_FEATURES"
+    ],
+    "src/features/invite-progress/invite-progress-service.ts": [
+      "ADMISSION_STALL_MS"
+    ],
+    "src/features/layout/main/panel-layout-history.repository.ts": [
+      "InMemoryPanelLayoutHistoryRepository",
+      "createPanelLayoutHistoryRepository"
+    ],
+    "src/features/layout/panel-cycle-navigation.ts": [
+      "findAdjacentWorkspaceWithPanels"
+    ],
+    "src/features/layout/panel-move-preview.ts": [
+      "getPanelMovePreview",
+      "getPanelRootEdgeMovePreview"
+    ],
+    "src/features/layout/tab-types/registry.ts": [
+      "TabTypeRegistry"
+    ],
+    "src/features/mcp/main/mcp-host-match.ts": [
+      "hostnameMatchesDomain"
+    ],
+    "src/features/mcp/main/mcp-oauth.ts": [
+      "clearMcpOAuthTokens",
+      "getMcpOAuthTokensAsync"
+    ],
+    "src/features/metadata-fs/main/metadata-fs-factory.ts": [
+      "getMetadataFS"
+    ],
+    "src/features/notes/note-presence/note-presence-service.ts": [
+      "CURSOR_HEARTBEAT_MS",
+      "CURSOR_PUBLISH_MIN_INTERVAL_MS",
+      "CURSOR_TTL_MS",
+      "resetNotePresenceSessionsForTests"
+    ],
+    "src/features/notes/note-presence/own-principal.ts": [
+      "resetOwnPrincipalIdForTests"
+    ],
+    "src/features/notes/utils/task-block-parser.ts": [
+      "extractTasksBlocks",
+      "hasTaskBlocks",
+      "hasTasksBlocks"
+    ],
+    "src/features/notifications/utils/notification-content.ts": [
+      "getSpecialistDisplayName"
+    ],
+    "src/features/notifications/web-notification-service.ts": [
+      "handleWebAgentIdle"
+    ],
+    "src/features/onboarding/messages/directory-picker-view.ts": [
+      "favoritesFromHome"
+    ],
+    "src/features/onboarding/utils/onboarding-skip-mark.ts": [
+      "hasOnboardingSkipMark"
+    ],
+    "src/features/onboarding/utils/order-onboarding-providers.ts": [
+      "getOnboardingProviderTier"
+    ],
+    "src/features/pi/main/pi-resolver.ts": [
+      "getPiPath"
+    ],
+    "src/features/pr-monitor/pr-monitor-service.ts": [
+      "PR_MONITOR_FAILURE_REPORT_THRESHOLD",
+      "foldPrMonitorEvent",
+      "listPrMonitors"
+    ],
+    "src/features/presence/components/presence-person.ts": [
+      "presencePersonForgeHandle"
+    ],
+    "src/features/providers/provider-auth-status.client.ts": [
+      "__resetProviderAuthStatusForTests"
+    ],
+    "src/features/providers/provider-availability.client.ts": [
+      "getAvailableProviderIds"
+    ],
+    "src/features/release-notes/main/release-notes.service.ts": [
+      "fetchReleaseNotes",
+      "fetchReleaseNotesRange"
+    ],
+    "src/features/remote-machines/machine-facts.ts": [
+      "machinePlatform"
+    ],
+    "src/features/remote-machines/remote-machines-slice.ts": [
+      "initialState"
+    ],
+    "src/features/remote-machines/remote-model-picker.ts": [
+      "MACHINE_REPORT_STALE_MS"
+    ],
+    "src/features/scripts/detect-scripts.ts": [
+      "classifyScriptHeuristic",
+      "detectPackageManager",
+      "parseCargoTomlScripts",
+      "parseMakefileScripts",
+      "parsePackageJsonScripts",
+      "parsePyprojectTomlScripts",
+      "uniquifyScriptCandidates"
+    ],
+    "src/features/scripts/utils/script-location.ts": [
+      "scriptLostReason"
+    ],
+    "src/features/settings/settings-hydration-service.ts": [
+      "BG_MODEL_MIGRATION_MARKER_KEY"
+    ],
+    "src/features/setup-scripts/last-used.ts": [
+      "LAST_USED_SETUP_SCRIPTS_STORAGE_KEY",
+      "MAX_RECENT_SCRIPTS_PER_REPO",
+      "MAX_REPOS",
+      "RECENT_SETUP_SCRIPTS_STORAGE_KEY"
+    ],
+    "src/features/setup-scripts/repo-config-probe.ts": [
+      "probeRepoConfigSetupScript"
+    ],
+    "src/features/setup-scripts/repo-config.ts": [
+      "parseRepoConfigSetupScript"
+    ],
+    "src/features/stats/stats-charts.ts": [
+      "gridLines",
+      "hourAmPm"
+    ],
+    "src/features/stats/stats-export.ts": [
+      "EXPORT_OPTIONS"
+    ],
+    "src/features/stats/stats-period.ts": [
+      "currentMonthKey",
+      "currentYearKey"
+    ],
+    "src/features/system/main/power-state.ts": [
+      "BATTERY_CHANGED_CHANNEL",
+      "GET_BATTERY_STATE_CHANNEL"
+    ],
+    "src/features/terminal/main/terminal.ipc.ts": [
+      "registerTerminalHandlers"
+    ],
+    "src/features/token-usage/token-usage-schema.ts": [
+      "TokenUsageSchema"
+    ],
+    "src/features/tools/main/executor-manager.ts": [
+      "ExecutorManager"
+    ],
+    "src/features/user-activity/main/user-activity.repository.ts": [
+      "InMemoryUserActivityRepository"
+    ],
+    "src/features/voice/main/voice-local.ipc.ts": [
+      "requestOsSpeechAuthorization",
+      "transcribeWithOsHelper"
+    ],
+    "src/features/voice/utils/wav-encoder.ts": [
+      "WAV_SAMPLE_RATE",
+      "downmixToMono",
+      "encodeWavPcm16"
+    ],
+    "src/features/voice/voice-engine-preference.ts": [
+      "VOICE_ENGINE_STORAGE_KEY",
+      "isVoiceEngine"
+    ],
+    "src/features/voice/voice-input-device-preference.ts": [
+      "VOICE_INPUT_DEVICE_STORAGE_KEY",
+      "resetVoiceInputDevicePreferenceSession"
+    ],
+    "src/features/voice/voice-settings-service.ts": [
+      "VOICE_API_KEY_SETTING_PATHS",
+      "VOICE_LANGUAGE_SETTING_PATH",
+      "VOICE_OPENAI_DEFAULT_MODEL",
+      "VOICE_OPENAI_MODEL_SETTING_PATH",
+      "VOICE_PROVIDER_SETTING_PATH",
+      "VOICE_VOCABULARY_SETTING_PATH",
+      "VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_DEFAULT",
+      "VOICE_WORKSPACE_VOCABULARY_MAX_TERMS_SETTING_PATH",
+      "isVoiceWorkspaceVocabularyMaxTerms"
+    ],
+    "src/features/voice/workspace-vocabulary-service.ts": [
+      "WORKSPACE_VOCABULARY_TTL_MS"
+    ],
+    "src/features/workspace-sharing/workspace-sharing.client.ts": [
+      "inviteErrorCode"
+    ],
+    "src/features/workspace/main/app-settings.service.ts": [
+      "getBranchPrefix",
+      "getWorktreesLocation"
+    ],
+    "src/features/workspace/main/change-history-persistence.ts": [
+      "__resetChangeHistoryForTesting",
+      "bulkSetChangeHistory",
+      "getAllChangeHistory",
+      "setChangeHistoryForWorkspace"
+    ],
+    "src/features/workspace/main/first-visit-state.repository.ts": [
+      "InMemoryFirstVisitStateRepository",
+      "createDefaultFirstVisitState",
+      "createFirstVisitStateRepository"
+    ],
+    "src/features/workspace/main/workspace-path.service.ts": [
+      "__resetWorkspacePathServiceForTesting"
+    ],
+    "src/features/workspace/main/workspace-settings.service.ts": [
+      "isAutoCommitEnabled"
+    ],
+    "src/features/workspace/main/workspace.repository.ts": [
+      "InMemoryWorkspaceRepository"
+    ],
+    "src/features/workspace/utils/workspace-tab-navigation.ts": [
+      "closeActivePanelTab",
+      "closeActiveWorkspaceTab",
+      "cycleWorkspaceTab",
+      "moveActiveWorkspaceTab",
+      "openNewPanel",
+      "reopenPanelOrWorkspaceTab",
+      "reopenWorkspaceTab",
+      "selectWorkspaceTabByPosition"
+    ],
+    "src/features/workspace/visible-workspace.ts": [
+      "resetVisibleWorkspaceNavigationForTests",
+      "resolveVisibleWorkspaceId"
+    ],
+    "src/features/workspace/workspace-detail-hydration.ts": [
+      "__resetWorkspaceDetailHydrationForTesting",
+      "fetchWorkspaceDetail"
+    ],
+    "src/lib/client/live/backend-transport.ts": [
+      "detectLiveStateCapability"
+    ],
+    "src/lib/client/live/bounded-object-read.ts": [
+      "OBJECT_CHUNK_BYTES",
+      "OBJECT_READ_MAX_BYTES",
+      "OBJECT_WHOLE_MAX_BYTES",
+      "readAllChunks"
+    ],
+    "src/lib/client/live/delta-subscription.ts": [
+      "DeltaReconciler",
+      "parseSubscriptionPush"
+    ],
+    "src/lib/client/live/live-chat-client.ts": [
+      "ChatTranscriptReconciler"
+    ],
+    "src/lib/client/live/live-clients-client.ts": [
+      "__resetOwnClientIdForTesting"
+    ],
+    "src/lib/client/live/live-notes-client.ts": [
+      "normalizeNote"
+    ],
+    "src/lib/client/live/live-prompt-enhancement.ts": [
+      "generateLayout"
+    ],
+    "src/lib/client/live/live-scripts-client.ts": [
+      "SCRIPT_GET_MAX_PARTS"
+    ],
+    "src/lib/client/live/live-settings-client.ts": [
+      "__resetSettingsReadCacheForTests"
+    ],
+    "src/lib/client/live/live-support.ts": [
+      "__resetLiveSupportCachesForTests",
+      "isEventInFamily",
+      "isEventOneOf",
+      "listWorkspaceIds"
+    ],
+    "src/lib/client/live/live-voice-client.ts": [
+      "VOICE_TRANSCRIBE_TIMEOUT_MS",
+      "blobToBase64"
+    ],
+    "src/lib/component-catalog/capture-stability.ts": [
+      "CaptureStabilityTimeoutError"
+    ],
+    "src/lib/component-catalog/catalog-clock.ts": [
+      "CATALOG_REFERENCE_NOW"
+    ],
+    "src/lib/component-catalog/catalog-navigation.ts": [
+      "buildCatalogGroups"
+    ],
+    "src/lib/component-catalog/catalog-renderers.ts": [
+      "catalogRenderers"
+    ],
+    "src/lib/component-catalog/chat-polish/chat-polish-geometry.ts": [
+      "CHAT_POLISH_STORAGE_KEY"
+    ],
+    "src/lib/component-catalog/chat-polish/chat-polish-scenarios.ts": [
+      "chatPolishScenarios",
+      "comprehensiveChatPolishConversation",
+      "longCompletionReport"
+    ],
+    "src/lib/component-catalog/preview-discovery.ts": [
+      "createPreviewLoaderIndex",
+      "listPreviewIds",
+      "loadPreviewFromLoader",
+      "registerPreviewLoader"
+    ],
+    "src/lib/components/browser/browser-viewport-action.ts": [
+      "applyBrowserTabViewport"
+    ],
+    "src/lib/components/browser/element-picker-payload.ts": [
+      "browserElementPayloadSchema"
+    ],
+    "src/lib/components/browser/toolbar-collapse.ts": [
+      "toolbarCollapseState"
+    ],
+    "src/lib/components/chat/agent-subscriptions-view-state.ts": [
+      "resetAgentSubscriptionsViewStateForTests"
+    ],
+    "src/lib/components/chat/agent-task-progress-derivation.ts": [
+      "deriveAgentTaskProgress"
+    ],
+    "src/lib/components/chat/attention-flow-spacing.ts": [
+      "isAttentionRequestEventNotification",
+      "isQuestionAnswerMessage"
+    ],
+    "src/lib/components/chat/chat-draft-cache.ts": [
+      "clearDraftCacheForTests"
+    ],
+    "src/lib/components/chat/chat-panel-visibility.ts": [
+      "isSessionActivelyResponding",
+      "shouldStopChatBeforeSending"
+    ],
+    "src/lib/components/chat/chat-scroll-cache.ts": [
+      "clearChatScrollCacheForTests"
+    ],
+    "src/lib/components/chat/chat-scrollback-composition.ts": [
+      "RAPID_SCROLL_VIEWPORT_FACTOR",
+      "SCROLLBACK_PAGE_ROWS",
+      "SCROLLBACK_SEEK_NEAR_PAGES",
+      "VIRTUAL_ROW_EMA_ALPHA",
+      "VIRTUAL_ROW_HEIGHT_MAX_PX",
+      "VIRTUAL_SPACER_HYSTERESIS_RATIO",
+      "classifySettledPosition",
+      "estimateSeekLandingStartOrdinal",
+      "estimateVirtualSpacerHeight",
+      "seekLandingScrollTop",
+      "shouldChainOlderHistoryOnSettle",
+      "smoothRowHeightEstimate"
+    ],
+    "src/lib/components/chat/chat-transcript-structure.ts": [
+      "getLiveStreamingAssistantMessage"
+    ],
+    "src/lib/components/chat/chat-turn-virtualization.ts": [
+      "FORCE_VISIBLE_TURN_COUNT",
+      "LAZY_MESSAGE_THRESHOLD",
+      "LAZY_TURN_THRESHOLD",
+      "isTurnInRecentWindow",
+      "shouldVirtualizeTurns"
+    ],
+    "src/lib/components/chat/conversation-turns.ts": [
+      "hasToolOnlyAssistantMessageBoundary",
+      "hasToolOnlyAssistantTurnBoundary",
+      "isOperationalOnlyAssistantMessage",
+      "isToolOnlyAssistantMessage"
+    ],
+    "src/lib/components/chat/harness-feature-catalog.ts": [
+      "HARNESS_FEATURE_CATALOG",
+      "humanizeHarnessFeatureKey"
+    ],
+    "src/lib/components/chat/input/agent-model-mutator.ts": [
+      "SKIPPED_MUTATION",
+      "isSkippedMutation"
+    ],
+    "src/lib/components/chat/input/attachment-placement.ts": [
+      "MAX_REMOTE_ATTACHMENT_TOTAL_BYTES",
+      "supportsIdempotentPlacementProtocol"
+    ],
+    "src/lib/components/chat/input/context-api.ts": [
+      "searchFiles",
+      "searchSymbols"
+    ],
+    "src/lib/components/chat/input/image-attachment-placement.ts": [
+      "ImagePlacementError",
+      "base64DecodedBytes"
+    ],
+    "src/lib/components/chat/input/model-picker-utils.ts": [
+      "collapseCodexEffortModels"
+    ],
+    "src/lib/components/chat/input/slash-skill-command.ts": [
+      "applySlashSkillSelection"
+    ],
+    "src/lib/components/chat/lazy-turn-observer.ts": [
+      "inspectLazyTurnObserverOwnership"
+    ],
+    "src/lib/components/chat/message-send-transition.ts": [
+      "MESSAGE_SEND_DISMISS_DURATION_MS",
+      "MESSAGE_SEND_TRANSITION_DURATION_MS",
+      "MESSAGE_SEND_TRANSITION_MAX_SETTLE_MS",
+      "settleFollowedSendAtBottom"
+    ],
+    "src/lib/components/chat/new-messages-divider.ts": [
+      "DIVIDER_ENTRY_VIEWPORT_FRACTION"
+    ],
+    "src/lib/components/chat/operational-run-collapse.ts": [
+      "collapseOperationalRuns"
+    ],
+    "src/lib/components/chat/pending-send-transitions.ts": [
+      "MESSAGE_SEND_MATCH_RETRY_INTERVAL_MS"
+    ],
+    "src/lib/components/chat/pinned-prompt.ts": [
+      "createPinnedPromptController"
+    ],
+    "src/lib/components/chat/proposals/pending-proposals.ts": [
+      "derivePendingProposals"
+    ],
+    "src/lib/components/chat/provider-failover-notice.ts": [
+      "getProviderFailoverNotice",
+      "getProviderReturnedNotice"
+    ],
+    "src/lib/components/chat/questions/answer-message.ts": [
+      "buildAnswerMessageMetadata",
+      "flattenAnswersToMessage"
+    ],
+    "src/lib/components/chat/queue-drain-prediction.ts": [
+      "predictDrainedQueueIds"
+    ],
+    "src/lib/components/chat/response-group-blocks.ts": [
+      "getResponseGroupBlockKeys",
+      "getResponseGroupCurrentBlock",
+      "getResponseGroupCurrentBlockIndex",
+      "hoistProposalBlocksFromResponseGroups",
+      "isReasoningPhaseGroupName",
+      "normalizeResponseGroup"
+    ],
+    "src/lib/components/chat/scroll-bottom-button-visibility.ts": [
+      "SCROLL_BUTTON_SHOW_SETTLE_MS"
+    ],
+    "src/lib/components/chat/secrets/pending-secret-requests.ts": [
+      "isSecretStackCollapsed",
+      "secretRequestCardState"
+    ],
+    "src/lib/components/chat/streaming-status-utils.ts": [
+      "SESSION_CORRUPTED",
+      "STALLED_PHASE",
+      "computeCompletedEvents",
+      "formatDuration",
+      "latestMeaningfulStatusMessage",
+      "shouldAppendStreamingEvent"
+    ],
+    "src/lib/components/chat/tool-display-model.ts": [
+      "isOkOnlyResult"
+    ],
+    "src/lib/components/chat/tool-result-pairing.ts": [
+      "buildToolResultsMap",
+      "getToolResultText"
+    ],
+    "src/lib/components/chat/unified-diff-merger.ts": [
+      "buildSyntheticChunks"
+    ],
+    "src/lib/components/chat/workspace-task-fallback.ts": [
+      "deriveTaskProgress",
+      "deriveWorkspaceTaskFallback",
+      "hasNativeExecutionPlan"
+    ],
+    "src/lib/components/diagrams/diagram-export.ts": [
+      "prepareDiagramSvgForExport"
+    ],
+    "src/lib/components/diagrams/layout-engine.ts": [
+      "measuredBidirectionalOffset"
+    ],
+    "src/lib/components/layout/panel-system/panel-drag.ts": [
+      "getPaneInsertionPlacement",
+      "getPaneInsertionTargetAtX"
+    ],
+    "src/lib/components/layout/workspace-tab-context-actions.ts": [
+      "getWorkspaceTabBulkCloseIds"
+    ],
+    "src/lib/components/layout/workspace-tab-group-items.ts": [
+      "buildWorkspaceTabStripItems"
+    ],
+    "src/lib/components/markdown/mermaid-path-geometry.ts": [
+      "buildDownstreamFanoutRoutes",
+      "buildFlowchartDecisionBranchPoints",
+      "buildFlowchartDecisionReturnPoints",
+      "buildFlowchartFeedbackLanePoints",
+      "buildGroupedReturnLanePoints",
+      "buildRoundedOrthogonalPath",
+      "chooseClearFlowchartLabel",
+      "chooseClearFlowchartRoute",
+      "chooseClearLocalReturn",
+      "chooseClearStateEntryRoute",
+      "chooseFlowchartFeedbackInsideX",
+      "chooseFlowchartFeedbackTargetX",
+      "chooseLabelSegment",
+      "chooseStateLabelPathIndex",
+      "clusterOutsiderShift",
+      "diamondBoundaryPort",
+      "diamondRayIntersection",
+      "expandFlowchartFeedbackLane",
+      "findFlowchartDecisionCycle",
+      "hasParallelFlowchartLanes",
+      "planCompactClusterFrame",
+      "preferClearStraightRoute",
+      "replacePathTerminal",
+      "routeOrthogonalAroundObstacles",
+      "separateFlowchartVerticalLane",
+      "simplifyOrthogonalPoints",
+      "snapOrthogonalTerminals"
+    ],
+    "src/lib/components/markdown/mermaid-theme.ts": [
+      "MERMAID_FONT_FAMILY"
+    ],
+    "src/lib/components/patterns/confirm/confirm-service.ts": [
+      "resetConfirmServiceForTests"
+    ],
+    "src/lib/components/patterns/form/create-form.svelte.ts": [
+      "createForm"
+    ],
+    "src/lib/components/patterns/form/index.ts": [
+      "UnsavedIndicator",
+      "createForm"
+    ],
+    "src/lib/components/terminal/drawer-terminal-cycling.ts": [
+      "drawerTerminalCycleDirection"
+    ],
+    "src/lib/components/ui/breadcrumb/index.ts": [
+      "Breadcrumb.Breadcrumb",
+      "Breadcrumb.BreadcrumbEllipsis",
+      "Breadcrumb.BreadcrumbItem",
+      "Breadcrumb.BreadcrumbLink",
+      "Breadcrumb.BreadcrumbList",
+      "Breadcrumb.BreadcrumbPage",
+      "Breadcrumb.BreadcrumbSeparator",
+      "Breadcrumb.Ellipsis",
+      "Breadcrumb.Item",
+      "Breadcrumb.Link",
+      "Breadcrumb.List",
+      "Breadcrumb.Page",
+      "Breadcrumb.Root",
+      "Breadcrumb.Separator",
+      "Breadcrumb.breadcrumbMetadata"
+    ],
+    "src/lib/components/ui/component-metadata.ts": [
+      "parseUiComponentInventory"
+    ],
+    "src/lib/components/ui/dialog/dialog-portal-context.ts": [
+      "Dialog.escapeBelongsToOpenPopup"
+    ],
+    "src/lib/components/ui/indicators/index.ts": [
+      "AgentBadge",
+      "UnsavedIndicator",
+      "intentMarkMotionTiming",
+      "spinnerMetadata"
+    ],
+    "src/lib/components/ui/indicators/intent-mark-motion.ts": [
+      "intentMarkMotionTiming"
+    ],
+    "src/lib/components/ui/input/index.ts": [
+      "inputMetadata"
+    ],
+    "src/lib/components/ui/label/index.ts": [
+      "labelMetadata"
+    ],
+    "src/lib/components/ui/list/index.ts": [
+      "listMetadata"
+    ],
+    "src/lib/components/ui/menu/menu.meta.ts": [
+      "Menu.menuSemantics"
+    ],
+    "src/lib/components/ui/radio-group/index.ts": [
+      "RadioGroup.Item",
+      "RadioGroup.RadioGroup",
+      "RadioGroup.RadioGroupItem",
+      "RadioGroup.Root"
+    ],
+    "src/lib/components/ui/scroll-area/index.ts": [
+      "Root",
+      "ScrollAreaScrollbar",
+      "scrollAreaMetadata"
+    ],
+    "src/lib/components/ui/separator/index.ts": [
+      "Root",
+      "separatorMetadata"
+    ],
+    "src/lib/components/ui/sidebar/index.ts": [
+      "Sidebar.Callout",
+      "Sidebar.Content",
+      "Sidebar.Footer",
+      "Sidebar.Group",
+      "Sidebar.GroupAction",
+      "Sidebar.GroupActions",
+      "Sidebar.GroupContent",
+      "Sidebar.GroupLabel",
+      "Sidebar.Harness",
+      "Sidebar.Header",
+      "Sidebar.Input",
+      "Sidebar.Inset",
+      "Sidebar.Menu",
+      "Sidebar.MenuAction",
+      "Sidebar.MenuActions",
+      "Sidebar.MenuBadge",
+      "Sidebar.MenuButton",
+      "Sidebar.MenuItem",
+      "Sidebar.MenuSkeleton",
+      "Sidebar.MenuSub",
+      "Sidebar.MenuSubButton",
+      "Sidebar.MenuSubItem",
+      "Sidebar.Provider",
+      "Sidebar.Rail",
+      "Sidebar.Root",
+      "Sidebar.Separator",
+      "Sidebar.Sidebar",
+      "Sidebar.SidebarCallout",
+      "Sidebar.SidebarContent",
+      "Sidebar.SidebarFooter",
+      "Sidebar.SidebarGroup",
+      "Sidebar.SidebarGroupAction",
+      "Sidebar.SidebarGroupActions",
+      "Sidebar.SidebarGroupContent",
+      "Sidebar.SidebarGroupLabel",
+      "Sidebar.SidebarHarness",
+      "Sidebar.SidebarHeader",
+      "Sidebar.SidebarInput",
+      "Sidebar.SidebarInset",
+      "Sidebar.SidebarMenu",
+      "Sidebar.SidebarMenuAction",
+      "Sidebar.SidebarMenuActions",
+      "Sidebar.SidebarMenuBadge",
+      "Sidebar.SidebarMenuButton",
+      "Sidebar.SidebarMenuItem",
+      "Sidebar.SidebarMenuSkeleton",
+      "Sidebar.SidebarMenuSub",
+      "Sidebar.SidebarMenuSubButton",
+      "Sidebar.SidebarMenuSubItem",
+      "Sidebar.SidebarProvider",
+      "Sidebar.SidebarRail",
+      "Sidebar.SidebarSeparator",
+      "Sidebar.SidebarTrigger",
+      "Sidebar.Trigger",
+      "Sidebar.sidebarMetadata",
+      "Sidebar.useSidebar"
+    ],
+    "src/lib/components/ui/skeleton/index.ts": [
+      "Root",
+      "skeletonMetadata"
+    ],
+    "src/lib/components/ui/textarea/index.ts": [
+      "textareaMetadata"
+    ],
+    "src/lib/components/ui/toggle-group/index.ts": [
+      "ToggleGroup.Item",
+      "ToggleGroup.Root"
+    ],
+    "src/lib/components/ui/toggle/toggle.meta.ts": [
+      "toggleCompatibilityModes"
+    ],
+    "src/lib/components/ui/tooltip/index.ts": [
+      "Tooltip.Content",
+      "Tooltip.LinkTooltip",
+      "Tooltip.Portal",
+      "Tooltip.Provider",
+      "Tooltip.Root",
+      "Tooltip.TooltipContent",
+      "Tooltip.TooltipPortal",
+      "Tooltip.TooltipRoot",
+      "Tooltip.TooltipTrigger",
+      "Tooltip.Trigger",
+      "Tooltip.formatUrlForDisplay",
+      "Tooltip.hideLinkTooltip",
+      "Tooltip.showLinkTooltip",
+      "Tooltip.tooltipMetadata"
+    ],
+    "src/lib/components/workspace/initializer/context-links.ts": [
+      "MAX_CONTEXT_LINKS"
+    ],
+    "src/lib/components/workspace/initializer/context-source-preference.ts": [
+      "LAST_SOURCE_STORAGE_KEY",
+      "orderProviders"
+    ],
+    "src/lib/components/workspace/initializer/issue-paging.ts": [
+      "appendPage",
+      "dedupeById"
+    ],
+    "src/lib/components/workspace/initializer/new-workspace-draft.ts": [
+      "MAX_DRAFT_ATTACHMENTS_BYTES"
+    ],
+    "src/lib/components/workspace/note-with-comments/external-update-editor.ts": [
+      "docPosOfTextOffset",
+      "mapDocSelectionThroughDiff",
+      "textOffsetOfDocPos"
+    ],
+    "src/lib/components/workspace/note-with-comments/external-update-effect.ts": [
+      "foldUnsavedEditsIntoIncoming"
+    ],
+    "src/lib/components/workspace/note-with-comments/image-upload-handlers.ts": [
+      "uploadImageAndInsert"
+    ],
+    "src/lib/components/workspace/note-with-comments/remote-cursors-binding.ts": [
+      "bindRemoteCursors"
+    ],
+    "src/lib/components/workspace/shrink-workspace-action.ts": [
+      "SHRINK_WORKSPACE_PROMPT"
+    ],
+    "src/lib/components/workspace/sidebar/file-conflict-prompt.ts": [
+      "conflictResolutionFromIndex"
+    ],
+    "src/lib/components/workspace/sidebar/sidebar-changes-utils.ts": [
+      "SIDEBAR_CHANGES_DISPLAY_LIMIT",
+      "countOtherPrs",
+      "getCommitsToPushCount",
+      "getCommitsToUndoCount",
+      "getLocalCommitsToUndoCount",
+      "monitorDisplayStatus",
+      "monitorPillStatus",
+      "orderPRSectionsForSelection",
+      "sortPRsByRecency",
+      "toPRDisplayStatus",
+      "toPullRequestStatus"
+    ],
+    "src/lib/components/workspace/sidebar/utils.ts": [
+      "getActivityChatTarget",
+      "getActivityIcon",
+      "getActivityTitle",
+      "shouldShowActivityPreviewEvent"
+    ],
+    "src/lib/components/workspace/utils/workspace-grouping.ts": [
+      "getGroupKey"
+    ],
+    "src/lib/components/workspace/utils/workspace-tab-status-presentation.ts": [
+      "formatWorkspaceTabStatusDetail"
+    ],
+    "src/lib/components/workspace/workspace-agents-list-utils.ts": [
+      "getDirectChildCounts",
+      "getVisibleWorkspaceAgentRows"
+    ],
+    "src/lib/components/workspace/workspace-phase.ts": [
+      "deriveWorkspacePhase",
+      "deriveWorkspaceStats"
+    ],
+    "src/lib/icons/phosphor-icons.ts": [
+      "faAsterisk",
+      "faCalendar",
+      "faCircleHalfStroke",
+      "faCirclePlus",
+      "faCloudArrowUp",
+      "faCompressAlt",
+      "faEllipsisV",
+      "faExpandAlt",
+      "faFileCircleMinus",
+      "faFilter",
+      "faFolderTree",
+      "faQuestionCircle",
+      "faStar",
+      "faTimesCircle",
+      "faVial",
+      "faXmarkCircle"
+    ],
+    "src/lib/notes/character-references.ts": [
+      "namedCharacterReferences"
+    ],
+    "src/lib/notes/text-rebase.ts": [
+      "createOffsetMapper"
+    ],
+    "src/lib/services/mentions/fuzzy-matcher.ts": [
+      "fuzzyFilterAndScore"
+    ],
+    "src/lib/services/mentions/providers/index.ts": [
+      "CommandProvider",
+      "FolderProvider",
+      "NoteProvider",
+      "PersonalityProvider",
+      "RuleProvider",
+      "TaskProvider"
+    ],
+    "src/lib/services/mentions/registry.ts": [
+      "MENTION_SERIALIZERS",
+      "MENTION_TOKEN_ENTRIES",
+      "mentionChipAttrs"
+    ],
+    "src/lib/services/mentions/types.ts": [
+      "hasRange",
+      "isSpecialCommand",
+      "validateMentionData"
+    ],
+    "src/lib/utils/accessibility.ts": [
+      "addAriaLabels",
+      "makeKeyboardNavigable"
+    ],
+    "src/lib/utils/boot-route-gate.ts": [
+      "setBootRoutePathnameForTesting"
+    ],
+    "src/lib/utils/browser-url-resolution.ts": [
+      "BROWSER_RESOLVE_URL_CHANNEL"
+    ],
+    "src/lib/utils/clipboard-formatters.ts": [
+      "formatToolCallForClipboard",
+      "formatToolResultBlockForClipboard",
+      "formatToolUseBlockForClipboard",
+      "safeStringify"
+    ],
+    "src/lib/utils/code-highlighter.ts": [
+      "clearHighlightCache"
+    ],
+    "src/lib/utils/date.ts": [
+      "formatDate"
+    ],
+    "src/lib/utils/delete-warning-utils.ts": [
+      "getActiveHookNames",
+      "getGuestsSummary",
+      "getLocalChanges",
+      "getOpenPrItems"
+    ],
+    "src/lib/utils/diff-highlighter-preloader.ts": [
+      "DIFF_WORKER_POOL_IDLE_TERMINATION_MS",
+      "getDiffWorkerPool",
+      "isDiffHighlighterPreloaded"
+    ],
+    "src/lib/utils/diff-patch-utils.ts": [
+      "hasUnifiedDiffHeaders"
+    ],
+    "src/lib/utils/editor-config.ts": [
+      "mentionRenderText"
+    ],
+    "src/lib/utils/file-path-detector.ts": [
+      "isFilePath"
+    ],
+    "src/lib/utils/get-file-changes-from-messages.ts": [
+      "getLastTurnAssistantMessages"
+    ],
+    "src/lib/utils/gitlab-host.ts": [
+      "normalizeGitLabHost"
+    ],
+    "src/lib/utils/history-navigation.ts": [
+      "NAVIGATION_DEDUPE_WINDOW_MS",
+      "handleHistoryMouseDown",
+      "handleHistoryMouseUp",
+      "navigateHistory"
+    ],
+    "src/lib/utils/markdown-processor.ts": [
+      "clearMarkdownCache",
+      "extractFrontMatter",
+      "processMarkdownForDisplay"
+    ],
+    "src/lib/utils/merge-queue.ts": [
+      "formatMergeQueueEta",
+      "formatMergeQueuePosition"
+    ],
+    "src/lib/utils/message-authorship.ts": [
+      "authorship.collectMessageAuthors",
+      "authorship.getQueuedMessageAuthor"
+    ],
+    "src/lib/utils/messageParser.ts": [
+      "cleanAgentMessage",
+      "hasSuggestedPrompts"
+    ],
+    "src/lib/utils/note-mention-label.ts": [
+      "noteMentionWorkspace"
+    ],
+    "src/lib/utils/notes-primitives-serializer.ts": [
+      "serializePrimitiveToMarkdown"
+    ],
+    "src/lib/utils/platform-capabilities.ts": [
+      "getCapabilities",
+      "isElectronRuntime"
+    ],
+    "src/lib/utils/pr-status.ts": [
+      "isPRMergeable"
+    ],
+    "src/lib/utils/previous-user-message.ts": [
+      "findPreviousUserMessage"
+    ],
+    "src/lib/utils/provider-list-order.ts": [
+      "compareProvidersByDisplayName"
+    ],
+    "src/lib/utils/queue-info.ts": [
+      "getBatchId",
+      "shouldSuppressQueueDivider"
+    ],
+    "src/lib/utils/reduced-motion.ts": [
+      "REDUCED_MOTION_MEDIA_QUERY"
+    ],
+    "src/lib/utils/reversible-actions.ts": [
+      "archiveWithUndo",
+      "confirmAction"
+    ],
+    "src/lib/utils/selected-note-markdown-copy.ts": [
+      "serializeSelectionToMarkdown"
+    ],
+    "src/lib/utils/shortcuts.ts": [
+      "getShortcutsForContext"
+    ],
+    "src/lib/utils/stream-lifecycle-telemetry.ts": [
+      "MAX_STREAM_LIFECYCLE_DIAGNOSTICS",
+      "RESERVED_TERMINAL_STREAM_LIFECYCLE_DIAGNOSTICS",
+      "__resetStreamLifecycleTelemetryForTests"
+    ],
+    "src/lib/utils/text-utils.ts": [
+      "extractTextFromBlocks",
+      "getAgentSummaryText",
+      "getLastSentence",
+      "stripGroupTags"
+    ],
+    "src/lib/utils/timeFormatting.ts": [
+      "formatChatTime",
+      "formatDateSeparator",
+      "formatFullTimestamp",
+      "shouldShowTimeSeparator"
+    ],
+    "src/lib/utils/tool-classifier.ts": [
+      "extractMcpSource"
+    ],
+    "src/lib/utils/vscode-theme-parser.ts": [
+      "hexToHSL",
+      "isHexDark"
+    ],
+    "src/lib/utils/workspace-utils.ts": [
+      "getStageDescription",
+      "getStageLabel",
+      "getWorkspaceStage"
+    ],
+    "src/main/activation-focus-claim.ts": [
+      "ACTIVATION_FOCUS_CLAIM_TTL_MS"
+    ],
+    "src/main/app-command-navigation.ts": [
+      "historyDirectionForAppCommand"
+    ],
+    "src/main/dock-context-menu.ts": [
+      "buildDockContextMenuTemplate"
+    ],
+    "src/main/hud-window.ts": [
+      "_resetHudWindowRefForTests"
+    ],
+    "src/main/invite-consent.ts": [
+      "resetInviteConsentStateForTests"
+    ],
+    "src/main/invite-notice.ts": [
+      "resetInviteNoticeStateForTests"
+    ],
+    "src/main/invite-progress.ts": [
+      "resetInviteProgressStateForTests"
+    ],
+    "src/main/ipc-authorization.ts": [
+      "IpcAuthorizationError",
+      "createTrustedBrowserBridgeIpcContext"
+    ],
+    "src/main/ipc-schemas.ts": [
+      "WORKSPACE_EVENT_TYPE_LITERALS",
+      "WorkspaceCreateSchema"
+    ],
+    "src/main/main-locale.ts": [
+      "getMainSystemLocales"
+    ],
+    "src/main/memory-monitor.ts": [
+      "DEFAULT_WARN_THRESHOLD_BYTES",
+      "FIRST_SAMPLE_DELAY_MS",
+      "MAX_RETAINED_AGE_MS",
+      "MAX_RETAINED_SAMPLES",
+      "RETAINED_TOP_PROCESSES",
+      "SAMPLE_INTERVAL_MS",
+      "WARN_THRESHOLD_ENV_VAR",
+      "__isMemoryMonitorRunningForTesting",
+      "__resetMemoryHistoryForTesting",
+      "collectDescendants",
+      "findSidecarProcesses",
+      "findThresholdBreaches",
+      "formatSnapshot",
+      "formatThresholdWarning",
+      "parseProcessTable",
+      "processBasename",
+      "recordMemorySample",
+      "resolveWarnThresholdBytes",
+      "sampleMemory",
+      "shortProcessName",
+      "totalRssBytes"
+    ],
+    "src/main/protocol-handlers.ts": [
+      "WORKSPACE_FILE_CHUNK_BYTES",
+      "WORKSPACE_FILE_MAX_BYTES",
+      "workspaceMediaBackendRedirect"
+    ],
+    "src/main/quit-confirmation.ts": [
+      "resetQuitConfirmationStateForTests"
+    ],
+    "src/main/quit-dialog.ts": [
+      "MAX_LISTED_AGENT_NAMES"
+    ],
+    "src/main/renderer-hang-monitor.ts": [
+      "captureRendererStack"
+    ],
+    "src/main/renderer-window-gate.ts": [
+      "_resetRendererWindowGateForTests"
+    ],
+    "src/main/utils/cache.ts": [
+      "SWEEP_INTERVAL_MS",
+      "clearAllCaches"
+    ],
+    "src/main/utils/resolve-dev-instance.ts": [
+      "DEV_INTENTD_DIR_NAME",
+      "MACOS_SUN_PATH_MAX_BYTES",
+      "USER_DATA_DIR_NAME",
+      "devIntentdSocketPathByteLength"
+    ],
+    "src/main/utils/workspace-backend-client.ts": [
+      "resolveWorkspaceBackendClient"
+    ],
+    "src/main/utils/workspace-file-url.ts": [
+      "imageMimeTypeForPath",
+      "workspaceFileMimeTypeForPath"
+    ],
+    "src/main/utils/workspace-validation.ts": [
+      "isValidProjectName",
+      "validateProjectName",
+      "validateRepositoryPath"
+    ],
+    "src/routes/(app)/workspace/[id]/composables/create-file-command.ts": [
+      "getCreateFileRootPath"
+    ],
+    "src/routes/(app)/workspace/[id]/workspace-deep-link.ts": [
+      "parseWorkspaceDeepLinks",
+      "stripWorkspaceDeepLinkParams"
+    ],
+    "src/shared/app-ui-targets.ts": [
+      "getAppUiTargets",
+      "getHighlightIdFromRoute"
+    ],
+    "src/shared/chief-agent-config.ts": [
+      "CHIEF_RUNTIME_IDENTITY"
+    ],
+    "src/shared/constants.ts": [
+      "CACHE_TTL",
+      "FILE_EXTENSIONS",
+      "LIMITS",
+      "PATHS",
+      "PATTERNS",
+      "THRESHOLDS",
+      "TIMEOUTS",
+      "calculateRetryDelay",
+      "isAtWarningThreshold",
+      "isSessionTooLarge",
+      "isValidModelId"
+    ],
+    "src/shared/constants/agent-services.ts": [
+      "isValidModelId"
+    ],
+    "src/shared/daemon-startup.ts": [
+      "clampStartupRetryMs",
+      "parseStartupSnapshot"
+    ],
+    "src/shared/dock-evidence.ts": [
+      "DOCK_WIRE_PEN_POINTS",
+      "sanitizeDockMark"
+    ],
+    "src/shared/errors/messages.ts": [
+      "ERROR_MESSAGE_TEMPLATES",
+      "HELP_LINKS",
+      "USER_FRIENDLY_MESSAGES",
+      "getLocalizedMessage"
+    ],
+    "src/shared/errors/recovery.ts": [
+      "RECOVERY_SUGGESTIONS",
+      "getRecoveryHints"
+    ],
+    "src/shared/i18n/locale-matcher.ts": [
+      "matchLocale"
+    ],
+    "src/shared/ipc-mock-router.ts": [
+      "EMITTED_MOCK_IPC_EVENT_CHANNELS",
+      "EMITTED_MOCK_IPC_EVENT_CHANNEL_PREFIXES",
+      "UNBRIDGED_INVOKE_ALLOWLIST",
+      "UNEMITTED_LISTENER_ALLOWLIST",
+      "UnbridgedMockIpcChannelError",
+      "getRegisteredMockIpcChannels",
+      "hasMockIpcHandler",
+      "isEmittedMockIpcEventChannel",
+      "mockIpcListenerCount",
+      "resetMockIpcRouter",
+      "setMockIpcInvokeFallback",
+      "unregisterMockIpcHandler"
+    ],
+    "src/shared/ipc-registry.ts": [
+      "DYNAMIC_CHANNEL_PATTERNS",
+      "EVENT_CHANNELS",
+      "getAllowedChannels",
+      "isDynamicChannel"
+    ],
+    "src/shared/ipc/channels.ts": [
+      "POWER_CHANNELS",
+      "createChannelName",
+      "getAllStaticChannels"
+    ],
+    "src/shared/ipc/contracts.ts": [
+      "AgentIpc",
+      "TerminalIpc",
+      "WorkspaceIpc"
+    ],
+    "src/shared/main/async-utils.ts": [
+      "existsAsync",
+      "findAuggieAsync"
+    ],
+    "src/shared/main/find-binary.ts": [
+      "FIND_BINARY_NEGATIVE_TTL_MS",
+      "FIND_BINARY_POSITIVE_TTL_MS",
+      "getCachedHostEnv",
+      "getCommonNpxPaths",
+      "invalidateHostDiscoveryCache"
+    ],
+    "src/shared/main/provider-auth-status.ts": [
+      "__resetProviderAuthStatusForTests",
+      "getProviderAuthVerdicts"
+    ],
+    "src/shared/main/window-appearance.ts": [
+      "isWindowTranslucencyEnabled"
+    ],
+    "src/shared/node-capabilities.ts": [
+      "NODE_CAPABILITY_KEYS"
+    ],
+    "src/shared/panel-layout-sizing.ts": [
+      "CONTAINED_PANEL_INLINE_CHROME",
+      "FIRST_CHAT_PREFERRED_WIDTH",
+      "getResolvedPanelCanvasWidth"
+    ],
+    "src/shared/provider-auth-status.ts": [
+      "formatProviderIdentity"
+    ],
+    "src/shared/schemas.ts": [
+      "AgentIdSchema",
+      "AgentMessageSchema",
+      "AgentSessionSchema",
+      "ContentBlockSchema",
+      "CreateWorkspaceRequestSchema",
+      "MessageIdSchema",
+      "SessionIdSchema",
+      "TaskMetadataSchema",
+      "TaskStatusSchema",
+      "ToolCallSchema",
+      "WorkspaceSchema",
+      "safeValidateAgentMessage",
+      "safeValidateAgentSession",
+      "safeValidateContentBlock",
+      "safeValidateToolCall",
+      "validateAgentMessage",
+      "validateAgentSession",
+      "validateContentBlock",
+      "validateToolCall",
+      "workspaceIdSchema"
+    ],
+    "src/shared/services/unified-id.service.ts": [
+      "UnifiedIdService"
+    ],
+    "src/shared/services/workspace-slug.ts": [
+      "WORKSPACE_SLUG_PATTERN",
+      "clearWorkspaceSlugRegistry",
+      "formatWorkspaceIdForDisplay",
+      "isLegacyWorkspaceId"
+    ],
+    "src/shared/streaming-config.ts": [
+      "STREAMING_PROFILES",
+      "calculateBackoff",
+      "resolveStreamingConfig"
+    ],
+    "src/shared/types/native-review.ts": [
+      "NativeReviewBranchIdentitySchema",
+      "NativeReviewBranchTargetSchema",
+      "NativeReviewExecuteExtensionSchema",
+      "NativeReviewGitReceiptSchema",
+      "NativeReviewOutcomeSchema",
+      "NativeReviewPrepareExtensionSchema",
+      "NativeReviewPublicationSchema",
+      "NativeReviewStateSchema",
+      "NativeReviewTransportSchema"
+    ],
+    "src/shared/types/notes-primitives.ts": [
+      "AgentActionPrimitiveSchema",
+      "CliPrimitiveSchema",
+      "PatchPrimitiveSchema",
+      "ReferencePrimitiveSchema",
+      "isValidSemanticId"
+    ],
+    "src/shared/types/proposal-resource.ts": [
+      "createProposalResource"
+    ],
+    "src/shared/types/question-resource.ts": [
+      "QUESTION_RESOURCE_MIME_TYPE"
+    ],
+    "src/shared/types/repository-context.ts": [
+      "RepositoryAvailabilitySchema",
+      "RepositoryCapabilitySchema",
+      "RepositoryRootContextSchema",
+      "RepositorySelectionSchema",
+      "repositoryConnectionScopeKey"
+    ],
+    "src/shared/types/repository-resource-read.ts": [
+      "RepositoryResourceTargetSchema"
+    ],
+    "src/shared/types/resource-block-identity.ts": [
+      "ATTACHMENT_ID_KEY",
+      "getResourceAttachmentId",
+      "getResourceContents",
+      "isCanonicalResourceBlock",
+      "resourceDedupeKey"
+    ],
+    "src/shared/utils/comment-id-generator.ts": [
+      "isValidCommentId"
+    ],
+    "src/shared/utils/content-block-helpers.ts": [
+      "getContentBlockRichness"
+    ],
+    "src/shared/utils/message-dedup.ts": [
+      "computeMessageContentHash",
+      "hasNearDuplicateAssistantContent",
+      "isTimestampClose",
+      "mergeAgentSessionMessagesWithPolicy"
+    ],
+    "src/shared/utils/paged-list.ts": [
+      "MAX_LIST_PAGES",
+      "latestThreadRows",
+      "nextPageToken"
+    ],
+    "src/shared/utils/workspace-activity-time.ts": [
+      "getWorkspaceActivityDisplayTimeInfo",
+      "isWorkspaceActivityWithin"
+    ],
+    "src/store/main/slices/agent-subscriptions/agent-subscriptions-slice.ts": [
+      "clearAgentQueue",
+      "clearWorkspace",
+      "enqueueEvent",
+      "evictDeletedAgent",
+      "markDelegationAgentCompleted",
+      "markDelegationAgentDeleted",
+      "markDelegationDelivered",
+      "recordDeliveryFailure",
+      "recordDeliverySuccess",
+      "recordDeliveryTimeout",
+      "recordDroppedEvents",
+      "removeDelegationGroup"
+    ],
+    "src/store/renderer/middlewares/action-ring-buffer.ts": [
+      "createActionTypeRingBuffer"
+    ],
+    "src/store/renderer/middlewares/structured-clone-checker.ts": [
+      "CHECK_INTERVAL_MS"
+    ],
+    "src/store/renderer/mock-bootstrap.ts": [
+      "clearMockSeeders",
+      "getRegisteredMockSeeders",
+      "seedMockStore"
+    ],
+    "src/store/renderer/retention-fingerprint.ts": [
+      "RETENTION_FINGERPRINT_FIRST_SAMPLE_MS",
+      "RETENTION_FINGERPRINT_INTERVAL_MS",
+      "RETENTION_FINGERPRINT_PREFIX",
+      "collectRetentionFingerprint",
+      "formatRetentionFingerprint"
+    ],
+    "src/store/renderer/sagas.ts": [
+      "sagas"
+    ],
+    "src/store/renderer/seeders/auto-update-bridge-seeder.ts": [
+      "registerAutoUpdateBridge"
+    ],
+    "src/store/renderer/seeders/browser-ipc-bridge-seeder.ts": [
+      "registerBrowserIpcBridge"
+    ],
+    "src/store/renderer/seeders/deep-link-bridge-seeder.ts": [
+      "registerDeepLinkBridge"
+    ],
+    "src/store/renderer/seeders/invite-consent-bridge-seeder.ts": [
+      "registerInviteConsentBridge"
+    ],
+    "src/store/renderer/seeders/invite-notice-bridge-seeder.ts": [
+      "registerInviteNoticeBridge"
+    ],
+    "src/store/renderer/seeders/invite-progress-bridge-seeder.ts": [
+      "registerInviteProgressBridge"
+    ],
+    "src/store/renderer/seeders/native-dialog-bridge-seeder.ts": [
+      "registerNativeDialogBridge"
+    ],
+    "src/store/renderer/seeders/notification-bridge-seeder.ts": [
+      "registerNotificationBridge"
+    ],
+    "src/store/renderer/seeders/power-bridge-seeder.ts": [
+      "registerBatteryChangedEventRelay",
+      "registerPowerBridge"
+    ],
+    "src/store/renderer/seeders/quit-confirmation-bridge-seeder.ts": [
+      "registerQuitConfirmationBridge"
+    ],
+    "src/store/renderer/seeders/release-notes-bridge-seeder.ts": [
+      "registerReleaseNotesBridge"
+    ],
+    "src/store/renderer/seeders/renderer-log-bridge-seeder.ts": [
+      "registerRendererLogBridge"
+    ],
+    "src/store/renderer/seeders/user-activity-bridge-seeder.ts": [
+      "registerUserActivityBridge"
+    ],
+    "src/store/renderer/seeders/user-mcp-bridge-seeder.ts": [
+      "registerUserMcpBridge"
+    ],
+    "src/store/renderer/seeders/window-state-bridge-seeder.ts": [
+      "registerAppVersionBridge",
+      "registerWindowCloseBridge",
+      "registerWindowCycleFocusBridge",
+      "registerWindowFullScreenBridge",
+      "registerWindowFullScreenEventRelay",
+      "registerWindowStateBridge",
+      "registerWindowThemeBridge"
+    ],
+    "src/store/renderer/slices/accept-workflow/accept-workflow-selectors.ts": [
+      "selectAcceptOperation"
+    ],
+    "src/store/renderer/slices/agent-availability/agent-availability-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/agent-availability/sagas/provider-availability-saga.ts": [
+      "checkAllProvidersWorker",
+      "checkSingleProviderWorker",
+      "openClaudeLoginWorker"
+    ],
+    "src/store/renderer/slices/agent-lock/agent-lock-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/agent-queue/agent-queue-slice.ts": [
+      "clearAgentQueue",
+      "initialState",
+      "restoreRecentlyRemovedMessageId"
+    ],
+    "src/store/renderer/slices/agent-session/agent-session-selectors.ts": [
+      "selectAgentActivationWaitComplete",
+      "selectAgentIsBlockedWaiting",
+      "selectAgentQueuedMessages",
+      "selectAgentSessionExists",
+      "selectAgentSessionIsProcessing",
+      "selectAllRetainedAgentSessions"
+    ],
+    "src/store/renderer/slices/agent-session/agent-session-slice.ts": [
+      "FE_OWNED_FIELD_POLICY",
+      "HISTORY_SEGMENT_MAX",
+      "computeMessageContentHash",
+      "hasCanonicalId",
+      "initialState",
+      "isTimestampClose",
+      "renameAgent",
+      "replaceMessageById"
+    ],
+    "src/store/renderer/slices/agent-session/sagas/agent-mutation-saga.ts": [
+      "AGENT_DELETION_TOMBSTONE_TTL_MS"
+    ],
+    "src/store/renderer/slices/agent-session/utils/stream-content-blocks.ts": [
+      "mergeStreamContentBlocks"
+    ],
+    "src/store/renderer/slices/agent-session/utils/stream-target-state.ts": [
+      "findInFlightAssistantMessage"
+    ],
+    "src/store/renderer/slices/agent-subscription-ui/agent-subscription-ui-selectors.ts": [
+      "selectCompletionStatus"
+    ],
+    "src/store/renderer/slices/agent-subscription-ui/agent-subscription-ui-slice.ts": [
+      "clearWokenUp",
+      "initialState"
+    ],
+    "src/store/renderer/slices/agent-subscription-ui/sagas/agent-subscription-read-saga.ts": [
+      "COMPLETED_DISPLAY_DURATION_MS"
+    ],
+    "src/store/renderer/slices/app-layout/app-layout-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/auto-update/sagas/auto-update-saga.ts": [
+      "CHECK_TIMEOUT_MS"
+    ],
+    "src/store/renderer/slices/background-agent-executor/background-agent-executor-slice.ts": [
+      "clearWorkspaceExecutors",
+      "initialState"
+    ],
+    "src/store/renderer/slices/background-agent-settings/background-agent-settings-slice.ts": [
+      "DEFAULT_BACKGROUND_MODEL",
+      "hydrateProviderSettings",
+      "initialState",
+      "restoreProviderSettings",
+      "saveProviderSnapshot"
+    ],
+    "src/store/renderer/slices/background-hooks/background-hooks-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/browser-access/browser-access-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/browser-access/sagas/browser-access-saga.ts": [
+      "enforceBrowserAccessLabsGate"
+    ],
+    "src/store/renderer/slices/browser-clients/browser-clients-selectors.ts": [
+      "selectLiveClient",
+      "selectLiveClients"
+    ],
+    "src/store/renderer/slices/browser-clients/browser-clients-slice.ts": [
+      "authenticatedClientsCleared",
+      "authenticatedClientsReceived",
+      "initialState"
+    ],
+    "src/store/renderer/slices/browser-clients/sagas/browser-clients-saga.ts": [
+      "PRESENCE_ROUTE_REREAD_MS"
+    ],
+    "src/store/renderer/slices/browser-tab-registry/browser-tab-registry-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/browser/browser-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/browser/sagas/browser-persistence-saga.ts": [
+      "hydrateBrowserWorkspaceWorker"
+    ],
+    "src/store/renderer/slices/changes/changes-selectors.ts": [
+      "selectAllAgentStats"
+    ],
+    "src/store/renderer/slices/changes/changes-slice.ts": [
+      "initialState",
+      "setChanges",
+      "setIsAutofillAndCommitting",
+      "setIsAutofillAndCreatingPR",
+      "setMainPanelView",
+      "setPendingCommitAction",
+      "setTargetBranch"
+    ],
+    "src/store/renderer/slices/chat-changes/chat-changes-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/chat-drafts/chat-drafts-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/chat-drafts/sagas/chat-drafts-saga.ts": [
+      "CHAT_DRAFT_SAVE_DEBOUNCE_MS"
+    ],
+    "src/store/renderer/slices/chat-state/chat-state-selectors.ts": [
+      "selectChatLastMessageTime",
+      "selectChatLiveStreamPhase"
+    ],
+    "src/store/renderer/slices/chat-state/chat-state-slice.ts": [
+      "chatInitFailed",
+      "initialState"
+    ],
+    "src/store/renderer/slices/chat-state/sagas/chat-scrollback-saga.ts": [
+      "previousUserMessageLoadSaga"
+    ],
+    "src/store/renderer/slices/chat-state/sagas/chat-subscribe-saga.ts": [
+      "SWITCH_BACK_REVEAL_WAIT_MS"
+    ],
+    "src/store/renderer/slices/command-palette/command-palette-results.ts": [
+      "MAX_BLENDED_ROWS",
+      "MAX_BLENDED_SERVER_ROWS"
+    ],
+    "src/store/renderer/slices/comments/comments-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/connections/connections-selectors.ts": [
+      "selectConnectionError",
+      "selectConnectionOpenStatus",
+      "selectConnectionStatus",
+      "selectIsOpeningConnection"
+    ],
+    "src/store/renderer/slices/connections/connections-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/context/context-slice.ts": [
+      "getWorkspaceState",
+      "initialState"
+    ],
+    "src/store/renderer/slices/daemon-health/daemon-health-selectors.ts": [
+      "isLocalTransport",
+      "supportsIdentitySeamProtocol",
+      "supportsSourceControlAuthProtocol"
+    ],
+    "src/store/renderer/slices/daemon-health/daemon-health-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/daemon-health/sagas/daemon-health-saga.ts": [
+      "pollSystemStatusSaga"
+    ],
+    "src/store/renderer/slices/deep-links/deep-links-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/deep-links/sagas/deep-links-saga.ts": [
+      "drainPendingDeepLinks",
+      "handleDeepLinkAction"
+    ],
+    "src/store/renderer/slices/directory-picker/directory-picker-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/dock-conversation/sagas/dock-evidence-saga.ts": [
+      "__setDockMarkAnswerTimeoutForTests"
+    ],
+    "src/store/renderer/slices/dock-conversation/sagas/dock-native-session-saga.ts": [
+      "configureDockNativeFactory"
+    ],
+    "src/store/renderer/slices/external-editors/external-editors-slice.ts": [
+      "initialState",
+      "isSpecialAction"
+    ],
+    "src/store/renderer/slices/external-editors/sagas/external-editors-persistence-saga.ts": [
+      "EDITOR_ORDER_STORAGE_KEY"
+    ],
+    "src/store/renderer/slices/feature-codes/feature-codes-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/file-explorer/file-explorer-selectors.ts": [
+      "selectFileExplorerEnvironmentConfigTrigger"
+    ],
+    "src/store/renderer/slices/file-explorer/file-explorer-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/file-explorer/file-explorer-utils.ts": [
+      "checkGitignored",
+      "shouldHide",
+      "sortNodes"
+    ],
+    "src/store/renderer/slices/files/files-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/files/sagas/files-read-saga.ts": [
+      "MAX_CONCURRENT_FILE_READS"
+    ],
+    "src/store/renderer/slices/files/sagas/files-write-saga.ts": [
+      "FILE_CONTENT_SAVE_DEBOUNCE_MS"
+    ],
+    "src/store/renderer/slices/git-roots/git-roots-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/git/git-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/github-repo-search/github-repo-search-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/github-repo-search/sagas/github-repo-search-saga.ts": [
+      "SEARCH_DEBOUNCE_MS"
+    ],
+    "src/store/renderer/slices/github-repos/github-repos-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/github-user-search/github-user-search-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/github-user-search/sagas/github-user-search-saga.ts": [
+      "USER_SEARCH_DEBOUNCE_MS"
+    ],
+    "src/store/renderer/slices/gitlab-auth/gitlab-auth-selectors.ts": [
+      "selectGitLabAuthMethod"
+    ],
+    "src/store/renderer/slices/gitlab-auth/gitlab-auth-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/global-modals/global-modals-selectors.ts": [
+      "selectHasShownGitCredentialsModalForWorkspace"
+    ],
+    "src/store/renderer/slices/global-modals/global-modals-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/guest-sessions/guest-sessions-selectors.ts": [
+      "selectIsGuestWindow"
+    ],
+    "src/store/renderer/slices/guest-sessions/guest-sessions-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/hardware-console/hardware-console-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/hardware-console/sagas/hardware-console-device-saga.ts": [
+      "watchHardwareConsoleEncoderHud"
+    ],
+    "src/store/renderer/slices/host-membership/host-membership-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/host-requirements/host-requirements-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/hud/hud-selectors.ts": [
+      "selectHudActive",
+      "selectHudAttentionByWorkspaceId",
+      "selectHudAttnCount",
+      "selectHudFeed",
+      "selectHudUsage",
+      "selectHudUsageError"
+    ],
+    "src/store/renderer/slices/hud/hud-slice.ts": [
+      "HUD_FEED_LIMIT",
+      "computeBurnRatePerMin",
+      "initialState"
+    ],
+    "src/store/renderer/slices/hud/sagas/hud-saga.ts": [
+      "HUD_FAILED_SUMMARY_ROW_READ_CAP",
+      "HUD_GRID_FILTER_STORAGE_KEY",
+      "HUD_RATE_HISTORY_LIMIT",
+      "HUD_RATE_HISTORY_POLL_MS",
+      "HUD_REPLACE_GROUP",
+      "HUD_SUBSCRIBE_EVENT_TYPES",
+      "sanitizePersistedHudGridFilter"
+    ],
+    "src/store/renderer/slices/identity/identity-selectors.ts": [
+      "selectIdentityProvider"
+    ],
+    "src/store/renderer/slices/identity/identity-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/inline-visuals/inline-visuals-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/inline-visuals/sagas/inline-visuals-saga.ts": [
+      "INLINE_VISUAL_RECORD_MAX_BYTES",
+      "INLINE_VISUAL_SAVE_DELAY_MS"
+    ],
+    "src/store/renderer/slices/invitation-account-search/invitation-account-search-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/known-repos/known-repos-selectors.ts": [
+      "selectKnownReposCollection"
+    ],
+    "src/store/renderer/slices/known-repos/known-repos-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/linear-auth/linear-auth-slice.ts": [
+      "setLinearIsAuthenticating"
+    ],
+    "src/store/renderer/slices/mcp-settings/mcp-settings-normalization.ts": [
+      "normalizeDisabledServers",
+      "normalizeMcpServerStatus"
+    ],
+    "src/store/renderer/slices/mcp-settings/mcp-settings-selectors.ts": [
+      "selectMcpServerErrorMessage"
+    ],
+    "src/store/renderer/slices/mcp-settings/mcp-settings-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/mcp-settings/sagas/mcp-settings-saga.ts": [
+      "ADVANCED_SAVED_RESET_MS"
+    ],
+    "src/store/renderer/slices/model/model-selectors.ts": [
+      "selectHasResolvableModel"
+    ],
+    "src/store/renderer/slices/model/model-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/model/model-utils.ts": [
+      "fetchModelsForProvider",
+      "getModelsForProvider"
+    ],
+    "src/store/renderer/slices/model/sagas/model-boot-saga.ts": [
+      "loadModelsOnBootWorker"
+    ],
+    "src/store/renderer/slices/model/sagas/model-reload-saga.ts": [
+      "reloadModelsWorker"
+    ],
+    "src/store/renderer/slices/model/sagas/model-selection-saga.ts": [
+      "handleSelectModel",
+      "persistDefaultReasoningEffortWorker"
+    ],
+    "src/store/renderer/slices/note-read-tracking/note-read-tracking-slice.ts": [
+      "clearCache",
+      "clearCurrentlyViewed",
+      "initialState"
+    ],
+    "src/store/renderer/slices/note-read-tracking/sagas/note-read-tracking-saga.ts": [
+      "COMPUTE_DEBOUNCE_MS"
+    ],
+    "src/store/renderer/slices/onboarding/onboarding-slice.ts": [
+      "initialState",
+      "nextStep"
+    ],
+    "src/store/renderer/slices/palette/palette-pick-memory.ts": [
+      "MAX_PALETTE_PICKS",
+      "PALETTE_PICK_FADE_MS",
+      "getPalettePickWeights",
+      "palettePickFade"
+    ],
+    "src/store/renderer/slices/palette/palette-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/palette/sagas/palette-memory-saga.ts": [
+      "PALETTE_MEMORY_STORAGE_KEY"
+    ],
+    "src/store/renderer/slices/panel-layout/offscreen-webview-eligibility.ts": [
+      "classifyOffscreenTab"
+    ],
+    "src/store/renderer/slices/panel-layout/panel-layout-selectors.ts": [
+      "selectFocusedPanelTargetsByWorkspaceId",
+      "selectPanelCanvasWidthsByWorkspaceId",
+      "selectPanelColumnCountsByWorkspaceId",
+      "selectPanelColumnStack",
+      "selectPanelNavigatorItems",
+      "selectPanelRestoreStatusesByWorkspaceId",
+      "selectWorkspaceHasBrowserTabs"
+    ],
+    "src/store/renderer/slices/panel-layout/panel-layout-slice.ts": [
+      "panel.MAX_SEEDED_CONTEXT_LINK_TABS",
+      "panel.initialState"
+    ],
+    "src/store/renderer/slices/panel-layout/panel-layout-tabless.ts": [
+      "appendHorizontalColumn",
+      "findRootHorizontalPanelIndex",
+      "insertHorizontalPanel",
+      "insertHorizontalPanelInLayout",
+      "normalizeTablessPanelLayout",
+      "removeForeignWorkspaceTabs",
+      "resizePanelTreeAtHorizontalIndex"
+    ],
+    "src/store/renderer/slices/panel-layout/sagas/browser-tab-registry-saga.ts": [
+      "REPORT_DEBOUNCE_MS",
+      "SYNC_RETRY_MS"
+    ],
+    "src/store/renderer/slices/panel-layout/sagas/panel-layout-saga.ts": [
+      "isStoredLayoutValid",
+      "watchRightmostColumnRequests"
+    ],
+    "src/store/renderer/slices/pdf-preview/pdf-preview-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/pending-submissions/pending-submissions-admission.ts": [
+      "admitPendingSubmission"
+    ],
+    "src/store/renderer/slices/pending-submissions/pending-submissions-model.ts": [
+      "SUBMISSION_TOMBSTONE_LIMIT"
+    ],
+    "src/store/renderer/slices/pending-submissions/pending-submissions-selectors.ts": [
+      "selectPendingSubmissionDisplay"
+    ],
+    "src/store/renderer/slices/permission/permission-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/pip/pip-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/plugins-settings/plugins-settings-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/power/power-selectors.ts": [
+      "selectOnBattery"
+    ],
+    "src/store/renderer/slices/power/power-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/pr-branch-lookup/pr-branch-lookup-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/pr-monitor/pr-monitor-selectors.ts": [
+      "selectPrMonitors",
+      "selectReviewMonitoringSupport"
+    ],
+    "src/store/renderer/slices/pr-monitor/pr-monitor-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/pr-monitor/sagas/pr-monitor-saga.ts": [
+      "cancelPrMonitorWorker",
+      "flushPrMonitorWorker"
+    ],
+    "src/store/renderer/slices/pr-status/pr-status-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/pr-workflow/pr-workflow-selectors.ts": [
+      "selectPRWorkflowOperation"
+    ],
+    "src/store/renderer/slices/presence/presence-selectors.ts": [
+      "hasOtherPresence"
+    ],
+    "src/store/renderer/slices/presence/presence-slice.ts": [
+      "initialState",
+      "presenceOwnPrincipalReceived"
+    ],
+    "src/store/renderer/slices/principal/principal-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/principal/sagas/host-owner-services-saga.ts": [
+      "hardwareConsoleSaga"
+    ],
+    "src/store/renderer/slices/principal/sagas/principal-saga.ts": [
+      "PRINCIPAL_RETRY_DELAYS_MS"
+    ],
+    "src/store/renderer/slices/proposal-lifecycle/proposal-lifecycle-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/proposal-lifecycle/sagas/proposal-lifecycle-saga.ts": [
+      "PROPOSAL_LIFECYCLE_STORAGE_KEY",
+      "handleApplyProposal",
+      "handleUndoProposal",
+      "hydrateProposalLifecycleSaga",
+      "validateProposalLifecycleEntries"
+    ],
+    "src/store/renderer/slices/provider-catalog/provider-catalog-selectors.ts": [
+      "selectProviderCatalogEntryOrDefault",
+      "selectProviderEnabledFromCatalog"
+    ],
+    "src/store/renderer/slices/provider-catalog/provider-catalog-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/provider-models/provider-models-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/provider-settings/provider-in-use-selectors.ts": [
+      "selectProviderInUseReason"
+    ],
+    "src/store/renderer/slices/provider-settings/provider-settings-selectors.ts": [
+      "selectEnabledProviderIds",
+      "selectIsProviderActive"
+    ],
+    "src/store/renderer/slices/provider-settings/provider-settings-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/provider-settings/sagas/provider-profile-setup-saga.ts": [
+      "SIGN_IN_POLL_MS",
+      "SIGN_IN_TIMEOUT_MS",
+      "chooseProfileFolder"
+    ],
+    "src/store/renderer/slices/provider-settings/sagas/provider-settings-saga.ts": [
+      "PROVIDER_SETTINGS_RETRY_DELAYS_MS"
+    ],
+    "src/store/renderer/slices/question-ui/question-ui-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/question-ui/sagas/question-ui-persistence-saga.ts": [
+      "QUESTION_WIZARD_SAVE_DEBOUNCE_MS"
+    ],
+    "src/store/renderer/slices/release-notes/release-notes-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/repository-context/repository-context-selectors.ts": [
+      "selectRepositoryContextRoot",
+      "selectRepositoryContextState"
+    ],
+    "src/store/renderer/slices/scripts/sagas/scripts-output-saga.ts": [
+      "SCRIPT_OUTPUT_STREAM_WAIT_MS"
+    ],
+    "src/store/renderer/slices/scripts/scripts-slice.ts": [
+      "MAX_OUTPUT_CHARS",
+      "MAX_OUTPUT_CHUNKS",
+      "upsertScript"
+    ],
+    "src/store/renderer/slices/sentry-auth/sentry-auth-slice.ts": [
+      "setSentryConnecting"
+    ],
+    "src/store/renderer/slices/settings-events/sagas/settings-hydration-saga.ts": [
+      "SETTINGS_HYDRATION_RETRY_DELAYS_MS",
+      "hydrateSettingsOnceSaga"
+    ],
+    "src/store/renderer/slices/settings-proposal-history/sagas/settings-proposal-history-saga.ts": [
+      "SETTINGS_PROPOSAL_HISTORY_STORAGE_KEY",
+      "hydrateSettingsProposalHistorySaga",
+      "persistSettingsProposalHistorySaga",
+      "validateProposalHistoryEntries"
+    ],
+    "src/store/renderer/slices/settings-proposal-history/settings-proposal-history-slice.ts": [
+      "SETTINGS_PROPOSAL_HISTORY_RETENTION_MS",
+      "initialState"
+    ],
+    "src/store/renderer/slices/setup-prompt/sagas/setup-prompt-saga.ts": [
+      "evaluateSetupStateWorker",
+      "requestReevaluation"
+    ],
+    "src/store/renderer/slices/setup-prompt/setup-prompt-selectors.ts": [
+      "selectActiveSetupEvaluation",
+      "selectSetupEvaluation"
+    ],
+    "src/store/renderer/slices/setup-prompt/setup-prompt-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/setup-scripts/setup-scripts-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/sidebar-nav/chief-thread-title.ts": [
+      "isPlaceholderChiefThreadName"
+    ],
+    "src/store/renderer/slices/sidebar-nav/sagas/workspace-auto-archive-saga.ts": [
+      "resetWorkspaceAutoArchiveWritesForTest"
+    ],
+    "src/store/renderer/slices/sidebar-nav/sagas/workspace-label-saga.ts": [
+      "resetWorkspaceLabelWritesForTest"
+    ],
+    "src/store/renderer/slices/sidebar-nav/sidebar-nav-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/skills/skills-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/specialist-proposal-history/sagas/specialist-proposal-history-saga.ts": [
+      "SPECIALIST_PROPOSAL_HISTORY_STORAGE_KEY",
+      "hydrateSpecialistProposalHistorySaga",
+      "persistSpecialistProposalHistorySaga",
+      "validateSpecialistProposalHistoryEntries"
+    ],
+    "src/store/renderer/slices/specialist-proposal-history/specialist-proposal-history-slice.ts": [
+      "SPECIALIST_PROPOSAL_HISTORY_RETENTION_MS",
+      "initialState"
+    ],
+    "src/store/renderer/slices/specialists/specialists-selectors.ts": [
+      "selectOverridesLoaded",
+      "selectProviderModelOverrides"
+    ],
+    "src/store/renderer/slices/specialists/specialists-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/stats/stats-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/streaming-config/streaming-config-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/streaming-config/streaming-config-types.ts": [
+      "STREAMING_PROFILES",
+      "calculateBackoff",
+      "resolveStreamingConfig"
+    ],
+    "src/store/renderer/slices/system-status/system-status-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/tab-state/sagas/proposal-workspace-tab-saga.ts": [
+      "PROPOSAL_WORKSPACE_TAB_WAIT_MS"
+    ],
+    "src/store/renderer/slices/tab-state/tab-state-slice.ts": [
+      "setActiveHandleDrop"
+    ],
+    "src/store/renderer/slices/task-agent-associations/task-agent-associations-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/terminals/terminals-selectors.ts": [
+      "selectActiveTerminalId",
+      "selectSelectedScriptId",
+      "selectTerminalPlacement"
+    ],
+    "src/store/renderer/slices/theme/theme-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/token-usage/token-usage-slice.ts": [
+      "clearWorkspaceTokenUsage",
+      "initialState"
+    ],
+    "src/store/renderer/slices/transient-ui/transient-ui-selectors.ts": [
+      "selectSidebarActiveTab"
+    ],
+    "src/store/renderer/slices/transient-ui/transient-ui-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/ui-highlight/ui-highlight-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/ui-layout/ui-layout-slice.ts": [
+      "DEFAULT_EXPANDED_WIDTH",
+      "DEFAULT_WIDTH",
+      "MAX_WIDTH",
+      "MIN_WIDTH",
+      "defaultBottomDockState",
+      "defaultWorkspaceSidebarPanelLayout",
+      "toggleSpacesSidebarCollapsed",
+      "toggleTabbedSidebarPinned"
+    ],
+    "src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts": [
+      "detectDividerSessionBoundary"
+    ],
+    "src/store/renderer/slices/unread-tracking/unread-tracking-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/user-preferences/sagas/notification-settings-saga.ts": [
+      "hydrateNotificationSettingsWorker",
+      "persistNotificationSettingsWorker"
+    ],
+    "src/store/renderer/slices/user-preferences/sagas/update-channel-saga.ts": [
+      "hydrateUpdateChannelWorker",
+      "persistUpdateChannelWorker"
+    ],
+    "src/store/renderer/slices/user-preferences/sagas/user-preferences-persistence-saga.ts": [
+      "hydrateUserPreferencesWorker",
+      "loadSystemFontsWorker",
+      "persistLanguagePreferenceWorker"
+    ],
+    "src/store/renderer/slices/user-preferences/user-preferences-selectors.ts": [
+      "selectAgentFontStyleLabel",
+      "selectCodeFontFamilyLabel",
+      "selectNoteFontStyleLabel"
+    ],
+    "src/store/renderer/slices/user-preferences/user-preferences-slice.ts": [
+      "initialState",
+      "setNativeReviewEnabled"
+    ],
+    "src/store/renderer/slices/video-preview/video-preview-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/voice-settings/voice-settings-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/websocket-api/websocket-api-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-agents/workspace-agents-selectors.ts": [
+      "selectActiveAgent",
+      "selectDiskMessageCount",
+      "selectEmptyLayoutAgent",
+      "selectRecentlyCreatedAgents",
+      "selectWorkspaceAgentIsSoftDeleted",
+      "selectWorkspaceAgentIsStreaming",
+      "selectWorkspaceAgentSession",
+      "selectWorkspaceHasAgent"
+    ],
+    "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts": [
+      "agentStreamResetStreamingMessagesRequested",
+      "agentStreamUpdateReceived",
+      "agentsLoaded",
+      "backendStreamsReconnectResultReceived",
+      "cleanupAgentCreatedEvents",
+      "delegateTaskRequested",
+      "forkAgentRequested",
+      "initialState",
+      "reconnectStreamHandlersForWorkspaceRequested",
+      "recordAgentCreatedEvent",
+      "removeWorkspaceAgentState",
+      "setInitialSpecWriteInProgress",
+      "setWaitingForFirstMessage",
+      "triggerBackendStreamReconnect",
+      "triggerStreamingSafetyCheck"
+    ],
+    "src/store/renderer/slices/workspace-create-progress/workspace-create-progress-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-discussion/workspace-discussion-selectors.ts": [
+      "selectDiscussionCreatedId"
+    ],
+    "src/store/renderer/slices/workspace-discussion/workspace-discussion-slice.ts": [
+      "discussionRecipientsChanged",
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-events/sagas/daemon-events-saga.ts": [
+      "FILE_EVENTS_REPLACE_GROUP",
+      "FILE_EVENTS_SUBSCRIBE_TYPES",
+      "SCRIPT_OUTPUT_LEASE_GRACE_MS",
+      "SCRIPT_OUTPUT_LEASE_RETRY_MS",
+      "SCRIPT_OUTPUT_SUBSCRIBE_TYPES",
+      "scriptOutputReplaceGroup"
+    ],
+    "src/store/renderer/slices/workspace-events/workspace-events-slice.ts": [
+      "initialState",
+      "setEventsLoading"
+    ],
+    "src/store/renderer/slices/workspace-import/workspace-import-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-initializer/sagas/workspace-initializer-repository-saga.ts": [
+      "knownReposLoadSaga"
+    ],
+    "src/store/renderer/slices/workspace-initializer/sagas/workspace-initializer-saga.ts": [
+      "hydrateWorkspaceInitializerWorker",
+      "persistWorkspaceInitializerWorker"
+    ],
+    "src/store/renderer/slices/workspace-initializer/utils/agent-by-repo.ts": [
+      "MAX_REMEMBERED_AGENT_REPOS"
+    ],
+    "src/store/renderer/slices/workspace-initializer/utils/known-repos.ts": [
+      "KNOWN_REPOS_RELOAD_AFTER_MS"
+    ],
+    "src/store/renderer/slices/workspace-initializer/utils/recent-specialists.ts": [
+      "MAX_RECENT_SPECIALISTS"
+    ],
+    "src/store/renderer/slices/workspace-initializer/workspace-initializer-selectors.ts": [
+      "selectKnownRepos"
+    ],
+    "src/store/renderer/slices/workspace-initializer/workspace-initializer-slice.ts": [
+      "DEFAULT_WORKSPACE_INITIALIZER_PARENT_PATH",
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-lifecycle/sagas/workspace-read-scheduler.ts": [
+      "MAX_CONCURRENT_WORKSPACE_READS",
+      "WORKSPACE_HYDRATION_BRANCHES",
+      "deriveCriticalHydrationBranches"
+    ],
+    "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-selectors.ts": [
+      "selectWorkspaceLoadError"
+    ],
+    "src/store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-navigation/workspace-navigation-slice.ts": [
+      "navigation.updateWorkspaceCodeReview"
+    ],
+    "src/store/renderer/slices/workspace-notes/sagas/notes-write-saga.ts": [
+      "NOTE_CONTENT_SAVE_DEBOUNCE_MS"
+    ],
+    "src/store/renderer/slices/workspace-notes/workspace-notes-slice.ts": [
+      "initialState",
+      "setWorkspaceNotesLoading"
+    ],
+    "src/store/renderer/slices/workspace-operations/sagas/workspace-operations-saga.ts": [
+      "WORKSPACE_DELETION_TOMBSTONE_TTL_MS",
+      "WORKSPACE_OPERATION_UNDO_DURATION_MS"
+    ],
+    "src/store/renderer/slices/workspace-operations/workspace-operations-slice.ts": [
+      "initialState",
+      "openRemoveRepoConfirm"
+    ],
+    "src/store/renderer/slices/workspace-share/workspace-share-selectors.ts": [
+      "selectWorkspaceRosterRemoveError",
+      "selectWorkspaceRosterWithheld"
+    ],
+    "src/store/renderer/slices/workspace-share/workspace-share-slice.ts": [
+      "initialRosterState",
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-summaries/workspace-summaries-slice.ts": [
+      "clearWorkspaceSummaries",
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace-tasks/workspace-tasks-selectors.ts": [
+      "selectWorkspaceTaskDisplayList",
+      "selectWorkspaceTasksError",
+      "selectWorkspaceTasksLoading"
+    ],
+    "src/store/renderer/slices/workspace-tasks/workspace-tasks-slice.ts": [
+      "initialState",
+      "invalidateWorkspaceTasks"
+    ],
+    "src/store/renderer/slices/workspace-transfer/workspace-transfer-slice.ts": [
+      "initialState"
+    ],
+    "src/store/renderer/slices/workspace/utils/workspace.client.ts": [
+      "WorkspaceClient"
+    ],
+    "src/store/renderer/slices/workspace/workspace-selectors.ts": [
+      "selectWorkflowStage",
+      "selectWorkspaceActivePrSummary",
+      "selectWorkspaceIsCreating",
+      "selectWorkspaceIsWaiting",
+      "selectWorkspacePendingDeletions",
+      "selectWorkspaceProgressHeadline",
+      "selectWorkspacesSortedByRecency"
+    ],
+    "src/store/renderer/slices/workspace/workspace-slice.ts": [
+      "cleanupRecency",
+      "clearPendingCreation",
+      "initialState",
+      "setPendingCreation",
+      "setWorkspaceCreating",
+      "setWorkspaceLoading"
+    ],
+    "src/store/renderer/utils/context-saga-effects.ts": [
+      "takeLatestByAgent"
+    ],
+    "src/store/renderer/utils/ipc-channel.ts": [
+      "createWindowEventChannel",
+      "resolveIpcChannelBufferPolicy",
+      "takeEveryFromListenSync"
+    ],
+    "src/store/renderer/utils/switch-timing.ts": [
+      "SEED_RELEVANCE_SLACK_MS",
+      "VIEW_MERGE_WINDOW_MS",
+      "resetSwitchTiming"
+    ]
+  },
+  "types": {
+    "src/features/accept-changes/types.ts": [
+      "AcceptChangesStep",
+      "StepStatus"
+    ],
+    "src/features/acp-official/types/base.ts": [
+      "SessionMode"
+    ],
+    "src/features/agent/browser/error-boundary.service.ts": [
+      "ErrorBoundaryOptions"
+    ],
+    "src/features/agent/components/agent-avatar/avatar-design.ts": [
+      "BuiltinAgentAvatarDesign",
+      "FallbackAgentAvatarDesign"
+    ],
+    "src/features/agent/services/active-streams-tracker.ts": [
+      "ActiveStream"
+    ],
+    "src/features/agent/services/agent-factory.ts": [
+      "CreateAgentResult",
+      "UnifiedAgentConfig"
+    ],
+    "src/features/auto-update/main/update-telemetry.ts": [
+      "TelemetryParams"
+    ],
+    "src/features/backend/main/backend-connection.ts": [
+      "RaceAttempt"
+    ],
+    "src/features/backend/main/client-identity.ts": [
+      "ClientHostIdentity"
+    ],
+    "src/features/backend/main/desktop-connections-store.ts": [
+      "connectionsStore.ConnectionRecord"
+    ],
+    "src/features/backend/main/intentd-orphan.ts": [
+      "ProcessExecutable"
+    ],
+    "src/features/backend/main/keychain-sync.ts": [
+      "HelperErrorCode",
+      "MigrationOutcome"
+    ],
+    "src/features/backend/main/orphan-recovery.ts": [
+      "KillOutcome"
+    ],
+    "src/features/backend/main/remote-machine-relay.ts": [
+      "RemoteMachineRpcClient"
+    ],
+    "src/features/browser-access/main/browser-access-server.ts": [
+      "LoginPageText"
+    ],
+    "src/features/browser/main/browser-exec-reverse.ts": [
+      "ExecuteBrowserActionsFn"
+    ],
+    "src/features/codex/main/codex-resolver.ts": [
+      "CodexResolvedMcpCommand"
+    ],
+    "src/features/debug-export/main/stack-sample.service.ts": [
+      "StackSampleResult"
+    ],
+    "src/features/desktop/main/desktop-windows.ts": [
+      "NativeWindow"
+    ],
+    "src/features/events/types.ts": [
+      "AgentCreatedEvent",
+      "AgentMessageEvent",
+      "AgentStatusChangedEvent",
+      "AgentStatusPayload",
+      "AgentSubscriptionsChangedEvent",
+      "AgentToolCallEvent",
+      "BuildEvent",
+      "FileChangedEvent",
+      "GitOperationEvent",
+      "NoteChangedEvent",
+      "ReadyTasksChangedEvent",
+      "TaskStatusChangedEvent",
+      "TerminalCommandEvent",
+      "TestEvent"
+    ],
+    "src/features/file-tracking/types.ts": [
+      "ChangeFilter",
+      "DiffHunk",
+      "WorkingChanges"
+    ],
+    "src/features/file-tracking/utils/tracking-excludes.ts": [
+      "FileTrackingExcludeCandidate",
+      "FileTrackingExcludeSummary"
+    ],
+    "src/features/git-roots/git-roots-service.ts": [
+      "GitRootEventData",
+      "GitRootFoldResult"
+    ],
+    "src/features/git-tracking/types.ts": [
+      "ChangeLocation",
+      "GitBranch",
+      "GitCommit",
+      "GitFileChange",
+      "GitFileStatus",
+      "PullRequest"
+    ],
+    "src/features/hardware-console/actions/action-key-registry.ts": [
+      "ActionKeyState"
+    ],
+    "src/features/hardware-console/led/clear-lighting.ts": [
+      "ClearHardwareConsoleLightingOptions",
+      "ClearLightingIpcLike"
+    ],
+    "src/features/hud/composer/dock-evidence-render.ts": [
+      "DockBurnOp"
+    ],
+    "src/features/hud/main/dock-evidence-session.ts": [
+      "DockEvidenceDependencies"
+    ],
+    "src/features/hud/takeover/hud-takeover-edges.ts": [
+      "HudTakeoverEdgePulse",
+      "HudTakeoverMapEdgeKind"
+    ],
+    "src/features/hud/takeover/hud-takeover-queue.ts": [
+      "HudTakeoverPhase"
+    ],
+    "src/features/hud/takeover/hud-takeover-routing.ts": [
+      "HudTakeoverEdgeRoute"
+    ],
+    "src/features/layout/main/panel-layout-history.repository.ts": [
+      "LayoutSnapshot",
+      "PanelLayoutHistoryRepository"
+    ],
+    "src/features/layout/tab-types/registry.ts": [
+      "TabTypeComponentLoader",
+      "TabTypeDefinition"
+    ],
+    "src/features/notes/note-presence/note-presence-service.ts": [
+      "NotePresenceListener"
+    ],
+    "src/features/notes/utils/task-block-parser.ts": [
+      "TasksBlockParseResult"
+    ],
+    "src/features/pr-monitor/pr-monitor-service.ts": [
+      "PrMonitorEventData",
+      "PrMonitorFoldResult"
+    ],
+    "src/features/remote-machines/start-on.ts": [
+      "StartOnCloudEntry"
+    ],
+    "src/features/scripts/detect-scripts.ts": [
+      "DetectedScriptCandidate",
+      "PackageManager"
+    ],
+    "src/features/setup-scripts/repo-config-probe.ts": [
+      "RepoConfigProbeOptions"
+    ],
+    "src/features/stats/stats-charts.ts": [
+      "GridLine"
+    ],
+    "src/features/voice/main/voice-local.ipc.ts": [
+      "VoiceRequestLocalAuthorizationSuccess",
+      "VoiceTranscribeLocalFailure",
+      "VoiceTranscribeLocalSuccess"
+    ],
+    "src/features/workspace/main/first-visit-state.repository.ts": [
+      "FirstVisitStateRepository"
+    ],
+    "src/features/workspace/utils/workspace-tab-navigation.ts": [
+      "WorkspaceTabDirection",
+      "WorkspaceTabMoveDirection"
+    ],
+    "src/lib/client/live/delta-subscription.ts": [
+      "DeltaPayload",
+      "SubscriptionPush"
+    ],
+    "src/lib/components/chat/chat-panel-draft.svelte.ts": [
+      "ChatDraftStorePort"
+    ],
+    "src/lib/components/chat/chat-scrollback-composition.ts": [
+      "SeekLandingScrollTopParams",
+      "SettleClassificationParams",
+      "SettleDriver",
+      "VirtualSpacerParams"
+    ],
+    "src/lib/components/chat/input/agent-model-mutator.ts": [
+      "SkippedMutation"
+    ],
+    "src/lib/components/chat/input/context-api.ts": [
+      "FileSearchResult",
+      "SymbolInfo"
+    ],
+    "src/lib/components/chat/input/slash-skill-command.ts": [
+      "SlashSkillSelection"
+    ],
+    "src/lib/components/chat/streaming-status-utils.ts": [
+      "CompletedEvent"
+    ],
+    "src/lib/components/layout/workspace-tab-context-actions.ts": [
+      "WorkspaceTabBulkCloseMode"
+    ],
+    "src/lib/components/patterns/form/create-form.svelte.ts": [
+      "CreateFormOptions",
+      "FormErrors"
+    ],
+    "src/lib/components/patterns/form/index.ts": [
+      "AutoSaveControl",
+      "CreateFormOptions",
+      "FormControlProps",
+      "FormErrors",
+      "SaveStatus"
+    ],
+    "src/lib/components/ui/component-metadata.ts": [
+      "UiComponentInventory"
+    ],
+    "src/lib/components/ui/panel-find-bar/types.ts": [
+      "PanelFindBarResultFormat"
+    ],
+    "src/lib/components/workspace/initializer/context-source-preference.ts": [
+      "ContextSourceProvider"
+    ],
+    "src/lib/components/workspace/initializer/issue-paging.ts": [
+      "PageResult"
+    ],
+    "src/lib/components/workspace/sidebar/sidebar-changes-utils.ts": [
+      "SelectionOrderedPRSections"
+    ],
+    "src/lib/components/workspace/sidebar/utils.ts": [
+      "ActivityChatTarget"
+    ],
+    "src/lib/components/workspace/utils/workspace-grouping.ts": [
+      "GroupKeyResult"
+    ],
+    "src/lib/components/workspace/workspace-phase.ts": [
+      "WorkspaceTaskProgressLike"
+    ],
+    "src/lib/services/mentions/registry.ts": [
+      "MentionChipAttrs",
+      "MentionTokenEntry"
+    ],
+    "src/lib/services/mentions/types.ts": [
+      "ValidationResult"
+    ],
+    "src/lib/utils/delete-warning-utils.ts": [
+      "GuestsWarning",
+      "LocalChangesWarning"
+    ],
+    "src/lib/utils/history-navigation.ts": [
+      "HistoryDirection"
+    ],
+    "src/lib/utils/messageParser.ts": [
+      "GroupedBlock"
+    ],
+    "src/lib/utils/palette-note-search.ts": [
+      "IndexedNoteMatch",
+      "IndexedNoteSearchResponse"
+    ],
+    "src/lib/utils/pr-status.ts": [
+      "PRForMergeability"
+    ],
+    "src/lib/utils/shortcuts.ts": [
+      "ShortcutContext"
+    ],
+    "src/lib/utils/workspace-utils.ts": [
+      "WorkspaceStage"
+    ],
+    "src/main/app-command-navigation.ts": [
+      "AppCommandHistoryDirection"
+    ],
+    "src/main/ipc-authorization.ts": [
+      "TrustedBrowserBridgeIpcContext"
+    ],
+    "src/main/memory-monitor.ts": [
+      "AppProcessMetric",
+      "ProcessTableEntry"
+    ],
+    "src/main/renderer-hang-monitor.ts": [
+      "RendererHangFrame"
+    ],
+    "src/shared/dock-speech.ts": [
+      "DockSpeechSegment"
+    ],
+    "src/shared/errors/messages.ts": [
+      "SupportedLocale"
+    ],
+    "src/shared/errors/recovery.ts": [
+      "RecoveryHint"
+    ],
+    "src/shared/ipc/channels.ts": [
+      "ChannelName"
+    ],
+    "src/shared/ipc/contracts.ts": [
+      "IpcContractMap"
+    ],
+    "src/shared/ipc/quit-confirmation.ts": [
+      "QuitBrowserTabSummary"
+    ],
+    "src/shared/ipc/workspace-command-payloads.ts": [
+      "BrowserSetTabViewportPayload"
+    ],
+    "src/shared/provider-auth-status.ts": [
+      "ProviderAuthIdentity"
+    ],
+    "src/shared/streaming-config.ts": [
+      "StreamingProfile",
+      "StreamingTimeoutConfig"
+    ],
+    "src/shared/types/native-review.ts": [
+      "NativeReviewBranchIdentity",
+      "NativeReviewGitReceipt",
+      "NativeReviewOutcome",
+      "NativeReviewPrepareExtension",
+      "NativeReviewPublication",
+      "NativeReviewStage",
+      "NativeReviewState",
+      "NativeReviewTransport"
+    ],
+    "src/shared/types/presence.ts": [
+      "PresenceTypingEntry"
+    ],
+    "src/shared/types/proposal-resource.ts": [
+      "ProposalResourceContents"
+    ],
+    "src/shared/types/repository-context.ts": [
+      "RepositoryAvailability",
+      "RepositoryCapability"
+    ],
+    "src/shared/types/resource-block-identity.ts": [
+      "ResourceBlockContents"
+    ],
+    "src/shared/utils/message-dedup.ts": [
+      "AgentSessionMessageMergeResult"
+    ],
+    "src/shared/utils/workspace-activity-time.ts": [
+      "WorkspaceActivityDisplayTime"
+    ],
+    "src/store/main/slices/agent-subscriptions/agent-subscriptions-slice.ts": [
+      "QueuedEventRecord"
+    ],
+    "src/store/renderer/mock-bootstrap.ts": [
+      "MockSeederContext"
+    ],
+    "src/store/renderer/retention-fingerprint.ts": [
+      "RetentionFingerprintSample",
+      "RetentionFingerprintState"
+    ],
+    "src/store/renderer/sagas.ts": [
+      "AppSaga"
+    ],
+    "src/store/renderer/slices/dock-conversation/sagas/dock-native-session-saga.ts": [
+      "DockNativeAdapter",
+      "DockNativeFactory"
+    ],
+    "src/store/renderer/slices/external-editors/external-editors-slice.ts": [
+      "SpecialAction"
+    ],
+    "src/store/renderer/slices/file-explorer/file-explorer-selectors.ts": [
+      "FileExplorerEnvironmentConfigTrigger"
+    ],
+    "src/store/renderer/slices/files/files-types.ts": [
+      "PreviewOnly"
+    ],
+    "src/store/renderer/slices/guest-sessions/guest-sessions-types.ts": [
+      "WorkspaceInvite"
+    ],
+    "src/store/renderer/slices/model/model-utils.ts": [
+      "ProviderModel"
+    ],
+    "src/store/renderer/slices/palette/palette-pick-memory.ts": [
+      "PalettePickWeights"
+    ],
+    "src/store/renderer/slices/panel-layout/offscreen-webview-eligibility.ts": [
+      "OffscreenEligibility",
+      "OffscreenEligibilityContext"
+    ],
+    "src/store/renderer/slices/provider-settings/sagas/provider-profiles-saga.ts": [
+      "ProfileAuthVerdict"
+    ],
+    "src/store/renderer/slices/tab-state/tab-state-slice.ts": [
+      "HandleDropInfo"
+    ],
+    "src/store/renderer/slices/ui-layout/ui-layout-slice.ts": [
+      "BottomDockState",
+      "WorkspaceSidebarPanelLayoutState"
+    ],
+    "src/store/renderer/slices/unread-tracking/sagas/unread-tracking-saga.ts": [
+      "DividerSessionBoundary"
+    ],
+    "src/store/renderer/slices/workspace-agents/workspace-agents-slice.ts": [
+      "AgentStreamUpdatePayload",
+      "BackendActiveStreamPayload",
+      "ForkAgentRequest"
+    ],
+    "src/store/renderer/slices/workspace-share/workspace-share-slice.ts": [
+      "WorkspaceRosterState"
+    ],
+    "src/store/renderer/utils/ipc-channel.ts": [
+      "IpcChannelBufferPolicy"
+    ]
+  },
+  "enumMembers": {
+    "src/features/acp-official/types/base.ts": [
+      "JsonRpcErrorCode.AuthRequired",
+      "JsonRpcErrorCode.InvalidParams",
+      "JsonRpcErrorCode.InvalidRequest",
+      "JsonRpcErrorCode.InvalidSession",
+      "JsonRpcErrorCode.PermissionDenied",
+      "JsonRpcErrorCode.RateLimitExceeded",
+      "JsonRpcErrorCode.ResourceConflict",
+      "JsonRpcErrorCode.SessionExpired",
+      "JsonRpcErrorCode.ToolExecutionFailed"
+    ],
+    "src/features/agent/errors/agent-errors.ts": [
+      "AgentErrorCode.AGENT_ALREADY_EXISTS",
+      "AgentErrorCode.AGENT_CREATION_FAILED",
+      "AgentErrorCode.CONCURRENT_LIMIT_EXCEEDED",
+      "AgentErrorCode.CONTEXT_OVERFLOW",
+      "AgentErrorCode.INVALID_AGENT_CONFIG",
+      "AgentErrorCode.INVALID_CONFIG",
+      "AgentErrorCode.INVALID_RESPONSE",
+      "AgentErrorCode.MEMORY_LIMIT_EXCEEDED",
+      "AgentErrorCode.MESSAGE_TOO_LONG",
+      "AgentErrorCode.MESSAGE_VALIDATION_FAILED",
+      "AgentErrorCode.PERMISSION_DENIED",
+      "AgentErrorCode.PROVIDER_ERROR",
+      "AgentErrorCode.PROVIDER_NOT_FOUND",
+      "AgentErrorCode.RATE_LIMIT_EXCEEDED",
+      "AgentErrorCode.RESOURCE_EXHAUSTED",
+      "AgentErrorCode.RESOURCE_NOT_FOUND",
+      "AgentErrorCode.SESSION_ALREADY_ACTIVE",
+      "AgentErrorCode.SESSION_INITIALIZATION_FAILED",
+      "AgentErrorCode.SESSION_NOT_FOUND",
+      "AgentErrorCode.STATE_CORRUPTION",
+      "AgentErrorCode.STORAGE_CORRUPTED",
+      "AgentErrorCode.STORAGE_ERROR",
+      "AgentErrorCode.STORAGE_QUOTA_EXCEEDED",
+      "AgentErrorCode.STREAM_RECOVERY_FAILED",
+      "AgentErrorCode.VALIDATION_ERROR"
+    ]
+  }
+}

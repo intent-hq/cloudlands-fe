@@ -1,0 +1,669 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ScriptWithState } from './types';
+import type { FileContentEntry } from '$store/renderer/slices/files/files-types';
+
+// FAKE seams: the daemon script.* (via appClient.scripts), the daemon file.read
+// (via appClient.files), and backendRequest (for repoConfig.save) are all
+// mocked, so no call reaches a real daemon or the mock router. The tests
+// assert the exact wire payloads: saveToRepo MUST source its scripts array
+// from the live daemon list (the legacy local store is empty in daemon builds
+// — forwarding nothing is what clobbered .intent/config.json with `scripts: []`),
+// send ONLY the `scripts` field (repoConfig.save merges the patch server-side;
+// rebuilding the full config from a stale repoConfig.get read is what reverted
+// setupScript in monorepo PR #270), and treat an empty list as a no-op.
+// detect() MUST diff manifest candidates against the live script.list before
+// upserting through `script.create` (scriptId upsert) so repeat clicks don't
+// duplicate rows, and MUST NOT send the upsert when the target script's
+// runtime status is live — anything outside the safe-to-upsert
+// `idle`/`exited` allowlist, e.g. `running` or `restarting` — because the
+// daemon-side upsert tears down the live PTY group (§5.8). Nor may
+// `script.remove` go out for a stale `running` row, for the same reason.
+// update() rides the same scriptId upsert and MUST apply the same
+// running-script guard: refuse with an error instead of sending
+// script.create.
+const { scriptsList, scriptsCreate, scriptsRemove, filesRead, backendRequestMock } = vi.hoisted(
+  () => ({
+    scriptsList: vi.fn<(workspaceId: string) => Promise<unknown[]>>(() => Promise.resolve([])),
+    scriptsCreate: vi.fn(() => Promise.resolve({ success: true })),
+    scriptsRemove: vi.fn(() => Promise.resolve({ success: true })),
+    filesRead: vi.fn<(workspaceId: string, path: string) => Promise<unknown>>(() =>
+      Promise.resolve(null),
+    ),
+    backendRequestMock: vi.fn(async (method: string, params: any) => {
+      if (method === 'script.remove') {
+        const result = await scriptsRemove(params.workspaceId, params.scriptId);
+        if (!result.success) throw new Error(result.error);
+        return { ok: true };
+      }
+      if (method === 'script.create') {
+        const { workspaceId, ...definition } = params;
+        const result = await scriptsCreate(workspaceId, definition);
+        if (!result.success) throw new Error(result.error);
+        return (
+          result.script ?? {
+            ...definition,
+            id: definition.scriptId,
+            workspaceId,
+            source: 'user',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            runtime: { status: 'idle', restartCount: 0 },
+          }
+        );
+      }
+      return { config: {} };
+    }),
+  }),
+);
+vi.mock('$lib/client', () => ({
+  appClient: {
+    scripts: {
+      list: scriptsList,
+      get: async (workspaceId: string, id: string) =>
+        (await scriptsList(workspaceId)).find((s: any) => s.id === id),
+      create: scriptsCreate,
+    },
+    files: { read: filesRead },
+  },
+}));
+vi.mock('$lib/client/live/backend-transport', () => ({
+  backendRequest: backendRequestMock,
+}));
+
+import { scriptsClient } from './scripts.test-helpers';
+import { store } from '$store/renderer/store';
+import { setScriptsData } from '$store/renderer/slices/scripts/scripts-slice';
+import { scriptsOperationSaga } from '$store/renderer/slices/scripts/sagas/scripts-operation-saga';
+import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
+import { setWorkspaceEntity } from '$store/renderer/slices/workspace/workspace-slice';
+
+let stop: () => void;
+beforeEach(() => {
+  store.dispose();
+  store.init();
+  admitLegacyPrincipal();
+  store.dispatch(setWorkspaceEntity({ id: 'ws-1', title: 'Scripts', myRole: 'owner' } as never));
+  stop = store.runSaga(scriptsOperationSaga);
+});
+afterEach(() => {
+  stop();
+  store.dispose();
+});
+
+function fileEntry(path: string, content: string): FileContentEntry {
+  return {
+    path,
+    absolutePath: null,
+    kind: 'editable-text',
+    originalContent: content,
+    localContent: content,
+    lastUpdated: 0,
+    loading: false,
+    saving: false,
+    error: null,
+    isBinary: false,
+    truncated: false,
+  };
+}
+
+/** Wire `filesRead` to respond from a fixed map of manifest → content. */
+function seedManifests(byPath: Record<string, string>): void {
+  filesRead.mockImplementation(async (_workspaceId, path) => {
+    const content = byPath[path];
+    return content !== undefined ? fileEntry(path, content) : null;
+  });
+}
+
+/** §5.8 `script.list` entry: camelCase definition + merged `runtime` block. */
+function liveScript(overrides: Partial<ScriptWithState> = {}): ScriptWithState {
+  return {
+    id: 'script-1',
+    workspaceId: 'ws-1',
+    name: 'dev',
+    command: 'pnpm dev',
+    mode: 'service',
+    source: 'user',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    runtime: { status: 'idle', restartCount: 0 },
+    ...overrides,
+  } as ScriptWithState;
+}
+
+describe('scripts operation saga: saveToRepo (repoConfig.save partial-update semantics)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('persists only the scripts field via repoConfig.save', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-dev',
+        name: 'dev',
+        command: 'pnpm dev',
+        mode: 'service',
+        category: 'dev',
+        cwd: 'packages/app',
+        env: { NODE_ENV: 'development' },
+        autoStart: true,
+        healthUrl: 'http://localhost:3100/health',
+        readyPattern: 'READY',
+      }),
+      liveScript({ id: 'script-test', name: 'test', command: 'pnpm test', mode: 'command' }),
+    ]);
+    backendRequestMock.mockResolvedValueOnce({ config: {} });
+
+    const result = await scriptsClient.saveToRepo('ws-1');
+
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
+    expect(backendRequestMock).toHaveBeenCalledTimes(1);
+    expect(backendRequestMock).toHaveBeenCalledWith('repoConfig.save', {
+      workspaceId: 'ws-1',
+      config: {
+        scripts: [
+          {
+            name: 'dev',
+            command: 'pnpm dev',
+            mode: 'service',
+            category: 'dev',
+            cwd: 'packages/app',
+            env: { NODE_ENV: 'development' },
+            autoStart: true,
+            healthUrl: 'http://localhost:3100/health',
+            readyPattern: 'READY',
+          },
+          { name: 'test', command: 'pnpm test', mode: 'command' },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('never fetches the existing config nor forwards unrelated fields (regression: stale full-object save reverted setupScript)', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({ name: 'build', command: 'pnpm build', mode: 'command' }),
+    ]);
+    backendRequestMock.mockResolvedValueOnce({ config: {} });
+
+    await scriptsClient.saveToRepo('ws-1');
+
+    expect(backendRequestMock).not.toHaveBeenCalledWith('repoConfig.get', expect.anything());
+    const [method, params] = backendRequestMock.mock.calls[0];
+    expect(method).toBe('repoConfig.save');
+    const config = (params as { config: object }).config;
+    expect(Object.keys(config)).toEqual(['scripts']);
+    expect(config).not.toHaveProperty('setupScript');
+    expect(config).not.toHaveProperty('branchPrefix');
+    expect(config).not.toHaveProperty('instructions');
+  });
+
+  it('omits undefined optional fields instead of shipping explicit undefined', async () => {
+    scriptsList.mockResolvedValueOnce([liveScript()]);
+    backendRequestMock.mockResolvedValueOnce({ config: {} });
+
+    await scriptsClient.saveToRepo('ws-1');
+
+    const saveCall = backendRequestMock.mock.calls[0];
+    const savedScripts = (saveCall[1] as { config: { scripts: object[] } }).config.scripts;
+    expect(savedScripts[0]).toEqual({ name: 'dev', command: 'pnpm dev', mode: 'service' });
+    expect(savedScripts[0]).not.toHaveProperty('category');
+    expect(savedScripts[0]).not.toHaveProperty('cwd');
+    expect(savedScripts[0]).not.toHaveProperty('env');
+    expect(savedScripts[0]).not.toHaveProperty('autoStart');
+  });
+
+  it('treats an empty live list as a no-op and never calls repoConfig.save', async () => {
+    scriptsList.mockResolvedValueOnce([]);
+
+    const result = await scriptsClient.saveToRepo('ws-1');
+
+    expect(backendRequestMock).not.toHaveBeenCalled();
+    expect(result.success).toBe(true);
+  });
+
+  it('surfaces a backendRequest failure envelope without masking it as success', async () => {
+    scriptsList.mockResolvedValueOnce([liveScript()]);
+    backendRequestMock.mockRejectedValueOnce(new Error('daemon offline'));
+
+    const result = await scriptsClient.saveToRepo('ws-1');
+
+    expect(result).toEqual({ success: false, error: 'daemon offline' });
+  });
+});
+
+describe('scripts operation saga: create purpose forwarding', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'preserves %s creation intent',
+    async (purpose) => {
+      const definition = liveScript({ mode: 'command', purpose: purpose ?? 'oneOff' });
+      scriptsCreate.mockResolvedValueOnce({ success: true, script: definition });
+      const input = {
+        name: 'test',
+        command: 'pnpm test',
+        mode: 'command' as const,
+        ...(purpose ? { purpose } : {}),
+      };
+      expect(await scriptsClient.create('ws-1', input)).toEqual({
+        success: true,
+        data: definition,
+      });
+      const sent = scriptsCreate.mock.calls[0][1];
+      if (purpose) expect(sent).toHaveProperty('purpose', purpose);
+      else expect(sent).not.toHaveProperty('purpose');
+    },
+  );
+});
+
+describe('scripts operation saga: update (script.create scriptId upsert, §5.8)', () => {
+  beforeEach(() =>
+    store.dispatch(setScriptsData('ws-1', [liveScript(), liveScript({ id: 'script-auto-dev' })])),
+  );
+  afterEach(() => vi.clearAllMocks());
+
+  it('merges partial updates into the existing definition and upserts via script.create with the existing scriptId', async () => {
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+      }),
+    ]);
+    scriptsCreate.mockResolvedValueOnce({ success: true });
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { command: 'pnpm dev' });
+
+    expect(scriptsList).toHaveBeenCalledWith('ws-1');
+    expect(scriptsCreate).toHaveBeenCalledTimes(1);
+    expect(scriptsCreate).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({
+        scriptId: 'script-auto-dev',
+        name: 'dev',
+        command: 'pnpm dev',
+        mode: 'service',
+        category: 'dev',
+      }),
+    );
+    expect(backendRequestMock).toHaveBeenCalledWith('script.create', {
+      workspaceId: 'ws-1',
+      scriptId: 'script-auto-dev',
+      name: 'dev',
+      command: 'pnpm dev',
+      mode: 'service',
+      category: 'dev',
+      cwd: undefined,
+      env: undefined,
+      autoStart: undefined,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'leaves stored %s purpose authoritative on an omitted-purpose update',
+    async (purpose) => {
+      scriptsList.mockResolvedValueOnce([liveScript({ mode: 'command', purpose })]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      await scriptsClient.update('ws-1', 'script-1', { name: 'renamed' });
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('purpose');
+    },
+  );
+
+  it('refuses the upsert when the target script is running — no script.create goes out on the wire', async () => {
+    // The scriptId upsert tears down the live PTY group daemon-side (§5.8),
+    // so update() must return a failure envelope naming the script instead
+    // of sending script.create.
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        source: 'auto-detected',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.update('ws-1', 'script-auto-dev', { name: 'renamed' });
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('"dev"');
+  });
+});
+
+describe('scripts operation saga: detect (fake files + daemon script.* seams)', () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it('reads manifests from the daemon and creates new auto-detected scripts', async () => {
+    seedManifests({
+      'package.json': JSON.stringify({ scripts: { dev: 'vite', test: 'vitest' } }),
+    });
+    scriptsList.mockResolvedValueOnce([]);
+    scriptsCreate.mockResolvedValue({ success: true });
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(filesRead).toHaveBeenCalledWith('ws-1', 'package.json');
+    expect(scriptsList).toHaveBeenCalledWith('ws-1', { archive: 'active' });
+    expect(scriptsCreate).toHaveBeenCalledTimes(2);
+    expect(scriptsCreate).toHaveBeenNthCalledWith(1, 'ws-1', {
+      name: 'dev',
+      command: 'npm run dev',
+      purpose: 'saved',
+      mode: 'service',
+      category: 'dev',
+      source: 'auto-detected',
+    });
+    expect(scriptsCreate).toHaveBeenNthCalledWith(2, 'ws-1', {
+      name: 'test',
+      command: 'npm run test',
+      purpose: 'saved',
+      mode: 'command',
+      category: 'test',
+      source: 'auto-detected',
+    });
+    expect(scriptsRemove).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      success: true,
+      detected: 2,
+      added: 2,
+      removed: 0,
+      packageManager: 'npm',
+    });
+  });
+
+  it('skips candidates whose name matches an existing user script (sacred) and does not upsert unchanged auto-detected rows', async () => {
+    seedManifests({
+      'package.json': JSON.stringify({ scripts: { dev: 'vite', build: 'tsc' } }),
+    });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-user-dev',
+        name: 'dev',
+        command: 'my-custom dev',
+        mode: 'service',
+        source: 'user',
+      }),
+      liveScript({
+        id: 'script-auto-build',
+        name: 'build',
+        command: 'npm run build',
+        mode: 'command',
+        category: 'build',
+        source: 'auto-detected',
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ success: true, detected: 2, added: 0, removed: 0 });
+  });
+
+  it('upserts an auto-detected script through script.create with the existing scriptId when the command changed', async () => {
+    // Existing row was auto-detected under yarn; the workspace now carries a
+    // pnpm-lock.yaml so the new command is `pnpm dev` — an upsert (not a
+    // create) that reuses the existing scriptId.
+    seedManifests({
+      'pnpm-lock.yaml': '',
+      'package.json': JSON.stringify({ scripts: { dev: 'vite' } }),
+    });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsCreate).toHaveBeenCalledTimes(1);
+    expect(scriptsCreate).toHaveBeenCalledWith(
+      'ws-1',
+      expect.objectContaining({
+        scriptId: 'script-auto-dev',
+        name: 'dev',
+        command: 'pnpm dev',
+        mode: 'service',
+        category: 'dev',
+      }),
+    );
+    expect(result).toMatchObject({ added: 0, removed: 0, packageManager: 'pnpm' });
+    expect(result).not.toHaveProperty('skippedRunning');
+  });
+
+  it.each(['saved', 'oneOff', undefined] as const)(
+    'does not reclassify existing %s detected commands',
+    async (purpose) => {
+      seedManifests({ 'package.json': JSON.stringify({ scripts: { test: 'vitest' } }) });
+      scriptsList.mockResolvedValueOnce([
+        liveScript({
+          name: 'test',
+          command: 'yarn test',
+          mode: 'command',
+          source: 'auto-detected',
+          purpose,
+        }),
+      ]);
+      scriptsCreate.mockResolvedValueOnce({ success: true });
+      await scriptsClient.detect('ws-1');
+      expect(scriptsCreate).toHaveBeenCalledTimes(1);
+      expect(scriptsCreate.mock.calls[0][1]).not.toHaveProperty('purpose');
+    },
+  );
+
+  it('never sends the script.create upsert when the target script is running — skips and reports it', async () => {
+    // Same changed-command diff as the upsert case above, but the existing
+    // auto-detected row is `running` per the daemon (§5.8 runtime block). The
+    // scriptId upsert would tear down the live PTY group daemon-side, so no
+    // script.create may go out on the wire; the script is reported back in
+    // `skippedRunning` instead.
+    seedManifests({
+      'pnpm-lock.yaml': '',
+      'package.json': JSON.stringify({ scripts: { dev: 'vite' } }),
+    });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      detected: 1,
+      added: 0,
+      removed: 0,
+      skippedRunning: ['dev'],
+    });
+  });
+
+  it('never sends the script.create upsert when the target script is restarting — skips and reports it', async () => {
+    // Same changed-command diff, but the daemon reports the auto-detected row
+    // as `restarting` (§5.8 runtime block) — a live transitional state. The
+    // guard is an allowlist (`idle`/`exited` are the only safe-to-upsert
+    // statuses), so no script.create may go out on the wire; the script is
+    // reported back in `skippedRunning` instead.
+    seedManifests({
+      'pnpm-lock.yaml': '',
+      'package.json': JSON.stringify({ scripts: { dev: 'vite' } }),
+    });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'yarn dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+        runtime: { status: 'restarting', pid: 4242, restartCount: 1 },
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      success: true,
+      detected: 1,
+      added: 0,
+      removed: 0,
+      skippedRunning: ['dev'],
+    });
+  });
+
+  it('removes stale auto-detected scripts whose name no longer appears in any manifest', async () => {
+    seedManifests({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'npm run dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+      }),
+      liveScript({
+        id: 'script-auto-stale',
+        name: 'stale',
+        command: 'npm run stale',
+        mode: 'command',
+        source: 'auto-detected',
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsRemove).toHaveBeenCalledTimes(1);
+    expect(scriptsRemove).toHaveBeenCalledWith('ws-1', 'script-auto-stale');
+    expect(result).toMatchObject({ detected: 1, added: 0, removed: 1 });
+  });
+
+  it('never sends script.remove for a stale row that is running — skips and reports it, still removing stale idle rows', async () => {
+    // Both rows are auto-detected and stale (no manifest produces their
+    // names), but the running one may not be removed: script.remove kills the
+    // live PTY group daemon-side. It is reported in `skippedRunning` and not
+    // counted in `removed`; the exited row is removed as usual.
+    seedManifests({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    scriptsList.mockResolvedValueOnce([
+      liveScript({
+        id: 'script-auto-dev',
+        name: 'dev',
+        command: 'npm run dev',
+        mode: 'service',
+        category: 'dev',
+        source: 'auto-detected',
+      }),
+      liveScript({
+        id: 'script-auto-stale-running',
+        name: 'stale-running',
+        command: 'npm run stale-running',
+        mode: 'service',
+        source: 'auto-detected',
+        runtime: { status: 'running', pid: 4242, restartCount: 0 },
+      }),
+      liveScript({
+        id: 'script-auto-stale-exited',
+        name: 'stale-exited',
+        command: 'npm run stale-exited',
+        mode: 'command',
+        source: 'auto-detected',
+        runtime: { status: 'exited', exitCode: 0, restartCount: 0 },
+      }),
+    ]);
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(scriptsRemove).toHaveBeenCalledTimes(1);
+    expect(scriptsRemove).toHaveBeenCalledWith('ws-1', 'script-auto-stale-exited');
+    expect(scriptsRemove).not.toHaveBeenCalledWith('ws-1', 'script-auto-stale-running');
+    expect(result).toMatchObject({
+      success: true,
+      detected: 1,
+      added: 0,
+      removed: 1,
+      skippedRunning: ['stale-running'],
+    });
+  });
+
+  it('surfaces a failure envelope when the manifest read throws', async () => {
+    filesRead.mockRejectedValueOnce(new Error('daemon offline'));
+
+    const result = await scriptsClient.detect('ws-1');
+
+    expect(result).toEqual({ success: false, error: 'daemon offline' });
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+  });
+
+  it('does not change definitions when active inventory is unavailable', async () => {
+    seedManifests({ 'package.json': JSON.stringify({ scripts: { dev: 'vite' } }) });
+    scriptsList.mockRejectedValueOnce(new Error('active script lists unavailable'));
+
+    expect(await scriptsClient.detect('ws-1')).toEqual({
+      success: false,
+      error: 'active script lists unavailable',
+    });
+    expect(scriptsCreate).not.toHaveBeenCalled();
+    expect(scriptsRemove).not.toHaveBeenCalled();
+  });
+
+  it.each(['create', 'update', 'remove'] as const)(
+    'reports a failed %s and stops before further script writes',
+    async (operation) => {
+      seedManifests({
+        'package.json': JSON.stringify({
+          scripts: operation === 'remove' ? {} : { dev: 'vite', test: 'vitest' },
+        }),
+      });
+      scriptsList.mockResolvedValueOnce(
+        operation === 'create'
+          ? []
+          : [
+              liveScript({ source: 'auto-detected' }),
+              liveScript({ id: 'script-2', name: 'stale', source: 'auto-detected' }),
+            ],
+      );
+      const method = operation === 'remove' ? 'script.remove' : 'script.create';
+      backendRequestMock.mockRejectedValueOnce(new Error('storage unavailable'));
+
+      expect(await scriptsClient.detect('ws-1')).toEqual({
+        success: false,
+        error: 'storage unavailable',
+      });
+      expect(backendRequestMock).toHaveBeenCalledOnce();
+      expect(backendRequestMock).toHaveBeenCalledWith(
+        method,
+        operation === 'remove'
+          ? { workspaceId: 'ws-1', scriptId: 'script-1' }
+          : {
+              workspaceId: 'ws-1',
+              name: 'dev',
+              command: 'npm run dev',
+              mode: 'service',
+              category: 'dev',
+              ...(operation === 'update'
+                ? { scriptId: 'script-1' }
+                : { purpose: 'saved', source: 'auto-detected' }),
+            },
+      );
+      expect(store.state.scripts.byWorkspaceId['ws-1'].detectionOperation).toBeUndefined();
+    },
+  );
+});

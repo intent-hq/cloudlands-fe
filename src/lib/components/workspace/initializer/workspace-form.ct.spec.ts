@@ -3,6 +3,28 @@ import WorkspaceForm from './workspace-form.preview.svelte';
 
 const dialogName = 'New Workspace';
 
+test('submission keeps the create control mounted without moving focus to context actions', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(WorkspaceForm, { props: { modal: true, scenario: 'selection-recovery' } });
+  const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+  const prompt = dialog.locator('[contenteditable=true]');
+  await prompt.fill('Keep the submission focus stable.');
+  const create = dialog.locator('[data-dialog-primary-action]');
+  const original = await create.elementHandle();
+  if (!original) throw new Error('The create control is missing');
+  await create.press('Enter');
+  await expect(page.getByTestId('workspace-submissions')).not.toHaveText('[]');
+  expect(await original.evaluate((element) => element.isConnected)).toBe(true);
+  await expect(dialog.getByRole('button', { name: 'Add context', exact: true })).not.toBeFocused();
+  await expect(create).toBeDisabled();
+  await testInfo.attach('workspace-submission-focus', {
+    body: await page.screenshot({ path: testInfo.outputPath('workspace-submission-focus.png') }),
+    contentType: 'image/png',
+  });
+});
+
 test('first workspace keeps adding a codebase discoverable with no repository history', async ({
   mount,
   page,
@@ -11,6 +33,7 @@ test('first workspace keeps adding a codebase discoverable with no repository hi
   await mount(WorkspaceForm, { props: { scenario: 'empty', modal: true } });
   const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
   await expect(dialog.getByRole('button', { name: /Create workspace/ })).toBeDisabled();
+  await expect(dialog.locator('[contenteditable=true]')).toBeFocused();
   await expect(dialog.getByRole('button', { name: /^Select a branch:/ })).toHaveCount(0);
   const codebase = dialog.getByRole('button', { name: /^Codebase\b/ });
   await codebase.click();
@@ -37,13 +60,9 @@ test('new workspace pickers restore focus and preserve the prompt when dismissed
   await mount(WorkspaceForm, { props: { modal: true } });
   const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
   const prompt = dialog.locator('[contenteditable=true]');
-  await prompt.fill('Refine the workspace navigation.');
-  for (const name of [/^Add context$/, /^Start dictation$/, /^Add files/]) {
-    await dialog.getByRole('button', { name }).hover();
-    await expect(page.getByRole('tooltip')).toBeVisible();
-    await prompt.hover();
-    await expect(page.getByRole('tooltip')).toBeHidden();
-  }
+  await expect(prompt).toBeFocused();
+  await page.keyboard.type('Refine the workspace navigation.');
+  await expect(prompt).toHaveText('Refine the workspace navigation.');
   const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
   await branch.focus();
   await branch.press('Enter');
@@ -252,6 +271,7 @@ test('setup search applies choices and edit or create keeps drafts staged until 
   mount,
   page,
 }, testInfo) => {
+  test.setTimeout(60_000);
   await page.setViewportSize({ width: 1200, height: 800 });
   await mount(WorkspaceForm, { props: { modal: true } });
   const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
@@ -374,3 +394,461 @@ test('a missing repository keeps creation disabled without losing the draft', as
     contentType: 'image/png',
   });
 });
+
+const LAYOUT_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAeklEQVR42g3JIQEEIRAAwE93IQixAZAIAiCQBNgAyBFEINEzdn5fKCFCCzNkEG74fVWpomrVrLJS3fqiK110rZtddrrbXwxliKENc8jBcMeLpSyxtGUuuVjuepFKitTSTJmkmy+2ssXWtrnlZrv7xVGOONoxjzwc9/gDMGt4gVaPnpMAAAAASUVORK5CYII=',
+  'base64',
+);
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`attachments keep the first agent on the chosen machine (${theme})`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1100, height: 640 });
+    if (theme === 'dark')
+      await page.addInitScript(() => document.documentElement.classList.add('dark'));
+    await mount(WorkspaceForm, { props: { scenario: 'remote-attachments', modal: true } });
+    if (theme === 'dark') await page.evaluate(() => document.documentElement.classList.add('dark'));
+    const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+    const machine = dialog.getByRole('button', { name: /^Machine / });
+    await expect(machine).toContainText('Mac mini');
+    await dialog.locator('[contenteditable=true]').fill('Fix the layout in the screenshot');
+    await dialog
+      .locator('input[type=file]')
+      .first()
+      .setInputFiles([
+        { name: 'layout.png', mimeType: 'image/png', buffer: LAYOUT_PNG },
+        { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('Steps to reproduce') },
+      ]);
+    await expect(dialog.getByTestId('new-workspace-attachments')).toBeVisible();
+    await expect(dialog.getByTestId('start-on-locked-reason')).toHaveCount(0);
+    await expect(machine).toBeEnabled();
+    await expect(machine).toContainText('Mac mini');
+    await testInfo.attach(`remote-attachments-${theme}`, {
+      body: await page.screenshot({ path: testInfo.outputPath(`remote-attachments-${theme}.png`) }),
+      contentType: 'image/png',
+    });
+  });
+}
+
+// These regressions exercise the real modal and picker, including their keyboard boundaries.
+for (const acceptance of ['Add codebase', 'history'] as const) {
+  test(`workspace selection recovery retains branch and draft through ${acceptance}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    // Two representative captures, not a theme/viewport cross-product.
+    await page.setViewportSize({
+      width: acceptance === 'history' ? 390 : 1200,
+      height: 800,
+    });
+    await mount(WorkspaceForm, { props: { modal: true, scenario: 'selection-recovery' } });
+    if (acceptance === 'history') {
+      await page.evaluate(() => document.documentElement.classList.add('dark'));
+    }
+    const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+    const create = dialog.getByRole('button', { name: /Create workspace/ });
+    const prompt = dialog.locator('[contenteditable=true]');
+    const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
+    await expect(create).toBeEnabled();
+    await prompt.fill('Keep my recovery draft.');
+    await branch.click();
+    await page.getByRole('option', { name: 'release/next', exact: true }).click();
+    await expect(branch).toContainText('release/next');
+    await testInfo.attach('before-reaccepting', {
+      body: await page.screenshot({ path: testInfo.outputPath('before-reaccepting.png') }),
+      contentType: 'image/png',
+    });
+    const requestsBefore = await page.getByTestId('workspace-branch-requests').textContent();
+    const codebase = dialog.getByRole('button', { name: /^Codebase\b/ });
+    await codebase.click();
+    const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
+    if (acceptance === 'Add codebase') {
+      await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+      const input = picker.getByRole('combobox');
+      await expect(input).toHaveValue('intent-hq/intent');
+      await input.press('Enter');
+    } else {
+      await picker.getByRole('button', { name: /intent-hq.*intent/ }).press('Enter');
+    }
+    await expect(picker).toBeHidden();
+    await expect(dialog).toBeVisible();
+    await expect(codebase).toBeFocused();
+    await expect(branch).toContainText('release/next');
+    await expect(create).toBeEnabled();
+    await expect(prompt).toHaveText('Keep my recovery draft.');
+    await expect(page.getByTestId('workspace-submissions')).toHaveText('[]');
+    await expect(page.getByTestId('workspace-branch-requests')).toHaveText(requestsBefore!);
+    await testInfo.attach('after-reaccepting', {
+      body: await page.screenshot({ path: testInfo.outputPath('after-reaccepting.png') }),
+      contentType: 'image/png',
+    });
+    await testInfo.attach('selection-recovery.json', {
+      body: JSON.stringify({
+        acceptance,
+        branch: await branch.innerText(),
+        ready: await create.isEnabled(),
+        draft: await prompt.innerText(),
+        branchRequests: JSON.parse(requestsBefore!),
+      }),
+      contentType: 'application/json',
+    });
+    await create.click();
+    await expect(page.getByTestId('workspace-submissions')).toHaveText(
+      JSON.stringify([
+        {
+          repoPath: 'intent-hq/intent',
+          branch: 'release/next',
+          prompt: 'Keep my recovery draft.',
+        },
+      ]),
+    );
+    await testInfo.attach('retained-branch-submission.json', {
+      body: (await page.getByTestId('workspace-submissions').textContent())!,
+      contentType: 'application/json',
+    });
+  });
+}
+
+test('workspace selection recovery carries a pasted URL into Add and waits for its own branch', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(WorkspaceForm, { props: { modal: true, scenario: 'selection-recovery' } });
+  const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+  const create = dialog.getByRole('button', { name: /Create workspace/ });
+  const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
+  const prompt = dialog.locator('[contenteditable=true]');
+  await expect(create).toBeEnabled();
+  await prompt.fill('Create the new application.');
+  await branch.click();
+  await page.getByRole('option', { name: 'release/next', exact: true }).click();
+  await dialog.getByRole('button', { name: /^Codebase\b/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
+  await picker.getByRole('searchbox').fill('https://github.com/fixture-owner/new-app');
+  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  const input = picker.getByRole('combobox');
+  await expect(input).toHaveValue('fixture-owner/new-app');
+  await input.press('Enter');
+  await expect(picker).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /^Codebase\b/ })).toContainText('new-app');
+  await expect(page.getByTestId('workspace-branch-requests')).toContainText(
+    '"repository":"fixture-owner/new-app","status":"loading"',
+  );
+  await expect(create).toBeDisabled();
+  await expect(branch).not.toContainText('release/next');
+  await testInfo.attach('new-repository-loading', {
+    body: await page.screenshot({ path: testInfo.outputPath('new-repository-loading.png') }),
+    contentType: 'image/png',
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('workspace-form:release-branches')));
+  await expect(branch).toContainText('develop');
+  await expect(create).toBeEnabled();
+  await expect(prompt).toHaveText('Create the new application.');
+  await testInfo.attach('new-repository-ready', {
+    body: await page.screenshot({ path: testInfo.outputPath('new-repository-ready.png') }),
+    contentType: 'image/png',
+  });
+  await testInfo.attach('selection-recovery.json', {
+    body: JSON.stringify({
+      branch: await branch.innerText(),
+      ready: await create.isEnabled(),
+      draft: await prompt.innerText(),
+      branchRequests: JSON.parse(
+        (await page.getByTestId('workspace-branch-requests').textContent())!,
+      ),
+    }),
+    contentType: 'application/json',
+  });
+});
+
+for (const invalid of ['', 'not a repository']) {
+  test(`workspace selection recovery rejects ${invalid ? 'invalid' : 'empty'} Add input after detection`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await mount(WorkspaceForm, { props: { modal: true, scenario: 'selection-recovery' } });
+    const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+    await expect(dialog.getByRole('button', { name: /Create workspace/ })).toBeEnabled();
+    await dialog.getByRole('button', { name: /^Codebase\b/ }).click();
+    const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
+    await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+    const input = picker.getByRole('combobox');
+    await input.fill('https://github.com/fixture-owner/new-app');
+    await expect(picker.getByRole('button', { name: 'Select', exact: true })).toBeVisible();
+    await input.fill(invalid);
+    await input.press('Enter');
+    await expect(picker).toBeVisible();
+    await expect(input).toHaveValue(invalid);
+    await expect(dialog.getByRole('button', { name: /^Codebase\b/ })).toContainText('intent');
+    await expect(page.getByTestId('workspace-branch-requests')).not.toContainText('new-app');
+    await testInfo.attach('invalid-add-input', {
+      body: await page.screenshot({ path: testInfo.outputPath('invalid-add-input.png') }),
+      contentType: 'image/png',
+    });
+  });
+}
+
+test('workspace selection recovery keeps the same repository access error blocking creation', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(WorkspaceForm, { props: { modal: true, scenario: 'selection-access-error' } });
+  const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+  const create = dialog.getByRole('button', { name: /Create workspace/ });
+  const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
+  await expect(page.getByTestId('workspace-branch-requests')).toContainText('no-access');
+  await expect(create).toBeDisabled();
+  await branch.click();
+  const branchPicker = page.getByRole('dialog', { name: 'Branch', exact: true });
+  await expect(branchPicker.getByText("You don't have access to this repository.")).toBeVisible();
+  await page.keyboard.press('Escape');
+  await dialog.getByRole('button', { name: /^Codebase\b/ }).click();
+  const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
+  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  await picker.getByRole('combobox').press('Enter');
+  await expect(picker).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(create).toBeDisabled();
+  await branch.click();
+  await expect(branchPicker.getByText("You don't have access to this repository.")).toBeVisible();
+  await testInfo.attach('same-repository-access-error', {
+    body: await page.screenshot({ path: testInfo.outputPath('same-repository-access-error.png') }),
+    contentType: 'image/png',
+  });
+});
+
+test('workspace selection recovery ignores a late branch response after switching back', async ({
+  mount,
+  page,
+}, testInfo) => {
+  await mount(WorkspaceForm, { props: { modal: true, scenario: 'selection-recovery' } });
+  const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+  const create = dialog.getByRole('button', { name: /Create workspace/ });
+  const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
+  const codebase = dialog.getByRole('button', { name: /^Codebase\b/ });
+  const picker = page.getByRole('dialog', { name: 'Codebase', exact: true });
+  await expect(create).toBeEnabled();
+  await codebase.click();
+  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  await picker.getByRole('combobox').fill('fixture-owner/new-app');
+  await picker.getByRole('combobox').press('Enter');
+  await expect(page.getByTestId('workspace-branch-requests')).toContainText(
+    '"repository":"fixture-owner/new-app","status":"loading"',
+  );
+  await expect(create).toBeDisabled();
+  await codebase.click();
+  await picker.getByRole('button', { name: 'Add codebase', exact: true }).click();
+  await picker.getByRole('combobox').fill('intent-hq/intent');
+  await picker.getByRole('combobox').press('Enter');
+  await expect(codebase).toContainText('intent');
+  await expect(branch).toContainText('trunk');
+  await expect(create).toBeEnabled();
+  await page.evaluate(() => window.dispatchEvent(new Event('workspace-form:release-branches')));
+  await expect(page.getByTestId('workspace-branch-requests')).toContainText(
+    '"repository":"fixture-owner/new-app","status":"ready"',
+  );
+  await expect(branch).toContainText('trunk');
+  await expect(create).toBeEnabled();
+  await testInfo.attach('late-response-ignored', {
+    body: await page.screenshot({ path: testInfo.outputPath('late-response-ignored.png') }),
+    contentType: 'image/png',
+  });
+});
+
+// Opening contracts intentionally never open either picker, except the explicit retry case.
+const openingCases = [
+  { scenario: 'opening-cold', name: 'cold lookup selects its default', expected: 'trunk' },
+  { scenario: 'opening-saved', name: 'confirms a remembered branch', expected: 'main' },
+  { scenario: 'opening-stale', name: 'replaces a missing remembered branch', expected: 'trunk' },
+  {
+    scenario: 'opening-error',
+    name: 'stays unselected on failure and recovers on retry',
+    expected: 'main',
+  },
+  { scenario: 'opening-empty', name: 'stays unselected with no branches', expected: null },
+  { scenario: 'opening-warm', name: 'reconciles cached and fresh defaults', expected: 'trunk' },
+  {
+    scenario: 'opening-hydration',
+    name: 'restores the repository after mount',
+    expected: 'main',
+  },
+] as const;
+
+for (const opening of openingCases) {
+  test(`workspace form opening ${opening.name}`, async ({ mount, page }, testInfo) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await mount(WorkspaceForm, { props: { modal: true, scenario: opening.scenario } });
+    const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+    const create = dialog.getByRole('button', { name: /Create workspace/ });
+    const prompt = dialog.locator('[contenteditable=true]');
+    const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
+    const requests = page.getByTestId('workspace-branch-requests');
+    const submissions = page.getByTestId('workspace-submissions');
+    const hydration = page.getByTestId('workspace-hydrated');
+    const draft = 'Keep my opening draft.';
+    await expect(dialog).toBeVisible();
+    await prompt.fill(draft);
+    await prompt.focus();
+
+    async function capture(state: string) {
+      await testInfo.attach(`opening-${state}`, {
+        body: await page.screenshot({ path: testInfo.outputPath(`opening-${state}.png`) }),
+        contentType: 'image/png',
+      });
+      await testInfo.attach(`opening-${state}.json`, {
+        body: JSON.stringify({
+          scenario: opening.scenario,
+          hydrated: await hydration.textContent(),
+          branch: (await branch.count()) ? await branch.innerText() : null,
+          ready: await create.isEnabled(),
+          draft: await prompt.innerText(),
+          promptFocused: await prompt.evaluate((element) => element === document.activeElement),
+          requests: JSON.parse((await requests.textContent())!),
+          submissions: JSON.parse((await submissions.textContent())!),
+        }),
+        contentType: 'application/json',
+      });
+    }
+
+    if (opening.scenario === 'opening-hydration') {
+      // This must be an initial hydration, not a second action on an already-hydrated slice.
+      await expect(hydration).toHaveText('false');
+      await expect(branch).toHaveCount(0);
+      await expect(create).toBeDisabled();
+      await expect(requests).toHaveText('[]');
+      await capture('before-hydration');
+      await page.evaluate(() =>
+        window.dispatchEvent(new Event('workspace-form:release-hydration')),
+      );
+      await expect(hydration).toHaveText('true');
+    }
+    await expect(requests).toContainText('"status":"loading"');
+    await expect(submissions).toHaveText('[]');
+    if (opening.scenario === 'opening-warm') {
+      await expect(branch).toContainText('cached-default');
+      await expect(create).toBeEnabled();
+    } else {
+      await expect(create).toBeDisabled();
+      await expect(branch).toBeVisible();
+      await expect(branch).not.toContainText('main');
+    }
+    await expect(prompt).toHaveText(draft);
+    await expect(prompt).toBeFocused();
+    await capture('pending');
+    await page.evaluate(() => window.dispatchEvent(new Event('workspace-form:release-branches')));
+
+    if (opening.scenario === 'opening-error' || opening.scenario === 'opening-empty') {
+      await expect(requests).toContainText(
+        opening.scenario === 'opening-error' ? '"status":"error"' : '"status":"empty"',
+      );
+      await expect(create).toBeDisabled();
+      await expect(branch).not.toContainText('main');
+      await expect(prompt).toHaveText(draft);
+      await expect(prompt).toBeFocused();
+      await expect(submissions).toHaveText('[]');
+      await capture('blocked');
+      if (opening.scenario === 'opening-empty') return;
+      // Only recovery uses the picker; valid opening data needs no such interaction.
+      await branch.click();
+      const picker = page.getByRole('dialog', { name: 'Branch', exact: true });
+      await picker.getByRole('button', { name: 'Refresh branches', exact: true }).click();
+      await expect(requests).toContainText('"status":"retry-ready"');
+      await page.keyboard.press('Escape');
+      await expect(picker).toBeHidden();
+    } else {
+      await expect(requests).toContainText('"status":"ready"');
+      await expect(prompt).toBeFocused();
+    }
+    await expect(branch).toContainText(opening.expected!);
+    await expect(create).toBeEnabled();
+    await expect(prompt).toHaveText(draft);
+    await expect(submissions).toHaveText('[]');
+    await capture('ready');
+    await create.click();
+    await expect(submissions).toHaveText(
+      JSON.stringify([{ repoPath: 'intent-hq/intent', branch: opening.expected, prompt: draft }]),
+    );
+    await testInfo.attach('opening-submission.json', {
+      body: (await submissions.textContent())!,
+      contentType: 'application/json',
+    });
+  });
+}
+
+for (const explicitBranch of [false, true]) {
+  test(`workspace form opening late same-repository prefill ${explicitBranch ? 'honors an explicit branch' : 'retains the validated branch'}`, async ({
+    mount,
+    page,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await mount(WorkspaceForm, { props: { modal: true, scenario: 'opening-late-prefill' } });
+    const dialog = page.getByRole('dialog', { name: dialogName, exact: true });
+    const create = dialog.getByRole('button', { name: /Create workspace/ });
+    const branch = dialog.getByRole('button', { name: /^Select a branch:/ });
+    const prompt = dialog.locator('[contenteditable=true]');
+    const requests = page.getByTestId('workspace-branch-requests');
+    const submissions = page.getByTestId('workspace-submissions');
+    const applications = page.getByTestId('workspace-prefill-applications');
+    const draft = 'Keep my late prefill draft.';
+    await expect(requests).toContainText('"repository":"/fixture/prefill","status":"ready"');
+    await expect(branch).toContainText('release/next');
+    await expect(create).toBeEnabled();
+    await prompt.fill(draft);
+    await prompt.focus();
+    const originalPrompt = await prompt.elementHandle();
+    const initialRequests = (await requests.textContent())!;
+    await expect(submissions).toHaveText('[]');
+    await expect(applications).toHaveText('0');
+    await testInfo.attach('before-late-prefill', {
+      body: await page.screenshot({ path: testInfo.outputPath('before-late-prefill.png') }),
+      contentType: 'image/png',
+    });
+    // Invoke the real public method after branch validation, with the same local identity.
+    // No parent state mutation, remount, branch picker click or fabricated branch event.
+    await page.evaluate((override) => {
+      sessionStorage.setItem(
+        'workspace-prefill',
+        JSON.stringify({ repoPath: '/fixture/prefill', ...(override ? { branch: 'trunk' } : {}) }),
+      );
+      window.dispatchEvent(new Event('workspace-form:apply-late-prefill'));
+    }, explicitBranch);
+    await expect(applications).toHaveText('1');
+    expect(await page.evaluate(() => sessionStorage.getItem('workspace-prefill'))).toBeNull();
+    const expectedBranch = explicitBranch ? 'trunk' : 'release/next';
+    await expect(branch).toContainText(expectedBranch);
+    await expect(create).toBeEnabled();
+    await expect(requests).toHaveText(initialRequests);
+    await expect(prompt).toHaveText(draft);
+    await expect(prompt).toBeFocused();
+    expect(await prompt.evaluate((element, original) => element === original, originalPrompt)).toBe(
+      true,
+    );
+    await expect(submissions).toHaveText('[]');
+    await testInfo.attach('after-late-prefill', {
+      body: await page.screenshot({ path: testInfo.outputPath('after-late-prefill.png') }),
+      contentType: 'image/png',
+    });
+    await testInfo.attach('late-prefill.json', {
+      body: JSON.stringify({
+        explicitBranch,
+        branch: await branch.innerText(),
+        ready: await create.isEnabled(),
+        draft: await prompt.innerText(),
+        prefillApplications: await applications.textContent(),
+        branchRequests: JSON.parse((await requests.textContent())!),
+      }),
+      contentType: 'application/json',
+    });
+    await create.click();
+    await expect(submissions).toHaveText(
+      JSON.stringify([{ repoPath: '/fixture/prefill', branch: expectedBranch, prompt: draft }]),
+    );
+    await testInfo.attach('late-prefill-submission.json', {
+      body: (await submissions.textContent())!,
+      contentType: 'application/json',
+    });
+  });
+}

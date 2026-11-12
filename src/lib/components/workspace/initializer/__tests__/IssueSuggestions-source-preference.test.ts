@@ -118,18 +118,9 @@ warmImport(() => import('./mocks/MockComponent.svelte'));
 warmImport(() => import('./mocks/MockTooltipRich.svelte'));
 
 describe('IssueSuggestions source preference + provider ordering', () => {
-  // The global test setup replaces window.localStorage with a non-storing
-  // vi.fn mock; back it with an in-memory store so persistence is observable.
-  let storage: Map<string, string>;
-
   beforeEach(() => {
     vi.useFakeTimers();
     mocks.dispatch.mockClear();
-    storage = new Map();
-    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-      storage.set(key, String(value));
-    });
     linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: false });
     linearMocks.fetchMyIssuesPage.mockResolvedValue({ issues: [], nextToken: null });
   });
@@ -137,10 +128,6 @@ describe('IssueSuggestions source preference + provider ordering', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
-    // Restore the global test-setup behavior so mocked storage does not leak
-    // into other test files.
-    vi.mocked(localStorage.getItem).mockImplementation(() => null);
-    vi.mocked(localStorage.setItem).mockImplementation(() => undefined);
   });
 
   async function settle(ms = 200): Promise<void> {
@@ -188,7 +175,7 @@ describe('IssueSuggestions source preference + provider ordering', () => {
     expect(issueButton).toBeTruthy();
     await fireEvent.click(issueButton!);
 
-    expect(storage.get(LAST_SOURCE_STORAGE_KEY)).toBe('linear');
+    expect(localStorage.getItem(LAST_SOURCE_STORAGE_KEY)).toBe('linear');
 
     cleanup();
     render(IssueSuggestions, { props: { initiallyExpanded: true } });
@@ -229,11 +216,11 @@ describe('IssueSuggestions source preference + provider ordering', () => {
     await settle();
 
     expect(screen.getByPlaceholderText('Search Linear issues...')).toBeTruthy();
-    expect(storage.has(LAST_SOURCE_STORAGE_KEY)).toBe(false);
+    expect(localStorage.getItem(LAST_SOURCE_STORAGE_KEY)).toBeNull();
   });
 
   it('initialSource overrides a different persisted value and stays locked through auth resolution', async () => {
-    storage.set(LAST_SOURCE_STORAGE_KEY, 'linear');
+    localStorage.setItem(LAST_SOURCE_STORAGE_KEY, 'linear');
     linearMocks.getAuthState.mockResolvedValue({ isAuthenticated: true });
 
     render(IssueSuggestions, { props: { initiallyExpanded: true, initialSource: 'sentry' } });

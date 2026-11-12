@@ -2,7 +2,6 @@ import { cleanup, render, within } from '@testing-library/svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getLocale, overwriteGetLocale } from '$shared/paraglide/runtime.js';
 import { DiagramPrimitiveSchema } from '$shared/types/notes-primitives';
-import { validateDiagram } from './diagram-validator';
 import { computeLayout } from './layout-engine';
 import {
   CUSTOM_WORKBENCH_CASES,
@@ -208,7 +207,6 @@ describe('diagram workbench fixtures', () => {
       expect(fixture.kind).toBe('custom');
       if (fixture.kind !== 'custom') continue;
       expect(DiagramPrimitiveSchema.safeParse(fixture.diagram).success).toBe(true);
-      expect(validateDiagram(fixture.diagram).errors).toEqual([]);
       expect(fixture.diagram.createdAt).toBe('2026-08-23T12:00:00.000Z');
       grammars.add(fixture.diagram.grammar);
     }

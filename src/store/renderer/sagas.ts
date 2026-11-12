@@ -10,6 +10,8 @@ import { invitationAccountSearchSaga } from './slices/invitation-account-search/
 import { hostUserPresenceSaga } from './slices/host-membership/sagas/host-user-presence-saga';
 import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { remoteMachinesSaga } from '$features/remote-machines/remote-machines-saga';
+import { nodesSaga } from '$features/nodes/nodes-saga';
+import { cloudMachinesSaga } from '$features/cloud-machines/cloud-machines-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
 import { repositoryCheckoutSaga } from './slices/repository-checkout/sagas/repository-checkout-saga';
@@ -96,11 +98,11 @@ import { browserTabRegistrySaga } from './slices/panel-layout/sagas/browser-tab-
 import { panelLayoutSaga } from './slices/panel-layout/sagas/panel-layout-saga';
 import { permissionResponseSaga } from './slices/permission/sagas/permission-response-saga';
 import { powerSaga } from './slices/power/sagas/power-saga';
+import { machineRailSaga } from './slices/machine-rail/sagas/machine-rail-saga';
 import { proposalLifecycleSaga } from './slices/proposal-lifecycle/sagas/proposal-lifecycle-saga';
 import { questionUiPersistenceSaga } from './slices/question-ui/sagas/question-ui-persistence-saga';
 import { secretRequestsSaga } from './slices/secret-requests/sagas/secret-requests-saga';
 import { providerSettingsSaga } from './slices/provider-settings/sagas/provider-settings-saga';
-import { antigravitySetupSaga } from './slices/antigravity-setup/sagas/antigravity-setup-saga';
 import { scriptMonitorSaga } from './slices/script-monitor/sagas/script-monitor-saga';
 import { agentWorkersSaga } from './slices/agent-workers/sagas/agent-workers-saga';
 import { prMonitorSaga } from './slices/pr-monitor/sagas/pr-monitor-saga';
@@ -113,9 +115,12 @@ import { setupPromptSaga } from './slices/setup-prompt/sagas/setup-prompt-saga';
 import { sidebarNavSaga } from './slices/sidebar-nav/sagas/sidebar-nav-saga';
 import { specialistProposalHistorySaga } from './slices/specialist-proposal-history/sagas/specialist-proposal-history-saga';
 import { workspaceCatalogSaga } from './slices/provider-catalog/workspace-catalog-saga';
+import { agentSkillsSaga } from './slices/skills/agent-skills-saga';
 import { specialistsSaga } from './slices/specialists/sagas/specialists-saga';
 import { statsReadSaga } from './slices/stats/sagas/stats-read-saga';
+import { pluginsSettingsSaga } from './slices/plugins-settings/sagas/plugins-settings-saga';
 import { tabStateSaga } from './slices/tab-state/sagas/tab-state-saga';
+import { paletteMemorySaga } from './slices/palette/sagas/palette-memory-saga';
 import { proposalWorkspaceTabSaga } from './slices/tab-state/sagas/proposal-workspace-tab-saga';
 import { workspaceTabReconciliationSaga } from './slices/tab-state/sagas/workspace-tab-reconciliation-saga';
 import { workspaceTabCleanupSaga } from './slices/workspace-lifecycle/sagas/workspace-tab-cleanup-saga';
@@ -145,6 +150,7 @@ import { workspaceNotesSaga } from './slices/workspace-notes/sagas/workspace-not
 import { workspaceOperationsSaga } from './slices/workspace-operations/sagas/workspace-operations-saga';
 import { workspaceSettingsSaga } from './slices/workspace-settings/sagas/workspace-settings-saga';
 import { workspaceTransferSaga } from './slices/workspace-transfer/sagas/workspace-transfer-saga';
+import { workspaceBulkTransferSaga } from './slices/workspace-bulk-transfer/sagas/workspace-bulk-transfer-saga';
 import { workspaceShareSaga } from './slices/workspace-share/sagas/workspace-share-saga';
 import { workspaceImportSaga } from './slices/workspace-import/sagas/workspace-import-saga';
 
@@ -213,6 +219,7 @@ export const sagas = [
   workspaceNavigationLayoutSaga,
   workspaceOperationsSaga,
   workspaceTransferSaga,
+  workspaceBulkTransferSaga,
   workspaceShareSaga,
   invitationAccountSearchSaga,
   hostMembershipSaga,
@@ -226,7 +233,6 @@ export const sagas = [
   modelSelectionSaga,
   backgroundAgentSettingsSaga,
   providerSettingsSaga,
-  antigravitySetupSaga,
   modelBootSaga,
   modelReloadSaga,
   providerAvailabilitySaga,
@@ -237,9 +243,11 @@ export const sagas = [
   dockConversationSaga,
   themeSaga,
   powerSaga,
+  machineRailSaga,
   autoUpdateSaga,
   specialistsSaga,
   workspaceCatalogSaga,
+  agentSkillsSaga,
   proposalLifecycleSaga,
   questionUiPersistenceSaga,
   secretRequestsSaga,
@@ -254,12 +262,14 @@ export const sagas = [
   mcpSettingsSaga,
   directoryPickerSaga,
   statsReadSaga,
+  pluginsSettingsSaga,
   prMonitorSaga,
   scriptMonitorSaga,
   agentWorkersSaga,
   gitRootsSaga,
   uiLayoutPersistenceSaga,
   tabStateSaga,
+  paletteMemorySaga,
   workspaceTabReconciliationSaga,
   proposalWorkspaceTabSaga,
   workspaceTabCleanupSaga,
@@ -272,6 +282,8 @@ export const sagas = [
   browserClientsSaga,
   personalDevicesSaga,
   remoteMachinesSaga,
+  nodesSaga,
+  cloudMachinesSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,

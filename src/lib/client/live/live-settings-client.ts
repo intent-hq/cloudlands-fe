@@ -440,11 +440,12 @@ export class LiveSettingsClient implements SettingsClient {
         desiredIds.add(id);
       }
       for (const server of existing) {
-        if (server.id && !desiredIds.has(server.id)) {
+        if (server.id && !server.plugin && !desiredIds.has(server.id)) {
           await backendRequest('mcp.servers.delete', { serverId: server.id });
         }
       }
       for (const { config, current } of desired) {
+        if (config.plugin && !current?.plugin) continue;
         if (!current?.id) {
           await backendRequest('mcp.servers.create', {
             config: toWireMcpConfig(config, config.id),
@@ -458,7 +459,7 @@ export class LiveSettingsClient implements SettingsClient {
           env: config.env ?? current.env,
           headers: config.headers ?? current.headers,
         };
-        if (!sameMcpConfigBody(current, desiredConfig)) {
+        if (!current.plugin && !sameMcpConfigBody(current, desiredConfig)) {
           await backendRequest('mcp.servers.update', {
             serverId: current.id,
             config: toWireMcpConfig(desiredConfig, current.id),
@@ -584,6 +585,8 @@ interface WireMcpServerConfig {
   scope?: string;
   /** Present only on workspace-scoped `mcp.servers.list` reads (§5.22 per-workspace disable). */
   workspaceDisabled?: boolean;
+  /** Set on servers that come from an Agent Plugin (§5.57); update/delete are refused. */
+  plugin?: string;
 }
 
 /** Wire `McpServerStatus` (PROTOCOL §5.22) — the daemon's runtime status shape. */
@@ -650,6 +653,7 @@ function fromWireMcpConfig(wire: WireMcpServerConfig): McpServerConfig | null {
   if (wire.enabled === false) config.disabled = true;
   if (typeof wire.workspaceDisabled === 'boolean')
     config.workspaceDisabled = wire.workspaceDisabled;
+  if (typeof wire.plugin === 'string' && wire.plugin) config.plugin = wire.plugin;
   return config;
 }
 

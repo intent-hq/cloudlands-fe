@@ -44,7 +44,6 @@
     { path: 'workspace.defaultShell', value: 'auto', type: 'string' },
     { path: 'workspace.branchPrefix', value: '', type: 'string' },
     { path: 'git.autoCommit', value: true, type: 'boolean' },
-    { path: 'workspace.cowIsolation', value: false, type: 'boolean' },
     { path: 'workspace.autoArchiveIdleAfterDays', value: 7, type: 'number', min: 0 },
     { path: 'workspace.purgeArchivedAfterDays', value: 7, type: 'number', min: 1 },
     { path: 'rtk.enabled', value: true, type: 'boolean' },
@@ -60,7 +59,6 @@
     list: appClient.settings.list,
     update: appClient.settings.update,
   };
-  const previousCapabilities = appClient.system.capabilities;
   appClient.settings.list = async () => definitions;
   appClient.settings.get = async (path) => {
     if (initial === 'loading-settings') await settingsGate;
@@ -72,7 +70,6 @@
     writes = [...writes, ...changes];
     return changes;
   };
-  appClient.system.capabilities = async () => ({ cowSupported: true });
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Registers a synthetic in-memory handler; never fetches domain data.
   const restoreProbe = overrideMockIpcHandler(SYSTEM_CHANNELS.CHECK_RTK, async () => {
     if (initial === 'loading-probe') await probeGate;
@@ -82,7 +79,6 @@
     releaseSettings();
     releaseProbe();
     Object.assign(appClient.settings, previous);
-    appClient.system.capabilities = previousCapabilities;
     restoreProbe();
   });
 </script>

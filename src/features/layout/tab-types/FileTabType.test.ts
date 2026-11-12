@@ -567,10 +567,14 @@ describe('FileTabType Redux integration', () => {
   });
 
   it.each([
-    ['No such file or directory (os error 2)', m.files_read_notFound_error()],
-    ['Permission denied (os error 13)', 'Internal error: Permission denied (os error 13)'],
-    ['Connection closed', 'Internal error: Connection closed'],
-  ])('preserves the file-read error panel: %s', async (message, expected) => {
+    ['No such file or directory (os error 2)', m.layout_fileTab_errorNotFound_label(), null],
+    ['Permission denied (os error 13)', m.layout_fileTab_errorAccessDenied_label(), null],
+    [
+      'Connection closed',
+      m.layout_fileTab_errorGeneric_label(),
+      'Internal error: Connection closed',
+    ],
+  ])('preserves the file-read error panel: %s', async (message, expected, detail) => {
     vi.spyOn(appClient.files, 'explorerTree').mockResolvedValue(null);
     vi.spyOn(appClient.files, 'listDirectory').mockResolvedValue([]);
     vi.mocked(backendRequest).mockRejectedValue(
@@ -585,6 +589,8 @@ describe('FileTabType Redux integration', () => {
     try {
       renderFileTab({ ...fileTab, filePath: '.intent/artifacts/report.xlsx' });
       expect(await screen.findByText(expected)).toBeTruthy();
+      if (detail) expect(screen.getByText(detail)).toBeTruthy();
+      else expect(screen.queryByText(/Internal error/)).toBeNull();
       expect(screen.queryByText(m.editor_fileViewer_binary_label())).toBeNull();
       expect(
         screen.queryByRole('button', { name: m.layout_fileTab_downloadFile_label() }),
@@ -1275,7 +1281,7 @@ describe('FileTabType Redux integration', () => {
 
     expect(await screen.findByTestId('markdown-viewer')).toBeTruthy();
     await fireEvent.click(await screen.findByRole('button', { name: 'Panel actions' }));
-    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Markdown Preview' }));
+    await fireEvent.click(screen.getByRole('menuitemcheckbox', { name: 'Markdown preview' }));
 
     const editor = await screen.findByTestId<HTMLTextAreaElement>('code-editor');
     await fireEvent.input(editor, { target: { value: '# Local draft' } });
@@ -1285,7 +1291,7 @@ describe('FileTabType Redux integration', () => {
     });
 
     await fireEvent.click(
-      await screen.findByRole('menuitemcheckbox', { name: 'Markdown Preview' }),
+      await screen.findByRole('menuitemcheckbox', { name: 'Markdown preview' }),
     );
 
     await waitFor(() =>
@@ -1925,11 +1931,50 @@ describe('FileTabType Redux integration', () => {
 
     renderFileTab({ ...fileTab, id: 'tab-err', title: 'app.ts', filePath: 'src/app.ts' });
 
-    expect(await screen.findByText(m.layout_fileTab_errorLoading_label())).toBeTruthy();
-    expect(screen.getByText('File not found')).toBeTruthy();
+    expect(await screen.findByText(m.layout_fileTab_errorNotFound_label())).toBeTruthy();
+    expect(screen.queryByText('File not found')).toBeNull();
     expect(screen.getByText('src/app.ts')).toBeTruthy();
     expect(screen.queryByText(m.layout_fileTab_didYouMean_label())).toBeNull();
     expect(screen.queryByRole('button', { name: /src\// })).toBeNull();
+  });
+
+  // intent-hq/intent#8644: a read the daemon refuses must not surface the raw
+  // "Internal error: Access denied…" text as the panel's message.
+  it('shows a plain-language message for an access-denied read', async () => {
+    mockReduxState.files['notes/plan.md'] = errorFileEntry({
+      error: 'Internal error: Access denied: path outside workspace',
+    });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+
+    expect(await screen.findByText(m.layout_fileTab_errorAccessDenied_label())).toBeTruthy();
+    expect(screen.getByText('notes/plan.md')).toBeTruthy();
+    expect(screen.queryByText(/Internal error/)).toBeNull();
+    expect(screen.queryByText(m.layout_fileTab_errorNotFound_label())).toBeNull();
+  });
+
+  it('shows a plain-language message for a daemon not-found error', async () => {
+    mockReduxState.files['notes/plan.md'] = errorFileEntry({
+      error: 'Internal error: File not found: notes/plan.md',
+    });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+
+    expect(await screen.findByText(m.layout_fileTab_errorNotFound_label())).toBeTruthy();
+    expect(screen.getByText('notes/plan.md')).toBeTruthy();
+    expect(screen.queryByText(/Internal error/)).toBeNull();
+  });
+
+  it('keeps the raw error as secondary detail for an unrecognized failure', async () => {
+    mockReduxState.files['notes/plan.md'] = errorFileEntry({
+      error: 'Internal error: disk on fire',
+    });
+
+    renderFileTab({ ...fileTab, id: 'tab-err', title: 'plan.md', filePath: 'notes/plan.md' });
+
+    expect(await screen.findByText(m.layout_fileTab_errorGeneric_label())).toBeTruthy();
+    expect(screen.getByText('Internal error: disk on fire')).toBeTruthy();
+    expect(screen.getByText('notes/plan.md')).toBeTruthy();
   });
 
   it('renders clickable candidates and retargets the tab on click', async () => {

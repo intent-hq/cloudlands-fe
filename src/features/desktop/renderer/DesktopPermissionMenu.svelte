@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { faDesktop } from '@fortawesome/free-solid-svg-icons';
   import { untrack } from 'svelte';
   import * as Menu from '$lib/components/ui/menu';
   import { m } from '$shared/paraglide/messages.js';
@@ -8,7 +9,11 @@
     desktopReadRequested,
   } from '$store/renderer/slices/desktop-control/desktop-control-slice';
   import { store } from '$store/renderer/store';
-  let { workspaceId, agentId }: { workspaceId: string; agentId: string } = $props();
+  let {
+    workspaceId,
+    agentId,
+    separator = true,
+  }: { workspaceId: string; agentId: string; separator?: boolean } = $props();
   const entry = selectDesktopEntry(
     untrack(() => workspaceId),
     untrack(() => agentId),
@@ -19,17 +24,28 @@
 </script>
 
 {#if $entry?.permission}
-  <Menu.Separator />
+  {#if separator}
+    <Menu.Separator />
+  {/if}
   <Menu.CheckboxItem
+    indicator="switch"
+    icon={faDesktop}
     checked={$entry.permission.allowed}
-    disabled={$entry.saving || $entry.loading}
-    onCheckedChange={(allowed) => {
-      if ($entry?.permission)
+    onSelect={(event) => {
+      // The switch follows the confirmed permission; reads and saves never disable the row.
+      event.preventDefault();
+      const permission = $entry?.permission;
+      if (permission && !$entry?.saving)
         store.dispatch(
-          desktopPermissionRequested(workspaceId, agentId, $entry.permission.computerId, allowed),
+          desktopPermissionRequested(
+            workspaceId,
+            agentId,
+            permission.computerId,
+            !permission.allowed,
+          ),
         );
     }}
   >
-    {m.desktop_menu_label()}
+    {m.settings_agentFeatures_desktopControl_label()}
   </Menu.CheckboxItem>
 {/if}

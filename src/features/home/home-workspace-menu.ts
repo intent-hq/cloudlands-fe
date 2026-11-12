@@ -7,6 +7,8 @@ import type {
   SidebarMenuItem,
 } from '$lib/components/ui/sidebar-context-menu/types';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
+import { formatInteger } from '$lib/i18n/format';
+import type { HomeBulkTargets } from './home-multi-select';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
 import {
@@ -25,11 +27,15 @@ import {
 import { isPinnedWorkspaceLabel } from '$store/renderer/slices/sidebar-nav/workspace-labels';
 import { selectHidesOwnerWorkspaceActions } from '$store/renderer/slices/workspace/workspace-selectors';
 import {
+  openBulkArchiveConfirm,
+  openBulkDeleteConfirm,
+  openBulkRetireConfirm,
   requestArchiveWorkspace,
   requestUnarchiveWorkspace,
   requestDeleteWorkspace,
   requestRetireWorkspace,
 } from '$store/renderer/slices/workspace-operations/workspace-operations-slice';
+import { openBulkTransferModal } from '$store/renderer/slices/workspace-bulk-transfer/workspace-bulk-transfer-slice';
 import {
   faThumbtack,
   faTag,
@@ -40,6 +46,8 @@ import {
   faArrowDown,
   faArrowUp,
   faHardDrive,
+  faHourglassHalf,
+  faRightLeft,
 } from '@fortawesome/free-solid-svg-icons';
 
 interface HomeWorkspaceMenuOptions {
@@ -140,7 +148,7 @@ export function createHomeWorkspaceMenu(
       id: 'open',
       label: m.home_open_workspace(),
       icon: faArrowRight,
-      shortcut: `Cmd+${m.chat_toolClassifier_click_label().toLowerCase()}`,
+      shortcut: m.home_workspace_open_shortcut(),
       onClick: () => onOpen(workspace.id),
     },
   ];
@@ -187,15 +195,16 @@ export function createHomeWorkspaceMenu(
     items.push({ type: 'separator' });
     // Per-workspace opt-out from the daemon's auto-archive sweep (PROTOCOL
     // §5.1); owner-only, offered on daemons that advertise it, and only while
-    // idle auto-archive is turned on in Settings.
+    // idle auto-archive is turned on in Settings. The switch is on while the
+    // workspace follows that setting, and stays open so the change is visible.
     if (selectCanSetWorkspaceAutoArchive.select(store.state, workspace.id)) {
       items.push({
-        id: 'disable-auto-archive',
-        label: m.home_workspace_disableAutoArchive_label(),
-        checked: selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id),
-        closeOnSelect: true,
+        id: 'auto-archive',
+        label: m.home_workspace_autoArchive_label(),
+        icon: faHourglassHalf,
+        checked: !selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id),
+        indicator: 'switch',
         onClick: () => {
-          onClose();
           // Read at click time: the flag may have changed while the menu was open.
           const disabled = selectWorkspaceAutoArchiveDisabled.select(store.state, workspace.id);
           store.dispatch(setWorkspaceAutoArchiveDisabled(workspace.id, !disabled));
@@ -244,4 +253,80 @@ export function createHomeWorkspaceMenu(
     );
   }
   return items;
+}
+
+export interface HomeBulkAction {
+  id: 'archive' | 'transfer' | 'purge' | 'delete';
+  label: string;
+  icon: SidebarMenuItem['icon'];
+  destructive?: boolean;
+  run: () => void;
+}
+
+/** Bulk actions for a Home multi-selection; an action with no eligible workspace is left out. */
+export function homeBulkActions(targets: HomeBulkTargets): HomeBulkAction[] {
+  const ids = (items: Workspace[]) => items.map((workspace) => workspace.id);
+  const actions: HomeBulkAction[] = [];
+  if (targets.archive.length)
+    actions.push({
+      id: 'archive',
+      label: m.workspace_card_archive_label(),
+      icon: faBoxArchive,
+      run: () => store.dispatch(openBulkArchiveConfirm({ workspaceIds: ids(targets.archive) })),
+    });
+  if (targets.transfer.length)
+    actions.push({
+      id: 'transfer',
+      label: m.home_selection_transfer_label(),
+      icon: faRightLeft,
+      run: () =>
+        store.dispatch(
+          openBulkTransferModal({
+            workspaces: targets.transfer.map((workspace) => ({
+              workspaceId: workspace.id,
+              title: workspace.title,
+            })),
+          }),
+        ),
+    });
+  if (targets.purge.length)
+    actions.push({
+      id: 'purge',
+      label: m.home_selection_purge_label(),
+      icon: faHardDrive,
+      run: () => store.dispatch(openBulkRetireConfirm({ workspaceIds: ids(targets.purge) })),
+    });
+  if (targets.delete.length)
+    actions.push({
+      id: 'delete',
+      label: m.home_selection_delete_label(),
+      icon: faTrash,
+      destructive: true,
+      run: () => store.dispatch(openBulkDeleteConfirm({ workspaceIds: ids(targets.delete) })),
+    });
+  return actions;
+}
+
+export function createHomeBulkMenu(
+  count: number,
+  actions: readonly HomeBulkAction[],
+  onClose: () => void,
+): SidebarMenuEntry[] {
+  const label =
+    count === 1
+      ? m.home_selection_count_one({ count: formatInteger(count) })
+      : m.home_selection_count_many({ count: formatInteger(count) });
+  return [
+    { type: 'label', id: 'selection', label },
+    ...actions.map((action) => ({
+      id: action.id,
+      label: action.label,
+      icon: action.icon,
+      destructive: action.destructive,
+      onClick: () => {
+        onClose();
+        action.run();
+      },
+    })),
+  ];
 }

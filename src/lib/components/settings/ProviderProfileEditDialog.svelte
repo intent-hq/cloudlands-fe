@@ -52,6 +52,8 @@
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import type { ProviderProfileSetup } from '$store/renderer/slices/provider-settings/provider-settings-types';
   import { selectIsDaemonAppOwned } from '$store/renderer/slices/daemon-health/daemon-health-selectors';
+  import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
+  import { advancedEditRemoteChange } from '$lib/provider-remote-ready';
   import ProviderProfileKindDialog from './profile-kinds/ProviderProfileKindDialog.svelte';
   import type { BaseUrlAction, ProfileSignInState } from './profile-kinds/profile-kind-mock';
   import { advancedRowsFromEdit, editEnvChanges, editScreenFacts } from './provider-profile-edit';
@@ -79,11 +81,13 @@
   const setups$ = selectProviderProfileSetups();
   const mutations$ = selectProviderProfileMutations();
   const appOwned$ = selectIsDaemonAppOwned();
+  const remoteReady$ = selectRemoteReadyProfilesVisible();
   const newId = () => crypto.randomUUID();
 
   let kind = $state<ProfileKind>('advanced');
   let name = $state('');
   let backup = $state(false);
+  let remoteCompatible = $state(true);
   let secret = $state('');
   let replacingSecret = $state(false);
   let baseUrl = $state('');
@@ -118,6 +122,7 @@
     kind = detectProfileKind(provider, profile.env);
     name = profile.name;
     backup = profile.backup === true;
+    remoteCompatible = profile.remoteCompatible !== false;
     secret = '';
     replacingSecret = false;
     baseUrl = '';
@@ -249,7 +254,17 @@
   function sendUpdate(env: EnvEntryWrite[] | undefined, rows: EnvRow[]) {
     const nameChanged = name !== profile.name;
     const backupChanged = backup !== (profile.backup === true);
-    if (!nameChanged && !backupChanged && !env) {
+    // Only Advanced has the toggle; the other kinds keep their saved mark.
+    const remoteChange =
+      kind === 'advanced'
+        ? advancedEditRemoteChange({
+            visible: $remoteReady$,
+            toggle: remoteCompatible,
+            rows: envRows,
+            saved: profile.remoteCompatible !== false,
+          })
+        : undefined;
+    if (!nameChanged && !backupChanged && remoteChange === undefined && !env) {
       open = false;
       return;
     }
@@ -263,6 +278,7 @@
         ...(nameChanged ? { name } : {}),
         ...(env ? { env } : {}),
         ...(backupChanged ? { backup } : {}),
+        ...(remoteChange !== undefined ? { remoteCompatible: remoteChange } : {}),
       }),
     );
   }
@@ -357,6 +373,8 @@
   {savedEnv}
   bind:envRows
   envErrors={errors}
+  remoteMarks={$remoteReady$}
+  bind:remoteCompatible
   onSave={save}
   onSignIn={signInToSavedFolder}
   onSwitchToAdvanced={switchToAdvanced}

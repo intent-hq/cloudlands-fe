@@ -62,6 +62,19 @@ export const selectProviderCatalogProfiles = store.createSelector(
 const NO_DEFAULT_NAMES: ProviderDefaultNames = {};
 
 /**
+ * True once the catalog that `selectProviderCatalogProfiles` reads for the
+ * same `workspaceId` has loaded: the workspace snapshot when scoped, the
+ * shared catalog otherwise. Until then an unmatched profile reference is
+ * unknown, not removed, so labels must not call it "Removed profile".
+ */
+export const selectProviderCatalogProfilesLoaded = store.createSelector(
+  (state, workspaceId?: string): boolean =>
+    workspaceId
+      ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
+      : (state.providerCatalog?.loaded ?? false),
+);
+
+/**
  * Renamed Default configurations (§5.54 catalog `defaultNames`) by base
  * provider id. Empty on older daemons, before hydration and when no Default
  * is renamed; labels then read `Default`.
@@ -85,6 +98,17 @@ export const selectProviderCatalogDefaultRemoteIncompatibility = store.createSel
     workspaceId
       ? state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.defaultRemoteIncompatibility
       : state.providerCatalog?.defaultRemoteIncompatibility,
+);
+
+/**
+ * What a remote launch of each base provider's Default does (§5.54 catalog
+ * `defaultRemoteLaunch`). Undefined on daemons that predate it.
+ */
+export const selectProviderCatalogDefaultRemoteLaunch = store.createSelector(
+  (state, workspaceId?: string): Record<string, string> | undefined =>
+    workspaceId
+      ? state.providerCatalog?.byWorkspaceId?.[workspaceId]?.catalog.defaultRemoteLaunch
+      : state.providerCatalog?.defaultRemoteLaunch,
 );
 
 /** All provider ids in registry order. */
@@ -196,6 +220,9 @@ export const selectProviderDisplayName = store.createSelector(
         providerId,
         baseName,
         selectProviderCatalogProfiles.select(state, workspaceId),
+        baseId,
+        undefined,
+        selectProviderCatalogProfilesLoaded.select(state, workspaceId),
       );
     }
     return (
@@ -221,20 +248,9 @@ export const selectProviderConfigurationLabel = store.createSelector(
       selectProviderCatalogProfiles.select(state, workspaceId),
       baseId,
       selectProviderCatalogDefaultNames.select(state, workspaceId),
+      selectProviderCatalogProfilesLoaded.select(state, workspaceId),
     );
   },
-);
-
-/**
- * Whether a (legacy compound or bare) model id belongs to
- * `targetProviderId`; bare ids attribute to the effective default provider.
- */
-export const selectIsModelValidForProvider = store.createSelector(
-  (state, model: string, targetProviderId: string): boolean =>
-    selectNormalizedProviderId.select(
-      state,
-      splitLegacyCompoundId(model).providerId ?? selectEffectiveDefaultProviderId.select(state),
-    ) === selectNormalizedProviderId.select(state, targetProviderId),
 );
 
 /**

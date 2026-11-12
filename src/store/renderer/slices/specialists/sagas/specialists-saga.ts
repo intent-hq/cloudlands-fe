@@ -164,6 +164,7 @@ function bundledFallback(builtin: Specialist): Specialist {
     description: builtin.description,
     defaultBehaviorPrompt: builtin.defaultBehaviorPrompt,
     source: 'bundled',
+    promptUnavailable: true,
   };
   if (builtin.codingAgent !== undefined) mapped.codingAgent = builtin.codingAgent;
   if (builtin.defaultModel !== undefined) mapped.defaultModel = builtin.defaultModel;
@@ -191,6 +192,7 @@ function toFileSpecialist(def: SpecialistDef): FileSpecialist {
     roleReminder: def.roleReminder,
     filePath: def.path ?? '',
     source: def.source as SpecialistFileScope,
+    bundled: def.bundled,
     importedFrom: def.importedFrom,
     unsupportedFields: def.unsupportedFields,
     requiredSkills: def.requiredSkills,
@@ -350,6 +352,12 @@ function* handleSave(
     const bundled = (bundledSpecialists.length ? bundledSpecialists : SPECIALISTS).find(
       (specialist) => specialist.id === payload.id,
     );
+    // A placeholder built-in has no daemon prompt yet: the first override
+    // would replace the shipped prompt and role reminder with empty values.
+    if (!existing && bundled?.promptUnavailable) {
+      yield* put(refetchSpecialistsRequested());
+      throw new Error(m.specialists_catalogLoading_error());
+    }
     const scope = payload.scope ?? 'user';
     const spec: SpecialistDef = {
       id: payload.id,

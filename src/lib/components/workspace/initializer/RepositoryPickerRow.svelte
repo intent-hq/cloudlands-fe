@@ -3,8 +3,7 @@
   import { ActionRow, Indicator } from '$lib/components/ui/menu';
   import { cn } from '$lib/utils';
   import { workspacePickerStyles } from './workspace-picker-styles';
-  import GitHubAvatar from '$lib/components/ui/GitHubAvatar.svelte';
-  import PrincipalAvatar from '$lib/components/ui/PrincipalAvatar.svelte';
+  import RepositoryPickerIcon from './RepositoryPickerIcon.svelte';
   import { faGithub, faGitlab } from '@fortawesome/free-brands-svg-icons';
   import Fa from 'svelte-fa';
 
@@ -14,6 +13,7 @@
     suffix,
     provider,
     avatarUrl,
+    local = false,
     showOwner = true,
     showForge = false,
     recent = false,
@@ -29,6 +29,7 @@
     suffix?: string;
     provider?: 'github' | 'gitlab';
     avatarUrl?: string;
+    local?: boolean;
     showOwner?: boolean;
     showForge?: boolean;
     recent?: boolean;
@@ -63,24 +64,7 @@
     : `gap-2 py-1.5 cursor-pointer ${className}`}
 >
   {#snippet leading()}
-    {#if avatarUrl}
-      <PrincipalAvatar
-        {avatarUrl}
-        label={owner || name}
-        size={formStyle ? 20 : 16}
-        referrerpolicy="no-referrer"
-      />
-    {:else if owner && provider === 'github'}
-      <GitHubAvatar
-        identity={owner}
-        size={formStyle ? 20 : 16}
-        class={formStyle ? 'size-5 rounded-full' : 'size-4 rounded-full'}
-      >
-        {#snippet fallback()}<PrincipalAvatar label={owner} size={formStyle ? 20 : 16} />{/snippet}
-      </GitHubAvatar>
-    {:else}
-      <PrincipalAvatar label={owner || name} size={formStyle ? 20 : 16} />
-    {/if}
+    <RepositoryPickerIcon {owner} {provider} {avatarUrl} {local} size={formStyle ? 20 : 16} />
   {/snippet}
   {#snippet title()}
     <span class="flex min-w-0 items-center gap-2 {formStyle ? '' : 'text-sm'}">

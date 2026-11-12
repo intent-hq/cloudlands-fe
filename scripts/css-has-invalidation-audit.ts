@@ -3,8 +3,8 @@
 // (`css-has-invalidation-built-audit.test.ts`). Blink shares one `:has()`
 // invalidation set per anchor: a `:has()` anchored at `html`/`body`/`:root`
 // makes every mutation in the page a candidate invalidation, and a universal
-// subject (`:has(…) *`, what Tailwind `group-has-*` / `peer-has-*` compile to)
-// restyles the whole subtree when it fires.
+// subject (`:has(…) *`, what Tailwind <= 4.3.3 compiled `group-has-*` /
+// `peer-has-*` to) restyles the whole subtree when it fires.
 const compoundSuffix = String.raw`(?:#[\w-]+|\.[\w-]+|\[[^\]]*\]|:(?!has\b)[\w-]+(?:\((?:[^()]|\([^()]*\))*\))?)*`;
 const documentSimple = /^(?:html|body|:root)$/i;
 const documentWrapper = /^:(?:is|where|global)\(/;
@@ -148,9 +148,11 @@ export function hasUniversalSubject(selector: string): boolean {
 
 /**
  * The top-level arguments of every `:is()` / `:where()` / `:not()` / `:global()`
- * in `selector`, each a selector of its own. Tailwind v4 compiles variants such
- * as `group-has-[…]:pr-8` to `.utility:is(:where(.group):has(…) *)`, so the
- * offending shape lives inside the argument rather than at the subject.
+ * in `selector`, each a selector of its own. Arbitrary variants such as
+ * `[.foo:has(.bar)_:is(*,.baz)]:pr-8` compile to `:is(.foo:has(.bar) :is(*, .baz))`
+ * (and Tailwind 4.3.3 compiled `group-has-[…]:pr-8` to
+ * `.utility:is(:where(.group):has(…) *)`), so the offending shape lives inside
+ * the argument rather than at the subject.
  */
 export function wrappedSelectorArguments(selector: string): string[] {
   return [...selector.matchAll(wrappedArguments)].flatMap((match) => {

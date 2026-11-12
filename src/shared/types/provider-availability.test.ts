@@ -49,13 +49,16 @@ describe('provider result helpers', () => {
     expect(isProviderReadyInResult(availability, 'cortex')).toBe(false);
   });
 
-  it.each([undefined, false, true])('requires confirmed Antigravity auth: %s', (authenticated) => {
-    const result = {
-      ...availability,
-      providers: { ...availability.providers, antigravity: { available: true, authenticated } },
-    };
-    expect(isProviderReadyInResult(result, 'antigravity')).toBe(authenticated === true);
-  });
+  it.each([undefined, false, true])(
+    'treats Antigravity auth like any other provider: %s',
+    (authenticated) => {
+      const result = {
+        ...availability,
+        providers: { ...availability.providers, antigravity: { available: true, authenticated } },
+      };
+      expect(isProviderReadyInResult(result, 'antigravity')).toBe(authenticated !== false);
+    },
+  );
 
   it('accepts an older daemon without Antigravity status', () => {
     const result = {

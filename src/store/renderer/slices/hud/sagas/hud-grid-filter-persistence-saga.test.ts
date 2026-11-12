@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // FAKE transport: same seam replacement as hud-subscription.test.ts so store
 // init never dials a real daemon. The REAL configured store is exercised.
@@ -29,9 +29,6 @@ import { LOCAL_CONNECTION_ID, type ConnectionRecord } from '$shared/types/connec
 import { HUD_GRID_FILTER_STORAGE_KEY, hudSaga, sanitizePersistedHudGridFilter } from './hud-saga';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-/** In-memory backing for the test-setup localStorage vi.fn() stubs. */
-const storage = new Map<string, string>();
 
 const LOCAL: ConnectionRecord = {
   id: LOCAL_CONNECTION_ID,
@@ -75,15 +72,6 @@ describe('hud-grid-filter-persistence (real store)', () => {
     stopRootSaga = appStore.runSaga(hudSaga);
   });
   afterAll(() => stopRootSaga?.());
-  beforeEach(() => {
-    storage.clear();
-    vi.mocked(window.localStorage.getItem).mockImplementation(
-      (key: string) => storage.get(key) ?? null,
-    );
-    vi.mocked(window.localStorage.setItem).mockImplementation((key: string, value: string) => {
-      storage.set(key, String(value));
-    });
-  });
   afterEach(() => {
     stop?.();
     stop = undefined;
@@ -92,7 +80,10 @@ describe('hud-grid-filter-persistence (real store)', () => {
   // NOTE: must run FIRST in this file — `hasReceivedList` latches true on the
   // shared store once any test dispatches connectionsListReceived.
   it('defers hydration until the connections list arrives (id can post-date HUD mount)', async () => {
-    storage.set(remoteKey('remote-1'), JSON.stringify({ repo: 'intent-hq/intentd', states: [] }));
+    window.localStorage.setItem(
+      remoteKey('remote-1'),
+      JSON.stringify({ repo: 'intent-hq/intentd', states: [] }),
+    );
     stop = startHudGridFilterPersistence();
     await flush();
 
@@ -100,7 +91,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
     expect(gridFilter()).toEqual(EMPTY_HUD_GRID_FILTER);
     appStore.dispatch(hudGridFilterRepoPicked('pre-hydration/pick'));
     await flush();
-    expect(storage.get(remoteKey('remote-1'))).toBe(
+    expect(window.localStorage.getItem(remoteKey('remote-1'))).toBe(
       JSON.stringify({ repo: 'intent-hq/intentd', states: [] }),
     );
 
@@ -119,14 +110,17 @@ describe('hud-grid-filter-persistence (real store)', () => {
     appStore.dispatch(hudGridFilterStateToggled('failed'));
     await flush();
 
-    expect(JSON.parse(storage.get(remoteKey('remote-1'))!)).toEqual({
+    expect(JSON.parse(window.localStorage.getItem(remoteKey('remote-1'))!)).toEqual({
       repo: 'intent-hq/monorepo',
       states: ['failed'],
     });
   });
 
   it('isolates filters per backend id — a different backend gets its own default', async () => {
-    storage.set(remoteKey('remote-1'), JSON.stringify({ repo: 'r1/repo', states: ['wait'] }));
+    window.localStorage.setItem(
+      remoteKey('remote-1'),
+      JSON.stringify({ repo: 'r1/repo', states: ['wait'] }),
+    );
     receiveConnections('remote-2');
     stop = startHudGridFilterPersistence();
     await flush();
@@ -137,11 +131,11 @@ describe('hud-grid-filter-persistence (real store)', () => {
     // Changes land under remote-2's key; remote-1's stays untouched.
     appStore.dispatch(hudGridFilterStateToggled('blocked'));
     await flush();
-    expect(JSON.parse(storage.get(remoteKey('remote-2'))!)).toEqual({
+    expect(JSON.parse(window.localStorage.getItem(remoteKey('remote-2'))!)).toEqual({
       repo: null,
       states: ['blocked'],
     });
-    expect(storage.get(remoteKey('remote-1'))).toBe(
+    expect(window.localStorage.getItem(remoteKey('remote-1'))).toBe(
       JSON.stringify({ repo: 'r1/repo', states: ['wait'] }),
     );
   });
@@ -150,7 +144,10 @@ describe('hud-grid-filter-persistence (real store)', () => {
     // A backend switch destroys/recreates the HUD window, so the id should
     // never change within one start — this is the defensive skip for the case
     // where that invariant ever breaks (e.g. windows surviving a switch).
-    storage.set(remoteKey('remote-1'), JSON.stringify({ repo: 'r1/repo', states: [] }));
+    window.localStorage.setItem(
+      remoteKey('remote-1'),
+      JSON.stringify({ repo: 'r1/repo', states: [] }),
+    );
     receiveConnections('remote-1');
     stop = startHudGridFilterPersistence();
     await flush();
@@ -162,14 +159,17 @@ describe('hud-grid-filter-persistence (real store)', () => {
     await flush();
 
     // Neither the hydrated backend's key nor the new backend's key was written.
-    expect(storage.get(remoteKey('remote-1'))).toBe(
+    expect(window.localStorage.getItem(remoteKey('remote-1'))).toBe(
       JSON.stringify({ repo: 'r1/repo', states: [] }),
     );
-    expect(storage.has(remoteKey('remote-2'))).toBe(false);
+    expect(window.localStorage.getItem(remoteKey('remote-2'))).toBeNull();
   });
 
   it('the local backend uses the bare (un-namespaced) key', async () => {
-    storage.set(HUD_GRID_FILTER_STORAGE_KEY, JSON.stringify({ repo: 'local/repo', states: [] }));
+    window.localStorage.setItem(
+      HUD_GRID_FILTER_STORAGE_KEY,
+      JSON.stringify({ repo: 'local/repo', states: [] }),
+    );
     receiveConnections(LOCAL_CONNECTION_ID);
     stop = startHudGridFilterPersistence();
     await flush();
@@ -177,14 +177,14 @@ describe('hud-grid-filter-persistence (real store)', () => {
     expect(gridFilter()).toEqual({ repo: 'local/repo', states: [] });
     appStore.dispatch(hudGridFilterStateToggled('complete'));
     await flush();
-    expect(JSON.parse(storage.get(HUD_GRID_FILTER_STORAGE_KEY)!)).toEqual({
+    expect(JSON.parse(window.localStorage.getItem(HUD_GRID_FILTER_STORAGE_KEY)!)).toEqual({
       repo: 'local/repo',
       states: ['complete'],
     });
   });
 
   it('falls back to the empty filter on malformed JSON', async () => {
-    storage.set(HUD_GRID_FILTER_STORAGE_KEY, '{not json');
+    window.localStorage.setItem(HUD_GRID_FILTER_STORAGE_KEY, '{not json');
     receiveConnections(LOCAL_CONNECTION_ID);
     stop = startHudGridFilterPersistence();
     await flush();
@@ -192,7 +192,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
   });
 
   it('drops unknown status keys from a persisted filter (keeps the known ones)', async () => {
-    storage.set(
+    window.localStorage.setItem(
       HUD_GRID_FILTER_STORAGE_KEY,
       JSON.stringify({ repo: 'a/b', states: ['failed', 'bogus-key', 'wait'] }),
     );
@@ -212,7 +212,7 @@ describe('hud-grid-filter-persistence (real store)', () => {
     stop();
     stop = undefined;
     await flush();
-    expect(JSON.parse(storage.get(HUD_GRID_FILTER_STORAGE_KEY)!)).toEqual({
+    expect(JSON.parse(window.localStorage.getItem(HUD_GRID_FILTER_STORAGE_KEY)!)).toEqual({
       repo: 'kept/repo',
       states: [],
     });

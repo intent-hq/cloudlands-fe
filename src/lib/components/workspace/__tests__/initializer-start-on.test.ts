@@ -594,7 +594,7 @@ describe('New Workspace → Start On', () => {
     expect(screen.getByTestId('picker-machine').textContent).toBe('');
   });
 
-  it('keeps the first agent on the backend while files are attached', async () => {
+  it('keeps the chosen machine while files are attached: remote agents receive them', async () => {
     const view = await createWith({ startOnMachineId: MACHINE.id });
     await waitFor(() => expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac'));
     const file = new File(['notes'], 'notes.txt', { type: 'text/plain' });
@@ -607,12 +607,11 @@ describe('New Workspace → Start On', () => {
         ],
       },
     });
+    await screen.findByTestId('new-workspace-attachments');
     const row = screen.getByTestId('start-on-picker');
-    await waitFor(() =>
-      expect(row.querySelector('[data-testid="start-on-locked-reason"]')).not.toBeNull(),
-    );
-    expect(row.querySelector('button')?.disabled).toBe(true);
-    expect(screen.getByTestId('picker-machine').textContent).toBe('');
+    expect(row.querySelector('[data-testid="start-on-locked-reason"]')).toBeNull();
+    expect(row.querySelector('button')?.disabled).toBe(false);
+    expect(screen.getByTestId('picker-machine').textContent).toBe('node-mac');
   });
 
   it('lists unreachable and revoked machines disabled with a reason', async () => {
@@ -625,10 +624,10 @@ describe('New Workspace → Start On', () => {
     await fireEvent.pointerDown(trigger, { button: 0, pointerType: 'mouse' });
     await fireEvent.pointerUp(trigger, { button: 0, pointerType: 'mouse' });
     await fireEvent.click(trigger);
-    const options = await screen.findAllByTestId('start-on-option');
-    const gone = options.find((option) => option.dataset.machineId === 'node-gone')!;
+    const options = await screen.findAllByRole('option');
+    const gone = screen.getByRole('option', { name: /Gone box/ });
     expect(gone.getAttribute('aria-disabled')).toBe('true');
     expect(gone.textContent).toContain(m.remoteMachines_state_unreachable_label());
-    expect(options[0].dataset.machineId).toBe('');
+    expect(options[0].textContent).toContain(m.layout_daemonStatus_localConnection_label());
   });
 });

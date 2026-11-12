@@ -1,0 +1,259 @@
+/**
+ * @vitest-environment jsdom
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, waitFor, within } from '@testing-library/svelte';
+import { PROVIDERS_CHANNELS } from '$shared/ipc/channels';
+import { m } from '$shared/paraglide/messages.js';
+import { warmImport } from '../../../test/warm-import';
+
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  invoke: vi.fn(),
+  toastError: vi.fn(),
+  state: { current: {} as unknown },
+}));
+
+vi.mock('$lib/electron-bridge', () => ({
+  invoke: mocks.invoke,
+  shell: { open: vi.fn() },
+}));
+
+vi.mock('$lib/client', () => ({
+  appClient: { settings: { get: vi.fn().mockResolvedValue({ value: {} }) } },
+}));
+
+vi.mock('$lib/components/patterns/notify', () => ({
+  notify: { error: mocks.toastError, success: vi.fn() },
+}));
+
+vi.mock('./ProviderPathConfig.svelte', async () => ({
+  default: (await import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte')).default,
+}));
+
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({
+    state: () => mocks.state.current,
+    dispatch: mocks.dispatch,
+  });
+});
+
+const cursorStatus = { available: true, authenticated: true };
+
+async function buildState({
+  cursorEnabled,
+  cursor = cursorStatus,
+}: {
+  cursorEnabled: boolean;
+  cursor?: object;
+}) {
+  const { initialState: specialistsInitialState } =
+    await import('$store/renderer/slices/specialists/specialists-slice');
+  const { initialState: modelInitialState } =
+    await import('$store/renderer/slices/model/model-slice');
+  const { initialState: providerSettingsInitialState } =
+    await import('$store/renderer/slices/provider-settings/provider-settings-slice');
+  const { initialState: availabilityInitialState } =
+    await import('$store/renderer/slices/agent-availability/agent-availability-slice');
+  const {
+    initialState: providerCatalogInitialState,
+    providerCatalogLoaded,
+    providerCatalogReducer,
+  } = await import('$store/renderer/slices/provider-catalog/provider-catalog-slice');
+  const { MOCK_CURSOR_PROVIDER, MOCK_PROVIDER_CATALOG } =
+    await import('../../../test/fixtures/provider-catalog.fixture');
+  const { initialState: daemonHealthInitialState } =
+    await import('$store/renderer/slices/daemon-health/daemon-health-slice');
+  return {
+    daemonHealth: { ...daemonHealthInitialState },
+    providerCatalog: providerCatalogReducer(
+      providerCatalogInitialState,
+      providerCatalogLoaded({
+        providers: [...MOCK_PROVIDER_CATALOG.providers, MOCK_CURSOR_PROVIDER],
+      }),
+    ),
+    providerSettings: {
+      ...providerSettingsInitialState,
+      // Absent, not false, when not enabled: an installed Cursor must not count as enabled.
+      enabledProviders: cursorEnabled ? { codex: true, cursor: true } : { codex: true },
+      nonDisableableProviderIds: [],
+    },
+    model: { ...modelInitialState, defaultProviderId: 'codex', providerModels: {} },
+    specialists: { ...specialistsInitialState },
+    featureCodes: { activeFeatures: [], initialized: true },
+    githubAuth: { isAuthenticated: false },
+    agentAvailability: {
+      ...availabilityInitialState,
+      providerStatusMap: {
+        codex: { available: true, authenticated: true },
+        cursor,
+      },
+      providerLoadingMap: { codex: false, cursor: false },
+      providerUserInfoLoadingMap: {},
+      hasCheckedOnce: true,
+      watchedTerminalIds: [],
+      npxStatus: null,
+    },
+  };
+}
+
+const unavailable = { available: false };
+const availability = {
+  hasAnyProvider: true,
+  providers: {
+    auggie: unavailable,
+    claudeCode: unavailable,
+    codex: { available: true, authenticated: true },
+    cortex: unavailable,
+    mock: unavailable,
+    opencode: unavailable,
+    pi: unavailable,
+    droid: unavailable,
+    grok: unavailable,
+    unsloth: unavailable,
+    cursor: cursorStatus,
+  },
+  hiddenProviders: ['mock'],
+};
+
+warmImport(() => import('../workspace/sidebar/__tests__/mocks/MockSimple.svelte'));
+warmImport(() => import('./ProviderSelector.svelte'));
+
+const CURSOR_ACTIONS = 'Provider actions for Cursor';
+
+describe('ProviderSelector Cursor row', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.invoke.mockImplementation(async (channel: string) => {
+      if (channel === PROVIDERS_CHANNELS.GET_AVAILABILITY) {
+        return { success: true, data: availability };
+      }
+      if (channel === PROVIDERS_CHANNELS.GET_PATHS) {
+        return { success: true, data: { paths: {}, secondaryPaths: {} } };
+      }
+      return { success: true, data: {} };
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  async function renderSelector(options: { cursorEnabled: boolean; cursor?: object }) {
+    mocks.state.current = await buildState(options);
+    const ProviderSelector = (await import('./ProviderSelector.svelte')).default;
+    const result = render(ProviderSelector);
+    await waitFor(() => {
+      expect(
+        result.getByRole('button', { name: 'Provider actions for OpenAI Codex' }),
+      ).toBeTruthy();
+    });
+    return result;
+  }
+
+  it('lists an installed Cursor under Available, not Enabled, until the user enables it', async () => {
+    const result = await renderSelector({ cursorEnabled: false });
+    const discovered = result.getByRole('region', {
+      name: m.settings_providers_groupDiscovered_label(),
+    });
+    expect(within(discovered).getByRole('button', { name: CURSOR_ACTIONS })).toBeTruthy();
+    expect(within(discovered).getByRole('img', { name: 'Cursor' })).toBeTruthy();
+    expect(
+      within(discovered).getByRole('button', { name: m.settings_providers_enable() }),
+    ).toBeTruthy();
+    const enabledGroup = result.getByRole('region', {
+      name: m.settings_providers_groupEnabled_label(),
+    });
+    expect(within(enabledGroup).queryByRole('button', { name: CURSOR_ACTIONS })).toBeNull();
+    // Detecting the CLI never enables it.
+    expect(mocks.dispatch).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [expect.objectContaining({ providerId: 'cursor' }), expect.anything()],
+      }),
+    );
+  });
+
+  it('enables Cursor only from the Enable button', async () => {
+    const result = await renderSelector({ cursorEnabled: false });
+    const discovered = result.getByRole('region', {
+      name: m.settings_providers_groupDiscovered_label(),
+    });
+    mocks.dispatch.mockClear();
+    await fireEvent.click(
+      within(discovered).getByRole('button', { name: m.settings_providers_enable() }),
+    );
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [
+          { providerId: 'cursor', enabled: true },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
+      }),
+    );
+  });
+
+  it('lists an enabled Cursor under Enabled with its Disable action', async () => {
+    const result = await renderSelector({ cursorEnabled: true });
+    const enabledGroup = result.getByRole('region', {
+      name: m.settings_providers_groupEnabled_label(),
+    });
+    await fireEvent.click(within(enabledGroup).getByRole('button', { name: CURSOR_ACTIONS }));
+    const disable = (await waitFor(() =>
+      result.getByRole('menuitem', { name: 'Disable' }),
+    )) as HTMLButtonElement;
+    expect(disable.getAttribute('aria-disabled')).not.toBe('true');
+    mocks.dispatch.mockClear();
+    await fireEvent.click(disable);
+    expect(mocks.dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'providerSettings/setProviderEnabled',
+        payload: [
+          { providerId: 'cursor', enabled: false },
+          { id: expect.any(String), sessionId: expect.any(String) },
+        ],
+      }),
+    );
+  });
+
+  it('shows the Cursor CLI version on an installed row', async () => {
+    const result = await renderSelector({
+      cursorEnabled: false,
+      cursor: { ...cursorStatus, version: '2026.11.05-86047df' },
+    });
+    expect(result.getByText('2026.11.05-86047df')).toBeTruthy();
+  });
+
+  it('shows unsupported-CLI guidance instead of Install for a refused Cursor CLI', async () => {
+    const reason = 'cursor-agent runs the Grok agent host, not the Cursor CLI.';
+    const warning = m.settings_providers_cursorUnsupported_warning({ reason });
+    const result = await renderSelector({
+      cursorEnabled: false,
+      cursor: { available: false, version: 'grok-agent 1.4.2', unavailableReason: reason, warning },
+    });
+    expect(result.getByRole('img', { name: warning })).toBeTruthy();
+    // A refused CLI is not installed-and-usable, so its version is not shown as one.
+    expect(result.queryByText('grok-agent 1.4.2')).toBeNull();
+    await fireEvent.click(result.getByRole('button', { name: CURSOR_ACTIONS }));
+    const menu = await waitFor(() => result.getByRole('menu'));
+    expect(within(menu).getByText(warning)).toBeTruthy();
+    expect(
+      within(menu).queryByRole('menuitem', { name: m.settings_providers_install() }),
+    ).toBeNull();
+  });
+
+  it('still offers Install for a Cursor CLI that is simply not installed', async () => {
+    const result = await renderSelector({
+      cursorEnabled: false,
+      cursor: { available: false },
+    });
+    await fireEvent.click(result.getByRole('button', { name: CURSOR_ACTIONS }));
+    const menu = await waitFor(() => result.getByRole('menu'));
+    expect(
+      within(menu).getByRole('menuitem', { name: m.settings_providers_install() }),
+    ).toBeTruthy();
+  });
+});

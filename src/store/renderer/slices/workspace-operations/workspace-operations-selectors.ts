@@ -49,10 +49,6 @@ export const selectOpenPrsForArchive = store.createSelector((state): OpenPrWarni
   );
 });
 
-export const selectLocalChangesForArchive = store.createSelector((state) => {
-  return state.workspaceOperations.localChangesForArchive;
-});
-
 export const selectGuestsForArchive = store.createSelector((state) => {
   return state.workspaceOperations.guestsForArchive;
 });
@@ -74,6 +70,10 @@ export const selectPendingBulkWorkspaces = store.createSelector((state) => {
     const workspace = selectWorkspaceById.select(state, id);
     return workspace ? [workspace] : [];
   });
+});
+
+export const selectShowBulkRetireConfirm = store.createSelector((state) => {
+  return state.workspaceOperations.showBulkRetireConfirm;
 });
 
 export const selectPendingBulkGroupLabel = store.createSelector((state) => {

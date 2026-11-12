@@ -1,0 +1,69 @@
+/*
+ * Tab group presentation for strip slots ([data-workspace-tab-motion] items).
+ *
+ * Collapsed group tabs stay in the strip and shrink to zero width, so the
+ * neighbours, the new-tab launcher and the active-tab border all follow the
+ * same layout every frame instead of animating separately.
+ */
+[data-tab-group-member] {
+  transition-property: width, min-width, max-width, margin-right, opacity;
+  transition-duration: var(--spring-moderate);
+  transition-timing-function: var(--ease-spring-moderate);
+}
+
+/* Tab content keeps its width while the slot shrinks, so titles do not reflow. */
+[data-tab-group-member] > [data-workspace-tab-visual]:not([data-dragging='true']) {
+  min-width: min(10rem, 40vw);
+}
+
+[data-tab-group-hidden] {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  /* Absorb the strip gap so collapsed tabs take no space at all. */
+  margin-right: -2px;
+  opacity: 0;
+  overflow: clip;
+  pointer-events: none;
+}
+
+/*
+ * One outline around the open group, drawn as joined segments: the chip
+ * starts it, member tabs continue it and the last tab ends it. The bottom
+ * stays open so the selected tab still joins the panel below.
+ */
+[data-tab-group-edge]::after {
+  content: '';
+  position: absolute;
+  z-index: 15;
+  inset: 0 -2px 0 0;
+  border-color: hsl(var(--tab-group-color) / 0.5);
+  border-style: solid;
+  border-width: 1px 0 0;
+  box-shadow: 0 0 0 2px hsl(var(--tab-group-color) / 0.16);
+  clip-path: inset(-3px 0 0 0);
+  pointer-events: none;
+}
+
+[data-tab-group-edge='start']::after {
+  border-left-width: 1px;
+  border-top-left-radius: 9px;
+  clip-path: inset(-3px 0 0 -3px);
+}
+
+[data-tab-group-edge='end']::after {
+  right: 0;
+  border-right-width: 1px;
+  border-top-right-radius: 9px;
+  clip-path: inset(-3px -3px 0 0);
+}
+
+[data-tab-group-hidden]::after {
+  display: none;
+}
+
+@container style(--motion-reduced: 1) {
+  [data-tab-group-member] {
+    transition: none;
+  }
+}

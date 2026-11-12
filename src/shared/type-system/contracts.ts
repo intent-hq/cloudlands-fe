@@ -39,8 +39,6 @@ const WorkspaceSchema = z.object({
   prUrl: z.string().optional(),
   prNumber: z.number().optional(),
   prStatus: z.enum(['open', 'closed', 'merged', 'draft']).optional(),
-  /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1). */
-  cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout. `direct` = standalone local clone. */
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
   defaultAgentPlacement: AgentPlacementRequestSchema.optional(),
@@ -61,7 +59,7 @@ const NoteSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   tags: z.array(z.string()).optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   parentId: z.string().optional() as z.ZodType<NoteId | undefined>,
   threadId: z.string().optional() as z.ZodType<ThreadId | undefined>,
 });
@@ -102,7 +100,7 @@ export const IpcContracts = {
       rules: z.string().optional(), // DEPRECATED: Backend builds from agentType
       initialMessage: z.string().optional(),
       contextReferences: z.array(z.any()).optional(),
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     }),
     response: z.object({
       agent: z.any(), // AgentSession type
@@ -115,7 +113,7 @@ export const IpcContracts = {
       agentId: z.string() as unknown as z.ZodType<AgentId>,
       content: z.string(),
       contextReferences: z.array(z.any()).optional(),
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     }),
     response: z.object({
       messageId: z.string() as unknown as z.ZodType<MessageId>,
@@ -142,7 +140,7 @@ export const IpcContracts = {
       content: z.string(),
       contentType: z.enum(['markdown', 'plaintext', 'code']).optional(),
       tags: z.array(z.string()).optional(),
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     }),
     response: z.object({
       note: NoteSchema,
@@ -153,7 +151,7 @@ export const IpcContracts = {
   'agent:context:update': {
     request: z.object({
       sessionId: z.string() as unknown as z.ZodType<AgentId>,
-      context: z.record(z.any()),
+      context: z.record(z.string(), z.any()),
     }),
     response: z.object({
       success: z.boolean(),
@@ -165,7 +163,7 @@ export const IpcContracts = {
       workspaceId: z.string() as unknown as z.ZodType<WorkspaceId>,
     }),
     response: z.object({
-      context: z.record(z.any()),
+      context: z.record(z.string(), z.any()),
     }),
   },
 
@@ -174,7 +172,7 @@ export const IpcContracts = {
       sessionId: z.string() as unknown as z.ZodType<AgentId>,
     }),
     response: z.object({
-      context: z.record(z.any()),
+      context: z.record(z.string(), z.any()),
     }),
   },
 
@@ -321,14 +319,14 @@ export const IpcContracts = {
       workspaceId: z.string() as unknown as z.ZodType<WorkspaceId>,
     }),
     response: z.object({
-      settings: z.record(z.any()),
+      settings: z.record(z.string(), z.any()),
     }),
   },
 
   'workspace:updateSettings': {
     request: z.object({
       workspaceId: z.string() as unknown as z.ZodType<WorkspaceId>,
-      settings: z.record(z.any()),
+      settings: z.record(z.string(), z.any()),
     }),
     response: z.object({
       success: z.boolean(),

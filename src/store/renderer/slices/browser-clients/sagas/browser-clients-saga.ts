@@ -11,7 +11,16 @@ import { connectionStatusChanged } from '../../daemon-health/daemon-health-slice
 import { appClient } from '$lib/client';
 import { createLogger } from '$lib/utils/client-logger';
 import { m } from '$shared/paraglide/messages.js';
-import { call, put, race, take, takeEvery, fork, type SagaGenerator } from 'typed-redux-saga';
+import {
+  call,
+  delay,
+  put,
+  race,
+  take,
+  takeEvery,
+  fork,
+  type SagaGenerator,
+} from 'typed-redux-saga';
 import {
   browserClientRouteTarget,
   type WorkspaceBrowserClient,
@@ -64,6 +73,8 @@ function routeMayMove(current: WorkspaceBrowserClient, input: BrowserRouteInput)
   if (input.kind === 'desktop-session') return true;
   const target = browserClientRouteTarget(current);
   if (target?.via === 'desktop') return false;
+  // Focus only moves the fallback route: never a claimed tab's host.
+  if (input.kind === 'presence') return target?.via !== 'tabs';
   if (input.change === 'rehomed') return true;
   if (target?.via === 'tabs') {
     // A newer claimed tab never displaces the oldest; only the host's own close can.
@@ -72,6 +83,12 @@ function routeMayMove(current: WorkspaceBrowserClient, input: BrowserRouteInput)
   // No routed client yet: a newly opened claimed tab can create one.
   return input.change === 'opened';
 }
+
+/**
+ * Presence rosters arrive on every focus change and typing pulse; a
+ * workspace re-reads its route at most once per window after the first.
+ */
+export const PRESENCE_ROUTE_REREAD_MS = 1000;
 
 const logger = createLogger('BrowserClientsSaga');
 const LIVE_CLIENTS_CONTEXT = 'live-clients';
@@ -380,8 +397,19 @@ export function* browserClientsSaga(): SagaGenerator<void> {
   });
   // Unpinned, a desktop session (ahead of tabs) or the oldest claimed tab's
   // host drives the workspace; re-read only when an input can move that route.
+  const presenceRereads = new Set<string>();
   yield* takeEvery(browserRouteInputChanged, function* ({ payload: [wsId, input] }) {
     if (!connection.mounted.has(wsId)) return;
+    if (input.kind === 'presence') {
+      if (presenceRereads.has(wsId)) return;
+      presenceRereads.add(wsId);
+      try {
+        yield* delay(PRESENCE_ROUTE_REREAD_MS);
+      } finally {
+        presenceRereads.delete(wsId);
+      }
+      if (!connection.mounted.has(wsId)) return;
+    }
     const current = yield* selectWorkspaceBrowserClient.effect(wsId);
     // No answer yet, or a read in flight that may predate this event: queue
     // the trailing re-read rather than judge the input against a stale route.

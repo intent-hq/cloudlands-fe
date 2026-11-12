@@ -7,6 +7,12 @@ vi.mock('electron', () => ({
   BrowserWindow: { fromWebContents: (sender: object) => windows.get(sender) ?? null },
 }));
 import {
+  bindMachineViewToBackend,
+  getRendererWebContents,
+  getShownBackendIdForWindow,
+  getShownRendererWebContents,
+  isShownRenderer,
+  setShownMachineView,
   getBackendIdForWebContents,
   getStrictBackendBindingForWebContents,
   stampWindowWithBackend,
@@ -79,5 +85,69 @@ describe('strict window backend documents', () => {
       retire(pair);
       expect(getStrictBackendBindingForWebContents(pair.sender)).toBeNull();
     }
+  });
+});
+
+describe('machine views inside a window', () => {
+  function makeView(host: WindowType) {
+    const sender = Object.assign(new EventEmitter(), { mainFrame: {}, isDestroyed: () => false });
+    // Electron reports the hosting window as the owner of a view's web contents.
+    windows.set(sender, host as unknown as EventEmitter);
+    return sender as unknown as WebContents;
+  }
+
+  it('routes a view to its own backend while the window keeps its stamp', () => {
+    const host = makeWindow();
+    stampWindowWithBackend(host.window, 'local');
+    const view = makeView(host.window);
+    bindMachineViewToBackend(host.window, view, 'machine-b');
+    expect(getBackendIdForWebContents(view)).toBe('machine-b');
+    expect(getBackendIdForWebContents(host.sender)).toBe('local');
+  });
+
+  it('gives a view a strict binding only once its document is ready, and a fresh one per document', () => {
+    const host = makeWindow();
+    stampWindowWithBackend(host.window, 'local');
+    const view = makeView(host.window);
+    bindMachineViewToBackend(host.window, view, 'machine-b');
+    expect(getStrictBackendBindingForWebContents(view)).toBeNull();
+    view.emit('dom-ready');
+    const first = getStrictBackendBindingForWebContents(view);
+    expect(first?.backendId).toBe('machine-b');
+    view.emit('did-start-navigation', {}, 'app://next', false, true);
+    expect(getStrictBackendBindingForWebContents(view)).toBeNull();
+    view.emit('dom-ready');
+    expect(getStrictBackendBindingForWebContents(view)?.stamp).not.toBe(first?.stamp);
+    expect(getStrictBackendBindingForWebContents(host.sender)?.backendId).toBe('local');
+  });
+
+  it('lists the window renderer first, then its live views, and forgets a destroyed view', () => {
+    const host = makeWindow();
+    stampWindowWithBackend(host.window, 'local');
+    const view = makeView(host.window);
+    bindMachineViewToBackend(host.window, view, 'machine-b');
+    expect(getRendererWebContents(host.window)).toEqual([host.sender, view]);
+    view.emit('destroyed');
+    expect(getRendererWebContents(host.window)).toEqual([host.sender]);
+    expect(getBackendIdForWebContents(view)).toBe('local');
+  });
+
+  it('names the shown view as the renderer that speaks for the window, then the window again', () => {
+    const host = makeWindow();
+    stampWindowWithBackend(host.window, 'local');
+    const view = makeView(host.window);
+    bindMachineViewToBackend(host.window, view, 'machine-b');
+    expect(getShownRendererWebContents(host.window)).toBe(host.sender);
+    expect(isShownRenderer(host.window, host.sender)).toBe(true);
+    expect(isShownRenderer(host.window, view)).toBe(false);
+    expect(getShownBackendIdForWindow(host.window)).toBe('local');
+    setShownMachineView(host.window, view);
+    expect(getShownRendererWebContents(host.window)).toBe(view);
+    expect(getShownBackendIdForWindow(host.window)).toBe('machine-b');
+    expect(isShownRenderer(host.window, view)).toBe(true);
+    expect(isShownRenderer(host.window, host.sender)).toBe(false);
+    setShownMachineView(host.window, null);
+    expect(getShownRendererWebContents(host.window)).toBe(host.sender);
+    expect(isShownRenderer(host.window, host.sender)).toBe(true);
   });
 });

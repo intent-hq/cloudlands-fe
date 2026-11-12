@@ -36,7 +36,7 @@ for (const role of ['user', 'assistant'] as const) {
       const toolbar = component.getByTestId('message-actions');
       const surface = role === 'user' ? component.getByTestId('user-message-surface') : component;
       const before = (await surface.boundingBox())!;
-      await surface.hover();
+      await toolbar.getByRole('button').first().focus();
       await expect(toolbar).toHaveCSS('opacity', '1');
       expect((await surface.boundingBox())!.height).toBeCloseTo(before.height, 1);
 
@@ -75,17 +75,11 @@ for (const role of ['user', 'assistant'] as const) {
         expect(rect.top).toBeGreaterThanOrEqual(geometry.box.top - 1);
         expect(rect.bottom).toBeLessThanOrEqual(geometry.box.bottom + 1);
       }
-      for (const button of await toolbar.getByRole('button').all()) {
-        await button.click({ trial: true });
-      }
-      await page.mouse.move(239 * zoom, 450 * zoom);
-      await expect(toolbar).toHaveCSS('opacity', '0');
       const action = toolbar.locator(
         role === 'user' ? '[data-action-id="scroll-previous"]' : 'button[aria-haspopup="menu"]',
       );
       await action.focus();
       await expect(toolbar).toHaveCSS('opacity', '1');
-      await action.click({ trial: true });
       await testInfo.attach('message-actions', {
         body: await component.screenshot(),
         contentType: 'image/png',

@@ -110,16 +110,6 @@ vi.mock('$features/workspace/navigate-away-if-viewing', async (importOriginal) =
   navigateAwayIfViewing: navigateAwayIfViewingSpy,
 }));
 
-// Fake the mark-workspace-seen helper so the attention suite can assert the
-// bridge never auto-clears an unread raise (unread persists until each agent
-// conversation is read — the bridge must not call `workspace.markSeen`).
-const { markWorkspaceSeenSpy } = vi.hoisted(() => ({
-  markWorkspaceSeenSpy: vi.fn(),
-}));
-vi.mock('$features/workspace/mark-workspace-seen', () => ({
-  markWorkspaceSeen: markWorkspaceSeenSpy,
-}));
-
 // The bridge now dispatches refreshWorkspaceSubscriptionEntriesRequested instead
 // of calling the service directly — the saga handles the actual fetch. No mock needed.
 
@@ -968,6 +958,62 @@ describe('daemonEventsBridge (wire contract — agent:idle clears the spinner)',
     };
     expect(state.providerSettings.enabledProviders).toEqual({ auggie: true, codex: true });
     expect(selectEnabledProviderIds.select(appStore.state)).toContain('codex');
+  });
+
+  describe('agents.permissionPolicy default change', () => {
+    const settingsChanged = (id: string, path: string, value: unknown) => ({
+      method: 'events.event',
+      params: {
+        event: {
+          id,
+          timestamp: '2026-01-02T00:00:00.000Z',
+          type: 'settings:changed',
+          actor: { type: 'system' },
+          data: { changes: [{ path, value }] },
+        },
+      },
+    });
+
+    function seedPolicySessions(): void {
+      seedSession({
+        id: 'policy-default',
+        permissionPolicy: null,
+        effectivePermissionPolicy: 'interactive',
+      });
+      seedSession({
+        id: 'policy-override',
+        permissionPolicy: 'interactive',
+        effectivePermissionPolicy: 'interactive',
+      });
+      // Older daemon / remote agent: no permissionPolicy field at all.
+      seedSession({ id: 'policy-absent' });
+    }
+
+    it('refetches only loaded sessions without a per-chat override', async () => {
+      await primeBridge();
+      seedPolicySessions();
+      refreshAgentSessionAfterEventSpy.mockClear();
+
+      capturedHandlers[0]!(settingsChanged('evt-policy-1', 'agents.permissionPolicy', 'allow'));
+      await flush();
+
+      const refreshed = refreshAgentSessionAfterEventSpy.mock.calls.map(
+        (call) => (call as unknown[])[0],
+      );
+      expect(refreshed).toEqual(['policy-default']);
+      expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith('policy-default', WS);
+    });
+
+    it('refetches nothing for an unrelated settings key', async () => {
+      await primeBridge();
+      seedPolicySessions();
+      refreshAgentSessionAfterEventSpy.mockClear();
+
+      capturedHandlers[0]!(settingsChanged('evt-policy-2', 'mcp.enableUserServers', true));
+      await flush();
+
+      expect(refreshAgentSessionAfterEventSpy).not.toHaveBeenCalled();
+    });
   });
 
   it('invalidates existing model catalogs on host settings invalidation without another reader', async () => {
@@ -6567,6 +6613,31 @@ describe('daemonEventsBridge (session lifecycle — agent:created/renamed/update
     expect(state.agentSessions.byAgentId[AGENT]?.messages[0].id).toBe('asst-keep');
   });
 
+  it('agent:updated carrying permissionPolicy re-reads so the effective policy converges', async () => {
+    appStore.dispatch(
+      bulkUpsertSessions([
+        {
+          id: AGENT,
+          backendSessionId: 'backend-1',
+          workspaceId: WS,
+          name: 'A',
+          status: AgentStatus.Active,
+          messages: [],
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        } as AgentSession,
+      ]),
+    );
+    refreshAgentSessionAfterEventSpy.mockClear();
+
+    capturedHandlers[0]!(
+      notification('agent:updated', { agentId: AGENT, permissionPolicy: 'interactive' }),
+    );
+    await flush();
+
+    expect(refreshAgentSessionAfterEventSpy).toHaveBeenCalledWith(AGENT, WS);
+  });
+
   it('forwards an agent:updated event that arrives while the prior refresh is in flight', async () => {
     let resolveFirst!: () => void;
     refreshAgentSessionAfterEventSpy.mockImplementationOnce(
@@ -8998,7 +9069,7 @@ describe('daemonEventsBridge (task:status-changed → applyTaskStatusChanged)', 
   });
 });
 
-describe('daemonEventsBridge (comment:added / comment:resolved → applyCommentFromEvent)', () => {
+describe('daemonEventsBridge (comment:added / comment:resolved → commentEventReceived)', () => {
   const COMMENT_WS = 'ws-comment-1';
 
   beforeAll(() => appStore.init());
@@ -10943,7 +11014,6 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
   beforeEach(async () => {
     onBackendNotificationSpy.mockClear();
     backendRequestSpy.mockClear();
-    markWorkspaceSeenSpy.mockClear();
     __resetDaemonEventsBridgeForTests();
     capturedHandlers.length = 0;
   });
@@ -11110,7 +11180,9 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
 
       const ws = await readWorkspace();
       expect(ws.attention).toBe('unread');
-      expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
+      expect(backendRequestSpy.mock.calls.map(([method]) => method)).not.toContain(
+        'workspace.markSeen',
+      );
     } finally {
       window.history.pushState({}, '', '/');
     }
@@ -11124,7 +11196,9 @@ describe('daemonEventsBridge (workspace:attention-changed → workspace slice)',
     handler(attentionChangedNotification('none'));
     handler(attentionChangedNotification('review_required'));
 
-    expect(markWorkspaceSeenSpy).not.toHaveBeenCalled();
+    expect(backendRequestSpy.mock.calls.map(([method]) => method)).not.toContain(
+      'workspace.markSeen',
+    );
   });
 
   it('prefers data.workspaceId over the envelope workspaceId (self-sufficient payload)', async () => {

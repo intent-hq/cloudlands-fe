@@ -88,7 +88,6 @@ describe('ChatMessageNavigator', () => {
     expect(listbox.className).toContain('overflow-x-hidden');
 
     const longResult = results.at(-1)!;
-    expect(longResult.getAttribute('title')).toBeNull();
     expect(longResult.className).toContain('bg-accent');
     expect(longResult.className).toContain('text-accent-foreground');
     expect(longResult.className).toContain('type-caption');
@@ -152,27 +151,6 @@ describe('ChatMessageNavigator', () => {
     await vi.runAllTimersAsync();
     expect(trigger).toBe(document.activeElement);
     expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull();
-  });
-
-  it('closes and disables its trigger tooltip while open, then restores it after close', async () => {
-    renderNavigator();
-    const trigger = screen.getByTestId('chat-message-navigator-trigger');
-
-    trigger.focus();
-    await fireEvent.focus(trigger);
-    await screen.findByRole('tooltip', { name: 'Browse user messages', hidden: true });
-    await fireEvent.click(trigger);
-    await screen.findByTestId('chat-message-navigator-panel');
-    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
-
-    await fireEvent.pointerMove(trigger, { pointerType: 'mouse' });
-    expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull();
-    await fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByTestId('chat-message-navigator-panel')).toBeNull());
-    trigger.blur();
-    trigger.focus();
-    await fireEvent.focus(trigger);
-    await screen.findByRole('tooltip', { name: 'Browse user messages' });
   });
 
   it('toggles with Space and Enter only from the trigger', async () => {

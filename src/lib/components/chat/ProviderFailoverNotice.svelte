@@ -5,7 +5,9 @@
    * Centered inline divider rendered for daemon-persisted automatic provider
    * switch rows: quota failover (`{ type: "provider_failover", fromProvider,
    * toProvider, model, reason: "quota-exceeded" }`) and the return home
-   * (`{ type: "provider_returned", ..., reason: "quota-reset" }`). Visually distinct from
+   * (`{ type: "provider_returned", ..., reason: "quota-reset" }`), and the
+   * Remote Ready profile picked on a machine without sign-in
+   * (`{ type: "provider_auto_selected", ..., machine }`). Visually distinct from
    * user/assistant bubbles — the row is informational, never an error, and
    * was never sent to the provider.
    */
@@ -50,7 +52,9 @@
       fallbackText ??
         (notice.kind === 'returned'
           ? m.chat_providerFailoverNotice_returnedFallback_label()
-          : m.chat_providerFailoverNotice_fallback_label()),
+          : notice.kind === 'autoSelected'
+            ? m.chat_providerFailoverNotice_autoSelectedFallback_label()
+            : m.chat_providerFailoverNotice_fallback_label()),
       workspaceId,
     );
   });

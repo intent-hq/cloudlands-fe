@@ -1,8 +1,12 @@
 // @vitest-environment node
+// The config guard loads eslint.config.js and every rule through `new ESLint()`.
+// @verify-changed-triggers: eslint.config.js, eslint-rules/**/*.js
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { ESLint, Linter, RuleTester } from 'eslint';
 import { describe, expect, it } from 'vitest';
+import { matchesTrigger, readTriggerHeader } from '../scripts/verify-changed-triggers.mjs';
 import { disableDirectives, suppressedLines } from './lib/disable-directives.js';
 import rule from './require-disable-reason.js';
 
@@ -156,6 +160,21 @@ function isOn(setting) {
 describe('repository config', () => {
   const eslint = new ESLint();
 
+  // `new ESLint()` loads the config at runtime, so `vitest related` never links this suite
+  // to the config or the rules; its trigger header must (cloudlands-fe#4158).
+  const header = readTriggerHeader(
+    readFileSync(new URL(import.meta.url), 'utf8'),
+    'eslint-rules/require-disable-reason.test.js',
+  );
+  it.each([
+    'eslint.config.js',
+    'eslint-rules/no-unpaused-clock-in-ct.js',
+    'eslint-rules/lib/disable-directives.js',
+  ])('is selected by verify:changed when %s changes', (changed) => {
+    expect(header.kind).toBe('triggers');
+    expect(header.triggers.some((trigger) => matchesTrigger(trigger, changed))).toBe(true);
+  });
+
   // A later config block's options for a rule replace an earlier block's for the same
   // file, so a block that lists only its own rule would silently drop the others.
   // Checking every tracked file catches that and a newly added reasoned-disable rule.
@@ -192,11 +211,13 @@ describe('repository config', () => {
     expect([...offered].sort()).toEqual([
       'intent/no-class-name-assertions-in-tests',
       'intent/no-fixed-wait-timeout-in-tests',
+      'intent/no-hand-typed-shortcut-in-ct',
       'intent/no-hand-written-typing-check',
       'intent/no-hover-then-click-in-ct',
       'intent/no-one-shot-animation-count',
       'intent/no-raw-mouse-wheel-in-ct',
       'intent/no-unarmed-outside-click-in-ct',
+      'intent/no-unpaused-clock-in-ct',
       'intent/no-wait-for-timeout-in-ct',
     ]);
     expect(mismatches.slice(0, 10)).toEqual([]);
@@ -215,6 +236,10 @@ describe('repository config', () => {
     ['intent/no-raw-mouse-wheel-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
     ['intent/no-wait-for-timeout-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
     ['intent/no-hover-then-click-in-ct', 'src/lib/components/example/__tests__/example.ct.spec.ts'],
+    [
+      'intent/no-hand-typed-shortcut-in-ct',
+      'src/lib/components/example/__tests__/example.ct.spec.ts',
+    ],
     ['intent/no-hand-written-typing-check', 'src/lib/components/example/example.ts'],
     ['intent/no-class-name-assertions-in-tests', 'src/features/example/__tests__/example.test.ts'],
     ['intent/no-fixed-wait-timeout-in-tests', 'src/features/example/__tests__/example.test.ts'],

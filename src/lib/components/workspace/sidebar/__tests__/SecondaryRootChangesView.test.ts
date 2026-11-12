@@ -785,7 +785,6 @@ describe('SecondaryRootChangesView', () => {
     expect(button.tagName).toBe('BUTTON');
     // WCAG 2.5.3: the accessible name must contain the visible label (the branch name).
     expect(button.getAttribute('aria-label')).toBe('Copy branch name: feature/copy-me');
-    expect(button.getAttribute('title')).toBe('Copy branch name');
 
     await fireEvent.click(button);
     await waitFor(() => expect(mocks.writeTextToClipboard).toHaveBeenCalledWith('feature/copy-me'));

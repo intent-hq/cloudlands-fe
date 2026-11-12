@@ -30,7 +30,9 @@
  * SPA history) after the follow's document committed is the user steering
  * while slow resources keep the load open, and is forwarded. Forwards are
  * fenced the same way: a rejected `browser.navigateTab` reloads the canonical
- * URL only if no later follow has moved the mirror on since.
+ * URL only if no later follow has moved the mirror on since. A URL the mirror
+ * may load but the host never accepts (`about:blank`) is never forwarded: a
+ * guest navigation there returns to the canonical URL, as a rejection would.
  *
  * The module is pure: the component feeds it events and executes the
  * commands it returns, so every race is a unit test over an event log.
@@ -76,10 +78,13 @@ export interface ViewerNavigationState {
   /** Where the mirror webview is, as last reported by its main-frame navigations. */
   mirrorUrl: string | null;
   isValidBrowserUrl: (url: string) => boolean;
+  /** Whether the host accepts `url` as a navigation; implies `isValidBrowserUrl`. */
+  isForwardableUrl: (url: string) => boolean;
 }
 
 export function createViewerNavigationState(options: {
   isValidBrowserUrl: (url: string) => boolean;
+  isForwardableUrl: (url: string) => boolean;
 }): ViewerNavigationState {
   return {
     followSeq: 0,
@@ -92,6 +97,7 @@ export function createViewerNavigationState(options: {
     targetUrl: null,
     mirrorUrl: null,
     isValidBrowserUrl: options.isValidBrowserUrl,
+    isForwardableUrl: options.isForwardableUrl,
   };
 }
 
@@ -108,6 +114,14 @@ function issueRequest(state: ViewerNavigationState, url: string): ViewerNavigati
   // The follow is issued first so the forward records it: a host rejection
   // then reloads the canonical URL unless a later follow moved the mirror on.
   return [issueFollow(state, url), issueForward(state, url)];
+}
+
+/** The mirror left for a URL the host cannot take: bring it back to the canonical URL. */
+function returnToCanonical(state: ViewerNavigationState): ViewerNavigationCommand[] {
+  const canonical = state.canonicalUrl;
+  if (!canonical || canonical === state.mirrorUrl || !state.webviewReady) return [];
+  if (!state.isValidBrowserUrl(canonical)) return [];
+  return [issueFollow(state, canonical)];
 }
 
 function issueForward(
@@ -169,6 +183,7 @@ export function applyViewerNavigationEvent(
         // is the page normalizing its own URL. Anything else is the user.
         if (!state.activeFollowCommitted || event.url === state.targetUrl) return [];
       }
+      if (!state.isForwardableUrl(event.url)) return returnToCanonical(state);
       return [issueForward(state, event.url)];
     }
 
@@ -205,7 +220,7 @@ export function applyViewerNavigationEvent(
     case 'address': {
       // The host request does not wait for the mirror load: the URL may be
       // reachable only from the host, or redirect differently here.
-      if (!event.url || !state.isValidBrowserUrl(event.url)) return [];
+      if (!event.url || !state.isForwardableUrl(event.url)) return [];
       // Before the webview can navigate only the host is asked; its echo is
       // then followed once ready, so the target is left as it is.
       if (!state.webviewReady) return [issueForward(state, event.url, { retarget: false })];
@@ -215,6 +230,8 @@ export function applyViewerNavigationEvent(
     case 'refresh': {
       const canonical = state.canonicalUrl;
       if (!canonical || !state.isValidBrowserUrl(canonical) || !state.webviewReady) return [];
+      // The host cannot take this URL: only the mirror reloads.
+      if (!state.isForwardableUrl(canonical)) return [issueFollow(state, canonical)];
       // The mirror reloads as a follow so the resulting navigation is not
       // forwarded again; the host reloads by navigating to its own URL.
       return issueRequest(state, canonical);

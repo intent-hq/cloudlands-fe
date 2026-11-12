@@ -14,7 +14,7 @@ import type {
   DockMarkTool,
 } from '$shared/dock-evidence';
 import type { DockSpeechCapability, DockSpeechEvent } from '$shared/dock-speech';
-import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry';
+import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry.fixtures';
 import {
   configureDockNativeFactory,
   type DockNativeAdapter,

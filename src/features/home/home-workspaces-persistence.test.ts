@@ -5,6 +5,8 @@ import {
   homePersistenceKey,
   normalizeHomeConfiguration,
   persistedHomeState,
+  HOME_HIDDEN_REPOS_CAPACITY,
+  normalizeHomeHiddenRepos,
 } from './home-workspaces-persistence';
 
 // Failure cases: backend/account leakage, invalid/future schemas, unsafe map keys,
@@ -106,4 +108,28 @@ it('normalizes separate integration scopes', () => {
     prs: { query: 'review', filter: 'review-requested', closed: true },
     linear: { query: 'bugs', filter: 'assigned', closed: false },
   });
+});
+
+// Hidden repositories survive reload; malformed or unsafe entries do not, and the
+// newest hides win at capacity.
+it('keeps hidden sidebar repositories across reloads', () => {
+  const stored = readHomePersistence({
+    version: 2,
+    configuration: {},
+    hiddenRepos: JSON.parse(
+      '{"acme/app":1700000000000,"/home/me/plain":0,"__proto__":1,"bad":-1,"nan":"1","":2}',
+    ),
+  });
+  expect(stored.hiddenRepos).toEqual({ 'acme/app': 1700000000000, '/home/me/plain': 0 });
+  expect(
+    readHomePersistence(persistedHomeState({ ...stored.configuration, ...stored })).hiddenRepos,
+  ).toEqual(stored.hiddenRepos);
+  expect(readHomePersistence({ configuration: {} })).not.toHaveProperty('hiddenRepos');
+  const many = Object.fromEntries(
+    Array.from({ length: HOME_HIDDEN_REPOS_CAPACITY + 1 }, (_, index) => [`repo-${index}`, index]),
+  );
+  const kept = normalizeHomeHiddenRepos(many);
+  expect(Object.keys(kept)).toHaveLength(HOME_HIDDEN_REPOS_CAPACITY);
+  expect(kept).not.toHaveProperty('repo-0');
+  expect(kept).toHaveProperty(`repo-${HOME_HIDDEN_REPOS_CAPACITY}`);
 });

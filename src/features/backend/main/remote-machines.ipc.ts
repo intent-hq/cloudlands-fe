@@ -16,12 +16,15 @@ import type {
   RemoteMachineExposeParams,
   RemoteMachineUnexposeParams,
 } from '$shared/types/remote-machines';
+import * as connectionsStore from './desktop-connections-store';
 import {
+  connectBackendClient,
   getBackendClientForConnection,
   getBackendClientForIpcEvent,
   getLocalBackendClient,
   resolveBackendRecord,
 } from './backend.ipc';
+import { createNodeInvites, type NodeInvites } from './node-invites';
 import {
   createRemoteMachineRelay,
   type RemoteMachineBackend,
@@ -33,6 +36,13 @@ const CHANNELS = IPC_CHANNELS.REMOTE_MACHINES;
 
 let handlersRegistered = false;
 let relay: RemoteMachineRelay | null = null;
+let nodeInvites: NodeInvites | null = null;
+
+/** Held `intent://node` links, shared by the paste row and the OS link handler. */
+export function getNodeInvites(): NodeInvites {
+  nodeInvites ??= createNodeInvites();
+  return nodeInvites;
+}
 
 function getRelay(): RemoteMachineRelay {
   relay ??= createRemoteMachineRelay({
@@ -60,6 +70,25 @@ function currentBackend(event: Electron.IpcMainInvokeEvent): RemoteMachineBacken
 
 const text = (value: unknown): value is string => typeof value === 'string' && value.length > 0;
 
+/**
+ * A node never opens a window, so nothing else keeps its pooled client up:
+ * connect it before the relay needs it. A failure leaves the relay to report
+ * `machine-not-connected`.
+ */
+async function ensureNodeClient(connectionId: string): Promise<void> {
+  if (connectionId === LOCAL_CONNECTION_ID || getBackendClientForConnection(connectionId)) return;
+  const saved = (await connectionsStore.list()).find((c) => c.id === connectionId);
+  if (saved?.daemonMode !== 'node') return;
+  try {
+    await connectBackendClient(connectionId);
+  } catch (error) {
+    logger.warn('Could not connect the node to make it available', {
+      connectionId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 /** Register the remote-machine IPC handlers (idempotent). */
 export function registerRemoteMachinesHandlers(): void {
   if (handlersRegistered) return;
@@ -72,6 +101,7 @@ export function registerRemoteMachinesHandlers(): void {
       params.enableListener === 'wss' || params.enableListener === 'tailcat'
         ? params.enableListener
         : undefined;
+    await ensureNodeClient(params.machineConnectionId);
     return getRelay().expose(
       {
         machineConnectionId: params.machineConnectionId,
@@ -94,6 +124,30 @@ export function registerRemoteMachinesHandlers(): void {
       },
       currentBackend(event),
     );
+  });
+
+  ipcMain.handle(CHANNELS.INVITE_INSPECT, (_event, params: { uri?: unknown } | undefined) =>
+    getNodeInvites().inspect(params?.uri),
+  );
+
+  ipcMain.handle(
+    CHANNELS.INVITE_CLAIM,
+    async (event, params: { pendingId?: unknown } | undefined) => {
+      if (!text(params?.pendingId)) return { ok: false, code: 'expired' };
+      let backend: RemoteMachineBackend;
+      try {
+        backend = currentBackend(event);
+      } catch {
+        getNodeInvites().discard(params.pendingId);
+        return { ok: false, code: 'failed' };
+      }
+      return getNodeInvites().claim(params.pendingId, backend.client);
+    },
+  );
+
+  ipcMain.handle(CHANNELS.INVITE_DISCARD, (_event, params: { pendingId?: unknown } | undefined) => {
+    if (text(params?.pendingId)) getNodeInvites().discard(params.pendingId);
+    return { ok: true };
   });
 
   ipcMain.handle(CHANNELS.MACHINE_FINGERPRINT, async (_event, connectionId: unknown) =>

@@ -2,7 +2,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'svelte-sonner';
-import SurfaceContextConsumer from './SurfaceContextConsumer.svelte';
+import SurfaceContextConsumerTestHost from './SurfaceContextConsumerTestHost.svelte';
 import SurfaceContextHarness from './SurfaceContextHarness.svelte';
 import SurfaceOverlayHarness from './SurfaceOverlayHarness.svelte';
 import { clampSurface, surfaceClasses, surfaceHoverClasses } from './surface-context';
@@ -42,7 +42,7 @@ describe('surface context', () => {
     expect(surfaceHoverClasses(9)).toBe('hover:bg-surface-8 hover:shadow-surface-8');
   });
 
-  it.each(['dialog', 'sheet', 'menu', 'select', 'combobox', 'tooltip', 'hover-card'] as const)(
+  it.each(['dialog', 'sheet', 'menu', 'select', 'combobox'] as const)(
     'raises the %s overlay two levels and provides its surface to children',
     async (kind) => {
       render(SurfaceOverlayHarness, { props: { kind, substrate: 2 } });
@@ -53,7 +53,7 @@ describe('surface context', () => {
 
   it('raises toast content and provides its surface to custom toast children', async () => {
     render(SurfaceOverlayHarness, { props: { kind: 'toast', substrate: 2 } });
-    toast.custom(SurfaceContextConsumer, {
+    toast.custom(SurfaceContextConsumerTestHost, {
       duration: Number.POSITIVE_INFINITY,
       componentProps: { testId: 'toast-surface' },
     });

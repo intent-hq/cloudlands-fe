@@ -7,7 +7,7 @@
   import { getOwnedPopupContext } from '$lib/components/ui/owned-popup-context';
   import { Button } from '$lib/components/ui/button';
   import { Input } from '$lib/components/ui/input';
-  import { getPageTargetIndex } from '$lib/components/ui/menu';
+  import { getPageTargetIndex, Indicator } from '$lib/components/ui/menu';
   import ListHighlight from '../menu/menu-list-highlight.svelte';
   import {
     menuItem,
@@ -952,7 +952,10 @@
     {#if !hasResults}
       {#if searchValue && allOptions.length > 0}
         <!-- Search yielded no results but there are options available -->
-        <div class="type-caption py-1 px-3 text-left text-muted-foreground">
+        <div
+          class="type-caption py-1 px-3 text-left text-muted-foreground"
+          data-dropdown-no-results
+        >
           <span>{m.ui_dropdown_noResultsFor_label({ query: searchValue })}</span>
         </div>
       {:else if empty}
@@ -1024,20 +1027,7 @@
         {#if item}
           {@render item({ option, selected: isSelected(option.value), highlighted: isHighlighted })}
         {:else}
-          <!-- Toggle checkbox -->
-          {#if option.type === 'toggle'}
-            <div
-              class={cn(
-                'h-4 w-4 shrink-0 rounded border border-muted-foreground/30',
-                'flex items-center justify-center',
-                option.checked ? 'bg-primary border-primary' : 'bg-transparent',
-              )}
-            >
-              {#if option.checked}
-                <Fa icon={faCheck} class="h-2.5 w-2.5 text-primary-foreground" />
-              {/if}
-            </div>
-          {:else if multiple}
+          {#if multiple && option.type !== 'toggle'}
             <!-- Checkbox for multiple select -->
             <div
               class={cn(
@@ -1079,8 +1069,10 @@
             <span class="text-xs text-subtle">{option.shortcut}</span>
           {/if}
 
-          <!-- Submenu arrow -->
-          {#if option.type === 'submenu'}
+          <!-- Trailing switch, submenu arrow, or single-select check -->
+          {#if option.type === 'toggle'}
+            <Indicator state={option.checked ? 'on' : 'off'} />
+          {:else if option.type === 'submenu'}
             <Fa icon={faChevronRight} class="h-3 w-3 shrink-0 text-ghost" />
           {:else if !multiple && !option.type && isSelected(option.value)}
             <!-- Checkmark for single select -->
@@ -1099,11 +1091,7 @@
             data-submenu
             in:panelEnter={menuOverlayTransition.enter}
             out:panelExit={menuOverlayTransition.exit}
-            class={cn(
-              menuOverlay(),
-              'min-w-45 overflow-hidden rounded-md border border-border',
-              'py-1',
-            )}
+            class={cn(menuOverlay(), 'min-w-45 overflow-hidden py-1')}
             style={submenuStyle}
             onmouseleave={() => (openSubmenu = null)}
             role="menu"

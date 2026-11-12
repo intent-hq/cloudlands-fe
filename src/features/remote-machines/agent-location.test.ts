@@ -1,3 +1,4 @@
+import { m } from '$shared/paraglide/messages.js';
 import { describe, expect, it } from 'vitest';
 import type { AgentSession } from '$shared/types';
 import type { RemoteMachine } from '$shared/types/remote-machines';
@@ -5,10 +6,11 @@ import { agentNodeUpdates } from '$shared/utils/agent-node';
 import { getAgentNodeStatusLabel } from '$lib/components/chat/agent-node-status-label';
 import {
   agentMachineLocation,
-  agentMachineTooltip,
   agentPlacementNoticeKind,
   machineLocation,
   machinePlatformLabel,
+  placementFailure,
+  remoteAttachmentFailure,
 } from './agent-location';
 
 const remoteAgent = (extra: Partial<AgentSession> = {}): AgentSession =>
@@ -112,19 +114,6 @@ describe('machinePlatformLabel', () => {
   });
 });
 
-describe('agentMachineTooltip', () => {
-  it('says where the agent runs, with the machine state when there is one', () => {
-    const base = { nodeId: 'n', name: 'Mac mini', platform: 'macOS arm64' };
-    expect(agentMachineTooltip({ ...base, state: 'ready' })).toBe('Runs on Mac mini · macOS arm64');
-    expect(agentMachineTooltip({ ...base, state: 'unreachable' })).toBe(
-      'Runs on Mac mini · macOS arm64 · Unreachable',
-    );
-    expect(agentMachineTooltip({ ...base, platform: null, state: 'revoked' })).toBe(
-      'Runs on Mac mini · Access revoked',
-    );
-  });
-});
-
 describe('agentPlacementNoticeKind', () => {
   it('is null for a running remote agent and for local agents', () => {
     const agent = remoteAgent();
@@ -151,6 +140,80 @@ describe('agentPlacementNoticeKind', () => {
     const starting = remoteAgent({ effectiveIsolation: 'pending' });
     expect(agentPlacementNoticeKind(starting, agentMachineLocation(starting))).toBe('starting');
   });
+
+  it('reports a failed setup once the agent has started, after the machine states', () => {
+    const setupFailed = remoteAgent({ setup: { state: 'failed', exitCode: 1 } });
+    expect(agentPlacementNoticeKind(setupFailed, agentMachineLocation(setupFailed))).toBe(
+      'setup-failed',
+    );
+    const stillStarting = remoteAgent({
+      effectiveIsolation: 'pending',
+      setup: { state: 'failed', exitCode: 1 },
+    });
+    expect(agentPlacementNoticeKind(stillStarting, agentMachineLocation(stillStarting))).toBe(
+      'starting',
+    );
+    const offline = remoteAgent({ nodeState: 'offline', setup: { state: 'failed' } });
+    expect(agentPlacementNoticeKind(offline, agentMachineLocation(offline))).toBe('unreachable');
+    for (const state of ['completed', 'skipped'] as const) {
+      const done = remoteAgent({ setup: { state } });
+      expect(agentPlacementNoticeKind(done, agentMachineLocation(done))).toBe(null);
+    }
+  });
+});
+
+describe('placementFailure', () => {
+  const data = (extra: object) =>
+    JSON.stringify({
+      code: 'machine-update-required',
+      machineVersion: '0.11.120',
+      backendVersion: '0.11.134',
+      update: 'machine',
+      ...extra,
+    });
+
+  it('reads a prepared-checkout refusal in plain words, without its data', () => {
+    const detail = `Update Intent on mac-mini to run agents for this workspace: it has submodules or a setup script. ${data({ reason: 'prepared-checkout' })}`;
+    expect(placementFailure({ code: 'remote-launch-failed', detail }, 'Mac mini')).toEqual({
+      updateRequired: true,
+      message:
+        'Mac mini needs a newer version of Intent to run agents for this workspace, because the workspace has submodules or a setup script.',
+    });
+  });
+
+  it('keeps the message of a plain update refusal and drops its data', () => {
+    const detail = `Update Intent on mac-mini (it runs 0.11.120; this backend needs 0.11.134 or newer). ${data({})}`;
+    expect(placementFailure({ code: 'machine-update-required', detail }, 'Mac mini')).toEqual({
+      updateRequired: true,
+      message:
+        'Update Intent on mac-mini (it runs 0.11.120; this backend needs 0.11.134 or newer).',
+    });
+    expect(
+      placementFailure({ code: 'machine-update-required', detail: 'Update Intent.' }, 'Mac mini'),
+    ).toEqual({ updateRequired: true, message: 'Update Intent.' });
+  });
+
+  it('keeps any other detail, without a trailing error data object', () => {
+    for (const detail of [
+      "node-provider-unavailable: Claude Code isn't signed in on Mac mini.",
+      'node-checkout-failed: packages/intentd {not json}',
+      'node-checkout-failed: {"path":"packages/intentd"}',
+    ]) {
+      expect(placementFailure({ code: 'remote-launch-failed', detail }, 'Mac mini')).toEqual({
+        updateRequired: false,
+        message: detail,
+      });
+    }
+    expect(
+      placementFailure(
+        {
+          code: 'remote-launch-failed',
+          detail: 'Model gpt-6 isn\'t available on Mac mini. {"code":"model-unavailable"}',
+        },
+        'Mac mini',
+      ),
+    ).toEqual({ updateRequired: false, message: "Model gpt-6 isn't available on Mac mini." });
+  });
 });
 
 describe('agent row status label', () => {
@@ -163,6 +226,16 @@ describe('agent row status label', () => {
         remoteAgent({ placementError: { code: 'remote-launch-failed', detail: 'x' } }),
       ),
     ).toBe("Couldn't start");
+  });
+
+  it('says what a starting remote agent is doing when the machine reports its setup', () => {
+    const starting = (setup: AgentSession['setup']) =>
+      getAgentNodeStatusLabel(remoteAgent({ effectiveIsolation: 'pending', setup }));
+    expect(starting({ state: 'pending' })).toBe('Preparing checkout');
+    expect(starting({ state: 'running', startedAt: '2026-11-05T10:00:00Z' })).toBe('Running setup');
+    expect(starting({ state: 'completed', exitCode: 0 })).toBe('Starting…');
+    expect(starting({ state: 'skipped' })).toBe('Starting…');
+    expect(getAgentNodeStatusLabel(remoteAgent({ setup: { state: 'failed' } }))).toBe(undefined);
   });
 
   it('keeps Provisioning for a local placement that is pending', () => {
@@ -199,5 +272,44 @@ describe('machineLocation (an agent not created yet)', () => {
       state: 'ready',
     });
     expect(machineLocation('', machine())).toBeNull();
+  });
+});
+
+describe('remoteAttachmentFailure', () => {
+  it('reads an older backend refusing attachments for a remote agent as an update prompt', () => {
+    expect(
+      remoteAttachmentFailure(
+        'remote-agent-unsupported: attachments can not reach an agent on another machine',
+      ),
+    ).toBe(m.remoteAgent_attachmentsUnsupported_error());
+  });
+
+  it('keeps the size and limit of a too-large refusal, without its code, method or data', () => {
+    const message = remoteAttachmentFailure(
+      `Invalid params: attachments-too-large-for-machine: agent.sendMessage: this message's text and images come to 9437184 bytes on the link to the remote machine, over its 8388608-byte limit; send fewer or smaller images {"code":"attachments-too-large-for-machine"}`,
+    );
+    expect(message).toBe(m.remoteAgent_attachmentsTooLargeSized_error({ size: '9', limit: '8' }));
+  });
+
+  it('keeps the detail of a too-large refusal it cannot measure', () => {
+    expect(
+      remoteAttachmentFailure(
+        'attachments-too-large-for-machine: agent.queueMessage: over the limit',
+      ),
+    ).toBe(m.remoteAgent_attachmentsTooLarge_error({ detail: 'over the limit' }));
+  });
+
+  it('reads a prompt that does not fit the machine link as too large', () => {
+    expect(remoteAttachmentFailure('node-prompt-too-large:')).toBe(
+      m.remoteAgent_attachmentsTooLargeNoDetail_error(),
+    );
+  });
+
+  it('leaves other refusals to the caller', () => {
+    expect(
+      remoteAttachmentFailure('remote-agent-unsupported: ws.app.* is for the Assistant workspace'),
+    ).toBeNull();
+    expect(remoteAttachmentFailure('unknown agent id: agent-1')).toBeNull();
+    expect(remoteAttachmentFailure('')).toBeNull();
   });
 });

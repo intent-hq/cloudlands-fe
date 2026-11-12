@@ -8,6 +8,7 @@ import { warmImport } from '../../../test/warm-import';
 import { m } from '$shared/paraglide/messages.js';
 import { store } from '$store/renderer/store';
 import { settingsFormSaga } from '$store/renderer/slices/settings-events/sagas/settings-form-saga';
+import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
 let stop: () => void;
 beforeEach(() => {
@@ -73,14 +74,12 @@ vi.mock('$features/onboarding/messages/DirectoryPickerModal.svelte', async () =>
 
 const GIT_CRED_PATH = 'sourceControl.github.exposeGitCredentialToChildren';
 const GIT_CRED_LABEL = /Git credentials in terminals & agents/;
-const COW_LABEL = /Use Copy-on-Write isolation/;
 
 const baseSettings = [
   { path: 'workspace.worktreesLocation', value: '' },
   { path: 'workspace.sshKeyPath', value: '' },
   { path: 'workspace.defaultShell', value: 'auto' },
   { path: 'git.autoCommit', value: true },
-  { path: 'workspace.cowIsolation', value: false },
   { path: 'workspace.branchPrefix', value: '' },
 ];
 
@@ -214,117 +213,87 @@ describe('GitWorkspaceSettings — git credential toggle (§5.12)', () => {
     const description = descriptionId ? document.getElementById(descriptionId) : null;
     expect(description).toBeTruthy();
   });
+
+  async function renderDescription() {
+    mocks.mockSettingsList.mockResolvedValue([
+      ...baseSettings,
+      { path: GIT_CRED_PATH, value: true },
+    ]);
+    render(GitWorkspaceSettings);
+    const toggle = await waitFor(() => screen.getByRole('switch', { name: GIT_CRED_LABEL }));
+    return () => document.getElementById(toggle.getAttribute('aria-describedby') ?? '');
+  }
+
+  it('describes only local behaviour when remote agents Labs is off', async () => {
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    const description = await renderDescription();
+
+    expect(description()?.textContent).toContain(
+      m.settings_gitWorkspace_gitCredentials_description(),
+    );
+    expect(description()?.textContent).not.toContain('GH_TOKEN');
+  });
+
+  it('adds the remote-machine behaviour when remote agents Labs is on, and follows the flag', async () => {
+    store.dispatch(setLabsRemoteAgentsEnabled(true));
+    const description = await renderDescription();
+
+    expect(description()?.textContent).toContain(
+      m.settings_gitWorkspace_gitCredentials_description(),
+    );
+    expect(description()?.textContent).toContain(
+      m.settings_gitWorkspace_gitCredentials_remoteDescription(),
+    );
+
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    await waitFor(() => expect(description()?.textContent).not.toContain('GH_TOKEN'));
+  });
 });
 
-describe('GitWorkspaceSettings — CoW isolation toggle', () => {
+describe('GitWorkspaceSettings — retired copy-on-write isolation', () => {
+  // A daemon from before the retirement still lists the setting; the form
+  // must neither show it, probe for CoW support, nor write it back.
+  const withRetiredSetting = () => [
+    ...baseSettings.filter((setting) => setting.path !== 'workspace.defaultShell'),
+    { path: 'workspace.defaultShell', value: '/bin/zsh' },
+    { path: 'workspace.cowIsolation', value: true },
+    { path: GIT_CRED_PATH, value: true },
+  ];
+
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.mockSettingsList.mockResolvedValue([...baseSettings]);
+    mocks.mockSettingsList.mockResolvedValue(withRetiredSetting());
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('renders the toggle when capabilities report cowSupported', async () => {
-    mocks.mockCapabilities.mockResolvedValue({ cowSupported: true });
-
-    render(GitWorkspaceSettings);
-
-    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-  });
-
-  it('associates the CoW description with its toggle', async () => {
-    mocks.mockCapabilities.mockResolvedValue({ cowSupported: true });
-
-    render(GitWorkspaceSettings);
-
-    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
-    const descriptionId = toggle.getAttribute('aria-describedby');
-    expect(descriptionId ? document.getElementById(descriptionId) : null).toBeTruthy();
-  });
-
-  it('hides the toggle when capabilities do not report cowSupported', async () => {
-    mocks.mockCapabilities.mockResolvedValue({});
-    // Include the git-credential setting so a load-gated sibling row appears —
-    // waiting for it guarantees both the settings load and the earlier-scheduled
-    // capabilities probe have resolved before asserting absence.
-    mocks.mockSettingsList.mockResolvedValue([
-      ...baseSettings,
-      { path: GIT_CRED_PATH, value: true },
-    ]);
-
+  it('offers no copy-on-write toggle and probes no machine capability', async () => {
     render(GitWorkspaceSettings);
 
     await waitFor(() => {
       expect(screen.getByRole('switch', { name: GIT_CRED_LABEL })).toBeTruthy();
     });
-    expect(screen.queryByRole('checkbox', { name: COW_LABEL })).toBeNull();
+    expect(screen.queryByText(/Copy-on-Write/)).toBeNull();
+    expect(mocks.mockCapabilities).not.toHaveBeenCalled();
   });
 
-  it('hides the toggle when capabilities report cowSupported as false', async () => {
-    mocks.mockCapabilities.mockResolvedValue({ cowSupported: false });
-    mocks.mockSettingsList.mockResolvedValue([
-      ...baseSettings,
-      { path: GIT_CRED_PATH, value: true },
-    ]);
-
-    render(GitWorkspaceSettings);
-
-    await waitFor(() => {
-      expect(screen.getByRole('switch', { name: GIT_CRED_LABEL })).toBeTruthy();
-    });
-    expect(screen.queryByRole('checkbox', { name: COW_LABEL })).toBeNull();
-  });
-
-  it('persists a toggle-on via settings.update with the exact payload', async () => {
-    mocks.mockCapabilities.mockResolvedValue({ cowSupported: true });
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'workspace.cowIsolation', value: true }]);
-
-    render(GitWorkspaceSettings);
-
-    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
-    await fireEvent.click(toggle);
-
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: 'workspace.cowIsolation', value: true },
-      ]);
-    });
-  });
-});
-
-describe('GitWorkspaceSettings — resetToDefaults', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.mockCapabilities.mockResolvedValue({ cowSupported: true });
-  });
-
-  afterEach(() => {
-    cleanup();
-  });
-
-  it('resets cowIsolation to false and persists the default via settings.update', async () => {
-    mocks.mockSettingsList.mockResolvedValue([
-      ...baseSettings.filter((setting) => setting.path !== 'workspace.cowIsolation'),
-      { path: 'workspace.cowIsolation', value: true },
-    ]);
-    mocks.mockSettingsUpdate.mockResolvedValue([{ path: 'workspace.cowIsolation', value: false }]);
-
+  it('resetToDefaults never writes workspace.cowIsolation', async () => {
+    mocks.mockSettingsUpdate.mockImplementation(async (changes) => changes);
     const { component } = render(GitWorkspaceSettings);
-
-    const toggle = await waitFor(() => screen.getByRole('checkbox', { name: COW_LABEL }));
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    await waitFor(() => {
+      expect(screen.getByRole('switch', { name: GIT_CRED_LABEL })).toBeTruthy();
+    });
 
     component.resetToDefaults();
 
-    await waitFor(() => {
-      expect(mocks.mockSettingsUpdate).toHaveBeenCalledWith([
-        { path: 'workspace.cowIsolation', value: false },
-      ]);
-      expect(toggle.getAttribute('aria-checked')).toBe('false');
-    });
+    await waitFor(() => expect(mocks.mockSettingsUpdate).toHaveBeenCalled());
+    const written = mocks.mockSettingsUpdate.mock.calls.flatMap(([changes]) =>
+      (changes as Array<{ path: string }>).map(({ path }) => path),
+    );
+    expect(written).toContain('workspace.defaultShell');
+    expect(written).not.toContain('workspace.cowIsolation');
   });
 });
 

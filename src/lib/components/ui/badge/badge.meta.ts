@@ -11,7 +11,6 @@ export const badgeMetadata = parseUiComponentMetadata({
   owner: '007-B1',
   callers: [
     'src/features/discussions/components/DiscussionUnreadBadge.svelte',
-    'src/lib/components/code-review/CodeReviewPanel.svelte',
     'src/lib/components/code-review/CodeReviewTabContent.svelte',
     'src/lib/components/workspace/PullRequestCreator.svelte',
     'src/lib/components/workspace/initializer/BranchSelector.svelte',

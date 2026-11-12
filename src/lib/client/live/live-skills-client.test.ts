@@ -422,4 +422,57 @@ describe('LiveSkillsClient', () => {
       });
     });
   });
+
+  describe('listForAgent', () => {
+    const wire = (name: string, scope: 'project' | 'user') => ({
+      name,
+      description: `${name} description`,
+      location: `/Users/me/.claude/skills/${name}/SKILL.md`,
+      scope,
+      allowedTools: '*',
+    });
+
+    it('sends agentId and reads the envelope with stale and unavailable', async () => {
+      const backendRequestSpy = vi
+        .spyOn(backendTransport, 'backendRequest')
+        .mockResolvedValueOnce({ skills: [wire('a', 'user')], nextToken: 't1', stale: true })
+        .mockResolvedValueOnce({ skills: [wire('b', 'project')], nextToken: null, stale: true });
+
+      const result = await client.listForAgent('ws-1', 'agent-remote');
+
+      expect(backendRequestSpy).toHaveBeenNthCalledWith(1, 'skill.list', {
+        workspaceId: 'ws-1',
+        agentId: 'agent-remote',
+        limit: 500,
+      });
+      expect(backendRequestSpy).toHaveBeenNthCalledWith(2, 'skill.list', {
+        workspaceId: 'ws-1',
+        agentId: 'agent-remote',
+        limit: 500,
+        nextToken: 't1',
+      });
+      expect(result.skills.map((s) => s.name)).toEqual(['a', 'b']);
+      expect(result.skills[0]).not.toHaveProperty('allowedTools');
+      expect(result.stale).toBe(true);
+      expect(result.unavailable).toBeNull();
+    });
+
+    it('keeps only the documented unavailable reasons', async () => {
+      const spy = vi.spyOn(backendTransport, 'backendRequest');
+      spy.mockResolvedValueOnce({ skills: [], nextToken: null, unavailable: 'machine-offline' });
+      expect(await client.listForAgent('ws-1', 'a1')).toEqual({
+        skills: [],
+        stale: false,
+        unavailable: 'machine-offline',
+      });
+      spy.mockResolvedValueOnce({
+        skills: [wire('p', 'project')],
+        nextToken: null,
+        unavailable: 'machine-update-required',
+      });
+      expect((await client.listForAgent('ws-1', 'a1')).unavailable).toBe('machine-update-required');
+      spy.mockResolvedValueOnce({ skills: [], nextToken: null, unavailable: 'something-new' });
+      expect((await client.listForAgent('ws-1', 'a1')).unavailable).toBeNull();
+    });
+  });
 });

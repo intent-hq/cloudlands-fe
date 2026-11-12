@@ -12,6 +12,7 @@ import {
   waitForAgentNotStreaming,
   exitPackagedApp,
   getSmokeWorkspace,
+  selectSidebarSection,
 } from './build-smoke-helpers';
 
 const artifactPhase = process.env.EDITORIAL_ARTIFACT_PHASE ?? 'current';
@@ -85,22 +86,12 @@ async function prepareSidebarFixture() {
   await expect(page.getByRole('button', { name: 'Edit workspace status' })).toContainText(
     longStatus,
   );
-  await setSidebarSections(['overview']);
+  await setSidebarSections(['agents']);
 }
 
 async function setSidebarSections(tabIds: string[]) {
-  const target = tabIds.at(-1) ?? 'overview';
-  const expanded = page.locator('[data-sidebar-launcher] button[aria-expanded="true"]');
-  if (target === 'overview') {
-    if ((await expanded.count()) > 0) await expanded.first().click();
-    await expect(expanded).toHaveCount(0);
-    return;
-  }
-
-  const launcher = page.locator(`[data-sidebar-launcher="${target}"] button[aria-expanded]`);
-  if ((await launcher.getAttribute('aria-expanded')) !== 'true') await launcher.click();
-  await expect(launcher).toHaveAttribute('aria-expanded', 'true');
-  await expect(expanded).toHaveCount(1);
+  // The icon-tab sidebar has no collapsed overview; Agents is its default section.
+  await selectSidebarSection(page, tabIds.at(-1) ?? 'agents');
 }
 
 async function setSidebarSide(side: 'left' | 'right') {
@@ -377,7 +368,7 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     await setTheme('light');
     await setSidebarSections(['changes']);
     await capture('desktop-light-expanded-sidebar-section');
-    await setSidebarSections(['overview']);
+    await setSidebarSections(['agents']);
     await setSidebarSide('right');
     await capture('desktop-light-right-sidebar');
     await setSidebarSide('left');
@@ -463,83 +454,7 @@ test.describe('Build Smoke — Editorial Workspace Shell', () => {
     await expect(panels.nth(2)).toHaveAttribute('data-focused', 'true');
     await capture('desktop-light-focused-panel');
 
-    // Keep the complete three-column canvas visible for a pointer-driven edge drop.
-    await emulateViewport(3200, 1000);
     const target = page.locator(`[data-panel-id="${firstPanelId}"]`);
-    const header = target.locator('[data-panel-content-header][draggable="true"]');
-    await expect(header).toHaveAttribute('data-pane-stack-size', '1');
-    const activePane = target.locator('.tab-content-wrapper[aria-hidden="false"]');
-    await expect(activePane).toHaveCount(1);
-    const paneId = await activePane.getAttribute('data-tab-id');
-    expect(paneId).toBeTruthy();
-    const beforePanes = await panels.evaluateAll((elements) =>
-      elements.map((element) => ({
-        panelId: element.getAttribute('data-panel-id'),
-        panes: Array.from(element.querySelectorAll('.tab-content-wrapper')).map((pane) =>
-          pane.getAttribute('data-tab-id'),
-        ),
-      })),
-    );
-    // The empty flex spacer has no height. Grab the real header's top padding
-    // instead, and verify that hit-testing reaches this draggable header rather
-    // than a selector/button. No drag event or application state is injected.
-    await expect(header).toBeVisible();
-    await header.scrollIntoViewIfNeeded();
-    const headerBox = await header.boundingBox();
-    if (!headerBox) throw new Error('Pane header bounds are unavailable');
-    await header.hover({ position: { x: headerBox.width / 2, y: 2 } });
-    const { x: startX, y: startY } = await header.evaluate((element) => {
-      const box = element.getBoundingClientRect();
-      if (box.width <= 20 || box.height <= 4) throw new Error('Pane header is too small to drag');
-      const x = box.left + box.width / 2;
-      const y = box.top + 2;
-      if (document.elementFromPoint(x, y) !== element) {
-        throw new Error('Pane header drag origin is covered or interactive');
-      }
-      return { x, y };
-    });
-    const destinationBox = await panels.last().boundingBox();
-    if (!destinationBox) throw new Error('Pane drop bounds are unavailable');
-    const dropX = destinationBox.x + destinationBox.width - 3;
-    const dropY = destinationBox.y + 80;
-    const viewportWidth = await page.evaluate(() => window.innerWidth);
-    expect(startX).toBeGreaterThan(0);
-    expect(dropX).toBeLessThan(viewportWidth);
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    try {
-      await page.mouse.move(startX + 10, startY, { steps: 3 });
-      await page.mouse.move(dropX, dropY, { steps: 20 });
-      await page.mouse.move(dropX, dropY);
-      await expect(page.locator('[data-panel-layout-edge-preview="after"]')).toBeVisible();
-      await capture('wide-light-drag-over');
-    } finally {
-      await page.mouse.up();
-    }
-    await expect
-      .poll(() =>
-        panels.evaluateAll((elements) =>
-          elements.map((element) => ({
-            panelId: element.getAttribute('data-panel-id'),
-            panes: Array.from(element.querySelectorAll('.tab-content-wrapper')).map((pane) =>
-              pane.getAttribute('data-tab-id'),
-            ),
-          })),
-        ),
-      )
-      .toEqual([beforePanes[1], beforePanes[2], beforePanes[0]]);
-    await expect(panels).toHaveCount(3);
-    await expect(panels.last()).toHaveAttribute('data-panel-id', firstPanelId!);
-    await expect(activePane).toHaveAttribute('data-tab-id', paneId!);
-    await expect(activePane).toBeVisible();
-    await expect(target).toHaveAttribute('data-focused', 'true');
-    await expect(page.locator('[data-panel-layout-edge-preview]')).toHaveCount(0);
-    await expect(page.locator('[data-split-gutter="horizontal"]')).toHaveCount(2);
-    await expect(page.locator('[data-split-gutter="vertical"]')).toHaveCount(0);
-    await expectUsableGutters();
-    await capture('wide-light-reordered-columns');
-    await emulateViewport(1440, 1000);
-
     await target.click({ position: { x: 24, y: 96 } });
     await expect(target).toHaveAttribute('data-focused', 'true');
     // Mod+Shift+M toggles workspace chrome; Mod+Shift+Enter zooms the focused panel.

@@ -77,6 +77,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { getEffectiveShortcut } from '$lib/utils/effective-shortcuts';
   import { matchesShortcut, type ShortcutId } from '$lib/utils/shortcut-bindings';
+  import { classifyFileReadError, fileReadErrorLabel } from './file-read-error';
 
   const lineWrapping = selectLineWrapping();
   const diffIndicators = selectDiffIndicators();
@@ -142,6 +143,7 @@
   const fileLoading = $derived($fileLoadingStore);
   const fileSaving = $derived($fileSavingStore);
   const fileError = $derived($fileErrorStore);
+  const fileErrorKind = $derived(fileError ? classifyFileReadError(fileError) : 'generic');
   // Suffix-resolution candidates recorded by the read saga on a not-found
   // error (see files-read-saga); capped for display in the error panel.
   const MAX_NOT_FOUND_CANDIDATES = 5;
@@ -697,9 +699,11 @@
       </div>
     {:else if fileError}
       <div class="flex flex-col items-center justify-center h-full text-subtle gap-2">
-        <p class="text-danger">{m.layout_fileTab_errorLoading_label()}</p>
-        <p class="text-xs">{fileError}</p>
+        <p class="text-danger" role="alert">{fileReadErrorLabel(fileErrorKind)}</p>
         <p class="text-xs font-mono">{tab.filePath}</p>
+        {#if fileErrorKind === 'generic'}
+          <p class="text-xs">{fileError}</p>
+        {/if}
         {#if fileNotFoundCandidates.length > 0}
           <p class="text-xs mt-2">{m.layout_fileTab_didYouMean_label()}</p>
           <ul class="flex flex-col items-center gap-1">

@@ -23,12 +23,17 @@
         props: { diagnosticCode: 'scan-limit', diagnosticIsDirectory: true, emptyCatalog: true },
       },
       'imported-unsupported': { props: { imported: true, unsupported: true, source: 'project' } },
+      'model-options': { props: { modelOptions: 'pair' } },
+      'model-options-heights': { props: { modelOptions: 'heights' } },
     },
   });
 </script>
 
 <script lang="ts">
   import { admitLegacyPrincipal, withHostPrincipal } from '../../../test/fixtures/principal-state';
+  import { createMockBridgeListeners } from '../../../test/ct-mock-electron-bridge';
+  import { emitMockIpcEvent } from '$shared/ipc-mock-router';
+  import { IPC_CHANNELS } from '$shared/ipc-registry';
   import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
   import { onDestroy } from 'svelte';
   import { Button } from '$lib/components/patterns/settings/custom-controls';
@@ -37,6 +42,7 @@
     SpecialistImportDiagnostic,
     SpecialistDef,
   } from '$lib/client/app-client';
+  import type { SpecialistModelOption } from '$shared/specialist-file-types';
   import SpecialistImportDiagnostics from './SpecialistImportDiagnostics.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
@@ -80,6 +86,7 @@
     emptyCatalog = false,
     catalogFlow = false,
     creationFlow = false,
+    modelOptions,
   }: {
     rules?: boolean;
     role?: 'owner' | 'member' | 'guest';
@@ -94,7 +101,30 @@
     emptyCatalog?: boolean;
     catalogFlow?: boolean;
     creationFlow?: boolean;
+    /** Saved delegation model options: a realistic pair, or hint-height probes. */
+    modelOptions?: 'pair' | 'heights';
   } = $props();
+
+  const lines = (count: number) =>
+    Array.from({ length: count }, (_, i) => `Hint line ${i + 1}`).join('\n');
+  // i18n-ignore (preview-only sample hints)
+  const savedModelOptions: SpecialistModelOption[] | undefined =
+    modelOptions === 'pair'
+      ? [
+          {
+            provider: 'claude-code',
+            model: 'opus',
+            hint: 'Large refactors that span several packages and need a careful plan.\nSecurity-sensitive changes.\nAnything where a wrong answer is expensive to undo.',
+          },
+          { provider: 'codex', model: 'gpt-5.3-codex', hint: 'Small, well-scoped edits.' },
+        ]
+      : modelOptions === 'heights'
+        ? [
+            { model: 'six-line-model', hint: lines(6) },
+            { model: 'twelve-line-model', hint: lines(12) },
+            { model: 'empty-hint-model', hint: '' },
+          ]
+        : undefined;
 
   admitLegacyPrincipal();
   const admitted = withHostPrincipal(appStore.state, role);
@@ -115,11 +145,11 @@
 
   let catalogFailure = false;
   let liveCatalog: SpecialistCatalog = { specialists: [] };
-  const notificationListeners = new Map<
-    string,
-    { channel: string; handler: (payload: unknown) => void }
-  >();
-  let listenerSequence = 0;
+  // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock bridge transport for preview events; never fetches domain data.
+  const { detachAll: detachListeners, ...listeners } = createMockBridgeListeners();
+  const notifyBackend = (method: string) =>
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock bridge transport for preview events; never fetches domain data.
+    emitMockIpcEvent(IPC_CHANNELS.BACKEND.NOTIFICATION, { method, params: {} });
   let stopCatalog: (() => void) | undefined;
 
   function refreshCatalog(empty = false, fail = false) {
@@ -136,10 +166,7 @@
           },
         ],
       };
-    for (const { channel, handler } of notificationListeners.values()) {
-      if (channel === 'backend:notification')
-        handler({ method: 'specialists:changed', params: {} });
-    }
+    notifyBackend('specialists:changed');
   }
 
   let launches = $state<Array<{ channel: string; args: unknown[] }>>([]);
@@ -160,12 +187,7 @@
     configurable: true,
     value: {
       versions: { electron: 'preview-native-controls' },
-      on: (channel: string, handler: (payload: unknown) => void) => {
-        const id = String(++listenerSequence);
-        notificationListeners.set(id, { channel, handler });
-        return id;
-      },
-      offById: (_channel: string, id: string) => notificationListeners.delete(id),
+      ...listeners,
       invoke: async (channel: string, ...args: unknown[]) => {
         if ((catalogFlow || creationFlow) && channel === 'backend:request') {
           const request = args[0] as { method: string; params?: { spec: SpecialistDef } };
@@ -233,6 +255,7 @@
               unsupportedFields: imported && unsupported ? ['tools', 'permissionMode'] : undefined,
               requiredSkills: missingSkills ? ['code-review'] : undefined,
               missingSkills: missingSkills ? ['code-review'] : undefined,
+              modelOptions: savedModelOptions,
             },
           ],
     ),
@@ -281,9 +304,7 @@
           missingSkills: undefined,
         })),
       };
-      for (const { channel, handler } of notificationListeners.values()) {
-        if (channel === 'backend:notification') handler({ method: 'skills:changed', params: {} });
-      }
+      notifyBackend('skills:changed');
       return;
     }
     appStore.dispatch(
@@ -328,6 +349,7 @@
     releaseWrite?.();
     releaseCatalog?.();
     disposeLaunchHandlers();
+    detachListeners();
     appStore.dispatch(setSpecialistImportDiagnostics(previous.diagnostics));
     appStore.dispatch(setBundledSpecialists(previous.bundled));
     appStore.dispatch(setFileSpecialists(previous.files));

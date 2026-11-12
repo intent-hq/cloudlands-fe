@@ -923,7 +923,7 @@ export function createDockWindow(): BrowserWindow {
     fullscreenable: false,
     hasShadow: false,
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, '../preload-build/preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,

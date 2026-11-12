@@ -370,13 +370,5 @@ describe('Overlapping comment ranges', () => {
       const roundTripped = processHTMLToMarkdown(editor.getHTML(), { preserveAnchors: true });
       expectAscending(markerOrder(roundTripped, NESTED_MARKERS));
     });
-
-    it('scanForProblematicAnchors does not flag interleaved pairs', async () => {
-      // Dynamic import: this main-process module must not enter the
-      // renderer-side static import graph (AGENTS.md module boundary).
-      const { scanForProblematicAnchors } = await import('../main/markdown-anchor-recovery');
-      expect(scanForProblematicAnchors(INTERLEAVED_MD, ['cmt-a', 'cmt-b'])).toEqual([]);
-      expect(scanForProblematicAnchors(NESTED_MD, ['cmt-a', 'cmt-b'])).toEqual([]);
-    });
   });
 });

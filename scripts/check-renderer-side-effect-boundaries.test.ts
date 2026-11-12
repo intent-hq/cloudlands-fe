@@ -336,30 +336,6 @@ describe('renderer side-effect boundary guard', () => {
     ).toEqual([]);
   });
 
-  it('pins the Antigravity setup bridge seeder to its two reviewed registrations', () => {
-    const seeder = (channels: string[]) => ({
-      path: 'src/store/renderer/seeders/antigravity-setup-bridge-seeder.ts',
-      content: [
-        "import { registerMockIpcHandler } from '$shared/ipc-mock-router';",
-        ...channels.map(
-          (channel) => `registerMockIpcHandler('${channel}', async () => undefined);`,
-        ),
-      ].join('\n'),
-    });
-    expect(
-      findRendererSideEffectBoundaryViolations([
-        registry,
-        seeder(['antigravity:setup', 'antigravity:close-setup']),
-      ]),
-    ).toEqual([]);
-    expect(
-      findRendererSideEffectBoundaryViolations([
-        registry,
-        seeder(['antigravity:setup', 'antigravity:close-setup', 'antigravity:unreviewed']),
-      ]),
-    ).toEqual([expect.stringContaining('reviewed renderer IPC bridge registrations changed')]);
-  });
-
   it('pins backend bridges including native desktop permissions without allowing further expansion', () => {
     const channels = [
       'backend:get-status',
@@ -370,6 +346,7 @@ describe('renderer side-effect boundary guard', () => {
       'backend:restart-orphaned-sidecar',
       'backend:get-sidecar-run-log',
       'backend:desktop-permissions',
+      'backend:desktop-os-permissions',
     ];
     const seeder = (names: string[]) => ({
       path: 'src/store/renderer/seeders/backend-status-bridge-seeder.ts',

@@ -8,7 +8,7 @@ const SUFFIX = process.env.DOCK_SPEC_SUFFIX ?? '';
 async function capture(page: Page, name: string): Promise<void> {
   const box = await page.getByTestId('composer-spec').boundingBox();
   if (!box) throw new Error('Missing harness bounds');
-  // Page clip so portaled tooltips and the tool popover are included.
+  // Page clip so the tool popover is included.
   const info = test.info();
   const path = info.outputPath(`${name}${SUFFIX}.png`);
   await page.screenshot({ path, clip: box });
@@ -105,7 +105,7 @@ for (const screen of [1, 2, 3, 4, 5, 6] as const) {
       await expect(component.locator('[data-screen-interim]')).toBeVisible();
     }
     if (screen === 2) {
-      await component.locator('[data-dock-media-attachments] .tile').first().hover();
+      await component.locator('[data-dock-media-attachments] .tile button').first().focus();
       await expect(component.getByRole('button', { name: 'Mark up' })).toBeVisible();
     }
     if (screen === 5) await expect(component.locator('[data-dock-dictation-time]')).toBeVisible();
@@ -118,10 +118,8 @@ for (const screen of [1, 2, 3, 4, 5, 6] as const) {
   });
 }
 
-test('an empty draft explains why Send is unavailable on hover', async ({ mount, page }) => {
+test('an empty draft disables Send', async ({ mount }) => {
   const component = await mount(ComposerSpecHarness, { props: { screen: 1 } });
   const send = component.getByTestId('composer-submit-button');
   await expect(send).toBeDisabled();
-  await send.hover({ force: true });
-  await expect(page.getByRole('tooltip')).toContainText('Add a message or an attachment to send');
 });

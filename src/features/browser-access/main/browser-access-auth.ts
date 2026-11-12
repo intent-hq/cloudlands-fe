@@ -15,14 +15,26 @@
  */
 import crypto from 'node:crypto';
 
-/** Cookie holding the session token. */
+/**
+ * Cookie that older versions issued. Browsers keep cookies per host name, not
+ * per port, so every server on one host shared it and signing in to one signed
+ * out the others. It is still accepted, and replaced on the next page load.
+ */
 export const SESSION_COOKIE = 'intent_browser_access';
-/** Session lifetime; resetting the access key revokes sessions sooner. */
-const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60;
+/** Prefix of the per-server cookie (see sessionCookieName). */
+const SESSION_COOKIE_PREFIX = 'intent_session_';
+/** Idle lifetime: the browser maximum (400 days). Active sessions slide. */
+export const SESSION_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
+/** A session cookie is renewed at most this often. */
+const SESSION_RENEW_AFTER_SECONDS = 24 * 60 * 60;
+/** Tolerated clock skew for a cookie's issue time. */
+const SESSION_FUTURE_SKEW_SECONDS = 5 * 60;
 /** Backend ids accepted in URLs (connection ids are UUIDs; `local` is reserved). */
 export const CONNECTION_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
 
 const SESSION_CONTEXT = 'intent-browser-access-session-v1';
+const SESSION_V2_CONTEXT = 'intent-browser-access-session-v2';
+const COOKIE_NAME_CONTEXT = 'intent-browser-access-cookie-name-v1';
 
 type Headers = Record<string, string | string[] | undefined>;
 
@@ -31,7 +43,7 @@ export function generateAccessKey(): string {
   return crypto.randomBytes(32).toString('base64url');
 }
 
-/** The cookie value for an access key. Stable across restarts; changes when the key does. */
+/** The legacy cookie value for an access key (accepted, never issued). */
 export function deriveSessionToken(accessKey: string): string {
   return crypto.createHmac('sha256', accessKey).update(SESSION_CONTEXT).digest('base64url');
 }
@@ -65,16 +77,91 @@ export function parseCookies(header: string | string[] | undefined): Map<string,
   return cookies;
 }
 
-/** Whether the request carries a valid session cookie for this access key. */
-export function hasValidSession(headers: Headers, accessKey: string): boolean {
-  const token = parseCookies(headers.cookie).get(SESSION_COOKIE);
-  return typeof token === 'string' && timingSafeEqualText(token, deriveSessionToken(accessKey));
+/**
+ * This server's session cookie name. It is derived from the access key, so two
+ * servers on one host name (different ports, or the desktop app and
+ * intent-web) never overwrite each other's sessions.
+ */
+export function sessionCookieName(accessKey: string): string {
+  const id = crypto
+    .createHmac('sha256', accessKey)
+    .update(COOKIE_NAME_CONTEXT)
+    .digest('base64url')
+    .replace(/[^A-Za-z0-9]/g, '')
+    .slice(0, 12);
+  return `${SESSION_COOKIE_PREFIX}${id}`;
 }
 
-/** `Set-Cookie` value establishing a session. `Secure` whenever the page is https. */
-export function sessionCookieHeader(accessKey: string, secure: boolean): string {
+function sessionMac(accessKey: string, issuedAt: number): string {
+  return crypto
+    .createHmac('sha256', accessKey)
+    .update(`${SESSION_V2_CONTEXT}|${issuedAt}`)
+    .digest('base64url');
+}
+
+/** The cookie value for a session issued at `issuedAt` (Unix seconds). */
+export function sessionCookieValue(accessKey: string, issuedAt: number): string {
+  return `${issuedAt.toString(36)}.${sessionMac(accessKey, issuedAt)}`;
+}
+
+/** What the request's cookies say about its session. */
+export interface SessionCheck {
+  readonly valid: boolean;
+  /** Valid, and old or legacy enough that the next page load should renew it. */
+  readonly renew: boolean;
+}
+
+const NO_SESSION: SessionCheck = { valid: false, renew: false };
+
+/**
+ * Check the session cookie. A session is valid while its issue time, signed
+ * with the current access key, is less than SESSION_MAX_AGE_SECONDS old.
+ * Resetting the key invalidates every session at once.
+ */
+export function checkSession(
+  headers: Headers,
+  accessKey: string,
+  nowMs: number = Date.now(),
+): SessionCheck {
+  const cookies = parseCookies(headers.cookie);
+  const now = Math.floor(nowMs / 1000);
+  const value = cookies.get(sessionCookieName(accessKey));
+  if (typeof value === 'string') {
+    const match = /^([0-9a-z]{1,10})\.([A-Za-z0-9_-]{43})$/.exec(value);
+    const issuedAt = match ? parseInt(match[1], 36) : NaN;
+    if (
+      match &&
+      Number.isSafeInteger(issuedAt) &&
+      issuedAt <= now + SESSION_FUTURE_SKEW_SECONDS &&
+      now - issuedAt < SESSION_MAX_AGE_SECONDS &&
+      timingSafeEqualText(match[2], sessionMac(accessKey, issuedAt))
+    ) {
+      return { valid: true, renew: now - issuedAt >= SESSION_RENEW_AFTER_SECONDS };
+    }
+  }
+  const legacy = cookies.get(SESSION_COOKIE);
+  if (typeof legacy === 'string' && timingSafeEqualText(legacy, deriveSessionToken(accessKey))) {
+    return { valid: true, renew: true };
+  }
+  return NO_SESSION;
+}
+
+/** Whether the request carries a valid session cookie for this access key. */
+export function hasValidSession(headers: Headers, accessKey: string): boolean {
+  return checkSession(headers, accessKey).valid;
+}
+
+/**
+ * `Set-Cookie` value establishing (or renewing) a session that lasts
+ * SESSION_MAX_AGE_SECONDS from now. `Secure` whenever the page is https.
+ */
+export function sessionCookieHeader(
+  accessKey: string,
+  secure: boolean,
+  nowMs: number = Date.now(),
+): string {
   return [
-    `${SESSION_COOKIE}=${deriveSessionToken(accessKey)}`,
+    `${sessionCookieName(accessKey)}=${sessionCookieValue(accessKey, Math.floor(nowMs / 1000))}`,
     'Path=/',
     'HttpOnly',
     'SameSite=Lax',
@@ -145,6 +232,17 @@ export function pageOrigin(headers: Headers): string | null {
   }
 }
 
+/**
+ * Which page origin to remember for sign-in links: the latest one, except that
+ * a loopback visit never replaces a front-end address seen before.
+ */
+export function preferredPageOrigin(previous: string | null, next: string | null): string | null {
+  if (!next) return previous;
+  if (previous && !isLoopbackHost(new URL(previous).host) && isLoopbackHost(new URL(next).host))
+    return previous;
+  return next;
+}
+
 /** Whether a WebSocket upgrade comes from the page this server served. */
 export function isSameOriginUpgrade(headers: Headers): boolean {
   const origin = firstHeaderValue(headers.origin);
@@ -174,5 +272,20 @@ export class LoginRateLimiter {
 
   recordFailure(): void {
     this.failures.push(this.now());
+  }
+
+  /**
+   * Count an attempt as a failure before checking it, so parallel attempts
+   * cannot all pass `allow()` while their checks are still running. Returns a
+   * refund to call if the attempt succeeds, or null when the budget is spent.
+   */
+  reserve(): (() => void) | null {
+    if (!this.allow()) return null;
+    const time = this.now();
+    this.failures.push(time);
+    return () => {
+      const index = this.failures.indexOf(time);
+      if (index !== -1) this.failures.splice(index, 1);
+    };
   }
 }

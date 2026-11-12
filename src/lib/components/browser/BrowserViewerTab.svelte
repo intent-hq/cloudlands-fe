@@ -14,7 +14,7 @@
   import BrowserViewerTabHeader from './BrowserViewerTabHeader.svelte';
   import type { BrowserTabHost } from './browser-tab-host';
   import type { EmbeddedBrowserWebview } from './embedded-browser-webview';
-  import { isValidBrowserUrl } from './embedded-browser-url-validation';
+  import { isForwardableBrowserUrl, isValidBrowserUrl } from './embedded-browser-url-validation';
   import {
     applyViewerNavigationEvent,
     createViewerNavigationState,
@@ -54,7 +54,10 @@
 
   // svelte-ignore state_referenced_locally - the webview is created once at the initial canonical URL
   const initialUrl = isValidBrowserUrl(url) ? url : 'about:blank';
-  const navigation = createViewerNavigationState({ isValidBrowserUrl });
+  const navigation = createViewerNavigationState({
+    isValidBrowserUrl,
+    isForwardableUrl: isForwardableBrowserUrl,
+  });
   /** The initial `src` load is follow #1 (see the reconciler). */
   const INITIAL_FOLLOW_SEQ = 1;
 

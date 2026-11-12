@@ -472,11 +472,19 @@ export class LiveTasksClient implements TasksClient {
           subscribeIds: subscribeWorkspaceIds,
           paramsForId: (id) => ({ workspaceId: id }),
         },
+        // Paged snapshot (§6.9): the rest comes from the paged `task.list`,
+        // whose `WorkspaceTask` rows (plus `workspaceId`) normalize below.
+        continuation: {
+          method: 'task.list',
+          key: 'tasks',
+          params: (scope) => ({ workspaceId: scope.workspaceId }),
+        },
       },
       getId: (raw) => String(raw.id ?? ''),
-      // Push-path entities are the daemon's task-filtered wire `Note` (§6.9),
-      // which always carries `workspaceId` (camelCase serde) — remembered so
-      // note-scoped task mutations can resolve their owning workspace.
+      // Push-path entities are the daemon's task-filtered wire `Note` (§6.9)
+      // and continuation pages are `task.list` rows; both carry `workspaceId`
+      // (camelCase serde) — remembered so note-scoped task mutations can
+      // resolve their owning workspace.
       normalize: (raw) => {
         const task = normalizeTaskEntity(raw);
         if (task?.id && typeof raw.workspaceId === 'string' && raw.workspaceId) {

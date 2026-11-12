@@ -29,6 +29,12 @@ export interface PanelHeaderState {
 }
 
 export interface PanelHeaderActions {
+  /** Conversation navigation, following the panel-owned inline Rename command. */
+  conversation?: Snippet<[menuOpen: boolean]>;
+  /** Agent lifecycle commands, separate from conversation and settings. */
+  lifecycle?: Snippet;
+  /** Metadata shown after all content and panel commands. */
+  footer?: Snippet;
   /** Legacy content menu items, rendered in the Actions section. Prefer actions. */
   primary?: Snippet;
   /** Presentation and view controls shown in the Display section. */

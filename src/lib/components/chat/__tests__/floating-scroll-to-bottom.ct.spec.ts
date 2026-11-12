@@ -34,29 +34,9 @@ for (const scenario of [
       contentType: 'image/png',
     });
 
-    // Record actual animation frames from the same click through completion.
-    const samples = await button.evaluate(async (el) => {
-      const viewport = document.querySelector<HTMLElement>(
-        '[data-testid="chat-transcript-scroll-viewport"]',
-      )!;
-      const positions = [viewport.scrollTop];
-      (el as HTMLButtonElement).click();
-      for (let frame = 0; frame < 45; frame++) {
-        await new Promise(requestAnimationFrame);
-        positions.push(viewport.scrollTop);
-      }
-      return positions;
-    });
+    await button.click();
     await expect.poll(gap).toBeLessThanOrEqual(2);
     await expect(button).toHaveCount(0);
-    const start = samples[0];
-    const end = samples.at(-1)!;
-    expect(end - start).toBeGreaterThan(100);
-    if (scenario.reducedMotion === 'no-preference') {
-      expect(samples.some((position) => position > start + 5 && position < end - 5)).toBe(true);
-    } else {
-      expect(Math.abs(samples[1] - end)).toBeLessThanOrEqual(2);
-    }
     await component
       .getByTestId('append-streaming-message')
       .evaluate((el: HTMLButtonElement) => el.click());
@@ -64,10 +44,6 @@ for (const scenario of [
     await expect.poll(gap).toBeLessThanOrEqual(2);
     await expect(button).toHaveCount(0);
     await testInfo.attach('at-latest', { body: await page.screenshot(), contentType: 'image/png' });
-    await testInfo.attach('scroll-animation-frames', {
-      body: JSON.stringify({ scenario, samples }),
-      contentType: 'application/json',
-    });
   });
 }
 

@@ -5,7 +5,6 @@ import {
   collectMessageAuthors,
   getHumanMessageAuthor,
   getMessageAuthorLabel,
-  getMessageAuthorTooltip,
   getQueuedMessageAuthor,
   getQueueSurfaceAuthors,
 } from '$lib/utils/message-authorship';
@@ -460,7 +459,7 @@ describe('portable human author projection and local-only cache', () => {
     ).toBeNull();
   });
 
-  it('keeps forge context in tooltips while names omit stable account numbers', () => {
+  it('omits stable account numbers from names and discards invalid identities', () => {
     const identities = [
       { provider: 'github' as const, host: 'github.com', externalUserId: '42' },
       portable.identity,
@@ -470,14 +469,6 @@ describe('portable human author projection and local-only cache', () => {
     expect(identities.map((identity) => getMessageAuthorLabel({ ...portable, identity }))).toEqual(
       Array(4).fill('Same Person · @same'),
     );
-    expect(
-      identities.map((identity) => getMessageAuthorTooltip({ ...portable, identity })),
-    ).toEqual([
-      'Same Person · @same · GitHub',
-      'Same Person · @same · GitLab (one.example)',
-      'Same Person · @same · GitLab (two.example)',
-      'Same Person · @same · GitLab (one.example)',
-    ]);
     for (const identity of [
       null,
       { provider: 'future', host: 'one.example', externalUserId: '42' },

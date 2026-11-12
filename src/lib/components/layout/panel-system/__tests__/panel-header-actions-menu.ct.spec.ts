@@ -539,7 +539,6 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
   await expect(component).toHaveAttribute('data-content-count', '1');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
-  await page.clock.install();
   await trigger.click();
   const leftArrow = await menu
     .getByRole('menuitem', { name: 'Move panel left', exact: true })
@@ -551,10 +550,7 @@ test('keeps desktop menu commands unclipped and restores focus after selection',
   await expect(component).toHaveAttribute('data-move-left-count', '1');
   await expect(menu).toBeHidden();
   await expect(trigger).toBeFocused();
-  await trigger.hover();
-  await page.clock.runFor(1000);
-  await expect(page.getByRole('tooltip')).toHaveCount(0);
-  await testInfo.attach('movement-dismissal-without-tooltip', {
+  await testInfo.attach('movement-dismissal', {
     body: await page.screenshot(),
     contentType: 'image/png',
   });

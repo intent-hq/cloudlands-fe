@@ -287,6 +287,20 @@ describe('shared operational disclosure-row contract', () => {
       },
     );
 
+    it('keeps ToolCall details mounted while the collapse animates', async () => {
+      const row = disclosureCases[0].renderRow();
+      const disclosure = within(row).getByRole('button', { name: /Run operational task/i });
+      await fireEvent.click(disclosure);
+      const wrapper = row.parentElement!.querySelector<HTMLElement>(
+        '[data-response-group-motion="animated-height"]',
+      )!;
+      expect(wrapper.childElementCount).toBe(1);
+      await fireEvent.click(disclosure);
+      expect(disclosure.getAttribute('aria-expanded')).toBe('false');
+      expect(wrapper.getAttribute('aria-hidden')).toBe('true');
+      expect(wrapper.childElementCount).toBe(1);
+    });
+
     it.each(disclosureCases)(
       'supports Enter and Space on the $name disclosure',
       async ({ renderRow, accessibleName, detailsSelector }) => {

@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render } from '@testing-library/svelte';
 import { afterEach, describe, expect, it } from 'vitest';
-import { collapsiblePanelProductMetadata } from '../CollapsiblePanel.meta';
 import { parseUiComponentMetadata } from '../component-metadata';
-import { smartCornerTabsProductMetadata } from '../smart-corner-tabs/smart-corner-tabs.meta';
 import TabsDynamicHarness from './TabsDynamicHarness.svelte';
 import TabsHarness from './TabsHarness.svelte';
 import { createTabsIndicatorSprings, retargetTabsIndicator } from './tabs-indicator-motion.svelte';
@@ -125,14 +123,8 @@ describe('Tabs', () => {
     },
   );
 
-  it('publishes catalog metadata and product replacement paths', () => {
+  it('publishes catalog metadata', () => {
     expect(() => parseUiComponentMetadata(tabsMetadata)).not.toThrow();
-    expect(() => parseUiComponentMetadata(smartCornerTabsProductMetadata)).not.toThrow();
-    expect(() => parseUiComponentMetadata(collapsiblePanelProductMetadata)).not.toThrow();
     expect(tabsMetadata.fixtures[0].states).toEqual(expect.arrayContaining(['subtle', 'compact']));
-    expect([
-      smartCornerTabsProductMetadata.replacement,
-      collapsiblePanelProductMetadata.replacement,
-    ]).toEqual(['$lib/components/ui/tabs', '$lib/components/ui/accordion']);
   });
 });

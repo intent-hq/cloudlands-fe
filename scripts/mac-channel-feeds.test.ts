@@ -69,7 +69,9 @@ function client(
         ? 'Darwin ARM64'
         : 'Darwin x86_64') as any);
   const value = Object.create(MacUpdater.prototype);
-  const transfer = vi.fn(async ({ fileInfo }) => [fileInfo.url.href]);
+  // electron-updater >= 6.8.11: executeDownload resolves { updateFile, packageFile? };
+  // downloadUpdate() maps it to the public string[] that downloadPromise yields.
+  const transfer = vi.fn(async ({ fileInfo }) => ({ updateFile: fileInfo.url.href }));
   Object.assign(value, {
     currentVersion: new SemVer(generation === 'production' ? '2.212.1' : '2.219.7'),
     allowDowngrade: false,

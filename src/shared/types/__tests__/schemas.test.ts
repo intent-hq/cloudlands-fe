@@ -388,14 +388,8 @@ describe('Zod Schemas', () => {
       updatedAt: '2026-07-26T00:00:00.000Z',
     };
 
-    it('passes cowSupported and checkoutMode through validation (regression: fields were stripped, hiding the CoW toggle)', () => {
-      const workspace = {
-        ...baseWorkspace,
-        cowSupported: true,
-        checkoutMode: 'cow',
-      };
-      const parsed = WorkspaceSchema.parse(workspace);
-      expect(parsed.cowSupported).toBe(true);
+    it('passes checkoutMode through validation (regression: the field was stripped)', () => {
+      const parsed = WorkspaceSchema.parse({ ...baseWorkspace, checkoutMode: 'cow' });
       expect(parsed.checkoutMode).toBe('cow');
     });
 
@@ -438,7 +432,6 @@ describe('Zod Schemas', () => {
         agentSummary: { agentIds: ['agent-1'] },
         taskStats: { total: 1, completed: 0, inProgress: 1 },
         gitSummary: { ahead: 1, behind: 0, hasUnpushed: true },
-        cowSupported: true,
         checkoutMode: 'worktree',
       };
       const parsed = WorkspaceSchema.parse(workspace);

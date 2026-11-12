@@ -1,20 +1,42 @@
 <!--
-  Conversation notice for a remote agent that is starting, couldn't start, or
-  whose machine can't be reached or revoked access. Nothing for a local agent
-  or a remote agent that runs normally.
+  Conversation notice for a remote agent that is starting (preparing its
+  checkout or running setup), couldn't start, whose setup script failed, or
+  whose machine can't be reached or revoked access. The checkout and setup
+  output opens here as a read-only log. An agent on E2B that couldn't start
+  gets the chat's failure card instead (the caller then hides the generic
+  one). Nothing for a local agent or a remote agent that runs normally.
+  With `phaseLine`, it renders only a starting or waking cloud machine's line,
+  shaped as the chat's working row that it stands in for.
 -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import Fa from 'svelte-fa';
   import { writable } from 'svelte/store';
   import { Button } from '$lib/components/ui/button';
   import { IntentMarkLoader } from '$lib/components/ui/indicators';
   import { faCircleExclamation, faTriangleExclamation } from '$lib/icons/phosphor-icons';
-  import { OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS } from '$lib/components/chat/operational-disclosure-row';
+  import {
+    CHAT_OPERATIONAL_LEADING_CLASS,
+    CHAT_OPERATIONAL_ROW_CLASS,
+    CHAT_OPERATIONAL_SUMMARY_CLASS,
+    OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS,
+    OPERATIONAL_EXPANDED_CONTENT_CLASS,
+  } from '$lib/components/chat/operational-disclosure-row';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import { m } from '$shared/paraglide/messages.js';
   import { selectAgentSession } from '$store/renderer/slices/agent-session/agent-session-selectors';
   import { store as appStore } from '$store/renderer/store';
-  import { agentMachineLocation, agentPlacementNoticeKind } from './agent-location';
+  import {
+    agentCloudStartFailure,
+    agentCloudWaking,
+    agentMachineLocation,
+    agentPlacementNoticeKind,
+    placementFailure,
+  } from './agent-location';
+  import RemoteSetupLog from './RemoteSetupLog.svelte';
+  import CloudStartFailureCard from './CloudStartFailureCard.svelte';
+  import { selectCloudEntries } from '$features/cloud-machines/cloud-machines-selectors';
+  import { cloudStartFailureView } from './cloud-start-failure';
   import {
     selectCurrentBackendLabel,
     selectRemoteMachine,
@@ -22,9 +44,42 @@
   } from './remote-machines-selectors';
   import { remoteMachinesRefreshRequested } from './remote-machines-slice';
 
-  let { agentId }: { agentId: string } = $props();
+  let {
+    agentId,
+    failedAt = null,
+    queued = false,
+    onRetry,
+    retrying = false,
+    turnError = null,
+    phaseLine = false,
+    onPhaseLine,
+    phaseLineShown = false,
+  }: {
+    agentId: string;
+    /** When the agent's start failed, for the failure card. */
+    failedAt?: string | null;
+    /** A message waits in the queue strip below. */
+    queued?: boolean;
+    /** Retries the failed start; absent when it can't be retried now. */
+    onRetry?: () => void;
+    /** A retry is in flight. */
+    retrying?: boolean;
+    /**
+     * A later turn error (a failed retry, a refused send). The caller shows it
+     * in the generic failure card, so the start failure card steps aside.
+     */
+    turnError?: string | null;
+    /** Render only a starting or waking cloud machine's line, in the chat's working row. */
+    phaseLine?: boolean;
+    /** Called while the working row shows the start line; returns its release. */
+    onPhaseLine?: () => () => void;
+    /** The working row shows the start line, so this notice leaves it out. */
+    phaseLineShown?: boolean;
+  } = $props();
 
-  const agentIdStore = writable<string | undefined>(undefined);
+  // Seeded with the first id so the first render already has the agent.
+  // svelte-ignore state_referenced_locally
+  const agentIdStore = writable<string | undefined>(agentId);
   const machineIdStore = writable<string | undefined>(undefined);
   $effect(() => {
     agentIdStore.set(agentId);
@@ -39,25 +94,203 @@
 
   const location = $derived(agentMachineLocation($agent$, $machine$));
   const kind = $derived(agentPlacementNoticeKind($agent$, location));
+  const setup = $derived($agent$?.setup);
+  const failure = $derived(
+    location && $agent$?.placementError
+      ? placementFailure($agent$.placementError, location.name)
+      : null,
+  );
+  const startingDescription = $derived(
+    setup?.state === 'running'
+      ? m.remoteAgent_notice_runningSetup_description()
+      : setup?.state === 'pending'
+        ? m.remoteAgent_notice_preparing_description()
+        : m.remoteAgent_notice_starting_description(),
+  );
+  const cloudStep = $derived($agent$?.cloudStart?.step);
+  const cloudStart = $derived(turnError ? null : agentCloudStartFailure($agent$));
+  const cloudFailure = $derived(
+    cloudStart
+      ? cloudStartFailureView(cloudStart, {
+          canRetry: !!onRetry,
+          turnError: $agent$?.stopReason,
+        })
+      : null,
+  );
+  // Northflank starts a service, not a sandbox.
+  const cloudEntries$ = selectCloudEntries();
+  const northflankStart = $derived(
+    $cloudEntries$.find((entry) => entry.id === $agent$?.placement?.cloudMachineId)?.provider ===
+      'northflank',
+  );
+  const startingStep = $derived(
+    cloudStep === 'creating-sandbox'
+      ? northflankStart
+        ? m.cloudMachines_northflank_start_creating()
+        : m.cloudMachines_start_creating()
+      : cloudStep === 'starting-daemon'
+        ? m.cloudMachines_start_daemon()
+        : cloudStep === 'connecting'
+          ? m.cloudMachines_start_connecting()
+          : setup?.state === 'running'
+            ? m.remoteAgent_status_runningSetup()
+            : setup?.state === 'pending'
+              ? m.remoteAgent_status_preparingCheckout()
+              : null,
+  );
+  const startingTitle = $derived(
+    location?.cloud
+      ? m.cloudMachines_start_title()
+      : m.remoteAgent_notice_starting_title({ machine: location?.name ?? '' }),
+  );
+  const setupFailedDescription = $derived(
+    setup?.exitCode !== undefined
+      ? m.remoteAgent_notice_setupFailed_exitCode({ code: String(setup.exitCode) })
+      : setup?.error?.startsWith('node-setup-timeout')
+        ? m.remoteAgent_notice_setupFailed_timeout()
+        : m.remoteAgent_notice_setupFailed_generic(),
+  );
+  // The log can be opened once the machine sends output, or while setup runs.
+  const canShowOutput = $derived(
+    !!setup && (!!setup.output || setup.state === 'running' || setup.state === 'failed'),
+  );
+  let outputOpen = $state(false);
 
-  function openDevicesSettings() {
+  const cloudStarting = $derived(!!location?.cloud && kind === 'starting');
+  // No `onPhaseLine` for it: the conversation notice has nothing to hide then.
+  const cloudWaking = $derived(agentCloudWaking($agent$, $machine$));
+  $effect(() => {
+    if (!phaseLine || !cloudStarting || !onPhaseLine) return;
+    return untrack(onPhaseLine);
+  });
+
+  function openMachinesSettings() {
     void navigateToSettings({ tab: 'devices', hash: 'devices' });
   }
 </script>
 
-{#if location && kind === 'starting'}
+{#snippet outputToggle()}
+  {#if canShowOutput}
+    <Button
+      variant="ghost-light"
+      size="compact"
+      class="-my-1 ml-auto shrink-0"
+      aria-expanded={outputOpen}
+      onclick={() => (outputOpen = !outputOpen)}
+    >
+      {outputOpen ? m.remoteAgent_setup_hideOutput() : m.remoteAgent_setup_showOutput()}
+    </Button>
+  {/if}
+{/snippet}
+
+{#snippet startingText()}
+  {startingTitle}
+  {#if startingStep}
+    <span class="text-foreground">{startingStep}</span>
+  {/if}
+  <span class="text-subtle">{startingDescription}</span>
+{/snippet}
+
+{#snippet setupLog(machineName: string)}
+  <RemoteSetupLog machine={machineName} output={setup?.output} truncated={setup?.outputTruncated} />
+{/snippet}
+
+{#if phaseLine}
+  {#if location && cloudStarting}
+    <div
+      data-agent-placement-notice="starting"
+      data-placement-phase-line
+      data-agent-setup-state={setup?.state}
+    >
+      <div class="{CHAT_OPERATIONAL_ROW_CLASS} font-family-child font-normal text-muted-foreground">
+        <div class={CHAT_OPERATIONAL_LEADING_CLASS} aria-hidden="true">
+          <IntentMarkLoader size={16} />
+        </div>
+        <span
+          class={CHAT_OPERATIONAL_SUMMARY_CLASS}
+          role="status"
+          aria-live="polite"
+          title={[startingTitle, startingStep, startingDescription].filter(Boolean).join(' ')}
+        >
+          {@render startingText()}
+        </span>
+        {@render outputToggle()}
+      </div>
+      {#if outputOpen && canShowOutput}
+        <div class={OPERATIONAL_EXPANDED_CONTENT_CLASS}>
+          {@render setupLog(location.name)}
+        </div>
+      {/if}
+    </div>
+  {:else if cloudWaking}
+    <div data-cloud-wake-line data-placement-phase-line>
+      <div class="{CHAT_OPERATIONAL_ROW_CLASS} font-family-child font-normal text-muted-foreground">
+        <div class={CHAT_OPERATIONAL_LEADING_CLASS} aria-hidden="true">
+          <IntentMarkLoader size={16} />
+        </div>
+        <span class={CHAT_OPERATIONAL_SUMMARY_CLASS} role="status" aria-live="polite">
+          {m.cloudMachines_wake_title()}
+        </span>
+      </div>
+    </div>
+  {/if}
+{:else if location && kind === 'starting'}
+  {#if !(location.cloud && phaseLineShown)}
+    <div
+      class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+      data-agent-placement-notice="starting"
+      data-agent-setup-state={setup?.state}
+    >
+      <div class="flex items-center gap-2 type-body font-family-child text-muted-foreground">
+        <span
+          class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
+            <IntentMarkLoader size={14} />
+          </span>
+          {@render startingText()}
+        </span>
+        {@render outputToggle()}
+      </div>
+      {#if outputOpen && canShowOutput}
+        {@render setupLog(location.name)}
+      {/if}
+    </div>
+  {/if}
+{:else if location && kind === 'setup-failed'}
   <div
-    class="flex flex-wrap items-center gap-x-2 gap-y-0.5 py-1.5 type-body font-family-child text-muted-foreground {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
-    role="status"
-    aria-live="polite"
-    data-agent-placement-notice="starting"
+    class="space-y-1.5 py-1.5 {OPERATIONAL_ASSISTANT_PROSE_INSET_CLASS}"
+    data-agent-placement-notice="setup-failed"
   >
-    <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
-      <IntentMarkLoader size={14} />
-    </span>
-    <span>{m.remoteAgent_notice_starting_title({ machine: location.name })}</span>
-    <span class="text-subtle">{m.remoteAgent_notice_starting_description()}</span>
+    <div class="flex items-center gap-2 type-body font-family-child">
+      <span class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5" role="status">
+        <span class="inline-flex size-5 items-center justify-center" aria-hidden="true">
+          <Fa icon={faTriangleExclamation} class="size-3.5! text-warning-ink" />
+        </span>
+        <span class="font-medium text-warning-ink">
+          {m.remoteAgent_notice_setupFailed_title({ machine: location.name })}
+        </span>
+        <span class="text-subtle">{setupFailedDescription}</span>
+      </span>
+      {@render outputToggle()}
+    </div>
+    {#if outputOpen && canShowOutput}
+      {@render setupLog(location.name)}
+    {/if}
   </div>
+{:else if kind === 'failed' && failure?.cloud}
+  {#if cloudFailure}
+    <CloudStartFailureCard
+      view={cloudFailure}
+      {failedAt}
+      {queued}
+      {onRetry}
+      {retrying}
+      onOpenSettings={openMachinesSettings}
+    />
+  {/if}
 {:else if location && kind}
   {@const danger = kind === 'failed' || kind === 'revoked'}
   <div
@@ -83,12 +316,16 @@
           {/if}
         </p>
         {#if kind === 'failed'}
-          {#if $agent$?.placementError?.detail}
+          {#if failure?.message}
             <p class="type-body break-words text-muted-foreground" data-agent-placement-detail>
-              {$agent$.placementError.detail}
+              {failure.message}
             </p>
           {/if}
-          <p class="type-body text-muted-foreground">{m.remoteAgent_notice_failed_hint()}</p>
+          <p class="type-body text-muted-foreground">
+            {failure?.updateRequired
+              ? m.remoteAgent_notice_updateRequired_hint({ machine: location.name })
+              : m.remoteAgent_notice_failed_hint()}
+          </p>
         {:else if kind === 'unreachable'}
           <p class="type-body text-muted-foreground">
             {m.remoteAgent_notice_unreachable_description({
@@ -98,7 +335,10 @@
           </p>
         {:else}
           <p class="type-body text-muted-foreground">
-            {m.remoteAgent_notice_revoked_description({ machine: location.name })}
+            {m.remoteAgent_notice_revoked_description({
+              machine: location.name,
+              backend: $backendLabel$,
+            })}
           </p>
         {/if}
       </div>
@@ -114,8 +354,8 @@
             {m.remoteAgent_notice_checkAgain_label()}
           </Button>
         {:else}
-          <Button variant="secondary" size="sm" onclick={openDevicesSettings}>
-            {m.remoteAgent_notice_openDevices_label()}
+          <Button variant="secondary" size="sm" onclick={openMachinesSettings}>
+            {m.remoteAgent_notice_openMachines_label()}
           </Button>
         {/if}
       </div>

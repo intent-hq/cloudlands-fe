@@ -8,6 +8,7 @@ import { AgentNodeFieldsSchema } from './types/agent-node';
  */
 
 import { z } from 'zod';
+import { isoDateTime } from '$shared/zod-compat';
 import { CheckoutSelectionSchema } from './types/repository-checkout';
 import {
   AgentStatus,
@@ -95,7 +96,7 @@ const DiffSummaryFileSchema = z.object({
 
 const DiffSummarySchema = z.object({
   schemaVersion: z.number().int(),
-  updatedAt: z.string().datetime(),
+  updatedAt: isoDateTime(),
   totalFiles: z.number().int().nonnegative(),
   totalAdditions: z.number().int().nonnegative(),
   totalDeletions: z.number().int().nonnegative(),
@@ -140,12 +141,12 @@ export const WorkspaceSchema = z.object({
   myRole: z.enum(['owner', 'collaborator', 'manager']).optional(),
   memberCount: z.number().int().nonnegative().optional(),
   openInviteCount: z.number().int().nonnegative().optional(),
-  createdAt: z.string().datetime(),
-  updatedAt: z.string().datetime(),
+  createdAt: isoDateTime(),
+  updatedAt: isoDateTime(),
   archived: z.boolean().optional(),
-  archivedAt: z.string().datetime().optional(),
+  archivedAt: isoDateTime().optional(),
 
-  lastActivity: z.string().datetime().optional(),
+  lastActivity: isoDateTime().optional(),
   tags: z.array(z.string()).optional(),
   path: z.string().optional(),
   repositoryPath: z.string().optional(),
@@ -176,8 +177,6 @@ export const WorkspaceSchema = z.object({
   agentSummary: z.object({ agentIds: z.array(z.string()) }).optional(),
   taskStats: z.any().optional(), // Task progress rollup; carried on metadata payloads (PROTOCOL §5.1)
   gitSummary: z.any().optional(), // Deprecated aggregate; fetch on demand
-  /** CoW filesystem capability of the workspaces root (PROTOCOL §5.1); gates the cowIsolation toggle. */
-  cowSupported: z.boolean().optional(),
   /** How the checkout was provisioned (PROTOCOL §5.1); omitted for rows without a daemon-provisioned checkout (skip-isolation, remote, …). `direct` = standalone local clone (cache-hydrated picked repos, isNewRepo). */
   checkoutMode: z.enum(['cow', 'worktree', 'direct']).optional(),
   defaultAgentPlacement: AgentPlacementRequestSchema.optional(),
@@ -186,7 +185,7 @@ export const WorkspaceSchema = z.object({
     .object({
       bytes: z.number().int().nonnegative(),
       fileCount: z.number().int().nonnegative(),
-      computedAt: z.string().datetime({ offset: true }),
+      computedAt: isoDateTime({ offset: true }),
       breakdown: z.array(
         z.object({
           name: z.string(),
@@ -233,6 +232,7 @@ export const CreateWorkspaceRequestSchema = z.object({
   environmentConfig: EnvironmentConfigSchema.optional(),
   isNewRepo: z.boolean().optional(),
   skipIsolation: z.boolean().optional(), // Canonical wire name; the daemon still accepts the deprecated skipWorktree alias
+  skipBaseRefresh: z.boolean().optional(), // Continue from last-fetched after base-refresh-failed (PROTOCOL §5.1 / §9.2)
   progressId: z.string().optional(), // FE-minted correlation id echoed on git:clone:progress/done frames (PROTOCOL §5.1)
   contextLinks: z.array(ContextLinkSchema).max(20).optional(), // Issue/PR context links persisted on the workspace row (PROTOCOL §5.1)
   // The applied proposal card (PROTOCOL §5.1 "Proposal origin").
@@ -251,7 +251,7 @@ export const FirstVisitStateSchema = z.object({
   mainContentRevealed: z.boolean(),
   navigationRailRevealed: z.boolean(),
   workspaceDockRevealed: z.boolean(),
-  lastUpdated: z.string().datetime(),
+  lastUpdated: isoDateTime(),
 });
 
 /**
@@ -281,8 +281,8 @@ export const TaskMetadataSchema = z.object({
   estimatedEffort: z.string().optional(),
   actualEffort: z.string().optional(),
   blockedReason: z.string().optional(),
-  completedAt: z.string().datetime().optional(),
-  startedAt: z.string().datetime().optional(),
+  completedAt: isoDateTime().optional(),
+  startedAt: isoDateTime().optional(),
   dependsOn: z.array(z.string()).optional(), // Hard ordering edges (task note ids)
   conflictsWith: z.array(z.string()).optional(), // Advisory conflict edges (task note ids)
   unmetDependsOn: z.array(z.string()).optional(), // Daemon-computed unmet deps (read/push shapes only)
@@ -308,9 +308,9 @@ export function safeValidateFirstVisitState(data: unknown) {
  */
 
 // ID Schemas
-export const AgentIdSchema = z.string().uuid().or(z.string().startsWith('agent-'));
-export const SessionIdSchema = z.string().startsWith('sess_').or(z.string().uuid());
-export const MessageIdSchema = z.string().startsWith('msg_').or(z.string().uuid());
+export const AgentIdSchema = z.guid().or(z.string().startsWith('agent-'));
+export const SessionIdSchema = z.string().startsWith('sess_').or(z.guid());
+export const MessageIdSchema = z.string().startsWith('msg_').or(z.guid());
 
 // Content Block Schema
 // Mirrors the `type` union in src/shared/types/content-block.ts. Persistence
@@ -350,7 +350,7 @@ export const ContentBlockSchema = z
     is_error: z.boolean().optional(),
     isError: z.boolean().optional(),
     output: z.any().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
     // Media-specific fields (image, audio, file)
     data: z.string().optional(), // Base64 encoded data
     mimeType: z.string().optional(), // e.g., 'image/png', 'audio/mp3', 'text/plain'
@@ -382,7 +382,7 @@ export const ContentBlockSchema = z
 export const ToolCallSchema = z.object({
   id: z.string(),
   name: z.string(),
-  arguments: z.record(z.any()),
+  arguments: z.record(z.string(), z.any()),
   result: z.any().optional(),
   error: z.string().optional(),
   timestamp: z.string(),
@@ -405,7 +405,7 @@ export const AgentMessageSchema = z.object({
   toolResults: z.array(z.any()).optional(),
   error: z.string().optional(),
   isStreaming: z.boolean().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 // Agent Session Schema
@@ -436,8 +436,8 @@ export const AgentSessionSchema = z.object({
   updatedAt: z.union([z.string(), z.date()]).optional(),
   lastActivity: z.union([z.string(), z.date()]).optional(),
   progress: z.any().optional(),
-  metadata: z.record(z.any()).optional(),
-  agentMetadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+  agentMetadata: z.record(z.string(), z.any()).optional(),
   fileChanges: z.array(z.any()).optional(),
   currentUserMessage: z.string().optional(),
   lastUserMessage: z.string().optional(),
@@ -459,7 +459,7 @@ export const AgentSessionSchema = z.object({
       provider: z.string().optional(), // ACP provider (auggie, claude-code, codex)
       roleReminder: z.string().optional(), // Critical constraints reminder for the specialist
       specialistName: z.string().optional(), // Display name of the specialist (e.g., "Coordinator")
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     })
     .optional(),
   // Fork metadata (for conversation forking)

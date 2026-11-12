@@ -5,32 +5,21 @@
   import {
     RepositoryResourceCaptureSchema,
     RepositoryResourceResultSchema,
-    type RepositoryResourceResult,
   } from '$shared/types/repository-resource-read';
   import { createLinkTooltipHandler } from '$features/navigation/link-handler';
   import { hideLinkTooltip } from './link-tooltip-state.svelte';
-  import LinkTooltip from './LinkTooltip.svelte';
-  let { holdFirst = false }: { holdFirst?: boolean } = $props();
   let container: HTMLDivElement;
   let mounted = $state(true);
-  let captures = $state(0);
   let requests = $state(0);
   let releases = $state(0);
-  let resolveHeld: ((result: RepositoryResourceResult) => void) | undefined;
-  let rejectHeld: ((reason: Error) => void) | undefined;
   const retire = new Set<() => void>();
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous JSON fixture decoding; this test harness makes no provider request.
   const captureFixture = RepositoryResourceCaptureSchema.parse(fixture.capture);
   // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous JSON fixture decoding for controlled browser replies.
   const mrFixture = RepositoryResourceResultSchema.parse(fixture.mergeRequest);
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous JSON fixture decoding for controlled browser replies.
-  const issueFixture = RepositoryResourceResultSchema.parse(fixture.issue);
   const mrUrl = fixture.mergeRequest.outcome.snapshot.details.url;
-  const issueUrl = fixture.issue.outcome.issue.url;
   function control(action: string) {
-    if (action === 'Resolve old MR') resolveHeld?.(mrFixture);
-    else if (action === 'Reject old MR') rejectHeld?.(new Error('Private obsolete error'));
-    else if (action === 'Retire connection') {
+    if (action === 'Retire connection') {
       for (const listener of [...retire]) listener();
     } else if (action === 'Unmount links') mounted = false;
   }
@@ -40,7 +29,6 @@
     const original = appClient.integrations.captureRepositoryResource;
     appClient.integrations.captureRepositoryResource = async (workspaceId) => {
       if (workspaceId !== 'workspace-A') throw new Error('Unexpected workspace');
-      captures++;
       let released = false;
       let listener: (() => void) | undefined;
       return {
@@ -50,14 +38,9 @@
           retire.add(handler);
           return () => retire.delete(handler);
         },
-        detail: async (target) => {
+        detail: async () => {
           requests++;
-          if (holdFirst && requests === 1)
-            return new Promise<RepositoryResourceResult>((resolve, reject) => {
-              resolveHeld = resolve;
-              rejectHeld = reject;
-            });
-          return target.kind === 'issue' ? issueFixture : mrFixture;
+          return mrFixture;
         },
         release: async () => {
           if (!released) {
@@ -78,13 +61,11 @@
   });
 </script>
 
-<LinkTooltip />
 <div
   bind:this={container}
   class="grid gap-8 p-12"
   data-workspace-surface="workspace-A"
   data-testid="hover-control"
-  data-captures={captures}
   data-requests={requests}
   data-releases={releases}
 >
@@ -95,10 +76,6 @@
       >
     </section>
     <section class="grid gap-2" aria-label="Note">
-      <a data-testid="issue-link" href={issueUrl}>Issue in a note</a>
-      <a data-testid="work-item-link" href={mrUrl.replace('merge_requests', 'work_items')}
-        >Unverified work item</a
-      >
       <a
         data-testid="foreign-link"
         href={mrUrl.replace('gitlab.example.test', 'foreign.example.test')}>Unconfigured host</a

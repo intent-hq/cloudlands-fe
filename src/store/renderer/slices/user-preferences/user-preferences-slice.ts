@@ -7,6 +7,7 @@ import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
 import { SYSTEM_LANGUAGE_PREFERENCE } from '$shared/i18n/locale-matcher';
+import { isChatContentWidth, type ChatContentWidth } from '$shared/chat-content-width';
 import type { GithubLinkDefaultAction } from '$shared/utils/link-helpers';
 import type { UpdateChannel } from '$features/auto-update/types';
 import type { AgentRulesEditorState, UserPreferencesStoreState } from './user-preferences-types';
@@ -64,6 +65,7 @@ export type UserPreferencesState = {
   /** Whether reasoning (thinking) dropdowns are shown in chat transcripts. */
   showReasoningBlocks: boolean;
   chatAuroraEnabled: boolean;
+  chatContentWidth: ChatContentWidth;
   /** Whether runs of consecutive tool calls and thinking steps collapse into one chat row. */
   collapseToolRuns: boolean;
   shellTransparencyEnabled: boolean;
@@ -84,6 +86,9 @@ export type UserPreferencesState = {
   labsPlainFolderWorkspacesEnabled: boolean;
   /** Shows Settings > Mobile > Browser access; turning it off also stops the server. */
   labsBrowserAccessEnabled: boolean;
+  labsTabGroupsEnabled: boolean;
+  /** Labs: E2B cloud machines (setup, sandbox list, Start On). Existing E2B agents always render. */
+  labsCloudMachinesEnabled: boolean;
   /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
@@ -158,6 +163,7 @@ export const initialState: UserPreferencesStoreState = {
   providerSetupHydratedBackendId: null,
   showReasoningBlocks: false,
   chatAuroraEnabled: true,
+  chatContentWidth: 'full',
   collapseToolRuns: false,
   shellTransparencyEnabled: true,
   reduceMotionOnBattery: false,
@@ -167,6 +173,8 @@ export const initialState: UserPreferencesStoreState = {
   labsRemoteAgentsEnabled: false,
   labsPlainFolderWorkspacesEnabled: false,
   labsBrowserAccessEnabled: false,
+  labsTabGroupsEnabled: false,
+  labsCloudMachinesEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -382,6 +390,10 @@ export const setChatAuroraEnabled = chatAuroraPreference.setAction;
 
 export const toggleChatAurora = chatAuroraPreference.toggleAction;
 
+export const setChatContentWidth = createAction<[width: ChatContentWidth]>(
+  'userPreferences/setChatContentWidth',
+);
+
 const collapseToolRunsPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'collapseToolRuns',
@@ -481,6 +493,28 @@ const labsBrowserAccessPreference = createBooleanPreference<UserPreferencesStore
 export const setLabsBrowserAccessEnabled = labsBrowserAccessPreference.setAction;
 
 export const toggleLabsBrowserAccess = labsBrowserAccessPreference.toggleAction;
+
+const labsTabGroupsPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsTabGroupsEnabled',
+  setActionName: 'setLabsTabGroupsEnabled',
+  toggleActionName: 'toggleLabsTabGroups',
+});
+
+export const setLabsTabGroupsEnabled = labsTabGroupsPreference.setAction;
+
+export const toggleLabsTabGroups = labsTabGroupsPreference.toggleAction;
+
+const labsCloudMachinesPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsCloudMachinesEnabled',
+  setActionName: 'setLabsCloudMachinesEnabled',
+  toggleActionName: 'toggleLabsCloudMachines',
+});
+
+export const setLabsCloudMachinesEnabled = labsCloudMachinesPreference.setAction;
+
+export const toggleLabsCloudMachines = labsCloudMachinesPreference.toggleAction;
 
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
@@ -602,6 +636,11 @@ userPreferencesReducer.with(
 );
 showReasoningBlocksPreference.register(userPreferencesReducer);
 chatAuroraPreference.register(userPreferencesReducer);
+userPreferencesReducer.with(setChatContentWidth, (state, { payload: [width] }) =>
+  !isChatContentWidth(width) || state.chatContentWidth === width
+    ? state
+    : { ...state, chatContentWidth: width },
+);
 collapseToolRunsPreference.register(userPreferencesReducer);
 shellTransparencyPreference.register(userPreferencesReducer);
 reduceMotionOnBatteryPreference.register(userPreferencesReducer);
@@ -611,6 +650,8 @@ labsMultiplayerPreference.register(userPreferencesReducer);
 labsRemoteAgentsPreference.register(userPreferencesReducer);
 labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsBrowserAccessPreference.register(userPreferencesReducer);
+labsTabGroupsPreference.register(userPreferencesReducer);
+labsCloudMachinesPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,

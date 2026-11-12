@@ -26,12 +26,18 @@ import {
   CONNECTION_ID_PATTERN,
   LoginRateLimiter,
   accessKeyMatches,
+  checkSession,
   hasValidSession,
   isAllowedHost,
   isSameOriginUpgrade,
   pageOrigin,
   sessionCookieHeader,
 } from './browser-access-auth';
+import {
+  formatSignInCode,
+  normalizeSignInCode,
+  type SignInCodeResult,
+} from './browser-access-sign-in-codes';
 
 // `ws` is CJS and the vitest suite aliases the ESM import to a browser stub
 // (see vitest.config.ts); createRequire loads the real package, as
@@ -86,14 +92,19 @@ const COMPRESSIBLE = new Set([
   '.txt',
 ]);
 
-/** Localized strings for the login page (main supplies them from Paraglide). */
+/** Localized strings for the login page (hosts supply them from Paraglide). */
 export interface LoginPageText {
   readonly lang: string;
   readonly title: string;
   readonly prompt: string;
+  /** Label of the one field that takes the access key or a sign-in code. */
   readonly keyLabel: string;
   readonly submit: string;
   readonly invalidKey: string;
+  /** A sign-in code that expired or was already used. */
+  readonly codeUsed: string;
+  /** Shown above the form when a sign-in link pre-filled the code. */
+  readonly codeReady: string;
   readonly tooManyAttempts: string;
 }
 
@@ -117,6 +128,11 @@ export interface BrowserAccessServerDeps {
   readonly runtimeConfig?: () => string | Promise<string>;
   /** Called after a browser bridge opens or closes (see `bridgedBackendIds`). */
   readonly onBridgesChanged?: () => void;
+  /** Consumes single-use sign-in codes (see browser-access-sign-in-codes). */
+  readonly consumeSignInCode?: (code: string) => Promise<SignInCodeResult>;
+  /** Told the page origin of each signed-in page load, to build sign-in links. */
+  readonly onPageOrigin?: (origin: string) => void;
+  readonly now?: () => number;
 }
 
 export interface BrowserAccessServer {
@@ -156,7 +172,14 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
 
-function loginPageHtml(text: LoginPageText, error: string | null): string {
+function loginPageHtml(
+  text: LoginPageText,
+  error: string | null,
+  prefilledCode: string | null,
+): string {
+  const field = prefilledCode
+    ? `<input id="key" name="key" type="text" value="${escapeHtml(prefilledCode)}" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required>`
+    : '<input id="key" name="key" type="password" autocomplete="current-password" required autofocus>';
   return `<!doctype html>
 <html lang="${escapeHtml(text.lang)}">
 <head>
@@ -166,7 +189,7 @@ function loginPageHtml(text: LoginPageText, error: string | null): string {
 <title>${escapeHtml(text.title)}</title>
 <style>
   :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: Canvas; color: CanvasText; }
   form { width: min(22rem, calc(100vw - 2rem)); display: grid; gap: 0.75rem; }
   h1 { font-size: 1.25rem; margin: 0; }
   p { margin: 0; opacity: 0.8; }
@@ -181,9 +204,10 @@ function loginPageHtml(text: LoginPageText, error: string | null): string {
   <h1>${escapeHtml(text.title)}</h1>
   <p>${escapeHtml(text.prompt)}</p>
   ${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}
+  ${prefilledCode && !error ? `<p>${escapeHtml(text.codeReady)}</p>` : ''}
   <label for="key">${escapeHtml(text.keyLabel)}</label>
-  <input id="key" name="key" type="password" autocomplete="current-password" required autofocus>
-  <button type="submit">${escapeHtml(text.submit)}</button>
+  ${field}
+  <button type="submit"${prefilledCode ? ' autofocus' : ''}>${escapeHtml(text.submit)}</button>
 </form>
 </body>
 </html>
@@ -312,6 +336,7 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
   const webRoot = path.resolve(deps.webRoot);
   const log = deps.log ?? console;
   const limiter = deps.rateLimiter ?? new LoginRateLimiter();
+  const now = deps.now ?? Date.now;
   const gzipCache = new Map<string, { key: string; data: Promise<Buffer> }>();
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
   /** Live bridges, revoked synchronously on key reset and shutdown. */
@@ -379,11 +404,16 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       .pipe(response);
   };
 
-  const sendLogin = (response: http.ServerResponse, status: number, error: string | null): void => {
+  const sendLogin = (
+    response: http.ServerResponse,
+    status: number,
+    error: string | null,
+    prefilledCode: string | null = null,
+  ): void => {
     response.statusCode = status;
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.setHeader('Cache-Control', 'no-store');
-    response.end(loginPageHtml(deps.loginText(), error));
+    response.end(loginPageHtml(deps.loginText(), error, prefilledCode));
   };
 
   const redirect = (response: http.ServerResponse, location: string, cookie?: string): void => {
@@ -394,21 +424,51 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     response.end();
   };
 
-  /** Validate a submitted key. Returns the Set-Cookie on success, else the page error. */
-  const tryLogin = (
+  const isSecure = (request: http.IncomingMessage): boolean =>
+    pageOrigin(request.headers)?.startsWith('https:') ?? false;
+
+  /**
+   * Validate a submitted access key or, when `allowCode`, a single-use sign-in
+   * code. Both share one failure budget, reserved before the (possibly slow)
+   * check so parallel attempts cannot exceed it. Returns the Set-Cookie on
+   * success, else the page error.
+   */
+  const tryLogin = async (
     request: http.IncomingMessage,
     candidate: unknown,
-  ): { cookie: string } | { error: string; status: number } => {
+    allowCode: boolean,
+  ): Promise<{ cookie: string } | { error: string; status: number }> => {
     const text = deps.loginText();
-    if (!limiter.allow()) return { error: text.tooManyAttempts, status: 429 };
+    const refund = limiter.reserve();
+    if (!refund) return { error: text.tooManyAttempts, status: 429 };
     const accessKey = deps.getAccessKey();
+    const consume = allowCode ? deps.consumeSignInCode : undefined;
+    const code = consume ? normalizeSignInCode(candidate) : null;
+    if (consume && code) {
+      let result: SignInCodeResult;
+      try {
+        result = await consume(code);
+      } catch (error) {
+        refund();
+        throw error;
+      }
+      if (result !== 'ok') {
+        log.warn('[BrowserAccess] rejected a sign-in code');
+        return {
+          error: result === 'used-or-expired' ? text.codeUsed : text.invalidKey,
+          status: 401,
+        };
+      }
+      refund();
+      log.info('[BrowserAccess] signed in with a single-use code');
+      return { cookie: sessionCookieHeader(accessKey, isSecure(request), now()) };
+    }
     if (!accessKeyMatches(candidate, accessKey)) {
-      limiter.recordFailure();
       log.warn('[BrowserAccess] rejected an access key');
       return { error: text.invalidKey, status: 401 };
     }
-    const secure = pageOrigin(request.headers)?.startsWith('https:') ?? false;
-    return { cookie: sessionCookieHeader(accessKey, secure) };
+    refund();
+    return { cookie: sessionCookieHeader(accessKey, isSecure(request), now()) };
   };
 
   const handle = async (
@@ -435,16 +495,19 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
     if (pathname === LOGIN_PATH) {
       if (request.method === 'POST') {
         const form = await readForm(request);
-        const result = tryLogin(request, form?.get('key'));
+        const result = await tryLogin(request, form?.get('key'), true);
         if ('cookie' in result) return redirect(response, '/', result.cookie);
         return sendLogin(response, result.status, result.error);
       }
-      return sendLogin(response, 200, null);
+      // A sign-in link only pre-fills its code: chat apps and link previews
+      // fetch URLs, so a GET must never consume it. The person submits it.
+      const code = normalizeSignInCode(url.searchParams.get('code'));
+      return sendLogin(response, 200, null, code ? formatSignInCode(code) : null);
     }
 
     const keyParam = request.method === 'GET' ? url.searchParams.get('key') : null;
     if (keyParam !== null) {
-      const result = tryLogin(request, keyParam);
+      const result = await tryLogin(request, keyParam, false);
       if ('error' in result) return sendLogin(response, result.status, result.error);
       url.searchParams.delete('key');
       // Never redirect off-site: `//host` and `/\host` are protocol-relative to browsers.
@@ -452,7 +515,9 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       return redirect(response, target, result.cookie);
     }
 
-    if (!hasValidSession(request.headers, deps.getAccessKey())) {
+    const accessKey = deps.getAccessKey();
+    const session = checkSession(request.headers, accessKey, now());
+    if (!session.valid) {
       if (wantsHtml(request)) return sendLogin(response, 401, null);
       response.statusCode = 401;
       response.setHeader('Cache-Control', 'no-store');
@@ -504,6 +569,16 @@ export function createBrowserAccessServer(deps: BrowserAccessServerDeps): Browse
       response.setHeader('Upgrade', 'websocket');
       response.end();
       return;
+    }
+
+    // A signed-in page load: remember where the page lives (for sign-in links)
+    // and slide the session forward at most once a day, so active browsers
+    // are never signed out.
+    if (request.method === 'GET' && wantsHtml(request)) {
+      const origin = pageOrigin(request.headers);
+      if (origin) deps.onPageOrigin?.(origin);
+      if (session.renew)
+        response.setHeader('Set-Cookie', sessionCookieHeader(accessKey, isSecure(request), now()));
     }
 
     const file = resolveStaticFile(webRoot, pathname);

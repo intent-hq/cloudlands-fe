@@ -109,6 +109,7 @@ function isInlineSystemNotice(message: AgentMessage): boolean {
   return (
     type === 'provider_failover' ||
     type === 'provider_returned' ||
+    type === 'provider_auto_selected' ||
     (message.role === 'system' &&
       (message.contentBlocks?.[0]?.meta?.kind === 'interruption' ||
         getAttentionNotice(message) !== null))

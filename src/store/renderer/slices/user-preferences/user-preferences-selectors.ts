@@ -63,6 +63,10 @@ export const selectChatAuroraEnabled = store.createSelector((state) => {
   return state.userPreferences?.chatAuroraEnabled ?? true;
 });
 
+export const selectChatContentWidth = store.createSelector((state) => {
+  return state.userPreferences?.chatContentWidth ?? 'full';
+});
+
 export const selectCollapseToolRuns = store.createSelector((state) => {
   return state.userPreferences?.collapseToolRuns ?? false;
 });
@@ -117,6 +121,15 @@ export const selectLabsPlainFolderWorkspacesEnabled = store.createSelector((stat
 /** Experimental Browser access (Settings > Mobile) is shown only when this Labs flag is on. */
 export const selectLabsBrowserAccessEnabled = store.createSelector((state) => {
   return state.userPreferences?.labsBrowserAccessEnabled === true;
+});
+
+export const selectLabsTabGroupsEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsTabGroupsEnabled === true;
+});
+
+/** Labs: E2B cloud machines. Off hides setup and new placement, never existing agents. */
+export const selectLabsCloudMachinesEnabled = store.createSelector((state) => {
+  return state.userPreferences?.labsCloudMachinesEnabled === true;
 });
 
 export const selectCounterScale = store.createSelector((state) => {

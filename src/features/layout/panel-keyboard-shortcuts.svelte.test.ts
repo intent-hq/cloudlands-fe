@@ -145,7 +145,7 @@ describe('fixed-column panel keyboard shortcuts', () => {
     ['macOS', true, { metaKey: true }],
     ['Windows/Linux', false, { ctrlKey: true }],
   ] as const)(
-    'uses both Mod+Shift bracket variants to focus columns from all targets on %s',
+    'uses Mod+Alt+Left/Right to focus columns from all targets on %s',
     (_platform, isMac, mod) => {
       const onFocusAdjacentColumn = vi.fn(() => true);
       const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
@@ -158,15 +158,13 @@ describe('fixed-column panel keyboard shortcuts', () => {
         ...editableTargetFactories,
       ];
       const chords = [
-        [']', 'next'],
-        ['}', 'next'],
-        ['[', 'prev'],
-        ['{', 'prev'],
+        ['ArrowRight', 'next'],
+        ['ArrowLeft', 'prev'],
       ] as const;
 
       for (const [_context, createTarget] of targets) {
         for (const [key, direction] of chords) {
-          const keyEvent = event(key, { ...mod, shiftKey: true }, createTarget());
+          const keyEvent = event(key, { ...mod, altKey: true }, createTarget());
           expect(shortcuts.handleKeyDown(keyEvent)).toBe(true);
           expect(keyEvent.defaultPrevented).toBe(true);
           expect(onFocusAdjacentColumn).toHaveBeenLastCalledWith(direction);
@@ -179,8 +177,45 @@ describe('fixed-column panel keyboard shortcuts', () => {
   it.each([
     ['macOS', true, { metaKey: true }],
     ['Windows/Linux', false, { ctrlKey: true }],
+  ] as const)('no longer focuses columns on Mod+Shift brackets on %s', (_platform, isMac, mod) => {
+    const onFocusAdjacentColumn = vi.fn(() => true);
+    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+      isMac,
+      onFocusAdjacentColumn,
+    });
+
+    for (const key of [']', '}', '[', '{']) {
+      const keyEvent = event(key, { ...mod, shiftKey: true });
+      expect(shortcuts.handleKeyDown(keyEvent)).toBe(false);
+      expect(keyEvent.defaultPrevented).toBe(false);
+    }
+    expect(onFocusAdjacentColumn).not.toHaveBeenCalled();
+    shortcuts.cleanup();
+  });
+
+  it('lets a custom binding on the default column chord win', () => {
+    mocks.shortcutOverrides['global.toggle-spaces'] = 'mod+alt+right';
+    const onFocusAdjacentColumn = vi.fn(() => true);
+    const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
+      isMac: true,
+      onFocusAdjacentColumn,
+    });
+
+    const claimed = event('ArrowRight', { metaKey: true, altKey: true });
+    expect(shortcuts.handleKeyDown(claimed)).toBe(false);
+    expect(claimed.defaultPrevented).toBe(false);
+    expect(shortcuts.handleKeyDown(event('ArrowLeft', { metaKey: true, altKey: true }))).toBe(true);
+    expect(onFocusAdjacentColumn).toHaveBeenCalledTimes(1);
+    expect(onFocusAdjacentColumn).toHaveBeenLastCalledWith('prev');
+
+    shortcuts.cleanup();
+  });
+
+  it.each([
+    ['macOS', true, { metaKey: true }],
+    ['Windows/Linux', false, { ctrlKey: true }],
   ] as const)(
-    'leaves unavailable Mod+Shift column directions native on %s',
+    'leaves unavailable Mod+Alt column directions native on %s',
     (_platform, isMac, mod) => {
       const shortcuts = createPanelKeyboardShortcuts(() => manager, undefined, undefined, {
         isMac,
@@ -192,12 +227,12 @@ describe('fixed-column panel keyboard shortcuts', () => {
 
       for (const [_context, createTarget] of targets) {
         mocks.focusedPanelId = 'p1';
-        const previous = event('[', { ...mod, shiftKey: true }, createTarget());
+        const previous = event('ArrowLeft', { ...mod, altKey: true }, createTarget());
         expect(shortcuts.handleKeyDown(previous)).toBe(false);
         expect(previous.defaultPrevented).toBe(false);
 
         mocks.focusedPanelId = 'p2';
-        const next = event('}', { ...mod, shiftKey: true }, createTarget());
+        const next = event('ArrowRight', { ...mod, altKey: true }, createTarget());
         expect(shortcuts.handleKeyDown(next)).toBe(false);
         expect(next.defaultPrevented).toBe(false);
       }
@@ -335,7 +370,9 @@ describe('fixed-column panel keyboard shortcuts', () => {
     });
 
     expect(shortcuts.handleKeyDown(event(']', { ctrlKey: true }))).toBe(false);
-    expect(shortcuts.handleKeyDown(event('}', { ctrlKey: true, shiftKey: true }))).toBe(false);
+    expect(shortcuts.handleKeyDown(event('ArrowRight', { ctrlKey: true, altKey: true }))).toBe(
+      false,
+    );
     expect(shortcuts.handleKeyDown(event('\\', { ctrlKey: true }))).toBe(false);
     expect(splitPanel).not.toHaveBeenCalled();
     shortcuts.cleanup();

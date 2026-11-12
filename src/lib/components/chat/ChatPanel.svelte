@@ -25,6 +25,7 @@
   import {
     advanceQueueDrainPrediction,
     initialQueueDrainPredictorState,
+    latestDirectSendAt,
     QUEUE_DRAIN_PREDICTION_TIMEOUT_MS,
     type QueueDrainPredictorState,
   } from './queue-drain-prediction';
@@ -207,7 +208,12 @@
   import type { Workspace, PendingProposalRef } from '$shared/types';
   import { extractAllContent, type SuggestedPrompt, AgentStatus } from '$shared/types';
   import type { ContextItem } from './input/context-api';
-  import { extractAttachmentBlocks, buildWorkspaceContextString } from './composer-submission';
+  import {
+    extractAttachmentBlocks,
+    buildWorkspaceContextString,
+    planChatSend,
+    type ChatSendSource,
+  } from './composer-submission';
   import {
     browserCaptureTargetsAgent,
     browserCaptureToContextItems,
@@ -244,6 +250,7 @@
   import ChiefStarterPrompts from './ChiefStarterPrompts.svelte';
 
   import SuggestedPrompts from './SuggestedPrompts.svelte';
+  import { publishFocusedChatSuggestions } from '$features/hardware-console/prompt-picker/chat-suggestions';
   import QuestionWizard, { type QuestionAnswer } from './questions/QuestionWizard.svelte';
   import SecretRequestCards from './secrets/SecretRequestCards.svelte';
   import { deriveSecretRequestTranscript } from './secrets/pending-secret-requests';
@@ -257,8 +264,14 @@
     deriveWizardPendingQuestions,
   } from './questions/wizard-gate';
   import { classifyPendingQuestionMarker } from './questions/pending-questions';
-  import { derivePendingProposalRecoveryState } from './proposals/pending-proposal-recovery';
-  import { classifyPendingProposalRefs } from './proposals/pending-proposals';
+  import {
+    derivePendingProposalRecoveryState,
+    pendingProposalLocalIdResolver,
+  } from './proposals/pending-proposal-recovery';
+  import {
+    classifyPendingProposalRefs,
+    effectivelyPendingProposalRefs,
+  } from './proposals/pending-proposals';
   import { reconcileAppliedProposals } from './proposals/proposal-action-handlers';
   import { selectProposalLifecycleMap } from '$store/renderer/slices/proposal-lifecycle/proposal-lifecycle-selectors';
   import {
@@ -310,7 +323,21 @@
     restoreScrollAnchor,
     type FollowBottomState,
   } from '$lib/utils/smartScroll';
-  import { getCachedChatScroll, setCachedChatScroll } from './chat-scroll-cache';
+  import {
+    getCachedChatScroll,
+    setCachedChatScroll,
+    type CachedChatScroll,
+  } from './chat-scroll-cache';
+  import {
+    classifyChatReturn,
+    decideReturnCorrection,
+    resolveTabReturnRestore,
+    scheduleReturnSafetyNet,
+    shouldRecordReturnBreadcrumb,
+    type ChatReturnKind,
+    type ReturnDividerPosition,
+  } from './chat-return-landing';
+  import { LogCategory, logger as persistedLogger } from '$lib/logging/logger.svelte';
   import { createScrollBottomButtonVisibility } from './scroll-bottom-button-visibility';
   import { createLogger } from '$lib/utils/client-logger';
   import { isFocusInEditableElement, isFocusInTerminal } from '$lib/utils/keyboardShortcuts';
@@ -340,6 +367,13 @@
   import { Skeleton } from '$lib/components/ui/skeleton';
   import AttentionRequestBanner from './AttentionRequestBanner.svelte';
   import AgentPlacementNotice from '$features/remote-machines/AgentPlacementNotice.svelte';
+  import {
+    agentCloudStartFailure,
+    agentCloudStarting,
+    agentCloudWaking,
+  } from '$features/remote-machines/agent-location';
+  import { selectRemoteMachine } from '$features/remote-machines/remote-machines-selectors';
+  import { StartLineHosts } from '$features/remote-machines/start-line-hosts.svelte';
   import {
     getMessageNavigationStartScrollTop,
     getUserMessageNavigationItems,
@@ -470,10 +504,7 @@
     shouldShowTranscriptSkeleton,
     shouldShowTranscriptUtilityStack,
   } from './chat-panel-visibility';
-  import {
-    isUserQueuedMessage,
-    omitDrainedQueuedMessages,
-  } from '$lib/utils/queued-message-visibility';
+  import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
   import { getQueueSurfaceAuthors } from '$lib/utils/message-authorship';
   import { isAutomatedChatMessage } from '$lib/utils/previous-user-message';
   import WorkspaceSetupCard from '$features/onboarding/messages/WorkspaceSetupCard.svelte';
@@ -739,6 +770,22 @@
     return null;
   });
 
+  // An agent on E2B that couldn't start shows one failure card (the placement
+  // notice) in place of the generic one; the error still blocks the queue.
+  const cloudStartFailed = $derived(!$chatError$ && !!agentCloudStartFailure($agentSession$));
+  const turnFailureError = $derived(cloudStartFailed ? null : effectiveError);
+  // While the agent's cloud machine starts or wakes, the working row shows its
+  // line in place of the phase line; the notice below leaves the start out then.
+  const agentMachineIdStore = writable<string | undefined>(undefined);
+  $effect(() => {
+    agentMachineIdStore.set($agentSession$?.nodeId);
+  });
+  const agentMachine$ = selectRemoteMachine(agentMachineIdStore);
+  const cloudPhaseLine = $derived(
+    agentCloudStarting($agentSession$) || agentCloudWaking($agentSession$, $agentMachine$),
+  );
+  const startLineHosts = new StartLineHosts();
+
   const latestAssistantForTelemetry = $derived.by(() => {
     for (let index = $agentMessages$.length - 1; index >= 0; index -= 1) {
       const message = $agentMessages$[index];
@@ -864,6 +911,7 @@
         $chatIsInterrupting$ ||
         $chatLastTurnInterrupted$ ||
         latestAssistantForTelemetry?.metadata?.stopReason === 'interrupted',
+      directSendAt: latestDirectSendAt($submissionDisplay$.conversation),
       queue,
       delivered,
       now: Date.now(),
@@ -896,6 +944,7 @@
 
   // DEBUG: Unique instance ID to detect duplicate ChatPanel mounts
   const instanceId = Math.random().toString(36).substring(2, 8);
+  const retryAgentUi$ = selectRetryAgentUi(workspaceIdStore, instanceId);
   const questionUiConsumer$ = selectQuestionUiConsumer(instanceId);
   const inlineVisualDrafts$ = selectInlineVisualDrafts(instanceId);
   const userMessageIndexUi$ = selectUserMessageIndexUi(workspace?.id ?? '', instanceId);
@@ -1370,8 +1419,8 @@
   // `questions_dismissed`, `source: 'system'`, unknown types) stay hidden —
   // the list, its count, and the up-arrow edit path all use this filtered
   // view (display-only; the daemon queue and drain order are untouched).
-  // Legacy queues omit transcript-stamped drains. Correlated full snapshots
-  // remain authoritative: a restored retry may legitimately share history aliases.
+  // Queue membership is daemon-authoritative. Persisted history can also belong
+  // to a restored batch that has never reached the provider.
   const admittedPrincipal$ = selectPrincipalSnapshot();
 
   // Agent secret requests (PROTOCOL §5.56), shown as composer-slot cards
@@ -1381,10 +1430,9 @@
     secretRequestsSupported ? deriveSecretRequestTranscript($agentMessages$) : null,
   );
   const visibleQueuedMessages = $derived(
-    ($admittedPrincipal$?.capabilities.submissionCorrelation === 1
-      ? $queuedMessages$.filter(isUserQueuedMessage)
-      : omitDrainedQueuedMessages($queuedMessages$.filter(isUserQueuedMessage), $agentMessages$)
-    ).filter((message) => !predictedDrainIds.has(message.id)),
+    $queuedMessages$
+      .filter(isUserQueuedMessage)
+      .filter((message) => !predictedDrainIds.has(message.id)),
   );
 
   const visibleQueueRows = $derived(
@@ -1480,6 +1528,23 @@
   const pendingProposalRefs = $derived(
     classifyPendingProposalRefs($agentSession$?.metadata?.pendingProposals),
   );
+  // The refs still awaiting the user under the card's own rule: a ref whose
+  // id already has an applied/dismissed outcome (local lifecycle or daemon
+  // `proposalResolutions`) renders as settled, so the pill must ignore it.
+  const openPendingProposalRefs = $derived.by(() => {
+    void $agentMessages$;
+    void $agentHistoryMessages$;
+    void $pendingProposalRecovery$;
+    return effectivelyPendingProposalRefs(
+      agentId,
+      pendingProposalRefs,
+      {
+        lifecycle: $proposalLifecycleMap$ ?? {},
+        resolutions: $agentSession$?.metadata?.proposalResolutions,
+      },
+      pendingProposalLocalIdResolver(appStore.state, agentId),
+    );
+  });
 
   // Targeted recovery for refs whose carrying message is not hydrated
   // (mirrors the marked-question recovery): request each missing messageId
@@ -1495,13 +1560,14 @@
   });
   $effect(() => {
     if ($agentSession$?.id !== agentId) return;
-    const refs = pendingProposalRefs;
+    // Prune against the raw refs: a recovered body is what lets a settled
+    // ref resolve its card-keyed lifecycle, so dropping it would reopen it.
     const tracked = $pendingProposalRecovery$;
-    const keep = [...new Set(refs.map((ref) => ref.messageId))];
+    const keep = [...new Set(pendingProposalRefs.map((ref) => ref.messageId))];
     if (tracked && Object.keys(tracked).some((messageId) => !keep.includes(messageId))) {
       appStore.dispatch(pendingProposalRecoveryPruned(agentId, keep));
     }
-    if (refs.length === 0 || $transcriptHydration$ !== 'settled') return;
+    if (pendingProposalRecoveryRequests.length === 0 || $transcriptHydration$ !== 'settled') return;
     for (const request of pendingProposalRecoveryRequests) {
       if (request.shouldRequest) {
         appStore.dispatch(pendingProposalRecoveryRequested(agentId, request.messageId));
@@ -2714,6 +2780,19 @@
     }),
   );
 
+  // Share the focused chat's suggestions with the hardware joystick ring, which
+  // sends them exactly like a click. Gated like the Ctrl/Alt+1-3 shortcut, minus
+  // its chip-visibility check: the ring shows the suggestion text itself.
+  $effect(() => {
+    if (!isActive || !isChatFocused || isRetiredSession || deferTranscriptReveal) return;
+    if (suggestedPrompts.length === 0) return;
+    return publishFocusedChatSuggestions({
+      ownerId: agentId,
+      prompts: suggestedPrompts,
+      send: (prompt) => handleSelectSuggestedPrompt(prompt),
+    });
+  });
+
   // The utility stack never precedes the transcript. Once transcript hydration
   // settles, each footer source owns its loading/failure/empty presentation.
   const showTranscriptUtilityCard = $derived(
@@ -2825,7 +2904,7 @@
   const recoveryAtEnd = $derived(
     failureTranscript.history.length > 0 &&
       Boolean(
-        effectiveError ||
+        turnFailureError ||
         $chatModelUnavailable$ ||
         failureTranscript.current.state === 'attempting',
       ),
@@ -3831,7 +3910,10 @@
       },
     );
   }
+  // Bumped when a same-instance workspace return re-arms the latch below.
+  let dividerRelatchEpoch = $state(0);
   $effect(() => {
+    void dividerRelatchEpoch;
     if (!agentId || latchedDividerSessionAgentId === agentId) return;
     // While progressive initial history is still streaming (hydration only
     // settles at completion), latch as soon as the seen-marker row has
@@ -3870,6 +3952,7 @@
   // (first transcript availability), never again on later marker convergence.
   let hasAppliedNewMessagesEntryScroll = false;
   $effect(() => {
+    void dividerRelatchEpoch;
     if ($initialHistory$?.complete !== true) return;
     const anchor = newMessagesDividerAnchorId;
     if (
@@ -4068,7 +4151,9 @@
     if (maxScrollTop < cachedScrollRestoreTop) {
       const rendered = scrollContainer.clientHeight > 0;
       if (!rendered || cachedScrollRestoreAttempts < CACHED_SCROLL_RESTORE_MAX_ATTEMPTS) {
-        if (rendered) cachedScrollRestoreAttempts += 1;
+        // The switch-back skeleton is not the transcript: wait it out
+        // without spending the budget.
+        if (rendered && !deferTranscriptReveal) cachedScrollRestoreAttempts += 1;
         scheduleCachedScrollRestoreRetry();
         return false;
       }
@@ -4102,6 +4187,7 @@
     const container = scrollContainer;
     if (!isActive || !container) return;
     const cancel = () => {
+      returnLandingUserInput = true;
       if ($initialHistoryPending$) hasAppliedNewMessagesEntryScroll = true;
       unreadEntryHold = null;
       cancelPendingCachedScrollRestore();
@@ -4111,15 +4197,297 @@
         cancel();
       }
     };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (RETURN_LANDING_SCROLL_KEYS.has(event.key)) returnLandingUserInput = true;
+    };
     container.addEventListener('wheel', cancel, { passive: true });
     container.addEventListener('touchstart', cancel, { passive: true });
     container.addEventListener('pointerdown', onPointerDown);
+    container.addEventListener('keydown', onKeyDown);
     return () => {
       container.removeEventListener('wheel', cancel);
       container.removeEventListener('touchstart', cancel);
       container.removeEventListener('pointerdown', onPointerDown);
+      container.removeEventListener('keydown', onKeyDown);
     };
   });
+
+  // ── Return landing (workspace or agent-tab switch back) ──
+  // A return must show conversation rows at the landing target: the bottom,
+  // the New messages divider (workspace returns), or the cached reading
+  // position (agent-tab returns). The switch-back skeleton collapses the
+  // scroll extent while it is up, so a non-following viewport would otherwise
+  // stay clamped at ~0 inside the unloaded-history spacer once rows return.
+  // From the reveal until the first user scroll input, a safety net moves a
+  // blank viewport to the landing target and records a persisted breadcrumb.
+  const RETURN_LANDING_SCROLL_KEYS = new Set([
+    'ArrowUp',
+    'ArrowDown',
+    'PageUp',
+    'PageDown',
+    'Home',
+    'End',
+    ' ',
+  ]);
+  const TAB_RETURN_RESTORE_MAX_ATTEMPTS = 30;
+  type ReturnLanding = {
+    kind: ChatReturnKind;
+    path: 'same-instance' | 'remount';
+    restoreTop: number | null;
+    awayMs: number | null;
+  };
+  let pendingReturnLanding: ReturnLanding | null = null;
+  let returnLandingRevealed = false;
+  let returnLandingUserInput = false;
+  let returnLandingBreadcrumbs = 0;
+  let returnLandingTimers: ReturnType<typeof setTimeout>[] = [];
+  let returnLandingRestoreFrame: number | null = null;
+  let returnLandingEpoch = $state(0);
+  let wasActiveForReturn = untrack(() => isActive);
+  let deactivatedAt: number | null = null;
+  let deactivatedScroll: CachedChatScroll | undefined;
+
+  function cancelReturnLanding() {
+    for (const timer of returnLandingTimers) clearTimeout(timer);
+    returnLandingTimers = [];
+    if (returnLandingRestoreFrame !== null) cancelAnimationFrame(returnLandingRestoreFrame);
+    returnLandingRestoreFrame = null;
+    pendingReturnLanding = null;
+    returnLandingRevealed = false;
+  }
+
+  function armReturnLanding(landing: ReturnLanding) {
+    cancelReturnLanding();
+    pendingReturnLanding = landing;
+    returnLandingUserInput = false;
+    returnLandingBreadcrumbs = 0;
+    returnLandingEpoch += 1;
+  }
+
+  // Remount over a conversation that hydrated before (tab content expired,
+  // workspace surface dropped, layout recreation): never a first open.
+  if (untrack(() => isActive && $transcriptHydratedOnce$)) {
+    armReturnLanding({
+      kind: classifyChatReturn({
+        sameInstance: false,
+        dividerSessionEnded: false,
+        hasCachedScroll: cachedScroll !== undefined,
+      }),
+      path: 'remount',
+      restoreTop: null,
+      awayMs: null,
+    });
+  }
+
+  // Same-instance return: the hidden panel is re-activated.
+  $effect(() => {
+    const active = isActive;
+    untrack(() => {
+      if (active === wasActiveForReturn) return;
+      wasActiveForReturn = active;
+      if (!active) {
+        deactivatedAt = performance.now();
+        // Kept current by handleBottomStateChange while the user scrolled;
+        // the hidden container itself no longer reports its position.
+        deactivatedScroll =
+          workspace?.id && agentId ? getCachedChatScroll(workspace.id, agentId) : undefined;
+        cancelReturnLanding();
+        return;
+      }
+      if (!agentId || $agentMessages$.length === 0) return;
+      const dividerSessionEnded =
+        latchedDividerSessionAgentId === agentId &&
+        selectDividerSession.select(appStore.state, agentId) === null;
+      const kind = classifyChatReturn({
+        sameInstance: true,
+        dividerSessionEnded,
+        hasCachedScroll: deactivatedScroll !== undefined,
+      });
+      let restoreTop: number | null = null;
+      if (kind === 'workspace') {
+        // Landing rule on every workspace return, divider included: re-arm
+        // the entry latch and the one-shot divider entry scroll.
+        latchedDividerSessionAgentId = null;
+        hasAppliedNewMessagesEntryScroll = false;
+        dividerRelatchEpoch += 1;
+        shouldFollowBottom = true;
+      } else if (deactivatedScroll) {
+        // Also restores follow when a navigation that dropped it bailed out
+        // because the panel went inactive.
+        shouldFollowBottom = deactivatedScroll.shouldFollowBottom;
+        restoreTop = deactivatedScroll.shouldFollowBottom ? null : deactivatedScroll.scrollTop;
+      }
+      armReturnLanding({
+        kind,
+        path: 'same-instance',
+        restoreTop,
+        awayMs: deactivatedAt === null ? null : Math.round(performance.now() - deactivatedAt),
+      });
+    });
+  });
+
+  // Reveal: the transcript (not the skeleton) is rendered again.
+  $effect(() => {
+    void returnLandingEpoch;
+    const container = scrollContainer;
+    if (
+      !isActive ||
+      deferTranscriptReveal ||
+      !container ||
+      $agentMessages$.length === 0 ||
+      returnLandingRevealed
+    )
+      return;
+    untrack(() => {
+      const landing = pendingReturnLanding;
+      if (!landing) return;
+      returnLandingRevealed = true;
+      void tick().then(() => applyReturnLanding(landing, 0));
+      scheduleReturnSafetyNet({
+        now: () => performance.now(),
+        schedule: (fn, ms) => {
+          returnLandingTimers.push(setTimeout(fn, ms));
+        },
+        check: (settling) => {
+          if (pendingReturnLanding !== landing || returnLandingUserInput) return 'stop';
+          runReturnSafetyNet(landing, settling);
+          return 'continue';
+        },
+        onEnd: () => {
+          if (pendingReturnLanding === landing) cancelReturnLanding();
+        },
+      });
+    });
+  });
+
+  function isReturnLandingCurrent(landing: ReturnLanding): HTMLElement | null {
+    const container = scrollContainer;
+    return container &&
+      isActive &&
+      !isComponentDestroyed &&
+      pendingReturnLanding === landing &&
+      !returnLandingUserInput
+      ? container
+      : null;
+  }
+
+  function applyReturnLanding(landing: ReturnLanding, attempts: number) {
+    const container = isReturnLandingCurrent(landing);
+    if (!container) return;
+    if (landing.restoreTop !== null) {
+      const decision = resolveTabReturnRestore({
+        restoreTop: landing.restoreTop,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        attempts,
+        maxAttempts: TAB_RETURN_RESTORE_MAX_ATTEMPTS,
+      });
+      if (decision === 'wait') {
+        returnLandingRestoreFrame = requestAnimationFrame(() => {
+          returnLandingRestoreFrame = null;
+          applyReturnLanding(landing, attempts + 1);
+        });
+        return;
+      }
+      if (decision === 'restore') {
+        container.scrollTop = landing.restoreTop;
+        return;
+      }
+      shouldFollowBottom = true;
+    }
+    // A latched divider is landed by the one-shot entry scroll.
+    if (newMessagesDividerAnchorId && !hasAppliedNewMessagesEntryScroll) return;
+    if (shouldFollowBottom && !showSearch) followToBottom(container);
+  }
+
+  function viewportHasMessageRow(container: HTMLElement): boolean {
+    const box = container.getBoundingClientRect();
+    for (const row of container.querySelectorAll<HTMLElement>('[data-message-id]')) {
+      const rect = row.getBoundingClientRect();
+      if (rect.height > 0 && rect.bottom > box.top + 1 && rect.top < box.bottom - 1) return true;
+    }
+    return false;
+  }
+
+  function returnDividerPosition(container: HTMLElement): ReturnDividerPosition {
+    const divider = container.querySelector<HTMLElement>('[data-new-messages-divider]');
+    if (!divider) return 'none';
+    const box = container.getBoundingClientRect();
+    const rect = divider.getBoundingClientRect();
+    if (rect.bottom <= box.top) return 'above';
+    if (rect.top >= box.bottom) return 'below';
+    return 'visible';
+  }
+
+  function runReturnSafetyNet(landing: ReturnLanding, settling: boolean) {
+    const container = scrollContainer;
+    if (!container || !isActive || isComponentDestroyed || pendingReturnLanding !== landing) return;
+    const cacheRestorePending = cachedScrollRestoreTop !== null && !hasConsumedCachedScrollRestore;
+    const fetching = {
+      older: $fetchingOlderHistory$,
+      gap: $fetchingGapFill$,
+      seek: $fetchingHistorySeek$ || seekLandingPending,
+    };
+    const busy =
+      deferTranscriptReveal ||
+      fetching.older ||
+      fetching.gap ||
+      fetching.seek ||
+      showSearch ||
+      cacheRestorePending ||
+      returnLandingRestoreFrame !== null;
+    const divider = returnDividerPosition(container);
+    const hasVisibleRow = viewportHasMessageRow(container);
+    const correction = decideReturnCorrection({
+      kind: landing.kind,
+      settling,
+      userScrolled: returnLandingUserInput,
+      busy,
+      following: shouldFollowBottom,
+      hasVisibleRow,
+      divider,
+    });
+    if (correction === 'none') return;
+    if (shouldRecordReturnBreadcrumb(returnLandingBreadcrumbs)) {
+      returnLandingBreadcrumbs += 1;
+      // i18n-ignore (internal diagnostic event name)
+      persistedLogger.warn(LogCategory.AGENT, 'chat-return-landing-correction', {
+        correction,
+        returnKind: landing.kind,
+        returnPath: landing.path,
+        awayMs: landing.awayMs,
+        following: shouldFollowBottom,
+        hasVisibleRow,
+        divider,
+        skeleton: deferTranscriptReveal,
+        cacheRestorePending,
+        tabRestoreTop: landing.restoreTop,
+        unreadEntryHold: unreadEntryHold !== null,
+        scrollTop: Math.round(container.scrollTop),
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        spacerAbove: Math.round(virtualSpacerHeight),
+        spacerBelow: Math.round(virtualSpacerBelowHeight),
+        fetching,
+      });
+    }
+    if (unreadEntryHold) releaseUnreadEntryHold();
+    const dividerElement = container.querySelector<HTMLElement>('[data-new-messages-divider]');
+    if (correction === 'divider' && dividerElement) {
+      beginScrollNavigation();
+      const box = container.getBoundingClientRect();
+      const targetOffsetTop =
+        container.scrollTop + (dividerElement.getBoundingClientRect().top - box.top);
+      container.scrollTop = dividerEntryScrollTop(
+        targetOffsetTop,
+        container.clientHeight,
+        container.scrollHeight,
+      );
+      return;
+    }
+    shouldFollowBottom = true;
+    followToBottom(container);
+  }
   // A cache write must record a real, user-held reading position: never
   // while this instance's own cached restore is still pending (until it is
   // consumed the current scrollTop is not user-chosen), and — away from the
@@ -4334,19 +4702,36 @@
 
   let offscreenPendingProposalMessageId = $state<string | null>(null);
 
+  // The card a ref points at, by key: the pending wrapper InlineProposal tags
+  // with its daemon-parity key (id or title, so id-less cards resolve to the
+  // right card, not the message's first one), else an exact applyToolCallId.
+  function findPendingProposalCardByKey(
+    message: HTMLElement,
+    ref: PendingProposalRef,
+    claimed: Set<Element> = new Set(),
+  ): HTMLElement | null {
+    const unclaimed = (selector: string) =>
+      Array.from(message.querySelectorAll<HTMLElement>(selector)).find(
+        (candidate) => !claimed.has(candidate),
+      ) ?? null;
+    const key = CSS.escape(ref.proposalId);
+    return (
+      unclaimed(`[data-pending-proposal-key="${key}"]`) ??
+      unclaimed(`[data-apply-tool-call-id="${key}"]`)
+    );
+  }
+
   function findPendingProposalCard(
     message: HTMLElement,
     ref: PendingProposalRef,
     claimed: Set<Element> = new Set(),
   ): HTMLElement | null {
-    const exact = message.querySelector<HTMLElement>(
-      `[data-apply-tool-call-id="${CSS.escape(ref.proposalId)}"]`,
-    );
-    if (exact && !claimed.has(exact)) return exact;
     return (
+      findPendingProposalCardByKey(message, ref, claimed) ??
       Array.from(message.querySelectorAll<HTMLElement>('[data-proposal-kind]')).find(
         (candidate) => !claimed.has(candidate),
-      ) ?? null
+      ) ??
+      null
     );
   }
 
@@ -4354,7 +4739,7 @@
   // LazyTurn shell survives content hydration changes, so observation does
   // not go stale when a card is replaced by a placeholder and restored.
   $effect(() => {
-    const refs = pendingProposalRefs;
+    const refs = openPendingProposalRefs;
     const root = scrollContainer;
     void $agentMessages$;
     void $pendingProposalRecovery$;
@@ -5104,25 +5489,74 @@
     return null;
   }
 
+  type PendingProposalReveal =
+    'shown' | 'cancelled' | 'seek-failed' | 'message-not-rendered' | 'card-not-found';
+
+  // Bring the ref's card into view: seek history when its message is outside
+  // the loaded window, force-render its (possibly virtualized) turn, find the
+  // card by key, scroll and flash. 'cancelled' means a newer navigation or
+  // deactivation took over; every other non-'shown' outcome is a real miss.
+  async function revealPendingProposal(
+    ref: PendingProposalRef,
+    getContainer: () => HTMLElement | null,
+  ): Promise<PendingProposalReveal> {
+    if (!messageIdToTurnKey.has(ref.messageId)) {
+      const found = await seekConversationToMessage(agentId, ref.messageId, workspace?.id);
+      if (!getContainer()) return 'cancelled';
+      if (!found) return 'seek-failed';
+      await tick();
+      if (!getContainer()) return 'cancelled';
+    }
+    const message = await forceRenderAndFindMessage(ref.messageId, getContainer);
+    if (!getContainer()) return 'cancelled';
+    if (!message) return 'message-not-rendered';
+    let card: HTMLElement | null = null;
+    for (let attempt = 0; attempt < 5 && !card; attempt++) {
+      if (attempt > 0) await new Promise(requestAnimationFrame);
+      else await tick();
+      if (!getContainer()) return 'cancelled';
+      card = findPendingProposalCardByKey(message, ref);
+    }
+    if (!card) {
+      scheduleDeepOpenRelease();
+      return 'card-not-found';
+    }
+    smoothScrollTo(card, 'center', undefined, getContainer);
+    card.classList.add('highlight-flash');
+    scheduleHighlightRemoval(card, 'highlight-flash', 1500);
+    scheduleDeepOpenRelease();
+    return 'shown';
+  }
+
   async function scrollToPendingProposal(): Promise<void> {
     const messageId = offscreenPendingProposalMessageId;
-    const ref = pendingProposalRefs.find((candidate) => candidate.messageId === messageId);
-    if (!messageId || !ref) return;
-    const getContainer = beginScrollNavigation();
-    if (!messageIdToTurnKey.has(messageId)) {
-      if (!(await seekConversationToMessage(agentId, messageId, workspace?.id)) || !getContainer())
-        return;
-      await tick();
+    const ref = openPendingProposalRefs.find((candidate) => candidate.messageId === messageId);
+    if (!messageId || !ref) {
+      offscreenPendingProposalMessageId = null;
+      return;
     }
-    const message = await forceRenderAndFindMessage(messageId, getContainer);
-    if (!message || !getContainer()) return;
-    await tick();
-    if (!getContainer()) return;
-    const target = findPendingProposalCard(message, ref) ?? message;
-    smoothScrollTo(target, 'center', undefined, getContainer);
-    target.classList.add('highlight-flash');
-    scheduleHighlightRemoval(target, 'highlight-flash', 1500);
-    scheduleDeepOpenRelease();
+    const getContainer = beginScrollNavigation();
+    const outcome = await revealPendingProposal(ref, getContainer);
+    if (outcome === 'shown' || outcome === 'cancelled') return;
+    logger.warn('[ChatPanel] Pending proposal card not reachable from the pill', {
+      agentId,
+      messageId: ref.messageId,
+      proposalId: ref.proposalId,
+      reason: outcome,
+    });
+    const stillPending = openPendingProposalRefs.some(
+      (candidate) =>
+        candidate.messageId === ref.messageId && candidate.proposalId === ref.proposalId,
+    );
+    // A ref settled while we looked: the pill is stale, not the user's problem.
+    if (!stillPending) {
+      if (offscreenPendingProposalMessageId === ref.messageId)
+        offscreenPendingProposalMessageId = null;
+      return;
+    }
+    notify.warning(m.chat_proposalTray_notFound_error(), {
+      key: `pending-proposal-not-found:${agentId}`,
+    });
   }
 
   // Entry positioning for the unread marker: force-render the anchor message's
@@ -5670,6 +6104,7 @@
       cancelAnimationFrame(cachedScrollRestoreRetryFrame);
       cachedScrollRestoreRetryFrame = null;
     }
+    cancelReturnLanding();
     for (const timer of highlightRemovalTimers) clearTimeout(timer);
     highlightRemovalTimers.clear();
     cancelActiveFrames();
@@ -5889,14 +6324,9 @@
   // references by the send saga before the wire call.
 
   // Handle sending messages
-  function handleSend(text: string, { fromComposer = false }: { fromComposer?: boolean } = {}) {
+  function handleSend(text: string, source: ChatSendSource) {
     // Gather DOM state only. Validation, queue decisions, serialization,
     // shared/domain cleanup, and send side effects live in sagas.
-    const inlineImageItems = inputComponent?.getInlineImageContextItems?.() ?? [];
-    const mentionContextItems = inputComponent?.getMentionContextItems?.() ?? [];
-    // Only the composer's own text has picked chips; a suggested prompt's
-    // text carries no record, so its paths keep the guessed chips.
-    const pickedMentions = fromComposer ? inputComponent?.getPickedMentionsMetadata?.() : undefined;
     if (!workspace || !isActive) {
       logger.warn('[ChatPanel] Dropping send: panel has no workspace or is inactive', {
         agentId,
@@ -5907,17 +6337,21 @@
     }
     flushPendingDraftWrite();
 
-    const allContextItems = [...getContextItems(), ...inlineImageItems, ...mentionContextItems];
-    const workspaceContextStr = buildWorkspaceContextString(
-      allContextItems,
-      selectCheckedPanels.select(appStore.state),
-      selectCheckedSelections.select(appStore.state),
-    );
-    const noteIds = selectCheckedNoteIds.select(appStore.state);
-
-    const { imageBlocks, fileBlocks } = extractAttachmentBlocks(allContextItems);
+    // A suggested prompt sends bare and leaves the composer intact; only a
+    // composer submit reads (and afterwards clears) the composer's context.
+    const plan = planChatSend(source, text, () => ({
+      contextItems: [
+        ...getContextItems(),
+        ...(inputComponent?.getInlineImageContextItems?.() ?? []),
+        ...(inputComponent?.getMentionContextItems?.() ?? []),
+      ],
+      checkedPanels: selectCheckedPanels.select(appStore.state),
+      checkedSelections: selectCheckedSelections.select(appStore.state),
+      noteIds: selectCheckedNoteIds.select(appStore.state),
+      pickedMentions: inputComponent?.getPickedMentionsMetadata?.(),
+    }));
     const userAppMessageId = createAppMessageId();
-    const animateSend = !$agentIsResponding$ && imageBlocks.length === 0 && fileBlocks.length === 0;
+    const animateSend = !$agentIsResponding$ && !plan.hasAttachments;
 
     // Dispatch all orchestration to the send-message saga
     if (
@@ -5925,12 +6359,7 @@
         wsId: workspace.id,
         text,
         userAppMessageId,
-        contextItems: allContextItems,
-        workspaceContextStr,
-        noteIds,
-        ...(imageBlocks.length > 0 ? { imageBlocks } : {}),
-        ...(fileBlocks.length > 0 ? { fileBlocks } : {}),
-        ...(pickedMentions ? { messageMetadata: pickedMentions } : {}),
+        ...plan.fields,
         agentName,
         agentModel,
         isInitialWorkspaceAgent,
@@ -5944,11 +6373,7 @@
       userAppMessageId,
     });
 
-    void performLocalSendCleanup({
-      clearInput: true,
-      followBottom: true,
-      historyText: text,
-    });
+    void performLocalSendCleanup(plan.cleanup);
   }
 
   // Handle stopping the current generation
@@ -6261,9 +6686,10 @@
     // delegates) or by the edit-regenerate saga it delegates to.
   }
 
-  // Handle selecting a suggested prompt - sends immediately
+  // Handle selecting a suggested prompt (click, Ctrl/Alt+1-3, starter
+  // prompts) - sends the prompt bare and keeps the composer draft intact.
   function handleSelectSuggestedPrompt(prompt: string) {
-    handleSend(prompt);
+    handleSend(prompt, 'suggested-prompt');
   }
 
   function isSuggestedPromptShortcutVisible(index: number): boolean {
@@ -6337,11 +6763,15 @@
 
   export function scrollToTop() {
     if (!isActive) return;
+    // Explicit navigation (controls outside the scroll container) ends the
+    // return landing so its safety net never pulls the viewport back.
+    cancelReturnLanding();
     smoothScrollToPosition(0);
   }
 
   export function scrollToBottom() {
     if (!isActive) return;
+    cancelReturnLanding();
     const container = scrollContainer;
     if (!container) return;
     const getContainer = beginScrollNavigation();
@@ -6365,6 +6795,7 @@
 
   export async function navigateToUserMessage(messageId: string): Promise<boolean> {
     if (!isActive) return false;
+    cancelReturnLanding();
     if (!userMessageNavigationItems.some((message) => message.id === messageId)) return false;
     const getContainer = beginScrollNavigation();
     // Index-only row: the message is outside the loaded transcript (neither
@@ -6487,6 +6918,12 @@
     };
   });
 </script>
+
+{#snippet cloudStartLine()}
+  {#if agentId}
+    <AgentPlacementNotice {agentId} phaseLine onPhaseLine={startLineHosts.register} />
+  {/if}
+{/snippet}
 
 <svelte:window
   onkeydown={(e) => {
@@ -6875,7 +7312,7 @@
                         backendSessionId={auggieSessionId}
                       />
                     </div>
-                    {#if !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
+                    {#if !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (turnFailureError || $chatModelUnavailable$)))}
                       <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
                         <StreamingStatus
                           isStreaming={$agentSessionIsStreaming$}
@@ -6884,7 +7321,7 @@
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                          error={effectiveError}
+                          error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
@@ -6893,6 +7330,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
+                          startLine={cloudPhaseLine ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -6915,7 +7353,7 @@
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                        error={effectiveError}
+                        error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
@@ -6924,6 +7362,7 @@
                         {quotaExceeded}
                         {quotaRetryProviders}
                         {hasPendingPermission}
+                        startLine={cloudPhaseLine ? cloudStartLine : null}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
                         onRetryWithProvider={gatedRetryWithProvider}
@@ -7008,7 +7447,7 @@
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                          error={effectiveError}
+                          error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
@@ -7017,6 +7456,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
+                          startLine={cloudPhaseLine ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7039,7 +7479,7 @@
                         lastChunkTime={$chatLastChunkTime$}
                         receivedFirstChunk={$chatReceivedFirstChunk$}
                         streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                        error={effectiveError}
+                        error={turnFailureError}
                         recoveryState={failureTranscript.current.state}
                         authGuidance={chatAuthGuidance}
                         sessionCorrupted={effectiveSessionCorrupted}
@@ -7048,6 +7488,7 @@
                         {quotaExceeded}
                         {quotaRetryProviders}
                         {hasPendingPermission}
+                        startLine={cloudPhaseLine ? cloudStartLine : null}
                         onRetry={gatedRetry}
                         onRetryWithModel={gatedRetryWithModel}
                         onRetryWithProvider={gatedRetryWithProvider}
@@ -7075,7 +7516,7 @@
                   lastChunkTime={$chatLastChunkTime$}
                   receivedFirstChunk={$chatReceivedFirstChunk$}
                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                  error={effectiveError}
+                  error={turnFailureError}
                   recoveryState={failureTranscript.current.state}
                   authGuidance={chatAuthGuidance}
                   sessionCorrupted={effectiveSessionCorrupted}
@@ -7084,6 +7525,7 @@
                   {quotaExceeded}
                   {quotaRetryProviders}
                   {hasPendingPermission}
+                  startLine={cloudPhaseLine ? cloudStartLine : null}
                   onRetry={gatedRetry}
                   onRetryWithModel={gatedRetryWithModel}
                   onRetryWithProvider={gatedRetryWithProvider}
@@ -7091,7 +7533,7 @@
                   onStalledRetry={gatedStalledRetry}
                   statusEvents={$chatStatusEvents$}
                   streamingStartTime={$chatStreamingStartTime$}
-                  class={effectiveError ? 'mt-0' : undefined}
+                  class={turnFailureError ? 'mt-0' : undefined}
                 />
               </div>
             </div>
@@ -7259,7 +7701,7 @@
                     shouldShowPendingAssistantStatus({
                       isStreaming: $agentSessionIsStreaming$,
                       isProcessing: $agentIsResponding$,
-                      error: effectiveError,
+                      error: turnFailureError,
                       modelUnavailable: $chatModelUnavailable$,
                     })}
                   {@const hasTurnBody = hasVisibleTurnBody({
@@ -7273,7 +7715,7 @@
                         turnIndex === turns.length - 1 &&
                         turn.assistantMessages.length > 0 &&
                         Boolean(
-                          $agentSessionIsStreaming$ || effectiveError || $chatModelUnavailable$,
+                          $agentSessionIsStreaming$ || turnFailureError || $chatModelUnavailable$,
                         )),
                     suppressCoordinationStoppedIndicator: turn.userMessage
                       ? isAutomatedMessage(turn.userMessage)
@@ -7456,7 +7898,7 @@
                           lastChunkTime={$chatLastChunkTime$}
                           receivedFirstChunk={$chatReceivedFirstChunk$}
                           streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                          error={effectiveError}
+                          error={turnFailureError}
                           recoveryState={failureTranscript.current.state}
                           authGuidance={chatAuthGuidance}
                           sessionCorrupted={effectiveSessionCorrupted}
@@ -7465,6 +7907,7 @@
                           {quotaExceeded}
                           {quotaRetryProviders}
                           {hasPendingPermission}
+                          startLine={cloudPhaseLine ? cloudStartLine : null}
                           onRetry={gatedRetry}
                           onRetryWithModel={gatedRetryWithModel}
                           onRetryWithProvider={gatedRetryWithProvider}
@@ -7552,7 +7995,7 @@
                               {/if}
                             </div>
                             <!-- Show streaming status while streaming or when there's an error/modelUnavailable -->
-                            {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (effectiveError || $chatModelUnavailable$)))}
+                            {#if !recoveryAtEnd && !pendingStatusMessageId && ((isCurrentlyStreaming && ($agentIsResponding$ || $agentSessionIsStreaming$)) || (isLastMessage && (turnFailureError || $chatModelUnavailable$)))}
                               <div class={isCompactMode ? 'mb-2' : 'mb-16'}>
                                 <StreamingStatus
                                   isStreaming={$agentSessionIsStreaming$}
@@ -7561,7 +8004,7 @@
                                   lastChunkTime={$chatLastChunkTime$}
                                   receivedFirstChunk={$chatReceivedFirstChunk$}
                                   streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                                  error={effectiveError}
+                                  error={turnFailureError}
                                   recoveryState={failureTranscript.current.state}
                                   authGuidance={chatAuthGuidance}
                                   sessionCorrupted={effectiveSessionCorrupted}
@@ -7570,6 +8013,7 @@
                                   {quotaExceeded}
                                   {quotaRetryProviders}
                                   {hasPendingPermission}
+                                  startLine={cloudPhaseLine ? cloudStartLine : null}
                                   onRetry={gatedRetry}
                                   onRetryWithModel={gatedRetryWithModel}
                                   onRetryWithProvider={gatedRetryWithProvider}
@@ -7653,7 +8097,7 @@
                     lastChunkTime={$chatLastChunkTime$}
                     receivedFirstChunk={$chatReceivedFirstChunk$}
                     streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                    error={effectiveError}
+                    error={turnFailureError}
                     recoveryState={failureTranscript.current.state}
                     authGuidance={chatAuthGuidance}
                     sessionCorrupted={effectiveSessionCorrupted}
@@ -7662,6 +8106,7 @@
                     {quotaExceeded}
                     {quotaRetryProviders}
                     {hasPendingPermission}
+                    startLine={cloudPhaseLine ? cloudStartLine : null}
                     onRetry={gatedRetry}
                     onRetryWithModel={gatedRetryWithModel}
                     onRetryWithProvider={gatedRetryWithProvider}
@@ -7703,7 +8148,15 @@
         {/if}
 
         {#if workspace?.id && agentId}
-          <AgentPlacementNotice {agentId} />
+          <AgentPlacementNotice
+            {agentId}
+            phaseLineShown={startLineHosts.shown}
+            failedAt={effectiveFailedAt}
+            queued={visibleQueuedMessages.length > 0}
+            onRetry={failureTranscript.current.state === 'attempting' ? undefined : gatedRetry}
+            retrying={$retryAgentUi$?.status === 'pending'}
+            turnError={$chatError$}
+          />
           <AttentionRequestBanner {agentId} />
         {/if}
 
@@ -7732,7 +8185,7 @@
                 shouldShowPendingAssistantStatus({
                   isStreaming: $agentSessionIsStreaming$,
                   isProcessing: pendingRowsProcessing,
-                  error: effectiveError,
+                  error: turnFailureError,
                   modelUnavailable: $chatModelUnavailable$,
                 })}
               {#if index > 0 || lastConversationTurn}
@@ -7761,7 +8214,7 @@
                               shouldShowPendingAssistantStatus({
                                 isStreaming: $agentSessionIsStreaming$,
                                 isProcessing: $agentIsResponding$,
-                                error: effectiveError,
+                                error: turnFailureError,
                                 modelUnavailable: $chatModelUnavailable$,
                               }),
                           }),
@@ -7802,7 +8255,7 @@
                       lastChunkTime={$chatLastChunkTime$}
                       receivedFirstChunk={$chatReceivedFirstChunk$}
                       streamingContentLength={$chatStreamingContent$?.length ?? 0}
-                      error={effectiveError}
+                      error={turnFailureError}
                       recoveryState={failureTranscript.current.state}
                       authGuidance={chatAuthGuidance}
                       sessionCorrupted={effectiveSessionCorrupted}
@@ -7811,6 +8264,7 @@
                       {quotaExceeded}
                       {quotaRetryProviders}
                       {hasPendingPermission}
+                      startLine={cloudPhaseLine ? cloudStartLine : null}
                       onRetry={gatedRetry}
                       onRetryWithModel={gatedRetryWithModel}
                       onRetryWithProvider={gatedRetryWithProvider}
@@ -8028,7 +8482,7 @@
                       scheduleDraftWrite(value);
                       reportTypingActivity(value);
                     }}
-                    onsubmit={(text: string) => handleSend(text, { fromComposer: true })}
+                    onsubmit={(text: string) => handleSend(text, 'composer')}
                     onforcesubmit={(text: string) => handleForceSubmit(text)}
                     onstop={handleStop}
                     onHistoryPrev={handleHistoryPrev}

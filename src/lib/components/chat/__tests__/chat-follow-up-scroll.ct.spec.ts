@@ -175,12 +175,20 @@ for (const { platform, modifier, chief } of [
     await page.evaluate(() => document.fonts.ready);
     const hints = prompts.locator('[data-suggested-prompt-hint]');
     await expect(hints).toHaveCount(2);
+    // A selected prompt sends bare and keeps the composer draft, so the draft
+    // proves nothing about sending; observe the transcript's user rows instead.
+    const userMessages = component.getByTestId('user-message-surface');
+    const sentFirst = userMessages.filter({ hasText: 'Walk me through the manual checks.' });
+    const sentSecond = userMessages.filter({ hasText: 'Hold off on opening the PR.' });
+    const userMessageCount = await userMessages.count();
 
     await wheelUntilScrolled(scroll, { deltaY: -250 });
     await expect(prompts).not.toBeInViewport();
     await page.keyboard.press(`${modifier}+1`);
     await expect(editor).toHaveText(draft);
     await expect(prompts).not.toBeInViewport();
+    await expect(sentFirst).toHaveCount(0);
+    await expect(userMessages).toHaveCount(userMessageCount);
 
     await scroll.evaluate((node) => {
       node.scrollTop = node.scrollHeight;
@@ -197,13 +205,17 @@ for (const { platform, modifier, chief } of [
     await expect(hints.last()).not.toBeInViewport();
     await page.keyboard.press(`${modifier}+2`);
     await expect(editor).toHaveText(draft);
+    await expect(sentSecond).toHaveCount(0);
+    await expect(userMessages).toHaveCount(userMessageCount);
 
     await scroll.evaluate((node) => {
       node.scrollTop = node.scrollHeight;
     });
     await expect(hints.last()).toBeInViewport({ ratio: 1 });
     await page.keyboard.press(`${modifier}+2`);
-    // The production send path clears the draft only when a prompt was selected.
-    await expect(editor).toHaveText('');
+    await expect(sentSecond).toHaveCount(1);
+    await expect(sentFirst).toHaveCount(0);
+    // Selecting a prompt sends it bare and leaves the unsent draft in place.
+    await expect(editor).toHaveText(draft);
   });
 }

@@ -42,6 +42,7 @@ import {
   saveActivityLogPreset,
   setAgentFontStyle,
   setChatAuroraEnabled,
+  setChatContentWidth,
   setCollapseToolRuns,
   setCodeFontFamily,
   setGroupByRepo,
@@ -52,6 +53,8 @@ import {
   userPreferencesHydrated,
   setLabsRemoteAgentsEnabled,
   setLabsPlainFolderWorkspacesEnabled,
+  setLabsTabGroupsEnabled,
+  setLabsCloudMachinesEnabled,
   setLabsBrowserAccessEnabled,
   toggleLabsRemoteAgents,
   toggleLabsPlainFolderWorkspaces,
@@ -214,6 +217,7 @@ describe('userPreferencesPersistenceSaga', () => {
       'workspace-list:completedProviderSetup': true,
       'chat:showReasoningBlocks': true,
       'chat:auroraEnabled': false,
+      'chat:contentWidth': '800',
       'chat:collapseToolRuns': true,
       'appearance:shellTransparencyEnabled': false,
       'appearance:reduceMotionOnBattery': false,
@@ -222,6 +226,8 @@ describe('userPreferencesPersistenceSaga', () => {
       'labs:remoteAgentsEnabled': true,
       'labs:plainFolderWorkspacesEnabled': true,
       'labs:browserAccessEnabled': true,
+      'labs:tabGroupsEnabled': true,
+      'labs:cloudMachinesEnabled': true,
       'agent-font-settings': { fontStyle: 'monospace' },
       'note-font-settings': { fontStyle: 'sans' },
       'code-font-settings': { fontFamily: 'Monaco' },
@@ -245,6 +251,7 @@ describe('userPreferencesPersistenceSaga', () => {
       [providerSetupHydrated('local', true)],
       [setShowReasoningBlocks(true)],
       [setChatAuroraEnabled(false)],
+      [setChatContentWidth('800')],
       [setCollapseToolRuns(true)],
       [setShellTransparencyEnabled(false)],
       [setReduceMotionOnBattery(false)],
@@ -253,6 +260,8 @@ describe('userPreferencesPersistenceSaga', () => {
       [setLabsRemoteAgentsEnabled(true)],
       [setLabsPlainFolderWorkspacesEnabled(true)],
       [setLabsBrowserAccessEnabled(true)],
+      [setLabsTabGroupsEnabled(true)],
+      [setLabsCloudMachinesEnabled(true)],
       [setAgentFontStyle('monospace')],
       [setNoteFontStyle('sans')],
       [setCodeFontFamily('Monaco')],
@@ -609,6 +618,38 @@ describe('userPreferencesPersistenceSaga', () => {
     task.cancel();
     await task.toPromise();
   });
+
+  it.each(['full', '800'] as const)('restores and persists chat width %s', async (width) => {
+    mocks.getJSON.mockImplementation((key: string) =>
+      key === 'chat:contentWidth' ? width : undefined,
+    );
+    const fixture = startPreferenceStore();
+    await settle();
+    expect(fixture.getUserPreferences().chatContentWidth).toBe(width);
+    mocks.setJSON.mockClear();
+    fixture.dispatch(setChatContentWidth('800'));
+    fixture.dispatch(setChatContentWidth('full'));
+    await settle();
+    expect(mocks.setJSON.mock.calls).toEqual([
+      ['chat:contentWidth', '800'],
+      ['chat:contentWidth', 'full'],
+    ]);
+    await fixture.stop();
+  });
+
+  it.each([undefined, null, 800, '0', '-800', '640', '750', '960', '1200', '800px', {}, false])(
+    'leaves chat full width when storage contains %j',
+    async (value) => {
+      mocks.getJSON.mockImplementation((key: string) =>
+        key === 'chat:contentWidth' ? value : undefined,
+      );
+      const fixture = startPreferenceStore();
+      await settle();
+      expect(fixture.getUserPreferences().chatContentWidth).toBe('full');
+      expect(mocks.setJSON.mock.calls).not.toContainEqual(['chat:contentWidth', value]);
+      await fixture.stop();
+    },
+  );
 
   it('persists every audited trigger using exact legacy keys and post-state values', async () => {
     const state = {

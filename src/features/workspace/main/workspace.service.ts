@@ -128,7 +128,7 @@ export class WorkspaceService {
    * a pending entry (`expiresAt === null`) is always reused regardless of how
    * long it has been in flight. A rejected promise is evicted immediately so
    * the next caller retries rather than waiting out the TTL on a cached failure.
-   * Mutation methods (`updateWorkspace`, `duplicateWorkspace`, `deleteWorkspace`,
+   * Mutation methods (`updateWorkspace`, `deleteWorkspace`,
    * `archiveWorkspace`, `unarchiveWorkspace`, `restoreWorkspace`) clear this
    * cache on success so a list requested shortly after a write does not serve
    * pre-mutation rows.
@@ -918,47 +918,6 @@ export class WorkspaceService {
         ok: false,
         error: this.extractErrorMessage(error),
       };
-    }
-  }
-
-  /**
-   * Duplicate a workspace
-   *
-   * Delegates to the daemon (`workspace.duplicate`, PROTOCOL.md §5.1). The
-   * daemon owns fresh-id allocation, worktree provisioning, spec seeding, and
-   * non-spec note copy; the FE only forwards the request.
-   */
-  async duplicateWorkspace(id: WorkspaceId, newTitle?: string): Promise<Result<Workspace, string>> {
-    try {
-      logger.info('Starting duplication of workspace', { workspaceId: id });
-
-      const response = (await getBackendClient().request('workspace.duplicate', {
-        workspaceId: id,
-        ...(newTitle ? { newTitle } : {}),
-      })) as { workspace?: unknown } | unknown;
-      const raw =
-        response && typeof response === 'object' && 'workspace' in response
-          ? (response as { workspace?: unknown }).workspace
-          : response;
-      if (!raw || typeof raw !== 'object') {
-        return { ok: false, error: m.workspaceService_invalidDaemonPayload_error() };
-      }
-      const newWorkspace = this.normalizeDaemonWorkspace(raw as Record<string, unknown>);
-
-      // Invalidate the workspace.list cache so a list requested shortly after
-      // this write does not serve pre-mutation rows.
-      this.workspaceListCache.clear();
-
-      logger.info('Workspace duplicated successfully', {
-        sourceId: id,
-        newId: newWorkspace.id,
-        title: newWorkspace.title,
-      });
-
-      return { ok: true, data: newWorkspace };
-    } catch (error) {
-      logger.error('Error duplicating workspace', error as Error, { workspaceId: id });
-      return { ok: false, error: this.extractErrorMessage(error) };
     }
   }
 

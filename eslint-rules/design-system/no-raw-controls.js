@@ -1,3 +1,4 @@
+import { isTestOnlySvelteFile } from '../../scripts/test-only-svelte-files.mjs';
 import { isWithin, relativeFilename, svelteElementName } from './common.js';
 
 const replacements = {
@@ -36,7 +37,7 @@ function isProductionSvelteSource(filename) {
     filename.endsWith('.svelte') &&
     !internalRoute &&
     !filename.includes('/__tests__/') &&
-    !/(?:test-harness|Harness|TestWrapper)\.svelte$/.test(filename)
+    !isTestOnlySvelteFile(filename)
   );
 }
 

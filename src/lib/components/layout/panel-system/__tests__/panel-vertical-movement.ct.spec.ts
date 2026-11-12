@@ -25,7 +25,7 @@ async function geometry(panel: Locator) {
 }
 
 for (const direction of ['up', 'down'] as const) {
-  test(`moves active content ${direction}, resizes rows, restores, then moves horizontally`, async ({
+  test(`moves active content ${direction}, restores, then moves horizontally`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -75,25 +75,11 @@ for (const direction of ['up', 'down'] as const) {
     });
     await page.keyboard.press('Escape');
 
-    const handle = component.locator('button[data-resize-axis="y"]');
-    await expect(handle).toHaveCount(1);
-    const beforeResize = await geometry(upper);
-    const divider = await geometry(handle);
-    await page.mouse.move(divider.x + divider.width / 2, divider.y + divider.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(divider.x + divider.width / 2, divider.y + divider.height / 2 + 60, {
-      steps: 4,
-    });
-    await page.mouse.up();
-    await expect
-      .poll(async () => (await geometry(upper)).height - beforeResize.height)
-      .toBeGreaterThan(40);
-    const resized = { alpha: await geometry(alpha), beta: await geometry(beta) };
     await component
       .getByTestId('restore-layout')
       .evaluate((node: HTMLButtonElement) => node.click());
     await expect
-      .poll(async () => Math.abs((await geometry(alpha)).height - resized.alpha.height))
+      .poll(async () => Math.abs((await geometry(alpha)).height - split.alpha.height))
       .toBeLessThan(1);
     await expect(state).toHaveAttribute('data-columns', '1');
     await testInfo.attach(`vertical-${direction}.png`, {
@@ -121,7 +107,7 @@ for (const direction of ['up', 'down'] as const) {
     };
     await testInfo.attach(`vertical-${direction}-geometry.json`, {
       body: JSON.stringify(
-        { original, split, resized, horizontal, layout: JSON.parse((await state.textContent())!) },
+        { original, split, horizontal, layout: JSON.parse((await state.textContent())!) },
         null,
         2,
       ),

@@ -16,6 +16,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { m } from '$shared/paraglide/messages.js';
 import type {
   ImportCancelResult,
   ImportProgressEvent,
@@ -170,7 +171,7 @@ export function createWorkspaceImportRelay(deps: ImportRelayDeps): WorkspaceImpo
   ): Promise<ImportStartResult> {
     if (session) {
       if (!deps.isOwnerGone(session.ownerId)) {
-        return { success: false, error: 'an import is already in progress' };
+        return { success: false, error: m.workspace_import_busy_error() };
       }
       // The in-flight run's owner window is gone: no renderer remains to
       // cancel it, so release it here — flag it cancelled (its loop observes

@@ -1,3 +1,5 @@
+import { parseCloudMachineState, type CloudMachineState } from './cloud-machines';
+
 /**
  * Daemon-to-daemon remote machines (PROTOCOL `methods/nodes.md` →
  * "Daemon-to-daemon remote machines").
@@ -49,9 +51,16 @@ export interface RemoteMachine {
   state: RemoteMachineState;
   runningAgents: number;
   capabilities?: RemoteMachineCapabilities;
+  /**
+   * Executor-link version negotiated at the machine's last bind, kept while it
+   * is disconnected; absent before the first bind (`remoteScripts: 1` backends).
+   */
+  nodeProtocol?: number;
   observedAt?: string;
   addedAt: string;
   lastConnectedAt?: string;
+  /** Only on cloud machine rows (`cloudMachines.list`, `cloudMachine:changed`). */
+  cloud?: CloudMachineState;
 }
 
 /** One `executor.list` entry: a backend this machine is available to. */
@@ -174,6 +183,11 @@ export function parseRemoteMachine(value: unknown): RemoteMachine | null {
   const tcAddress = optionalText(value.tcAddress);
   const observedAt = optionalText(value.observedAt);
   const lastConnectedAt = optionalText(value.lastConnectedAt);
+  const cloud = parseCloudMachineState(value.cloud);
+  const nodeProtocol =
+    Number.isInteger(value.nodeProtocol) && (value.nodeProtocol as number) >= 0
+      ? (value.nodeProtocol as number)
+      : undefined;
   return {
     id: value.id,
     name: value.name,
@@ -187,9 +201,11 @@ export function parseRemoteMachine(value: unknown): RemoteMachine | null {
     state: value.state as RemoteMachineState,
     runningAgents: count(value.runningAgents),
     ...(capabilities ? { capabilities } : {}),
+    ...(nodeProtocol !== undefined ? { nodeProtocol } : {}),
     ...(observedAt ? { observedAt } : {}),
     addedAt: value.addedAt,
     ...(lastConnectedAt ? { lastConnectedAt } : {}),
+    ...(cloud ? { cloud } : {}),
   };
 }
 

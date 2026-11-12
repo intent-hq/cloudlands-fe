@@ -1,5 +1,5 @@
 <script lang="ts">
-  import AgentAvatarCatalog from '../AgentAvatarCatalog.svelte';
+  import AgentAvatarCatalogHarness from '../AgentAvatarCatalogHarness.svelte';
   import AgentAvatar from '../AgentAvatar.svelte';
   import AgentAvatarWithState from '../AgentAvatarWithState.svelte';
   import type { AvatarState } from '../avatar-state';
@@ -35,5 +35,5 @@
   <div data-testid="legacy-sized-avatar">
     <AgentAvatar agentId="legacy-sized-agent" size={18} />
   </div>
-  <AgentAvatarCatalog />
+  <AgentAvatarCatalogHarness />
 </section>

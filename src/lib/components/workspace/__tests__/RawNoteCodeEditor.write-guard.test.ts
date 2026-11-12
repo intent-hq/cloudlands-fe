@@ -42,9 +42,11 @@ vi.mock('$lib/components/editor/CodeEditor.svelte', async () => ({
 
 import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
-import { loadWorkspaceNotesSucceeded } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
+import {
+  flushNoteContentRequested,
+  loadWorkspaceNotesSucceeded,
+} from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
 import { selectNoteById } from '$store/renderer/slices/workspace-notes/workspace-notes-selectors';
-import { flushNoteContent } from '$features/notes/notes-write-service';
 import { startWorkspaceNotesSagaFixture } from '../../../../test/fixtures/workspace-notes-saga-fixture';
 import { recordDaemonNote } from '$store/renderer/slices/workspace-notes/sagas/note-daemon-text';
 import RawNoteCodeEditor from '../RawNoteCodeEditor.svelte';
@@ -155,7 +157,7 @@ it('keeps typing during an in-flight save without a refusal or lost text', async
   await fireEvent.input(input, { target: { value: 'body first' } });
   await vi.advanceTimersByTimeAsync(1000);
   await syncStore();
-  const first = flushNoteContent(WS, NOTE);
+  const first = appStore.dispatch(flushNoteContentRequested(WS, NOTE));
   await vi.waitFor(() => expect(wire).toHaveBeenCalledTimes(1));
 
   // The user keeps typing while save 1 is in flight; its echo lands mid-typing.
@@ -165,7 +167,7 @@ it('keeps typing during an in-flight save without a refusal or lost text', async
   await tick();
   await syncStore();
   await vi.advanceTimersByTimeAsync(1000);
-  await flushNoteContent(WS, NOTE);
+  await appStore.dispatch(flushNoteContentRequested(WS, NOTE));
   await vi.advanceTimersByTimeAsync(5000);
   await tick();
 
@@ -191,7 +193,7 @@ it('saves on top of a concurrent agent edit without a refusal', async () => {
   await syncStore();
   await fireEvent.input(input, { target: { value: 'AGENT body MINE' } });
   await vi.advanceTimersByTimeAsync(1000);
-  await flushNoteContent(WS, NOTE);
+  await appStore.dispatch(flushNoteContentRequested(WS, NOTE));
   await tick();
 
   expect(daemon.refusals).toEqual([]);

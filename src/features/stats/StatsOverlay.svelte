@@ -47,6 +47,7 @@
     exportPeriodKey,
     type StatsCardName,
   } from './stats-export';
+  import { withoutCachedTokens } from './stats-format';
 
   const isOpen$ = selectStatsOverlayOpen();
   const mode$ = selectStatsMode();
@@ -56,6 +57,8 @@
   const data$ = selectStatsData();
 
   let dropdownOpen = $state(false);
+  let showCached = $state(false);
+  const cardData = $derived($data$ && !showCached ? withoutCachedTokens($data$) : $data$);
 
   const available = $derived($data$?.availablePeriods ?? { months: [], years: [] });
   const options = $derived(periodOptions($mode$, available));
@@ -202,6 +205,17 @@
           </Select.Root>
         </div>
       {/if}
+
+      <div class="flex rounded-lg bg-popover p-1 text-popover-foreground shadow-sm">
+        <Button
+          variant={showCached ? 'secondary' : 'ghost'}
+          size="sm"
+          aria-pressed={showCached}
+          onclick={() => (showCached = !showCached)}
+        >
+          {m.stats_overlay_cachedTokens_label()}
+        </Button>
+      </div>
     </div>
 
     {#if $error$}
@@ -220,29 +234,29 @@
     {/if}
 
     <!-- Card slots (each wrapped for the hover-reveal PNG export button) -->
-    {#if $data$}
+    {#if cardData}
       <div class="pointer-events-auto mt-[30px] flex flex-wrap justify-center gap-7">
         <div class="group relative" data-stats-card-slot="passport">
           {@render exportBtn('passport')}
-          <AgentPassportCard data={$data$} label={cardLabel} />
+          <AgentPassportCard data={cardData} label={cardLabel} {showCached} />
         </div>
         <div class="group relative" data-stats-card-slot="models">
           {@render exportBtn('models')}
-          <ModelsCard data={$data$} label={cardLabel} />
+          <ModelsCard data={cardData} label={cardLabel} />
         </div>
         <div class="group relative" data-stats-card-slot="providers">
           {@render exportBtn('providers')}
-          <ProvidersCard data={$data$} label={cardLabel} />
+          <ProvidersCard data={cardData} label={cardLabel} />
         </div>
         <div class="group relative" data-stats-card-slot="by-hour">
           {@render exportBtn('by-hour')}
-          <TokensByHourCard data={$data$} mode={$mode$} label={cardLabel} loading={$loading$} />
+          <TokensByHourCard data={cardData} mode={$mode$} label={cardLabel} loading={$loading$} />
         </div>
         {#if $mode$ !== '24h'}
           <!-- Tokens by Month is hidden in 24H mode (Spec D11). -->
           <div class="group relative" data-stats-card-slot="by-month">
             {@render exportBtn('by-month')}
-            <TokensByMonthCard data={$data$} {yearKey} loading={$loading$} />
+            <TokensByMonthCard data={cardData} {yearKey} loading={$loading$} />
           </div>
         {/if}
       </div>

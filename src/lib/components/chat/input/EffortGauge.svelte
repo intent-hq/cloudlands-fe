@@ -8,14 +8,14 @@
     size = 'compact',
     testId = 'effort-gauge',
     class: className = '',
-  } = $props<{
+  }: {
     value?: number;
     max?: number;
     centered?: boolean;
     size?: 'compact' | 'prominent';
     testId?: string;
     class?: string;
-  }>();
+  } = $props();
 
   const progress = $derived(centered ? 0.5 : max > 0 ? Math.min(1, Math.max(0, value / max)) : 0.5);
   const needleAngle = $derived(-65 + progress * 130);

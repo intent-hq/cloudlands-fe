@@ -5,7 +5,7 @@ for (const state of [
   { label: 'regular narrow message', width: 320, isSticky: false },
   { label: 'pinned minimum-width message', width: 240, isSticky: true },
 ]) {
-  test(`delivery metadata is a zero-reflow hover/focus overlay for ${state.label}`, async ({
+  test(`delivery metadata is a zero-reflow focus overlay for ${state.label}`, async ({
     mount,
     page,
   }) => {
@@ -21,27 +21,18 @@ for (const state of [
     const bodyBox = (await surface.boundingBox())!;
     await expect(toolbar).toHaveCSS('opacity', '0');
     await expect(toolbar).toHaveCSS('position', 'absolute');
-    await surface.hover();
+    const metadata = toolbar.getByRole('button', { name: 'Waited in queue for 1m 39s' });
+    await metadata.focus();
     await expect(toolbar).toHaveCSS('opacity', '1');
     await expect(notice).toBeVisible();
-    const hoverBox = (await surface.boundingBox())!;
-    expect(hoverBox.height).toBeCloseTo(bodyBox.height, 1);
+    const focusedBox = (await surface.boundingBox())!;
+    expect(focusedBox.height).toBeCloseTo(bodyBox.height, 1);
     const toolbarBox = (await toolbar.boundingBox())!;
     expect(toolbarBox.x).toBeGreaterThanOrEqual(bodyBox.x);
     expect(toolbarBox.x + toolbarBox.width).toBeLessThanOrEqual(bodyBox.x + bodyBox.width);
 
-    await page.mouse.move(state.width - 1, 450);
-    await expect(toolbar).toHaveCSS('opacity', '0');
-    await page.keyboard.press('Tab');
-    const metadata = toolbar.getByRole('button', { name: 'Waited in queue for 1m 39s' });
     await expect(metadata).toBeFocused();
     await expect(toolbar).toHaveCSS('opacity', '1');
-    const tooltip = page.getByRole('tooltip');
-    await expect(tooltip).toContainText('1m 39s');
-    await expect(tooltip).toContainText('2026');
-    expect((await surface.boundingBox())!.height).toBeCloseTo(bodyBox.height, 1);
-    await page.keyboard.press('Escape');
-    await expect(tooltip).toHaveCount(0);
     await page.keyboard.press('Tab');
     await expect(toolbar.getByRole('button', { name: /^Copy message/ })).toBeFocused();
     await page.keyboard.press('Tab');

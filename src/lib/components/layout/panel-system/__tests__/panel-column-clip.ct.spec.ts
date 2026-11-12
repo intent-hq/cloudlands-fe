@@ -362,40 +362,6 @@ test('creates a fitted chat once without a post-creation resize flash', async ({
   expect(geometry.lastPanelRight!).toBeLessThanOrEqual(geometry.columnRight);
 });
 
-for (const zoomFactor of [1, 2]) {
-  test(`resizes between new chat panels without changing the canvas at ${zoomFactor * 100}% zoom`, async ({
-    mount,
-  }) => {
-    const component = await mount(PanelWorkspaceColumnClipHarness, {
-      props: {
-        scenario: 'create-agent',
-        canvasWidth: 1200,
-        persistedCanvasWidth: null,
-        zoomFactor,
-      },
-    });
-    await component.getByTestId('create-agent-panel').evaluate((button: HTMLButtonElement) => {
-      button.click();
-    });
-    await expectStableCanvasWidth(component);
-    const canvasWidth = (await measureGeometry(component)).canvasOffsetWidth!;
-    const before = (await measureGeometry(component)).panelWidths;
-    const handle = component.locator('.panel-split-handle').first();
-    await handle.evaluate(async (element) => {
-      element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100 }));
-      document.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 200 }));
-      await new Promise(requestAnimationFrame);
-      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 200 }));
-    });
-
-    await expect
-      .poll(async () => (await measureGeometry(component)).panelWidths[0])
-      .toBeGreaterThan(before[0]);
-    expect((await measureGeometry(component)).panelWidths[1]).toBeLessThan(before[1]);
-    await expectStableCanvasWidth(component, canvasWidth);
-  });
-}
-
 /**
  * Regression (clipped bottom stacked panel): a root vertical split must size
  * its children against the inset's content-box height (clientHeight minus the

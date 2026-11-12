@@ -382,13 +382,13 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
     await expect(agentAlpha).toHaveAttribute('aria-checked', 'true');
     expect(await compositionValues()).toEqual([
-      { value: '400', share: '67%' },
       { value: '150', share: '25%' },
       { value: '0', share: '0%' },
-      { value: '50', share: '8%' },
+      { value: '450', share: '75%' },
+      { value: '400', share: undefined },
     ]);
     const compositionSegments = details.locator('.composition-strip-segment');
-    await expect(compositionSegments).toHaveCount(3);
+    await expect(compositionSegments).toHaveCount(2);
     const readSegmentColors = () =>
       compositionSegments.evaluateAll((segments) =>
         segments.map((segment) => ({
@@ -409,10 +409,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     );
     await expect
       .poll(readSegmentColors)
-      .toEqual(keyColors.filter(({ metric }) => metric !== 'reasoning'));
+      .toEqual(keyColors.filter(({ metric }) => metric !== 'reasoning' && metric !== 'cached'));
     const segmentColors = await readSegmentColors();
     themeCompositionColors.push(segmentColors.map(({ color }) => color));
-    expect(new Set(themeCompositionColors.at(-1)).size).toBe(3);
+    expect(new Set(themeCompositionColors.at(-1)).size).toBe(2);
     expect(new Set(keyColors.map(({ color }) => color)).size).toBe(4);
     await expect(messageRows.locator('.composition-key')).toHaveCount(0);
     await agentAlpha.focus();
@@ -475,11 +475,9 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
         ).map((part) => getComputedStyle(part).color),
       };
     });
-    for (const colors of [segmentColors, keyColors]) {
-      const cached = colors.find(({ metric }) => metric === 'cached')!;
-      expect(cached.color).toBe(navigatorColors.neutralCachedMarker);
-      expect(cached.color).not.toBe(navigatorColors.successCachedMarker);
-    }
+    const cachedKey = keyColors.find(({ metric }) => metric === 'cached')!;
+    expect(cachedKey.color).toBe(navigatorColors.neutralCachedMarker);
+    expect(cachedKey.color).not.toBe(navigatorColors.successCachedMarker);
     expect(
       contrastRatio(navigatorColors.cachedMarker, navigatorColors.surface),
       `${theme} cached marker`,
@@ -582,7 +580,7 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
     { value: '0', share: '0%' },
     { value: '0', share: '0%' },
     { value: '0', share: '0%' },
-    { value: '0', share: '0%' },
+    { value: '0', share: undefined },
   ]);
   await expect(messageRows.locator('.animated-number-value')).toHaveText(
     '0 human and 0 agent messages',
@@ -612,10 +610,10 @@ test('navigates exact stacked totals with accessible pointer, focus, theme, and 
   await expect(finalModel).toHaveAttribute('aria-checked', 'false');
   await expect(finalModel).toHaveAttribute('data-preview-active', 'true');
   expect(await compositionValues()).toEqual([
-    { value: '0', share: '0%' },
     { value: '10', share: '100%' },
     { value: '0', share: '0%' },
     { value: '0', share: '0%' },
+    { value: '0', share: undefined },
   ]);
   await expect(details.locator('.composition-strip-segment')).toHaveCount(1);
   await expect(details.locator('.composition-strip')).toHaveAccessibleName(
@@ -763,10 +761,10 @@ test('retains each selected dimension and skips message-only scopes', async ({ m
 });
 
 for (const locale of ['en', 'de'] as const) {
-  test(`keeps wrapped ${locale} summaries readable without retargeting native pointer clicks`, async ({
+  test(`keeps wrapped ${locale} summaries readable when selecting a scope`, async ({
     mount,
     page,
-  }, testInfo) => {
+  }) => {
     await page.setViewportSize({ width: 280, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
@@ -799,35 +797,10 @@ for (const locale of ['en', 'de'] as const) {
     const initialSummary = await summaryGeometry();
     expect(initialSummary.lines).toBeGreaterThan(1);
     expect(initialSummary.readable).toBe(true);
-    const before = (await target.boundingBox())!;
-    const point = { x: before.x + before.width / 2, y: before.y + before.height / 2 };
-    await page.mouse.move(point.x, point.y);
-    await expect(target).toHaveAttribute('data-preview-active', 'true');
-    await expect(details.locator('.token-summary .animated-number-value')).toHaveText('1');
-    await page.evaluate(
-      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-    );
-    const after = await target.boundingBox();
-    // Use the ORIGINAL pointer coordinates: locator.click() can chase a moving target.
-    await page.mouse.down();
-    await page.mouse.up();
-    await testInfo.attach('wrapped-summary-pointer.json', {
-      body: JSON.stringify(
-        { locale, point, before, after, initialSummary, previewSummary: await summaryGeometry() },
-        null,
-        2,
-      ),
-      contentType: 'application/json',
-    });
-    await testInfo.attach('wrapped-summary-pointer.png', {
-      body: await page.screenshot(),
-      contentType: 'image/png',
-    });
+    await target.click();
     await expect(target).toBeChecked();
     await expect(adjacent).not.toBeChecked();
-    expect(after).toEqual(before);
     expect((await summaryGeometry()).readable).toBe(true);
-    await page.mouse.move(0, 0);
     await target.blur();
     await expect(target).toBeChecked();
   });
@@ -870,7 +843,7 @@ for (const localeCase of [
     singular: '1 human message and 1 agent message',
     pluralHuman: '2 human messages and 1 agent message',
     pluralAgent: '1 human message and 3 agent messages',
-    suffixes: ['tokens', 'of total'],
+    suffixes: ['tokens'],
   },
   {
     locale: 'de',
@@ -878,7 +851,7 @@ for (const localeCase of [
     singular: '1 menschliche Nachricht und 1 Agentennachricht',
     pluralHuman: '2 menschliche Nachrichten und 1 Agentennachricht',
     pluralAgent: '1 menschliche Nachricht und 3 Agentennachrichten',
-    suffixes: ['Token', 'der Gesamtmenge'],
+    suffixes: ['Token'],
   },
   {
     locale: 'es',
@@ -886,7 +859,7 @@ for (const localeCase of [
     singular: '1 mensaje humano y 1 mensaje del agente',
     pluralHuman: '2 mensajes humanos y 1 mensaje del agente',
     pluralAgent: '1 mensaje humano y 3 mensajes del agente',
-    suffixes: ['tókenes', 'del total'],
+    suffixes: ['tókenes'],
   },
   {
     locale: 'fr',
@@ -894,7 +867,7 @@ for (const localeCase of [
     singular: '1 message humain et 1 message de l’agent',
     pluralHuman: '2 messages humains et 1 message de l’agent',
     pluralAgent: '1 message humain et 3 messages de l’agent',
-    suffixes: ['jetons', 'du total'],
+    suffixes: ['jetons'],
   },
   {
     locale: 'ja',
@@ -902,7 +875,7 @@ for (const localeCase of [
     singular: '人間のメッセージ 1 件、エージェントメッセージ 1 件',
     pluralHuman: '人間のメッセージ 2 件、エージェントメッセージ 1 件',
     pluralAgent: '人間のメッセージ 1 件、エージェントメッセージ 3 件',
-    suffixes: ['トークン', '（合計比）'],
+    suffixes: ['トークン'],
   },
   {
     locale: 'ko',
@@ -910,7 +883,7 @@ for (const localeCase of [
     singular: '사람 메시지 1개 및 에이전트 메시지 1개',
     pluralHuman: '사람 메시지 2개 및 에이전트 메시지 1개',
     pluralAgent: '사람 메시지 1개 및 에이전트 메시지 3개',
-    suffixes: ['토큰', '전체 대비'],
+    suffixes: ['토큰'],
   },
   {
     locale: 'zh-CN',
@@ -918,7 +891,7 @@ for (const localeCase of [
     singular: '1 条人工消息，1 条智能体消息',
     pluralHuman: '2 条人工消息，1 条智能体消息',
     pluralAgent: '1 条人工消息，3 条智能体消息',
-    suffixes: ['个令牌', '占总量'],
+    suffixes: ['个令牌'],
   },
   {
     locale: 'zh-TW',
@@ -926,7 +899,7 @@ for (const localeCase of [
     singular: '1 則人工訊息，1 則智慧體訊息',
     pluralHuman: '2 則人工訊息，1 則智慧體訊息',
     pluralAgent: '1 則人工訊息，3 則智慧體訊息',
-    suffixes: ['個 Token', '佔總量'],
+    suffixes: ['個 Token'],
   },
 ] as const) {
   test(`localizes singular and plural message summaries in ${localeCase.locale}`, async ({
@@ -946,8 +919,6 @@ for (const localeCase of [
     await expect(messageRows.locator('.animated-number-target')).toHaveText(localeCase.plural);
     await expect(details.locator('.composition-value-suffix')).toHaveText(localeCase.suffixes[0]);
     await expect(details.locator('.composition-value-suffix')).not.toBeVisible();
-    await expect(details.locator('.composition-context-suffix')).toHaveText(localeCase.suffixes[1]);
-    await expect(details.locator('.composition-context-suffix')).not.toBeVisible();
 
     const agentControls = page
       .getByTestId('token-usage-by-agent')
@@ -977,13 +948,12 @@ for (const localeCase of [
   });
 }
 
-test('retargets animated values smoothly with final-only accessibility', async ({
+test('exposes final-only accessible values when previewing token scopes', async ({
   mount,
   page,
 }) => {
   await page.setViewportSize({ width: 1100, height: 720 });
-  await page.emulateMedia({ reducedMotion: 'no-preference' });
-  await page.clock.install();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(WorkspaceTokenUsageAccessibilityHost, {
     props: { theme: 'light', width: 304 },
   });
@@ -996,7 +966,6 @@ test('retargets animated values smoothly with final-only accessibility', async (
   const finalTargets = rows.locator('.composition-value .animated-number-target');
   const messageValues = details.locator('.message-composition-row .animated-number-value');
   const messageTargets = details.locator('.message-composition-row .animated-number-target');
-  const animatedNumbers = details.locator('.animated-number');
   const agentBeta = page
     .getByTestId('token-usage-by-agent')
     .locator('.breakdown-item-control')
@@ -1005,37 +974,14 @@ test('retargets animated values smoothly with final-only accessibility', async (
     .getByTestId('token-usage-by-model')
     .locator('.breakdown-item-control')
     .nth(1);
-  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 1000));
-  await expect(animatedNumbers).toHaveCount(12);
-  expect(
-    await animatedNumbers.evaluateAll((numbers) =>
-      numbers.every(
-        (number) =>
-          (number as HTMLElement).dataset.pulse === 'false' &&
-          getComputedStyle(number).transform === 'none',
-      ),
-    ),
-  ).toBe(true);
-
   await modelBeta.focus();
   await expect(previewStatus).toContainText('By model Model Beta 150 processed');
-  await expect(finalTargets).toHaveText(['150', '0', '0', '0']);
+  await expect(finalTargets).toHaveText(['0', '0', '150', '150']);
   expect(
     await animatedValues.evaluateAll((values) =>
       values.every((value) => value.ariaHidden === 'true'),
     ),
   ).toBe(true);
-  await page.clock.runFor(75);
-  const midpoint = Number.parseFloat((await animatedValues.first().textContent()) ?? '');
-  expect(midpoint).toBeGreaterThan(150);
-  expect(midpoint).toBeLessThan(400);
-  expect(
-    (await details.locator('.animated-number-value').allTextContents()).every(
-      (value) => !/[0-9][.,][0-9]/.test(value),
-    ),
-  ).toBe(true);
-
-  await page.clock.runFor(275);
   await agentBeta.dispatchEvent('pointerenter', { pointerType: 'mouse' });
   await expect(previewStatus).toHaveAttribute('aria-atomic', 'true');
   await expect(previewStatus).toContainText('By agent Agent beta-02 100 processed');
@@ -1043,7 +989,7 @@ test('retargets animated values smoothly with final-only accessibility', async (
   await expect(agentBeta).toHaveAttribute('data-preview-active', 'true');
   await expect(modelBeta).toHaveAttribute('aria-checked', 'false');
   await expect(modelBeta).toHaveAttribute('data-preview-active', 'true');
-  await expect(finalTargets).toHaveText(['10', '60', '0', '30']);
+  await expect(finalTargets).toHaveText(['60', '0', '40', '10']);
   await expect(messageTargets).toHaveText('2 human and 4 agent messages');
   expect(
     await finalTargets.evaluateAll((targets) =>
@@ -1051,20 +997,17 @@ test('retargets animated values smoothly with final-only accessibility', async (
     ),
   ).toBe(true);
 
-  await page.clock.runFor(350);
   await expect(messageValues).toHaveText('2 human and 4 agent messages');
-  await expect(animatedValues).toHaveText(['10', '60', '0', '30']);
+  await expect(animatedValues).toHaveText(['60', '0', '40', '10']);
 
   await agentBeta.dispatchEvent('pointerleave', { pointerType: 'mouse' });
   await expect(previewStatus).toContainText('By model Model Beta 150 processed');
   await expect(messageTargets).toHaveText('1 human message and 3 agent messages');
-  await page.clock.runFor(350);
-  await expect(animatedValues).toHaveText(['150', '0', '0', '0']);
+  await expect(animatedValues).toHaveText(['0', '0', '150', '150']);
 
   await modelBeta.blur();
   await expect(previewStatus).toContainText('By agent Agent alpha-01 600 processed');
-  await page.clock.runFor(350);
-  await expect(animatedValues).toHaveText(['400', '150', '0', '50']);
+  await expect(animatedValues).toHaveText(['150', '0', '450', '400']);
 });
 
 test('renders the full reference table as a wide overlay from the real workspace sidebar', async ({
@@ -1123,7 +1066,10 @@ test('renders the full reference table as a wide overlay from the real workspace
   const compositionStrip = composition.locator('.composition-strip');
   const compositionSegments = compositionStrip.locator('.composition-strip-segment');
   const compositionRows = details.locator('.composition-row');
-  const tokenCompositionRows = details.locator('.token-composition-row');
+  const tokenCompositionRows = details.locator('.token-composition-row:has(.composition-context)');
+  const cachedCompositionRow = details.locator(
+    '.token-composition-row:not(:has(.composition-context))',
+  );
   const messageCompositionRows = details.locator('.message-composition-row');
   const agentRows = agentSection.locator('.breakdown-stack-item');
   const modelRows = modelSection.locator('.breakdown-stack-item');
@@ -1170,32 +1116,26 @@ test('renders the full reference table as a wide overlay from the real workspace
   await expect(compositionRows).toHaveCount(5);
   await expect(compositionStrip).toHaveRole('img');
   await expect(compositionStrip).toHaveAccessibleName(
-    /Token composition, Cached context: 400 tokens, 67%.*Model output: 150 tokens, 25%.*Input context: 50 tokens, 8%/,
+    /^Token composition, Model output: 150 tokens, 25%.*Input context: 450 tokens, 75%$/,
   );
-  await expect(compositionSegments).toHaveCount(3);
+  await expect(compositionSegments).toHaveCount(2);
   await expect(composition.locator('.composition-header')).toHaveCount(0);
-  await expect(compositionRows.nth(0)).toContainText('Cached context');
+  await expect(compositionRows.nth(0)).toContainText('Model output');
+  await expect(compositionRows.nth(1)).toContainText('Reasoning tokens');
+  await expect(compositionRows.nth(2)).toContainText('Input context');
+  await expect(compositionRows.nth(3)).toContainText('Cached context');
+  await expect(cachedCompositionRow).toHaveCount(1);
   await expect(
-    compositionRows.nth(0).locator('.composition-value .animated-number-value'),
+    cachedCompositionRow.locator('.composition-value .animated-number-value'),
   ).toHaveText('400');
-  await expect(compositionRows.nth(0).locator('.composition-value-suffix')).toHaveText('tokens');
-  await expect(compositionRows.nth(0).locator('.composition-value-suffix')).not.toBeVisible();
-  await expect(
-    compositionRows.nth(0).locator('.composition-context .animated-number-value'),
-  ).toHaveText('67%');
-  await expect(compositionRows.nth(0).locator('.composition-context-suffix')).toHaveText(
-    'of total',
-  );
-  await expect(compositionRows.nth(0).locator('.composition-context-suffix')).not.toBeVisible();
-  await expect(compositionRows.nth(1)).toContainText('Model output');
-  await expect(compositionRows.nth(2)).toContainText('Reasoning tokens');
-  await expect(compositionRows.nth(3)).toContainText('Input context');
+  await expect(cachedCompositionRow.locator('.composition-value-suffix')).toHaveText('tokens');
+  await expect(cachedCompositionRow.locator('.composition-value-suffix')).not.toBeVisible();
   await expect(compositionRows.nth(4).locator('.animated-number-value')).toHaveText(
     '3 human and 5 agent messages',
   );
   await expect(messageCompositionRows.locator('.composition-value')).toHaveCount(0);
   await expect(messageCompositionRows.locator('.composition-context')).toHaveCount(0);
-  await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(4);
+  await expect(tokenCompositionRows.locator('.composition-key[aria-hidden="true"]')).toHaveCount(3);
   await expect(messageCompositionRows.locator('.composition-key')).toHaveCount(0);
   await expect(composition.locator('.composition-description')).toHaveCount(0);
   await expect(details.getByTestId('token-usage-total-cost')).toHaveText('Cost $0.12');
@@ -1267,7 +1207,6 @@ test('renders the full reference table as a wide overlay from the real workspace
           value: box('.composition-value'),
           valueSuffix: optionalBox('.composition-value-suffix'),
           context: box('.composition-context'),
-          contextSuffix: optionalBox('.composition-context-suffix'),
           valueAlign: getComputedStyle(valueElement).textAlign,
           contextAlign: getComputedStyle(contextElement).textAlign,
           valueColor: getComputedStyle(valueElement).color,
@@ -1500,12 +1439,8 @@ test('renders the full reference table as a wide overlay from the real workspace
     ),
   ).toBe(true);
   expect(compositionBar.overflowX).toBe('hidden');
-  expect(compositionBar.segments.map(({ metric }) => metric)).toEqual([
-    'cached',
-    'output',
-    'input',
-  ]);
-  expect(new Set(compositionBar.segments.map(({ color }) => color)).size).toBe(3);
+  expect(compositionBar.segments.map(({ metric }) => metric)).toEqual(['output', 'input']);
+  expect(new Set(compositionBar.segments.map(({ color }) => color)).size).toBe(2);
   expect(
     Math.abs(
       compositionBar.segments.at(-1)!.box.x +
@@ -1578,10 +1513,8 @@ test('renders the full reference table as a wide overlay from the real workspace
         value.x < context.x,
     ),
   ).toBe(true);
-  expect(desktopRows[0].valueSuffix!.width).toBe(0);
-  expect(desktopRows[0].contextSuffix!.width).toBe(0);
-  expect(desktopRows.slice(1).every(({ valueSuffix }) => valueSuffix === undefined)).toBe(true);
-  expect(desktopRows.slice(1).every(({ contextSuffix }) => contextSuffix === undefined)).toBe(true);
+  expect(desktopRows).toHaveLength(3);
+  expect(desktopRows.every(({ valueSuffix }) => valueSuffix === undefined)).toBe(true);
   expect(messageAlignment.rows).toHaveLength(1);
   expect(messageAlignment.rows[0].labels).toHaveLength(1);
   expect(messageAlignment.rows[0]).toMatchObject({

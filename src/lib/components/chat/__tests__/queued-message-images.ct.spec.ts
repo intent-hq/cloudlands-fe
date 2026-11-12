@@ -211,6 +211,7 @@ test('pending image groups survive out-of-order ACKs, confirmation, editing, rem
   await expect(rows).toHaveCount(2);
   await expect.poll(widths).toEqual([48, 64, 64]);
   await capture('removed-text-group');
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- QueuedMessageList hard-codes Mod+Enter to send a queued message now; it is not chat.force-send
   await rows.first().getByTestId('queued-message-content').press('Control+Enter');
   await expect(rows).toHaveCount(1);
   await expect.poll(widths).toEqual([64, 64]);
@@ -481,6 +482,7 @@ test('a retry displays ordered groups with parent controls and edits the full pa
     body: await queueScreenshot(component),
     contentType: 'image/png',
   });
+  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- QueuedMessageList hard-codes Mod+Enter to send a queued message now; it is not chat.force-send
   await row.getByTestId('queued-message-content').press('Control+Enter');
   await expect(row).toHaveCount(0);
   const sent = JSON.parse((await component.getByTestId('sent-images').textContent())!);

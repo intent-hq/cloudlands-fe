@@ -579,11 +579,6 @@ describe('CatalogShell root inline style ownership', () => {
   const rootStyle = () => document.documentElement.style;
 
   beforeEach(() => {
-    const storage = new Map<string, string>();
-    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-      storage.set(key, String(value));
-    });
     window.history.replaceState(null, '', '/sandbox/button');
     document.documentElement.removeAttribute('style');
     document.documentElement.removeAttribute('class');
@@ -692,11 +687,6 @@ describe('CatalogShell root inline style ownership', () => {
 
 describe('CatalogShell motion URL compatibility', () => {
   beforeEach(() => {
-    const storage = new Map<string, string>();
-    vi.mocked(localStorage.getItem).mockImplementation((key) => storage.get(key) ?? null);
-    vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
-      storage.set(key, String(value));
-    });
     writeCatalogPreferences(localStorage, {
       theme: 'dark',
       colorTheme: 'default',

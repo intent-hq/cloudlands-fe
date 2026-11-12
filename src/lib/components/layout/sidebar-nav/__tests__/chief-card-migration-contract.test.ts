@@ -20,6 +20,10 @@ import {
   removeWorkspaceAgentState,
 } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
 import { setChiefActiveAgentId } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  setBundledSpecialists,
+  setBundledSpecialistsLoaded,
+} from '$store/renderer/slices/specialists/specialists-slice';
 import { m } from '$shared/paraglide/messages.js';
 import { guestSessionsListReceived } from '$store/renderer/slices/guest-sessions/guest-sessions-slice';
 import ChiefCard from '../cards/ChiefCard.svelte';
@@ -75,6 +79,19 @@ describe('Chief card migration contract', () => {
     appStore.dispatch(guestSessionsListReceived({ sessions: [], openIds: [], connectedIds: [] }));
     appStore.dispatch(hydrateDefaultProvider('auggie'));
     appStore.dispatch(setChiefActiveAgentId(null));
+    appStore.dispatch(
+      setBundledSpecialists([
+        {
+          id: CHIEF_SPECIALIST_ID,
+          name: 'Chief of Staff',
+          description: 'Chief',
+          defaultBehaviorPrompt: 'Daemon Chief prompt',
+          source: 'bundled',
+          hidden: true,
+        },
+      ]),
+    );
+    appStore.dispatch(setBundledSpecialistsLoaded(true));
     createAgentMock.mockReset();
     createAgentMock.mockResolvedValue({
       success: true,
@@ -117,6 +134,33 @@ describe('Chief card migration contract', () => {
     await waitFor(() => expect(launchActions).toHaveLength(1));
     await settle();
     expect(launchActions).toHaveLength(1);
+  });
+
+  it('waits for the daemon specialist catalog before creating a Chief thread', async () => {
+    appStore.dispatch(setBundledSpecialists([]));
+    appStore.dispatch(setBundledSpecialistsLoaded(false));
+    appStore.dispatch(setAgentsLoaded(CHIEF_WORKSPACE_ID, true));
+    render(ChiefCard, { props: {} });
+
+    await settle();
+    expect(launchActions).toHaveLength(0);
+
+    appStore.dispatch(
+      setBundledSpecialists([
+        {
+          id: CHIEF_SPECIALIST_ID,
+          name: 'Chief of Staff',
+          description: 'Chief',
+          defaultBehaviorPrompt: 'Daemon Chief prompt',
+          source: 'bundled',
+          hidden: true,
+        },
+      ]),
+    );
+    appStore.dispatch(setBundledSpecialistsLoaded(true));
+    await waitFor(() => expect(launchActions).toHaveLength(1));
+    const [launch] = launchActions as { payload: [string, { behaviorPrompt: string }] }[];
+    expect(launch.payload[1].behaviorPrompt).toContain('Daemon Chief prompt');
   });
 
   it('selects the latest current-identity thread instead of creating one once hydrated', async () => {

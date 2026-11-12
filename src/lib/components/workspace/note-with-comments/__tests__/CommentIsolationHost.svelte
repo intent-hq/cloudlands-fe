@@ -7,7 +7,7 @@
   import { startRootStoreLifecycle } from '$store/renderer/root-store-lifecycle';
   import { selectComments } from '$store/renderer/slices/comments/comments-selectors';
   import { selectCommentAction } from '$store/renderer/slices/comments/comments-slice';
-  import { applyCommentFromEvent } from '$features/comments/comments-read-service';
+  import { commentEventReceived } from '$store/renderer/slices/workspace-notes/workspace-notes-slice';
   import { installMockElectronBridge } from '../../../../../test/ct-mock-electron-bridge';
   import type { Workspace } from '$shared/types';
   import { WorkspaceId } from '$shared/types/branded-ids';
@@ -17,17 +17,19 @@
     second = false,
     noteId = 'spec',
     generation = 0,
-  } = $props<{
+  }: {
     second?: boolean;
     noteId?: string;
     generation?: number;
-  }>();
+  } = $props();
   let ready = $state(false);
   let requests = $state<unknown[]>([]);
   let updated = false;
   const comments = selectComments();
   const workspace = (id: string) => ({ id: WorkspaceId(id), title: id }) as Workspace;
   const firstWorkspace = workspace('isolation-a');
+  const applyCommentFromEvent = (workspaceId: string, noteId: string, kind: 'added' | 'resolved') =>
+    store.dispatch(commentEventReceived(workspaceId, noteId, kind));
   const secondWorkspace = workspace('isolation-b');
   const disposeStore = startRootStoreLifecycle(store, {
     startSagas: startWorkspaceNotesSagaFixture,

@@ -48,19 +48,9 @@ app
     // setControlledCursor(null) opts back into the real cursor (native pointer tests).
     let controlledCursor = { x: -100000, y: -100000 };
     screen.getCursorScreenPoint = () => controlledCursor ?? actualCursor();
-    let holdDragBegin = false;
-    const pendingDragBegins = [];
     const originalHandle = ipcMain.handle.bind(ipcMain);
     ipcMain.handle = (channel, handler) =>
       originalHandle(channel, async (...args) => {
-        if (
-          holdDragBegin &&
-          channel === 'window:update-dock-placement' &&
-          args[1]?.action === 'begin-drag'
-        ) {
-          calls.push({ boundary: 'controlled-begin-delay', command: args[1] });
-          await new Promise((resolve) => pendingDragBegins.push(resolve));
-        }
         const result = await handler(...args);
         if (channel.startsWith('dock-evidence:'))
           calls.push({ boundary: 'production-dock-evidence-command', channel, ok: result?.ok });
@@ -173,18 +163,6 @@ app
       calls,
       history,
       menu,
-      dragBeginGate: {
-        hold() {
-          holdDragBegin = true;
-        },
-        pending() {
-          return pendingDragBegins.length;
-        },
-        release() {
-          holdDragBegin = false;
-          for (const resolve of pendingDragBegins.splice(0)) resolve();
-        },
-      },
       setControlledCursor(point) {
         controlledCursor = point;
         calls.push({ boundary: 'controlled-os-cursor', point });

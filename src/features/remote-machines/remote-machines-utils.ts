@@ -34,7 +34,26 @@ export function connectionForMachine(
   );
 }
 
-/** Offer "Make available" again only while the machine is not usefully exposed. */
+/** Offer "Let <backend> run agents here" again only while the machine is not usefully exposed. */
 export function canOfferExpose(machine: RemoteMachine | null): boolean {
   return !machine || machine.state === 'revoked';
+}
+
+/** First executor-link version that runs remote agents' saved scripts. */
+const REMOTE_SCRIPTS_LINK_VERSION = 8;
+
+/**
+ * The backend runs remote agents' saved scripts (`remoteScripts: 1`) but the
+ * machine last bound on an older link, which refuses them: it needs an
+ * update. Unknown (never bound) is not flagged.
+ */
+export function machineNeedsUpdateForScripts(
+  machine: Pick<RemoteMachine, 'nodeProtocol'>,
+  remoteScriptsSupported: boolean,
+): boolean {
+  return (
+    remoteScriptsSupported &&
+    machine.nodeProtocol !== undefined &&
+    machine.nodeProtocol < REMOTE_SCRIPTS_LINK_VERSION
+  );
 }

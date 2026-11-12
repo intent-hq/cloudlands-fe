@@ -10,6 +10,7 @@ import type {
   AgentScopeCounts,
 } from '$shared/types';
 import type { UnifiedAgentConfig } from '$shared/types/agent.types';
+import type { AgentPermissionPolicy } from '$shared/types/agent-session';
 import { isBackgroundAgentSession } from '$shared/utils/agent-scope';
 import { createAction, createAsyncAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
@@ -591,6 +592,16 @@ export const setAgentPinnedRequested = createAsyncAction<
   [wsId: string, agentId: string, pinned: boolean],
   void
 >('workspaceAgents/setAgentPinned', 'workspaceAgents/setAgentPinnedRequested');
+/**
+ * Set or clear the per-chat permission policy override
+ * (`agent.update { changes: { permissionPolicy } }`, §5.5; `null` = daemon
+ * default). The saga applies it optimistically, reverts on a daemon failure,
+ * and lets the `agent:updated` refetch converge `effectivePermissionPolicy`.
+ */
+export const setAgentPermissionPolicyRequested = createAsyncAction<
+  [wsId: string, agentId: string, permissionPolicy: AgentPermissionPolicy | null],
+  void
+>('workspaceAgents/setAgentPermissionPolicy', 'workspaceAgents/setAgentPermissionPolicyRequested');
 /** Persist mode before reconciling the session and scoped agent list. */
 export const setAgentBackgroundRequested = createAsyncAction<
   [wsId: string, agentId: string, isBackground: boolean],
@@ -601,13 +612,21 @@ export const deleteAgentSessionRequested = createAsyncAction<[wsId: string, agen
   'workspaceAgents/deleteAgentSessionRequested',
 );
 export const deleteAgentWithUndoRequested = createAsyncAction<
-  [wsId: string, agentId: string, agentName?: string],
+  [wsId: string, agentId: string, agentName?: string, options?: { undoToast?: boolean }],
   AgentSession | null
 >('workspaceAgents/deleteAgentWithUndo', 'workspaceAgents/deleteAgentWithUndoRequested');
+/** Delete several agents in one grace window, with a single Undo toast for all of them. */
+export const deleteAgentsWithUndoRequested = createAction<
+  [wsId: string, agents: Array<{ agentId: string; name?: string }>]
+>('workspaceAgents/deleteAgentsWithUndoRequested');
 export const undoAgentDeletionRequested = createAsyncAction<
   [wsId: string, agentId: string],
   boolean
 >('workspaceAgents/undoAgentDeletion', 'workspaceAgents/undoAgentDeletionRequested');
+/** Undo several pending deletions; one error toast reports any that could not be undone. */
+export const undoAgentDeletionsRequested = createAction<[wsId: string, agentIds: string[]]>(
+  'workspaceAgents/undoAgentDeletionsRequested',
+);
 
 // Stream lifecycle actions
 
@@ -668,6 +687,11 @@ export const agentRetirementSupportReceived = createAction<
 export const retireAgentRequested = createAsyncAction<[wsId: string, agentId: string], void>(
   'workspaceAgents/retireAgent',
   'workspaceAgents/retireAgentRequested',
+);
+
+/** Retire several agents from a list action; one error toast reports any refusal. */
+export const retireAgentsRequested = createAction<[wsId: string, agentIds: string[]]>(
+  'workspaceAgents/retireAgentsRequested',
 );
 
 /**

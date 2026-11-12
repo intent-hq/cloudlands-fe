@@ -235,7 +235,7 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     path: 'labs.remoteAgents',
     label: 'Remote agents (Labs)',
     description:
-      'Offer experimental remote agent setup and placement, including making your machines available to a backend. Existing remote sessions remain available when disabled.',
+      'Offer experimental remote agent setup and placement, including letting a backend run agents on your machines. Existing remote sessions remain available when disabled.',
     category: 'labs',
     type: 'boolean',
     source: 'local-storage',
@@ -257,6 +257,30 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
       kind: 'redux-action',
       action: 'userPreferences/setLabsPlainFolderWorkspacesEnabled',
     },
+  },
+  {
+    path: 'labs.tabGroups',
+    label: 'Tab groups (Labs)',
+    description:
+      'Group workspace tabs into named, colored groups that collapse when not in use. Groups you made are kept but hidden while disabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:tabGroupsEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsTabGroupsEnabled' },
+  },
+  {
+    path: 'labs.cloudMachines',
+    label: 'E2B cloud machines (Labs)',
+    description:
+      'Offer E2B cloud machines: set up E2B in Settings → Machines, list its sandboxes, and start agents on a new E2B sandbox. Needs Remote agents. Agents already on E2B keep showing when disabled.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:cloudMachinesEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsCloudMachinesEnabled' },
   },
   {
     path: 'theme.activePresetId',
@@ -583,7 +607,7 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     path: 'quickActions.defaultModel',
     label: 'Default quick action model',
     description:
-      'Default model for single-shot quick actions (commit messages, PR descriptions, quick tasks). Never applied to agent sessions.',
+      'Default model for single-shot quick actions (commit messages and PR descriptions). Never applied to agent sessions.',
     category: 'agents',
     type: 'string',
     source: 'local-storage',

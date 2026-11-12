@@ -47,16 +47,10 @@ const SRC_ROOT = path.resolve(__dirname, '..', '..');
 /**
  * Channels the renderer invokes during startup (init sagas, layout mounts,
  * store initialization). Gathered by auditing:
- * - src/store/renderer/slices/specialists/sagas/init-saga.ts
  * - src/store/renderer/slices/auto-update/sagas/auto-update-saga.ts
  * - src/store/renderer/slices/workspace-settings/sagas/init-saga.ts
  */
 const RENDERER_STARTUP_CHANNELS = [
-  // Specialists init saga — called immediately on store init
-  'specialists:list-bundled',
-  'specialists:list-files',
-  'specialists:get-folder-path',
-
   // Auto-update — get-state called during +layout.svelte init
   'auto-update:get-state',
 ];
@@ -111,26 +105,6 @@ describe('IPC Startup Race Condition', () => {
     expect(sidecarStart).toBeGreaterThan(criticalStart);
     expect(appSettingsInit).toBeGreaterThan(sidecarStart);
     expect(configSetup).toBeGreaterThan(sidecarStart);
-  });
-
-  it('defers specialist GitHub auth until handlers and the first window are available', () => {
-    const indexPath = path.join(SRC_ROOT, 'main', 'index.ts');
-    const source = fs.readFileSync(indexPath, 'utf-8');
-    const specialistInit = source.indexOf('await initSpecialistsService();');
-    const specialistHandlers = source.indexOf('setupSpecialistsIPC();');
-    const backendHandlers = source.indexOf('registerBackendHandlers();');
-    const criticalEnd = source.indexOf("startupMetrics.end('criticalIPC')");
-    const windowCreated = source.indexOf("startupMetrics.end('createWindow')");
-    const authRefresh = source.indexOf('void refreshGitHubAuthStatus();');
-
-    expect(specialistInit).toBeGreaterThan(-1);
-    expect(specialistHandlers).toBeGreaterThan(specialistInit);
-    expect(specialistHandlers).toBeLessThan(criticalEnd);
-    expect(backendHandlers).toBeLessThan(criticalEnd);
-    expect(windowCreated).toBeGreaterThan(criticalEnd);
-    expect(authRefresh).toBeGreaterThan(windowCreated);
-    expect(authRefresh).toBeGreaterThan(backendHandlers);
-    expect(source).not.toContain('await refreshGitHubAuthStatus();');
   });
 
   it('releases the renderer-window gate after the last critical IPC registration and before the first window creator, and again from bootFlow.finally', () => {
@@ -239,7 +213,6 @@ describe('IPC Startup Race Condition', () => {
     expect(secondaryFunctions.size).toBeGreaterThan(0);
 
     // Verify known critical functions (moved from secondary to fix race conditions)
-    expect(criticalFunctions.has('setupSpecialistsIPC')).toBe(true);
     expect(criticalFunctions.has('setupAutoUpdateIPC')).toBe(true);
   });
 
@@ -259,12 +232,12 @@ describe('IPC Startup Race Condition', () => {
       }
     }
 
-    // We should find channels in the specialists IPC file
-    const specialistsFile = Object.keys(secondaryChannelMap).find((f) =>
-      f.includes('specialists.ipc.ts'),
+    // We should find channels in the auto-update IPC file
+    const autoUpdateFile = Object.keys(secondaryChannelMap).find((f) =>
+      f.includes('auto-update.ipc.ts'),
     );
-    expect(specialistsFile).toBeDefined();
-    expect(secondaryChannelMap[specialistsFile!]).toContain('specialists:list-bundled');
+    expect(autoUpdateFile).toBeDefined();
+    expect(secondaryChannelMap[autoUpdateFile!]).toContain('auto-update:get-state');
   });
 
   it('no renderer-startup channels should be in the secondary IPC group', () => {

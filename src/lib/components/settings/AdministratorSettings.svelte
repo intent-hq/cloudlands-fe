@@ -2,6 +2,8 @@
   import ProviderSelector from '$lib/components/settings/ProviderSelector.svelte';
   import ConnectionsSettings from '$lib/components/settings/ConnectionsSettings.svelte';
   import McpServersSettings from '$lib/components/settings/McpServersSettings.svelte';
+  import PluginsSettings from '$lib/components/settings/PluginsSettings.svelte';
+  import { selectAgentPluginsSupported } from '$store/renderer/slices/principal/principal-selectors';
   import BackgroundAgentSettings from '$lib/components/settings/BackgroundAgentSettings.svelte';
   import DefaultAgentModelSettings from '$lib/components/settings/DefaultAgentModelSettings.svelte';
   import { highlightTarget } from '$lib/components/patterns/settings/highlight-target';
@@ -16,6 +18,7 @@
   }
 
   let { tab, workspaceId }: Props = $props();
+  const pluginsSupported$ = selectAgentPluginsSupported();
 </script>
 
 {#if tab === 'providers'}
@@ -61,4 +64,13 @@
     </h2>
     <McpServersSettings />
   </div>
+
+  {#if $pluginsSupported$}
+    <div id="plugins" data-highlight-id="plugins" use:highlightTarget class="scroll-mt-20">
+      <h2 class="type-title mb-3 text-foreground">
+        {m.settings_section_plugins()}
+      </h2>
+      <PluginsSettings />
+    </div>
+  {/if}
 {/if}

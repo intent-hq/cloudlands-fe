@@ -20,6 +20,14 @@ export interface ProviderStatus {
   warning?: string;
   /** Whether this provider supports npx fallback when binary is unresolved. */
   hasNpxFallback?: boolean;
+  /** CLI version the daemon reported for the resolved binary (discovery `cliVersion`). */
+  version?: string;
+  /**
+   * Daemon reason a resolved binary is refused (discovery `unavailableReason`), e.g. a
+   * `cursor-agent` that runs the Grok agent host. The CLI is present but unusable, so
+   * the UI shows this guidance instead of install instructions.
+   */
+  unavailableReason?: string;
 }
 
 /**
@@ -52,6 +60,8 @@ export interface ProviderAvailabilityResult {
     unsloth: ProviderStatus;
     /** Absent when connected to a daemon without Antigravity support. */
     antigravity?: ProviderStatus;
+    /** Absent when connected to a daemon without Cursor support. */
+    cursor?: ProviderStatus;
   };
   /**
    * Provider IDs that are hidden because their required env var or feature
@@ -85,6 +95,7 @@ export const PROVIDER_AVAILABILITY_KEY_TO_ID: Record<string, string> = {
   grok: 'grok',
   unsloth: 'unsloth',
   antigravity: 'antigravity',
+  cursor: 'cursor',
 };
 
 const PROVIDER_AVAILABILITY_ID_TO_KEY = new Map(
@@ -124,12 +135,12 @@ export function isProviderReadyInResult(
  */
 export const NPX_ONLY_PATH_OVERRIDE_PROVIDERS: ReadonlySet<string> = new Set(['claude-code']);
 
-/** Antigravity needs a confirmed OAuth session; preserve other providers' gates. */
+/** A provider is auth-ready unless its probe said it is not logged in. */
 export function isProviderAuthenticationReady(
-  providerId: string,
+  _providerId: string,
   authenticated?: boolean,
 ): boolean {
-  return providerId === 'antigravity' ? authenticated === true : authenticated !== false;
+  return authenticated !== false;
 }
 
 /**

@@ -103,6 +103,17 @@ export const DEVICE_KINDS = [...DETECTED_DEVICE_KINDS, ...WILD_CARD_DEVICE_KINDS
 export type DeviceKind = (typeof DEVICE_KINDS)[number];
 export type DeviceIconChoice = 'auto' | DeviceKind;
 
+/**
+ * The running mode a daemon reports (`client.hello` `server.daemonMode`, or the
+ * `node-mode` refusal probe for older daemons). A node only runs agents for
+ * other backends: it is never the current backend and never opens a window.
+ */
+export type DaemonMode = 'regular' | 'node';
+
+export function isDaemonMode(value: unknown): value is DaemonMode {
+  return value === 'regular' || value === 'node';
+}
+
 /** Transient state derived only from an already-created backend client. */
 export type ConnectionOpenStatus = 'connecting' | 'connected' | 'disconnected' | 'not-open';
 
@@ -199,6 +210,12 @@ export interface ConnectionRecord {
    */
   updateSupported?: boolean | null;
   /**
+   * Detected running mode, checked again on every connect. Absent until
+   * detected; a record without it is listed with the full machines. Never set
+   * for the local entry.
+   */
+  daemonMode?: DaemonMode | null;
+  /**
    * Per-backend keychain-sync exclusion (spec Phase 2): `true` when the user
    * opted this backend out of iCloud sync at add time, making the record
    * local-only (never pushed to the keychain, never touched by pulls).
@@ -226,6 +243,26 @@ export interface ConnectionRecord {
   status?: ConnectionOpenStatus;
   /** From an already-open connected client's `client.hello`; transient and never persisted. */
   intentdVersion?: string;
+  /**
+   * The connected daemon host's OS identifier (`host.status.os`, e.g. `macos`).
+   * Transient: present only while the connection is connected and the daemon
+   * reported it; never persisted.
+   */
+  hostOs?: string;
+  /** The connected daemon host's CPU architecture (`host.status.arch`); transient like `hostOs`. */
+  hostArch?: string;
+  /**
+   * Providers the connected daemon reports as installed
+   * (`host.providerDiscovery`). Transient: present only while connected and
+   * after discovery answered (absent = unknown); never persisted.
+   */
+  providers?: ConnectionProviderSummary[];
+}
+
+/** One provider installed on a connected daemon's host (Settings → Machines). */
+export interface ConnectionProviderSummary {
+  id: string;
+  displayName: string;
 }
 
 /**
@@ -341,6 +378,11 @@ export interface AddConnectionParams {
    */
   detectHosts?: boolean;
   /**
+   * Set when the current backend can't use nodes: if the daemon turns out to
+   * be a node, main refuses it before saving anything.
+   */
+  refuseNode?: 'labs-off' | 'backend-unsupported';
+  /**
    * Per-backend keychain-sync opt-out (spec Phase 2): `true` when the user
    * unchecked "Save to iCloud" at add time, storing the record local-only
    * (never pushed to the keychain, never touched by pulls). Absent = `false`
@@ -455,7 +497,10 @@ export interface OpenConnectionParams {
 
 /** `connections:open` result: echoes the opened or focused backend id. */
 export type OpenConnectionResult =
-  { status: 'opened'; id: string } | { status: 'secret-unavailable' };
+  | { status: 'opened'; id: string }
+  | { status: 'secret-unavailable' }
+  /** The daemon is a node: no window opened (it only runs agents for other backends). */
+  | { status: 'node'; id: string };
 
 /** `connections:forget` params. */
 export interface ForgetConnectionParams {

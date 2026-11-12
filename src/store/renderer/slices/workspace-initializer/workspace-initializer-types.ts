@@ -6,6 +6,7 @@ import type { CreateWorkspaceRequest, Workspace } from '$shared/types';
 import type { KnownRepo } from '$shared/types/known-repo';
 import type { CheckoutSelection } from '$shared/types/repository-checkout';
 import type { SetupScriptNameSource } from '$features/setup-scripts/repo-config';
+import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 
 type WorkspaceInitializerRepoType = 'local' | 'github' | 'remote';
 
@@ -54,6 +55,8 @@ export interface WorkspaceInitializerRecentRepo {
    * the entry still probes the folder; the hint applies when the probe cannot run.
    */
   plainFolder?: true;
+  /** ISO time the repo was last used (registry or newest workspace), when known. */
+  lastUsedAt?: string;
 }
 
 export interface WorkspaceInitializerRecentRepoRefresh {
@@ -287,6 +290,8 @@ export interface WorkspaceInitializationRequest {
   setupScriptRecord?: WorkspaceInitializationSetupScriptRecord;
   /** Form completion applied once the workspace is created, before the success outcome. */
   completion?: WorkspaceInitializationCompletion;
+  /** Set on a Continue create (`skipBaseRefresh`): warn on this computer once it succeeds. */
+  staleBase?: WorkspaceInitializationStaleBase;
 }
 
 export interface WorkspaceInitializationSetupScriptRecord {
@@ -360,6 +365,18 @@ interface WorkspaceInitializationSubmissionBase {
   plainFolder?: 'existing' | 'new' | null;
   selectedPrNumber: number | null;
   draft: NonNullable<WorkspaceInitializationCompletion['draft']>;
+  /**
+   * Continue from last-fetched after a `base-refresh-failed` create (PROTOCOL
+   * §9.2): the same create is re-sent with `skipBaseRefresh: true`, and a
+   * may-be-out-of-date toast names this base and remote once it succeeds.
+   */
+  continueFromLastFetched?: WorkspaceInitializationStaleBase;
+}
+
+/** The base a Continue create started from without refreshing it. */
+export interface WorkspaceInitializationStaleBase {
+  baseRef: string;
+  remote: string;
 }
 
 export interface CompactWorkspaceInitializationSubmission extends WorkspaceInitializationSubmissionBase {
@@ -441,6 +458,8 @@ export interface WorkspaceInitializationOutcome extends WorkspaceInitializationC
   pullCompleted?: boolean;
   error?: string;
   errorCode?: string;
+  /** Set with `errorCode: "base-refresh-failed"` (PROTOCOL §9.2). */
+  baseRefreshFailure?: BaseRefreshFailure;
   stagedItems?: WorkspaceInitializationStagedItem[];
   retryImageBlocks?: WorkspaceInitializationImageBlock[];
   /** Set on a failure whose request was retained for resume. */

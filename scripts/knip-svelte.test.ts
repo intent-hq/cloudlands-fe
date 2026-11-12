@@ -166,13 +166,18 @@ describe('Svelte imports in the real dead-code gate', () => {
         // Knip registers import.meta.glob handling through its Vite plugin, as in this repo.
         write(
           'package.json',
-          JSON.stringify({ type: 'module', dependencies: { svelte: '*', vite: '*' } }),
+          JSON.stringify({
+            type: 'module',
+            // vitest makes the gate's test-only canary a test entry, as in this repo.
+            dependencies: { svelte: '*', vite: '*', vitest: '*' },
+          }),
         );
         write(
           'knip.jsonc',
           JSON.stringify({
-            entry: ['src/main.ts'],
-            project: ['src/**/*.{ts,svelte}'],
+            // `!` marks production code for the gate's --production pass.
+            entry: ['src/main.ts!'],
+            project: ['src/**/*.{ts,svelte}!'],
             include: ['files', 'exports', 'types', 'unresolved'],
           }),
         );

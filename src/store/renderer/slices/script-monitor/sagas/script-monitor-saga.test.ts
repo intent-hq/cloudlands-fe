@@ -96,6 +96,68 @@ describe('scriptMonitorSaga lease reopen', () => {
     }
   });
 
+  it('keeps passing retained rows when a reopen closes before its fresh read lands', async () => {
+    const h = createHarness();
+    try {
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      (mocks.subscribeScriptMonitors.mock.calls[0][1] as Emit)({
+        monitors: [summary],
+        scripts: [],
+        status: 'ready',
+      });
+      await settle();
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws'));
+
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      // The reopened service shows the retained rows while its first page loads.
+      (mocks.subscribeScriptMonitors.mock.calls[1][1] as Emit)({
+        monitors: [summary],
+        scripts: [],
+        status: 'loading',
+      });
+      await settle();
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws'));
+
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      expect(mocks.subscribeScriptMonitors.mock.calls[2][3]).toEqual({ monitors: [summary] });
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
+  it('does not pass loading rows across a backend change', async () => {
+    const h = createHarness();
+    try {
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      (mocks.subscribeScriptMonitors.mock.calls[0][1] as Emit)({
+        monitors: [summary],
+        scripts: [],
+        status: 'ready',
+      });
+      await settle();
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws'));
+
+      h.setBackend('remote-host');
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      // Rows that arrive on the other host before its first page lands.
+      (mocks.subscribeScriptMonitors.mock.calls[1][1] as Emit)({
+        monitors: [{ ...summary, monitorId: 'remote-monitor' }],
+        scripts: [],
+        status: 'loading',
+      });
+      await settle();
+      h.dispatch(scriptMonitorsUnsubscribeRequested('ws'));
+
+      h.setBackend('local');
+      h.dispatch(scriptMonitorsSubscribeRequested('ws'));
+      expect(mocks.subscribeScriptMonitors.mock.calls[2][3]).toBeUndefined();
+    } finally {
+      h.task.cancel();
+      await h.task.toPromise();
+    }
+  });
+
   it('does not pass rows read from a different backend', async () => {
     const h = createHarness();
     try {

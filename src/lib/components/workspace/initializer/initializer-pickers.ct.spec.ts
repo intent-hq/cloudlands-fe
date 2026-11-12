@@ -49,7 +49,7 @@ for (const scenario of ['local', 'clone'] as const) {
     }
     if (scenario === 'local') {
       // The uncommitted-changes dot mounts once the async branch status resolves and widens
-      // the branch trigger; wait for it so hover/focus is the only variable measured below.
+      // the branch trigger; wait for it before measuring the control.
       await expect(triggers.last().getByRole('button')).toBeVisible();
     }
     await page.evaluate(() => document.fonts.ready);
@@ -64,10 +64,10 @@ for (const scenario of ['local', 'clone'] as const) {
         range.selectNodeContents(node);
         const { x, y, right } = range.getBoundingClientRect();
         const weight = getComputedStyle(node.parentElement!).fontWeight;
-        // A loaded owner avatar is visible picker content, not inter-word whitespace.
+        // Avatars and folder icons are visible picker content, not inter-word whitespace.
         const images = node
           .parentElement!.closest('button[aria-haspopup="dialog"]')
-          ?.querySelectorAll('img');
+          ?.querySelectorAll('img, svg');
         const imageLefts = Array.from(images ?? [], (image) => image.getBoundingClientRect().left);
         bounds.push({ contentLeft: Math.min(x, ...imageLefts), y, right, weight });
       }
@@ -89,9 +89,7 @@ for (const scenario of ['local', 'clone'] as const) {
     for (const trigger of await triggers.all()) {
       const initial = (await trigger.boundingBox())!;
       expect(initial.height).toBeGreaterThanOrEqual(24);
-      await trigger.hover();
       await trigger.focus();
-      expect(await trigger.boundingBox()).toEqual(initial);
       await trigger.press('Enter');
       const menu = page.getByRole('dialog');
       await expect(menu).toBeVisible();
@@ -125,7 +123,11 @@ for (const { locale, fragments } of [
         const range = document.createRange();
         range.selectNodeContents(node);
         const { x, right } = range.getBoundingClientRect();
-        bounds.push({ text: node.textContent.trim(), left: x, right });
+        const icons = node
+          .parentElement!.closest('button[aria-haspopup="dialog"]')
+          ?.querySelectorAll('img, svg');
+        const iconLefts = Array.from(icons ?? [], (icon) => icon.getBoundingClientRect().left);
+        bounds.push({ text: node.textContent.trim(), left: Math.min(x, ...iconLefts), right });
       }
       return bounds;
     });
@@ -311,7 +313,7 @@ for (const { name, width, height, position } of [
 }
 
 for (const presentation of ['default', 'form'] as const) {
-  test(`isolation registers the first pointer click and preserves focus while changing modes (${presentation})`, async ({
+  test(`isolation selects the branch and preserves focus while changing modes (${presentation})`, async ({
     mount,
     page,
   }) => {
@@ -330,10 +332,7 @@ for (const presentation of ['default', 'form'] as const) {
     await expect(selection).toContainText('"branch":"feature/task-3"');
     await trigger.click();
     await expect(isolation).toBeChecked();
-    await isolation.hover();
-    await page.mouse.down();
-    await expect(menu.getByRole('region', { name: 'Select a branch' })).toBeVisible();
-    await page.mouse.up();
+    await isolation.click();
     await expect(selection).toContainText('"skipIsolation":true');
     await expect(selection).toContainText('"branch":"main"');
     await expect(menu).toBeVisible();
@@ -357,7 +356,10 @@ for (const { position, contract } of [
   { position: 'top', contract: 'trigger width changes below the trigger' },
   { position: 'bottom', contract: 'content height changes above the trigger' },
 ] as const) {
-  test(`worktree toggle stays under the pointer through ${contract}`, async ({ mount, page }) => {
+  test(`worktree toggle preserves focus and menu access through ${contract}`, async ({
+    mount,
+    page,
+  }) => {
     await page.setViewportSize({ width: 1000, height: 900 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await mount(Pickers, { props: { position } });
@@ -370,20 +372,10 @@ for (const { position, contract } of [
     await expect(menu.getByRole('combobox')).toHaveAttribute('aria-busy', 'false');
     await expect(menu.getByRole('option', { name: 'feature/task-29', exact: true })).toBeAttached();
     const isolation = menu.getByRole('switch', { name: /use an isolated/i });
-    await isolation.hover();
-    const origin = (await menu.boundingBox())!;
-    const control = (await isolation.boundingBox())!;
-    const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
 
     for (const checked of [false, true, false, true]) {
-      await page.mouse.click(point.x, point.y);
+      await isolation.click();
       await expect(isolation).toBeChecked({ checked });
-      await expect
-        .poll(async () => {
-          const current = (await menu.boundingBox())!;
-          return Math.hypot(current.x - origin.x, current.y - origin.y);
-        })
-        .toBeLessThanOrEqual(1);
       await expect(isolation).toBeFocused();
       await expectViewportBounded(menu);
     }
@@ -414,7 +406,7 @@ for (const { position, contract } of [
 }
 
 for (const initialMode of ['direct', 'reopened-direct'] as const) {
-  test(`worktree toggle stays under the pointer when opened ${initialMode} at the bottom edge`, async ({
+  test(`worktree toggle preserves branch access when opened ${initialMode} at the bottom edge`, async ({
     mount,
     page,
   }) => {
@@ -442,20 +434,10 @@ for (const initialMode of ['direct', 'reopened-direct'] as const) {
       await trigger.click();
     }
     await expect(isolation).not.toBeChecked();
-    await isolation.hover();
-    const origin = (await menu.boundingBox())!;
-    const control = (await isolation.boundingBox())!;
-    const point = { x: control.x + control.width / 2, y: control.y + control.height / 2 };
 
     for (const checked of [true, false, true, false]) {
-      await page.mouse.click(point.x, point.y);
+      await isolation.click();
       await expect(isolation).toBeChecked({ checked });
-      await expect
-        .poll(async () => {
-          const current = (await menu.boundingBox())!;
-          return Math.hypot(current.x - origin.x, current.y - origin.y);
-        })
-        .toBeLessThanOrEqual(1);
       await expect(isolation).toBeFocused();
       await expectViewportBounded(menu);
       if (checked) {

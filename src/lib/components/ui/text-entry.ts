@@ -9,6 +9,10 @@ export const textEntryGroupClasses = `border-border bg-transparent shadow-none o
 export const textEntryFocusResetClasses =
   'focus-visible:!bg-transparent focus-visible:!shadow-none focus-visible:outline-none';
 
+export const textEntryInlineClasses =
+  // i18n-ignore (shared inline text-control CSS recipe)
+  'h-auto min-h-0 min-w-0 w-full rounded-none border-0 bg-transparent p-0 text-inherit placeholder:text-inherit! shadow-none outline-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:ring-1 aria-invalid:ring-danger';
+
 // Caret-bearing controls indicate focus through their caret, not an outer box.
 // Keep separate from the shared control recipe so file-picker focus is preserved.
 export const textEntryCaretFocusClasses = 'focus-visible:outline-none focus-visible:shadow-none';
@@ -18,10 +22,10 @@ export function textEntryHeight(size: UiSize): string {
 }
 
 /**
- * Menu and picker search: one flat, body-sized field on the popover surface.
+ * Menu and picker search matches the option text on the popover surface.
  * Transparent surface, light placeholder, and caret focus without an outer box.
  */
 export const textEntrySearchClasses =
-  'type-body h-9 w-full min-w-0 rounded-(--radius-medium) border-0 bg-transparent px-3 text-foreground placeholder:text-muted-foreground/60! shadow-none outline-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:ring-1 aria-invalid:ring-danger';
+  'type-caption h-9 w-full min-w-0 rounded-(--radius-medium) border-0 bg-transparent px-3 text-foreground placeholder:text-muted-foreground/60! shadow-none outline-none ring-0 hover:bg-transparent focus-visible:bg-transparent focus-visible:shadow-none focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:ring-1 aria-invalid:ring-danger';
 
-export type TextEntryVariant = 'default' | 'search';
+export type TextEntryVariant = 'default' | 'search' | 'inline';

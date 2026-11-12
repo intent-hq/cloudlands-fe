@@ -8,10 +8,22 @@
 import { m } from '$shared/paraglide/messages.js';
 import { splitLegacyCompoundId } from '$shared/utils/legacy-model-id';
 import type { RemoteMachine, RemoteMachineState } from '$shared/types/remote-machines';
+import type { CloudProviderKind } from '$shared/types/cloud-machines';
 import { machinePlatformLabel } from './agent-location';
 
 /** The current backend: no placement. */
 export const START_ON_BACKEND = '';
+const CLOUD_PREFIX = 'cloud:';
+/** The Start On id of a new machine from a cloud entry; never a daemon id. */
+export function startOnCloudId(cloudMachineId: string): string {
+  return `${CLOUD_PREFIX}${cloudMachineId}`;
+}
+/** The entry a Start On id names, or null for the backend or a machine. */
+export function startOnCloudMachineId(id: string | undefined): string | null {
+  return id?.startsWith(CLOUD_PREFIX) ? id.slice(CLOUD_PREFIX.length) || null : null;
+}
+/** The entry "e2b" (the only one an older backend keeps). */
+export const START_ON_E2B = startOnCloudId('e2b');
 
 export interface StartOnOption {
   /** Machine id, or `START_ON_BACKEND`. */
@@ -20,6 +32,33 @@ export interface StartOnOption {
   platform: string | null;
   disabled: boolean;
   reason?: string;
+  /** Secondary text for a usable row (the E2B profile hint). */
+  hint?: string;
+  /** `cloud` for an E2B entry row. */
+  kind?: 'machine' | 'cloud';
+}
+
+/** One E2B entry row of Start On. */
+export interface StartOnCloudEntry {
+  cloudMachineId: string;
+  /** "E2B · <name>", or the single-provider label from an older backend. */
+  label: string;
+  /** Null when usable, else why not. */
+  unavailableReason: string | null;
+  /** No configuration from here can be sent to it: show the profile hint. */
+  needsProfile?: boolean;
+}
+
+/** The E2B rows; null or empty when cloud machines are not configured. */
+export type StartOnCloud = readonly StartOnCloudEntry[];
+
+function usableCloudEntry(
+  cloud: StartOnCloud | null | undefined,
+  id: string,
+): StartOnCloudEntry | undefined {
+  return cloud?.find(
+    (entry) => startOnCloudId(entry.cloudMachineId) === id && entry.unavailableReason === null,
+  );
 }
 
 /** Disconnected machines connect on demand; the other states can't start an agent. */
@@ -45,13 +84,23 @@ function isStartOnMachineUsable(machine: RemoteMachine): boolean {
 /** The backend first, then each machine available to it. */
 export function startOnOptions({
   backendLabel,
+  backendPlatform,
   machines,
+  cloud,
 }: {
   backendLabel: string;
+  /** The backend's own host platform (`host.status` os/arch), when known. */
+  backendPlatform?: { os?: string; arch?: string };
   machines: readonly RemoteMachine[];
+  cloud?: StartOnCloud | null;
 }): StartOnOption[] {
-  return [
-    { id: START_ON_BACKEND, label: backendLabel, platform: null, disabled: false },
+  const options: StartOnOption[] = [
+    {
+      id: START_ON_BACKEND,
+      label: backendLabel,
+      platform: machinePlatformLabel(backendPlatform?.os, backendPlatform?.arch),
+      disabled: false,
+    },
     ...machines.map((machine): StartOnOption => {
       const platform = machinePlatformLabel(machine.platform?.os, machine.platform?.arch);
       if (isStartOnMachineUsable(machine))
@@ -65,6 +114,20 @@ export function startOnOptions({
       };
     }),
   ];
+  for (const entry of cloud ?? [])
+    options.push({
+      id: startOnCloudId(entry.cloudMachineId),
+      label: entry.label,
+      platform: null,
+      kind: 'cloud',
+      disabled: entry.unavailableReason !== null,
+      ...(entry.unavailableReason
+        ? { reason: entry.unavailableReason }
+        : entry.needsProfile
+          ? { hint: m.cloudMachines_startOn_hint() }
+          : {}),
+    });
+  return options;
 }
 
 /**
@@ -76,28 +139,61 @@ export function startOnVisible({
   remoteMachinesVisible,
   supported,
   machines,
+  cloud,
 }: {
   remoteMachinesVisible: boolean;
   supported: boolean;
   machines: readonly RemoteMachine[];
+  cloud?: StartOnCloud | null;
 }): boolean {
-  return remoteMachinesVisible && supported && machines.some(isStartOnMachineUsable);
+  return (
+    remoteMachinesVisible &&
+    supported &&
+    (machines.some(isStartOnMachineUsable) ||
+      (cloud ?? []).some((entry) => entry.unavailableReason === null))
+  );
 }
 
 /** A remembered machine while it is still usable, else the backend. */
 export function resolveStartOn(
   remembered: string | undefined,
   machines: readonly RemoteMachine[],
+  cloud?: StartOnCloud | null,
 ): string {
   if (!remembered) return START_ON_BACKEND;
+  if (startOnCloudMachineId(remembered))
+    return usableCloudEntry(cloud, remembered) ? remembered : START_ON_BACKEND;
   const machine = machines.find((row) => row.id === remembered);
   return machine && isStartOnMachineUsable(machine) ? machine.id : START_ON_BACKEND;
 }
 
-/** `workspace.create.initialAgent.placement` for a choice; absent for the backend. */
+/**
+ * `workspace.create.initialAgent.placement` for a choice; absent for the
+ * backend. The entry is named only to a backend that keeps entries.
+ */
+export type StartOnPlacement =
+  | { target: 'remote'; checkout: 'isolated'; nodeId: string }
+  | { target: 'e2b' | 'cloud'; checkout: 'isolated'; cloudMachineId?: string };
+
 export function initialAgentPlacement(
   machineId: string | undefined,
-): { target: 'remote'; checkout: 'isolated'; nodeId: string } | undefined {
+  {
+    cloudEntries = false,
+    providerOf,
+  }: {
+    cloudEntries?: boolean;
+    /** The provider of a saved entry; a Northflank entry takes the provider-neutral target. */
+    providerOf?: (cloudMachineId: string) => CloudProviderKind | undefined;
+  } = {},
+): StartOnPlacement | undefined {
+  const cloudMachineId = startOnCloudMachineId(machineId);
+  if (cloudMachineId) {
+    if (cloudEntries && providerOf?.(cloudMachineId) === 'northflank')
+      return { target: 'cloud', checkout: 'isolated', cloudMachineId };
+    return cloudEntries
+      ? { target: 'e2b', checkout: 'isolated', cloudMachineId }
+      : { target: 'e2b', checkout: 'isolated' };
+  }
   return machineId ? { target: 'remote', checkout: 'isolated', nodeId: machineId } : undefined;
 }
 

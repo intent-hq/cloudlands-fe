@@ -85,6 +85,12 @@ vi.mock('$store/renderer/store', async () => {
 });
 
 vi.mock('$store/renderer/slices/scripts/scripts-selectors', () => ({
+  selectRemoteScriptsSupported: () => ({
+    subscribe: (listener: (value: boolean) => void) => {
+      listener(false);
+      return () => {};
+    },
+  }),
   selectScriptWorkflowOutcome: () => ({
     subscribe: (listener: (value: undefined) => void) => {
       listener(undefined);
@@ -158,16 +164,6 @@ vi.mock('$lib/components/ui/tooltip', async () => {
 vi.mock('$lib/components/ui/button/button.svelte', async () => ({
   default: (await import('./mocks/MockButton.svelte')).default,
 }));
-vi.mock('$features/scripts/scripts.client', () => ({
-  scriptsClient: {
-    detect: vi.fn(),
-    start: vi.fn(),
-    stop: vi.fn().mockResolvedValue({ success: true }),
-    restart: vi.fn(),
-    remove: vi.fn(),
-    update: vi.fn(),
-  },
-}));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
 }));
@@ -180,7 +176,6 @@ vi.mock('$features/terminal/terminal-history-tracker', () => ({
 
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { store as appStore } from '$store/renderer/store';
-import { scriptsClient } from '$features/scripts/scripts.client';
 import {
   setScriptsData,
   setScriptsInitialized,
@@ -319,7 +314,6 @@ describe('QuakeTerminalOverlay previously-running script tabs', () => {
         payload: [WS_A, 'prev-1', m.terminal_quakeOverlay_dismissScriptTab_ariaLabel()],
       }),
     );
-    expect(scriptsClient.stop).not.toHaveBeenCalled();
     expect(dispatchedTypes()).not.toContain('scripts/refreshScripts');
   });
 

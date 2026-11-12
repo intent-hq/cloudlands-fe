@@ -24,6 +24,7 @@ export const initialState: SidebarNavState = {
   panelItem: null,
   onboardingActive: false,
   showCreateModal: false,
+  createModalPrefillRequest: 0,
   pinnedWorkspaceIds: [],
   multiSelectTabOrder: [],
   multiSelectSelectedTabIdsByWorkspaceId: {},
@@ -44,6 +45,8 @@ export const setOnboardingActive = createAction<[active: boolean]>(
 
 // Create modal
 export const setShowCreateModal = createAction<[show: boolean]>('sidebarNav/setShowCreateModal');
+/** Ask an already-open New Workspace dialog to apply a freshly written `workspace-prefill`. */
+export const createModalPrefillRequested = createAction('sidebarNav/createModalPrefillRequested');
 
 /**
  * Pin or unpin a workspace. On a daemon with label support this sets or clears
@@ -140,6 +143,10 @@ sidebarNavReducer.with(setOnboardingActive, (state, { payload: [active] }) => ({
 sidebarNavReducer.with(setShowCreateModal, (state, { payload: [show] }) => ({
   ...state,
   showCreateModal: show,
+}));
+sidebarNavReducer.with(createModalPrefillRequested, (state) => ({
+  ...state,
+  createModalPrefillRequest: state.createModalPrefillRequest + 1,
 }));
 sidebarNavReducer.with(togglePinWorkspace, (state, { payload: [id] }) => {
   if (state.pinnedWorkspaceIds.includes(id)) {

@@ -39,10 +39,12 @@
   import {
     selectIsProviderEnabled,
     selectProviderDefaultConfigs,
+    selectBaseIdsWithProfiles,
     selectProviderProfilesLoadStatus,
   } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
   import { CLAUDE_CODE_NPX_MISSING_WARNING } from '$shared/constants/claude-code';
   import { groupProviderEntries, orderProviderEntries } from '$lib/utils/provider-list-order';
+  import { displayCliVersion } from '$features/providers/utils/cli-version';
   import {
     faArrowsRotate,
     faBan,
@@ -70,14 +72,13 @@
   import ProviderProfileAddDialog from './ProviderProfileAddDialog.svelte';
   import { profileProviderFromBaseId } from '$lib/provider-profile-kinds';
   import ProviderFastModeMenuItems from './ProviderFastModeMenuItems.svelte';
+  import ProviderRemoteMenuItems from './ProviderRemoteMenuItems.svelte';
+  import RemoteReadyPill from './RemoteReadyPill.svelte';
+  import { selectRemoteReadyProfilesVisible } from '$features/remote-machines/remote-machines-selectors';
   import { providerProfilesRequested } from '$store/renderer/slices/provider-settings/provider-settings-slice';
   import AgentProviderIcon from '$features/agent/components/AgentProviderIcon.svelte';
   import { isProviderAuthenticationReady } from '$shared/types/provider-availability';
   import { store as appStore } from '$store/renderer/store';
-  import AntigravityConnect from '$features/antigravity/AntigravityConnect.svelte';
-  import { selectAntigravitySetupPolicy } from '$store/renderer/slices/antigravity-setup/antigravity-setup-selectors';
-  const antigravitySetupPolicy$ = selectAntigravitySetupPolicy();
-  let antigravityConnectOpen = $state(false);
 
   const fastModeProviders$ = selectFastModeSupportedProviders();
   const sessionId = crypto.randomUUID();
@@ -122,6 +123,7 @@
       requiresAuth: false,
     },
     pi: { docsUrl: 'https://pi.dev/docs/latest/quickstart', requiresAuth: false },
+    cursor: { docsUrl: 'https://cursor.com/docs/cli/installation', requiresAuth: true },
   };
 
   // Helper to get provider availability from the shared status map
@@ -171,6 +173,8 @@
         loginCommandHint: provider.loginCommandHint,
         hasNpxFallback: status?.hasNpxFallback ?? false,
         warning: status?.warning,
+        version: displayCliVersion(status?.version),
+        unavailableReason: status?.unavailableReason,
       };
     }),
   );
@@ -223,6 +227,10 @@
   // The dialog seeds its form only once the saved list has loaded, so a save
   // can never replace overrides it has not seen.
   const defaultConfigs$ = selectProviderDefaultConfigs();
+  // With no named profiles there is no Default row: its remote options and
+  // Remote Ready pill move to the provider row.
+  const remoteReady$ = selectRemoteReadyProfilesVisible();
+  const baseIdsWithProfiles$ = selectBaseIdsWithProfiles();
   const profilesLoadStatus$ = selectProviderProfilesLoadStatus();
   let defaultTarget = $state<{ providerId: string; providerName: string } | null>(null);
   let defaultOpen = $state(false);
@@ -247,12 +255,6 @@
   }
 
   function handleToggleProvider(providerId: string, enabled: boolean) {
-    if (
-      enabled &&
-      providerId === 'antigravity' &&
-      !selectAntigravitySetupPolicy.select(appStore.state).canEnable
-    )
-      return;
     appStore.dispatch(
       setProviderEnabled({ providerId, enabled }, { id: crypto.randomUUID(), sessionId }),
     );
@@ -320,16 +322,14 @@
             {@const isReady = isProviderReadyForUse(provider.id)}
             {@const canManageEnablement = canManageProviderEnablement(provider.id)}
             {@const canDisable = canManageEnablement && isEnabled}
-            {@const canEnable =
-              canManageEnablement &&
-              !isEnabled &&
-              isReady &&
-              (provider.id !== 'antigravity' || $antigravitySetupPolicy$.canEnable)}
+            {@const canEnable = canManageEnablement && !isEnabled && isReady}
             {@const needsLogin = provider.available && provider.authenticated === false}
-            {@const canLogIn = provider.id !== 'antigravity' && needsLogin && provider.loginDocsUrl}
-            {@const canInstall = provider.id !== 'antigravity' && !provider.available}
+            {@const canLogIn = needsLogin && provider.loginDocsUrl}
+            {@const canInstall = !provider.available && !provider.unavailableReason}
             {@const canAddProfile =
               !provider.statusPending && provider.available && supportsProfiles(provider.id)}
+            {@const defaultOnlyRemote =
+              $remoteReady$ && canAddProfile && !$baseIdsWithProfiles$.includes(provider.id)}
             {@const hasNodeMissing =
               !provider.statusPending &&
               provider.hasNpxFallback &&
@@ -360,6 +360,12 @@
                     >
                       {provider.name}
                     </span>
+                    {#if provider.available && provider.version}
+                      <span class="type-caption text-muted-foreground">{provider.version}</span>
+                    {/if}
+                    {#if defaultOnlyRemote && $defaultConfigs$[provider.id]?.remoteCompatible === true}
+                      <RemoteReadyPill />
+                    {/if}
                   </div>
                 </div>
 
@@ -445,10 +451,7 @@
                           name: provider.name,
                         })}
                         onCloseAutoFocus={(event) => {
-                          if (
-                            pathConfigOpen[provider.id] ||
-                            (provider.id === 'antigravity' && antigravityConnectOpen)
-                          ) {
+                          if (pathConfigOpen[provider.id]) {
                             event.preventDefault();
                           }
                         }}
@@ -465,16 +468,9 @@
                             <ProviderFastModeMenuItems providerRef={provider.id} />
                             <Menu.Separator />
                           {/if}
-                          {#if provider.id === 'antigravity'}
-                            <Menu.Item
-                              class="cursor-pointer text-foreground"
-                              onSelect={() => {
-                                antigravityConnectOpen = true;
-                              }}
-                            >
-                              <span class="size-4 shrink-0" aria-hidden="true"></span>
-                              {m.antigravity_setup_connect_label()}
-                            </Menu.Item>
+                          {#if defaultOnlyRemote}
+                            <ProviderRemoteMenuItems providerId={provider.id} />
+                            <Menu.Separator />
                           {/if}
                           {#if hasWarning}
                             <div class="border-b border-border pb-1">
@@ -669,9 +665,6 @@
                   onEditDefault={() => openDefaultEnv(provider.id, provider.name)}
                 />
               {/if}
-              {#if provider.id === 'antigravity'}
-                <AntigravityConnect bind:open={antigravityConnectOpen} />
-              {/if}
             </div>
           {/each}
         </div>
@@ -714,7 +707,7 @@
 
 {#snippet providerIcon(providerId: string)}
   <span class="w-7 text-subtle">
-    {#if providerId === 'antigravity'}
+    {#if providerId === 'antigravity' || providerId === 'cursor'}
       <AgentProviderIcon {providerId} size={20} class="size-5" />
     {:else if providerId === 'auggie'}
       <AuggieLogo width={22} />

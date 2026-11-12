@@ -48,6 +48,7 @@ import { hydrateWorkspaceNavigation } from '../../workspace-navigation/workspace
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { recordLastUsedSetupScript } from '$features/setup-scripts/last-used';
+import { placementFailure } from '$features/remote-machines/agent-location';
 import {
   selectWorkspaceInitializationOutcome,
   selectWorkspaceInitializationResume,
@@ -76,11 +77,13 @@ import type {
   WorkspaceInitializationResult,
   WorkspaceInitializationStagedItem,
 } from '../workspace-initializer-types';
+import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import {
   buildWorkspaceInitializationResume,
   buildWorkspaceInitializationRetry,
   prepareCompactWorkspaceInitialization,
   prepareOnboardingWorkspaceInitialization,
+  withContinueFromLastFetched,
   type PreparedWorkspaceInitialization,
 } from './workspace-initialization-submission';
 
@@ -356,14 +359,22 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
         // nodes.md "Placement subset"): the workspace and its agent exist, so
         // open it and warn rather than offer a Create that would duplicate it.
         const launchNodeId = result.errorCode === 'launch-failed' ? startOnNodeId : undefined;
+        const launchMachine = launchNodeId ? startOnMachineName(launchNodeId) : '';
         const message = launchNodeId
           ? m.workspace_startOn_launchFailed_error({
-              machine: startOnMachineName(launchNodeId),
-              cause: result.launchFailure?.cause ?? result.error,
+              machine: launchMachine,
+              cause: placementFailure(
+                { detail: result.launchFailure?.cause ?? result.error },
+                launchMachine,
+              ).message,
             })
           : result.error;
         const launch = launchNodeId ? result.launchFailure : undefined;
-        if (!launch) throw Object.assign(new Error(message), { errorCode: result.errorCode });
+        if (!launch)
+          throw Object.assign(new Error(message), {
+            errorCode: result.errorCode,
+            baseRefreshFailure: result.baseRefreshFailure,
+          });
         // Keep its identity first: if the read below fails, the failure is
         // resumable and a retry installs this workspace instead of creating.
         workspaceId = launch.workspaceId;
@@ -457,6 +468,15 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
     if (request.recentGitHubRepository) yield* fork(registerRecent, request.recentGitHubRepository);
     yield* put(clearWorkspaceInitializationResume(action.consumer.id));
     yield* call(complete, request, workspaceId);
+    // Continue from last-fetched: only the creating computer is told the base may be stale.
+    if (request.staleBase)
+      yield* call(
+        notify.warning,
+        m.workspace_create_staleBase_toast({
+          base: request.staleBase.baseRef,
+          remote: request.staleBase.remote,
+        }),
+      );
     yield* finish(action, {
       status: 'success',
       workspaceId,
@@ -471,6 +491,8 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
     const cancelledAttempt =
       !current(action, dispatch) || errorMessage(error) === 'initialization-cancelled';
     const errorCode = (error as { errorCode?: string })?.errorCode;
+    const baseRefreshFailure = (error as { baseRefreshFailure?: BaseRefreshFailure })
+      ?.baseRefreshFailure;
     const resumable =
       !cancelledAttempt && !!workspaceId && (stage === 'post-create' || stage === 'attachments');
     if (resumable && workspaceId) {
@@ -496,6 +518,7 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
       ...(pullCompleted ? { pullCompleted: true } : {}),
       error: errorMessage(error),
       ...(errorCode ? { errorCode } : {}),
+      ...(baseRefreshFailure ? { baseRefreshFailure } : {}),
       ...(resumable ? { resumable: true } : {}),
     });
     yield* put(action.failure(error instanceof Error ? error : new Error(errorMessage(error))));
@@ -558,6 +581,7 @@ function* submit(action: SubmittedAction): SagaGenerator<void> {
         ? yield* call(prepareCompactWorkspaceInitialization, preparedSubmission, isCurrent)
         : yield* call(prepareOnboardingWorkspaceInitialization, preparedSubmission, isCurrent);
     if (!prepared || !isCurrent()) throw new Error('initialization-cancelled');
+    prepared = withContinueFromLastFetched(prepared, submission.continueFromLastFetched);
     yield* put(workspaceInitializationPrepared(consumer.id, action.seq, prepared.prepared));
     preparationSettled = true;
   } catch (error) {

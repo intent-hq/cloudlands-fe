@@ -198,12 +198,6 @@ vi.mock('$lib/client/live/backend-transport', async () => {
 vi.mock('$lib/client', () => ({
   appClient: { scripts: { list: vi.fn(), get: vi.fn(), create: vi.fn() } },
 }));
-vi.mock('$features/scripts/scripts.client', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('$features/scripts/scripts.client')>();
-  return {
-    scriptsClient: { ...actual.scriptsClient, stop: vi.fn(), remove: vi.fn() },
-  };
-});
 vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn().mockResolvedValue(true) }));
 vi.mock('$lib/components/patterns/notify', () => ({
   notify: { success: vi.fn(), info: vi.fn(), error: vi.fn(), warning: vi.fn() },
@@ -224,7 +218,6 @@ import { notify } from '$lib/components/patterns/notify';
 import QuakeTerminalOverlay from '../QuakeTerminalOverlay.svelte';
 import { fireEvent, screen } from '@testing-library/svelte';
 import { store as appStore } from '$store/renderer/store';
-import { scriptsClient } from '$features/scripts/scripts.client';
 import {
   setScriptsData,
   removeScript,
@@ -303,7 +296,6 @@ describe('QuakeTerminalOverlay delete script (PR #705 review)', () => {
         payload: [WS_A, 'script-1', expect.any(String)],
       }),
     );
-    expect(scriptsClient.stop).not.toHaveBeenCalled();
     expect(rawSelectedScriptId(WS_A)).toBe('script-1');
     expect(dispatchedTypes()).not.toContain('scripts/refreshScripts');
   });
@@ -360,14 +352,13 @@ describe('confirmed script deletion controls', () => {
   });
 
   it.each(['running', 'starting', 'restarting', 'unknown', undefined])(
-    'disables deletion for %s',
+    'allows deletion for %s',
     async (status) => {
       appStore.dispatch(updateRuntimeState(WS_A, 'script-1', { status: status as never }));
       render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
       expect(
         (screen.getByRole('button', { name: 'Delete script' }) as HTMLButtonElement).disabled,
-      ).toBe(true);
-      expect(confirm).not.toHaveBeenCalled();
+      ).toBe(false);
     },
   );
 
@@ -404,17 +395,18 @@ describe('confirmed script deletion controls', () => {
       accept(true);
       await waitFor(() => expect(notify.error).toHaveBeenCalled());
       expect(dispatchedTypes()).not.toContain('scripts/deleteScriptRequested');
-      expect(scriptsClient.remove).not.toHaveBeenCalled();
     },
   );
 
-  it.each(['idle', 'exited'] as const)(
-    'requests deletion for %s from the visible header button',
+  it.each(['idle', 'exited', 'running'] as const)(
+    'requests deletion for %s from the visible header button and clears the selection',
     async (status) => {
       appStore.dispatch(updateRuntimeState(WS_A, 'script-1', { status }));
       render(QuakeTerminalOverlay, { props: { workspaceId: WS_A } });
       await fireEvent.click(screen.getByRole('button', { name: 'Delete script' }));
       await waitFor(() => expect(dispatchedTypes()).toContain('scripts/deleteScriptRequested'));
+      appStore.dispatch(removeScript(WS_A, 'script-1'));
+      expect(rawSelectedScriptId(WS_A)).toBeNull();
     },
   );
 });

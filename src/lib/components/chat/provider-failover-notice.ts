@@ -10,12 +10,16 @@
  * moves it back and persists one
  * `{ type: "provider_returned", fromProvider, toProvider, model,
  *    reason: "quota-reset" }` row (`toProvider` = home).
- * Both rows are transcript-only (never replayed to providers); the FE renders
+ * A remote launch of the plain Default on a machine without sign-in runs the
+ * first Remote Ready profile instead and persists one
+ * `{ type: "provider_auto_selected", fromProvider, toProvider, model,
+ *    reason: "machine-signed-out" | "sandbox-no-sign-in", machine }` row.
+ * All three rows are transcript-only (never replayed to providers); the FE renders
  * them as centered inline notices naming configurations by label, in turn
  * order (between the attempt they interrupt and the output that follows).
  */
 import {
-  selectProviderCatalogLoaded,
+  selectProviderCatalogProfilesLoaded,
   selectProviderCatalogDefaultNames,
   selectProviderCatalogProfiles,
   selectProviderDisplayName,
@@ -31,8 +35,11 @@ interface MessageLike {
 }
 
 export interface ProviderFailoverNoticeInfo {
-  /** `failover` (quota exceeded → backup) when omitted; `returned` (quota reset → home). */
-  kind?: 'failover' | 'returned';
+  /**
+   * `failover` (quota exceeded → backup) when omitted; `returned` (quota reset
+   * → home); `autoSelected` (a Remote Ready profile on a machine without sign-in).
+   */
+  kind?: 'failover' | 'returned' | 'autoSelected';
   /** Reference (bare provider id or `<base>@<profile>`) that hit its quota. */
   fromProvider?: string;
   /** Backup reference now running the turn. */
@@ -40,6 +47,8 @@ export interface ProviderFailoverNoticeInfo {
   /** Unchanged model id; null = provider default model. */
   model: string | null;
   reason?: string;
+  /** `autoSelected`: the machine's display name. */
+  machine?: string;
 }
 
 /**
@@ -60,17 +69,28 @@ export function getProviderReturnedNotice(
   return parseSwitchRow(message, 'provider_returned', 'returned');
 }
 
-/** Either automatic provider switch row (failover or return home), else null. */
+/** The info for a daemon-persisted `provider_auto_selected` row, else null. */
+function getProviderAutoSelectedNotice(
+  message: MessageLike | null | undefined,
+): ProviderFailoverNoticeInfo | null {
+  return parseSwitchRow(message, 'provider_auto_selected', 'autoSelected');
+}
+
+/** Any automatic provider switch row (failover, return home, auto-selected), else null. */
 export function getProviderSwitchNotice(
   message: MessageLike | null | undefined,
 ): ProviderFailoverNoticeInfo | null {
-  return getProviderFailoverNotice(message) ?? getProviderReturnedNotice(message);
+  return (
+    getProviderFailoverNotice(message) ??
+    getProviderReturnedNotice(message) ??
+    getProviderAutoSelectedNotice(message)
+  );
 }
 
 function parseSwitchRow(
   message: MessageLike | null | undefined,
   type: string,
-  kind: 'failover' | 'returned',
+  kind: NonNullable<ProviderFailoverNoticeInfo['kind']>,
 ): ProviderFailoverNoticeInfo | null {
   const metadata = message?.metadata;
   if (!metadata || metadata['type'] !== type) return null;
@@ -82,6 +102,7 @@ function parseSwitchRow(
     toProvider: asString(metadata['toProvider']),
     model: asString(metadata['model']) ?? null,
     reason: asString(metadata['reason']),
+    machine: asString(metadata['machine']),
   };
 }
 
@@ -95,9 +116,7 @@ function parseSwitchRow(
 function describeRef(providerRef: string, workspaceId?: string): string {
   const state = appStore.state;
   const baseId = providerRefBaseId(providerRef);
-  const loaded = workspaceId
-    ? state.providerCatalog?.byWorkspaceId?.[workspaceId] !== undefined
-    : selectProviderCatalogLoaded.select(state);
+  const loaded = selectProviderCatalogProfilesLoaded.select(state, workspaceId);
   const baseName =
     selectProviderDisplayName.select(state, baseId, loaded ? workspaceId : undefined) || baseId;
   if (selectHidesProviderProfileNames.select(state, workspaceId ?? '')) return baseName;
@@ -134,6 +153,15 @@ export function formatProviderFailoverLabel(
   fallbackText: string,
   workspaceId?: string,
 ): string {
+  if (notice.kind === 'autoSelected') {
+    if (!notice.toProvider || !notice.machine) return fallbackText;
+    const values = { to: describeRef(notice.toProvider, workspaceId), machine: notice.machine };
+    if (notice.reason === 'machine-signed-out')
+      return m.chat_providerFailoverNotice_autoSelectedSignedOut_label(values);
+    if (notice.reason === 'sandbox-no-sign-in')
+      return m.chat_providerFailoverNotice_autoSelectedSandbox_label(values);
+    return fallbackText;
+  }
   if (notice.kind === 'returned') {
     if (notice.reason !== 'quota-reset' || !notice.toProvider) return fallbackText;
     return m.chat_providerFailoverNotice_returned_label({

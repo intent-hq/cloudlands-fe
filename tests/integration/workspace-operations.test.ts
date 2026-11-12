@@ -29,18 +29,6 @@ const backend = vi.hoisted(() => {
       workspaces.set(workspaceId, workspace);
       return { workspace };
     }
-    if (method === 'workspace.duplicate') {
-      const current = workspaces.get(workspaceId);
-      if (!current) throw new Error('Workspace not found');
-      const workspace = {
-        ...current,
-        id: `${workspaceId}-copy`,
-        title: params?.newTitle,
-        branch: `${workspaceId}-copy`,
-      };
-      workspaces.set(String(workspace.id), workspace);
-      return { workspace };
-    }
     if (method === 'workspace.archive') {
       const current = workspaces.get(workspaceId);
       const workspace = { ...current, status: WorkspaceStatus.Archived, archived: true };
@@ -106,16 +94,6 @@ describe('Workspace Operations Integration Tests', () => {
     ]);
     expect(backend.request.mock.calls.filter(([method]) => method === 'workspace.list')).toEqual([
       ['workspace.list', { includeArchived: false }],
-    ]);
-  });
-
-  it('duplicates a workspace through the daemon', async () => {
-    const result = await workspaceService.duplicateWorkspace(workspace.id, 'Copy');
-
-    expect(result.ok && result.data.title === 'Copy').toBe(true);
-    expect(backend.request.mock.calls).toContainEqual([
-      'workspace.duplicate',
-      { workspaceId: workspace.id, newTitle: 'Copy' },
     ]);
   });
 

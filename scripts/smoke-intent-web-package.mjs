@@ -25,7 +25,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SESSION_COOKIE = 'intent_browser_access';
+// Each server's session cookie is named from its access key (intent_session_<id>).
+const SESSION_COOKIE_PREFIX = 'intent_session_';
+const cookieName = (pair) => pair?.slice(0, pair.indexOf('='));
 const FAKE_DAEMON_TOKEN = 'smoke-daemon-token';
 
 // The packed web UI is about 20 MB; this cap catches an accidental inclusion
@@ -259,7 +261,38 @@ async function bridgeSmoke({ base, cookie, bin, dataDir }) {
     assert(revoked.status === 401, `old session after key reset, status ${revoked.status}`);
     const signIn = await fetch(`${base}/?key=${newKey}`, { redirect: 'manual' });
     const fresh = signIn.headers.get('set-cookie')?.split(';')[0];
-    assert(signIn.status === 303 && fresh?.startsWith(`${SESSION_COOKIE}=`), 'new key signs in');
+    assert(
+      signIn.status === 303 &&
+        fresh?.startsWith(SESSION_COOKIE_PREFIX) &&
+        cookieName(fresh) !== cookieName(cookie),
+      `new key signs in with a newly named session cookie, got ${cookieName(fresh)}`,
+    );
+
+    // A single-use sign-in code from `intent-web link` in another process.
+    const linked = run(process.execPath, [bin, 'link', '--data-dir', dataDir, '--url', base]);
+    const code = linked.match(/Sign-in code: ([A-Z2-9]{3}-[A-Z2-9]{3})/)?.[1];
+    assert(
+      code && linked.includes(`${base}/__browser-access/login?code=`),
+      'link prints a code and link',
+    );
+    const preview = await fetch(`${base}/__browser-access/login?code=${code.replace('-', '')}`);
+    assert(
+      preview.status === 200 && !preview.headers.get('set-cookie'),
+      'opening the link does not sign in',
+    );
+    const submitCode = () =>
+      fetch(`${base}/__browser-access/login`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: `key=${encodeURIComponent(code)}`,
+      });
+    const codeSignIn = await submitCode();
+    assert(
+      codeSignIn.status === 303 && codeSignIn.headers.get('set-cookie'),
+      'the code signs in once',
+    );
+    assert((await submitCode()).status === 401, 'the code does not sign in twice');
     const listed = await (
       await fetch(`${base}/__intent-web/connections`, { headers: { cookie: fresh } })
     ).json();

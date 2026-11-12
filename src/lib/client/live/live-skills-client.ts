@@ -6,7 +6,11 @@
  * discovered set changes; this client subscribes to that event and refetches.
  */
 import type { AppClient, SkillsClient, SubscriptionHandler, Unsubscribe } from '../app-client';
-import type { SkillInfo } from '$store/renderer/slices/skills/skills-types';
+import type {
+  AgentSkills,
+  AgentSkillsUnavailable,
+  SkillInfo,
+} from '$store/renderer/slices/skills/skills-types';
 import { createLogger } from '$lib/utils/client-logger';
 import {
   backendRequest,
@@ -38,7 +42,15 @@ interface WireSkill {
 interface WireSkillPage {
   skills: WireSkill[];
   nextToken?: string | null;
+  /** With `agentId` only (§5.34 Skills of a remote agent). */
+  stale?: boolean;
+  unavailable?: string;
 }
+
+const UNAVAILABLE_REASONS: readonly AgentSkillsUnavailable[] = [
+  'machine-offline',
+  'machine-update-required',
+];
 
 /** Rows per `skill.list` page (the daemon's maximum). */
 const SKILL_PAGE_LIMIT = 500;
@@ -89,6 +101,38 @@ export class LiveSkillsClient implements SkillsClient {
 
   async list(workspaceId: string): Promise<SkillInfo[]> {
     return this.fetchList(workspaceId);
+  }
+
+  /**
+   * A remote agent's skills, from its machine (`skill.list` with `agentId`,
+   * gated by `remoteAgentSkills: 1`). The reply is always the envelope.
+   */
+  async listForAgent(workspaceId: string, agentId: string): Promise<AgentSkills> {
+    const skills: SkillInfo[] = [];
+    const seen = new Set<string>();
+    let stale = false;
+    let unavailable: AgentSkillsUnavailable | null = null;
+    let nextToken: string | undefined;
+    for (let page = 0; page < MAX_SKILL_PAGES; page++) {
+      const result = await backendRequest<WireSkillPage>('skill.list', {
+        workspaceId,
+        agentId,
+        limit: SKILL_PAGE_LIMIT,
+        ...(nextToken ? { nextToken } : {}),
+      });
+      for (const wire of Array.isArray(result?.skills) ? result.skills : []) {
+        if (seen.has(wire.name)) continue;
+        seen.add(wire.name);
+        skills.push(normalizeSkill(wire));
+      }
+      stale = result?.stale === true;
+      const reason = UNAVAILABLE_REASONS.find((r) => r === result?.unavailable);
+      unavailable = reason ?? null;
+      nextToken = typeof result?.nextToken === 'string' ? result.nextToken : undefined;
+      if (!nextToken) return { skills, stale, unavailable };
+    }
+    logger.warn('skill.list paging stopped at the page limit');
+    return { skills, stale, unavailable };
   }
 
   subscribe(handler: SubscriptionHandler<SkillInfo[]>): Unsubscribe {

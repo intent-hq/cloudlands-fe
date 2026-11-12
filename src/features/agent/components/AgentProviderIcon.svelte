@@ -13,6 +13,7 @@
     'cortex',
     'pi',
     'antigravity',
+    'cursor',
   ]);
 
   /** Check if a provider ID (or a profile reference's base provider, §5.54) has a known icon */
@@ -30,9 +31,19 @@
     providerId: string;
     class?: string;
     size?: number;
+    /**
+     * Single-color rendering in `currentColor` for marks that otherwise use
+     * fixed brand colors, so a row of icons reads the same in light and dark.
+     */
+    monochrome?: boolean;
   }
 
-  let { providerId: providerRef, class: className = 'size-3.5', size = 14 }: Props = $props();
+  let {
+    providerId: providerRef,
+    class: className = 'size-3.5',
+    size = 14,
+    monochrome = false,
+  }: Props = $props();
   // A named profile (§5.54 `<base>@<id>`) shares its base provider's icon.
   // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure string helper, not a data fetch; rule misfires on the '/provider-profiles' import source
   const providerId = $derived(providerRefBaseId(providerRef));
@@ -54,6 +65,22 @@
       <path
         d="M14.1452 14.6818C14.9937 15.3182 16.2664 14.894 15.0997 13.7273C11.5998 10.3333 12.3421 1 7.99366 1C3.64518 1 4.3876 10.3333 0.887603 13.7273C-0.385123 15 0.993664 15.3182 1.84215 14.6818C5.13002 12.4545 4.9179 8.5303 7.99366 8.5303C11.0694 8.5303 10.8573 12.4545 14.1452 14.6818Z"
         fill="currentColor"
+      />
+    </svg>
+  {:else if providerId === 'cursor'}
+    <!-- Official ACP registry icon, cursor/icon.svg (864b66c). -->
+    <svg
+      class={className}
+      width={size}
+      height={size}
+      viewBox="0 0 466.73 532.09"
+      role="img"
+      aria-label="Cursor"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        fill="currentColor"
+        d="M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01ZM444.05,151.99l-205.63,356.16c-1.39,2.4-5.06,1.42-5.06-1.36v-233.21c0-4.66-2.49-8.97-6.53-11.31L24.87,145.67c-2.4-1.39-1.42-5.06,1.36-5.06h411.26c5.84,0,9.49,6.33,6.57,11.39h-.01Z"
       />
     </svg>
   {:else if providerId === 'auggie'}
@@ -104,9 +131,13 @@
             width="240"
             height="300"><path d="M240 0H0V300H240V0Z" fill="white" /></mask
           ><g mask="url(#mask0_1401_86274)"
-            ><path d="M180 240H60V120H180V240Z" fill="#CFCECD" /><path
+            ><path
+              d="M180 240H60V120H180V240Z"
+              fill={monochrome ? 'currentColor' : '#CFCECD'}
+              fill-opacity={monochrome ? 0.4 : undefined}
+            /><path
               d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"
-              fill="#211E1E"
+              fill={monochrome ? 'currentColor' : '#211E1E'}
             /></g
           ></g
         ></g
@@ -135,8 +166,9 @@
   {:else if providerId === 'unsloth'}
     <!-- Unsloth's brand mark is the sloth emoji (per their brand guidelines) -->
     <span
-      class="inline-flex items-center justify-center leading-none"
-      style={`font-size: ${size - 2}px; width: ${size}px; height: ${size}px;`}>🦥</span
+      class={cn('inline-flex items-center justify-center leading-none', monochrome && 'grayscale')}
+      style={`font-size: ${monochrome ? size - 4 : size - 2}px; width: ${size}px; height: ${size}px;`}
+      >🦥</span
     >
   {:else if providerId === 'cortex'}
     <svg
@@ -168,13 +200,13 @@
       viewBox="0 0 800 800"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <rect width="800" height="800" rx="120" fill="#09090b" />
+      {#if !monochrome}<rect width="800" height="800" rx="120" fill="#09090b" />{/if}
       <path
-        fill="#fff"
+        fill={monochrome ? 'currentColor' : '#fff'}
         fill-rule="evenodd"
         d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"
       />
-      <path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z" />
+      <path fill={monochrome ? 'currentColor' : '#fff'} d="M517.36 400 H634.72 V634.72 H517.36 Z" />
     </svg>
   {/if}
 </span>

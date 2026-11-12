@@ -26,6 +26,11 @@ type GitCredentialsModalState = {
 export type GlobalModalsState = {
   githubAuth: GitHubAuthModalState;
   gitCredentials: GitCredentialsModalState;
+  /**
+   * The web build's experimental notice was dismissed in this page load. Not
+   * persisted: the notice shows again at the next app start (full page load).
+   */
+  webExperimentalNoticeDismissed: boolean;
 };
 
 export const initialState: GlobalModalsState = {
@@ -39,6 +44,7 @@ export const initialState: GlobalModalsState = {
     error: null,
     shownForWorkspaceIds: {},
   },
+  webExperimentalNoticeDismissed: false,
 };
 
 export const openGitHubAuthModal = createAction<[pendingAuth: GitHubAuthRequiredEvent | null]>(
@@ -52,6 +58,10 @@ export const openGitCredentialsModal = createAction<[error: GitCredentialsModalE
 );
 
 export const closeGitCredentialsModal = createAction('globalModals/closeGitCredentialsModal');
+
+export const webExperimentalNoticeDismissed = createAction(
+  'globalModals/webExperimentalNoticeDismissed',
+);
 
 export const globalModalsReducer = createReducer<GlobalModalsState>(initialState);
 globalModalsReducer.with(openGitHubAuthModal, (state, { payload: [pendingAuth] }) => ({
@@ -91,4 +101,8 @@ globalModalsReducer.with(closeGitCredentialsModal, (state) => ({
     open: false,
     error: null,
   },
+}));
+globalModalsReducer.with(webExperimentalNoticeDismissed, (state) => ({
+  ...state,
+  webExperimentalNoticeDismissed: true,
 }));

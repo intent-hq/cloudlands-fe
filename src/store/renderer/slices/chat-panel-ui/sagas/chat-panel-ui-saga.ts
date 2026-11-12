@@ -1,7 +1,11 @@
 import { call, cancelled, put, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 
 import { appClient } from '$lib/client';
-import type { AgentsClient } from '$lib/client/app-client';
+import type {
+  AgentsClient,
+  UserMessageIndexItem,
+  UserMessageIndexResult,
+} from '$lib/client/app-client';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
 import { AgentStatus } from '$shared/types';
@@ -34,11 +38,48 @@ function* indexIsCurrent(action: IndexAction): SagaGenerator<boolean> {
   return current?.requestId === requestId && current.status === 'pending';
 }
 
+/** Rows per index page: the daemon maximum, so long histories take few reads. */
+const INDEX_PAGE_LIMIT = 500;
+/** Upper bound on index pages per load (500,000 rows at the page limit). */
+const INDEX_MAX_PAGES = 1_000;
+
+/**
+ * Read the whole user-message index (`agent.listUserMessages`, §5.5): the
+ * daemon serves the newest page first, so each `nextToken` page is older
+ * and goes in front. `null` when the request was superseded mid-walk.
+ */
+function* readFullUserMessageIndex(
+  client: Client,
+  action: IndexAction,
+): SagaGenerator<UserMessageIndexResult | null> {
+  const [workspaceId, , , agentId] = action.payload;
+  const pages: UserMessageIndexItem[][] = [];
+  let nextToken: string | undefined;
+  for (let page = 0; page < INDEX_MAX_PAGES; page++) {
+    const result = yield* call(
+      [client, client.listUserMessages],
+      agentId,
+      undefined,
+      workspaceId,
+      nextToken === undefined
+        ? { limit: INDEX_PAGE_LIMIT }
+        : { limit: INDEX_PAGE_LIMIT, nextToken },
+    );
+    if (!result.ok) return result;
+    pages.unshift(result.items);
+    if (typeof result.nextToken !== 'string' || result.nextToken === nextToken) break;
+    if (!(yield* indexIsCurrent(action))) return null;
+    nextToken = result.nextToken;
+  }
+  const items = pages.flat();
+  return { ok: true, items, total: items.length, nextToken: null };
+}
+
 function* loadUserMessageIndex(client: Client, action: IndexAction): SagaGenerator<void> {
   const [workspaceId, consumerId, requestId, agentId, epoch] = action.payload;
   try {
-    const result = yield* call([client, client.listUserMessages], agentId, undefined, workspaceId);
-    if (!(yield* indexIsCurrent(action))) return;
+    const result = yield* call(readFullUserMessageIndex, client, action);
+    if (result === null || !(yield* indexIsCurrent(action))) return;
     if ((yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch !== epoch) {
       yield* put(userMessageIndexFinished(workspaceId, consumerId, requestId, 'cancelled'));
       return;

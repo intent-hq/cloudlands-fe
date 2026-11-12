@@ -8,7 +8,7 @@
  * `providerCatalogLoaded(MOCK_PROVIDER_CATALOG)` (or via
  * `seedProviderCatalog(store)`), never by hardcoding rows inline.
  */
-import type { ProviderCatalogResult } from '$shared/provider-catalog';
+import type { ProviderCatalogEntry, ProviderCatalogResult } from '$shared/provider-catalog';
 import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
 
 export const MOCK_PROVIDER_CATALOG: ProviderCatalogResult = {
@@ -99,9 +99,9 @@ export const MOCK_PROVIDER_CATALOG: ProviderCatalogResult = {
       id: 'antigravity',
       displayName: 'Google Antigravity',
       shortName: 'Antigravity',
-      command: 'antigravity-acp',
+      command: 'agy',
       canBeDisabled: true,
-      loginCommandHint: 'intentd provider login antigravity',
+      loginCommandHint: 'agy acp --login',
       loginDocsUrl: 'https://antigravity.google/docs/ide/extensions',
       visible: true,
     },
@@ -115,6 +115,23 @@ export const MOCK_PROVIDER_CATALOG: ProviderCatalogResult = {
       visible: false,
     },
   ],
+};
+
+/**
+ * Mocked Cursor catalog row (Labs-gated, per device). Kept out of
+ * `MOCK_PROVIDER_CATALOG` until the daemon registry serves it; tests and
+ * previews append it where they exercise Cursor.
+ */
+export const MOCK_CURSOR_PROVIDER: ProviderCatalogEntry = {
+  id: 'cursor',
+  displayName: 'Cursor',
+  shortName: 'Cursor',
+  command: 'cursor-agent',
+  canBeDisabled: true,
+  loginCommandHint: 'cursor-agent login',
+  loginDocsUrl: 'https://cursor.com/docs/cli/reference/authentication',
+  supportsTestPrompt: true,
+  visible: true,
 };
 
 /**

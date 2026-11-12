@@ -980,6 +980,41 @@ describe('chatReadSaga capped block reads (§5.5, messageBlockPages: 1)', () => 
     await run.task.toPromise();
   });
 
+  it('joins every page of a long text body (single-message bound, §5.5)', async () => {
+    mocks.messageBlockPages = true;
+    mocks.getMessageBlockPage
+      .mockResolvedValueOnce({
+        block: { type: 'text', id: BLOCK, text: 'first ' },
+        truncated: true,
+        field: 'text',
+        encoding: 'text',
+        totalBytes: 12,
+        nextOffset: 6,
+      })
+      .mockResolvedValueOnce({
+        block: { type: 'text', id: BLOCK, text: 'second' },
+        truncated: true,
+        field: 'text',
+        encoding: 'text',
+        totalBytes: 12,
+        nextOffset: null,
+      });
+    const run = harness();
+    run.dispatch(messageBlockHydrationRequested(AGENT, MSG, BLOCK));
+    await settle();
+
+    expect(mocks.getMessageBlockPage).toHaveBeenNthCalledWith(1, AGENT, MSG, BLOCK, undefined);
+    expect(mocks.getMessageBlockPage).toHaveBeenNthCalledWith(2, AGENT, MSG, BLOCK, undefined, 6);
+    const entry = run.chat().byAgentId[AGENT]?.hydratedBlocks?.[KEY];
+    expect(entry).toMatchObject({
+      status: 'loaded',
+      block: { type: 'text', text: 'first second' },
+    });
+    expect(entry).not.toHaveProperty('truncation');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
   it('a whole block served under the cap carries no truncation', async () => {
     mocks.messageBlockPages = true;
     mocks.getMessageBlockPage.mockResolvedValue({

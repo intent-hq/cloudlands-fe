@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import {
-    selectConnections,
+    selectBackendConnections,
     selectCurrentConnectionId,
   } from '$store/renderer/slices/connections/connections-selectors';
   import { DOCK_BACKEND_SWITCH_FAILED_QUERY } from '$shared/dock-connection';
@@ -54,7 +54,7 @@
     appStore.dispatch(closeDockConversationRequested());
     disposeAppStore();
   });
-  const connections$ = selectConnections();
+  const connections$ = selectBackendConnections();
   const currentConnectionId$ = selectCurrentConnectionId();
   const machineSwitch$ = selectDockMachineSwitch();
   const machines = $derived(

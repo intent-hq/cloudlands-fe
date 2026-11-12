@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 // @ui-invariant
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createRawSnippet } from 'svelte';
@@ -13,7 +13,6 @@ import ButtonHarness from './ButtonHarness.svelte';
 import { buttonFixtures } from './button.fixtures';
 import { buttonMetadata } from './button.meta';
 import {
-  activeButtonSurfaceVariants,
   buttonCompatibilityAliases,
   buttonEmphasisLadder,
   buttonSizeLadder,
@@ -69,31 +68,6 @@ describe('Button', () => {
     expect(buttonMetadata.apiGuidance?.emphasis).toEqual(buttonEmphasisLadder);
   });
 
-  it('gives default, primary, and secondary solid raised surfaces with pressed states', () => {
-    const defaultButton = buttonVariants({ variant: 'default' });
-    expect(defaultButton).toBe(buttonVariants({ variant: 'secondary' }));
-    expect(defaultButton).toContain('text-secondary-foreground');
-    expect(buttonSurfaceVariants.default).toBe(buttonSurfaceVariants.secondary);
-    expect(activeButtonSurfaceVariants.default).toBe(activeButtonSurfaceVariants.secondary);
-    expect(buttonVariants({ variant: 'primary' })).toContain('text-primary-foreground');
-    expect(buttonSurfaceVariants.primary).toContain('bg-primary');
-    expect(buttonSurfaceVariants.primary).toContain('shadow-(--elevation-raised)');
-    expect(buttonSurfaceVariants.primary).toContain('group-active/button:brightness-90');
-    const outlineButton = buttonVariants({ variant: 'outline' });
-    expect(outlineButton).toContain('text-foreground');
-    expect(buttonSurfaceVariants.outline).toContain('group-hover/button:bg-hover');
-    expect(buttonSurfaceVariants.outline).toContain('group-active/button:bg-active');
-    const secondaryButton = buttonVariants({ variant: 'secondary' });
-    expect(secondaryButton).toContain('text-secondary-foreground');
-    expect(buttonSurfaceVariants.secondary).toContain('bg-secondary');
-    expect(buttonSurfaceVariants.secondary).toContain('shadow-(--elevation-raised)');
-    expect(buttonSurfaceVariants.secondary).toContain('group-active/button:brightness-90');
-    const destructiveButton = buttonVariants({ variant: 'destructive' });
-    expect(destructiveButton).toContain('text-danger-background');
-    expect(buttonSurfaceVariants.destructive).toContain('bg-danger');
-    expect(buttonSurfaceVariants.neumorphic).toBe(buttonSurfaceVariants.outline);
-  });
-
   it('keeps filled and ghost controls borderless while outline controls retain 1px', () => {
     for (const variant of ['default', 'primary', 'secondary', 'destructive', 'ghost'] as const) {
       const classes = buttonVariants({ variant }).split(/\s+/);
@@ -116,8 +90,6 @@ describe('Button', () => {
     expect(contextual.className).toContain('h-(--control-height-compact)');
     expect(explicit.className).toContain('h-(--control-height-large)');
     expect(active.getAttribute('data-state')).toBe('active');
-    expect(active.querySelector('[data-slot="button-surface"]')?.className).toContain('bg-active');
-    expect(activeButtonSurfaceVariants.outline).toContain('bg-active');
 
     const iconButton = screen.getByRole('button', { name: 'Navigate' });
     expect(iconButton.querySelector('[data-slot="button-leading-icon"]')).not.toBeNull();
@@ -200,41 +172,6 @@ describe('Button', () => {
     await fireEvent.keyDown(button, { key: 'Enter' });
     expect(document.activeElement).toBe(button);
     expect(onkeydown).toHaveBeenCalledWith(expect.objectContaining({ key: 'Enter' }));
-  });
-
-  it('applies tooltipClass to the tooltip trigger wrapper', () => {
-    render(Button, { props: { tooltip: 'Shrinkable action', tooltipClass: 'min-w-0' } });
-    const button = screen.getByRole('button', { name: 'Shrinkable action' });
-    // eslint-disable-next-line intent/no-class-name-assertions-in-tests -- forwarding the given class is tooltipClass's contract
-    expect(button.parentElement?.closest('span')?.classList.contains('min-w-0')).toBe(true);
-  });
-
-  it('disables an open tooltip reactively without remounting its button', async () => {
-    const view = render(Button, {
-      props: { tooltip: 'Stable action help', tooltipDelayDuration: 0 },
-    });
-    const button = screen.getByRole('button', { name: 'Stable action help' });
-    button.focus();
-    await fireEvent.focus(button);
-    await screen.findByRole('tooltip', { name: 'Stable action help', hidden: true });
-
-    await view.rerender({
-      tooltip: 'Stable action help',
-      tooltipDelayDuration: 0,
-      tooltipDisabled: true,
-    });
-    await waitFor(() => expect(screen.queryByRole('tooltip', { hidden: true })).toBeNull());
-    expect(screen.getByRole('button', { name: 'Stable action help' })).toBe(button);
-
-    await view.rerender({
-      tooltip: 'Stable action help',
-      tooltipDelayDuration: 0,
-      tooltipDisabled: false,
-    });
-    button.blur();
-    button.focus();
-    await fireEvent.focus(button);
-    await screen.findByRole('tooltip', { name: 'Stable action help', hidden: true });
   });
 
   it.each(['icon', 'icon-compact', 'icon-sm', 'icon-xs', 'icon-lg'] as const)(

@@ -306,6 +306,7 @@
   }
 
   async function saveTitle() {
+    if (!isEditingTitle) return;
     if (isSavingTitle || !$workspace || !editedTitle.trim()) {
       isEditingTitle = false;
       return;
@@ -407,7 +408,6 @@
     id: 'toggle-sidebar',
     label: m.ui_sidebar_toggle_label(),
     iconSnippet: sidebarToggleIconSnippet,
-    dividerBefore: true,
     shortcut: 'mod+b',
     onClick: () => {
       appStore.dispatch(toggleSidebar());
@@ -438,7 +438,6 @@
           id: 'share-workspace',
           label: m.workspace_share_menu_label(),
           icon: faUserPlus,
-          dividerBefore: true,
           onClick: () => {
             if (!$workspace || !selectCanShareWorkspace.select(appStore.state, $workspace.id))
               return;
@@ -480,7 +479,6 @@
           id: 'transfer-workspace',
           label: m.workspace_card_transfer_label(),
           icon: faRightLeft,
-          dividerBefore: !shareAction && !leaveAction,
           onClick: () => {
             if (!$workspace) return;
             appStore.dispatch(
@@ -560,7 +558,6 @@
     id: 'primary-client',
     label: m.workspace_drivingClient_menu_label(),
     icon: faGlobe,
-    dividerBefore: true,
     detail: primaryClientOffline
       ? m.workspace_drivingClient_offline_label()
       : primaryClientHere
@@ -801,6 +798,7 @@
       <div class="relative flex-1 flex flex-col min-w-0">
         {#if isEditingTitle}
           <Input
+            variant="inline"
             bind:ref={titleInputRef}
             type="text"
             bind:value={editedTitle}
@@ -808,8 +806,8 @@
             onkeydown={handleTitleKeydown}
             noFocusStyle
             class="edit-input type-title relative z-10 font-medium text-foreground bg-transparent hover:bg-transparent border-none
-               py-0.5 rounded
-               outline-none w-full leading-normal
+               h-(--control-height-medium) px-0 py-0 rounded
+               outline-none w-full leading-(--text-title-line-height)
                focus:ring-none! focus:outline-none!
                transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none"
             placeholder={m.workspace_links_untitled_label()}
@@ -817,12 +815,13 @@
         {:else}
           <Button
             variant="plain"
+            labelClass="whitespace-pre"
             class="type-title relative z-10 font-medium text-foreground bg-transparent {!$workspace?.title
               ? 'opacity-50'
               : ''}
-               border-none py-0.5 pr-1 rounded cursor-text text-left
+               border-none h-(--control-height-medium) py-0 rounded cursor-text text-left
                max-w-full overflow-hidden text-ellipsis whitespace-nowrap
-               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-normal
+               transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none leading-(--text-title-line-height)
                focus-visible:outline-1 focus-visible:outline-primary-ink/50 focus-visible:-outline-offset-1
                disabled:cursor-default disabled:opacity-50 truncate min-w-0"
             onclick={startEditingTitle}
@@ -837,9 +836,9 @@
         <span
           aria-hidden="true"
           data-workspace-title-edit-decoration
-          class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
-            ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
-            : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+          class="pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingTitle
+            ? '-inset-x-2 inset-y-0 bg-hover dark:bg-surface-1'
+            : '-inset-x-1 -inset-y-0.5 bg-transparent'}"
         ></span>
       </div>
 
@@ -1088,6 +1087,7 @@
         <div class="relative flex">
           {#if isEditingStatusMessage}
             <Textarea
+              variant="inline"
               bind:ref={statusInputRef}
               bind:value={editedStatusMessage}
               onblur={saveStatusMessage}
@@ -1097,7 +1097,7 @@
               maxlength={WORKSPACE_STATUS_MESSAGE_MAX_LENGTH}
               rows={1}
               aria-label={m.workspace_sidebarHeader_status_ariaLabel()}
-              class="edit-input type-caption relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent py-0.5 text-foreground outline-none leading-snug
+              class="edit-input type-caption relative z-10 min-h-0 max-h-32 w-full resize-none overflow-hidden whitespace-pre-wrap break-words rounded border-none bg-transparent hover:bg-transparent px-0 py-0.5 text-muted-foreground outline-none leading-snug
                      focus:ring-none! focus:outline-none! transition-all duration-spring-moderate ease-spring-moderate motion-reduce:transition-none disabled:opacity-50"
               style="field-sizing: content;"
               placeholder={m.workspace_sidebarHeader_addStatus_placeholder()}
@@ -1129,9 +1129,9 @@
           <span
             aria-hidden="true"
             data-workspace-status-edit-decoration
-            class="pointer-events-none absolute z-0 rounded-(--radius-small) border transition-[inset,border-color,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingStatusMessage
-              ? '-inset-x-2 -inset-y-1.5 border-ring/60 bg-sidebar'
-              : '-inset-x-1 -inset-y-0.5 border-transparent bg-transparent'}"
+            class="pointer-events-none absolute z-0 rounded-(--radius-small) transition-[inset,background-color] duration-(--motion-standard) ease-(--ease-standard) motion-reduce:transition-none {isEditingStatusMessage
+              ? '-inset-x-2 -inset-y-0.5 bg-hover dark:bg-surface-1'
+              : '-inset-x-1 -inset-y-0.5 bg-transparent'}"
           ></span>
         </div>
       </div>

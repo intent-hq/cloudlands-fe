@@ -417,24 +417,6 @@ describe('WorkspaceProgressCard status message', () => {
     });
   });
 
-  it('places a divider between the move and transfer actions while keeping transfer before archive', async () => {
-    const { container } = await renderProgressCard();
-    await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
-
-    const moveSidebar = screen.getByRole('button', { name: 'Move sidebar to right' });
-    const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
-    const archive = screen.getByRole('button', { name: 'Archive Workspace' });
-    const menuItems = Array.from(transfer.parentElement!.children);
-    const moveSidebarIndex = menuItems.indexOf(moveSidebar);
-    const transferIndex = menuItems.indexOf(transfer);
-    const archiveIndex = menuItems.indexOf(archive);
-
-    expect(transfer.dataset.iconName).toBe('right-left');
-    expect(menuItems[transferIndex - 1]?.getAttribute('data-testid')).toBe('menu-divider');
-    expect(transferIndex).toBeGreaterThan(moveSidebarIndex);
-    expect(archiveIndex).toBe(transferIndex + 1);
-  });
-
   it('routes archive through the workspace-operations saga instead of calling the RPC directly', async () => {
     const { requestArchiveWorkspace } =
       await import('$store/renderer/slices/workspace-operations/workspace-operations-slice');
@@ -476,19 +458,12 @@ describe('WorkspaceProgressCard status message', () => {
     );
   });
 
-  it('offers Share to the workspace owner ahead of Transfer and opens the share dialog once the Multiplayer lab is on', async () => {
+  it('offers Share to the workspace owner and opens the share dialog once the Multiplayer lab is on', async () => {
     mocks.storeState.userPreferences = { labsMultiplayerEnabled: true };
     const { container } = await renderProgressCard({ myRole: 'owner' });
     await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
     const share = screen.getByRole('button', { name: 'Share…' });
-    const transfer = screen.getByRole('button', { name: 'Transfer/Download…' });
-    const menuItems = Array.from(share.parentElement!.children);
-    const shareIndex = menuItems.indexOf(share);
-
-    expect(share.dataset.iconName).toBe('user-plus');
-    expect(menuItems[shareIndex - 1]?.getAttribute('data-testid')).toBe('menu-divider');
-    expect(menuItems.indexOf(transfer)).toBe(shareIndex + 1);
 
     await fireEvent.click(share);
 
@@ -588,16 +563,13 @@ describe('WorkspaceProgressCard status message', () => {
       payload: ['guest-1', 'ws-1'],
     };
 
-    it('offers Leave in place of Share, after a divider, for a guest who can leave', async () => {
+    it('offers Leave in place of Share for a guest who can leave', async () => {
       asGuest();
       const { container } = await renderProgressCard({ myRole: 'collaborator' });
       await fireEvent.click(container.querySelector('[data-workspace-actions-trigger]')!);
 
-      const leave = screen.getByRole('button', { name: 'Leave…' });
+      expect(screen.getByRole('button', { name: 'Leave…' })).toBeTruthy();
       expect(screen.queryByRole('button', { name: 'Share…' })).toBeNull();
-      expect(leave.dataset.iconName).toBe('right-from-bracket');
-      const items = Array.from(leave.parentElement!.children);
-      expect(items[items.indexOf(leave) - 1]?.getAttribute('data-testid')).toBe('menu-divider');
     });
 
     it('does not offer Leave when the window cannot leave this workspace', async () => {

@@ -146,7 +146,6 @@ describe('TaskAgentStatus indicator', () => {
     const expectState = async (state: string, label: RegExp) => {
       await waitFor(() => expect(avatar()?.getAttribute('data-avatar-state')).toBe(state));
       expect(avatar()?.getAttribute('aria-label')).toMatch(label);
-      expect(avatar()?.getAttribute('title')).toMatch(label);
     };
 
     await expectState('idle', /Idle/i);

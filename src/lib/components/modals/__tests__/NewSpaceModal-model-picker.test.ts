@@ -85,7 +85,6 @@ vi.mock('$store/renderer/slices/provider-settings/provider-settings-selectors', 
   selectActiveProviderId: () => mocks.readable('auggie'),
   selectEnabledProviders: () => mocks.readable({}),
   selectModelFetchProviderIds: () => mocks.readable(mocks.availableProviderIds),
-  selectIsProviderModelAccessAllowed: () => mocks.readable(true),
   selectAvailableEnabledProviderIds: () => mocks.readable(mocks.availableProviderIds),
 }));
 
@@ -357,7 +356,7 @@ function dropdownContent(listbox: HTMLElement) {
 }
 
 const COORDINATOR = /Coordinator/;
-const GENERAL = /^General/;
+const GENERAL = /^None/;
 
 let disposeStore: () => void;
 let cancelCatalog: () => void;
@@ -425,7 +424,7 @@ describe('NewSpaceModal model-picker composition', () => {
         await screen.findByRole('option', { name: 'Codex model', exact: true }),
       );
       await waitFor(() => expect(modelTrigger().textContent).toContain('Codex model'));
-      expect(agentTrigger().textContent).toContain(mode === 'team' ? 'Coordinator' : 'General');
+      expect(agentTrigger().textContent).toContain(mode === 'team' ? 'Coordinator' : 'None');
       expect(modelTrigger().getAttribute('aria-expanded')).toBe('true');
       const effort = await screen.findByTestId('effort-picker-trigger');
       await fireEvent.click(effort);
@@ -835,13 +834,13 @@ describe('NewSpaceModal model-picker composition', () => {
     expect(mocks.onClose).not.toHaveBeenCalled();
 
     await pickAgent(GENERAL);
-    expect(agentTrigger().textContent).toContain('General');
+    expect(agentTrigger().textContent).toContain('None');
     await fireEvent.click(modelTrigger());
     const singleListbox = await screen.findByRole('listbox');
     await fireEvent.click(await within(singleListbox).findByRole('option', { name: /GPT 5\.5/ }));
 
     await waitFor(() => expect(modelTrigger().textContent).toContain('GPT 5.5'));
-    expect(agentTrigger().textContent).toContain('General');
+    expect(agentTrigger().textContent).toContain('None');
     expect(screen.getByRole('dialog', { name: 'New Workspace' })).toBe(dialog);
     expect(mocks.onClose).not.toHaveBeenCalled();
     await fireEvent.click(modelTrigger());

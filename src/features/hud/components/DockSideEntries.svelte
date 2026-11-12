@@ -548,6 +548,9 @@
   }
   .preview-bridge {
     position: absolute;
+    /* Its JS position feeds the native input region: never interpolate it, even under the
+       motion blanket, or the region is measured at the transition's start and goes stale. */
+    transition-property: none;
     pointer-events: auto;
   }
   .side-preview {

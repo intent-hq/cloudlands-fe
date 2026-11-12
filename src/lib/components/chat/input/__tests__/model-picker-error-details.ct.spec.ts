@@ -57,7 +57,7 @@ for (const placement of ['settings', 'modal'] as const) {
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toBeFocused();
     await trigger.press('Enter');
-    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await page.getByTestId('model-provider-refresh-button').click();
     await expect(details).toHaveCount(0);
     await expect(page.getByRole('option', { name: /Reasoning model/ })).toBeVisible();
     await expect(page.getByTestId('refresh-requests')).toHaveText(

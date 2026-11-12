@@ -1,5 +1,5 @@
 import { expect, test } from '../../../../test/ct-test';
-import SkeletonMotionHost from './SkeletonMotionHost.svelte';
+import SkeletonMotionTestHost from './SkeletonMotionTestHost.svelte';
 
 for (const theme of ['light', 'dark']) {
   test(`keeps ${theme} placeholders subdued and preserves layout when motion changes`, async ({
@@ -7,7 +7,7 @@ for (const theme of ['light', 'dark']) {
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    const component = await mount(SkeletonMotionHost);
+    const component = await mount(SkeletonMotionTestHost);
     await page.evaluate((value) => {
       document.documentElement.classList.toggle('dark', value === 'dark');
       document.documentElement.classList.toggle('light', value === 'light');

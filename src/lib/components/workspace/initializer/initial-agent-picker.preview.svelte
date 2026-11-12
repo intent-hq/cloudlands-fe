@@ -1,15 +1,7 @@
 <script module lang="ts">
   import { definePreview } from '$lib/component-catalog/preview-definition';
-  import { catalogNow } from '$lib/component-catalog/catalog-clock';
+  import { setupStartOnPreview, startOnPreviewMachine } from './start-on.preview-fixtures';
   import { store } from '$store/renderer/store';
-  import type { RemoteMachine, RemoteMachineState } from '$shared/types/remote-machines';
-  import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
-  import { connectionsListReceived } from '$store/renderer/slices/connections/connections-slice';
-  import { selectConnections } from '$store/renderer/slices/connections/connections-selectors';
-  import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-  import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
-  import { providerCatalogLoaded } from '$store/renderer/slices/provider-catalog/provider-catalog-slice';
-  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
   import { setupPreviewProviders } from '$lib/components/settings/provider-selector.preview';
   import {
     setupModelPickerPreviewHandler,
@@ -45,82 +37,36 @@
     };
   }
 
-  function startOnMachine(id: string, name: string, state: RemoteMachineState): RemoteMachine {
-    return {
-      id,
-      name,
-      platform: { os: 'macos', arch: 'aarch64' },
-      hosts: ['192.0.2.4'],
-      port: 5179,
-      fingerprint: `fp-${id}`,
-      state,
-      runningAgents: 0,
-      capabilities: {
-        providers: [{ id: 'codex', status: 'ready', models: ['fixture-model'] }],
-      },
-      observedAt: new Date(catalogNow()).toISOString(),
-      addedAt: '2026-11-01T00:00:00Z',
-    };
-  }
-
-  /** Labs on, a backend advertising remoteInitialAgent, and the scene's machines. */
   function setupStartOnFixture(scenario: string) {
-    const before = store.state;
-    const previousLabs = before.userPreferences?.labsRemoteAgentsEnabled === true;
-    const previousConnections = selectConnections.select(before);
-    store.dispatch(
-      connectionsListReceived({
-        connections: [
-          {
-            id: 'intent1',
-            label: 'intent1',
-            host: '192.0.2.1',
-            port: 5179,
-            fingerprint: 'AA:01',
-            isLocal: false,
-            status: 'connected',
+    if (scenario === 'start-on-auto-pick')
+      // Codex isn't signed in on the machine; the plain Default uses the Remote Ready profile.
+      return setupStartOnPreview(
+        [startOnPreviewMachine('d-mac', 'Mac mini', 'connected', ['fixture-model'], 'signed-out')],
+        {
+          catalog: {
+            profiles: [
+              {
+                id: 'pkey00000001',
+                providerRef: 'codex@pkey00000001',
+                baseProviderId: 'codex',
+                name: 'Team token',
+                remoteCompatible: true,
+              },
+            ],
+            defaultRemoteLaunch: { codex: 'machine-sign-in' },
           },
-        ],
-        activeId: 'intent1',
-        windowBackendId: 'intent1',
-      }),
-    );
-    store.dispatch(setLabsRemoteAgentsEnabled(true));
-    // A catalog with remote-compatibility fields: the backend switches remote models.
-    store.dispatch(
-      providerCatalogLoaded({
-        providers: selectProviderCatalogEntries.select(store.state),
-        defaultRemoteIncompatibility: {},
-      }),
-    );
-    store.dispatch(
-      remoteMachinesLoaded({
-        supported: true,
-        initialAgentPlacement: true,
-        machines:
-          scenario === 'start-on-none'
-            ? []
-            : [
-                startOnMachine('d-mac', 'Mac mini', 'connected'),
-                ...(scenario === 'start-on-unreachable'
-                  ? [startOnMachine('d-lab', 'Lab PC', 'unreachable')]
-                  : []),
-              ],
-        localFingerprint: null,
-        executorBackends: null,
-      }),
-    );
-    return () => {
-      store.dispatch(setLabsRemoteAgentsEnabled(previousLabs));
-      store.dispatch(backendReconnected());
-      store.dispatch(
-        connectionsListReceived({
-          connections: previousConnections,
-          activeId: before.connections.activeId,
-          windowBackendId: before.connections.windowBackendId,
-        }),
+        },
       );
-    };
+    return setupStartOnPreview(
+      scenario === 'start-on-none'
+        ? []
+        : [
+            startOnPreviewMachine('d-mac', 'Mac mini', 'connected'),
+            ...(scenario === 'start-on-unreachable'
+              ? [startOnPreviewMachine('d-lab', 'Lab PC', 'unreachable')]
+              : []),
+          ],
+    );
   }
 
   interface Props {
@@ -132,15 +78,19 @@
       | 'compact'
       | 'welcome'
       | 'crowded'
+      | 'builtin'
       | 'start-on-none'
       | 'start-on-machine'
-      | 'start-on-unreachable';
+      | 'start-on-unreachable'
+      | 'start-on-open'
+      | 'start-on-auto-pick';
   }
   export const preview = definePreview<Props>({
     id: 'initial-agent-picker',
     title: 'Initial agent picker',
     defaultState: 'populated',
     states: {
+      builtin: { props: { state: 'builtin' } },
       populated: { props: { state: 'populated' } },
       orchestration: { props: { state: 'orchestration' } },
       sidebar: { props: { state: 'sidebar' } },
@@ -151,13 +101,20 @@
       // New Workspace → Start On (remote initial agent).
       'start-on-none': { props: { state: 'start-on-none' } },
       'start-on-machine': { props: { state: 'start-on-machine' } },
+      // A machine not signed in to Codex: the plain Default auto-picks a Remote Ready profile.
+      'start-on-auto-pick': { props: { state: 'start-on-auto-pick' } },
       'start-on-unreachable': { props: { state: 'start-on-unreachable' } },
+      // The open machine list: backend and machine rows both show their platform.
+      'start-on-open': { props: { state: 'start-on-open' } },
     },
   });
 </script>
 
 <script lang="ts">
   import { onDestroy, untrack } from 'svelte';
+  import { SPECIALISTS } from '$lib/constants/specialists';
+  import StartOnPicker from './StartOnPicker.svelte';
+  import { selectStartOnOptions } from '$features/remote-machines/remote-machines-selectors';
   import InitialAgentPicker from './InitialAgentPicker.svelte';
   import SpecialistDropdown from '$lib/components/chat/SpecialistDropdown.svelte';
   import RegularAgentWelcome from '$lib/components/chat/RegularAgentWelcome.svelte';
@@ -185,8 +142,13 @@
   } as AgentSession);
   onDestroy(setupPickerProviders());
   const startOn = untrack(() => scenario.startsWith('start-on-'));
-  let startOnMachineId = $state(untrack(() => (scenario === 'start-on-machine' ? 'd-mac' : '')));
+  let startOnMachineId = $state(
+    untrack(() =>
+      scenario === 'start-on-machine' || scenario === 'start-on-auto-pick' ? 'd-mac' : '',
+    ),
+  );
   if (startOn) onDestroy(setupStartOnFixture(untrack(() => scenario)));
+  const startOnOptions$ = selectStartOnOptions();
   // Enough rows to overflow the specialist menu's height cap.
   const crowdedSpecialists = () =>
     Array.from({ length: 8 }, (_, index) => ({
@@ -206,47 +168,55 @@
   store.dispatch(
     setFileSpecialists(
       untrack(() =>
-        scenario === 'empty'
-          ? []
-          : [
-              {
-                id: 'fixture-developer',
-                name: 'Developer',
-                description: 'Builds and verifies focused changes.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt:
-                  '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
-                filePath: '/fixture/developer.md',
-                source: 'user',
-                icon: 'developer',
-              },
-              {
-                id: 'fixture-long',
-                name: 'A specialist with a very long descriptive name',
-                description:
-                  'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt: '',
-                filePath: '/fixture/long.md',
-                source: 'user',
-                icon: 'reviewer',
-              },
-              {
-                id: 'fixture-coordinator',
-                name: 'Coordinator',
-                description: 'Plans the work and delegates it.',
-                model: 'fixture-model',
-                codingAgent: 'codex',
-                behaviorPrompt: '',
-                filePath: '/fixture/coordinator.md',
-                source: 'user',
-                icon: 'coordinator',
-                role: 'orchestrator',
-              },
-              ...(scenario === 'crowded' ? crowdedSpecialists() : []),
-            ],
+        scenario === 'builtin'
+          ? SPECIALISTS.map((specialist) => ({
+              ...specialist,
+              model: '',
+              behaviorPrompt: specialist.defaultBehaviorPrompt,
+              filePath: `/fixture/${specialist.id}.md`,
+              source: 'user' as const,
+            }))
+          : scenario === 'empty'
+            ? []
+            : [
+                {
+                  id: 'fixture-developer',
+                  name: 'Developer',
+                  description: 'Builds and verifies focused changes.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt:
+                    '## Developer\n\nWork on one focused task at a time.\n\nInspect the relevant components before changing them.\n\nUse the existing design system.\n\nPreserve keyboard and pointer behavior.\n\nVerify narrow and wide layouts.\n\nRun focused tests and report the results.',
+                  filePath: '/fixture/developer.md',
+                  source: 'user',
+                  icon: 'developer',
+                },
+                {
+                  id: 'fixture-long',
+                  name: 'A specialist with a very long descriptive name',
+                  description:
+                    'Investigates difficult rendering problems and verifies accessible behavior in narrow application panels.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt: '',
+                  filePath: '/fixture/long.md',
+                  source: 'user',
+                  icon: 'reviewer',
+                },
+                {
+                  id: 'fixture-coordinator',
+                  name: 'Coordinator',
+                  description: 'Plans the work and delegates it.',
+                  model: 'fixture-model',
+                  codingAgent: 'codex',
+                  behaviorPrompt: '',
+                  filePath: '/fixture/coordinator.md',
+                  source: 'user',
+                  icon: 'coordinator',
+                  role: 'orchestrator',
+                },
+                ...(scenario === 'crowded' ? crowdedSpecialists() : []),
+              ],
       ),
     ),
   );
@@ -260,7 +230,9 @@
 </script>
 
 <section
-  class="w-full min-w-0 p-4 {scenario === 'sidebar' ? 'max-w-[300px]' : ''}"
+  class="w-full min-w-0 p-4 {scenario === 'sidebar' || startOn ? 'max-w-[300px]' : ''} {startOn
+    ? 'ml-auto'
+    : ''} {scenario === 'start-on-open' ? 'min-h-[420px]' : ''}"
   data-testid="specialist-fixture"
 >
   {#if scenario === 'compact'}
@@ -269,6 +241,13 @@
     <RegularAgentWelcome
       session={welcomeSession}
       onSpecialistChange={(value) => (selected = value)}
+    />
+  {:else if scenario === 'start-on-open'}
+    <StartOnPicker
+      open
+      value={startOnMachineId}
+      options={$startOnOptions$}
+      onChange={(id) => (startOnMachineId = id)}
     />
   {:else}
     <InitialAgentPicker

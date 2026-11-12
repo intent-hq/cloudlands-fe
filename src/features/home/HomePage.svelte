@@ -21,7 +21,9 @@
     createHomeDoubleClickOpener,
     openHomeWorkspaceFromEvent,
   } from './home-workspace-opening';
-  import { createHomeWorkspaceMenu } from './home-workspace-menu';
+  import { createHomeBulkMenu, createHomeWorkspaceMenu } from './home-workspace-menu';
+  import { createHomeSelection } from './home-selection.svelte';
+  import HomeSelectionBar from './HomeSelectionBar.svelte';
   import { tick, untrack } from 'svelte';
   import { Button } from '$lib/components/ui/button';
   import HomeWorkspaceSettings from './HomeWorkspaceSettings.svelte';
@@ -37,7 +39,16 @@
   import {
     buildRepoPathLookup,
     groupWorkspacesByRepository,
+    type RepositoryGroup,
   } from '$lib/components/workspace/utils/workspace-grouping';
+  import {
+    HOME_HIDDEN_REPOS_GROUP,
+    hiddenHomeRepositories,
+    isHomeRepositoryHidden,
+    newestHomeRepositoryWorkspace,
+    revivedHomeRepositories,
+  } from './home-hidden-repos';
+  import { createHomeRepositoryMenu } from './home-repository-menu';
   import {
     selectWorkspaceItems,
     selectWorkspaceById,
@@ -72,6 +83,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import {
     getHomeTriageGroup,
+    homeTriageGroupLabel,
     matchesHomeFilter,
     needsAttention,
     type HomeFilter,
@@ -81,6 +93,7 @@
   import HomePreviewPane from './HomePreviewPane.svelte';
   import HomeWorkspaceBoard from './HomeWorkspaceBoard.svelte';
   import HomeWorkspaceList from './HomeWorkspaceList.svelte';
+  import HomeHiddenRepositories from './HomeHiddenRepositories.svelte';
   import { groupHomeWorkspacesByStatus } from './home-workspace-status-groups';
   import GitHubIcon from '$lib/components/icons/GitHubIcon.svelte';
   import LinearIcon from '$lib/components/icons/LinearIcon.svelte';
@@ -101,7 +114,12 @@
     setHomeWorkspaceAsideWithUndo,
   } from './home-set-aside';
   import { handleHomeSetAsideShortcut } from './home-set-aside-shortcut';
-  import { updateHomeWorkspaceView } from './home-workspaces-slice';
+  import { homeListOrder, registerHomeEncoderTarget } from './home-encoder-target';
+  import {
+    homeRepositoriesUnhidden,
+    homeRepositoryHidden,
+    updateHomeWorkspaceView,
+  } from './home-workspaces-slice';
   import { loadWorkspacesRequested } from '$store/renderer/slices/workspace/workspace-slice';
   import { homeRetiredWorkspaces } from './home-retired-workspaces.svelte';
   import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
@@ -119,7 +137,14 @@
   const pinnedIds$ = selectPinnedWorkspaceIds();
   const labelsInUse$ = selectWorkspaceLabelsInUse();
   const labelsSupported$ = selectLabelsSupported();
-  let contextMenu = $state<(SidebarContextPosition & { workspace: Workspace }) | null>(null);
+  let contextMenu = $state<
+    | (SidebarContextPosition &
+        (
+          | { workspace: Workspace; bulk: boolean; repo?: never }
+          | { repo: RepositoryGroup; workspace?: never; bulk?: never }
+        ))
+    | null
+  >(null);
   function openWorkspace(id: string) {
     contextMenu = null;
     void openAndShowWorkspace(id);
@@ -129,20 +154,22 @@
     openWorkspace(id);
   }
   const doubleClick = createHomeDoubleClickOpener(openSelectedWorkspace);
-  function openModifiedWorkspace(event: MouseEvent | KeyboardEvent, id: string) {
-    if (event instanceof MouseEvent) doubleClick.arm(event, id);
-    openHomeWorkspaceFromEvent(event, id, openWorkspace);
+  function activateListRow(event: MouseEvent | KeyboardEvent, id: string) {
+    if (event instanceof KeyboardEvent) {
+      openHomeWorkspaceFromEvent(event, id, openWorkspace);
+      return;
+    }
+    doubleClick.arm(event, id);
+    selection.click(event, id);
   }
   function showWorkspaceMenu(event: MouseEvent | KeyboardEvent, workspace: Workspace) {
     const position = getSidebarContextPosition(event);
     if (!position) return;
-    contextMenu = {
-      ...position,
-      returnFocus:
-        position.returnFocus?.closest<HTMLElement>('[role="option"], button') ??
-        position.returnFocus,
-      workspace,
-    };
+    const returnFocus =
+      position.returnFocus?.closest<HTMLElement>('[role="option"], button') ?? position.returnFocus;
+    const bulk = selection.includes(workspace.id);
+    if (!bulk) selection.clear();
+    contextMenu = { ...position, returnFocus, workspace, bulk };
   }
   function showListMenu(
     event: MouseEvent | KeyboardEvent,
@@ -170,6 +197,34 @@
         updateView({ expandedGroups: { ...$view$.expandedGroups, [key]: true } }),
       getHomeElement: () => homeElement,
       aside: { setAside: asideSet.has(workspace.id), onToggle: () => toggleAside(workspace) },
+    });
+  }
+  function showRepositoryMenu(event: MouseEvent | KeyboardEvent, repo: RepositoryGroup) {
+    const position = getSidebarContextPosition(event);
+    if (position) contextMenu = { ...position, repo };
+  }
+  function repositoryMenu(repo: RepositoryGroup): SidebarMenuEntry[] {
+    const then = (action: () => void) => () => {
+      contextMenu = null;
+      action();
+    };
+    return createHomeRepositoryMenu({
+      canCreate: !$collaborator$,
+      hidden: isHomeRepositoryHidden(hiddenRepos, repo),
+      loaded: $hasLoaded$,
+      onNewWorkspace: then(() => {
+        chooseRepo(repo.key);
+        createWorkspace();
+      }),
+      onHide: then(() => {
+        // Leaving the selected repository, or an org with nothing else, shows All repos.
+        if (repoKey === repo.key || selectedOrg?.items.every((item) => item.key === repo.key))
+          updateView({ repoKey: null, selectedId: null });
+        store.dispatch(
+          homeRepositoryHidden(repo.key, newestHomeRepositoryWorkspace(repo.workspaces)),
+        );
+      }),
+      onUnhide: then(() => store.dispatch(homeRepositoriesUnhidden([repo.key]))),
     });
   }
   const asideIds$ = selectHomeSetAsideWorkspaceIds();
@@ -262,6 +317,12 @@
     ),
   );
   const selectedRepository = $derived(repositoryGroups.find((repo) => repo.key === repoKey));
+  // Hidden repositories leave the sidebar only; their workspaces stay in All repos.
+  const hiddenRepos = $derived($view$.hiddenRepos ?? {});
+  $effect(() => {
+    const revived = revivedHomeRepositories(hiddenRepos, repositoryGroups);
+    if (revived.length) untrack(() => store.dispatch(homeRepositoriesUnhidden(revived)));
+  });
   // Counts and triage describe active work.
   function isActive(workspace: Workspace): boolean {
     return matchesHomeFilter(workspace, 'all') && !asideSet.has(workspace.id);
@@ -275,6 +336,7 @@
       [];
     const unassigned: typeof repositoryGroups = [];
     for (const repo of repositoryGroups) {
+      if (isHomeRepositoryHidden(hiddenRepos, repo)) continue;
       if (repo.key === m.workspace_grouping_unknownRepository_label()) {
         unassigned.push(repo);
         continue;
@@ -300,6 +362,8 @@
     }
     return { groups, unassigned };
   });
+  const hiddenSidebarRepos = $derived(hiddenHomeRepositories(hiddenRepos, repositoryGroups));
+  const hiddenReposExpanded = $derived($view$.expandedGroups[HOME_HIDDEN_REPOS_GROUP] === true);
   const selectedOrg = $derived(sidebar.groups.find((group) => `sidebar:${group.key}` === repoKey));
   const scopedWorkspaces = $derived(
     selectedRepository?.workspaces ??
@@ -387,6 +451,12 @@
     filteredWorkspaces.find((workspace) => workspace.id === selectedId) ??
       asideWorkspaces.find((workspace) => workspace.id === selectedId),
   );
+  const selection = createHomeSelection({
+    visible: () => [...filteredWorkspaces, ...asideWorkspaces],
+    previewId: () => selectedWorkspace?.id ?? null,
+    order: () => screenOrder(),
+    select: (id) => updateView({ selectedId: id }),
+  });
   // The shelf starts collapsed; a search opens it so matching work is never hidden.
   let asideCollapsedForQuery = $state<string | null>(null);
   const asideExpanded = $derived(
@@ -411,20 +481,6 @@
       ...(!expanded && holdsSelection ? { selectedId: null } : {}),
     });
   }
-  function groupLabel(group: string): string {
-    switch (group) {
-      case 'needs-you':
-        return m.home_filter_attention();
-      case 'running':
-        return m.home_filter_running();
-      case 'waiting':
-        return m.home_filter_waiting();
-      case 'blocked':
-        return m.home_filter_blocked();
-      default:
-        return m.home_board_done_idle();
-    }
-  }
   // Grouping is only meaningful on the unfiltered list; a status filter already
   // names the group, and archived rows have no live triage state.
   const triageGroups = $derived(
@@ -444,7 +500,7 @@
           const expanded =
             $view$.expandedGroups[id] !== false ||
             items.some((workspace) => workspace.id === selectedId);
-          return [{ id, label: groupLabel(id), items, expanded, collapsible: true }];
+          return [{ id, label: homeTriageGroupLabel(id), items, expanded, collapsible: true }];
         })
       : [],
   );
@@ -562,10 +618,12 @@
   });
   homeRetiredWorkspaces(() => ({ filter, preview }), workspaces$, admissionSelector());
   function chooseFilter(next: HomeFilter) {
+    selection.clear();
     store.dispatch(closePanel());
     updateView({ filter: next, tab: 'workspaces', selectedId: null });
   }
   function chooseRepo(key: string | null) {
+    selection.clear();
     store.dispatch(closePanel());
     updateView({
       repoKey: key,
@@ -584,6 +642,37 @@
     ],
     () => tab,
   );
+  // Row ids as shown; the board has no virtualization, so its card order is read from the page.
+  function screenOrder(): string[] {
+    if ($view$.view === 'board')
+      return [
+        ...(homeElement?.querySelectorAll<HTMLElement>(
+          '[data-home-destination="workspaces"] [data-home-workspace]',
+        ) ?? []),
+      ].flatMap((node) => node.dataset.homeWorkspace ?? []);
+    return homeListOrder({
+      groups: listGroups,
+      workspaces: filteredWorkspaces,
+      aside: asideWorkspaces,
+      asideExpanded,
+    });
+  }
+  // The hardware knob steps through the rows shown on screen.
+  $effect(() => {
+    if (preview) return;
+    return registerHomeEncoderTarget({
+      ids: () => (destination === 'workspaces' && tab === 'workspaces' ? screenOrder() : null),
+      selectedId: () => selectedWorkspace?.id ?? null,
+      select: (id) => {
+        updateView({ selectedId: id });
+        void tick().then(() =>
+          homeElement
+            ?.querySelector<HTMLElement>(`[data-home-workspace="${CSS.escape(id)}"]`)
+            ?.scrollIntoView({ block: 'nearest' }),
+        );
+      },
+    });
+  });
   // New space resolves the selected Home repository itself
   // (`defaultToSidebarRepository`), so Home only opens it.
   function createWorkspace() {
@@ -602,6 +691,7 @@
       })
     )
       return;
+    if (destination === 'workspaces' && tab === 'workspaces' && selection.escape(event)) return;
     if (
       event.key === 'Escape' &&
       !event.defaultPrevented &&
@@ -619,7 +709,15 @@
     x={contextMenu.x}
     y={contextMenu.y}
     returnFocus={contextMenu.returnFocus}
-    items={workspaceMenu(contextMenu.workspace)}
+    items={contextMenu.bulk
+      ? createHomeBulkMenu(
+          selection.workspaces.length,
+          selection.actions,
+          () => (contextMenu = null),
+        )
+      : contextMenu.workspace
+        ? workspaceMenu(contextMenu.workspace)
+        : repositoryMenu(contextMenu.repo)}
     onClickOutside={() => (contextMenu = null)}
   />
 {/if}
@@ -671,21 +769,24 @@
           >{formatInteger(items.filter(isActive).length)}</span
         >
       {/snippet}
-      {#snippet repoButton(repo: (typeof repositoryGroups)[number])}
+      {#snippet repoButton(repo: (typeof repositoryGroups)[number], hidden = false)}
+        {@const unassigned = repo.key === m.workspace_grouping_unknownRepository_label()}
         <Tooltip.Tooltip content={repo.label} class="flex w-full">
           <Button
-            variant="ghost"
+            variant={hidden ? 'ghost-light' : 'ghost'}
             active={repoKey === repo.key && destination === 'workspaces'}
             class="w-full justify-start px-2"
-            aria-label={repo.key === m.workspace_grouping_unknownRepository_label()
-              ? m.fileTracking_startNew_noRepository_label()
-              : repo.label}
+            aria-label={unassigned ? m.fileTracking_startNew_noRepository_label() : repo.label}
             onclick={() => chooseRepo(repo.key)}
+            oncontextmenu={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
+            onkeydown={unassigned ? undefined : (event) => showRepositoryMenu(event, repo)}
           >
             <span class="flex-1 truncate text-left font-normal"
-              >{repo.key === m.workspace_grouping_unknownRepository_label()
+              >{unassigned
                 ? m.fileTracking_startNew_noRepository_label()
-                : repo.name || repo.label}</span
+                : hidden
+                  ? repo.label
+                  : repo.name || repo.label}</span
             >
             {@render sidebarCounts(repo.workspaces)}
           </Button>
@@ -800,6 +901,21 @@
                 {/each}
               </div>
             {/if}
+            {#if hiddenSidebarRepos.length}
+              <HomeHiddenRepositories
+                repos={hiddenSidebarRepos}
+                expanded={hiddenReposExpanded}
+                ontoggle={() =>
+                  updateView({
+                    expandedGroups: {
+                      ...$view$.expandedGroups,
+                      [HOME_HIDDEN_REPOS_GROUP]: !hiddenReposExpanded,
+                    },
+                  })}
+              >
+                {#snippet row(repo)}{@render repoButton(repo, true)}{/snippet}
+              </HomeHiddenRepositories>
+            {/if}
             {#if repositoryGroups.length === 0 && $hasLoaded$}<p
                 class="px-2 py-3 type-caption text-muted-foreground"
               >
@@ -864,6 +980,7 @@
                   const order = ['workspaces', 'prs', 'linear'];
                   mainDirection = order.indexOf(value) > order.indexOf(tab) ? 1 : -1;
                   tabFocus = { value };
+                  selection.clear();
                   updateView({ tab: value });
                 }
               }}
@@ -923,7 +1040,7 @@
                       class:has-selection={!!selectedWorkspace}
                     >
                       <section
-                        class="workspace-list flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
+                        class="workspace-list relative flex min-h-0 min-w-0 flex-col overflow-hidden home-panel bg-background"
                         aria-label={m.home_tab_workspaces()}
                       >
                         {@render homeHeader()}
@@ -993,9 +1110,10 @@
                             groups={boardGroups}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
-                            {selectedId}
-                            onselect={(id) =>
-                              updateView({ selectedId: selectedId === id ? null : id })}
+                            selectedIds={selection.selectedIds}
+                            onselect={selection.pickCard}
+                            ontoggleselect={selection.toggle}
+                            onrangeselect={selection.range}
                             onopen={openWorkspace}
                             {doubleClick}
                             oncontextmenu={showWorkspaceMenu}
@@ -1011,16 +1129,23 @@
                             aside={asideWorkspaces}
                             {asideExpanded}
                             pinnedIds={$pinnedIds$}
-                            selectedId={selectedWorkspace?.id ?? null}
+                            selectedIds={selection.selectedIds}
                             showRepository={!selectedRepository}
                             showRepositoryOwner={!selectedOrg}
                             menu={workspaceMenu}
-                            onopen={openModifiedWorkspace}
+                            onopen={activateListRow}
                             onmenu={showListMenu}
-                            onselect={(id) => updateView({ selectedId: id })}
+                            onselect={selection.pickRow}
                             ongroupexpanded={setGroupExpanded}
                             onasideexpanded={setAsideExpanded}
                             ontoggleaside={toggleAside}
+                          />
+                        {/if}
+                        {#if selection.active}
+                          <HomeSelectionBar
+                            count={selection.workspaces.length}
+                            actions={selection.actions}
+                            onclear={selection.clear}
                           />
                         {/if}
                       </section>

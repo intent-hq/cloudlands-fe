@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { openDevConsole } from '$features/dev-console/dev-console-client';
   import { getSettingsPaletteCommands } from '$features/settings/settings-palette-commands';
   import {
     selectPrincipalConnectionContext,
@@ -11,15 +10,12 @@
   import { EmptyState } from '$lib/components/patterns/screen';
   import { ShortcutChip } from '$lib/components/ui/kbd';
   /** App-wide palette for commands, files, workspace search, notes and headings. */
-  import { onMount, tick, untrack } from 'svelte';
+  import { flushSync, onMount, tick, untrack } from 'svelte';
   import { writable } from 'svelte/store';
-  import { goto } from '$app/navigation';
   import { fly } from '$lib/motion';
-  import { navigateToSettings } from '$lib/utils/workspace-navigation';
   import Fa from 'svelte-fa';
   import {
     faSearch,
-    faFile,
     faFolderOpen,
     faTerminal,
     faCommentDots,
@@ -27,7 +23,6 @@
     faCodeBranch,
     faGlobe,
   } from '@fortawesome/free-solid-svg-icons';
-  import { backendRequest } from '$lib/client/live/backend-transport';
   import { openMessage } from '$lib/utils/open-message';
   import { openPaletteNote } from '$lib/utils/palette-note-navigation';
   import { openAndShowWorkspace } from '$lib/utils/show-workspace';
@@ -40,9 +35,10 @@
     selectLabsRemoteAgentsEnabled,
     selectLabsPlainFolderWorkspacesEnabled,
     selectLabsBrowserAccessEnabled,
+    selectLabsTabGroupsEnabled,
+    selectLabsCloudMachinesEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
-  import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
   import {
     selectHidesAgentCreationActions,
@@ -50,31 +46,16 @@
     selectIsWorkspaceCollaborator,
     selectWorkspaceItems,
   } from '$store/renderer/slices/workspace/workspace-selectors';
-  import { createAgentRequested } from '$store/renderer/slices/workspace-agents/workspace-agents-slice';
-  import { createTerminalRequested } from '$store/renderer/slices/terminals/terminals-slice';
-  import { createNoteRequested } from '$store/renderer/slices/note-read-tracking/note-read-tracking-slice';
+
   import { dispatchWindowEvent } from '$lib/utils/window-events';
-  import { invoke } from '$lib/electron-bridge';
-  import { IPC_CHANNELS } from '$shared/ipc-registry';
+
   import { openWorkspaceBrowser } from '$store/renderer/slices/workspace-navigation/workspace-navigation-slice';
-  import {
-    commandPaletteNewFileRequested,
-    openAgentTabRequested,
-  } from '$store/renderer/slices/app-layout/app-layout-slice';
+  import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
   import { openTab } from '$store/renderer/slices/panel-layout/panel-layout-slice';
-  import {
-    resetOnboarding,
-    setOnboardingFullFlowRequested,
-  } from '$store/renderer/slices/onboarding/onboarding-slice';
   import { selectPrincipalActionContext as admissionSelector } from '$store/renderer/slices/principal/principal-selectors';
-  import {
-    setShowCreateModal,
-    setStatsOverlayOpen,
-  } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     type WorkspaceObject,
     FILTER_PREFIXES,
-    fuzzyScore,
     formatRelativeTime,
     parseQueryFilter,
     buildNoteBreadcrumbs,
@@ -84,6 +65,7 @@
   import {
     recordPaletteFileMru,
     recordPaletteMruItem,
+    recordPalettePick,
     paletteNoteSearchReleased,
     paletteNoteSearchRequested,
   } from '$store/renderer/slices/palette/palette-slice';
@@ -91,13 +73,43 @@
     selectPaletteFileMru,
     selectPaletteMruEntries,
     selectPaletteNoteSearch,
+    selectPalettePicks,
   } from '$store/renderer/slices/palette/palette-selectors';
-  import { computeResults } from '$store/renderer/slices/command-palette/command-palette-results';
+  import type { PaletteMruEntryType } from '$store/renderer/slices/palette/palette-types';
+  import {
+    computeResults,
+    type PaletteLateSource,
+    type PaletteRepoItem,
+  } from '$store/renderer/slices/command-palette/command-palette-results';
+  import {
+    selectKnownReposGitLabInstance,
+    selectPaletteKnownRepos,
+  } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
+  import { ensureKnownReposLoaded } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
+  import { recentRepoKey } from '$store/renderer/slices/workspace-initializer/utils/recent-repo-key';
+
+  import { paletteCategoryLabel, paletteMoreLabel, toPaletteRepo } from './command-palette-rows';
+  import {
+    openRepoInNewWorkspace,
+    queryPaletteFiles,
+    runPaletteCommand,
+  } from './command-palette-actions';
+  import {
+    createLateArrivalTracker,
+    findSelectableIndex,
+    isSelectableResult,
+    firstRowKey,
+    keepRowOne,
+    resolveSelection,
+    rowKey,
+  } from './command-palette-selection';
+  import RepositoryPickerIcon from './workspace/initializer/RepositoryPickerIcon.svelte';
   import { Skeleton } from './ui/skeleton';
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import { isLabCommandHidden, runLabCommand } from './command-palette-labs';
+  import { isLabCommandHidden, isMachineRailCommandHidden } from './command-palette-labs';
+  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
   import { selectAllWorkspaceAgents } from '$store/renderer/slices/workspace-agents/workspace-agents-selectors';
@@ -145,6 +157,9 @@
   const labsRemoteAgentsEnabled$ = selectLabsRemoteAgentsEnabled();
   const labsPlainFolders$ = selectLabsPlainFolderWorkspacesEnabled();
   const labsBrowserAccess$ = selectLabsBrowserAccessEnabled();
+  const labsTabGroups$ = selectLabsTabGroupsEnabled();
+  const machineRailEnabled$ = selectMachineRailEnabled();
+  const labsCloudMachines$ = selectLabsCloudMachinesEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -170,7 +185,15 @@
         !(!$canCreate$ && command.id === 'new-workspace') &&
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
         !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
-        !isLabCommandHidden(command.id, $dockLabEnabled, $labsPlainFolders$, $labsBrowserAccess$),
+        !isMachineRailCommandHidden(command.id, $machineRailEnabled$) &&
+        !isLabCommandHidden(
+          command.id,
+          $dockLabEnabled,
+          $labsPlainFolders$,
+          $labsBrowserAccess$,
+          $labsTabGroups$,
+          $labsCloudMachines$,
+        ),
     ),
   );
   const currentChanges$ = selectCurrentChanges(workspaceIdStore);
@@ -305,23 +328,36 @@
       : [],
   );
 
-  // Localized "Show N more …" labels per palette item type.
-  function showMoreLabel(count: number, itemType: string): string {
-    switch (itemType) {
-      case 'agent':
-        return m.lib_commandPalette_showMoreAgents_label({ count });
-      case 'note':
-        return m.lib_commandPalette_showMoreNotes_label({ count });
-      case 'change':
-        return m.lib_commandPalette_showMoreChanges_label({ count });
-      case 'terminal':
-        return m.lib_commandPalette_showMoreTerminals_label({ count });
-      case 'browser':
-        return m.lib_commandPalette_showMoreBrowsers_label({ count });
-      default:
-        return m.lib_commandPalette_showMoreFiles_label({ count });
-    }
-  }
+  const paletteMruTimes = $derived.by(() => {
+    const times = new Map<string, number>();
+    for (const entry of $paletteMruEntries$)
+      times.set(`${entry.type}:${entry.id}`, entry.timestamp);
+    return times;
+  });
+  // Commands carry their last pick time so equal matches rank the recent one first.
+  const searchCommands = $derived(
+    commands.map((command) => {
+      const timestamp = paletteMruTimes.get(`command:${command.id}`);
+      return timestamp ? { ...command, timestamp } : command;
+    }),
+  );
+
+  // Known repos (empty whenever New Workspace is hidden); one load per palette open.
+  const knownRepos$ = selectPaletteKnownRepos();
+  const gitlabInstance$ = selectKnownReposGitLabInstance();
+  const palettePicks$ = selectPalettePicks();
+  $effect(() => {
+    if (!isOpen) return;
+    untrack(() => appStore.dispatch(ensureKnownReposLoaded()));
+  });
+  const repos: PaletteRepoItem[] = $derived(
+    $knownRepos$.map((repo) =>
+      toPaletteRepo(repo, $gitlabInstance$, paletteMruTimes.get(`repo:${recentRepoKey(repo)}`)),
+    ),
+  );
+
+  // While searching without a filter the list is blended: each row names its category.
+  const showCategoryLabels = $derived(!!parsedQuery.searchTerm && !activeFilter);
 
   // Load workspace objects when the workspace changes. Terminal metadata
   // titles are localized at read time; a runtime language switch remounts the
@@ -373,48 +409,6 @@
   let groupFiles: any[] = $state([]);
 
   // Daemon helper to query files (search.fileNames, PROTOCOL §5.15) and map to palette items (with fuzzy/MRU)
-  async function queryFiles(pattern: string, wsId: string): Promise<any[]> {
-    try {
-      const resp = await backendRequest<{ files?: string[] }>('search.fileNames', {
-        workspaceId: wsId,
-        pattern: (pattern || '').trim(),
-        limit: 50,
-      });
-      const files = Array.isArray(resp?.files) ? resp.files : [];
-      const mapped = files.map((path: string) => ({
-        id: path,
-        label: path.split('/').pop() ?? path,
-        path,
-        icon: faFile,
-        description: path,
-      }));
-      const q = (pattern || '').trim();
-      if (q) {
-        const mru = getMRUMap();
-        return (mapped as any[])
-          .map((m: any) => ({
-            ...m,
-            _score: fuzzyScore(`${m.label} ${m.description || m.path}`, q),
-            _mru: m.path ? mru.get(m.path) || 0 : 0,
-          }))
-          .filter((m: any) => m._score !== -Infinity)
-          .sort(
-            (a: any, b: any) =>
-              (b._score as number) - (a._score as number) ||
-              (b._mru as number) - (a._mru as number),
-          )
-
-          .map(({ _score, _mru, ...rest }: any) => rest)
-          .slice(0, 8);
-      } else {
-        return rankByMRU(mapped).slice(0, 8);
-      }
-    } catch (error) {
-      logger.error('Failed to list workspace files:', error);
-      return [];
-    }
-  }
-
   const FILE_QUERY_DEBOUNCE_MS = 150;
 
   // Keep file group in sync with current query/workspace (debounced)
@@ -446,7 +440,7 @@
     // Debounce the actual IPC call
     fileQueryTimeout = setTimeout(async () => {
       try {
-        const files = await queryFiles(q, wsId);
+        const files = await queryPaletteFiles(q, wsId, $paletteFileMru$);
         // Only update if this is still the current request (untracked to avoid effect loop)
         if (requestId === currentFileRequestId) {
           untrack(() => {
@@ -537,7 +531,14 @@
   });
   onMount(() => () => appStore.dispatch(paletteNoteSearchReleased(noteSearchConsumerId)));
   paletteRetiredWorkspaces(() => isOpen, workspaceItems, admissionSelector());
-  function buildResults(q: string, files: any[], messages: any[], remoteNotes: WorkspaceObject[]) {
+  function buildResults(
+    q: string,
+    files: any[],
+    messages: any[],
+    remoteNotes: WorkspaceObject[],
+    repoItems: PaletteRepoItem[],
+    lateArrivalOrder: PaletteLateSource[],
+  ) {
     const wsItems = ($workspaceItems || [])
       .filter((w: any) => w.id !== workspaceId)
       .sort(compareWorkspaceActivityDisplayTimeDesc)
@@ -553,7 +554,8 @@
           _workspace: true as const,
           isRetiredWorkspace: w.retiredAt ? true : undefined, // retiredAt ⇔ Retired (§5.1)
           _time: activityTime > 0 ? formatRelativeTime(new Date(activityTime)) : '',
-          _activityTime: activityTime,
+          // Ranking recency: last activity or last palette pick, whichever is newer.
+          _activityTime: Math.max(activityTime, paletteMruTimes.get(`workspace:${w.id}`) ?? 0),
         };
       });
     return computeResults({
@@ -568,49 +570,62 @@
       browserUrls,
       recentItems,
       files,
-      commands,
+      commands: searchCommands,
       workspaceItems: wsItems,
       messages,
+      repos: repoItems,
+      pickMemory: $palettePicks$,
+      lateArrivalOrder,
     });
   }
   // PERF: Debounce timer for rapid typing
   let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   const SEARCH_DEBOUNCE_MS = 16; // ~1 frame, prevents excessive RAF calls during fast typing
 
-  // Recompute flat results - debounced and deferred via RAF to not block typing
-  $effect(() => {
-    const q = parsedQuery.searchTerm;
-    // Skip result computation in Go to Line mode
-    if ((searchQuery || '').trimStart().startsWith(':')) {
-      // Cancel any pending debounce/RAF from a previous non-GoToLine query
-      if (resultComputeRaf !== null) {
-        cancelAnimationFrame(resultComputeRaf);
-        resultComputeRaf = null;
-      }
-      if (searchDebounceTimer !== null) {
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = null;
-      }
-      untrack(() => {
-        searchResults = [];
-      });
-      return;
-    }
-    // Read before the deferred callback so live Labs changes refresh command results.
-    commands;
-    $workspaceItems; // Metadata updates presentation without restarting remote queries.
-    const files = groupFiles;
-    const messages = groupMessages.map((item) => ({
-      ...item,
-      ...buildMessageTitleSegments(($workspaceItems || []).find((w) => w.id === item.workspaceId)),
-    }));
-    const remoteNotes = indexedNotes;
-    // Local-note updates and workspace switches must refresh local fallback/browsing too.
-    notes;
-    workspaceId;
-    recentItems;
-    activeFilter;
+  // The highlight follows an item, not a row number. Each keystroke puts it on
+  // row 1; after an arrow key or hover it stays on that item while results land.
+  let selectedKey: string | null = null;
+  let highlightMoved = false;
+  // Inputs of the last rebuild, to tell a repo-list arrival from a keystroke.
+  let builtQuery: string | null = null;
+  let builtRepos: PaletteRepoItem[] | null = null;
+  let heldRowOne: string | null = null;
+  // The scheduled rebuild; Enter runs it at once so it acts on the current text.
+  let pendingRebuild: (() => void) | null = null;
+  // Order in which late sources answered the current text (first leads when nothing instant matches).
+  const noteLateArrivals = createLateArrivalTracker();
 
+  $effect(() => {
+    searchQuery;
+    untrack(() => {
+      highlightMoved = false;
+    });
+  });
+
+  function selectRow(index: number, moved: boolean) {
+    selectedIndex = index;
+    selectedKey = rowKey(searchResults[index]);
+    if (moved) highlightMoved = true;
+  }
+
+  function applyResults(flat: any[], query: string, repoItems: PaletteRepoItem[]) {
+    // A repo list that lands mid-typing keeps row 1 until the next keystroke.
+    if (query !== builtQuery) heldRowOne = null;
+    else if (repoItems !== builtRepos && !heldRowOne) heldRowOne = firstRowKey(searchResults);
+    if (heldRowOne) keepRowOne(heldRowOne, flat);
+    builtQuery = query;
+    builtRepos = repoItems;
+    const index = resolveSelection(flat, {
+      index: selectedIndex,
+      key: selectedKey,
+      moved: highlightMoved,
+    });
+    searchResults = flat;
+    selectedIndex = index;
+    selectedKey = rowKey(flat[index]);
+  }
+
+  function cancelPendingRebuild() {
     if (resultComputeRaf !== null) {
       cancelAnimationFrame(resultComputeRaf);
       resultComputeRaf = null;
@@ -619,76 +634,79 @@
       clearTimeout(searchDebounceTimer);
       searchDebounceTimer = null;
     }
+    pendingRebuild = null;
+  }
+
+  /** Finish any scheduled rebuild now, so Enter acts on results for the current text. */
+  function flushPendingRebuild() {
+    flushSync();
+    pendingRebuild?.();
+  }
+
+  // Recompute flat results - debounced and deferred via RAF to not block typing
+  $effect(() => {
+    const q = parsedQuery.searchTerm;
+    const query = searchQuery;
+    // Skip result computation in Go to Line mode
+    if ((searchQuery || '').trimStart().startsWith(':')) {
+      // Cancel any pending debounce/RAF from a previous non-GoToLine query
+      cancelPendingRebuild();
+      untrack(() => {
+        searchResults = [];
+      });
+      return;
+    }
+    // Read before the deferred callback so live Labs changes refresh command results.
+    searchCommands;
+    $workspaceItems; // Metadata updates presentation without restarting remote queries.
+    const files = groupFiles;
+    const messages = groupMessages.map((item) => ({
+      ...item,
+      ...buildMessageTitleSegments(($workspaceItems || []).find((w) => w.id === item.workspaceId)),
+    }));
+    const remoteNotes = indexedNotes;
+    const repoItems = repos;
+    const arrivalOrder = untrack(() =>
+      noteLateArrivals(query, {
+        file: !isLoadingFiles && files.length > 0,
+        note: !$noteResults.loading && remoteNotes.length > 0,
+        message: !isLoadingMessages && messages.length > 0,
+      }),
+    );
+    isLoadingFiles;
+    isLoadingMessages;
+    $noteResults.loading;
+    // Local-note updates and workspace switches must refresh local fallback/browsing too.
+    notes;
+    workspaceId;
+    recentItems;
+    activeFilter;
+
+    cancelPendingRebuild();
+    const rebuild = () => {
+      cancelPendingRebuild();
+      const flat = buildResults(q, files, messages, remoteNotes, repoItems, arrivalOrder);
+      // Use untrack for all state updates to avoid effect loops
+      untrack(() => applyResults(flat, query, repoItems));
+    };
+    pendingRebuild = rebuild;
 
     // PERF: Debounce rapid typing, then defer to RAF
     searchDebounceTimer = setTimeout(() => {
       searchDebounceTimer = null;
       resultComputeRaf = requestAnimationFrame(() => {
         resultComputeRaf = null;
-        const flat = buildResults(q, files, messages, remoteNotes);
-        // Use untrack for all state updates to avoid effect loops
-        untrack(() => {
-          searchResults = flat;
-          // Keep selection on an actionable item.
-          const currentIdx = Math.max(0, Math.min(selectedIndex, flat.length - 1));
-          const nextSelectableIdx = findSelectableIndex(flat, currentIdx, 1);
-          const prevSelectableIdx = findSelectableIndex(flat, currentIdx, -1);
-          const resolvedIdx = nextSelectableIdx !== -1 ? nextSelectableIdx : prevSelectableIdx;
-
-          if (resolvedIdx !== -1 && resolvedIdx !== selectedIndex) {
-            selectedIndex = resolvedIdx;
-          }
-        });
+        rebuild();
       });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
-      if (resultComputeRaf !== null) {
-        cancelAnimationFrame(resultComputeRaf);
-        resultComputeRaf = null;
-      }
-      if (searchDebounceTimer !== null) {
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = null;
-      }
+      if (pendingRebuild === rebuild) cancelPendingRebuild();
     };
   });
 
-  function getMRUMap(): Map<string, number> {
-    return new Map(Object.entries($paletteFileMru$));
-  }
-
   function recordMRUFile(path: string) {
     appStore.dispatch(recordPaletteFileMru(path, Date.now()));
-  }
-
-  function rankByMRU<T extends { path?: string }>(items: T[]): T[] {
-    const map = getMRUMap();
-    return items.slice().sort((a, b) => {
-      const ta = a.path ? map.get(a.path) || 0 : 0;
-      const tb = b.path ? map.get(b.path) || 0 : 0;
-      return tb - ta;
-    });
-  }
-
-  function isSelectableResult(item: any): boolean {
-    return (
-      Boolean(item) &&
-      !item._groupLabel &&
-      !item._newActionsRow &&
-      !item._borderAbove &&
-      !item._showMore
-    );
-  }
-
-  function findSelectableIndex(items: any[], startIndex: number, direction: 1 | -1): number {
-    for (let index = startIndex; index >= 0 && index < items.length; index += direction) {
-      if (isSelectableResult(items[index])) {
-        return index;
-      }
-    }
-
-    return -1;
   }
 
   function scrollToSelection() {
@@ -713,7 +731,7 @@
       if (isGoToLineMode) return;
       const nextIndex = findSelectableIndex(searchResults, selectedIndex + 1, 1);
       if (nextIndex !== -1) {
-        selectedIndex = nextIndex;
+        selectRow(nextIndex, true);
         scrollToSelection();
       }
     } else if (e.key === 'ArrowUp') {
@@ -721,7 +739,7 @@
       if (isGoToLineMode) return;
       const prevIndex = findSelectableIndex(searchResults, selectedIndex - 1, -1);
       if (prevIndex !== -1) {
-        selectedIndex = prevIndex;
+        selectRow(prevIndex, true);
         scrollToSelection();
       }
     } else if (e.key === 'Enter') {
@@ -733,6 +751,7 @@
         }
         return;
       }
+      flushPendingRebuild();
       // Cmd+Enter opens in adjacent panel
       const openInAdjacentPanel = isCmdClickModifier({ event: e });
       const selectedItem = searchResults[selectedIndex];
@@ -757,6 +776,14 @@
     if (!item) return;
     if (item._groupLabel) return;
     const openInAdjacentPanel = options?.openInAdjacentPanel ?? false;
+    const pickQuery = parsedQuery.searchTerm;
+    if (item._seeAll) {
+      const prefix = Object.keys(FILTER_PREFIXES).find(
+        (key) => FILTER_PREFIXES[key] === item._filter,
+      );
+      if (prefix) applyFilter(prefix);
+      return;
+    }
     // Handle "show more" button - insert the appropriate prefix
     if (item._showMore) {
       const prefix = Object.keys(FILTER_PREFIXES).find(
@@ -770,7 +797,10 @@
       return;
     }
     let shouldClose = true;
-    if (item.type) {
+    if (item._repo) {
+      recordMru('repo', item.id);
+      openRepoInNewWorkspace(item._repo, $gitlabInstance$);
+    } else if (item.type) {
       // Transcript rows are not MRU-tracked ('message' is not a PaletteMruEntryType)
       if (item.type !== 'message' && item.type !== 'note') {
         appStore.dispatch(recordPaletteMruItem(item.type, item.id, Date.now()));
@@ -831,6 +861,7 @@
           break;
       }
     } else if ('_workspace' in item) {
+      recordMru('workspace', item.id);
       void openAndShowWorkspace(item.id).catch((error) =>
         logger.warn('Failed to open workspace from palette', { workspaceId: item.id, error }),
       );
@@ -838,89 +869,28 @@
       onSelectFile?.({ path: item.path, line: item.line, openInAdjacentPanel });
       if (item.path) recordMRUFile(item.path);
     } else {
+      recordMru('command', item.id);
       const close = handleCommand(item.id);
       if (close === false) shouldClose = false;
     }
+    // Pick memory: this item was chosen for this query (the row key, whole).
+    if (pickQuery && item._key) {
+      appStore.dispatch(recordPalettePick(pickQuery, item._key, Date.now()));
+    }
     if (shouldClose) onClose?.();
   }
+
+  function recordMru(type: PaletteMruEntryType, id: string) {
+    appStore.dispatch(recordPaletteMruItem(type, id, Date.now()));
+  }
+
   function handleCommand(commandId: string): boolean {
-    const settingsCommand = commands.find((command) => command.id === commandId);
-    if (settingsCommand && 'settingsTab' in settingsCommand) {
-      appStore.dispatch(setShowCreateModal(false));
-      navigateToSettings({ tab: settingsCommand.settingsTab });
-      return true;
-    }
-    if (runLabCommand(commandId)) return true;
-    switch (commandId) {
-      case 'new-workspace':
-        if (selectWorkspaceCreationVisible.select(appStore.state)) {
-          appStore.dispatch(setShowCreateModal(true));
-        }
-        return true;
-      case 'settings':
-        appStore.dispatch(setShowCreateModal(false));
-        navigateToSettings();
-        return true;
-      case 'enable-experimental-remote-agents':
-        appStore.dispatch(setLabsRemoteAgentsEnabled(true));
-        return true;
-      case 'disable-experimental-remote-agents':
-        appStore.dispatch(setLabsRemoteAgentsEnabled(false));
-        return true;
-      case 'new-agent':
-        if (workspaceId && !$hidesAgentLifecycleActions$) {
-          appStore.dispatch(createAgentRequested(workspaceId));
-        }
-        return true;
-      case 'new-terminal':
-        if (workspaceId && !$isCollaborator$) {
-          appStore.dispatch(createTerminalRequested(workspaceId));
-        }
-        return true;
-      case 'new-note':
-        if (workspaceId) {
-          appStore.dispatch(createNoteRequested(workspaceId));
-        }
-        return true;
-      case 'new-file':
-        if (workspaceId) {
-          appStore.dispatch(commandPaletteNewFileRequested(workspaceId));
-        }
-        return true;
-      case 'open-url':
-        // Open a browser panel with default URL
-        if (workspaceId && !$isCollaborator$) {
-          appStore.dispatch(openWorkspaceBrowser(workspaceId, 'about:blank'));
-        }
-        return true;
-      case 'show-onboarding':
-        // Explicit restart: request the full flow so OnboardingPage's
-        // initial-step decision never skips ahead on setup state.
-        appStore.dispatch(setOnboardingFullFlowRequested(true));
-        appStore.dispatch(resetOnboarding(admissionSelector.select(appStore.state) ?? undefined));
-        goto('/workspace/new');
-        return true;
-      case 'enhance-prompt':
-        dispatchWindowEvent('chat:enhance-prompt');
-        return true;
-      case 'attach-context':
-        dispatchWindowEvent('chat:attach-context');
-        return true;
-      case 'attach-files':
-        dispatchWindowEvent('chat:attach-files');
-        return true;
-      case 'open-dev-console':
-        void openDevConsole();
-        return true;
-      case 'open-hud':
-        void invoke(IPC_CHANNELS.WINDOW.OPEN_NEW, { route: '/hud' });
-        return true;
-      case 'open-usage-stats':
-        appStore.dispatch(setStatsOverlayOpen(true));
-        return true;
-      default:
-        return true;
-    }
+    return runPaletteCommand(commandId, {
+      commands,
+      workspaceId,
+      hidesAgentLifecycleActions: $hidesAgentLifecycleActions$,
+      isCollaborator: $isCollaborator$,
+    });
   }
 
   onMount(() => {
@@ -1048,6 +1018,7 @@
           {workspaceId}
           {activeFilter}
           isCollaborator={$isCollaborator$}
+          showRepos={$canCreate$}
           onFilter={applyFilter}
         />
       </div>
@@ -1091,7 +1062,7 @@
                 {m.layout_commandPalette_commands_group()}
               </div>
             {:else if item._groupLabel}
-              <div class="px-3 pb-2 pt-3 {index > 0 ? 'mt-2' : ''}">
+              <div class="px-3 pb-2 pt-3 {index > 0 ? 'mt-2' : ''}" data-palette-group>
                 <div class="flex items-center justify-between type-caption text-muted-foreground">
                   <span>{item._groupLabel}</span>
                   {#if item._shortcutKey}
@@ -1099,18 +1070,21 @@
                   {/if}
                 </div>
               </div>
-            {:else if item._showMore}
+            {:else if item._showMore || item._seeAll}
               <ActionRow
                 data-palette-index={index}
+                data-palette-see-all={item._filter}
+                class="rounded-md px-3 py-2"
                 selected={selectedIndex === index}
-                class="px-3 py-2"
+                aria-current={item._seeAll && selectedIndex === index ? 'true' : undefined}
                 onpointerdown={(event) => event.preventDefault()}
+                onpointermove={() => {
+                  if (item._seeAll && selectedIndex !== index) selectRow(index, true);
+                }}
                 onclick={() => selectItem(item)}
               >
                 {#snippet title()}
-                  <span class="text-muted-foreground"
-                    >{showMoreLabel(item._count, item._itemType)}</span
-                  >
+                  <span class="text-muted-foreground">{paletteMoreLabel(item)}</span>
                 {/snippet}
               </ActionRow>
             {:else}
@@ -1121,11 +1095,20 @@
                 selected={selectedIndex === index}
                 aria-current={selectedIndex === index ? 'true' : undefined}
                 onclick={() => selectItem(item)}
-                onpointermove={() => (selectedIndex = index)}
+                onpointermove={() => {
+                  if (selectedIndex !== index) selectRow(index, true);
+                }}
                 onpointerdown={(event) => event.preventDefault()}
               >
                 {#snippet leading()}
-                  {#if item.type === 'agent'}
+                  {#if item._repo}
+                    <RepositoryPickerIcon
+                      owner={item._repoOwner}
+                      provider={item._repoProvider}
+                      local={item._repo.type === 'local'}
+                      size={16}
+                    />
+                  {:else if item.type === 'agent'}
                     <AgentAvatar agentId={item.id} variant="compact" />
                   {:else if item.navigationIcon}
                     <IntentNavigationIcon
@@ -1143,13 +1126,21 @@
                 {/snippet}
 
                 {#snippet trailing()}
-                  <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">
-                    {#if item.shortcut}
-                      <ShortcutChip>{item.shortcut}</ShortcutChip>
+                  <span class="flex items-center justify-end gap-2">
+                    {#if showCategoryLabels && paletteCategoryLabel(item._category)}
+                      <span
+                        class="min-w-16 text-right type-caption text-muted-foreground"
+                        data-palette-category>{paletteCategoryLabel(item._category)}</span
+                      >
                     {/if}
-                    {#if selectedIndex === index}
-                      <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
-                    {/if}
+                    <span aria-hidden="true" class="flex min-w-6 items-center justify-end gap-2">
+                      {#if item.shortcut}
+                        <ShortcutChip>{item.shortcut}</ShortcutChip>
+                      {/if}
+                      {#if selectedIndex === index}
+                        <ShortcutChip class="rounded bg-muted px-1.5 py-1">↵</ShortcutChip>
+                      {/if}
+                    </span>
                   </span>
                 {/snippet}
               </ActionRow>

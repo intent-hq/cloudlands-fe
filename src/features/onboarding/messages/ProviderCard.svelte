@@ -48,6 +48,8 @@
     hasNpxFallback: boolean;
     /** Status warning from the availability check (e.g. npx missing for claude-code). */
     warning?: string;
+    /** The CLI is present but refused (e.g. Cursor's Grok agent host); `warning` explains why. */
+    unavailableReason?: string;
   }
 
   export interface ProviderBrandColors {
@@ -91,18 +93,10 @@
   const needsLogin = $derived(
     provider.available && !provider.statusLoading && provider.authenticated === false,
   );
-  const authUnknown = $derived(
-    provider.id === 'antigravity' &&
-      installed &&
-      provider.authenticated === undefined &&
-      !provider.statusLoading,
-  );
   const ready = $derived(
     installed && isProviderAuthenticationReady(provider.id, provider.authenticated),
   );
-  const needsAction = $derived(
-    !provider.statusLoading && (needsInstall || needsLogin || authUnknown),
-  );
+  const needsAction = $derived(!provider.statusLoading && (needsInstall || needsLogin));
   const cardClickable = $derived(
     ready || (!ready && !provider.statusLoading && !!provider.docsUrl),
   );
@@ -161,11 +155,9 @@
         ? selected
           ? m.onboarding_providerCard_selected_ariaLabel({ name: provider.name })
           : m.onboarding_providerCard_use_ariaLabel({ name: provider.name })
-        : authUnknown
-          ? m.providers_antigravity_authUnknown()
-          : needsLogin
-            ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
-            : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
+        : needsLogin
+          ? m.onboarding_providerCard_notLoggedIn_ariaLabel({ name: provider.name })
+          : m.onboarding_providerCard_notInstalled_ariaLabel({ name: provider.name })}
   >
     <!-- Gradient overlay — always present, opacity animates on install -->
     <div
@@ -266,8 +258,6 @@
               {/if}
             </div>
           </div>
-        {:else if authUnknown}
-          <span>{m.providers_antigravity_authUnknown()}</span>
         {:else if needsLogin}
           {#if provider.id === 'claude-code'}
             <ClaudeLoginButton />
@@ -280,12 +270,14 @@
         {:else}
           <span
             class="border border-border rounded-sm bg-background text-foreground px-2.25 py-0.75 font-medium"
-            >{m.onboarding_providerCard_notInstalled_label()}</span
+            >{provider.unavailableReason
+              ? m.onboarding_providerCard_unsupported_label()
+              : m.onboarding_providerCard_notInstalled_label()}</span
           >
         {/if}
 
         <div class="flex items-center gap-1.5">
-          {#if needsInstall || needsLogin || authUnknown}
+          {#if needsInstall || needsLogin}
             <Button
               variant="plain"
               type="button"

@@ -355,6 +355,7 @@ import {
   startDockLab,
 } from './dock-lab';
 import { registerDockMediaClipboardIPC } from '../features/hud/main/dock-media-clipboard';
+import { loadMachineRailEnabled, registerMachineRailHandlers } from './machine-rail';
 import {
   setupBrowserAccess,
   shutdownBrowserAccess,
@@ -366,7 +367,6 @@ import { setupLogIPC } from '../features/log/main/log.ipc';
 import { setupNotificationIPC } from '../features/notifications/main/notification.ipc';
 import { getNotificationService } from '../features/notifications/main/notification.service';
 import { setupRulesIPC } from '../features/rules/main/rules.ipc';
-import { setupSpecialistsIPC } from '../features/specialists/main/specialists.ipc';
 import { setupAutoUpdateIPC } from '../features/auto-update/main/auto-update.ipc';
 import { setupReleaseNotesIPC } from '../features/release-notes/main/release-notes.ipc';
 import { isInstallingUpdate } from '../features/auto-update/main/auto-update.service';
@@ -374,6 +374,7 @@ import {
   registerBackendHandlers,
   connectBackendClient,
   disconnectBackendClient,
+  listMachineRailCandidateIds,
   disposeAllBackendClients,
   isSameHostBackendActive,
   getBackendClientForId,
@@ -382,6 +383,7 @@ import { createDaemonLinks } from '../features/dev-console/main/daemon-links';
 import { registerWorkspaceTransferHandlers } from '../features/backend/main/workspace-transfer.ipc';
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { registerRemoteMachinesHandlers } from '../features/backend/main/remote-machines.ipc';
+import { registerPairLinkHandlers } from '../features/backend/main/pair-link.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import {
@@ -430,10 +432,6 @@ import { createSettingsMenuItem } from './menu-settings';
 import { registerMissingAgentHandlers } from '../features/agent/main/agent-missing.ipc';
 import { registerVoiceLocalHandlers } from '../features/voice/main/voice-local.ipc';
 import { cleanupStaleTempFiles } from '../shared/main/temp-files';
-import {
-  initSpecialistsService,
-  refreshGitHubAuthStatus,
-} from '../features/agent/main/specialists.service';
 import { initAppSettingsService } from '../features/workspace/main/app-settings.service';
 import { workspaceService } from '../features/workspace/main/workspace.service';
 
@@ -448,7 +446,7 @@ import { handlePairDeepLink, routePairLinkFromOs } from '../features/deeplink/ma
 import { scrubToken } from '../features/deeplink/utils/scrub-token';
 import { findIntentUrl } from '../features/deeplink/utils/find-intent-url';
 import { isInviteUri } from '../shared/utils/invite-uri';
-import { isPairingUri } from '../shared/utils/pairing-uri';
+import { isMainOnlyLinkUri } from '../shared/utils/node-invite-uri';
 import { registerChatExportHandlers } from '../features/export/main/export.ipc';
 import { registerDebugExportHandlers } from '../features/debug-export/main/debug-export.ipc';
 import { protocolAdapter } from '../features/protocol/main/protocol-adapter';
@@ -460,7 +458,7 @@ import {
   disposeDevConsole,
 } from '../features/dev-console/main/dev-console-window';
 import { isHudWindow, isTrackedHudWindow } from './hud-window.js';
-import { getBackendIdForWindow } from './window-backend.js';
+import { getBackendIdForWindow, getShownRendererWebContents } from './window-backend.js';
 import { buildWindowMenuEntries } from './window-menu-entries.js';
 import { buildNativeEditMenu, buildNativeViewMenu } from './native-menu-model.js';
 import { buildAboutDialogOptions, formatThirdPartyCredits } from './about-dialog.js';
@@ -915,7 +913,7 @@ const bootFlow = app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('navigate', '/workspace/new');
+            getShownRendererWebContents(focusedWindow).send('navigate', '/workspace/new');
           }
         },
       },
@@ -968,7 +966,7 @@ const bootFlow = app.whenReady().then(async () => {
         click: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow() ?? getMainWindow();
           if (focusedWindow && !focusedWindow.isDestroyed()) {
-            focusedWindow.webContents.send('menu:import-workspace');
+            getShownRendererWebContents(focusedWindow).send('menu:import-workspace');
           }
         },
       },
@@ -1032,9 +1030,17 @@ const bootFlow = app.whenReady().then(async () => {
     };
   };
 
+  // Menu commands act on the renderer the user is looking at: the window's
+  // own, or the machine view it shows (machine rail lab).
+  const shownRenderer = (window: BrowserWindowType | null) =>
+    window && {
+      isDestroyed: () => window.isDestroyed(),
+      webContents: getShownRendererWebContents(window),
+    };
+
   const sendWorkspaceCommand = (channel: string): void => {
     sendWorkspaceMenuCommand(
-      BrowserWindow.getFocusedWindow(),
+      shownRenderer(BrowserWindow.getFocusedWindow()),
       channel,
       getFocusedWindowWorkspaceId(),
     );
@@ -1480,9 +1486,11 @@ const bootFlow = app.whenReady().then(async () => {
       buildNativeViewMenu(isMacOS, {
         reload: () => {
           const focusedWindow = BrowserWindow.getFocusedWindow();
-          if (focusedWindow && !focusedWindow.isDestroyed()) focusedWindow.webContents.reload();
+          if (focusedWindow && !focusedWindow.isDestroyed()) {
+            getShownRendererWebContents(focusedWindow).reload();
+          }
         },
-        toggleDevTools: () => toggleWindowDevTools(BrowserWindow.getFocusedWindow()),
+        toggleDevTools: () => toggleWindowDevTools(shownRenderer(BrowserWindow.getFocusedWindow())),
         zoom: (channel) => handleMenuZoom(channel, sendWorkspaceCommand),
       }),
       {
@@ -1614,11 +1622,6 @@ const bootFlow = app.whenReady().then(async () => {
   // sample already sees the sidecar and its agent children.
   startMemoryMonitor();
 
-  // Initialize specialists service BEFORE workspace IPC - this is critical!
-  // The instruction service calls formatSpecialistsForPrompt(), which needs the
-  // specialist file cache initialized.
-  await initSpecialistsService();
-
   // Initialize app settings service for branch prefix and other settings
   await initAppSettingsService();
 
@@ -1675,7 +1678,6 @@ const bootFlow = app.whenReady().then(async () => {
   // Pass the shared ConfigManager to workspace rules service
   const configManager = getConfigManager();
   await setupWorkspaceRulesIPC(configManager || undefined); // Needed for initial agent system prompt
-  setupSpecialistsIPC(); // Needed for specialist selection on startup
   setupAutoUpdateIPC(); // Needed for auto-update IPC on startup
   setupReleaseNotesIPC(); // Needed for the Help ▸ Show Release Notes fetch
 
@@ -1693,6 +1695,7 @@ const bootFlow = app.whenReady().then(async () => {
   registerWorkspaceTransferHandlers(); // Workspace transfer relay (wizard steps 3–4)
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
   registerRemoteMachinesHandlers(); // Make a machine available to the current backend
+  registerPairLinkHandlers(); // Add a machine or node from a pasted intent:// link
 
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
@@ -1709,6 +1712,15 @@ const bootFlow = app.whenReady().then(async () => {
     },
     restore: () => dockMenuController.restore(),
     isDock: (sender) => getDockWindow()?.webContents === sender,
+  });
+  // The machine rail lab is main-owned and off by default.
+  await loadMachineRailEnabled();
+  registerMachineRailHandlers({
+    listMachineIds: listMachineRailCandidateIds,
+    connect: connectBackendClient,
+    disconnect: (backendId) => {
+      if (!isShuttingDown) disconnectBackendClient(backendId);
+    },
   });
   markRendererWindowsAllowed();
   await startDockLab();
@@ -1742,7 +1754,6 @@ const bootFlow = app.whenReady().then(async () => {
     // setupEventsIPC(); // Already called in critical IPC setup
     // registerAcceptChangesHandlers(); // Already called in critical IPC setup
     setupRulesIPC();
-    // setupSpecialistsIPC(); // Already called in critical IPC setup
     // Token usage is daemon-owned (workspace.getTokenUsage, PROTOCOL §5.23);
     // the renderer reads it directly over the JSON-RPC bridge.
     // setupWorkspaceRulesIPC(); // Already called in critical IPC setup
@@ -1849,7 +1860,7 @@ const bootFlow = app.whenReady().then(async () => {
     // Check for intent:// deep link in process.argv (cold start)
     const intentUrlArg = findIntentUrl(process.argv);
     const isPairLinkArg =
-      intentUrlArg !== undefined && (isPairingUri(intentUrlArg) || isInviteUri(intentUrlArg));
+      intentUrlArg !== undefined && (isMainOnlyLinkUri(intentUrlArg) || isInviteUri(intentUrlArg));
 
     // A pair or invite link is handled fully in the main process: park it now
     // and let the pending-URL pass after window creation route it to its
@@ -1905,12 +1916,6 @@ const bootFlow = app.whenReady().then(async () => {
     startupMetrics.end('createWindow');
   }
   bootWindowsGate.release();
-
-  // GitHub-dependent specialist filtering is noncritical for first paint. Start
-  // its daemon-backed refresh only after backend handlers and the first window
-  // are available; the service conservatively hides those specialists until it
-  // completes. Do not await this on the first-window startup path.
-  void refreshGitHubAuthStatus();
 
   // Register intent:// protocol handler with the OS.
   // In production, electron-builder registers the scheme statically (Info.plist / registry),
@@ -2175,7 +2180,7 @@ app.on('open-url', async (event: Electron.Event, url: string) => {
   // window (the confirm dialog can show parentless and openBackendWindow
   // creates its own window), which covers macOS staying alive with zero
   // windows open. Before ready, parked as pending for the startup pass.
-  if (isPairingUri(url)) {
+  if (isMainOnlyLinkUri(url)) {
     await routePairLinkFromOs(url, (pending) => deepLinkHandler.handleDeepLink(pending, null));
     return;
   }
@@ -2229,7 +2234,7 @@ if (!gotTheLock) {
 
     if (deepLinkUrl) {
       logger.info('Found deep link URL in second instance:', { url: scrubToken(deepLinkUrl) });
-      if (isPairingUri(deepLinkUrl)) {
+      if (isMainOnlyLinkUri(deepLinkUrl)) {
         // Pair links go straight to the main-process handler — the first
         // instance is already running, so no parking or window is needed.
         await handlePairDeepLink(deepLinkUrl);

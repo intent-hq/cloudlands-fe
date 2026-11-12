@@ -9,9 +9,18 @@ import {
 import {
   normalizePaletteFileMru,
   getPaletteMruEntries,
+  getPalettePicks,
+  mergePaletteMemory,
+  toPalettePickState,
   normalizePaletteMruState,
 } from './palette-normalization';
-import type { PaletteMruEntryType, PaletteNoteSearchUpdate, PaletteState } from './palette-types';
+import { addPalettePick, normalizePalettePickQuery } from './palette-pick-memory';
+import type {
+  PaletteMemorySnapshot,
+  PaletteMruEntryType,
+  PaletteNoteSearchUpdate,
+  PaletteState,
+} from './palette-types';
 
 export const initialState: PaletteState = {
   isOpen: false,
@@ -19,6 +28,8 @@ export const initialState: PaletteState = {
   mruEntryIds: [],
   mruEntriesByKey: {},
   fileMru: {},
+  pickQueries: [],
+  picksByQuery: {},
   noteSearches: createCollection('consumerId'),
 };
 
@@ -30,6 +41,12 @@ export const recordPaletteMruItem =
   createAction<[type: PaletteMruEntryType, id: string, timestamp: number]>('palette/recordMruItem');
 export const recordPaletteFileMru =
   createAction<[path: string, timestamp: number]>('palette/recordFileMru');
+/** Remember that the row with `itemKey` (the ranker's `paletteItemKey(row)`) was opened for `query`. */
+export const recordPalettePick =
+  createAction<[query: string, itemKey: string, timestamp: number]>('palette/recordPick');
+/** Stored memory loaded: `merge` at startup, `replace` when the window switches daemon. */
+export const paletteMemoryLoaded =
+  createAction<[memory: PaletteMemorySnapshot, mode: 'merge' | 'replace']>('palette/memoryLoaded');
 export const paletteNoteSearchRequested = createAsyncAction<
   [consumerId: string, requestId: string, query: string, preferWorkspaceId?: string],
   PaletteNoteSearchUpdate
@@ -73,6 +90,24 @@ paletteReducer.with(recordPaletteMruItem, (state, { payload: [type, id, timestam
 paletteReducer.with(recordPaletteFileMru, (state, { payload: [path, timestamp] }) => ({
   ...state,
   fileMru: normalizePaletteFileMru({ ...state.fileMru, [path]: timestamp }),
+}));
+paletteReducer.with(recordPalettePick, (state, { payload: [query, itemKey, timestamp] }) => {
+  const normalized = normalizePalettePickQuery(query);
+  if (!normalized || !itemKey) return state;
+  return {
+    ...state,
+    ...toPalettePickState(
+      addPalettePick(getPalettePicks(state), {
+        query: normalized,
+        itemKey,
+        timestamp,
+      }),
+    ),
+  };
+});
+paletteReducer.with(paletteMemoryLoaded, (state, { payload: [memory, mode] }) => ({
+  ...state,
+  ...(mode === 'merge' ? mergePaletteMemory(state, memory) : memory),
 }));
 paletteReducer.with(
   paletteNoteSearchRequested,

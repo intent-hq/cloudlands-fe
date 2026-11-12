@@ -7,7 +7,7 @@ import {
   getFallbackAgentAvatarDesign,
   isBuiltinAgentAvatarDesign,
 } from './avatar-design';
-import { agentAvatarCatalogIdentities } from './agent-avatar.catalog';
+import { agentAvatarCatalogIdentities } from './agent-avatar-catalog.fixtures';
 
 describe('agent avatar design selection', () => {
   it('maps every built-in specialist to its approved Figma center design', () => {
@@ -17,6 +17,8 @@ describe('agent avatar design selection', () => {
       implementor: 'implementor',
       verifier: 'verifier',
       developer: 'verifier',
+      'product-manager': 'coordinator',
+      'maintenance-coordinator': 'ralph',
       'pr-reviewer': 'pr-reviewer',
       'ui-designer': 'ui-designer',
       'chief-of-staff': 'chief-of-staff',

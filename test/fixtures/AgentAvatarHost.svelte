@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import AgentAvatarCatalog from '$features/agent/components/agent-avatar/AgentAvatarCatalog.svelte';
+  import AgentAvatarCatalogHarness from '$features/agent/components/agent-avatar/AgentAvatarCatalogHarness.svelte';
   import AgentAvatarWithState from '$features/agent/components/agent-avatar/AgentAvatarWithState.svelte';
   import AIBehaviorSidebar from '$lib/components/settings/AIBehaviorSidebar.svelte';
   import {
@@ -53,7 +53,7 @@
 </script>
 
 <main data-agent-avatar-host>
-  <AgentAvatarCatalog />
+  <AgentAvatarCatalogHarness />
   <section data-agent-avatar-sizes>
     {#each agentAvatarVariants as variant (variant)}
       {#each designs as design (design)}

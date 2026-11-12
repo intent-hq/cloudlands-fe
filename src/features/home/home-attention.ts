@@ -19,7 +19,7 @@ export interface HomeAttentionRequest {
   canRetry: boolean;
 }
 
-export function isHomeAttentionAgent(workspaceId: string, agent: AgentSession): boolean {
+function isHomeAttentionAgent(workspaceId: string, agent: AgentSession): boolean {
   return (
     agent.workspaceId === workspaceId &&
     !agent.retiredAt &&
@@ -30,7 +30,7 @@ export function isHomeAttentionAgent(workspaceId: string, agent: AgentSession): 
   );
 }
 
-export function currentHomeQuestion(agent: AgentSession): string | null {
+function currentHomeQuestion(agent: AgentSession): string | null {
   const pending = agent.metadata?.pendingQuestionsMessageId;
   return typeof pending === 'string' &&
     pending.length > 0 &&
@@ -39,7 +39,7 @@ export function currentHomeQuestion(agent: AgentSession): string | null {
     : null;
 }
 
-export function canRetryHomeAgent(agent: AgentSession): boolean {
+function canRetryHomeAgent(agent: AgentSession): boolean {
   return (
     agent.status === AgentStatus.Error &&
     !hasAgentActiveTurnEvidence(toAgentRuntimeStateInput(agent))
@@ -79,11 +79,11 @@ export function getHomeStatusCause(workspace: HomeTriageInput) {
   if (workspace.displayStatus === 'blocked') return 'blocked';
   if (workspace.attention === 'review_required') return 'review';
   if (workspace.displayStatus === 'needs_attention') return 'question';
-  if (workspace.displayStatus === 'pr_ready') return 'pr_ready';
   if (workspace.activity === 'agent_running' || workspace.displayStatus === 'in_progress')
     return 'running';
   if (workspace.scriptsRunning === true) return 'scripts_running';
   if (workspace.backgroundTasksRunning === true) return 'background_tasks_running';
+  if (workspace.displayStatus === 'pr_ready') return 'pr_ready';
   if (workspace.displayStatus === 'pr_merged') return 'merged';
   if (workspace.displayStatus === 'complete') return 'complete';
   if (workspace.attention === 'unread') return 'unread';

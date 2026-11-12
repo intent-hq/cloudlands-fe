@@ -37,11 +37,6 @@ async function mountNote(
       host.id = 'diagram-note-host';
       host.style.cssText = `width:${width}px;height:900px;margin-left:80px`;
       document.body.replaceChildren(host);
-      if (comments) {
-        const { commentsClient } = await import('/src/features/comments/comments.client.ts');
-        // Keep the real manager/sidebar lifecycle, but never contact a daemon.
-        commentsClient.list = async () => ({ ok: true, data: [] });
-      }
       // The real note host and node views, with no note ID or persistence callback.
       mount(NoteWithComments, {
         target: host,

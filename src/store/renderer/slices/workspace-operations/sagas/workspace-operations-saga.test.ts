@@ -142,6 +142,7 @@ const noActiveWork = {
   localChanges: null,
   guests: noGuests,
 };
+const noArchiveWork = { agentNames: [], hookNames: [], openPrs: [], guests: noGuests };
 
 const localChanges = {
   roots: [
@@ -621,7 +622,7 @@ describe('workspaceOperationsSaga', () => {
 
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(mocks.getActiveWorkNames).toHaveBeenCalledExactlyOnceWith('ws-1', {
-      includeLocalChanges: true,
+      includeLocalChanges: false,
     });
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
@@ -631,7 +632,6 @@ describe('workspaceOperationsSaga', () => {
           agentNames: [],
           hookNames: ['pr-watch'],
           openPrs: [],
-          localChanges: null,
           guests: noGuests,
         },
       ],
@@ -670,15 +670,24 @@ describe('workspaceOperationsSaga', () => {
     expect(mocks.archive).not.toHaveBeenCalled();
     expect(run.dispatch.mock.calls.flat()).toContainEqual({
       type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-2', ...noActiveWork, openPrs }],
+      payload: [{ workspaceId: 'ws-2', ...noArchiveWork, openPrs }],
     });
 
     run.task.cancel();
     await run.task.toPromise();
   });
 
-  it('shows the delete and archive warnings when only local changes exist (zero agents/hooks/PRs)', async () => {
-    mocks.getActiveWorkNames.mockResolvedValue({ ...noActiveWork, localChanges });
+  it('warns before delete but archives without a dialog when only local changes exist', async () => {
+    mocks.getActiveWorkNames.mockImplementation(
+      async (_id: string, options?: { includeLocalChanges?: boolean }) => ({
+        ...noActiveWork,
+        localChanges: options?.includeLocalChanges ? localChanges : null,
+      }),
+    );
+    mocks.archive.mockResolvedValue({
+      ok: true,
+      data: workspace('ws-2', WorkspaceStatusEnum.Archived),
+    });
     const run = harness([workspace('ws-1'), workspace('ws-2')]);
 
     run.send(requestDeleteWorkspace('ws-1'));
@@ -691,15 +700,14 @@ describe('workspaceOperationsSaga', () => {
       payload: [{ workspaceId: 'ws-1', ...noActiveWork, localChanges }],
     });
 
+    // Archive keeps local changes on disk, so they are not outstanding work.
     run.send(requestArchiveWorkspace('ws-2'));
     await settle();
-    expect(mocks.archive).not.toHaveBeenCalled();
-    expect(run.state().workspaceOperations.showArchiveWarning).toBe(true);
-    expect(run.state().workspaceOperations.localChangesForArchive).toEqual(localChanges);
-    expect(run.dispatch.mock.calls.flat()).toContainEqual({
-      type: 'workspaceOperations/openArchiveWarning',
-      payload: [{ workspaceId: 'ws-2', ...noActiveWork, localChanges }],
-    });
+    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-2');
+    expect(run.state().workspaceOperations.showArchiveWarning).toBe(false);
+    expect(run.dispatch.mock.calls.flat().map((action) => action.type)).not.toContain(
+      'workspaceOperations/openArchiveWarning',
+    );
 
     run.task.cancel();
     await run.task.toPromise();
@@ -731,7 +739,7 @@ describe('workspaceOperationsSaga', () => {
       expect(run.state().workspaceOperations.guestsForArchive).toEqual(guests);
       expect(run.dispatch.mock.calls.flat()).toContainEqual({
         type: 'workspaceOperations/openArchiveWarning',
-        payload: [{ workspaceId: 'ws-2', ...noActiveWork, guests }],
+        payload: [{ workspaceId: 'ws-2', ...noArchiveWork, guests }],
       });
 
       run.task.cancel();
@@ -764,17 +772,16 @@ describe('workspaceOperationsSaga', () => {
         hasUncommittedChanges: false,
       },
     });
-    mocks.archive.mockResolvedValue({
-      ok: true,
-      data: workspace('ws-1', WorkspaceStatusEnum.Archived),
-    });
+    mocks.deleteWorkspace.mockResolvedValue({ ok: true, data: undefined });
     const run = harness([workspace('ws-1')]);
 
-    run.send(requestArchiveWorkspace('ws-1'));
+    run.send(requestDeleteWorkspace('ws-1'));
     await settle();
 
-    expect(run.state().workspaceOperations.showArchiveWarning).toBe(false);
-    expect(mocks.archive).toHaveBeenCalledExactlyOnceWith('ws-1');
+    expect(run.state().workspaceOperations.showDeleteWarning).toBe(false);
+    expect(mocks.deleteWorkspace).toHaveBeenCalledExactlyOnceWith('ws-1', {
+      undoDelayMs: WORKSPACE_OPERATION_UNDO_DURATION_MS,
+    });
     run.task.cancel();
     await run.task.toPromise();
   });
@@ -1236,6 +1243,61 @@ describe('workspaceOperationsSaga', () => {
       errorCode: 'base-ref-unresolvable',
     });
     expect(mocks.notify.error).toHaveBeenCalledWith('cannot resolve base ref');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('toasts the readable base-refresh cause when an applied create fails, never "Internal error"', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: false,
+      error: "Couldn't update main from origin: Permission denied (publickey)",
+      errorCode: 'base-refresh-failed',
+    });
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-base-refresh') }));
+    await settle();
+    expect(mocks.notify.error).toHaveBeenCalledWith(
+      "Couldn't update main from origin: Permission denied (publickey)",
+    );
+    expect(mocks.notify.error).not.toHaveBeenCalledWith('Internal error');
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('applies a card whose first agent failed to start after the workspace committed', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: false,
+      error: 'Internal error',
+      errorCode: 'launch-failed',
+      launchFailure: {
+        workspaceId: 'ws-kept',
+        agentId: 'agent-kept',
+        cause: 'Mac mini went offline before the agent started.',
+      },
+    });
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-launch-failed') }));
+    await settle();
+    const entry = run.state().proposalLifecycle['create-launch-failed'];
+    expect(entry).toMatchObject({ status: 'applied', result: { workspaceId: 'ws-kept' } });
+    expect(entry?.result?.launchError).toContain('Mac mini went offline');
+    expect(mocks.notify.error).not.toHaveBeenCalled();
+    run.task.cancel();
+    await run.task.toPromise();
+  });
+
+  it('keeps a launch-failed card applied even when the error carries no workspace id', async () => {
+    mocks.create.mockResolvedValueOnce({
+      ok: false,
+      error: 'first agent failed to start',
+      errorCode: 'launch-failed',
+    });
+    const run = harness([]);
+    run.send(applyWorkspaceProposal({ proposal: createProposal('create-launch-bare') }));
+    await settle();
+    const entry = run.state().proposalLifecycle['create-launch-bare'];
+    expect(entry?.status).toBe('applied');
+    expect(entry?.result?.launchError).toContain('first agent failed to start');
     run.task.cancel();
     await run.task.toPromise();
   });

@@ -24,7 +24,7 @@
     CONNECTION_ACCENT_COLORS,
     connectionAccentOptions,
   } from '$lib/utils/connection-accents';
-  import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
+  import { formatMachineRowLabel } from '$lib/utils/connection-label';
   import { canRequestDeviceUpdate, isDaemonBehindPin } from '$lib/utils/device-update-eligibility';
   import { m } from '$shared/paraglide/messages.js';
   import {
@@ -60,6 +60,7 @@
   } from '@fortawesome/free-solid-svg-icons';
   import Fa from 'svelte-fa';
   import RemoteMachineBadge from '$features/remote-machines/RemoteMachineBadge.svelte';
+  import NodeStatusBadge from '$features/nodes/NodeStatusBadge.svelte';
   import RemoteMachineNotice from '$features/remote-machines/RemoteMachineNotice.svelte';
   import {
     selectCurrentBackendLabel,
@@ -77,6 +78,10 @@
     canOfferExpose,
     machineForConnection,
   } from '$features/remote-machines/remote-machines-utils';
+  import MachinePlatformIcon from '$features/remote-machines/MachinePlatformIcon.svelte';
+  import MachineProviderIcons from '$features/remote-machines/MachineProviderIcons.svelte';
+  import { machineRowPlatform, machineRowProviders } from '$features/remote-machines/machine-facts';
+  import { selectProviderCatalogEntries } from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
 
   export type DevicePanelMode = 'edit' | null;
 
@@ -86,9 +91,26 @@
     onOpenPanel: (panel: Exclude<DevicePanelMode, null>) => void;
     onClosePanel: () => void;
     onRequestRemove: (device: ConnectionRecord) => void;
+    /** Briefly highlighted after it was added. */
+    highlighted?: boolean;
+    /** First row of a list without the local row on top (no divider above). */
+    first?: boolean;
+    /** Last row of its list: the highlight follows the card's rounded corners. */
+    last?: boolean;
   }
 
-  let { device, panelMode, onOpenPanel, onClosePanel, onRequestRemove }: Props = $props();
+  let {
+    device,
+    panelMode,
+    onOpenPanel,
+    onClosePanel,
+    onRequestRemove,
+    highlighted = false,
+    first = false,
+    last = false,
+  }: Props = $props();
+  // A node only runs agents for other backends: it is never connected to as a backend.
+  const isNode = $derived(device.daemonMode === 'node');
   const pinnedVersion$ = selectPinnedDaemonVersion();
   const connectedIds$ = selectConnectedIds();
   // intent-web dials the remote itself for tunnel settings, so they do not
@@ -102,6 +124,7 @@
   const remoteOperations$ = selectRemoteMachineOperations();
   const remoteFailures$ = selectRemoteMachineFailures();
   const backendLabel$ = selectCurrentBackendLabel();
+  const catalogEntries$ = selectProviderCatalogEntries();
   let name = $state('');
   let host = $state('');
   let port = $state('');
@@ -213,9 +236,7 @@
   );
   const savedDeviceIcon = $derived(device.deviceIcon ?? 'auto');
   const accentOptions = $derived(connectionAccentOptions(savedAccent));
-  const displayName = $derived(
-    device.isLocal ? formatLocalMachineLabel(device) : formatConnectionLabel(device),
-  );
+  const displayName = $derived(formatMachineRowLabel(device, $currentConnectionId$));
   const openStatus = $derived(device.status ?? 'not-open');
   const trimmedName = $derived(name.trim());
   const trimmedHost = $derived(host.trim());
@@ -266,12 +287,24 @@
   const exposedMachine = $derived(
     $remoteSupported$ ? machineForConnection($remoteMachines$, device, $localFingerprint$) : null,
   );
+  // A node has no window keeping it connected; main connects it on demand.
   const canExpose = $derived(
     $remoteSupported$ &&
       device.id !== $currentConnectionId$ &&
-      openStatus === 'connected' &&
+      (isNode || openStatus === 'connected') &&
       canOfferExpose(exposedMachine),
   );
+  // The exposed-machine report fills in platform/providers only while the
+  // daemon is not reporting them itself (see machine-facts).
+  const platform = $derived(machineRowPlatform(device, exposedMachine));
+  const providers = $derived.by(() => {
+    const entries = $catalogEntries$;
+    return machineRowProviders(
+      device,
+      exposedMachine,
+      (id) => entries.find((entry) => entry.id === id)?.displayName,
+    );
+  });
   const exposing = $derived($remoteOperations$[device.id] === 'exposing');
   const unexposing = $derived(
     !!exposedMachine && $remoteOperations$[exposedMachine.id] === 'removing',
@@ -281,7 +314,7 @@
   );
   const remoteFailure = $derived($remoteFailures$[remoteFailureKey] ?? null);
   const rowActions = $derived.by((): ActionDefinition[] => [
-    ...(!device.isLocal
+    ...(!device.isLocal && !isNode
       ? [{ id: 'connect', label: m.settings_devices_connect_label(), icon: faPlug }]
       : []),
     ...(canUpdateDaemon
@@ -314,7 +347,6 @@
             id: 'unexpose',
             label: m.remoteMachines_unexposeAction_label({ backend: $backendLabel$ }),
             icon: faLinkSlash,
-            destructive: true,
             disabled: unexposing,
           },
         ]
@@ -584,7 +616,15 @@
 </script>
 
 <article
-  class={cn('group/collection-row', !device.isLocal && 'border-t border-border')}
+  class={cn(
+    'group/collection-row transition-colors duration-spring-slow',
+    !device.isLocal && !first && 'border-t border-border',
+    highlighted && 'bg-accent/60',
+    highlighted && first && 'rounded-t-xl',
+    highlighted && last && 'rounded-b-xl',
+  )}
+  data-device-row={device.id}
+  data-highlighted={highlighted || undefined}
   aria-labelledby={`device-${device.id}-name`}
   aria-busy={busy !== null}
 >
@@ -604,18 +644,31 @@
     {/snippet}
     {#snippet title()}<span id={`device-${device.id}-name`}>{displayName}</span>{/snippet}
     {#snippet meta()}
-      {#if exposedMachine}
-        <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
-      {/if}
-      {#if openStatus === 'connected' && device.intentdVersion}
-        {#if daemonBehindTooltip}
-          <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
-            <span>{device.intentdVersion}</span>
-          </Tooltip>
-        {:else}
-          <span>{device.intentdVersion}</span>
+      <!-- One title-line-high flex row centres every part (platform icon,
+           badge, version, provider icons) on the name; inline icons with
+           vertical-align: middle sat ~1.5px below cap-height text. -->
+      <span data-slot="machine-row-meta" class="inline-flex h-[1lh] items-center gap-1 align-top">
+        {#if platform}
+          <MachinePlatformIcon {platform} />
         {/if}
-      {/if}
+        {#if exposedMachine}
+          <RemoteMachineBadge machine={exposedMachine} backendLabel={$backendLabel$} />
+        {:else if isNode && exposing}
+          <NodeStatusBadge label={m.remoteMachines_exposing_label()} />
+        {:else if isNode && $remoteSupported$}
+          <NodeStatusBadge label={m.nodes_notUsed_label({ backend: $backendLabel$ })} />
+        {/if}
+        {#if openStatus === 'connected' && device.intentdVersion}
+          {#if daemonBehindTooltip}
+            <Tooltip content={daemonBehindTooltip} class="rounded-sm text-warning-ink">
+              <span>{device.intentdVersion}</span>
+            </Tooltip>
+          {:else}
+            <span>{device.intentdVersion}</span>
+          {/if}
+        {/if}
+        <MachineProviderIcons {providers} />
+      </span>
     {/snippet}
     {#snippet trailing()}
       <RowActions

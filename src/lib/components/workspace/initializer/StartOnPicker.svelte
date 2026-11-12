@@ -1,57 +1,115 @@
 <script lang="ts">
   import { Button } from '$lib/components/ui/button';
-  import * as Menu from '$lib/components/ui/menu';
+  import { Combobox, type ComboboxOption } from '$lib/components/ui/combobox';
+  import * as Popover from '$lib/components/ui/popover';
   import { useDialogPortalTarget } from '$lib/components/ui/dialog';
-  import { faDesktop } from '@fortawesome/free-solid-svg-icons';
+  import { canPlaceBeside } from '$lib/components/ui/overlay-positioning';
+  import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
+  import { pushEscapeLayer } from '$lib/utils/escapeLayers';
+  import { faChevronDown, faDesktop } from '@fortawesome/free-solid-svg-icons';
+  import { faCloud } from '$lib/icons/phosphor-icons';
   import Fa from 'svelte-fa';
   import { m } from '$shared/paraglide/messages.js';
   import type { StartOnOption } from '$features/remote-machines/start-on';
   import { workspacePickerStyles } from './workspace-picker-styles';
 
   /**
-   * New Workspace → "Start On": the machine the first agent starts on. Only
+   * New Workspace → "Machine": the machine the first agent starts on. Only
    * rendered while another machine can take it (see `startOnVisible`).
    */
   interface Props {
-    presentation?: 'form' | 'footer';
+    /** `metadata`: a quiet row trigger under a visible label the host renders. */
+    presentation?: 'form' | 'footer' | 'metadata';
     /** Selected option id: a machine id, or '' for the current backend. */
     value: string;
     options: StartOnOption[];
     onChange: (machineId: string) => void;
     /** Why only the current backend can be used (shown under the value; the row is disabled). */
     lockedReason?: string;
+    /** Field name; `metadata` shows it, muted, before the value. */
+    label?: string;
+    /** Whether the machine list is open (bindable; previews open it directly). */
+    open?: boolean;
   }
 
-  let { presentation = 'form', value, options, onChange, lockedReason }: Props = $props();
+  let {
+    presentation = 'form',
+    value,
+    options,
+    onChange,
+    lockedReason,
+    label = m.workspace_initialAgentPicker_startOn_label(),
+    open = $bindable(false),
+  }: Props = $props();
 
   const uid = $props.id();
   const labelId = `${uid}-start-on-label`;
   const valueId = `${uid}-start-on-value`;
   const dialogPortalTarget = useDialogPortalTarget();
+  const isMobile = new IsMobile();
+  let menuBelow = $state(false);
+  let trigger = $state<HTMLButtonElement | HTMLAnchorElement | null>(null);
+  let searchInput = $state<HTMLInputElement | null>(null);
   const selected = $derived(options.find((option) => option.id === value) ?? options[0]);
+  const machineOptions = $derived<ComboboxOption[]>(
+    options.map((option) => ({
+      // Prefix every id so the backend's empty id is a selectable combobox value.
+      value: `machine:${option.id}`,
+      label: option.label,
+      description: option.reason ?? option.hint ?? option.platform ?? undefined,
+      disabled: option.disabled,
+      data: option,
+    })),
+  );
+  // The E2B row and its profile hint need a wider list.
+  const hasCloud = $derived(options.some((option) => option.kind === 'cloud'));
+  const popoverWidth = $derived(hasCloud ? 440 : 360);
+  $effect(() => {
+    if (!open) return;
+    return pushEscapeLayer((event) => {
+      if (!event.isComposing) open = false;
+    });
+  });
 </script>
 
-<div class={presentation === 'footer' ? 'min-w-0' : 'w-full'} data-testid="start-on-picker">
-  <Menu.Root>
-    <Menu.Trigger>
+<div class={presentation === 'footer' ? 'min-w-0' : 'w-full min-w-0'} data-testid="start-on-picker">
+  <Popover.Root
+    bind:open
+    onOpenChange={(next) => {
+      if (next) menuBelow = !canPlaceBeside(trigger, popoverWidth);
+    }}
+  >
+    <Popover.Trigger>
       {#snippet child({ props })}
         <Button
           {...props}
-          variant="ghost"
-          size="sm"
+          bind:ref={trigger}
+          variant={presentation === 'metadata' ? 'plain' : 'ghost'}
+          size={presentation === 'metadata' ? undefined : 'sm'}
           type="button"
           wrapContent={false}
           disabled={!!lockedReason}
           aria-labelledby="{labelId} {valueId}"
           class={presentation === 'footer'
             ? 'h-9 min-w-0 max-w-36 gap-1 px-2 text-sm font-normal'
-            : workspacePickerStyles.fieldTrigger}
+            : presentation === 'metadata'
+              ? `${workspacePickerStyles.bareTrigger} w-full`
+              : workspacePickerStyles.fieldTrigger}
         >
           <span
-            class={presentation === 'footer' ? 'sr-only' : workspacePickerStyles.fieldLabel}
-            id={labelId}>{m.workspace_initialAgentPicker_startOn_label()}</span
+            class={presentation === 'form'
+              ? workspacePickerStyles.fieldLabel
+              : presentation === 'metadata'
+                ? 'shrink-0 text-muted-foreground'
+                : 'sr-only'}
+            id={labelId}>{label}</span
           >
-          <span class="min-w-0 flex-1 text-left" id={valueId}>
+          <span
+            class={presentation === 'metadata'
+              ? workspacePickerStyles.bareValue
+              : 'min-w-0 flex-1 text-left'}
+            id={valueId}
+          >
             <span class="block truncate">{selected?.label}</span>
             {#if lockedReason}
               <span class="block truncate text-xs text-subtle" data-testid="start-on-locked-reason"
@@ -59,41 +117,75 @@
               >
             {/if}
           </span>
+          {#if presentation === 'metadata' && !lockedReason}
+            <Fa icon={faChevronDown} class={workspacePickerStyles.bareChevron} />
+          {/if}
         </Button>
       {/snippet}
-    </Menu.Trigger>
-    <Menu.Content
+    </Popover.Trigger>
+    <Popover.Content
+      role="dialog"
       portalProps={{ to: dialogPortalTarget() }}
-      aria-label={m.workspace_initialAgentPicker_startOn_label()}
-      class="w-[320px] max-w-[calc(100vw-1rem)]"
+      aria-label={label}
+      side={presentation === 'footer'
+        ? 'top'
+        : presentation === 'metadata' || isMobile.current || menuBelow
+          ? 'bottom'
+          : 'left'}
+      align={presentation === 'metadata'
+        ? 'start'
+        : presentation === 'footer' || isMobile.current || menuBelow
+          ? 'end'
+          : 'start'}
+      sideOffset={presentation !== 'form' || isMobile.current || menuBelow ? 4 : 24}
+      strategy={dialogPortalTarget() ? 'absolute' : 'fixed'}
+      preventScroll={false}
+      class="flex min-h-0 max-w-[calc(100vw-1rem)] flex-col overflow-hidden p-0 {hasCloud
+        ? 'w-110'
+        : 'w-90'}"
+      style="max-height: min(440px, var(--bits-popover-content-available-height, calc(100dvh - 1rem)))"
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        searchInput?.focus();
+      }}
+      onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        trigger?.focus();
+      }}
+      onkeydown={(event) => {
+        if (event.key === 'Enter') event.stopPropagation();
+      }}
     >
-      <Menu.RadioGroup
-        value={selected?.id}
-        onValueChange={(next) => {
-          if (next !== value) onChange(next);
+      <Combobox
+        value={selected ? `machine:${selected.id}` : undefined}
+        options={machineOptions}
+        {open}
+        bind:inputRef={searchInput}
+        ariaLabel={label}
+        placeholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
+        searchPlaceholder={m.workspace_initialAgentPicker_searchMachines_placeholder()}
+        staticPosition
+        inputVariant="search"
+        size="compact"
+        class="flex min-h-0 flex-1 flex-col gap-1 px-2 pt-1 pb-2"
+        inputClass="shrink-0"
+        rowClass={workspacePickerStyles.row}
+        viewportClass="min-h-0 max-h-none flex-1 p-0"
+        contentClass="flex min-h-0 max-h-none flex-1 flex-col border-0 shadow-none"
+        oncommit={(_, option) => {
+          const machine = option.data as StartOnOption;
+          if (machine.id !== value) onChange(machine.id);
+          open = false;
+        }}
+        onopenchange={(next) => {
+          if (!next) open = false;
         }}
       >
-        {#each options as option (option.id)}
-          <Menu.RadioItem
-            value={option.id}
-            disabled={option.disabled}
-            closeOnSelect
-            class="h-auto py-2 whitespace-normal"
-            data-testid="start-on-option"
-            data-machine-id={option.id}
-          >
-            {#snippet leading()}<Fa icon={faDesktop} class={workspacePickerStyles.icon} />{/snippet}
-            <span class="min-w-0 flex-1">
-              <span class="block truncate">{option.label}</span>
-              {#if option.reason || option.platform}
-                <span class="block truncate text-xs text-subtle"
-                  >{option.reason ?? option.platform}</span
-                >
-              {/if}
-            </span>
-          </Menu.RadioItem>
-        {/each}
-      </Menu.RadioGroup>
-    </Menu.Content>
-  </Menu.Root>
+        {#snippet optionIcon(option)}<Fa
+            icon={(option.data as StartOnOption).kind === 'cloud' ? faCloud : faDesktop}
+            class={workspacePickerStyles.icon}
+          />{/snippet}
+      </Combobox>
+    </Popover.Content>
+  </Popover.Root>
 </div>

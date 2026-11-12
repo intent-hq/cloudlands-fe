@@ -56,7 +56,6 @@ for (const theme of ['light', 'dark'] as const) {
       expect(resting.effectiveStrokePx).toBeGreaterThan(0);
 
       await trigger.hover();
-      await expect(page.getByRole('tooltip')).toBeVisible();
       const hovered = await probeStroke(svg);
       expect(hovered.effectiveStrokePx).toBeGreaterThan(0);
       expect(hovered.effectiveStrokePx).toBe(resting.effectiveStrokePx);
@@ -77,7 +76,6 @@ test('a filled device icon still takes the button-owned stroke weight', async ({
   const svg = trigger.locator('svg');
   const resting = await probeStroke(svg);
   await trigger.hover();
-  await expect(page.getByRole('tooltip')).toBeVisible();
   await expect
     .poll(async () => (await probeStroke(svg)).effectiveStrokePx)
     .toBeGreaterThan(resting.effectiveStrokePx);

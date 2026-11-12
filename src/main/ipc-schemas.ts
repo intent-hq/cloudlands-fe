@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { emailString, urlString } from '$shared/zod-compat';
 import { BROWSER_PROTOCOLS } from '../shared/constants';
 import { DOCK_SURFACE_MAX_SIZE } from '../shared/dock-placement';
 import type { InviteProgressAction } from '../shared/ipc/invite-progress';
@@ -177,7 +178,7 @@ export const WorkspaceCreateSchema = z.object({
   statusMessage: WorkspaceStatusMessageSchema.optional(),
   path: z.string().optional(),
   template: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   repositoryPath: z.string().optional(),
   githubUrl: z.string().optional(), // GitHub URL to clone (e.g., https://github.com/owner/repo)
   clonePath: z.string().optional(), // User-selected folder path where the GitHub repo should be cloned
@@ -216,7 +217,7 @@ export const WorkspaceCreateSchema = z.object({
           }),
         )
         .optional(),
-      metadata: z.record(z.any()).optional(),
+      metadata: z.record(z.string(), z.any()).optional(),
     })
     .optional(),
 });
@@ -232,7 +233,7 @@ export const WorkspaceUpdateSchema = z.object({
   branch: z.string().optional(),
   baseRef: z.string().optional(),
   baseCommitSha: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
   // PR-related fields use .nullable() to distinguish between:
   // - undefined (field omitted): don't change the existing value
   // - null: explicitly clear the field (e.g., when PR is closed/merged)
@@ -258,11 +259,6 @@ export const WorkspaceCloseSchema = z.object({
 export const WorkspaceRenameSchema = z.object({
   id: WorkspaceIdSchema,
   newName: z.string().min(1, 'New name is required').max(255, 'Name too long'),
-});
-
-export const WorkspaceDuplicateSchema = z.object({
-  id: WorkspaceIdSchema,
-  newTitle: z.string().min(1, 'New title is required').max(255, 'Title too long'),
 });
 
 export const WorkspaceArchiveSchema = z.object({
@@ -291,7 +287,7 @@ export const WorkspaceGetMetadataSchema = z.object({
 
 export const WorkspaceUpdateMetadataSchema = z.object({
   id: WorkspaceIdSchema,
-  metadata: z.record(z.any()),
+  metadata: z.record(z.string(), z.any()),
 });
 
 export const WorkspaceSaveSchema = z.object({
@@ -347,7 +343,7 @@ export const WorkspaceGetSettingsSchema = z.object({
 
 export const WorkspaceUpdateGitInfoSchema = z.object({
   id: WorkspaceIdSchema,
-  gitInfo: z.record(z.any()),
+  gitInfo: z.record(z.string(), z.any()),
 });
 
 export const WorkspaceGetSettingsAltSchema = z.object({
@@ -356,7 +352,7 @@ export const WorkspaceGetSettingsAltSchema = z.object({
 
 export const WorkspaceUpdateSettingsAltSchema = z.object({
   id: WorkspaceIdSchema,
-  settings: z.record(z.any()),
+  settings: z.record(z.string(), z.any()),
 });
 
 // ============================================================================
@@ -475,8 +471,8 @@ const EventActorSchema = z.object({
     .min(1, 'Actor name is required')
     .or(z.literal(''))
     .transform((v) => v || 'Unknown'),
-  email: z.string().email().optional(),
-  metadata: z.record(z.any()).optional(),
+  email: emailString().optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
 });
 
 export const EventsEmitSchema = z.object({
@@ -492,7 +488,7 @@ export const EventsEmitSchema = z.object({
     sessionId: z.string().optional(),
     correlationId: z.string().optional(),
     parentEventId: z.string().optional(),
-    metadata: z.record(z.any()).optional(),
+    metadata: z.record(z.string(), z.any()).optional(),
     data: z.any().optional(),
   }),
   options: z
@@ -564,7 +560,7 @@ export const TerminalCreateWithCommandSchema = z.object({
   command: z.string().min(1, 'Command is required'),
   cwd: z.string().optional(),
   title: z.string().optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   /**
    * When `true`, the command text is written to the PTY prompt but NOT
    * executed — the trailing `\r` is skipped so the user has to press
@@ -703,7 +699,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
     sidePanelSize: DockSurfaceSizeSchema.nullable().optional(),
     sidePanelAnchor: z.number().finite().min(0).max(16384).nullable().optional(),
     expansionDirection: z.enum(['up', 'down']).nullable().optional(),
-    resizeToken: z.string().uuid().optional(),
+    resizeToken: z.guid().optional(),
     landingSizes: z
       .object({
         notch: DockSurfaceSizeSchema,
@@ -724,7 +720,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
     }),
   }),
   ...(['end-resize', 'cancel-resize'] as const).map((action) =>
-    z.object({ action: z.literal(action), token: z.string().uuid() }),
+    z.object({ action: z.literal(action), token: z.guid() }),
   ),
   z.object({
     action: z.literal('begin-drag'),
@@ -744,7 +740,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   }),
   z.object({
     action: z.literal('end-drag'),
-    token: z.string().uuid(),
+    token: z.guid(),
     sequence: z.number().int().nonnegative(),
     releasePoint: z
       .object({
@@ -756,7 +752,7 @@ export const WindowUpdateDockPlacementSchema = z.discriminatedUnion('action', [
   ...(['drag', 'cancel-drag'] as const).map((action) =>
     z.object({
       action: z.literal(action),
-      token: z.string().uuid(),
+      token: z.guid(),
       sequence: z.number().int().nonnegative(),
     }),
   ),
@@ -772,6 +768,17 @@ export const WindowSetFullScreenSchema = z.object({
 });
 
 export const WindowSetDockLabSchema = z.object({ enabled: z.boolean() }).strict();
+
+export const MachineRailMachineSchema = z.object({ id: z.string().min(1).max(256) }).strict();
+
+export const MachineRailForwardToastSchema = z
+  .object({
+    kind: z.enum(['success', 'info', 'warning', 'error']),
+    message: z.string().min(1).max(2000),
+  })
+  .strict();
+
+export const MachineRailSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 
@@ -834,7 +841,7 @@ export const UserMcpAuthenticateSchema = z.object({
   serverId: z.string().min(1, 'Server ID is required'),
   // Advisory only: the handler resolves the OAuth URL from the daemon record
   // by `serverId` and rejects a renderer URL that disagrees with it.
-  url: z.string().url('A valid MCP server URL is required').optional(),
+  url: urlString('A valid MCP server URL is required').optional(),
 });
 
 export const UserMcpCheckAuthSchema = z.object({
@@ -844,7 +851,7 @@ export const UserMcpCheckAuthSchema = z.object({
 
 export const UserMcpTestConnectionSchema = z.object({
   url: z.string().min(1, 'URL is required'),
-  headers: z.record(z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
   name: z.string().optional(), // Server name for OAuth token lookup
 });
 
@@ -899,7 +906,7 @@ export const WorkspaceUpdateSpecWatcherTimestampSchema = z.object({
 
 export const WorkspaceUpdateCurrentContextSchema = z.object({
   workspaceId: z.string().min(1, 'Workspace ID is required'),
-  context: z.record(z.any()).optional(),
+  context: z.record(z.string(), z.any()).optional(),
 });
 
 export const WorkspaceLoadRulesSchema = z.object({
@@ -961,7 +968,7 @@ export const FirstVisitStateExistsSchema = z.object({
 
 const LayoutSnapshotSchema = z.object({
   root: z.any(),
-  panels: z.record(z.any()),
+  panels: z.record(z.string(), z.any()),
   focusedPanelId: z.string().nullable(),
   timestamp: z.number(),
 });
@@ -1026,59 +1033,6 @@ export const UserRulesImportSchema = z.object({
 
 export const UserRulesGetCombinedPromptSchema = z.object({
   basePrompt: z.string().optional(),
-});
-
-// ============================================================================
-// Specialists Schemas
-// ============================================================================
-
-export const SpecialistIdSchema = z.object({
-  id: z.string().min(1, 'Specialist ID is required'),
-  scope: z.enum(['user', 'project']).optional(),
-  workspacePath: z.string().optional(),
-});
-
-export const SpecialistListSchema = z.object({
-  workspacePath: z.string().optional(),
-});
-
-export const SpecialistWriteSchema = z
-  .object({
-    id: z.string().min(1, 'Specialist ID is required'),
-    name: z.string().min(1, 'Specialist name is required'),
-    description: z.string().min(1, 'Description is required'),
-    codingAgent: z.string().optional(),
-    model: z.string().optional(),
-    roleReminder: z.string().optional(),
-    hidden: z.boolean().optional(),
-    modelOptions: z
-      .array(
-        z.object({
-          provider: z
-            .string()
-            .refine((value) => value.trim() !== '', 'Provider must be non-empty when present')
-            .optional(),
-          model: z.string().min(1, 'Model is required'),
-          hint: z.string(),
-          reasoningEffort: z.string().optional(),
-        }),
-      )
-      .optional(),
-    reasoningEffort: z.string().optional(),
-    role: z.enum(['orchestrator', 'internal']).optional(),
-    teamAgents: z.array(z.string().min(1, 'Team agent id must be non-empty')).optional(),
-    icon: z.string().optional(),
-    behaviorPrompt: z.string().min(1, 'Behavior prompt is required'),
-    scope: z.enum(['user', 'project']).optional(),
-    workspacePath: z.string().optional(),
-  })
-  .refine((data) => data.scope !== 'project' || !!data.workspacePath, {
-    message: 'workspacePath is required when scope is "project"',
-    path: ['workspacePath'],
-  });
-
-export const SpecialistExportBuiltinSchema = z.object({
-  id: z.string().min(1, 'Built-in specialist ID is required'),
 });
 
 // ============================================================================
@@ -1180,6 +1134,8 @@ export const ConnectionsAddSchema = z.object({
   detectHosts: z.boolean().optional(),
   /** Per-backend keychain-sync opt-out (spec Phase 2); absent = synced. */
   syncExcluded: z.boolean().optional(),
+  /** The current backend can't use nodes: refuse a node before saving. */
+  refuseNode: z.enum(['labs-off', 'backend-unsupported']).optional(),
 });
 
 export const ConnectionsUpdateSchema = z

@@ -41,7 +41,7 @@ vi.mock('svelte-fa', () => ({
 
 vi.mock('$store/renderer/store', async () => {
   const { createConnectionsHarness } =
-    await import('$store/renderer/slices/connections/test-harness');
+    await import('$store/renderer/slices/connections/connections.test-helpers');
   const harness = createConnectionsHarness(
     () => ({ keychainSync: mocks.syncState.value, browserHost: mocks.browserHost.value }),
     mocks.dispatch,
@@ -58,7 +58,7 @@ vi.mock('$lib/utils/open-external', () => ({
 warmImport(() => import('./ConnectBackendModal.svelte'));
 
 async function fillDetails() {
-  await fireEvent.input(screen.getByLabelText('Device name'), {
+  await fireEvent.input(screen.getByLabelText('Machine name'), {
     target: { value: 'Studio Mac' },
   });
   await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });
@@ -190,6 +190,7 @@ describe('ConnectBackendModal', () => {
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
       detectHosts: true,
+      refuseNode: 'labs-off',
     });
     await vi.waitFor(() => expect(mocks.openConnectionRequested).toHaveBeenCalledWith('r1'));
   });
@@ -216,6 +217,7 @@ describe('ConnectBackendModal', () => {
       fingerprint: 'AA:BB:CC:DD',
       token: 'secret-token',
       detectHosts: false,
+      refuseNode: 'labs-off',
     });
   });
 
@@ -269,7 +271,7 @@ describe('ConnectBackendModal', () => {
       true,
     );
 
-    await fireEvent.input(screen.getByLabelText('Device name'), {
+    await fireEvent.input(screen.getByLabelText('Machine name'), {
       target: { value: 'Render box' },
     });
     expect(screen.queryByRole('button', { name: 'Use Rose accent' })).toBeNull();
@@ -332,9 +334,9 @@ describe('ConnectBackendModal', () => {
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect(document.activeElement).toBe(picker);
     // Leave the focus-triggered tooltip before asserting dialog dismissal.
-    const name = screen.getByLabelText('Device name');
+    const name = screen.getByLabelText('Machine name');
     name.focus();
-    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
+    await fireEvent.focus(name);
     await fireEvent.keyDown(name, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(mocks.captureFingerprintRequested).not.toHaveBeenCalled();
@@ -508,7 +510,7 @@ describe('ConnectBackendModal', () => {
     const continueBtn = () => screen.getByRole('button', { name: 'Continue' }) as HTMLButtonElement;
     expect(continueBtn().disabled).toBe(true);
 
-    await fireEvent.input(screen.getByLabelText('Device name'), {
+    await fireEvent.input(screen.getByLabelText('Machine name'), {
       target: { value: 'Studio Mac' },
     });
     await fireEvent.input(screen.getByLabelText('Host'), { target: { value: '10.0.0.2' } });
@@ -576,6 +578,7 @@ describe('ConnectBackendModal', () => {
         token: 'secret-token',
         detectHosts: true,
         syncExcluded: true,
+        refuseNode: 'labs-off',
       });
       expect(mocks.setKeychainSyncEnabledRequested).not.toHaveBeenCalled();
     });

@@ -1,4 +1,4 @@
-// @verify-changed-triggers: tsconfig*.json, scripts/check-dead-code.mjs
+// @verify-changed-triggers: tsconfig*.json, scripts/check-dead-code.mjs, knip.jsonc, vitest.config.ts
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import {
   existsSync,
@@ -22,12 +22,20 @@ import {
   CANARY_DIR,
   CANARY_PATHS,
   CANARY_TSCONFIG_EXCLUDE,
+  PRODUCTION_BASELINE_PATH,
+  PRODUCTION_CANARY_PATHS,
+  compareToBaseline,
   decideExitCode,
   findMissingCanaries,
   formatCanaryFailure,
   parseKnipJson,
   parseKnipRules,
+  parseProductionBaseline,
+  productionIssueKeys,
+  pruneBaseline,
   renderIssues,
+  renderProductionResult,
+  serializeProductionBaseline,
   stripCanaryIssues,
   stripJsonc,
 } from './check-dead-code-lib.mjs';
@@ -179,6 +187,76 @@ describe('stripCanaryIssues + exit decision', () => {
 // TypeScript's own config parser is the oracle: generic glob matchers disagree with tsc on
 // brace/extglob patterns, single-star depth and how inherited patterns are rebased, so the
 // checks below resolve each config exactly the way `tsc` / `svelte-check` do.
+describe('production pass baseline', () => {
+  const rows = [
+    unusedFile('src/only-tests.ts'),
+    {
+      file: 'src/store.ts',
+      owners: [],
+      files: [],
+      exports: [{ name: 'initialState', line: 3, col: 14, pos: 40 }],
+      types: [{ name: 'State', line: 1, col: 13, pos: 0 }],
+      enumMembers: [{ name: 'Legacy', namespace: 'Mode', line: 9, col: 3, pos: 90 }],
+      duplicates: [[{ name: 'a' }, { name: 'b' }]],
+    },
+  ];
+
+  it('keys findings by type, file and symbol without positions; ignores default-pass types', () => {
+    expect([...productionIssueKeys(rows)].sort()).toEqual([
+      'enumMembers\tsrc/store.ts\tMode.Legacy',
+      'exports\tsrc/store.ts\tinitialState',
+      'files\tsrc/only-tests.ts',
+      'types\tsrc/store.ts\tState',
+    ]);
+  });
+
+  it('round-trips through the serialized baseline, and a missing baseline is empty', () => {
+    const keys = productionIssueKeys(rows);
+    expect(parseProductionBaseline(serializeProductionBaseline(keys))).toEqual(keys);
+    expect(parseProductionBaseline(null).size).toBe(0);
+    expect(() => parseProductionBaseline('{"version":2}')).toThrow(/version 1/);
+  });
+
+  it('fails on new findings and on stale baseline entries; passes on an exact match', () => {
+    const current = new Set(['files\ta.ts', 'exports\tb.ts\tx']);
+    const baseline = new Set(['files\ta.ts', 'files\tgone.ts']);
+    const comparison = compareToBaseline(current, baseline);
+    expect(comparison).toEqual({ added: ['exports\tb.ts\tx'], stale: ['files\tgone.ts'] });
+    const report = renderProductionResult(comparison);
+    expect(report).toContain('b.ts  x  (export)');
+    expect(report).toContain('gone.ts  (file)');
+    expect(report).toContain('--prune-baseline');
+    expect(renderProductionResult(compareToBaseline(current, current))).toBe('');
+  });
+
+  it('pruning only removes entries and never adds a new finding', () => {
+    const current = new Set(['files\ta.ts', 'files\tnew.ts']);
+    const baseline = new Set(['files\ta.ts', 'files\tgone.ts']);
+    expect(pruneBaseline(current, baseline)).toEqual(new Set(['files\ta.ts']));
+  });
+
+  it('a baselined file that gains a production caller hands its leftover findings to the baseline', () => {
+    const baseline = new Set(['files\tnow-used.ts', 'files\tkept.ts']);
+    const current = new Set([
+      'files\tkept.ts',
+      'exports\tnow-used.ts\tleftover',
+      'exports\tother.ts\tfresh',
+    ]);
+    expect(compareToBaseline(current, baseline)).toEqual({
+      added: ['exports\tother.ts\tfresh'],
+      stale: ['files\tnow-used.ts'],
+    });
+    expect(pruneBaseline(current, baseline)).toEqual(
+      new Set(['files\tkept.ts', 'exports\tnow-used.ts\tleftover']),
+    );
+  });
+
+  it('the checked-in baseline is sorted and canonical', () => {
+    const text = readFileSync(path.join(REPO_ROOT, PRODUCTION_BASELINE_PATH), 'utf8');
+    expect(serializeProductionBaseline(parseProductionBaseline(text))).toBe(text);
+  });
+});
+
 describe('tsconfig excludes the canary directory', () => {
   // svelte-check registers `.svelte` like this before asking TypeScript for the file list, so
   // the resolved set is what svelte-check compiles (a superset of what `tsc` compiles).
@@ -364,6 +442,69 @@ describe('check-dead-code CLI cleanup', () => {
   });
 });
 
+// A fresh worktree has no generated i18n/build-config modules; knip then reports >1,200
+// unresolved imports that read as dead code. The gate must name the generate command instead.
+describe('check-dead-code generated-file preflight', () => {
+  const cliPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'check-dead-code.mjs');
+  const I18N_OUTPUT = 'src/shared/paraglide/messages.js';
+  const BUILD_CONFIG_OUTPUT = 'src/main/build-config.generated.ts';
+
+  function run(present: string[]) {
+    const tmp = mkdtempSync(path.join(tmpdir(), 'check-dead-code-generated-'));
+    try {
+      const root = path.join(tmp, 'root');
+      const files = [
+        'knip.jsonc',
+        'project.inlang/settings.json',
+        'scripts/generate-build-config.cjs',
+        ...present,
+      ];
+      for (const file of files) {
+        mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+        writeFileSync(path.join(root, file), file === 'knip.jsonc' ? '{}' : '');
+      }
+      const result = spawnSync(process.execPath, [cliPath], {
+        cwd: root,
+        env: { ...process.env, CHECK_DEAD_CODE_ROOT: root },
+        encoding: 'utf8',
+        timeout: 20_000,
+      });
+      return { ...result, canaryWritten: existsSync(path.join(root, CANARY_DIR)) };
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+
+  it.each([
+    {
+      present: [],
+      named: ['pnpm run generate:i18n', 'pnpm run generate:build-config'],
+      absent: [],
+    },
+    {
+      present: [BUILD_CONFIG_OUTPUT],
+      named: ['pnpm run generate:i18n'],
+      absent: ['generate:build-config'],
+    },
+    {
+      present: [I18N_OUTPUT],
+      named: ['pnpm run generate:build-config'],
+      absent: ['generate:i18n'],
+    },
+  ])('with $present present, exits 1 naming only $named', ({ present, named, absent }) => {
+    const result = run(present);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    const lines = result.stderr.trim().split('\n');
+    expect(lines).toHaveLength(1);
+    for (const command of named) expect(lines[0]).toContain(command);
+    for (const command of absent) expect(lines[0]).not.toContain(command);
+    expect(lines[0]).toContain('pnpm run lint:dead-code');
+    expect(result.canaryWritten).toBe(false);
+  });
+});
+
 // Real gate processes and real scanner children share a disposable root. The scanner
 // reads the files only when released over a socket; no sleep determines scan ordering.
 describe('check-dead-code concurrent processes', () => {
@@ -416,6 +557,16 @@ describe('check-dead-code concurrent processes', () => {
       }
       const paths = ${JSON.stringify(CANARY_PATHS)};
       const present = () => paths.filter(file => fs.existsSync(file));
+      if (process.argv.includes('--production')) {
+        const files = [...paths, ...${JSON.stringify(PRODUCTION_CANARY_PATHS)}].filter(
+          file => fs.existsSync(file) && file !== process.env.MISSING_PRODUCTION_CANARY
+        );
+        if (process.env.TEST_ONLY_FILE) files.push(process.env.TEST_ONLY_FILE);
+        console.log(JSON.stringify({ issues: files.map(file => ({
+          file, owners: [], files: [{ name: file }]
+        })) }));
+        process.exit(1);
+      }
       const socket = net.connect(${address.port}, '127.0.0.1');
       socket.on('connect', () => socket.write(JSON.stringify({
         id: process.env.RUN_ID, phase: 'scan', files: present(), pid: process.pid
@@ -479,10 +630,15 @@ describe('check-dead-code concurrent processes', () => {
         check();
       });
     }
-    function start(id: string, fixtureRoot = root, env: Record<string, string> = {}) {
+    function start(
+      id: string,
+      fixtureRoot = root,
+      env: Record<string, string> = {},
+      args: string[] = [],
+    ) {
       const child = spawn(
         process.execPath,
-        ['--import', preload, path.join(REPO_ROOT, 'scripts/check-dead-code.mjs')],
+        ['--import', preload, path.join(REPO_ROOT, 'scripts/check-dead-code.mjs'), ...args],
         {
           // Killed waiters may leave the helper's unpublished staging directory.
           // Keep all temporary lock state inside this test's disposable directory.
@@ -722,6 +878,12 @@ describe('check-dead-code concurrent processes', () => {
     ['missing canary', { MISSING_CANARY: CANARY_SVELTE }, 'canary FAILED'],
     ['unused application file', { UNUSED_FILE: 'unused.ts' }, 'unused.ts'],
     ['malformed scanner output', { BAD_JSON: '1' }, 'no parseable JSON'],
+    [
+      'missing production canary',
+      { MISSING_PRODUCTION_CANARY: PRODUCTION_CANARY_PATHS[0] },
+      'production canary FAILED',
+    ],
+    ['file used only by tests', { TEST_ONLY_FILE: 'src/only-tests.ts' }, 'src/only-tests.ts'],
   ] as const)(
     'preserves failure for %s and releases ownership for the next gate',
     async (_name, env, message) => {
@@ -740,4 +902,31 @@ describe('check-dead-code concurrent processes', () => {
       expect((await next.done).code).toBe(0);
     },
   );
+
+  it('baselined findings pass; stale entries fail until --prune-baseline shrinks the baseline', async () => {
+    const h = await harness();
+    const baselinePath = path.join(h.root, PRODUCTION_BASELINE_PATH);
+    mkdirSync(path.dirname(baselinePath), { recursive: true });
+    writeFileSync(
+      baselinePath,
+      serializeProductionBaseline(new Set(['files\tsrc/kept.ts', 'files\tsrc/gone.ts'])),
+    );
+    const env = { TEST_ONLY_FILE: 'src/kept.ts' };
+
+    const stale = h.start('stale', h.root, env);
+    await h.wait('stale', ['scan']);
+    h.release('stale');
+    const staleResult = await stale.done;
+    expect(staleResult.code).toBe(1);
+    expect(staleResult.stdout).toContain('src/gone.ts  (file)');
+
+    const prune = h.start('prune', h.root, env, ['--prune-baseline']);
+    await h.wait('prune', ['scan']);
+    h.release('prune');
+    const pruneResult = await prune.done;
+    expect(pruneResult.code, pruneResult.stdout + pruneResult.stderr).toBe(0);
+    expect(parseProductionBaseline(readFileSync(baselinePath, 'utf8'))).toEqual(
+      new Set(['files\tsrc/kept.ts']),
+    );
+  });
 });

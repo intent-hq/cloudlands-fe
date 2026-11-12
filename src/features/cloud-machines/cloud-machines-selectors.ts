@@ -1,0 +1,238 @@
+import { getItems } from '@themislib/themis/utils/collections/collection-utils';
+import { m } from '$shared/paraglide/messages.js';
+import {
+  DEFAULT_CLOUD_MACHINE_ID,
+  cloudProviderName,
+  type CloudMachineProvider,
+  type CloudProviderKind,
+} from '$shared/types/cloud-machines';
+import type { RemoteMachine } from '$shared/types/remote-machines';
+import { isProviderProfileRef, providerRefBaseId } from '$shared/provider-profiles';
+import { store } from '$store/renderer/store';
+import {
+  selectLabsCloudMachinesEnabled,
+  selectLabsRemoteAgentsEnabled,
+} from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+import { selectWorkspaceById } from '$store/renderer/slices/workspace/workspace-selectors';
+import type { StartOnCloud } from '$features/remote-machines/start-on';
+import { defaultRemoteSends } from '$features/remote-machines/remote-model-picker';
+import { selectEnabledProviders } from '$store/renderer/slices/provider-settings/provider-settings-selectors';
+import {
+  selectProviderCatalogDefaultRemoteIncompatibility,
+  selectProviderCatalogDefaultRemoteLaunch,
+  selectProviderCatalogProfiles,
+} from '$store/renderer/slices/provider-catalog/provider-catalog-selectors';
+
+type State = typeof store.state;
+
+/**
+ * E2B setup, the sandbox list and the Start On row show while the Labs
+ * "E2B cloud machines" and "Remote agents" flags are on and the backend
+ * advertises `cloudMachines: 1`. Agents already on E2B render without it.
+ */
+export const selectCloudMachinesVisible = store.createSelector(
+  (state) =>
+    selectLabsCloudMachinesEnabled.select(state) &&
+    selectLabsRemoteAgentsEnabled.select(state) &&
+    state.remoteMachines?.supported === true &&
+    state.cloudMachines?.supported === true,
+);
+
+/** The providers a new entry can use; Northflank needs named entries. */
+export const selectCloudProviderKinds = store.createSelector((state): CloudProviderKind[] => {
+  const kinds = state.cloudMachines?.providerKinds ?? ['e2b'];
+  return state.cloudMachines?.entries === true ? kinds : kinds.filter((kind) => kind === 'e2b');
+});
+
+/** `cloudMachineEntries: 1`: entries are named and listed under Nodes. */
+export const selectCloudEntriesSupported = store.createSelector(
+  (state) => state.cloudMachines?.entries === true,
+);
+
+function savedEntries(state: State): CloudMachineProvider[] {
+  return Object.values(state.cloudMachines?.providers ?? {}).sort(
+    (a, b) => a.configuredAt.localeCompare(b.configuredAt) || a.name.localeCompare(b.name),
+  );
+}
+
+/** The saved E2B entries, oldest first; empty when E2B is not set up. */
+export const selectCloudEntries = store.createSelector(savedEntries);
+
+/** Live sandboxes, oldest first. */
+export const selectCloudSandboxes = store.createSelector((state): RemoteMachine[] =>
+  Object.values(state.cloudMachines?.machines ?? {}).sort((a, b) =>
+    (a.cloud?.startedAt ?? '').localeCompare(b.cloud?.startedAt ?? ''),
+  ),
+);
+
+/** Paused sandboxes, which no live link counts. */
+export const selectPausedCloudSandboxCount = store.createSelector(
+  (state) =>
+    Object.values(state.cloudMachines?.machines ?? {}).filter(
+      (machine) => machine.cloud?.state === 'paused',
+    ).length,
+);
+
+export interface SandboxAgentLink {
+  workspaceId: string;
+  agentId: string;
+}
+
+/**
+ * The agent a sandbox runs, to open from its row; null when its workspace is
+ * unknown here. A session missing from the store keeps the link: list reads
+ * skip delegated and background agents. The row drops it while a deletion is
+ * pending (see `CloudSandboxList`); the app can't tell an agent deleted
+ * earlier, since a deletion removes its session.
+ */
+function sandboxAgentLink(state: State, machine: RemoteMachine): SandboxAgentLink | null {
+  const cloud = machine.cloud;
+  if (!cloud?.agentId || !cloud.workspaceId) return null;
+  if (!selectWorkspaceById.select(state, cloud.workspaceId)) return null;
+  return { workspaceId: cloud.workspaceId, agentId: cloud.agentId };
+}
+
+/** Per sandbox list: each workspace's name (null when unknown) and each row's agent link. */
+export const selectSandboxListContext = store.createSelector(
+  (
+    state,
+    sandboxes: readonly RemoteMachine[],
+  ): {
+    workspaceNames: Record<string, string | null>;
+    agentLinks: Record<string, SandboxAgentLink | null>;
+  } => {
+    const workspaceNames: Record<string, string | null> = {};
+    const agentLinks: Record<string, SandboxAgentLink | null> = {};
+    for (const machine of sandboxes) {
+      const id = machine.cloud?.workspaceId;
+      if (id && !(id in workspaceNames)) {
+        const workspace = selectWorkspaceById.select(state, id);
+        workspaceNames[id] = workspace?.title || workspace?.name || null;
+      }
+      agentLinks[machine.id] = sandboxAgentLink(state, machine);
+    }
+    return { workspaceNames, agentLinks };
+  },
+);
+
+export const selectCloudSandboxReadAt = store.createSelector(
+  (state) => state.cloudMachines?.readAt ?? {},
+);
+
+export const selectCloudOperations = store.createSelector(
+  (state) => state.cloudMachines?.pending ?? {},
+);
+
+export const selectCloudFailures = store.createSelector(
+  (state) => state.cloudMachines?.failures ?? {},
+);
+
+export const selectCloudValidated = store.createSelector(
+  (state) => state.cloudMachines?.validated ?? null,
+);
+
+/**
+ * The E2B Start On rows, one per entry: null when E2B is not offered, else
+ * whether each entry can start a new sandbox at all (the model check comes after).
+ */
+export function startOnCloud(state: State): StartOnCloud | null {
+  if (!selectCloudMachinesVisible.select(state)) return null;
+  const entries = savedEntries(state);
+  if (entries.length === 0) return null;
+  const named = state.cloudMachines?.entries === true;
+  return entries.map((entry) => ({
+    cloudMachineId: entry.id,
+    // One entry still called "E2B" needs no name; otherwise "<provider> · <name>".
+    label:
+      entry.provider === 'northflank'
+        ? entry.name.trim().toLowerCase() === 'northflank'
+          ? cloudProviderName('northflank')
+          : m.cloudMachines_startOn_northflank_label({ name: entry.name })
+        : named && (entries.length > 1 || entry.name.trim().toLowerCase() !== 'e2b')
+          ? m.cloudMachines_startOn_entry_label({ name: entry.name })
+          : m.cloudMachines_startOn_label(),
+    unavailableReason:
+      entry.state !== 'key-rejected'
+        ? null
+        : entry.provider === 'northflank'
+          ? m.cloudMachines_northflank_state_tokenRejected_label()
+          : m.cloudMachines_state_keyRejected_label(),
+    needsProfile: !cloudEntrySendsConfig(state, entry),
+  }));
+}
+
+/**
+ * Some configuration from here can run on the entry's sandboxes, by the
+ * remote model picker's rule: a Default the catalog sends
+ * (`defaultRemoteLaunch` "send") with overrides known to be saved, or a
+ * marked profile that sets a variable. Providers turned off in Settings
+ * don't count. A profile whose variables are unknown (the admin-only list
+ * not read) counts.
+ */
+function cloudEntrySendsConfig(state: State, entry: CloudMachineProvider): boolean {
+  const enabled = selectEnabledProviders.select(state);
+  const savedDefaults = state.providerSettings?.profiles?.defaults ?? {};
+  const defaults = {
+    defaultRemoteLaunch: selectProviderCatalogDefaultRemoteLaunch.select(state),
+    defaultRemoteIncompatibility: selectProviderCatalogDefaultRemoteIncompatibility.select(state),
+  };
+  const usable = (base: string) =>
+    enabled[base] !== false &&
+    (entry.agentProviders.length === 0 || entry.agentProviders.includes(base));
+  const bases = new Set([
+    ...entry.agentProviders,
+    ...Object.keys(defaults.defaultRemoteLaunch ?? {}),
+  ]);
+  for (const base of bases)
+    if (
+      usable(base) &&
+      (savedDefaults[base]?.env.length ?? 0) > 0 &&
+      defaultRemoteSends(base, defaults)
+    )
+      return true;
+  const profileItems = state.providerSettings?.profiles?.items;
+  const saved = profileItems ? getItems(profileItems) : [];
+  return selectProviderCatalogProfiles.select(state).some((profile) => {
+    if (profile.remoteCompatible !== true || !usable(profile.baseProviderId)) return false;
+    const row = saved.find((item) => item.providerRef === profile.providerRef);
+    return !row || row.env.some((variable) => variable.kind === 'set');
+  });
+}
+
+/**
+ * Why `providerRef` can't run on E2B, or null when it can or the app can't
+ * tell (the daemon then decides). A sandbox has no login: the configuration
+ * must set at least one env variable (an API key or token) and be
+ * remote-compatible, and the templates must install its CLI
+ * (PROTOCOL `methods/nodes.md` → "Placement on E2B").
+ */
+export function cloudProfileBlockReason(
+  state: State,
+  providerRef: string,
+  entry: CloudMachineProvider | null = state.cloudMachines?.providers[DEFAULT_CLOUD_MACHINE_ID] ??
+    null,
+): string | null {
+  if (!providerRef) return null;
+  const provider = entry;
+  const base = providerRefBaseId(providerRef);
+  if (provider && provider.agentProviders.length > 0 && !provider.agentProviders.includes(base))
+    return m.cloudMachines_startOn_providerMissing();
+  const profiles = state.providerSettings?.profiles;
+  if (isProviderProfileRef(providerRef)) {
+    const profile = profiles
+      ? getItems(profiles.items).find((row) => row.providerRef === providerRef)
+      : undefined;
+    if (!profile) return null;
+    if (profile.remoteCompatible === false) return m.cloudMachines_startOn_needsProfile();
+    return profile.env.some((entry) => entry.kind === 'set')
+      ? null
+      : m.cloudMachines_startOn_needsProfile();
+  }
+  const defaults = profiles?.defaults?.[base];
+  if (!defaults)
+    return profiles?.loadStatus === 'success' ? m.cloudMachines_startOn_needsProfile() : null;
+  if (defaults.remoteCompatible === false) return m.cloudMachines_startOn_needsProfile();
+  return defaults.env.some((entry) => entry.kind === 'set')
+    ? null
+    : m.cloudMachines_startOn_needsProfile();
+}

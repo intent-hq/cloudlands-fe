@@ -24,11 +24,7 @@ describe('Home workspace status updates', () => {
       });
       expect(view.getByRole('img', { name: /Needs you/i })).toBeTruthy();
       await view.rerender({ workspace: { displayStatus, activity: 'agent_running' } });
-      expect(
-        view.getByRole('img', {
-          name: displayStatus === 'pr_ready' ? /PR Mergeable/i : /Running/i,
-        }),
-      ).toBeTruthy();
+      expect(view.getByRole('img', { name: /Running/i })).toBeTruthy();
       await view.rerender({ workspace: { displayStatus } });
       expect(view.getByRole('img', { name: /PR /i })).toBeTruthy();
     },

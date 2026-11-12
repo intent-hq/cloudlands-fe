@@ -39,7 +39,6 @@ export const IPC_CHANNELS = {
     ARCHIVE: 'workspace:archive',
     UNARCHIVE: 'workspace:unarchive',
     CLEANUP: 'workspace:cleanup',
-    DUPLICATE: 'workspace:duplicate',
     RENAME: 'workspace:rename',
     EXPORT: 'workspace:export',
     IMPORT: 'workspace:import',
@@ -246,8 +245,6 @@ export const IPC_CHANNELS = {
   // Google Antigravity Integration
   ANTIGRAVITY: {
     GET_MODELS: 'antigravity:get-models',
-    SETUP: 'antigravity:setup',
-    CLOSE_SETUP: 'antigravity:close-setup',
   },
 
   // Provider Availability (aggregates all ACP providers)
@@ -822,19 +819,6 @@ export const IPC_CHANNELS = {
     GET_CONTEXT: 'rules:get-context',
   },
 
-  // Specialists (file-based specialist management)
-  SPECIALISTS: {
-    LIST_FILES: 'specialists:list-files',
-    LIST_BUNDLED: 'specialists:list-bundled',
-    LIST_ALL: 'specialists:list-all',
-    READ_FILE: 'specialists:read-file',
-    WRITE_FILE: 'specialists:write-file',
-    DELETE_FILE: 'specialists:delete-file',
-    GET_FOLDER_PATH: 'specialists:get-folder-path',
-    EXPORT_BUILTIN: 'specialists:export-builtin',
-    FILE_EXISTS: 'specialists:file-exists',
-  },
-
   // Config Rules
   CONFIG_RULES: {
     GET_ALL: 'config:getAll',
@@ -1039,11 +1023,13 @@ export const IPC_CHANNELS = {
   // Browser access: main serves the web build to a browser behind a front-end
   // such as `tailscale serve`. get-state → BrowserAccessState; set-enabled
   // ({ enabled }), set-port ({ port }) and reset-key ({}) also return it.
+  // create-sign-in-code ({}) → BrowserAccessSignInCode.
   BROWSER_ACCESS: {
     GET_STATE: 'browser-access:get-state',
     SET_ENABLED: 'browser-access:set-enabled',
     SET_PORT: 'browser-access:set-port',
     RESET_KEY: 'browser-access:reset-key',
+    CREATE_SIGN_IN_CODE: 'browser-access:create-sign-in-code',
   },
 
   // WebSocket API
@@ -1066,6 +1052,7 @@ export const IPC_CHANNELS = {
   // notifications on the BACKEND.NOTIFICATION event channel.
   BACKEND: {
     DESKTOP_PERMISSIONS: 'backend:desktop-permissions',
+    DESKTOP_OS_PERMISSIONS: 'backend:desktop-os-permissions',
     REQUEST: 'backend:request',
     PR_MONITOR: {
       READY: 'backend:pr-monitor:ready',
@@ -1146,6 +1133,11 @@ export const IPC_CHANNELS = {
     SET_TUNNEL: 'connections:set-tunnel',
     OPEN: 'connections:open',
     FORGET: 'connections:forget',
+    // Add from an intent://pair link: test + detect (the token stays in main),
+    // then save or drop the pending credential.
+    PAIR_LINK_INSPECT: 'connections:pair-link-inspect',
+    PAIR_LINK_COMMIT: 'connections:pair-link-commit',
+    PAIR_LINK_DISCARD: 'connections:pair-link-discard',
     // Ask one connected remote backend's daemon to self-update (routes
     // `system.requestUpdate` to that backend's pooled client). Structured
     // result — never throws for daemon-side failures (unsupported/old daemon,
@@ -1194,6 +1186,30 @@ export const IPC_CHANNELS = {
     CHANGED: 'guest-sessions:changed',
   },
 
+  // Machine rail (Labs): one window stays connected to several machines and a
+  // left rail switches which machine's renderer the window shows. Main owns
+  // the per-window list and selection; CHANGED is a main→renderer push (also
+  // in EVENT_CHANNELS). Types: `shared/types/machine-rail.ts`.
+  MACHINE_RAIL: {
+    GET_STATE: 'machine-rail:get-state',
+    SELECT: 'machine-rail:select',
+    ADD: 'machine-rail:add',
+    REMOVE: 'machine-rail:remove',
+    SET_ENABLED: 'machine-rail:set-enabled',
+    CHANGED: 'machine-rail:changed',
+    // A renderer whose machine is not shown hands a toast to main, which
+    // pushes TOAST to the renderer the window shows (also in EVENT_CHANNELS).
+    FORWARD_TOAST: 'machine-rail:forward-toast',
+    TOAST: 'machine-rail:toast',
+    // Select a machine and ask its renderer to open its status menu;
+    // MENU_REQUESTED is the push to that renderer (also in EVENT_CHANNELS).
+    // A window's own renderer reports that it has painted after becoming the
+    // shown one, so main can take the previous machine's view away without a gap.
+    SHOWN: 'machine-rail:shown',
+    OPEN_MENU: 'machine-rail:open-menu',
+    MENU_REQUESTED: 'machine-rail:menu-requested',
+  },
+
   // Workspace presence (multiplayer w5). The daemon connection is pooled per
   // backend in main and `presence.update` replaces the CONNECTION's whole
   // focus set, so each window reports its own focus / typing here and main
@@ -1227,6 +1243,11 @@ export const IPC_CHANNELS = {
     EXPOSE: 'remote-machines:expose',
     UNEXPOSE: 'remote-machines:unexpose',
     MACHINE_FINGERPRINT: 'remote-machines:machine-fingerprint',
+    /** Hold an `intent://node` link in main; returns a pending id, never the secret. */
+    INVITE_INSPECT: 'remote-machines:invite-inspect',
+    /** Claim a held node invite on the window's backend. */
+    INVITE_CLAIM: 'remote-machines:invite-claim',
+    INVITE_DISCARD: 'remote-machines:invite-discard',
   },
 
   // Hardware console (Codex Micro / Creator Micro 2)
@@ -1280,6 +1301,9 @@ export const EVENT_CHANNELS = [
   'window:dock-placement-changed',
   'window:dock-pointer-presence-changed',
   'window:dock-lab-changed',
+  'machine-rail:changed',
+  'machine-rail:toast',
+  'machine-rail:menu-requested',
   'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',

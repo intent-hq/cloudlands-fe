@@ -17,6 +17,10 @@
    * key check ("Key works" / "Key was rejected"); Advanced reuses today's env
    * editor. Edit screens show the running-sessions warning once env changes,
    * and Switch to Advanced keeps the unsaved name and backup switch.
+   *
+   * With `remoteMarks` (remote-ready profiles), the picker marks each kind and
+   * Advanced shows "Use on remote machines" plus warnings for settings that
+   * may only work on this backend.
    */
   import { onDestroy } from 'svelte';
   import { faTriangleExclamation } from '@fortawesome/free-solid-svg-icons';
@@ -49,6 +53,7 @@
     type ProfileSignInState,
   } from './profile-kind-mock';
   import { isJwtShaped, randomSuffix } from '$lib/provider-profile-kinds';
+  import ProfileRemoteToggle from './ProfileRemoteToggle.svelte';
 
   interface Props {
     open?: boolean;
@@ -97,6 +102,10 @@
     envRows?: EnvRow[];
     /** Advanced: field errors keyed like today's dialog (`<rowId>.key`, `env`, …). */
     envErrors?: Record<string, string>;
+    /** Mark kinds for remote machines and show Advanced's toggle. */
+    remoteMarks?: boolean;
+    /** Advanced: "Use on remote machines". */
+    remoteCompatible?: boolean;
     /** Different login create; the parent closes the dialog once the terminal opens. */
     onCreateAndSignIn?: () => void;
     /** API key / Token create (the parent then drives `signIn` through the key check). */
@@ -142,6 +151,8 @@
         : [newRow(() => crypto.randomUUID())],
     ),
     envErrors = {},
+    remoteMarks = false,
+    remoteCompatible = $bindable(true),
     onCreateAndSignIn,
     onCreate,
     onSave,
@@ -321,7 +332,7 @@
   onSubmit={submit}
 >
   {#if picking}
-    <ProfileKindPicker {provider} disabled={busy} onPick={pick} />
+    <ProfileKindPicker {provider} disabled={busy} {remoteMarks} onPick={pick} />
   {:else}
     <div class="space-y-5" data-testid="provider-profile-kind-details" data-kind={kind}>
       <FormField
@@ -389,6 +400,13 @@
           errors={envErrors}
           disabled={fieldsDisabled}
         />
+        {#if remoteMarks}
+          <ProfileRemoteToggle
+            rows={envRows}
+            bind:checked={remoteCompatible}
+            disabled={fieldsDisabled}
+          />
+        {/if}
       {/if}
 
       {#if envChanged}

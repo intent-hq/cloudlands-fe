@@ -25,6 +25,7 @@ import { m } from '$shared/paraglide/messages.js';
 import { sanitizeCommandForDisplay } from '$shared/utils/sanitize-credentials';
 import { dispatchWindowEvent } from '$lib/utils/window-events';
 import { store as appStore } from '$store/renderer/store';
+import { isTerminalPassthroughChord } from './terminal-app-chords';
 import {
   closeActiveTerminalRequested,
   toggleTerminalOverlay,
@@ -575,7 +576,19 @@ export class TerminalAdapter {
         return false;
       }
 
-      // Cmd+Shift+] / Cmd+Shift+[ - cycle terminal tabs
+      // Column focus and Mod+Shift+] / [ workspace-tab (or drawer-terminal) switching, from
+      // the resolved bindings. Return false so xterm types nothing and the window handlers run.
+      if (
+        isTerminalPassthroughChord(
+          event,
+          appStore.state.userPreferences?.shortcutOverrides ?? {},
+          isMac,
+        )
+      ) {
+        return false;
+      }
+
+      // Cmd+Shift+] / Cmd+Shift+[ - cycle drawer terminals or switch workspace tabs
       // Return false to let the overlay's window keydown handler pick these up
       if (
         isMod &&

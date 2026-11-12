@@ -15,7 +15,9 @@ import {
   buildWorkspaceInitializationRetry,
   prepareCompactWorkspaceInitialization,
   prepareOnboardingWorkspaceInitialization,
+  withContinueFromLastFetched,
 } from '$store/renderer/slices/workspace-initializer/sagas/workspace-initialization-submission';
+import type { BaseRefreshFailure } from '$shared/types/base-refresh-failure';
 import {
   clearWorkspaceInitializationResume,
   setCompactWorkspaceInitializerFormState,
@@ -83,6 +85,7 @@ interface CreateFailure {
   ok: false;
   error: string;
   errorCode?: string;
+  baseRefreshFailure?: BaseRefreshFailure;
 }
 
 interface AdapterOptions {
@@ -145,10 +148,11 @@ async function settleSubmittedInitialization(action: SubmissionAction, options: 
       () => true,
     ).toPromise();
     if (!prepared) throw new Error('initialization-cancelled');
+    const { request } = withContinueFromLastFetched(prepared, submission.continueFromLastFetched);
     await settleInitialization(
       {
         ...action,
-        payload: { request: prepared.request, consumer, progressId },
+        payload: { request, consumer, progressId },
       },
       options,
     );
@@ -242,7 +246,17 @@ async function settleInitialization(action: InitializationAction, options: Adapt
     if (!request.resume) {
       stage = 'create';
       const result = await options.create({ ...request.createRequest, progressId });
-      if (!result.ok) throw new Error(result.error);
+      if (!result.ok) {
+        failure = {
+          status: 'failure',
+          stage: 'create',
+          error: result.error,
+          ...(result.errorCode ? { errorCode: result.errorCode } : {}),
+          ...(result.baseRefreshFailure ? { baseRefreshFailure: result.baseRefreshFailure } : {}),
+        };
+        publish(failure);
+        throw new Error(result.error);
+      }
       const { workspace } = result.data;
       workspaceId = workspace.id;
       agentId = result.data.initialAgent?.id;
