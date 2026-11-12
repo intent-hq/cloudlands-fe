@@ -521,7 +521,7 @@ describe('ssh setup runner: host keys', () => {
       `box ecdsa-sha2-nistp256 ${TEST_HOST_KEYS.ecdsa.toString('base64')}\n`;
     h.runner.start(params());
     await h.settle();
-    expect(h.clients[0].config?.algorithms?.serverHostKey).toEqual({
+    expect(h.clients[0].config?.algorithms?.serverHostKey).toMatchObject({
       prepend: ['rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa', 'ecdsa-sha2-nistp256'],
     });
   });

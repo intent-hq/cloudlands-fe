@@ -12,7 +12,13 @@
  */
 
 import { randomUUID } from 'crypto';
-import type { ConnectConfig, ExecOptions, KeyboardInteractiveCallback, Prompt } from 'ssh2';
+import type {
+  ConnectConfig,
+  ExecOptions,
+  KeyboardInteractiveCallback,
+  Prompt,
+  ServerHostKeyAlgorithm,
+} from 'ssh2';
 import type {
   SshSetupErrorCode,
   SshSetupEvent,
@@ -423,7 +429,15 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
       // Ask for the key types known_hosts records for this host first, as
       // OpenSSH does: another type then counts as a changed key.
       ...(preferred.length
-        ? { algorithms: { serverHostKey: { prepend: preferred as never[] } } }
+        ? {
+            algorithms: {
+              serverHostKey: {
+                prepend: preferred as ServerHostKeyAlgorithm[],
+                append: [],
+                remove: [],
+              },
+            },
+          }
         : {}),
       ...credentials,
     });
