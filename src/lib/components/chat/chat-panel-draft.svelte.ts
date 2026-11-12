@@ -114,10 +114,18 @@ export interface ChatDraftCapture {
   text: string;
   attachments: DraftAttachmentWithScreen[];
   generation: number;
+  /** Retires attachment editors across removal, clearing, and pair changes; typing does not. */
+  attachmentEpoch: number;
 }
 
 export interface ChatDraftManager {
   captureDraft(): ChatDraftCapture | null;
+  /** Change only one attachment's draft metadata, conditional on the clicked snapshot. */
+  updateAttachmentScreen(
+    capture: ChatDraftCapture,
+    attachmentId: string,
+    screen: unknown,
+  ): ChatDraftCapture | null;
   flushDraft(capture: ChatDraftCapture): Promise<boolean>;
   isCurrentDraft(capture: ChatDraftCapture): boolean;
   /** True while the initial draft restore gates the composer. */
@@ -191,10 +199,12 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     null;
   const saveHandlers: Record<string, (outcome: ChatDraftSaveOutcome) => void> = {};
   let latestView: ChatDraftOwnerView | undefined;
-  let retainedAttachments: DraftAttachmentWithScreen[] = [];
+  let retainedAttachments = $state.raw<DraftAttachmentWithScreen[]>([]);
   let sharedSeen: string | null = null;
   let captureGeneration = 0;
   let captureFingerprint = '';
+  let attachmentEpoch = 0;
+  let attachmentFingerprint = '';
   const captureDraft = (): ChatDraftCapture | null => {
     const workspaceId = options.workspaceId();
     const agentId = options.agentId();
@@ -203,6 +213,21 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     if (!authority || destroyed) return null;
     const text = options.inputValue();
     const attachments = serializeCurrentAttachments();
+    const shared = latestView?.shared;
+    const sharedLifetime =
+      shared?.workspaceId === workspaceId && shared.agentId === agentId ? shared.lifetime : null;
+    const nextAttachmentFingerprint = JSON.stringify([
+      authority,
+      workspaceId,
+      agentId,
+      invalidations,
+      sharedLifetime,
+      attachments.map((item) => [item.id, item.attachmentId, item.path]),
+    ]);
+    if (nextAttachmentFingerprint !== attachmentFingerprint) {
+      attachmentFingerprint = nextAttachmentFingerprint;
+      attachmentEpoch += 1;
+    }
     const fingerprint = JSON.stringify([
       authority,
       workspaceId,
@@ -223,6 +248,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       text,
       attachments: JSON.parse(JSON.stringify(attachments)),
       generation: captureGeneration,
+      attachmentEpoch,
     };
   };
   let sharedBaseline: { text: string; attachmentsJson: string } | null = null;
@@ -280,6 +306,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         }
       }
     }
+    untrack(captureDraft);
     const acknowledged: string[] = [];
     for (const save of view.saves) {
       if (save.status === 'pending') continue;
@@ -543,7 +570,8 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
 
     // The saga debounces the write, refreshes the switch-back cache when it
     // commits, and rolls that cache back to `rollback` if the write fails.
-    retainedAttachments = currentAttachments;
+    if (JSON.stringify(retainedAttachments) !== attachmentsJson)
+      retainedAttachments = currentAttachments;
     const saveKey = `${workspaceId}\u0000${agentId}`;
     const invalidationsAtSchedule = invalidations;
     const requestId = crypto.randomUUID();
@@ -605,6 +633,14 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
   return {
     captureDraft,
     isCurrentDraft,
+    updateAttachmentScreen(capture, attachmentId, screen) {
+      if (!isCurrentDraft(capture) || !capture.attachments.some((item) => item.id === attachmentId))
+        return null;
+      retainedAttachments = capture.attachments.map((item) =>
+        item.id === attachmentId ? { ...item, screen: structuredClone(screen) } : item,
+      );
+      return captureDraft();
+    },
     async flushDraft(capture) {
       if (!isCurrentDraft(capture)) return false;
       if (!port.persistSnapshot) throw new Error('draft-shared-transport-unavailable');

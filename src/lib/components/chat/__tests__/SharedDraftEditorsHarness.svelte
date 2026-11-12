@@ -7,6 +7,7 @@
   import SharedDraftMainEditor from './SharedDraftMainEditor.svelte';
   import DockConversation from '$features/hud/components/DockConversation.svelte';
   import '$lib/styles/dock-tokens.css';
+  let { outputReady = true }: { outputReady?: boolean } = $props();
   let fixture = $state<SharedDraftFixture>();
   let saved = $state('');
   let handoff = $state(false);
@@ -24,6 +25,7 @@
 {#if fixture}
   <div data-testid="shared-editors" data-saved={saved} data-handoff={handoff}>
     <SharedDraftMainEditor
+      {outputReady}
       driver={fixture.driver}
       workspaceId={fixture.workspaceId}
       agentId={fixture.agentId}
@@ -48,5 +50,6 @@
         await fixture?.seedScreen();
       }}>Seed screenshot draft</button
     >
+    <button onclick={() => fixture?.seedRecording()}>Seed recording draft</button>
   </div>
 {/if}

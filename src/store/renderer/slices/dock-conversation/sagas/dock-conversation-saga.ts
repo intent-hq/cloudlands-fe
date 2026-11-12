@@ -146,28 +146,29 @@ function* applySharedDraft(
   agentId: string,
   snapshot: SharedDraftSnapshot,
   revision: number,
-): SagaGenerator<void> {
+): SagaGenerator<SharedDraftSnapshot> {
   const items = deserializeDraftAttachments(snapshot.attachments);
-  yield* put(setComposerContextItems(workspaceId, agentId, items));
   const present = new Set(items.map((item) => item.id));
-  yield* put(
-    dockEvidenceShared(
-      workspaceId,
-      agentId,
-      fromDockDraftEvidence(
-        dockEvidenceId(workspaceId, agentId),
-        readDraftAttachmentScreens(snapshot.attachments).filter(([id]) => present.has(id)),
-        items.map((item) => ({
-          contextItemId: item.id,
-          attachmentId: item.attachmentId,
-          path: item.path,
-        })),
-      ),
-    ),
+  const evidence = fromDockDraftEvidence(
+    dockEvidenceId(workspaceId, agentId),
+    readDraftAttachmentScreens(snapshot.attachments).filter(([id]) => present.has(id)),
+    items.map((item) => ({
+      contextItemId: item.id,
+      attachmentId: item.attachmentId,
+      path: item.path,
+    })),
   );
+  yield* put(setComposerContextItems(workspaceId, agentId, items));
+  yield* put(dockEvidenceShared(workspaceId, agentId, evidence));
   yield* put(
     dockConversationDraftShared(workspaceId, agentId, snapshot.text, items.length > 0, revision),
   );
+  // The dirty baseline must use the same parsed projection as draftAttachments.
+  // Derive it from the requested snapshot, never from intervening local typing.
+  return {
+    text: snapshot.text,
+    attachments: serializeDraftAttachments(items, toDockDraftEvidence(evidence)),
+  };
 }
 function* saveDrafts(
   ownerId: string,
@@ -234,8 +235,9 @@ function* saveDrafts(
         else if (snapshot === baseline) {
           applyingShared = true;
           try {
-            yield* applySharedDraft(workspaceId, agentId, shared.snapshot, draft.revision);
-            baseline = JSON.stringify(shared.snapshot);
+            baseline = JSON.stringify(
+              yield* applySharedDraft(workspaceId, agentId, shared.snapshot, draft.revision),
+            );
           } finally {
             applyingShared = false;
           }

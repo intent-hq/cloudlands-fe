@@ -174,6 +174,7 @@
       text: draftText,
       attachments,
       generation: 1,
+      attachmentEpoch: 0,
     };
     const plan = planChatSend('composer', draftText, () => ({
       contextItems: items,

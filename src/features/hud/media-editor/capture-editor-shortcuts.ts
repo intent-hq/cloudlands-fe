@@ -17,6 +17,7 @@ export type CaptureEditorKeyTool = keyof typeof CAPTURE_EDITOR_TOOL_KEYS;
 export function captureEditorToolShortcut(
   event: KeyboardEvent,
   blocked: boolean,
+  ownDialog?: HTMLElement | null,
 ): CaptureEditorKeyTool | null {
   if (
     blocked ||
@@ -34,11 +35,15 @@ export function captureEditorToolShortcut(
     return null;
   const layers =
     '[role="menu"], [role="dialog"], [role="alertdialog"], [data-slot="select-content"], [data-slot="popover-content"], [data-bits-floating-content-wrapper] [role="listbox"]';
-  if (event.target instanceof Element && event.target.closest(`${layers}, [role="listbox"]`))
-    return null;
+  const targetLayer =
+    event.target instanceof Element && event.target.closest(`${layers}, [role="listbox"]`);
+  if (targetLayer && targetLayer !== ownDialog) return null;
   if (
     [...document.querySelectorAll(layers)].some(
-      (layer) => layer.getAttribute('aria-hidden') !== 'true' && layer.getClientRects().length > 0,
+      (layer) =>
+        layer !== ownDialog &&
+        layer.getAttribute('aria-hidden') !== 'true' &&
+        layer.getClientRects().length > 0,
     )
   )
     return null;

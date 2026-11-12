@@ -21,6 +21,7 @@ export type ChatMediaBegin = z.infer<typeof ChatMediaBeginSchema>;
 export const ChatMediaScopeSchema = z.object({ sessionId: z.guid() }).strict();
 export const ChatMediaControlSchema = ChatMediaScopeSchema.extend({
   control: z.discriminatedUnion('action', [
+    z.object({ action: z.literal('readiness') }).strict(),
     z.object({ action: z.literal('export'), request: DockMediaExportRequestSchema }).strict(),
     z
       .object({ action: z.literal('transcribe'), request: DockMediaTranscribeRequestSchema })

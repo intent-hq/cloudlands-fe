@@ -46,7 +46,7 @@ export function dockClipPlaybackUrl(
 }
 
 /** A saved recording edit's send choice, for the pill's second line. */
-function dockClipSendSummary(saved: {
+export function dockClipSendSummary(saved: {
   video: 'full' | 'highlights';
   voice: 'audio' | 'transcript' | 'off';
 }): string {

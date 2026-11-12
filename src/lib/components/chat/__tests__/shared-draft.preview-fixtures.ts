@@ -1,4 +1,5 @@
 import type { ChatDraftManager } from '../chat-panel-draft.svelte';
+import { defaultDockMediaEdit, type DockMediaSource } from '$shared/dock-media-edit';
 import { createChatDraftBroker } from '$shared/chat-draft-broker';
 import type { SharedDraft } from '$shared/types/chat-draft-sync';
 import { createDraftSyncConnection } from '../chat-draft-sync';
@@ -231,6 +232,74 @@ export function setupSharedDraftFixture() {
       });
       await dock.flush(conversationWireWorkspace, 'wire-main');
       return attachment.screen;
+    },
+    async removeRecording(clear: boolean) {
+      if (clear) await dock.clear(conversationWireWorkspace, 'wire-main');
+      else {
+        const current = await dock.read(conversationWireWorkspace, 'wire-main');
+        await dock.edit('dock-fixture', conversationWireWorkspace, 'wire-main', {
+          text: current.snapshot.text,
+          attachments: [],
+        });
+      }
+      await dock.flush(conversationWireWorkspace, 'wire-main');
+    },
+    async seedRecording() {
+      const source: DockMediaSource = {
+        id: 'shared-recording-source',
+        revision: 0,
+        kind: 'recording',
+        attachmentId: 'shared-recording-file',
+        path: '.intent/attachments/shared-recording.mp4',
+        durationMs: 5000,
+        width: 640,
+        height: 360,
+        audio: 'available',
+        visuals: 'clean',
+        batches: [],
+        capturedMarks: [],
+      };
+      const media = {
+        source,
+        saved: { ...defaultDockMediaEdit(source, [], null), voice: 'audio' as const },
+        transcript: null,
+      };
+      const attachment = {
+        id: 'shared-recording',
+        type: 'file',
+        label: 'clip-shared-recording.mp4',
+        attachmentId: source.attachmentId,
+        path: source.path,
+        attachmentMimeType: 'video/mp4',
+        screen: {
+          kind: 'clip',
+          clip: {
+            id: 'shared-clip',
+            startedAt: 0,
+            durationMs: source.durationMs,
+            hasMicAudio: true,
+            path: source.path,
+            media,
+          },
+        },
+      };
+      await dock.edit('fixture-recording-owner', conversationWireWorkspace, 'wire-main', {
+        text: 'Review this recording',
+        attachments: [attachment],
+      });
+      await dock.flush(conversationWireWorkspace, 'wire-main');
+      return attachment;
+    },
+    async peerRecordingText(text: string) {
+      const current = await dock.read(conversationWireWorkspace, 'wire-main');
+      await dock.edit('fixture-peer-typing', conversationWireWorkspace, 'wire-main', {
+        ...current.snapshot,
+        text,
+      });
+    },
+    releasePersistence() {
+      releaseWrites?.();
+      releaseWrites = undefined;
     },
     async queuedClearProof(retire: boolean) {
       const isolatedDrafts = createChatDraftFixture().client;
