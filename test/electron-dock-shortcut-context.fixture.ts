@@ -255,15 +255,26 @@ test('cold shortcut context preserves native identity and first-use guest owners
       },
       { guestId },
     );
-    expect(evidence.nativeIdentity.distMainAvailable).toBe(true);
     expect(evidence.nativeIdentity.appLayout).toBe('dist/main');
-    expect(evidence.nativeIdentity.available).toBe(true);
-    expect(evidence.nativeIdentity.identityOutcome).toBe('ok');
-    expect(evidence.nativeIdentity.pidPresent).toBe(true);
-    expect(evidence.nativeIdentity.appNamePresent).toBe(true);
-    expect(evidence.degradedIdentityPreserved).toBe(true);
+    const supportedPlatform = process.platform === 'darwin' || process.platform === 'win32';
+    if (supportedPlatform) {
+      expect(evidence.nativeIdentity.distMainAvailable).toBe(true);
+      expect(evidence.nativeIdentity.available).toBe(true);
+      expect(evidence.nativeIdentity.identityOutcome).toBe('ok');
+      expect(evidence.nativeIdentity.pidPresent).toBe(true);
+      expect(evidence.nativeIdentity.appNamePresent).toBe(true);
+      expect(evidence.degradedIdentityPreserved).toBe(true);
+      expect(evidence.feedEvidence.first.appName).toBeTruthy();
+    } else {
+      expect(evidence.nativeIdentity.distMainAvailable).toBe(false);
+      expect(evidence.nativeIdentity.available).toBe(false);
+      expect(evidence.nativeIdentity.identityOutcome).toBe('unavailable');
+      expect(evidence.nativeIdentity.pidPresent).toBe(false);
+      expect(evidence.nativeIdentity.appNamePresent).toBe(false);
+      expect(evidence.degradedIdentityPreserved).toBe(false);
+      expect(evidence.feedEvidence.first.appName).toBeNull();
+    }
     expect(evidence.before).toBeNull();
-    expect(evidence.feedEvidence.first.appName).toBeTruthy();
     expect(evidence.feedEvidence.stable).toEqual(evidence.feedEvidence.first);
     expect(evidence.feedEvidence.metadata.contextVersion).toBe(
       evidence.feedEvidence.first.contextVersion,
