@@ -40,7 +40,7 @@ function* checkProviderCliRequirements() {
 
 type UpdateAction = ReturnType<typeof providerCliUpdateRequested>;
 
-/** Same root-terminal route as onboarding's Claude login (`openClaudeLoginWorker`). */
+/** Same root-terminal route as provider login (`openProviderLoginWorker`). */
 function* openProviderCliUpdateWorker(action: UpdateAction) {
   try {
     const [providerId] = action.payload;

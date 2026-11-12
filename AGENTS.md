@@ -38,6 +38,9 @@ affected guide section or explain why there is no user-help impact. Full rule:
   battery" via `prefersReducedMotion()` / `data-reduce-motion`, or "Pause animations when not in
   focus" via `data-window-blurred` — or add a new Appearance setting that defaults to off.
 - Never add a raw control, direct toast/native dialog, bespoke settings row, or feature-owned dialog root.
+- Popover menus hold short labels, not prose. Never add sentences that explain options,
+  instructions, or captions under items; if an option needs explaining, rename it or move the
+  explanation out of the menu.
 - Ratchets only shrink: do not raise `scripts/ui-component-guardrails.ts` ceilings or expand lint baselines.
 - Run `pnpm run lint:design-cheatsheet` (part of `pnpm run lint`) with the focused lint/tests; regenerate the cheatsheet with `pnpm exec tsx scripts/generate-design-cheatsheet.ts`.
 

@@ -12,6 +12,8 @@
   import Fa from 'svelte-fa';
   import { faGlobe } from '@fortawesome/free-solid-svg-icons';
   import { notify } from '$lib/components/patterns/notify';
+  import ProviderMenuHelp from './ProviderMenuHelp.svelte';
+  import ProviderMenuHelpText from './ProviderMenuHelpText.svelte';
   import { store as appStore } from '$store/renderer/store';
   import {
     providerDefaultUpdateRequested,
@@ -42,6 +44,11 @@
       : null,
   );
   const markDescriptionId = $derived(`remote-default-description-${providerId}`);
+  const markDescription = $derived(
+    folderKeys
+      ? m.settings_providerRemote_accountFolderBlocked_description({ keys: folderKeys.join(', ') })
+      : m.settings_providerRemote_defaultUseOnRemote_description(),
+  );
 
   /** Reports the outcome even after the menu closes and this component unmounts. */
   function watchOutcome(requestId: string) {
@@ -90,10 +97,9 @@
   data-testid="provider-default-remote-item"
 >
   {@render icon(faGlobe)}
-  {m.settings_providerRemote_useOnRemote_label()}
+  <span class="flex min-w-0 flex-1 items-start gap-1.5">
+    {m.settings_providerRemote_useOnRemote_label()}
+    <ProviderMenuHelp text={markDescription} />
+  </span>
 </Menu.CheckboxItem>
-<p id={markDescriptionId} class="py-1.5 ps-9 pe-2.5 type-caption {Menu.menuDescription}">
-  {folderKeys
-    ? m.settings_providerRemote_accountFolderBlocked_description({ keys: folderKeys.join(', ') })
-    : m.settings_providerRemote_defaultUseOnRemote_description()}
-</p>
+<ProviderMenuHelpText id={markDescriptionId} text={markDescription} />

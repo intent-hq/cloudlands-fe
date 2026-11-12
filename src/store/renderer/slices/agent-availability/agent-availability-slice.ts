@@ -39,13 +39,14 @@ export const checkSingleProviderRequested = createAction<[providerId: string]>(
   'agentAvailability/checkSingleProviderRequested',
 );
 
-export const claudeLoginRequested = createAsyncAction<[], void>(
-  'agentAvailability/claudeLogin',
-  'agentAvailability/claudeLoginRequested',
+/** Run the provider's CLI login command in the root terminal drawer. */
+export const providerLoginRequested = createAsyncAction<[providerId: string], void>(
+  'agentAvailability/providerLogin',
+  'agentAvailability/providerLoginRequested',
 );
 
-export const claudeLoginStarted = createAction<[terminalId: string]>(
-  'agentAvailability/claudeLoginStarted',
+export const providerLoginStarted = createAction<[providerId: string, terminalId: string]>(
+  'agentAvailability/providerLoginStarted',
 );
 
 /**

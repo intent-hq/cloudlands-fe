@@ -360,6 +360,42 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
         };
       },
     },
+    // Claude signed out with Fast mode and the Default's remote toggle: the full ⋯ menu.
+    'claude-signed-out': {
+      props: {},
+      setup: () => {
+        const restoreProviders = setupProviderSelector();
+        const restoreRemote = setupRemoteReadyPreview();
+        const restoreProfiles = setupProviderProfilesPreview({
+          appOwned: true,
+          withoutProfiles: true,
+          remote: { markedProfileIds: [], markedDefaults: [] },
+        });
+        const restoreFastMode = setupProviderFastModePreview();
+        appStore.dispatch(
+          providerCatalogLoaded({
+            providers: previewProviders.map((provider) =>
+              provider.id === 'claude-code'
+                ? { ...provider, supportsProfiles: true, loginCommandHint: 'claude auth login' }
+                : provider,
+            ),
+          }),
+        );
+        appStore.dispatch(
+          checkSingleProviderSuccess('claude-code', {
+            available: true,
+            authenticated: false,
+            version: PREVIEW_CLI_VERSIONS['claude-code'],
+          }),
+        );
+        return () => {
+          restoreFastMode();
+          restoreProfiles();
+          restoreRemote();
+          restoreProviders();
+        };
+      },
+    },
     'fast-mode': {
       props: {},
       setup: () => {

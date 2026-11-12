@@ -156,6 +156,7 @@ import QuotesIcon from 'phosphor-svelte/lib/QuotesIcon';
 import RobotIcon from './RobotIcon.svelte';
 import RocketIcon from 'phosphor-svelte/lib/RocketIcon';
 import ShieldIcon from 'phosphor-svelte/lib/ShieldIcon';
+import SignInIcon from 'phosphor-svelte/lib/SignInIcon';
 import SignOutIcon from 'phosphor-svelte/lib/SignOutIcon';
 import SlidersHorizontalIcon from 'phosphor-svelte/lib/SlidersHorizontalIcon';
 import SparkleIcon from 'phosphor-svelte/lib/SparkleIcon';
@@ -375,6 +376,7 @@ const iconComponents: Record<string, Component<any>> = {
   refresh: ArrowsClockwiseIcon,
   reply: ArrowBendUpLeftIcon,
   'right-from-bracket': SignOutIcon,
+  'right-to-bracket': SignInIcon,
   'right-left': ArrowsLeftRightIcon,
   robot: RobotIcon,
   rocket: RocketIcon,
@@ -605,6 +607,7 @@ export const faQuoteLeft = icon('quote-left');
 export const faRefresh = icon('refresh');
 export const faReply = icon('reply');
 export const faRightFromBracket = icon('right-from-bracket');
+export const faRightToBracket = icon('right-to-bracket');
 export const faRightLeft = icon('right-left');
 export const faRobot = icon('robot');
 export const faRocket = icon('rocket');

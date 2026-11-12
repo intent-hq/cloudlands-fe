@@ -10,8 +10,8 @@ import type { ProviderCatalogResult } from '$shared/provider-catalog';
 import {
   agentAvailabilityReducer,
   checkAllProvidersRequested,
-  claudeLoginRequested,
-  claudeLoginStarted,
+  providerLoginRequested,
+  providerLoginStarted,
   checkSingleProviderRequested,
   ensureProvidersChecked,
   initialState,
@@ -107,7 +107,7 @@ describe('providerAvailabilitySaga', () => {
       { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
       providerAvailabilitySaga,
     );
-    const request = claudeLoginRequested();
+    const request = providerLoginRequested('claude-code');
     try {
       channel.put(request);
       await request.promise;
@@ -268,8 +268,8 @@ describe('providerAvailabilitySaga', () => {
         { channel, dispatch, getState: () => ({ agentAvailability: initialState }) },
         providerAvailabilitySaga,
       );
-      const first = claudeLoginRequested();
-      const second = claudeLoginRequested();
+      const first = providerLoginRequested('claude-code');
+      const second = providerLoginRequested('claude-code');
       const settled = Promise.allSettled([first.promise, second.promise]);
       try {
         channel.put(first);
@@ -292,7 +292,7 @@ describe('providerAvailabilitySaga', () => {
         ).toHaveLength(outcome === 'success' ? 1 : 0);
         if (outcome === 'failure' || outcome === 'rejection') {
           mocks.invoke.mockResolvedValueOnce({ ok: true, terminalId: 'retry-login' });
-          const retry = claudeLoginRequested();
+          const retry = providerLoginRequested('claude-code');
           channel.put(retry);
           await retry.promise;
           expect(mocks.invoke).toHaveBeenCalledTimes(2);
@@ -625,7 +625,7 @@ describe('Claude login terminal dismissal', () => {
       providerAvailabilitySaga,
     );
     dispatch(openTerminalOverlay('__root__', 'login-terminal'));
-    dispatch(claudeLoginStarted('login-terminal'));
+    dispatch(providerLoginStarted('claude-code', 'login-terminal'));
     return { dispatch, task, isOpen: () => terminals.workspaces.__root__?.isOpen };
   }
 
@@ -748,7 +748,7 @@ describe('Claude login terminal dismissal', () => {
     });
     const login = startLogin();
     login.dispatch(openTerminalOverlay('__root__', 'replacement-login'));
-    login.dispatch(claudeLoginStarted('replacement-login'));
+    login.dispatch(providerLoginStarted('claude-code', 'replacement-login'));
     await vi.advanceTimersByTimeAsync(2000);
     expect(mocks.invoke).toHaveBeenCalledTimes(1);
     login.task.cancel();
