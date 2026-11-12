@@ -32,6 +32,11 @@ vi.mock('$lib/i18n/locale', () => ({
   resolvePreferenceToLocale: vi.fn(),
 }));
 vi.mock('$lib/electron-bridge', () => ({ isElectron: mocks.isElectron }));
+// This persistence suite owns a reducer/runSaga state, not the initialized app singleton.
+// Native dock shortcut settings are an independent root child with their own IPC/lease owner.
+vi.mock('./dock-shortcut-settings-saga', () => ({
+  dockShortcutSettingsSaga: function* () {},
+}));
 
 import {
   cycleNoteFontStyle,
