@@ -705,7 +705,7 @@ function* openEditorWith(
       window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request),
     )) as DockCaptureEditorOpenResult | undefined;
     mark('mainOpen');
-    startupLogger.debug('Capture editor startup', {
+    startupLogger.info('Capture editor startup', {
       origin: origin ?? 'pill',
       opened: !!opened?.ok,
       totalMs: Math.round(performance.now() - startedAt),

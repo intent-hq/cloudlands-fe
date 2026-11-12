@@ -372,7 +372,7 @@ function* captureWithHold(
     result = { ok: false, error: 'failed' };
   }
   // Duration only, for editor-delay reports (the native capture, incl. any selection UI).
-  captureLogger.debug('Dock capture', {
+  captureLogger.info('Dock capture', {
     ok: result.ok,
     captureMs: Math.round(performance.now() - captureStarted),
   });
