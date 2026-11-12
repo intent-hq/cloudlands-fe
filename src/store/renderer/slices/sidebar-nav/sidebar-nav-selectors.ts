@@ -97,6 +97,10 @@ export const selectShowCreateModal = store.createSelector(
   (state) => state.sidebarNav.showCreateModal,
 );
 
+export const selectCreateModalUsesHomeRepository = store.createSelector(
+  (state) => state.sidebarNav.createModalUsesHomeRepository,
+);
+
 export const selectCreateModalPrefillRequest = store.createSelector(
   (state) => state.sidebarNav.createModalPrefillRequest,
 );
