@@ -9043,5 +9043,12 @@
   "machineSetup_error_installFailed": "Das Installationsprogramm ist auf {host} fehlgeschlagen.",
   "machineSetup_error_noLink": "Das Installationsprogramm hat nicht rechtzeitig einen Link ausgegeben.",
   "machineSetup_error_seeLog_hint": "Das Protokoll unten zeigt, was passiert ist.",
-  "machineSetup_error_failed": "Etwas ist schiefgelaufen. Versuche es erneut."
+  "machineSetup_error_failed": "Etwas ist schiefgelaufen. Versuche es erneut.",
+  "machineSetup_run_found_label": "Intent auf {host} gefunden",
+  "machineSetup_run_remoteOn_description": "Remote-Verbindungen und der Tailcat-Tunnel wurden auf {host} eingeschaltet.",
+  "machineSetup_error_noStart": "Intent auf {host} läuft nicht und diese Version kann nicht von hier gestartet werden. Starte es dort und versuche es dann erneut.",
+  "machineSetup_error_didNotStart": "Intent ist auf {host} installiert, ist aber nicht gestartet.",
+  "machineSetup_error_tooOld": "Intent auf {host} ist zu alt zum Koppeln. Aktualisiere es dort und versuche es dann erneut.",
+  "machineSetup_error_orchestrator": "{host} ist so eingestellt, dass es selbst keine Agenten ausführt, und kann daher kein Node sein.",
+  "machineSetup_error_pairFailed": "Intent auf {host} konnte nicht koppeln."
 }

@@ -29,7 +29,10 @@ import {
   setLabsRemoteAgentsEnabled,
   setLabsSshMachineSetupEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
-import { remoteMachinesLoaded } from '$features/remote-machines/remote-machines-slice';
+import {
+  remoteMachineExposeRequested,
+  remoteMachinesLoaded,
+} from '$features/remote-machines/remote-machines-slice';
 import { nodesSaga } from '$features/nodes/nodes-saga';
 import { pasteLinkSubmitted } from '$features/nodes/nodes-slice';
 import { stashPastedLink } from '$features/nodes/pasted-link';
@@ -128,6 +131,8 @@ const doneEvent = (overrides: Partial<Extract<SshSetupEvent, { type: 'done' }>['
         existingId: null,
       },
       lingerUser: null,
+      existing: false,
+      remoteTurnedOn: false,
       ...overrides,
     },
   }) satisfies SshSetupEvent;
@@ -220,6 +225,41 @@ describe('paste in the wizard', () => {
     expect(ui.navigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
     expect(store.state.nodes.paste.phase).toBe('closed');
   });
+
+  it.each([
+    ['the Install screen', 'manual', true, false],
+    ['the Paste link card', 'paste', false, true],
+  ] as const)(
+    'a node link pasted on %s: prompt %s',
+    async (_where, screen, consented, prompted) => {
+      store.dispatch(
+        remoteMachinesLoaded({
+          supported: true,
+          claimInvites: true,
+          machines: [],
+          localFingerprint: null,
+          executorBackends: [],
+        }),
+      );
+      invoke.mockImplementation(async (name: string) => {
+        if (name === IPC_CHANNELS.REMOTE_MACHINES.INVITE_INSPECT)
+          return { ok: true, pendingId: 'inv-7', label: 'Lab node' };
+        return { ok: false, code: 'node-invite-used' };
+      });
+      dispatch(machineSetupOpened());
+      dispatch(machineSetupInstallPicked('node'));
+      dispatch(machineSetupScreenShown(screen));
+      stashPastedLink(
+        'intent://node?v=1&host=192.0.2.40&port=7443&fp=AA%3A40&invite=inv_7&secret=node-invite-secret',
+      );
+      dispatch(pasteLinkSubmitted(consented));
+      await vi.waitFor(() =>
+        expect(calls(IPC_CHANNELS.REMOTE_MACHINES.INVITE_CLAIM)).toHaveLength(1),
+      );
+      expect(ui.confirm.mock.calls.length > 0).toBe(prompted);
+      expect(seen.map((a) => a.type)).toContain('nodes/pasteTestingStarted');
+    },
+  );
 
   it('Back closes the wizard paste field', () => {
     dispatch(machineSetupOpened());
@@ -338,7 +378,7 @@ describe('SSH setup run', () => {
     expect(setup().open).toBe(true);
   });
 
-  it('claims a node link after the prompt', async () => {
+  it('claims a node link at once: choosing Install a node was the consent', async () => {
     store.dispatch(
       remoteMachinesLoaded({
         supported: true,
@@ -364,14 +404,67 @@ describe('SSH setup run', () => {
       result: {
         link: { kind: 'invite', pendingId: 'inv-1', label: 'gpu-rig' },
         lingerUser: null,
+        existing: false,
+        remoteTurnedOn: false,
       },
     });
     await vi.waitFor(() => expect(setup().ssh?.phase).toBe('failed'));
-    expect(ui.confirm).toHaveBeenCalled();
+    expect(ui.confirm).not.toHaveBeenCalled();
     expect(calls(IPC_CHANNELS.REMOTE_MACHINES.INVITE_CLAIM)).toEqual([
       [IPC_CHANNELS.REMOTE_MACHINES.INVITE_CLAIM, { pendingId: 'inv-1' }],
     ]);
     expect(setup().ssh?.failure?.addError?.code).toBe('node-invite-used');
+  });
+
+  it('adds a node-mode box from the backend card without the prompt, and makes it available', async () => {
+    commitReply = { ok: true, connection: { ...ADDED, id: 'gpu-rig', daemonMode: 'node' } };
+    await startRun();
+    emit(
+      doneEvent({
+        link: {
+          kind: 'pair',
+          pendingId: 'p-node',
+          machineKind: 'node',
+          label: 'gpu-rig',
+          existingId: null,
+        },
+      }),
+    );
+    await vi.waitFor(() =>
+      expect(seen.map((a) => a.type)).toContain(remoteMachineExposeRequested.toString()),
+    );
+    expect(ui.confirm).not.toHaveBeenCalled();
+    expect(calls(CONNECTIONS.PAIR_LINK_COMMIT)).toEqual([
+      [CONNECTIONS.PAIR_LINK_COMMIT, { pendingId: 'p-node' }],
+    ]);
+  });
+
+  it('still refuses a node when Remote agents is off, with no prompt', async () => {
+    store.dispatch(setLabsRemoteAgentsEnabled(false));
+    await startRun();
+    emit(
+      doneEvent({
+        link: {
+          kind: 'pair',
+          pendingId: 'p-node',
+          machineKind: 'node',
+          label: 'gpu-rig',
+          existingId: null,
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(setup().ssh?.phase).toBe('failed'));
+    expect(setup().ssh?.failure?.addError?.code).toBe('labs-off');
+    expect(calls(CONNECTIONS.PAIR_LINK_COMMIT)).toHaveLength(0);
+    expect(ui.confirm).not.toHaveBeenCalled();
+  });
+
+  it('keeps the wizard open to say pairing turned on remote connections', async () => {
+    await startRun();
+    emit(doneEvent({ existing: true, remoteTurnedOn: true }));
+    await vi.waitFor(() => expect(setup().ssh?.phase).toBe('done'));
+    expect(setup().ssh?.remoteTurnedOn).toBe(true);
+    expect(setup().open).toBe(true);
   });
 
   it('prefills the next login from the last one, without a secret', async () => {

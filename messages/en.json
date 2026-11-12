@@ -9043,5 +9043,12 @@
   "machineSetup_error_installFailed": "The installer failed on {host}.",
   "machineSetup_error_noLink": "The installer did not print a link in time.",
   "machineSetup_error_seeLog_hint": "The log below shows what happened.",
-  "machineSetup_error_failed": "Something went wrong. Try again."
+  "machineSetup_error_failed": "Something went wrong. Try again.",
+  "machineSetup_run_found_label": "Found Intent on {host}",
+  "machineSetup_run_remoteOn_description": "Turned on remote connections and the Tailcat tunnel on {host}.",
+  "machineSetup_error_noStart": "Intent on {host} is not running and this version can't be started from here. Start it there, then try again.",
+  "machineSetup_error_didNotStart": "Intent is installed on {host} but did not start.",
+  "machineSetup_error_tooOld": "Intent on {host} is too old to pair. Update it there, then try again.",
+  "machineSetup_error_orchestrator": "{host} is set to run no agents itself, so it can't be a node.",
+  "machineSetup_error_pairFailed": "Intent on {host} could not pair."
 }

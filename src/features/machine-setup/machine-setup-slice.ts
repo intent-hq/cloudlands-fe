@@ -48,6 +48,12 @@ export interface SshRunState {
   failure: SshRunFailure | null;
   /** Done but lingering is still off: show the sudo step. */
   lingerUser: string | null;
+  /** intentd was already installed (the `found` step). */
+  existing: boolean;
+  /** An existing install had to be started (the `starting` step). */
+  startedExisting: boolean;
+  /** Done; pairing turned on remote connections or the tunnel. */
+  remoteTurnedOn: boolean;
 }
 
 export interface MachineSetupState {
@@ -112,7 +118,10 @@ export const sshHostKeyAnswered = createAction<[trust: boolean]>('machineSetup/s
 export const sshSetupAdding = createAction('machineSetup/sshSetupAdding');
 export const sshSetupFailed = createAction<[failure: SshRunFailure]>('machineSetup/sshSetupFailed');
 /** Added, with one more step to show (lingering off, or a Mac nobody is logged in to). */
-export const sshSetupDone = createAction<[lingerUser: string]>('machineSetup/sshSetupDone');
+/** Added, with something to show: the lingering step or what pairing turned on. */
+export const sshSetupDone = createAction<[lingerUser: string | null, remoteTurnedOn: boolean]>(
+  'machineSetup/sshSetupDone',
+);
 
 export const machineSetupReducer = createReducer<MachineSetupState>(initialState);
 
@@ -160,6 +169,9 @@ machineSetupReducer.with(sshRunShown, (state, { payload: [login] }) => ({
     hostKey: null,
     failure: null,
     lingerUser: null,
+    existing: false,
+    startedExisting: false,
+    remoteTurnedOn: false,
   },
 }));
 machineSetupReducer.with(sshSetupStarted, (state, { payload: [runId] }) =>
@@ -171,7 +183,15 @@ machineSetupReducer.with(sshSetupEventReceived, (state, { payload: [event] }) =>
     return state;
   switch (event.type) {
     case 'step':
-      return { ...state, ssh: { ...ssh, step: event.step } };
+      return {
+        ...state,
+        ssh: {
+          ...ssh,
+          step: event.step,
+          existing: ssh.existing || event.step === 'found',
+          startedExisting: ssh.startedExisting || (ssh.existing && event.step === 'starting'),
+        },
+      };
     case 'log':
       return {
         ...state,
@@ -203,6 +223,8 @@ machineSetupReducer.with(sshSetupFailed, (state, { payload: [failure] }) =>
     ? { ...state, ssh: { ...state.ssh, phase: 'failed', step: failure.step, failure } }
     : state,
 );
-machineSetupReducer.with(sshSetupDone, (state, { payload: [lingerUser] }) =>
-  state.ssh ? { ...state, ssh: { ...state.ssh, phase: 'done', lingerUser } } : state,
+machineSetupReducer.with(sshSetupDone, (state, { payload: [lingerUser, remoteTurnedOn] }) =>
+  state.ssh
+    ? { ...state, ssh: { ...state.ssh, phase: 'done', lingerUser, remoteTurnedOn } }
+    : state,
 );

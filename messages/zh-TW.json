@@ -9043,5 +9043,12 @@
   "machineSetup_error_installFailed": "安裝程式在 {host} 上失敗。",
   "machineSetup_error_noLink": "安裝程式未能及時輸出連結。",
   "machineSetup_error_seeLog_hint": "下方記錄顯示了發生的情況。",
-  "machineSetup_error_failed": "發生了問題。請重試。"
+  "machineSetup_error_failed": "發生了問題。請重試。",
+  "machineSetup_run_found_label": "在 {host} 上找到了 Intent",
+  "machineSetup_run_remoteOn_description": "已在 {host} 上開啟遠端連線和 Tailcat 通道。",
+  "machineSetup_error_noStart": "{host} 上的 Intent 沒有執行，且此版本無法從這裡啟動。請在那裡啟動後再試。",
+  "machineSetup_error_didNotStart": "Intent 已安裝在 {host} 上，但沒有啟動。",
+  "machineSetup_error_tooOld": "{host} 上的 Intent 版本太舊，無法配對。請在那裡更新後再試。",
+  "machineSetup_error_orchestrator": "{host} 被設定為自身不執行代理，因此不能作為節點。",
+  "machineSetup_error_pairFailed": "{host} 上的 Intent 無法配對。"
 }

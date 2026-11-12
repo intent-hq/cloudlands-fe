@@ -193,7 +193,8 @@
   function submitLink() {
     if (!linkText.trim() || testing) return;
     stashPastedLink(linkText);
-    appStore.dispatch(pasteLinkSubmitted());
+    // The Install screens' link: choosing to install was the consent.
+    appStore.dispatch(pasteLinkSubmitted(screen === 'manual'));
   }
 
   function tryAgain() {

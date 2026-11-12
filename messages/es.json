@@ -9043,5 +9043,12 @@
   "machineSetup_error_installFailed": "El instalador falló en {host}.",
   "machineSetup_error_noLink": "El instalador no mostró un enlace a tiempo.",
   "machineSetup_error_seeLog_hint": "El registro de abajo muestra lo que pasó.",
-  "machineSetup_error_failed": "Algo salió mal. Inténtalo de nuevo."
+  "machineSetup_error_failed": "Algo salió mal. Inténtalo de nuevo.",
+  "machineSetup_run_found_label": "Intent encontrado en {host}",
+  "machineSetup_run_remoteOn_description": "Se activaron las conexiones remotas y el túnel de Tailcat en {host}.",
+  "machineSetup_error_noStart": "Intent no se está ejecutando en {host} y esta versión no se puede iniciar desde aquí. Inícialo allí y vuelve a intentarlo.",
+  "machineSetup_error_didNotStart": "Intent está instalado en {host}, pero no se inició.",
+  "machineSetup_error_tooOld": "Intent en {host} es demasiado antiguo para emparejarse. Actualízalo allí y vuelve a intentarlo.",
+  "machineSetup_error_orchestrator": "{host} está configurado para no ejecutar agentes, así que no puede ser un nodo.",
+  "machineSetup_error_pairFailed": "Intent en {host} no pudo emparejarse."
 }

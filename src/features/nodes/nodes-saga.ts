@@ -82,6 +82,8 @@ const HIGHLIGHT_MS = 2_500;
 
 /** The last link submitted in the paste row, for Try again. Never put in state. */
 let lastPasted: string | null = null;
+/** Whether that link came from the wizard's Install flows (no node prompt). */
+let lastConsented = false;
 const SNAPSHOT_WAIT_MS = 15_000;
 
 function bridge() {
@@ -173,18 +175,28 @@ function* clearHighlight(action: ReturnType<typeof rowHighlighted>): SagaGenerat
   yield* put(rowHighlighted(null));
 }
 
-/** Ask before making a node available; skipped when it already is. */
-function* promptForNode(connection: ConnectionRecord, label: string): SagaGenerator<void> {
+/**
+ * Ask before making a node available; skipped when it already is. With
+ * `consented` (the wizard's Install flows, where choosing to install was the
+ * yes) it makes the node available without asking.
+ */
+function* promptForNode(
+  connection: ConnectionRecord,
+  label: string,
+  consented = false,
+): SagaGenerator<void> {
   const machines = selectRemoteMachines.select(store.state);
   const exposed = machineForConnection(machines, connection, null);
   if (!canOfferExpose(exposed)) return;
   const backend = selectCurrentBackendLabel.select(store.state);
-  const accepted = yield* call(confirm, {
-    title: m.nodes_prompt_title({ node: label, backend }),
-    description: m.nodes_prompt_description({ node: label, backend }),
-    confirmLabel: m.nodes_prompt_confirm_label(),
-    cancelLabel: m.nodes_prompt_cancel_label(),
-  });
+  const accepted =
+    consented ||
+    (yield* call(confirm, {
+      title: m.nodes_prompt_title({ node: label, backend }),
+      description: m.nodes_prompt_description({ node: label, backend }),
+      confirmLabel: m.nodes_prompt_confirm_label(),
+      cancelLabel: m.nodes_prompt_cancel_label(),
+    }));
   if (accepted) yield* put(remoteMachineExposeRequested(connection.id, undefined, true));
 }
 
@@ -197,6 +209,7 @@ function* promptForNode(connection: ConnectionRecord, label: string): SagaGenera
 function* addInspected(
   inspected: PairLinkInspected,
   fromPaste = false,
+  consented = false,
 ): SagaGenerator<NodeAddError | null | 'cancelled'> {
   if (inspected.kind === 'node') {
     const checked = fromPaste
@@ -221,7 +234,8 @@ function* addInspected(
     lastPasted = null;
     yield* put(pasteCompleted());
   }
-  if (inspected.kind === 'node') yield* call(promptForNode, committed.connection, inspected.label);
+  if (inspected.kind === 'node')
+    yield* call(promptForNode, committed.connection, inspected.label, consented);
   return null;
 }
 
@@ -296,6 +310,7 @@ function* inviteSupport(): SagaGenerator<'ok' | NodeRefusal | 'invites-unsupport
 function* claimInvite(
   held: { pendingId: string; label: string },
   masked: string | null = null,
+  consented = false,
 ): SagaGenerator<NodeAddError | null | 'cancelled'> {
   const fromPaste = masked !== null;
   const checked = fromPaste
@@ -307,12 +322,14 @@ function* claimInvite(
     return support === 'cancelled' ? 'cancelled' : { code: support, node: held.label };
   }
   const backend = selectCurrentBackendLabel.select(store.state);
-  const accepted = yield* call(confirm, {
-    title: m.nodes_prompt_title({ node: held.label, backend }),
-    description: m.nodes_invite_prompt_description({ node: held.label, backend }),
-    confirmLabel: m.nodes_prompt_confirm_label(),
-    cancelLabel: m.nodes_paste_cancel_label(),
-  });
+  const accepted =
+    consented ||
+    (yield* call(confirm, {
+      title: m.nodes_prompt_title({ node: held.label, backend }),
+      description: m.nodes_invite_prompt_description({ node: held.label, backend }),
+      confirmLabel: m.nodes_prompt_confirm_label(),
+      cancelLabel: m.nodes_paste_cancel_label(),
+    }));
   if (!accepted) {
     yield* call(invokeInviteDiscard, held.pendingId);
     if (fromPaste) yield* put(pasteClosed());
@@ -348,7 +365,7 @@ function* claimInvite(
 }
 
 /** One pasted `intent://node` link: main holds it, then ask and claim. */
-function* pasteInvite(text: string): SagaGenerator<void> {
+function* pasteInvite(text: string, consented: boolean): SagaGenerator<void> {
   let held: HeldInvite;
   try {
     held = inviteInspectReply(yield* call(invokeInviteInspect, text));
@@ -359,7 +376,7 @@ function* pasteInvite(text: string): SagaGenerator<void> {
     yield* put(pasteFailed({ code: held.code }));
     return;
   }
-  const error = yield* call(claimInvite, held, maskNodeInviteUri(text));
+  const error = yield* call(claimInvite, held, maskNodeInviteUri(text), consented);
   if (error === 'cancelled') lastPasted = null;
   else if (error) yield* put(pasteFailed(error));
 }
@@ -375,10 +392,11 @@ function discardLate(request: Promise<unknown>) {
 }
 
 /** One paste attempt. Cancel stops it before anything is saved. */
-function* testPasted(text: string): SagaGenerator<void> {
+function* testPasted(text: string, consented = false): SagaGenerator<void> {
   lastPasted = text;
+  lastConsented = consented;
   if (isNodeInviteUri(text)) {
-    yield* call(pasteInvite, text);
+    yield* call(pasteInvite, text, consented);
     return;
   }
   if (!isPairingUri(text)) {
@@ -413,36 +431,47 @@ function* testPasted(text: string): SagaGenerator<void> {
     );
     return;
   }
-  const error = yield* call(addInspected, inspected, true);
+  const error = yield* call(addInspected, inspected, true, consented);
   if (error === 'cancelled') lastPasted = null;
   else if (error) yield* put(pasteFailed(error));
 }
 
 /**
  * Add a link main captured itself (SSH machine setup): a held pair link is
- * saved (a node only when the backend can use it, then the prompt); a held
- * node invite is asked about and claimed. Returns the error to show, null
- * once added, or 'cancelled' when the user declined the node prompt.
+ * saved (a node only when the backend can use it); a held node invite is
+ * claimed. Choosing to install was the consent, so a node is made available
+ * without the prompt; the support refusals still apply. Returns the error
+ * to show, or null once added.
  */
 export function* addHeldLink(link: SshSetupLink): SagaGenerator<NodeAddError | null | 'cancelled'> {
   if (link.kind === 'invite')
-    return yield* call(claimInvite, { pendingId: link.pendingId, label: inviteLabel(link.label) });
-  return yield* call(addInspected, {
-    ok: true as const,
-    pendingId: link.pendingId,
-    kind: link.machineKind,
-    label: link.label,
-    existingId: link.existingId,
-  });
+    return yield* call(
+      claimInvite,
+      { pendingId: link.pendingId, label: inviteLabel(link.label) },
+      null,
+      true,
+    );
+  return yield* call(
+    addInspected,
+    {
+      ok: true as const,
+      pendingId: link.pendingId,
+      kind: link.machineKind,
+      label: link.label,
+      existingId: link.existingId,
+    },
+    false,
+    true,
+  );
 }
 
-function* submitPaste(): SagaGenerator<void> {
+function* submitPaste(action: ReturnType<typeof pasteLinkSubmitted>): SagaGenerator<void> {
   const text = takePastedLink();
-  if (text !== null) yield* call(testPasted, text);
+  if (text !== null) yield* call(testPasted, text, action.payload[0] === true);
 }
 
 function* retryPaste(): SagaGenerator<void> {
-  if (lastPasted) yield* call(testPasted, lastPasted);
+  if (lastPasted) yield* call(testPasted, lastPasted, lastConsented);
 }
 
 function nodeLinkErrorMessage(error: NodeAddError): string {
@@ -519,7 +548,8 @@ export function* nodesSaga(): SagaGenerator<void> {
   yield* takeLeading(
     [pasteLinkSubmitted, pasteLinkRetried],
     function* (action): SagaGenerator<void> {
-      if (action.type === pasteLinkSubmitted.toString()) yield* call(submitPaste);
+      if (action.type === pasteLinkSubmitted.toString())
+        yield* call(submitPaste, action as ReturnType<typeof pasteLinkSubmitted>);
       else yield* call(retryPaste);
     },
   );

@@ -40,16 +40,28 @@
   let { run, logOpen = $bindable(false), onTryAgain, onRunItMyself }: Props = $props();
 
   const backend$ = selectCurrentBackendLabel();
-  const STEPS: SshSetupStep[] = ['connecting', 'installing', 'starting', 'pairing', 'adding'];
+  // An existing install replaces Installing with Found, and starts only if stopped.
+  const steps = $derived<SshSetupStep[]>(
+    run.existing
+      ? [
+          'connecting',
+          'found',
+          ...(run.startedExisting ? (['starting'] as const) : []),
+          'pairing',
+          'adding',
+        ]
+      : ['connecting', 'installing', 'starting', 'pairing', 'adding'],
+  );
   const stepLabel: Record<SshSetupStep, () => string> = {
     connecting: () => m.machineSetup_run_connecting_label(),
     installing: () => m.machineSetup_run_installing_label(),
+    found: () => m.machineSetup_run_found_label({ host: run.host }),
     starting: () => m.machineSetup_run_starting_label(),
     pairing: () => m.machineSetup_run_pairing_label(),
     adding: () => m.machineSetup_run_adding_label(),
   };
 
-  const current = $derived(STEPS.indexOf(run.step));
+  const current = $derived(steps.indexOf(run.step));
   type Status = 'done' | 'active' | 'failed' | 'pending';
   function status(index: number): Status {
     if (run.phase === 'done') return 'done';
@@ -79,7 +91,7 @@
 
 <div class="space-y-5" data-machine-setup-ssh-run={run.phase}>
   <div class="space-y-2" role="list" aria-label={m.machineSetup_run_steps_ariaLabel()}>
-    {#each STEPS as step, index (step)}
+    {#each steps as step, index (step)}
       {@const state = status(index)}
       <div class="flex items-center gap-3" role="listitem" data-step={step} data-status={state}>
         <span class="flex size-4 items-center justify-center" aria-hidden="true">
@@ -160,6 +172,11 @@
       </p>
       <CopyInput value={lingerCommand(run.lingerUser)} class="font-mono" />
     </div>
+  {/if}
+  {#if run.phase === 'done' && run.remoteTurnedOn}
+    <p class="type-caption text-muted-foreground" data-machine-setup-remote-on>
+      {m.machineSetup_run_remoteOn_description({ host: run.host })}
+    </p>
   {/if}
 
   {#if run.log.length > 0}

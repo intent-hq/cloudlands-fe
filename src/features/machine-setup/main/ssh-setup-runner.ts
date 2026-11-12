@@ -200,6 +200,88 @@ export function installCommand(target: SshSetupStartParams['target']): string {
   );
 }
 
+/** Quote one word for sh. */
+function shq(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/** The user unit the installer writes, and the data dir and binary it names. */
+const DETECT_COMMAND = [
+  'UNIT="$HOME/.config/systemd/user/intentd.service"',
+  'if [ -f "$UNIT" ]; then echo unit=1; sed -n "s/^ExecStart=/exec=/p" "$UNIT" | head -n 1; ' +
+    'grep -o "INTENTD_DATA_DIR=[^\\"]*" "$UNIT" | head -n 1 | sed "s/^/env_/"; fi',
+].join('; ');
+
+/** `systemctl --user` needs the session bus, which a non-login SSH shell may not name. */
+const SYSTEMD_ENV = 'XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"';
+
+interface ExistingInstall {
+  unit: boolean;
+  execPath: string | null;
+  dataDir: string | null;
+}
+
+/** Undo systemd's escaping in a unit value (`\\`, `\"`, `%%`). */
+function unescapeUnit(value: string): string {
+  return value.replace(/\\(["\\])/g, '$1').replaceAll('%%', '%');
+}
+
+/** The binary of an `ExecStart=` value: a quoted first word, or the first word. @internal */
+export function parseExecStart(value: string): string | null {
+  const rest = value.trim().replace(/^[-@+!:]+/, '');
+  if (!rest) return null;
+  if (rest.startsWith('"')) {
+    const match = /^"((?:[^"\\]|\\.)*)"/.exec(rest);
+    return match ? unescapeUnit(match[1]) : null;
+  }
+  return unescapeUnit(rest.split(/\s+/)[0]);
+}
+
+/** Read the detection output (`unit=1`, `exec=…`, `env_INTENTD_DATA_DIR=…`). @internal */
+export function parseExistingInstall(stdout: string): ExistingInstall {
+  const found: ExistingInstall = { unit: false, execPath: null, dataDir: null };
+  for (const line of stdout.split('\n')) {
+    if (line === 'unit=1') found.unit = true;
+    else if (line.startsWith('exec=')) found.execPath = parseExecStart(line.slice(5));
+    else if (line.startsWith('env_INTENTD_DATA_DIR='))
+      found.dataDir = unescapeUnit(line.slice('env_INTENTD_DATA_DIR='.length)) || null;
+  }
+  return found;
+}
+
+/** The first runnable intentd: the unit's binary, then PATH, then the installer's dirs. */
+function findBinaryCommand(execPath: string | null): string {
+  const candidates = [
+    ...(execPath ? [shq(execPath)] : []),
+    '"$(command -v intentd 2>/dev/null)"',
+    '/usr/local/bin/intentd',
+    '"$HOME/.local/bin/intentd"',
+  ];
+  return (
+    `for p in ${candidates.join(' ')}; do ` +
+    `if [ -n "$p" ] && [ -x "$p" ]; then printf '%s\\n' "$p"; exit 0; fi; done; exit 1`
+  );
+}
+
+/** Why `intentd pair` failed on an existing install, from its output. */
+function pairFailureCode(
+  code: number | null,
+  lines: string[],
+): 'too-old' | 'orchestrator' | 'pair-failed' {
+  const text = lines.join('\n');
+  if (code === 2 && /unexpected argument '--(?:tunnel|node)'/.test(text)) return 'too-old';
+  if (/cannot create a node invite: .*method not found/i.test(text)) return 'too-old';
+  if (/runs agents only on other machines/.test(text)) return 'orchestrator';
+  return 'pair-failed';
+}
+
+/** `intentd start` is unknown: a direct (non-sitter) build. */
+function isMissingStart(lines: string[]): boolean {
+  return /(?:unrecognized|unexpected|invalid) subcommand 'start'|unexpected argument 'start'/.test(
+    lines.join('\n'),
+  );
+}
+
 function fallbackPairCommand(target: SshSetupStartParams['target']): string {
   const args = target === 'node' ? 'pair --node --tunnel --yes' : 'pair --yes --tunnel';
   return [
@@ -513,6 +595,10 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
     if (os !== 'Linux')
       throw new SetupFailure('unsupported-os', { os: os.slice(0, 64) || 'unknown' });
 
+    const detected = parseExistingInstall((await exec(run, DETECT_COMMAND)).stdout);
+    const binary = (await exec(run, findBinaryCommand(detected.execPath))).stdout.trim();
+    if (binary) return await useExisting(run, detected, binary, user, nodeName);
+
     // Installer: the step follows its output; the marker line is the link.
     setStep(run, 'installing');
     let link: string | null = null;
@@ -550,9 +636,22 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
     }
 
     const linger = await lingerUser(run, user);
+    return {
+      ...(await holdFor(run, link, nodeName)),
+      lingerUser: linger,
+      existing: false,
+      remoteTurnedOn: false,
+    };
+  }
 
+  /** Hand the captured link to main's pipeline. */
+  async function holdFor(
+    run: Run,
+    link: string,
+    nodeName: string,
+  ): Promise<{ link: SshSetupLink }> {
     setStep(run, 'adding');
-    const holding = Promise.resolve().then(() => deps.holdLink(link as string, nodeName));
+    const holding = Promise.resolve().then(() => deps.holdLink(link, nodeName));
     // A run cancelled or timed out while the link was being held keeps nothing.
     holding.then(
       (late) => {
@@ -568,9 +667,89 @@ export function createSshSetupRunner(deps: SshSetupRunnerDeps): SshSetupRunner {
       held = null;
     }
     if (!held) throw new SetupFailure('link-rejected');
+    return { link: held };
+  }
+
+  /**
+   * intentd is already installed: never install, restart, upgrade or change
+   * its mode. Start it only if it is stopped, then pair the running daemon.
+   */
+  async function useExisting(
+    run: Run,
+    found: ExistingInstall,
+    binary: string,
+    user: string,
+    nodeName: string,
+  ): Promise<SshSetupResult> {
+    setStep(run, 'found');
+    const env = found.dataDir ? `INTENTD_DATA_DIR=${shq(found.dataDir)} ` : '';
+    const intentd = (args: string) => `${env}${shq(binary)} ${args}`;
+    const waitUp = (seconds: number) =>
+      exec(
+        run,
+        `i=0; while [ "$i" -lt ${seconds} ]; do ${intentd('status')} >/dev/null 2>&1 && exit 0; ` +
+          `sleep 1; i=$((i+1)); done; exit 1`,
+      );
+
+    if ((await exec(run, intentd('status'))).code !== 0) {
+      const active =
+        found.unit &&
+        (await tryExec(run, `${SYSTEMD_ENV} systemctl --user is-active intentd`)).stdout.trim() ===
+          'active';
+      if (!active) {
+        setStep(run, 'starting');
+        if (found.unit) {
+          await tryExec(run, `${SYSTEMD_ENV} systemctl --user start intentd`);
+        } else {
+          const lines: string[] = [];
+          const started = await exec(run, intentd('start'), (line) => {
+            lines.push(line);
+            log(run, line);
+          });
+          if (started.code !== 0 && isMissingStart(lines)) throw new SetupFailure('no-start');
+        }
+      }
+      if ((await waitUp(60)).code !== 0) throw new SetupFailure('did-not-start');
+    }
+
+    const settings = async () => {
+      const out = (
+        await tryExec(
+          run,
+          `${intentd('settings server.wsApi.enabled')}; ${intentd('settings server.tunnel.enabled')}`,
+        )
+      ).stdout.split('\n');
+      return [0, 1].map((i) => /\btrue\b/.test(out[i] ?? ''));
+    };
+    const before = await settings();
+
+    setStep(run, 'pairing');
+    armWatchdog(run);
+    const raw: string[] = [];
+    let link: string | null = null;
+    const pair = await exec(
+      run,
+      intentd(run.params.target === 'node' ? 'pair --node --tunnel --yes' : 'pair --yes --tunnel'),
+      (line) => {
+        armWatchdog(run);
+        raw.push(line);
+        link ??= parsePairUrl(line);
+        log(run, line);
+      },
+    );
+    stopWatchdog(run);
+    if (pair.code !== 0) throw new SetupFailure(pairFailureCode(pair.code, raw));
+    raw.length = 0;
+    if (!link) throw new SetupFailure('no-link');
+
+    const after = await settings();
+    const remoteTurnedOn = after.some((on, i) => on && !before[i]);
+    const linger = await lingerUser(run, user);
     return {
-      link: held,
+      ...(await holdFor(run, link, nodeName)),
       lingerUser: linger,
+      existing: true,
+      remoteTurnedOn,
     };
   }
 
