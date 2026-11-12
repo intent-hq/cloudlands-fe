@@ -152,12 +152,12 @@
                 ? m.settings_keyboardShortcuts_dockPreparing_status()
                 : m.settings_keyboardShortcuts_dockSaving_status()}
             </p>{/if}
-          {#if $dockError}<p role="alert" class="mt-2 type-caption text-destructive">
+          {#if $dockError}<p role="alert" class="mt-2 type-caption text-danger">
               {issueText($dockError)}
             </p>{/if}
           {#each ($dockSettings?.issues ?? []).filter((issue) => !issue.id) as issue}<p
               role="alert"
-              class="mt-2 type-caption text-destructive"
+              class="mt-2 type-caption text-danger"
             >
               {issueText(issue)}
             </p>{/each}
@@ -213,7 +213,7 @@
                   {/if}
                   {#if isDockShortcutId(definition.id)}
                     {#each $dockSettings?.issues.filter((issue) => issue.id === definition.id) ?? [] as issue}
-                      <p role="alert" class="mt-1 max-w-48 type-caption text-destructive">
+                      <p role="alert" class="mt-1 max-w-48 type-caption text-danger">
                         {issueText(issue)}
                       </p>
                     {/each}
