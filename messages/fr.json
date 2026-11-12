@@ -4933,6 +4933,7 @@
   "settings_aiBehavior_usageHint": "Sélectionnez ce spécialiste au démarrage d'une discussion pour utiliser son modèle et son prompt système. Vous pouvez personnaliser les deux ci-dessous.",
   "settings_appearance_chatAurora_description": "Lueur animée derrière la zone de saisie pendant qu’un agent répond.",
   "settings_appearance_chatAurora_label": "Aurore du chat",
+  "settings_appearance_chatContentWidth_description": "Utiliser toute la largeur du panneau pour les messages et la zone de saisie.",
   "settings_appearance_chatContentWidth_label": "Pleine largeur",
   "settings_appearance_collapseToolRuns_description": "Regroupe les appels d’outils et étapes de réflexion consécutifs du chat en une seule ligne dépliable.",
   "settings_appearance_collapseToolRuns_label": "Réduire l’activité des outils",
