@@ -832,6 +832,13 @@ export async function setDetectedDeviceKind(
   const changed = await mutate(async (state) => {
     const session = state.sessions.find((s) => s.id === id);
     if (!canCommit(session, guard) || session.detectedDeviceKind === kind) return false;
+    // Pin a legacy record's pairing time before its clock moves (as setHostname does).
+    if (session.pairedAt === undefined)
+      session.legacyAccounts = sortedStrings([
+        ...(session.legacyAccounts ?? []),
+        accountKeyFor(session.host, session.port),
+      ]);
+    session.pairedAt ??= session.updatedAt;
     session.detectedDeviceKind = kind;
     session.updatedAt = Math.max(
       Date.now(),

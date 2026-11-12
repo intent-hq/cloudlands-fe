@@ -4517,7 +4517,11 @@ export async function retryBackendConnection(id: string): Promise<boolean> {
       resolve(status === 'connected');
     };
     client.on('status', onStatus);
-    client.retryNow();
+    // No dial now (cooldown, shutting down) and none in flight: report the failure at once.
+    if (!client.retryNow() && client.getStatus() !== 'connecting') {
+      client.off('status', onStatus);
+      resolve(false);
+    }
   });
 }
 

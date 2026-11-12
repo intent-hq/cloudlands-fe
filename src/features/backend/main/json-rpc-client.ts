@@ -814,15 +814,16 @@ export class JsonRpcClient extends EventEmitter {
 
   /**
    * Dial a dropped connection now instead of waiting out the backoff, for a
-   * user who asked for this machine. No-op while connected or connecting, and
-   * during the connection-limit cooldown.
+   * user who asked for this machine. Returns whether it dialled: not while
+   * connected or connecting, nor during the connection-limit cooldown.
    */
-  retryNow(): void {
-    if (this.status !== 'disconnected' || this.socket) return;
-    if (this.refuseSealed() || this.lifecycle?.stopping || this.disposed) return;
-    if (this.isInConnectionLimitCooldown()) return;
+  retryNow(): boolean {
+    if (this.status !== 'disconnected' || this.socket) return false;
+    if (this.refuseSealed() || this.lifecycle?.stopping || this.disposed) return false;
+    if (this.isInConnectionLimitCooldown()) return false;
     this.clearReconnect();
     this.connect();
+    return true;
   }
 
   private isInConnectionLimitCooldown(): boolean {

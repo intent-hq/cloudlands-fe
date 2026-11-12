@@ -707,14 +707,14 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     sockets[0].emit('close');
     expect(sockets).toHaveLength(1);
 
-    client.retryNow();
+    expect(client.retryNow()).toBe(true);
     expect(sockets).toHaveLength(2);
     // The pending backoff dial is gone: no extra socket when it would have fired.
     await vi.advanceTimersByTimeAsync(100);
     expect(sockets).toHaveLength(2);
 
     // While that dial is in flight, another retry changes nothing.
-    client.retryNow();
+    expect(client.retryNow()).toBe(false);
     expect(sockets).toHaveLength(2);
     client.dispose();
   });

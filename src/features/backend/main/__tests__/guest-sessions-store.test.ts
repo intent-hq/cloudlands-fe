@@ -406,6 +406,21 @@ describe('guest-sessions-store', () => {
     expect(await reloaded.setDetectedDeviceKind('unknown-id', 'server')).toBe(false);
   });
 
+  it('keeps a legacy record pinned to its pairing time when the device kind is saved', async () => {
+    const store = await import('../guest-sessions-store');
+    const record = await store.add(sample);
+    const raw = await readFile();
+    const rows = raw.sessions as Array<{ pairedAt?: number; updatedAt: number }>;
+    delete rows[0].pairedAt;
+    const pairedAt = rows[0].updatedAt;
+    await fs.writeFile(path.join(tmpDir, 'guest-sessions.json'), JSON.stringify(raw));
+
+    expect(await store.setDetectedDeviceKind(record.id, 'server')).toBe(true);
+    const [saved] = await store.list();
+    expect(saved.pairedAt).toBe(pairedAt);
+    expect(saved.detectedDeviceKind).toBe('server');
+  });
+
   it('keeps two invited people on one host separate across a disk reload', async () => {
     const store = await import('../guest-sessions-store');
     const fingerprint = 'ab'.repeat(32);

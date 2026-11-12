@@ -121,7 +121,7 @@ vi.mock('../window-backend', () => ({
 import { IPC_CHANNELS } from '../../shared/ipc-registry';
 import type { MachineRailState } from '../../shared/types/machine-rail';
 import { registerMachineRailHandlers } from '../machine-rail';
-import { setMachineRailEnabledFlag } from '../machine-rail-state';
+import { getMachineRailSession, setMachineRailEnabledFlag } from '../machine-rail-state';
 
 const RAIL = IPC_CHANNELS.MACHINE_RAIL;
 const REVEAL_TIMEOUT_MS = 250;
@@ -291,6 +291,25 @@ describe('machine rail switching', () => {
     );
     await invoke(RAIL.HEALTH, viewOf('b').webContents, { degraded: false });
     expect((await state()).degradedIds).toEqual([]);
+  });
+
+  it('drops a degraded mark once no renderer of that machine is left', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    await invoke(RAIL.READY, viewOf('b').webContents);
+    await invoke(RAIL.HEALTH, viewOf('b').webContents, { degraded: true });
+    await invoke(RAIL.REMOVE, home(), { id: 'b' });
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    expect((await state()).degradedIds).toEqual([]);
+  });
+
+  it('saves the machine being waited for as the selection, so a quit does not lose it', async () => {
+    await invoke(RAIL.ADD, home(), { id: 'b' });
+    expect(getMachineRailSession(fakes.window as never)).toEqual({
+      machineIds: ['b'],
+      selectedId: 'b',
+    });
+    await invoke(RAIL.SELECT, home(), { id: 'local' });
+    expect(getMachineRailSession(fakes.window as never)?.selectedId).toBe('local');
   });
 
   it('forgets the wait for a machine removed while it starts', async () => {

@@ -40,6 +40,7 @@ import {
   MACHINE_RAIL_SHOWN_CHANGED_EVENT,
   readWindowRail,
   setMachineRailEnabledFlag,
+  setPendingSelection,
   setMachineRailRestoreHandler,
   writeWindowRail,
 } from './machine-rail-state';
@@ -122,6 +123,7 @@ function clearTransition(window: BrowserWindowType): void {
   clearTimeout(transition.revealTimer);
   clearTimeout(transition.pendingTimer);
   transitions.delete(window);
+  setPendingSelection(window, '');
 }
 
 function stateOf(window: BrowserWindowType): MachineRailState {
@@ -192,6 +194,28 @@ function destroyView(window: BrowserWindowType, id: string): void {
   }
   // A view's web contents outlives its window unless it is closed here.
   if (!view.webContents.isDestroyed()) view.webContents.close({ waitForBeforeUnload: false });
+  forgetHealthWithoutRenderer(id);
+}
+
+/** Broadcast to every window whose rail lists `id`. */
+function broadcastToRailsOf(id: string): void {
+  for (const window of getAppWindows()) {
+    if (!window.isDestroyed() && readWindowRail(window).machineIds.includes(id)) {
+      broadcastState(window);
+    }
+  }
+}
+
+/** Health is reported by a machine's renderers: with none left, its report is stale. */
+function forgetHealthWithoutRenderer(id: string): void {
+  if (!degradedMachines.has(id)) return;
+  const rendered = getAppWindows().some(
+    (window) =>
+      !window.isDestroyed() && (getBackendIdForWindow(window) === id || viewsOf(window).has(id)),
+  );
+  if (rendered) return;
+  degradedMachines.delete(id);
+  broadcastToRailsOf(id);
 }
 
 function observeWindow(window: BrowserWindowType): void {
@@ -206,6 +230,7 @@ function observeWindow(window: BrowserWindowType): void {
     clearTransition(window);
     for (const id of [...viewsOf(window).keys()]) destroyView(window, id);
     clearWindowRail(window);
+    forgetHealthWithoutRenderer(rail.machineIds[0]);
     for (const id of rail.machineIds.slice(1)) releaseMachine(id);
   });
 }
@@ -286,6 +311,7 @@ function clearPending(window: BrowserWindowType): void {
   clearTimeout(transition.pendingTimer);
   transition.pendingTimer = undefined;
   transition.pendingId = '';
+  setPendingSelection(window, '');
 }
 
 /** Show `id` in place of the machine on screen, ready or not. */
@@ -306,6 +332,7 @@ function awaitMachine(window: BrowserWindowType, id: string): void {
   clearPending(window);
   const transition = transitionOf(window);
   transition.pendingId = id;
+  setPendingSelection(window, id);
   transition.pendingTimer = setTimeout(() => {
     if (window.isDestroyed() || transitions.get(window)?.pendingId !== id) return;
     if (readWindowRail(window).machineIds.includes(id)) showMachine(window, id);
@@ -546,12 +573,7 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
         if (degradedMachines.has(id) === degraded) return { ok: true };
         if (degraded) degradedMachines.add(id);
         else degradedMachines.delete(id);
-        if (!isMachineRailEnabled()) return { ok: true };
-        for (const window of getAppWindows()) {
-          if (!window.isDestroyed() && readWindowRail(window).machineIds.includes(id)) {
-            broadcastState(window);
-          }
-        }
+        if (isMachineRailEnabled()) broadcastToRailsOf(id);
         return { ok: true };
       },
       MACHINE_RAIL.HEALTH,
