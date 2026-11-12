@@ -16,7 +16,16 @@ for (const mode of ['notch', 'floating'] as const) {
     const props = dockRailPreview.states[mode].props;
     const initial: DockPlacementSnapshot = {
       ...props.placement!,
-      surface: { x: 100, y: 0, width: 420, height: 240 },
+      surface: {
+        // Native centers a notch allocation on its cutout; an arbitrary x would
+        // leave a horizontal clip even when the full height has been granted.
+        x: props.placement!.cutout
+          ? props.placement!.cutout.x + (props.placement!.cutout.width - 420) / 2
+          : 100,
+        y: 0,
+        width: 420,
+        height: 240,
+      },
     };
     const component = await mount(Harness, {
       props: {
@@ -88,7 +97,9 @@ for (const mode of ['notch', 'floating'] as const) {
         const maybeGrant = () => {
           if (granted || !ownerCurrent()) return;
           const requests = JSON.parse(host.getAttribute('data-preview-commands') ?? '[]');
-          const last = requests.at(-1);
+          const last = requests.findLast(
+            (request: { action?: string }) => request.action === 'resize',
+          );
           if (last?.action !== 'resize' || last.height < 450 || last.revision !== snapshot.revision)
             return;
           granted = true;
