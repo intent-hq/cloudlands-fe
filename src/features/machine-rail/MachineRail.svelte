@@ -207,6 +207,16 @@
       pointerId: event.pointerId,
       entry,
     };
+    // A release anywhere ends a press that has not become a drag (a drag is
+    // captured, so its release reaches the entry).
+    const pointerId = event.pointerId;
+    window.addEventListener(
+      'pointerup',
+      (up) => {
+        if (up.pointerId === pointerId && drag && !drag.active) drag = null;
+      },
+      { once: true, capture: true },
+    );
   }
 
   function moveDrag(event: PointerEvent) {
