@@ -2,13 +2,14 @@
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
 import { githubClient, readJson } from './nightly-test-github.mjs';
 import { synchronizeIssues } from './nightly-test-issues.mjs';
 import {
   analyzeReports,
+  NIGHTLY_SOURCES,
   parseReport,
   safeText,
+  sourceOf,
   SOURCE_REPO,
   trustedRun,
 } from './nightly-test-report.mjs';
@@ -113,13 +114,13 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
       save(directory, 'jobs.json', jobs);
       const artifacts = client.artifacts(runId);
       save(directory, 'artifacts.json', artifacts);
+      const source = sourceOf(run) ?? NIGHTLY_SOURCES[0];
       const documents = {};
       for (const entry of [
-        {
-          artifactName: 'browser-test-manifest',
-          paths: { manifest: 'browser-test-manifest.json' },
-        },
-        ...BROWSER_ARTIFACTS.map((e) => ({
+        ...(source.manifest
+          ? [{ artifactName: source.manifest, paths: { manifest: `${source.manifest}.json` } }]
+          : []),
+        ...source.artifacts.map((e) => ({
           ...e,
           paths: { outcome: e.outcomePath, report: e.reportPath },
         })),
@@ -141,7 +142,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
       plan.historical = historical;
       if (historical) {
         plan.historicalFailures = [];
-        for (const entry of BROWSER_ARTIFACTS) {
+        for (const entry of source.artifacts) {
           const report = documents[entry.artifactName]?.report;
           if (report) plan.historicalFailures.push(...parseReport(report, entry).failures);
         }
@@ -149,7 +150,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
       save(directory, 'plan.json', plan);
       summary(
         directory,
-        `Browser report for [run ${run.id}](https://github.com/${SOURCE_REPO}/actions/runs/${run.id}), attempt ${run.run_attempt}.\n\n` +
+        `${source.name} report for [run ${run.id}](https://github.com/${SOURCE_REPO}/actions/runs/${run.id}), attempt ${run.run_attempt}.\n\n` +
           `${plan.lanes.length} validated reports. ${plan.items.length} issue candidates. ${plan.incidents.length} evidence gaps.\n\n` +
           (historical
             ? 'Read-only historical evidence: missing producer metadata cannot establish completeness or freshness. No issue writes are authorized.\n\n'
@@ -171,7 +172,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
     save(directory, 'receipts.json', results);
     summary(
       directory,
-      `${write ? 'Reported' : 'Dry run for'} [browser run ${plan.run.id}, attempt ${plan.run.run_attempt}](https://github.com/${SOURCE_REPO}/actions/runs/${plan.run.id}/attempts/${plan.run.run_attempt}).\n\n` +
+      `${write ? 'Reported' : 'Dry run for'} [nightly run ${plan.run.id}, attempt ${plan.run.run_attempt}](https://github.com/${SOURCE_REPO}/actions/runs/${plan.run.id}/attempts/${plan.run.run_attempt}).\n\n` +
         (results.length
           ? results
               .map((r) => `- ${r.url ? `[Issue ${r.issue}](${r.url})` : r.key}: ${r.action}`)
@@ -201,7 +202,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
       })();
       summary(
         directory,
-        `Browser failure reporting failed: ${safeText(error.message)}.\n\nInputs, plan and partial receipts are retained for retry.\n\n` +
+        `Nightly failure reporting failed: ${safeText(error.message)}.\n\nInputs, plan and partial receipts are retained for retry.\n\n` +
           receipts
             .filter((r) => r.url)
             .map((r) => `- [Issue ${r.issue}](${r.url}): ${r.action}`)
@@ -209,7 +210,7 @@ export function main(argv, { env = process.env, createClient = githubClient } = 
         env,
       );
     }
-    process.stderr.write(`Browser failure reporting failed: ${error.message}\n`);
+    process.stderr.write(`Nightly failure reporting failed: ${error.message}\n`);
     return 1;
   }
 }

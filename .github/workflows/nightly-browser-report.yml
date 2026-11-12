@@ -2,7 +2,7 @@ name: Report Nightly Browser Failures
 
 on:
   workflow_run:
-    workflows: [Nightly Browser Tests]
+    workflows: [Nightly Browser Tests, Build Smoke]
     types: [completed]
 
 permissions:

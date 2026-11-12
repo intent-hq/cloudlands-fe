@@ -1,17 +1,40 @@
 import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
-import { BROWSER_ARTIFACTS } from './browser-test-artifacts.mjs';
+import { BROWSER_ARTIFACTS, BUILD_SMOKE_ARTIFACTS } from './browser-test-artifacts.mjs';
 import { cleanLogLines } from './ct-run-failures-lib.mjs';
 
 export const SOURCE_REPO = 'intent-hq/cloudlands-fe';
 export const ISSUE_REPO = 'intent-hq/intent';
 export const OWNER = 'panghy';
 export const WORKFLOW_PATH = '.github/workflows/nightly-browser-tests.yml';
+// Each nightly workflow the reporter files issues for. `label` is part of the
+// incident title, so the browser value must stay 'browser' to keep its key.
+export const NIGHTLY_SOURCES = Object.freeze([
+  Object.freeze({
+    name: 'Nightly Browser Tests',
+    path: WORKFLOW_PATH,
+    label: 'browser',
+    manifest: 'browser-test-manifest',
+    artifacts: BROWSER_ARTIFACTS,
+  }),
+  Object.freeze({
+    name: 'Build Smoke',
+    path: '.github/workflows/build-smoke.yml',
+    label: 'build smoke',
+    manifest: null,
+    artifacts: BUILD_SMOKE_ARTIFACTS,
+  }),
+]);
+const MAX_FAILURES_STOP = /^Testing stopped early after \d+ maximum allowed failures\.?$/;
 const STATUSES = ['passed', 'failed', 'timedOut', 'skipped', 'interrupted'];
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const requireValue = (ok, message) => {
   if (!ok) throw new Error(message);
 };
+
+export function sourceOf(run) {
+  return NIGHTLY_SOURCES.find((s) => run?.path === s.path && run?.name === s.name) ?? null;
+}
 
 export function trustedRun(run) {
   return (
@@ -19,8 +42,7 @@ export function trustedRun(run) {
     run?.head_repository?.full_name === SOURCE_REPO &&
     run.head_branch === 'main' &&
     ['schedule', 'workflow_dispatch'].includes(run.event) &&
-    run.path === WORKFLOW_PATH &&
-    run.name === 'Nightly Browser Tests'
+    sourceOf(run) !== null
   );
 }
 
@@ -191,6 +213,7 @@ export function parseReport(report, entry) {
 
 function jobName(entry) {
   if (entry.suite === 'manifest') return 'Expected browser reports';
+  if (entry.suite === 'build-smoke') return 'Build Smoke (linux x64)';
   if (entry.suite === 'ct' || entry.suite === 'quarantine')
     return `test-ct / Component Tests (shard ${entry.suite === 'quarantine' ? 1 : entry.shard}/4)`;
   return entry.suite === 'root'
@@ -249,6 +272,8 @@ function validateEntry(data, entry) {
 
 export function analyzeReports({ run, jobs, artifacts, documents }) {
   requireValue(Array.isArray(jobs), 'Unreadable job history');
+  // Historical diagnosis of other workflows (e.g. PR checks) reads browser lanes.
+  const source = sourceOf(run) ?? NIGHTLY_SOURCES[0];
   const incidents = [];
   const failures = [];
   const lanes = [];
@@ -272,25 +297,26 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
     return documents[name];
   };
   let validManifest = true;
-  try {
-    const job = latestJob(jobs, { suite: 'manifest' }, run);
-    const manifest = archive('browser-test-manifest')?.manifest;
-    validateContext(manifest, run, job);
-    requireValue(job.conclusion === 'success', 'Manifest job did not succeed');
-    requireValue(
-      Array.isArray(manifest.artifacts) && manifest.artifacts.length === BROWSER_ARTIFACTS.length,
-      'Incomplete manifest',
-    );
-    for (const entry of BROWSER_ARTIFACTS) {
-      const matches = manifest.artifacts.filter((a) => a.artifactName === entry.artifactName);
-      requireValue(matches.length === 1, 'Incomplete manifest');
-      validateEntry(matches[0], entry);
+  if (source.manifest)
+    try {
+      const job = latestJob(jobs, { suite: 'manifest' }, run);
+      const manifest = archive(source.manifest)?.manifest;
+      validateContext(manifest, run, job);
+      requireValue(job.conclusion === 'success', 'Manifest job did not succeed');
+      requireValue(
+        Array.isArray(manifest.artifacts) && manifest.artifacts.length === source.artifacts.length,
+        'Incomplete manifest',
+      );
+      for (const entry of source.artifacts) {
+        const matches = manifest.artifacts.filter((a) => a.artifactName === entry.artifactName);
+        requireValue(matches.length === 1, 'Incomplete manifest');
+        validateEntry(matches[0], entry);
+      }
+    } catch (error) {
+      validManifest = false;
+      incidents.push(`manifest: ${error.message}`);
     }
-  } catch (error) {
-    validManifest = false;
-    incidents.push(`manifest: ${error.message}`);
-  }
-  for (const entry of BROWSER_ARTIFACTS) {
+  for (const entry of source.artifacts) {
     try {
       const job = latestJob(jobs, entry, run);
       const doc = archive(entry.artifactName);
@@ -316,8 +342,12 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
           shard.current === entry.shard && shard.total === entry.shardCount,
           'Mismatched report shard',
         );
+      // A maxFailures stop after a reported failure is the run's own consequence.
+      const globalErrors = parsed.globalErrors.filter(
+        (e) => !(parsed.failures.length > 0 && MAX_FAILURES_STOP.test(String(e?.message ?? ''))),
+      );
       requireValue(
-        !parsed.interrupted && parsed.globalErrors.length === 0,
+        !parsed.interrupted && globalErrors.length === 0,
         'Interrupted tests or global runner error',
       );
       requireValue(!parsed.infrastructureError, 'Browser provisioning or host resource failure');
@@ -327,6 +357,7 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
         'Root Playwright tests',
         'Electron browser lifetime tests',
         'Quarantined component tests (advisory)',
+        'Build smoke tests',
       ];
       requireValue(
         !job.steps.some((s) => s.conclusion === 'failure' && !testSteps.includes(s.name)),
@@ -337,7 +368,9 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
           ? 'Upload quarantine report'
           : entry.suite === 'electron'
             ? 'Upload electron lifetime report'
-            : 'Upload playwright report';
+            : entry.suite === 'build-smoke'
+              ? 'Upload build-smoke reports'
+              : 'Upload playwright report';
       requireValue(
         job.steps.some((s) => s.name === upload && s.conclusion === 'success'),
         'Report upload was not successful',
@@ -400,8 +433,8 @@ export function analyzeReports({ run, jobs, artifacts, documents }) {
     const incident = {
       suite: 'infrastructure',
       project: 'nightly',
-      file: WORKFLOW_PATH,
-      title: 'Nightly browser CI evidence is incomplete',
+      file: source.path,
+      title: `Nightly ${source.label} CI evidence is incomplete`,
       category: 'incomplete-ci-evidence',
       evidence: incidents.join('\n'),
       artifacts: artifacts.map((a) => a.name),

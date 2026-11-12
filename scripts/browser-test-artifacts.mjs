@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Versioned producer contract for nightly-browser-tests.yml and its completion
@@ -22,6 +23,19 @@ export const BROWSER_ARTIFACTS = Object.freeze([
   ...[1, 2, 3, 4].map((shard) => artifact('root', shard, 4, `playwright-root-report-${shard}`)),
   artifact('electron', 1, 1, 'playwright-electron-lifetime-report'),
   artifact('quarantine', 1, 1, 'playwright-ct-report-quarantine', true),
+]);
+
+// build-smoke.yml uploads e2e-reports/ as one artifact; the outcome rides inside it.
+export const BUILD_SMOKE_ARTIFACTS = Object.freeze([
+  Object.freeze({
+    suite: 'build-smoke',
+    shard: 1,
+    shardCount: 1,
+    advisory: false,
+    artifactName: 'build-smoke-reports',
+    reportPath: 'e2e-reports/packaged-run/default-suite/results.json',
+    outcomePath: 'e2e-reports/build-smoke-outcome.json',
+  }),
 ]);
 
 function runContext(env) {
@@ -92,7 +106,7 @@ function main(args, env) {
     path = 'browser-test-manifest.json';
     data = { ...context, artifacts: BROWSER_ARTIFACTS };
   } else if (args.length === 3 && args[0] === 'record') {
-    const entry = BROWSER_ARTIFACTS.find(
+    const entry = [...BROWSER_ARTIFACTS, ...BUILD_SMOKE_ARTIFACTS].find(
       ({ suite, shard }) => suite === args[1] && String(shard) === args[2],
     );
     if (!entry) throw new Error(`Unknown browser suite/shard: ${args.slice(1).join(' ')}`);
@@ -115,11 +129,12 @@ function main(args, env) {
     };
   } else {
     throw new Error(
-      'Usage: browser-test-artifacts.mjs manifest | record <ct|root|electron|quarantine> <shard>',
+      'Usage: browser-test-artifacts.mjs manifest | record <ct|root|electron|quarantine|build-smoke> <shard>',
     );
   }
   // Never rewrite/filter Playwright's report: expected failures, retries, flakes,
   // skipped cases, global errors and attachments are all reporter inputs.
+  mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`);
   if (
     args[0] === 'record' &&

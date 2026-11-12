@@ -89,7 +89,7 @@ function evidenceBody(item, run, occurrences, firstSeen, latestSeen, candidates 
     .join('\n\n');
   return (
     `${marker(item.key)}\n${attempts.map((attempt) => occurrenceMarker(run, item.key, attempt)).join('\n')}\n` +
-    `Nightly browser ${item.quarantine ? 'quarantine ' : ''}recurrence${occurrences.some((o) => o.status === 'flaky') ? ' (passed on retry)' : ''}.\n\n` +
+    `Nightly ${item.suite === 'build-smoke' ? 'build smoke' : 'browser'} ${item.quarantine ? 'quarantine ' : ''}recurrence${occurrences.some((o) => o.status === 'flaky') ? ' (passed on retry)' : ''}.\n\n` +
     `First seen: ${firstSeen}. Latest seen: ${latestSeen}.\n` +
     `Commit: [${run.head_sha}](https://github.com/${SOURCE_REPO}/commit/${run.head_sha}). ${attempts.map((attempt) => `[Run ${run.id}, attempt ${attempt}](${runUrl(attempt)})`).join(', ')}.\n\n` +
     `Suite/project: ${safeText(item.suite)} / ${safeText(item.project)}\n\nSpec: ${safeText(item.file)}\n\nTest: ${safeText(item.title)}\n\nCategory: ${safeText(item.category)}\n\n` +

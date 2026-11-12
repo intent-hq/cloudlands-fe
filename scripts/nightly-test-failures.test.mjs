@@ -16,7 +16,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { main } from './nightly-test-failures.mjs';
 import { githubClient } from './nightly-test-github.mjs';
 import { analyzeReports, marker } from './nightly-test-report.mjs';
-import { entries, fixture, report } from './test-fixtures/nightly-browser.mjs';
+import {
+  buildSmokeEntry,
+  buildSmokeFixture,
+  entries,
+  fixture,
+  report,
+} from './test-fixtures/nightly-browser.mjs';
 import { fakeGhPath } from './test-fixtures/nightly-gh.mjs';
 
 const roots = [];
@@ -40,7 +46,7 @@ function functional(data = fixture()) {
   chmodSync(gh, 0o755);
   const state = { ...data, calls: [], issues: [], comments: [], archives: {} };
   for (const artifact of data.artifacts) {
-    const entry = entries.find((e) => e.artifactName === artifact.name);
+    const entry = [...entries, buildSmokeEntry].find((e) => e.artifactName === artifact.name);
     const doc = data.documents[artifact.name];
     const members = entry
       ? {
@@ -168,6 +174,24 @@ describe('gh-only reporter functional workflow', () => {
       expect(readFileSync(join(f.out, 'summary.md'), 'utf8')).toContain('issues/1');
     },
   );
+  it('files one Bug for a failing nightly Build Smoke test and replays without duplicates', () => {
+    const data = buildSmokeFixture();
+    const f = functional(data);
+    const collected = f.call('collect', ['--run', String(data.run.id)]);
+    expect(collected.status, collected.stderr).toBe(0);
+    const plan = JSON.parse(readFileSync(join(f.out, 'plan.json'), 'utf8'));
+    expect(plan.incidents).toEqual([]);
+    expect(plan.items.map((item) => item.suite)).toEqual(['build-smoke']);
+    expect(f.call('publish', ['--write']).status).toBe(0);
+    expect(f.call('publish', ['--write']).status).toBe(0);
+    const state = f.readState();
+    expect(state.issues).toHaveLength(1);
+    expect(state.issues[0].title).toBe(
+      '[nightly build-smoke] Build Smoke — Multi-Agent Orchestration UI › child agent creation updates sidebar and chat isolation',
+    );
+    expect(state.issues[0].body).toContain('e2e/build-smoke-multi-agent.e2e.ts');
+    expect(state.calls.filter((c) => c.method !== 'GET')).toHaveLength(1);
+  });
   it('finds old adopted markers beyond page one, without using eventually indexed search', () => {
     const data = fixture();
     data.documents['playwright-ct-report-1-of-4'].report = report('unexpected');
@@ -456,6 +480,12 @@ describe('GitHub API validation', () => {
 describe('trusted workflow execution policy', () => {
   const expression = / {4}if: >-\n((?: {6}.*\n)+)/.exec(workflow)[1].trim();
   const evaluate = new Function('github', `return (${expression})`);
+  it('runs after both nightly browser tests and Build Smoke complete', () => {
+    expect(/^ {4}workflows: \[(.*)\]$/m.exec(workflow)?.[1].split(/, */)).toEqual([
+      'Nightly Browser Tests',
+      'Build Smoke',
+    ]);
+  });
   it('passes the triggering attempt to collection independently of the latest run', () => {
     expect(workflow).toContain('SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}');
     expect(workflow).toContain('collect --run "$SOURCE_RUN_ID" --attempt "$SOURCE_RUN_ATTEMPT"');
@@ -479,13 +509,14 @@ describe('trusted workflow execution policy', () => {
   it.each(['success', 'failure', 'cancelled'])(
     'processes %s conclusions for trusted nightly and manual runs',
     (conclusion) => {
-      for (const event of ['schedule', 'workflow_dispatch'])
-        expect(
-          evaluate({
-            repository: 'intent-hq/cloudlands-fe',
-            event: { workflow_run: { ...fixture().run, event, conclusion } },
-          }),
-        ).toBe(true);
+      for (const run of [fixture().run, buildSmokeFixture().run])
+        for (const event of ['schedule', 'workflow_dispatch'])
+          expect(
+            evaluate({
+              repository: 'intent-hq/cloudlands-fe',
+              event: { workflow_run: { ...run, event, conclusion } },
+            }),
+          ).toBe(true);
     },
   );
   it.each([
