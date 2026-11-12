@@ -25,13 +25,7 @@ import type { NodeAddError } from '$features/nodes/nodes-types';
  * - `sshLogin` / `sshRun`: the SSH login and its run.
  */
 export type MachineSetupScreen =
-  | 'pick'
-  | 'paste'
-  | 'details'
-  | 'method'
-  | 'manual'
-  | 'sshLogin'
-  | 'sshRun';
+  'pick' | 'paste' | 'details' | 'method' | 'manual' | 'sshLogin' | 'sshRun';
 
 export interface SshRunFailure {
   code: SshSetupErrorCode;
@@ -67,7 +61,7 @@ export interface MachineSetupState {
   agentAvailable: boolean | null;
 }
 
-export const SSH_LOG_LIMIT = 400;
+const SSH_LOG_LIMIT = 400;
 
 const initialState: MachineSetupState = {
   open: false,
@@ -79,9 +73,8 @@ const initialState: MachineSetupState = {
 };
 
 /** Open the wizard on its cards (the Add machine menu, the rail). */
-export const machineSetupOpened = createAction<[screen?: MachineSetupScreen]>(
-  'machineSetup/opened',
-);
+export const machineSetupOpened =
+  createAction<[screen?: MachineSetupScreen]>('machineSetup/opened');
 /** Close it: stops a paste test or an SSH run; nothing more is saved. */
 export const machineSetupClosed = createAction('machineSetup/closed');
 /** Show another screen (cards, Back). */
@@ -119,9 +112,7 @@ export const sshHostKeyAnswered = createAction<[trust: boolean]>('machineSetup/s
 export const sshSetupAdding = createAction('machineSetup/sshSetupAdding');
 export const sshSetupFailed = createAction<[failure: SshRunFailure]>('machineSetup/sshSetupFailed');
 /** Added, with one more step to show (lingering off, or a Mac nobody is logged in to). */
-export const sshSetupDone = createAction<[lingerUser: string]>(
-  'machineSetup/sshSetupDone',
-);
+export const sshSetupDone = createAction<[lingerUser: string]>('machineSetup/sshSetupDone');
 
 export const machineSetupReducer = createReducer<MachineSetupState>(initialState);
 
@@ -213,7 +204,5 @@ machineSetupReducer.with(sshSetupFailed, (state, { payload: [failure] }) =>
     : state,
 );
 machineSetupReducer.with(sshSetupDone, (state, { payload: [lingerUser] }) =>
-  state.ssh
-    ? { ...state, ssh: { ...state.ssh, phase: 'done', lingerUser } }
-    : state,
+  state.ssh ? { ...state, ssh: { ...state.ssh, phase: 'done', lingerUser } } : state,
 );

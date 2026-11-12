@@ -51,7 +51,7 @@ interface Pending {
   expiresAt: number;
 }
 
-export interface PairLinkInspectOptions {
+interface PairLinkInspectOptions {
   /** Name for a new row when the daemon reports none (SSH setup: `uname -n`). */
   label?: string;
 }

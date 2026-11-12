@@ -52,7 +52,7 @@ export const inputMetadata = parseUiComponentMetadata({
     'src/lib/components/debug/DebugPanel.svelte',
     'src/lib/components/file-explorer/VirtualizedFileTree.svelte',
     'src/lib/components/file-explorer/file-explorer-sidebar.svelte',
-    'src/lib/components/layout/ConnectBackendModal.svelte',
+    'src/lib/components/layout/ConnectBackendForm.svelte',
     'src/lib/components/layout/WorkspaceTabGroupChip.svelte',
     'src/lib/components/layout/panel-system/PanelTabBar.svelte',
     'src/lib/components/modals/FeatureCodeDialog.svelte',

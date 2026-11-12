@@ -26,7 +26,7 @@ import { checkKnownHosts, hostKeyType, sha256Fingerprint } from './known-hosts';
 import { createLineSplitter, parseLinkMarker, parsePairUrl, redactLine } from './ssh-output';
 
 // i18n-ignore (remote shell commands and installer wire text)
-export const INSTALL_SCRIPT_URL =
+const INSTALL_SCRIPT_URL =
   'https://github.com/intent-hq/intentd-releases/releases/download/sitter-latest/install.sh';
 const PROBE_COMMAND = 'uname -s; uname -n; id -un';
 const LINGER_CHECK = 'loginctl show-user "$(id -un)" -p Linger';
@@ -157,7 +157,7 @@ interface ExecResult {
   stdout: string;
 }
 
-export function expandHome(path: string, homeDir: string): string {
+function expandHome(path: string, homeDir: string): string {
   if (path === '~') return homeDir;
   if (path.startsWith('~/') || path.startsWith('~\\')) return `${homeDir}${path.slice(1)}`;
   return path;
@@ -171,7 +171,7 @@ export function installCommand(target: SshSetupStartParams['target']): string {
   );
 }
 
-export function fallbackPairCommand(target: SshSetupStartParams['target']): string {
+function fallbackPairCommand(target: SshSetupStartParams['target']): string {
   const args = target === 'node' ? 'pair --node --tunnel --yes' : 'pair --yes --tunnel';
   return [
     'INTENTD="$(command -v intentd 2>/dev/null)"',

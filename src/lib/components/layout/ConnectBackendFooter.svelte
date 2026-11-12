@@ -32,14 +32,14 @@
   <Button variant="ghost" disabled={busy} onclick={onDetailsSecondary}
     >{detailsSecondaryLabel}</Button
   >
-  <Button variant="default" onclick={() => form?.capture()} disabled={!canContinue}>
+  <Button variant="secondary" onclick={() => form?.capture()} disabled={!canContinue}>
     {busy ? m.modals_connect_connecting_label() : m.modals_connect_continue_label()}
   </Button>
 {:else if step === 'confirm'}
   <Button variant="ghost" onclick={() => form?.back()} disabled={busy}
     >{m.modals_connect_back_label()}</Button
   >
-  <Button variant="default" onclick={() => form?.confirm()} disabled={busy}>
+  <Button variant="secondary" onclick={() => form?.confirm()} disabled={busy}>
     {busy ? m.modals_connect_connecting_label() : m.modals_connect_confirm_label()}
   </Button>
 {:else}
@@ -49,7 +49,7 @@
   <Button variant="ghost" onclick={() => form?.declineSync()} disabled={busy}>
     {m.modals_connect_enableSync_decline_label()}
   </Button>
-  <Button variant="default" onclick={() => form?.enableSyncAndAdd()} disabled={busy}>
+  <Button variant="secondary" onclick={() => form?.enableSyncAndAdd()} disabled={busy}>
     {busy ? m.modals_connect_connecting_label() : m.modals_connect_enableSync_confirm_label()}
   </Button>
 {/if}

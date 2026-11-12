@@ -1,6 +1,4 @@
-import type { ConnectBackendStep } from './ConnectBackendForm.svelte';
-
-export type { ConnectBackendStep };
+export type ConnectBackendStep = 'details' | 'confirm' | 'syncConfirm';
 
 /** The actions `ConnectBackendForm` exports, for the footer that drives it. */
 export interface ConnectBackendForm {

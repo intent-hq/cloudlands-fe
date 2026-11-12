@@ -1,7 +1,3 @@
-<script lang="ts" module>
-  export type ConnectBackendStep = 'details' | 'confirm' | 'syncConfirm';
-</script>
-
 <script lang="ts">
   /**
    * ConnectBackendForm — the "Enter connection details" flow, shared by
@@ -66,6 +62,7 @@
   import { isPairingUri, parsePairingUri } from '$shared/utils/pairing-uri';
   import { isTcAddress } from '$shared/tc-address';
   import { cn } from '$lib/utils';
+  import type { ConnectBackendStep } from './connect-backend';
 
   interface Props {
     /** Shown in an open dialog: prefill applies on activation, fields reset on deactivation. */
@@ -516,8 +513,10 @@
       <p class="text-xs text-subtle">{m.modals_connect_whereToFind_help()}</p>
       <p class="text-xs text-subtle">
         {m.modals_connect_headless_before()}
-        <a href={INTENTD_REPO_URL} class="text-primary-ink hover:underline" onclick={openIntentdRepo}
-          ><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
+        <a
+          href={INTENTD_REPO_URL}
+          class="text-primary-ink hover:underline"
+          onclick={openIntentdRepo}><!-- i18n-ignore (URL) -->github.com/intent-hq/intentd</a
         >
         {m.modals_connect_headless_after()}
       </p>

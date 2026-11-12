@@ -8,7 +8,7 @@
   import { m } from '$shared/paraglide/messages.js';
   import type { MachineSetupTarget } from '$shared/types/machine-setup';
   import PairLinkField from '$features/nodes/PairLinkField.svelte';
-  import { unixInstallCommand, windowsInstallCommand } from './install-commands';
+  import { unixInstallCommand, windowsInstallCommand } from './install-lines';
 
   interface Props {
     target: MachineSetupTarget;

@@ -437,7 +437,7 @@ export function* addHeldLink(link: SshSetupLink): SagaGenerator<NodeAddError | n
   if (link.kind === 'invite')
     return yield* call(claimInvite, { pendingId: link.pendingId, label: inviteLabel(link.label) });
   return yield* call(addInspected, {
-    ok: true,
+    ok: true as const,
     pendingId: link.pendingId,
     kind: link.machineKind,
     label: link.label,

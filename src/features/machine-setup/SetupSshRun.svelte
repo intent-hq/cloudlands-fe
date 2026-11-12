@@ -25,7 +25,7 @@
   import { store as appStore } from '$store/renderer/store';
   import { selectCurrentBackendLabel } from '$features/remote-machines/remote-machines-selectors';
   import { nodeAddErrorMessage } from '$features/nodes/node-add-errors';
-  import { lingerCommand } from './install-commands';
+  import { lingerCommand } from './install-lines';
   import { sshHostKeyAnswered, type SshRunState } from './machine-setup-slice';
   import { sshFailureHint, sshFailureMessage } from './ssh-failure-messages';
 
@@ -78,10 +78,10 @@
 </script>
 
 <div class="space-y-5" data-machine-setup-ssh-run={run.phase}>
-  <ol class="space-y-2" aria-label={m.machineSetup_run_steps_ariaLabel()}>
+  <div class="space-y-2" role="list" aria-label={m.machineSetup_run_steps_ariaLabel()}>
     {#each STEPS as step, index (step)}
       {@const state = status(index)}
-      <li class="flex items-center gap-3" data-step={step} data-status={state}>
+      <div class="flex items-center gap-3" role="listitem" data-step={step} data-status={state}>
         <span class="flex size-4 items-center justify-center" aria-hidden="true">
           {#if state === 'done'}
             <Fa icon={faCheck} class="size-3.5 text-success" />
@@ -96,17 +96,17 @@
         <span class={state === 'pending' ? 'type-body text-muted-foreground' : 'type-body'}>
           {stepLabel[step]()}
         </span>
-      </li>
+      </div>
     {/each}
     {#if needsStep}
-      <li class="flex items-center gap-3" data-step="extra">
+      <div class="flex items-center gap-3" role="listitem" data-step="extra">
         <span class="flex size-4 items-center justify-center" aria-hidden="true">
           <Fa icon={faTriangleExclamation} class="size-3.5 text-warning" />
         </span>
         <span class="type-body">{m.machineSetup_run_needsStep_label()}</span>
-      </li>
+      </div>
     {/if}
-  </ol>
+  </div>
 
   {#if run.phase === 'hostKey' && run.hostKey}
     <div class="space-y-3 rounded-lg bg-muted/50 p-4" data-machine-setup-host-key>

@@ -52,6 +52,11 @@ const LOGIN: SshLoginPrefill = {
   keyPath: '~/.ssh/id_ed25519',
 };
 const RUN = 'preview-run';
+type SshSetupEventBody = SshSetupEvent extends infer E
+  ? E extends SshSetupEvent
+    ? Omit<E, 'runId'>
+    : never
+  : never;
 const LOG = [
   'install.sh: downloading intentd-x86_64-unknown-linux-musl.tar.xz from the sitter-latest release...',
   'install.sh: sha256 verified',
@@ -64,7 +69,7 @@ function run(step: SshSetupStep, log: string[] = LOG) {
   store.dispatch(machineSetupInstallPicked('backend'));
   store.dispatch(sshRunShown(LOGIN));
   store.dispatch(sshSetupStarted(RUN, LOGIN.host, LOGIN.username));
-  const event = (e: Omit<SshSetupEvent, 'runId'>) =>
+  const event = (e: SshSetupEventBody) =>
     store.dispatch(sshSetupEventReceived({ runId: RUN, ...e } as SshSetupEvent));
   event({ type: 'step', step });
   if (log.length) event({ type: 'log', lines: log });
@@ -142,7 +147,10 @@ export function setupMachineSetupFixture(state: MachineSetupPreviewState): () =>
       run('installing');
       break;
     case 'ssh-host-key':
-      run('connecting', [])({
+      run(
+        'connecting',
+        [],
+      )({
         type: 'host-key',
         fingerprint: 'SHA256:pQ3x0rLm2V8n9aZcE1Yt7kWd4sHf6Uj5GbNq0RvTi2o',
         algorithm: 'ssh-ed25519',
