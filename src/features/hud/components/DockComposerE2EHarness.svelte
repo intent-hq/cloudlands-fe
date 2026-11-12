@@ -1,15 +1,43 @@
 <script context="module" lang="ts">
+  import type { DockConversationDraft } from '$store/renderer/slices/dock-conversation/dock-conversation-types';
+  import type {
+    PendingSubmission,
+    SubmissionScope,
+    SubmissionTombstone,
+  } from '$store/renderer/slices/pending-submissions/pending-submissions-types';
+  import type { ChatDraftRestore } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
+  import type { DockComposerEvidence } from '$shared/dock-evidence';
+  import type { ComposerContextItem } from '$store/renderer/slices/transient-ui/transient-ui-types';
+  export interface ComposerDraftSnapshot {
+    workspaceId: string | null;
+    agentId: string | null;
+    draft: DockConversationDraft | undefined;
+    evidence: DockComposerEvidence | null;
+    restore: ChatDraftRestore | null;
+    scope: SubmissionScope | undefined;
+    submission: PendingSubmission | undefined;
+    tombstone: SubmissionTombstone | undefined;
+    contextItems: ComposerContextItem[];
+    recoveryItems: ComposerContextItem[];
+  }
   import type { DockForegroundObservation } from '$shared/dock-context-links';
 </script>
 
 <script lang="ts">
-  import { dockEvidenceId, emptyDockEvidence, type DockMark } from '$shared/dock-evidence';
-  import { setComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import {
+    dockEvidenceId,
+    emptyDockEvidence,
+    toDockDraftEvidence,
+    type DockMark,
+  } from '$shared/dock-evidence';
+  import { serializeDraftAttachments } from '$lib/components/chat/chat-draft-attachments';
+  import { getItem, getItems } from '@themislib/themis/utils/collections/collection-utils';
+  import { selectComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-selectors';
+  import { selectPendingSubmissionEntry } from '$store/renderer/slices/pending-submissions/pending-submissions-selectors';
+  import type { ChatDraftSnapshot } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
   import { selectDockComposerEvidence } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { choosePendingDockShortcut } from '$features/hud/dock-navigation';
   import {
-    dockEvidenceRestored,
-    dockConversationDraftRestored,
     dockContextLinkRequested,
     dockContextUnlinkRequested,
     dockContextFollowed,
@@ -71,10 +99,12 @@
     width = 420,
     height = 600,
     shell,
+    legacyPickDraft = false,
   }: {
     width?: number;
     height?: number;
     shell?: DockRailPreviewProps;
+    legacyPickDraft?: boolean;
   } = $props();
   const shortcut$ = selectDockShortcut();
   const workspaces$ = selectDockShortcutWorkspaces();
@@ -95,6 +125,64 @@
   const storeFocusRequest$ = selectDockFocusRequest();
   let caption = $state('');
 
+  function createLegacyDraft(): ChatDraftSnapshot {
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 200;
+    const context = canvas.getContext('2d')!;
+    context.fillStyle = '#e9ebef';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const imageId = 'legacy-image';
+    const contextItemId = 'legacy-pixels';
+    const marks: DockMark[] = ['Cancel', 'Save'].map((name, index) => {
+      const bounds = { x: 30 + index * 140, y: 70, w: 100, h: 40 };
+      return {
+        id: `legacy-pick-${index + 1}`,
+        imageId,
+        tool: 'pick',
+        geometry: { kind: 'rect', ...bounds },
+        bounds,
+        element: {
+          role: 'button',
+          name,
+          path: `main > button.${name.toLowerCase()}`,
+          source: 'https://example.test/settings',
+        },
+        createdAt: index + 1,
+      };
+    });
+    const evidence = {
+      ...emptyDockEvidence(dockEvidenceId(conversationWireWorkspace, 'wire-main')),
+      images: [
+        {
+          id: imageId,
+          contextItemId,
+          width: 320,
+          height: 200,
+          displayScale: 1,
+          capturedAt: '2026-10-29T23:30:00.000Z',
+          source: 'capture' as const,
+        },
+      ],
+      marks,
+    };
+    return {
+      text: 'Review [[mark:1]] and [[mark:2]]',
+      attachments: serializeDraftAttachments(
+        [
+          {
+            id: contextItemId,
+            type: 'file',
+            label: 'legacy.png',
+            imageData: canvas.toDataURL('image/png').split(',')[1],
+            imageMimeType: 'image/png',
+          },
+        ],
+        toDockDraftEvidence(evidence),
+      ),
+    };
+  }
+
   onMount(() => {
     const root = document.documentElement;
     const hadDark = root.classList.contains('dark');
@@ -103,7 +191,9 @@
     root.classList.remove('light');
     const { native, uninstall } = installSyntheticNative();
     const calls: ConversationWireCall[] = [];
-    const fixture = setupConversationWire((call) => calls.push(call));
+    const fixture = setupConversationWire((call) => calls.push(call), {
+      initialDraft: legacyPickDraft ? createLegacyDraft() : undefined,
+    });
     // The local sidecar places a native clip by host path; the wire fixture only
     // accepts bytes, so answer that one placement here (no file is read).
     const api = window.electronAPI!;
@@ -142,83 +232,42 @@
       setCaption(text: string) {
         caption = text;
       },
-      seedLegacyPickDraft() {
-        const { workspaceId, agentId, loading } = store.state.dockConversation;
-        if (!workspaceId || !agentId || loading) throw new Error('Legacy draft owner not ready');
-        const current = selectDockComposerEvidence.select(
-          store.state,
-          workspaceId,
-          agentId,
-        ).evidence;
-        if (current && (current.images.length || current.marks.length || current.clips.length))
-          throw new Error('Legacy seed requires an empty draft');
-        const canvas = document.createElement('canvas');
-        canvas.width = 320;
-        canvas.height = 200;
-        const context = canvas.getContext('2d')!;
-        context.fillStyle = '#e9ebef';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        const imageId = 'legacy-image';
-        const contextItemId = 'legacy-pixels';
-        const marks: DockMark[] = ['Cancel', 'Save'].map((name, index) => {
-          const bounds = { x: 30 + index * 140, y: 70, w: 100, h: 40 };
-          return {
-            id: `legacy-pick-${index + 1}`,
-            imageId,
-            tool: 'pick',
-            geometry: { kind: 'rect', ...bounds },
-            bounds,
-            element: {
-              role: 'button',
-              name,
-              path: `main > button.${name.toLowerCase()}`,
-              source: 'https://example.test/settings',
-            },
-            createdAt: index + 1,
-          };
-        });
-        store.dispatch(
-          setComposerContextItems(workspaceId, agentId, [
-            {
-              id: contextItemId,
-              type: 'file',
-              label: 'legacy.png',
-              imageData: canvas.toDataURL('image/png').split(',')[1],
-              imageMimeType: 'image/png',
-            },
-          ]),
-        );
-        store.dispatch(
-          dockEvidenceRestored(workspaceId, agentId, {
-            ...emptyDockEvidence(dockEvidenceId(workspaceId, agentId)),
-            images: [
-              {
-                id: imageId,
-                contextItemId,
-                width: 320,
-                height: 200,
-                displayScale: 1,
-                capturedAt: '2026-10-29T23:30:00.000Z',
-                source: 'capture',
-              },
-            ],
-            marks,
-          }),
-        );
-        store.dispatch(
-          dockConversationDraftRestored(
-            workspaceId,
-            agentId,
-            'Review [[mark:1]] and [[mark:2]]',
-            true,
-          ),
-        );
+      draftSnapshot(): ComposerDraftSnapshot {
+        const { workspaceId, agentId } = store.state.dockConversation;
+        const draft =
+          workspaceId && agentId
+            ? getItem(store.state.dockConversation.drafts, dockEvidenceId(workspaceId, agentId))
+            : undefined;
+        const reference = draft?.delivery?.reference;
+        const entry = reference
+          ? selectPendingSubmissionEntry.select(store.state, reference.scope)
+          : undefined;
+        const restore =
+          getItems(store.state.chatDrafts.owners).find(
+            (owner) =>
+              owner.id.startsWith('dock-conversation:') &&
+              owner.restore?.workspaceId === workspaceId &&
+              owner.restore.agentId === agentId,
+          )?.restore ?? null;
         return {
           workspaceId,
           agentId,
-          marks:
-            selectDockComposerEvidence.select(store.state, workspaceId, agentId).evidence?.marks ??
-            [],
+          draft,
+          restore,
+          evidence:
+            workspaceId && agentId
+              ? selectDockComposerEvidence.select(store.state, workspaceId, agentId).evidence
+              : null,
+          scope: entry?.scope,
+          submission: entry && reference ? getItem(entry.submissions, reference.id) : undefined,
+          tombstone: entry && reference ? getItem(entry.tombstones, reference.id) : undefined,
+          contextItems:
+            workspaceId && agentId
+              ? selectComposerContextItems.select(store.state, workspaceId, agentId)
+              : [],
+          recoveryItems: draft?.delivery?.recovery
+            ? getItems(draft.delivery.recovery.contextItems)
+            : [],
         };
       },
       context(value: DockForegroundObservation) {

@@ -1,9 +1,9 @@
-import type { DockMark, DockScreenEvidenceMetadata } from '$shared/dock-evidence';
+import type { DockScreenEvidenceMetadata } from '$shared/dock-evidence';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import type { Page } from '@playwright/test';
 import { expect, test } from '../../../test/ct-test';
-import ComposerE2EHarness from './DockComposerE2EHarness.svelte';
+import ComposerE2EHarness, { type ComposerDraftSnapshot } from './DockComposerE2EHarness.svelte';
 import { SYNTHETIC_ELEMENTS } from './dock-composer-e2e-geometry.fixtures';
 
 /**
@@ -34,7 +34,7 @@ type Harness = {
   calls: { method: string; params: Record<string, unknown> }[];
   fixture: { settle: (accepted?: boolean) => void };
   setCaption: (text: string) => void;
-  seedLegacyPickDraft: () => { workspaceId: string; agentId: string; marks: DockMark[] };
+  draftSnapshot: () => ComposerDraftSnapshot;
   store: {
     state: {
       dockConversation: { workspaceId: string | null; agentId: string | null; loading: boolean };
@@ -42,6 +42,58 @@ type Harness = {
     dispatch: (action: { type: string; payload: unknown[] }) => void;
   };
 };
+
+const draftSnapshot = (page: Page) =>
+  page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.draftSnapshot(),
+  );
+
+async function assertAdmitted(
+  page: Page,
+  before: ComposerDraftSnapshot,
+  send: Harness['calls'][number],
+) {
+  const admitted = await draftSnapshot(page);
+  const delivery = admitted.draft?.delivery;
+  expect(delivery).toBeDefined();
+  expect(delivery?.settled).not.toBe(true);
+  expect(admitted.scope).toEqual(delivery?.reference.scope);
+  expect(admitted.scope).toMatchObject({
+    workspaceId: before.workspaceId,
+    agentId: before.agentId,
+  });
+  expect(admitted.submission?.id).toBe(delivery?.reference.id);
+  expect(admitted.submission?.status).toBe('sending');
+  expect(admitted.submission?.content).toBe(before.draft?.text.trim());
+  expect(admitted.submission?.messageMetadata).toEqual(send.params.messageMetadata);
+  expect(admitted.submission?.imageBlocks).toEqual(send.params.imageBlocks);
+  expect(admitted.submission?.fileBlocks).toEqual(send.params.fileBlocks);
+  expect(delivery?.recovery?.text).toBe(before.draft?.text);
+  expect(delivery?.recovery?.evidence?.marks).toEqual(before.evidence?.marks);
+  expect(delivery?.recovery?.evidence?.images).toEqual(before.evidence?.images);
+  expect(admitted.recoveryItems).toEqual(before.contextItems);
+  expect(admitted.draft?.text).toBe('');
+  expect(admitted.contextItems).toEqual([]);
+  expect(admitted.evidence?.marks ?? []).toEqual([]);
+  return admitted;
+}
+
+async function settleAdmission(page: Page, admitted: ComposerDraftSnapshot) {
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.fixture.settle(),
+  );
+  await expect.poll(async () => (await draftSnapshot(page)).draft?.delivery?.settled).toBe(true);
+  const settled = await draftSnapshot(page);
+  expect(settled.draft?.delivery?.reference).toEqual(admitted.draft?.delivery?.reference);
+  expect(settled.draft?.text).toBe('');
+  expect(settled.contextItems).toEqual([]);
+  expect(settled.evidence?.marks ?? []).toEqual([]);
+  expect(
+    settled.submission?.status === 'accepted' ||
+      (!!settled.tombstone && settled.tombstone.reason !== 'rejected'),
+  ).toBe(true);
+  return settled;
+}
 
 /**
  * Choose an annotate tool, as the recording tool bar or a tool key does: the
@@ -231,6 +283,9 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
       .__dockComposerE2E.store.state.dockConversation;
     return { workspaceId, agentId };
   });
+  await expect(tiles).not.toHaveCount(0);
+  await expect(chips).toHaveCount(1);
+  const beforeSend = await draftSnapshot(page);
   await submit.click();
   await expect
     .poll(() =>
@@ -248,17 +303,26 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
       native: JSON.parse(JSON.stringify(h.native.log)) as unknown,
     };
   });
-  await expect(tiles).not.toHaveCount(0);
-  await expect(chips).toHaveCount(1);
-  await page.evaluate(() =>
-    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.fixture.settle(),
+  const sends = captured.calls.filter(
+    (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
   );
+  expect(sends).toHaveLength(1);
+  const [send] = sends;
+  const admitted = await assertAdmitted(page, beforeSend, send);
+  await expect(tiles).toHaveCount(0);
+  await expect(chips).toHaveCount(0);
+  const settled = await settleAdmission(page, admitted);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+          (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
+        ).length,
+    ),
+  ).toBe(1);
   await expect(tiles).toHaveCount(0);
   await expect(chips).toHaveCount(0);
 
-  const send = captured.calls.find(
-    (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
-  )!;
   const placements = captured.calls
     .filter((call) => call.method === 'file.placeAttachment')
     .map(({ params }) => {
@@ -282,6 +346,8 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
           note: 'Production dock composer, controller, sagas, editor and send; scripted daemon wire and native helper. No screen capture, microphone, recording or real message.',
         },
         send,
+        admissionId: admitted.submission?.id,
+        settled: settled.draft?.delivery?.settled,
         placements,
         native: captured.native,
       },
@@ -319,18 +385,27 @@ test('restored legacy Pick marks retain metadata through reference deletion and 
   mount,
   page,
 }, info) => {
-  const component = await mount(ComposerE2EHarness);
+  const component = await mount(ComposerE2EHarness, { props: { legacyPickDraft: true } });
   await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const h = (window as unknown as { __dockComposerE2E?: Harness }).__dockComposerE2E;
-        return !!h?.store.state.dockConversation.agentId && !h.store.state.dockConversation.loading;
-      }),
-    )
+    .poll(async () => {
+      const state = await draftSnapshot(page);
+      return (
+        state.restore?.status === 'restored' &&
+        state.restore.workspaceId === state.workspaceId &&
+        state.restore.agentId === state.agentId &&
+        !!state.restore.requestId &&
+        state.draft?.restored === true
+      );
+    })
     .toBe(true);
-  const seeded = await page.evaluate(() =>
-    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.seedLegacyPickDraft(),
-  );
+  const restored = await draftSnapshot(page);
+  expect(restored.restore?.draft?.text).toBe('Review [[mark:1]] and [[mark:2]]');
+  expect(restored.restore?.draft?.attachments).toHaveLength(1);
+  const seeded = {
+    workspaceId: restored.workspaceId,
+    agentId: restored.agentId,
+    marks: restored.evidence?.marks ?? [],
+  };
   expect(seeded.marks.map(({ id, tool, element }) => ({ id, tool, element }))).toEqual([
     {
       id: 'legacy-pick-1',
@@ -371,6 +446,7 @@ test('restored legacy Pick marks retain metadata through reference deletion and 
   await expect(
     component.getByRole('button', { name: 'Screenshot with 1 marks. Open' }),
   ).toBeVisible();
+  const beforeSend = await draftSnapshot(page);
   await component.getByTestId('composer-submit-button').click();
   const sends = () =>
     page.evaluate(() =>
@@ -381,6 +457,18 @@ test('restored legacy Pick marks retain metadata through reference deletion and 
   await expect.poll(async () => (await sends()).length).toBe(1);
   const [send] = await sends();
   expect(send.params).toMatchObject({ workspaceId: seeded.workspaceId, agentId: seeded.agentId });
+  const placements = await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+      (call) => call.method === 'file.placeAttachment',
+    ),
+  );
+  // This wire does not advertise raw retention: one restored screenshot places one composite.
+  expect(placements).toHaveLength(1);
+  expect(placements[0].params).toMatchObject({
+    workspaceId: seeded.workspaceId,
+    mimeType: 'image/png',
+  });
+  expect(placements[0].params).not.toHaveProperty('sourcePath');
   const metadata = send.params.messageMetadata as DockScreenEvidenceMetadata;
   expect(metadata.type).toBe('dock_screen_evidence');
   expect(metadata.images.flatMap((image) => image.marks)).toEqual([
@@ -395,16 +483,26 @@ test('restored legacy Pick marks retain metadata through reference deletion and 
   expect(text).toContain('with the updated explanation');
   expect(text).toContain('[[mark:1]]');
   expect(text).not.toContain('[[mark:2]]');
-  await expect(chips).toHaveCount(1);
-  await expect(tiles).toHaveCount(1);
-  await page.evaluate(() =>
-    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.fixture.settle(),
-  );
+  const admitted = await assertAdmitted(page, beforeSend, send);
   await expect(chips).toHaveCount(0);
   await expect(tiles).toHaveCount(0);
+  const settled = await settleAdmission(page, admitted);
+  await expect(chips).toHaveCount(0);
+  await expect(tiles).toHaveCount(0);
+  expect(await sends()).toHaveLength(1);
   await expect(editor).toHaveText('');
   await info.attach('legacy-pick-send-receipt', {
-    body: JSON.stringify({ synthetic: true, seeded, send }, null, 2),
+    body: JSON.stringify(
+      {
+        synthetic: true,
+        seeded,
+        send,
+        admissionId: admitted.submission?.id,
+        settled: settled.draft?.delivery?.settled,
+      },
+      null,
+      2,
+    ),
     contentType: 'application/json',
   });
 });

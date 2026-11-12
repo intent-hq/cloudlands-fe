@@ -1,3 +1,4 @@
+import type { ChatDraftSnapshot } from '$store/renderer/slices/chat-drafts/chat-drafts-types';
 import type { AgentMessage, ContentBlock, QueuedMessage } from '$shared/types';
 import { AgentId, WorkspaceId } from '$shared/types/branded-ids';
 import type { ResourceBlockContents } from '$shared/types/resource-block-identity';
@@ -68,6 +69,8 @@ export function setupConversationWire(
   options: {
     failPlacementOnce?: boolean;
     initialMessage?: string;
+    /** Persisted synthetic draft, restored by the real owner saga on open. */
+    initialDraft?: ChatDraftSnapshot;
     dockAppearance?: boolean;
     /** Seed the main agent with this many assistant turns of operational (thinking) rows. */
     operationalHistory?: number;
@@ -97,6 +100,13 @@ export function setupConversationWire(
   }
   const subscriptions = new Map<string, { agentId: string; seq: number }>();
   const drafts = createChatDraftFixture().client;
+  if (options.initialDraft)
+    void drafts.set(
+      wireWorkspace,
+      'wire-main',
+      options.initialDraft.text,
+      options.initialDraft.attachments,
+    );
   const placements = new Map<string, PlaceAttachmentResult>();
   let rejectPlacement = options.failPlacementOnce ?? false;
   let nextId = 0;
