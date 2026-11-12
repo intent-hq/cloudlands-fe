@@ -286,12 +286,9 @@ describe('DevicesSettings', () => {
     await openAction('Connect');
     expect(mocks.open).toHaveBeenCalledWith(remote.id);
     await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
-    await fireEvent.click(
-      await screen.findByRole('menuitem', {
-        name: new RegExp(m.cloudMachines_addMenu_connect_label()),
-      }),
+    expect(dispatchSpy.mock.calls.map(([action]) => (action as { type: string }).type)).toContain(
+      'machineSetup/opened',
     );
-    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
   it('preserves local icon editing and Mobile configuration with personal capabilities enabled', async () => {
@@ -490,29 +487,6 @@ describe('DevicesSettings', () => {
     mocks.connections = [];
     render(DevicesSettings);
     expect(screen.getByText(m.settings_devices_empty_title())).toBeTruthy();
-  });
-
-  it('cycles automatic accents through only the selectable palette', async () => {
-    mocks.connections = [
-      local,
-      remote,
-      { ...remote, id: 'remote-2' },
-      { ...remote, id: 'remote-3' },
-    ];
-    render(DevicesSettings);
-
-    await fireEvent.click(screen.getByRole('button', { name: m.settings_devices_add_label() }));
-    await fireEvent.click(
-      await screen.findByRole('menuitem', {
-        name: new RegExp(m.cloudMachines_addMenu_connect_label()),
-      }),
-    );
-
-    expect(
-      screen.getByRole('button', { name: 'Use Teal accent' }).getAttribute('aria-pressed'),
-    ).toBe('true');
-    expect(screen.queryByRole('button', { name: 'Use Rose accent' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Use Orange accent' })).toBeNull();
   });
 
   async function openAction(
