@@ -1,4 +1,4 @@
-import type { DockSendTiming } from './dock-send-timing';
+import type { DockSendTiming } from '$store/renderer/utils/submission-timing';
 /** One evidence-to-message projection shared by the notch and ordinary chat. */
 import {
   dockMediaSendsOriginal,

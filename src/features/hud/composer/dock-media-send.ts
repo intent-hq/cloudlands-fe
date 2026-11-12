@@ -1,4 +1,4 @@
-import type { DockSendTiming } from './dock-send-timing';
+import type { DockSendTiming } from '$store/renderer/utils/submission-timing';
 import { dockCertifiedFramePromptBytes } from '$shared/dock-media-frame-budget';
 import { dockMediaOverlaySpans } from '$shared/dock-media-animation';
 /** Materialize the click's immutable media edits before message admission. */

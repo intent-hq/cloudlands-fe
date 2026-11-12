@@ -2,7 +2,7 @@
   import {
     beginDockSendTiming,
     type DockSendTiming,
-  } from '$features/hud/composer/dock-send-timing';
+  } from '$store/renderer/utils/submission-timing';
   import type { Workspace } from '$shared/types';
   import { dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
   import { createLogger } from '$lib/utils/client-logger';

@@ -1,3 +1,4 @@
+import { settleDockSendTiming } from '$store/renderer/utils/submission-timing';
 import { hasUnresolvedQueueProcessing } from '../../pending-submissions/pending-submissions-model';
 import { hydrateAgentQueue } from '$features/agent/agent-queue-read-service';
 import { loadChatTranscript } from '$features/agent/chat-read-service';
@@ -521,6 +522,12 @@ export function* chatReadSaga() {
       takeSingleFlightInContext(
         queueReconciliationActions,
         (action: QueueReconciliationAction) => {
+          // Observe the actual result before single-flight reconciliation can coalesce it.
+          if (action.type === pendingSubmissionSettled.type) {
+            const [scope, id, outcome] = (action as ReturnType<typeof pendingSubmissionSettled>)
+              .payload;
+            settleDockSendTiming(scope, id, outcome);
+          }
           const context = JSON.stringify(action.payload[0]);
           return action.type === pendingScopeReleased.type ? { context, cancel: true } : context;
         },

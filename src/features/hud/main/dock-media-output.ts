@@ -580,6 +580,7 @@ export async function exportDockMedia(
     try {
       const ms = (name: string) => Math.round(durationsMs[name] ?? 0);
       // The main logger abbreviates nested objects and records with more than five keys.
+      // i18n-ignore (content-free diagnostic label, not user-facing copy)
       timingLogger.info('Local media export timing', {
         exportToken,
         stage: 'prepare',
@@ -587,6 +588,7 @@ export async function exportDockMedia(
         sourceMs: ms('source'),
         layersMs: ms('layers'),
       });
+      // i18n-ignore (content-free diagnostic label, not user-facing copy)
       timingLogger.info('Local media export timing', {
         exportToken,
         stage: 'render',
@@ -594,6 +596,7 @@ export async function exportDockMedia(
         framesMs: ms('frames'),
         outputMs: ms('output'),
       });
+      // i18n-ignore (content-free diagnostic label, not user-facing copy)
       timingLogger.info('Local media export timing', {
         exportToken,
         stage: 'complete',

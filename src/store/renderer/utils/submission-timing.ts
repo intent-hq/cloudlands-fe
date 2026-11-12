@@ -1,7 +1,18 @@
 import { createLogger } from '$lib/utils/client-logger';
 import { sameSubmissionScope } from '$store/renderer/slices/pending-submissions/pending-submissions-model';
 import type { SubmissionScope } from '$store/renderer/slices/pending-submissions/pending-submissions-types';
-import type { DockSendStage } from './dock-send-diagnostics';
+export type DockSendStage =
+  | 'validate'
+  | 'transcribe'
+  | 'plan'
+  | 'screenshot-source'
+  | 'screenshot-render'
+  | 'overlay-render'
+  | 'export'
+  | 'placement'
+  | 'burn'
+  | 'admission'
+  | 'barrier';
 
 const logger = createLogger('DockSendTiming');
 type Stage = DockSendStage | 'barrier' | 'target' | 'preparation' | 'release' | 'admission';

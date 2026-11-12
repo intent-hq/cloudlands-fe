@@ -1,5 +1,4 @@
-import { dockSendTimingFor, settleDockSendTiming } from '$features/hud/composer/dock-send-timing';
-import { pendingSubmissionSettled } from '$store/renderer/slices/pending-submissions/pending-submissions-slice';
+import { dockSendTimingFor } from '$store/renderer/utils/submission-timing';
 import { selectDockDraftSynchronization } from '../dock-conversation-selectors';
 import type { SharedDraftSnapshot } from '$shared/types/chat-draft-sync';
 import {
@@ -758,9 +757,6 @@ function* reconcileDeliveries(): SagaGenerator<void> {
   }
 }
 export function* dockConversationSaga(): SagaGenerator<void> {
-  yield* takeEvery(pendingSubmissionSettled, function* ({ payload: [scope, id, outcome] }) {
-    yield* call(settleDockSendTiming, scope, id, outcome);
-  });
   yield* fork(dockContextLinksSaga);
   yield* fork(dockShortcutSaga);
   yield* fork(dockEvidenceSaga);
