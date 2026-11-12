@@ -899,6 +899,23 @@ export function createDockScreenRecorder(
 
   const ended = new Map<string, Promise<DockNativeResult<DockRecordedClip>>>();
 
+  const removeCompletedFiles = async (result: DockNativeResult<DockRecordedClip>): Promise<void> => {
+    if (!result.ok) return;
+    // finished() constructs both paths from main-owned temporary clip files.
+    // Durable daemon attachment paths never enter this recorder result.
+    const paths = new Set([
+      result.value.sourcePath,
+      ...(result.value.original ? [result.value.original.sourcePath] : []),
+    ]);
+    await Promise.all([...paths].map((file) => deps.removeFile(file).catch(() => undefined)));
+  };
+
+  const retireEnded = async (clipId: string): Promise<void> => {
+    const result = ended.get(clipId);
+    ended.delete(clipId);
+    if (result) await removeCompletedFiles(await result);
+  };
+
   const stop = (clipId: string): Promise<DockNativeResult<DockRecordedClip>> => {
     const clip = current(clipId);
     if (!clip) {
@@ -927,9 +944,7 @@ export function createDockScreenRecorder(
         if (reservation?.clipId === clipId) await reservation.promise;
         return;
       }
-      const result = await ended.get(clipId);
-      ended.delete(clipId);
-      if (result?.ok) await deps.removeFile(result.value.sourcePath).catch(() => undefined);
+      await retireEnded(clipId);
       return;
     }
     clip.cancelled = true;
@@ -939,7 +954,7 @@ export function createDockScreenRecorder(
     else kill(clip, 'cancelled');
     const result = await clip.ended;
     ended.delete(clipId);
-    if (result.ok) await deps.removeFile(result.value.sourcePath).catch(() => undefined);
+    await removeCompletedFiles(result);
     await deps.removeFile(clip.outputPath).catch(() => undefined);
     await deps.removeFile(clip.cleanPath).catch(() => undefined);
   };
@@ -947,7 +962,7 @@ export function createDockScreenRecorder(
   // Remember the last few outcomes so a late `stop` after an auto-limit still resolves.
   listeners.add((clipId, result) => {
     ended.set(clipId, Promise.resolve(result));
-    while (ended.size > 4) ended.delete(ended.keys().next().value as string);
+    while (ended.size > 4) void retireEnded(ended.keys().next().value as string);
   });
 
   return {
@@ -975,6 +990,7 @@ export function createDockScreenRecorder(
     },
     async dispose() {
       if (active) await cancel(active.clipId);
+      await Promise.all([...ended.keys()].map(retireEnded));
     },
   };
 }
