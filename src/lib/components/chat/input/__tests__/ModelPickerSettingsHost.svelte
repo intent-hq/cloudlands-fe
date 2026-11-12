@@ -54,7 +54,6 @@
     const providerModels =
       providerId === 'codex' ? models : [{ value: 'other', label: 'Other provider model' }];
     store.dispatch(providerModelsLoaded(providerId, { models: providerModels }, 0));
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalogs
     registerMockIpcHandler(`${providerId}:get-models`, () => ({
       success: true,
       data: providerModels,
@@ -106,7 +105,6 @@
     appClient.settings.updateSnapshot = originalUpdateSnapshot;
     appClient.settings.listSnapshot = originalListSnapshot;
     for (const providerId of ['codex', 'claude-code']) {
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only handler cleanup
       unregisterMockIpcHandler(`${providerId}:get-models`);
     }
     disposeStore();

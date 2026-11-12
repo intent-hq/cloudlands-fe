@@ -34,7 +34,6 @@
     updatedAt: '2026-09-22T00:00:00.000Z',
   };
   const previousBridge = window.electronAPI;
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only local bridge setup; no domain data is fetched.
   installMockElectronBridge({
     'note.get': () => ({ note }),
     'comment.list': () => ({ threads: [] }),

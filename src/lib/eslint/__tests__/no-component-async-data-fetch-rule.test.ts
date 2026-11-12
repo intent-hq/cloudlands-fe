@@ -20,7 +20,11 @@ afterEach(() => {
  * Lints a component that sits next to real modules on disk, so the rule can
  * inspect what each relative import actually contains.
  */
-async function lintSvelteWithModules(code: string, modules: Record<string, string>) {
+async function lintSvelteWithModules(
+  code: string,
+  modules: Record<string, string>,
+  componentPath = 'Component.svelte',
+) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'no-component-async-data-fetch-'));
   fixtureDirs.push(dir);
   for (const [relativePath, source] of Object.entries(modules)) {
@@ -28,7 +32,7 @@ async function lintSvelteWithModules(code: string, modules: Record<string, strin
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, source);
   }
-  return lintSvelte(code, { cwd: dir, filePath: path.join(dir, 'Component.svelte') });
+  return lintSvelte(code, { cwd: dir, filePath: path.join(dir, componentPath) });
 }
 
 async function lintSvelte(
@@ -458,6 +462,99 @@ describe('no-component-async-data-fetch ESLint rule', () => {
           <button onclick={refresh}>Refresh</button>
         `,
         {},
+      );
+
+      expect(messages).toHaveLength(2);
+    });
+  });
+
+  describe('test transport fixtures', () => {
+    const fixtureHost = `
+      <script lang="ts">
+        import { onDestroy } from 'svelte';
+        import {
+          emitMockIpcEvent,
+          overrideMockIpcHandler,
+          registerMockIpcHandler,
+          unregisterMockIpcHandler,
+        } from '$shared/ipc-mock-router';
+        import {
+          createMockBridgeListeners,
+          installMockElectronBridge,
+        } from '../../../test/ct-mock-electron-bridge';
+
+        const { detachAll } = createMockBridgeListeners();
+        installMockElectronBridge({ 'agent.get': () => ({ id: 'a' }) });
+        registerMockIpcHandler('codex:get-models', () => ({ success: true, data: [] }));
+        const restore = overrideMockIpcHandler('shell:openExternal', () => undefined);
+        const push = () => emitMockIpcEvent('backend:notification', { method: 'x' });
+
+        onDestroy(() => {
+          unregisterMockIpcHandler('codex:get-models');
+          restore();
+          detachAll();
+        });
+      </script>
+
+      <button onclick={push}>Push</button>
+    `;
+    const fixtureCallCount = 6;
+    const inRepo = (relativePath: string) => path.resolve(process.cwd(), relativePath);
+
+    it.each([
+      ['a test host', 'src/lib/components/__tests__/FixtureHost.svelte'],
+      ['a preview', 'src/lib/components/previews/fixture-host.preview.svelte'],
+    ])('allows %s to drive the mock IPC router and fake desktop bridge', async (_, filePath) => {
+      expect(await lintSvelte(fixtureHost, { filePath: inRepo(filePath) })).toEqual([]);
+    });
+
+    it('still reports a production component that imports the test transports', async () => {
+      const messages = await lintSvelte(fixtureHost, {
+        filePath: inRepo('src/lib/components/fixtures/FixtureHost.svelte'),
+      });
+
+      expect(messages).toHaveLength(fixtureCallCount);
+    });
+
+    it('still reports a test host that calls the desktop bridge directly', async () => {
+      const messages = await lintSvelte(
+        `
+          <script lang="ts">
+            import { installMockElectronBridge } from '../../../test/ct-mock-electron-bridge';
+
+            installMockElectronBridge({});
+            const refresh = () => window.electronAPI.invoke('workspace:list');
+          </script>
+
+          <button onclick={refresh}>Refresh</button>
+        `,
+        { filePath: inRepo('src/lib/components/__tests__/FixtureHost.svelte') },
+      );
+
+      expect(messages).toHaveLength(1);
+      expect(messages[0].line).toBe(6);
+    });
+
+    it('still reports real IPC wrappers and lookalike mock modules in test hosts', async () => {
+      const messages = await lintSvelteWithModules(
+        `
+          <script lang="ts">
+            import { listWorkspaces } from '../ipc/workspace-ipc';
+            import { registerMockIpcHandler } from '../ipc-mock-router';
+
+            function refresh() {
+              listWorkspaces();
+              registerMockIpcHandler('workspace:list', () => []);
+            }
+          </script>
+
+          <button onclick={refresh}>Refresh</button>
+        `,
+        {
+          'src/lib/ipc/workspace-ipc.ts': `export const listWorkspaces = () => window.electronAPI.invoke('workspace:list');`,
+          'src/lib/ipc-mock-router.ts': `export const registerMockIpcHandler = (channel: string, handler: () => unknown) => window.electronAPI.invoke(channel, handler);`,
+        },
+        'src/lib/__tests__/FixtureHost.svelte',
       );
 
       expect(messages).toHaveLength(2);

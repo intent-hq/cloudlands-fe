@@ -372,7 +372,6 @@
     };
   });
   onDestroy(
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Fixture-only mock registration, not a domain fetch; intercepts external navigation and restores on teardown.
     overrideMockIpcHandler('shell:openExternal', (payload) => {
       onOpenExternal?.(payload);
       return { success: true };

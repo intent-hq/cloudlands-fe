@@ -37,6 +37,12 @@ const STATIC_MODULE_SPECIFIER_PATTERN =
 const MODULE_FILE_EXTENSIONS = ['.ts', '.js', '.svelte.ts', '.svelte.js', '.svelte'];
 const INDEX_FILE_EXTENSIONS = ['.ts', '.js'];
 const MAX_SYNCHRONOUS_MODULE_DEPTH = 8;
+// Test hosts and previews drive these in-memory fakes of the desktop bridge; they never load data.
+const TEST_FIXTURE_FILE_PATTERN = /(?:^|[\\/])__tests__[\\/]|\.preview\.svelte$/;
+const TEST_TRANSPORT_MODULE_SUFFIXES = [
+  ['src', 'shared', 'ipc-mock-router.ts'],
+  ['src', 'test', 'ct-mock-electron-bridge.ts'],
+].map((segments) => path.sep + path.join(...segments));
 const ASYNC_WRAPPER_SOURCE_TEXT_PATTERN =
   /(?:window\.)?electronAPI\??\.invoke|(?:^|[^\w$])invoke\s*\(|(?:^|[^\w$])fetch\s*\(|IPC_CHANNELS|(?:SETTINGS|SYSTEM|DIALOG|TERMINAL)_CHANNELS/;
 
@@ -166,15 +172,15 @@ function getImportCandidates(basePath) {
   ];
 }
 
-/** Resolves a local import to the file it names and reads it, or returns null. */
-function readImportedModule(fromFilename, source) {
+/** Resolves a local import to the file it names, or returns null. */
+function resolveImportedModulePath(fromFilename, source) {
   const basePath = resolveImportBase(fromFilename, source);
   if (!basePath) return null;
 
   for (const candidate of getImportCandidates(basePath)) {
     try {
       if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) {
-        return { filePath: candidate, text: fs.readFileSync(candidate, 'utf8') };
+        return candidate;
       }
     } catch {
       return null;
@@ -182,6 +188,30 @@ function readImportedModule(fromFilename, source) {
   }
 
   return null;
+}
+
+/** Resolves a local import to the file it names and reads it, or returns null. */
+function readImportedModule(fromFilename, source) {
+  const filePath = resolveImportedModulePath(fromFilename, source);
+  if (!filePath) return null;
+
+  try {
+    return { filePath, text: fs.readFileSync(filePath, 'utf8') };
+  } catch {
+    return null;
+  }
+}
+
+function isTestTransportImport(context, source) {
+  const filename = getFilename(context);
+  if (!filename || !TEST_FIXTURE_FILE_PATTERN.test(filename)) {
+    return false;
+  }
+
+  const filePath = resolveImportedModulePath(filename, source);
+  return Boolean(
+    filePath && TEST_TRANSPORT_MODULE_SUFFIXES.some((suffix) => filePath.endsWith(suffix)),
+  );
 }
 
 function readImportSourceText(context, source) {
@@ -441,6 +471,8 @@ export default {
     return {
       ImportDeclaration(node) {
         const source = node.source.value;
+        if (isTestTransportImport(context, source)) return;
+
         const isAsyncWrapperSource = isAsyncWrapperImportSource(context, source);
         const isDomainSource =
           isDomainImportSource(source) &&
