@@ -189,3 +189,25 @@ it('offers guest hosts that are not in the rail in the add menu', async () => {
   const candidates = await screen.findAllByTestId('machine-rail-add-item');
   expect(candidates.map((item) => item.dataset.machineId)).toEqual(['g2']);
 });
+
+it("lists every machine but the window's own for removal in the add menu, and removes the picked one", async () => {
+  render(MachineRail);
+  await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });
+  await fireEvent.click(screen.getByTestId('machine-rail-add'));
+  const removable = await screen.findAllByTestId('machine-rail-remove-item');
+  expect(removable.map((item) => item.dataset.machineId)).toEqual(['b', 'g1']);
+
+  await fireEvent.click(removable[0]);
+  expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'machineRail/removeRequested', payload: ['b'] }),
+  );
+});
+
+it('offers nothing to remove when the rail holds only the window machine', async () => {
+  setState({ machineIds: ['local'] });
+  render(MachineRail);
+  await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });
+  await fireEvent.click(screen.getByTestId('machine-rail-add'));
+  await screen.findByTestId('machine-rail-add-new');
+  expect(screen.queryAllByTestId('machine-rail-remove-item')).toEqual([]);
+});

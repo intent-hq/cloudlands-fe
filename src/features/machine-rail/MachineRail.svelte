@@ -94,10 +94,9 @@
     return { destroy: () => node.remove() };
   }
 
-  // A machine's name shows after a short pause, then at once on the next item
-  // (the tooltip provider skips the delay), so a pointer can slide down the rail.
-  // The add button's tooltip waits for a deliberate pause.
-  const MACHINE_TOOLTIP_DELAY_MS = 300;
+  // Names are a fallback, not something to read on every pass of the pointer:
+  // the first shows only after the pointer rests on a button. Once one is up,
+  // moving to the next machine shows its name at once (the app's usual behaviour).
   const RAIL_TOOLTIP_DELAY_MS = 900;
 
   // Rail buttons show keyboard focus as the hover background, not the app-wide
@@ -149,6 +148,8 @@
     return ordered.every((item) => item !== undefined) ? (ordered as MachineRailItem[]) : $items$;
   });
   const ownItems = $derived(orderedItems.filter((item) => !item.guest));
+  // Everything but the window's own machine can leave the rail.
+  const removableItems = $derived(orderedItems.filter((item) => !item.home));
   const guestItems = $derived(orderedItems.filter((item) => item.guest));
 
   // Main's reply carries the new order: the local one is no longer needed.
@@ -303,9 +304,11 @@
 
   // Each machine's renderer has its own rail, and one that stops being shown
   // never sees the pointer leave. A machine's name stays hidden after a click
-  // on it, and every name while this rail is not on screen, until the pointer
-  // or keyboard focus moves on, so a tooltip cannot stay open for when this
-  // rail shows again.
+  // on it until the pointer or keyboard focus moves to another machine. Every
+  // name stays hidden while this rail is not on screen and, once it shows
+  // again, until the pointer has left the rail: after a switch the pointer is
+  // still resting on the rail of the machine that just appeared, which reports
+  // it as entering, so entering alone must not bring the names back.
   let quietTooltips = $state<'all' | string | null>(null);
   $effect(() => {
     if (!$isShown$) quietTooltips = 'all';
@@ -315,8 +318,16 @@
     return quietTooltips === 'all' || quietTooltips === item.id;
   }
 
-  function wakeTooltips(item?: MachineRailItem) {
-    if (quietTooltips !== null && quietTooltips !== item?.id) quietTooltips = null;
+  /** The pointer or focus reached `item`: names return unless the whole rail is quiet. */
+  function wakeTooltips(item: MachineRailItem) {
+    if (quietTooltips !== null && quietTooltips !== 'all' && quietTooltips !== item.id) {
+      quietTooltips = null;
+    }
+  }
+
+  /** The pointer left the rail: the next visit is a deliberate one. */
+  function wakeAllTooltips() {
+    quietTooltips = null;
   }
 
   function selectMachine(id: string) {
@@ -446,7 +457,7 @@
       aria-label={itemLabel(item)}
       tooltip={itemLabel(item)}
       tooltipSide="right"
-      tooltipDelayDuration={MACHINE_TOOLTIP_DELAY_MS}
+      tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
       tooltipDisabled={tooltipQuiet(item)}
       aria-current={item.selected ? 'true' : undefined}
       aria-busy={item.pending || undefined}
@@ -498,11 +509,10 @@
 
 {#if $enabled$}
   <nav
-    class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-1"
+    class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-2.5"
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
-    onpointerenter={() => wakeTooltips()}
-    onpointerleave={() => wakeTooltips()}
+    onpointerleave={wakeAllTooltips}
   >
     <div
       bind:this={railList}
@@ -547,7 +557,7 @@
           </Button>
         {/snippet}
       </Menu.Trigger>
-      <Menu.Content side="right" align="end" aria-label={m.machineRail_add_label()}>
+      <Menu.Content side="right" align="start" aria-label={m.machineRail_add_label()}>
         {#if $candidates$.length > 0}
           <Header class="px-2 pt-1.5 pb-0.5" size={6}>{m.machineRail_add_header()}</Header>
           {#each $candidates$ as candidate (candidate.id)}
@@ -591,6 +601,26 @@
           {/snippet}
           {m.settings_devices_add_label()}
         </Menu.Item>
+        {#if removableItems.length > 0}
+          <Menu.Separator />
+          <Header class="px-2 pt-1.5 pb-0.5" size={6}>{m.machineRail_remove_header()}</Header>
+          {#each removableItems as item (item.id)}
+            <Menu.Item
+              data-testid="machine-rail-remove-item"
+              data-machine-id={item.id}
+              onSelect={() => removeFromRail(item.id)}
+            >
+              {#snippet leading()}
+                {#if item.guest}
+                  {@render guestIcon(item.guest, 16, 'text-foreground')}
+                {:else if item.record}
+                  <DeviceIcon record={item.record} size={16} class="text-foreground" />
+                {/if}
+              {/snippet}
+              <span class="min-w-0 flex-1 truncate">{itemName(item)}</span>
+            </Menu.Item>
+          {/each}
+        {/if}
       </Menu.Content>
     </Menu.Root>
 
