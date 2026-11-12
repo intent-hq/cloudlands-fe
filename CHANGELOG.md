@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.326.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.326.0...v2.326.1) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* **dock:** reuse stored recordings for unchanged sends ([#4510](https://github.com/intent-hq/cloudlands-fe/issues/4510)) ([f73a535](https://github.com/intent-hq/cloudlands-fe/commit/f73a5351dea657db61210991bb335b421d6b0306))
+
 ## [2.326.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.325.0...v2.326.0) (2026-11-12)
 
 
