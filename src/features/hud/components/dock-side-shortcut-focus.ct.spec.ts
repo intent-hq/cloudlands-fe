@@ -13,10 +13,10 @@ import {
 } from '$shared/dock-placement';
 
 /**
- * The open shortcut with the dock on a screen side (edge placement) and no destination
- * from the foreground: it opens the last chat opened from the dock (same machine and
- * authority, still present), else the first workspace, expands it and focuses its real
- * composer, instead of only focusing the Assistant entry. Real store, sagas, rail and shell.
+ * Global focus without admitted foreground context preserves a selected conversation;
+ * with no selection it opens the index, never an arbitrary first or remembered workspace.
+ * Focused toggleClose has a separate established side-panel contract, covered below.
+ * Real store, sagas, rail and shell; linked-first admission is covered by dock-single-shortcut.
  */
 type Fixture = {
   shortcut(context: DockShortcutContext): void;
@@ -116,7 +116,20 @@ const firstEntry = (page: Page) =>
         .find((id) => id !== 'dock:assistant') ?? null,
   );
 
-test('side: a cold shortcut opens the first workspace chat and focuses its composer', async ({
+async function expectIndex(page: Page) {
+  await expect.poll(() => state(page, 'workspaceId')).toBeNull();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.store.state
+            .dockConversation.shortcut,
+      ),
+    )
+    .toMatchObject({ context: { action: 'focus' }, destination: null, resolving: false });
+}
+
+test('side: a cold unadmitted shortcut opens the index until a workspace is chosen', async ({
   mount,
   page,
 }, info) => {
@@ -125,16 +138,18 @@ test('side: a cold shortcut opens the first workspace chat and focuses its compo
   const first = await firstEntry(page);
   expect(first).not.toBeNull();
   await press(page);
+  await expectIndex(page);
+  await page.locator(`[data-dock-entry="${first}"]`).click();
   await expect.poll(() => state(page, 'workspaceId')).toBe(first);
   await expect.poll(() => composerFocused(page)).toBe(true);
-  await page.screenshot({ path: info.outputPath('side-cold-first-workspace.png') });
+  await page.screenshot({ path: info.outputPath('side-cold-explicit-workspace.png') });
   await writeFile(
     info.outputPath('side-cold-receipt.json'),
-    JSON.stringify({ opened: 'first entry', composerFocused: true }),
+    JSON.stringify({ shortcut: 'index', opened: 'explicit first entry', composerFocused: true }),
   );
 });
 
-test('side: the shortcut returns to the last chat opened from the dock', async ({
+test('side: an unadmitted shortcut does not reopen the remembered chat', async ({
   mount,
   page,
 }, info) => {
@@ -150,19 +165,25 @@ test('side: the shortcut returns to the last chat opened from the dock', async (
   // The pointer moves away from the side; the press comes from the keyboard.
   await page.mouse.move(200, 200);
   await press(page);
+  await expectIndex(page);
+  // A remembered workspace remains available for explicit selection, never auto-routing.
+  await page.locator('[data-dock-entry="choice-1"]').click();
   await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
-  // Synthetic workspaces have no agent fixture (no composer; composer focus is proven on
-  // the fixture workspace in the other cases): the chat opens, not the Assistant preview.
   await expect(page.getByTestId('dock-edge-shell')).toBeVisible();
   await expect(page.locator('[data-dock-entry="dock:assistant"]')).not.toBeFocused();
   await expect(page.locator('[data-preview-workspace-id="dock:assistant"]')).toHaveCount(0);
   await writeFile(
     info.outputPath('side-last-receipt.json'),
-    JSON.stringify({ opened: 'choice-1', edgeShell: 'visible', assistantPreview: false }),
+    JSON.stringify({
+      shortcut: 'index',
+      opened: 'explicit choice-1',
+      edgeShell: 'visible',
+      assistantPreview: false,
+    }),
   );
 });
 
-test('side: a removed last chat, or one from another machine, falls back to the first workspace', async ({
+test('side: an unadmitted shortcut never substitutes for an archived or foreign last chat', async ({
   mount,
   page,
 }, info) => {
@@ -185,8 +206,7 @@ test('side: a removed last chat, or one from another machine, falls back to the 
   const first = await firstEntry(page);
   expect(first).not.toBe('choice-1');
   await press(page);
-  await expect.poll(() => state(page, 'workspaceId')).toBe(first);
-  await expect.poll(() => composerFocused(page)).toBe(true);
+  await expectIndex(page);
 
   await page.locator('[data-dock-entry="choice-2"]').click();
   await expect.poll(() => state(page, 'workspaceId')).toBe('choice-2');
@@ -200,10 +220,10 @@ test('side: a removed last chat, or one from another machine, falls back to the 
     });
   }, null);
   await press(page);
-  await expect.poll(() => state(page, 'workspaceId')).toBe(await firstEntry(page));
+  await expectIndex(page);
   await writeFile(
     info.outputPath('side-fence-receipt.json'),
-    JSON.stringify({ removed: 'first', otherMachine: 'first' }),
+    JSON.stringify({ removed: 'index', otherMachine: 'index', automaticWorkspace: null }),
   );
 });
 
@@ -215,12 +235,18 @@ test('side: with a chat open but unfocused, the shortcut keeps that chat instead
   const open = await state(page, 'workspaceId');
   expect(open).not.toBeNull();
   await press(page);
-  await expect.poll(() => state(page, 'destination')).toBe(open);
+  await expect.poll(() => state(page, 'workspaceId')).toBe(open);
   await expect.poll(() => composerFocused(page)).toBe(true);
 });
 
-for (const conflict of ['a different last chat', 'a foreground workspace with a URL'] as const) {
-  test(`side: the open chat wins over ${conflict}`, async ({ mount, page }, info) => {
+for (const conflict of [
+  'a different last chat',
+  'an unadmitted foreground workspace URL',
+] as const) {
+  test(`side: unadmitted focus preserves the selected chat despite ${conflict}`, async ({
+    mount,
+    page,
+  }, info) => {
     await mountSide(mount, page);
     const open = await state(page, 'workspaceId');
     expect(open).not.toBeNull();
@@ -240,7 +266,7 @@ for (const conflict of ['a different last chat', 'a foreground workspace with a 
     await page.mouse.move(200, 200);
     await press(
       page,
-      conflict === 'a foreground workspace with a URL'
+      conflict === 'an unadmitted foreground workspace URL'
         ? {
             workspaceId: 'choice-1',
             url: 'https://example.com/choice-1',
@@ -248,7 +274,7 @@ for (const conflict of ['a different last chat', 'a foreground workspace with a 
           }
         : {},
     );
-    await expect.poll(() => state(page, 'destination')).toBe(open);
+    await expect.poll(() => state(page, 'workspaceId')).toBe(open);
     expect(await state(page, 'workspaceId')).toBe(open);
     await expect.poll(() => composerFocused(page)).toBe(true);
     await writeFile(
