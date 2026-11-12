@@ -78,6 +78,14 @@ const KNOWN_BRIDGE_WRAPPERS: ReadonlyMap<string, KnownBridgeWrapper> = new Map([
     },
   ],
   [
+    'src/features/hud/composer/chat-media-native.ts',
+    {
+      reason:
+        '`invoke(channel, request)` forwards only the offline chat media BEGIN/CONTROL/CLOSE channels declared in this adapter.',
+      channelFiles: ['src/features/hud/composer/chat-media-native.ts'],
+    },
+  ],
+  [
     'src/features/hud/media-editor/capture-editor-bridge.ts',
     {
       reason:

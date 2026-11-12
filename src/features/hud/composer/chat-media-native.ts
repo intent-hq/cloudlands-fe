@@ -1,13 +1,16 @@
 import { electronAPI } from '$lib/electron-bridge';
 import {
-  CHAT_MEDIA_CHANNELS as C,
+  CHAT_MEDIA_CHANNELS,
   type ChatMediaBegin,
   type ChatMediaControl,
 } from '$shared/chat-media-ipc';
 import type { DockNativeResult } from '$shared/dock-evidence';
 import type { DockMediaSendService } from './dock-media-send';
 
-type Invoke = (channel: (typeof C)[keyof typeof C], request: unknown) => Promise<unknown>;
+type Invoke = (
+  channel: (typeof CHAT_MEDIA_CHANNELS)[keyof typeof CHAT_MEDIA_CHANNELS],
+  request: unknown,
+) => Promise<unknown>;
 /** A send-scoped offline adapter, never a dock/native-capture adapter. */
 export function createChatMediaNative(
   request: ChatMediaBegin,
@@ -23,7 +26,7 @@ export function createChatMediaNative(
     signal.removeEventListener('abort', onAbort);
     const id = sessionId;
     sessionId = null;
-    if (id) await invoke(C.CLOSE, { sessionId: id }).catch(() => {});
+    if (id) await invoke(CHAT_MEDIA_CHANNELS.CLOSE, { sessionId: id }).catch(() => {});
   }
   const onAbort = () => {
     void dispose();
@@ -37,7 +40,9 @@ export function createChatMediaNative(
     if (sessionId) return sessionId;
     if (starting) return starting;
     starting = (async () => {
-      const result = (await invoke(C.BEGIN, request)) as DockNativeResult<{ sessionId: string }>;
+      const result = (await invoke(CHAT_MEDIA_CHANNELS.BEGIN, request)) as DockNativeResult<{
+        sessionId: string;
+      }>;
       if (!result.ok) throw new Error('media-export-unavailable');
       sessionId = result.value.sessionId;
       try {
@@ -57,7 +62,10 @@ export function createChatMediaNative(
   async function control<T>(control: ChatMediaControl['control']): Promise<DockNativeResult<T>> {
     const id = await begin();
     check();
-    const result = (await invoke(C.CONTROL, { sessionId: id, control })) as DockNativeResult<T>;
+    const result = (await invoke(CHAT_MEDIA_CHANNELS.CONTROL, {
+      sessionId: id,
+      control,
+    })) as DockNativeResult<T>;
     check();
     return result;
   }
@@ -66,7 +74,7 @@ export function createChatMediaNative(
     transcribeMedia: (request) => control({ action: 'transcribe', request }),
     releaseMediaJob: async (jobId) => {
       if (!sessionId) return { ok: true, value: undefined };
-      return (await invoke(C.CONTROL, {
+      return (await invoke(CHAT_MEDIA_CHANNELS.CONTROL, {
         sessionId,
         control: { action: 'release', jobId },
       })) as DockNativeResult<void>;

@@ -1,3 +1,4 @@
+import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { CHIEF_WORKSPACE_ID } from '../../../shared/types/branded-ids';
 /** Main-window offline media leases. Never route through dock capture authority. */
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
@@ -11,7 +12,6 @@ import {
 import { getBackendClientForId } from '../../backend/main/backend.ipc';
 import { parsePrincipalSnapshot } from '../../../shared/types/principal';
 import {
-  CHAT_MEDIA_CHANNELS as C,
   ChatMediaBeginSchema,
   ChatMediaScopeSchema,
   ChatMediaControlSchema,
@@ -313,7 +313,16 @@ function createChatMediaLeases() {
 }
 export function setupChatMediaIPC(): void {
   const leases = createChatMediaLeases();
-  ipcMain.handle(C.BEGIN, createAuthorizedIpcHandler(C.BEGIN, leases.begin));
-  ipcMain.handle(C.CONTROL, createAuthorizedIpcHandler(C.CONTROL, leases.control));
-  ipcMain.handle(C.CLOSE, createAuthorizedIpcHandler(C.CLOSE, leases.close));
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_MEDIA.BEGIN,
+    createAuthorizedIpcHandler(IPC_CHANNELS.CHAT_MEDIA.BEGIN, leases.begin),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_MEDIA.CONTROL,
+    createAuthorizedIpcHandler(IPC_CHANNELS.CHAT_MEDIA.CONTROL, leases.control),
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.CHAT_MEDIA.CLOSE,
+    createAuthorizedIpcHandler(IPC_CHANNELS.CHAT_MEDIA.CLOSE, leases.close),
+  );
 }
