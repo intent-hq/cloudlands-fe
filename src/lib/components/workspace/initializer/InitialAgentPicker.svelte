@@ -695,8 +695,7 @@
   function knownModelsForProvider(
     providerId: string,
   ): Array<{ value: string; effortLevels?: string[] }> | undefined {
-    // A chosen machine (or, on an orchestrator, the first machine in order)
-    // lists its own models; the backend's catalog is not the evidence there.
+    // A machine as model source (chosen, or an orchestrator's first) is the evidence.
     if (startOnMachine)
       return machineReportedModels(startOnMachine, providerId, Date.now())?.map((value) => ({
         value,
