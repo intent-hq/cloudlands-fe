@@ -705,12 +705,13 @@ function* openEditorWith(
       window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request),
     )) as DockCaptureEditorOpenResult | undefined;
     mark('mainOpen');
+    // Two lines: the logger prints at most five context keys (more become "{ N keys }").
     startupLogger.info('Capture editor startup', {
       origin: origin ?? 'pill',
       opened: !!opened?.ok,
       totalMs: Math.round(performance.now() - startedAt),
-      ...phases,
     });
+    startupLogger.info('Capture editor phases', phases);
     // Refused: say so where it was asked, and start no follow-up recognition for it.
     if (!opened?.ok) {
       if (shownHere()) notify.warning(m.dock_captureEditor_openFailed_error());

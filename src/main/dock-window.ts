@@ -765,12 +765,22 @@ export function beginDockEditorHold(
   sender: Electron.WebContents,
   binding: object,
   token: string,
+  hide = false,
 ): boolean {
   const owner = { window, sender, binding };
   if (!ownerCurrent(owner) || editorHolds.has(token)) return false;
   editorHolds.set(token, { ...owner, openId: null });
   onStrictBackendBindingRetired(sender, () => dropOwnerHolds((hold) => hold.sender === sender));
   window.once('closed', () => dropOwnerHolds((hold) => hold.window === window));
+  // A screenshot: out of sight from the press, not only once its editor opens. Its document
+  // stays mounted; a recording keeps its own hide. As for a selection, the pointer's last
+  // "inside" is forgotten so a later reveal re-reports entry.
+  if (hide && window.isVisible() && !recordingHidden(window)) {
+    placementController?.cancelInteraction();
+    presenceFor(window).reset();
+    lastForwardedMove.delete(window);
+    window.hide();
+  }
   return true;
 }
 /**

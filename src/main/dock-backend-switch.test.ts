@@ -350,6 +350,29 @@ describe('owned dock capture visibility release', () => {
     dock.releaseDockEditorHolds('open-1', false);
   });
 
+  it('hides a screenshot hold at the press and reveals it only when no editor follows', () => {
+    const sender = window.webContents as unknown as Electron.WebContents;
+    const binding = bindings.getStrictBackendBindingForWebContents(sender)!;
+    const shot = '00000000-0000-4000-8000-000000000002';
+    // A recording-stop hold (no hide) leaves the dock as it is.
+    expect(dock.beginDockEditorHold(window, sender, binding, shot.replace(/2$/, '3'))).toBe(true);
+    expect(window.isVisible()).toBe(true);
+    dock.endDockEditorHold(shot.replace(/2$/, '3'), sender, binding);
+    // A screenshot hold: out of sight from the press, through the capture.
+    vi.mocked(window.showInactive).mockClear();
+    expect(dock.beginDockEditorHold(window, sender, binding, shot, true)).toBe(true);
+    expect(window.isVisible()).toBe(false);
+    dock.setDockHiddenForSelection(true, { window });
+    dock.setDockHiddenForSelection(false, { window });
+    dock.focusDockWindow();
+    expect(window.showInactive).not.toHaveBeenCalled();
+    expect(window.show).not.toHaveBeenCalled();
+    // Cancelled or refused (no editor adopted it): its owner's end brings the dock back.
+    dock.endDockEditorHold(shot, sender, binding);
+    expect(window.showInactive).toHaveBeenCalledTimes(1);
+    expect(window.focus).not.toHaveBeenCalled();
+  });
+
   it('hides for a window or region selection without telling the dock document', () => {
     fixture.captureHidden.mockClear();
     vi.mocked(window.showInactive).mockClear();

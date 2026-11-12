@@ -9,6 +9,7 @@ const io = vi.hoisted(() => ({
   retired: new Map(),
   dock: null as any,
   Window: null as any,
+  holdOk: false,
 }));
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events');
@@ -47,6 +48,7 @@ vi.mock('electron', async () => {
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
     debug() {}
+    info() {}
     warn() {}
   },
 }));
@@ -58,7 +60,7 @@ vi.mock('../../../main/fixed-zoom', () => ({ fixWebContentsZoom: () => {} }));
 vi.mock('../../../main/dock-window', () => ({
   getDockWindow: () => io.dock,
   adoptDockEditorHold: () => false,
-  beginDockEditorHold: () => false,
+  beginDockEditorHold: () => io.holdOk,
   endDockEditorHold: () => {},
   focusDockForEditorReturn: () => false,
   releaseDockEditorHolds: () => {},
@@ -91,6 +93,7 @@ vi.mock('../../../main/utils/workspace-file-url', () => ({
   },
   withWorkspaceMediaBackendHint: (raw: string) => raw,
 }));
+import { writeFileSync } from 'node:fs';
 import { setupDockCaptureEditorIPC } from './dock-capture-editor-window';
 const source = {
   id: 'source',
@@ -131,6 +134,7 @@ async function open() {
   return { editor: io.windows.at(-1), openId: reply.openId, dock: io.dock };
 }
 afterEach(() => {
+  io.holdOk = false;
   for (const cb of [...io.retired.values()]) cb();
   io.handlers.clear();
   io.bindings.clear();
@@ -236,5 +240,81 @@ describe('editor delete authority and save serialization', () => {
         (message: { channel: string }) => message.channel === C.RETAKE_REQUESTED,
       ),
     ).toHaveLength(2);
+  });
+});
+
+describe('screenshot editor entry', () => {
+  /**
+   * Main's side of a screenshot's editor entry, against fake windows (no native visibility
+   * claim): the editor page loads hidden from the press, shows nothing without an admitted
+   * session, and is shown once its page reads the session OPEN admitted. A capture that
+   * opens no editor closes it unseen. The timeline is written for the handoff receipt.
+   */
+  it('loads the editor hidden at the press and shows it only with the admitted session', async () => {
+    vi.useFakeTimers();
+    const timeline: string[] = [];
+    const t0 = Date.now();
+    const note = (step: string) => timeline.push(`${Date.now() - t0}ms ${step}`);
+    const watch = (window: any, name: string) => {
+      let visible = false;
+      window.isVisible = () => visible;
+      window.show = () => ((visible = true), note(`${name} shown`));
+      window.close = () => (note(`${name} closed`), window.emit('closed'));
+      return window;
+    };
+    io.dock = new io.Window();
+    io.bindings.set(io.dock.webContents, { window: io.dock, backendId: 'backend' });
+    setupDockCaptureEditorIPC();
+    io.holdOk = true;
+    const [cancelled, token] = [crypto.randomUUID(), crypto.randomUUID()];
+    // A recording-stop hold (no hide) loads nothing.
+    expect(await invoke(C.HOLD_BEGIN, io.dock, { token: crypto.randomUUID() })).toBe(true);
+    expect(io.windows).toHaveLength(1);
+    // A cancelled screenshot: the editor loaded at the press closes unseen.
+    expect(await invoke(C.HOLD_BEGIN, io.dock, { token: cancelled, hide: true })).toBe(true);
+    const unused = watch(io.windows.at(-1), 'cancelled editor');
+    note('cancelled hold begun, editor loading hidden');
+    expect(await invoke(C.HOLD_END, io.dock, { token: cancelled })).toBe(true);
+    expect(timeline.at(-1)).toMatch(/cancelled editor closed/);
+    expect(timeline.join()).not.toMatch(/cancelled editor shown/);
+    expect(unused.webContents.sent).toEqual([]);
+    // The screenshot that opens: loaded hidden at the press, inert without a session.
+    expect(await invoke(C.HOLD_BEGIN, io.dock, { token, hide: true })).toBe(true);
+    const editor = watch(io.windows.at(-1), 'editor');
+    note('hold begun, editor loading hidden');
+    expect(await invoke(C.GET, editor)).toBeNull();
+    vi.advanceTimersByTime(40);
+    note('capture durable, OPEN');
+    const reply = await invoke(C.OPEN, io.dock, {
+      kind: 'screenshot',
+      workspaceId: 'workspace',
+      agentId: 'agent',
+      attachmentId: 'file',
+      attachmentPath: source.path,
+      sourceRevision: '0',
+      title: 'Synthetic',
+      source,
+      marks: [],
+      provenance: { visuals: 'clean' },
+      holdToken: token,
+    });
+    expect(reply.ok).toBe(true);
+    // The same loaded window takes the session; it is told, not shown yet.
+    expect(io.windows.at(-1)).toBe(editor);
+    expect(editor.webContents.sent.map((m: any) => m.channel)).toEqual([C.CHANGED]);
+    expect(editor.isVisible()).toBe(false);
+    const snapshot = await invoke(C.GET, editor);
+    note('page read the session');
+    expect(snapshot.openId).toBe(reply.openId);
+    vi.advanceTimersByTime(0);
+    expect(editor.isVisible()).toBe(true);
+    // Its own hold ends nothing: the session owns it now.
+    expect(await invoke(C.HOLD_END, io.dock, { token })).toBe(true);
+    expect(timeline.some((l) => l.endsWith(' editor closed') && !l.includes('cancelled'))).toBe(
+      false,
+    );
+    if (process.env.EDITOR_ENTRY_TIMELINE)
+      writeFileSync(process.env.EDITOR_ENTRY_TIMELINE, JSON.stringify({ timeline }, null, 2));
+    vi.useRealTimers();
   });
 });

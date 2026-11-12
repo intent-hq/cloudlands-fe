@@ -345,7 +345,7 @@ function* capture({
   const mode = evidence?.annotation ? 'fullscreen' : appStore.state.dockConversation.captureMode;
   // A screenshot may open straight in the editor: keep the dock out of sight from now
   // until that editor ends (or, when it does not open, until this capture is done).
-  const hold = evidence?.annotation ? null : yield* beginDockEditorHold();
+  const hold = evidence?.annotation ? null : yield* beginDockEditorHold(true);
   let handed = false;
   try {
     handed = yield* captureWithHold(workspaceId, agentId, service, mode, evidence, hold);

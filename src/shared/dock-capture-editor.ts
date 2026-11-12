@@ -204,8 +204,13 @@ export const DockCaptureEditorCloseSchema = z
 export const DockCaptureEditorAttachReturnSchema = z
   .object({ openId: z.string().uuid(), accept: z.boolean() })
   .strict();
-/** A dock hold around a capture that may open the editor (HOLD_BEGIN / HOLD_END). */
-export const DockCaptureEditorHoldSchema = z.object({ token: z.string().uuid() }).strict();
+/**
+ * A dock hold around a capture that may open the editor (HOLD_BEGIN / HOLD_END). `hide`
+ * (a screenshot) takes the dock out of sight at once and loads the editor window, hidden.
+ */
+export const DockCaptureEditorHoldSchema = z
+  .object({ token: z.string().uuid(), hide: z.literal(true).optional() })
+  .strict();
 /**
  * main → the opening dock: its editor attached. The dock returns to exactly this
  * conversation only while this attachment's source is still the one the editor had.

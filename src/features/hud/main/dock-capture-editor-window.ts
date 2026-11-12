@@ -255,6 +255,51 @@ let ending: 'close' | 'attach' | 'retired' = 'close';
 const openedAt = new Map<string, number>();
 let openedAtMark = 0;
 
+/**
+ * An editor window loaded ahead of a screenshot's OPEN (see prewarmEditor): hidden, with no
+ * session, so it shows nothing and offers no action. It is shown only once its page has read
+ * the admitted session, like a new window. `token` is the dock hold it was loaded for.
+ */
+let prewarm: {
+  window: BrowserWindow;
+  token: string;
+  expire: ReturnType<typeof setTimeout>;
+} | null = null;
+const PREWARM_IDLE_MS = 60_000;
+/** Load the editor page, hidden, while a screenshot is taken and made durable. */
+function prewarmEditor(backendId: string, token: string): void {
+  if (usable(editor) || session || pending) return;
+  const window = createEditorWindow(backendId);
+  editor = window;
+  editorBackendId = backendId;
+  prewarm = { window, token, expire: setTimeout(() => discardPrewarm(), PREWARM_IDLE_MS) };
+}
+/** A loaded editor no session took (cancelled or failed capture, idle): close it unseen. */
+function discardPrewarm(token?: string): void {
+  const loaded = prewarm;
+  if (!loaded || (token !== undefined && loaded.token !== token)) return;
+  prewarm = null;
+  clearTimeout(loaded.expire);
+  if (editor !== loaded.window || session || pending) return;
+  // Detached first: its 'closed' then ends nothing (no session, no newer open refused).
+  editor = null;
+  editorBackendId = null;
+  if (!usable(loaded.window)) return;
+  closingAllowed = true;
+  try {
+    loaded.window.close();
+  } finally {
+    closingAllowed = false;
+  }
+}
+/** The loaded editor now has a session: it is shown when its page reads it. */
+function adoptPrewarm(window: BrowserWindow): boolean {
+  if (prewarm?.window !== window) return false;
+  clearTimeout(prewarm.expire);
+  prewarm = null;
+  return true;
+}
+
 function endSession(): void {
   const ended = session;
   ended?.stopWatching();
@@ -340,7 +385,13 @@ function showSession(next: Session): void {
   dropPending();
   endSession();
   session = next;
-  if (usable(editor)) {
+  if (usable(editor) && adoptPrewarm(editor)) {
+    // Loaded ahead and never shown: its page reads this session and is shown then.
+    const window = editor;
+    window.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
+    const fallback = setTimeout(() => revealEditor(window), REVEAL_FALLBACK_MS);
+    window.once('closed', () => clearTimeout(fallback));
+  } else if (usable(editor)) {
     editor.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
     if (editor.isMinimized()) editor.restore();
     noteDockCaptureEditorFocused();
@@ -431,12 +482,17 @@ function bringEditorForward(window: BrowserWindow): void {
   window.focus();
 }
 
+/** Editor windows that were loaded ahead (prewarmEditor), for the startup timing log. */
+const preloaded = new WeakSet<BrowserWindow>();
 function revealEditor(window: BrowserWindow): void {
   if (editor !== window || !usable(window) || !session || window.isVisible()) return;
   // Startup phase timing (OPEN admitted → editor shown), for the editor-delay reports.
   const admittedAt = openedAt.get(session.snapshot.openId);
   if (admittedAt !== undefined)
-    logger.info('Capture editor revealed', { msSinceOpen: Date.now() - admittedAt });
+    logger.info('Capture editor revealed', {
+      msSinceOpen: Date.now() - admittedAt,
+      preloaded: preloaded.has(window),
+    });
   openedAt.delete(session.snapshot.openId);
   noteDockCaptureEditorFocused();
   window.show();
@@ -642,12 +698,19 @@ export function setupDockCaptureEditorIPC(): void {
     const dock = fromDock(event);
     const binding = getStrictBackendBindingForWebContents(event.sender);
     // Bound to the asking document: its retirement drops the hold (see beginDockEditorHold).
-    return (
-      !!parsed.success &&
-      !!dock &&
-      !!binding &&
-      beginDockEditorHold(dock, event.sender, binding, parsed.data.token)
-    );
+    if (
+      !parsed.success ||
+      !dock ||
+      !binding ||
+      !beginDockEditorHold(dock, event.sender, binding, parsed.data.token, parsed.data.hide)
+    )
+      return false;
+    // A screenshot: load the editor now, while the capture is taken and made durable.
+    if (parsed.data.hide) {
+      prewarmEditor(binding.backendId, parsed.data.token);
+      if (prewarm) preloaded.add(prewarm.window);
+    }
+    return true;
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_END, (event, request: unknown) => {
     const parsed = DockCaptureEditorHoldSchema.safeParse(request);
@@ -655,6 +718,7 @@ export function setupDockCaptureEditorIPC(): void {
     const binding = getStrictBackendBindingForWebContents(event.sender);
     if (!parsed.success || !dock || !binding) return false;
     endDockEditorHold(parsed.data.token, event.sender, binding);
+    discardPrewarm(parsed.data.token);
     return true;
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, (event, value: unknown) =>
