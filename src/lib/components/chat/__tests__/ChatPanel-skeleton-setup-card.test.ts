@@ -492,6 +492,16 @@ describe('ChatPanel skeleton branch vs WorkspaceSetupCard', () => {
       expect(card.getAttribute('data-has-prompt')).toBe('true');
     });
 
+    it('keeps the idle line above a transcript with no user message', async () => {
+      testState.historyExhausted = true;
+      testState.agentHistoryMessages = [assistantMessage('a1')];
+      testState.agentMessages = [assistantMessage('a2')];
+      await renderInitialWorkspaceChatPanel();
+
+      const card = await screen.findByTestId('mock-workspace-setup-card');
+      expect(card.getAttribute('data-has-prompt')).toBe('false');
+    });
+
     it('keeps the idle line when there is no prompt and no message', async () => {
       await renderInitialWorkspaceChatPanel();
 
