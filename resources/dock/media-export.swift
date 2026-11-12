@@ -195,6 +195,20 @@ if CommandLine.arguments.dropFirst().first == "--capability" {
 }
 Task {
   do { try await main(); exit(0) }
-  catch { emit(["event":"error","code":"export-failed","detail":error.localizedDescription]); exit(1) }
+  catch {
+    let native = error as NSError
+    let known = Set(["job-too-large", "output-version-unavailable", "invalid-job", "output-exists",
+      "missing-video", "source-changed", "invalid-geometry", "invalid-blur", "invalid-brush",
+      "blur-mask-unavailable", "invalid-range", "video-track", "missing-audio", "audio-track",
+      "invalid-overlay", "export-unavailable", "export-failed", "invalid-frame", "frame-failed"])
+    let code = native.domain == "capture-export" && known.contains(native.localizedDescription)
+      ? native.localizedDescription : "export-failed"
+    let domains = Set(["capture-export", "AVFoundationErrorDomain", "NSOSStatusErrorDomain", "NSCocoaErrorDomain"])
+    var event: [String: Any] = ["event": "error", "code": code, "nativeCode": native.code]
+    if domains.contains(native.domain) { event["nativeDomain"] = native.domain }
+    // No localized descriptions, file paths or media contents cross this boundary.
+    emit(event)
+    exit(1)
+  }
 }
 RunLoop.main.run()

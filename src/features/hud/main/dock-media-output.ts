@@ -60,6 +60,53 @@ const TRANSCRIPT_CODES = new Set([
   'invalid-job',
   'recognition-failed',
 ]);
+const EXPORT_CODES = new Set([
+  'job-too-large',
+  'output-version-unavailable',
+  'invalid-job',
+  'output-exists',
+  'missing-video',
+  'source-changed',
+  'invalid-geometry',
+  'invalid-blur',
+  'invalid-brush',
+  'blur-mask-unavailable',
+  'invalid-range',
+  'video-track',
+  'missing-audio',
+  'audio-track',
+  'invalid-overlay',
+  'export-unavailable',
+  'export-failed',
+  'invalid-frame',
+  'frame-failed',
+  'media-kind',
+  'media-plan',
+  'media-layers',
+  'media-platform-unavailable',
+  'media-helper-unavailable',
+  'media-capability-timeout',
+  'media-capability-invalid',
+  'media-capability-unavailable',
+  'media-session-retired',
+  'media-job-busy',
+  'media-backend-changed',
+  'media-source-missing',
+  'media-source-changed',
+  'media-source-incomplete',
+  'media-layer-time',
+  'media-layer-size',
+  'media-frame-outside-kept-span',
+  'media-output-version-mismatch',
+  'media-output-size',
+  'media-job-failed',
+]);
+const EXPORT_NATIVE_DOMAINS = new Set([
+  'capture-export',
+  'AVFoundationErrorDomain',
+  'NSOSStatusErrorDomain',
+  'NSCocoaErrorDomain',
+]);
 class DockMediaJobError extends Error {
   constructor(
     readonly code: string,
@@ -342,7 +389,8 @@ async function run(
               progress(Math.max(0, Math.min(1, event.fraction)));
             if (event.event === 'error')
               nativeFailure = new DockMediaJobError(
-                typeof event.code === 'string' && TRANSCRIPT_CODES.has(event.code)
+                typeof event.code === 'string' &&
+                  (TRANSCRIPT_CODES.has(event.code) || EXPORT_CODES.has(event.code))
                   ? event.code
                   : 'media-job-failed',
                 typeof event.nativeDomain === 'string'
@@ -378,6 +426,7 @@ export async function exportDockMedia(
   progress: (fraction: number) => void,
 ): Promise<DockNativeResult<DockMediaNativeOutput>> {
   let job: Job | undefined;
+  let stage = 'plan';
   try {
     const { media } = request,
       { source } = media;
@@ -394,11 +443,16 @@ export async function exportDockMedia(
       request.layers.reduce((sum, layer) => sum + layer.png.length, 0) > MAX_BYTES
     )
       throw new Error('media-layers');
+    stage = 'helper';
     const binary = await helper('intent-dock-media-export');
+    stage = 'capability';
     await requireExporterVersion(binary);
     check(context);
+    stage = 'job';
     job = await createJob(context, request.jobId, JSON.stringify(request));
+    stage = 'source';
     const file = await copySource(context, job, media);
+    stage = 'layers';
     const layers: { path: string; startMs: number; endMs: number }[] = [];
     for (let index = 0; index < spans.length; index++) {
       check(context, job);
@@ -421,6 +475,7 @@ export async function exportDockMedia(
       if (atMs === null) throw new Error('media-frame-outside-kept-span');
       return { path: path.join(job!.directory, `frame-${index}.png`), atMs };
     });
+    stage = 'encode';
     const completed = await run(
       context,
       job,
@@ -444,10 +499,12 @@ export async function exportDockMedia(
       progress,
     );
     check(context, job);
+    stage = 'output';
     if (completed.outputVersion !== DOCK_MEDIA_OUTPUT_VERSION)
       throw new Error('media-output-version-mismatch');
     const videoSize = (await stat(output)).size;
     if (videoSize <= 0 || videoSize > MAX_BYTES) throw new Error('media-output-size');
+    stage = 'frames';
     const fitted = frames.length
       ? await fitDockMediaFrames(
           frames.map((frame) => frame.path),
@@ -480,7 +537,22 @@ export async function exportDockMedia(
         frames: frameFiles,
       },
     };
-  } catch {
+  } catch (error) {
+    const code =
+      error instanceof Error && EXPORT_CODES.has(error.message) ? error.message : 'export-failed';
+    // Never include source paths, attachment ids, native descriptions or request content.
+    logger.warn('Local media export did not complete', {
+      stage,
+      code,
+      ...(error instanceof DockMediaJobError
+        ? {
+            nativeDomain: EXPORT_NATIVE_DOMAINS.has(error.nativeDomain ?? '')
+              ? error.nativeDomain
+              : undefined,
+            nativeCode: error.nativeCode,
+          }
+        : {}),
+    });
     if (job) await releaseDockMediaJob(context.scope.sessionId, job.id);
     return { ok: false, error: 'failed' };
   }
