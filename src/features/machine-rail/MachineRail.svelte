@@ -27,6 +27,7 @@
    * shell backdrop with the shown machine's tint, so the tint cross-fades.
    */
   import { faPlus, faUsers } from '@fortawesome/free-solid-svg-icons';
+  import { tick } from 'svelte';
   import { flip } from 'svelte/animate';
   import Fa from 'svelte-fa';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
@@ -117,20 +118,27 @@
     to: number;
     startY: number;
     dy: number;
-    /** Slot centres of the group at drag start. */
+    /** Layout centres of the group's slots (transforms ignored). */
     centers: number[];
     /** First slot a machine may move to: the window's own machine stays first. */
     min: number;
     active: boolean;
+    pointerId: number;
+    entry: HTMLElement;
   }
   // Movement before a press becomes a drag, so a click stays a click.
   const DRAG_THRESHOLD_PX = 4;
   // How long a new order shows before main confirms it (or refuses it).
   const PENDING_ORDER_MS = 2000;
   let drag = $state<RailDrag | null>(null);
+  // A dropped machine glides from where it was let go to its new slot.
+  let settle = $state<{ id: string; offset: number; animate: boolean } | null>(null);
+  // While a drop reorders the list, the settle glide replaces the reorder animation.
+  let dropping = $state(false);
   let suppressClick = false;
   let pendingOrder = $state<string[] | null>(null);
   let pendingOrderTimer: ReturnType<typeof setTimeout> | undefined;
+  let railList = $state<HTMLElement | null>(null);
 
   const orderedItems = $derived.by(() => {
     if (!pendingOrder || pendingOrder.length !== $items$.length) return $items$;
@@ -141,42 +149,50 @@
   const ownItems = $derived(orderedItems.filter((item) => !item.guest));
   const guestItems = $derived(orderedItems.filter((item) => item.guest));
 
-  // Main's reply (or push) carries the order to show from then on.
+  // Main's reply carries the new order: the local one is no longer needed.
   $effect(() => {
-    void $items$;
-    pendingOrder = null;
+    const order = $items$.map((item) => item.id).join('\n');
+    if (pendingOrder && order === orderedItems.map((item) => item.id).join('\n')) {
+      pendingOrder = null;
+    }
   });
 
   function groupItems(group: RailGroup): MachineRailItem[] {
     return group === 'own' ? ownItems : guestItems;
   }
 
-  function commitOrder(group: RailGroup, from: number, to: number) {
+  function flipDuration(): number {
+    return dropping || prefersReducedMotion() ? 0 : spring.moderate.settleMs;
+  }
+
+  /** Move machine `id` to slot `to` of its group, by id so a changed list stays right. */
+  function commitOrder(group: RailGroup, id: string, to: number): boolean {
     const own = ownItems.map((item) => item.id);
     const guests = guestItems.map((item) => item.id);
+    const list = group === 'own' ? own : guests;
+    const from = list.indexOf(id);
+    const target = Math.min(list.length - 1, to);
+    if (from < 0 || from === target) return false;
     const moved =
       group === 'own'
-        ? [...moveItem(own, from, to), ...guests]
-        : [...own, ...moveItem(guests, from, to)];
+        ? [...moveItem(own, from, target), ...guests]
+        : [...own, ...moveItem(guests, from, target)];
     const homeId = $items$.find((item) => item.home)?.id;
-    const order = homeId ? [homeId, ...moved.filter((id) => id !== homeId)] : moved;
+    const order = homeId ? [homeId, ...moved.filter((machineId) => machineId !== homeId)] : moved;
     clearTimeout(pendingOrderTimer);
     pendingOrder = order;
     pendingOrderTimer = setTimeout(() => (pendingOrder = null), PENDING_ORDER_MS);
     appStore.dispatch(reorderRailMachinesRequested(order));
+    return true;
   }
 
   function startDrag(event: PointerEvent, item: MachineRailItem, group: RailGroup, index: number) {
     suppressClick = false;
+    drag = null;
     if (event.button !== 0 || item.home) return;
     const entry = event.currentTarget as HTMLElement;
-    const slots = entry
-      .closest('[data-rail-list]')
-      ?.querySelectorAll<HTMLElement>(`[data-rail-group="${group}"]`);
-    const centers = [...(slots ?? [])].map((slot) => {
-      const rect = slot.getBoundingClientRect();
-      return rect.top + rect.height / 2;
-    });
+    const slots = railList?.querySelectorAll<HTMLElement>(`[data-rail-group="${group}"]`);
+    const centers = [...(slots ?? [])].map((slot) => slot.offsetTop + slot.offsetHeight / 2);
     const list = groupItems(group);
     drag = {
       id: item.id,
@@ -188,15 +204,20 @@
       centers,
       min: list[0]?.home ? 1 : 0,
       active: false,
+      pointerId: event.pointerId,
+      entry,
     };
-    entry.setPointerCapture(event.pointerId);
   }
 
   function moveDrag(event: PointerEvent) {
-    if (!drag) return;
+    if (!drag || event.pointerId !== drag.pointerId) return;
     const dy = event.clientY - drag.startY;
-    if (!drag.active && Math.abs(dy) < DRAG_THRESHOLD_PX) return;
-    drag.active = true;
+    if (!drag.active) {
+      if (Math.abs(dy) < DRAG_THRESHOLD_PX) return;
+      // Capture only once it is a drag: a captured press would take the button's click.
+      drag.active = true;
+      drag.entry.setPointerCapture(event.pointerId);
+    }
     drag.dy = dy;
     drag.to = railDropIndex(drag.centers, drag.from, dy, drag.min);
   }
@@ -205,13 +226,29 @@
     const ended = drag;
     drag = null;
     if (!ended?.active) return;
-    // The press that ended a drag is not a click on the machine.
+    // The press that ended a drag is not a click on the machine; clear the
+    // mark once that click has had its turn.
     suppressClick = true;
-    if (commit && ended.to !== ended.from) commitOrder(ended.group, ended.from, ended.to);
+    setTimeout(() => (suppressClick = false), 0);
+    if (!commit || !commitOrder(ended.group, ended.id, ended.to)) return;
+    if (prefersReducedMotion()) return;
+    const offset = ended.centers[ended.from] + ended.dy - ended.centers[ended.to];
+    dropping = true;
+    settle = { id: ended.id, offset, animate: false };
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        dropping = false;
+        if (settle?.id === ended.id) settle = { id: ended.id, offset: 0, animate: true };
+        setTimeout(() => {
+          if (settle?.id === ended.id) settle = null;
+        }, spring.moderate.settleMs);
+      }),
+    );
   }
 
-  /** Where a group entry sits during a drag: the dragged one follows the pointer. */
-  function dragOffset(group: RailGroup, index: number): string | undefined {
+  /** Where a group entry sits: the dragged one follows the pointer, the others make room. */
+  function entryOffset(item: MachineRailItem, group: RailGroup, index: number): string | undefined {
+    if (settle?.id === item.id) return `translateY(${settle.offset}px)`;
     if (!drag?.active || drag.group !== group) return undefined;
     if (index === drag.from) return `translateY(${drag.dy}px)`;
     const step = drag.centers.length > 1 ? drag.centers[1] - drag.centers[0] : 0;
@@ -219,7 +256,13 @@
     return shift ? `translateY(${shift * step}px)` : undefined;
   }
 
-  function moveWithKeys(
+  function entryTransition(item: MachineRailItem): string | undefined {
+    const moving =
+      (drag?.active && drag.id !== item.id) || (settle?.id === item.id && settle.animate);
+    return moving ? 'transform var(--spring-moderate) var(--spring-moderate-ease)' : undefined;
+  }
+
+  async function moveWithKeys(
     event: KeyboardEvent,
     item: MachineRailItem,
     group: RailGroup,
@@ -232,7 +275,12 @@
     const list = groupItems(group);
     const min = list[0]?.home ? 1 : 0;
     const to = Math.min(list.length - 1, Math.max(min, index + delta));
-    if (to !== index) commitOrder(group, index, to);
+    if (to === index || !commitOrder(group, item.id, to)) return;
+    // Moving a focused element in the DOM drops its focus: keep it on the machine.
+    await tick();
+    [...(railList?.querySelectorAll<HTMLElement>('[data-testid="machine-rail-item"]') ?? [])]
+      .find((button) => button.dataset.machineId === item.id)
+      ?.focus();
   }
 
   function selectMachine(id: string) {
@@ -323,14 +371,13 @@
   <div
     class={cn('relative flex', dragged && 'z-10 cursor-grabbing')}
     data-rail-group={group}
-    style:transform={dragOffset(group, index)}
-    style:transition={drag?.active && !dragged
-      ? 'transform var(--spring-moderate) var(--spring-moderate-ease)'
-      : undefined}
+    style:transform={entryOffset(item, group, index)}
+    style:transition={entryTransition(item)}
     onpointerdown={(event) => startDrag(event, item, group, index)}
     onpointermove={moveDrag}
     onpointerup={() => endDrag(true)}
     onpointercancel={() => endDrag(false)}
+    onlostpointercapture={() => endDrag(false)}
     onkeydown={(event) => moveWithKeys(event, item, group, index)}
   >
     {@render railItem(item)}
@@ -414,9 +461,13 @@
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
   >
-    <div class="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto" data-rail-list>
+    <div
+      bind:this={railList}
+      class="flex min-h-0 flex-col items-center gap-1.5 overflow-y-auto"
+      data-rail-list
+    >
       {#each ownItems as item, index (item.id)}
-        <div animate:flip={{ duration: prefersReducedMotion() ? 0 : spring.moderate.settleMs }}>
+        <div animate:flip={{ duration: flipDuration() }}>
           {@render railEntry(item, 'own', index)}
         </div>
       {/each}
@@ -428,7 +479,7 @@
         ></div>
       {/if}
       {#each guestItems as item, index (item.id)}
-        <div animate:flip={{ duration: prefersReducedMotion() ? 0 : spring.moderate.settleMs }}>
+        <div animate:flip={{ duration: flipDuration() }}>
           {@render railEntry(item, 'guest', index)}
         </div>
       {/each}

@@ -160,7 +160,12 @@ it("moves a machine with Alt+arrow keys, keeping the window's own machine first"
   };
   render(MachineRail);
   const [local, , c] = railItems();
+  c.focus();
   await fireEvent.keyDown(c, { key: 'ArrowUp', altKey: true });
+  // The moved machine keeps keyboard focus, so it can be moved again.
+  await waitFor(() =>
+    expect((document.activeElement as HTMLElement | null)?.dataset.machineId).toBe('c'),
+  );
   expect(mocks.dispatch).toHaveBeenLastCalledWith(
     expect.objectContaining({
       type: 'machineRail/reorderRequested',
