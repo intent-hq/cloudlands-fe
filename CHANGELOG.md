@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.324.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.323.0...v2.324.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **dock:** edit captures and follow linked workspaces ([#4483](https://github.com/intent-hq/cloudlands-fe/issues/4483)) ([d8830f2](https://github.com/intent-hq/cloudlands-fe/commit/d8830f202e6fb60b5c9f467abd8ca174e388dcba))
+
 ## [2.323.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.322.0...v2.323.0) (2026-11-12)
 
 
