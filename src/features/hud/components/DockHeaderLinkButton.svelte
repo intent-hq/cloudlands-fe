@@ -37,29 +37,37 @@
 
   let open = $state(false);
   /**
-   * The menu acts on what it showed when it opened: {version, operation per scope}. If the
-   * context or a choice's operation changes meanwhile, that choice does nothing (no
-   * fallback to the new context); a new context closes the menu.
+   * The menu acts on what it showed when it opened: {workspace, version, operation per
+   * scope}. If the workspace, the context or a choice's operation changes meanwhile, that
+   * choice does nothing (no fallback to the new target); a new workspace or context closes
+   * the menu. A choice dispatches the captured target, never the current one.
    */
-  let held: { version: string; operations: Record<DockContextLinkScope, Operation> } | null = null;
+  let held: {
+    workspaceId: string;
+    version: string;
+    operations: Record<DockContextLinkScope, Operation>;
+  } | null = null;
   function opened(next: boolean): void {
     held =
       next && context?.contextVersion
-        ? { version: context.contextVersion, operations: { ...operations } }
+        ? { workspaceId, version: context.contextVersion, operations: { ...operations } }
         : null;
   }
   $effect(() => {
     const version = context?.contextVersion;
-    if (open && held && held.version !== version) open = false;
+    const target = workspaceId;
+    if (open && held && (held.version !== version || held.workspaceId !== target)) open = false;
   });
   function choose(id: string): void {
     const scope = SCOPES.find((value) => value === id);
     const gesture = held;
-    if (!scope || !gesture || context?.contextVersion !== gesture.version) return;
+    held = null;
+    if (!scope || !gesture) return;
+    if (context?.contextVersion !== gesture.version || workspaceId !== gesture.workspaceId) return;
     const now = operations[scope];
     if (!now || now !== gesture.operations[scope]) return;
     if (now === 'unlink') appStore.dispatch(dockContextUnlinkRequested(gesture.version, scope));
-    else appStore.dispatch(dockContextLinkRequested(gesture.version, workspaceId, scope));
+    else appStore.dispatch(dockContextLinkRequested(gesture.version, gesture.workspaceId, scope));
   }
   const actions = $derived(
     defineActions(

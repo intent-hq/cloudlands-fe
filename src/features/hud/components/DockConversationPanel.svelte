@@ -160,6 +160,8 @@
   const isAssistant = $derived(
     (workspaceId ?? (workspace ? String(workspace.id) : null)) === CHIEF_WORKSPACE_ID,
   );
+  /** The open workspace for Link: the loaded row's id, else the dock's own while it loads. */
+  const linkWorkspaceId = $derived(workspace ? String(workspace.id) : (workspaceId ?? null));
   let scrollArea: HTMLDivElement | undefined = $state();
   let transcript: HTMLDivElement | undefined = $state();
   let following = $state(true);
@@ -364,6 +366,12 @@
       {/if}
     {/snippet}
     {#snippet actions()}
+      <!-- Link stays in a normal workspace's header, also during capture/recording status and
+           while the workspace's metadata is still loading (its id is known from the dock). -->
+      {#if !isAssistant && linkWorkspaceId}<DockHeaderLinkButton
+          workspaceId={linkWorkspaceId}
+          title={workspace?.title?.trim() || workspaceTitle || m.workspace_links_untitled_label()}
+        />{/if}
       {#if mediaStatus}
         <span
           class="dock-media-status"
@@ -374,10 +382,7 @@
           <span class="dock-media-status-dot" aria-hidden="true"></span>
           <span class="truncate">{mediaStatus.label}</span>
         </span>
-      {:else}{#if !isAssistant && workspace}<DockHeaderLinkButton
-            workspaceId={String(workspace.id)}
-            title={workspace.title?.trim() || workspaceTitle || m.workspace_links_untitled_label()}
-          />{/if}<Button
+      {:else}<Button
           variant="ghost"
           size="icon-sm"
           onclick={onOpenWorkspace}

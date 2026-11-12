@@ -266,6 +266,8 @@ let prewarm: {
   owner: { sender: Electron.WebContents; binding: object };
   begunAt: number;
   expire: ReturnType<typeof setTimeout>;
+  /** Stops watching the owner (its retirement or destruction discards this window). */
+  release: () => void;
 } | null = null;
 const PREWARM_IDLE_MS = 60_000;
 /** Holds whose loading shell the person closed: their OPEN is refused, never reopened. */
@@ -280,12 +282,21 @@ function prewarmEditor(
   const window = createEditorWindow(backendId);
   editor = window;
   editorBackendId = backendId;
+  // A gone owner (document reload, backend switch, closed dock) discards it at once, unseen
+  // and without revealing anything; only this token's own window, never a later session.
+  const gone = () => discardPrewarm(token);
+  const stopRetired = onStrictBackendBindingRetired(owner.sender, gone);
+  owner.sender.once('destroyed', gone);
   prewarm = {
     window,
     token,
     owner,
     begunAt: Date.now(),
     expire: setTimeout(() => discardPrewarm(), PREWARM_IDLE_MS),
+    release: () => {
+      stopRetired();
+      owner.sender.removeListener('destroyed', gone);
+    },
   };
 }
 /**
@@ -312,6 +323,7 @@ function discardPrewarm(token?: string): void {
   if (!loaded || (token !== undefined && loaded.token !== token)) return;
   prewarm = null;
   clearTimeout(loaded.expire);
+  loaded.release();
   if (editor !== loaded.window || session || pending) return;
   // Detached first: its 'closed' then ends nothing (no session, no newer open refused).
   editor = null;
@@ -328,6 +340,7 @@ function discardPrewarm(token?: string): void {
 function adoptPrewarm(window: BrowserWindow): boolean {
   if (prewarm?.window !== window) return false;
   clearTimeout(prewarm.expire);
+  prewarm.release();
   prewarm = null;
   return true;
 }
@@ -490,6 +503,7 @@ function createEditorWindow(backendId: string): BrowserWindow {
     if (prewarm?.window === window) {
       closedShells.add(prewarm.token);
       clearTimeout(prewarm.expire);
+      prewarm.release();
       prewarm = null;
     }
     // Closed by the person: an open still awaiting must not reopen it.

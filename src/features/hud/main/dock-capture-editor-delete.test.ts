@@ -82,8 +82,9 @@ vi.mock('../../../main/window-backend', () => ({
   stampWindowWithBackend: (window: any, backendId: string) =>
     io.bindings.set(window.webContents, { window, backendId }),
   onStrictBackendBindingRetired: (wc: unknown, cb: () => void) => {
-    io.retired.set(wc, cb);
-    return () => io.retired.delete(wc);
+    const listeners: Set<() => void> = io.retired.get(wc) ?? new Set();
+    io.retired.set(wc, listeners.add(cb));
+    return () => listeners.delete(cb);
   },
 }));
 vi.mock('../../../main/utils/workspace-file-url', () => ({
@@ -135,7 +136,8 @@ async function open() {
 }
 afterEach(() => {
   io.holdOk = false;
-  for (const cb of [...io.retired.values()]) cb();
+  for (const listeners of [...io.retired.values()]) for (const cb of [...listeners]) cb();
+  io.retired.clear();
   io.handlers.clear();
   io.bindings.clear();
   io.windows = [];
@@ -207,7 +209,7 @@ describe('editor delete authority and save serialization', () => {
     const first = await open();
     const deleting = invoke(C.DELETE, first.editor, { openId: first.openId });
     const removal = first.dock.webContents.sent.at(-1);
-    io.retired.get(first.dock.webContents)();
+    for (const cb of [...io.retired.get(first.dock.webContents)]) cb();
     expect(await deleting).toBe(false);
     const next = await open();
     expect(
@@ -302,6 +304,15 @@ describe('screenshot editor entry', () => {
     expect(await openFor(closedToken)).toEqual({ ok: false, error: 'cancelled' });
     expect(await invoke(C.HOLD_END, io.dock, { token: closedToken })).toBe(true);
     expect(io.windows.at(-1)).toBe(closedShell);
+    // A shell whose dock document retires is discarded at once (not after the idle bound).
+    const retiredToken = crypto.randomUUID();
+    expect(await invoke(C.HOLD_BEGIN, io.dock, { token: retiredToken, hide: true })).toBe(true);
+    const orphan = watch(io.windows.at(-1), 'retired-owner shell');
+    expect(await invoke(C.HOLD_SHOW, io.dock, { token: retiredToken })).toBe(true);
+    for (const cb of [...io.retired.get(io.dock.webContents)]) cb();
+    expect(timeline.at(-1)).toMatch(/retired-owner shell closed/);
+    expect(orphan.webContents.sent).toEqual([]);
+    expect(await invoke(C.HOLD_END, io.dock, { token: retiredToken })).toBe(true);
     // The screenshot that opens: loaded hidden at the press, inert without a session.
     expect(await invoke(C.HOLD_BEGIN, io.dock, { token, hide: true })).toBe(true);
     const editor = watch(io.windows.at(-1), 'editor');
