@@ -9,6 +9,7 @@
     DockCaptureEditorSnapshot,
   } from '$shared/dock-capture-editor';
   import { dockMediaRetakeMapping } from '$shared/dock-media-edit';
+  import { m } from '$shared/paraglide/messages.js';
 
   let snapshot = $state.raw<DockCaptureEditorSnapshot | null>(null);
   /** The open session has unsaved edits (the view reports it; main asks us). */
@@ -110,5 +111,13 @@
           : undefined}
       />
     {/key}
+  {:else}
+    <!-- A screenshot's editor shown before its session is admitted: loading only, no media
+         and no actions until main hands it the session. -->
+    <div class="flex h-full w-full items-center justify-center" role="status" data-editor-preparing>
+      <span class="type-caption text-muted-foreground"
+        >{m.chat_imageBlock_loadingImage_label()}</span
+      >
+    </div>
   {/if}
 </Screen>

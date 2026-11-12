@@ -714,7 +714,9 @@ function* openEditorWith(
     startupLogger.info('Capture editor phases', phases);
     // Refused: say so where it was asked, and start no follow-up recognition for it.
     if (!opened?.ok) {
-      if (shownHere()) notify.warning(m.dock_captureEditor_openFailed_error());
+      // Cancelled: the person closed its loading shell; nothing failed.
+      if (shownHere() && opened?.error !== 'cancelled')
+        notify.warning(m.dock_captureEditor_openFailed_error());
       return;
     }
     // The opened editor session owns the dock hold now; it ends when the editor does.

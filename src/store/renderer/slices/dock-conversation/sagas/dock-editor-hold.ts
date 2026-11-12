@@ -28,3 +28,14 @@ export function endDockEditorHold(token: string | null | undefined): void {
     ?.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_END, { token })
     .catch(() => false);
 }
+
+/**
+ * The screenshot is taken and goes to the editor: main shows its loaded window now as a
+ * loading shell (no media, no actions) until OPEN hands it the admitted session.
+ */
+export function showDockEditorShell(token: string | null | undefined): void {
+  if (!token) return;
+  void window.electronAPI
+    ?.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_SHOW, { token })
+    .catch(() => false);
+}

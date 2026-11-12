@@ -263,16 +263,48 @@ let openedAtMark = 0;
 let prewarm: {
   window: BrowserWindow;
   token: string;
+  owner: { sender: Electron.WebContents; binding: object };
+  begunAt: number;
   expire: ReturnType<typeof setTimeout>;
 } | null = null;
 const PREWARM_IDLE_MS = 60_000;
+/** Holds whose loading shell the person closed: their OPEN is refused, never reopened. */
+const closedShells = new Set<string>();
 /** Load the editor page, hidden, while a screenshot is taken and made durable. */
-function prewarmEditor(backendId: string, token: string): void {
+function prewarmEditor(
+  backendId: string,
+  token: string,
+  owner: { sender: Electron.WebContents; binding: object },
+): void {
   if (usable(editor) || session || pending) return;
   const window = createEditorWindow(backendId);
   editor = window;
   editorBackendId = backendId;
-  prewarm = { window, token, expire: setTimeout(() => discardPrewarm(), PREWARM_IDLE_MS) };
+  prewarm = {
+    window,
+    token,
+    owner,
+    begunAt: Date.now(),
+    expire: setTimeout(() => discardPrewarm(), PREWARM_IDLE_MS),
+  };
+}
+/**
+ * The screenshot is taken and goes to the editor: show the loaded window now, as a loading
+ * shell (no session yet, so no media and no action), only for the hold's own dock document.
+ * OPEN then hands it the admitted session; a capture that never opens closes it (HOLD_END).
+ */
+function showPrewarm(token: string, sender: Electron.WebContents, binding: object): boolean {
+  const loaded = prewarm;
+  if (!loaded || loaded.token !== token || editor !== loaded.window || session || pending)
+    return false;
+  if (loaded.owner.sender !== sender || loaded.owner.binding !== binding) return false;
+  if (!usable(loaded.window) || loaded.window.isVisible()) return false;
+  // Startup timing (screenshot press → loading shell shown), for the editor-delay reports.
+  logger.info('Capture editor shell shown', { msSincePress: Date.now() - loaded.begunAt });
+  noteDockCaptureEditorFocused();
+  loaded.window.show();
+  loaded.window.focus();
+  return true;
 }
 /** A loaded editor no session took (cancelled or failed capture, idle): close it unseen. */
 function discardPrewarm(token?: string): void {
@@ -386,7 +418,8 @@ function showSession(next: Session): void {
   endSession();
   session = next;
   if (usable(editor) && adoptPrewarm(editor)) {
-    // Loaded ahead and never shown: its page reads this session and is shown then.
+    // Loaded ahead (perhaps shown already as its loading shell): its page reads this
+    // session and draws it; a window not shown yet is shown then.
     const window = editor;
     window.webContents.send(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED);
     const fallback = setTimeout(() => revealEditor(window), REVEAL_FALLBACK_MS);
@@ -453,6 +486,12 @@ function createEditorWindow(backendId: string): BrowserWindow {
   });
   window.on('closed', () => {
     if (editor !== window) return;
+    // A loading shell closed by the person: that screenshot's editor does not open later.
+    if (prewarm?.window === window) {
+      closedShells.add(prewarm.token);
+      clearTimeout(prewarm.expire);
+      prewarm = null;
+    }
     // Closed by the person: an open still awaiting must not reopen it.
     openGeneration += 1;
     dropPending();
@@ -517,6 +556,7 @@ async function open(
   const parsed = DockCaptureEditorOpenSchema.safeParse(request);
   if (!parsed.success) return unavailable('invalid');
   const { attachmentPath, holdToken, ...rest } = parsed.data;
+  if (holdToken && closedShells.delete(holdToken)) return unavailable('cancelled');
   const canonical = canonicalDockAttachmentPath(attachmentPath);
   if (!canonical) return unavailable('invalid-path');
   const mediaUrl = mediaUrlFor(rest.workspaceId, canonical, binding.backendId);
@@ -707,10 +747,17 @@ export function setupDockCaptureEditorIPC(): void {
       return false;
     // A screenshot: load the editor now, while the capture is taken and made durable.
     if (parsed.data.hide) {
-      prewarmEditor(binding.backendId, parsed.data.token);
+      prewarmEditor(binding.backendId, parsed.data.token, { sender: event.sender, binding });
       if (prewarm) preloaded.add(prewarm.window);
     }
     return true;
+  });
+  ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_SHOW, (event, request: unknown) => {
+    const parsed = DockCaptureEditorHoldSchema.safeParse(request);
+    const dock = fromDock(event);
+    const binding = getStrictBackendBindingForWebContents(event.sender);
+    if (!parsed.success || !dock || !binding) return false;
+    return showPrewarm(parsed.data.token, event.sender, binding);
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.HOLD_END, (event, request: unknown) => {
     const parsed = DockCaptureEditorHoldSchema.safeParse(request);
@@ -719,6 +766,7 @@ export function setupDockCaptureEditorIPC(): void {
     if (!parsed.success || !dock || !binding) return false;
     endDockEditorHold(parsed.data.token, event.sender, binding);
     discardPrewarm(parsed.data.token);
+    closedShells.delete(parsed.data.token);
     return true;
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, (event, value: unknown) =>

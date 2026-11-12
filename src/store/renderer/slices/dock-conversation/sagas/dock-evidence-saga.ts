@@ -1,6 +1,6 @@
 import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
 import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
-import { beginDockEditorHold, endDockEditorHold } from './dock-editor-hold';
+import { beginDockEditorHold, endDockEditorHold, showDockEditorShell } from './dock-editor-hold';
 import { Logger } from '$shared/logger';
 
 const captureLogger = new Logger('DockCapture');
@@ -401,6 +401,8 @@ function* captureWithHold(
       currentDockServerCapabilities(appStore.state)?.chiefAttachments === true) &&
     dockCaptureEditorPreviewEnabled()
   ) {
+    // The editor shows at once (loading) while the screenshot is made durable and admitted.
+    showDockEditorShell(hold);
     yield* put(
       dockMediaEditorOpenRequested(workspaceId, agentId, image.id, 'capture', hold ?? undefined),
     );

@@ -492,6 +492,8 @@ export const IPC_CHANNELS = {
     HOLD_BEGIN: 'dock-capture-editor:hold-begin',
     /** dock → main: the capture did not hand off to an editor; release that hold ({ token }). */
     HOLD_END: 'dock-capture-editor:hold-end',
+    /** dock → main: the screenshot is taken and goes to the editor: show its loading shell ({ token }). */
+    HOLD_SHOW: 'dock-capture-editor:hold-show',
     /** main → the opening dock send: its editor attached (DockCaptureEditorAttached). */
     ATTACHED: 'dock-capture-editor:attached',
     /** dock → main: the owner validated (or refused) the return for that attach ({ openId, accept }). */

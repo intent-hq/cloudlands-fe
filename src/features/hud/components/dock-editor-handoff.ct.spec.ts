@@ -3,7 +3,13 @@ import { expect, test } from '../../../test/ct-test';
 import Harness from './DockComposerE2EHarness.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 
-type IpcRow = { ch: string; token: string | null; kind: string | null; at: number };
+type IpcRow = {
+  ch: string;
+  token: string | null;
+  kind: string | null;
+  at: number;
+  hide?: boolean | null;
+};
 
 /**
  * Capture → editor handoff through the real dock sagas (synthetic native capture/recorder,
@@ -39,10 +45,15 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     (window as any).__ipc = [];
     (window as any).__openOk = true;
     api.invoke = async (ch: string, payload: any) => {
-      if (ch === 'dock-capture-editor:hold-begin' || ch === 'dock-capture-editor:hold-end') {
+      if (
+        ch === 'dock-capture-editor:hold-begin' ||
+        ch === 'dock-capture-editor:hold-end' ||
+        ch === 'dock-capture-editor:hold-show'
+      ) {
         (window as any).__ipc.push({
           ch,
           token: payload?.token ?? null,
+          hide: payload?.hide ?? null,
           kind: null,
           at: performance.now(),
         });
@@ -125,6 +136,12 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   expect(shotHold.token).toBeTruthy();
   expect(shotOpen).toMatchObject({ kind: 'screenshot', token: shotHold.token });
   expect(shotHold.at).toBeLessThan(shotOpen.at);
+  // A screenshot hides the dock at the press; its editor shell shows once the image is
+  // taken, before the durable save and OPEN.
+  const shotShow = rows.find((r) => r.ch === 'dock-capture-editor:hold-show')!;
+  expect(shotHold.hide).toBe(true);
+  expect(shotShow.token).toBe(shotHold.token);
+  expect(shotShow.at).toBeLessThan(shotOpen.at);
   expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
   // The opened editor collapses the dock behind it (main keeps it out of sight meanwhile).
   await expect.poll(closeRequests).toBeGreaterThan(closesBefore);
@@ -137,6 +154,8 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     imageToSourcePlaced: round((marks.sourcePlaced ?? shotOpen.at) - marks.imageInEvidence!),
     sourcePlacedToOpen: round(shotOpen.at - (marks.sourcePlaced ?? shotOpen.at)),
     requestToOpenTotal: round(shotOpen.at - marks.request!),
+    requestToShellShown: round(shotShow.at - marks.request!),
+    shellShownToOpen: round(shotOpen.at - shotShow.at),
     note: 'Synthetic capture and wire (draft flush ACK included in sourcePlacedToOpen); main editor creation/reveal not in this run.',
   };
 

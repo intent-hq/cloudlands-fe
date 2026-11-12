@@ -246,11 +246,12 @@ describe('editor delete authority and save serialization', () => {
 describe('screenshot editor entry', () => {
   /**
    * Main's side of a screenshot's editor entry, against fake windows (no native visibility
-   * claim): the editor page loads hidden from the press, shows nothing without an admitted
-   * session, and is shown once its page reads the session OPEN admitted. A capture that
-   * opens no editor closes it unseen. The timeline is written for the handoff receipt.
+   * claim): the editor page loads hidden from the press and shows as a loading shell (no
+   * session, no media, no action) once the screenshot is taken; OPEN then hands it the
+   * admitted session. A capture that opens no editor closes it unseen, and a shell the person
+   * closes is never reopened. The timeline is written for the handoff receipt.
    */
-  it('loads the editor hidden at the press and shows it only with the admitted session', async () => {
+  it('shows the editor shell once the screenshot is taken and the session only once admitted', async () => {
     vi.useFakeTimers();
     const timeline: string[] = [];
     const t0 = Date.now();
@@ -278,36 +279,56 @@ describe('screenshot editor entry', () => {
     expect(timeline.at(-1)).toMatch(/cancelled editor closed/);
     expect(timeline.join()).not.toMatch(/cancelled editor shown/);
     expect(unused.webContents.sent).toEqual([]);
+    const openFor = (holdToken: string) =>
+      invoke(C.OPEN, io.dock, {
+        kind: 'screenshot',
+        workspaceId: 'workspace',
+        agentId: 'agent',
+        attachmentId: 'file',
+        attachmentPath: source.path,
+        sourceRevision: '0',
+        title: 'Synthetic',
+        source,
+        marks: [],
+        provenance: { visuals: 'clean' },
+        holdToken,
+      });
+    // A loading shell the person closes: that screenshot's editor never opens later.
+    const closedToken = crypto.randomUUID();
+    expect(await invoke(C.HOLD_BEGIN, io.dock, { token: closedToken, hide: true })).toBe(true);
+    const closedShell = watch(io.windows.at(-1), 'closed shell');
+    expect(await invoke(C.HOLD_SHOW, io.dock, { token: closedToken })).toBe(true);
+    closedShell.close();
+    expect(await openFor(closedToken)).toEqual({ ok: false, error: 'cancelled' });
+    expect(await invoke(C.HOLD_END, io.dock, { token: closedToken })).toBe(true);
+    expect(io.windows.at(-1)).toBe(closedShell);
     // The screenshot that opens: loaded hidden at the press, inert without a session.
     expect(await invoke(C.HOLD_BEGIN, io.dock, { token, hide: true })).toBe(true);
     const editor = watch(io.windows.at(-1), 'editor');
-    note('hold begun, editor loading hidden');
+    note('screenshot pressed: dock hidden, editor loading hidden');
     expect(await invoke(C.GET, editor)).toBeNull();
-    vi.advanceTimersByTime(40);
-    note('capture durable, OPEN');
-    const reply = await invoke(C.OPEN, io.dock, {
-      kind: 'screenshot',
-      workspaceId: 'workspace',
-      agentId: 'agent',
-      attachmentId: 'file',
-      attachmentPath: source.path,
-      sourceRevision: '0',
-      title: 'Synthetic',
-      source,
-      marks: [],
-      provenance: { visuals: 'clean' },
-      holdToken: token,
-    });
+    vi.advanceTimersByTime(250);
+    // Another document's or token's request shows nothing.
+    expect(await invoke(C.HOLD_SHOW, io.dock, { token: cancelled })).toBe(false);
+    expect(await invoke(C.HOLD_SHOW, editor, { token })).toBe(false);
+    expect(editor.isVisible()).toBe(false);
+    // The screenshot is taken: the editor shows at once, as a loading shell.
+    expect(await invoke(C.HOLD_SHOW, io.dock, { token })).toBe(true);
+    note('screenshot taken: editor shell shown (loading, no session)');
+    expect(editor.isVisible()).toBe(true);
+    expect(await invoke(C.GET, editor)).toBeNull();
+    vi.advanceTimersByTime(300);
+    note('screenshot durable: OPEN admitted');
+    const reply = await openFor(token);
     expect(reply.ok).toBe(true);
-    // The same loaded window takes the session; it is told, not shown yet.
+    // The same window takes the session; the page is told and draws it.
     expect(io.windows.at(-1)).toBe(editor);
     expect(editor.webContents.sent.map((m: any) => m.channel)).toEqual([C.CHANGED]);
-    expect(editor.isVisible()).toBe(false);
     const snapshot = await invoke(C.GET, editor);
-    note('page read the session');
+    note('page read the admitted session');
     expect(snapshot.openId).toBe(reply.openId);
     vi.advanceTimersByTime(0);
-    expect(editor.isVisible()).toBe(true);
+    expect(timeline.filter((l) => l.endsWith(' editor shown'))).toHaveLength(1);
     // Its own hold ends nothing: the session owns it now.
     expect(await invoke(C.HOLD_END, io.dock, { token })).toBe(true);
     expect(timeline.some((l) => l.endsWith(' editor closed') && !l.includes('cancelled'))).toBe(
