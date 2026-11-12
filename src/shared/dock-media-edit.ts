@@ -288,7 +288,7 @@ export const DockMediaEditSchema = z
     video: z.enum(['full', 'highlights']),
     voice: z.enum(['audio', 'transcript', 'off']),
     /** Corrections affect sent text only, keyed by genuine recognition unit IDs. */
-    wordEdits: z.record(z.string().max(20000)),
+    wordEdits: z.record(z.string(), z.string().max(20000)),
   })
   .strict()
   .superRefine((edit, ctx) => {

@@ -100,11 +100,13 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
   // the keyboard in its prompt); only a dock with nothing selected shows the index.
   // A conversation opened or changed meanwhile (by the person or another flow) is never replaced.
   const startedOn = appStore.state.dockConversation.workspaceId;
+  const generation = appStore.state.dockConversation.generation;
   const selected = !!startedOn;
   const current = (): boolean => {
     const state = appStore.state;
     return (
       request === shortcutRequest &&
+      state.dockConversation.generation === generation &&
       getPrincipalActionContext(state) === authority &&
       state.connections.windowBackendId === context.backendId
     );
@@ -169,6 +171,7 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
         const target = snapshot.linkedWorkspaceId;
         if (state.dockConversation.workspaceId === target) return;
         yield* put(openDockConversationRequested(target));
+        const targetGeneration = appStore.state.dockConversation.generation;
         yield* put(dockContextFollowed(snapshot.contextVersion));
         // The press asked for composer focus before this conversation existed: ask again once
         // it is open and loaded (a cached reopen may not announce a load), unless something
@@ -180,6 +183,7 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
             request !== shortcutRequest ||
             getPrincipalActionContext(now) !== authority ||
             now.connections.windowBackendId !== context.backendId ||
+            dock.generation !== targetGeneration ||
             dock.workspaceId !== target ||
             dock.error
           )
@@ -422,12 +426,15 @@ function* choose({
 export function* dockShortcutSaga(): SagaGenerator<void> {
   yield* takeEveryFromElectronChannel<DockShortcutContext>(WINDOW_CHANNELS.FOCUS_DOCK, receive);
   yield* takeLatest(dockShortcutChosen, choose);
-  yield* takeEvery([closeDockConversationRequested, hudDeactivated], function* () {
+  yield* takeEvery(hudDeactivated, function* () {
+    shortcutRequest++;
     yield* put(dockShortcutChanged(null));
   });
   yield* takeEvery(dockPlacementCommandRequested, function* ({ payload: [command] }) {
-    if (command.action === 'dismiss' || command.action === 'release')
+    if (command.action === 'dismiss' || command.action === 'release') {
+      shortcutRequest++;
       yield* put(dockShortcutChanged(null));
+    }
   });
   yield* takeLatestFromSelector(selectPrincipalActionContext, function* () {
     const shortcut = appStore.state.dockConversation.shortcut;

@@ -64,8 +64,8 @@ export function reportCaptureEditorSaveFailure(
           message,
         },
       ])
-      .then((reply) => {
-        if ((reply as { success?: boolean } | undefined)?.success !== true)
+      .then((reply: unknown) => {
+        if (!reply || typeof reply !== 'object' || !('success' in reply) || reply.success !== true)
           console.warn('CaptureEditorSave persistence=unacknowledged');
       })
       .catch(() => console.warn('CaptureEditorSave persistence=unavailable'));
@@ -137,7 +137,7 @@ export function connectDockCaptureEditor(
       return await Promise.race([
         electronAPI()
           .invoke(DOCK_CAPTURE_EDITOR_CHANNELS.CLOSE, payload)
-          .then((result) => result === true),
+          .then((result: unknown) => result === true),
         new Promise<boolean>((resolve) => {
           timer = setTimeout(() => resolve(false), 5000);
         }),

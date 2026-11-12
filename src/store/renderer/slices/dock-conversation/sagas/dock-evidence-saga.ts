@@ -1870,7 +1870,7 @@ function* watchNative(): SagaGenerator<void> {
           rememberEndedSession(event.sessionId, workspaceId, agentId);
           yield* put(dockEvidenceAnnotationChanged(workspaceId, agentId, null));
         }
-      } else {
+      } else if (event.type === 'clip-ended') {
         const owner = getItems(appStore.state.dockConversation.evidence).find((row) =>
           row.clips.some((clip) => clip.id === event.clipId),
         );

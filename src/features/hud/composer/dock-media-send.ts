@@ -183,7 +183,7 @@ export async function prepareDockMediaSend(
             throw new Error(['media-export-failed', exported.error].filter(Boolean).join(':'));
           stage = 'placement';
           const files = [exported.value.video, ...exported.value.frames];
-          const references = [];
+          const references: string[] = [];
           for (let index = 0; index < files.length; index++) {
             check();
             const file = files[index],

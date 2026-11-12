@@ -7,6 +7,7 @@ import { dockMediaCapturedMarks, dockMediaCaptureBatches } from '$shared/dock-me
 import { DockMediaSourceSchema } from '$shared/dock-media-edit';
 import type { DockCaptureEditorOpenRequest } from '$shared/dock-capture-editor';
 import { buffers, channel, type Channel } from 'redux-saga';
+import type { Action } from '@redux-saga/types';
 import {
   actionChannel,
   call,
@@ -74,6 +75,22 @@ import {
   openDockConversationRequested,
   selectDockConversationAgentRequested,
 } from '../dock-conversation-slice';
+
+type DraftSaveSettled = ReturnType<typeof chatDraftSaveSettled>;
+const draftSaveSettledPayload = z.tuple([
+  z.string(),
+  z.string(),
+  z.enum(['failed', 'saved']),
+  z.string().optional(),
+]);
+/** Admit only the exact save receipt this operation awaits; other actions have no payload contract. */
+function matchesDraftSave(ownerId: string, requestId: string) {
+  return (action: Action): action is DraftSaveSettled => {
+    if (action.type !== chatDraftSaveSettled.type || !('payload' in action)) return false;
+    const parsed = draftSaveSettledPayload.safeParse(action.payload);
+    return parsed.success && parsed.data[0] === ownerId && parsed.data[1] === requestId;
+  };
+}
 
 const requestSchema = z
   .object({
@@ -158,11 +175,8 @@ function* persist({ payload: [requestId, request, authority] }: SaveAction): Sag
   }
   const ownerId = `dock-media-edit:${requestId}`;
   // Subscribe before flushing; a synchronous transport may settle in the same turn.
-  const settled = yield* actionChannel(
-    (action: ReturnType<typeof chatDraftSaveSettled>) =>
-      action.type === chatDraftSaveSettled.type &&
-      action.payload[0] === ownerId &&
-      action.payload[1] === requestId,
+  const settled = yield* actionChannel<DraftSaveSettled>(
+    matchesDraftSave(ownerId, requestId),
     buffers.expanding(),
   );
   const items = selectComposerContextItems.select(store.state, workspaceId, agentId);
@@ -374,11 +388,8 @@ function* recognizeAndPersist(
     if (!replaceMediaState(workspaceId, agentId, logicalId, live, next)) return;
     const ownerId = `dock-media-transcript:${jobId}`,
       requestId = crypto.randomUUID();
-    const settled = yield* actionChannel(
-      (action: ReturnType<typeof chatDraftSaveSettled>) =>
-        action.type === chatDraftSaveSettled.type &&
-        action.payload[0] === ownerId &&
-        action.payload[1] === requestId,
+    const settled = yield* actionChannel<DraftSaveSettled>(
+      matchesDraftSave(ownerId, requestId),
       buffers.expanding(),
     );
     try {
@@ -640,11 +651,8 @@ function* openEditorWith(
   if (!source || !media) return;
   const ownerId = `dock-media-source:${crypto.randomUUID()}`,
     requestId = crypto.randomUUID();
-  const settled = yield* actionChannel(
-    (action: ReturnType<typeof chatDraftSaveSettled>) =>
-      action.type === chatDraftSaveSettled.type &&
-      action.payload[0] === ownerId &&
-      action.payload[1] === requestId,
+  const settled = yield* actionChannel<DraftSaveSettled>(
+    matchesDraftSave(ownerId, requestId),
     buffers.expanding(),
   );
   try {

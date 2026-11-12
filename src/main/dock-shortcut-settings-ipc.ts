@@ -8,14 +8,14 @@ import {
   onStrictBackendBindingRetired,
 } from './window-backend';
 import type { createDockShortcutPreferences } from './dock-shortcut-preferences';
-const readSchema = z.object({ appOverrides: z.record(z.string()).optional() }).strict();
+const readSchema = z.object({ appOverrides: z.record(z.string(), z.string()).optional() }).strict();
 const writeSchema = z
   .object({
     id: z.string().optional(),
     key: z.string().nullable().optional(),
     resetAll: z.boolean().optional(),
     expectedRevision: z.number().int().nonnegative(),
-    appOverrides: z.record(z.string()).optional(),
+    appOverrides: z.record(z.string(), z.string()).optional(),
     captureToken: z.string().optional(),
   })
   .strict();

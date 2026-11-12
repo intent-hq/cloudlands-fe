@@ -233,7 +233,7 @@ export async function createDockEvidencePreviewUrl(
 function arrowHeadPoints(
   origin: { x: number; y: number },
   end: { x: number; y: number },
-  headLength = DOCK_MARK_BURN_STYLE.arrowHead,
+  headLength: number = DOCK_MARK_BURN_STYLE.arrowHead,
 ) {
   const angle = Math.atan2(end.y - origin.y, end.x - origin.x);
   const spread = DOCK_MARK_BURN_STYLE.arrowSpread;

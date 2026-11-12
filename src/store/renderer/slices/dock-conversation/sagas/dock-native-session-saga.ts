@@ -163,6 +163,18 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
       })
       .catch(() => undefined);
   }
+  function finishRetiredNote(): void {
+    const live = note;
+    if (!live) return;
+    note = null;
+    reportNote({
+      requestId: live.requestId,
+      generation: live.generation,
+      text: live.committed,
+      final: true,
+      error: 'failed',
+    });
+  }
   function* onNoteRequest(value: object): SagaGenerator<void> {
     const request = value as DockCaptureEditorNoteDictationRequested;
     if (typeof request.requestId !== 'string' || !Number.isInteger(request.generation)) return;
@@ -572,17 +584,7 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
     channel.close();
     speech = null;
     // The session is going: a note dictation still running ends, once.
-    if (note) {
-      const live = note;
-      note = null;
-      reportNote({
-        requestId: live.requestId,
-        generation: live.generation,
-        text: live.committed,
-        final: true,
-        error: 'failed',
-      });
-    }
+    finishRetiredNote();
     if (installed && retireDockEvidenceNative(adapter.service, workspaceId, agentId)) {
       if (appStore.state.dockConversation.nativeSpeech.pairId === pairId)
         appStore.dispatch(dockNativeSpeechSessionChanged(null, null));
