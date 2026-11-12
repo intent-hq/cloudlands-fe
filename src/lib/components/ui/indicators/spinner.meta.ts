@@ -24,6 +24,7 @@ export const spinnerMetadata = parseUiComponentMetadata({
     'src/features/home/HomeAssistantThreads.svelte',
     'src/features/hud/components/DockAnnotationToolbar.svelte',
     'src/features/local-pairing/add/LocalIntentAddForm.svelte',
+    'src/features/machine-rail/MachineRail.svelte',
     'src/features/nodes/PairLinkPaste.svelte',
     'src/features/onboarding/messages/GitHubRepoTab.svelte',
     'src/features/onboarding/messages/ProviderCard.svelte',

@@ -350,7 +350,9 @@ import {
   registerBackendHandlers,
   connectBackendClient,
   disconnectBackendClient,
+  isBackendClientConnected,
   listMachineRailCandidateIds,
+  retryBackendConnection,
   disposeAllBackendClients,
   isSameHostBackendActive,
   getBackendClientForId,
@@ -1675,6 +1677,8 @@ const bootFlow = app.whenReady().then(async () => {
   registerMachineRailHandlers({
     listMachineIds: listMachineRailCandidateIds,
     connect: connectBackendClient,
+    isConnected: isBackendClientConnected,
+    retry: retryBackendConnection,
     disconnect: (backendId) => {
       if (!isShuttingDown) disconnectBackendClient(backendId);
     },

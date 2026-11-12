@@ -1,3 +1,4 @@
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runSaga, stdChannel, type Task } from 'redux-saga';
 import { withHostPrincipal } from '../../test/fixtures/principal-state';
@@ -106,6 +107,7 @@ let ownerPush: ((payload: unknown) => void) | undefined;
 let task: Task;
 let state: ReturnType<typeof withHostPrincipal>;
 const listeners = new Set<() => void>();
+const dispatched: Array<{ type: string; payload?: unknown }> = [];
 const rawListeners = new Set<(message: unknown) => void>();
 const statusListeners = new Set<(status: HardwareConsoleStatus) => void>();
 const manager = {
@@ -163,6 +165,7 @@ function boot(role: 'owner' | 'member' | 'guest') {
       channel,
       getState: reduxStore.getState,
       dispatch: (action) => {
+        dispatched.push(action as { type: string; payload?: unknown });
         state = {
           ...state,
           hardwareConsole: hardwareConsoleReducer(state.hardwareConsole, action),
@@ -183,6 +186,7 @@ beforeEach(() => {
   vi.spyOn(appClient.settings, 'get').mockResolvedValue(null);
   vi.spyOn(appClient.settings, 'update').mockResolvedValue([]);
   effects.started.length = 0;
+  dispatched.length = 0;
   effects.cancelled.length = 0;
   listeners.clear();
   rawListeners.clear();
@@ -305,6 +309,36 @@ describe('shared-window hardware cycling through host service admission', () => 
     press();
     expect(invoke).toHaveBeenCalledExactlyOnceWith(IPC_CHANNELS.WINDOW.CYCLE_FOCUS);
     expect(localStorage.setItem).not.toHaveBeenCalled();
+  });
+
+  it("shows the window's next own machine instead of cycling windows while the machine rail is on", async () => {
+    boot('guest');
+    await vi.waitFor(() => expect(manager.start).toHaveBeenCalledTimes(1));
+    state = {
+      ...state,
+      machineRail: {
+        enabled: true,
+        homeId: 'local',
+        machineIds: ['local', 'remote-owned-or-shared-host', 'b'],
+        selectedId: 'remote-owned-or-shared-host',
+        shownId: 'remote-owned-or-shared-host',
+        pendingId: '',
+        degradedIds: [],
+      },
+      connections: {
+        ...state.connections,
+        connections: createCollection('id', [{ id: 'local' }, { id: 'b' }]),
+      },
+      guestSessions: { sessions: createCollection('id', [{ id: 'remote-owned-or-shared-host' }]) },
+    } as typeof state;
+    for (const listener of listeners) listener();
+    press();
+    await vi.waitFor(() =>
+      expect(dispatched).toContainEqual(
+        expect.objectContaining({ type: 'machineRail/selectRequested', payload: ['b'] }),
+      ),
+    );
+    expect(invoke).not.toHaveBeenCalled();
   });
 
   it('accepts live preference changes and stops cycling when the integration is disabled', async () => {

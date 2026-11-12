@@ -17,6 +17,8 @@ export type SidebarNavState = {
   panelItem: 'chief' | null;
   onboardingActive: boolean;
   showCreateModal: boolean;
+  /** The open New Workspace dialog defaults to the repository selected on Home. */
+  createModalUsesHomeRepository: boolean;
   /** Bumped to make an open New Workspace dialog re-read its `workspace-prefill` entry. */
   createModalPrefillRequest: number;
   pinnedWorkspaceIds: string[];

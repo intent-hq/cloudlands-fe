@@ -30,6 +30,7 @@
   <SettingsFieldRow
     id="settings-appearance-chatContentWidth-label-field"
     label={m.settings_appearance_chatContentWidth_label()}
+    description={m.settings_appearance_chatContentWidth_description()}
   >
     <Switch
       id="chat-content-width-switch"

@@ -37,7 +37,11 @@ import { m } from '$shared/paraglide/messages.js';
 import { type Workspace } from '$shared/types';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { SPEC_NOTE_ID } from '$shared/constants/notes';
-import { type Collection } from '@themislib/themis/utils/collections/collection-utils';
+import { getItem, type Collection } from '@themislib/themis/utils/collections/collection-utils';
+import type { ConnectionRecord } from '$shared/types/connections';
+import { nextRailMachine } from '$shared/types/machine-rail';
+import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
+import { selectRailMachineRequested } from '$store/renderer/slices/machine-rail/machine-rail-slice';
 import type { StoredAgentSession } from '$store/renderer/slices/agent-session/agent-session-types';
 import { agentSessionStopChatRequested } from '$store/renderer/slices/agent-session/agent-session-slice';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
@@ -105,6 +109,10 @@ export interface ActionKeyState {
   };
   agentSessions: { byAgentId: Record<string, StoredAgentSession> };
   hardwareConsole: { cycleScopeByFamily: Record<CycleScopeFamilyId, CycleScope> };
+  /** The window's machine rail (Labs): the window-cycle key cycles its machines. */
+  machineRail?: { enabled: boolean; machineIds: readonly string[]; selectedId: string };
+  connections?: { connections: Collection<ConnectionRecord, 'id'> };
+  guestSessions?: { sessions: Collection<{ id: string }, 'id'> };
   /** Structural view of the panel layout for the see-spec toggle. */
   panelLayout: {
     byWorkspaceId: Record<
@@ -745,6 +753,34 @@ export const ACTION_KEY_REGISTRY: readonly ActionKeyDefinition[] = [
       return isElectronPlatform();
     },
     execute(context) {
+      // With the machine rail on, the key shows the window's next own machine
+      // (guest hosts are skipped), looping back to the first.
+      const rail = context.state.machineRail;
+      if (rail?.enabled) {
+        const guests = context.state.guestSessions?.sessions;
+        const next = nextRailMachine(
+          rail.machineIds,
+          rail.selectedId,
+          (id) => !!guests && getItem(guests, id) !== undefined,
+        );
+        if (!next) {
+          context.showHint(m.hardwareConsole_actionKey_noOtherMachines_message());
+          return;
+        }
+        const records = context.state.connections?.connections;
+        const record = records ? getItem(records, next) : undefined;
+        context.dispatch(selectRailMachineRequested(next));
+        context.dispatch(
+          actionHudShown(
+            !record
+              ? next
+              : record.isLocal
+                ? formatLocalMachineLabel(record)
+                : formatConnectionLabel(record),
+          ),
+        );
+        return;
+      }
       // The IPC invoke lives in window-cycle.ts (not inline) so this
       // registry — imported by Svelte components for labels/icons — stays
       // free of bridge references per intent/no-component-async-data-fetch.

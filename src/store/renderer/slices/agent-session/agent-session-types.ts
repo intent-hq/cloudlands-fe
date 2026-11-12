@@ -181,24 +181,26 @@ export type AgentSessionUpdate = Partial<Omit<AgentSession, 'metadata'>> &
   };
 
 /**
- * Bounded, on-demand history segment for infinite scrollback.
+ * Bounded, on-demand scrollback window for infinite scrollback.
  *
- * Holds rows OLDER than the always-resident tail (`session.messages`),
- * hydrated page-by-page as the user scrolls up. Capped at
- * `HISTORY_SEGMENT_MAX` rows; pruning past the cap can open a hole (gap)
- * between history and tail that is refilled on demand.
+ * Always ONE contiguous run of rows: never a hole inside it, and never a hole
+ * between it and the tail. While attached it holds the rows directly OLDER
+ * than the always-resident tail (`session.messages`) and the transcript is
+ * window + tail. After a far jump, or once walking up passes
+ * `HISTORY_SEGMENT_MAX`, the window detaches: the transcript is the window
+ * alone and the tail is not part of it until a forward page reaches it.
  */
 export interface AgentHistorySegment {
-  /** Hydrated older rows, ordered ascending by timestamp (same ordering as the tail). */
+  /** Hydrated rows, ordered ascending by timestamp (same ordering as the tail). */
   messages: AgentMessage[];
   /**
-   * true when a hole is open between history's newest row and the tail's
-   * oldest retained row (newest-side pruning severed contiguity). When false
-   * and history is non-empty, history's newest row directly precedes the
-   * tail's oldest retained row, so the renderer may concatenate without a
-   * gap affordance.
+   * true when the window does not join the tail (far jump, or newest-side
+   * pruning past the cap). The transcript then renders the window ONLY; the
+   * unloaded rows below it are walked forward until a page reaches the tail.
+   * When false and the window is non-empty, its newest row directly precedes
+   * the tail's oldest retained row.
    */
-  gapToTail: boolean;
+  detachedFromTail: boolean;
   /** true once the conversation's true first message has been hydrated. */
   oldestReached: boolean;
   /**
@@ -212,29 +214,14 @@ export interface AgentHistorySegment {
    */
   startOrdinalEstimate?: number;
   /**
-   * Estimated number of rows inside the open history→tail hole for a
-   * SERIAL-walk segment: grown by the exact newest-side prune count when a
-   * prepend passes the cap, shrunk by the rows a gap refill moves back into
-   * history, and dropped when the hole closes. Anchors the below side of
-   * `splitUnloadedRows` so hole rows never inflate the above extent (they
-   * used to be attributed all-above, overestimating the virtual extent by up
-   * to 2x mid-walk). Absent on seek-seeded segments (`startOrdinalEstimate`
-   * anchors their split) and while the segment is contiguous with the tail.
-   * Rows the TAIL cap-prunes into the hole (live appends past
-   * `MAX_MESSAGES_PER_AGENT` while a contiguous segment is loaded) are also
-   * counted here — the tail prune opens the gap and adds the dropped count.
+   * Estimated number of unloaded rows between a DETACHED serial-walk window
+   * and the tail: grown by the exact newest-side prune count when a prepend
+   * passes the cap, shrunk by the rows a forward page loads, and dropped
+   * when the window attaches. Sizes the spacer below the window (with the
+   * hidden tail rows). Absent on seek-seeded windows (`startOrdinalEstimate`
+   * anchors their split) and while the window is attached.
    */
   holeRowsEstimate?: number;
-  /**
-   * true when a tail write dropped older resident rows while the segment held
-   * no rows to carry `gapToTail`: where history meets the tail is unknown. A
-   * held older-page cursor was minted against the pre-loss tail and continues
-   * BELOW the dropped rows, so the next prepend that does not overlap the
-   * tail opens the gap (the refill restores the dropped rows), and
-   * `oldestReached` cannot latch until rows land. Cleared once rows land.
-   * Meanwhile `holeRowsEstimate` carries the dropped-row count for that gap.
-   */
-  tailBoundaryUnknown?: boolean;
 }
 
 /**

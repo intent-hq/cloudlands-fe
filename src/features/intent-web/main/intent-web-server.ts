@@ -243,6 +243,7 @@ export async function createIntentWebServer(options: WebServerOptions) {
   const refreshRoutes = async (
     id: string,
     request: (method: string, params?: unknown) => Promise<unknown>,
+    tunnelEnabled: boolean,
   ) => {
     try {
       let result: unknown;
@@ -255,7 +256,9 @@ export async function createIntentWebServer(options: WebServerOptions) {
         ips = (extractLocalIps(result) ?? []).filter((ip) => !isLoopbackHost(ip));
       }
       if (ips.length > 0 && (await store.getDetectHosts(id))) await store.setHosts(id, ips);
-      await store.setTcAddress(id, extractTcAddress(result));
+      // The tc address is stable; only turning the tunnel off clears it.
+      const tcAddress = tunnelEnabled ? extractTcAddress(result) : null;
+      if (tcAddress !== null || !tunnelEnabled) await store.setTcAddress(id, tcAddress);
     } catch {
       // The saved routes stay as they were.
     }
@@ -364,7 +367,7 @@ globalThis.__INTENT_RUNTIME_CONFIG__=Object.freeze({backendId:backend,intentdWsU
             const result = body
               ? await setConnectionTunnel(request, body.enabled as boolean)
               : await getConnectionTunnel(request);
-            if (body && result.supported) await refreshRoutes(id, request);
+            if (body && result.supported) await refreshRoutes(id, request, result.enabled);
             send(res, result);
           } finally {
             client?.dispose();

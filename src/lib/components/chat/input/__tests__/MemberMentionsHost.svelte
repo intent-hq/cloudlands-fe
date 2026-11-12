@@ -105,7 +105,6 @@
       return result;
     };
     // Only transport is mocked: the production saga hydrates Redux and all mention providers run.
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Test fixture installs a mock transport; domain reads remain in production sagas/providers.
     installMockElectronBridge({
       'principal.me': response('principal.me', {
         id: 'self',

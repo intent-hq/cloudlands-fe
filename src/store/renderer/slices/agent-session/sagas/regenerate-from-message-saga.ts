@@ -39,14 +39,14 @@ type FileBlocks = NonNullable<AgentSessionSendMessageOptions['fileBlocks']>;
 function findRegenerateSource(
   history: AgentMessage[],
   tail: AgentMessage[],
-  gapToTail: boolean,
+  detachedFromTail: boolean,
   messageId: string,
 ): AgentMessage | undefined {
   history = dropTailResidentRows(history, tail);
   const messages = [...history, ...tail];
   const index = messages.findIndex((message) => message.id === messageId);
   if (index < 0) return undefined;
-  const floor = gapToTail && index >= history.length ? history.length : 0;
+  const floor = detachedFromTail && index >= history.length ? history.length : 0;
   for (let cursor = index; cursor >= floor; cursor -= 1) {
     if (messages[cursor].role === 'user') return messages[cursor];
   }
@@ -204,14 +204,14 @@ function* regenerateFromMessage(action: RegenerateAction): SagaGenerator<void> {
   try {
     const session = yield* selectAgentSession.effect(agentId);
     const history = yield* selectAgentHistoryMessages.effect(agentId);
-    const { gapToTail } = yield* selectHistorySegmentMeta.effect(agentId);
+    const { detachedFromTail } = yield* selectHistorySegmentMeta.effect(agentId);
     const source = session
-      ? findRegenerateSource(history, session.messages, gapToTail, messageId)
+      ? findRegenerateSource(history, session.messages, detachedFromTail, messageId)
       : undefined;
     if (!source) {
       throw new NoRegenerateSourceError('no user message to regenerate from', {
         messageId,
-        gapToTail,
+        detachedFromTail,
       });
     }
     const blocks = source.contentBlocks ?? [];

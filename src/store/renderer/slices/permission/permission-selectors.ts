@@ -1,12 +1,19 @@
-import { selectPrincipalActionContext } from '../principal/principal-selectors';
 import {
-  selectWorkspaceManagementDenied,
+  selectWorkspaceAuthority,
   selectWorkspaceListLoadedForBackend,
-  selectWorkspacePermissionContext,
 } from '../workspace/workspace-selectors';
+import {
+  workspaceManagementDenied,
+  workspacePermissionContext,
+} from '../workspace/workspace-authority';
 import { store } from '../../store';
-import { getItems, type Collection } from '@themislib/themis/utils/collections/collection-utils';
+import {
+  getItem,
+  getItems,
+  type Collection,
+} from '@themislib/themis/utils/collections/collection-utils';
 import type { PermissionRequest } from './permission-slice';
+import type { Workspace } from '$shared/types';
 
 export const selectPermissionRequestsCollection = store.createSelector(
   (state): Collection<PermissionRequest, 'requestId'> => {
@@ -31,36 +38,47 @@ export const selectPendingCount = store.createSelector((state, sessionId: string
 
 // A current subscription and management grants own snapshots, never agent discovery.
 // Wait for capability hydration so initial list loading does not cause a second read.
+// Both recovery selectors re-run on every workspace/agent update: derive authority once.
 export const selectPermissionRecoveryScope = store.createSelector((state) => {
-  const context = selectPrincipalActionContext.select(state);
+  const authority = selectWorkspaceAuthority.select(state);
+  const context = authority.actionContext;
   if (
     !context ||
     !selectWorkspaceListLoadedForBackend.select(state, state.connections.windowBackendId)
   )
     return null;
   const workspaceIds = getItems(state.workspace.workspaces)
-    .filter((workspace) => selectWorkspacePermissionContext.select(state, workspace.id) !== null)
+    .filter(
+      (workspace) => workspacePermissionContext(authority, workspace.id, () => workspace) !== null,
+    )
     .map((workspace) => workspace.id)
     .sort();
   return JSON.stringify([context, workspaceIds]);
 });
 
 // Late identity/capability hydration can admit cached prompts without another RPC.
-export const selectPermissionRecoveryAgents = store.createSelector((state) =>
-  JSON.stringify(
+export const selectPermissionRecoveryAgents = store.createSelector((state) => {
+  const authority = selectWorkspaceAuthority.select(state);
+  const byWorkspace = new Map<string, [string | null, boolean]>();
+  const workspaceGrant = (wsId: string) => {
+    let grant = byWorkspace.get(wsId);
+    if (!grant) {
+      const readRow = () => getItem(state.workspace.workspaces, wsId as Workspace['id']);
+      grant = [
+        workspacePermissionContext(authority, wsId, readRow),
+        workspaceManagementDenied(authority, wsId, readRow),
+      ];
+      byWorkspace.set(wsId, grant);
+    }
+    return grant;
+  };
+  return JSON.stringify(
     Object.values(state.agentSessions.byAgentId)
-      .flatMap<[string, string, string | null, boolean]>((agent) => {
-        if (!agent.workspaceId) return [];
-        const context = selectWorkspacePermissionContext.select(state, agent.workspaceId);
-        return [
-          [
-            agent.id,
-            agent.workspaceId,
-            context,
-            selectWorkspaceManagementDenied.select(state, agent.workspaceId),
-          ],
-        ];
-      })
+      .flatMap<[string, string, string | null, boolean]>((agent) =>
+        agent.workspaceId
+          ? [[agent.id, agent.workspaceId, ...workspaceGrant(agent.workspaceId)]]
+          : [],
+      )
       .sort((a, b) => a[0].localeCompare(b[0])),
-  ),
-);
+  );
+});

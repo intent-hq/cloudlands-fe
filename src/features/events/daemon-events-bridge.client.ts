@@ -2116,6 +2116,19 @@ function handleTaskAgentUnlinkedEvent(event: WorkspaceEvent, workspaceId: string
  * prompt renders. The BE is the source of truth for `requestId` (used by
  * `agent.respondPermission` to route the answer back).
  */
+const PERMISSION_OPTION_KINDS = ['allow_once', 'allow_always', 'reject_once', 'reject_always'];
+const PERMISSION_OPTION_SCOPES = ['chat', 'workspace', 'allWorkspaces'];
+function isPermissionOptionKind(
+  value: unknown,
+): value is NonNullable<PermissionRequest['options'][number]['kind']> {
+  return typeof value === 'string' && PERMISSION_OPTION_KINDS.includes(value);
+}
+function isPermissionOptionScope(
+  value: unknown,
+): value is NonNullable<PermissionRequest['options'][number]['scope']> {
+  return typeof value === 'string' && PERMISSION_OPTION_SCOPES.includes(value);
+}
+
 function handlePermissionRequestEvent(event: WorkspaceEvent): void {
   const data = (event as { data?: Record<string, unknown> }).data;
   if (!data) return;
@@ -2140,11 +2153,15 @@ function handlePermissionRequestEvent(event: WorkspaceEvent): void {
     if (typeof id !== 'string' || typeof label !== 'string') continue;
     const description = (raw as { description?: unknown }).description;
     const destructive = (raw as { destructive?: unknown }).destructive;
+    const kind = (raw as { kind?: unknown }).kind;
+    const scope = (raw as { scope?: unknown }).scope;
     options.push({
       id,
       label,
       ...(typeof description === 'string' ? { description } : {}),
       ...(typeof destructive === 'boolean' ? { destructive } : {}),
+      ...(isPermissionOptionKind(kind) ? { kind } : {}),
+      ...(isPermissionOptionScope(scope) ? { scope } : {}),
     });
   }
   const description = data.description;

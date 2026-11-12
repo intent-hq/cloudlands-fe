@@ -205,11 +205,14 @@ export default {
         const offending =
           isElementClassMatcher(matcher, node.arguments) ||
           (!PRESENCE_MATCHERS.has(matcher) && isClassRead(expectation.arguments[0], context));
-        // A reasoned `eslint-disable` is the sanctioned escape hatch; it must not use up
-        // a baselined file's allowance, which counts only unsuppressed assertions.
-        if (!offending || suppressed(expectation.loc.start.line)) return;
-        seen += 1;
-        if (seen > allowed) context.report({ node: expectation, messageId: 'classNameAssertion' });
+        if (!offending) return;
+        // A reasoned disable still gets its report, so ESLint counts the directive as used,
+        // but it does not use up the baseline allowance.
+        if (!suppressed(expectation.loc.start.line)) {
+          seen += 1;
+          if (seen <= allowed) return;
+        }
+        context.report({ node: expectation, messageId: 'classNameAssertion' });
       },
     };
   },

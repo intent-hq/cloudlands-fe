@@ -107,6 +107,36 @@ describe('startSplashGate', () => {
     expect(dismiss).toHaveBeenCalledTimes(1);
   });
 
+  it('waits out a failed connection attempt by default', async () => {
+    const { api, emit } = makeMockApi({ status: 'connecting' });
+    const dismiss = vi.fn();
+    startSplashGate(dismiss, { api });
+
+    await vi.waitFor(() => expect(api.invoke).toHaveBeenCalledWith(BACKEND.GET_STATUS));
+    emit(BACKEND.STATUS, { status: 'disconnected', reconnectAttempts: 0 });
+    emit(BACKEND.STATUS, { status: 'connecting', reconnectAttempts: 1 });
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  it('settles on a failed connection attempt when asked to', async () => {
+    const { api, emit } = makeMockApi({ status: 'connecting', reconnectAttempts: 0 });
+    const dismiss = vi.fn();
+    startSplashGate(dismiss, { api, settleOnConnectFailure: true });
+
+    await vi.waitFor(() => expect(api.invoke).toHaveBeenCalledWith(BACKEND.GET_STATUS));
+    expect(dismiss).not.toHaveBeenCalled();
+    emit(BACKEND.STATUS, { status: 'disconnected', reconnectAttempts: 0 });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('settles at once when the first check finds the connection already retrying', async () => {
+    const { api } = makeMockApi({ status: 'connecting', reconnectAttempts: 2 });
+    const dismiss = vi.fn();
+    startSplashGate(dismiss, { api, settleOnConnectFailure: true });
+
+    await vi.waitFor(() => expect(dismiss).toHaveBeenCalledTimes(1));
+  });
+
   it('dismisses after the bounded fallback timeout when the daemon never connects', async () => {
     const { api } = makeMockApi({ status: 'connecting' });
     const dismiss = vi.fn();

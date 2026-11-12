@@ -52,7 +52,6 @@
   // Auggie --print has no effort channel, even if ordinary models advertise it.
   // A named profile (§5.54) runs its base provider's route.
   const supportsQuickActionEffort = $derived(
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- synchronous pure string helper, not a data fetch; rule misfires on the '/provider-profiles' import source
     ['codex', 'claude-code', 'pi'].includes(providerRefBaseId($effectiveProviderId$)),
   );
 

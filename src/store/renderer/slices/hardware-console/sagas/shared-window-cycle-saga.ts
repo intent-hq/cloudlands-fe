@@ -1,6 +1,6 @@
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
-import { buffers, eventChannel } from 'redux-saga';
-import { call, take } from 'typed-redux-saga';
+import { buffers, channel, eventChannel } from 'redux-saga';
+import { call, fork, put, take } from 'typed-redux-saga';
 import {
   getConsoleOwnerBridge,
   installConsoleOwnerListener,
@@ -20,6 +20,8 @@ import {
   selectSharedWindowCycleActive,
   selectWindowCyclePreference,
 } from '../hardware-console-selectors';
+import { selectNextRailMachine } from '../../machine-rail/machine-rail-selectors';
+import { selectRailMachineRequested } from '../../machine-rail/machine-rail-slice';
 
 const logger = createLogger('SharedWindowCycle');
 
@@ -56,6 +58,18 @@ function* sharedWindowCycle() {
     emit(true);
     return () => window.removeEventListener('storage', onStorage);
   }, buffers.sliding(1));
+  // With the machine rail on, the key shows the window's next own machine instead.
+  let nextMachine: string | null = null;
+  yield* takeLatestFromSelector(
+    selectNextRailMachine,
+    function* ({ payload }: SelectorChannelPayload<string | null>) {
+      nextMachine = payload;
+    },
+  );
+  const machinePresses = channel<string>(buffers.sliding(1));
+  yield* fork(function* () {
+    while (true) yield* put(selectRailMachineRequested(yield* take(machinePresses)));
+  });
   const decoder = new HardwareInputDecoder();
   const offKey = decoder.on('keydown', ({ key }) => {
     const model = manager.connectedDevice?.model;
@@ -66,6 +80,10 @@ function* sharedWindowCycle() {
       !preference.keysByModel[model].some((mappedKey) => mappedKey === key)
     )
       return;
+    if (nextMachine !== null) {
+      if (nextMachine) machinePresses.put(nextMachine);
+      return;
+    }
     void cycleOpenWindows().catch((error: unknown) =>
       logger.warn('Window cycling failed', { error }),
     );
@@ -88,6 +106,7 @@ function* sharedWindowCycle() {
     offKey();
     offOwner();
     changes.close();
+    machinePresses.close();
     yield* call([manager, manager.stop]);
   }
 }

@@ -171,8 +171,7 @@
       "readZipEntry"
     ],
     "src/features/backend/splash-gate.ts": [
-      "SPLASH_FALLBACK_TIMEOUT_MS",
-      "startSplashGate"
+      "SPLASH_FALLBACK_TIMEOUT_MS"
     ],
     "src/features/browser-access/main/browser-access-auth.ts": [
       "SESSION_COOKIE",

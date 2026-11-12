@@ -244,7 +244,7 @@ export const selectHasHistorySegment = store.createSelector(
 
 export interface HistorySegmentMeta {
   /** true when a hole is open between history and the tail. */
-  gapToTail: boolean;
+  detachedFromTail: boolean;
   /** true once the conversation's true first message has been hydrated. */
   oldestReached: boolean;
   /** Number of hydrated history rows. */
@@ -270,7 +270,7 @@ export const selectHistorySegmentMeta = store.createSelector(
     const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
     const tailCount = state.agentSessions?.byAgentId[agentId]?.messages.length ?? 0;
     return {
-      gapToTail: segment?.gapToTail === true,
+      detachedFromTail: segment?.detachedFromTail === true,
       oldestReached: segment?.oldestReached === true,
       historyCount: segment?.messages.length ?? 0,
       tailCount,

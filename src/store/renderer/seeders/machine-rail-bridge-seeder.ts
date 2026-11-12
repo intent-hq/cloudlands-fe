@@ -21,6 +21,9 @@ const railOff = (): MachineRailState => ({
   homeId: LOCAL_CONNECTION_ID,
   machineIds: [LOCAL_CONNECTION_ID],
   selectedId: LOCAL_CONNECTION_ID,
+  shownId: LOCAL_CONNECTION_ID,
+  pendingId: '',
+  degradedIds: [],
 });
 
 const STATE_CHANNELS = [
@@ -28,13 +31,14 @@ const STATE_CHANNELS = [
   MACHINE_RAIL.SELECT,
   MACHINE_RAIL.ADD,
   MACHINE_RAIL.REMOVE,
-  MACHINE_RAIL.OPEN_MENU,
   MACHINE_RAIL.SET_ENABLED,
 ] as const;
 
 const FORWARDED_CHANNELS = [
   ...STATE_CHANNELS,
   MACHINE_RAIL.SHOWN,
+  MACHINE_RAIL.READY,
+  MACHINE_RAIL.HEALTH,
   MACHINE_RAIL.FORWARD_TOAST,
 ] as const;
 
@@ -47,7 +51,13 @@ for (const channel of FORWARDED_CHANNELS) {
       ((channel: string, payload?: unknown) => Promise<unknown>) | undefined;
     if (invoke) return invoke(channel, arg);
 
-    if (channel === MACHINE_RAIL.SHOWN) return { ok: true };
+    if (
+      channel === MACHINE_RAIL.SHOWN ||
+      channel === MACHINE_RAIL.READY ||
+      channel === MACHINE_RAIL.HEALTH
+    ) {
+      return { ok: true };
+    }
     if (channel === MACHINE_RAIL.FORWARD_TOAST) return { forwarded: false };
     return railOff();
   });

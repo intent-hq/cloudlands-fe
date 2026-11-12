@@ -16,7 +16,9 @@ import { CHAT_PAGE_SIZE } from '$shared/constants';
  *      absent even after a full hydrate — once hydration settles without it,
  *      seek the page
  *      CONTAINING the message via `agent.getConversation`'s `aroundMessageId`
- *      (PROTOCOL §5.5) and seed the history segment with that page, retaining the live tail.
+ *      (PROTOCOL §5.5) and make that page the transcript window: the rest of the
+ *      conversation is abandoned from the transcript until the reader scrolls
+ *      back to the end (the live tail stays loaded for live features).
  *   4. Hand the DOM work to the mounted ChatPanel through the
  *      'chat:open-message' window event (dispatched on a retry ladder to
  *      cover slow cross-workspace mounts): the panel force-renders the
@@ -33,6 +35,7 @@ import { appClient } from '$lib/client';
 import { store as appStore } from '$store/renderer/store';
 import { openAgentTabRequested } from '$store/renderer/slices/app-layout/app-layout-slice';
 import {
+  clearHistorySegment,
   seedHistoryAround,
   setHistoryOldestReached,
 } from '$store/renderer/slices/agent-session/agent-session-slice';
@@ -97,7 +100,10 @@ function sleep(ms: number): Promise<void> {
 type StoreStateView = {
   agentSessions?: {
     byAgentId: Record<string, { messages?: AgentMessage[] }>;
-    historySegmentsByAgentId?: Record<string, { messages: AgentMessage[] }>;
+    historySegmentsByAgentId?: Record<
+      string,
+      { messages: AgentMessage[]; detachedFromTail?: boolean }
+    >;
   };
   chatState?: {
     byAgentId: Record<string, { transcriptHydration?: 'loading' | 'settled' }>;
@@ -112,6 +118,21 @@ function isMessageInStore(agentId: string, messageId: string): boolean {
     messages?.some((message) => message.id === messageId) ||
     history?.some((message) => message.id === messageId),
   );
+}
+
+/**
+ * A loaded row the transcript does not render: a live-tail row behind a
+ * detached window. Revealing it means returning to the live tail, so the
+ * detached window is dropped (scrolling up reloads it).
+ */
+function revealHiddenTailMessage(agentId: string, messageId: string): void {
+  const state = appStore.state as StoreStateView;
+  const segment = state.agentSessions?.historySegmentsByAgentId?.[agentId];
+  if (segment?.detachedFromTail !== true) return;
+  if (segment.messages.some((message) => message.id === messageId)) return;
+  const tail = state.agentSessions?.byAgentId[agentId]?.messages;
+  if (!tail?.some((message) => message.id === messageId)) return;
+  appStore.dispatch(clearHistorySegment(agentId));
 }
 
 function hydrationStatus(agentId: string): 'loading' | 'settled' | undefined {
@@ -171,10 +192,17 @@ export async function seekConversationToMessage(
   }
   const session = appStore.state.agentSessions?.byAgentId[agentId];
   if (!session || signal?.aborted) return false;
-  if (isMessageInStore(agentId, messageId)) return true;
+  if (isMessageInStore(agentId, messageId)) {
+    revealHiddenTailMessage(agentId, messageId);
+    return true;
+  }
   workspaceId ??= session.workspaceId;
   const previous = selectChatAgentState.select(appStore.state, agentId);
-  let tokens = { nextToken: previous.scrollbackOlderToken, prevToken: previous.scrollbackGapToken };
+  let tokens = {
+    nextToken: previous.scrollbackOlderToken,
+    prevToken: previous.scrollbackGapToken,
+    olderAnchorId: previous.scrollbackOlderTokenAnchorId,
+  };
   appStore.dispatch(scrollbackFetchStarted(agentId, 'seek'));
   const epoch = selectChatAgentState.select(appStore.state, agentId).scrollbackDiscardEpoch;
   const ownsSeek = () =>
@@ -199,7 +227,11 @@ export async function seekConversationToMessage(
     // position. Legacy rows without a sequence leave that estimate unknown.
     appStore.dispatch(seedHistoryAround(agentId, page.messages, page.messages[0]?.seq));
     if (page.nextToken === null) appStore.dispatch(setHistoryOldestReached(agentId));
-    tokens = { nextToken: page.nextToken, prevToken: page.prevToken };
+    tokens = {
+      nextToken: page.nextToken,
+      prevToken: page.prevToken,
+      olderAnchorId: page.messages[0]?.id ?? null,
+    };
     return isMessageInStore(agentId, messageId);
   } catch (error) {
     logger.warn('[seekConversationToMessage] Seek fetch failed (message may no longer exist)', {
@@ -265,9 +297,10 @@ export async function openMessage(options: OpenMessageOptions): Promise<void> {
     appStore.dispatch(openAgentTabRequested(workspaceId, { agentId }));
   }
 
-  const present = (await waitForMessage(agentId, messageId, signal))
-    ? true
-    : await seekConversationToMessage(agentId, messageId, workspaceId, signal);
+  const loaded = await waitForMessage(agentId, messageId, signal);
+  if (loaded) revealHiddenTailMessage(agentId, messageId);
+  const present =
+    loaded || (await seekConversationToMessage(agentId, messageId, workspaceId, signal));
   if (signal.aborted) return;
   if (!present) {
     logger.warn('[openMessage] Message not found; conversation opened at tail', {

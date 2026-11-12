@@ -10,12 +10,10 @@
 import type { ScriptOutputBuffer } from '$store/renderer/slices/scripts/scripts-types';
 
 // CSI / OSC / single-char ANSI escape sequences.
-// eslint-disable-next-line no-control-regex
 const ANSI_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 
 // Unterminated escape sequence at the very end of the buffer (its tail chunk
 // has not arrived yet) — strip so raw bytes like `\x1b[3` don't leak through.
-// eslint-disable-next-line no-control-regex
 const TRAILING_PARTIAL_ANSI = /\x1b(\[[0-9;?]*[ -/]*|\][^\x07\x1b]*)?$/;
 
 /**

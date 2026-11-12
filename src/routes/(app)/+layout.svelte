@@ -153,6 +153,7 @@
   import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
   import {
     selectCreateModalPrefillRequest,
+    selectCreateModalUsesHomeRepository,
     selectShowCreateModal,
   } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
   import NewSpaceModal from '$lib/components/modals/NewSpaceModal.svelte';
@@ -210,6 +211,7 @@
   const releaseNotes$ = selectReleaseNotes();
   const showCreateModal$ = selectShowCreateModal();
   const createModalPrefillRequest$ = selectCreateModalPrefillRequest();
+  const createModalUsesHomeRepository$ = selectCreateModalUsesHomeRepository();
   const currentConnection$ = selectCurrentConnection();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
   const panelLayouts = selectPanelLayoutWorkspaces();
@@ -1112,6 +1114,7 @@
   <NewSpaceModal
     open={$showCreateModal$ && $canCreateWorkspace$}
     prefillRequest={$createModalPrefillRequest$}
+    defaultToHomeRepository={$createModalUsesHomeRepository$}
     onClose={() => appStore.dispatch(setShowCreateModal(false))}
   />
 

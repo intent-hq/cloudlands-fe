@@ -28,9 +28,17 @@
   // Parse the permission request into friendly display format
   const display = $derived(parsePermissionRequest(request.title, request.description));
 
-  // Filter out "always" options (not implemented yet) and add keyboard shortcuts
+  const ALWAYS_SCOPE_HINTS = {
+    chat: m.chat_inlinePermission_alwaysScope_chat_hint,
+    workspace: m.chat_inlinePermission_alwaysScope_workspace_hint,
+    allWorkspaces: m.chat_inlinePermission_alwaysScope_allWorkspaces_hint,
+  };
+
+  // Daemons that send no option kind keep the old "always" filter.
   const optionsWithShortcuts = $derived.by(() => {
-    const filtered = request.options.filter((opt) => !opt.id.toLowerCase().includes('always'));
+    const filtered = request.options.filter(
+      (opt) => opt.kind !== undefined || !opt.id.toLowerCase().includes('always'),
+    );
     return filtered.map((opt, idx) => ({
       ...opt,
       shortcut: idx < 9 ? String(idx + 1) : null,
@@ -164,7 +172,7 @@
         <Button
           type="button"
           variant="plain"
-          class="type-body flex items-center gap-3 rounded-md px-3 py-2 transition-colors
+          class="type-body flex h-auto items-center gap-3 rounded-md px-3 py-2 transition-colors
                  disabled:opacity-50 disabled:cursor-not-allowed
                  {option.destructive
             ? 'bg-muted text-muted-foreground hover:bg-danger hover:text-danger-background'
@@ -179,7 +187,12 @@
               {option.shortcut}
             </kbd>
           {/if}
-          <span class="flex-1 text-left">{option.label}</span>
+          <span class="flex flex-1 flex-col text-left">
+            <span>{option.label}</span>
+            {#if option.kind === 'allow_always' && option.scope}
+              <span class="type-caption opacity-70">{ALWAYS_SCOPE_HINTS[option.scope]()}</span>
+            {/if}
+          </span>
           {#if option.description}
             <span class="type-caption text-muted-foreground">{option.description}</span>
           {/if}

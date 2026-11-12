@@ -780,7 +780,7 @@
       desktopEntryPatched(workspaceId, agentId, store.state.desktopControl.generation, {
         error: notice ? m.desktop_os_setup_description() : undefined,
         osChecklist: notice
-          ? { accessibility: false, screenRecording: false, screenCapture: 'unavailable' }
+          ? { accessibility: false, screenRecording: false, screenCapture: 'blocked' }
           : undefined,
       }),
     );
