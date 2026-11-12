@@ -63,7 +63,7 @@ export const selectMachineOrder = store.createSelector((state): MachineOrderRow[
 
 /** A reorder is in flight. */
 export const selectMachineOrderSaving = store.createSelector(
-  (state) => state.remoteMachines.orderSaving,
+  (state) => state.remoteMachines.orderSaving !== null,
 );
 
 /** The current backend's exposed machines, by name. */

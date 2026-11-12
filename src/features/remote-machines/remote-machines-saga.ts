@@ -31,7 +31,8 @@ import { selectLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-prefe
 import {
   executorBackendRevoked,
   executorRevokeRequested,
-  machineOrderSaving,
+  machineOrderSaveSettled,
+  machineOrderSaveStarted,
   machineOrderSetRequested,
   remoteMachineChanged,
   remoteMachineExposeRequested,
@@ -419,8 +420,9 @@ function* setOrder(action: ReturnType<typeof machineOrderSetRequested>): SagaGen
     return row ? [row] : [];
   });
   const shown = optimistic.length === previous.length ? optimistic : previous;
+  const saveId = crypto.randomUUID();
   const started = generation();
-  yield* put(machineOrderSaving(true, shown));
+  yield* put(machineOrderSaveStarted(saveId, shown));
   let next: MachineOrderRow[] | null = null;
   let stale = false;
   try {
@@ -432,19 +434,19 @@ function* setOrder(action: ReturnType<typeof machineOrderSetRequested>): SagaGen
     next = staleOrder(error);
     stale = next !== null;
   }
-  if (started !== generation()) {
-    // A reconnect reloads the list; only the in-flight mark is ours to clear.
-    yield* put(machineOrderSaving(false));
+  // A new connection reset the state (`backendReconnected`) and reads the list again.
+  if (started !== generation() || store.state.remoteMachines.orderSaving !== saveId) {
+    yield* put(machineOrderSaveSettled(saveId));
     return;
   }
   if (next) {
-    yield* put(machineOrderSaving(false, next));
+    yield* put(machineOrderSaveSettled(saveId, next));
     if (stale) yield* call(notify.info, m.remoteMachines_order_stale_info());
     return;
   }
   // Put the previous order back unless a live event already replaced ours.
   const current = store.state.remoteMachines.order;
-  yield* put(machineOrderSaving(false, current === shown ? previous : undefined));
+  yield* put(machineOrderSaveSettled(saveId, current === shown ? previous : undefined));
   yield* call(notify.error, m.remoteMachines_order_saveFailed_error());
 }
 

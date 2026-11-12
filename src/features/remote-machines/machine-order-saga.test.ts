@@ -119,7 +119,7 @@ describe('remoteMachines.setOrder', () => {
     mock.onRequest('remoteMachines.setOrder', () => new Promise((done) => (resolve = done)));
     dispatch(machineOrderSetRequested([...MOVED]));
 
-    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(true));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).not.toBeNull());
     expect(store.state.remoteMachines.order?.map((row) => row.name)).toEqual([
       'Studio Mac',
       'build-host',
@@ -131,7 +131,7 @@ describe('remoteMachines.setOrder', () => {
     // The backend's answer wins, here with a renamed entry.
     const reply = [ORDER[1], ORDER[0], { ...ORDER[2], name: 'Renamed' }];
     resolve({ order: reply });
-    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(false));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBeNull());
     expect(store.state.remoteMachines.order).toEqual(reply);
     expect(ui.error).not.toHaveBeenCalled();
   });
@@ -153,7 +153,7 @@ describe('remoteMachines.setOrder', () => {
     dispatch(machineOrderSetRequested([...MOVED]));
 
     await vi.waitFor(() => expect(store.state.remoteMachines.order).toEqual(current));
-    expect(store.state.remoteMachines.orderSaving).toBe(false);
+    expect(store.state.remoteMachines.orderSaving).toBeNull();
     expect(ui.error).not.toHaveBeenCalled();
     // The move snapped back: say why.
     expect(ui.info).toHaveBeenCalledTimes(1);
@@ -168,7 +168,7 @@ describe('remoteMachines.setOrder', () => {
 
     await vi.waitFor(() => expect(ui.error).toHaveBeenCalledTimes(1));
     expect(store.state.remoteMachines.order).toEqual(ORDER);
-    expect(store.state.remoteMachines.orderSaving).toBe(false);
+    expect(store.state.remoteMachines.orderSaving).toBeNull();
   });
 
   it('sends nothing to a backend without machineOrder: 1', async () => {
@@ -183,13 +183,13 @@ describe('remoteMachines.setOrder', () => {
     let reject!: (error: unknown) => void;
     mock.onRequest('remoteMachines.setOrder', () => new Promise((_, fail) => (reject = fail)));
     dispatch(machineOrderSetRequested([...MOVED]));
-    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(true));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).not.toBeNull());
 
     const elsewhere = [ORDER[2], ORDER[1], ORDER[0]];
     store.dispatch(machineOrderLoaded(elsewhere));
     reject(new BackendError({ code: 'UNAVAILABLE', message: 'down', rpcCode: -32000 }));
 
-    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(false));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBeNull());
     expect(store.state.remoteMachines.order).toEqual(elsewhere);
     expect(ui.error).toHaveBeenCalledTimes(1);
   });
@@ -199,18 +199,42 @@ describe('remoteMachines.setOrder', () => {
     let resolve!: (value: unknown) => void;
     mock.onRequest('remoteMachines.setOrder', () => new Promise((done) => (resolve = done)));
     dispatch(machineOrderSetRequested([...MOVED]));
-    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(true));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).not.toBeNull());
 
     store.dispatch(connectionStatusChanged('disconnected'));
     store.dispatch(connectionStatusChanged('connected'));
     resolve({ order: ORDER });
 
-    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(false));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBeNull());
     // A later move is sent, not ignored.
     mock.onRequest('remoteMachines.setOrder', () => ({ order: ORDER }));
     dispatch(machineOrderSetRequested([...MOVED]));
     await vi.waitFor(() =>
       expect(mock.requests.filter((r) => r.method === 'remoteMachines.setOrder')).toHaveLength(2),
     );
+  });
+
+  it('keeps a save in flight through a plain refresh, so saves never overlap', async () => {
+    const mock = await loaded({ remoteMachines: 1, machineOrder: 1 });
+    let resolve!: (value: unknown) => void;
+    mock.onRequest('remoteMachines.setOrder', () => new Promise((done) => (resolve = done)));
+    dispatch(machineOrderSetRequested([...MOVED]));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).not.toBeNull());
+
+    // Reopening Settings → Machines reads the list again on the same connection.
+    const reads = () => mock.requests.filter((r) => r.method === 'remoteMachines.order').length;
+    const before = reads();
+    dispatch(remoteMachinesRefreshRequested());
+    await vi.waitFor(() => expect(reads()).toBe(before + 1));
+    await vi.waitFor(() => expect(store.state.remoteMachines.order).toEqual(ORDER));
+    expect(store.state.remoteMachines.orderSaving).not.toBeNull();
+
+    // A second move while the first is in flight is not sent.
+    dispatch(machineOrderSetRequested([...MOVED]));
+    await Promise.resolve();
+    expect(mock.requests.filter((r) => r.method === 'remoteMachines.setOrder')).toHaveLength(1);
+
+    resolve({ order: ORDER });
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBeNull());
   });
 });

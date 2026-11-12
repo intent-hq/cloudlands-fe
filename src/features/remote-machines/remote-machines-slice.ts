@@ -17,7 +17,7 @@ export const initialState: RemoteMachinesState = {
   claimInvites: false,
   machineOrder: false,
   order: null,
-  orderSaving: false,
+  orderSaving: null,
   machines: {},
   localFingerprint: null,
   executorBackends: null,
@@ -58,9 +58,13 @@ export const machineOrderLoaded = createAction<[order: MachineOrderRow[]]>(
 export const machineOrderSetRequested = createAction<[order: MachineOrderKey[]]>(
   'remoteMachines/orderSetRequested',
 );
-/** A `remoteMachines.setOrder` started (optimistic `order`) or settled. */
-export const machineOrderSaving = createAction<[saving: boolean, order?: MachineOrderRow[]]>(
-  'remoteMachines/orderSaving',
+/** Save `saveId` started: its optimistic `order` shows until it settles. */
+export const machineOrderSaveStarted = createAction<[saveId: string, order: MachineOrderRow[]]>(
+  'remoteMachines/orderSaveStarted',
+);
+/** Save `saveId` settled, with the order to keep (none: leave the list as it is). */
+export const machineOrderSaveSettled = createAction<[saveId: string, order?: MachineOrderRow[]]>(
+  'remoteMachines/orderSaveSettled',
 );
 export const remoteMachineChanged = createAction<[machine: RemoteMachine]>(
   'remoteMachines/machineChanged',
@@ -112,7 +116,6 @@ remoteMachinesReducer.with(remoteMachinesLoaded, (state, { payload: [snapshot] }
   claimInvites: snapshot.supported && snapshot.claimInvites === true,
   machineOrder: snapshot.supported && snapshot.machineOrder === true,
   order: snapshot.supported && snapshot.machineOrder === true ? (snapshot.order ?? null) : null,
-  orderSaving: false,
   machines: Object.fromEntries(snapshot.machines.map((machine) => [machine.id, machine])),
   localFingerprint: snapshot.localFingerprint,
   executorBackends: snapshot.executorBackends,
@@ -120,11 +123,17 @@ remoteMachinesReducer.with(remoteMachinesLoaded, (state, { payload: [snapshot] }
 remoteMachinesReducer.with(machineOrderLoaded, (state, { payload: [order] }) =>
   state.machineOrder ? { ...state, order } : state,
 );
-remoteMachinesReducer.with(machineOrderSaving, (state, { payload: [saving, order] }) => ({
+remoteMachinesReducer.with(machineOrderSaveStarted, (state, { payload: [saveId, order] }) => ({
   ...state,
-  orderSaving: saving,
-  ...(order ? { order } : {}),
+  orderSaving: saveId,
+  order,
 }));
+// Only the save in flight settles; a stale one (its connection is gone) changes nothing.
+remoteMachinesReducer.with(machineOrderSaveSettled, (state, { payload: [saveId, order] }) =>
+  state.orderSaving === saveId
+    ? { ...state, orderSaving: null, ...(order ? { order } : {}) }
+    : state,
+);
 remoteMachinesReducer.with(remoteMachineChanged, (state, { payload: [machine] }) => ({
   ...state,
   machines: { ...state.machines, [machine.id]: machine },

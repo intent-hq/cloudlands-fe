@@ -2,7 +2,8 @@ import { store } from '$store/renderer/store';
 import { principalReceived } from '$store/renderer/slices/principal/principal-slice';
 import { admitLegacyPrincipal, withHostPrincipal } from './fixtures/principal-state';
 import {
-  machineOrderSaving,
+  machineOrderSaveSettled,
+  machineOrderSaveStarted,
   remoteMachinesLoaded,
 } from '$features/remote-machines/remote-machines-slice';
 import type { MachineOrderRow, RemoteMachine } from '$shared/types/remote-machines';
@@ -60,7 +61,7 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
       executorBackends: [],
     }),
   );
-  if (state === 'saving') store.dispatch(machineOrderSaving(true));
+  if (state === 'saving') store.dispatch(machineOrderSaveStarted('preview-save', ORDER));
   // The owner reorders; a member reads the same list.
   admitLegacyPrincipal('owner');
   const { context, invalidation, presentationVersion } = store.state.principal;
@@ -68,7 +69,7 @@ export function setupMachineOrderFixture(state: MachineOrderPreviewState) {
   if (state === 'member' && context && member)
     store.dispatch(principalReceived({ context, invalidation, presentationVersion }, member));
   return () => {
-    store.dispatch(machineOrderSaving(false));
+    store.dispatch(machineOrderSaveSettled('preview-save'));
     restoreCloud();
   };
 }

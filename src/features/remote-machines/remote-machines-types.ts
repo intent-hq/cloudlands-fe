@@ -25,8 +25,11 @@ export interface RemoteMachinesState {
    * `machineOrder: 1`. Owner reorders replace it optimistically.
    */
   order: MachineOrderRow[] | null;
-  /** A `remoteMachines.setOrder` is in flight; further moves wait for it. */
-  orderSaving: boolean;
+  /**
+   * The id of the `remoteMachines.setOrder` in flight, or null. Further moves
+   * wait for it, and only that save (or a new connection) settles it.
+   */
+  orderSaving: string | null;
   /** The current backend's exposed machines, keyed by machine (daemon) id. */
   machines: Record<string, RemoteMachine>;
   /** WSS certificate fingerprint of this computer's own daemon, to match its row. */
