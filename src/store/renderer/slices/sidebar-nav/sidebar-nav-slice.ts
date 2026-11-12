@@ -24,6 +24,7 @@ export const initialState: SidebarNavState = {
   panelItem: null,
   onboardingActive: false,
   showCreateModal: false,
+  createModalUsesHomeRepository: false,
   createModalPrefillRequest: 0,
   pinnedWorkspaceIds: [],
   multiSelectTabOrder: [],
@@ -44,7 +45,13 @@ export const setOnboardingActive = createAction<[active: boolean]>(
 );
 
 // Create modal
-export const setShowCreateModal = createAction<[show: boolean]>('sidebarNav/setShowCreateModal');
+/**
+ * Open or close the New Workspace dialog. Only Home's own New workspace button
+ * passes `homeRepository`; other openers default to the last-used repository.
+ */
+export const setShowCreateModal = createAction<
+  [show: boolean, options?: { homeRepository?: boolean }]
+>('sidebarNav/setShowCreateModal');
 /** Ask an already-open New Workspace dialog to apply a freshly written `workspace-prefill`. */
 export const createModalPrefillRequested = createAction('sidebarNav/createModalPrefillRequested');
 
@@ -140,9 +147,10 @@ sidebarNavReducer.with(setOnboardingActive, (state, { payload: [active] }) => ({
   ...state,
   onboardingActive: active,
 }));
-sidebarNavReducer.with(setShowCreateModal, (state, { payload: [show] }) => ({
+sidebarNavReducer.with(setShowCreateModal, (state, { payload: [show, options] }) => ({
   ...state,
   showCreateModal: show,
+  createModalUsesHomeRepository: show && options?.homeRepository === true,
 }));
 sidebarNavReducer.with(createModalPrefillRequested, (state) => ({
   ...state,

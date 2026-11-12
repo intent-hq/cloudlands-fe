@@ -6,8 +6,14 @@ import {
   replaceWorkspaceList,
   setWorkspaceHasLoaded,
 } from '$store/renderer/slices/workspace/workspace-slice';
-import { closePanel } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
-import { selectShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
+import {
+  closePanel,
+  setShowCreateModal,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
+import {
+  selectCreateModalUsesHomeRepository,
+  selectShowCreateModal,
+} from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 import { setWorkspaceInitializerLastSelectedRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-slice';
 import { selectWorkspaceInitializerLastSelectedRepo } from '$store/renderer/slices/workspace-initializer/workspace-initializer-selectors';
 import { WorkspaceStatusEnum, type Workspace } from '$shared/types';
@@ -65,8 +71,22 @@ describe('Home New workspace', () => {
     await fireEvent.click(screen.getAllByRole('button', { name: m.home_new_workspace() })[0]);
 
     expect(selectShowCreateModal.select(store.state)).toBe(true);
+    expect(selectCreateModalUsesHomeRepository.select(store.state)).toBe(true);
     // New space resolves the sidebar repository itself; Home must not record
     // the clone folder as a "Existing folder" choice for later restores.
     expect(selectWorkspaceInitializerLastSelectedRepo.select(store.state)).toEqual(lastPick);
+  });
+
+  it('lets other openers fall back to the last-used repository', async () => {
+    store.dispatch(replaceWorkspaceList([clonedWorkspace]));
+    store.dispatch(updateHomeWorkspaceView({ repoKey: 'intent-hq/intent' }));
+    render(HomePage);
+    await fireEvent.click(screen.getAllByRole('button', { name: m.home_new_workspace() })[0]);
+    store.dispatch(setShowCreateModal(false));
+
+    store.dispatch(setShowCreateModal(true));
+
+    expect(selectShowCreateModal.select(store.state)).toBe(true);
+    expect(selectCreateModalUsesHomeRepository.select(store.state)).toBe(false);
   });
 });
