@@ -1729,7 +1729,16 @@
       {@render renderAttachments(contextItems)}
     {/if}
     {#if !renderAttachments && renderCustomAttachments}
-      {@render renderCustomAttachments()}
+      <!-- Keep the controller/dialog mounted even when the attachment row becomes empty. -->
+      <div
+        class={cn(
+          'min-w-0',
+          contextItems.some((item) => customContextAttachmentIds.includes(item.id)) &&
+            `pt-1 ${contentInsetClasses}`,
+        )}
+      >
+        {@render renderCustomAttachments()}
+      </div>
     {/if}
     <!-- Non-image context items and selections - shown above editor when present -->
     {#if !renderAttachments && nonImageItems.some((item) => !customContextAttachmentIds.includes(item.id))}
