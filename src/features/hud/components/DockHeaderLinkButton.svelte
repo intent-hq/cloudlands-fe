@@ -99,7 +99,9 @@
     data-context-version={context?.contextVersion}
     aria-pressed={saved}
     aria-label={operation}
-    tooltipContentClass="dock-chrome-tooltip"
+    tooltipContentClass="dock-chrome-tooltip max-w-64 whitespace-normal"
+    tooltipSide="bottom"
+    tooltipAlign="end"
     tooltip={operation}
     onpointerdown={hold}
     onpointercancel={release}

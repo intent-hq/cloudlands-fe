@@ -471,3 +471,80 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
     ),
   );
 });
+
+/**
+ * The header Link tooltip opens below the header, inside the dock and the viewport (never up
+ * into the notch), wrapping a long name; normal and narrow viewports.
+ */
+test('header link tooltip opens below the header inside the dock', async ({
+  mount,
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 1000, height: 740 });
+  await mount(Harness, { props: { shell: dockRailPreview.states.notch.props } });
+  await expect.poll(() => page.evaluate(() => !!(window as any).__dockComposerE2E)).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as any).__dockComposerE2E.store.state.dockConversation.loading),
+    )
+    .toBe(false);
+  await page.evaluate(() => {
+    const h = (window as any).__dockComposerE2E;
+    h.seedChoices(2);
+    h.contextReady();
+    h.context({
+      sequence: 1,
+      contextVersion: 't1',
+      backendId: h.store.state.connections.windowBackendId,
+      identityKey: 'url:https://github.com/example/tooltip/issues/1',
+      identityKind: 'url',
+      self: false,
+      appId: 'com.apple.Safari',
+      appName: 'Synthetic Safari',
+      url: 'https://github.com/example/tooltip/issues/1',
+      icon: null,
+    });
+    h.store.dispatch({ type: 'dockConversation/open', payload: ['choice-1'] });
+  });
+  const link = page.locator('[data-dock-header-link]');
+  await expect(link).toBeVisible();
+  const results: Record<string, unknown> = {};
+  for (const [name, width] of [
+    ['normal', 1000],
+    ['narrow', 560],
+  ] as const) {
+    await page.setViewportSize({ width, height: 740 });
+    // Rest the pointer on the header's title (inside the dock, off the button), then hover.
+    const header = (await page.locator('[data-dock-chrome]').boundingBox())!;
+    await page.mouse.move(header.x + header.width / 2, header.y + header.height / 2);
+    await link.hover();
+    const tip = page.locator('[role="tooltip"]', { hasText: 'github.com' });
+    await expect(tip).toBeVisible();
+    const m = await page.evaluate(() => {
+      const r = (el: Element | null) => {
+        const b = el!.getBoundingClientRect();
+        return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width };
+      };
+      const tooltip = Array.from(document.querySelectorAll('[role="tooltip"]')).find((el) =>
+        el.textContent?.includes('github.com'),
+      )!;
+      return {
+        tooltip: r(tooltip),
+        header: r(document.querySelector('[data-dock-chrome]')),
+        trigger: r(document.querySelector('[data-dock-header-link]')),
+        shell: r(document.querySelector('[data-testid="dock-shell"]')),
+        viewport: window.innerWidth,
+        text: tooltip.textContent?.trim(),
+      };
+    });
+    // Below the trigger (never above the header, where the notch clips the window).
+    expect(m.tooltip.top).toBeGreaterThanOrEqual(m.trigger.bottom - 0.5);
+    expect(m.tooltip.top).toBeGreaterThan(m.header.top);
+    expect(m.tooltip.left).toBeGreaterThanOrEqual(Math.max(0, m.shell.left) - 0.5);
+    expect(m.tooltip.right).toBeLessThanOrEqual(Math.min(m.viewport, m.shell.right) + 0.5);
+    expect(m.tooltip.width).toBeLessThanOrEqual(256.5);
+    await page.screenshot({ path: info.outputPath(`16-header-tooltip-${name}.png`) });
+    results[name] = m;
+  }
+  await writeFile(info.outputPath('header-tooltip-receipt.json'), JSON.stringify(results, null, 2));
+});
