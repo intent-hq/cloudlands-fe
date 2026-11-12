@@ -2965,3 +2965,166 @@ describe('bound editor capture removal', () => {
     },
   );
 });
+
+describe('unchanged clean recording identity send', () => {
+  function recording() {
+    const source: DockMediaSource = {
+      id: 'identity-source',
+      revision: 0,
+      kind: 'recording',
+      attachmentId: 'identity-file',
+      path: '.intent/attachments/identity.mp4',
+      durationMs: 5000,
+      width: 320,
+      height: 180,
+      audio: 'available',
+      visuals: 'clean',
+      batches: [],
+      capturedMarks: [],
+    };
+    return {
+      source,
+      saved: {
+        ...defaultDockMediaEdit(source, [], null),
+        video: 'full' as const,
+        voice: 'audio' as const,
+      },
+      transcript: null,
+    } satisfies DockSavedMedia;
+  }
+  async function stage(
+    media: DockSavedMedia,
+    identity: 'valid' | 'missing' | 'forged' | 'path' | 'failed' = 'valid',
+  ) {
+    await open();
+    backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
+    const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
+    evidence.clips = [
+      {
+        id: 'identity-clip',
+        status: 'ready',
+        startedAt: 1,
+        durationMs: 5000,
+        hasMicAudio: true,
+        contextItemId: 'identity-item',
+        path: media.source.path,
+        media,
+      },
+    ];
+    appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
+    const items: ContextItem[] =
+      identity === 'missing'
+        ? []
+        : [
+            {
+              id: 'identity-item',
+              type: 'file',
+              label: 'identity.mp4',
+              attachmentId: identity === 'forged' ? 'other-file' : media.source.attachmentId,
+              path: identity === 'path' ? '.intent/attachments/other.mp4' : media.source.path,
+              attachmentMimeType: 'video/mp4',
+              attachmentSize: 123,
+              ...(identity === 'failed' ? { placementStatus: 'failed' as const } : {}),
+            },
+          ];
+    appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, items));
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, 'Keep this recording'));
+    return items;
+  }
+  it('sends the exact original file and clip metadata without an export job', async () => {
+    const native = scriptedNative();
+    const exportMedia = vi.fn<NonNullable<DockEvidenceNativeService['exportMedia']>>();
+    const releaseMediaJob = vi.fn<NonNullable<DockEvidenceNativeService['releaseMediaJob']>>();
+    configureDockEvidenceNative({ ...native.service, exportMedia, releaseMediaJob });
+    await stage(recording());
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    const payload = latestSend().payload.payload;
+    expect(payload.fileBlocks).toEqual([
+      expect.objectContaining({ attachmentId: 'identity-file', mimeType: 'video/mp4' }),
+    ]);
+    expect(payload.messageMetadata).toMatchObject({
+      clips: [
+        expect.objectContaining({
+          attachment_id: 'identity-file',
+          duration_ms: 5000,
+          has_mic_audio: true,
+        }),
+      ],
+      edited_captures: [],
+    });
+    expect(payload.workspaceContextStr).toContain('identity-file');
+    expect(exportMedia).not.toHaveBeenCalled();
+    expect(releaseMediaJob).not.toHaveBeenCalled();
+    expect(backend.requests.filter((row) => row.method === 'file.placeAttachment')).toEqual([]);
+    expect(view().draft).toBe('');
+  });
+  it.each([
+    'cut',
+    'trim',
+    'mute',
+    'transcript',
+    'highlights',
+    'crop',
+    'blur',
+    'brush',
+    'mark',
+    'stale',
+  ] as const)(
+    'never treats %s as unchanged and retains the draft on preparation failure',
+    async (change) => {
+      const media: DockSavedMedia = recording();
+      const edit = media.saved!;
+      if (change === 'cut') edit.cuts = [{ startMs: 100, endMs: 200 }];
+      if (change === 'trim') edit.trim.startMs = 100;
+      if (change === 'mute') edit.voice = 'off';
+      if (change === 'transcript') edit.voice = 'transcript';
+      if (change === 'highlights') edit.video = 'highlights';
+      if (change === 'crop') edit.crop = { x: 0, y: 0, w: 160, h: 90 };
+      if (change === 'blur') edit.blurRegions = [{ id: 'blur', x: 1, y: 1, w: 10, h: 10 }];
+      if (change === 'brush')
+        edit.blurStrokes = [{ id: 'brush', radius: 5, points: [{ x: 1, y: 1 }] }];
+      if (change === 'mark' || change === 'highlights')
+        edit.marks = [
+          {
+            id: 'mark',
+            atMs: 100,
+            batchId: 'b',
+            source: 'editor',
+            kind: 'box',
+            included: true,
+            geometry: { kind: 'rect', x: 1, y: 1, w: 10, h: 10 },
+            label: '',
+            note: '',
+            context: { selector: null, text: null, url: null },
+          },
+        ];
+      if (change === 'stale') edit.sourceRevision = 99;
+      expect(mediaSend.dockMediaSendsOriginal(media)).toBe(false);
+      // No native exporter is available: any needed transformation must fail closed.
+      await stage(media);
+      appStore.dispatch(sendDockConversationRequested());
+      await vi.waitFor(() => expect(view().sendError).toBeTruthy());
+      expect(sent).toEqual([]);
+      expect(view().draft).toBe('Keep this recording');
+      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toHaveLength(1);
+    },
+  );
+  it.each(['missing', 'forged', 'path', 'failed'] as const)(
+    'rejects an original with %s placement',
+    async (identity) => {
+      await stage(recording(), identity);
+      const targetReads = backend.requests.filter((row) => row.method === 'agent.get').length;
+      appStore.dispatch(sendDockConversationRequested());
+      if (identity === 'failed') {
+        // A blocked attachment is refused synchronously before target validation.
+        expect(backend.requests.filter((row) => row.method === 'agent.get')).toHaveLength(
+          targetReads,
+        );
+        expect(view().sending).toBe(false);
+      } else await vi.waitFor(() => expect(view().sendError).toBeTruthy());
+      expect(sent).toEqual([]);
+      expect(view().draft).toBe('Keep this recording');
+    },
+  );
+});
