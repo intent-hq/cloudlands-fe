@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "Adding",
   "machineSetup_run_needsStep_label": "Added, needs one more step",
   "machineSetup_run_linger_description": "Run this on {host} so Intent keeps running after you log out:",
-  "machineSetup_run_linger_label": "Command",
   "machineSetup_run_tryAgain_label": "Try again",
   "machineSetup_run_runItMyself_label": "Run it myself instead",
   "machineSetup_run_showLog_label": "Show log",

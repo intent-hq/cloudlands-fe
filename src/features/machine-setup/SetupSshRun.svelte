@@ -160,7 +160,6 @@
       </p>
       <CopyInput
         value={lingerCommand(run.lingerUser)}
-        label={m.machineSetup_run_linger_label()}
         class="font-mono"
       />
     </div>

@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "추가 중",
   "machineSetup_run_needsStep_label": "추가됨, 한 단계 더 필요",
   "machineSetup_run_linger_description": "로그아웃한 후에도 Intent가 계속 실행되도록 {host}에서 다음을 실행하세요:",
-  "machineSetup_run_linger_label": "명령",
   "machineSetup_run_tryAgain_label": "다시 시도",
   "machineSetup_run_runItMyself_label": "대신 직접 실행",
   "machineSetup_run_showLog_label": "로그 보기",

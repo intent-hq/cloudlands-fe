@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "追加中",
   "machineSetup_run_needsStep_label": "追加済み。あと 1 ステップ必要です",
   "machineSetup_run_linger_description": "ログアウト後も Intent が動き続けるよう、{host} で次を実行してください:",
-  "machineSetup_run_linger_label": "コマンド",
   "machineSetup_run_tryAgain_label": "再試行",
   "machineSetup_run_runItMyself_label": "代わりに自分で実行する",
   "machineSetup_run_showLog_label": "ログを表示",

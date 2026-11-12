@@ -43,7 +43,7 @@
     </div>
     <CopyInput
       value={command}
-      label={m.machineSetup_manual_command_label()}
+      aria-labelledby="{uid}-command"
       class="font-mono"
       data-machine-setup-command={system}
     />

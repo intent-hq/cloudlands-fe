@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "正在添加",
   "machineSetup_run_needsStep_label": "已添加，还需一步",
   "machineSetup_run_linger_description": "在 {host} 上运行以下命令，让 Intent 在你注销后继续运行：",
-  "machineSetup_run_linger_label": "命令",
   "machineSetup_run_tryAgain_label": "重试",
   "machineSetup_run_runItMyself_label": "改为我自己运行",
   "machineSetup_run_showLog_label": "显示日志",

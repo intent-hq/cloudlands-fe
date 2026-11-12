@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "Añadiendo",
   "machineSetup_run_needsStep_label": "Añadido, falta un paso",
   "machineSetup_run_linger_description": "Ejecuta esto en {host} para que Intent siga funcionando cuando cierres la sesión:",
-  "machineSetup_run_linger_label": "Comando",
   "machineSetup_run_tryAgain_label": "Reintentar",
   "machineSetup_run_runItMyself_label": "Ejecutarlo yo en su lugar",
   "machineSetup_run_showLog_label": "Mostrar registro",

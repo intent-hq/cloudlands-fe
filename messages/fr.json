@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "Ajout",
   "machineSetup_run_needsStep_label": "Ajouté, il reste une étape",
   "machineSetup_run_linger_description": "Exécutez ceci sur {host} pour qu’Intent continue de tourner après votre déconnexion :",
-  "machineSetup_run_linger_label": "Commande",
   "machineSetup_run_tryAgain_label": "Réessayer",
   "machineSetup_run_runItMyself_label": "Plutôt l’exécuter moi-même",
   "machineSetup_run_showLog_label": "Afficher le journal",

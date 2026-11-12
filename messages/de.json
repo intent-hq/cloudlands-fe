@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "Hinzufügen",
   "machineSetup_run_needsStep_label": "Hinzugefügt, ein Schritt fehlt noch",
   "machineSetup_run_linger_description": "Führe dies auf {host} aus, damit Intent nach dem Abmelden weiterläuft:",
-  "machineSetup_run_linger_label": "Befehl",
   "machineSetup_run_tryAgain_label": "Erneut versuchen",
   "machineSetup_run_runItMyself_label": "Stattdessen selbst ausführen",
   "machineSetup_run_showLog_label": "Protokoll anzeigen",

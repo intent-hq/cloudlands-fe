@@ -8826,7 +8826,6 @@
   "machineSetup_run_adding_label": "正在新增",
   "machineSetup_run_needsStep_label": "已新增，還需一步",
   "machineSetup_run_linger_description": "在 {host} 上執行以下指令，讓 Intent 在你登出後繼續執行：",
-  "machineSetup_run_linger_label": "指令",
   "machineSetup_run_tryAgain_label": "重試",
   "machineSetup_run_runItMyself_label": "改為我自己執行",
   "machineSetup_run_showLog_label": "顯示記錄",
