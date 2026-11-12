@@ -9,13 +9,13 @@ export function projectFailureTranscript(
   transcript: ComposedTranscript,
   input: Omit<FailureSummaryInput, 'messages' | 'breakBeforeMessageIds'>,
 ) {
-  const boundary =
-    transcript.gapBeforeGroupIndex === null
-      ? undefined
-      : transcript.groups[transcript.gapBeforeGroupIndex]?.messages[0]?.id;
+  // A detached window leaves the live tail out of the rendered groups, but
+  // the current failure state belongs to the tail: summarize both, with a
+  // hard break where the unloaded rows sit between them.
+  const boundary = transcript.hiddenTail[0]?.id;
   const summary = deriveFailureSummary({
     ...input,
-    messages: transcript.groups.flatMap((group) => group.messages),
+    messages: [...transcript.groups.flatMap((group) => group.messages), ...transcript.hiddenTail],
     breakBeforeMessageIds: new Set(boundary ? [boundary] : []),
   });
   return {

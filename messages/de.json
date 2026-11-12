@@ -477,7 +477,6 @@
   "chat_chatPanel_agentSpawnFailed_error": "Agent-Start fehlgeschlagen",
   "chat_chatPanel_assignedTask_fallback": "Zugewiesene Aufgabe",
   "chat_chatPanel_fileChangesAggregate_suffix": "in der bisherigen Unterhaltung",
-  "chat_chatPanel_historyGapLoad_label": "Mehr von der Unterhaltung laden",
   "chat_chatPanel_historyGapLoading_label": "Weitere Teile der Unterhaltung werden geladen …",
   "chat_chatPanel_loadingOlderMessages_label": "Ältere Nachrichten werden geladen …",
   "chat_chatPanel_nothingToRetry_toast": "Nichts zu wiederholen — Fehler gelöscht. Senden Sie eine Nachricht, um eine neue Runde zu starten.",

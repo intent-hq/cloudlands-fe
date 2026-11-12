@@ -10,31 +10,33 @@ import { selectAgentSessionWorkspaceId } from '../../agent-session/agent-session
  * flag is set synchronously before the wire call, so a second request
  * arriving mid-flight is dropped):
  *
- *  - OLDER (`olderHistoryPageRequested`): anchor a §5.5 `aroundMessageId`
- *    seek at the history segment's oldest row (or the tail's oldest when
- *    history is empty), then persist the page's `nextToken` per agent so
- *    subsequent requests continue the backward walk without re-seeking.
- *    Pages merge via `prependHistoryMessages` (normalize/dedup/sort; past
- *    the segment cap the reducer prunes the newest side and opens
- *    `gapToTail`). `nextToken === null` marks `setHistoryOldestReached`.
+ * The transcript is ONE contiguous window (see `AgentHistorySegment`): every
+ * page either borders the loaded rows or is dropped, so no gap ever forms.
  *
- *  - GAP REFILL (`historyGapFillRequested`): only while the segment's
- *    `gapToTail` is open. Anchor a seek at history's newest row, then walk
- *    the seek page's `prevToken` (forward cursor toward the live tail) one
- *    page per request. Pages merge via `appendHistoryMessages`, which closes
- *    the gap when appended rows overlap the tail; a page whose rows the tail
- *    has since pruned simply lands in history with the gap still open, and
- *    the persisted token keeps the walk moving on the next request.
+ *  - OLDER (`olderHistoryPageRequested`): continue the persisted backward
+ *    cursor while the oldest loaded row is still the one it was minted
+ *    against, else anchor a §5.5 `aroundMessageId` seek at the oldest loaded
+ *    row (window's, else the tail's). Pages merge via
+ *    `prependHistoryMessages` (normalize/dedup/sort; past the cap the
+ *    reducer prunes the newest side and the window detaches from the tail).
+ *    A page whose anchor stopped being the oldest loaded row mid-flight is
+ *    dropped. `nextToken === null` marks `setHistoryOldestReached`.
+ *
+ *  - FORWARD (`historyGapFillRequested`): only while the window is detached.
+ *    Anchor a seek at the window's newest row, then walk the page's
+ *    `prevToken` toward the live tail one page per request. Pages merge via
+ *    `appendHistoryMessages`, which attaches the window when rows overlap
+ *    the tail or no newer rows remain (`prevToken === null`).
  *
  *  - SEEK (`historySeekRequested`): far-flick jump. ONE `aroundIndex`
  *    (§5.5 ordinal seek, 0-based from oldest, clamped daemon-side) fetch
- *    REPLACES the history segment with the landing page
- *    (`seedHistoryAround`), and BOTH cursors the landing page mints persist
- *    (backward `nextToken`, forward `prevToken`) so subsequent older/gap
- *    walks continue from the landing without re-seeking. A daemon predating
- *    `aroundIndex` rejects with INVALID_PARAMS (-32602): the settle latches
- *    `historySeekUnsupported`, disabling seeks for the agent — deep scrolls
- *    keep exactly the serial-walk behavior.
+ *    REPLACES the window with the landing page (`seedHistoryAround`): the
+ *    rest of the conversation is abandoned from the transcript, and
+ *    scrolling back to the end reloads it. BOTH cursors the landing page
+ *    mints persist (backward `nextToken`, forward `prevToken`). A daemon
+ *    predating `aroundIndex` rejects with INVALID_PARAMS (-32602): the
+ *    settle latches `historySeekUnsupported`, disabling seeks for the agent —
+ *    deep scrolls keep exactly the serial-walk behavior.
  *
  * Each settle drops the OTHER direction's cursor: a prepend can cap-prune
  * history's newest side and an append its oldest side, so the other walk's
@@ -207,6 +209,27 @@ function newestRowId(messages: AgentMessage[]): string | undefined {
   return undefined;
 }
 
+/** Oldest loaded row: the window's when it holds rows, else the tail's. */
+function* oldestLoadedRowId(agentId: string): SagaGenerator<string | undefined> {
+  const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
+  const tail: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
+  return oldestRowId(history) ?? oldestRowId(tail);
+}
+
+/**
+ * True while a row with this id is loaded at the window's older edge: in
+ * the window when it holds rows, else in the tail. A tail row no longer
+ * borders the loaded rows once a window holds rows (a detached window may
+ * sit far from it).
+ */
+function* isRowLoaded(agentId: string, id: string | null | undefined): SagaGenerator<boolean> {
+  if (!id) return false;
+  const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
+  if (history.length > 0) return history.some((message) => message.id === id);
+  const tail: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
+  return tail.some((message) => message.id === id);
+}
+
 function* waitForInitialHistory(agentId: string): SagaGenerator<void> {
   while ((yield* selectChatAgentState.effect(agentId)).initialHistoryPending) {
     yield* take([
@@ -259,27 +282,26 @@ function* fetchOlderPageWorker(
   if (chat.fetchingHistorySeek) return;
   const meta = yield* selectHistorySegmentMeta.effect(agentId);
   if (meta.oldestReached) return;
-  const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
-  // A held cursor is honored unconditionally — even when the segment holds
-  // no rows. It is never stale: every segment-clearing path (removeSession,
-  // the removeWorkspaceSessions / clearAllSessions bulk removals,
-  // clearHistorySegment, the §7.1 `resumed: false` snapshot discard) nulls
-  // it via scrollbackContinuationReset / the snapshot reducer's atomic
-  // reset. A tail write that drops older rows under an empty segment leaves
-  // the cursor below those rows; the reducer marks that boundary unknown and
-  // opens the gap when this page lands (`tailBoundaryUnknown`).
-  // And it can be the walk's only way to make progress: a page whose
-  // rows are all already tail-resident merges to an EMPTY segment, so
-  // re-anchoring at the tail's oldest row would refetch the identical page
-  // forever. The anchored seek is only the no-cursor fallback.
-  const token = chat.scrollbackOlderToken;
-  const tail: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
-  const anchor = oldestRowId(history) ?? oldestRowId(tail);
+  // A held cursor continues directly below the row it was minted against.
+  // Honor it only while that row is still loaded: a tail write or cap prune
+  // that dropped it would make the page land below unloaded rows — a gap.
+  // Otherwise anchor a seek at the oldest loaded row, whose page always
+  // contains that row. The cursor can be the walk's only way to make
+  // progress: a page whose rows are all already tail-resident merges to an
+  // EMPTY window but keeps its row loaded, so the advanced cursor stays
+  // valid and the identical page is never refetched.
+  const cursorAnchor = chat.scrollbackOlderTokenAnchorId;
+  const token =
+    chat.scrollbackOlderToken !== null && (yield* isRowLoaded(agentId, cursorAnchor))
+      ? chat.scrollbackOlderToken
+      : null;
+  const anchor = token ? (cursorAnchor ?? undefined) : yield* oldestLoadedRowId(agentId);
   // No cursor and no anchorable row anywhere: empty conversation.
   if (!token && !anchor) return;
   const epoch = chat.scrollbackDiscardEpoch;
   yield* put(scrollbackFetchStarted(agentId, 'older'));
   let continuation: string | null = null;
+  let continuationAnchor: string | null = null;
   let blocked = true;
   try {
     const page = yield* fetchPage(agentId, token, anchor, workspaceId);
@@ -288,10 +310,20 @@ function* fetchOlderPageWorker(
     // fetched against the discarded transcript — drop it entirely (the
     // reducer already reset the flags/cursors atomically with the snapshot).
     if (yield* discardedSince(agentId, epoch)) return;
+    // The row the page borders was dropped while the page was in flight:
+    // the page no longer joins the loaded rows. Drop it; the next request
+    // re-anchors at the oldest loaded row.
+    if (!(yield* isRowLoaded(agentId, anchor))) {
+      blocked = false;
+      return;
+    }
     // Keep a segment record even for filtered/empty pages so its advancing
     // continuation survives the post-settle hygiene check.
     yield* put(prependHistoryMessages(agentId, page.messages));
     continuation = page.nextToken;
+    // The cursor continues below the page's oldest row (an empty page keeps
+    // the row the request continued below).
+    continuationAnchor = oldestRowId(page.messages) ?? anchor ?? null;
     blocked = token !== null && page.nextToken === token;
     if (page.nextToken === null) {
       yield* put(setHistoryOldestReached(agentId));
@@ -300,7 +332,7 @@ function* fetchOlderPageWorker(
     logger.error('Failed to fetch older scrollback page', error);
   } finally {
     if (!(yield* discardedSince(agentId, epoch))) {
-      yield* put(scrollbackOlderPageSettled(agentId, continuation, blocked));
+      yield* put(scrollbackOlderPageSettled(agentId, continuation, blocked, continuationAnchor));
       yield* dropContinuationIfSegmentGone(agentId, blocked);
     }
   }
@@ -316,7 +348,7 @@ function* fetchGapFillWorker(
   // Mirror of the seek worker's serial guard (see fetchOlderPageWorker).
   if (chat.fetchingHistorySeek) return;
   const meta = yield* selectHistorySegmentMeta.effect(agentId);
-  if (!meta.gapToTail) return;
+  if (!meta.detachedFromTail) return;
   const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
   const anchor = newestRowId(history);
   if (!anchor) return;
@@ -330,11 +362,23 @@ function* fetchGapFillWorker(
     if (yield* call(isAgentDeletionPending, agentId)) return;
     // Mid-flight §7.1 discard: drop the stale page (see fetchOlderPageWorker).
     if (yield* discardedSince(agentId, epoch)) return;
-    if (page.messages.length > 0) {
-      yield* put(appendHistoryMessages(agentId, page.messages));
+    // The window's newest row changed (window dropped or replaced) while the
+    // page was in flight: it no longer borders the window — drop it.
+    const current: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
+    if (newestRowId(current) !== anchor) {
+      blocked = false;
+      return;
+    }
+    // No newer rows left: the window now reaches the newest persisted row
+    // and attaches, even when no row overlaps the tail by identity. Treating
+    // that page as a stall left the window detached for good behind a
+    // "Load more" button that only refetched the same page.
+    const reachedEnd = page.prevToken === null;
+    if (page.messages.length > 0 || reachedEnd) {
+      yield* put(appendHistoryMessages(agentId, page.messages, reachedEnd));
     }
     continuation = page.prevToken;
-    blocked = page.prevToken === null || (token !== null && page.prevToken === token);
+    blocked = !reachedEnd && token !== null && page.prevToken === token;
   } catch (error) {
     logger.error('Failed to fetch scrollback gap-refill page', error);
   } finally {
@@ -372,7 +416,7 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
   const target = Math.max(0, Math.round(targetOrdinal));
   yield* put(scrollbackFetchStarted(agentId, 'seek'));
   const epoch = (yield* selectChatAgentState.effect(agentId)).scrollbackDiscardEpoch;
-  let tokens: { nextToken: string | null; prevToken: string | null } = {
+  let tokens: ScrollbackTokens = {
     nextToken: null,
     prevToken: null,
   };
@@ -400,7 +444,11 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
       const newestPageStart = Math.max(0, page.totalMessages - page.messages.length);
       if (target >= newestPageStart && page.messages.length > 0) {
         yield* put(seedHistoryAround(agentId, page.messages, newestPageStart));
-        tokens = { nextToken: page.nextToken, prevToken: null };
+        tokens = {
+          nextToken: page.nextToken,
+          prevToken: null,
+          olderAnchorId: oldestRowId(page.messages) ?? null,
+        };
         if (page.nextToken === null) yield* put(setHistoryOldestReached(agentId));
       } else {
         // The page cannot contain the target — old daemon. Discard it and
@@ -418,7 +466,11 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
           estimateSeekLandingStartOrdinal(target, page.messages.length, page.totalMessages),
         ),
       );
-      tokens = { nextToken: page.nextToken, prevToken: page.prevToken };
+      tokens = {
+        nextToken: page.nextToken,
+        prevToken: page.prevToken,
+        olderAnchorId: oldestRowId(page.messages) ?? null,
+      };
       if (page.nextToken === null) yield* put(setHistoryOldestReached(agentId));
     }
   } catch (error) {
@@ -442,7 +494,11 @@ function* historySeekWorker(action: ReturnType<typeof historySeekRequested>): Sa
   }
 }
 
-type ScrollbackTokens = { nextToken: string | null; prevToken: string | null };
+type ScrollbackTokens = {
+  nextToken: string | null;
+  prevToken: string | null;
+  olderAnchorId?: string | null;
+};
 
 interface PreviousUserMessageWalk {
   /** Read synchronously by the promise-based walk between pages. */
@@ -599,7 +655,11 @@ function* walkPreviousUserMessage(
       ),
     );
     yield* put(setHistoryOldestReached(agentId, result.page.nextToken === null));
-    walk.tokens = { nextToken: result.page.nextToken, prevToken: result.page.prevToken };
+    walk.tokens = {
+      nextToken: result.page.nextToken,
+      prevToken: result.page.prevToken,
+      olderAnchorId: oldestRowId(result.page.messages) ?? null,
+    };
     yield* put(
       result.target
         ? previousUserMessageLoadSettled(agentId, requestId, 'found', result.target.id)
@@ -992,7 +1052,9 @@ function* snapshotResetWorker(
   if (replayed || meta.resumed !== false) return;
   yield* put(clearHistorySegment(agentId));
   if (meta.nextToken !== undefined) {
-    yield* put(scrollbackOlderPageSettled(agentId, meta.nextToken));
+    yield* put(
+      scrollbackOlderPageSettled(agentId, meta.nextToken, undefined, meta.oldestMessageId ?? null),
+    );
   }
 }
 

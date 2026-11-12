@@ -477,7 +477,6 @@
   "chat_chatPanel_agentSpawnFailed_error": "Agent spawn failed",
   "chat_chatPanel_assignedTask_fallback": "Assigned task",
   "chat_chatPanel_fileChangesAggregate_suffix": "in conversation so far",
-  "chat_chatPanel_historyGapLoad_label": "Load more of the conversation",
   "chat_chatPanel_historyGapLoading_label": "Loading more of the conversation…",
   "chat_chatPanel_loadingOlderMessages_label": "Loading older messages…",
   "chat_chatPanel_nothingToRetry_toast": "Nothing to retry — error cleared. Send a message to start a new turn.",
