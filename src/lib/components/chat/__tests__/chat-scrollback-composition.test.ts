@@ -43,7 +43,7 @@ describe('composeTranscript', () => {
       msg('t2', 'assistant', '2026-08-01T10:01:00Z'),
     ];
     const composed = composeTranscript([], tail, false);
-    expect(composed.gapBeforeGroupIndex).toBeNull();
+    expect(composed.detached).toBe(false);
     expect(composed.groups).toHaveLength(1);
     expect(composed.groups[0].groupKey).toBeUndefined();
     expect(composed.groups[0].messages.map((m) => m.id)).toEqual(['t1', 't2']);
@@ -53,7 +53,7 @@ describe('composeTranscript', () => {
     const history = [msg('h1', 'user', '2026-08-01T09:00:00Z')];
     const tail = [msg('t1', 'assistant', '2026-08-01T10:00:00Z')];
     const composed = composeTranscript(history, tail, false);
-    expect(composed.gapBeforeGroupIndex).toBeNull();
+    expect(composed.detached).toBe(false);
     expect(composed.groups).toHaveLength(1);
     expect(composed.groups[0].messages.map((m) => m.id)).toEqual(['h1', 't1']);
     // A same-day turn stitches across the closed junction.
@@ -61,27 +61,27 @@ describe('composeTranscript', () => {
     expect(indexed.turnKeyByMessageId.get('t1')).toBe('h1');
   });
 
-  it('keeps history and tail as separate groups when the gap is open (hard turn boundary)', () => {
-    const history = [msg('h1', 'user', '2026-08-01T09:00:00Z')];
+  it('renders only the detached window, never the tail behind a gap', () => {
+    const history = [
+      msg('h1', 'user', '2026-08-01T09:00:00Z'),
+      msg('h2', 'assistant', '2026-08-01T09:01:00Z'),
+    ];
     const tail = [msg('t1', 'assistant', '2026-08-01T10:00:00Z')];
     const composed = composeTranscript(history, tail, true);
-    expect(composed.groups).toHaveLength(2);
-    expect(composed.gapBeforeGroupIndex).toBe(1);
-    // The orphaned tail assistant is NOT stitched into the history turn.
-    const indexed = indexConversationTurns(composed.groups);
-    expect(indexed.turnKeyByMessageId.get('t1')).not.toBe('h1');
+    expect(composed.detached).toBe(true);
+    expect(composed.groups.flatMap((group) => group.messages.map((m) => m.id))).toEqual([
+      'h1',
+      'h2',
+    ]);
+    expect(composed.hiddenTail.map((m) => m.id)).toEqual(['t1']);
   });
 
-  it('keeps tail turn keys stable across history prepends (LazyTurn cache survival)', () => {
-    const tail = [msg('t-orphan', 'assistant', '2026-08-02T10:00:00Z')];
-    const history1 = [msg('h2', 'user', '2026-08-01T09:00:00Z')];
-    const history2 = [msg('h1', 'user', '2026-07-30T08:00:00Z'), ...history1];
-    const before = indexConversationTurns(composeTranscript(history1, tail, true).groups);
-    const after = indexConversationTurns(composeTranscript(history2, tail, true).groups);
-    expect(before.turnKeyByMessageId.get('t-orphan')).toBeDefined();
-    expect(after.turnKeyByMessageId.get('t-orphan')).toBe(
-      before.turnKeyByMessageId.get('t-orphan'),
-    );
+  it('shows the tail when a detached window has no rows of its own', () => {
+    const tail = [msg('t1', 'assistant', '2026-08-01T10:00:00Z')];
+    const composed = composeTranscript([], tail, true);
+    expect(composed.detached).toBe(false);
+    expect(composed.hiddenTail).toEqual([]);
+    expect(composed.groups[0].messages.map((m) => m.id)).toEqual(['t1']);
   });
 
   it('disambiguates duplicate day keys from out-of-order timestamps', () => {
@@ -140,7 +140,7 @@ describe('composeTranscript', () => {
       expect(ids).toEqual(['msg_h1', 'msg_h2', 'msg_shared', 'msg_t1']);
     });
 
-    it('drops history rows the tail re-acquired (same id), open gap', () => {
+    it('drops window rows the tail re-acquired (same id), detached window', () => {
       const history = [h1, h2, shared];
       const tail = [
         wireRow('msg_shared', 'user', '2026-08-01T09:02:00Z'),
@@ -148,7 +148,8 @@ describe('composeTranscript', () => {
       ];
       const composed = composeTranscript(history, tail, true);
       const ids = composed.groups.flatMap((g) => g.messages.map((m) => m.id));
-      expect(ids.filter((id) => id === 'msg_shared')).toHaveLength(1);
+      expect(ids).toEqual(['msg_h1', 'msg_h2']);
+      expect(composed.hiddenTail.map((m) => m.id)).toEqual(['msg_shared', 'msg_t1']);
     });
 
     it('drops history rows matching a tail row by appMessageId', () => {
@@ -168,7 +169,7 @@ describe('composeTranscript', () => {
         wireRow('msg_t1', 'assistant', '2026-08-01T09:04:00Z'),
       ];
       const composed = composeTranscript(history, tail, true);
-      expect(composed.gapBeforeGroupIndex).toBeNull();
+      expect(composed.detached).toBe(false);
       const ids = composed.groups.flatMap((g) => g.messages.map((m) => m.id));
       expect(ids).toEqual(['msg_shared', 'msg_t1']);
     });
@@ -1050,7 +1051,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 200,
         exhausted: false,
         startOrdinalEstimate: null,
-        gapToTail: true,
+        detachedFromTail: true,
       }),
     ).toEqual({ above: 800, below: 0 });
   });
@@ -1065,7 +1066,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 200,
         exhausted: false,
         startOrdinalEstimate: null,
-        gapToTail: true,
+        detachedFromTail: true,
         holeRowsEstimate: 400,
       }),
     ).toEqual({ above: 400, below: 400 });
@@ -1078,7 +1079,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 900,
         exhausted: false,
         startOrdinalEstimate: null,
-        gapToTail: true,
+        detachedFromTail: true,
         holeRowsEstimate: 5000,
       }),
     ).toEqual({ above: 0, below: 100 });
@@ -1091,7 +1092,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 300,
         exhausted: true,
         startOrdinalEstimate: null,
-        gapToTail: true,
+        detachedFromTail: true,
         holeRowsEstimate: 500,
       }),
     ).toEqual({ above: 0, below: 700 });
@@ -1104,7 +1105,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 300,
         exhausted: false,
         startOrdinalEstimate: 300,
-        gapToTail: true,
+        detachedFromTail: true,
         holeRowsEstimate: 650,
       }),
     ).toEqual({ above: 300, below: 400 });
@@ -1117,7 +1118,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 200,
         exhausted: false,
         startOrdinalEstimate: 800,
-        gapToTail: false,
+        detachedFromTail: false,
       }),
     ).toEqual({ above: 800, below: 0 });
   });
@@ -1131,7 +1132,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 300,
         exhausted: false,
         startOrdinalEstimate: 300,
-        gapToTail: true,
+        detachedFromTail: true,
       }),
     ).toEqual({ above: 300, below: 400 });
   });
@@ -1143,9 +1144,22 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 300,
         exhausted: true,
         startOrdinalEstimate: 0,
-        gapToTail: true,
+        detachedFromTail: true,
       }),
     ).toEqual({ above: 0, below: 700 });
+  });
+
+  it('a detached window puts the hidden tail rows below it', () => {
+    expect(
+      splitUnloadedRows({
+        totalMessages: 1000,
+        residentCount: 300,
+        exhausted: false,
+        startOrdinalEstimate: 300,
+        detachedFromTail: true,
+        hiddenTailCount: 100,
+      }),
+    ).toEqual({ above: 300, below: 500 });
   });
 
   it('all rows resident returns zeros', () => {
@@ -1155,7 +1169,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 300,
         exhausted: false,
         startOrdinalEstimate: 100,
-        gapToTail: true,
+        detachedFromTail: true,
       }),
     ).toEqual({ above: 0, below: 0 });
   });
@@ -1167,7 +1181,7 @@ describe('splitUnloadedRows (dual-spacer extent split)', () => {
         residentCount: 900,
         exhausted: false,
         startOrdinalEstimate: 5000,
-        gapToTail: true,
+        detachedFromTail: true,
       }),
     ).toEqual({ above: 100, below: 0 });
   });
@@ -1422,7 +1436,7 @@ describe('indexPreviousUserMessages', () => {
     },
   );
 
-  it('stops at a gap but resumes after a human prompt on each loaded side', () => {
+  it('indexes only the detached window, never rows behind it', () => {
     const historyHuman = row('history-human', 'user');
     const liveHuman = row('live-human', 'user');
     const wake = { ...row('wake', 'user'), metadata: { type: 'hook_wake' } };
@@ -1435,8 +1449,9 @@ describe('indexPreviousUserMessages', () => {
       true,
     );
     expect(targets.get('history-reply')).toBe(historyHuman);
-    for (const id of ['wake', 'orphan-reply', 'live-human']) expect(targets.has(id)).toBe(false);
-    expect(targets.get('live-reply')).toBe(liveHuman);
+    for (const id of ['wake', 'orphan-reply', 'live-human', 'live-reply'])
+      expect(targets.has(id)).toBe(false);
+    expect(liveHuman.role).toBe('user');
   });
 
   it('withholds top fallback with unloaded older history and keeps question answers human-authored', () => {

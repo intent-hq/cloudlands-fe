@@ -780,6 +780,8 @@ export const MachineRailForwardToastSchema = z
 
 export const MachineRailSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 
+export const MachineRailHealthSchema = z.object({ degraded: z.boolean() }).strict();
+
 export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const BrowserAccessSetPortSchema = z

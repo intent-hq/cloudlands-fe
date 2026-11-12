@@ -196,7 +196,6 @@
       owner === original &&
       !readChanged &&
       readIdentity(selectRead.select(store.state, demand, root)) === readIdentityAtStart &&
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- Pure shared root keys, following the existing selection editor; no client or IO.
       repositoryRootKey(root) === repositoryRootKey(original.root) &&
       selectNativeReviewForOwner.select(store.state, original)?.status === 'ready' &&
       submitted !== original.attemptId
@@ -272,7 +271,6 @@
     const original = owner;
     if (
       original &&
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- Pure identity comparison before original-owner cleanup.
       (repositoryRootKey(root) !== repositoryRootKey(original.root) ||
         (original.admission !== $admission &&
           original.admission !== selectPrincipalActionContext.select(store.state)) ||

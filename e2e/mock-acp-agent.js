@@ -14,6 +14,21 @@
  *       Example: { "chunks": ["Thinking about", " your request...", " Done! TASK_COMPLETE"], "chunkDelayMs": 500 }
  *     - chunkDelayMs: milliseconds to wait between each chunk (default: 500). Only used with chunks.
  *     When chunks is set, it takes precedence over response.
+ *     - clientCalls: agent→client requests sent before the reply, one at a time, in the same
+ *       { method, params } shape as intentd's tests/fixtures/mock-acp-agent.mjs. The agent
+ *       waits for each answer (no timeout, so an approval card can stay open) and logs it to
+ *       stderr. Example: a tool-approval prompt the user answers in the chat:
+ *         { "clientCalls": [{ "method": "session/request_permission", "params": {
+ *             "sessionId": "mock-session-1",
+ *             "toolCall": { "toolCallId": "tc-1", "title": "Run npm test", "kind": "execute",
+ *                           "rawInput": { "command": "npm test" } },
+ *             "options": [{ "optionId": "allow", "name": "Allow", "kind": "allow_once" },
+ *                         { "optionId": "reject", "name": "Reject", "kind": "reject_once" }] } }],
+ *           "response": "Permission answered." }
+ *       An error answer is logged and the turn still finishes with the reply. intentd shows the
+ *       card only when agents.permissionPolicy (or INTENTD_PERMISSION_POLICY) is "interactive";
+ *       under its default "allow" it approves unasked. See the header of the monorepo's
+ *       scripts/dev-sandbox.sh for a ready-made sandbox command.
  *   MOCK_AGENT_BEHAVIOR_FILE - path of a JSON file holding the same payload, re-read on every
  *     session/prompt. Takes precedence over MOCK_AGENT_BEHAVIOR when the file exists. The
  *     daemon spawns this agent with the env it was itself started with, so a test can only
@@ -32,6 +47,12 @@ let mcpServers = [];
 let delegated = false;
 let childFixture;
 const sessionId = 'mock-session-1';
+// Agent→client requests (clientCalls) awaiting the daemon's answer, keyed by our JSON-RPC id.
+let nextClientCallId = 1;
+const pendingClientCalls = new Map();
+// Set once the daemon closes our stdin; client calls made after that cannot be answered.
+let stdinClosed = false;
+const STDIN_CLOSED_ERROR = { code: -32000, message: 'stdin closed' };
 
 // --- JSON-RPC helpers ---
 
@@ -45,6 +66,30 @@ function jsonrpcError(id, code, message) {
 
 function jsonrpcNotification(method, params) {
   return JSON.stringify({ jsonrpc: '2.0', method, params });
+}
+
+function callClient(method, params) {
+  // No daemon left to answer: settle now so the turn can still finish (see the close handler).
+  if (stdinClosed) return Promise.resolve({ error: STDIN_CLOSED_ERROR });
+  const id = nextClientCallId++;
+  return new Promise((resolve) => {
+    pendingClientCalls.set(id, resolve);
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+  });
+}
+
+/** Settle a pending clientCalls request; true when `msg` was the daemon's answer to one. */
+function settleClientCall(msg) {
+  if (msg?.method !== undefined || msg?.id === undefined) return false;
+  if (msg.result === undefined && msg.error === undefined) return false;
+  const resolve = pendingClientCalls.get(msg.id);
+  if (!resolve) {
+    process.stderr.write(`[mock-agent] dropping response for unknown id ${msg.id}\n`);
+    return true;
+  }
+  pendingClientCalls.delete(msg.id);
+  resolve(msg);
+  return true;
 }
 
 // --- Method handlers ---
@@ -140,7 +185,16 @@ async function handleSessionPrompt(id, params) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
-  // 3. Stream response as agent_message_chunk updates
+  // 3. Agent→client requests (e.g. session/request_permission), answered one at a time
+  for (const call of Array.isArray(behavior.clientCalls) ? behavior.clientCalls : []) {
+    const answer = await callClient(call.method, call.params ?? {});
+    const outcome = answer.error
+      ? `error ${JSON.stringify(answer.error)}`
+      : JSON.stringify(answer.result);
+    process.stderr.write(`[mock-agent] client call ${call.method} → ${outcome.slice(0, 200)}\n`);
+  }
+
+  // 4. Stream response as agent_message_chunk updates
   if (Array.isArray(behavior.chunks)) {
     // Chunked streaming mode: send each chunk with a delay between them
     const chunkDelayMs = behavior.chunkDelayMs ?? 500;
@@ -160,7 +214,7 @@ async function handleSessionPrompt(id, params) {
     }
   }
 
-  // 4. End the turn — the prompt result carries the stop reason
+  // 5. End the turn — the prompt result carries the stop reason
   return jsonrpcResult(id, { stopReason: 'end_turn' });
 }
 
@@ -191,7 +245,6 @@ function handleMessage(msg) {
 
 const rl = readline.createInterface({ input: process.stdin, terminal: false });
 let pendingHandlers = 0;
-let stdinClosed = false;
 
 function exitIfDone() {
   if (stdinClosed && pendingHandlers === 0) {
@@ -202,6 +255,11 @@ function exitIfDone() {
 rl.on('line', async (line) => {
   const trimmed = line.trim();
   if (!trimmed) return;
+  try {
+    if (settleClientCall(JSON.parse(trimmed))) return;
+  } catch {
+    // Not JSON: respondToMockRequest reports the parse error.
+  }
 
   pendingHandlers++;
   try {
@@ -219,5 +277,10 @@ rl.on('line', async (line) => {
 
 rl.on('close', () => {
   stdinClosed = true;
+  // No daemon left to answer: let any turn waiting on a client call finish.
+  for (const resolve of pendingClientCalls.values()) {
+    resolve({ error: STDIN_CLOSED_ERROR });
+  }
+  pendingClientCalls.clear();
   exitIfDone();
 });

@@ -160,7 +160,6 @@
     identity = session;
     showToken = false;
     toggleDraft = null;
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous mount-only credential receiver, not domain I/O; secrets must remain outside Redux.
     const dispose = registerWebsocketCredentials(session.formId, session.sessionId, (value) => {
       token = value.token;
       qrDataUrl = value.qrDataUrl;

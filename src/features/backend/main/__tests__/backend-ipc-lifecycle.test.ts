@@ -88,6 +88,7 @@ vi.mock('../guest-sessions-store', () => ({
   setPrincipal: async () => true,
   setWorkspaces: async () => false,
   setHostname: async () => false,
+  setDetectedDeviceKind: async () => false,
   setTcAddress: async () => false,
   setHosts: async () => false,
   onGuestSessionsMutated: () => () => {},

@@ -332,6 +332,22 @@ describe('direct message seek pagination ownership', () => {
     }
   });
 
+  it('returns to the live tail when the target is a hidden tail row of a detached window', async () => {
+    const run = harness();
+    try {
+      mock.getConversation.mockResolvedValueOnce(page(498));
+      await expect(seekConversationToMessage(AGENT, 'm-500', WS)).resolves.toBe(true);
+      expect(run.history()?.detachedFromTail).toBe(true);
+      await expect(seekConversationToMessage(AGENT, 'm-997', WS)).resolves.toBe(true);
+      expect(mock.getConversation).toHaveBeenCalledTimes(1);
+      expect(run.history()).toBeUndefined();
+      expect(run.tail()?.map((message) => message.id)).toContain('m-997');
+    } finally {
+      run.task.cancel();
+      await run.task.toPromise();
+    }
+  });
+
   it('failed seeks preserve the displayed window and its older cursor', async () => {
     const run = harness();
     try {

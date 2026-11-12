@@ -2108,6 +2108,60 @@ describe('cycle-open-windows', () => {
     });
   });
 
+  describe('with the machine rail on', () => {
+    const railState = (selectedId: string, machineIds = ['local', 'g1', 'b']) => ({
+      ...makeState(),
+      machineRail: { enabled: true, machineIds, selectedId },
+      connections: {
+        connections: createCollection('id', [
+          { id: 'local', label: 'local', host: null, port: null, fingerprint: null, isLocal: true },
+          {
+            id: 'b',
+            label: 'Build box',
+            host: '10.0.0.2',
+            port: 5181,
+            fingerprint: null,
+            isLocal: false,
+          },
+        ]),
+      },
+      guestSessions: { sessions: createCollection('id', [{ id: 'g1' }]) },
+    });
+
+    it('shows the next own machine, skipping guest hosts, instead of cycling windows', () => {
+      const { context, dispatch, showHint } = makeContext(railState('local') as never);
+      definition().execute(context);
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'machineRail/selectRequested', payload: ['b'] }),
+      );
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'hardwareConsole/actionHudShown' }),
+      );
+      expect(invokeMock).not.toHaveBeenCalled();
+      expect(showHint).not.toHaveBeenCalled();
+    });
+
+    it('loops back to the first machine', () => {
+      const { context, dispatch } = makeContext(railState('b') as never);
+      definition().execute(context);
+      expect(dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'machineRail/selectRequested', payload: ['local'] }),
+      );
+    });
+
+    it('hints when there is no other own machine', () => {
+      const { context, dispatch, showHint } = makeContext(
+        railState('local', ['local', 'g1']) as never,
+      );
+      definition().execute(context);
+      expect(showHint).toHaveBeenCalledExactlyOnceWith(
+        m.hardwareConsole_actionKey_noOtherMachines_message(),
+      );
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(invokeMock).not.toHaveBeenCalled();
+    });
+  });
+
   it('catches and logs a rejected invoke without throwing', async () => {
     invokeMock.mockRejectedValueOnce(new Error('boom'));
     const { context, dispatch, showHint } = makeContext(makeState());

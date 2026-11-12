@@ -475,11 +475,13 @@ export default {
         unique.sort((a, b) => a.node.range[0] - b.node.range[0]);
         let seen = 0;
         for (const finding of unique) {
-          // A reasoned `eslint-disable-line` is the sanctioned escape hatch; it must not use
-          // up a baselined file's allowance, which counts only unsuppressed findings.
-          if (suppressed(finding.node.loc.start.line)) continue;
-          seen += 1;
-          if (seen > allowed) context.report(finding);
+          // A reasoned disable still gets its report, so ESLint counts the directive as
+          // used, but it does not use up the baseline allowance.
+          if (!suppressed(finding.node.loc.start.line)) {
+            seen += 1;
+            if (seen <= allowed) continue;
+          }
+          context.report(finding);
         }
       },
     };

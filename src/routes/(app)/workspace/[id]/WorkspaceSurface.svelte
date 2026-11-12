@@ -99,7 +99,6 @@
   import { m } from '$shared/paraglide/messages.js';
   import { store as appStore } from '$store/renderer/store';
 
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Constructs a logger; no domain data is fetched.
   const logger = createLogger('workspace-page');
 
   interface Props {

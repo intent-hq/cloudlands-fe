@@ -222,7 +222,7 @@ class WalkSim {
       residentCount: meta.historyCount + meta.tailCount,
       exhausted: meta.oldestReached,
       startOrdinalEstimate: meta.startOrdinalEstimate,
-      gapToTail: meta.gapToTail,
+      detachedFromTail: meta.detachedFromTail,
       holeRowsEstimate: meta.holeRowsEstimate,
     });
   }
@@ -273,7 +273,7 @@ class WalkSim {
       residentCount,
       exhausted,
       startOrdinalEstimate: meta.startOrdinalEstimate,
-      gapToTail: meta.gapToTail,
+      detachedFromTail: meta.detachedFromTail,
       holeRowsEstimate: meta.holeRowsEstimate,
     });
     const residentContentHeight = this.residentHeight();
@@ -425,7 +425,7 @@ class WalkSim {
    */
   fetchGapFillPage(): void {
     const meta = this.meta;
-    if (!meta.gapToTail) return;
+    if (!meta.detachedFromTail) return;
     const history = this.history;
     if (history.length === 0) return;
     const preHistoryHeight = heightOf(history);
@@ -467,7 +467,7 @@ class WalkSim {
    * viewport swept from `fromScrollTop` to `toScrollTop`.
    */
   sentinelIntersectsSweep(fromScrollTop: number, toScrollTop: number): boolean {
-    if (!this.meta.gapToTail) return false;
+    if (!this.meta.detachedFromTail) return false;
     const sentinelDoc = this.belowSpacerTopDoc();
     const sweepTop = Math.min(fromScrollTop, toScrollTop) - 160;
     const sweepBottom = Math.max(fromScrollTop, toScrollTop) + VIEWPORT_PX + 160;
@@ -476,14 +476,14 @@ class WalkSim {
 
   /** Mirrors ChatPanel `viewportOverlapsBelowSpacer` (the downward dead zone). */
   viewportOverlapsBelowSpacer(): boolean {
-    if (!this.meta.gapToTail || this.below <= 0) return false;
+    if (!this.meta.detachedFromTail || this.below <= 0) return false;
     const top = this.belowSpacerTopDoc();
     return this.scrollTop < top + this.below && this.scrollTop + VIEWPORT_PX > top;
   }
 
   /** Mirrors ChatPanel `viewportFullyBelowOpenHole` (back on the live tail). */
   viewportFullyBelowOpenHole(): boolean {
-    if (!this.meta.gapToTail || this.history.length === 0) return false;
+    if (!this.meta.detachedFromTail || this.history.length === 0) return false;
     return this.scrollTop >= this.belowSpacerTopDoc() + this.below;
   }
 
@@ -528,7 +528,7 @@ describe('full-walk scrollback harness', () => {
     const meta = selectHistorySegmentMeta.select(storeState(state), AGENT_ID);
     expect(meta.historyCount).toBe(PAGE_ROWS);
     expect(meta.tailCount).toBe(tailRows);
-    expect(meta.gapToTail).toBe(false);
+    expect(meta.detachedFromTail).toBe(false);
     expect(meta.oldestReached).toBe(false);
   });
 
@@ -584,7 +584,7 @@ describe('full-walk scrollback harness', () => {
       blankFraction: number;
       historyCount: number;
       holeRowsEstimate: number | null;
-      gapToTail: boolean;
+      detachedFromTail: boolean;
       pagesFetched: number;
       triggerStillFires: boolean;
     }
@@ -612,7 +612,7 @@ describe('full-walk scrollback harness', () => {
           blankFraction: Number(sim.blankFraction().toFixed(3)),
           historyCount: meta.historyCount,
           holeRowsEstimate: meta.holeRowsEstimate,
-          gapToTail: meta.gapToTail,
+          detachedFromTail: meta.detachedFromTail,
           pagesFetched,
           triggerStillFires: sim.triggerFires(),
         });
@@ -650,7 +650,7 @@ describe('full-walk scrollback harness', () => {
       blankFraction: number;
       historyCount: number;
       holeRowsEstimate: number | null;
-      gapToTail: boolean;
+      detachedFromTail: boolean;
       pagesFetched: number;
     }
     const blankViolations: StepTrace[] = [];
@@ -696,7 +696,7 @@ describe('full-walk scrollback harness', () => {
           blankFraction: Number(sim.blankFraction().toFixed(3)),
           historyCount: meta.historyCount,
           holeRowsEstimate: meta.holeRowsEstimate,
-          gapToTail: meta.gapToTail,
+          detachedFromTail: meta.detachedFromTail,
           pagesFetched,
         });
       }
@@ -752,11 +752,11 @@ describe('full-walk scrollback harness', () => {
 
     // Serial-walk until cap pruning has opened the hole (frozen regime).
     let guard = 0;
-    while (!sim.meta.gapToTail && guard < 20) {
+    while (!sim.meta.detachedFromTail && guard < 20) {
       guard += 1;
       sim.fetchOlderPage();
     }
-    expect(sim.meta.gapToTail).toBe(true);
+    expect(sim.meta.detachedFromTail).toBe(true);
 
     // Park the viewport just above the resident top edge — inside the
     // spacer, but well within the serial classification band (< 2 pages).
@@ -803,11 +803,11 @@ describe('full-walk scrollback harness', () => {
 
     // Serial-walk until cap pruning opens the hole (the capped regime).
     let guard = 0;
-    while (!sim.meta.gapToTail && guard < 20) {
+    while (!sim.meta.detachedFromTail && guard < 20) {
       guard += 1;
       sim.fetchOlderPage();
     }
-    expect(sim.meta.gapToTail).toBe(true);
+    expect(sim.meta.detachedFromTail).toBe(true);
 
     // Park the viewport mid-spacer: no anchor row is visible, so nothing
     // repositions the viewport — only the spacer restatement can end the
@@ -872,7 +872,7 @@ describe('full-walk scrollback harness', () => {
       if (sim.triggerFires()) sim.fetchOlderPage();
     }
     expect(sim.meta.oldestReached).toBe(true);
-    expect(sim.meta.gapToTail).toBe(true);
+    expect(sim.meta.detachedFromTail).toBe(true);
     // Exhaustion boundary: the effect forces a reconcile (above → 0 exact).
     sim.reconcile();
     expect(sim.above).toBe(0);
@@ -901,7 +901,7 @@ describe('full-walk scrollback harness', () => {
       sim.fetchGapFillPage();
       return 'gap-fill';
     }
-    if (sim.meta.gapToTail && sim.sentinelIntersectsSweep(sim.scrollTop, sim.scrollTop)) {
+    if (sim.meta.detachedFromTail && sim.sentinelIntersectsSweep(sim.scrollTop, sim.scrollTop)) {
       sim.fetchGapFillPage();
       return 'gap-fill';
     }
@@ -923,7 +923,7 @@ describe('full-walk scrollback harness', () => {
     const flickFrom = sim.scrollTop;
     const flickTo = Math.round(0.6 * (sim.scrollHeight() - VIEWPORT_PX));
     sim.scrollTop = flickTo;
-    if (sim.meta.gapToTail && sim.sentinelIntersectsSweep(flickFrom, flickTo)) {
+    if (sim.meta.detachedFromTail && sim.sentinelIntersectsSweep(flickFrom, flickTo)) {
       sim.fetchGapFillPage();
     }
 
@@ -938,7 +938,7 @@ describe('full-walk scrollback harness', () => {
       historyFirst: number | null;
       historyLast: number | null;
       blankFraction: number;
-      gapToTail: boolean;
+      detachedFromTail: boolean;
     }
     const trace: RoundTrace[] = [];
     let rounds = 0;
@@ -955,7 +955,7 @@ describe('full-walk scrollback harness', () => {
         historyFirst: history.length > 0 ? ordinalOf(history[0]) : null,
         historyLast: history.length > 0 ? ordinalOf(history[history.length - 1]) : null,
         blankFraction: Number(sim.blankFraction().toFixed(3)),
-        gapToTail: sim.meta.gapToTail,
+        detachedFromTail: sim.meta.detachedFromTail,
       });
       if (fired === 'none') break;
     }
@@ -978,7 +978,7 @@ describe('full-walk scrollback harness', () => {
     // the sweep-aware sentinel included.
     let previous = sim.scrollTop;
     sim.scrollTop = Math.round(0.6 * (sim.scrollHeight() - VIEWPORT_PX));
-    if (sim.meta.gapToTail && sim.sentinelIntersectsSweep(previous, sim.scrollTop)) {
+    if (sim.meta.detachedFromTail && sim.sentinelIntersectsSweep(previous, sim.scrollTop)) {
       sim.fetchGapFillPage();
     }
     interface StepTrace {
@@ -986,7 +986,7 @@ describe('full-walk scrollback harness', () => {
       fired: string;
       scrollTop: number;
       below: number;
-      gapToTail: boolean;
+      detachedFromTail: boolean;
       splitBelow: number;
       blankFraction: number;
     }
@@ -1002,7 +1002,10 @@ describe('full-walk scrollback harness', () => {
       if (target !== null) {
         sim.performSeek(target);
         fired = 'seek';
-      } else if (sim.meta.gapToTail && sim.sentinelIntersectsSweep(previous, sim.scrollTop)) {
+      } else if (
+        sim.meta.detachedFromTail &&
+        sim.sentinelIntersectsSweep(previous, sim.scrollTop)
+      ) {
         sim.fetchGapFillPage();
         fired = 'gap-fill';
       }
@@ -1011,7 +1014,7 @@ describe('full-walk scrollback harness', () => {
         fired,
         scrollTop: sim.scrollTop,
         below: sim.below,
-        gapToTail: sim.meta.gapToTail,
+        detachedFromTail: sim.meta.detachedFromTail,
         splitBelow: sim.currentSplit().below,
         blankFraction: Number(sim.blankFraction().toFixed(3)),
       });
@@ -1024,7 +1027,7 @@ describe('full-walk scrollback harness', () => {
     const meta = sim.meta;
     const split = sim.currentSplit();
     const summary =
-      `bottom settle after ${steps} steps: gapToTail=${meta.gapToTail} below=${sim.below}px ` +
+      `bottom settle after ${steps} steps: detachedFromTail=${meta.detachedFromTail} below=${sim.below}px ` +
       `split.below=${split.below} historyCount=${meta.historyCount} ` +
       `blank=${(sim.blankFraction() * 100).toFixed(0)}%; trace tail: ` +
       JSON.stringify(trace.slice(-8));
@@ -1034,12 +1037,14 @@ describe('full-walk scrollback harness', () => {
     // be CLOSED (no Load-more affordance between contiguous rows) and the
     // below spacer must be zero.
     if (split.below === 0) {
-      expect(meta.gapToTail, `phantom gap: hole empty but still open — ${summary}`).toBe(false);
+      expect(meta.detachedFromTail, `phantom gap: hole empty but still open — ${summary}`).toBe(
+        false,
+      );
       expect(sim.below, `phantom spacer: hole empty but below > 0 — ${summary}`).toBe(0);
     }
     // Convergence: the downward walk must actually close the gap by the
     // time the user has scrolled the whole conversation to the bottom.
-    expect(meta.gapToTail, `gap still open at the settled bottom — ${summary}`).toBe(false);
+    expect(meta.detachedFromTail, `gap still open at the settled bottom — ${summary}`).toBe(false);
   });
 
   it('flick from the exhausted top straight to the tail leaves no phantom gap between history and tail', () => {
@@ -1051,14 +1056,14 @@ describe('full-walk scrollback harness', () => {
     // sentinel through the viewport, so grant it one gap-fill fire.
     const flickFrom = sim.scrollTop;
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
-    if (sim.meta.gapToTail && sim.sentinelIntersectsSweep(flickFrom, sim.scrollTop)) {
+    if (sim.meta.detachedFromTail && sim.sentinelIntersectsSweep(flickFrom, sim.scrollTop)) {
       sim.fetchGapFillPage();
     }
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
 
     // Settled at the bottom: let every driver run to convergence, then the
     // quiet reconcile.
-    const trace: { round: number; fired: string; below: number; gapToTail: boolean }[] = [];
+    const trace: { round: number; fired: string; below: number; detachedFromTail: boolean }[] = [];
     let rounds = 0;
     while (rounds < 20) {
       rounds += 1;
@@ -1067,7 +1072,7 @@ describe('full-walk scrollback harness', () => {
         round: rounds,
         fired,
         below: sim.below,
-        gapToTail: sim.meta.gapToTail,
+        detachedFromTail: sim.meta.detachedFromTail,
       });
       if (fired === 'none') break;
     }
@@ -1075,12 +1080,14 @@ describe('full-walk scrollback harness', () => {
 
     const meta = sim.meta;
     const summary =
-      `bottom settle: gapToTail=${meta.gapToTail} below=${sim.below}px ` +
+      `bottom settle: detachedFromTail=${meta.detachedFromTail} below=${sim.below}px ` +
       `split=${JSON.stringify(sim.currentSplit())} historyCount=${meta.historyCount} ` +
       `holeRowsEstimate=${meta.holeRowsEstimate}; rounds: ${JSON.stringify(trace)}`;
     // Phantom gap: a giant white below-spacer + Load-more affordance parked
     // between the history segment and the tail with NOTHING converging.
-    expect(meta.gapToTail, `gap never closes after the flick to the tail — ${summary}`).toBe(false);
+    expect(meta.detachedFromTail, `gap never closes after the flick to the tail — ${summary}`).toBe(
+      false,
+    );
     expect(sim.below, `below spacer stuck > 0 at the settled bottom — ${summary}`).toBe(0);
   });
 
@@ -1093,7 +1100,7 @@ describe('full-walk scrollback harness', () => {
     sim.scrollTop = Math.max(0, sim.scrollHeight() - VIEWPORT_PX);
     let rounds = 0;
     while (rounds < 20 && settleRound(sim) !== 'none') rounds += 1;
-    expect(sim.meta.gapToTail, 'collapse must close the gap').toBe(false);
+    expect(sim.meta.detachedFromTail, 'collapse must close the gap').toBe(false);
     expect(sim.meta.historyCount, 'collapse must drop the segment').toBe(0);
     expect(sim.meta.oldestReached, 'collapse must reset the exhaustion latch').toBe(false);
     expect(sim.above).toBe(0);
@@ -1343,7 +1350,7 @@ describe('full-walk scrollback harness', () => {
       driver.onScroll(Math.round(0.3 * sim.above), 0);
       driver.fireSeekDebounce();
       expect(driver.seekDispatches).toBe(1);
-      expect(sim.meta.gapToTail).toBe(true);
+      expect(sim.meta.detachedFromTail).toBe(true);
 
       // Gentle event near the landed segment's top edge: immediate serial
       // dispatch, fetch now in flight.
@@ -1367,7 +1374,7 @@ describe('full-walk scrollback harness', () => {
       driver.settleOlderFetch();
       expect(driver.collapses).toBe(1);
       expect(driver.seekDispatches, 'no spurious seek at the tail').toBe(1);
-      expect(sim.meta.gapToTail).toBe(false);
+      expect(sim.meta.detachedFromTail).toBe(false);
       expect(sim.spacerOverlapPx()).toBe(0);
     });
 
@@ -1387,7 +1394,7 @@ describe('full-walk scrollback harness', () => {
       driver.fireSeekDebounce();
       expect(driver.collapses).toBe(1);
       expect(driver.seekDispatches).toBe(0);
-      expect(sim.meta.gapToTail).toBe(false);
+      expect(sim.meta.detachedFromTail).toBe(false);
       expect(sim.spacerOverlapPx()).toBe(0);
     });
   });
@@ -1425,12 +1432,12 @@ describe('five-message full history traversal', () => {
       expect(olderPages).toBe(279);
       expect(seen.size).toBe(CONVERSATION_ROWS);
       expect(sim.meta.oldestReached).toBe(true);
-      expect(sim.meta.gapToTail).toBe(true);
+      expect(sim.meta.detachedFromTail).toBe(true);
       sim.reconcile();
       expect(sim.above).toBe(0);
       let forwardPages = 0;
       const forwardSeen = new Set([...sim.history, ...sim.tail].map((row) => row.id));
-      while (sim.meta.gapToTail && forwardPages < CONVERSATION_ROWS) {
+      while (sim.meta.detachedFromTail && forwardPages < CONVERSATION_ROWS) {
         const before = Math.max(...sim.history.map(ordinalOf));
         // Oldest-side cap pruning must preserve a reader near the newest
         // resident rows as the history-to-tail gap is filled.
@@ -1442,7 +1449,7 @@ describe('five-message full history traversal', () => {
         // Presentation ordering groups turns; the newest ordinal need not
         // be the last DOM row on an odd-sized page.
         expect(after - before).toBeLessThanOrEqual(5);
-        if (sim.meta.gapToTail) expect(after).toBeGreaterThan(before);
+        if (sim.meta.detachedFromTail) expect(after).toBeGreaterThan(before);
         sim.history.forEach((row) => forwardSeen.add(row.id));
         expect(sim.history.length).toBeLessThanOrEqual(500);
         if (anchor) {
@@ -1454,7 +1461,7 @@ describe('five-message full history traversal', () => {
       }
       expect(forwardPages).toBeGreaterThan(100);
       expect(forwardSeen.size).toBe(CONVERSATION_ROWS);
-      expect(sim.meta.gapToTail).toBe(false);
+      expect(sim.meta.detachedFromTail).toBe(false);
       expect(sim.meta.oldestReached).toBe(false);
       expect(sim.below).toBe(0);
     },
@@ -1469,6 +1476,6 @@ describe('five-message full history traversal', () => {
     sim.performSeek(700);
     expect(sim.history).toHaveLength(5);
     expect(sim.history.map(ordinalOf)).toContain(700);
-    expect(sim.meta.gapToTail).toBe(true);
+    expect(sim.meta.detachedFromTail).toBe(true);
   });
 });
