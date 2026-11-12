@@ -294,8 +294,9 @@
   .word[data-untimed] {
     color: hsl(var(--muted-foreground));
   }
-  /* A number in the running text: a rounded, brighter chip that sits on the text's line
-     (no taller than it) with the same word gaps as the words around it. */
+  /* A number in the running text: a bright chip with slightly rounded corners and no
+     border, sitting on the text's line (no taller than it) with ordinary word gaps; its
+     numeral centered in it. */
   .text :global(.mark-pill) {
     display: inline-flex;
     align-items: center;
@@ -304,16 +305,22 @@
     height: 16px;
     min-height: 0;
     margin: 0;
-    padding: 0 5px;
-    border-radius: 999px;
+    padding: 0 4px;
+    border: 0;
+    border-radius: 4px;
     background: hsl(var(--foreground) / 0.16);
-    box-shadow: inset 0 0 0 1px hsl(var(--foreground) / 0.12);
+    box-shadow: none;
     color: hsl(var(--foreground));
     font-size: 10.5px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
     line-height: 1;
+    text-align: center;
     vertical-align: 0.05em;
+  }
+  .text :global(.mark-pill [data-slot='button-label']) {
+    flex: none;
+    text-align: center;
   }
   .text :global(.mark-pill:hover:not(:disabled)) {
     background: hsl(var(--foreground) / 0.24);

@@ -3,7 +3,7 @@ import { expect, test } from '../../../../test/ct-test';
 import DockRecordingTranscript from './DockRecordingTranscript.svelte';
 
 /**
- * Annotation numbers inline in an editable transcript: rounded, bright, semibold chips that
+ * Annotation numbers inline in an editable transcript: bright, semibold chips with ~4px corners and no border that
  * sit on the text line with ordinary word gaps, while the text itself (words, order, the
  * editable runs) stays exactly as recognized.
  */
@@ -38,7 +38,7 @@ for (const [name, width] of [
   ['normal', 520],
   ['narrow', 300],
 ] as const)
-  test(`transcript mark pills are round, bright chips on the text line (dark, ${name})`, async ({
+  test(`transcript mark pills are bright, borderless chips on the text line (dark, ${name})`, async ({
     mount,
     page,
   }, info) => {
@@ -103,6 +103,8 @@ for (const [name, width] of [
             height: box.height,
             width: box.width,
             radius: parseFloat(css.borderTopLeftRadius),
+            border: css.borderTopWidth,
+            shadow: css.boxShadow,
             weight: Number(css.fontWeight),
             background: css.backgroundColor,
             // The number is centered: no trailing whitespace inside the chip.
@@ -116,7 +118,9 @@ for (const [name, width] of [
     expect(m.text.replace(/ \| /g, ' ')).toBe(words.map((word) => word.text).join(' '));
     for (const pill of m.pills) {
       expect(pill.height).toBeLessThanOrEqual(m.lineHeight);
-      expect(pill.radius).toBeGreaterThanOrEqual(pill.height / 2 - 0.5);
+      expect(Math.abs(pill.radius - 4)).toBeLessThan(0.5);
+      expect(pill.border).toBe('0px');
+      expect(pill.shadow).toBe('none');
       expect(pill.weight).toBeGreaterThanOrEqual(600);
       expect(pill.offCenter).toBeLessThan(1);
     }

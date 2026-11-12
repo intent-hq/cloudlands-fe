@@ -296,6 +296,8 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
       icon: value.icon,
       url: value.url,
       appId: value.appId,
+      appName: value.appName,
+      tabTitle: value.tabTitle ?? null,
       linkable: loaded && !!defaultDockContextLinkKey(value),
       linkedWorkspaceId: destination,
       linkKey: key ?? null,

@@ -325,10 +325,18 @@ describe('screenshot editor entry', () => {
     expect(timeline.join()).not.toMatch(/foreign preload (shown|closed)/);
     expect(await invoke(C.HOLD_END, io.dock, { token: otherToken })).toBe(true);
     expect(timeline.at(-1)).toMatch(/foreign preload closed/);
-    // The screenshot that opens: loaded hidden at the press, inert without a session.
+    // The screenshot that opens, pressed while an older pill OPEN is still waiting: that OPEN
+    // is refused and shows no editor; the preload stays the screenshot's own.
+    const olderPill = openFor();
+    note('older pill OPEN waiting');
     expect(await invoke(C.HOLD_BEGIN, io.dock, { token, hide: true })).toBe(true);
     const editor = watch(io.windows.at(-1), 'editor');
     note('screenshot pressed: dock hidden, editor loading hidden');
+    const windowsAtPress = io.windows.length;
+    expect(await olderPill).toEqual({ ok: false, error: 'superseded' });
+    note('older pill OPEN refused (superseded); no window opened');
+    expect(io.windows.length).toBe(windowsAtPress);
+    expect(editor.isVisible()).toBe(false);
     expect(await invoke(C.GET, editor)).toBeNull();
     vi.advanceTimersByTime(250);
     // Another document's or token's request shows nothing.

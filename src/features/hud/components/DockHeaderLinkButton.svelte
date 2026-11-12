@@ -2,7 +2,7 @@
   import LinkSimpleIcon from 'phosphor-svelte/lib/LinkSimpleIcon';
   import { m } from '$shared/paraglide/messages.js';
   import { Button } from '$lib/components/ui/button';
-  import { ActionMenu, defineActions } from '$lib/components/patterns/action-menu';
+  import * as Menu from '$lib/components/ui/menu';
   import { store as appStore } from '$store/renderer/store';
   import { selectDockLinkedContext } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import {
@@ -10,11 +10,15 @@
     dockContextUnlinkRequested,
   } from '$store/renderer/slices/dock-conversation/dock-conversation-slice';
   import type { DockContextLinkScope } from '$shared/dock-context-links';
+  import { selectShortcutOverrides } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
+  import { resolveShortcut } from '$shared/keyboard-shortcut-bindings';
+  import { formatShortcut } from '$lib/utils/shortcuts';
 
   /**
    * Link the current tab or app to the open workspace, from its conversation header. The
-   * icon is always there; it opens a menu with This tab and This app, each checked when
-   * that scope's saved link sends it here. A choice the current context cannot save
+   * icon is always there; it opens a menu with Active tab and Active app, each with its real
+   * tab title or app name muted on the same row, each checked when that scope's saved link
+   * sends it here, and a line on what the configured open-dock shortcut does with a link. A choice the current context cannot save
    * (unknown, the dock itself, no exact tab or app) is shown disabled. Choosing links that
    * scope here, or unlinks exactly that scope's saved link; never the effective link of
    * another scope. The menu's popup is owned by the dock conversation (it keeps the dock
@@ -69,57 +73,101 @@
     if (now === 'unlink') appStore.dispatch(dockContextUnlinkRequested(gesture.version, scope));
     else appStore.dispatch(dockContextLinkRequested(gesture.version, gesture.workspaceId, scope));
   }
-  const actions = $derived(
-    defineActions(
-      SCOPES.map((scope) => ({
-        id: scope,
-        kind: 'checkbox' as const,
-        label:
-          scope === 'tab' ? m.dock_linkedTab_thisTab_label() : m.dock_linkedTab_thisApp_label(),
-        checked: operations[scope] === 'unlink',
-        disabled: operations[scope] === null,
-        // One choice per opening: the menu acts on what it showed when opened.
-        closeOnSelect: true,
-      })),
-    ),
-  );
+  /**
+   * Muted secondary text per choice: the real tab title and app name (optional display
+   * metadata of the snapshot, never a key), else the context's own label for its kind.
+   */
+  const details = $derived({
+    tab:
+      context?.tabTitle?.trim() ||
+      (context && context.identityKind !== 'app' ? context.label : '') ||
+      null,
+    app: context?.appName?.trim() || (context?.identityKind === 'app' ? context.label : '') || null,
+  });
+  /** The person's own open-dock shortcut (their override, else the default), as shown. */
+  const overrides$ = selectShortcutOverrides();
+  const openShortcut = $derived(formatShortcut(resolveShortcut('dock.focus', $overrides$)));
   const label = $derived(
     m.dock_linkedTab_link_ariaLabel({ context: context?.label || '', workspace: title }),
   );
 </script>
 
-<ActionMenu
-  bind:open
-  {actions}
-  ariaLabel={m.dock_linkedTab_link_label()}
-  align="end"
-  side="bottom"
-  class="dock-header-link-menu min-w-40"
-  onOpenChange={opened}
-  onAction={choose}
->
-  {#snippet trigger({ props })}
-    <Button
-      {...props}
-      variant="ghost"
-      size="icon-sm"
-      class="dock-header-link"
-      data-dock-header-link
-      data-linked={linkedHere || undefined}
-      data-context-version={context?.contextVersion}
-      aria-label={context?.label ? label : m.dock_linkedTab_link_label()}
-      tooltipContentClass="dock-chrome-tooltip max-w-64 whitespace-normal"
-      tooltipSide="bottom"
-      tooltipAlign="end"
-      tooltip={context?.label ? label : m.dock_linkedTab_link_label()}
-      tooltipDisabled={open}
-      ><LinkSimpleIcon size={15} weight={linkedHere ? 'bold' : 'regular'} /></Button
-    >
-  {/snippet}
-</ActionMenu>
+<Menu.Root bind:open onOpenChange={opened}>
+  <Menu.Trigger>
+    {#snippet child({ props })}
+      <Button
+        {...props}
+        variant="ghost"
+        size="icon-sm"
+        class="dock-header-link"
+        data-dock-header-link
+        data-linked={linkedHere || undefined}
+        data-context-version={context?.contextVersion}
+        aria-label={context?.label ? label : m.dock_linkedTab_link_label()}
+        tooltipContentClass="dock-chrome-tooltip max-w-64 whitespace-normal"
+        tooltipSide="bottom"
+        tooltipAlign="end"
+        tooltip={context?.label ? label : m.dock_linkedTab_link_label()}
+        tooltipDisabled={open}
+        ><LinkSimpleIcon size={15} weight={linkedHere ? 'bold' : 'regular'} /></Button
+      >
+    {/snippet}
+  </Menu.Trigger>
+  <Menu.Content
+    align="end"
+    side="bottom"
+    sideOffset={4}
+    collisionPadding={8}
+    aria-label={m.dock_linkedTab_link_label()}
+    class="dock-header-link-menu w-80 max-w-[calc(100vw-16px)]"
+  >
+    {#each SCOPES as scope (scope)}
+      <!-- One choice per opening: the menu acts on what it showed when opened. -->
+      <Menu.CheckboxItem
+        checked={operations[scope] === 'unlink'}
+        disabled={operations[scope] === null}
+        closeOnSelect
+        data-link-scope={scope}
+        onSelect={() => choose(scope)}
+      >
+        <span class="flex min-w-0 flex-1 items-baseline gap-3">
+          <span class="shrink-0 whitespace-nowrap"
+            >{scope === 'tab'
+              ? m.dock_linkedTab_thisTab_label()
+              : m.dock_linkedTab_thisApp_label()}</span
+          >
+          {#if details[scope]}
+            <span class="min-w-0 flex-1 truncate text-right" data-link-scope-detail
+              >{details[scope]}</span
+            >
+          {/if}
+        </span>
+      </Menu.CheckboxItem>
+    {/each}
+    {#if openShortcut}
+      <p class="dock-header-link-hint" data-link-shortcut-hint>
+        {m.dock_linkedTab_shortcutHint_label({ shortcut: openShortcut })}
+      </p>
+    {/if}
+  </Menu.Content>
+</Menu.Root>
 
 <style>
   /* Linked: this tab or app is linked here; the same quiet accent as other dock state. */
+  /* The tab title / app name beside each choice: secondary, muted, one line. */
+  :global(.dock-header-link-menu [data-link-scope-detail]) {
+    color: hsl(var(--muted-foreground));
+    font-size: 0.92em;
+  }
+  /* What the open-dock shortcut does with a link: a quiet, wrapping note under the choices. */
+  :global(.dock-header-link-menu .dock-header-link-hint) {
+    margin: 4px 0 0;
+    padding: 6px 8px 4px;
+    border-top: 1px solid hsl(var(--border));
+    color: hsl(var(--muted-foreground));
+    font-size: 11px;
+    line-height: 1.4;
+  }
   :global(.dock-header-link[data-linked]) {
     color: hsl(var(--dock-accent, var(--foreground)));
     background-color: hsl(var(--dock-hover, var(--muted)));

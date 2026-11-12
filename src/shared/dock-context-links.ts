@@ -22,6 +22,9 @@ export interface DockLinkedContextSnapshot {
   icon: string | null;
   url: string | null;
   appId: string | null;
+  /** Display only; neither field participates in context identity or saved link keys. */
+  appName?: string | null;
+  tabTitle?: string | null;
   linkable: boolean;
   linkedWorkspaceId: string | null;
   linkKey: string | null;
@@ -54,6 +57,8 @@ export interface DockForegroundObservation {
   self: boolean;
   appId: string | null;
   appName: string | null;
+  /** Title of the verified current document, never a guessed tab/window identity. */
+  tabTitle?: string | null;
   url: string | null;
   icon: string | null;
   workspaceId?: string;
@@ -211,6 +216,7 @@ export function isDockForegroundObservation(value: unknown): value is DockForegr
     [row.appId, row.appName, row.url, row.icon].every(
       (item) => item === null || typeof item === 'string',
     ) &&
+    (row.tabTitle === undefined || row.tabTitle === null || typeof row.tabTitle === 'string') &&
     (row.workspaceId === undefined || typeof row.workspaceId === 'string') &&
     (row.serviceAddress === undefined || typeof row.serviceAddress === 'string')
   );

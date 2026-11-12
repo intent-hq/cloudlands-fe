@@ -386,8 +386,11 @@
           variant="ghost"
           size="icon-sm"
           onclick={onOpenWorkspace}
+          data-dock-open-full
           aria-label={m.dock_conversation_openFull_ariaLabel()}
-          tooltipContentClass="dock-chrome-tooltip"
+          tooltipContentClass="dock-chrome-tooltip max-w-64 whitespace-normal"
+          tooltipSide="bottom"
+          tooltipAlign="end"
           tooltip={m.dock_conversation_openFull_ariaLabel()}
           ><Fa icon={faArrowUpRightFromSquare} /></Button
         >{/if}

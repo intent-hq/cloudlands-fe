@@ -16,7 +16,7 @@ import { createDockShortcutPreferences } from '../../../main/dock-shortcut-prefe
  * foreground sampling are not exercised). Registry and saved-preference handling run the real
  * shared/main modules with a fake globalShortcut.
  */
-test('single dock shortcut: linked conversation, else the index; old keys gone', async ({
+test('single dock shortcut: linked conversation, else the selected one, else the index; old keys gone', async ({
   mount,
   page,
 }, info) => {
@@ -213,8 +213,8 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await row('choice-1').locator('[data-workspace-id]').click();
   await expect.poll(open).toBe('choice-1');
   const headerLink = page.locator('[data-dock-header-link]');
-  const thisTab = page.getByRole('menuitemcheckbox', { name: 'This tab' });
-  const thisApp = page.getByRole('menuitemcheckbox', { name: 'This app' });
+  const thisTab = page.getByRole('menuitemcheckbox', { name: 'Active tab' });
+  const thisApp = page.getByRole('menuitemcheckbox', { name: 'Active app' });
   await expect(headerLink).not.toHaveAttribute('data-linked', /.*/);
   await expect(headerLink).toHaveAttribute(
     'aria-label',
@@ -223,6 +223,25 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await headerLink.click();
   await expect(thisTab).toHaveAttribute('aria-checked', 'false');
   await expect(thisApp).toBeVisible();
+  // Each choice names what it links, muted: the tab (its title, else its site) and the app.
+  await expect(thisTab.locator('[data-link-scope-detail]')).toHaveText(/github\.com/);
+  const tones = await thisTab.evaluate((item) => ({
+    label: getComputedStyle(item.querySelector('span span')!).color,
+    detail: getComputedStyle(item.querySelector('[data-link-scope-detail]')!).color,
+  }));
+  expect(tones.detail).not.toBe(tones.label);
+  // Label and name share one row; the menu explains what the open-dock shortcut does.
+  const sameRow = await thisTab.evaluate((item) => {
+    const a = item.querySelector('span span')!.getBoundingClientRect();
+    const b = item.querySelector('[data-link-scope-detail]')!.getBoundingClientRect();
+    return {
+      sameRow: Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < 4,
+      right: b.left > a.right,
+    };
+  });
+  expect(sameRow).toEqual({ sameRow: true, right: true });
+  await expect(page.locator('[data-link-shortcut-hint]')).toContainText('linked tab or app');
+  await page.screenshot({ path: info.outputPath('12a-d-link-menu-labels.png') });
   await thisTab.click();
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');
   await expect.poll(() => read().then((s) => s?.linkScopes?.tab.savedWorkspaceId)).toBe('choice-1');
@@ -270,15 +289,36 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
     sourceDraftKept: true,
   };
 
-  // 4c. A selected conversation stays: with it open, a press (even for a linked tab) only
-  // opens the dock on it, its prompt focused and draft kept; no follow, no index.
-  await press({ version: 'v1', url: A });
-  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a press over a selected conversation must not route
-  await page.waitForTimeout(800);
+  // 4c. With a conversation selected: an unlinked or unknown press keeps it (no index, its
+  // draft kept); a press for a linked tab follows that link away from it, draft still kept.
+  const U = 'https://github.com/example/unlinked/issues/8';
+  await observe('v8', U);
+  await expect.poll(() => read().then((s) => s?.url)).toBe(U);
+  await press({ version: 'v8', url: U });
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- past the bounded link wait: an unlinked press must not route
+  await page.waitForTimeout(1900);
   expect(await open()).toBe(origin);
+  await expect(overview).toBeHidden();
   expect(await shortcutState()).toBeNull();
   await expect(composer).toContainText(DRAFT);
-  receipts.selectedStays = { open: origin, routed: false };
+  await press();
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: an unknown press must not route
+  await page.waitForTimeout(500);
+  expect(await open()).toBe(origin);
+  await expect(overview).toBeHidden();
+  await observe('v9', A);
+  await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');
+  await press({ version: 'v9', url: A });
+  await expect.poll(open).toBe('choice-1');
+  expect(await draftLength(origin)).toBe(DRAFT.length);
+  await page.screenshot({ path: info.outputPath('14-d-selected-follows-link.png') });
+  receipts.selectedConversation = {
+    unlinkedKeepsSelection: origin,
+    unknownKeepsSelection: origin,
+    linkedFollowsFrom: origin,
+    opened: 'choice-1',
+    draftKept: true,
+  };
 
   // 5. The linked snapshot publishes after the press: held (no index flash), then followed.
   await blank();
@@ -364,7 +404,7 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
   await press({ version: 'v3', url: C });
   await expect.poll(open).toBe('choice-2');
   const link = page.locator('[data-dock-header-link]');
-  const tabChoice = page.getByRole('menuitemcheckbox', { name: 'This tab' });
+  const tabChoice = page.getByRole('menuitemcheckbox', { name: 'Active tab' });
   await expect(link).not.toHaveAttribute('data-linked', /.*/);
   await link.click();
   await expect(tabChoice).toHaveAttribute('aria-checked', 'false');
@@ -456,8 +496,8 @@ test('single dock shortcut: linked conversation, else the index; old keys gone',
 });
 
 /**
- * The header Link tooltip opens below the header, inside the dock and the viewport (never up
- * into the notch), wrapping a long name; normal and narrow viewports.
+ * The header Link and full-conversation tooltips open below the header, inside the dock and
+ * the viewport (never up into the notch), wrapping a long name; normal and narrow viewports.
  */
 test('header link tooltip opens below the header inside the dock', async ({
   mount,
@@ -528,6 +568,33 @@ test('header link tooltip opens below the header inside the dock', async ({
     expect(m.tooltip.width).toBeLessThanOrEqual(256.5);
     await page.screenshot({ path: info.outputPath(`16-header-tooltip-${name}.png`) });
     results[name] = m;
+    // The full-conversation arrow's tooltip: also below the header, inside the dock.
+    const header2 = (await page.locator('[data-dock-chrome]').boundingBox())!;
+    await page.mouse.move(header2.x + header2.width / 2, header2.y + header2.height / 2);
+    await page.locator('[data-dock-open-full]').hover();
+    const fullTip = page.locator('[role="tooltip"]', { hasText: 'Open full conversation' });
+    await expect(fullTip).toBeVisible();
+    const f = await page.evaluate(() => {
+      const r = (el: Element | null) => {
+        const b = el!.getBoundingClientRect();
+        return { left: b.left, right: b.right, top: b.top, bottom: b.bottom, width: b.width };
+      };
+      const tooltip = Array.from(document.querySelectorAll('[role="tooltip"]')).find((el) =>
+        el.textContent?.includes('Open full conversation'),
+      )!;
+      return {
+        tooltip: r(tooltip),
+        header: r(document.querySelector('[data-dock-chrome]')),
+        trigger: r(document.querySelector('[data-dock-open-full]')),
+        shell: r(document.querySelector('[data-testid="dock-shell"]')),
+        viewport: window.innerWidth,
+      };
+    });
+    expect(f.tooltip.top).toBeGreaterThanOrEqual(f.trigger.bottom - 0.5);
+    expect(f.tooltip.left).toBeGreaterThanOrEqual(Math.max(0, f.shell.left) - 0.5);
+    expect(f.tooltip.right).toBeLessThanOrEqual(Math.min(f.viewport, f.shell.right) + 0.5);
+    await page.screenshot({ path: info.outputPath(`17-open-full-tooltip-${name}.png`) });
+    results[`${name}-openFull`] = f;
   }
   await writeFile(info.outputPath('header-tooltip-receipt.json'), JSON.stringify(results, null, 2));
 });

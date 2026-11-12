@@ -272,6 +272,16 @@ function createSyntheticNative() {
     },
   };
 
+  const initialized = () => ({
+    ok: true as const,
+    value: {
+      capture: true,
+      captureModes: true,
+      annotate: true,
+      record: true,
+      speech: capability,
+    },
+  });
   const capability: DockSpeechCapability = {
     available: true,
     engine: 'analyzer',
@@ -282,16 +292,19 @@ function createSyntheticNative() {
   } as DockSpeechCapability;
 
   const adapter = {
-    initialize: async () => ({
-      ok: true as const,
-      value: {
-        capture: true,
-        captureModes: true,
-        annotate: true,
-        record: true,
-        speech: capability,
-      },
-    }),
+    // Opt-in: refuse the next N probes (as main refuses a session on a hidden dock).
+    initialize: async () => {
+      const probe = globalThis as {
+        __syntheticNativeRefusals?: number;
+        __syntheticNativeProbes?: number;
+      };
+      probe.__syntheticNativeProbes = (probe.__syntheticNativeProbes ?? 0) + 1;
+      if ((probe.__syntheticNativeRefusals ?? 0) > 0) {
+        probe.__syntheticNativeRefusals! -= 1;
+        return { ok: false as const, error: 'unavailable' as const };
+      }
+      return initialized();
+    },
     cancel: async () => {
       if (speech) clearInterval(speech.levels);
       speech = null;

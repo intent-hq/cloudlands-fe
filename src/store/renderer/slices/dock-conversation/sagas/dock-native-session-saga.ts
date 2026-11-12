@@ -8,7 +8,7 @@
  * serializable `nativeSpeech` mirror through selectors.
  */
 import { buffers, eventChannel } from 'redux-saga';
-import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { store as appStore } from '$store/renderer/store';
 import type { DockEvidencePrivacyPane } from '$shared/dock-evidence-ipc';
@@ -448,15 +448,25 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
   }
 
   try {
-    const result = yield* call(async () => {
-      try {
-        return await adapter.initialize();
-      } catch {
-        return null;
-      }
-    });
-    // A failed or stale probe never installs: unobserved availability is never published.
-    if (!result?.ok || !stillCurrent(scope)) return;
+    let result: Awaited<ReturnType<typeof adapter.initialize>> | null = null;
+    for (let attempt = 0; ; attempt += 1) {
+      result = yield* call(async () => {
+        try {
+          return await adapter.initialize();
+        } catch {
+          return null;
+        }
+      });
+      // A stale probe never installs: unobserved availability is never published.
+      if (!stillCurrent(scope)) return;
+      if (result?.ok) break;
+      // Refused (main admits a session only on a visible dock, so a pair opened while the
+      // dock is hidden is refused): probe again with a bounded backoff while this scope is
+      // current. A probe has no screen or microphone access; a scope change cancels this.
+      yield* delay(Math.min(10_000, 1_000 * 2 ** Math.min(attempt, 4)));
+      if (!stillCurrent(scope)) return;
+    }
+    if (!result?.ok) return;
     configureDockEvidenceNative(adapter.service);
     installed = true;
     yield* put(

@@ -10,6 +10,7 @@ vi.mock('../../../main/dock-window', () => ({
   getDockPlacementSnapshot: vi.fn(),
   getDockWindow: vi.fn(),
   setDockHiddenForCapture: vi.fn(),
+  hideDockForOwnScreenshot: vi.fn(() => false),
 }));
 vi.mock('../../../main/window-backend', () => ({
   getStrictBackendBindingForWebContents: vi.fn(),

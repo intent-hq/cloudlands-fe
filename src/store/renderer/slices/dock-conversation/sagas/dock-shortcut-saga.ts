@@ -94,12 +94,13 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
   if (!authority) return;
   const pending = appStore.state.dockConversation.shortcut;
   if (pending && pending.context.action !== 'focus' && pending.destination === null) return;
-  // A selected conversation stays: the press only opens the dock on it (the press's own
-  // focus request puts the keyboard in its prompt, its draft untouched). The linked
-  // conversation or the index is for a dock with no conversation selected.
-  if (appStore.state.dockConversation.workspaceId) return;
-  // A conversation opened meanwhile (by the person or another flow) is never replaced.
+  // The press follows the active tab's or app's link, even away from a selected
+  // conversation. Without an eligible link (unknown context, no version, unlinked, timed out)
+  // a selected conversation stays, its draft untouched (the press's own focus request puts
+  // the keyboard in its prompt); only a dock with nothing selected shows the index.
+  // A conversation opened or changed meanwhile (by the person or another flow) is never replaced.
   const startedOn = appStore.state.dockConversation.workspaceId;
+  const selected = !!startedOn;
   const current = (): boolean => {
     const state = appStore.state;
     return (
@@ -111,6 +112,11 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
   const ours = (): boolean => appStore.state.dockConversation.shortcut?.context.id === context.id;
   function* showIndex(): SagaGenerator<void> {
     if (!current() || appStore.state.dockConversation.workspaceId !== startedOn) return;
+    // A selected conversation is kept, never replaced by the index.
+    if (selected) {
+      if (ours()) yield* put(dockShortcutChanged(null));
+      return;
+    }
     if (dockInputLive() || appStore.state.dockConversation.sending) {
       if (ours()) yield* put(dockShortcutChanged(null));
       return;
@@ -126,10 +132,12 @@ function* openFromShortcut(context: DockShortcutContext): SagaGenerator<void> {
     yield* showIndex();
     return;
   }
-  // Hold the current view while the linked snapshot publishes, so the index does not flash.
-  yield* put(
-    dockShortcutChanged({ context, destination: null, error: null, authority, resolving: true }),
-  );
+  // Hold the current view while the linked snapshot publishes, so the index does not flash
+  // (a selected conversation simply stays shown meanwhile).
+  if (!selected)
+    yield* put(
+      dockShortcutChanged({ context, destination: null, error: null, authority, resolving: true }),
+    );
   const expected = JSON.stringify([authority, context.contextVersion]);
   const deadline = Date.now() + LINKED_WAIT_MS;
   let seen = false;
@@ -220,7 +228,7 @@ function* receive(context?: DockShortcutContext): SagaGenerator<void> {
     yield* recordingOwnerAction(context);
     return;
   }
-  // The global shortcut: the linked conversation, else the index. Never the destination or
+  // The global shortcut: the linked conversation, else the selected one, else the index. Never the destination or
   // media intent flow, which only the Window-menu capture/record/dictate commands use.
   if (context.action === 'focus') {
     yield* openFromShortcut(context);

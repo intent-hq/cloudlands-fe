@@ -22,9 +22,17 @@ export async function readDockForegroundObservation(
     });
   const { snapshot: sample } = await reading;
   let url: string | null = foregroundDocumentUrl(sample.url);
+  // Native window titles are document labels only when that read verified a document URL.
+  // Intent's own browser must instead pass the focused embedded-tab ownership check below.
+  let tabTitle = sample.pid !== process.pid && url ? sample.title?.trim() || null : null;
   let workspaceId: string | undefined;
   let tabId: string | undefined;
-  if (sample.pid === process.pid && focused && !focused.isDestroyed()) {
+  if (
+    sample.pid === process.pid &&
+    focused &&
+    !focused.isDestroyed() &&
+    webContents.getFocusedWebContents() === focused
+  ) {
     const owner = embeddedBrowserCdp.focusedTabOwner(focused.id);
     if (
       owner?.backendId === backendId &&
@@ -35,6 +43,7 @@ export async function readDockForegroundObservation(
       url = owner.url;
       workspaceId = owner.workspaceId;
       tabId = owner.tabId;
+      tabTitle = foregroundDocumentUrl(owner.url) ? focused.getTitle().trim() || null : null;
     }
   }
   if (url && !workspaceId) {
@@ -55,6 +64,7 @@ export async function readDockForegroundObservation(
     identityKind,
     appId: sample.appId ?? null,
     appName: sample.appName ?? null,
+    tabTitle,
     url: url ?? null,
     icon: null,
     ...(workspaceId ? { workspaceId } : {}),

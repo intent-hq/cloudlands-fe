@@ -350,27 +350,93 @@ describe('owned dock capture visibility release', () => {
     dock.releaseDockEditorHolds('open-1', false);
   });
 
-  it('hides a screenshot hold at the press and reveals it only when no editor follows', () => {
+  it('a screenshot is captured, then hidden for its editor; a hold alone hides nothing', async () => {
+    // The real capture lease (DockEvidenceSessions) with the real dock hold: only the native
+    // pixel source is synthetic, and it records whether the dock was visible at that moment.
+    const { DockEvidenceSessions } = await import('../features/hud/main/dock-evidence-session');
     const sender = window.webContents as unknown as Electron.WebContents;
     const binding = bindings.getStrictBackendBindingForWebContents(sender)!;
+    const owner = { sender, frame: sender.mainFrame };
+    const display = { id: 1, scaleFactor: 2, bounds: { x: 0, y: 0, width: 1280, height: 900 } };
+    const visibleAtPixels: boolean[] = [];
+    const pixels = {
+      base64: Buffer.from('synthetic PNG').toString('base64'),
+      mimeType: 'image/png' as const,
+      width: 2560,
+      height: 1800,
+      displayScale: 2,
+      capturedAt: '2026-11-12T04:00:00.000Z',
+      hash: 'c'.repeat(64),
+    };
+    const sessions = new DockEvidenceSessions({
+      dock: () => dock.getDockWindow(),
+      binding: (contents) => bindings.getStrictBackendBindingForWebContents(contents),
+      retired: () => () => {},
+      placement: () => ({ displayId: 1, captureHidden: false }) as never,
+      displays: () => [display as Electron.Display],
+      permissionDenied: () => false,
+      hidden: (target, hidden, restore) =>
+        dock.setDockHiddenForCapture(hidden, { window: target, restore }),
+      hiddenForSelection: (target, hidden, restore) =>
+        dock.setDockHiddenForSelection(hidden, { window: target, restore }),
+      settle: async () => {},
+      capture: async () => {
+        throw new Error('legacy capture not used');
+      },
+      captureVisible: async (target) => {
+        visibleAtPixels.push(target.isVisible());
+        return { ok: true, value: pixels };
+      },
+      hideForOwnScreenshot: dock.hideDockForOwnScreenshot,
+      id: () => crypto.randomUUID(),
+      now: () => Date.now(),
+    });
+    const begun = sessions.begin(owner, { workspaceId: 'w', agentId: 'a', draftId: 'd' });
+    if (!begun.ok) throw new Error('capture session not admitted');
     const shot = '00000000-0000-4000-8000-000000000002';
-    // A recording-stop hold (no hide) leaves the dock as it is.
-    expect(dock.beginDockEditorHold(window, sender, binding, shot.replace(/2$/, '3'))).toBe(true);
+    const recordingStop = '00000000-0000-4000-8000-000000000003';
+    // A recording-stop hold (no hide) and a screenshot hold at the press change nothing yet:
+    // the capture is admitted only on a visible dock.
+    expect(dock.beginDockEditorHold(window, sender, binding, recordingStop)).toBe(true);
+    dock.endDockEditorHold(recordingStop, sender, binding);
     expect(window.isVisible()).toBe(true);
-    dock.endDockEditorHold(shot.replace(/2$/, '3'), sender, binding);
-    // A screenshot hold: out of sight from the press, through the capture.
-    vi.mocked(window.showInactive).mockClear();
     expect(dock.beginDockEditorHold(window, sender, binding, shot, true)).toBe(true);
+    expect(window.isVisible()).toBe(true);
+    // Another document's binding cannot hide it.
+    expect(dock.hideDockForOwnScreenshot(window, sender, {})).toBe(false);
+    expect(window.isVisible()).toBe(true);
+    // The admitted capture hides the dock before its pixels; the hold keeps it hidden after
+    // the capture's release (and through selection ends and focus requests) for the editor.
+    vi.mocked(window.showInactive).mockClear();
+    const taken = await sessions.capture(owner, { ...begun.value, requestId: 'shot' });
+    expect(taken.ok).toBe(true);
+    expect(visibleAtPixels).toEqual([false]);
     expect(window.isVisible()).toBe(false);
     dock.setDockHiddenForSelection(true, { window });
     dock.setDockHiddenForSelection(false, { window });
     dock.focusDockWindow();
     expect(window.showInactive).not.toHaveBeenCalled();
     expect(window.show).not.toHaveBeenCalled();
-    // Cancelled or refused (no editor adopted it): its owner's end brings the dock back.
-    dock.endDockEditorHold(shot, sender, binding);
+    // Its editor adopts the hold; closing the editor brings the dock back, inactive.
+    expect(dock.adoptDockEditorHold(shot, { window, sender, binding }, 'open-1')).toBe(true);
+    expect(window.isVisible()).toBe(false);
+    dock.releaseDockEditorHolds('open-1', true);
     expect(window.showInactive).toHaveBeenCalledTimes(1);
     expect(window.focus).not.toHaveBeenCalled();
+    // Without a screenshot hold the capture leaves the dock as it is (native exclusion).
+    const plain = await sessions.capture(owner, { ...begun.value, requestId: 'plain' });
+    expect(plain.ok).toBe(true);
+    expect(visibleAtPixels).toEqual([false, true]);
+    expect(window.isVisible()).toBe(true);
+    // A screenshot that opens no editor: its hold's end reveals the dock it hid.
+    const refused = '00000000-0000-4000-8000-000000000004';
+    expect(dock.beginDockEditorHold(window, sender, binding, refused, true)).toBe(true);
+    expect((await sessions.capture(owner, { ...begun.value, requestId: 'no-editor' })).ok).toBe(
+      true,
+    );
+    expect(window.isVisible()).toBe(false);
+    dock.endDockEditorHold(refused, sender, binding);
+    expect(window.isVisible()).toBe(true);
   });
 
   it('hides for a window or region selection without telling the dock document', () => {

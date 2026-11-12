@@ -32,6 +32,40 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
       page.evaluate(() => (window as any).__dockComposerE2E.store.state.dockConversation.loading),
     )
     .toBe(false);
+  // 0. A conversation opened while main refuses the native session (as for a hidden dock):
+  // the probe is retried until admitted, so Screenshot/Record/mic do not stay disabled.
+  await page.evaluate(() => {
+    const g = globalThis as any;
+    g.__syntheticNativeRefusals = 2;
+    g.__syntheticNativeProbes = 0;
+    const store = g.__dockComposerE2E.store;
+    const workspaceId = store.state.dockConversation.workspaceId;
+    store.dispatch({ type: 'dockConversation/close', payload: [] });
+    store.dispatch({ type: 'dockConversation/open', payload: [workspaceId] });
+  });
+  const retried = await page.evaluate(async () => {
+    const g = globalThis as any;
+    const startedAt = performance.now();
+    for (;;) {
+      const caps = g.__dockComposerE2E.store.state.dockConversation.nativeCapabilities;
+      if (caps?.capture)
+        return { probes: g.__syntheticNativeProbes, ms: performance.now() - startedAt };
+      if (performance.now() - startedAt > 9000)
+        return { probes: g.__syntheticNativeProbes, ms: -1 };
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  });
+  expect(retried.ms).toBeGreaterThan(0);
+  expect(retried.probes).toBe(3);
+  const refusedProbeRetried = { probes: retried.probes, admittedAfterMs: Math.round(retried.ms) };
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const d = (window as any).__dockComposerE2E.store.state.dockConversation;
+        return !d.loading && !!d.agentId;
+      }),
+    )
+    .toBe(true);
   const pair = await page.evaluate(() => {
     const d = (window as any).__dockComposerE2E.store.state.dockConversation;
     return { workspaceId: d.workspaceId as string, agentId: d.agentId as string };
@@ -96,7 +130,7 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     page.evaluate(
       () => (window as any).__dockComposerE2E.store.state.hud.dockCloseRequest as number,
     );
-  const receipts: Record<string, unknown> = { pair };
+  const receipts: Record<string, unknown> = { pair, refusedProbeRetried };
 
   // 1. Screenshot: hold → capture → editor request carrying that hold (adopted, not ended).
   // Phase marks, from inside the page: request, image in the evidence, original placed (its
