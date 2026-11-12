@@ -503,6 +503,9 @@ export function setupConversationWire(
   // bootstrap's draft saga instead of running a second one beside it.
   stops.push(...startChatFixtureSagas(store, appClient.drafts));
   return {
+    readDraft(workspaceId: string, agentId: string) {
+      return drafts.get(workspaceId, agentId);
+    },
     setServices(
       rows: import('$features/scripts/types').ScriptListEntry[],
       override: import('$features/scripts/types').ScriptRuntimeState | null = null,

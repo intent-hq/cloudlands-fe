@@ -32,7 +32,10 @@ type Harness = {
   reopen: () => void;
   holdPlacements: (value: boolean) => void;
   calls: { method: string; params: Record<string, unknown> }[];
-  fixture: { settle: (accepted?: boolean) => void };
+  fixture: {
+    settle: (accepted?: boolean) => void;
+    readDraft: (workspaceId: string, agentId: string) => Promise<{ text: string } | null>;
+  };
   setCaption: (text: string) => void;
   draftSnapshot: () => ComposerDraftSnapshot;
   store: {
@@ -95,6 +98,56 @@ async function settleAdmission(page: Page, admitted: ComposerDraftSnapshot) {
       (!!settled.tombstone && settled.tombstone.reason !== 'rejected'),
   ).toBe(true);
   return settled;
+}
+
+async function assertAcceptedDraftStaysEmpty(page: Page) {
+  const persistedText = () =>
+    page.evaluate(async () => {
+      const h = (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E;
+      const { workspaceId, agentId } = h.draftSnapshot();
+      if (!workspaceId || !agentId) throw new Error('Missing admitted draft owner');
+      return (await h.fixture.readDraft(workspaceId, agentId))?.text ?? '';
+    });
+  await expect.poll(persistedText).toBe('');
+  const before = await draftSnapshot(page);
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.close(),
+  );
+  const editor = page.locator('[data-testid="message-input"] [contenteditable]');
+  await expect(editor).toHaveCount(0);
+  await page.evaluate(() =>
+    (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.reopen(),
+  );
+  await expect(editor).toBeEditable();
+  await expect(editor).toHaveText('');
+  await expect.poll(async () => (await draftSnapshot(page)).draft?.text).toBe('');
+  await expect.poll(persistedText).toBe('');
+  const after = await draftSnapshot(page);
+  expect(after.workspaceId).toBe(before.workspaceId);
+  expect(after.agentId).toBe(before.agentId);
+  expect(after.draft?.delivery?.reference).toEqual(before.draft?.delivery?.reference);
+  expect(after.draft?.delivery?.settled).toBe(true);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { __dockComposerE2E: Harness }).__dockComposerE2E.calls.filter(
+          (call) => call.method === 'agent.sendMessage' || call.method === 'agent.queueMessage',
+        ).length,
+    ),
+  ).toBe(1);
+  await writeFile(
+    test.info().outputPath('accepted-draft-reopen.json'),
+    JSON.stringify(
+      {
+        before,
+        after,
+        persistedText: await persistedText(),
+      },
+      null,
+      2,
+    ),
+  );
+  await page.screenshot({ path: test.info().outputPath('accepted-draft-reopened.png') });
 }
 
 /**
@@ -314,6 +367,7 @@ test('dock composer walkthrough: capture, annotate, dictate, renumber, record, s
   await expect(tiles).toHaveCount(0);
   await expect(chips).toHaveCount(0);
   const settled = await settleAdmission(page, admitted);
+  await assertAcceptedDraftStaysEmpty(page);
   expect(
     await page.evaluate(
       () =>
@@ -489,6 +543,7 @@ test('restored legacy Pick marks retain metadata through reference deletion and 
   await expect(chips).toHaveCount(0);
   await expect(tiles).toHaveCount(0);
   const settled = await settleAdmission(page, admitted);
+  await assertAcceptedDraftStaysEmpty(page);
   await expect(chips).toHaveCount(0);
   await expect(tiles).toHaveCount(0);
   expect(await sends()).toHaveLength(1);

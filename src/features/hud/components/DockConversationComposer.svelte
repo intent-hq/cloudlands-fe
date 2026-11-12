@@ -166,7 +166,7 @@
   // Keep UI staging synchronous across consecutive paste/placement callbacks.
   // Serializable parent snapshots omit File; retain it locally for upload retry.
   let stagedContextItems = $state<ContextItem[]>([]);
-  $effect(() => {
+  $effect.pre(() => {
     const admittedRevision = clearRevision;
     const submissionId = clearSubmissionId;
     const editor = input;
