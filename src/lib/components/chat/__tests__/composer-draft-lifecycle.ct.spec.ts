@@ -380,6 +380,7 @@ test('pins queued clear and save authority before older persistence completes', 
     );
     expect(result?.text).toBe('peer typed after clear request');
     expect(result?.persisted).toBe('peer typed after clear request');
+    expect(result?.restored).toBe('peer typed after clear request');
     expect(result?.invalidPublished).toBe(false);
     expect(result?.changes.at(-1)).toBe('peer typed after clear request');
     await test.info().attach(retire ? 'retired-clear-order' : 'same-owner-clear-order', {

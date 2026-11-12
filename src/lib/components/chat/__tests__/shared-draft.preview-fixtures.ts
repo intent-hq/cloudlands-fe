@@ -337,9 +337,32 @@ export function setupSharedDraftFixture() {
         );
         await Promise.resolve();
         const persisted = await isolatedDrafts.get(ws, agent);
+        isolatedDriver.stop();
+        peer.dispose();
+        isolated.dispose();
+        // A fresh broker and renderer must restore durable state, not the old
+        // connection's in-memory snapshot after the queued clear settles.
+        const reopenedBroker = createChatDraftBroker(provenance, isolatedDrafts, () => {});
+        const reopenedOwner = {};
+        const reopened = createDraftSyncConnection(
+          {
+            request: (request) =>
+              reopenedBroker.request(request, { owner: reopenedOwner, current: () => true }),
+            subscribe: () => () => {},
+          },
+          () => provenance,
+        );
+        let restored: string;
+        try {
+          restored = (await reopened.read(ws, agent)).snapshot.text;
+        } finally {
+          reopened.dispose();
+          reopenedBroker.dispose();
+        }
         return {
           text: canonical.snapshot.text,
           persisted: persisted?.text,
+          restored,
           invalidPublished: methods.length !== beforeInvalid,
           changes,
         };
