@@ -21,7 +21,6 @@ const wireId = (value: unknown): value is string =>
   typeof value === 'string' &&
   value.length > 0 &&
   new TextEncoder().encode(value).length <= 256 &&
-  // eslint-disable-next-line no-control-regex
   !/[\u0000-\u001f\u007f]/u.test(value);
 const time = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0;

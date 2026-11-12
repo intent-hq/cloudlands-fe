@@ -42,7 +42,6 @@
     }),
   );
   onMount(() => {
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Synchronous mount-scoped secret receiver; no API calls or asynchronous work.
     const unregister = registerWebsocketCredentials(
       identity.formId,
       identity.sessionId,
