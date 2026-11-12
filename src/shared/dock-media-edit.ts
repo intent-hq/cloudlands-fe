@@ -495,6 +495,47 @@ function transcriptText(
   const events: Array<{ at: number; order: number; text: string }> = [];
   const editingTime =
     edit.cuts.length > 0 || edit.trim.startMs > 0 || edit.trim.endMs < source.durationMs;
+  // With no speech removed, incomplete recognition alignment must not discard or
+  // reorder words. Keep lexical order and put mark references after the transcript;
+  // their structured source times remain authoritative. Explicit time edits still
+  // use the strict projection below so removed speech can never reappear.
+  const uncertainFullAlignment =
+    !editingTime &&
+    transcript.words.some((word) => {
+      const text = edit.wordEdits[word.id] ?? word.text;
+      if (/^[\s\p{P}]*$/u.test(text) && /^[\s\p{P}]*$/u.test(word.text)) return false;
+      return (
+        word.startMs === null ||
+        word.endMs === null ||
+        (word.startMs < source.durationMs && word.endMs > source.durationMs)
+      );
+    });
+  if (uncertainFullAlignment) {
+    const units: string[] = [];
+    let previousRetained = false;
+    for (const word of transcript.words) {
+      const text = edit.wordEdits[word.id] ?? word.text;
+      if (!text.trim()) {
+        if (word.text.trim()) previousRetained = false;
+        continue;
+      }
+      if (/^[\s\p{P}]*$/u.test(text)) {
+        if (previousRetained) units[units.length - 1] += text.trim();
+      } else {
+        units.push(text.trim());
+        previousRetained = true;
+      }
+    }
+    const references = [...marks]
+      .sort((a, b) => a.mark.atMs - b.mark.atMs || a.n - b.n)
+      .map(({ n, mark }) => `[mark ${n}: ${mark.label || mark.kind}]`)
+      .join('\n');
+    const text = units
+      .join(' ')
+      .replace(/[^\S\n]+/g, ' ')
+      .trim();
+    return { text: [text, references].filter(Boolean).join('\n\n'), timingMissing: false };
+  }
   let timingMissing = false;
   let previousTimed: { at: number; order: number; text: string } | null = null;
   for (const word of transcript.words) {
