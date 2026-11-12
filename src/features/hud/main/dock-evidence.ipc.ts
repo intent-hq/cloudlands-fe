@@ -103,7 +103,6 @@ const controlSchema = z.discriminatedUnion('action', [
     .object({
       action: z.literal('media-waveform'),
       request: DockMediaAnalyzeRequestSchema,
-      DockMediaAudioProbeRequestSchema,
     })
     .strict(),
   z.object({ action: z.literal('media-export'), request: DockMediaExportRequestSchema }).strict(),

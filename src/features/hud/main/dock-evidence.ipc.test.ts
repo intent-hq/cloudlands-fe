@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: any[]) => unknown>(),
+  analyzeMedia: vi.fn(),
+  probeMediaAudio: vi.fn(),
   begin: vi.fn(),
   capture: vi.fn(),
   cancel: vi.fn(),
@@ -51,6 +53,13 @@ vi.mock('electron', () => ({
     handle: (channel: string, handler: (...args: any[]) => unknown) =>
       mocks.handlers.set(channel, handler),
   },
+}));
+vi.mock('./dock-media-output', () => ({
+  analyzeDockMedia: mocks.analyzeMedia,
+  probeDockMediaAudio: mocks.probeMediaAudio,
+  exportDockMedia: vi.fn(),
+  transcribeDockMedia: vi.fn(),
+  releaseDockMediaJob: vi.fn(),
 }));
 vi.mock('./dock-evidence-session', () => ({
   dockEvidenceSessions: mocks,
@@ -124,6 +133,70 @@ describe('dock evidence IPC', () => {
       },
     };
   }
+
+  it('admits the renderer waveform control shape while retaining strict validation and session ownership', async () => {
+    const f = mediaContext();
+    const request = {
+      jobId: requestId,
+      media: {
+        source: {
+          id: 'recording',
+          revision: 0,
+          kind: 'recording',
+          attachmentId: 'attachment',
+          path: '.intent/attachments/recording.mp4',
+          durationMs: 1000,
+          width: 1280,
+          height: 720,
+          audio: 'available',
+          batches: [],
+          visuals: 'clean',
+        },
+        saved: null,
+        transcript: null,
+      },
+    };
+    const waveform = {
+      ok: true,
+      value: {
+        sourceId: 'recording',
+        sourceRevision: 0,
+        durationMs: 1000,
+        intervalMs: 50,
+        peaks: Array(20).fill(0.5),
+      },
+    };
+    mocks.analyzeMedia.mockResolvedValue(waveform);
+    const control = { action: 'media-waveform', request };
+    expect(await f.invoke(control)).toEqual(waveform);
+    expect(mocks.analyzeMedia).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ scope: { ...scope, sessionId }, backendId: 'remote' }),
+      request,
+    );
+    for (const invalid of [
+      { ...control, DockMediaAudioProbeRequestSchema: request },
+      { ...control, request: { ...request, jobId: 'invalid' } },
+      {
+        ...control,
+        request: {
+          ...request,
+          media: { ...request.media, source: { ...request.media.source, path: '../private.mp4' } },
+        },
+      },
+    ])
+      expect(await f.invoke(invalid)).toEqual({ ok: false, error: 'unavailable' });
+    expect(mocks.analyzeMedia).toHaveBeenCalledTimes(1);
+    const probe = {
+      ok: true,
+      value: { sourceId: 'recording', sourceRevision: 0, trackCount: 1, populatedTrackCount: 1 },
+    };
+    mocks.probeMediaAudio.mockResolvedValue(probe);
+    expect(await f.invoke({ action: 'media-audio-probe', request })).toEqual(probe);
+    expect(mocks.probeMediaAudio).toHaveBeenCalledExactlyOnceWith(expect.anything(), request);
+    f.retire();
+    expect(await f.invoke(control)).toEqual({ ok: false, error: 'unavailable' });
+    expect(mocks.analyzeMedia).toHaveBeenCalledTimes(1);
+  });
 
   it('pauses only the session-owned live clip, and forwards its mic signal to the tool bar', async () => {
     const f = mediaContext();
