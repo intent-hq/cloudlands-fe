@@ -4,10 +4,17 @@ import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { build } from 'vite';
 
 test('cold shortcut context preserves native identity and first-use guest ownership', async ({}, info) => {
   test.setTimeout(60000);
+  // This direct Vite bundle bypasses build:main's generated-config prerequisite.
+  await promisify(execFile)(process.execPath, [
+    resolve('scripts/generate-build-config.cjs'),
+    '--if-missing',
+  ]);
   const root = await mkdtemp(join(tmpdir(), 'intent-shortcut-context-'));
   const appPath = join(root, 'dist', 'main');
   await symlink(
