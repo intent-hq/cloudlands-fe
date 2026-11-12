@@ -4,6 +4,13 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.327.4](https://github.com/intent-hq/cloudlands-fe/compare/v2.327.3...v2.327.4) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* **machine-rail:** hide machine name tooltips while dragging a machine ([#4507](https://github.com/intent-hq/cloudlands-fe/issues/4507)) ([d503aec](https://github.com/intent-hq/cloudlands-fe/commit/d503aec1d1163265660cc504b7b6b380ef0fa263))
+
 ## [2.327.3](https://github.com/intent-hq/cloudlands-fe/compare/v2.327.2...v2.327.3) (2026-11-12)
 
 
