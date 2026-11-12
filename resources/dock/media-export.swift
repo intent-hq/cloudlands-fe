@@ -145,11 +145,13 @@ func main() async throws {
     }
     cursor = cursor + span.duration
   }
-  let layers = try job.layers.map { layer -> (CIImage, Double, Double) in
+  let layers = try job.layers.compactMap { layer -> (CIImage, Double, Double)? in
     guard layer.startMs.isFinite, layer.endMs.isFinite, layer.startMs >= 0, layer.endMs > layer.startMs, layer.endMs <= job.expectedDurationMs + 1,
       let image = CIImage(contentsOf: URL(fileURLWithPath: layer.path)) else { throw failure("invalid-overlay") }
     let start = max(playableStart, layer.startMs), end = min(playableEnd, layer.endMs)
-    guard end > start else { throw failure("invalid-overlay") }
+    // A valid overlay beyond finalized video has no effect; requested frames
+    // still require playable source video below.
+    guard end > start else { return nil }
     return (image, start, end)
   }
   guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else { throw failure("export-unavailable") }
