@@ -17,7 +17,12 @@ export interface WindowRail {
   selectedId: string;
 }
 
+/** `app` event, with the window: it now shows another machine's renderer. */
+export const MACHINE_RAIL_SHOWN_CHANGED_EVENT = 'machine-rail-shown-changed';
+
 const rails = new WeakMap<BrowserWindowType, WindowRail>();
+/** A machine a window waits to show; the session saves it as the selection. */
+const pendingSelections = new WeakMap<BrowserWindowType, string>();
 let enabled = false;
 
 type RestoreHandler = (window: BrowserWindowType, session: unknown) => void;
@@ -45,6 +50,13 @@ export function writeWindowRail(window: BrowserWindowType, rail: WindowRail): vo
 
 export function clearWindowRail(window: BrowserWindowType): void {
   rails.delete(window);
+  pendingSelections.delete(window);
+}
+
+/** Record the machine the window waits to show (`''` when none). */
+export function setPendingSelection(window: BrowserWindowType, id: string): void {
+  if (id) pendingSelections.set(window, id);
+  else pendingSelections.delete(window);
 }
 
 /** What to save with the window's session; nothing while the rail holds only home. */
@@ -52,7 +64,9 @@ export function getMachineRailSession(window: BrowserWindowType): MachineRailSes
   if (!enabled) return undefined;
   const rail = readWindowRail(window);
   if (rail.machineIds.length < 2) return undefined;
-  return { machineIds: rail.machineIds.slice(1), selectedId: rail.selectedId };
+  const pending = pendingSelections.get(window);
+  const selectedId = pending && rail.machineIds.includes(pending) ? pending : rail.selectedId;
+  return { machineIds: rail.machineIds.slice(1), selectedId };
 }
 
 export function setMachineRailRestoreHandler(handler: RestoreHandler | null): void {

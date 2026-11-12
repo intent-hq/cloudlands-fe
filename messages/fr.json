@@ -2558,6 +2558,7 @@
   "hardwareConsole_actionKey_noOtherIdleAgents_message": "Aucun autre agent inactif",
   "hardwareConsole_actionKey_noOtherInProgressAgents_message": "Aucun autre agent en cours",
   "hardwareConsole_actionKey_noOtherOpenWindows_message": "Aucune autre fenêtre ouverte",
+  "hardwareConsole_actionKey_noOtherMachines_message": "Aucune autre machine dans cette fenêtre",
   "hardwareConsole_actionKey_noOtherUnreadAgents_message": "Aucun autre agent non lu",
   "hardwareConsole_actionKey_noUnreadAgents_message": "Aucun agent non lu",
   "hardwareConsole_actionKey_none_label": "Aucune",

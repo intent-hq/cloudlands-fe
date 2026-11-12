@@ -157,7 +157,7 @@
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
@@ -177,8 +177,13 @@
   const activeProtocolMismatch$ = selectActiveProtocolMismatch();
   const protocolMismatchModal$ = selectProtocolMismatchModal();
 
-  // Machine rail (Labs): the menu opens from the machine's rail item, with no visible trigger.
-  let { open: dropdownOpen = $bindable(false), railAnchor = false } = $props();
+  // Machine rail (Labs): the menu opens from the machine's rail item, with no visible
+  // trigger, and lists the rail's actions in place of the machines.
+  let {
+    open: dropdownOpen = $bindable(false),
+    railAnchor = false,
+    railActions,
+  }: { open?: boolean; railAnchor?: boolean; railActions?: Snippet } = $props();
   let menuBody = $state<HTMLDivElement | null>(null);
   // Align the details surface to the parent menu, not its inset first row.
   const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
@@ -980,7 +985,9 @@
       <!-- Multi-backend devices list + final Devices CTA -->
       <div class="h-px bg-border my-1"></div>
       <div class="px-1 pb-1">
-        {#if $connections$.length > 0}
+        {#if railActions}
+          {@render railActions()}
+        {:else if $connections$.length > 0}
           <Header class="px-2 pt-1.5 pb-0.5" size={6}
             >{m.layout_daemonStatus_devices_header()}</Header
           >
@@ -1068,18 +1075,23 @@
             </Menu.Item>
           {/each}
         {/if}
-        <Menu.Item class="w-full cursor-pointer text-xs px-2 py-1.5" onSelect={openDevicesSettings}>
-          {#snippet leading()}
-            <span class="text-subtle"><Fa icon={faPlus} /></span>
-          {/snippet}
-          {hasSavedRemoteConnections
-            ? m.layout_daemonStatus_manageDevices_action()
-            : m.layout_daemonStatus_connectAnotherDevice_action()}
-        </Menu.Item>
+        {#if !railActions}
+          <Menu.Item
+            class="w-full cursor-pointer text-xs px-2 py-1.5"
+            onSelect={openDevicesSettings}
+          >
+            {#snippet leading()}
+              <span class="text-subtle"><Fa icon={faPlus} /></span>
+            {/snippet}
+            {hasSavedRemoteConnections
+              ? m.layout_daemonStatus_manageDevices_action()
+              : m.layout_daemonStatus_connectAnotherDevice_action()}
+          </Menu.Item>
+        {/if}
       </div>
 
       <!-- Guest sessions (hosts joined through an invite) — shown only once joined -->
-      {#if $guestSessions$.length > 0}
+      {#if !railActions && $guestSessions$.length > 0}
         <div class="h-px bg-border my-1"></div>
         <div class="px-1 pb-1" data-testid="daemon-status-guest-sessions">
           <Header class="px-2 pt-1.5 pb-0.5" size={6}

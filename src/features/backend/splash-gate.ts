@@ -29,6 +29,8 @@ interface SplashGateStatusPayload {
   sidecarStartupFailed?: boolean;
   /** The daemon is starting or failed to start; the app shows its own screen. */
   daemonStartup?: unknown;
+  /** Dial retries since the last connect; above zero once an attempt has failed. */
+  reconnectAttempts?: number;
 }
 
 export interface StartSplashGateOptions {
@@ -36,12 +38,24 @@ export interface StartSplashGateOptions {
   api?: Window['electronAPI'] | null;
   /** Overrides `SPLASH_FALLBACK_TIMEOUT_MS`. */
   timeoutMs?: number;
+  /**
+   * Also settle once a connection attempt has failed, so the app's own
+   * cannot-connect screen shows instead of waiting out the fallback.
+   */
+  settleOnConnectFailure?: boolean;
 }
 
-function shouldDismiss(payload: SplashGateStatusPayload | null | undefined): boolean {
+function shouldDismiss(
+  payload: SplashGateStatusPayload | null | undefined,
+  settleOnConnectFailure: boolean,
+): boolean {
+  if (!payload) return false;
+  if (payload.status === 'connected' || payload.daemonStartup || payload.sidecarStartupFailed) {
+    return true;
+  }
   return (
-    !!payload &&
-    (payload.status === 'connected' || !!payload.daemonStartup || !!payload.sidecarStartupFailed)
+    settleOnConnectFailure &&
+    (payload.status === 'disconnected' || (payload.reconnectAttempts ?? 0) > 0)
   );
 }
 
@@ -63,6 +77,7 @@ export function startSplashGate(
         ? window.electronAPI
         : undefined;
   const timeoutMs = options.timeoutMs ?? SPLASH_FALLBACK_TIMEOUT_MS;
+  const settleOnConnectFailure = options.settleOnConnectFailure ?? false;
 
   if (!api) {
     // Non-Electron (browser/test/mock) — dismiss immediately, as today.
@@ -76,7 +91,7 @@ export function startSplashGate(
   let listenerId: string | null = null;
 
   const statusListener = (payload: SplashGateStatusPayload) => {
-    if (shouldDismiss(payload)) finish();
+    if (shouldDismiss(payload, settleOnConnectFailure)) finish();
   };
 
   function finish(): void {
@@ -99,7 +114,7 @@ export function startSplashGate(
   void bridge
     .invoke(BACKEND.GET_STATUS)
     .then((result: SplashGateStatusPayload) => {
-      if (shouldDismiss(result)) finish();
+      if (shouldDismiss(result, settleOnConnectFailure)) finish();
     })
     .catch(() => {
       // Bridge not ready yet — the BACKEND.STATUS listener and fallback timer converge.

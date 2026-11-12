@@ -2642,8 +2642,12 @@ function refreshGuestHostname(
     try {
       if (!guard()) return;
       const name = collaborationMachineName(result);
-      if (name && (await guestSessionsStore.setHostname(id, name, guard)))
-        await broadcastGuestSessionsChangedOwned(owner);
+      const renamed = !!name && (await guestSessionsStore.setHostname(id, name, guard));
+      // `system.status` reports the machine's kind in its `host` block.
+      const kind = extractDeviceKind((result as { host?: unknown } | null)?.host);
+      const kindChanged =
+        !!kind && (await guestSessionsStore.setDetectedDeviceKind(id, kind, guard));
+      if (renamed || kindChanged) await broadcastGuestSessionsChangedOwned(owner);
     } catch (error) {
       recordPoolError(owner, error);
       logger.warn('Failed to refresh collaboration machine name', {
@@ -4494,16 +4498,49 @@ async function forgetConnectionLockedOriginal(
   await broadcastConnectionsChangedOwned(owner);
 }
 
+/** Whether the pooled client of `id` is connected right now. */
+export function isBackendClientConnected(id: string): boolean {
+  return backendClients.get(id)?.getStatus() === 'connected';
+}
+
 /**
- * Ids of the saved machines a window may show in its machine rail: every
- * saved connection except this machine's own published entry and nodes, which
- * never open a window.
+ * Dial `id` now, for a user who asked to see that machine: resolves `true`
+ * once it is connected and `false` once that attempt fails.
+ */
+export async function retryBackendConnection(id: string): Promise<boolean> {
+  const client = await connectBackendClient(id);
+  if (client.getStatus() === 'connected') return true;
+  return new Promise((resolve) => {
+    const onStatus = (status: string): void => {
+      if (status !== 'connected' && status !== 'disconnected') return;
+      client.off('status', onStatus);
+      resolve(status === 'connected');
+    };
+    client.on('status', onStatus);
+    // No dial now (cooldown, shutting down) and none in flight: report the failure at once.
+    if (!client.retryNow() && client.getStatus() !== 'connecting') {
+      client.off('status', onStatus);
+      resolve(false);
+    }
+  });
+}
+
+/**
+ * Ids of the machines a window may show in its machine rail: every saved
+ * connection except nodes, which never open a window, then every host joined
+ * as a guest.
  */
 export async function listMachineRailCandidateIds(): Promise<string[]> {
-  const { connections } = await listConnections();
-  return connections
-    .filter((connection) => connection.daemonMode !== 'node')
-    .map((connection) => connection.id);
+  const [{ connections }, guests] = await Promise.all([
+    listConnections(),
+    guestSessionsStore.list(),
+  ]);
+  return [
+    ...connections
+      .filter((connection) => connection.daemonMode !== 'node')
+      .map((connection) => connection.id),
+    ...guests.map((session) => session.id),
+  ];
 }
 
 /** Register the backend bridge IPC handlers (idempotent). */
