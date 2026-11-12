@@ -73,6 +73,9 @@ importers:
       pdfjs-dist:
         specifier: 6.5.438
         version: 6.5.438
+      ssh2:
+        specifier: ^1.17.0
+        version: 1.17.0
       unique-names-generator:
         specifier: ^4.7.1
         version: 4.7.1
@@ -386,9 +389,6 @@ importers:
       sharp:
         specifier: ^0.35.5
         version: 0.35.5(@types/node@26.6.6)
-      ssh2:
-        specifier: ^1.17.0
-        version: 1.17.0
       svelte:
         specifier: ^5.57.3
         version: 5.57.3(@typescript-eslint/types@8.72.2)

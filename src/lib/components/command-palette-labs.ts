@@ -7,6 +7,7 @@ import {
   setLabsBrowserAccessEnabled,
   setLabsCloudMachinesEnabled,
   setLabsPlainFolderWorkspacesEnabled,
+  setLabsSshMachineSetupEnabled,
   setLabsTabGroupsEnabled,
 } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 
@@ -20,6 +21,8 @@ const ENABLE_BROWSER_ACCESS = 'enable-experimental-browser-access';
 const DISABLE_BROWSER_ACCESS = 'disable-experimental-browser-access';
 const ENABLE_CLOUD_MACHINES = 'enable-experimental-cloud-machines';
 const DISABLE_CLOUD_MACHINES = 'disable-experimental-cloud-machines';
+const ENABLE_SSH_MACHINE_SETUP = 'enable-experimental-ssh-machine-setup';
+const DISABLE_SSH_MACHINE_SETUP = 'disable-experimental-ssh-machine-setup';
 const ENABLE_TAB_GROUPS = 'enable-experimental-tab-groups';
 const DISABLE_TAB_GROUPS = 'disable-experimental-tab-groups';
 
@@ -52,6 +55,14 @@ export function isMachineRailCommandHidden(commandId: string, railEnabled: boole
   return commandId === (railEnabled ? ENABLE_MACHINE_RAIL : DISABLE_MACHINE_RAIL);
 }
 
+/** SSH machine setup runs in Electron main: its commands exist in the desktop app only. */
+export function isSshMachineSetupCommandHidden(commandId: string, enabled: boolean): boolean {
+  if (commandId !== ENABLE_SSH_MACHINE_SETUP && commandId !== DISABLE_SSH_MACHINE_SETUP)
+    return false;
+  if (!isElectronPlatform()) return true;
+  return commandId === (enabled ? ENABLE_SSH_MACHINE_SETUP : DISABLE_SSH_MACHINE_SETUP);
+}
+
 export function runLabCommand(commandId: string): boolean {
   if (commandId === ENABLE_MACHINE_RAIL || commandId === DISABLE_MACHINE_RAIL) {
     appStore.dispatch(setMachineRailEnabledRequested(commandId === ENABLE_MACHINE_RAIL));
@@ -59,6 +70,10 @@ export function runLabCommand(commandId: string): boolean {
   }
   if (commandId === ENABLE_CLOUD_MACHINES || commandId === DISABLE_CLOUD_MACHINES) {
     appStore.dispatch(setLabsCloudMachinesEnabled(commandId === ENABLE_CLOUD_MACHINES));
+    return true;
+  }
+  if (commandId === ENABLE_SSH_MACHINE_SETUP || commandId === DISABLE_SSH_MACHINE_SETUP) {
+    appStore.dispatch(setLabsSshMachineSetupEnabled(commandId === ENABLE_SSH_MACHINE_SETUP));
     return true;
   }
   if (commandId === ENABLE_TAB_GROUPS || commandId === DISABLE_TAB_GROUPS) {

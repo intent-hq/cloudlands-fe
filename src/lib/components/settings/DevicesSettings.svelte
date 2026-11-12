@@ -51,7 +51,8 @@
     type CloudProviderKind,
   } from '$shared/types/cloud-machines';
   import { Menu } from '$lib/components/patterns/settings/custom-controls';
-  import { faCloud, faDesktop, faLink } from '$lib/icons/phosphor-icons';
+  import { faCirclePlus, faCloud, faDesktop, faLink } from '$lib/icons/phosphor-icons';
+  import { machineSetupOpened } from '$features/machine-setup/machine-setup-slice';
   import PairLinkPaste from '$features/nodes/PairLinkPaste.svelte';
   import { selectHighlightedConnectionId } from '$features/nodes/nodes-selectors';
   import { pasteLinkRequested } from '$features/nodes/nodes-slice';
@@ -323,6 +324,18 @@
         {/snippet}
       </Menu.Trigger>
       <Menu.Content align="end" class="w-80">
+        <Menu.Item
+          onSelect={() => appStore.dispatch(machineSetupOpened())}
+          data-testid="add-machine-setup"
+        >
+          {#snippet leading()}<Fa icon={faCirclePlus} />{/snippet}
+          <span class="flex min-w-0 flex-col">
+            <span>{m.machineSetup_addMenu_label()}</span>
+            <span class="type-caption text-muted-foreground"
+              >{m.machineSetup_addMenu_description()}</span
+            >
+          </span>
+        </Menu.Item>
         <Menu.Item onSelect={() => (connectModalOpen = true)}>
           {#snippet leading()}<Fa icon={faDesktop} />{/snippet}
           <span class="flex min-w-0 flex-col">

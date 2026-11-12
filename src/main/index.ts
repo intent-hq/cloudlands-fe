@@ -362,6 +362,7 @@ import { registerWorkspaceTransferHandlers } from '../features/backend/main/work
 import { registerWorkspaceImportHandlers } from '../features/backend/main/workspace-import.ipc';
 import { registerRemoteMachinesHandlers } from '../features/backend/main/remote-machines.ipc';
 import { registerPairLinkHandlers } from '../features/backend/main/pair-link.ipc';
+import { registerSshSetupHandlers } from '../features/machine-setup/main/ssh-setup.ipc';
 import { getConnectionMode, getDaemonVersionInfo } from '../features/backend/main/connection-mode';
 import { list as listGuestSessions } from '../features/backend/main/guest-sessions-store';
 import {
@@ -1656,6 +1657,7 @@ const bootFlow = app.whenReady().then(async () => {
   registerWorkspaceImportHandlers(); // Import Workspace from File (File menu)
   registerRemoteMachinesHandlers(); // Make a machine available to the current backend
   registerPairLinkHandlers(); // Add a machine or node from a pasted intent:// link
+  registerSshSetupHandlers(); // Set up a new machine over SSH (Labs)
 
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).

@@ -80,6 +80,8 @@ export type UserPreferencesState = {
   labsTabGroupsEnabled: boolean;
   /** Labs: E2B cloud machines (setup, sandbox list, Start On). Existing E2B agents always render. */
   labsCloudMachinesEnabled: boolean;
+  /** Labs: Set up a new machine over SSH (desktop app only). */
+  labsSshMachineSetupEnabled: boolean;
   /**
    * Internal gate for the native review pull-request flow. Off for everyone, so PR creation
    * keeps the classic flow; not persisted and has no UI. Tests and previews turn it on.
@@ -166,6 +168,7 @@ export const initialState: UserPreferencesStoreState = {
   labsBrowserAccessEnabled: false,
   labsTabGroupsEnabled: false,
   labsCloudMachinesEnabled: false,
+  labsSshMachineSetupEnabled: false,
   nativeReviewEnabled: false,
   preferencesHydrated: false,
   ...fontSettingsInitialState,
@@ -492,6 +495,17 @@ export const setLabsCloudMachinesEnabled = labsCloudMachinesPreference.setAction
 
 export const toggleLabsCloudMachines = labsCloudMachinesPreference.toggleAction;
 
+const labsSshMachineSetupPreference = createBooleanPreference<UserPreferencesStoreState>({
+  sliceName: 'userPreferences',
+  field: 'labsSshMachineSetupEnabled',
+  setActionName: 'setLabsSshMachineSetupEnabled',
+  toggleActionName: 'toggleLabsSshMachineSetup',
+});
+
+export const setLabsSshMachineSetupEnabled = labsSshMachineSetupPreference.setAction;
+
+export const toggleLabsSshMachineSetup = labsSshMachineSetupPreference.toggleAction;
+
 const nativeReviewPreference = createBooleanPreference<UserPreferencesStoreState>({
   sliceName: 'userPreferences',
   field: 'nativeReviewEnabled',
@@ -628,6 +642,7 @@ labsPlainFolderWorkspacesPreference.register(userPreferencesReducer);
 labsBrowserAccessPreference.register(userPreferencesReducer);
 labsTabGroupsPreference.register(userPreferencesReducer);
 labsCloudMachinesPreference.register(userPreferencesReducer);
+labsSshMachineSetupPreference.register(userPreferencesReducer);
 nativeReviewPreference.register(userPreferencesReducer);
 userPreferencesReducer.with(setUpdateChannel, (state, { payload: [channel] }) => ({
   ...state,

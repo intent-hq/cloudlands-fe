@@ -1,15 +1,16 @@
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
-import type { NodeAddError, NodesState } from './nodes-types';
+import type { NodeAddError, NodesState, PasteSurface } from './nodes-types';
 
 const initialState: NodesState = {
-  paste: { phase: 'closed', masked: null, error: null },
+  paste: { phase: 'closed', masked: null, error: null, surface: 'inline' },
   highlightId: null,
 };
 
 /** "Paste an intent:// link": read the clipboard, else open the field. */
 export const pasteLinkRequested = createAction('nodes/pasteLinkRequested');
-export const pasteFieldOpened = createAction('nodes/pasteFieldOpened');
+/** Open the paste field; the wizard passes `'wizard'` so the inline row stays hidden. */
+export const pasteFieldOpened = createAction<[surface?: PasteSurface]>('nodes/pasteFieldOpened');
 /** Test and add the link typed in the field (stashed with `stashPastedLink`, never in the action). */
 export const pasteLinkSubmitted = createAction('nodes/pasteLinkSubmitted');
 /** Test the last submitted link again (kept in the saga, never in state). */
@@ -39,17 +40,23 @@ export const nodeConnectionOpened = createAction<[connectionId: string, added: b
 export const rowHighlighted = createAction<[connectionId: string | null]>('nodes/rowHighlighted');
 
 export const nodesReducer = createReducer<NodesState>(initialState);
-nodesReducer.with(pasteFieldOpened, (state) => ({
+nodesReducer.with(pasteFieldOpened, (state, { payload: [surface] }) => ({
   ...state,
-  paste: { phase: 'field', masked: null, error: null },
+  paste: {
+    phase: 'field',
+    masked: null,
+    error: null,
+    // A retry re-opens the field from the saga: keep the open surface.
+    surface: surface ?? (state.paste.phase === 'closed' ? 'inline' : state.paste.surface),
+  },
 }));
 nodesReducer.with(pasteTestingStarted, (state, { payload: [masked] }) => ({
   ...state,
-  paste: { phase: 'testing', masked, error: null },
+  paste: { phase: 'testing', masked, error: null, surface: state.paste.surface },
 }));
 nodesReducer.with(pasteFailed, (state, { payload: [error] }) => ({
   ...state,
-  paste: { phase: 'field', masked: state.paste.masked, error },
+  paste: { phase: 'field', masked: state.paste.masked, error, surface: state.paste.surface },
 }));
 nodesReducer.with(pasteClosed, (state) => ({ ...state, paste: initialState.paste }));
 nodesReducer.with(pasteCompleted, (state) => ({ ...state, paste: initialState.paste }));

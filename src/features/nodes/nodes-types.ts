@@ -33,6 +33,9 @@ export interface NodeAddError {
 
 type PastePhase = 'closed' | 'field' | 'testing';
 
+/** Where the paste field shows: under the Machines list, or in the Set up a new machine wizard. */
+export type PasteSurface = 'inline' | 'wizard';
+
 export interface NodesState {
   /** Settings → Machines → Add machine → Paste an intent:// link. */
   paste: {
@@ -40,6 +43,7 @@ export interface NodesState {
     /** The link being tested, token masked. */
     masked: string | null;
     error: NodeAddError | null;
+    surface: PasteSurface;
   };
   /** Row briefly highlighted after it was added. */
   highlightId: string | null;
