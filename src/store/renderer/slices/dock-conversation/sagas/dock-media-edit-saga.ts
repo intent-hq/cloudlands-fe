@@ -763,6 +763,22 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
   const { openId, workspaceId, agentId, attachmentId, sourceId, sourceRevision } = value;
   const mine = admittedEditor;
   const myReturn = ++returnGeneration;
+  // The attachment still has the source the editor had (not removed, replaced or revised).
+  const sourceCurrent = (): boolean => {
+    const evidence = evidenceOf(workspaceId, agentId);
+    const rows: Array<{
+      media?: { source?: { attachmentId: string; id: string; revision: number } };
+    }> = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])];
+    return rows.some((row) => {
+      const source = row.media?.source;
+      return (
+        !!source &&
+        source.attachmentId === attachmentId &&
+        (sourceId === null || (source.id === sourceId && source.revision === sourceRevision))
+      );
+    });
+  };
+
   let answered = false;
   const answer = (accept: boolean) =>
     call(() =>
@@ -780,18 +796,7 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
     if (getPrincipalActionContext(store.state) !== mine.authority) return false;
     if (store.state.connections.windowBackendId !== mine.backend) return false;
     if (dockInputLive() || store.state.dockConversation.sending) return false;
-    const evidence = evidenceOf(workspaceId, agentId);
-    const rows: Array<{
-      media?: { source?: { attachmentId: string; id: string; revision: number } };
-    }> = [...(evidence?.images ?? []), ...(evidence?.clips ?? [])];
-    return rows.some((row) => {
-      const source = row.media?.source;
-      return (
-        !!source &&
-        source.attachmentId === attachmentId &&
-        (sourceId === null || (source.id === sourceId && source.revision === sourceRevision))
-      );
-    });
+    return sourceCurrent();
   };
   try {
     if (!current()) return;
@@ -806,7 +811,8 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
       getPrincipalActionContext(store.state) === keep.authority &&
       store.state.connections.windowBackendId === keep.backend &&
       !dockInputLive() &&
-      !store.state.dockConversation.sending;
+      !store.state.dockConversation.sending &&
+      sourceCurrent();
     // The dock opens by keyboard first, so the conversation mounts asked to focus its prompt.
     yield* put(dockFocusRequested());
     if (store.state.dockConversation.workspaceId !== workspaceId)

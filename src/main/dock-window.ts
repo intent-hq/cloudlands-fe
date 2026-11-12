@@ -1122,7 +1122,9 @@ export function focusDockWindow(
   context?: import('../shared/dock-shortcuts').DockShortcutContext,
 ): void {
   const window = getDockWindow();
-  if (!window || captureHiddenWindows.has(window) || editorHeld(window) || sessionPaused) return;
+  if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
+  // A live recording (which may already hold the dock for its editor) keeps its exact-owner
+  // record/dictate path; it never shows, focuses or routes.
   if (recordingHidden(window)) {
     // Out of sight for a recording: never shown or focused, and a focus-only request
     // (or capture) does nothing meanwhile. Record and dictate reach the dock
@@ -1139,6 +1141,8 @@ export function focusDockWindow(
       });
     return;
   }
+  // An editor holding the dock (or a capture handing off to one) blocks every other press.
+  if (editorHeld(window)) return;
   dockFocusedByIntentAt = Date.now();
   window.show();
   window.focus();

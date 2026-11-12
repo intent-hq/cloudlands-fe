@@ -46,6 +46,7 @@ vi.mock('electron', async () => {
 });
 vi.mock('../../../shared/logger', () => ({
   Logger: class {
+    debug() {}
     warn() {}
   },
 }));

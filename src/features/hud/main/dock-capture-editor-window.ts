@@ -620,7 +620,9 @@ export function setupDockCaptureEditorIPC(): void {
     if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
     if (getStrictBackendBindingForWebContents(event.sender) !== owner.binding) return false;
     if (!parsed.data.accept) {
-      releaseDockEditorHolds(parsed.data.openId, true);
+      // A refused return (stale source, newer session, live input) is not a user Cancel:
+      // the hold ends without revealing or focusing anything.
+      releaseDockEditorHolds(parsed.data.openId, false);
       return false;
     }
     releaseDockEditorHolds(parsed.data.openId, false);

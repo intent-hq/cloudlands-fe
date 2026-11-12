@@ -54,6 +54,10 @@ vi.mock('electron', async () => {
     setAlwaysOnTop = vi.fn();
     setFullScreenable = vi.fn();
     setVisibleOnAllWorkspaces = vi.fn();
+    setOpacity = vi.fn();
+    setFocusable = vi.fn();
+    blur = vi.fn();
+    moveTop = vi.fn();
     getBounds = () => ({ x: 0, y: 0, width: 224, height: 40 });
     isVisible = () => this.visible;
     isDestroyed = () => this.destroyed;
@@ -308,6 +312,42 @@ describe('owned dock capture visibility release', () => {
     expect(fixture.captureHidden).not.toHaveBeenCalled();
     expect(window.showInactive).not.toHaveBeenCalled();
     expect(window.focus).not.toHaveBeenCalled();
+  });
+
+  it('lets a live recording own its record shortcut under a pending editor hold', () => {
+    const sender = window.webContents as unknown as Electron.WebContents;
+    const binding = bindings.getStrictBackendBindingForWebContents(sender)!;
+    expect(binding).toBeTruthy();
+    (window as unknown as { isFocused: () => boolean }).isFocused = () => false;
+    // A recording started: the dock is out of sight and the recording holds it for its editor.
+    dock.hideDockForRecording(window, 'clip-1');
+    expect(
+      dock.beginDockEditorHold(window, sender, binding, '00000000-0000-4000-8000-000000000001'),
+    ).toBe(true);
+    vi.mocked(window.webContents.send).mockClear();
+    vi.mocked(window.show).mockClear();
+    // Ctrl+Shift+R reaches that recording's own pair (owner-only), never shown or focused.
+    dock.focusDockWindow({ id: 'p1', backendId: 'local', action: 'record' });
+    expect(window.webContents.send).toHaveBeenCalledWith(
+      'window:focus-dock',
+      expect.objectContaining({ action: 'record', recordingOwnerOnly: true }),
+    );
+    expect(window.show).not.toHaveBeenCalled();
+    expect(window.focus).not.toHaveBeenCalled();
+    // After the recording, an adopted editor blocks unrelated shortcuts entirely.
+    dock.releaseDockRecordingHide('clip-1');
+    expect(
+      dock.adoptDockEditorHold(
+        '00000000-0000-4000-8000-000000000001',
+        { window, sender, binding },
+        'open-1',
+      ),
+    ).toBe(true);
+    vi.mocked(window.webContents.send).mockClear();
+    dock.focusDockWindow({ id: 'p2', backendId: 'local', action: 'focus' });
+    expect(window.webContents.send).not.toHaveBeenCalled();
+    expect(window.show).not.toHaveBeenCalled();
+    dock.releaseDockEditorHolds('open-1', false);
   });
 
   it('hides for a window or region selection without telling the dock document', () => {
@@ -787,7 +827,11 @@ describe('a transient close (release) keeps the dock; only its own Hide closes i
   it('six focus/release cycles keep the same open dock, never Hide it or save anything', async () => {
     // Native key focus for this window only (other tests rely on the shared mock as is).
     let focused = false;
-    const native = window as unknown as { focus: () => void; isFocused: () => boolean; blur: () => void };
+    const native = window as unknown as {
+      focus: () => void;
+      isFocused: () => boolean;
+      blur: () => void;
+    };
     native.focus = () => void (focused = true);
     native.isFocused = () => focused;
     native.blur = vi.fn(() => void (focused = false));
@@ -829,7 +873,11 @@ describe('a transient close hands the keyboard back without taking the dock off 
   // dock off screen and back. The native handback never calls blur.
   function nativeFocus() {
     let focused = false;
-    const native = window as unknown as { focus: () => void; isFocused: () => boolean; blur: () => void };
+    const native = window as unknown as {
+      focus: () => void;
+      isFocused: () => boolean;
+      blur: () => void;
+    };
     native.focus = () => void (focused = true);
     native.isFocused = () => focused;
     native.blur = vi.fn(() => void (focused = false));
@@ -844,7 +892,13 @@ describe('a transient close hands the keyboard back without taking the dock off 
       focus.current?.release();
       return true;
     });
-    fixture.cursor = { update: vi.fn(), cursorChanged: vi.fn(), dispose: vi.fn(), inspect: vi.fn(), releaseKey };
+    fixture.cursor = {
+      update: vi.fn(),
+      cursorChanged: vi.fn(),
+      dispose: vi.fn(),
+      inspect: vi.fn(),
+      releaseKey,
+    };
     dock.closeDockWindow();
     dock = await import('./dock-window');
     window = dock.createDockWindow();
@@ -878,7 +932,13 @@ describe('a transient close hands the keyboard back without taking the dock off 
     fixture.cursor = undefined;
     vi.resetModules();
     const releaseKey = vi.fn(() => false);
-    fixture.cursor = { update: vi.fn(), cursorChanged: vi.fn(), dispose: vi.fn(), inspect: vi.fn(), releaseKey };
+    fixture.cursor = {
+      update: vi.fn(),
+      cursorChanged: vi.fn(),
+      dispose: vi.fn(),
+      inspect: vi.fn(),
+      releaseKey,
+    };
     dock.closeDockWindow();
     dock = await import('./dock-window');
     window = dock.createDockWindow();
