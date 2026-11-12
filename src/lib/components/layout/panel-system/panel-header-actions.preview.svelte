@@ -364,6 +364,8 @@
     }}
     onTabClick={(id) => (selectedTab = id)}
     onZoomToggle={() => (lastAction = 'zoom')}
+    onMovePaneLeft={stacked ? () => (lastAction = 'move-left') : undefined}
+    onMovePaneRight={atLimit || !tabs.length ? undefined : () => (lastAction = 'move-right')}
     onTabClose={() => (lastAction = 'close')}
     onClosePanel={() => (lastAction = 'close')}
     isFocused
