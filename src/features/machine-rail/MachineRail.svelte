@@ -55,6 +55,7 @@
   import type { GuestSessionRecord } from '$shared/types/guest-sessions';
   import {
     selectIsRailHomeRenderer,
+    selectIsRailMachineShown,
     selectMachineRailCandidates,
     selectMachineRailEnabled,
     selectMachineRailGuestCandidates,
@@ -78,6 +79,7 @@
   const candidates$ = selectMachineRailCandidates();
   const guestCandidates$ = selectMachineRailGuestCandidates();
   const isHomeRenderer$ = selectIsRailHomeRenderer();
+  const isShown$ = selectIsRailMachineShown();
   const selectedRecord$ = selectRailSelectedRecord();
   const shellTransparencyEnabled$ = selectShellTransparencyEnabled();
 
@@ -299,7 +301,26 @@
       ?.focus();
   }
 
+  // Each machine's renderer has its own rail, and one that stops being shown
+  // never sees the pointer leave. A machine's name stays hidden after a click
+  // on it, and every name while this rail is not on screen, until the pointer
+  // or keyboard focus moves on, so a tooltip cannot stay open for when this
+  // rail shows again.
+  let quietTooltips = $state<'all' | string | null>(null);
+  $effect(() => {
+    if (!$isShown$) quietTooltips = 'all';
+  });
+
+  function tooltipQuiet(item: MachineRailItem): boolean {
+    return quietTooltips === 'all' || quietTooltips === item.id;
+  }
+
+  function wakeTooltips(item?: MachineRailItem) {
+    if (quietTooltips !== null && quietTooltips !== item?.id) quietTooltips = null;
+  }
+
   function selectMachine(id: string) {
+    quietTooltips = id;
     if (suppressClick) {
       suppressClick = false;
       return;
@@ -390,6 +411,8 @@
     data-rail-group={group}
     style:transform={entryOffset(item, group, index)}
     style:transition={entryTransition(item)}
+    onpointerenter={() => wakeTooltips(item)}
+    onfocusin={() => wakeTooltips(item)}
     onpointerdown={(event) => startDrag(event, item, group, index)}
     onpointermove={moveDrag}
     onpointerup={() => endDrag(true)}
@@ -424,6 +447,7 @@
       tooltip={itemLabel(item)}
       tooltipSide="right"
       tooltipDelayDuration={MACHINE_TOOLTIP_DELAY_MS}
+      tooltipDisabled={tooltipQuiet(item)}
       aria-current={item.selected ? 'true' : undefined}
       aria-busy={item.pending || undefined}
       aria-haspopup="menu"
@@ -477,6 +501,8 @@
     class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-1"
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
+    onpointerenter={() => wakeTooltips()}
+    onpointerleave={() => wakeTooltips()}
   >
     <div
       bind:this={railList}
