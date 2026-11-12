@@ -284,6 +284,7 @@ export const selectDockConversationComposer = store.createSelector((state) => {
     clearRevision: draft?.clearRevision ?? 0,
     clearSubmissionId: draft?.clearSubmissionId ?? null,
     recoverRevision: draft?.recoverRevision ?? 0,
+    sharedRevision: draft?.sharedRevision ?? 0,
     contextItems:
       workspaceId && agentId ? selectComposerContextItems.select(state, workspaceId, agentId) : [],
     disabled: view.draftDisabled,

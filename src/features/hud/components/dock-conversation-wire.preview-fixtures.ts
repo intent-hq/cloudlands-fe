@@ -1,3 +1,5 @@
+import type { DraftSyncConnection } from '$lib/components/chat/chat-draft-sync';
+import type { DraftsClient } from '$lib/client/app-client';
 import type { DockConversationDraft } from '$store/renderer/slices/dock-conversation/dock-conversation-types';
 import type {
   PendingSubmission,
@@ -130,6 +132,8 @@ const questionRow: ConversationWireMessage = {
 export function setupConversationWire(
   record: (call: ConversationWireCall) => void,
   options: {
+    draftsClient?: DraftsClient;
+    draftSync?: DraftSyncConnection;
     failPlacementOnce?: boolean;
     initialMessage?: string;
     /** Persisted synthetic draft, restored by the real owner saga on open. */
@@ -162,7 +166,7 @@ export function setupConversationWire(
     ThemeManager.resetInstance();
   }
   const subscriptions = new Map<string, { agentId: string; seq: number }>();
-  const drafts = createChatDraftFixture().client;
+  const drafts = options.draftsClient ?? createChatDraftFixture().client;
   if (options.initialDraft)
     void drafts.set(
       wireWorkspace,
@@ -564,7 +568,14 @@ export function setupConversationWire(
   ].map((saga) => store.runSaga(saga));
   // Drafts go through the mock backend. The shared helper replaces the CT
   // bootstrap's draft saga instead of running a second one beside it.
-  stops.push(...startChatFixtureSagas(store, appClient.drafts));
+  stops.push(
+    ...startChatFixtureSagas(store, {
+      get: (...args) => appClient.drafts.get(...args),
+      set: (...args) => appClient.drafts.set(...args),
+      clear: (...args) => appClient.drafts.clear(...args),
+      sync: options.draftSync,
+    }),
+  );
   return {
     readDraft(workspaceId: string, agentId: string) {
       return drafts.get(workspaceId, agentId);

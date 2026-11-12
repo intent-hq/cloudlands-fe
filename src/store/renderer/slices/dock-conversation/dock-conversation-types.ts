@@ -61,6 +61,7 @@ export interface DockConversationDraft {
   clearRevision?: number;
   clearSubmissionId?: string;
   recoverRevision?: number;
+  sharedRevision?: number;
   delivery?: {
     reference: import('../pending-submissions/pending-submissions-types').SubmissionReference;
     revision: number;

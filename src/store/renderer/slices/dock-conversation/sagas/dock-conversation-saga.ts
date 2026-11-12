@@ -1,3 +1,4 @@
+import type { SharedDraftSnapshot } from '$shared/types/chat-draft-sync';
 import {
   dockMediaSendsOriginal,
   prepareDockMediaSend,
@@ -97,6 +98,7 @@ import {
   sendMessage,
 } from '../../chat-state/chat-state-slice';
 import {
+  chatDraftSharedChanged,
   chatDraftOwnerOpened,
   chatDraftOwnerReleased,
   chatDraftRestoreRequested,
@@ -122,6 +124,7 @@ import {
   dockConversationDraftChanged,
   dockConversationContextItemsChanged,
   dockConversationDraftRestored,
+  dockConversationDraftShared,
   dockConversationDraftAdmitted,
   dockConversationDraftRecovered,
   dockConversationDeliveryTracked,
@@ -138,6 +141,7 @@ import {
   dockEvidenceMarkUndone,
   dockEvidenceReferencesEdited,
   dockEvidenceRestored,
+  dockEvidenceShared,
   dockEvidenceInsertionCommitted,
   dockEvidencePlacementRecorded,
 } from '../dock-conversation-slice';
@@ -158,14 +162,50 @@ function draftAttachments(
 ) {
   return serializeDraftAttachments(items, toDockDraftEvidence(evidenceOf(workspaceId, agentId)));
 }
+function* applySharedDraft(
+  workspaceId: string,
+  agentId: string,
+  snapshot: SharedDraftSnapshot,
+  revision: number,
+): SagaGenerator<void> {
+  const items = deserializeDraftAttachments(snapshot.attachments);
+  yield* put(setComposerContextItems(workspaceId, agentId, items));
+  const present = new Set(items.map((item) => item.id));
+  yield* put(
+    dockEvidenceShared(
+      workspaceId,
+      agentId,
+      fromDockDraftEvidence(
+        dockEvidenceId(workspaceId, agentId),
+        readDraftAttachmentScreens(snapshot.attachments).filter(([id]) => present.has(id)),
+        items.map((item) => ({
+          contextItemId: item.id,
+          attachmentId: item.attachmentId,
+          path: item.path,
+        })),
+      ),
+    ),
+  );
+  yield* put(
+    dockConversationDraftShared(workspaceId, agentId, snapshot.text, items.length > 0, revision),
+  );
+}
 function* saveDrafts(
   ownerId: string,
   workspaceId: string,
   agentId: string,
   authority: string,
 ): SagaGenerator<void> {
+  let baseline = JSON.stringify({
+    text:
+      getItem(appStore.state.dockConversation.drafts, dockEvidenceId(workspaceId, agentId))?.text ??
+      '',
+    attachments: draftAttachments(workspaceId, agentId),
+  });
   while (true) {
     const action = yield* take([
+      chatDraftSharedChanged,
+      chatDraftClearRequested,
       dockConversationDraftChanged,
       dockConversationDraftRecovered,
       dockEvidenceImageCaptured,
@@ -179,8 +219,37 @@ function* saveDrafts(
       dockEvidenceRestored,
       dockEvidenceInsertionCommitted,
     ]);
+    if (action.type === chatDraftSharedChanged.type) {
+      const shared = action.payload[0];
+      if (
+        shared.workspaceId !== workspaceId ||
+        shared.agentId !== agentId ||
+        getPrincipalActionContext(appStore.state) !== authority
+      )
+        continue;
+      const draft = getItem(
+        appStore.state.dockConversation.drafts,
+        dockEvidenceId(workspaceId, agentId),
+      );
+      if (!draft) continue;
+      const snapshot = JSON.stringify({
+        text: draft.text,
+        attachments: draftAttachments(workspaceId, agentId),
+      });
+      if (shared.origin === ownerId || snapshot === JSON.stringify(shared.snapshot))
+        baseline = JSON.stringify(shared.snapshot);
+      else if (snapshot === baseline) {
+        yield* applySharedDraft(workspaceId, agentId, shared.snapshot, draft.revision);
+        baseline = JSON.stringify(shared.snapshot);
+      }
+      continue;
+    }
     if (action.payload[0] !== workspaceId || action.payload[1] !== agentId) continue;
     if (getPrincipalActionContext(appStore.state) !== authority) continue;
+    if (action.type === chatDraftClearRequested.type) {
+      baseline = JSON.stringify({ text: '', attachments: [] });
+      continue;
+    }
     const draft = getItem(
       appStore.state.dockConversation.drafts,
       JSON.stringify([workspaceId, agentId]),
@@ -273,6 +342,12 @@ function* conversationLifetime(): SagaGenerator<void> {
     });
     yield* put(chatDraftOwnerOpened(ownerId));
     const requestId = crypto.randomUUID();
+    const restoreRevision =
+      getItem(appStore.state.dockConversation.drafts, dockEvidenceId(workspaceId, chosen.id))
+        ?.revision ?? 0;
+    const restoreItems = JSON.stringify(
+      selectComposerContextItems.select(appStore.state, workspaceId, chosen.id),
+    );
     yield* put(chatDraftRestoreRequested(ownerId, requestId, workspaceId, chosen.id));
     while (true) {
       const restore = selectChatDraftOwnerView.select(appStore.state, ownerId)?.restore;
@@ -283,6 +358,17 @@ function* conversationLifetime(): SagaGenerator<void> {
           appStore.state.dockConversation.drafts,
           JSON.stringify([workspaceId, chosen.id]),
         );
+        const shared = selectChatDraftOwnerView.select(appStore.state, ownerId)?.shared;
+        if (
+          shared &&
+          (existing?.revision ?? 0) === restoreRevision &&
+          JSON.stringify(
+            selectComposerContextItems.select(appStore.state, workspaceId, chosen.id),
+          ) === restoreItems
+        ) {
+          yield* applySharedDraft(workspaceId, chosen.id, shared.snapshot, restoreRevision);
+          break;
+        }
         // Live pair-scoped attachments and user edits win over a late restore.
         if (
           (!existing || existing.revision === 0) &&

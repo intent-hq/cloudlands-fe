@@ -1,3 +1,4 @@
+import { flushDraftBeforeHandoff } from '$lib/components/chat/chat-draft-sync';
 import { store as appStore } from '$store/renderer/store';
 import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
 import { selectDockShortcutWorkspaces } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
@@ -76,6 +77,7 @@ export async function openDockConversation(
   workspaceId: string,
   agentId: string | null,
 ): Promise<void> {
+  if (agentId) await flushDraftBeforeHandoff(workspaceId, agentId);
   if (workspaceId === CHIEF_WORKSPACE_ID) return openDockAssistant(agentId ?? undefined);
   return openDockWorkspace(workspaceId, agentId ?? undefined);
 }

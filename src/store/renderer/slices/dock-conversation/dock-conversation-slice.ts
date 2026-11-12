@@ -139,6 +139,15 @@ export const dockConversationFailed =
 export const dockConversationDraftChanged = createAction<
   [workspaceId: string, agentId: string, text: string]
 >('dockConversation/draftChanged');
+export const dockConversationDraftShared = createAction<
+  [
+    workspaceId: string,
+    agentId: string,
+    text: string,
+    hasAttachments: boolean,
+    expectedRevision: number,
+  ]
+>('dockConversation/draftShared');
 export const dockConversationDraftRestored = createAction<
   [workspaceId: string, agentId: string, text: string, hasAttachments: boolean]
 >('dockConversation/draftRestored');
@@ -355,6 +364,9 @@ export const dockEvidenceAnnotationEndRequested = createAction<Pair>(
   'dockConversation/evidenceAnnotationEndRequested',
 );
 /** Restore from a draft or failed delivery; never overwrites live evidence. */
+export const dockEvidenceShared = createAction<
+  [workspaceId: string, agentId: string, evidence: DockComposerEvidence]
+>('dockConversation/evidenceShared');
 export const dockEvidenceRestored = createAction<
   [workspaceId: string, agentId: string, evidence: DockComposerEvidence]
 >('dockConversation/evidenceRestored');
@@ -1066,4 +1078,37 @@ dockConversationReducer.with(
     linkedContextAuthority,
     linkedContextServiceAddress,
   }),
+);
+
+dockConversationReducer.with(
+  dockConversationDraftShared,
+  (state, { payload: [ws, agent, text, hasAttachments, expectedRevision] }) => {
+    const draft = draftFor(state, ws, agent);
+    if (draft.revision !== expectedRevision) return state;
+    return {
+      ...state,
+      drafts: upsertItem(state.drafts, {
+        ...draft,
+        text,
+        hasAttachments,
+        restored: true,
+        revision: draft.revision + 1,
+        sharedRevision: (draft.sharedRevision ?? 0) + 1,
+      }),
+    };
+  },
+);
+
+dockConversationReducer.with(dockEvidenceShared, (state, { payload: [ws, agent, restored] }) =>
+  withEvidence(state, ws, agent, (e) =>
+    restored.id === e.id
+      ? {
+          ...restored,
+          annotation: e.annotation,
+          dictation: e.dictation,
+          insertions: [],
+          revision: e.revision + 1,
+        }
+      : e,
+  ),
 );

@@ -28,6 +28,7 @@
     clearRevision?: number;
     clearSubmissionId?: string | null;
     recoverRevision?: number;
+    sharedRevision?: number;
     selectedModel?: string | null;
     providerId?: string;
     isStreaming?: boolean;
@@ -80,6 +81,7 @@
     clearRevision = 0,
     clearSubmissionId = null,
     recoverRevision = 0,
+    sharedRevision = 0,
     selectedModel,
     providerId,
     isStreaming = false,
@@ -166,6 +168,28 @@
   // Keep UI staging synchronous across consecutive paste/placement callbacks.
   // Serializable parent snapshots omit File; retain it locally for upload retry.
   let stagedContextItems = $state<ContextItem[]>([]);
+  let appliedSharedRevision = 0;
+  $effect.pre(() => {
+    const revision = sharedRevision;
+    const editor = input;
+    const sharedValue = value;
+    const items = contextItems;
+    untrack(() => {
+      if (!editor || disposed || revision <= appliedSharedRevision) return;
+      appliedSharedRevision = revision;
+      // A peer edit is new user intent, even though this editor applies it
+      // programmatically. An older admission/recovery must not clear it.
+      editGeneration += 1;
+      userEditGeneration += 1;
+      applyingClear = true;
+      try {
+        void editor.setContent(sharedValue);
+        stagedContextItems = items;
+      } finally {
+        applyingClear = false;
+      }
+    });
+  });
   $effect.pre(() => {
     const admittedRevision = clearRevision;
     const submissionId = clearSubmissionId;

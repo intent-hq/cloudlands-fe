@@ -1,3 +1,4 @@
+import type { DraftSyncConnection } from '$lib/components/chat/chat-draft-sync';
 import type { DraftsClient } from '$lib/client/app-client';
 import type { store } from '$store/renderer/store';
 import { cancelled, fork, join } from 'typed-redux-saga';
@@ -6,7 +7,9 @@ import { questionUiPersistenceSaga } from '$store/renderer/slices/question-ui/sa
 import { createDraftsFixture } from './fixtures/chat-drafts';
 
 type FixtureStore = Pick<typeof store, 'runSaga'>;
-type FixtureDraftsTransport = Pick<DraftsClient, 'get' | 'set' | 'clear'>;
+type FixtureDraftsTransport = Pick<DraftsClient, 'get' | 'set' | 'clear'> & {
+  sync?: DraftSyncConnection;
+};
 
 interface FixtureState {
   /** Transports by start order; the innermost (last) one serves drafts. */
@@ -31,7 +34,7 @@ function runDrafts(appStore: FixtureStore, state: FixtureState) {
     try {
       // chatDraftsSaga returns once its watchers fork; join them so the
       // cleanup below sees the saga's cancellation.
-      yield* join(yield* fork(chatDraftsSaga, transport));
+      yield* join(yield* fork(chatDraftsSaga, transport, transport.sync ?? null));
     } finally {
       // A store disposed without its stops cancels the serving run from
       // outside; forget it so the next init starts a fresh fixture. This
