@@ -169,7 +169,7 @@
     line-height: 1.4;
   }
   :global(.dock-header-link[data-linked]) {
-    color: hsl(var(--dock-accent, var(--foreground)));
+    color: hsl(var(--foreground));
     background-color: hsl(var(--dock-hover, var(--muted)));
   }
 </style>
