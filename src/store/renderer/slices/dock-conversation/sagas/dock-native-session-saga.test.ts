@@ -14,6 +14,7 @@ import { store as appStore } from '$store/renderer/store';
 import { getPrincipalActionContext } from '../../principal/principal-context';
 import type { DockEvidenceNativeEvent, DockEvidenceNativeService } from '$shared/dock-evidence';
 import type { DockSpeechCapability, DockSpeechEvent } from '$shared/dock-speech';
+import { WINDOW_CHANNELS } from '$shared/ipc/channels';
 import {
   dockConversationContextSet,
   dockConversationLoaded,
@@ -38,6 +39,8 @@ import { __setDockMarkAnswerTimeoutForTests, dockEvidenceSaga } from './dock-evi
 const WS = 'ws-native-session';
 const AGENT = 'agent-native-session';
 let cleanups: (() => void)[] = [];
+const dockShownListeners = new Map<string, () => void>();
+let dockShownListenerId = 0;
 const view = () => selectDockComposerEvidence.select(appStore.state, WS, AGENT);
 
 /** Scripted native at the adapter boundary: the real saga drives it through Redux. */
@@ -218,7 +221,29 @@ afterEach(() => {
 beforeEach(() => {
   const backend = installMockBackend();
   backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
-  cleanups = [appStore.init(createAdmittedLegacyPrincipal())];
+  const originalOn = vi.mocked(window.electronAPI.on).getMockImplementation();
+  const originalOff = vi.mocked(window.electronAPI.offById).getMockImplementation();
+  if (!originalOn) throw new Error('Expected the shared setup listener implementation');
+  const on = vi.spyOn(window.electronAPI, 'on').mockImplementation((channel, callback) => {
+    if (channel !== WINDOW_CHANNELS.DOCK_SHOWN) return originalOn(channel, callback);
+    const id = `dock-shown-${++dockShownListenerId}`;
+    dockShownListeners.set(id, () => callback());
+    return id;
+  });
+  const off = vi.spyOn(window.electronAPI, 'offById').mockImplementation((channel, id) => {
+    if (channel === WINDOW_CHANNELS.DOCK_SHOWN) dockShownListeners.delete(id);
+    else originalOff?.(channel, id);
+  });
+  cleanups = [
+    () => {
+      const remaining = dockShownListeners.size;
+      dockShownListeners.clear();
+      on.mockRestore();
+      off.mockRestore();
+      expect(remaining).toBe(0);
+    },
+    appStore.init(createAdmittedLegacyPrincipal()),
+  ];
   // `init` starts no app sagas in tests: run the production roots under test
   // (in the app, `dockConversationSaga` forks both from the root registry).
   cleanups.push(appStore.runSaga(dockEvidenceSaga));
@@ -262,13 +287,39 @@ describe('root-owned dock native session', () => {
     expect(view().speech.capability).toBeNull();
   });
 
-  it('does not install or publish availability when the probe fails', async () => {
-    const native = scriptedNative({ probe: false });
+  it('keeps a refused probe unavailable and retries once on a buffered dock-shown signal', async () => {
+    let refuse = () => {};
+    const refusal = new Promise<{ ok: false; error: 'unavailable' }>((resolve) => {
+      refuse = () => resolve({ ok: false, error: 'unavailable' });
+    });
+    const native = scriptedNative();
+    native.adapter.initialize.mockImplementationOnce(async () => {
+      native.order.push('initialize');
+      return refusal;
+    });
     inject(native);
     openPair();
-    await vi.waitFor(() => expect(native.adapter.cancel).toHaveBeenCalledTimes(1));
-    expect(native.order).toEqual(['initialize', 'cancel']);
+    await vi.waitFor(() => expect(native.adapter.initialize).toHaveBeenCalledTimes(1));
+    expect(native.adapter.cancel).not.toHaveBeenCalled();
+    expect(native.order).toEqual(['initialize']);
     expect(view().capabilities).toEqual({ capture: false, annotate: false, record: false });
+    expect(view().speech.available).toBe(false);
+    expect(dockShownListeners.size).toBe(1);
+    // Main can show the dock before the refused initialize returns. Sliding(1) keeps
+    // that event, coalesces repeats and wakes exactly one retry; no timer is involved.
+    const shown = [...dockShownListeners.values()][0];
+    shown();
+    shown();
+    expect(native.adapter.initialize).toHaveBeenCalledTimes(1);
+    refuse();
+    await vi.waitFor(() => expect(view().speech.available).toBe(true));
+    expect(native.adapter.initialize).toHaveBeenCalledTimes(2);
+    expect(native.order).toEqual(['initialize', 'initialize', 'install']);
+    expect(dockShownListeners.size).toBe(0);
+    revokeAuthority();
+    await vi.waitFor(() => expect(native.adapter.cancel).toHaveBeenCalledTimes(1));
+    shown();
+    expect(native.adapter.initialize).toHaveBeenCalledTimes(2);
     expect(view().speech.available).toBe(false);
   });
 
