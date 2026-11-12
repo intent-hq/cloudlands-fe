@@ -196,14 +196,14 @@
 </script>
 
 <section
-  class="w-full max-w-[480px] p-4 {scenario === 'not-forked' ? 'min-h-56' : ''}"
+  class="w-full max-w-120 p-4 {scenario === 'not-forked' ? 'min-h-56' : ''}"
   data-testid="import-session-preview"
 >
   {#if scenario === 'selected' || scenario === 'not-forked'}
     <ImportSessionPicker selected={picked} onSelect={(next) => (picked = next)} autoload={false} />
   {:else}
     <div
-      class="flex h-[420px] w-110 max-w-full flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground"
+      class="flex h-105 w-110 max-w-full flex-col overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground"
     >
       <ImportSessionList
         {status}
