@@ -79,3 +79,22 @@ export function chunked(text: string, size: number): Buffer[] {
   for (let at = 0; at < bytes.length; at += size) chunks.push(bytes.subarray(at, at + size));
   return chunks;
 }
+
+/**
+ * Fixed public host keys (generated once with ssh-keygen). Generating keys
+ * per run made ssh2's key parser fail now and then.
+ */
+export const TEST_HOST_KEYS = {
+  ed25519: Buffer.from(
+    'AAAAC3NzaC1lZDI1NTE5AAAAIIausPMUxzA9Pb2XGhyQ7pre5FXeb7+2OGO78/IGxCFt',
+    'base64',
+  ),
+  otherEd25519: Buffer.from(
+    'AAAAC3NzaC1lZDI1NTE5AAAAIH7aHHOzxXBSIGObWTaYY7P96CIArcTQfafoBL3sTMJB',
+    'base64',
+  ),
+  ecdsa: Buffer.from(
+    'AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBBn8Ek90KqlYJ9bnozvi6kfVN56yfp60G+PJQ3oGVhn1kuFyHX8A+rdGGAV+VImDSnz2wuw4ujIUFOL8Wqv2IyM=',
+    'base64',
+  ),
+};

@@ -34,6 +34,7 @@ const LINGER_ENABLE = 'sudo -n loginctl enable-linger "$(id -un)"';
 const STARTING_TEXT = 'waiting for the daemon to respond';
 const PAIRING_TEXT = /\bpairing\b|node mode on/i;
 
+/** @internal */
 export const SSH_SETUP_TIMEOUTS = {
   /** TCP + SSH handshake + sign-in (paused while the user decides on a host key). */
   connectMs: 20_000,
@@ -57,19 +58,20 @@ const UNREACHABLE_CODES = new Set([
   'EAI_AGAIN',
 ]);
 
+/** @internal */
 export interface SshClientError extends Error {
   level?: string;
   code?: string;
 }
 
-/** The part of an ssh2 exec channel the runner uses. */
+/** The part of an ssh2 exec channel the runner uses. @internal */
 export interface SshChannelLike {
   on(event: 'data', listener: (chunk: Buffer) => void): unknown;
   on(event: 'close', listener: (code?: number | null) => void): unknown;
   stderr: { on(event: 'data', listener: (chunk: Buffer) => void): unknown };
 }
 
-/** The part of an ssh2 `Client` the runner uses. */
+/** The part of an ssh2 `Client` the runner uses. @internal */
 export interface SshClientLike {
   on(event: 'ready', listener: () => void): unknown;
   on(event: 'close', listener: () => void): unknown;
@@ -163,6 +165,7 @@ function expandHome(path: string, homeDir: string): string {
   return path;
 }
 
+/** @internal */
 export function installCommand(target: SshSetupStartParams['target']): string {
   const mode = target === 'node' ? ' INTENTD_DAEMON_MODE=node' : '';
   return (
@@ -182,7 +185,7 @@ function fallbackPairCommand(target: SshSetupStartParams['target']): string {
   ].join('; ');
 }
 
-/** Map an ssh2 client error to a setup error code. */
+/** Map an ssh2 client error to a setup error code. @internal */
 export function sshErrorCode(error: SshClientError): SshSetupErrorCode {
   if (error.level === 'client-authentication') return 'auth-refused';
   if (error.level === 'client-timeout') return 'unreachable';

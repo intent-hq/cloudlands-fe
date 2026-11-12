@@ -50,7 +50,7 @@ import { parseSshLoginPrefill } from './ssh-login';
 import { takeSshSecret } from './ssh-secret';
 
 const CHANNELS = IPC_CHANNELS.MACHINE_SETUP;
-/** The last SSH host, port, username, method and key path. Never a secret. */
+/** The last SSH host, port, username, method and key path. Never a secret. @internal */
 export const LAST_SSH_LOGIN_STORAGE_KEY = 'machineSetup:lastSshLogin';
 
 const PASTE_SCREENS: ReadonlySet<MachineSetupScreen> = new Set(['paste', 'manual']);

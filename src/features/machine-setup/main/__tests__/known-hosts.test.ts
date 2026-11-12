@@ -1,6 +1,5 @@
 import { createHash, createHmac, randomBytes } from 'crypto';
 import { describe, expect, it } from 'vitest';
-import { utils } from 'ssh2';
 import {
   checkKnownHosts,
   hostFieldMatches,
@@ -8,16 +7,7 @@ import {
   knownHostsName,
   sha256Fingerprint,
 } from '../known-hosts';
-
-function publicBlob(type: 'ed25519' | 'ecdsa'): Buffer {
-  const pair =
-    type === 'ed25519'
-      ? utils.generateKeyPairSync('ed25519')
-      : utils.generateKeyPairSync('ecdsa', { bits: 256 });
-  const parsed = utils.parseKey(pair.public);
-  if (parsed instanceof Error) throw parsed;
-  return parsed.getPublicSSH();
-}
+import { TEST_HOST_KEYS } from './fixtures';
 
 function hashed(name: string): string {
   const salt = randomBytes(20);
@@ -25,9 +15,9 @@ function hashed(name: string): string {
   return `|1|${salt.toString('base64')}|${hash.toString('base64')}`;
 }
 
-const ed = publicBlob('ed25519');
-const otherEd = publicBlob('ed25519');
-const ecdsa = publicBlob('ecdsa');
+const ed = TEST_HOST_KEYS.ed25519;
+const otherEd = TEST_HOST_KEYS.otherEd25519;
+const ecdsa = TEST_HOST_KEYS.ecdsa;
 const edKey = { type: 'ssh-ed25519', blob: ed };
 const line = (hosts: string, type: string, blob: Buffer) =>
   `${hosts} ${type} ${blob.toString('base64')}`;

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ dispatch: vi.fn(), setDock: vi.fn(), electron: { value: true } }));
+const mocks = vi.hoisted(() => ({
+  dispatch: vi.fn(),
+  setDock: vi.fn(),
+  electron: { value: true },
+}));
 vi.mock('$lib/dock-lab', () => ({ setDockLabEnabled: mocks.setDock }));
 vi.mock('$lib/utils/platform-capabilities', () => ({
   isElectronPlatform: () => mocks.electron.value,

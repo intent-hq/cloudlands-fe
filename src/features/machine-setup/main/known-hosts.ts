@@ -32,7 +32,7 @@ export function hostKeyType(blob: Buffer): string | null {
   return /^[\x21-\x7e]+$/.test(type) ? type : null;
 }
 
-/** The name OpenSSH looks up: `host`, or `[host]:port` off port 22. */
+/** The name OpenSSH looks up: `host`, or `[host]:port` off port 22. @internal */
 export function knownHostsName(host: string, port: number): string {
   const name = host.trim().toLowerCase();
   return port === 22 ? name : `[${name}]:${port}`;
@@ -54,7 +54,7 @@ function hashedMatches(entry: string, name: string): boolean {
   return actual.length === expected.length && actual.equals(expected);
 }
 
-/** Whether a host field (comma list, wildcards, `!` negation, or hashed) names `name`. */
+/** Whether a host field (comma list, wildcards, `!` negation, or hashed) names `name`. @internal */
 export function hostFieldMatches(field: string, name: string): boolean {
   if (field.startsWith('|')) return hashedMatches(field, name);
   let matched = false;

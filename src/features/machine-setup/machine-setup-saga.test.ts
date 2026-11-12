@@ -257,7 +257,11 @@ describe('SSH setup run', () => {
     expect(store.state.nodes.highlightId).toBe('build-box-2');
     expect(ui.navigateToSettings).toHaveBeenCalledWith({ tab: 'devices' });
 
-    const leaked = JSON.stringify([seen, store.state, localStorage.getItem(LAST_SSH_LOGIN_STORAGE_KEY)]);
+    const leaked = JSON.stringify([
+      seen,
+      store.state,
+      localStorage.getItem(LAST_SSH_LOGIN_STORAGE_KEY),
+    ]);
     expect(leaked).not.toContain(PASSWORD);
     expect(leaked).not.toContain(TOKEN);
     expect(JSON.parse(localStorage.getItem(LAST_SSH_LOGIN_STORAGE_KEY) ?? 'null')).toEqual(LOGIN);
@@ -279,16 +283,28 @@ describe('SSH setup run', () => {
     expect(setup().ssh?.hostKey).toEqual({ fingerprint: 'SHA256:abc', algorithm: 'ssh-ed25519' });
     dispatch(sshHostKeyAnswered(true));
     await vi.waitFor(() =>
-      expect(calls(SETUP.SSH_TRUST)).toEqual([[SETUP.SSH_TRUST, { runId: 'run-1', trusted: true }]]),
+      expect(calls(SETUP.SSH_TRUST)).toEqual([
+        [SETUP.SSH_TRUST, { runId: 'run-1', trusted: true }],
+      ]),
     );
     expect(setup().ssh?.phase).toBe('running');
   });
 
   it('shows a failure with its code and step', async () => {
     await startRun();
-    emit({ runId: 'run-1', type: 'failed', code: 'unsupported-os', step: 'connecting', os: 'FreeBSD' });
+    emit({
+      runId: 'run-1',
+      type: 'failed',
+      code: 'unsupported-os',
+      step: 'connecting',
+      os: 'FreeBSD',
+    });
     await vi.waitFor(() => expect(setup().ssh?.phase).toBe('failed'));
-    expect(setup().ssh?.failure).toEqual({ code: 'unsupported-os', step: 'connecting', os: 'FreeBSD' });
+    expect(setup().ssh?.failure).toEqual({
+      code: 'unsupported-os',
+      step: 'connecting',
+      os: 'FreeBSD',
+    });
   });
 
   it('Cancel closes the connection, ignores later events and saves nothing', async () => {
@@ -333,7 +349,10 @@ describe('SSH setup run', () => {
       }),
     );
     await startRun({ ...LOGIN, method: 'agent' }, '', 'node');
-    expect(calls(SETUP.SSH_START)[0]?.[1]).toMatchObject({ auth: { method: 'agent' }, target: 'node' });
+    expect(calls(SETUP.SSH_START)[0]?.[1]).toMatchObject({
+      auth: { method: 'agent' },
+      target: 'node',
+    });
     invoke.mockImplementation(async (name: string) =>
       name === IPC_CHANNELS.REMOTE_MACHINES.INVITE_CLAIM
         ? { ok: false, code: 'node-invite-used' }
@@ -345,7 +364,7 @@ describe('SSH setup run', () => {
       result: {
         link: { kind: 'invite', pendingId: 'inv-1', label: 'gpu-rig' },
         lingerUser: null,
-        },
+      },
     });
     await vi.waitFor(() => expect(setup().ssh?.phase).toBe('failed'));
     expect(ui.confirm).toHaveBeenCalled();

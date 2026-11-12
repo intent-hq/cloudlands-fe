@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { utils, type ConnectConfig } from 'ssh2';
+import type { ConnectConfig } from 'ssh2';
 import type { SshSetupEvent, SshSetupLink, SshSetupStartParams } from '$shared/types/machine-setup';
 import {
   createSshSetupRunner,
@@ -22,18 +22,14 @@ import {
   PAIR_OUTPUT,
   PAIR_TOKEN,
   PAIR_URI,
+  TEST_HOST_KEYS,
 } from './fixtures';
 
 const PASSWORD = 'hunter2-PASSWORD-xyz';
 const PASSPHRASE = 'correct-horse-PASSPHRASE';
 
-const hostPair = utils.generateKeyPairSync('ed25519');
-const hostParsed = utils.parseKey(hostPair.public);
-if (hostParsed instanceof Error) throw hostParsed;
-const HOST_KEY = hostParsed.getPublicSSH();
-const otherParsed = utils.parseKey(utils.generateKeyPairSync('ed25519').public);
-if (otherParsed instanceof Error) throw otherParsed;
-const OTHER_KEY = otherParsed.getPublicSSH();
+const HOST_KEY = TEST_HOST_KEYS.ed25519;
+const OTHER_KEY = TEST_HOST_KEYS.otherEd25519;
 const KNOWN = `box ssh-ed25519 ${HOST_KEY.toString('base64')}\n`;
 
 /** What the fake server answers for one exec. `hang` never closes. */

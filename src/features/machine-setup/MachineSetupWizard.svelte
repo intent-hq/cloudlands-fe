@@ -259,12 +259,7 @@
         agentAvailable={setup.agentAvailable}
       />
     {:else if screen === 'sshRun' && run}
-      <SetupSshRun
-        {run}
-        {logOpen}
-        onTryAgain={tryAgain}
-        onRunItMyself={() => show('manual')}
-      />
+      <SetupSshRun {run} {logOpen} onTryAgain={tryAgain} onRunItMyself={() => show('manual')} />
     {/if}
   </div>
 

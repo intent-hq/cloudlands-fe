@@ -57,12 +57,13 @@ export function redactLine(line: string): string | null {
   return redacted.length > MAX_LOG_LINE ? `${redacted.slice(0, MAX_LOG_LINE)}…` : redacted;
 }
 
-/** A streaming redactor: chunks in, safe complete lines out. */
+/** A streaming redactor: chunks in, safe complete lines out. @internal */
 export interface OutputRedactor {
   push(chunk: Buffer | string): string[];
   flush(): string[];
 }
 
+/** @internal */
 export function createOutputRedactor(): OutputRedactor {
   const splitter = createLineSplitter();
   const redact = (lines: string[]) =>
@@ -83,7 +84,7 @@ export function parsePairUrl(line: string): string | null {
   return URL_LINE.exec(line)?.[1] ?? null;
 }
 
-/** The first marker link in `text`, else the first `URL:` link, else null. */
+/** The first marker link in `text`, else the first `URL:` link, else null. @internal */
 export function findLink(text: string): string | null {
   const lines = text.split(/\r?\n/);
   for (const line of lines) {

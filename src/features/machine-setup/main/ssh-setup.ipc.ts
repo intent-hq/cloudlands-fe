@@ -68,7 +68,7 @@ function parseAuth(value: unknown): SshAuth | null {
   }
 }
 
-/** Validate the start payload without ever logging or echoing it. */
+/** Validate the start payload without ever logging or echoing it. @internal */
 export function parseStartParams(value: unknown): SshSetupStartParams | null {
   if (!record(value)) return null;
   const { host, port, username, target } = value;
@@ -81,7 +81,7 @@ export function parseStartParams(value: unknown): SshSetupStartParams | null {
   return { host: host.trim(), port, username, auth, target: target as MachineSetupTarget };
 }
 
-/** Production `holdLink`: node links go to the node-invite pipeline, the rest to pair-link. */
+/** Production `holdLink`: node links go to the node-invite pipeline, the rest to pair-link. @internal */
 export async function holdSetupLink(uri: string, label: string): Promise<SshSetupLink | null> {
   if (isNodeInviteUri(uri)) {
     const held = getNodeInvites().inspect(uri);
@@ -110,7 +110,7 @@ function parseKey(data: Buffer, passphrase: string | undefined): boolean {
   return !(sshUtils.parseKey(data, passphrase) instanceof Error);
 }
 
-/** Whether the login screen should default to the SSH agent. */
+/** Whether the login screen should default to the SSH agent. @internal */
 export function sshSetupDefaults(
   env: Readonly<Record<string, string | undefined>> = process.env,
   platform: NodeJS.Platform = process.platform,
