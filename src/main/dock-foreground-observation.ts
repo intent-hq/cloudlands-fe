@@ -1,6 +1,6 @@
 import { webContents } from 'electron';
 import { getDockWindow } from './dock-window';
-import { sampleDockForeground } from './dock-shortcut-foreground';
+import { foregroundDocumentUrl, sampleDockForeground } from './dock-shortcut-foreground';
 import { getDesktopNativeAdapter } from '../features/desktop/main/desktop-native';
 import { dockServiceAddress } from '../features/browser/main/browser.ipc';
 import { embeddedBrowserCdp } from '../features/browser/main/embedded-browser-cdp-service';
@@ -21,7 +21,7 @@ export async function readDockForegroundObservation(
       reading = null;
     });
   const { snapshot: sample } = await reading;
-  let url = sample.url;
+  let url: string | null = foregroundDocumentUrl(sample.url);
   let workspaceId: string | undefined;
   let tabId: string | undefined;
   if (sample.pid === process.pid && focused && !focused.isDestroyed()) {

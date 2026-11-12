@@ -3,6 +3,13 @@ export interface DockContextPolicy {
   follows: number;
   decision: 'unasked' | 'no' | 'yes';
 }
+export type DockContextLinkScope = 'tab' | 'app';
+export interface DockContextScopeLink {
+  available: boolean;
+  key: string | null;
+  savedWorkspaceId: string | null;
+  revision: number;
+}
 export interface DockLinkedContextSnapshot {
   /** Changes only on context entry or admitted backend/principal lifetime change. */
   contextVersion: string;
@@ -19,6 +26,9 @@ export interface DockLinkedContextSnapshot {
   linkedWorkspaceId: string | null;
   linkKey: string | null;
   linkRevision: number;
+  /** Additive: old consumers can keep reading the effective destination above. */
+  linkScope?: DockContextLinkScope | 'project' | null;
+  linkScopes?: Record<DockContextLinkScope, DockContextScopeLink>;
   policy: DockContextPolicy;
   dismissed: boolean;
   /** Desktop-app auto-switch policy can be enabled independently of linking. */
@@ -84,6 +94,23 @@ export function defaultDockContextLinkKey(value: DockForegroundObservation): str
   }
   return browserApp(value.appId) ? null : dockLinkKey(context, 'app');
 }
+/** Explicit tab means this verified URL, never the legacy project/directory default. */
+export function dockContextLinkKey(
+  value: Pick<DockForegroundObservation, 'self' | 'url' | 'appId'>,
+  scope: DockContextLinkScope,
+): string | null {
+  if (value.self) return null;
+  const key =
+    scope === 'app'
+      ? value.appId
+        ? `app:${value.appId}`
+        : null
+      : value.url
+        ? dockLinkKey({ id: 'scoped-link', backendId: '', action: 'focus', url: value.url }, 'url')
+        : null;
+  return key && safeSavedKey(key) ? key : null;
+}
+
 function safeSavedKey(key: string): boolean {
   if (key.startsWith('app:')) return key.length > 4 && key.length < 512;
   const kind = key.startsWith('url:') ? 'url' : key.startsWith('project:') ? 'project' : null;
@@ -150,6 +177,7 @@ export function dockContextLinkKeys(
     if (!safeSavedKey(key)) return false;
     if (value.url) {
       if (key === exact) return true;
+      if (key === dockContextLinkKey(value, 'app')) return true;
       if (!key.startsWith('project:')) return false;
       try {
         const current = new URL(value.url),
@@ -163,9 +191,10 @@ export function dockContextLinkKeys(
         return false;
       }
     }
-    return !browserApp(value.appId) && key === dockLinkKey(context, 'app');
+    return key === dockContextLinkKey(value, 'app');
   });
-  return keys.sort((a, b) => (a === exact ? -1 : b === exact ? 1 : b.length - a.length));
+  const rank = (key: string) => (key === exact ? 0 : key.startsWith('project:') ? 1 : 2);
+  return keys.sort((a, b) => rank(a) - rank(b) || b.length - a.length);
 }
 export function isDockForegroundObservation(value: unknown): value is DockForegroundObservation {
   if (!value || typeof value !== 'object') return false;

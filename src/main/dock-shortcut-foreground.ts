@@ -55,3 +55,19 @@ export async function sampleDockForeground(reader: {
     elapsedMs: Date.now() - start,
   };
 }
+
+/** Only a real, supported document URL is usable as a tab; app/title text is never a URL. */
+export function foregroundDocumentUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) &&
+      !!url.hostname &&
+      !url.username &&
+      !url.password
+      ? url.href
+      : null;
+  } catch {
+    return null;
+  }
+}

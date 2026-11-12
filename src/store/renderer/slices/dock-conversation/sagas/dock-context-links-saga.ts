@@ -15,6 +15,7 @@ import { IPC_CHANNELS } from '$shared/ipc-registry';
 import {
   contextAsShortcut,
   defaultDockContextLinkKey,
+  dockContextLinkKey,
   dockContextLinkKeys,
   dockContextStorageKey,
   isDockForegroundObservation,
@@ -299,6 +300,29 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
       linkedWorkspaceId: destination,
       linkKey: key ?? null,
       linkRevision: record?.revision ?? 0,
+      linkScope: key
+        ? key.startsWith('url:')
+          ? 'tab'
+          : key.startsWith('project:')
+            ? 'project'
+            : 'app'
+        : null,
+      linkScopes: Object.fromEntries(
+        (['tab', 'app'] as const).map((scope) => {
+          const scopeKey = dockContextLinkKey(value, scope);
+          const saved = scopeKey ? preferences.links[scopeKey] : null;
+          const eligible = loaded && !!saved && ids.includes(saved.workspaceId);
+          return [
+            scope,
+            {
+              available: loaded && !!scopeKey,
+              key: scopeKey,
+              savedWorkspaceId: eligible ? saved!.workspaceId : null,
+              revision: eligible ? saved!.revision : 0,
+            },
+          ];
+        }),
+      ) as NonNullable<DockLinkedContextSnapshot['linkScopes']>,
       policy: record?.policy ?? { follows: 0, decision: 'unasked' },
       dismissed: dismissed.has(JSON.stringify([value.identityKey, record?.revision ?? 0])),
       // Desktop-app auto-switch remains a separate capability pending the product decision.
@@ -412,6 +436,7 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
           basedOn = action.payload[0];
         if (
           !loaded ||
+          activeObservation !== currentObservation() ||
           basedOn !== version(value) ||
           authority !== getPrincipalActionContext(appStore.state)
         )
@@ -425,12 +450,31 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
           action.type === dockContextLinkRequested.type ||
           action.type === dockContextUnlinkRequested.type
         ) {
-          if (action.type === dockContextUnlinkRequested.type && !keys.length) continue;
+          const scope =
+            action.type === dockContextLinkRequested.type
+              ? (action as ReturnType<typeof dockContextLinkRequested>).payload[2]
+              : (action as ReturnType<typeof dockContextUnlinkRequested>).payload[1];
+          if (scope !== undefined && scope !== 'tab' && scope !== 'app') continue;
+          const scopedKey = scope ? dockContextLinkKey(value, scope) : null;
+          if (scope && !scopedKey) continue;
+          // No-scope callers keep the legacy project/app default behavior; they do not
+          // erase an independently saved explicit app scope on a browser document.
+          const legacyKeys = value.url
+            ? keys.filter((key) => !key.startsWith('app:'))
+            : defaultDockContextLinkKey(value)
+              ? keys
+              : [];
+          const changedKeys = scope ? [scopedKey!] : legacyKeys;
+          if (
+            action.type === dockContextUnlinkRequested.type &&
+            !changedKeys.some((key) => preferences.links[key])
+          )
+            continue;
           const links = { ...preferences.links };
-          for (const key of keys) delete links[key];
+          for (const key of changedKeys) delete links[key];
           if (action.type === dockContextLinkRequested.type) {
             const [, workspaceId] = (action as ReturnType<typeof dockContextLinkRequested>).payload;
-            const key = defaultDockContextLinkKey(value);
+            const key = scopedKey ?? defaultDockContextLinkKey(value);
             if (!key || !ids.includes(workspaceId)) continue;
             links[key] = {
               workspaceId,

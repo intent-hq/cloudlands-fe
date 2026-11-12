@@ -6,7 +6,10 @@ import {
 } from '$lib/components/chat/questions/wizard-gate';
 import { selectPresenceOwnPrincipalId } from '../presence/presence-selectors';
 import { selectComposerContextItems } from '../transient-ui/transient-ui-selectors';
-import { selectWorkspaceById } from '../workspace/workspace-selectors';
+import {
+  selectWorkspaceListLoadedForBackend,
+  selectWorkspaceById,
+} from '../workspace/workspace-selectors';
 import { selectContextDefaultProvider } from '../provider-catalog/workspace-catalog-selectors';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { resolveHydratedInputModel } from '$lib/components/chat/input-hydration';
@@ -470,14 +473,32 @@ export const selectDockLinkedContext = store.createSelector((state) => {
     state.dockConversation.linkedContextAuthority !== getPrincipalActionContext(state)
   )
     return null;
-  if (
-    !snapshot.linkedWorkspaceId ||
-    selectDockShortcutWorkspaces.select(state).some((row) => row.id === snapshot.linkedWorkspaceId)
-  )
-    return snapshot;
+  const ids = new Set(selectDockShortcutWorkspaces.select(state).map((row) => String(row.id)));
+  const loaded = selectWorkspaceListLoadedForBackend.select(
+    state,
+    state.connections.windowBackendId,
+  );
+  const scopes = snapshot.linkScopes;
+  const scopeView =
+    scopes &&
+    (Object.fromEntries(
+      Object.entries(scopes).map(([scope, link]) => [
+        scope,
+        {
+          ...link,
+          available: loaded && link.available,
+          ...(!link.savedWorkspaceId || ids.has(link.savedWorkspaceId)
+            ? {}
+            : { savedWorkspaceId: null, revision: 0 }),
+        },
+      ]),
+    ) as typeof scopes);
+  const presented = scopeView ? { ...snapshot, linkScopes: scopeView } : snapshot;
+  if (!snapshot.linkedWorkspaceId || ids.has(snapshot.linkedWorkspaceId)) return presented;
   return {
-    ...snapshot,
+    ...presented,
     linkedWorkspaceId: null,
+    linkScope: null,
     linkKey: null,
     policy: { follows: 0, decision: 'unasked' as const },
     autoSwitchEligible: false,

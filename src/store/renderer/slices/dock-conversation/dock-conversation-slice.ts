@@ -78,12 +78,16 @@ export const dockContextServiceReceived = createAction<
     service: import('$shared/dock-shortcuts').DockServiceOwner | null,
   ]
 >('dockConversation/contextServiceReceived');
-export const dockContextLinkRequested = createAction<[version: string, workspaceId: string]>(
-  'dockConversation/contextLinkRequested',
-);
-export const dockContextUnlinkRequested = createAction<[version: string]>(
-  'dockConversation/contextUnlinkRequested',
-);
+export const dockContextLinkRequested = createAction<
+  [
+    version: string,
+    workspaceId: string,
+    scope?: import('$shared/dock-context-links').DockContextLinkScope,
+  ]
+>('dockConversation/contextLinkRequested');
+export const dockContextUnlinkRequested = createAction<
+  [version: string, scope?: import('$shared/dock-context-links').DockContextLinkScope]
+>('dockConversation/contextUnlinkRequested');
 export const dockContextFollowed = createAction<[version: string]>(
   'dockConversation/contextFollowed',
 );

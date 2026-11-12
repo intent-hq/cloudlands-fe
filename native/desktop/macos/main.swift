@@ -314,6 +314,12 @@ actor Desktop {
                 if result["url"] == nil, let focusedValue = attribute(element, kAXFocusedUIElementAttribute) {
                     var item = unsafeBitCast(focusedValue, to: AXUIElement.self)
                     for _ in 0..<12 {
+                        // Native document apps may expose AXDocument on the focused editor
+                        // or an ancestor rather than on their top-level window. It is an
+                        // actual document URL; never derive one from a title or a link.
+                        if let document = urlValue(attribute(item, kAXDocumentAttribute)) {
+                            result["url"] = document; break
+                        }
                         if let url = webUrl(item) { result["url"] = url; break }
                         guard let parent = attribute(item, kAXParentAttribute) else { break }
                         item = unsafeBitCast(parent, to: AXUIElement.self)
@@ -336,6 +342,8 @@ actor Desktop {
                     }
                     if !truncated && queue.isEmpty && Date() < deadline && urls.count == 1 { result["url"] = urls.first }
                 }
+                // A focus change during the bounded AX read invalidates this observation.
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier else { return [String: Any]() }
                 result["urlStatus"] = result["url"] == nil ? "unavailable" : "available"
                 return result
             }
