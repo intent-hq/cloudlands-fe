@@ -44,10 +44,27 @@ test('hover options keep the capture button mounted, the current glyph stable an
   await capture.press('ArrowUp');
   await expect(menu.getByRole('menuitemradio', { name: 'Region', exact: true })).toBeFocused();
   await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
   await expect(capture).toBeFocused();
   await capture.press('ArrowDown');
   await expectDismissibleLayerArmed(menu);
-  await editor.click();
+  // The menu opens above the footer and can cover the textarea's center.
+  // Dismiss from an exposed point that actually hits the field, not the menu.
+  const outsidePoint = await editor.evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    const points = [
+      { x: 8, y: 8 },
+      { x: rect.width - 8, y: 8 },
+      { x: 8, y: rect.height - 8 },
+      { x: rect.width - 8, y: rect.height - 8 },
+    ];
+    const point = points.find(({ x, y }) =>
+      node.contains(document.elementFromPoint(rect.left + x, rect.top + y)),
+    );
+    if (!point) throw new Error('No exposed textbox point for outside menu dismissal');
+    return point;
+  });
+  await editor.click({ position: outsidePoint });
   await expect(menu).toBeHidden();
   await expect(editor).toBeFocused();
   await capture.dispatchEvent('contextmenu');
