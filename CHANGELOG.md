@@ -4,6 +4,18 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.321.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.320.1...v2.321.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **agent:** per-chat tool approval toggle and default setting ([#4458](https://github.com/intent-hq/cloudlands-fe/issues/4458)) ([d2e88c9](https://github.com/intent-hq/cloudlands-fe/commit/d2e88c99165ae12503109f1890d877e084e686ac))
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.190 ([#4473](https://github.com/intent-hq/cloudlands-fe/issues/4473)) ([9d07574](https://github.com/intent-hq/cloudlands-fe/commit/9d07574943ece1cb10e7f9d67322ce89dcd2ee97))
+
 ## [2.320.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.320.0...v2.320.1) (2026-11-12)
 
 
