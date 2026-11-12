@@ -1,6 +1,17 @@
 import { DockMediaCaptureSchema } from '../../../shared/dock-media-edit';
-import { exportDockMedia, transcribeDockMedia, releaseDockMediaJob, analyzeDockMedia, probeDockMediaAudio } from './dock-media-output';
-import { DockMediaExportRequestSchema, DockMediaTranscribeRequestSchema, DockMediaAnalyzeRequestSchema, DockMediaAudioProbeRequestSchema } from '../../../shared/dock-media-output';
+import {
+  exportDockMedia,
+  transcribeDockMedia,
+  releaseDockMediaJob,
+  analyzeDockMedia,
+  probeDockMediaAudio,
+} from './dock-media-output';
+import {
+  DockMediaExportRequestSchema,
+  DockMediaTranscribeRequestSchema,
+  DockMediaAnalyzeRequestSchema,
+  DockMediaAudioProbeRequestSchema,
+} from '../../../shared/dock-media-output';
 import {
   app,
   BrowserWindow,
@@ -85,10 +96,20 @@ const pixels = z
   })
   .strict();
 const controlSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('media-audio-probe'), request: DockMediaAudioProbeRequestSchema }).strict(),
-  z.object({ action: z.literal('media-waveform'), request: DockMediaAnalyzeRequestSchema, DockMediaAudioProbeRequestSchema }).strict(),
+  z
+    .object({ action: z.literal('media-audio-probe'), request: DockMediaAudioProbeRequestSchema })
+    .strict(),
+  z
+    .object({
+      action: z.literal('media-waveform'),
+      request: DockMediaAnalyzeRequestSchema,
+      DockMediaAudioProbeRequestSchema,
+    })
+    .strict(),
   z.object({ action: z.literal('media-export'), request: DockMediaExportRequestSchema }).strict(),
-  z.object({ action: z.literal('media-transcribe'), request: DockMediaTranscribeRequestSchema }).strict(),
+  z
+    .object({ action: z.literal('media-transcribe'), request: DockMediaTranscribeRequestSchema })
+    .strict(),
   z.object({ action: z.literal('media-job-cancel'), jobId: z.guid() }).strict(),
   z.object({ action: z.literal('media-job-release'), jobId: z.guid() }).strict(),
   z.object({ action: z.literal('capabilities') }).strict(),
@@ -178,9 +199,7 @@ const controlSchema = z.discriminatedUnion('action', [
     })
     .strict(),
   z.object({ action: z.literal('clip-stop'), clipId: z.guid() }).strict(),
-  z
-    .object({ action: z.literal('clip-pause'), clipId: z.guid(), paused: z.boolean() })
-    .strict(),
+  z.object({ action: z.literal('clip-pause'), clipId: z.guid(), paused: z.boolean() }).strict(),
   z.object({ action: z.literal('clip-release'), clipId: z.guid() }).strict(),
   z
     .object({
@@ -456,12 +475,18 @@ function createMediaBinder() {
         break;
       case 'media-export':
         result = await exportDockMedia(state.context, control.request, (fraction) => {
-          send(state, { kind: 'evidence', event: { type: 'media-progress', jobId: control.request.jobId, fraction } });
+          send(state, {
+            kind: 'evidence',
+            event: { type: 'media-progress', jobId: control.request.jobId, fraction },
+          });
         });
         break;
       case 'media-transcribe':
         result = await transcribeDockMedia(state.context, control.request, (fraction) => {
-          send(state, { kind: 'evidence', event: { type: 'media-progress', jobId: control.request.jobId, fraction } });
+          send(state, {
+            kind: 'evidence',
+            event: { type: 'media-progress', jobId: control.request.jobId, fraction },
+          });
         });
         break;
       case 'media-job-cancel':
@@ -571,7 +596,8 @@ function createMediaBinder() {
               ...(snapshot.placement.kind === 'edge' ? { side: snapshot.placement.side } : {}),
             };
           },
-          clipIdentity: () => current() && !state.clipEnded ? state.clipId ?? undefined : undefined,
+          clipIdentity: () =>
+            current() && !state.clipEnded ? (state.clipId ?? undefined) : undefined,
           clipMs: () =>
             state.clipId ? (dockEvidenceRecorder.elapsedMs(state.clipId) ?? undefined) : undefined,
           // Annotating while dictating is activity: the mic's silence timer must not
@@ -640,7 +666,11 @@ function createMediaBinder() {
       case 'annotation-end': {
         if (state.annotationId !== control.annotationId) return unavailable();
         if (control.action === 'annotation-tool')
-          await dockAnnotationController.setAnnotationTool(control.annotationId, control.tool, control.restoreInputRevision);
+          await dockAnnotationController.setAnnotationTool(
+            control.annotationId,
+            control.tool,
+            control.restoreInputRevision,
+          );
         else if (control.action === 'annotation-mouse')
           await dockAnnotationController.setAnnotationMouse(control.annotationId);
         else if (control.action === 'annotation-sync') {

@@ -40,11 +40,20 @@ test('dock Back focus parked by the app shows no ring', async ({ mount, page }, 
  * Keyboard focus on the dock conversation's Back button, in the real notch chrome, still
  * shows a ring; its look is checked by eye from the screenshots.
  */
-test('dock Back keeps its keyboard focus ring after a Tab move', async ({ mount, page }, testInfo) => {
+test('dock Back keeps its keyboard focus ring after a Tab move', async ({
+  mount,
+  page,
+}, testInfo) => {
   await page.setViewportSize({ width: 380, height: 680 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const component = await mount(ConversationWireHarness, {
-    props: { width: 320, height: 520, notchChrome: true, dockAppearance: true, syntheticNative: true },
+    props: {
+      width: 320,
+      height: 520,
+      notchChrome: true,
+      dockAppearance: true,
+      syntheticNative: true,
+    },
   });
   const surface = component.getByTestId('dock-conversation-surface');
   const back = component.locator('[data-dock-conversation-back]');

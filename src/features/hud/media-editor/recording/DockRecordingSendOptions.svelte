@@ -38,7 +38,8 @@
   let highlightsHelpOpen = $state(false);
 
   function dismissHelp(event: KeyboardEvent): void {
-    if (event.key !== 'Escape' || event.isComposing || (!fullHelpOpen && !highlightsHelpOpen)) return;
+    if (event.key !== 'Escape' || event.isComposing || (!fullHelpOpen && !highlightsHelpOpen))
+      return;
     // Dismiss this local help layer before the editor's Escape-to-close handler.
     event.preventDefault();
     fullHelpOpen = false;

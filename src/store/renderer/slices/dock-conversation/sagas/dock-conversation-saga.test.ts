@@ -5,7 +5,11 @@ import {
   type DockMediaSource,
 } from '$shared/dock-media-edit';
 import { emptyDockEvidence, dockEvidenceId } from '$shared/dock-evidence';
-import { dockEvidenceRestored, dockEvidenceMediaChanged, dockEvidenceAnnotationChanged } from '../dock-conversation-slice';
+import {
+  dockEvidenceRestored,
+  dockEvidenceMediaChanged,
+  dockEvidenceAnnotationChanged,
+} from '../dock-conversation-slice';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createWorkspaceId, createAgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -77,7 +81,11 @@ import {
   selectDockConversationComposer,
 } from '../dock-conversation-selectors';
 import { dockConversationSaga } from './dock-conversation-saga';
-import { configureDockEvidenceNative, evidenceOf, setDockDictationMarkSink } from './dock-evidence-saga';
+import {
+  configureDockEvidenceNative,
+  evidenceOf,
+  setDockDictationMarkSink,
+} from './dock-evidence-saga';
 import { DOCK_CAPTURE_EDITOR_CHANNELS } from '$shared/dock-capture-editor';
 import {
   __resetDockRetentionProbesForTests,
@@ -1879,7 +1887,9 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
     advertised = attachmentsAdvertised;
     const opens: unknown[] = [];
     const placements: unknown[] = [];
-    const bridge = window as unknown as { electronAPI?: { invoke: (channel: string, request?: unknown) => Promise<unknown> } };
+    const bridge = window as unknown as {
+      electronAPI?: { invoke: (channel: string, request?: unknown) => Promise<unknown> };
+    };
     const previous = bridge.electronAPI;
     bridge.electronAPI = {
       invoke: async (channel, request) => {
@@ -1896,18 +1906,35 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
     backend.onRequest('file.placeAttachment', (params) => {
       const row = params as { workspaceId: string; fileName: string; mimeType?: string };
       placements.push(row.workspaceId);
-      if (row.workspaceId === CHIEF_WORKSPACE_ID && !advertised) throw new Error('chief attachments unsupported');
-      return { ok: true, path: `.intent/attachments/${row.fileName}`, fileName: row.fileName, size: 2048,
-        attachmentId: `chief-image-${placements.length}`, mimeType: row.mimeType ?? 'image/png', uploadedAt: timestamp };
+      if (row.workspaceId === CHIEF_WORKSPACE_ID && !advertised)
+        throw new Error('chief attachments unsupported');
+      return {
+        ok: true,
+        path: `.intent/attachments/${row.fileName}`,
+        fileName: row.fileName,
+        size: 2048,
+        attachmentId: `chief-image-${placements.length}`,
+        mimeType: row.mimeType ?? 'image/png',
+        uploadedAt: timestamp,
+      };
     });
     const native = scriptedNative();
     await openChief(native);
     appStore.dispatch(dockEvidenceCaptureRequested(CHIEF_WORKSPACE_ID, chiefAgent));
-    await vi.waitFor(() => expect(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images).toHaveLength(1));
+    await vi.waitFor(() =>
+      expect(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images).toHaveLength(1),
+    );
     const image = evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)!.images[0];
     const before = JSON.stringify(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images);
     appStore.dispatch(dockMediaEditorOpenRequested(CHIEF_WORKSPACE_ID, chiefAgent, image.id));
-    return { opens, placements, before, restore: () => { bridge.electronAPI = previous; } };
+    return {
+      opens,
+      placements,
+      before,
+      restore: () => {
+        bridge.electronAPI = previous;
+      },
+    };
   }
 
   it('Edit on an Assistant screenshot without chiefAttachments uploads nothing and says why', async () => {
@@ -2195,83 +2222,134 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     await vi.waitFor(() => expect(evidenceView().clips.map((clip) => clip.id)).toEqual([clipId]));
   });
 
-  it.each([false, true])('discard suspends input before held pause; Undo respects owner replacement=%s', async (replaceOwner) => {
-    const native = scriptedNative({ record: true });
-    const pause = deferred<DockNativeResult<{ paused: boolean }>>();
-    vi.spyOn(native.service, 'pauseClip').mockReturnValue(pause.promise);
-    const mouse = vi.fn(async () => {});
-    native.service.setAnnotationMouse = mouse;
-    const tool = vi.spyOn(native.service, 'setAnnotationTool');
-    configureDockEvidenceNative(native.service);
-    await open();
-    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
-    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
-    const sessionId = native.calls.started[0].id;
-    native.emit({ type: 'mark', sessionId, markId: 'kept-before-discard', tool: 'box', geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 }, element: null, capture: shot(1) });
-    await vi.waitFor(() => expect(evidenceView().evidence?.marks).toHaveLength(1));
-    const marksBefore = structuredClone(evidenceView().evidence?.marks);
-    const imagesBefore = structuredClone(evidenceView().evidence?.images);
-    mouse.mockClear(); tool.mockClear();
-    try {
+  it.each([false, true])(
+    'discard suspends input before held pause; Undo respects owner replacement=%s',
+    async (replaceOwner) => {
+      const native = scriptedNative({ record: true });
+      const pause = deferred<DockNativeResult<{ paused: boolean }>>();
+      vi.spyOn(native.service, 'pauseClip').mockReturnValue(pause.promise);
+      const mouse = vi.fn(async () => {});
+      native.service.setAnnotationMouse = mouse;
+      const tool = vi.spyOn(native.service, 'setAnnotationTool');
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+      const sessionId = native.calls.started[0].id;
+      native.emit({
+        type: 'mark',
+        sessionId,
+        markId: 'kept-before-discard',
+        tool: 'box',
+        geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 },
+        element: null,
+        capture: shot(1),
+      });
+      await vi.waitFor(() => expect(evidenceView().evidence?.marks).toHaveLength(1));
+      const marksBefore = structuredClone(evidenceView().evidence?.marks);
+      const imagesBefore = structuredClone(evidenceView().evidence?.images);
+      mouse.mockClear();
+      tool.mockClear();
+      try {
+        native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+        await new Promise((r) => setTimeout(r, 0));
+        expect(mouse).toHaveBeenCalledWith(sessionId);
+        native.emit({
+          type: 'mark',
+          sessionId,
+          markId: 'late-discard',
+          tool: 'box',
+          geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 },
+          element: null,
+          capture: shot(1),
+        });
+        native.emit({
+          type: 'annotation-media',
+          sessionId,
+          action: 'discard-undo',
+          inputRevision: 1,
+        });
+        await new Promise((r) => setTimeout(r, 0));
+        expect(evidenceView().evidence?.marks).toEqual(marksBefore);
+        expect(native.calls.acks).toContainEqual([sessionId, 'late-discard', false]);
+        expect(evidenceView().evidence?.images).toEqual(imagesBefore);
+        expect(tool).not.toHaveBeenCalled();
+        if (replaceOwner) configureDockEvidenceNative(scriptedNative({ record: true }).service);
+      } finally {
+        pause.resolve({ ok: true, value: { paused: true } });
+      }
+      if (replaceOwner) {
+        await new Promise((r) => setTimeout(r, 0));
+        expect(tool).not.toHaveBeenCalled();
+      } else await vi.waitFor(() => expect(tool).toHaveBeenCalledWith(sessionId, 'box', 1));
+      expect(evidenceView().recording).toBe(true);
+      expect(native.calls.stopped).toEqual([]);
+    },
+  );
+
+  it.each(['pause', 'tool'] as const)(
+    'Done remains a safe recovery after rejected %s restoration',
+    async (failure) => {
+      const native = scriptedNative({ record: true });
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+      const sessionId = native.calls.started[0].id;
+      const clipId = native.calls.clips[0];
+      const pauseCommand = vi.spyOn(native.service, 'pauseClip');
+      if (failure === 'pause') pauseCommand.mockRejectedValueOnce(new Error('transport'));
+      else
+        vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
       native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+      await vi.waitFor(() => expect(pauseCommand).toHaveBeenCalledTimes(1));
+      native.emit({
+        type: 'annotation-media',
+        sessionId,
+        action: 'discard-undo',
+        inputRevision: 1,
+      });
       await new Promise((r) => setTimeout(r, 0));
-      expect(mouse).toHaveBeenCalledWith(sessionId);
-      native.emit({ type: 'mark', sessionId, markId: 'late-discard', tool: 'box', geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 }, element: null, capture: shot(1) });
-      native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
-      await new Promise((r) => setTimeout(r, 0));
-      expect(evidenceView().evidence?.marks).toEqual(marksBefore);
-      expect(native.calls.acks).toContainEqual([sessionId, 'late-discard', false]);
-      expect(evidenceView().evidence?.images).toEqual(imagesBefore);
-      expect(tool).not.toHaveBeenCalled();
-      if (replaceOwner) configureDockEvidenceNative(scriptedNative({ record: true }).service);
-    } finally { pause.resolve({ ok: true, value: { paused: true } }); }
-    if (replaceOwner) {
-      await new Promise((r) => setTimeout(r, 0));
-      expect(tool).not.toHaveBeenCalled();
-    } else await vi.waitFor(() => expect(tool).toHaveBeenCalledWith(sessionId, 'box', 1));
-    expect(evidenceView().recording).toBe(true);
-    expect(native.calls.stopped).toEqual([]);
-  });
+      native.emit({ type: 'annotation-media', sessionId, action: 'done' });
+      await vi.waitFor(() => expect(native.calls.stopped).toEqual([clipId]));
+      await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+      expect(evidenceView().clips).toHaveLength(1);
+    },
+  );
 
-  it.each(['pause', 'tool'] as const)('Done remains a safe recovery after rejected %s restoration', async (failure) => {
-    const native = scriptedNative({ record: true });
-    configureDockEvidenceNative(native.service);
-    await open();
-    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
-    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
-    const sessionId = native.calls.started[0].id;
-    const clipId = native.calls.clips[0];
-    const pauseCommand = vi.spyOn(native.service, 'pauseClip');
-    if (failure === 'pause') pauseCommand.mockRejectedValueOnce(new Error('transport'));
-    else vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
-    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
-    await vi.waitFor(() => expect(pauseCommand).toHaveBeenCalledTimes(1));
-    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
-    await new Promise((r) => setTimeout(r, 0));
-    native.emit({ type: 'annotation-media', sessionId, action: 'done' });
-    await vi.waitFor(() => expect(native.calls.stopped).toEqual([clipId]));
-    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
-    expect(evidenceView().clips).toHaveLength(1);
-  });
-
-  it.each(['mouse', 'tool'] as const)('a rejected %s control during discard/Undo leaves the saga usable', async (failure) => {
-    const native = scriptedNative({ record: true });
-    native.service.setAnnotationMouse = vi.fn(async () => {});
-    configureDockEvidenceNative(native.service);
-    await open();
-    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
-    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
-    const sessionId = native.calls.started[0].id;
-    if (failure === 'mouse') vi.mocked(native.service.setAnnotationMouse).mockRejectedValueOnce(new Error('transport'));
-    if (failure === 'tool') vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
-    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
-    await vi.waitFor(() => expect(native.calls.pauses).toHaveLength(1));
-    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
-    await new Promise((r) => setTimeout(r, 0));
-    native.emit({ type: 'annotation-media', sessionId, action: 'discard-confirm', inputRevision: 1 });
-    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
-    await vi.waitFor(() => expect(evidenceView().clips).toEqual([]));
-  });
+  it.each(['mouse', 'tool'] as const)(
+    'a rejected %s control during discard/Undo leaves the saga usable',
+    async (failure) => {
+      const native = scriptedNative({ record: true });
+      native.service.setAnnotationMouse = vi.fn(async () => {});
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+      const sessionId = native.calls.started[0].id;
+      if (failure === 'mouse')
+        vi.mocked(native.service.setAnnotationMouse).mockRejectedValueOnce(new Error('transport'));
+      if (failure === 'tool')
+        vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
+      native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+      await vi.waitFor(() => expect(native.calls.pauses).toHaveLength(1));
+      native.emit({
+        type: 'annotation-media',
+        sessionId,
+        action: 'discard-undo',
+        inputRevision: 1,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      native.emit({
+        type: 'annotation-media',
+        sessionId,
+        action: 'discard-confirm',
+        inputRevision: 1,
+      });
+      await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+      await vi.waitFor(() => expect(evidenceView().clips).toEqual([]));
+    },
+  );
 
   it('an unexpected annotation-ended retires discard ownership before another session', async () => {
     const native = scriptedNative({ record: true });
@@ -2715,48 +2793,169 @@ describe('held capture preparation local-admission content CAS', () => {
   );
 });
 
-
 describe('bound editor capture removal', () => {
-  it.each(['screenshot', 'recording'] as const)('removes only the current %s and refuses a later stale Save', async (kind) => {
-    await open();
-    const source: DockMediaSource = {
-      id: 'delete-source', revision: 0, kind, attachmentId: 'delete-file',
-      path: '.intent/attachments/delete.' + (kind === 'screenshot' ? 'png' : 'mp4'),
-      durationMs: kind === 'recording' ? 1000 : 0, width: 320, height: 180,
-      audio: 'none', visuals: 'clean', batches: [],
-    };
-    const media: DockSavedMedia = { source, saved: defaultDockMediaEdit(source, [], null), transcript: null };
-    const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
-    if (kind === 'screenshot') evidence.images = [{ id: 'current-capture', contextItemId: 'current-item', width: 320, height: 180, displayScale: 1, capturedAt: timestamp, source: 'capture', media }];
-    else evidence.clips = [{ id: 'current-capture', contextItemId: 'current-item', status: 'ready', startedAt: 1, durationMs: 1000, hasMicAudio: false, path: source.path, media }];
-    appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
-    const other: ContextItem = { id: 'other', type: 'file', label: 'Keep this', attachmentId: 'other-file', path: '.intent/attachments/other.png' };
-    appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, [other, { id: 'current-item', type: kind === 'screenshot' ? 'image' : 'file', label: 'Synthetic', attachmentId: source.attachmentId, path: source.path }]));
-    const bridge = window as unknown as { electronAPI?: { invoke: (...args: unknown[]) => Promise<unknown> } };
-    const previous = bridge.electronAPI;
-    const replies: unknown[] = [];
-    bridge.electronAPI = { invoke: async (...args) => { replies.push(args); return true; } };
-    try {
-      const { deleteEditorCapture } = await import('./dock-media-edit-saga');
-      const request = { requestId: crypto.randomUUID(), openId: crypto.randomUUID(), pair: { workspaceId: workspaceA, agentId: mainA }, kind, attachmentId: source.attachmentId, sourceId: source.id, sourceRevision: 0, expectedEditRevision: 0 };
-      cleanups.push(appStore.runSaga(function* () { yield* deleteEditorCapture({ ...request, sourceId: 'wrong-source' }); }));
-      await vi.waitFor(() => expect(replies).toContainEqual([DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT, { requestId: request.requestId, result: 'stale-source' }]));
-      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toHaveLength(2);
-      replies.length = 0;
-      cleanups.push(appStore.runSaga(function* () { yield* deleteEditorCapture(request); }));
-      await vi.waitFor(() => expect(replies).toContainEqual([DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT, { requestId: request.requestId, result: 'deleted' }]));
-      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([other]);
-      expect(evidenceOf(workspaceA, mainA)?.images).toEqual([]);
-      expect(evidenceOf(workspaceA, mainA)?.clips).toEqual([]);
-      const { dockMediaEditSaveRequested, dockMediaEditSaveSettled } = await import('../dock-conversation-slice');
-      const { getPrincipalActionContext } = await import('../../principal/principal-context');
-      const results: unknown[] = [];
-      cleanups.push(appStore.runSaga(function* () { results.push(yield* take(dockMediaEditSaveSettled)); }));
-      const saveId = crypto.randomUUID();
-      appStore.dispatch(dockMediaEditSaveRequested(saveId, { openId: request.openId, pair: request.pair, sourceId: source.id, sourceRevision: 0, expectedEditRevision: 0, edit: media.saved! }, getPrincipalActionContext(appStore.state)!));
-      await vi.waitFor(() => expect(results).toContainEqual(dockMediaEditSaveSettled(saveId, { requestId: saveId, result: 'stale-source' })));
-      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([other]);
-      expect([...evidenceOf(workspaceA, mainA)!.images, ...evidenceOf(workspaceA, mainA)!.clips]).toEqual([]);
-    } finally { bridge.electronAPI = previous; }
-  });
+  it.each(['screenshot', 'recording'] as const)(
+    'removes only the current %s and refuses a later stale Save',
+    async (kind) => {
+      await open();
+      const source: DockMediaSource = {
+        id: 'delete-source',
+        revision: 0,
+        kind,
+        attachmentId: 'delete-file',
+        path: '.intent/attachments/delete.' + (kind === 'screenshot' ? 'png' : 'mp4'),
+        durationMs: kind === 'recording' ? 1000 : 0,
+        width: 320,
+        height: 180,
+        audio: 'none',
+        visuals: 'clean',
+        batches: [],
+      };
+      const media: DockSavedMedia = {
+        source,
+        saved: defaultDockMediaEdit(source, [], null),
+        transcript: null,
+      };
+      const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
+      if (kind === 'screenshot')
+        evidence.images = [
+          {
+            id: 'current-capture',
+            contextItemId: 'current-item',
+            width: 320,
+            height: 180,
+            displayScale: 1,
+            capturedAt: timestamp,
+            source: 'capture',
+            media,
+          },
+        ];
+      else
+        evidence.clips = [
+          {
+            id: 'current-capture',
+            contextItemId: 'current-item',
+            status: 'ready',
+            startedAt: 1,
+            durationMs: 1000,
+            hasMicAudio: false,
+            path: source.path,
+            media,
+          },
+        ];
+      appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
+      const other: ContextItem = {
+        id: 'other',
+        type: 'file',
+        label: 'Keep this',
+        attachmentId: 'other-file',
+        path: '.intent/attachments/other.png',
+      };
+      appStore.dispatch(
+        dockConversationContextItemsChanged(workspaceA, mainA, [
+          other,
+          {
+            id: 'current-item',
+            type: kind === 'screenshot' ? 'image' : 'file',
+            label: 'Synthetic',
+            attachmentId: source.attachmentId,
+            path: source.path,
+          },
+        ]),
+      );
+      const bridge = window as unknown as {
+        electronAPI?: { invoke: (...args: unknown[]) => Promise<unknown> };
+      };
+      const previous = bridge.electronAPI;
+      const replies: unknown[] = [];
+      bridge.electronAPI = {
+        invoke: async (...args) => {
+          replies.push(args);
+          return true;
+        },
+      };
+      try {
+        const { deleteEditorCapture } = await import('./dock-media-edit-saga');
+        const request = {
+          requestId: crypto.randomUUID(),
+          openId: crypto.randomUUID(),
+          pair: { workspaceId: workspaceA, agentId: mainA },
+          kind,
+          attachmentId: source.attachmentId,
+          sourceId: source.id,
+          sourceRevision: 0,
+          expectedEditRevision: 0,
+        };
+        cleanups.push(
+          appStore.runSaga(function* () {
+            yield* deleteEditorCapture({ ...request, sourceId: 'wrong-source' });
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(replies).toContainEqual([
+            DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT,
+            { requestId: request.requestId, result: 'stale-source' },
+          ]),
+        );
+        expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toHaveLength(
+          2,
+        );
+        replies.length = 0;
+        cleanups.push(
+          appStore.runSaga(function* () {
+            yield* deleteEditorCapture(request);
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(replies).toContainEqual([
+            DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT,
+            { requestId: request.requestId, result: 'deleted' },
+          ]),
+        );
+        expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([
+          other,
+        ]);
+        expect(evidenceOf(workspaceA, mainA)?.images).toEqual([]);
+        expect(evidenceOf(workspaceA, mainA)?.clips).toEqual([]);
+        const { dockMediaEditSaveRequested, dockMediaEditSaveSettled } =
+          await import('../dock-conversation-slice');
+        const { getPrincipalActionContext } = await import('../../principal/principal-context');
+        const results: unknown[] = [];
+        cleanups.push(
+          appStore.runSaga(function* () {
+            results.push(yield* take(dockMediaEditSaveSettled));
+          }),
+        );
+        const saveId = crypto.randomUUID();
+        appStore.dispatch(
+          dockMediaEditSaveRequested(
+            saveId,
+            {
+              openId: request.openId,
+              pair: request.pair,
+              sourceId: source.id,
+              sourceRevision: 0,
+              expectedEditRevision: 0,
+              edit: media.saved!,
+            },
+            getPrincipalActionContext(appStore.state)!,
+          ),
+        );
+        await vi.waitFor(() =>
+          expect(results).toContainEqual(
+            dockMediaEditSaveSettled(saveId, { requestId: saveId, result: 'stale-source' }),
+          ),
+        );
+        expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([
+          other,
+        ]);
+        expect([
+          ...evidenceOf(workspaceA, mainA)!.images,
+          ...evidenceOf(workspaceA, mainA)!.clips,
+        ]).toEqual([]);
+      } finally {
+        bridge.electronAPI = previous;
+      }
+    },
+  );
 });

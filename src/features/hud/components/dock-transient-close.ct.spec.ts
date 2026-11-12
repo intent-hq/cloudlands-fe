@@ -13,7 +13,10 @@ test.use({ contextOptions: { reducedMotion: 'reduce' } });
 
 type Command = { action: string };
 
-test('six open/close shortcut cycles collapse the dock without ever hiding it', async ({ mount, page }, info) => {
+test('six open/close shortcut cycles collapse the dock without ever hiding it', async ({
+  mount,
+  page,
+}, info) => {
   await page.setViewportSize({ width: 1000, height: 740 });
   await page.mouse.move(900, 700);
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
@@ -21,7 +24,8 @@ test('six open/close shortcut cycles collapse the dock without ever hiding it', 
   const shell = page.getByTestId('dock-shell');
   const draft = page.getByRole('textbox', { name: 'Draft' });
   const proof = page.getByTestId('dismiss-proof');
-  const commands = async () => JSON.parse((await proof.getAttribute('data-commands')) ?? '[]') as Command[];
+  const commands = async () =>
+    JSON.parse((await proof.getAttribute('data-commands')) ?? '[]') as Command[];
   await expect(shell).toHaveAttribute('data-reveal', '0');
   const cycles: Record<string, unknown>[] = [];
   let request = 0;
@@ -39,7 +43,10 @@ test('six open/close shortcut cycles collapse the dock without ever hiding it', 
   const sent = await commands();
   expect(sent.filter((c) => c.action === 'dismiss')).toEqual([]);
   expect(sent.filter((c) => c.action === 'release').length).toBeGreaterThanOrEqual(6);
-  await writeFile(info.outputPath('transient-close-cycles.json'), JSON.stringify({ cycles, sent: sent.map((c) => c.action) }, null, 2));
+  await writeFile(
+    info.outputPath('transient-close-cycles.json'),
+    JSON.stringify({ cycles, sent: sent.map((c) => c.action) }, null, 2),
+  );
 });
 
 for (const how of ['Escape', 'a click outside'] as const) {

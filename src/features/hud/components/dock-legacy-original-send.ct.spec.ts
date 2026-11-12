@@ -12,7 +12,10 @@ import ComposerE2EHarness from './DockComposerE2EHarness.svelte';
 type H = {
   calls: { method: string; params: Record<string, unknown> }[];
   native: { log: Record<string, unknown> };
-  store: { state: Record<string, any>; dispatch: (action: { type: string; payload: unknown[] }) => void };
+  store: {
+    state: Record<string, any>;
+    dispatch: (action: { type: string; payload: unknown[] }) => void;
+  };
 };
 
 async function recordClip(page: Page, component: { getByRole: Function }) {
@@ -41,28 +44,52 @@ async function makeLegacy(page: Page, mismatch: boolean) {
     const find = (node: any, depth = 0): any => {
       if (!node || typeof node !== 'object' || depth > 8) return undefined;
       if (node.id === clip.contextItemId && 'attachmentId' in node) return node;
-      for (const v of Object.values(node)) { const hit = find(v, depth + 1); if (hit) return hit; }
+      for (const v of Object.values(node)) {
+        const hit = find(v, depth + 1);
+        if (hit) return hit;
+      }
       return undefined;
     };
     const item = find(h.store.state.transientUi ?? h.store.state);
     const source = {
-      id: `${clip.id}:legacy`, revision: 0, kind: 'recording',
+      id: `${clip.id}:legacy`,
+      revision: 0,
+      kind: 'recording',
       attachmentId: mismatch ? 'another-attachment' : item.attachmentId,
-      path: item.path, durationMs: 23000, width: 1728, height: 1117,
-      audio: 'available', visuals: 'baked-marks',
-      batches: [{ id: 'batch-0', atMs: 0, clearAtMs: null }], bakedMarks: [],
+      path: item.path,
+      durationMs: 23000,
+      width: 1728,
+      height: 1117,
+      audio: 'available',
+      visuals: 'baked-marks',
+      batches: [{ id: 'batch-0', atMs: 0, clearAtMs: null }],
+      bakedMarks: [],
     };
     const saved = {
-      version: 1, kind: 'recording', sourceId: source.id, sourceRevision: 0, revision: 1,
-      trim: { startMs: 0, endMs: 23000 }, cuts: [], marks: [], blurRegions: [], blurStrokes: [],
-      crop: null, video: 'full', voice: 'audio', wordEdits: {},
+      version: 1,
+      kind: 'recording',
+      sourceId: source.id,
+      sourceRevision: 0,
+      revision: 1,
+      trim: { startMs: 0, endMs: 23000 },
+      cuts: [],
+      marks: [],
+      blurRegions: [],
+      blurStrokes: [],
+      crop: null,
+      video: 'full',
+      voice: 'audio',
+      wordEdits: {},
     };
     h.store.dispatch({
       type: 'dockConversation/evidenceMediaChanged',
       payload: [d.workspaceId, d.agentId, clip.id, null, { source, saved, transcript: null }],
     });
     const after = (Object.values(h.store.state.dockConversation.evidence.map)[0] as any).clips[0];
-    return { attachmentId: item.attachmentId, applied: after.media?.source?.visuals === 'baked-marks' };
+    return {
+      attachmentId: item.attachmentId,
+      applied: after.media?.source?.visuals === 'baked-marks',
+    };
   }, mismatch);
 }
 
@@ -73,7 +100,10 @@ const sends = (page: Page) =>
     ),
   );
 
-test('an unchanged legacy recording is sent as its own original attachment', async ({ mount, page }, info) => {
+test('an unchanged legacy recording is sent as its own original attachment', async ({
+  mount,
+  page,
+}, info) => {
   const component = await mount(ComposerE2EHarness);
   await recordClip(page, component);
   const legacy = await makeLegacy(page, false);
@@ -92,13 +122,27 @@ test('an unchanged legacy recording is sent as its own original attachment', asy
   expect(exported).not.toContain('exportMedia');
   await writeFile(
     info.outputPath('legacy-original-receipt.json'),
-    JSON.stringify({ fileBlock: { type: fileBlock!.type ?? 'file', attachmentIdMatches: true }, fileBlocks: fileBlocks.length, sends: 1, exportCalled: exported.includes('exportMedia') }, null, 2),
+    JSON.stringify(
+      {
+        fileBlock: { type: fileBlock!.type ?? 'file', attachmentIdMatches: true },
+        fileBlocks: fileBlocks.length,
+        sends: 1,
+        exportCalled: exported.includes('exportMedia'),
+      },
+      null,
+      2,
+    ),
   );
 });
 
-test('a legacy recording whose raw attachment does not match is not sent and the draft stays', async ({ mount, page }, info) => {
+test('a legacy recording whose raw attachment does not match is not sent and the draft stays', async ({
+  mount,
+  page,
+}, info) => {
   const logged: string[] = [];
-  page.on('console', (message) => { if (message.text().includes('Dock reply send failed')) logged.push(message.text()); });
+  page.on('console', (message) => {
+    if (message.text().includes('Dock reply send failed')) logged.push(message.text());
+  });
   const component = await mount(ComposerE2EHarness);
   await recordClip(page, component);
   const legacy = await makeLegacy(page, true);
@@ -107,12 +151,20 @@ test('a legacy recording whose raw attachment does not match is not sent and the
   // Settled on the observed failure (logged stage/code and the send error), not a timer.
   await expect.poll(() => logged.join('\n')).toContain('legacy-original-unavailable');
   await expect
-    .poll(() => page.evaluate(() => !!(window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError))
+    .poll(() =>
+      page.evaluate(
+        () =>
+          !!(window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state
+            .dockConversation.sendError,
+      ),
+    )
     .toBe(true);
   expect(await sends(page)).toHaveLength(0);
   await expect(component.locator('[data-dock-media-attachments] .tile')).toHaveCount(1);
   const sendError = await page.evaluate(
-    () => (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation.sendError,
+    () =>
+      (window as unknown as { __dockComposerE2E: H }).__dockComposerE2E.store.state.dockConversation
+        .sendError,
   );
   expect(sendError).toBeTruthy();
   await writeFile(

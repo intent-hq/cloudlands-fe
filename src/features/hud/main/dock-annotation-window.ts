@@ -511,9 +511,20 @@ export class DockAnnotationController implements AnnotationService {
     return { ok: true, value: undefined };
   }
 
-  async setAnnotationTool(sessionId: string, tool: DockMarkTool, restoreInputRevision?: number): Promise<void> {
+  async setAnnotationTool(
+    sessionId: string,
+    tool: DockMarkTool,
+    restoreInputRevision?: number,
+  ): Promise<void> {
     const session = this.session;
-    if (!session || session.id !== sessionId || session.ended || !validTool(tool) || tool === 'pick') return;
+    if (
+      !session ||
+      session.id !== sessionId ||
+      session.ended ||
+      !validTool(tool) ||
+      tool === 'pick'
+    )
+      return;
     if (!session.discarding && restoreInputRevision !== undefined) return;
     if (session.discarding) {
       if (!session.undoRequested || restoreInputRevision !== session.inputRevision) return;
@@ -729,7 +740,13 @@ export class DockAnnotationController implements AnnotationService {
       return false;
     if (session.discarding && request.action === 'discard') return false;
     if (session.discarding && request.action === 'done' && !session.undoRequested) return false;
-    if (session.discarding && !['discard', 'discard-undo', 'discard-confirm', 'rect', 'mouse', 'done'].includes(request.action)) return false;
+    if (
+      session.discarding &&
+      !['discard', 'discard-undo', 'discard-confirm', 'rect', 'mouse', 'done'].includes(
+        request.action,
+      )
+    )
+      return false;
     if (request.action !== 'rect') this.activity();
     if (request.action === 'tool') {
       if (session.discarding || !validTool(request.tool) || request.tool === 'pick') return false;
@@ -808,7 +825,12 @@ export class DockAnnotationController implements AnnotationService {
       }
       if (request.action === 'discard-undo') session.undoRequested = true;
       // Only the owned Undo reply for this discard revision may restore input.
-      this.emit({ type: 'annotation-media', sessionId: session.id, action: request.action, inputRevision: session.inputRevision });
+      this.emit({
+        type: 'annotation-media',
+        sessionId: session.id,
+        action: request.action,
+        inputRevision: session.inputRevision,
+      });
       return true;
     }
     if (request.action === 'rect') {
@@ -838,18 +860,36 @@ export class DockAnnotationController implements AnnotationService {
       return { ok: true };
     }
     if (request.phase === 'move') {
-      const hold = session.hold, atMs = this.host?.clipMs();
-      if (!hold || hold.sequence !== request.sequence || hold.tool !== request.tool || !hold.clipId ||
-          hold.clipId !== this.host?.clipIdentity?.() || !finitePoint(request) || !this.insideDisplay(session, request) ||
-          !Number.isSafeInteger(request.pointCount) || request.pointCount! < 1 || request.pointCount! > DOCK_ANNOTATION_LIMITS.gesturePoints ||
-          atMs === undefined || !Number.isFinite(atMs) || atMs < (hold.clipMs ?? 0)) return reject('stale');
+      const hold = session.hold,
+        atMs = this.host?.clipMs();
+      if (
+        !hold ||
+        hold.sequence !== request.sequence ||
+        hold.tool !== request.tool ||
+        !hold.clipId ||
+        hold.clipId !== this.host?.clipIdentity?.() ||
+        !finitePoint(request) ||
+        !this.insideDisplay(session, request) ||
+        !Number.isSafeInteger(request.pointCount) ||
+        request.pointCount! < 1 ||
+        request.pointCount! > DOCK_ANNOTATION_LIMITS.gesturePoints ||
+        atMs === undefined ||
+        !Number.isFinite(atMs) ||
+        atMs < (hold.clipMs ?? 0)
+      )
+        return reject('stale');
       const previous = hold.progress.at(-1);
-      if (previous && (atMs < previous.atMs || request.pointCount! < previous.pointCount)) return reject('stale');
+      if (previous && (atMs < previous.atMs || request.pointCount! < previous.pointCount))
+        return reject('stale');
       const sample = { atMs, pointCount: request.pointCount!, end: { x: request.x, y: request.y } };
-      if (previous?.atMs === atMs) { if (hold.progress.length > 1) hold.progress[hold.progress.length - 1] = sample; }
-      else if (!previous || atMs - previous.atMs >= 32) hold.progress.push(sample);
+      if (previous?.atMs === atMs) {
+        if (hold.progress.length > 1) hold.progress[hold.progress.length - 1] = sample;
+      } else if (!previous || atMs - previous.atMs >= 32) hold.progress.push(sample);
       // Keep observed points only; evenly thin older observations under the cap.
-      if (hold.progress.length > 64) hold.progress = hold.progress.filter((_, i) => i === 0 || i % 2 === 0 || i === hold.progress.length - 1);
+      if (hold.progress.length > 64)
+        hold.progress = hold.progress.filter(
+          (_, i) => i === 0 || i % 2 === 0 || i === hold.progress.length - 1,
+        );
       return { ok: true };
     }
     if (request.phase !== 'down' || !finitePoint(request) || !validTool(request.tool))
@@ -988,8 +1028,17 @@ export class DockAnnotationController implements AnnotationService {
       geometry,
       clipMs: hold.clipMs,
       clipId: hold.clipId,
-      ...(hold.clipId && hold.clipId === host?.clipIdentity?.() && hold.progress.length && host?.clipMs() !== undefined
-        ? { gestureProgress: { completedAtMs: host.clipMs()!, samples: hold.progress.map((sample) => ({ ...sample, end: { ...sample.end } })) } } : {}),
+      ...(hold.clipId &&
+      hold.clipId === host?.clipIdentity?.() &&
+      hold.progress.length &&
+      host?.clipMs() !== undefined
+        ? {
+            gestureProgress: {
+              completedAtMs: host.clipMs()!,
+              samples: hold.progress.map((sample) => ({ ...sample, end: { ...sample.end } })),
+            },
+          }
+        : {}),
       markId: hold.markId,
       atEpochMs: hold.atEpochMs,
       excludeWindowIds: [
@@ -1015,7 +1064,11 @@ export class DockAnnotationController implements AnnotationService {
     const { session, display } = frozen;
     const host = this.host;
     // Every await is fenced by the session and the commit deadline before any state changes.
-    const live = () => !frozen.lease.expired && !session.discarding && frozen.inputRevision === session.inputRevision && this.current(session);
+    const live = () =>
+      !frozen.lease.expired &&
+      !session.discarding &&
+      frozen.inputRevision === session.inputRevision &&
+      this.current(session);
     if (!host || !live()) return reject('stale');
     const { x: dx, y: dy } = display.bounds;
     const originGlobal = { x: dx + frozen.origin.x, y: dy + frozen.origin.y };
@@ -1134,8 +1187,7 @@ export class DockAnnotationController implements AnnotationService {
     // Without two comparable hashes a change cannot be shown, so the image is kept.
     const comparable = !!previous?.hash && !!hash;
     if (frozen.clipId && frozen.clipId !== host.clipIdentity?.()) return reject('stale');
-    const recordingImage =
-      !!frozen.clipId && previous?.clipId === frozen.clipId;
+    const recordingImage = !!frozen.clipId && previous?.clipId === frozen.clipId;
     const reuse =
       !!previous &&
       previous.width === shot.width &&
@@ -1147,7 +1199,12 @@ export class DockAnnotationController implements AnnotationService {
             dockHashDistance(previous.hash, hash) <= DOCK_ANNOTATION_LIMITS.hashThreshold)));
     const image: SessionImage = reuse
       ? previous!
-      : { width: shot.width, height: shot.height, hash, ...(frozen.clipId ? { clipId: frozen.clipId } : {}) };
+      : {
+          width: shot.width,
+          height: shot.height,
+          hash,
+          ...(frozen.clipId ? { clipId: frozen.clipId } : {}),
+        };
     const view = dockAnnotationViewport(display.bounds, image, session.mode);
     if (!view) return reject('failed');
 
@@ -1242,14 +1299,32 @@ export class DockAnnotationController implements AnnotationService {
     element: DockMarkElement | null,
     capture?: DockCapturedPixels,
   ): boolean {
-    if (frozen.lease.expired || frozen.session.discarding || frozen.inputRevision !== frozen.session.inputRevision || !this.current(frozen.session)) return false;
+    if (
+      frozen.lease.expired ||
+      frozen.session.discarding ||
+      frozen.inputRevision !== frozen.session.inputRevision ||
+      !this.current(frozen.session)
+    )
+      return false;
     if (frozen.clipId && frozen.clipId !== this.host?.clipIdentity?.()) return false;
-    const sameClip = frozen.clipId ? frozen.clipId === this.host?.clipIdentity?.() : !this.host?.clipIdentity;
+    const sameClip = frozen.clipId
+      ? frozen.clipId === this.host?.clipIdentity?.()
+      : !this.host?.clipIdentity;
     const width = capture?.width ?? frozen.session.image?.width;
     const height = capture?.height ?? frozen.session.image?.height;
-    const progress = sameClip && frozen.gestureProgress && width && height && frozen.tool !== 'pick'
-      ? { ...frozen.gestureProgress, samples: frozen.gestureProgress.samples.map((sample) => ({ ...sample,
-          end: { x: sample.end.x * width / frozen.display.bounds.width, y: sample.end.y * height / frozen.display.bounds.height } })) } : undefined;
+    const progress =
+      sameClip && frozen.gestureProgress && width && height && frozen.tool !== 'pick'
+        ? {
+            ...frozen.gestureProgress,
+            samples: frozen.gestureProgress.samples.map((sample) => ({
+              ...sample,
+              end: {
+                x: (sample.end.x * width) / frozen.display.bounds.width,
+                y: (sample.end.y * height) / frozen.display.bounds.height,
+              },
+            })),
+          }
+        : undefined;
     this.emit({
       type: 'mark',
       ...(progress ? { gestureProgress: progress } : {}),
@@ -1260,7 +1335,10 @@ export class DockAnnotationController implements AnnotationService {
       ...(capture ? { capture } : {}),
       markId: frozen.markId,
       gestureAtEpochMs: frozen.atEpochMs,
-      ...(sameClip && frozen.clipMs !== undefined && Number.isFinite(frozen.clipMs) && frozen.clipMs >= 0
+      ...(sameClip &&
+      frozen.clipMs !== undefined &&
+      Number.isFinite(frozen.clipMs) &&
+      frozen.clipMs >= 0
         ? { clipMs: Math.round(frozen.clipMs) }
         : {}),
     });

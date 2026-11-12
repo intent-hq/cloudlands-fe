@@ -278,7 +278,11 @@ describe('DockAnnotationController', () => {
     await t.start('live', 'pick');
     const state = () => t.windows[0]!.webContents.sent.at(-1) as { tool: string; marks: unknown[] };
     expect(state().tool).toBe('box');
-    const old = { n: 1, tool: 'pick' as const, geometry: { kind: 'rect' as const, x: 100, y: 100, w: 30, h: 30 } };
+    const old = {
+      n: 1,
+      tool: 'pick' as const,
+      geometry: { kind: 'rect' as const, x: 100, y: 100, w: 30, h: 30 },
+    };
     await t.controller.syncMarks('s1', [old]);
     expect(state().marks).toEqual([old]);
     t.controller.handleToolbar({ sessionId: 's1', action: 'discard' });
@@ -292,7 +296,9 @@ describe('DockAnnotationController', () => {
     expect(t.controller.handleToolbar({ sessionId: 's1', action: 'done' })).toBe(true);
     await t.controller.setAnnotationTool('s1', 'box', 1);
     expect(state().marks).toEqual([old]);
-    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pick' })).toBe(false);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pick' })).toBe(
+      false,
+    );
     await t.controller.endAnnotation('s1');
   });
 
@@ -300,10 +306,15 @@ describe('DockAnnotationController', () => {
     const t = setup();
     await t.start();
     t.holdCaptures();
-    const pending = t.gesture([{ x: 100, y: 100 }, { x: 160, y: 160 }]);
+    const pending = t.gesture([
+      { x: 100, y: 100 },
+      { x: 160, y: 160 },
+    ]);
     await new Promise((r) => setTimeout(r, 0));
     expect(t.controller.handleToolbar({ sessionId: 's1', action: 'discard' })).toBe(true);
-    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pen' })).toBe(false);
+    expect(t.controller.handleToolbar({ sessionId: 's1', action: 'tool', tool: 'pen' })).toBe(
+      false,
+    );
     t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
     await t.controller.setAnnotationTool('s1', 'pen');
     t.controller.handleToolbar({ sessionId: 's1', action: 'discard-undo' });
@@ -659,7 +670,13 @@ describe('DockAnnotationController', () => {
       t.host.clip = 2500;
 
       await expect(
-        t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }], tool),
+        t.gesture(
+          [
+            { x: 100, y: 100 },
+            { x: 300, y: 300 },
+          ],
+          tool,
+        ),
       ).resolves.toEqual({ ok: true });
       expect(marks(t.events)).toHaveLength(1);
       expect(marks(t.events)[0]).toMatchObject({ tool, clipMs: 2500 });
@@ -677,7 +694,13 @@ describe('DockAnnotationController', () => {
     t.host.clip = 2500;
 
     await expect(
-      t.gesture([{ x: 800, y: 100 }, { x: 1000, y: 300 }], 'arrow'),
+      t.gesture(
+        [
+          { x: 800, y: 100 },
+          { x: 1000, y: 300 },
+        ],
+        'arrow',
+      ),
     ).resolves.toEqual({ ok: true });
     expect(marks(t.events)).toHaveLength(1);
     expect(marks(t.events)[0]).toMatchObject({ tool: 'arrow', clipMs: 2500 });
@@ -691,7 +714,10 @@ describe('DockAnnotationController', () => {
     t.host.clip = 2500;
 
     await expect(
-      t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }]),
+      t.gesture([
+        { x: 100, y: 100 },
+        { x: 300, y: 300 },
+      ]),
     ).resolves.toEqual({ ok: true });
     expect(marks(t.events)).toHaveLength(1);
     expect(marks(t.events)[0]!.element).toBeNull();
@@ -703,7 +729,10 @@ describe('DockAnnotationController', () => {
     t.host.clip = 2500;
 
     await expect(
-      t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }]),
+      t.gesture([
+        { x: 100, y: 100 },
+        { x: 300, y: 300 },
+      ]),
     ).resolves.toEqual({ ok: true });
     expect(marks(t.events)).toHaveLength(1);
     expect(marks(t.events)[0]!.element).toBeNull();
@@ -718,7 +747,10 @@ describe('DockAnnotationController', () => {
     };
 
     await expect(
-      t.gesture([{ x: 100, y: 100 }, { x: 300, y: 300 }]),
+      t.gesture([
+        { x: 100, y: 100 },
+        { x: 300, y: 300 },
+      ]),
     ).resolves.toEqual({ ok: true });
     expect(marks(t.events)).toHaveLength(1);
     expect(marks(t.events)[0]!.element).toBeNull();
@@ -730,12 +762,16 @@ describe('DockAnnotationController', () => {
     t.host.clip = 2500;
 
     await expect(
-      t.gesture([{ x: 1200, y: 10 }, { x: 1300, y: 90 }]),
+      t.gesture([
+        { x: 1200, y: 10 },
+        { x: 1300, y: 90 },
+      ]),
     ).resolves.toEqual({ ok: false, reason: 'excluded' });
     await t.controller.setAnnotationTool('s1', 'pick');
-    await expect(
-      t.gesture([{ x: 100, y: 100 }], 'pick'),
-    ).resolves.toEqual({ ok: false, reason: 'stale' });
+    await expect(t.gesture([{ x: 100, y: 100 }], 'pick')).resolves.toEqual({
+      ok: false,
+      reason: 'stale',
+    });
     expect(marks(t.events)).toEqual([]);
     expect(t.captures).toEqual([]);
   });
@@ -845,7 +881,11 @@ describe('DockAnnotationController', () => {
   });
 
   it('removed Pick cannot create a mark even when accessibility metadata is available', async () => {
-    const element = { role: 'AXButton', name: 'Get started', rect: { x: -1340, y: -50, width: 112, height: 36 } };
+    const element = {
+      role: 'AXButton',
+      name: 'Get started',
+      rect: { x: -1340, y: -50, width: 112, height: 36 },
+    };
     const t = setup({ hit: () => ({ ...noHit, element }) });
     await t.start('dictation', 'pick');
     expect(await t.gesture([{ x: 120, y: 60 }], 'pick')).toEqual({ ok: false, reason: 'stale' });
@@ -853,7 +893,7 @@ describe('DockAnnotationController', () => {
     expect(t.captures).toEqual([]);
   });
 
-  it("removed Pick never inspects an Intent page or browser panel", async () => {
+  it('removed Pick never inspects an Intent page or browser panel', async () => {
     const requests: unknown[] = [];
     let answer: Awaited<ReturnType<DockAnnotationNative['intentWindow']>> = {
       kind: 'intent',
@@ -1426,30 +1466,64 @@ describe('DockAnnotationController on-screen tool bar and start refusals', () =>
 
 describe('recorded gesture progress lifetime', () => {
   it('stamps actual move clock, commits once, rejects late move after up or cancel', async () => {
-    const t = setup(); let clipId: string | undefined = 'clip-a';
-    t.host.clipIdentity = () => clipId; t.host.clip = 100;
+    const t = setup();
+    let clipId: string | undefined = 'clip-a';
+    t.host.clipIdentity = () => clipId;
+    t.host.clip = 100;
     await t.start('live', 'pen');
-    const request = { sessionId: 's1', sequence: t.nextSequence(), tool: 'pen' as const, x: 10, y: 10 };
+    const request = {
+      sessionId: 's1',
+      sequence: t.nextSequence(),
+      tool: 'pen' as const,
+      x: 10,
+      y: 10,
+    };
     expect(t.controller.handlePointer({ ...request, phase: 'down' }).ok).toBe(true);
     t.host.clip = 180;
-    expect(t.controller.handlePointer({ ...request, phase: 'move', x: 30, y: 30, pointCount: 2 }).ok).toBe(true);
+    expect(
+      t.controller.handlePointer({ ...request, phase: 'move', x: 30, y: 30, pointCount: 2 }).ok,
+    ).toBe(true);
     t.host.clip = 250;
-    await t.controller.handleGesture({ sessionId: 's1', sequence: request.sequence, tool: 'pen', origin: { x: 10, y: 10 }, points: [{ x:10,y:10 },{ x:30,y:30 },{ x:60,y:60 }] });
-    expect(marks(t.events)[0].gestureProgress).toMatchObject({ completedAtMs: 250, samples: [{ atMs: 100, pointCount: 1 },{ atMs: 180, pointCount: 2 }] });
-    expect(t.controller.handlePointer({ ...request, phase:'move', pointCount:3 }).ok).toBe(false);
-    const next = { ...request, sequence:t.nextSequence() };
-    t.controller.handlePointer({ ...next, phase:'down' });
-    t.controller.handlePointer({ ...next, phase:'cancel' });
-    expect(t.controller.handlePointer({ ...next, phase:'move', pointCount:2 }).ok).toBe(false);
+    await t.controller.handleGesture({
+      sessionId: 's1',
+      sequence: request.sequence,
+      tool: 'pen',
+      origin: { x: 10, y: 10 },
+      points: [
+        { x: 10, y: 10 },
+        { x: 30, y: 30 },
+        { x: 60, y: 60 },
+      ],
+    });
+    expect(marks(t.events)[0].gestureProgress).toMatchObject({
+      completedAtMs: 250,
+      samples: [
+        { atMs: 100, pointCount: 1 },
+        { atMs: 180, pointCount: 2 },
+      ],
+    });
+    expect(t.controller.handlePointer({ ...request, phase: 'move', pointCount: 3 }).ok).toBe(false);
+    const next = { ...request, sequence: t.nextSequence() };
+    t.controller.handlePointer({ ...next, phase: 'down' });
+    t.controller.handlePointer({ ...next, phase: 'cancel' });
+    expect(t.controller.handlePointer({ ...next, phase: 'move', pointCount: 2 }).ok).toBe(false);
     expect(marks(t.events)).toHaveLength(1);
     clipId = undefined;
   });
   it('rejects the whole frozen mark when the clip changes during capture', async () => {
-    const t = setup(); let clipId = 'clip-a'; t.host.clipIdentity = () => clipId; t.host.clip = 100;
-    await t.start(); t.holdCaptures();
-    const pending = t.gesture([{x:10,y:10},{x:80,y:80}]);
+    const t = setup();
+    let clipId = 'clip-a';
+    t.host.clipIdentity = () => clipId;
+    t.host.clip = 100;
+    await t.start();
+    t.holdCaptures();
+    const pending = t.gesture([
+      { x: 10, y: 10 },
+      { x: 80, y: 80 },
+    ]);
     await vi.waitFor(() => expect(t.captures).toHaveLength(1));
-    clipId = 'clip-b'; t.releaseCapture();
+    clipId = 'clip-b';
+    t.releaseCapture();
     expect((await pending).ok).toBe(false);
     expect(marks(t.events)).toHaveLength(0);
   });

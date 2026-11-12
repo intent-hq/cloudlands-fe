@@ -17,7 +17,9 @@ function upToDate() {
   if (!fs.existsSync(destination) || !binaryMatchesArchitecture(destination, process.arch))
     return false;
   const built = fs.statSync(destination).mtimeMs;
-  return [source, accumulator, infoPlist, __filename].every((input) => fs.statSync(input).mtimeMs < built);
+  return [source, accumulator, infoPlist, __filename].every(
+    (input) => fs.statSync(input).mtimeMs < built,
+  );
 }
 
 function main() {
@@ -28,7 +30,9 @@ function main() {
   try {
     execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'ignore' });
   } catch {
-    console.warn('Warning: swiftc not found — dock media transcribe not built; media transcription is unavailable.');
+    console.warn(
+      'Warning: swiftc not found — dock media transcribe not built; media transcription is unavailable.',
+    );
     return;
   }
   if (upToDate()) {

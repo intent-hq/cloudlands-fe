@@ -38,10 +38,7 @@ test('exactly one tool is selected as tools change', async ({ mount, page }) => 
   }
 });
 
-test('Clear appears with the first mark and clears to Pointer', async ({
-  mount,
-  page,
-}) => {
+test('Clear appears with the first mark and clears to Pointer', async ({ mount, page }) => {
   const harness = await mount(Harness, { props: { signal: null } });
   await pauseClock(page);
   await expect(bar(page).locator('[data-clear]')).toHaveCount(0);

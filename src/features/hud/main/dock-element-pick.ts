@@ -122,7 +122,10 @@ function parseDiagnostic(value: unknown): DockHitDiagnostic | null {
   if (row.reason !== 'system-layer' && row.reason !== 'none') return null;
   if (!Number.isSafeInteger(row.listCount) || (row.listCount as number) < 0) return null;
   let blocker: DockHitDiagnostic['blocker'] = null;
-  const b = row.blocker && typeof row.blocker === 'object' ? (row.blocker as Record<string, unknown>) : null;
+  const b =
+    row.blocker && typeof row.blocker === 'object'
+      ? (row.blocker as Record<string, unknown>)
+      : null;
   const bounds = b ? parseRect(b.bounds) : null;
   if (
     b &&
@@ -261,7 +264,10 @@ export class DockElementPicker {
           if (reply.hit.checked) this.trusted = reply.hit.access === 'granted';
           // Names what stopped the lookup (one line per such answer, metadata only).
           if (reply.hit.checked && !reply.hit.window && this.pending.has(reply.id))
-            logger.info('Dock element picker found no app window', reply.hit.diagnostic ?? { reason: null });
+            logger.info(
+              'Dock element picker found no app window',
+              reply.hit.diagnostic ?? { reason: null },
+            );
           this.pending.get(reply.id)?.(reply.hit);
           return;
         }

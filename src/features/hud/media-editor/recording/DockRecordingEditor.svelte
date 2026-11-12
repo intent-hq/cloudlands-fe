@@ -459,8 +459,18 @@
   }
   function onKeydown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
-    const shortcut = captureEditorToolShortcut(event,
-      !active || saving || finishing || deleting || interactionPending || !marksEditable || failed || !source || !edits || !frameKept,
+    const shortcut = captureEditorToolShortcut(
+      event,
+      !active ||
+        saving ||
+        finishing ||
+        deleting ||
+        interactionPending ||
+        !marksEditable ||
+        failed ||
+        !source ||
+        !edits ||
+        !frameKept,
     );
     if (shortcut && shortcut !== 'crop' && shortcut !== 'blur') {
       event.preventDefault();
@@ -577,8 +587,12 @@
                 aria-pressed={frameTool === entry.tool}
                 aria-label={frameToolLabels[entry.tool ?? 'pointer']()}
                 tooltip={frameToolLabels[entry.tool ?? 'pointer']()}
-                tooltipShortcut={CAPTURE_EDITOR_TOOL_KEYS[entry.tool === 'pen' ? 'draw' : entry.tool ?? 'pointer']}
-                aria-keyshortcuts={CAPTURE_EDITOR_TOOL_KEYS[entry.tool === 'pen' ? 'draw' : entry.tool ?? 'pointer']}
+                tooltipShortcut={CAPTURE_EDITOR_TOOL_KEYS[
+                  entry.tool === 'pen' ? 'draw' : (entry.tool ?? 'pointer')
+                ]}
+                aria-keyshortcuts={CAPTURE_EDITOR_TOOL_KEYS[
+                  entry.tool === 'pen' ? 'draw' : (entry.tool ?? 'pointer')
+                ]}
                 tooltipContentClass="dock-chrome-tooltip"
                 onclick={() => chooseFrameTool(entry.tool)}
               >

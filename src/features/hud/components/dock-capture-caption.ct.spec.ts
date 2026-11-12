@@ -1,10 +1,7 @@
 import { expect, test } from '../../../test/ct-test';
 import Harness from './__tests__/DockCaptureCaptionHarness.svelte';
 
-test('pointer and keyboard keep mode selection and draft intact', async ({
-  mount,
-  page,
-}) => {
+test('pointer and keyboard keep mode selection and draft intact', async ({ mount, page }) => {
   const harness = await mount(Harness);
   const draft = page.getByRole('textbox', { name: 'Synthetic draft' });
   const trigger = page.getByRole('button', { name: 'Open screenshot options' });
@@ -23,9 +20,7 @@ test('pointer and keyboard keep mode selection and draft intact', async ({
   ).toEqual([2, 10]);
   await trigger.focus();
   await trigger.press('ArrowUp');
-  await expect(
-    menu.getByRole('menuitemradio', { name: 'Full screen', exact: true }),
-  ).toBeFocused();
+  await expect(menu.getByRole('menuitemradio', { name: 'Full screen', exact: true })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await expect(menu.getByRole('menuitemradio', { name: 'Window', exact: true })).toBeFocused();
   await expect(

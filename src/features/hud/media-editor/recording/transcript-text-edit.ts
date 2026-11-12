@@ -2,8 +2,14 @@ import type { DockMediaTranscript } from '$shared/dock-media-edit';
 
 type Word = DockMediaTranscript['words'][number];
 
-export function transcriptText(words: readonly Word[], edits: Readonly<Record<string, string>>): string {
-  return words.map((word) => edits[word.id] ?? word.text).filter(Boolean).join(' ');
+export function transcriptText(
+  words: readonly Word[],
+  edits: Readonly<Record<string, string>>,
+): string {
+  return words
+    .map((word) => edits[word.id] ?? word.text)
+    .filter(Boolean)
+    .join(' ');
 }
 
 /**
@@ -21,10 +27,15 @@ export function transcriptTextChange(
   if (next === transcriptText(words, {}))
     return Object.fromEntries(words.map((word) => [word.id, null]));
   let prefix = 0;
-  while (prefix < before.length && prefix < next.length && before[prefix] === next[prefix]) prefix++;
+  while (prefix < before.length && prefix < next.length && before[prefix] === next[prefix])
+    prefix++;
   let suffix = 0;
-  while (suffix < before.length - prefix && suffix < next.length - prefix &&
-    before[before.length - 1 - suffix] === next[next.length - 1 - suffix]) suffix++;
+  while (
+    suffix < before.length - prefix &&
+    suffix < next.length - prefix &&
+    before[before.length - 1 - suffix] === next[next.length - 1 - suffix]
+  )
+    suffix++;
   let offset = 0;
   const units = words.flatMap((word) => {
     const value = edits[word.id] ?? word.text;
@@ -34,8 +45,7 @@ export function transcriptTextChange(
     offset += value.length + 1;
     return [{ word, start, end: offset - 1 }];
   });
-  if (!units.length)
-    return next.length <= 20_000 ? { [words[0].id]: next || null } : {};
+  if (!units.length) return next.length <= 20_000 ? { [words[0].id]: next || null } : {};
   const changedEnd = before.length - suffix;
   const insertion = changedEnd === prefix;
   let first = units.findIndex((unit) => unit.end > prefix);
@@ -45,8 +55,16 @@ export function transcriptTextChange(
   if (first > 0 && units[first - 1].end === prefix) first--;
   let last = insertion ? first : units.findLastIndex((unit) => unit.start < changedEnd);
   last = Math.max(first, last);
-  const leading = () => units.slice(0, first).map(({ word }) => edits[word.id] ?? word.text).join(' ');
-  const trailing = () => units.slice(last + 1).map(({ word }) => edits[word.id] ?? word.text).join(' ');
+  const leading = () =>
+    units
+      .slice(0, first)
+      .map(({ word }) => edits[word.id] ?? word.text)
+      .join(' ');
+  const trailing = () =>
+    units
+      .slice(last + 1)
+      .map(({ word }) => edits[word.id] ?? word.text)
+      .join(' ');
   // Keep complete, untouched units outside the changed range. Their separator is
   // supplied by transcriptText, including when the first/last unit was deleted.
   while (first > 0 && !next.startsWith(leading() + ' ')) first--;
@@ -54,10 +72,15 @@ export function transcriptTextChange(
   const left = leading();
   const right = trailing();
   const withoutTouched = [left, right].filter(Boolean).join(' ');
-  const replacement = next === withoutTouched ? '' : next.slice(left ? left.length + 1 : 0, right ? -(right.length + 1) : undefined);
+  const replacement =
+    next === withoutTouched
+      ? ''
+      : next.slice(left ? left.length + 1 : 0, right ? -(right.length + 1) : undefined);
   if (replacement.length > 20_000) return {};
-  return Object.fromEntries(units.slice(first, last + 1).map(({ word }, index) => {
-    const value = index === 0 ? replacement : '';
-    return [word.id, value === word.text ? null : value];
-  }));
+  return Object.fromEntries(
+    units.slice(first, last + 1).map(({ word }, index) => {
+      const value = index === 0 ? replacement : '';
+      return [word.id, value === word.text ? null : value];
+    }),
+  );
 }

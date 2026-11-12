@@ -201,8 +201,7 @@ export function setupConversationWire(
       },
       ...(!main
         ? {
-            parentAgentId:
-              workspaceId === wireWorkspace ? 'wire-main' : `${workspaceId}:wire-main`,
+            parentAgentId: workspaceId === wireWorkspace ? 'wire-main' : `${workspaceId}:wire-main`,
           }
         : {}),
       createdAt: timestamp,
@@ -345,9 +344,7 @@ export function setupConversationWire(
                   ]
                 : ['wire-sub', 'wire-main'].map((id) =>
                     agent(
-                      params.workspaceId === wireWorkspace
-                        ? id
-                        : `${params.workspaceId}:${id}`,
+                      params.workspaceId === wireWorkspace ? id : `${params.workspaceId}:${id}`,
                       String(params.workspaceId),
                     ),
                   ),

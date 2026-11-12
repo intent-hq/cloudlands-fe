@@ -27,10 +27,18 @@ export function dockBase64Bytes(bytes: number): number {
  * of at most 3 MiB, which the daemon sends unchanged) and the certificate matches the file.
  * Any other frame is prepared by the daemon, so its prompt size is unknown here: null.
  */
-export function dockCertifiedFramePromptBytes(frame: { mimeType: string; size: number; promptBase64Bytes?: number }): number | null {
+export function dockCertifiedFramePromptBytes(frame: {
+  mimeType: string;
+  size: number;
+  promptBase64Bytes?: number;
+}): number | null {
   const certified = frame.promptBase64Bytes;
-  return frame.mimeType === 'image/jpeg' && Number.isSafeInteger(frame.size) && frame.size > 0 &&
-    frame.size <= DOCK_PREPARED_IMAGE_MAX_BYTES && typeof certified === 'number' && certified === dockBase64Bytes(frame.size)
+  return frame.mimeType === 'image/jpeg' &&
+    Number.isSafeInteger(frame.size) &&
+    frame.size > 0 &&
+    frame.size <= DOCK_PREPARED_IMAGE_MAX_BYTES &&
+    typeof certified === 'number' &&
+    certified === dockBase64Bytes(frame.size)
     ? certified
     : null;
 }
@@ -47,9 +55,16 @@ export const DOCK_FRAME_ENCODINGS: readonly { maxEdge: number; quality: number }
 ];
 
 /** Output size for an image of `width`×`height` whose long edge is at most `maxEdge`. */
-export function dockFrameSize(width: number, height: number, maxEdge: number): { width: number; height: number } {
+export function dockFrameSize(
+  width: number,
+  height: number,
+  maxEdge: number,
+): { width: number; height: number } {
   const scale = Math.min(1, maxEdge / Math.max(width, height));
-  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
 /**
@@ -59,8 +74,18 @@ export function dockFrameSize(width: number, height: number, maxEdge: number): {
 export async function chooseDockFrameEncoding<T>(
   encode: (step: { maxEdge: number; quality: number }) => Promise<{ frames: T[]; bytes: number[] }>,
   budget: number = DOCK_FRAME_IMAGE_BUDGET,
-): Promise<{ step: { maxEdge: number; quality: number }; frames: T[]; bytes: number[]; fits: boolean }> {
-  let last: { step: { maxEdge: number; quality: number }; frames: T[]; bytes: number[]; fits: boolean } | null = null;
+): Promise<{
+  step: { maxEdge: number; quality: number };
+  frames: T[];
+  bytes: number[];
+  fits: boolean;
+}> {
+  let last: {
+    step: { maxEdge: number; quality: number };
+    frames: T[];
+    bytes: number[];
+    fits: boolean;
+  } | null = null;
   for (const step of DOCK_FRAME_ENCODINGS) {
     const { frames, bytes } = await encode(step);
     const fits = bytes.reduce((sum, size) => sum + dockBase64Bytes(size), 0) <= budget;

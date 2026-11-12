@@ -27,7 +27,9 @@ function main() {
   try {
     execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'ignore' });
   } catch {
-    console.warn('Warning: swiftc not found — dock capture selector not built; window and region capture are unavailable.');
+    console.warn(
+      'Warning: swiftc not found — dock capture selector not built; window and region capture are unavailable.',
+    );
     return;
   }
   if (upToDate()) {

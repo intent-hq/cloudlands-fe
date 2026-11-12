@@ -42,8 +42,14 @@ export type DockEvidencePrivacyPane = 'screen' | 'microphone' | 'speech' | 'acce
 export type DockEvidenceControl =
   | { action: 'media-waveform'; request: import('./dock-media-output').DockMediaAnalyzeRequest }
   | { action: 'media-export'; request: import('./dock-media-output').DockMediaExportRequest }
-  | { action: 'media-transcribe'; request: import('./dock-media-output').DockMediaTranscribeRequest }
-  | { action: 'media-audio-probe'; request: import('./dock-media-output').DockMediaAudioProbeRequest }
+  | {
+      action: 'media-transcribe';
+      request: import('./dock-media-output').DockMediaTranscribeRequest;
+    }
+  | {
+      action: 'media-audio-probe';
+      request: import('./dock-media-output').DockMediaAudioProbeRequest;
+    }
   | { action: 'media-job-cancel'; jobId: string }
   | { action: 'media-job-release'; jobId: string }
   | { action: 'capabilities' }

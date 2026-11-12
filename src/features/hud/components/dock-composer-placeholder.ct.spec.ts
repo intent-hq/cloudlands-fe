@@ -3,7 +3,10 @@ import { expect, test } from '../../../test/ct-test';
 import Harness from './DockComposerE2EHarness.svelte';
 
 /** Actual composer with synthetic capture/recorder; no OS media or real Send. */
-test('capture and recording keep the contextual placeholder and draft', async ({ mount, page }, info) => {
+test('capture and recording keep the contextual placeholder and draft', async ({
+  mount,
+  page,
+}, info) => {
   const component = await mount(Harness);
   const editor = component.locator('.tiptap-editor');
   const empty = editor.locator('p[data-placeholder]').first();
@@ -27,14 +30,20 @@ test('capture and recording keep the contextual placeholder and draft', async ({
   await page.evaluate(() => {
     const { store } = (window as any).__dockComposerE2E;
     const { workspaceId, agentId } = store.state.dockConversation;
-    store.dispatch({ type: 'dockConversation/evidenceToolSelectRequested', payload: [workspaceId, agentId, 'box'] });
+    store.dispatch({
+      type: 'dockConversation/evidenceToolSelectRequested',
+      payload: [workspaceId, agentId, 'box'],
+    });
   });
   await expect(component.getByText('Annotating', { exact: true })).toBeVisible();
   await unchanged('annotating');
   await page.evaluate(() => {
     const { store } = (window as any).__dockComposerE2E;
     const { workspaceId, agentId } = store.state.dockConversation;
-    store.dispatch({ type: 'dockConversation/evidenceAnnotationToggleRequested', payload: [workspaceId, agentId] });
+    store.dispatch({
+      type: 'dockConversation/evidenceAnnotationToggleRequested',
+      payload: [workspaceId, agentId],
+    });
   });
   await expect(component.getByText('Annotating', { exact: true })).toHaveCount(0);
   await component.getByRole('button', { name: /^Record the screen/ }).dispatchEvent('click');
@@ -45,5 +54,17 @@ test('capture and recording keep the contextual placeholder and draft', async ({
   await component.getByRole('button', { name: 'Stop recording' }).dispatchEvent('click');
   await expect(editor).toHaveText('Keep this synthetic draft');
   await page.screenshot({ path: info.outputPath('draft-retained.png') });
-  await writeFile(info.outputPath('placeholder-receipt.json'), JSON.stringify({ states, recordingDraftRetained: true, scope: 'Real DockConversation / SimpleRichInput / controller, synthetic native media and transport; no real Send' }, null, 2));
+  await writeFile(
+    info.outputPath('placeholder-receipt.json'),
+    JSON.stringify(
+      {
+        states,
+        recordingDraftRetained: true,
+        scope:
+          'Real DockConversation / SimpleRichInput / controller, synthetic native media and transport; no real Send',
+      },
+      null,
+      2,
+    ),
+  );
 });

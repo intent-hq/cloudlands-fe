@@ -23,7 +23,10 @@ vi.mock('electron', () => ({
     getAllWindows: () => [
       {
         isDestroyed: () => false,
-        webContents: { isDestroyed: () => false, send: (_channel: string, payload: unknown) => mocks.sent.push(payload) },
+        webContents: {
+          isDestroyed: () => false,
+          send: (_channel: string, payload: unknown) => mocks.sent.push(payload),
+        },
       },
     ],
   },

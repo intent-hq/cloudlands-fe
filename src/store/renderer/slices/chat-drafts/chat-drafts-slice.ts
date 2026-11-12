@@ -48,9 +48,9 @@ export const chatDraftSaveFlushRequested = createAction<[ownerId: string]>(
   'chatDrafts/saveFlushRequested',
 );
 /** Flushes older pending snapshots of this pair before an explicit durable save. */
-export const chatDraftSavePairFlushRequested = createAction<
-  [workspaceId: string, agentId: string]
->('chatDrafts/savePairFlushRequested');
+export const chatDraftSavePairFlushRequested = createAction<[workspaceId: string, agentId: string]>(
+  'chatDrafts/savePairFlushRequested',
+);
 export const chatDraftSaveCancelled = createAction<[ownerId: string]>('chatDrafts/saveCancelled');
 export const chatDraftSaveStarted =
   createAction<[ownerId: string, requestId: string, request: ChatDraftSaveRequest]>(

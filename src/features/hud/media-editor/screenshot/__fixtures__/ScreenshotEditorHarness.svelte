@@ -12,7 +12,10 @@
     type DockMediaBlurRegion,
   } from '$shared/dock-media-edit';
   import { retakeScreenshotEdit } from '../screenshot-edit-geometry';
-  let { initialMarks = [], initialBlurRegions = [] }: {
+  let {
+    initialMarks = [],
+    initialBlurRegions = [],
+  }: {
     initialMarks?: DockMediaEditMark[];
     initialBlurRegions?: DockMediaBlurRegion[];
   } = $props();

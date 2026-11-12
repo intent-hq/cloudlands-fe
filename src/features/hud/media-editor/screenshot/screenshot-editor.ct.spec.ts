@@ -95,11 +95,7 @@ test('screenshot keyboard edits, notes and save share the shell transaction', as
   expect(saved.marks[3].note).toBe('Synthetic dictated note');
   await expect(fixture.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
   await info.attach('screenshot-editor-saved-draft', {
-    body: JSON.stringify(
-      { syntheticSource: true, syntheticDictation: true, saved },
-      null,
-      2,
-    ),
+    body: JSON.stringify({ syntheticSource: true, syntheticDictation: true, saved }, null, 2),
     contentType: 'application/json',
   });
   await info.attach('screenshot-editor-saved', {

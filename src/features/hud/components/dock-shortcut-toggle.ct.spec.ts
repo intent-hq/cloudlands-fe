@@ -17,7 +17,10 @@ async function collapsedStart(page: Parameters<Parameters<typeof test>[1]>[0]['p
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
 }
 
-test('the open shortcut toggles the dock: collapsed opens and focuses, open closes, live stays', async ({ mount, page }, info) => {
+test('the open shortcut toggles the dock: collapsed opens and focuses, open closes, live stays', async ({
+  mount,
+  page,
+}, info) => {
   await collapsedStart(page);
   const component = await mount(Harness);
   const shell = page.getByTestId('dock-shell');
@@ -52,10 +55,16 @@ test('the open shortcut toggles the dock: collapsed opens and focuses, open clos
   await expect(proof).toHaveAttribute('data-draft', 'Keep this draft');
   steps.push({ case: 'live', expanded: await shell.getAttribute('data-expanded') });
 
-  await writeFile(info.outputPath('shortcut-toggle-receipt.json'), JSON.stringify({ steps }, null, 2));
+  await writeFile(
+    info.outputPath('shortcut-toggle-receipt.json'),
+    JSON.stringify({ steps }, null, 2),
+  );
 });
 
-test('while a recording runs, the open shortcut on the collapsed dock changes nothing', async ({ mount, page }, info) => {
+test('while a recording runs, the open shortcut on the collapsed dock changes nothing', async ({
+  mount,
+  page,
+}, info) => {
   await collapsedStart(page);
   const component = await mount(Harness, { props: { recordingLive: true } });
   const shell = page.getByTestId('dock-shell');
@@ -63,9 +72,17 @@ test('while a recording runs, the open shortcut on the collapsed dock changes no
   await expect(shell).toHaveAttribute('data-reveal', '0');
   await component.update({ props: { recordingLive: true, closeRequest: 1 } });
   // Two settled frames: the guarded press neither opens nor closes anything.
-  await page.waitForFunction(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)))));
+  await page.waitForFunction(
+    () =>
+      new Promise((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))),
+      ),
+  );
   await expect(shell).toHaveAttribute('data-reveal', '0');
   await expect(shell).toHaveAttribute('data-expanded', 'false');
   await expect(proof).toHaveAttribute('data-draft', 'Keep this draft');
-  await writeFile(info.outputPath('shortcut-toggle-guard-receipt.json'), JSON.stringify({ recording: 'stayed collapsed', draft: 'kept' }, null, 2));
+  await writeFile(
+    info.outputPath('shortcut-toggle-guard-receipt.json'),
+    JSON.stringify({ recording: 'stayed collapsed', draft: 'kept' }, null, 2),
+  );
 });

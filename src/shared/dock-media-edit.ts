@@ -20,21 +20,33 @@ export const DockMediaBlurRegionSchema = DockMediaRectSchema.extend({ id });
 export type DockMediaBlurRegion = z.infer<typeof DockMediaBlurRegionSchema>;
 export const DOCK_MEDIA_BLUR_RADIUS = 16;
 export const DOCK_MEDIA_OUTPUT_VERSION = 2;
-export const DockMediaBlurStrokeSchema = z.object({
-  id, radius: finite.positive().max(4096), points: z.array(point).min(1).max(4096),
-}).strict();
+export const DockMediaBlurStrokeSchema = z
+  .object({
+    id,
+    radius: finite.positive().max(4096),
+    points: z.array(point).min(1).max(4096),
+  })
+  .strict();
 export type DockMediaBlurStroke = z.infer<typeof DockMediaBlurStrokeSchema>;
 export function dockMediaBlurStrokeBounds(stroke: DockMediaBlurStroke): DockMediaRect {
-  const xs = stroke.points.map((p) => p.x), ys = stroke.points.map((p) => p.y);
-  const x = Math.min(...xs) - stroke.radius, y = Math.min(...ys) - stroke.radius;
+  const xs = stroke.points.map((p) => p.x),
+    ys = stroke.points.map((p) => p.y);
+  const x = Math.min(...xs) - stroke.radius,
+    y = Math.min(...ys) - stroke.radius;
   return { x, y, w: Math.max(...xs) + stroke.radius - x, h: Math.max(...ys) + stroke.radius - y };
 }
-export function transformDockMediaBlurStroke(stroke: DockMediaBlurStroke,
-  mapping: { scaleX: number; scaleY: number; offsetX: number; offsetY: number }): DockMediaBlurStroke {
+export function transformDockMediaBlurStroke(
+  stroke: DockMediaBlurStroke,
+  mapping: { scaleX: number; scaleY: number; offsetX: number; offsetY: number },
+): DockMediaBlurStroke {
   // Preserve coverage conservatively if a retake has nonuniform pixel scaling.
-  return DockMediaBlurStrokeSchema.parse({ ...stroke,
+  return DockMediaBlurStrokeSchema.parse({
+    ...stroke,
     radius: stroke.radius * Math.max(Math.abs(mapping.scaleX), Math.abs(mapping.scaleY)),
-    points: stroke.points.map((p) => ({ x: p.x * mapping.scaleX + mapping.offsetX, y: p.y * mapping.scaleY + mapping.offsetY })),
+    points: stroke.points.map((p) => ({
+      x: p.x * mapping.scaleX + mapping.offsetX,
+      y: p.y * mapping.scaleY + mapping.offsetY,
+    })),
   });
 }
 export const DockMediaGeometrySchema = z.discriminatedUnion('kind', [
@@ -58,13 +70,23 @@ export const DockMediaGeometrySchema = z.discriminatedUnion('kind', [
 export type DockMediaGeometry = z.infer<typeof DockMediaGeometrySchema>;
 /** Shared card wrapping/bounds for painting, hit testing, crop and retake. */
 export function layoutDockMediaText(g: Extract<DockMediaGeometry, { kind: 'text' }>): {
-  lines: string[]; width: number; height: number; padding: number; lineHeight: number;
+  lines: string[];
+  width: number;
+  height: number;
+  padding: number;
+  lineHeight: number;
 } {
-  const lineHeight = g.fontSize * 1.4, padding = g.style === 'sticky' ? (g.padding ?? 8) : 0;
+  const lineHeight = g.fontSize * 1.4,
+    padding = g.style === 'sticky' ? (g.padding ?? 8) : 0;
   if (g.style !== 'sticky') {
     const lines = g.text.split('\n');
-    return { lines, width: Math.max(1, ...lines.map((line) => line.length)) * g.fontSize * 0.65,
-      height: lines.length * lineHeight, padding, lineHeight };
+    return {
+      lines,
+      width: Math.max(1, ...lines.map((line) => line.length)) * g.fontSize * 0.65,
+      height: lines.length * lineHeight,
+      padding,
+      lineHeight,
+    };
   }
   const width = Math.max(padding * 2 + 1, g.width ?? 240);
   const maxChars = Math.max(1, Math.floor((width - padding * 2) / (g.fontSize * 0.65)));
@@ -82,14 +104,22 @@ export function layoutDockMediaText(g: Extract<DockMediaGeometry, { kind: 'text'
   return { lines, width, height: lines.length * lineHeight + padding * 2, padding, lineHeight };
 }
 /** Retake/resize preserves the label's source-pixel presentation parameters. */
-export function transformDockMediaText(g: Extract<DockMediaGeometry, { kind: 'text' }>,
-  mapping: { scaleX: number; scaleY: number; offsetX: number; offsetY: number }): Extract<DockMediaGeometry, { kind: 'text' }> {
+export function transformDockMediaText(
+  g: Extract<DockMediaGeometry, { kind: 'text' }>,
+  mapping: { scaleX: number; scaleY: number; offsetX: number; offsetY: number },
+): Extract<DockMediaGeometry, { kind: 'text' }> {
   const layout = layoutDockMediaText(g);
-  const parsed = DockMediaGeometrySchema.parse({ ...g,
-    x: g.x * mapping.scaleX + mapping.offsetX, y: g.y * mapping.scaleY + mapping.offsetY,
+  const parsed = DockMediaGeometrySchema.parse({
+    ...g,
+    x: g.x * mapping.scaleX + mapping.offsetX,
+    y: g.y * mapping.scaleY + mapping.offsetY,
     fontSize: g.fontSize * Math.abs(mapping.scaleY),
-    ...(g.style === 'sticky' ? { width: layout.width * Math.abs(mapping.scaleX),
-      padding: layout.padding * Math.min(Math.abs(mapping.scaleX), Math.abs(mapping.scaleY)) } : {}),
+    ...(g.style === 'sticky'
+      ? {
+          width: layout.width * Math.abs(mapping.scaleX),
+          padding: layout.padding * Math.min(Math.abs(mapping.scaleX), Math.abs(mapping.scaleY)),
+        }
+      : {}),
   });
   if (parsed.kind !== 'text') throw new Error('invalid-text-transform');
   return parsed;
@@ -119,17 +149,22 @@ export type DockMediaEditMark = z.infer<typeof DockMediaEditMarkSchema>;
 export const DockMediaBatchSchema = z
   .object({ id, atMs: ms, clearAtMs: ms.nullable() })
   .strict()
-  .refine(
-    (batch) => batch.clearAtMs === null || batch.clearAtMs >= batch.atMs,
-    'Reversed batch',
-  );
+  .refine((batch) => batch.clearAtMs === null || batch.clearAtMs >= batch.atMs, 'Reversed batch');
 export type DockMediaBatch = z.infer<typeof DockMediaBatchSchema>;
 /** Global screen points use Electron's top-left display coordinate convention. */
-export const DockMediaCaptureSchema = z.object({
-  mode: z.enum(['fullscreen', 'window', 'region']),
-  frame: z.object({ displayId: z.number().int(), rect: DockMediaRectSchema,
-    coordinateSpace: z.literal('screen-points-top-left') }).strict().nullable(),
-}).strict();
+export const DockMediaCaptureSchema = z
+  .object({
+    mode: z.enum(['fullscreen', 'window', 'region']),
+    frame: z
+      .object({
+        displayId: z.number().int(),
+        rect: DockMediaRectSchema,
+        coordinateSpace: z.literal('screen-points-top-left'),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
 export type DockMediaCapture = z.infer<typeof DockMediaCaptureSchema>;
 export const DockMediaSourceSchema = z
   .object({
@@ -165,10 +200,21 @@ export const DockMediaSourceSchema = z
   .superRefine((source, ctx) => {
     for (const mark of source.capturedMarks ?? []) {
       const progress = mark.gestureProgress;
-      if (progress && (source.kind !== 'recording' || progress.completedAtMs > source.durationMs ||
-          progress.samples.some((sample) => sample.atMs < mark.atMs ||
-            (mark.geometry.kind === 'path' && sample.pointCount > mark.geometry.points.length))))
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['capturedMarks'], message: 'Gesture timing does not match the recording' });
+      if (
+        progress &&
+        (source.kind !== 'recording' ||
+          progress.completedAtMs > source.durationMs ||
+          progress.samples.some(
+            (sample) =>
+              sample.atMs < mark.atMs ||
+              (mark.geometry.kind === 'path' && sample.pointCount > mark.geometry.points.length),
+          ))
+      )
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['capturedMarks'],
+          message: 'Gesture timing does not match the recording',
+        });
     }
     if (source.kind === 'recording' && source.durationMs <= 0)
       ctx.addIssue({
@@ -274,10 +320,16 @@ export const DockMediaSaveRequestSchema = z
       .optional(),
   })
   .strict()
-  .refine((request) => (
-    !(request.edit.blurStrokes?.length || request.edit.marks.some((mark) => mark.geometry.kind === 'text' && mark.geometry.style === 'sticky')) ||
-    request.outputVersion === DOCK_MEDIA_OUTPUT_VERSION
-  ), 'This edit requires an admitted output version');
+  .refine(
+    (request) =>
+      !(
+        request.edit.blurStrokes?.length ||
+        request.edit.marks.some(
+          (mark) => mark.geometry.kind === 'text' && mark.geometry.style === 'sticky',
+        )
+      ) || request.outputVersion === DOCK_MEDIA_OUTPUT_VERSION,
+    'This edit requires an admitted output version',
+  );
 export type DockMediaSaveRequest = z.infer<typeof DockMediaSaveRequestSchema>;
 export const DOCK_MEDIA_CHOICE_PREF = 'dock-media-last-saved-choice-v1';
 
@@ -306,9 +358,7 @@ export interface DockMediaOutputPlan {
 }
 export function mergeDockMediaRanges(ranges: readonly DockMediaRange[]): DockMediaRange[] {
   const ordered = ranges
-    .filter(
-      (r) => Number.isFinite(r.startMs) && Number.isFinite(r.endMs) && r.endMs > r.startMs,
-    )
+    .filter((r) => Number.isFinite(r.startMs) && Number.isFinite(r.endMs) && r.endMs > r.startMs)
     .map((r) => ({ ...r }))
     .sort((a, b) => a.startMs - b.startMs);
   const result: DockMediaRange[] = [];
@@ -474,7 +524,9 @@ function transcriptText(
       (range) => word.startMs! >= range.startMs && word.endMs! <= range.endMs,
     );
     if (overlaps && !contained) timingMissing = true;
-    previousTimed = contained ? { at: word.startMs, order: 1, text: edit.wordEdits[word.id] ?? word.text } : null;
+    previousTimed = contained
+      ? { at: word.startMs, order: 1, text: edit.wordEdits[word.id] ?? word.text }
+      : null;
     if (previousTimed) events.push(previousTimed);
   }
   for (const { n, mark } of marks)
@@ -502,9 +554,14 @@ export function dockMediaBatchAt(source: DockMediaSource, atMs: number): DockMed
   );
 }
 /** Edited geometry has no recorded timing of its own; only an unchanged captured gesture animates. */
-export function recordedMarkProgress(source: DockMediaSource, mark: DockMediaEditMark): DockGestureProgress | undefined {
+export function recordedMarkProgress(
+  source: DockMediaSource,
+  mark: DockMediaEditMark,
+): DockGestureProgress | undefined {
   const original = source.capturedMarks?.find((entry) => entry.id === mark.id);
-  return original && JSON.stringify(original.geometry) === JSON.stringify(mark.geometry) ? original.gestureProgress : undefined;
+  return original && JSON.stringify(original.geometry) === JSON.stringify(mark.geometry)
+    ? original.gestureProgress
+    : undefined;
 }
 /** Creation order is canonical; excluded/cropped/cut marks receive no output number. */
 export function numberDockMediaMarks(
@@ -524,8 +581,7 @@ export function numberDockMediaMarks(
       mark,
       frameAtMs: Math.min(mark.atMs, Math.max(0, source.durationMs - 1)),
       visibleUntilMs:
-        source.batches.find((batch) => batch.id === mark.batchId)?.clearAtMs ??
-        source.durationMs,
+        source.batches.find((batch) => batch.id === mark.batchId)?.clearAtMs ?? source.durationMs,
     }));
 }
 /** Pure plan only. A plan is not a claim that native export or placement has succeeded. */
@@ -572,7 +628,8 @@ export function planDockMediaOutput(
   }
   if (
     source.visuals === 'baked-marks' &&
-    (edit.blurRegions.length > 0 || (edit.blurStrokes?.length ?? 0) > 0 ||
+    (edit.blurRegions.length > 0 ||
+      (edit.blurStrokes?.length ?? 0) > 0 ||
       JSON.stringify(edit.marks) !== JSON.stringify(source.bakedMarks) ||
       (!!source.bakedMarks?.length &&
         (edit.cuts.length > 0 ||
@@ -584,10 +641,15 @@ export function planDockMediaOutput(
     return empty;
   }
   const strokes = edit.blurStrokes ?? [];
-  if (new Set(strokes.map((stroke) => stroke.id)).size !== strokes.length ||
-      strokes.reduce((sum, stroke) => sum + stroke.points.length, 0) > 200000 ||
-      strokes.some((stroke) => stroke.points.some((p) => p.x < 0 || p.y < 0 || p.x > source.width || p.y > source.height))) {
-    errors.push('invalid-edit'); return empty;
+  if (
+    new Set(strokes.map((stroke) => stroke.id)).size !== strokes.length ||
+    strokes.reduce((sum, stroke) => sum + stroke.points.length, 0) > 200000 ||
+    strokes.some((stroke) =>
+      stroke.points.some((p) => p.x < 0 || p.y < 0 || p.x > source.width || p.y > source.height),
+    )
+  ) {
+    errors.push('invalid-edit');
+    return empty;
   }
   const kept = subtractDockMediaRanges([edit.trim], edit.cuts);
   const marks = numberDockMediaMarks(edit, source);
@@ -601,7 +663,11 @@ export function planDockMediaOutput(
             mergeDockMediaRanges(
               included.map((mark) => ({
                 startMs: Math.max(edit.trim.startMs, mark.atMs - 3000),
-                endMs: Math.min(edit.trim.endMs, source.durationMs, (recordedMarkProgress(source, mark)?.completedAtMs ?? mark.atMs) + 3000),
+                endMs: Math.min(
+                  edit.trim.endMs,
+                  source.durationMs,
+                  (recordedMarkProgress(source, mark)?.completedAtMs ?? mark.atMs) + 3000,
+                ),
               })),
             ),
             edit.cuts,
@@ -702,15 +768,34 @@ export function originalDockMediaEdit(
   if (!source.capturedMarks) return null;
   return {
     source,
-    edit: { ...defaultDockMediaEdit(source, source.capturedMarks, media.transcript, null), revision: media.saved?.revision ?? 0 },
+    edit: {
+      ...defaultDockMediaEdit(source, source.capturedMarks, media.transcript, null),
+      revision: media.saved?.revision ?? 0,
+    },
   };
 }
 
 /** No origin is inferred for legacy/window/region captures lacking a verified frame. */
-export function dockMediaRetakeMapping(from: DockMediaSource, to: DockMediaSource): { scaleX: number; scaleY: number; offsetX: number; offsetY: number } | null {
-  const a = from.capture?.frame, b = to.capture?.frame;
-  if (!a || !b || a.displayId !== b.displayId || from.kind !== 'screenshot' || to.kind !== 'screenshot') return null;
-  const x = to.width / b.rect.w, y = to.height / b.rect.h;
-  return { scaleX: a.rect.w / from.width * x, scaleY: a.rect.h / from.height * y,
-    offsetX: (a.rect.x - b.rect.x) * x, offsetY: (a.rect.y - b.rect.y) * y };
+export function dockMediaRetakeMapping(
+  from: DockMediaSource,
+  to: DockMediaSource,
+): { scaleX: number; scaleY: number; offsetX: number; offsetY: number } | null {
+  const a = from.capture?.frame,
+    b = to.capture?.frame;
+  if (
+    !a ||
+    !b ||
+    a.displayId !== b.displayId ||
+    from.kind !== 'screenshot' ||
+    to.kind !== 'screenshot'
+  )
+    return null;
+  const x = to.width / b.rect.w,
+    y = to.height / b.rect.h;
+  return {
+    scaleX: (a.rect.w / from.width) * x,
+    scaleY: (a.rect.h / from.height) * y,
+    offsetX: (a.rect.x - b.rect.x) * x,
+    offsetY: (a.rect.y - b.rect.y) * y,
+  };
 }

@@ -599,7 +599,9 @@ describe('dock evidence IPC', () => {
     const f = mediaContext();
     mocks.dock.mockReturnValue(mocks.context().window);
     mocks.recorder.start.mockResolvedValue({ ok: true, value: { startedAt: 10 } });
-    expect(await f.invoke({ action: 'clip-start', clipId: requestId, maxMs: 120000 })).toMatchObject({ ok: true });
+    expect(
+      await f.invoke({ action: 'clip-start', clipId: requestId, maxMs: 120000 }),
+    ).toMatchObject({ ok: true });
     expect(mocks.recorder.start).toHaveBeenCalledWith(
       expect.objectContaining({ displayId: 7, excludeWindowIds: [42] }),
     );

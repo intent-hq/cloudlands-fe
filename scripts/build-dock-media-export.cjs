@@ -27,7 +27,9 @@ function main() {
   try {
     execFileSync('xcrun', ['--find', 'swiftc'], { stdio: 'ignore' });
   } catch {
-    console.warn('Warning: swiftc not found — dock media export not built; media export is unavailable.');
+    console.warn(
+      'Warning: swiftc not found — dock media export not built; media export is unavailable.',
+    );
     return;
   }
   if (upToDate()) {

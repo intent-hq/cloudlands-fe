@@ -27,7 +27,7 @@
         onclick={() => onApplyCrop?.()}
         ><CropIcon size={16} />{m.dock_screenshotEditor_applyCrop()}</Button
       >
-      <Button variant="ghost" size="compact" disabled={disabled} onclick={onCrop}
+      <Button variant="ghost" size="compact" {disabled} onclick={onCrop}
         >{m.dock_screenshotEditor_cancelCrop()}</Button
       >
     {:else}
@@ -39,7 +39,7 @@
         tooltipShortcut={CAPTURE_EDITOR_TOOL_KEYS.crop}
         tooltipContentClass="dock-chrome-tooltip"
         aria-keyshortcuts={CAPTURE_EDITOR_TOOL_KEYS.crop}
-        disabled={disabled}
+        {disabled}
         onclick={onCrop}><CropIcon size={16} />{m.dock_screenshotEditor_crop()}</Button
       >
     {/if}

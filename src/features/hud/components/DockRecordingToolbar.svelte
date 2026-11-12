@@ -267,7 +267,12 @@
   transition:fade={{ tier: 'fast' }}
 >
   {#if pickFailureReason}
-    <p class="pick-feedback type-caption" class:below={visual.y - overlay.workArea.y < 60} role="status" aria-live="polite">
+    <p
+      class="pick-feedback type-caption"
+      class:below={visual.y - overlay.workArea.y < 60}
+      role="status"
+      aria-live="polite"
+    >
       {pickFailureReason === 'permission'
         ? m.dock_composer_accessibilityPermission_tooltip()
         : m.dock_composer_annotationUnavailable_error()}
@@ -707,7 +712,10 @@
     text-align: center;
     pointer-events: none;
   }
-  .pick-feedback.below { bottom: auto; top: calc(100% + 8px); }
+  .pick-feedback.below {
+    bottom: auto;
+    top: calc(100% + 8px);
+  }
   .sr-only {
     position: absolute;
     width: 1px;

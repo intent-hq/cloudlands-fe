@@ -123,4 +123,3 @@ test('with nothing marked, Done ends the session without an attachment', async (
     { sessionId: 'fixture-live', action: 'end' },
   ]);
 });
-

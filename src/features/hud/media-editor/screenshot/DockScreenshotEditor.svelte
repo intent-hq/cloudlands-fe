@@ -71,7 +71,9 @@
   let selectedIds = $state<string[]>([]);
   let selectionAnchor = $state<string | null>(null);
   let pendingTextMark = $state<DockMediaEditMark | null>(null);
-  const displayDraft = $derived(pendingTextMark ? { ...draft, marks: [...draft.marks, pendingTextMark] } : draft);
+  const displayDraft = $derived(
+    pendingTextMark ? { ...draft, marks: [...draft.marks, pendingTextMark] } : draft,
+  );
   let editingTextId = $state<string | null>(null);
   let textPreview = $state<{ id: string; value: string } | null>(null);
   let fontSettled = $state(false);
@@ -99,7 +101,9 @@
   });
   onDestroy(() => onInteractionPending?.(false));
   const previewEdit = $derived.by(() => {
-    let edit = gesturePreview ? transformedEdit(gesturePreview.id, gesturePreview.geometry) : displayDraft;
+    let edit = gesturePreview
+      ? transformedEdit(gesturePreview.id, gesturePreview.geometry)
+      : displayDraft;
     if (textPreview) {
       const { id, value } = textPreview;
       edit = {
@@ -177,11 +181,7 @@
             throw error;
           }
           const sameFrame = job.frameKey === frameKey && job.attempt === previewRetry;
-          if (
-            destroyed ||
-            !sameFrame ||
-            job.key !== visualKey
-          ) {
+          if (destroyed || !sameFrame || job.key !== visualKey) {
             URL.revokeObjectURL(next);
             continue;
           }
@@ -247,7 +247,11 @@
       : (draft.crop ?? { x: 0, y: 0, w: source.width, h: source.height }),
   );
   const numbered = $derived(numberDockMediaMarks(displayDraft, source));
-  const annotationOps = $derived(fontSettled && source.visuals === 'clean' ? layoutDockMediaMarks(previewEdit, source, 0, editingTextId) : []);
+  const annotationOps = $derived(
+    fontSettled && source.visuals === 'clean'
+      ? layoutDockMediaMarks(previewEdit, source, 0, editingTextId)
+      : [],
+  );
   const shapes = $derived<ScreenshotShape[]>([
     ...numbered.map(({ mark }) => ({
       id: mark.id,
@@ -484,7 +488,8 @@
   /** Esc with a tool chosen puts it down (before the shell's Esc closes the editor). */
   function onToolEscape(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
-    const shortcut = captureEditorToolShortcut(event,
+    const shortcut = captureEditorToolShortcut(
+      event,
       blocked || gesturePending || !!editingTextId || !!pendingTextMark || !!cropCandidate,
     );
     if (shortcut && (shortcut !== 'blur' || canCreateV2)) {
@@ -496,7 +501,11 @@
     }
     if (event.key === 'Escape' && gesturePending) return;
     const target = event.target instanceof Element ? event.target : null;
-    if (isTextEntryTarget(target) || target?.closest('[role="menu"], [role="dialog"], [role="alertdialog"]')) return;
+    if (
+      isTextEntryTarget(target) ||
+      target?.closest('[role="menu"], [role="dialog"], [role="alertdialog"]')
+    )
+      return;
     if (event.key === 'Enter' && target?.closest('button')) return;
     if (cropCandidate && (event.key === 'Enter' || event.key === 'Escape')) {
       event.preventDefault();
@@ -601,7 +610,10 @@
     const pending = pendingTextMark?.id === id ? pendingTextMark : null;
     const mark = pending ?? draft.marks.find((item) => item.id === id);
     if (mark?.geometry.kind !== 'text') return;
-    if (pending && !value.trim()) { pendingTextMark = null; return; }
+    if (pending && !value.trim()) {
+      pendingTextMark = null;
+      return;
+    }
     let geometry = { ...mark.geometry, text: value };
     const layout = layoutDockMediaText(geometry),
       available = frame.y + frame.h - geometry.y;
@@ -615,7 +627,10 @@
     }
     if (screenshotContains(frame, dockMediaGeometryRect(geometry))) {
       if (pending) {
-        apply({ ...draft, marks: [...draft.marks, { ...pending, geometry, label: value.slice(0, 2048) }] });
+        apply({
+          ...draft,
+          marks: [...draft.marks, { ...pending, geometry, label: value.slice(0, 2048) }],
+        });
         pendingTextMark = null;
       } else update(id, { geometry, label: value.slice(0, 2048) });
     } else if (pending) {

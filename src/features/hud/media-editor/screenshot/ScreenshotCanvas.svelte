@@ -7,7 +7,14 @@
     geometry: DockMarkGeometry;
     blur?: boolean;
     blurStroke?: DockMediaBlurStroke;
-    text?: { origin?: { x: number; y: number }; value: string; fontSize: number; padding: number; width: number; wrapped: boolean };
+    text?: {
+      origin?: { x: number; y: number };
+      value: string;
+      fontSize: number;
+      padding: number;
+      width: number;
+      wrapped: boolean;
+    };
   }
   export type ScreenshotTool =
     'pointer' | 'element' | 'box' | 'draw' | 'arrow' | 'text' | 'blur' | 'crop';
@@ -17,7 +24,11 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import { dockAnnotationCursor } from '$features/hud/composer/dock-annotation-cursor';
   import { ensureDockAnnotationFont } from '$features/hud/composer/dock-annotation-font';
-  import { paintDockMediaMarks, type DockMediaPaintOp, DOCK_MEDIA_PAINT } from '$features/hud/composer/dock-media-render';
+  import {
+    paintDockMediaMarks,
+    type DockMediaPaintOp,
+    DOCK_MEDIA_PAINT,
+  } from '$features/hud/composer/dock-media-render';
   import { layoutDockMediaText } from '$shared/dock-media-edit';
   import {
     annotationHandles,
@@ -190,7 +201,8 @@
     if (!context) return { offset: 0, height: textLayout.height };
     context.font = `${text.fontSize}px ${DOCK_MEDIA_PAINT.fontFamily}`;
     context.textBaseline = 'top';
-    let top = Infinity, bottom = -Infinity;
+    let top = Infinity,
+      bottom = -Infinity;
     for (const [index, line] of textLayout.lines.entries()) {
       const ink = context.measureText(line || 'Mg');
       top = Math.min(top, index * textLayout.lineHeight - ink.actualBoundingBoxAscent);
@@ -324,7 +336,9 @@
   let annotationBacking: OffscreenCanvas | null = null;
   let annotationCanvas = $state<HTMLCanvasElement | null>(null);
   $effect(() => {
-    const canvas = annotationCanvas, ops = annotationOps, crop = frame;
+    const canvas = annotationCanvas,
+      ops = annotationOps,
+      crop = frame;
     if (!canvas || !fontsReady) return;
     canvas.width = Math.max(1, Math.round(crop.w));
     canvas.height = Math.max(1, Math.round(crop.h));
@@ -505,9 +519,10 @@
         if (g.tool === 'draw') {
           // Keep observing the whole stroke. A full buffer is sampled down before
           // accepting the next point, rather than silently discarding its tail.
-          const retained = points.length < 4096
-            ? points
-            : points.filter((_, index) => index % 2 === 0 || index === points.length - 1);
+          const retained =
+            points.length < 4096
+              ? points
+              : points.filter((_, index) => index % 2 === 0 || index === points.length - 1);
           points = [...retained, current];
         } else if (points.length < 4096) points = [...points, current];
       }
@@ -734,7 +749,12 @@
       </g>
     {/if}
     <foreignObject x={frame.x} y={frame.y} width={frame.w} height={frame.h} pointer-events="none">
-      <canvas bind:this={annotationCanvas} data-annotation-layer style:width="100%" style:height="100%" />
+      <canvas
+        bind:this={annotationCanvas}
+        data-annotation-layer
+        style:width="100%"
+        style:height="100%"
+      />
     </foreignObject>
     <g class:cropping={!!cropCandidate}>
       {#if tool === 'pointer' && !cropCandidate}

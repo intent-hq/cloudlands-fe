@@ -98,9 +98,9 @@ export function* chatDraftsSaga(
     yield* call(commitPending, ownerId);
   }
 
-  function* flushPair(
-    { payload: [workspaceId, agentId] }: ReturnType<typeof chatDraftSavePairFlushRequested>,
-  ): SagaGenerator<void> {
+  function* flushPair({
+    payload: [workspaceId, agentId],
+  }: ReturnType<typeof chatDraftSavePairFlushRequested>): SagaGenerator<void> {
     // Preserve insertion order: an older debounced owner cannot overwrite the
     // explicit save that was scheduled after it. All writes still use one FIFO.
     for (const [ownerId, entry] of Object.entries(pending)) {

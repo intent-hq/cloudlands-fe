@@ -215,7 +215,8 @@
         onpointerdown={(event: PointerEvent) => {
           // Saving must not blur an active text field before the draft is captured.
           // A failed durable save leaves its caret and native Undo stack in place.
-          if (event.button === 0 && isTextEntryTarget(document.activeElement)) event.preventDefault();
+          if (event.button === 0 && isTextEntryTarget(document.activeElement))
+            event.preventDefault();
         }}
         onclick={onAttach}
       >

@@ -19,17 +19,41 @@ export type DockSendStage =
 /** The internal failure codes a dock send can raise; anything else is unclassified. */
 const KNOWN_CODES = new Set([
   // send preparation and its media plan
-  'invalid-saved-edit', 'media-send-retired', 'transcript-unavailable', 'transcript-pending',
-  'invalid-edit', 'stale-source', 'legacy-baked-marks', 'timing-unavailable', 'audio-unavailable',
-  'media-source-unavailable', 'media-export-unavailable', 'media-animation-layer-limit',
-  'media-export-failed', 'legacy-original-unavailable',
+  'invalid-saved-edit',
+  'media-send-retired',
+  'transcript-unavailable',
+  'transcript-pending',
+  'invalid-edit',
+  'stale-source',
+  'legacy-baked-marks',
+  'timing-unavailable',
+  'audio-unavailable',
+  'media-source-unavailable',
+  'media-export-unavailable',
+  'media-animation-layer-limit',
+  'media-export-failed',
+  'legacy-original-unavailable',
   // canonical rendering
-  'capture-render-unavailable', 'capture-blur-unavailable', 'stale-source-pixels', 'not-a-screenshot',
+  'capture-render-unavailable',
+  'capture-blur-unavailable',
+  'stale-source-pixels',
+  'not-a-screenshot',
   // admission and evidence
-  'not-admitted', 'unavailable', 'dock-evidence-missing-pixels', 'draft-restore-failed', 'image-budget-exceeded',
+  'not-admitted',
+  'unavailable',
+  'dock-evidence-missing-pixels',
+  'draft-restore-failed',
+  'image-budget-exceeded',
 ]);
 /** A native result's own error words, kept after `media-export-failed:`. */
-const NATIVE_ERRORS = new Set(['unavailable', 'permission', 'failed', 'busy', 'cancelled', 'limit']);
+const NATIVE_ERRORS = new Set([
+  'unavailable',
+  'permission',
+  'failed',
+  'busy',
+  'cancelled',
+  'limit',
+]);
 
 export class DockSendError extends Error {
   constructor(

@@ -5,7 +5,11 @@
   let workspaceId = $state('ws-a');
 </script>
 
-<button type="button" data-testid="switch" onclick={() => (workspaceId = workspaceId === 'ws-a' ? 'ws-b' : 'ws-a')}>
+<button
+  type="button"
+  data-testid="switch"
+  onclick={() => (workspaceId = workspaceId === 'ws-a' ? 'ws-b' : 'ws-a')}
+>
   Switch conversation
 </button>
 <div style="width: 320px; height: 240px;">

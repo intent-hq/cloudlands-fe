@@ -4,7 +4,14 @@
   import type { DockMediaTranscript } from '$shared/dock-media-edit';
   import { transcriptText, transcriptTextChange } from './transcript-text-edit';
 
-  let { words, wordEdits, locked = false, onChange, onComposing, onSubmit }: {
+  let {
+    words,
+    wordEdits,
+    locked = false,
+    onChange,
+    onComposing,
+    onSubmit,
+  }: {
     words: readonly DockMediaTranscript['words'][number][];
     wordEdits: Readonly<Record<string, string>>;
     locked?: boolean;
@@ -43,10 +50,15 @@
     const selection = window.getSelection();
     // Browser text hosts bound selections at annotation anchors. Defensively reject
     // any cross-host mutation as well. Numbers retain their own explicit Delete and transaction Undo.
-    if (locked || (selection && (!node.contains(selection.anchorNode) || !node.contains(selection.focusNode))))
+    if (
+      locked ||
+      (selection && (!node.contains(selection.anchorNode) || !node.contains(selection.focusNode)))
+    )
       event.preventDefault();
   }
-  onDestroy(() => { if (composing) onComposing(false); });
+  onDestroy(() => {
+    if (composing) onComposing(false);
+  });
 </script>
 
 <span
@@ -62,15 +74,27 @@
   use:syncText={text}
   onbeforeinput={beforeInput}
   oninput={input}
-  oncompositionstart={() => { composing = true; onComposing(true); }}
-  oncompositionend={(event) => { composing = false; input(event); onComposing(false); }}
+  oncompositionstart={() => {
+    composing = true;
+    onComposing(true);
+  }}
+  oncompositionend={(event) => {
+    composing = false;
+    input(event);
+    onComposing(false);
+  }}
   onkeydown={(event) => {
-    if (composing || event.isComposing) { event.stopPropagation(); return; }
+    if (composing || event.isComposing) {
+      event.stopPropagation();
+      return;
+    }
     if (event.key === 'Escape') {
-      event.preventDefault(); event.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
       (event.currentTarget as HTMLElement).blur();
     } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-      event.preventDefault(); event.stopPropagation();
+      event.preventDefault();
+      event.stopPropagation();
       if (!locked) onSubmit?.();
     } else if (event.key === 'Delete' || event.key === 'Backspace') event.stopPropagation();
   }}
@@ -82,8 +106,19 @@
 {/if}
 
 <style>
-  .transcript-text { white-space: pre-wrap; overflow-wrap: anywhere; cursor: text; outline: none; }
-  .transcript-text:focus-visible { text-decoration-color: hsl(var(--primary)); }
-  .transcript-text:empty::after { content: '\200b'; }
-  .text-limit { color: hsl(var(--danger)); }
+  .transcript-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    cursor: text;
+    outline: none;
+  }
+  .transcript-text:focus-visible {
+    text-decoration-color: hsl(var(--primary));
+  }
+  .transcript-text:empty::after {
+    content: '\200b';
+  }
+  .text-limit {
+    color: hsl(var(--danger));
+  }
 </style>

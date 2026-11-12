@@ -96,7 +96,11 @@ export interface DockEvidenceDependencies {
    * An admitted capture whose dock document holds a screenshot hold: hide the dock now (before
    * pixels), so it never shows while that screenshot's editor prepares. Exact owner only.
    */
-  hideForOwnScreenshot?(window: BrowserWindow, sender: Electron.WebContents, binding: object): boolean;
+  hideForOwnScreenshot?(
+    window: BrowserWindow,
+    sender: Electron.WebContents,
+    binding: object,
+  ): boolean;
 }
 
 interface Session {
@@ -332,9 +336,17 @@ export class DockEvidenceSessions {
         session.listeners.add(abortSelection);
         let selected: DockNativeResult<SelectedImage>;
         try {
-        selected = await this.deps.captureSelection(selection, [window, ...this.exclusions()].filter((entry) => !entry.isDestroyed())
-          .map((entry) => cgWindowIdFromMediaSourceId(entry.getMediaSourceId())).filter((id): id is number => id !== null), selectionAbort.signal);
-        } finally { session.listeners.delete(abortSelection); }
+          selected = await this.deps.captureSelection(
+            selection,
+            [window, ...this.exclusions()]
+              .filter((entry) => !entry.isDestroyed())
+              .map((entry) => cgWindowIdFromMediaSourceId(entry.getMediaSourceId()))
+              .filter((id): id is number => id !== null),
+            selectionAbort.signal,
+          );
+        } finally {
+          session.listeners.delete(abortSelection);
+        }
         if (!this.current(session)) return unavailable();
         // Screen Recording can be turned off during a selection: the image would hold
         // only the desktop, and a dismissal must not hide the missing permission.
@@ -417,11 +429,26 @@ export class DockEvidenceSessions {
     if (captured.png.length > MAX_PNG_BYTES) return { ok: false, error: 'limit' };
     const id = this.deps.id();
     const capturedAt = nativePixels?.capturedAt ?? new Date(this.deps.now()).toISOString();
-    const display = this.deps.displays().find((row) => row.id === this.deps.placement(session.binding.window)?.displayId);
-    const capture = nativePixels?.capture ?? ('capture' in captured ? (captured as SelectedImage).capture : undefined) ?? { mode: request.mode ?? 'fullscreen' as const,
-      frame: (!request.mode || request.mode === 'fullscreen') && display
-        ? { displayId: display.id, rect: { x: display.bounds.x, y: display.bounds.y, w: display.bounds.width, h: display.bounds.height },
-            coordinateSpace: 'screen-points-top-left' as const } : null };
+    const display = this.deps
+      .displays()
+      .find((row) => row.id === this.deps.placement(session.binding.window)?.displayId);
+    const capture = nativePixels?.capture ??
+      ('capture' in captured ? (captured as SelectedImage).capture : undefined) ?? {
+        mode: request.mode ?? ('fullscreen' as const),
+        frame:
+          (!request.mode || request.mode === 'fullscreen') && display
+            ? {
+                displayId: display.id,
+                rect: {
+                  x: display.bounds.x,
+                  y: display.bounds.y,
+                  w: display.bounds.width,
+                  h: display.bounds.height,
+                },
+                coordinateSpace: 'screen-points-top-left' as const,
+              }
+            : null,
+      };
     const pixels = {
       capture,
       base64: captured.png.toString('base64'),
@@ -458,19 +485,41 @@ export class DockEvidenceSessions {
 const SELECTION_TIMEOUT_MS = 5 * 60_000;
 
 /** Native selector returns the exact selected frame with its pixels. */
-async function captureSelection(mode: Exclude<DockCaptureMode, 'fullscreen'>, excludeWindowIds: number[] = [], signal?: AbortSignal): Promise<DockNativeResult<SelectedImage>> {
+async function captureSelection(
+  mode: Exclude<DockCaptureMode, 'fullscreen'>,
+  excludeWindowIds: number[] = [],
+  signal?: AbortSignal,
+): Promise<DockNativeResult<SelectedImage>> {
   const release = dockEvidenceRecorder.reserveSelection();
   if (!release) return { ok: false, error: 'failed', detail: 'recording-busy' };
-  try { return await captureSelectionReserved(mode, excludeWindowIds, signal); }
-  finally { release(); }
+  try {
+    return await captureSelectionReserved(mode, excludeWindowIds, signal);
+  } finally {
+    release();
+  }
 }
-async function captureSelectionReserved(mode: Exclude<DockCaptureMode, 'fullscreen'>, excludeWindowIds: number[] = [], signal?: AbortSignal): Promise<DockNativeResult<SelectedImage>> {
+async function captureSelectionReserved(
+  mode: Exclude<DockCaptureMode, 'fullscreen'>,
+  excludeWindowIds: number[] = [],
+  signal?: AbortSignal,
+): Promise<DockNativeResult<SelectedImage>> {
   if (process.platform !== 'darwin') return { ok: false, error: 'unavailable', detail: 'platform' };
-  const roots = app.isPackaged ? [process.resourcesPath] : [path.join(app.getAppPath(), 'resources'), path.resolve(app.getAppPath(), '..', '..', 'resources')];
+  const roots = app.isPackaged
+    ? [process.resourcesPath]
+    : [
+        path.join(app.getAppPath(), 'resources'),
+        path.resolve(app.getAppPath(), '..', '..', 'resources'),
+      ];
   let helper: string | undefined;
   for (const root of roots) {
     const candidate = path.join(root, 'dock-helper', 'intent-dock-capture-selector');
-    try { await access(candidate); helper = candidate; break; } catch { /* known next layout */ }
+    try {
+      await access(candidate);
+      helper = candidate;
+      break;
+    } catch {
+      /* known next layout */
+    }
   }
   if (!helper) return { ok: false, error: 'unavailable', detail: 'selection-helper-missing' };
   try {
@@ -478,23 +527,50 @@ async function captureSelectionReserved(mode: Exclude<DockCaptureMode, 'fullscre
     const stdout = await (async () => {
       try {
         return await new Promise<string>((resolve, reject) => {
-          const child = execFile(helper!, [mode, ...excludeWindowIds.map(String)],
+          const child = execFile(
+            helper!,
+            [mode, ...excludeWindowIds.map(String)],
             { timeout: SELECTION_TIMEOUT_MS, maxBuffer: 96 * 1024 * 1024, signal },
-            (error, output) => error ? reject(error) : resolve(output));
+            (error, output) => (error ? reject(error) : resolve(output)),
+          );
           childClosed = new Promise<void>((done) => child.once('close', () => done()));
         });
-      } finally { await childClosed; }
+      } finally {
+        await childClosed;
+      }
     })();
     const result = JSON.parse(stdout) as Record<string, unknown>;
-    if (result.ok !== true) return result.error === 'cancelled' ? { ok: false, error: 'unavailable', detail: 'cancelled' }
-      : { ok: false, error: result.error === 'permission' ? 'permission' : result.error === 'unavailable' ? 'unavailable' : 'failed' };
+    if (result.ok !== true)
+      return result.error === 'cancelled'
+        ? { ok: false, error: 'unavailable', detail: 'cancelled' }
+        : {
+            ok: false,
+            error:
+              result.error === 'permission'
+                ? 'permission'
+                : result.error === 'unavailable'
+                  ? 'unavailable'
+                  : 'failed',
+          };
     const capture = DockMediaCaptureSchema.parse(result.capture);
-    if (capture.mode !== mode || !capture.frame || typeof result.base64 !== 'string') throw new Error('selection-frame');
+    if (capture.mode !== mode || !capture.frame || typeof result.base64 !== 'string')
+      throw new Error('selection-frame');
     const image = nativeImage.createFromBuffer(Buffer.from(result.base64, 'base64'));
     const size = image.getSize();
-    if (image.isEmpty() || size.width !== result.width || size.height !== result.height) throw new Error('selection-size');
-    return { ok: true, value: { png: image.toPNG(), ...size, capture, displayScale: size.width / capture.frame.rect.w } };
-  } catch { return { ok: false, error: 'failed', detail: 'selection' }; }
+    if (image.isEmpty() || size.width !== result.width || size.height !== result.height)
+      throw new Error('selection-size');
+    return {
+      ok: true,
+      value: {
+        png: image.toPNG(),
+        ...size,
+        capture,
+        displayScale: size.width / capture.frame.rect.w,
+      },
+    };
+  } catch {
+    return { ok: false, error: 'failed', detail: 'selection' };
+  }
 }
 
 /** Construction does not start a helper, recording, microphone or screenshot. */

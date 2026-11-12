@@ -107,7 +107,13 @@ describe('dock evidence native adapter', () => {
     expect(adapter.service.capabilities).toEqual({ capture: true, annotate: true, record: true });
     await adapter.service.setAnnotationTool('annotation', 'box', 7);
     expect(invoke).toHaveBeenLastCalledWith(DOCK_EVIDENCE_CHANNELS.CONTROL, {
-      ...session, control: { action: 'annotation-tool', annotationId: 'annotation', tool: 'box', restoreInputRevision: 7 },
+      ...session,
+      control: {
+        action: 'annotation-tool',
+        annotationId: 'annotation',
+        tool: 'box',
+        restoreInputRevision: 7,
+      },
     });
     await adapter.service.startAnnotation({ id: 'annotation', mode: 'live', tool: 'box' });
     expect(invoke).toHaveBeenLastCalledWith(DOCK_EVIDENCE_CHANNELS.CONTROL, {

@@ -95,13 +95,18 @@ async function press(page: Page, extra: Partial<DockShortcutContext> = {}) {
   }, extra);
 }
 async function close(page: Page) {
-  await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(), null);
+  await h(page)(
+    () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.close(),
+    null,
+  );
   await expect.poll(() => state(page, 'workspaceId')).toBeNull();
 }
 const composerFocused = (page: Page) =>
   page.evaluate(() => {
     const active = document.activeElement as HTMLElement | null;
-    return !!active?.closest('.tiptap-editor') || active?.getAttribute('contenteditable') === 'true';
+    return (
+      !!active?.closest('.tiptap-editor') || active?.getAttribute('contenteditable') === 'true'
+    );
   });
 const firstEntry = (page: Page) =>
   page.evaluate(
@@ -111,7 +116,10 @@ const firstEntry = (page: Page) =>
         .find((id) => id !== 'dock:assistant') ?? null,
   );
 
-test('side: a cold shortcut opens the first workspace chat and focuses its composer', async ({ mount, page }, info) => {
+test('side: a cold shortcut opens the first workspace chat and focuses its composer', async ({
+  mount,
+  page,
+}, info) => {
   await mountSide(mount, page);
   await close(page);
   const first = await firstEntry(page);
@@ -120,12 +128,21 @@ test('side: a cold shortcut opens the first workspace chat and focuses its compo
   await expect.poll(() => state(page, 'workspaceId')).toBe(first);
   await expect.poll(() => composerFocused(page)).toBe(true);
   await page.screenshot({ path: info.outputPath('side-cold-first-workspace.png') });
-  await writeFile(info.outputPath('side-cold-receipt.json'), JSON.stringify({ opened: 'first entry', composerFocused: true }));
+  await writeFile(
+    info.outputPath('side-cold-receipt.json'),
+    JSON.stringify({ opened: 'first entry', composerFocused: true }),
+  );
 });
 
-test('side: the shortcut returns to the last chat opened from the dock', async ({ mount, page }, info) => {
+test('side: the shortcut returns to the last chat opened from the dock', async ({
+  mount,
+  page,
+}, info) => {
   await mountSide(mount, page);
-  await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(3), null);
+  await h(page)(
+    () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(3),
+    null,
+  );
   await close(page);
   await page.locator('[data-dock-entry="choice-1"]').click();
   await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
@@ -139,17 +156,32 @@ test('side: the shortcut returns to the last chat opened from the dock', async (
   await expect(page.getByTestId('dock-edge-shell')).toBeVisible();
   await expect(page.locator('[data-dock-entry="dock:assistant"]')).not.toBeFocused();
   await expect(page.locator('[data-preview-workspace-id="dock:assistant"]')).toHaveCount(0);
-  await writeFile(info.outputPath('side-last-receipt.json'), JSON.stringify({ opened: 'choice-1', edgeShell: 'visible', assistantPreview: false }));
+  await writeFile(
+    info.outputPath('side-last-receipt.json'),
+    JSON.stringify({ opened: 'choice-1', edgeShell: 'visible', assistantPreview: false }),
+  );
 });
 
-test('side: a removed last chat, or one from another machine, falls back to the first workspace', async ({ mount, page }, info) => {
+test('side: a removed last chat, or one from another machine, falls back to the first workspace', async ({
+  mount,
+  page,
+}, info) => {
   await mountSide(mount, page);
-  await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(3), null);
+  await h(page)(
+    () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(3),
+    null,
+  );
   await close(page);
   await page.locator('[data-dock-entry="choice-1"]').click();
   await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
   await close(page);
-  await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.archiveWorkspace('choice-1'), null);
+  await h(page)(
+    () =>
+      (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.archiveWorkspace(
+        'choice-1',
+      ),
+    null,
+  );
   const first = await firstEntry(page);
   expect(first).not.toBe('choice-1');
   await press(page);
@@ -162,14 +194,23 @@ test('side: a removed last chat, or one from another machine, falls back to the 
   await h(page)(() => {
     const { store } = (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E;
     const selection = store.state.dockConversation.shortcutSelection;
-    store.dispatch({ type: 'dockConversation/shortcutSelectionChanged', payload: [{ ...selection, backendId: 'another-machine' }] });
+    store.dispatch({
+      type: 'dockConversation/shortcutSelectionChanged',
+      payload: [{ ...selection, backendId: 'another-machine' }],
+    });
   }, null);
   await press(page);
   await expect.poll(() => state(page, 'workspaceId')).toBe(await firstEntry(page));
-  await writeFile(info.outputPath('side-fence-receipt.json'), JSON.stringify({ removed: 'first', otherMachine: 'first' }));
+  await writeFile(
+    info.outputPath('side-fence-receipt.json'),
+    JSON.stringify({ removed: 'first', otherMachine: 'first' }),
+  );
 });
 
-test('side: with a chat open but unfocused, the shortcut keeps that chat instead of the chooser', async ({ mount, page }) => {
+test('side: with a chat open but unfocused, the shortcut keeps that chat instead of the chooser', async ({
+  mount,
+  page,
+}) => {
   await mountSide(mount, page);
   const open = await state(page, 'workspaceId');
   expect(open).not.toBeNull();
@@ -183,28 +224,44 @@ for (const conflict of ['a different last chat', 'a foreground workspace with a 
     await mountSide(mount, page);
     const open = await state(page, 'workspaceId');
     expect(open).not.toBeNull();
-    await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(2), null);
+    await h(page)(
+      () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(2),
+      null,
+    );
     // Remember choice-1 as the last chat, then return to the fixture chat (A).
     await close(page);
     await page.locator('[data-dock-entry="choice-1"]').click();
     await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
-    await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.reopen(), null);
+    await h(page)(
+      () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.reopen(),
+      null,
+    );
     await expect.poll(() => state(page, 'workspaceId')).toBe(open);
     await page.mouse.move(200, 200);
     await press(
       page,
       conflict === 'a foreground workspace with a URL'
-        ? { workspaceId: 'choice-1', url: 'https://example.com/choice-1', appId: 'com.example.browser' }
+        ? {
+            workspaceId: 'choice-1',
+            url: 'https://example.com/choice-1',
+            appId: 'com.example.browser',
+          }
         : {},
     );
     await expect.poll(() => state(page, 'destination')).toBe(open);
     expect(await state(page, 'workspaceId')).toBe(open);
     await expect.poll(() => composerFocused(page)).toBe(true);
-    await writeFile(info.outputPath('side-conflict-receipt.json'), JSON.stringify({ conflict, kept: 'open chat', composerFocused: true }));
+    await writeFile(
+      info.outputPath('side-conflict-receipt.json'),
+      JSON.stringify({ conflict, kept: 'open chat', composerFocused: true }),
+    );
   });
 }
 
-test('side, focused but collapsed: the open shortcut again opens the first workspace chat, not the Assistant', async ({ mount, page }, info) => {
+test('side, focused but collapsed: the open shortcut again opens the first workspace chat, not the Assistant', async ({
+  mount,
+  page,
+}, info) => {
   await mountSide(mount, page);
   const first = await firstEntry(page);
   await close(page);
@@ -213,12 +270,21 @@ test('side, focused but collapsed: the open shortcut again opens the first works
   await expect.poll(() => state(page, 'workspaceId')).toBe(first);
   await expect.poll(() => composerFocused(page)).toBe(true);
   await expect(page.locator('[data-dock-entry="dock:assistant"]')).not.toBeFocused();
-  await writeFile(info.outputPath('side-toggle-cold-receipt.json'), JSON.stringify({ toggleClose: true, opened: 'first entry', composerFocused: true }));
+  await writeFile(
+    info.outputPath('side-toggle-cold-receipt.json'),
+    JSON.stringify({ toggleClose: true, opened: 'first entry', composerFocused: true }),
+  );
 });
 
-test('side, focused but collapsed after Back: the open shortcut again returns to that last chat', async ({ mount, page }, info) => {
+test('side, focused but collapsed after Back: the open shortcut again returns to that last chat', async ({
+  mount,
+  page,
+}, info) => {
   await mountSide(mount, page);
-  await h(page)(() => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(2), null);
+  await h(page)(
+    () => (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.seedChoices(2),
+    null,
+  );
   await close(page);
   await page.locator('[data-dock-entry="choice-1"]').click();
   await expect.poll(() => state(page, 'workspaceId')).toBe('choice-1');
@@ -230,10 +296,16 @@ test('side, focused but collapsed after Back: the open shortcut again returns to
   await expect(page.getByTestId('dock-edge-shell')).toBeVisible();
   await expect(page.locator('[data-dock-entry="dock:assistant"]')).not.toBeFocused();
   await expect(page.locator('[data-preview-workspace-id="dock:assistant"]')).toHaveCount(0);
-  await writeFile(info.outputPath('side-toggle-last-receipt.json'), JSON.stringify({ toggleClose: true, opened: 'choice-1' }));
+  await writeFile(
+    info.outputPath('side-toggle-last-receipt.json'),
+    JSON.stringify({ toggleClose: true, opened: 'choice-1' }),
+  );
 });
 
-test('side, with the chat open and focused: the open shortcut again closes it as Escape would', async ({ mount, page }) => {
+test('side, with the chat open and focused: the open shortcut again closes it as Escape would', async ({
+  mount,
+  page,
+}) => {
   await mountSide(mount, page);
   const open = await state(page, 'workspaceId');
   await press(page);

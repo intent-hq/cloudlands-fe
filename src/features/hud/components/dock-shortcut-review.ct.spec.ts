@@ -67,9 +67,7 @@ for (const action of ['capture', 'dictate'] as const) {
         page.evaluate((action) => {
           const log = (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native
             .log;
-          return action === 'capture'
-            ? log.captures
-            : log.speech.started.length;
+          return action === 'capture' ? log.captures : log.speech.started.length;
         }, action),
       )
       .toBe(1);
@@ -117,9 +115,7 @@ for (const action of ['record', 'dictate'] as const) {
         page.evaluate((action) => {
           const log = (window as unknown as { __dockComposerE2E: Fixture }).__dockComposerE2E.native
             .log;
-          return action === 'record'
-            ? log.clips.started.length
-            : log.speech.started.length;
+          return action === 'record' ? log.clips.started.length : log.speech.started.length;
         }, action),
       )
       .toBe(1);
@@ -179,9 +175,7 @@ for (const action of ['record', 'dictate'] as const) {
     expect(evidence.workspaceId).toBe('conversation-wire');
     expect(evidence.destination).toBe('conversation-wire');
     const starts =
-      action === 'record'
-        ? evidence.log.clips.started.length
-        : evidence.log.speech.started.length;
+      action === 'record' ? evidence.log.clips.started.length : evidence.log.speech.started.length;
     expect(starts).toBe(1);
     await writeFile(
       info.outputPath(`${action}-active-owner.json`),

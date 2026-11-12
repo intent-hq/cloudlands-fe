@@ -65,21 +65,34 @@
   let pendingKey = 0;
   let feedbackEpoch = 0;
   let active = true;
-  let pickFailure = $state<{ epoch: number; reason: Extract<DockAnnotationAck, { ok: false }>['reason'] } | null>(null);
-  const feedbackContext = $derived(JSON.stringify([overlay?.sessionId, overlay?.tool, !!overlay?.mouse]));
+  let pickFailure = $state<{
+    epoch: number;
+    reason: Extract<DockAnnotationAck, { ok: false }>['reason'];
+  } | null>(null);
+  const feedbackContext = $derived(
+    JSON.stringify([overlay?.sessionId, overlay?.tool, !!overlay?.mouse]),
+  );
   function retirePickFeedback() {
     feedbackEpoch++;
     pickFailure = null;
   }
   $effect(() => {
-    const context = feedbackContext, owner = transport;
+    const context = feedbackContext,
+      owner = transport;
     untrack(retirePickFeedback);
-    void context; void owner;
+    void context;
+    void owner;
   });
   function ownsPickFeedback(current: Gesture): boolean {
-    return active && current.feedbackEpoch === feedbackEpoch && current.sequence === sequence &&
-      current.sessionId === overlay?.sessionId && current.tool === overlay?.tool &&
-      !overlay?.mouse && current.transport === transport;
+    return (
+      active &&
+      current.feedbackEpoch === feedbackEpoch &&
+      current.sequence === sequence &&
+      current.sessionId === overlay?.sessionId &&
+      current.tool === overlay?.tool &&
+      !overlay?.mouse &&
+      current.transport === transport
+    );
   }
   function pickResult(current: Gesture, ack: DockAnnotationAck) {
     if (current.tool !== 'pick' || !ownsPickFeedback(current)) return;
@@ -173,7 +186,9 @@
       capped: false,
       feedbackEpoch,
       transport,
-      down: transport.pointer(request).catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' })),
+      down: transport
+        .pointer(request)
+        .catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' })),
     };
     gesture = current;
     void current.down.then((ack) => {
@@ -251,13 +266,15 @@
     void (async () => {
       const down = await current.down;
       const ack = down.ok
-        ? await current.transport.gesture({
-            sessionId: current.sessionId,
-            sequence: current.sequence,
-            tool: current.tool,
-            origin: current.origin,
-            points,
-          }).catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' }))
+        ? await current.transport
+            .gesture({
+              sessionId: current.sessionId,
+              sequence: current.sequence,
+              tool: current.tool,
+              origin: current.origin,
+              points,
+            })
+            .catch((): DockAnnotationAck => ({ ok: false, reason: 'failed' }))
         : down;
       pickResult(current, ack);
       settle(key, ack.ok);
@@ -357,7 +374,6 @@
     };
     return `M${a.x} ${a.y} L${to.x} ${to.y} L${b.x} ${b.y}`;
   }
-
 </script>
 
 {#snippet shape(geometry: DockMarkGeometry, tool: DockMarkTool)}
@@ -378,7 +394,11 @@
       stroke-width={INK.stroke}
     />
   {:else}
-    <path d={dockFreehandPath(geometry.points)} class="dock-annotation-stroke" stroke-width={INK.pen} />
+    <path
+      d={dockFreehandPath(geometry.points)}
+      class="dock-annotation-stroke"
+      stroke-width={INK.pen}
+    />
   {/if}
 {/snippet}
 
@@ -482,7 +502,8 @@
         pickFailureReason={pickFailure?.reason ?? null}
         bind:anchor={toolbarAnchor}
         send={(request) => {
-          if (['tool', 'mouse', 'clear', 'end', 'commit', 'done'].includes(request.action)) retirePickFeedback();
+          if (['tool', 'mouse', 'clear', 'end', 'commit', 'done'].includes(request.action))
+            retirePickFeedback();
           void transport.toolbar?.(request).catch(() => false);
         }}
       />

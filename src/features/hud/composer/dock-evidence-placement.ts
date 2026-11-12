@@ -435,13 +435,24 @@ export async function placeDockEvidenceImages(input: {
 
 /** An immutable editor source or output; every upload/recovery step stays on the captured backend. */
 export async function placeDockMediaImage(
-  workspaceId: string, fileName: string, source: { data: string; mimeType: string }, binding: DockPlacementBinding,
+  workspaceId: string,
+  fileName: string,
+  source: { data: string; mimeType: string },
+  binding: DockPlacementBinding,
 ): Promise<PlaceAttachmentResult> {
-  const check = () => { if (!defaultDockPlacementApi.current(binding)) throw new DockPlacementBackendChangedError(); };
+  const check = () => {
+    if (!defaultDockPlacementApi.current(binding)) throw new DockPlacementBackendChangedError();
+  };
   check();
-  const placed = await defaultDockPlacementApi.placeImage(workspaceId, fileName, {
-    ...source, idempotencyKey: defaultDockPlacementApi.mintKey(),
-  }, check);
+  const placed = await defaultDockPlacementApi.placeImage(
+    workspaceId,
+    fileName,
+    {
+      ...source,
+      idempotencyKey: defaultDockPlacementApi.mintKey(),
+    },
+    check,
+  );
   check();
   return placed;
 }

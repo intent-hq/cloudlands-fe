@@ -185,7 +185,6 @@ function helperCandidates(): string[] {
   ];
 }
 
-
 const defaultDockScreenRecorderDeps: DockScreenRecorderDeps = {
   platform: process.platform,
   async resolveHelper() {
@@ -204,12 +203,20 @@ const defaultDockScreenRecorderDeps: DockScreenRecorderDeps = {
     let closed: Promise<void> | undefined;
     try {
       return await new Promise<{ stdout: string }>((resolve, reject) => {
-        const child = nodeExecFile(file, args, {
-          timeout: options?.timeoutMs ?? 5_000, maxBuffer: options?.maxBuffer ?? MAX_LINE,
-        }, (error, stdout) => error ? reject(error) : resolve({ stdout }));
+        const child = nodeExecFile(
+          file,
+          args,
+          {
+            timeout: options?.timeoutMs ?? 5_000,
+            maxBuffer: options?.maxBuffer ?? MAX_LINE,
+          },
+          (error, stdout) => (error ? reject(error) : resolve({ stdout })),
+        );
         closed = new Promise<void>((done) => child.once('close', () => done()));
       });
-    } finally { await closed; }
+    } finally {
+      await closed;
+    }
   },
   fileSize: async (file) => (await stat(file)).size,
   readFile: (file) => readFile(file),
@@ -395,21 +402,40 @@ export function createDockScreenRecorder(
       settle(clip, fail('limit', 'too-large'));
       return;
     }
-    const width = Number(event.width), height = Number(event.height);
-    const clearAtMs = Array.isArray(event.clearAtMs) ? event.clearAtMs.filter((time): time is number =>
-      typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= durationMs) : [];
-    if (!(cleanSize > 0 && Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0)) {
+    const width = Number(event.width),
+      height = Number(event.height);
+    const clearAtMs = Array.isArray(event.clearAtMs)
+      ? event.clearAtMs.filter(
+          (time): time is number =>
+            typeof time === 'number' && Number.isFinite(time) && time >= 0 && time <= durationMs,
+        )
+      : [];
+    if (!(
+      cleanSize > 0 &&
+      Number.isInteger(width) &&
+      width > 0 &&
+      Number.isInteger(height) &&
+      height > 0
+    )) {
       settle(clip, fail('failed', 'invalid-clean-source'));
       return;
     }
     settle(clip, {
       ok: true,
       value: {
-        original: { sourcePath: clip.cleanPath, size: cleanSize, width, height, clearAtMs,
+        original: {
+          sourcePath: clip.cleanPath,
+          size: cleanSize,
+          width,
+          height,
+          clearAtMs,
           // Old helpers' positive primary append proves clean append happened first;
           // a negative primary flag cannot prove the separate clean track is empty.
-          ...(typeof event.hasCleanMicAudio === 'boolean' ? { hasMicAudio: event.hasCleanMicAudio }
-            : event.hasMicAudio === true ? { hasMicAudio: true } : {}),
+          ...(typeof event.hasCleanMicAudio === 'boolean'
+            ? { hasMicAudio: event.hasCleanMicAudio }
+            : event.hasMicAudio === true
+              ? { hasMicAudio: true }
+              : {}),
         },
         clipId: clip.clipId,
         sourcePath: clip.outputPath,
@@ -582,35 +608,38 @@ export function createDockScreenRecorder(
     if (selectionOwner || standaloneStillOwner) return fail('failed', 'capture-busy');
     if (active) return streamStill(active, request);
     if (reservation) return fail('failed', 'recording-busy');
-    const token = Symbol(); standaloneStillOwner = token;
+    const token = Symbol();
+    standaloneStillOwner = token;
     try {
-    const helper = await deps.resolveHelper();
-    if (!helper) return fail('unavailable', 'helper-missing');
-    let raw: Record<string, unknown>;
-    try {
-      const { stdout } = await deps.execFile(
-        helper,
-        [
-          'still',
-          '--display',
-          String(request.displayId),
-          '--max-edge',
-          String(DOCK_RECORDING_MAX_EDGE),
-          ...windowArgs(request.excludeWindowIds),
-        ],
-        { timeoutMs: STILL_TIMEOUT_MS, maxBuffer: MAX_STILL_OUTPUT },
-      );
-      raw = JSON.parse(stdout.trim()) as Record<string, unknown>;
-    } catch (error) {
-      logger.warn('Still capture helper failed', { error });
-      return fail('failed', 'helper');
+      const helper = await deps.resolveHelper();
+      if (!helper) return fail('unavailable', 'helper-missing');
+      let raw: Record<string, unknown>;
+      try {
+        const { stdout } = await deps.execFile(
+          helper,
+          [
+            'still',
+            '--display',
+            String(request.displayId),
+            '--max-edge',
+            String(DOCK_RECORDING_MAX_EDGE),
+            ...windowArgs(request.excludeWindowIds),
+          ],
+          { timeoutMs: STILL_TIMEOUT_MS, maxBuffer: MAX_STILL_OUTPUT },
+        );
+        raw = JSON.parse(stdout.trim()) as Record<string, unknown>;
+      } catch (error) {
+        logger.warn('Still capture helper failed', { error });
+        return fail('failed', 'helper');
+      }
+      if (raw.ok !== true) {
+        if (raw.code === 'unsupported') return fail('unavailable', 'os-version');
+        return fail(errorCode(raw.code), typeof raw.detail === 'string' ? raw.detail : undefined);
+      }
+      return stillPixels(raw);
+    } finally {
+      if (standaloneStillOwner === token) standaloneStillOwner = null;
     }
-    if (raw.ok !== true) {
-      if (raw.code === 'unsupported') return fail('unavailable', 'os-version');
-      return fail(errorCode(raw.code), typeof raw.detail === 'string' ? raw.detail : undefined);
-    }
-    return stillPixels(raw);
-    } finally { if (standaloneStillOwner === token) standaloneStillOwner = null; }
   };
 
   const stillPixels = (raw: Record<string, unknown>): DockNativeResult<DockCapturedPixels> => {
@@ -657,14 +686,18 @@ export function createDockScreenRecorder(
   let standaloneStillOwner: symbol | null = null;
   const reserveSelection = (): (() => void) | null => {
     if (active || reservation || selectionOwner || standaloneStillOwner) return null;
-    const token = Symbol(); selectionOwner = token;
-    return () => { if (selectionOwner === token) selectionOwner = null; };
+    const token = Symbol();
+    selectionOwner = token;
+    return () => {
+      if (selectionOwner === token) selectionOwner = null;
+    };
   };
 
   const start = (
     request: DockRecordingStartRequest,
   ): Promise<DockNativeResult<{ startedAt: number }>> => {
-    if (selectionOwner || standaloneStillOwner) return Promise.resolve(fail('failed', 'capture-busy'));
+    if (selectionOwner || standaloneStillOwner)
+      return Promise.resolve(fail('failed', 'capture-busy'));
     if (active) {
       if (active.clipId === request.clipId) return active.started;
       return Promise.resolve(fail('failed', 'busy'));
@@ -905,8 +938,7 @@ export function createDockScreenRecorder(
   const removeCompletedFiles = async (clipId: string): Promise<void> => {
     const paths = completedFiles.get(clipId);
     completedFiles.delete(clipId);
-    if (paths)
-      await Promise.all(paths.map((file) => deps.removeFile(file).catch(() => undefined)));
+    if (paths) await Promise.all(paths.map((file) => deps.removeFile(file).catch(() => undefined)));
   };
 
   const retireEnded = async (clipId: string): Promise<void> => {

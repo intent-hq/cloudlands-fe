@@ -20,12 +20,16 @@ vi.mock('electron', () => ({
     getAllWindows: () => [
       {
         isDestroyed: () => false,
-        webContents: { isDestroyed: () => false, send: (_channel: string, payload: unknown) => mocks.sent.push(payload) },
+        webContents: {
+          isDestroyed: () => false,
+          send: (_channel: string, payload: unknown) => mocks.sent.push(payload),
+        },
       },
     ],
   },
   ipcMain: {
-    handle: (channel: string, handler: (...args: unknown[]) => Promise<unknown>) => mocks.handlers.set(channel, handler),
+    handle: (channel: string, handler: (...args: unknown[]) => Promise<unknown>) =>
+      mocks.handlers.set(channel, handler),
   },
 }));
 vi.mock('./local-prefs', () => ({
@@ -41,7 +45,12 @@ vi.mock('./ipc-validation-middleware', () => ({
 
 import type { MenuItemConstructorOptions } from 'electron';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
-import { changeDockLabEnabled, isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
+import {
+  changeDockLabEnabled,
+  isDockLabEnabled,
+  loadDockLabEnabled,
+  registerDockLabHandlers,
+} from './dock-lab';
 import { dockWindowMenuItems } from './dock-window-menu';
 
 const labels = {
@@ -67,7 +76,8 @@ function menu(): MenuItemConstructorOptions[] {
     refresh: () => void (refreshes += 1),
   });
 }
-const show = (items: MenuItemConstructorOptions[]) => items.find((item) => item.label === labels.show);
+const show = (items: MenuItemConstructorOptions[]) =>
+  items.find((item) => item.label === labels.show);
 const commands = (items: MenuItemConstructorOptions[]) =>
   items.filter((item) => item.label && item.label !== labels.show).map((item) => item.label);
 /** Electron flips a checkbox before calling its click handler. */
@@ -118,7 +128,10 @@ describe('Window menu Show Intent Dock is the Notch dock setting', () => {
   it('turned off in Settings, the item stays, unchecked, and the dock commands go away', async () => {
     await launch(true);
     const settings = { id: 'settings' };
-    await mocks.handlers.get(WINDOW_CHANNELS.SET_DOCK_LAB)!({ sender: settings }, { enabled: false });
+    await mocks.handlers.get(WINDOW_CHANNELS.SET_DOCK_LAB)!(
+      { sender: settings },
+      { enabled: false },
+    );
     expect(isDockLabEnabled()).toBe(false);
     expect(dockShown).toBe(false);
     expect(show(menu())).toMatchObject({ type: 'checkbox', checked: false });
@@ -150,7 +163,11 @@ describe('Window menu Show Intent Dock is the Notch dock setting', () => {
   it('the dock commands only act while a dock window exists', async () => {
     await launch(true);
     dockShown = false;
-    expect(menu().filter((item) => commands([item]).length).every((item) => item.enabled === false)).toBe(true);
+    expect(
+      menu()
+        .filter((item) => commands([item]).length)
+        .every((item) => item.enabled === false),
+    ).toBe(true);
     dockShown = true;
     const focus = menu().find((item) => item.label === labels.focus)!;
     expect(focus.enabled).toBe(true);

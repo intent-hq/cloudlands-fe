@@ -16,28 +16,59 @@ import {
 import { DockMediaEditSchema, type DockMediaEdit } from '$shared/dock-media-edit';
 
 export type CaptureEditorSaveFailureStage =
-  | 'plan' | 'ack' | 'saved-source' | 'saved-schema' | 'saved-plan' | 'exception' | 'serialize' | 'invoke';
+  | 'plan'
+  | 'ack'
+  | 'saved-source'
+  | 'saved-schema'
+  | 'saved-plan'
+  | 'exception'
+  | 'serialize'
+  | 'invoke';
 const SAVE_DIAGNOSTIC_REASONS = new Set([
-  'stale-source', 'invalid-edit', 'legacy-baked-marks', 'transcript-pending',
-  'transcript-unavailable', 'timing-unavailable', 'audio-unavailable', 'failed',
-  'revision-conflict', 'invalid-result', 'no-result', 'mismatch',
-  'Error', 'TypeError', 'DataCloneError', 'other',
+  'stale-source',
+  'invalid-edit',
+  'legacy-baked-marks',
+  'transcript-pending',
+  'transcript-unavailable',
+  'timing-unavailable',
+  'audio-unavailable',
+  'failed',
+  'revision-conflict',
+  'invalid-result',
+  'no-result',
+  'mismatch',
+  'Error',
+  'TypeError',
+  'DataCloneError',
+  'other',
 ]);
 
 /** Existing logging IPC persists bounded codes even in utility windows without console forwarding. */
-export function reportCaptureEditorSaveFailure(stage: CaptureEditorSaveFailureStage, reason: string | readonly string[]): void {
-  const reasons = (typeof reason === 'string' ? [reason] : reason).slice(0, 7)
-    .map((code) => SAVE_DIAGNOSTIC_REASONS.has(code) ? code : 'other');
+export function reportCaptureEditorSaveFailure(
+  stage: CaptureEditorSaveFailureStage,
+  reason: string | readonly string[],
+): void {
+  const reasons = (typeof reason === 'string' ? [reason] : reason)
+    .slice(0, 7)
+    .map((code) => (SAVE_DIAGNOSTIC_REASONS.has(code) ? code : 'other'));
   const message = `CaptureEditorSave stage=${stage} reason=${reasons.join(',') || 'other'}`;
   console.warn(message);
   if (!isElectron()) return;
   try {
-    void electronAPI().invoke(LOG_CHANNELS.PERSIST_RENDERER_LOGS, [{
-      timestamp: new Date().toISOString(), level: 'WARN', category: 'CaptureEditorSave', message,
-    }]).then((reply) => {
-      if ((reply as { success?: boolean } | undefined)?.success !== true)
-        console.warn('CaptureEditorSave persistence=unacknowledged');
-    }).catch(() => console.warn('CaptureEditorSave persistence=unavailable'));
+    void electronAPI()
+      .invoke(LOG_CHANNELS.PERSIST_RENDERER_LOGS, [
+        {
+          timestamp: new Date().toISOString(),
+          level: 'WARN',
+          category: 'CaptureEditorSave',
+          message,
+        },
+      ])
+      .then((reply) => {
+        if ((reply as { success?: boolean } | undefined)?.success !== true)
+          console.warn('CaptureEditorSave persistence=unacknowledged');
+      })
+      .catch(() => console.warn('CaptureEditorSave persistence=unavailable'));
   } catch {
     console.warn('CaptureEditorSave persistence=unavailable');
   }
@@ -155,8 +186,12 @@ export function connectDockCaptureEditor(
     deleteCapture: async (openId) => {
       if (disposed) return false;
       try {
-        return await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, { openId }) === true;
-      } catch { return false; }
+        return (
+          (await electronAPI().invoke(DOCK_CAPTURE_EDITOR_CHANNELS.DELETE, { openId })) === true
+        );
+      } catch {
+        return false;
+      }
     },
     attach: async (openId) => {
       if (await requestClose({ openId, intent: 'attach' })) return true;
@@ -183,8 +218,12 @@ export function connectDockCaptureEditor(
         })) ?? null) as DockCaptureEditorSaveResult | null;
       } catch (cause) {
         const name = cause instanceof Error ? cause.name : '';
-        const reason = stage === 'serialize' ? 'invalid-edit'
-          : ['Error', 'TypeError', 'DataCloneError'].includes(name) ? name : 'other';
+        const reason =
+          stage === 'serialize'
+            ? 'invalid-edit'
+            : ['Error', 'TypeError', 'DataCloneError'].includes(name)
+              ? name
+              : 'other';
         // Never include the request, pixels, user text, error message or stack.
         reportCaptureEditorSaveFailure(stage, reason);
         return null;

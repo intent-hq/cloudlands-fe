@@ -1,5 +1,12 @@
-import { dockMediaSendsOriginal, prepareDockMediaSend } from '$features/hud/composer/dock-media-send';
-import { DockSendError, dockSendCode, dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
+import {
+  dockMediaSendsOriginal,
+  prepareDockMediaSend,
+} from '$features/hud/composer/dock-media-send';
+import {
+  DockSendError,
+  dockSendCode,
+  dockSendFailure,
+} from '$features/hud/composer/dock-send-diagnostics';
 import { DOCK_PROMPT_IMAGE_BUDGET } from '$shared/dock-media-frame-budget';
 import { createLogger } from '$lib/utils/client-logger';
 import { dockMediaEditSaga } from './dock-media-edit-saga';
@@ -293,7 +300,11 @@ function* conversationLifetime(): SagaGenerator<void> {
               fromDockDraftEvidence(
                 dockEvidenceId(workspaceId, chosen.id),
                 readDraftAttachmentScreens(attachments).filter(([id]) => present.has(id)),
-                restoredItems.map(item => ({ contextItemId: item.id, attachmentId: item.attachmentId, path: item.path })),
+                restoredItems.map((item) => ({
+                  contextItemId: item.id,
+                  attachmentId: item.attachmentId,
+                  path: item.path,
+                })),
               ),
             ),
           );
@@ -416,17 +427,22 @@ function* sendReply(
     : null;
   const evidenceItems = dockEvidenceImageItemIds(evidence ?? undefined);
   // An edited clip is replaced by its export; one sent as its original keeps its attachment.
-  const exported = (clip: DockComposerEvidence['clips'][number]) => !!clip.media && !dockMediaSendsOriginal(clip.media);
-  const editedClipItems = new Set(evidence?.clips.filter(exported).map((clip) => clip.contextItemId));
-  const sendItems = clickedItems.filter((item) => !evidenceItems.has(item.id) && !editedClipItems.has(item.id));
+  const exported = (clip: DockComposerEvidence['clips'][number]) =>
+    !!clip.media && !dockMediaSendsOriginal(clip.media);
+  const editedClipItems = new Set(
+    evidence?.clips.filter(exported).map((clip) => clip.contextItemId),
+  );
+  const sendItems = clickedItems.filter(
+    (item) => !evidenceItems.has(item.id) && !editedClipItems.has(item.id),
+  );
   const blocks = extractAttachmentBlocks(sendItems);
   if (
     !retry &&
     (!clickedDraft ||
       hasBlockingAttachments(clickedItems) ||
       !!liveEvidence?.capture.pending ||
-      !!liveEvidence?.images.some(image => image.mediaError) ||
-      !!liveEvidence?.clips.some(clip => clip.mediaError) ||
+      !!liveEvidence?.images.some((image) => image.mediaError) ||
+      !!liveEvidence?.clips.some((clip) => clip.mediaError) ||
       // Narration or chips not yet committed by the editor would be lost or resent.
       (liveEvidence?.insertions.length ?? 0) > 0 ||
       liveEvidence?.dictation?.status === 'transcribing' ||
@@ -523,27 +539,50 @@ function* sendReply(
         throw new DockSendError('validate', 'legacy-original-unavailable');
     }
     // Composites come only from the click's snapshot (items + evidence).
-    const materialized = evidence ? yield* call(prepareDockMediaSend, workspaceId, evidence, binding,
-      dockMediaNativeService(), () => current(generation, authority)) : { images: {}, files: [], frames: [], framePromptBytes: [], metadata: [] };
+    const materialized = evidence
+      ? yield* call(
+          prepareDockMediaSend,
+          workspaceId,
+          evidence,
+          binding,
+          dockMediaNativeService(),
+          () => current(generation, authority),
+        )
+      : { images: {}, files: [], frames: [], framePromptBytes: [], metadata: [] };
     // A recording's markup screenshot only anchors marks the recording itself carries once it
     // is exported with them or sent as its marked original: then it is not sent again. An
     // edit of its own, or any mark of its own (or of a recording that does not carry it),
     // keeps it in the output.
-    const carrying = new Set(evidence?.clips
-      .filter((clip) => exported(clip) || (!!clip.media && dockMediaSendsOriginal(clip.media)))
-      .map((clip) => clip.id));
-    const carriers = new Set(evidence?.clips
-      .filter((clip) => carrying.has(clip.id))
-      .flatMap((clip) => (clip.captureHistory ?? []).map((entry) => entry.image.id)));
-    const outputImages = (evidence?.images ?? []).filter((image) =>
-      image.source !== 'annotate' ||
-      !!image.media ||
-      !carriers.has(image.id) ||
-      evidence!.marks.some((mark) => mark.imageId === image.id && !(mark.clipId && carrying.has(mark.clipId))));
+    const carrying = new Set(
+      evidence?.clips
+        .filter((clip) => exported(clip) || (!!clip.media && dockMediaSendsOriginal(clip.media)))
+        .map((clip) => clip.id),
+    );
+    const carriers = new Set(
+      evidence?.clips
+        .filter((clip) => carrying.has(clip.id))
+        .flatMap((clip) => (clip.captureHistory ?? []).map((entry) => entry.image.id)),
+    );
+    const outputImages = (evidence?.images ?? []).filter(
+      (image) =>
+        image.source !== 'annotate' ||
+        !!image.media ||
+        !carriers.has(image.id) ||
+        evidence!.marks.some(
+          (mark) => mark.imageId === image.id && !(mark.clipId && carrying.has(mark.clipId)),
+        ),
+    );
     let burned: Awaited<ReturnType<typeof burnEvidence>> = [];
     try {
       // Numbering stays the composer's: every mark counts, whichever images are sent.
-      burned = evidence ? yield* call(burnEvidence, { ...evidence, images: outputImages }, clickedItems, materialized.images) : [];
+      burned = evidence
+        ? yield* call(
+            burnEvidence,
+            { ...evidence, images: outputImages },
+            clickedItems,
+            materialized.images,
+          )
+        : [];
     } catch (error) {
       throw new DockSendError('burn', dockSendCode(error));
     }
@@ -552,21 +591,53 @@ function* sendReply(
     // refuse a send here: the recording frames main fitted and certified, which the daemon
     // sends unchanged. Every other image is prepared by the daemon, so its size is unknown
     // here (null) and never blocks a valid message (the daemon adapts or reports it).
-    const promptImageBytes = materialized.framePromptBytes.reduce<number>((sum, bytes) => sum + (bytes ?? 0), 0);
-    if (promptImageBytes > DOCK_PROMPT_IMAGE_BUDGET) throw new DockSendError('validate', 'image-budget-exceeded');
-    const editedImageIds = new Set(evidence?.images.filter((image) => image.media).map((image) => image.id));
-    const wireEvidence = evidence ? { ...evidence,
-      images: outputImages.map((image) => materialized.images[image.id]
-        ? { ...image, width: materialized.images[image.id].width, height: materialized.images[image.id].height } : image),
-      clips: evidence.clips.filter((clip) => !exported(clip)),
-      marks: evidence.marks.filter((mark) => !editedImageIds.has(mark.imageId) && !evidence.clips.some((clip) => exported(clip) && clip.id === mark.clipId)),
-    } : null;
+    const promptImageBytes = materialized.framePromptBytes.reduce<number>(
+      (sum, bytes) => sum + (bytes ?? 0),
+      0,
+    );
+    if (promptImageBytes > DOCK_PROMPT_IMAGE_BUDGET)
+      throw new DockSendError('validate', 'image-budget-exceeded');
+    const editedImageIds = new Set(
+      evidence?.images.filter((image) => image.media).map((image) => image.id),
+    );
+    const wireEvidence = evidence
+      ? {
+          ...evidence,
+          images: outputImages.map((image) =>
+            materialized.images[image.id]
+              ? {
+                  ...image,
+                  width: materialized.images[image.id].width,
+                  height: materialized.images[image.id].height,
+                }
+              : image,
+          ),
+          clips: evidence.clips.filter((clip) => !exported(clip)),
+          marks: evidence.marks.filter(
+            (mark) =>
+              !editedImageIds.has(mark.imageId) &&
+              !evidence.clips.some((clip) => exported(clip) && clip.id === mark.clipId),
+          ),
+        }
+      : null;
     if (!current(generation, authority)) return;
-    const hasTranscript = materialized.metadata.some((entry) => typeof entry.transcript === 'string' && entry.transcript.trim());
-    if (!clickedDraft.text.trim() && !sendItems.length && !clickedPayload.workspaceContextStr.trim() &&
-        !burned.length && !materialized.files.length && !materialized.frames.length &&
-        !clickedPayload.imageBlocks?.length && !clickedPayload.fileBlocks?.length && !hasTranscript) {
-      yield* put(dockConversationSendState(generation, false, m.dock_conversation_nothingToSend_error()));
+    const hasTranscript = materialized.metadata.some(
+      (entry) => typeof entry.transcript === 'string' && entry.transcript.trim(),
+    );
+    if (
+      !clickedDraft.text.trim() &&
+      !sendItems.length &&
+      !clickedPayload.workspaceContextStr.trim() &&
+      !burned.length &&
+      !materialized.files.length &&
+      !materialized.frames.length &&
+      !clickedPayload.imageBlocks?.length &&
+      !clickedPayload.fileBlocks?.length &&
+      !hasTranscript
+    ) {
+      yield* put(
+        dockConversationSendState(generation, false, m.dock_conversation_nothingToSend_error()),
+      );
       return;
     }
     let evidenceBlocks: {
@@ -624,7 +695,9 @@ function* sendReply(
     }
     // Marks that go with an exported recording leave the wire evidence; the rest keep the
     // numbers the composer showed and the composites burned.
-    const markNumbers = new Map(evidence ? numberDockMarks(evidence).map(({ n, mark }) => [mark.id, n]) : []);
+    const markNumbers = new Map(
+      evidence ? numberDockMarks(evidence).map(({ n, mark }) => [mark.id, n]) : [],
+    );
     const wireContext =
       evidenceContext && imageAttachments
         ? { ...evidenceContext, imageAttachments, markNumbers }
@@ -633,20 +706,26 @@ function* sendReply(
       evidence && wireContext
         ? {
             ...clickedPayload,
-            imageBlocks: [...evidenceBlocks, ...materialized.frames, ...(clickedPayload.imageBlocks ?? [])],
+            imageBlocks: [
+              ...evidenceBlocks,
+              ...materialized.frames,
+              ...(clickedPayload.imageBlocks ?? []),
+            ],
             fileBlocks: [...(clickedPayload.fileBlocks ?? []), ...materialized.files],
             // Models may never see messageMetadata: an agent-readable copy leads the context.
             workspaceContextStr: [
               buildDockEvidenceContext(wireEvidence!, wireContext),
-              materialized.metadata.length ? `[Edited capture outputs]\n${JSON.stringify(materialized.metadata)}` : '',
+              materialized.metadata.length
+                ? `[Edited capture outputs]\n${JSON.stringify(materialized.metadata)}`
+                : '',
               clickedPayload.workspaceContextStr,
             ]
               .filter(Boolean)
               .join('\n\n'),
-            messageMetadata: { ...buildDockEvidenceMetadata(wireEvidence!, wireContext), edited_captures: materialized.metadata } as unknown as Record<
-              string,
-              unknown
-            >,
+            messageMetadata: {
+              ...buildDockEvidenceMetadata(wireEvidence!, wireContext),
+              edited_captures: materialized.metadata,
+            } as unknown as Record<string, unknown>,
           }
         : clickedPayload;
     const appMessageId = createAppMessageId();
@@ -689,10 +768,13 @@ function* sendReply(
     sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'admission'));
     if (current(generation, authority))
       yield* put(
-        dockConversationSendState(generation, false,
+        dockConversationSendState(
+          generation,
+          false,
           error instanceof DockSendError && error.code === 'image-budget-exceeded'
             ? m.dock_conversation_imageBudget_error()
-            : m.dock_conversation_sendFailed_error()),
+            : m.dock_conversation_sendFailed_error(),
+        ),
       );
     return;
   } finally {
