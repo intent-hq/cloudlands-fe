@@ -4,7 +4,8 @@
      mirrored onto data attributes so tests can assert what the card is
      handed to render. -->
 <script lang="ts">
-  let { setupScriptContent, setupScriptStatus, plainFolder, hasPrompt }: Record<string, unknown> = $props();
+  let { setupScriptContent, setupScriptStatus, plainFolder, hasPrompt }: Record<string, unknown> =
+    $props();
 </script>
 
 <div
