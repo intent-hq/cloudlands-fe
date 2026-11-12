@@ -3,8 +3,13 @@
 </script>
 
 <script lang="ts">
+  import { dockEvidenceId, emptyDockEvidence, type DockMark } from '$shared/dock-evidence';
+  import { setComposerContextItems } from '$store/renderer/slices/transient-ui/transient-ui-slice';
+  import { selectDockComposerEvidence } from '$store/renderer/slices/dock-conversation/dock-conversation-selectors';
   import { choosePendingDockShortcut } from '$features/hud/dock-navigation';
   import {
+    dockEvidenceRestored,
+    dockConversationDraftRestored,
     dockContextLinkRequested,
     dockContextUnlinkRequested,
     dockContextFollowed,
@@ -136,6 +141,85 @@
       native,
       setCaption(text: string) {
         caption = text;
+      },
+      seedLegacyPickDraft() {
+        const { workspaceId, agentId, loading } = store.state.dockConversation;
+        if (!workspaceId || !agentId || loading) throw new Error('Legacy draft owner not ready');
+        const current = selectDockComposerEvidence.select(
+          store.state,
+          workspaceId,
+          agentId,
+        ).evidence;
+        if (current && (current.images.length || current.marks.length || current.clips.length))
+          throw new Error('Legacy seed requires an empty draft');
+        const canvas = document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 200;
+        const context = canvas.getContext('2d')!;
+        context.fillStyle = '#e9ebef';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        const imageId = 'legacy-image';
+        const contextItemId = 'legacy-pixels';
+        const marks: DockMark[] = ['Cancel', 'Save'].map((name, index) => {
+          const bounds = { x: 30 + index * 140, y: 70, w: 100, h: 40 };
+          return {
+            id: `legacy-pick-${index + 1}`,
+            imageId,
+            tool: 'pick',
+            geometry: { kind: 'rect', ...bounds },
+            bounds,
+            element: {
+              role: 'button',
+              name,
+              path: `main > button.${name.toLowerCase()}`,
+              source: 'https://example.test/settings',
+            },
+            createdAt: index + 1,
+          };
+        });
+        store.dispatch(
+          setComposerContextItems(workspaceId, agentId, [
+            {
+              id: contextItemId,
+              type: 'file',
+              label: 'legacy.png',
+              imageData: canvas.toDataURL('image/png').split(',')[1],
+              imageMimeType: 'image/png',
+            },
+          ]),
+        );
+        store.dispatch(
+          dockEvidenceRestored(workspaceId, agentId, {
+            ...emptyDockEvidence(dockEvidenceId(workspaceId, agentId)),
+            images: [
+              {
+                id: imageId,
+                contextItemId,
+                width: 320,
+                height: 200,
+                displayScale: 1,
+                capturedAt: '2026-10-29T23:30:00.000Z',
+                source: 'capture',
+              },
+            ],
+            marks,
+          }),
+        );
+        store.dispatch(
+          dockConversationDraftRestored(
+            workspaceId,
+            agentId,
+            'Review [[mark:1]] and [[mark:2]]',
+            true,
+          ),
+        );
+        return {
+          workspaceId,
+          agentId,
+          marks:
+            selectDockComposerEvidence.select(store.state, workspaceId, agentId).evidence?.marks ??
+            [],
+        };
       },
       context(value: DockForegroundObservation) {
         fixture.emit(IPC_CHANNELS.DOCK_CONTEXT.CHANGED, value);
