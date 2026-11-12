@@ -8,7 +8,7 @@ import {
   type SharedDraftSnapshot,
 } from '$shared/types/chat-draft-sync';
 import { backendRequest, onBackendNotification } from '$lib/client/live/backend-transport';
-import { electronAPI } from '$lib/client/live/electron-ipc-transport';
+import { isElectronPlatform } from '$lib/utils/platform-capabilities';
 import {
   getPrincipalActionContext,
   getPrincipalDraftProvenance,
@@ -220,7 +220,7 @@ export async function flushDraftBeforeHandoff(workspaceId: string, agentId: stri
   if (liveConnection) await liveConnection.flush(workspaceId, agentId);
 }
 export function createLiveDraftSyncConnection(): DraftSyncConnection | null {
-  if (!electronAPI()) return null;
+  if (!isElectronPlatform()) return null;
   const connection = createDraftSyncConnection(
     {
       request: (request) => backendRequest(DRAFT_SYNC_METHOD, request),
