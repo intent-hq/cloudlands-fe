@@ -1,3 +1,4 @@
+import { registerChatWindow } from './chat-window-identity';
 import { isDevConsoleRoute } from '../shared/dev-console-route';
 import { isDesktopOverlayRoute } from '../shared/desktop-overlay';
 import path from 'path';
@@ -696,6 +697,7 @@ export async function createWindowForSession(
   if (session.route.startsWith(HUD_ROUTE_PREFIX)) {
     registerHudWindow(window);
   } else {
+    registerChatWindow(window);
     restoreMachineRailSession(window, session.rail);
   }
   forwardRendererConsoleToMainLog(window);
@@ -1006,6 +1008,7 @@ export async function createWindow(backendId: string = LOCAL_CONNECTION_ID): Pro
   stampWindowWithBackend(window, backendId);
   forwardRendererConsoleToMainLog(window);
 
+  registerChatWindow(window);
   setMainWindow(window);
 
   // Save window bounds when resized or moved (debounced)
@@ -1155,6 +1158,7 @@ export async function createWindowForDeepLink(
 
   const iconPath = resolveIcon(false);
   const newWindow = await createConfiguredWindow({ bounds, title: resolveAppTitle(), iconPath });
+  registerChatWindow(newWindow);
   stampWindowWithBackend(newWindow);
   forwardRendererConsoleToMainLog(newWindow);
   queueDeepLinkForWindow(newWindow, action);

@@ -1,3 +1,4 @@
+import { registerChatWindow } from '../../../main/chat-window-identity';
 /**
  * System IPC Handlers
  *
@@ -1283,6 +1284,7 @@ export function setupSystemIPC() {
       ...getWindowAppearanceOptions(isDarkMode),
       ...(iconPath && { icon: iconPath }),
     });
+    if (!isHudRoute) registerChatWindow(newWindow);
     registerWindowTitleListener(newWindow);
     // The HUD inherits the opener's backend (its data reflects that backend);
     // only the local-only chief route stays pinned to the local backend.

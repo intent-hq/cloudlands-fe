@@ -13,6 +13,10 @@
     inlineVisualDraftOwnerReleased,
   } from '$store/renderer/slices/inline-visuals/inline-visuals-slice';
   import { submitChatMessage } from '$features/agent/chat-submission';
+  import {
+    submitPreparedChatMessage,
+    type PreparedChatDraftCapture,
+  } from '$features/agent/prepare-chat-submission';
   import { requestChatMessageRetry } from '$features/agent/chat-submission-retry';
   import {
     selectQueueMutationBlocked,
@@ -6362,6 +6366,17 @@
   // metadata, no bytes). Inline image blocks are placed and swapped to
   // references by the send saga before the wire call.
 
+  let pendingEvidenceSend = $state.raw<{
+    capture: PreparedChatDraftCapture;
+    controller: AbortController;
+  } | null>(null);
+  $effect(() => {
+    const pending = pendingEvidenceSend;
+    if (pending && (!isActive || !draftManager.isCurrentDraft(pending.capture)))
+      pending.controller.abort();
+  });
+  onDestroy(() => pendingEvidenceSend?.controller.abort());
+
   // Handle sending messages
   function handleSend(text: string, source: ChatSendSource) {
     // Gather DOM state only. Validation, queue decisions, serialization,
@@ -6391,6 +6406,44 @@
     }));
     const userAppMessageId = createAppMessageId();
     const animateSend = !$agentIsResponding$ && !plan.hasAttachments;
+
+    const capture = source === 'composer' ? draftManager.captureDraft() : null;
+    if (capture?.attachments.some((attachment) => attachment.screen !== undefined)) {
+      if (pendingEvidenceSend) return;
+      const pending = { capture, controller: new AbortController() };
+      pendingEvidenceSend = pending;
+      // The application service owns persistence, preparation and admission. UI cleanup is
+      // conditional on the unchanged capture, so typing during preparation is retained.
+      void submitPreparedChatMessage({
+        capture,
+        drafts: draftManager,
+        items: 'contextItems' in plan.fields ? plan.fields.contextItems : [],
+        payload: {
+          wsId: workspace.id,
+          text,
+          userAppMessageId,
+          ...plan.fields,
+          agentName,
+          agentModel,
+          isInitialWorkspaceAgent,
+        },
+        signal: pending.controller.signal,
+      })
+        .then((admitted) => {
+          if (admitted && draftManager.isCurrentDraft(capture)) {
+            prepareMessageSendTransition(text, {
+              enabled: false,
+              followBottom: true,
+              userAppMessageId,
+            });
+            void performLocalSendCleanup(plan.cleanup);
+          }
+        })
+        .finally(() => {
+          if (pendingEvidenceSend === pending) pendingEvidenceSend = null;
+        });
+      return;
+    }
 
     // Dispatch all orchestration to the send-message saga
     if (

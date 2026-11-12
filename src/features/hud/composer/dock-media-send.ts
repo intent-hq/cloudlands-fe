@@ -62,11 +62,16 @@ export function dockMediaSendsOriginal(media: DockSavedMedia | undefined): boole
   );
 }
 
+export type DockMediaSendService = Pick<
+  DockEvidenceNativeService,
+  'exportMedia' | 'transcribeMedia' | 'releaseMediaJob'
+>;
+
 export async function prepareDockMediaSend(
   workspaceId: string,
   evidence: DockComposerEvidence,
   binding: DockPlacementBinding,
-  service: DockEvidenceNativeService | null,
+  service: DockMediaSendService | null,
   current: () => boolean,
 ): Promise<DockMediaSendResult> {
   const output: DockMediaSendResult = {

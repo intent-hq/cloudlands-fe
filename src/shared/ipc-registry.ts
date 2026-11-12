@@ -447,6 +447,12 @@ export const IPC_CHANNELS = {
     CHANGED: 'dock-shortcuts:changed',
   },
 
+  CHAT_MEDIA: {
+    BEGIN: 'chat-media:begin',
+    CONTROL: 'chat-media:control',
+    CLOSE: 'chat-media:close',
+  },
+
   DOCK_EVIDENCE: {
     BEGIN: 'dock-evidence:begin',
     CAPTURE: 'dock-evidence:capture',

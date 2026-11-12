@@ -32,7 +32,13 @@ import {
   dockBase64Bytes,
 } from '../../../shared/dock-media-frame-budget';
 import type { DockNativeResult } from '../../../shared/dock-evidence';
-import type { DockEvidenceContext } from './dock-evidence-session';
+/** Offline authority deliberately has no capture window/display capability. */
+export interface DockMediaJobContext {
+  scope: { sessionId: string; workspaceId: string; agentId: string; draftId: string };
+  backendId: string;
+  isCurrent(): boolean;
+  onDispose(listener: () => void): () => void;
+}
 import { requestRouted } from '../../backend/main/transfer-connections';
 
 const logger = new Logger('DockMediaOutput');
@@ -76,7 +82,7 @@ interface Job {
   stopWatching: () => void;
   expiry: ReturnType<typeof setTimeout>;
 }
-function check(context: DockEvidenceContext, job?: Job) {
+function check(context: DockMediaJobContext, job?: Job) {
   if (!context.isCurrent() || job?.stopped) throw new Error('media-session-retired');
 }
 async function helper(name: string): Promise<string> {
@@ -159,7 +165,7 @@ export async function dockMediaOutputReady(
   }
 }
 async function createJob(
-  context: DockEvidenceContext,
+  context: DockMediaJobContext,
   id: string,
   fingerprint: string,
 ): Promise<Job> {
@@ -219,7 +225,7 @@ export async function releaseDockMediaJob(sessionId: string, id: string): Promis
   if (jobs.get(key) === job) jobs.delete(key);
 }
 async function copySource(
-  context: DockEvidenceContext,
+  context: DockMediaJobContext,
   job: Job,
   media: DockSavedMedia,
 ): Promise<string> {
@@ -281,7 +287,7 @@ async function copySource(
   return file;
 }
 async function run(
-  context: DockEvidenceContext,
+  context: DockMediaJobContext,
   job: Job,
   binary: string,
   input: object,
@@ -367,7 +373,7 @@ async function run(
   }
 }
 export async function exportDockMedia(
-  context: DockEvidenceContext,
+  context: DockMediaJobContext,
   request: DockMediaExportRequest,
   progress: (fraction: number) => void,
 ): Promise<DockNativeResult<DockMediaNativeOutput>> {
@@ -480,7 +486,7 @@ export async function exportDockMedia(
   }
 }
 export async function transcribeDockMedia(
-  context: DockEvidenceContext,
+  context: DockMediaJobContext,
   request: DockMediaTranscribeRequest,
   progress: (fraction: number) => void,
 ): Promise<DockNativeResult<import('../../../shared/dock-media-edit').DockMediaTranscript>> {
@@ -544,7 +550,7 @@ export async function transcribeDockMedia(
 }
 
 export async function analyzeDockMedia(
-  context: DockEvidenceContext,
+  context: DockMediaJobContext,
   request: DockMediaAnalyzeRequest,
 ): Promise<DockNativeResult<DockMediaWaveform>> {
   let job: Job | undefined;
@@ -630,7 +636,7 @@ async function requireAudioProbeCapability(binary: string): Promise<void> {
   });
 }
 export async function probeDockMediaAudio(
-  context: DockEvidenceContext,
+  context: DockMediaJobContext,
   request: DockMediaAudioProbeRequest,
 ): Promise<DockNativeResult<DockMediaAudioProbe>> {
   let job: Job | undefined;
