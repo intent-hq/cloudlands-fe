@@ -80,9 +80,13 @@ export default {
     const suppressed = suppressedLines(context.sourceCode, RULE_NAME);
     let seen = 0;
     const offend = (node) => {
-      if (suppressed(node.loc.start.line)) return;
-      seen += 1;
-      if (seen > allowed) context.report({ node, messageId: 'fixedSleep' });
+      // A reasoned disable still gets its report, so ESLint counts the directive as used,
+      // but it does not use up the baseline allowance.
+      if (!suppressed(node.loc.start.line)) {
+        seen += 1;
+        if (seen <= allowed) return;
+      }
+      context.report({ node, messageId: 'fixedSleep' });
     };
 
     return {

@@ -2,7 +2,8 @@
  * Reads `eslint-disable*` comments the way ESLint does, for rules that need to know
  * where they are turned off: a baselined rule counts only unsuppressed findings (so its
  * per-file count matches what ESLint reports), and a rule can require that a directive
- * naming it gives a reason.
+ * naming it gives a reason. A baselined rule must still report a suppressed finding, so
+ * that ESLint counts the directive as used under reportUnusedDisableDirectives.
  */
 
 const DIRECTIVE =
