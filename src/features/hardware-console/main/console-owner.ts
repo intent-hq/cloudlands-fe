@@ -172,7 +172,7 @@ export function setupConsoleOwnerTracking(): ConsoleOwnerTracker<BrowserWindow> 
     (win) => isHudWindow(win) || isTrackedHudWindow(win),
     { shown: getShownRendererWebContents, all: getRendererWebContents },
   );
-  app.on(MACHINE_RAIL_SHOWN_CHANGED_EVENT, (window: BrowserWindow) =>
+  (app as NodeJS.EventEmitter).on(MACHINE_RAIL_SHOWN_CHANGED_EVENT, (window: BrowserWindow) =>
     tracker.refreshWindow(window),
   );
   app.on('browser-window-created', (_event, window) => {
