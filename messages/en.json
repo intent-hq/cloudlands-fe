@@ -8831,6 +8831,7 @@
   "dock_captureEditor_transcript_failed": "The transcript couldn’t be made from this recording.",
   "dock_captureEditor_batch_label": "Batch {n} · {time}",
   "dock_captureEditor_markCount_one": "1 mark",
+  "dock_captureEditor_markCount_many": "{count} marks",
   "dock_captureEditor_markCount_other": "{count} marks",
   "dock_captureEditor_pin_ariaLabel": "{mark} at {time}",
   "dock_captureEditor_unavailable_label": "This recording can’t be played.",

@@ -96,6 +96,8 @@
   "dock_captureEditor_videoHighlights_label": ["de"],
   "dock_captureEditor_video_label": ["de"],
   "dock_captureEditor_voiceAudio_label": ["de", "es", "fr"],
+  "dock_screenshotEditor_text": ["de"],
+  "dock_screenshotEditor_title": ["de"],
   "ecosystem_canvas_esc_label": ["zh-CN", "zh-TW", "ja", "ko", "de", "es"],
   "ecosystem_canvas_fileSize_label": ["zh-CN", "zh-TW", "ja", "de", "es"],
   "ecosystem_canvas_inPrCount_label": ["de"],
