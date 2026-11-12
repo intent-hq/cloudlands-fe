@@ -700,6 +700,25 @@ describe('JsonRpcClient reconnect + heartbeat', () => {
     client.dispose();
   });
 
+  it('dials a dropped connection at once on retryNow instead of waiting out the backoff', async () => {
+    vi.useFakeTimers();
+    const { client, sockets } = makeReconnectingClient();
+    client.start();
+    sockets[0].emit('close');
+    expect(sockets).toHaveLength(1);
+
+    expect(client.retryNow()).toBe(true);
+    expect(sockets).toHaveLength(2);
+    // The pending backoff dial is gone: no extra socket when it would have fired.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sockets).toHaveLength(2);
+
+    // While that dial is in flight, another retry changes nothing.
+    expect(client.retryNow()).toBe(false);
+    expect(sockets).toHaveLength(2);
+    client.dispose();
+  });
+
   it('resets the backoff after a successful reconnect', async () => {
     vi.useFakeTimers();
     const { client, sockets } = makeReconnectingClient();

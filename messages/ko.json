@@ -2558,6 +2558,7 @@
   "hardwareConsole_actionKey_noOtherIdleAgents_message": "다른 유휴 에이전트가 없습니다",
   "hardwareConsole_actionKey_noOtherInProgressAgents_message": "진행 중인 다른 에이전트가 없습니다",
   "hardwareConsole_actionKey_noOtherOpenWindows_message": "열려 있는 다른 창이 없습니다",
+  "hardwareConsole_actionKey_noOtherMachines_message": "이 창에 다른 머신이 없습니다",
   "hardwareConsole_actionKey_noOtherUnreadAgents_message": "읽지 않은 다른 에이전트가 없습니다",
   "hardwareConsole_actionKey_noUnreadAgents_message": "읽지 않은 에이전트가 없습니다",
   "hardwareConsole_actionKey_none_label": "없음",

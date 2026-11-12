@@ -258,6 +258,7 @@ vi.mock('../guest-sessions-store', () => ({
   createInvitedSyncAdapter: vi.fn(() => ({})),
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: vi.fn(async () => false),
+  setDetectedDeviceKind: async () => false,
   setTcAddress: guestStore.setTcAddress,
   setHosts: guestStore.setHosts,
   listSyncRecords: vi.fn(async () => []),
