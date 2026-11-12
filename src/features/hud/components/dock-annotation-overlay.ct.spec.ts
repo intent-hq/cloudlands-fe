@@ -18,14 +18,15 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
 });
 
-test('draws authoritative numbered marks from Retina image pixels at overlay scale', async ({
+test('draws authoritative marks from Retina image pixels at overlay scale', async ({
   mount,
   page,
 }) => {
   await mount(Harness, { props: { fixture: 'live-marked' } });
   const marks = page.locator('[data-mark]');
   await expect(marks).toHaveCount(4);
-  await expect(marks.locator('text')).toHaveText(['1', '2', '3', '4']);
+  for (let index = 0; index < 4; index++)
+    await expect(marks.nth(index)).toHaveAttribute('data-mark', String(index + 1));
   // Pick image coordinates at 2× map into the overlay coordinate system.
   const pick = page.locator('[data-mark="1"]');
   expect(await numbers(pick, 'rect', ['x', 'y', 'width', 'height'])).toEqual([120, 150, 224, 72]);
@@ -72,7 +73,7 @@ const actions = async (page: Page) =>
   ) as { action: string; tool?: string }[];
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`annotating uses the same dark bar: tools, Clear, Close and Attach, no capture or record (${scheme} system)`, async ({
+  test(`annotating exposes tools, Clear, Record, Close and Attach (${scheme} system)`, async ({
     mount,
     page,
   }, testInfo) => {
@@ -81,13 +82,11 @@ for (const scheme of ['light', 'dark'] as const) {
     const bar = page.getByRole('toolbar', { name: 'Annotation tools' });
     await expect(bar).toBeVisible();
     await expect(bar).toHaveAttribute('data-mode', 'annotate');
-    // The recording bar's family: pointer, the four tools, Clear; no Screenshot/Record.
-    for (const tool of ['pointer', 'pick', 'box', 'pen', 'arrow'])
+    // The shared bar exposes the supported tools and an idle recording action.
+    for (const tool of ['pointer', 'box', 'pen', 'arrow'])
       await expect(bar.locator(`[data-tool="${tool}"]`)).toBeVisible();
-    await expect(
-      bar.getByRole('button', { name: /Capture the screen|Record the screen/ }),
-    ).toHaveCount(0);
-    await expect(bar.locator('[data-testid="recording-chip"]')).toHaveCount(0);
+    await expect(bar.getByRole('button', { name: /Capture the screen/ })).toHaveCount(0);
+    await expect(bar.getByRole('button', { name: 'Record', exact: true })).toBeEnabled();
     await expect(bar.locator('[data-clear]')).toBeVisible();
     await page.screenshot({ path: testInfo.outputPath(`annotation-bar-${scheme}.png`) });
 
@@ -97,9 +96,10 @@ for (const scheme of ['light', 'dark'] as const) {
     expect(await recorded(page, 'pointers')).toEqual([]);
     await bar.locator('[data-tool="arrow"]').click();
 
-    // Attach counts the marks on screen and commits them; Close ends the session.
-    await expect(bar.locator('[data-attach-count]')).toHaveText('4');
-    await bar.locator('[data-done]').click();
+    // Attach commits the marks on screen; Close ends the session.
+    const attach = bar.getByRole('button', { name: 'Attach', exact: true });
+    await expect(attach).toBeEnabled();
+    await attach.click();
     await bar.locator('[data-close]').click();
     expect((await actions(page)).filter((row) => row.action !== 'rect')).toEqual([
       { sessionId: 'fixture-live', action: 'tool', tool: 'pen' },

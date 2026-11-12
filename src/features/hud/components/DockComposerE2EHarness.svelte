@@ -134,6 +134,9 @@
     }) as typeof api.invoke;
     (window as unknown as Record<string, unknown>).__dockComposerE2E = {
       native,
+      setCaption(text: string) {
+        caption = text;
+      },
       context(value: DockForegroundObservation) {
         fixture.emit(IPC_CHANNELS.DOCK_CONTEXT.CHANGED, value);
       },
