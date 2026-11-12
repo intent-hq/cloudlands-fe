@@ -59,7 +59,7 @@
     noteDictationUpdate = null,
   }: {
     snapshot: DockCaptureEditorSnapshot;
-    onClose: () => void;
+    onClose: () => void | boolean | Promise<void | boolean>;
     onAttach?: () => void | boolean | Promise<void | boolean>;
     onDelete?: () => Promise<boolean>;
     discardRequest?: number;
@@ -152,6 +152,11 @@
         }
       : null,
   );
+  /**
+   * A crop being adjusted or text being typed is not in the draft yet: until it is
+   * applied or cancelled, nothing saves or retakes (it would silently leave it out).
+   */
+  let interactionPending = $state(false);
   const dirty = $derived(
     interactionPending ||
       !!edits?.dirty ||
@@ -360,11 +365,6 @@
         )),
   );
   const outputAdmitted = $derived(snapshot.output?.version === DOCK_MEDIA_OUTPUT_VERSION);
-  /**
-   * A crop being adjusted or text being typed is not in the draft yet: until it is
-   * applied or cancelled, nothing saves or retakes (it would silently leave it out).
-   */
-  let interactionPending = $state(false);
   // Save is offered whenever this session can save at all, and stays in place; a
   // pending edit or an edit the output cannot carry only disables it.
   const saveCapable = $derived(!!onSave && !!snapshot.output?.ready && !!edits);

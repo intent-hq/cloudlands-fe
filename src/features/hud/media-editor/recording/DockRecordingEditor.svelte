@@ -68,7 +68,7 @@
     onSave,
   }: {
     snapshot: DockCaptureEditorSnapshot;
-    onClose: () => void;
+    onClose: () => void | boolean | Promise<void | boolean>;
     onAttach?: () => void | boolean | Promise<void | boolean>;
     onDelete?: () => Promise<boolean>;
     /** Main's "edits would be lost" questions (window close, a switch); see the shell. */

@@ -439,7 +439,7 @@
         style:top={`${box.y + typing.y / box.scale}px`}
       >
         <Input
-          size="sm"
+          size="compact"
           class="annotation-text-input"
           aria-label={m.dock_captureEditor_frameText_label()}
           bind:value={typing.value}

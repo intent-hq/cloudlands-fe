@@ -130,6 +130,9 @@
   const redactionKey = $derived(
     JSON.stringify([previewEdit.blurRegions, previewEdit.blurStrokes ?? []]),
   );
+  const frameKey = $derived(
+    JSON.stringify([source.id, source.revision, sourceUrl, previewEdit.crop]),
+  );
   const frameReady = $derived(displayedPreview?.frameKey === frameKey);
   const redactionsReady = $derived(frameReady && displayedPreview?.redactionKey === redactionKey);
   function rasterReady(url: string) {
@@ -158,9 +161,6 @@
   let queuedPreview: PreviewJob | null = null;
   let rendering = false;
   let destroyed = false;
-  const frameKey = $derived(
-    JSON.stringify([source.id, source.revision, sourceUrl, previewEdit.crop]),
-  );
   // One renderer at a time, with only the newest queued gesture frame retained.
   async function drainPreview() {
     if (rendering) return;

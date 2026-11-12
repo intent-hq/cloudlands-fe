@@ -158,7 +158,10 @@
           class="image-preview"
           disabled={readOnly}
           aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name: title })}
-          onclick={(event) => capture.primaryId && onImage(capture.primaryId, event.currentTarget)}
+          onclick={(event) => {
+            if (capture.primaryId && event.currentTarget instanceof HTMLButtonElement)
+              onImage(capture.primaryId, event.currentTarget);
+          }}
         >
           <img
             {src}
@@ -193,7 +196,10 @@
               aria-label={label}
               tooltip={label}
               disabled={readOnly || !src}
-              onclick={(event) => onImage(frame.attachment_id, event.currentTarget)}
+              onclick={(event) => {
+                if (event.currentTarget instanceof HTMLButtonElement)
+                  onImage(frame.attachment_id, event.currentTarget);
+              }}
             >
               {#if src}<img
                   {src}

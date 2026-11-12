@@ -713,12 +713,21 @@
         onload={(event) => {
           // This node belongs to one URL for its entire lifetime. Delayed events
           // from a retired node cannot acknowledge its replacement's resource.
-          if (incomingUrl !== sourceUrl || event.currentTarget.href.baseVal !== incomingUrl) return;
+          if (
+            !(event.currentTarget instanceof SVGImageElement) ||
+            incomingUrl !== sourceUrl ||
+            event.currentTarget.href.baseVal !== incomingUrl
+          )
+            return;
           loadedUrl = incomingUrl;
           onRasterReady?.(incomingUrl);
         }}
         onerror={(event) => {
-          if (incomingUrl === sourceUrl && event.currentTarget.href.baseVal === incomingUrl)
+          if (
+            event.currentTarget instanceof SVGImageElement &&
+            incomingUrl === sourceUrl &&
+            event.currentTarget.href.baseVal === incomingUrl
+          )
             onRasterError?.(incomingUrl);
         }}
       />
