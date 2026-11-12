@@ -228,7 +228,7 @@ export const buildSmokeEntry = {
   outcomePath: 'e2e-reports/build-smoke-outcome.json',
 };
 
-export function buildSmokeReport(failed = true) {
+function buildSmokeReport(failed = true) {
   const test = (status, results) => ({
     projectName: '',
     projectId: '',
