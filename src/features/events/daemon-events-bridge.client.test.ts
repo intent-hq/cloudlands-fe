@@ -5693,7 +5693,7 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
 
     handler(
       notification('agent:permission:request', {
-        requestId: REQUEST_ID,
+        requestId: 'perm-option-kind',
         sessionId: AGENT,
         title: 'Run command',
         options: [
@@ -5711,7 +5711,9 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
       }),
     );
 
-    expect(readPermissionRequests()[0]?.options).toEqual([
+    expect(
+      readPermissionRequests().find((r) => r.requestId === 'perm-option-kind')?.options,
+    ).toEqual([
       { id: 'allow-once', label: 'Yes', destructive: false, kind: 'allow_once' },
       {
         id: 'allow-with-updates',
