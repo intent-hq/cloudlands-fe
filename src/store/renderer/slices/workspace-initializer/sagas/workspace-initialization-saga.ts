@@ -48,6 +48,8 @@ import { hydrateWorkspaceNavigation } from '../../workspace-navigation/workspace
 import { setWorkspaceEntity } from '../../workspace/workspace-slice';
 import { workspaceClient } from '../../workspace/utils/workspace.client';
 import { recordLastUsedSetupScript } from '$features/setup-scripts/last-used';
+import { importSession } from '$features/session-import/importable-sessions.client';
+import { selectProviderDisplayName } from '../../provider-catalog/provider-catalog-selectors';
 import { placementFailure } from '$features/remote-machines/agent-location';
 import {
   selectWorkspaceInitializationOutcome,
@@ -201,6 +203,31 @@ function* registerRecent(
   } catch (error) {
     logger.warn('Failed to register picked repo as recent', { error });
   }
+}
+
+/** Import the picked session as the workspace's first agent (`agent.importSession`). */
+function* importSessionAgent(
+  request: WorkspaceInitializationRequest,
+  workspaceId: string,
+): SagaGenerator<string> {
+  const session = request.importSession;
+  if (!session) throw new Error('missing-import-session');
+  let imported: Awaited<ReturnType<typeof importSession>>;
+  try {
+    imported = yield* call(importSession, { workspaceId, ...session });
+  } catch (error) {
+    throw new Error(m.sessionImport_create_importFailed_error({ detail: errorMessage(error) }));
+  }
+  // Load-only providers resume the original session: it now continues here.
+  if (!imported.forked) {
+    yield* call(
+      notify.info,
+      m.sessionImport_create_notForked_info({
+        provider: selectProviderDisplayName.select(appStore.state, session.provider),
+      }),
+    );
+  }
+  return imported.agent.id;
 }
 
 function* installWorkspace(
@@ -402,6 +429,12 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
       workspaceId = workspace.id;
       workspacePath = workspace.worktreePath || workspace.repositoryPath || workspace.path;
       stage = 'post-create';
+      if (request.importSession && !agentId) {
+        // A failed import is resumable: a retry reads, imports and installs.
+        installPending = true;
+        agentId = yield* call(importSessionAgent, request, workspace.id);
+        if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      }
       yield* call(installWorkspace, action, workspace, dispatch, agentId);
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
       installPending = false;
@@ -414,6 +447,10 @@ function* initialize(action: InitializationRun): SagaGenerator<void> {
       }
       workspacePath =
         kept.workspace.worktreePath || kept.workspace.repositoryPath || kept.workspace.path;
+      if (request.importSession && !agentId) {
+        agentId = yield* call(importSessionAgent, request, workspaceId);
+        if (!current(action, dispatch)) throw new Error('initialization-cancelled');
+      }
       yield* call(installWorkspace, action, kept.workspace, dispatch, agentId);
       if (!current(action, dispatch)) throw new Error('initialization-cancelled');
       installPending = false;
