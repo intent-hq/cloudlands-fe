@@ -686,3 +686,220 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     ),
   );
 });
+
+for (const endedDuringUndo of [false, true]) {
+  test(`discard hides recording controls before native replies; Undo and cleanup stay owned (${endedDuringUndo ? 'natural end' : 'delayed stop'})`, async ({
+    mount,
+    page,
+  }, info) => {
+    await mount(Harness, {
+      props: { shell: dockRailPreview.states.notch.props, nativePlacementFixture: true },
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const h = (window as any).__dockComposerE2E;
+          return !!h?.store.state.dockConversation.nativeCapabilities?.record;
+        }),
+      )
+      .toBe(true);
+    const state = () =>
+      page.evaluate(() => {
+        const h = (window as any).__dockComposerE2E;
+        const d = h.store.state.dockConversation;
+        const evidence = Object.values(d.evidence.map ?? {}).find(
+          (e: any) => e.id === JSON.stringify([d.workspaceId, d.agentId]),
+        ) as any;
+        return {
+          clips: evidence?.clips ?? [],
+          marks: evidence?.marks ?? [],
+          started: h.native.log.clips.started,
+          stopped: h.native.log.clips.stopped,
+          draft: h.draftSnapshot(),
+        };
+      });
+    const toggle = () =>
+      page.evaluate(() => {
+        const h = (window as any).__dockComposerE2E;
+        const d = h.store.state.dockConversation;
+        h.store.dispatch({
+          type: 'dockConversation/evidenceRecordToggleRequested',
+          payload: [d.workspaceId, d.agentId],
+        });
+      });
+    const action = (action: string) =>
+      page.evaluate((action) => {
+        const h = (window as any).__dockComposerE2E;
+        h.native.emitEvidence({
+          type: 'annotation-media',
+          sessionId: h.native.sessionId,
+          action,
+          inputRevision: 1,
+        });
+      }, action);
+    await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      const d = h.store.state.dockConversation;
+      h.store.dispatch({
+        type: 'dockConversation/draftChanged',
+        payload: [d.workspaceId, d.agentId, 'Keep this unsent prompt'],
+      });
+    });
+    await toggle();
+    await expect.poll(async () => (await state()).started.length).toBe(1);
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(1);
+    const clipId = (await state()).started[0];
+    await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      h.native.gesture('box', { kind: 'rect', x: 100, y: 100, w: 200, h: 100 }, null);
+      h.native.holdClipPauses(true);
+    });
+    await expect.poll(async () => (await state()).marks.length).toBe(1);
+    const marks = (await state()).marks;
+    await action('discard');
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+    await expect.poll(async () => (await state()).clips[0]?.discarding).toBe('undo');
+    // Native pause is still held. The hidden clip remains the lease owner.
+    await toggle();
+    expect((await state()).started).toEqual([clipId]);
+    expect((await state()).stopped).toEqual([]);
+    await page.evaluate(() => (window as any).__dockComposerE2E.native.holdClipPauses(false));
+    await expect.poll(async () => !!(await state()).clips[0]?.pausedAt).toBe(true);
+    if (endedDuringUndo) {
+      await page.evaluate((id) => (window as any).__dockComposerE2E.native.endClip(id), clipId);
+      expect((await state()).clips[0].status).toBe('recording');
+      await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+    }
+    await action('discard-undo');
+    await expect.poll(async () => (await state()).clips[0]?.discarding ?? null).toBeNull();
+    expect((await state()).marks).toEqual(marks);
+    if (endedDuringUndo) {
+      await expect.poll(async () => (await state()).clips[0]?.status).toBe('ready');
+      await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+    } else {
+      await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(1);
+      await action('discard');
+      await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+      await page.evaluate(() => (window as any).__dockComposerE2E.native.holdClipStops(true));
+      await action('discard-confirm');
+      await expect.poll(async () => (await state()).stopped.length).toBe(1);
+      expect((await state()).clips[0]).toMatchObject({
+        id: clipId,
+        status: 'recording',
+        discarding: 'stopping',
+      });
+      await toggle();
+      expect((await state()).started).toEqual([clipId]);
+      await page.evaluate(() => (window as any).__dockComposerE2E.native.holdClipStops(false));
+      await expect.poll(async () => (await state()).clips.length).toBe(0);
+      await toggle();
+      await expect.poll(async () => (await state()).started.length).toBe(2);
+      const successor = (await state()).started[1];
+      await page.evaluate((clipId) => {
+        (window as any).__dockComposerE2E.native.emitEvidence({
+          type: 'clip-ended',
+          clipId,
+          result: { ok: false, error: 'failed', detail: 'cancelled' },
+        });
+      }, clipId);
+      expect((await state()).clips.map((clip: any) => clip.id)).toEqual([successor]);
+      await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(1);
+      // Stop the synthetic successor without placing any output.
+      await action('discard');
+      await action('discard-confirm');
+      await expect.poll(async () => (await state()).clips.length).toBe(0);
+    }
+    expect((await state()).draft.draft.text).toContain('Keep this unsent prompt');
+    await writeFile(
+      info.outputPath('cancel-ownership-receipt.json'),
+      JSON.stringify(
+        { endedDuringUndo, final: await state(), native: 'synthetic; no capture or OS inputs' },
+        null,
+        2,
+      ),
+    );
+    await page.screenshot({ path: info.outputPath('cancelled-recording.png') });
+  });
+}
+
+for (const recovery of ['failed pause', 'ended overlay'] as const) {
+  test(`discard recovery keeps cleanup usable after ${recovery}`, async ({ mount, page }, info) => {
+    await mount(Harness, {
+      props: { shell: dockRailPreview.states.notch.props, nativePlacementFixture: true },
+    });
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            !!(window as any).__dockComposerE2E?.store.state.dockConversation.nativeCapabilities
+              ?.record,
+        ),
+      )
+      .toBe(true);
+    const snapshot = () =>
+      page.evaluate(() => {
+        const h = (window as any).__dockComposerE2E;
+        const d = h.store.state.dockConversation;
+        const evidence = Object.values(d.evidence.map ?? {}).find(
+          (e: any) => e.id === JSON.stringify([d.workspaceId, d.agentId]),
+        ) as any;
+        return {
+          clips: evidence?.clips ?? [],
+          stopped: h.native.log.clips.stopped,
+          sessionId: h.native.sessionId,
+        };
+      });
+    await page.evaluate(() => {
+      const h = (window as any).__dockComposerE2E;
+      const d = h.store.state.dockConversation;
+      h.store.dispatch({
+        type: 'dockConversation/evidenceRecordToggleRequested',
+        payload: [d.workspaceId, d.agentId],
+      });
+    });
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(1);
+    const id = (await snapshot()).clips[0].id;
+    await page.evaluate((recovery) => {
+      const h = (window as any).__dockComposerE2E;
+      if (recovery === 'failed pause') h.native.failNextClipPause();
+      h.native.emitEvidence({
+        type: 'annotation-media',
+        sessionId: h.native.sessionId,
+        action: 'discard',
+        inputRevision: 1,
+      });
+    }, recovery);
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+    if (recovery === 'failed pause') {
+      await page.evaluate(() => {
+        const h = (window as any).__dockComposerE2E;
+        h.native.emitEvidence({
+          type: 'annotation-media',
+          sessionId: h.native.sessionId,
+          action: 'discard-undo',
+          inputRevision: 1,
+        });
+      });
+      await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+      await page.evaluate(() => {
+        const h = (window as any).__dockComposerE2E;
+        h.native.emitEvidence({
+          type: 'annotation-media',
+          sessionId: h.native.sessionId,
+          action: 'done',
+        });
+      });
+      await expect.poll(async () => (await snapshot()).clips[0]?.status).toBe('ready');
+    } else {
+      await expect.poll(async () => !!(await snapshot()).clips[0]?.pausedAt).toBe(true);
+      await page.evaluate(() => (window as any).__dockComposerE2E.native.endNatively());
+      await expect.poll(async () => (await snapshot()).clips.length).toBe(0);
+    }
+    expect((await snapshot()).stopped).toEqual([id]);
+    await expect(page.locator('[data-dock-recording-indicator]')).toHaveCount(0);
+    await writeFile(
+      info.outputPath('cancel-recovery-receipt.json'),
+      JSON.stringify({ recovery, final: await snapshot(), native: 'synthetic' }, null, 2),
+    );
+  });
+}

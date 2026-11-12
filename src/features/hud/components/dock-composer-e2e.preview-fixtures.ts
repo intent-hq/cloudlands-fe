@@ -121,6 +121,11 @@ function createSyntheticNative() {
   let holdStarts = false;
   const heldStarts: Array<() => void> = [];
   let clip: { id: string; startedAt: number } | null = null;
+  let holdClipStops = false;
+  let holdClipPauses = false;
+  let failNextClipPause = false;
+  const heldClipStops: Array<() => void> = [];
+  const heldClipPauses: Array<() => void> = [];
   // Held speech stops (the recognizer "finalizing"), released by the test.
   let holdStops = false;
   const heldStops: Array<() => void> = [];
@@ -193,8 +198,18 @@ function createSyntheticNative() {
       clip = { id: clipId, startedAt: catalogNow() };
       return { ok: true, value: undefined };
     },
+    pauseClip: async (clipId, paused) => {
+      if (failNextClipPause) {
+        failNextClipPause = false;
+        throw new Error('Synthetic pause transport failure');
+      }
+      if (holdClipPauses) await new Promise<void>((resolve) => heldClipPauses.push(resolve));
+      if (clip?.id !== clipId) return { ok: false, error: 'unavailable' };
+      return { ok: true, value: { paused } };
+    },
     stopClip: async (clipId) => {
       log.clips.stopped.push(clipId);
+      if (holdClipStops) await new Promise<void>((resolve) => heldClipStops.push(resolve));
       const durationMs = clip?.id === clipId ? catalogNow() - clip.startedAt : 0;
       clip = null;
       const result = {
@@ -376,6 +391,18 @@ function createSyntheticNative() {
   return {
     log,
     factory: () => ({ ...adapter, service: { ...service } }) as unknown as DockNativeAdapter,
+    holdClipStops(value: boolean) {
+      holdClipStops = value;
+      if (!value) for (const resolve of heldClipStops.splice(0)) resolve();
+    },
+    failNextClipPause() {
+      failNextClipPause = true;
+    },
+    holdClipPauses(value: boolean) {
+      holdClipPauses = value;
+      if (!value) for (const resolve of heldClipPauses.splice(0)) resolve();
+    },
+    emitEvidence,
     /** Finished recordings carry a canonical original (opt-in; see `recordingOriginal`). */
     recordingOriginal(value: boolean) {
       recordingOriginal = value;
