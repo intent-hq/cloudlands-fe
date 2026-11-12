@@ -1,3 +1,4 @@
+import { DOCK_CAPTURE_EDITOR_CHANNELS } from '../shared/dock-capture-editor';
 import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -348,6 +349,78 @@ describe('owned dock capture visibility release', () => {
     expect(window.webContents.send).not.toHaveBeenCalled();
     expect(window.show).not.toHaveBeenCalled();
     dock.releaseDockEditorHolds('open-1', false);
+  });
+
+  it('reveals only the admitted editor after fresh compact regions, without focus or losing its owner', async () => {
+    const { registerDockPlacementHandlers } = await import('./dock-placement-ipc');
+    registerDockPlacementHandlers();
+    const sender = window.webContents as unknown as Electron.WebContents;
+    const binding = bindings.getStrictBackendBindingForWebContents(sender)!;
+    const openId = '00000000-0000-4000-8000-000000000011';
+    const nextId = '00000000-0000-4000-8000-000000000012';
+    const invoke = (channel: string, payload: unknown, frame = sender.mainFrame) =>
+      fixture.handlers.get(channel)!({ sender, senderFrame: frame }, payload);
+    const regions = {
+      active: true,
+      revision: fixture.placementRevision,
+      regions: [{ x: 0, y: 0, width: 80, height: 40 }],
+    };
+    expect(dock.adoptDockEditorHold('editor-a', { window, sender, binding }, openId)).toBe(true);
+    expect(window.isVisible()).toBe(false);
+    const first = (await invoke(WINDOW_CHANNELS.SET_DOCK_POINTER_REGION, regions)) as {
+      version: number;
+    };
+    const release = (
+      id = openId,
+      version = first.version,
+      revision = fixture.placementRevision,
+    ) => ({ action: 'release', editorCompact: { openId: id, revision, pointerVersion: version } });
+    await expect(
+      invoke(WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT, release(), {} as Electron.WebFrameMain),
+    ).rejects.toThrow();
+    await invoke(WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT, release(nextId));
+    await invoke(
+      WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT,
+      release(openId, first.version, fixture.placementRevision + 1),
+    );
+    expect(window.isVisible()).toBe(false);
+    const fresh = (await invoke(WINDOW_CHANNELS.SET_DOCK_POINTER_REGION, regions)) as {
+      version: number;
+    };
+    await invoke(WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT, release());
+    expect(window.isVisible()).toBe(false); // stale publication, even with identical geometry
+    await invoke(WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT, release(openId, fresh.version));
+    expect(window.isVisible()).toBe(true);
+    expect(window.showInactive).toHaveBeenCalledTimes(1);
+    expect(window.show).not.toHaveBeenCalled();
+    expect(window.focus).not.toHaveBeenCalled();
+    expect(dock.dockEditorHoldOwner(openId)).toMatchObject({ window, sender, binding });
+    // Retargeting requires the new editor's own compact acknowledgement.
+    expect(dock.adoptDockEditorHold('editor-b', { window, sender, binding }, nextId)).toBe(true);
+    await invoke(WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT, release(openId, fresh.version));
+    expect(window.isVisible()).toBe(false);
+    dock.setDockHiddenForCapture(true, { window });
+    const held = (await invoke(WINDOW_CHANNELS.SET_DOCK_POINTER_REGION, regions)) as {
+      version: number;
+    };
+    await invoke(WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT, release(nextId, held.version));
+    expect(window.isVisible()).toBe(false);
+    dock.setDockHiddenForCapture(false, { window });
+    expect(window.isVisible()).toBe(false);
+    const ready = (await invoke(WINDOW_CHANNELS.SET_DOCK_POINTER_REGION, regions)) as {
+      version: number;
+    };
+    await invoke(WINDOW_CHANNELS.UPDATE_DOCK_PLACEMENT, release(nextId, ready.version));
+    expect(window.isVisible()).toBe(true);
+    dock.releaseDockEditorHolds(nextId, false);
+    expect(window.webContents.send).toHaveBeenCalledWith(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED, {
+      endedOpenId: nextId,
+    });
+    dock.releaseDockEditorHolds(openId, false);
+    expect(window.webContents.send).toHaveBeenCalledWith(DOCK_CAPTURE_EDITOR_CHANNELS.CHANGED, {
+      endedOpenId: openId,
+    });
+    expect(dock.dockEditorHoldOwner(openId)).toBeNull();
   });
 
   it('a screenshot is captured, then hidden for its editor; a hold alone hides nothing', async () => {

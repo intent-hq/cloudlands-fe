@@ -10,6 +10,7 @@ import {
 import { createSafeValidatedHandler, createValidatedHandler } from './ipc-validation-middleware';
 import {
   getDockWindow,
+  getDockPointerPublication,
   getDockPlacementSnapshot,
   markDockRendererReady,
   updateDockPlacement,
@@ -39,8 +40,16 @@ export function registerDockPlacementHandlers(): void {
       WindowSetDockPointerRegionSchema,
       async (event, validated) => {
         const window = BrowserWindow.fromWebContents(event.sender);
-        if (!window || window !== getDockWindow()) return { success: false, supported: false };
-        return { success: true, supported: setDockPointerRegions(window, validated) };
+        if (
+          !window ||
+          window !== getDockWindow() ||
+          event.senderFrame !== event.sender.mainFrame ||
+          (validated.revision !== undefined &&
+            validated.revision !== getDockPlacementSnapshot(window)?.revision)
+        )
+          return { success: false, supported: false };
+        const supported = setDockPointerRegions(window, validated);
+        return { success: true, supported, version: getDockPointerPublication(window) };
       },
       WINDOW_CHANNELS.SET_DOCK_POINTER_REGION,
     ),

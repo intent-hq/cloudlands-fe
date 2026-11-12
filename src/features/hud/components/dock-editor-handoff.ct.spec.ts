@@ -9,6 +9,8 @@ type IpcRow = {
   kind: string | null;
   at: number;
   hide?: boolean | null;
+  openId?: string;
+  currentRegions?: boolean;
 };
 
 /**
@@ -25,13 +27,26 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
 }, info) => {
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1000, height: 740 });
-  await mount(Harness, { props: { shell: dockRailPreview.states.notch.props } });
+  await mount(Harness, {
+    props: { shell: dockRailPreview.states.notch.props, nativePlacementFixture: true },
+    hooksConfig: {
+      mockIpc: {
+        'window:get-dock-placement': null,
+        'window:update-dock-placement': null,
+        'window:set-dock-pointer-region': { success: true, supported: true, version: 0 },
+        'window:dock-renderer-ready': { shown: true },
+      },
+    },
+  });
   await expect.poll(() => page.evaluate(() => !!(window as any).__dockComposerE2E)).toBe(true);
   await expect
     .poll(() =>
       page.evaluate(() => (window as any).__dockComposerE2E.store.state.dockConversation.loading),
     )
     .toBe(false);
+  await page.evaluate(() =>
+    (window as any).__dockComposerE2E.store.dispatch({ type: 'hud/dockActivated' }),
+  );
   // 0. A conversation opened while main refuses the native session (as for a hidden dock):
   // no timer retries it; each time main shows the dock it probes again, until admitted.
   await page.evaluate(() => {
@@ -109,9 +124,30 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
           sourceId: payload?.source?.id ?? null,
           sourceRevision: payload?.source?.revision ?? null,
         });
+        if ((window as any).__closeDuringOpen) {
+          (window as any).__closeDuringOpen = false;
+          (window as any).__dockComposerE2E.fixture.emit('dock-capture-editor:changed', {
+            endedOpenId: openId,
+          });
+        }
         return (window as any).__openOk
           ? { ok: true, openId }
           : { ok: false, error: 'unavailable' };
+      }
+      if (ch === 'window:set-dock-pointer-region') {
+        (window as any).__pointerVersion = ((window as any).__pointerVersion ?? 0) + 1;
+        return { success: true, supported: true, version: (window as any).__pointerVersion };
+      }
+      if (ch === 'window:update-dock-placement' && payload?.editorCompact) {
+        const surface = document.querySelector('[data-dock-surface]');
+        (window as any).__ipc.push({
+          ch,
+          token: payload.editorCompact.openId,
+          kind: surface?.getAttribute('data-expanded'),
+          at: performance.now(),
+          currentRegions: payload.editorCompact.pointerVersion === (window as any).__pointerVersion,
+          focused: document.hasFocus(),
+        });
       }
       if (ch === 'dock-capture-editor:attach-return') {
         (window as any).__ipc.push({
@@ -181,8 +217,55 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   expect(shotShow.token).toBe(shotHold.token);
   expect(shotShow.at).toBeLessThan(shotOpen.at);
   expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
+  // Keep a bounded failure receipt with state, never prompt text or attachment bytes.
+  const compactState = () =>
+    page.evaluate(() => {
+      const hud = (window as any).__dockComposerE2E.store.state.hud;
+      const surface = document.querySelector('[data-dock-surface]');
+      return {
+        request: hud.dockEditorCompactRequest,
+        active: hud.active,
+        surfaceExpanded: surface?.getAttribute('data-expanded'),
+        pointerVersion: (window as any).__pointerVersion,
+        dock: {
+          workspaceId: (window as any).__dockComposerE2E.store.state.dockConversation.workspaceId,
+          agentId: (window as any).__dockComposerE2E.store.state.dockConversation.agentId,
+        },
+        pointer: document
+          .querySelector('[data-preview-pointer]')
+          ?.getAttribute('data-preview-pointer'),
+        recording: Object.values(
+          (window as any).__dockComposerE2E.store.state.dockConversation.evidence.map ?? {},
+        ).flatMap((e: any) => e?.clips?.map((c: any) => ({ id: c.id, status: c.status })) ?? []),
+        acknowledgements: (window as any).__ipc.filter(
+          (r: any) => r.ch === 'window:update-dock-placement',
+        ),
+      };
+    });
   // The opened editor collapses the dock behind it (main keeps it out of sight meanwhile).
-  await expect.poll(closeRequests).toBeGreaterThan(closesBefore);
+  await expect
+    .poll(
+      async () =>
+        (await ipc()).filter(
+          (r) => r.ch === 'window:update-dock-placement' && r.token === shotOpen.openId,
+        ).length,
+    )
+    .toBe(1)
+    .catch(async (error) => {
+      await writeFile(
+        info.outputPath('compact-failure.json'),
+        JSON.stringify(await compactState(), null, 2),
+      );
+      throw error;
+    });
+  const compact = (await ipc()).find(
+    (r) => r.ch === 'window:update-dock-placement' && r.token === shotOpen.openId,
+  ) as any;
+  expect(compact.kind).toBe('false');
+  expect(compact.currentRegions).toBe(true);
+  expect(await closeRequests()).toBe(closesBefore); // editor collapse is not the shortcut toggle
+  receipts.compact = compact;
+
   const marks = await page.evaluate(() => (window as any).__marks as Record<string, number>);
   const round = (n: number | undefined) => (n === undefined ? null : Math.round(n));
   receipts.screenshot = { holdBeforeOpen: true, openCarriesHold: true, ended: false };
@@ -215,7 +298,8 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   const ended = rows.find((r) => r.ch === 'dock-capture-editor:hold-end')!;
   expect(ended.token).toBe(refusedHold.token);
   expect(ended.token).not.toBe(shotHold.token);
-  receipts.refused = { endedOwnHoldOnly: true };
+  expect((await ipc()).filter((r) => r.ch === 'window:update-dock-placement')).toHaveLength(1);
+  receipts.refused = { endedOwnHoldOnly: true, noCompactAcknowledgement: true };
   await page.evaluate(() => ((window as any).__openOk = true));
 
   // 3. Recording (canonical source, as native placement provides it): the start takes the
@@ -278,6 +362,53 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
   receipts.recordingStop = { holdAtStart: true, openCarriesHold: true, ended: false };
 
+  const compactFor = async (row: IpcRow) => {
+    await expect
+      .poll(async () =>
+        (await ipc()).find(
+          (r) => r.ch === 'window:update-dock-placement' && r.token === row.openId,
+        ),
+      )
+      .toMatchObject({ kind: 'false', currentRegions: true })
+      .catch(async (error) => {
+        await writeFile(
+          info.outputPath('compact-failure.json'),
+          JSON.stringify({ expectedOpenId: row.openId, ...(await compactState()) }, null, 2),
+        );
+        throw error;
+      });
+    expect(await open()).toBe(pair.workspaceId);
+    expect(
+      await page.evaluate(
+        () => (window as any).__dockComposerE2E.store.state.dockConversation.agentId,
+      ),
+    ).toBe(pair.agentId);
+  };
+  await compactFor(stopOpen);
+  // A pill opened from an expanded, pinned conversation must collapse too. Reopening
+  // while already compact is idempotent: it must never take the shortcut toggle path.
+  await page.evaluate(() =>
+    (window as any).__dockComposerE2E.store.dispatch({ type: 'hud/dockFocusRequested' }),
+  );
+  await expect(page.getByTestId('dock-surface')).toHaveAttribute('data-expanded', 'true');
+  for (const mode of ['expanded-pill', 'already-compact-pill']) {
+    const before = (await ipc()).length;
+    await page.evaluate(
+      ({ workspaceId, agentId, clipId }) =>
+        (window as any).__dockComposerE2E.store.dispatch({
+          type: 'dockConversation/mediaEditorOpenRequested',
+          payload: [workspaceId, agentId, clipId],
+        }),
+      { ...pair, clipId: stopped.clipId },
+    );
+    const pillRows = await recordingOpened(before);
+    const pill = pillRows.find((r) => r.ch === 'dock-capture-editor:open')!;
+    await compactFor(pill);
+    receipts[mode] = { compact: true, sameOwner: true, shortcutToggled: false };
+  }
+  expect(await closeRequests()).toBe(closesBefore);
+  await page.screenshot({ path: info.outputPath('16-editor-owner-compact.png') });
+
   // 3b. A recording that ends by itself (a native limit, nobody pressed Stop): the hold taken
   // at its start still travels to the recording editor; the dock never comes back first.
   const auto = await startRecording();
@@ -290,6 +421,171 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   expect(autoOpen.token).toBe(auto.hold.token);
   expect(rows.some((r) => r.ch === 'dock-capture-editor:hold-end')).toBe(false);
   receipts.recordingAutoEnded = { holdAtStart: true, openCarriesHold: true, ended: false };
+  // Automatic clip completion leaves its annotation session live in this fixture.
+  // The existing live-input barrier must refuse collapse until that session ends.
+  expect(
+    await page.evaluate(() => (window as any).__dockComposerE2E.native.sessionId),
+  ).toBeTruthy();
+  expect(
+    (await ipc()).some(
+      (r) => r.ch === 'window:update-dock-placement' && r.token === autoOpen.openId,
+    ),
+  ).toBe(false);
+  await page.evaluate(() => (window as any).__dockComposerE2E.native.endNatively());
+  await compactFor(autoOpen);
+  receipts.liveInputBarrier = {
+    annotationBlockedCompact: true,
+    automaticallyCompactedAfterInputEnded: true,
+  };
+
+  // A pending presentation request cannot survive A -> B -> A, even though the editor
+  // still owns its source and may later Attach back to A.
+  const navigated = await startRecording();
+  await page.evaluate(
+    (clipId) => (window as any).__dockComposerE2E.native.endClip(clipId),
+    navigated.clipId,
+  );
+  const navigationOpen = (await recordingOpened(navigated.before)).find(
+    (r) => r.ch === 'dock-capture-editor:open',
+  )!;
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).__dockComposerE2E.store.state.hud.dockEditorCompactRequest?.openId,
+      ),
+    )
+    .toBe(navigationOpen.openId);
+  const originalGeneration = await page.evaluate(
+    () => (window as any).__dockComposerE2E.store.state.dockConversation.generation,
+  );
+  await page.evaluate((agentId) => {
+    const store = (window as any).__dockComposerE2E.store;
+    store.dispatch({ type: 'dockConversation/selectAgent', payload: ['wire-sub'] });
+    store.dispatch({ type: 'dockConversation/selectAgent', payload: [agentId] });
+  }, pair.agentId);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const dock = (window as any).__dockComposerE2E.store.state.dockConversation;
+        return { agentId: dock.agentId, loading: dock.loading, generation: dock.generation };
+      }),
+    )
+    .toEqual({ agentId: pair.agentId, loading: false, generation: originalGeneration + 2 });
+  await page.evaluate(async () => {
+    (window as any).__dockComposerE2E.native.endNatively();
+    (window as any).__dockComposerE2E.store.dispatch({ type: 'hud/dockFocusRequested' });
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+  await expect(page.getByTestId('dock-surface')).toHaveAttribute('data-expanded', 'true');
+  expect(
+    (await ipc()).some(
+      (r) => r.ch === 'window:update-dock-placement' && r.token === navigationOpen.openId,
+    ),
+  ).toBe(false);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).__dockComposerE2E.store.state.hud.dockEditorCompactRequest
+          ?.conversationGeneration,
+    ),
+  ).toBe(originalGeneration);
+  receipts.retiredConversationLifetime = {
+    samePairReopened: true,
+    generationAdvanced: true,
+    noLateAcknowledgement: true,
+    conversationStillOpen: true,
+  };
+
+  // A closed editor must not leave a deferred collapse behind. Keep this pair and draft.
+  await page.evaluate(() =>
+    (window as any).__dockComposerE2E.store.dispatch({ type: 'hud/dockFocusRequested' }),
+  );
+  const cancelled = await startRecording();
+  await page.evaluate(
+    (clipId) => (window as any).__dockComposerE2E.native.endClip(clipId),
+    cancelled.clipId,
+  );
+  const closedOpen = (await recordingOpened(cancelled.before)).find(
+    (r) => r.ch === 'dock-capture-editor:open',
+  )!;
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).__dockComposerE2E.store.state.hud.dockEditorCompactRequest?.openId,
+      ),
+    )
+    .toBe(closedOpen.openId);
+  await page.evaluate(
+    (openId) =>
+      (window as any).__dockComposerE2E.fixture.emit('dock-capture-editor:changed', {
+        endedOpenId: openId,
+      }),
+    closedOpen.openId,
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).__dockComposerE2E.store.state.hud.dockEditorCompactRequest,
+      ),
+    )
+    .toBeNull();
+  await page.evaluate(() => {
+    (window as any).__dockComposerE2E.native.endNatively();
+    (window as any).__dockComposerE2E.store.dispatch({ type: 'hud/dockFocusRequested' });
+  });
+  await expect(page.getByTestId('dock-surface')).toHaveAttribute('data-expanded', 'true');
+  expect(
+    (await ipc()).some(
+      (r) => r.ch === 'window:update-dock-placement' && r.token === closedOpen.openId,
+    ),
+  ).toBe(false);
+  receipts.closedWhileBlocked = {
+    pendingCancelled: true,
+    noLateAcknowledgement: true,
+    conversationStillOpen: true,
+  };
+  // Main can close the admitted editor before the OPEN response reaches its owner.
+  const earlyCloseAt = (await ipc()).length;
+  await page.evaluate(
+    ({ workspaceId, agentId, clipId }) => {
+      (window as any).__closeDuringOpen = true;
+      (window as any).__dockComposerE2E.store.dispatch({
+        type: 'dockConversation/mediaEditorOpenRequested',
+        payload: [workspaceId, agentId, clipId],
+      });
+    },
+    { ...pair, clipId: cancelled.clipId },
+  );
+  const earlyClosed = (await recordingOpened(earlyCloseAt)).find(
+    (r) => r.ch === 'dock-capture-editor:open',
+  )!;
+  expect(
+    await page.evaluate(
+      () => (window as any).__dockComposerE2E.store.state.hud.dockEditorCompactRequest,
+    ),
+  ).toBeNull();
+  expect(
+    (await ipc()).some(
+      (r) => r.ch === 'window:update-dock-placement' && r.token === earlyClosed.openId,
+    ),
+  ).toBe(false);
+  receipts.closedBeforeOpenReply = { noResurrectedIntent: true };
+  // Reopen explicitly only for a new Attach case; the cancelled editor is already gone.
+  const reopenAt = (await ipc()).length;
+  await page.evaluate(
+    ({ workspaceId, agentId, clipId }) =>
+      (window as any).__dockComposerE2E.store.dispatch({
+        type: 'dockConversation/mediaEditorOpenRequested',
+        payload: [workspaceId, agentId, clipId],
+      }),
+    { ...pair, clipId: cancelled.clipId },
+  );
+  const reopened = (await recordingOpened(reopenAt)).find(
+    (r) => r.ch === 'dock-capture-editor:open',
+  )!;
+  await compactFor(reopened);
 
   // 4. Attach: main asks the owner to validate while the dock is still held; only a valid,
   // current session's Attach is accepted, then the dock returns to that exact conversation
@@ -323,6 +619,21 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
   await expect.poll(async () => (await answers()).length).toBe(2);
   expect((await answers())[1]).toMatchObject({ token: latest.openId, kind: 'false' });
   expect(await open()).toBeNull();
+  await page.evaluate(() => {
+    const original = HTMLElement.prototype.focus;
+    (window as any).__focusLog = [];
+    HTMLElement.prototype.focus = function (options) {
+      original.call(this, options);
+      (window as any).__focusLog.push({
+        tag: this.tagName,
+        back: this.hasAttribute('data-dock-conversation-back'),
+        composer: this.hasAttribute('data-dock-conversation-composer'),
+        editable: this.getAttribute('contenteditable'),
+        active: document.activeElement === this,
+        stack: new Error().stack?.split('\n').slice(1, 5),
+      });
+    };
+  });
   // The current session, current source: accepted, then the exact conversation and prompt.
   await attached(latest, latest.sourceRevision);
   await expect.poll(async () => (await answers()).length).toBe(3);
@@ -337,7 +648,21 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
         );
       }),
     )
-    .toBe(true);
+    .toBe(true)
+    .catch(async (error) => {
+      const focus = await page.evaluate(() => ({
+        log: (window as any).__focusLog,
+        request: (window as any).__dockComposerE2E.store.state.hud.dockFocusRequest,
+        compact: (window as any).__dockComposerE2E.store.state.hud.dockEditorCompactRequest,
+        composer: [...document.querySelectorAll('[data-dock-conversation-composer]')].map((e) => ({
+          tag: e.tagName,
+          disabled: e.hasAttribute('disabled'),
+          editable: e.getAttribute('contenteditable'),
+        })),
+      }));
+      await writeFile(info.outputPath('focus-failure.json'), JSON.stringify(focus, null, 2));
+      throw error;
+    });
   await page.screenshot({ path: info.outputPath('17-editor-attach-returned.png') });
   receipts.attach = {
     olderSessionRefused: true,
