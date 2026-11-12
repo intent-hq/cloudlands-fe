@@ -262,7 +262,7 @@ export async function prepareEvidenceMessage({
           workspaceContextStr: [
             buildDockEvidenceContext(wireEvidence!, wireContext),
             materialized.metadata.length
-              ? `[Edited capture outputs]\n${JSON.stringify(materialized.metadata)}`
+              ? `[Edited capture outputs]\n${JSON.stringify(materialized.metadata)}` // i18n-ignore (agent-directed context marker, not user-facing UI)
               : '',
             clickedPayload.workspaceContextStr,
           ]
