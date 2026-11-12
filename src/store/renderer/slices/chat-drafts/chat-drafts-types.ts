@@ -1,3 +1,4 @@
+import type { SharedDraft } from '$shared/types/chat-draft-sync';
 import type { Collection } from '@themislib/themis/utils/collections/collection-utils';
 import type { DraftAttachment } from '$lib/client/app-client';
 
@@ -51,10 +52,12 @@ export interface ChatDraftOwner {
 }
 
 export interface ChatDraftOwnerView {
+  shared?: SharedDraft;
   restore: ChatDraftRestore | null;
   saves: ChatDraftSaveOutcome[];
 }
 
 export interface ChatDraftsState {
+  shared: Record<string, SharedDraft>;
   owners: Collection<ChatDraftOwner, 'id'>;
 }

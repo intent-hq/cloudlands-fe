@@ -1,3 +1,8 @@
+import { createAuthorizedIpcHandler } from '../../../main/ipc-authorization';
+import { getStrictBackendBindingForWebContents } from '../../../main/window-backend';
+import type { SharedDraft } from '../../../shared/types/chat-draft-sync';
+import { createChatDraftBroker } from '../../../shared/chat-draft-broker';
+import { DRAFT_SYNC_METHOD, DRAFT_SYNC_CHANGED } from '../../../shared/types/chat-draft-sync';
 import { buildConfigForRecord, ConnectionSecretUnavailableError } from './connection-config';
 import { collectListPages } from '$shared/paged-list';
 import { collaborationMachineName } from '../../../shared/collaboration-machine-name';
@@ -468,7 +473,108 @@ function captureRemoteDaemonVersion(
   );
 }
 const backendClients = new Map<string, JsonRpcClient>();
+const draftBrokers = new WeakMap<
+  JsonRpcClient,
+  Promise<ReturnType<typeof createChatDraftBroker>>
+>();
+function retireDraftBroker(client: JsonRpcClient): void {
+  const pending = draftBrokers.get(client);
+  draftBrokers.delete(client);
+  void pending?.then(
+    (broker) => broker.dispose(),
+    () => {},
+  );
+}
+function draftBroker(backendId: string, client: JsonRpcClient, admit: () => boolean) {
+  let pending = draftBrokers.get(client);
+  if (!pending) {
+    pending = (async () => {
+      if (!admit()) throw new Error('draft-document-retired');
+      const hello = await client.readHelloSnapshot();
+      if (!admit()) throw new Error('draft-document-retired');
+      const identity = await client.request('principal.me', {});
+      if (!admit()) throw new Error('draft-document-retired');
+      const principal = parsePrincipalSnapshot(hello, identity);
+      if (!principal) throw new Error('draft-authority-unavailable');
+      const provenance = JSON.stringify([backendId, principal.principal.id]);
+      return createChatDraftBroker(
+        provenance,
+        {
+          get: (workspaceId, agentId) =>
+            client.request<{
+              text: string;
+              attachments?: SharedDraft['snapshot']['attachments'];
+            } | null>('drafts.get', { workspaceId, agentId }),
+          set: (workspaceId, agentId, text, attachments) =>
+            client.request('drafts.set', { workspaceId, agentId, text, attachments }),
+          clear: (workspaceId, agentId) => client.request('drafts.clear', { workspaceId, agentId }),
+        },
+        (draft) => {
+          // One pooled client is one authenticated principal. Only explicitly bound,
+          // live documents on that exact backend receive its private draft snapshots.
+          for (const win of BrowserWindow.getAllWindows())
+            for (const renderer of getRendererWebContents(win)) {
+              const binding = getStrictBackendBindingForWebContents(renderer);
+              if (
+                !binding ||
+                binding.backendId !== backendId ||
+                backendClients.get(backendId) !== client
+              )
+                continue;
+              if (!renderer.isDestroyed() && renderer.mainFrame === binding.frame)
+                renderer.send(BACKEND.NOTIFICATION, { method: DRAFT_SYNC_CHANGED, params: draft });
+            }
+        },
+        () =>
+          backendClients.get(backendId) === client &&
+          client.getStatus() === 'connected' &&
+          draftBrokers.get(client) === pending,
+        (error) =>
+          logger.warn('Shared draft persistence failed', {
+            error: error instanceof Error ? error.name : 'UnknownError',
+          }),
+      );
+    })();
+    draftBrokers.set(client, pending);
+    void pending.catch(() => {
+      if (draftBrokers.get(client) === pending) draftBrokers.delete(client);
+    });
+  }
+  return pending;
+}
+
 const captureRegistrations = new Map<string, () => void>();
+const sharedDraftRequest = createAuthorizedIpcHandler(
+  BACKEND.REQUEST,
+  async (
+    event: Electron.IpcMainInvokeEvent,
+    payload: { params?: unknown; localMachine?: boolean },
+  ) => {
+    try {
+      const binding = getStrictBackendBindingForWebContents(event.sender);
+      if (payload.localMachine === true || !binding || binding.frame !== event.senderFrame)
+        throw new Error('draft-bound-route-required');
+      const client = backendClients.get(binding.backendId);
+      if (!client) throw new Error('draft-authority-unavailable');
+      const currentDocument = () =>
+        !event.sender.isDestroyed() &&
+        getStrictBackendBindingForWebContents(event.sender) === binding &&
+        event.senderFrame === binding.frame &&
+        event.sender.mainFrame === binding.frame &&
+        backendClients.get(binding.backendId) === client;
+      const broker = await draftBroker(binding.backendId, client, currentDocument);
+      if (!currentDocument()) throw new Error('draft-document-retired');
+      const result = await broker.request(payload.params, {
+        owner: binding,
+        current: currentDocument,
+      });
+      if (!currentDocument()) throw new Error('draft-document-retired');
+      return { ok: true, result };
+    } catch (error) {
+      return { ok: false, error: toErrorPayload(error) };
+    }
+  },
+);
 const backendClientConnects = new Map<string, Promise<JsonRpcClient>>();
 /**
  * Per-id credential generation, bumped whenever the durable credential for
@@ -2101,6 +2207,7 @@ function createAdditionalBackendClient(
     nativeReviewFeeds.set(instance, createNativeReviewFeed(instance));
   }
   instance.on('identity-confirmed', () => {
+    retireDraftBroker(instance);
     if (backendClients.get(id) === instance) broadcast(BACKEND.PR_MONITOR.READY, {}, id);
   });
   instance.on('notification', (notification: JsonRpcNotification) => {
@@ -2134,6 +2241,7 @@ function createAdditionalBackendClient(
     ) {
       const type = (notification.params as { event?: { type?: string } })?.event?.type;
       if (type === 'host:members-changed') {
+        retireDraftBroker(instance);
         identityRevision++;
         invitedConnectionGuards.delete(id);
         void refreshInvited();
@@ -2143,6 +2251,7 @@ function createAdditionalBackendClient(
   instance.on('status', (status: ConnectionStatus) => {
     if (backendClients.get(id) !== instance) return;
     if (status !== 'connected') {
+      retireDraftBroker(instance);
       if (id === LOCAL_CONNECTION_ID) {
         localIdentityGeneration++;
         localCollaborationIdentitySupported = false;
@@ -4626,6 +4735,7 @@ export function registerBackendHandlers(): void {
       if (typeof method !== 'string' || method.length === 0) {
         return { ok: false, error: { code: 'INVALID_PARAMS', message: 'method is required' } };
       }
+      if (method === DRAFT_SYNC_METHOD) return sharedDraftRequest(event, payload);
       if (
         method.startsWith('sourceControl.read.') ||
         method.startsWith('sourceControl.checkout.') ||

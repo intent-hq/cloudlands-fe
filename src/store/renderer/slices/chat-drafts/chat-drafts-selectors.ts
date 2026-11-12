@@ -6,6 +6,16 @@ import type { ChatDraftOwnerView } from './chat-drafts-types';
 export const selectChatDraftOwnerView = store.createSelector(
   (state, ownerId: string): ChatDraftOwnerView | undefined => {
     const owner = getItem(state.chatDrafts.owners, ownerId);
-    return owner ? { restore: owner.restore, saves: getItems(owner.saves) } : undefined;
+    return owner
+      ? {
+          restore: owner.restore,
+          saves: getItems(owner.saves),
+          shared: owner.restore
+            ? state.chatDrafts.shared[
+                JSON.stringify([owner.restore.workspaceId, owner.restore.agentId])
+              ]
+            : undefined,
+        }
+      : undefined;
   },
 );

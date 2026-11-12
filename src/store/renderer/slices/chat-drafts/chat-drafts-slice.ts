@@ -1,3 +1,4 @@
+import type { SharedDraft } from '$shared/types/chat-draft-sync';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import {
@@ -17,8 +18,13 @@ import type {
 export type { ChatDraftsState };
 
 export const initialState: ChatDraftsState = {
+  shared: {},
   owners: createCollection<ChatDraftOwner, 'id'>('id'),
 };
+
+export const chatDraftSharedChanged = createAction<[draft: SharedDraft]>(
+  'chatDrafts/sharedChanged',
+);
 
 export const chatDraftOwnerOpened = createAction<[ownerId: string]>('chatDrafts/ownerOpened');
 /** Flushes the owner's pending save, then drops its outcomes. */
@@ -151,3 +157,8 @@ chatDraftsReducer.with(
       return saves === owner.saves ? owner : { ...owner, saves };
     }),
 );
+
+chatDraftsReducer.with(chatDraftSharedChanged, (state, { payload: [draft] }) => ({
+  ...state,
+  shared: { ...state.shared, [JSON.stringify([draft.workspaceId, draft.agentId])]: draft },
+}));

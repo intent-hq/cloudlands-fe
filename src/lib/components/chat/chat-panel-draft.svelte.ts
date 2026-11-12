@@ -1,3 +1,8 @@
+import { persistLiveDraftSnapshot } from './chat-draft-sync';
+import {
+  retainDraftAttachmentScreens,
+  type DraftAttachmentWithScreen,
+} from './chat-draft-attachments';
 /**
  * ChatPanel composer draft restore/save manager (PROTOCOL §5.16 `drafts.*`).
  *
@@ -36,6 +41,7 @@
  * to the pair) keeps the original gated restore below.
  */
 import { untrack } from 'svelte';
+import { getPrincipalActionContext } from '$store/renderer/slices/principal/principal-context';
 import type { Readable } from 'svelte/store';
 
 import { store as appStore } from '$store/renderer/store';
@@ -72,6 +78,14 @@ type ChatDraftAction = ReturnType<
 
 /** Store seam: the app store by default; tests inject a saga-backed store. */
 export interface ChatDraftStorePort {
+  authority?: () => string | null;
+  persistSnapshot?: (
+    ownerId: string,
+    workspaceId: string,
+    agentId: string,
+    snapshot: { text: string; attachments: DraftAttachmentWithScreen[] },
+    authority: string,
+  ) => Promise<void>;
   dispatch: (action: ChatDraftAction) => unknown;
   ownerView: (ownerId: string) => Readable<ChatDraftOwnerView | undefined>;
 }
@@ -92,7 +106,20 @@ export interface ChatDraftManagerOptions {
   onSaveError?: (error: unknown) => void;
 }
 
+export interface ChatDraftCapture {
+  authority: string;
+  ownerId: string;
+  workspaceId: string;
+  agentId: string;
+  text: string;
+  attachments: DraftAttachmentWithScreen[];
+  generation: number;
+}
+
 export interface ChatDraftManager {
+  captureDraft(): ChatDraftCapture | null;
+  flushDraft(capture: ChatDraftCapture): Promise<boolean>;
+  isCurrentDraft(capture: ChatDraftCapture): boolean;
   /** True while the initial draft restore gates the composer. */
   readonly gateActive: boolean;
   /** Includes a restore still pending after the typing gate times out. */
@@ -129,6 +156,8 @@ const GATE_TIMEOUT_MS = 5000;
 const GATE_VISIBLE_DELAY_MS = 500;
 
 const appStorePort = (): ChatDraftStorePort => ({
+  authority: () => getPrincipalActionContext(appStore.state),
+  persistSnapshot: persistLiveDraftSnapshot,
   dispatch: (action) => appStore.dispatch(action),
   ownerView: (ownerId) => selectChatDraftOwnerView.withStore(appStore)(ownerId),
 });
@@ -162,6 +191,46 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     null;
   const saveHandlers: Record<string, (outcome: ChatDraftSaveOutcome) => void> = {};
   let latestView: ChatDraftOwnerView | undefined;
+  let retainedAttachments: DraftAttachmentWithScreen[] = [];
+  let sharedSeen: string | null = null;
+  let captureGeneration = 0;
+  let captureFingerprint = '';
+  const captureDraft = (): ChatDraftCapture | null => {
+    const workspaceId = options.workspaceId();
+    const agentId = options.agentId();
+    if (!workspaceId || !agentId || !(options.active?.() ?? true)) return null;
+    const authority = port.authority?.();
+    if (!authority || destroyed) return null;
+    const text = options.inputValue();
+    const attachments = serializeCurrentAttachments();
+    const fingerprint = JSON.stringify([
+      authority,
+      workspaceId,
+      agentId,
+      text,
+      attachments,
+      invalidations,
+    ]);
+    if (fingerprint !== captureFingerprint) {
+      captureFingerprint = fingerprint;
+      captureGeneration += 1;
+    }
+    return {
+      authority,
+      ownerId,
+      workspaceId,
+      agentId,
+      text,
+      attachments: JSON.parse(JSON.stringify(attachments)),
+      generation: captureGeneration,
+    };
+  };
+  let sharedBaseline: { text: string; attachmentsJson: string } | null = null;
+  const serializeCurrentAttachments = () =>
+    serializeDraftAttachments(
+      options.contextItems(),
+      retainDraftAttachmentScreens(options.contextItems(), retainedAttachments),
+    );
 
   const applyOutcomes = (view: ChatDraftOwnerView | undefined) => {
     latestView = view;
@@ -172,7 +241,43 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
         const { apply } = pendingRestore;
         pendingRestore = null;
         restoring = false;
+        if (restore.status === 'restored') retainedAttachments = restore.draft?.attachments ?? [];
         apply(restore);
+      }
+    }
+    const shared = view.shared;
+    if (shared && !restoring && restoreKey === `${shared.workspaceId}\u0000${shared.agentId}`) {
+      const stamp = JSON.stringify([
+        shared.provenance,
+        shared.workspaceId,
+        shared.agentId,
+        shared.lifetime,
+        shared.revision,
+      ]);
+      if (sharedSeen !== stamp) {
+        sharedSeen = stamp;
+        const baseline = sharedBaseline ?? lastPersisted;
+        const untouched =
+          baseline &&
+          options.inputValue() === baseline.text &&
+          JSON.stringify(serializeCurrentAttachments()) === baseline.attachmentsJson;
+        if (shared.origin === ownerId) {
+          sharedBaseline = {
+            text: shared.snapshot.text,
+            attachmentsJson: JSON.stringify(shared.snapshot.attachments),
+          };
+        } else if (untouched) {
+          restoreGeneration += 1;
+          if (hydrateTimeoutId) clearTimeout(hydrateTimeoutId);
+          retainedAttachments = shared.snapshot.attachments;
+          sharedBaseline = lastPersisted = {
+            text: shared.snapshot.text,
+            attachmentsJson: JSON.stringify(retainedAttachments),
+          };
+          options.setInputValue(shared.snapshot.text);
+          options.setContextItems(deserializeDraftAttachments(retainedAttachments));
+          options.applyEditorContent(shared.snapshot.text);
+        }
       }
     }
     const acknowledged: string[] = [];
@@ -264,6 +369,9 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     untrack(() => {
       // A previous pair's restore/hydration no longer applies.
       lastPersisted = null;
+      sharedBaseline = null;
+      sharedSeen = null;
+      retainedAttachments = [];
       if (gateTimeoutId) clearTimeout(gateTimeoutId);
       clearGateVisible();
       if (hydrateTimeoutId) {
@@ -281,6 +389,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
 
       const cached = getCachedDraft(workspaceId, agentId);
       if (cached) {
+        retainedAttachments = cached.attachments;
         // Cache hit: hydrate synchronously, no gate — switch-back to a
         // previously visited pair never shows the loading indicator,
         // regardless of the background revalidation's latency.
@@ -321,8 +430,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
           // result if the composer still matches what the cache hydrated.
           const untouched =
             options.inputValue() === hydratedText &&
-            JSON.stringify(serializeDraftAttachments(options.contextItems())) ===
-              hydratedAttachmentsJson;
+            JSON.stringify(serializeCurrentAttachments()) === hydratedAttachmentsJson;
           if (hasLiveAttachments || !untouched) return;
           if (freshText !== hydratedText) {
             options.setInputValue(freshText);
@@ -414,7 +522,8 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     }
     if (!workspaceId || !agentId) return;
     const currentValue = options.inputValue();
-    const currentAttachments = serializeDraftAttachments(options.contextItems());
+    const currentAttachments = serializeCurrentAttachments();
+    untrack(captureDraft);
 
     untrack(cancelPendingSave);
     // No saves while the initial restore gates the composer.
@@ -434,6 +543,7 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
 
     // The saga debounces the write, refreshes the switch-back cache when it
     // commits, and rolls that cache back to `rollback` if the write fails.
+    retainedAttachments = currentAttachments;
     const saveKey = `${workspaceId}\u0000${agentId}`;
     const invalidationsAtSchedule = invalidations;
     const requestId = crypto.randomUUID();
@@ -478,7 +588,34 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
     };
   });
 
+  const isCurrentDraft = (capture: ChatDraftCapture) => {
+    const current = captureDraft();
+    return (
+      current !== null &&
+      current.authority === capture.authority &&
+      current.ownerId === capture.ownerId &&
+      current.workspaceId === capture.workspaceId &&
+      current.agentId === capture.agentId &&
+      current.generation === capture.generation &&
+      current.text === capture.text &&
+      JSON.stringify(current.attachments) === JSON.stringify(capture.attachments)
+    );
+  };
   return {
+    captureDraft,
+    isCurrentDraft,
+    async flushDraft(capture) {
+      if (!isCurrentDraft(capture)) return false;
+      if (!port.persistSnapshot) throw new Error('draft-shared-transport-unavailable');
+      await port.persistSnapshot(
+        ownerId,
+        capture.workspaceId,
+        capture.agentId,
+        capture,
+        capture.authority,
+      );
+      return isCurrentDraft(capture);
+    },
     get restorePending() {
       return restoring;
     },
@@ -511,6 +648,8 @@ export function createChatDraftManager(options: ChatDraftManagerOptions): ChatDr
       if (restoreKey !== null) {
         const [workspaceId, agentId] = restoreKey.split('\u0000');
         setCachedDraft(workspaceId, agentId, { text: '', attachments: [] });
+        sharedBaseline = null;
+        retainedAttachments = [];
         lastPersisted = { text: '', attachmentsJson: '[]' };
       }
     },
