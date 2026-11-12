@@ -26,7 +26,13 @@ import {
 } from '$lib/components/chat/input/context-api';
 import { placeImageAttachment } from '$lib/components/chat/input/image-attachment-placement';
 import { mintPlacementIdempotencyKey } from '$lib/components/chat/input/attachment-placement';
-import type { DockEvidenceImage, DockImagePlacementRecord } from '$shared/dock-evidence';
+import {
+  dockEvidenceId,
+  type DockEvidenceImage,
+  type DockImagePlacementRecord,
+} from '$shared/dock-evidence';
+import { getItem } from '@themislib/themis/utils/collections/collection-utils';
+import type { DockPasteOrigin } from '$shared/dock-media-clipboard';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 
 /** The backend a click belongs to: transport identity, connection generation and window backend. */
@@ -112,6 +118,31 @@ const defaultDockPlacementApi: DockPlacementApi = {
 /** Whether later requests would still reach the backend connection a binding captured. */
 export function isDockBindingCurrent(binding: DockPlacementBinding): boolean {
   return defaultDockPlacementApi.current(binding);
+}
+
+/** Capture a paste gesture's origin (see `DockPasteOrigin`). */
+export function captureDockPasteOrigin(workspaceId: string, agentId: string): DockPasteOrigin {
+  const dock = appStore.state.dockConversation;
+  return {
+    generation: dock.generation,
+    authority: dock.authority,
+    clearRevision: getItem(dock.drafts, dockEvidenceId(workspaceId, agentId))?.clearRevision ?? 0,
+    binding: captureDockPlacementBinding(),
+  };
+}
+
+export function isDockPasteOriginCurrent(
+  workspaceId: string,
+  agentId: string,
+  origin: DockPasteOrigin,
+): boolean {
+  const now = captureDockPasteOrigin(workspaceId, agentId);
+  return (
+    now.generation === origin.generation &&
+    now.authority === origin.authority &&
+    now.clearRevision === origin.clearRevision &&
+    isDockBindingCurrent(origin.binding)
+  );
 }
 
 function guard(api: DockPlacementApi, binding: DockPlacementBinding): () => void {
@@ -399,5 +430,29 @@ export async function placeDockEvidenceImages(input: {
     }
     placed.push(record);
   }
+  return placed;
+}
+
+/** An immutable editor source or output; every upload/recovery step stays on the captured backend. */
+export async function placeDockMediaImage(
+  workspaceId: string,
+  fileName: string,
+  source: { data: string; mimeType: string },
+  binding: DockPlacementBinding,
+): Promise<PlaceAttachmentResult> {
+  const check = () => {
+    if (!defaultDockPlacementApi.current(binding)) throw new DockPlacementBackendChangedError();
+  };
+  check();
+  const placed = await defaultDockPlacementApi.placeImage(
+    workspaceId,
+    fileName,
+    {
+      ...source,
+      idempotencyKey: defaultDockPlacementApi.mintKey(),
+    },
+    check,
+  );
+  check();
   return placed;
 }

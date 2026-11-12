@@ -377,7 +377,7 @@ export class DockPlacementController {
   }
 
   async command(
-    command: Exclude<DockPlacementCommand, { action: 'dismiss' | 'focus' }>,
+    command: Exclude<DockPlacementCommand, { action: 'dismiss' | 'release' | 'focus' }>,
   ): Promise<DockPlacementSnapshot | null> {
     if (this.disposed || this.hiddenForCapture || this.window.isDestroyed()) return this.snapshot;
     if (command.action === 'move') {

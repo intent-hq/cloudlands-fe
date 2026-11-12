@@ -2,10 +2,7 @@ import { expect, test } from '../../../test/ct-test';
 import DockRailPreview from './dock-rail.preview.svelte';
 import { dockRailPreview } from './dock-rail.preview-fixtures';
 
-test('compact header shows the same status dots and counts as the rows', async ({
-  mount,
-  page,
-}) => {
+test('compact header status counts match accessible row descriptions', async ({ mount, page }) => {
   await page.setViewportSize({ width: 720, height: 640 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'dark' });
   const props = dockRailPreview.states.notch.props;
@@ -52,16 +49,40 @@ test('compact header shows the same status dots and counts as the rows', async (
       count: Number(group.getAttribute('data-status-count')),
     })),
   );
-  // Oracle: the expanded rows' own workspace statuses (carried by their avatars).
+  expect(headerGroups).toEqual([
+    { status: 'in_progress', count: 1 },
+    { status: 'unread', count: 3 },
+  ]);
+  // Repository avatars identify rows; their accessible descriptions carry the statuses.
   await component.getByTestId('dock-drag-handle').hover();
   await expect(shell).toHaveAttribute('data-reveal', '1');
-  const rowStatuses = await component
-    .locator('[data-dock-row] [data-dock-workspace-avatar][data-workspace-status]')
-    .evaluateAll((badges) => badges.map((badge) => badge.getAttribute('data-workspace-status')));
-  const rowCounts = headerGroups.map(({ status }) => ({
-    status,
-    count: rowStatuses.filter((value) => value === status).length,
-  }));
+  const rows = component
+    .getByRole('grid', { name: 'Active spaces', exact: true })
+    .locator('[data-dock-row]');
+  await expect(rows).toHaveCount(4);
+  for (const [index, item] of items.entries()) {
+    await expect(
+      rows.and(component.locator(`[data-workspace-id="${item.workspace.id}"]`)),
+    ).toHaveAccessibleDescription(index === 0 ? /In progress$/ : /Unread$/);
+  }
+  const descriptions = await rows.evaluateAll((buttons) =>
+    buttons.map((button) =>
+      (button.getAttribute('aria-describedby') ?? '')
+        .split(/\s+/)
+        .map((id) => document.getElementById(id)?.textContent ?? '')
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    ),
+  );
+  const rowCounts = [
+    {
+      status: 'in_progress',
+      count: descriptions.filter((text) => /In progress$/.test(text)).length,
+    },
+    { status: 'unread', count: descriptions.filter((text) => /Unread$/.test(text)).length },
+  ];
   expect(headerGroups).toEqual(rowCounts);
-  expect(headerGroups.reduce((sum, group) => sum + group.count, 0)).toBe(rowStatuses.length);
+  expect(headerGroups.reduce((sum, group) => sum + group.count, 0)).toBe(4);
+  expect(rowCounts.reduce((sum, group) => sum + group.count, 0)).toBe(descriptions.length);
 });

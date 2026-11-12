@@ -1,4 +1,4 @@
-import { spring } from '$lib/motion';
+import { panelSpring } from '$lib/motion';
 
 /** One display frame: the most time a motion advances per painted frame. */
 const FRAME_MS = 1000 / 60;
@@ -51,51 +51,82 @@ export function createFrameLoop() {
   };
 }
 
-/** Open and close timing for a reveal; durations scale with the remaining distance. */
-export interface RevealTiming {
+interface RevealSpringTiming {
   openMs: number;
   closeMs: number;
-  openEasing: (t: number) => number;
-  closeEasing: (t: number) => number;
 }
 
-/** The shell reveal default: the moderate spring opens and its exit curve closes. */
-const MODERATE_REVEAL: RevealTiming = {
-  openMs: spring.moderate.settleMs,
-  closeMs: spring.moderate.exit.duration,
-  openEasing: spring.moderate.easing,
-  closeEasing: spring.moderate.exit.easing,
-};
-
-/**
- * Reveal progress (0 closed, 1 open). An interrupted motion reverses from the current
- * value, and the last frame lands exactly on the target.
- */
-export function createRevealTween(
+/** Critically damped reveal; retargeting carries the last painted position and velocity. */
+export function createRevealSpring(
   read: () => number,
   write: (value: number) => void,
-  timing: RevealTiming = MODERATE_REVEAL,
+  timing: RevealSpringTiming = panelSpring,
+) {
+  const loop = createFrameLoop();
+  let target = 0;
+  let velocity = 0;
+  const cancel = (): void => {
+    loop.cancel();
+    velocity = 0;
+  };
+  return {
+    cancel,
+    animate(next: number, instant: boolean): void {
+      if (target === next && loop.active && !instant) return;
+      loop.cancel();
+      target = next;
+      let position = read();
+      if (instant || (position === next && velocity === 0)) {
+        velocity = 0;
+        write(next);
+        return;
+      }
+      const duration = (next ? timing.openMs : timing.closeMs) / 1000;
+      // At the nominal duration, a full reveal is within 0.1% and 1%/s of rest.
+      const omega = 10.5 / duration;
+      let lastElapsed = 0;
+      loop.start((elapsed) => {
+        const dt = (elapsed - lastElapsed) / 1000;
+        lastElapsed = elapsed;
+        const offset = position - next;
+        const carry = velocity + omega * offset;
+        const decay = Math.exp(-omega * dt);
+        position = next + (offset + carry * dt) * decay;
+        velocity = (velocity - omega * carry * dt) * decay;
+        if (position < 0 || position > 1) {
+          position = Math.max(0, Math.min(1, position));
+          velocity = 0;
+        }
+        const settled = Math.abs(position - next) < 0.001 && Math.abs(velocity) < 0.01;
+        if (settled) velocity = 0;
+        write(settled ? next : position);
+        return settled;
+      });
+    },
+  };
+}
+
+/** Reduced motion keeps the same lifecycle with opacity only. */
+export function createRevealFade(
+  read: () => number,
+  write: (value: number) => void,
+  duration = panelSpring.reducedMs,
 ) {
   const loop = createFrameLoop();
   let target = 0;
   return {
     cancel: loop.cancel,
-    animate(next: number, instant: boolean): void {
-      if (target === next && loop.active && !instant) return;
+    animate(next: number): void {
+      if (target === next && loop.active) return;
       loop.cancel();
       target = next;
       const from = read();
-      if (instant || from === next) {
-        write(next);
-        return;
-      }
-      const duration = (next ? timing.openMs : timing.closeMs) * Math.abs(next - from);
-      const easing = next ? timing.openEasing : timing.closeEasing;
+      if (from === next) return;
+      const travelMs = duration * Math.abs(next - from);
       loop.start((elapsed) => {
-        const progress = duration > 0 ? Math.max(0, Math.min(1, elapsed / duration)) : 1;
-        // The last frame lands exactly on the target, whatever the easing rounds to.
-        write(progress >= 1 ? next : from + (next - from) * easing(progress));
-        return progress >= 1;
+        const progress = Math.min(1, elapsed / travelMs);
+        write(from + (next - from) * progress);
+        return progress === 1;
       });
     },
   };

@@ -1,3 +1,8 @@
+import {
+  isDockShortcutId,
+  type DockShortcutSettingsSnapshot,
+  type DockShortcutIssue,
+} from '$shared/dock-shortcut-settings';
 import { createAction } from '@themislib/themis/utils/store/create-action';
 import { createReducer } from '@themislib/themis/utils/store/create-reducer';
 import { createBooleanPreference } from '@themislib/themis/utils/store/boolean-preference';
@@ -47,6 +52,10 @@ export interface ActivityLogPresetPreference {
 }
 
 export type UserPreferencesState = {
+  dockShortcuts?: DockShortcutSettingsSnapshot | null;
+  dockShortcutPending?: boolean;
+  dockShortcutCaptureToken?: string | null;
+  dockShortcutError?: DockShortcutIssue | null;
   updateChannel: UpdateChannel;
   spellcheckEnabled: boolean;
   zoomFactor: number;
@@ -294,6 +303,21 @@ export const setGithubLinkDefaultAction = createAction<[action: GithubLinkDefaul
   'userPreferences/setGithubLinkDefaultAction',
 );
 
+export const dockShortcutSettingsReceived = createAction<[snapshot: DockShortcutSettingsSnapshot]>(
+  'userPreferences/dockShortcutSettingsReceived',
+);
+export const dockShortcutPendingSet = createAction<[pending: boolean]>(
+  'userPreferences/dockShortcutPendingSet',
+);
+export const dockShortcutCaptureRequested = createAction<[active: boolean]>(
+  'userPreferences/dockShortcutCaptureRequested',
+);
+export const dockShortcutCaptureTokenSet = createAction<[token: string | null]>(
+  'userPreferences/dockShortcutCaptureTokenSet',
+);
+export const dockShortcutErrorSet = createAction<[issue: DockShortcutIssue | null]>(
+  'userPreferences/dockShortcutErrorSet',
+);
 export const hydrateShortcutOverrides = createAction<[overrides: unknown]>(
   'userPreferences/hydrateShortcutOverrides',
 );
@@ -764,9 +788,17 @@ userPreferencesReducer.with(setGithubLinkDefaultAction, (state, { payload: [acti
 }));
 userPreferencesReducer.with(hydrateShortcutOverrides, (state, { payload: [overrides] }) => ({
   ...state,
-  shortcutOverrides: sanitizeShortcutOverrides(overrides),
+  shortcutOverrides: {
+    ...Object.fromEntries(
+      Object.entries(state.shortcutOverrides).filter(([id]) => isDockShortcutId(id)),
+    ),
+    ...Object.fromEntries(
+      Object.entries(sanitizeShortcutOverrides(overrides)).filter(([id]) => !isDockShortcutId(id)),
+    ),
+  },
 }));
 userPreferencesReducer.with(setShortcutOverride, (state, { payload: [id, shortcut] }) => {
+  if (isDockShortcutId(id)) return state;
   if (!isShortcutId(id)) return state;
   const normalized = normalizeShortcut(shortcut);
   if (!normalized) return state;
@@ -776,6 +808,7 @@ userPreferencesReducer.with(setShortcutOverride, (state, { payload: [id, shortcu
   return { ...state, shortcutOverrides };
 });
 userPreferencesReducer.with(resetShortcutOverride, (state, { payload: [id] }) => {
+  if (isDockShortcutId(id)) return state;
   if (!(id in state.shortcutOverrides)) return state;
   const shortcutOverrides = { ...state.shortcutOverrides };
   delete shortcutOverrides[id];
@@ -783,5 +816,38 @@ userPreferencesReducer.with(resetShortcutOverride, (state, { payload: [id] }) =>
 });
 userPreferencesReducer.with(resetAllShortcutOverrides, (state) => {
   if (Object.keys(state.shortcutOverrides).length === 0) return state;
-  return { ...state, shortcutOverrides: {} };
+  return {
+    ...state,
+    shortcutOverrides: Object.fromEntries(
+      Object.entries(state.shortcutOverrides).filter(([id]) => isDockShortcutId(id)),
+    ),
+  };
 });
+
+userPreferencesReducer.with(dockShortcutSettingsReceived, (state, { payload: [snapshot] }) => {
+  // Invokes can resolve after a newer authoritative change event from another window.
+  if (state.dockShortcuts && snapshot.revision < state.dockShortcuts.revision) return state;
+  return {
+    ...state,
+    dockShortcuts: snapshot,
+    dockShortcutCaptureToken: snapshot.capturing ? state.dockShortcutCaptureToken : null,
+    shortcutOverrides: {
+      ...Object.fromEntries(
+        Object.entries(state.shortcutOverrides).filter(([id]) => !isDockShortcutId(id)),
+      ),
+      ...snapshot.overrides,
+    },
+  };
+});
+userPreferencesReducer.with(
+  dockShortcutPendingSet,
+  (state, { payload: [dockShortcutPending] }) => ({ ...state, dockShortcutPending }),
+);
+userPreferencesReducer.with(
+  dockShortcutCaptureTokenSet,
+  (state, { payload: [dockShortcutCaptureToken] }) => ({ ...state, dockShortcutCaptureToken }),
+);
+userPreferencesReducer.with(dockShortcutErrorSet, (state, { payload: [dockShortcutError] }) => ({
+  ...state,
+  dockShortcutError,
+}));

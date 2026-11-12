@@ -20,7 +20,8 @@ const isMac =
 /**
  * Shortcut category for organizing the cheat sheet
  */
-export type ShortcutCategory = 'global' | 'navigation' | 'chat' | 'editor' | 'panel' | 'leader';
+export type ShortcutCategory =
+  'global' | 'navigation' | 'chat' | 'editor' | 'panel' | 'leader' | 'dock';
 
 /**
  * Context for determining which shortcuts to show
@@ -326,6 +327,17 @@ export const SHORTCUT_CATEGORIES: Record<
       entry('leader.equalize-sizes', () => m.ui_shortcuts_equalizeSizes_label(), ['panel']),
       entry('leader.jump-to-panel', () => m.ui_shortcuts_jumpToPanel_label(), ['panel']),
       entry('leader.cycle-layout', () => m.ui_shortcuts_cycleLayout_label(), ['panel']),
+    ],
+  },
+  // System-wide: they work with any app in front, not only inside Intent.
+  dock: {
+    get title() {
+      return m.ui_shortcuts_dockCategory_title();
+    },
+    shortcuts: [
+      entry('dock.focus', () => m.ui_shortcuts_dockFocus_label(), ['global']),
+      entry('dock.capture', () => m.ui_shortcuts_dockCapture_label(), ['global']),
+      entry('dock.record', () => m.ui_shortcuts_dockRecord_label(), ['global']),
     ],
   },
 };

@@ -22,6 +22,8 @@ export function useDockConversationFocus(state: DockConversationFocus) {
   let returning = $state(false);
   let previousWorkspace: string | null = null;
   let lastRequest = 0;
+  // An entry focus request is about to place the keyboard (set until it has run).
+  let entryPending = false;
   let lastPointer: { x: number; y: number } | undefined;
   $effect(() => {
     if (state.request) untrack(state.openKeyboard);
@@ -37,12 +39,27 @@ export function useDockConversationFocus(state: DockConversationFocus) {
     untrack(() => {
       if (request === lastRequest) return;
       lastRequest = request;
-      void tick().then(() => {
-        if (!disposed && state.keyboardOpen && state.expanded && !state.workspaceId)
-          state.surface
-            ?.querySelector<HTMLElement>('[data-dock-row]')
-            ?.focus({ preventScroll: true });
-      });
+      // The index search when it shows, else the first row. Reopening after a full close
+      // reveals the content a few frames later (inert until then), so retry briefly while
+      // nothing else has taken focus and this is still the latest request.
+      const focusEntry = (attempt: number): void => {
+        entryPending = false;
+        if (disposed || request !== lastRequest) return;
+        if (!state.keyboardOpen || !state.expanded || state.workspaceId) return;
+        const owner = document.activeElement;
+        if (attempt > 0 && owner && owner !== document.body) return;
+        const target =
+          state.surface?.querySelector<HTMLElement>('[data-dock-search]') ??
+          state.surface?.querySelector<HTMLElement>('[data-dock-row]');
+        target?.focus({ preventScroll: true });
+        // Not mounted or not focusable yet (inert while revealing): try again shortly.
+        if (document.activeElement !== target && attempt < 30) {
+          entryPending = true;
+          requestAnimationFrame(() => focusEntry(attempt + 1));
+        }
+      };
+      entryPending = true;
+      void tick().then(() => focusEntry(0));
     });
   });
   $effect(() => {
@@ -52,10 +69,16 @@ export function useDockConversationFocus(state: DockConversationFocus) {
       previousWorkspace = id;
       if (id || state.hidden) returning = false;
       if (!previous || id || state.hidden) return;
+      // The index replaced the conversation for a focus request (the shortcut showing the
+      // index), not Back: that request places the keyboard; no return focus.
+      if (entryPending) return;
       returning = true;
       state.openKeyboard(true);
       void tick().then(() => {
         if (disposed || state.workspaceId || state.hidden) return;
+        // An entry focus request (the shortcut showing the index) already placed the keyboard.
+        const owner = document.activeElement;
+        if (owner && owner !== document.body && state.root?.contains(owner)) return;
         const targetId = previous === CHIEF_WORKSPACE_ID ? 'dock:assistant' : previous;
         const targets = state.root?.querySelectorAll<HTMLElement>(
           '[data-dock-entry], [data-dock-row]',

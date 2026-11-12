@@ -19,6 +19,7 @@ export const toggleGroupMetadata = {
   category: 'primitive',
   owner: '007-B2',
   callers: [
+    'src/features/hud/media-editor/recording/DockRecordingSendOptions.svelte',
     'src/features/session-import/ImportSessionList.svelte',
     'src/lib/component-catalog/CatalogControls.svelte',
     'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',

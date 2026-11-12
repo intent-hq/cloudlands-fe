@@ -78,6 +78,32 @@ const KNOWN_BRIDGE_WRAPPERS: ReadonlyMap<string, KnownBridgeWrapper> = new Map([
     },
   ],
   [
+    'src/features/hud/composer/chat-media-native.ts',
+    {
+      reason:
+        '`invoke(channel, request)` forwards only the offline chat media BEGIN/CONTROL/CLOSE channels declared in this adapter.',
+      channelFiles: ['src/features/hud/composer/chat-media-native.ts'],
+    },
+  ],
+  [
+    'src/features/hud/media-editor/capture-editor-bridge.ts',
+    {
+      reason:
+        "`send(channel, payload)` forwards this utility editor document's DISCARD/KEEP requests to its main-owned openId session.",
+      channelFiles: ['src/features/hud/media-editor/capture-editor-bridge.ts'],
+    },
+  ],
+  [
+    'src/store/renderer/slices/user-preferences/sagas/dock-shortcut-settings-saga.ts',
+    {
+      reason:
+        "`invokeDockShortcuts(channel, payload)` forwards this file's GET/SET/CAPTURE requests to main's native settings and capture-lease owner.",
+      channelFiles: [
+        'src/store/renderer/slices/user-preferences/sagas/dock-shortcut-settings-saga.ts',
+      ],
+    },
+  ],
+  [
     'src/features/providers/provider-models.client.ts',
     {
       reason: '`invokeModelChannel` sends each provider `*:get-models` channel to main.',

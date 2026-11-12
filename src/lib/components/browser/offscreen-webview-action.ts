@@ -140,7 +140,11 @@ export function offscreenWebview(node: HTMLElement, entry: OffscreenWebviewEntry
           webContentsId,
         });
         window.electronAPI
-          ?.invoke('browser:register-tab', { tabId: entry.tabId, webContentsId })
+          ?.invoke('browser:register-tab', {
+            tabId: entry.tabId,
+            webContentsId,
+            workspaceId: entry.workspaceId,
+          })
           .catch((err) => {
             logger.error('Failed to register offscreen browser tab for CDP', {
               tabId: entry.tabId,

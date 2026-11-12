@@ -40,6 +40,9 @@
     class?: string;
     /** Display mode - 'chip' for small inline preview, 'thumbnail' for larger Slack-style preview */
     variant?: 'chip' | 'thumbnail';
+    /** Optional size for an owning surface; the shared default stays 64×64. */
+    thumbnailClass?: string;
+    disabled?: boolean;
     /**
      * Placement lifecycle for placed workspace attachments (shared across
      * chat input, new-workspace modal, and onboarding): 'placing' shows a
@@ -74,6 +77,8 @@
     onRemove,
     class: className = '',
     variant = 'chip',
+    thumbnailClass = 'w-16 h-16',
+    disabled = false,
     placementStatus = undefined,
     placementProgress = undefined,
     placementError = undefined,
@@ -177,12 +182,12 @@
       wrapContent={false}
       bind:ref={thumbnailButtonElement}
       type="button"
-      class="w-16 h-16 rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
+      class="{thumbnailClass} rounded-lg overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
       onclick={openLightbox}
       onkeydown={handleThumbnailKeydown}
       aria-label={m.chat_attachmentPreview_viewFullSize_ariaLabel({ name })}
       title={name}
-      disabled={!thumbnailUrl}
+      disabled={disabled || !thumbnailUrl}
     >
       {#if thumbnailUrl}
         <img

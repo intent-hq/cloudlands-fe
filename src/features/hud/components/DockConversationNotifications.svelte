@@ -179,7 +179,8 @@
               size="icon-sm"
               onclick={() => close(item)}
               aria-label={m.ui_toast_close_ariaLabel()}
-              title={m.ui_toast_close_ariaLabel()}><Fa icon={faXmark} /></Button
+              tooltipContentClass="dock-chrome-tooltip"
+              tooltip={m.ui_toast_close_ariaLabel()}><Fa icon={faXmark} /></Button
             >
           {/if}
         {/if}

@@ -1,5 +1,7 @@
 <script lang="ts" module>
   import type { Workspace } from '$shared/types';
+  import { dockSendFailure } from '$features/hud/composer/dock-send-diagnostics';
+  import { createLogger } from '$lib/utils/client-logger';
   import type { ContextItem } from '$lib/components/chat/input/context-api';
   import type { FileAttachmentPolicy } from '$lib/components/chat/input/file-attachment-policy';
   import type {
@@ -26,6 +28,7 @@
     clearRevision?: number;
     clearSubmissionId?: string | null;
     recoverRevision?: number;
+    sharedRevision?: number;
     selectedModel?: string | null;
     providerId?: string;
     isStreaming?: boolean;
@@ -62,10 +65,13 @@
   import SimpleRichInput from '$lib/components/chat/input/SimpleRichInput.svelte';
   import DockComposerMediaFooter from './DockComposerMediaFooter.svelte';
   import DockComposerAttachments from './DockComposerAttachments.svelte';
+  import { showDockMediaMenu } from '$features/hud/composer/dock-media-clipboard';
   import AuroraBackground from '$lib/components/chat/AuroraBackground.svelte';
   import { COMPOSER_INSET_CLASS } from '$lib/components/chat/composer-inset';
   import { selectChatAuroraEnabled } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { m } from '$shared/paraglide/messages.js';
+
+  const sendLogger = createLogger('DockSend');
 
   let {
     workspace,
@@ -75,6 +81,7 @@
     clearRevision = 0,
     clearSubmissionId = null,
     recoverRevision = 0,
+    sharedRevision = 0,
     selectedModel,
     providerId,
     isStreaming = false,
@@ -161,7 +168,29 @@
   // Keep UI staging synchronous across consecutive paste/placement callbacks.
   // Serializable parent snapshots omit File; retain it locally for upload retry.
   let stagedContextItems = $state<ContextItem[]>([]);
-  $effect(() => {
+  let appliedSharedRevision = 0;
+  $effect.pre(() => {
+    const revision = sharedRevision;
+    const editor = input;
+    const sharedValue = value;
+    const items = contextItems;
+    untrack(() => {
+      if (!editor || disposed || revision <= appliedSharedRevision) return;
+      appliedSharedRevision = revision;
+      // A peer edit is new user intent, even though this editor applies it
+      // programmatically. An older admission/recovery must not clear it.
+      editGeneration += 1;
+      userEditGeneration += 1;
+      applyingClear = true;
+      try {
+        void editor.setContent(sharedValue);
+        stagedContextItems = items;
+      } finally {
+        applyingClear = false;
+      }
+    });
+  });
+  $effect.pre(() => {
     const admittedRevision = clearRevision;
     const submissionId = clearSubmissionId;
     const editor = input;
@@ -272,7 +301,15 @@
   }
 
   function submit(text: string, forceSubmit = false): void {
-    if (disposed || preparingSubmission || (media && composing)) return;
+    if (
+      disposed ||
+      disabled ||
+      inputLocked ||
+      pending ||
+      preparingSubmission ||
+      (media && composing)
+    )
+      return;
     const beforeSubmit = media?.beforeSubmit;
     if (!beforeSubmit) {
       commitSubmission(text, forceSubmit);
@@ -310,7 +347,10 @@
       // acknowledged text as the editor holds it now (the `value` prop can lag a
       // store notification), never the pre-barrier string from the original click.
       commitSubmission(input?.getValue() ?? value, forceSubmit);
-    } catch {
+    } catch (error) {
+      // Stage and bounded code only: never the prompt, file names or ids.
+      // i18n-ignore (bounded log diagnostic; the displayed failure uses the message below)
+      sendLogger.warn('Dock reply send failed', dockSendFailure(error, 'barrier'));
       if (isCurrent()) notify.error(m.dock_conversation_sendFailed_error());
     } finally {
       preparingSubmission = false;
@@ -326,6 +366,24 @@
     if (!item || disposed || disabled || pending || inputLocked || preparingSubmission) return;
     if (item.owner === 'attachment') input?.removeAttachment(id);
     else media?.onRemove(id);
+  }
+
+  /** Copy, or cut: a cut removes the unsent tile only after the clipboard write succeeded. */
+  async function copyMediaAttachment(id: string, cut: boolean): Promise<void> {
+    if (!media?.onCopy || disposed) return;
+    const copied = await media.onCopy(id);
+    if (!copied) {
+      if (!disposed) notify.error(m.dock_mediaClipboard_copyFailed_error());
+      return;
+    }
+    if (cut) removeMediaAttachment(id);
+  }
+
+  async function showMediaMenu(id: string): Promise<void> {
+    const locked = disabled || pending || inputLocked || preparingSubmission;
+    // eslint-disable-next-line intent/no-component-async-data-fetch -- a native Copy/Cut menu; nothing is loaded
+    const action = await showDockMediaMenu(!locked);
+    if (action) await copyMediaAttachment(id, action === 'cut');
   }
 
   function retryMediaAttachment(id: string): void {
@@ -354,6 +412,7 @@
   role="group"
   aria-label={m.chat_richInput_editor_ariaLabel()}
   onfocus={forwardFocus}
+  onpastecapture={(event) => media?.onPaste?.(event)}
 >
   {#if (popupOwner?.active() ?? true) && $chatAuroraEnabled$ && (isStreaming || auroraWarm)}
     <!-- Warmed paused while idle; streaming only unpauses and fades it (no mount cost). -->
@@ -377,7 +436,7 @@
     {screenInterim}
     screenSpeechActive={!!media?.state.dictating}
     pendingContent={!!media?.state.dictating || (screenInterim?.length ?? 0) > 0}
-    submitPending={preparingSubmission}
+    submitPending={preparingSubmission || pending}
     {fileAttachmentPolicy}
     deferScreenEvidenceFlush={!!media?.beforeSubmit}
     onScreenInsertionApplied={(id, committedText) => {
@@ -460,8 +519,11 @@
         labels={media.labels}
         disabled={disabled || pending || inputLocked || preparingSubmission}
         onMarkUp={media.onMarkUp}
+        onEdit={media.onEdit}
         onRemove={removeMediaAttachment}
         onRetry={retryMediaAttachment}
+        onCopy={media.onCopy ? (id, cut) => void copyMediaAttachment(id, cut) : undefined}
+        onMenu={media.onCopy ? (id) => void showMediaMenu(id) : undefined}
       />
     </div>
   {/if}
@@ -473,12 +535,14 @@
     outline: none;
   }
   .dock-conversation-composer[data-dock-media] :global([data-chat-input-submit-actions]) {
-    flex: 1 0 auto;
+    flex: 0 0 auto;
     min-width: min-content;
+    margin-inline-start: auto;
   }
   .dock-conversation-composer[data-dock-media] :global([data-chat-input-primary-actions]) {
-    flex: 0 1 110px;
-    min-width: 24px;
+    /* Keep the model and profile readable; crowded controls take their own row. */
+    flex: 1 1 180px;
+    min-width: 0;
   }
   /* The picker glyph sits on the editor text edge; its hover fill bleeds outward.
      The negative margin equals the trigger's inline padding (px-2). */
@@ -489,6 +553,7 @@
     margin-inline-start: -0.5rem;
   }
   .dock-conversation-composer[data-dock-media] :global([data-chat-input-action-bar]) {
+    flex-wrap: wrap;
     gap: 4px;
   }
   /* Spec card radius 16. Send hugs the bottom-right corner 6px from the card edges with a

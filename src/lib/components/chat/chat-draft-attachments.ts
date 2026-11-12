@@ -117,3 +117,27 @@ export function deserializeDraftAttachments(attachments: DraftAttachment[]): Con
       : {}),
   }));
 }
+
+/** Preserve draft-only evidence only while the actual attachment source is unchanged. */
+export function retainDraftAttachmentScreens(
+  items: ContextItem[],
+  previous: readonly DraftAttachmentWithScreen[],
+): Record<string, unknown> {
+  const source = (item: DraftAttachmentWithScreen | ContextItem) =>
+    JSON.stringify([
+      item.attachmentId ?? null,
+      item.sourcePath ?? null,
+      item.path ?? null,
+      item.imageData ?? null,
+      item.imageMimeType ?? null,
+    ]);
+  const byId = new Map(previous.map((item) => [item.id, item]));
+  return Object.fromEntries(
+    items.flatMap((item) => {
+      const old = byId.get(item.id);
+      return old?.screen !== undefined && source(old) === source(item)
+        ? [[item.id, old.screen]]
+        : [];
+    }),
+  );
+}

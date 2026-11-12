@@ -4,6 +4,7 @@ import {
   addRailMachine,
   nextRailMachine,
   normalizeRailSession,
+  reorderRailMachines,
   removeRailMachine,
 } from './machine-rail';
 
@@ -101,5 +102,23 @@ describe('nextRailMachine', () => {
   it('has nowhere to go without another own machine', () => {
     expect(nextRailMachine(['local', 'g1'], 'local', isGuest)).toBeNull();
     expect(nextRailMachine(['local'], 'local', isGuest)).toBeNull();
+  });
+});
+
+describe('reorderRailMachines', () => {
+  const rail = ['local', 'b', 'c', 'g1'];
+
+  it('takes a new order of the same machines', () => {
+    expect(reorderRailMachines(rail, ['local', 'c', 'b', 'g1'])).toEqual(['local', 'c', 'b', 'g1']);
+  });
+
+  it('keeps the home machine first', () => {
+    expect(reorderRailMachines(rail, ['b', 'local', 'c', 'g1'])).toEqual(rail);
+  });
+
+  it('refuses an order that adds, drops or repeats a machine', () => {
+    expect(reorderRailMachines(rail, ['local', 'b', 'c'])).toEqual(rail);
+    expect(reorderRailMachines(rail, ['local', 'b', 'c', 'x'])).toEqual(rail);
+    expect(reorderRailMachines(rail, ['local', 'b', 'b', 'g1'])).toEqual(rail);
   });
 });

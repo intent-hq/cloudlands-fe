@@ -76,6 +76,21 @@ export function addRailMachine(machineIds: readonly string[], id: string): strin
 }
 
 /**
+ * A new rail order: the same machines with home still first, or the current
+ * order unchanged when `next` is not that.
+ */
+export function reorderRailMachines(
+  machineIds: readonly string[],
+  next: readonly string[],
+): string[] {
+  const same =
+    next.length === machineIds.length &&
+    new Set(next).size === next.length &&
+    next.every((id) => machineIds.includes(id));
+  return same && next[0] === machineIds[0] ? [...next] : [...machineIds];
+}
+
+/**
  * The machine after `selectedId` in rail order, looping back to the start and
  * skipping those `skip` names (guest hosts); `null` when there is none other.
  */

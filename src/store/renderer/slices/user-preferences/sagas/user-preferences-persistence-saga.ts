@@ -1,3 +1,5 @@
+import { dockShortcutSettingsSaga } from './dock-shortcut-settings-saga';
+import { isDockShortcutId } from '$shared/dock-shortcut-settings';
 import { buffers, channel } from 'redux-saga';
 import { call, fork, put, take, takeEvery } from 'typed-redux-saga';
 import { agentRulesSaga } from './agent-rules-saga';
@@ -548,7 +550,11 @@ function* persistGithubLinkDefaultActionWorker() {
 function* persistShortcutOverridesWorker() {
   yield* setLocalStorageJSON(
     SHORTCUT_OVERRIDES_STORAGE_KEY,
-    yield* selectShortcutOverrides.effect(),
+    Object.fromEntries(
+      Object.entries(yield* selectShortcutOverrides.effect()).filter(
+        ([id]) => !isDockShortcutId(id),
+      ),
+    ),
   );
 }
 
@@ -621,6 +627,7 @@ function* watchUserPreferenceWrites() {
 
 /** Canonical root-owned preference persistence and rules-editor orchestration. */
 export function* userPreferencesPersistenceSaga() {
+  yield* fork(dockShortcutSettingsSaga);
   yield* fork(agentRulesSaga);
   yield* fork(watchUserPreferenceWrites);
   yield* fork(hydrateUserPreferencesWorker);

@@ -31,7 +31,6 @@ import {
   nodeConnectionOpened,
   nodeLinkReceived,
   pasteClosed,
-  pasteLinkRequested,
   pasteLinkRetried,
   pasteLinkSubmitted,
 } from './nodes-slice';
@@ -56,7 +55,6 @@ let channel: ReturnType<typeof stdChannel>;
 let seen: { type: string; payload?: unknown[] }[];
 let inspectReply: PairLinkInspectResult | Promise<PairLinkInspectResult>;
 let invoke: ReturnType<typeof vi.fn>;
-let clipboard: string;
 
 function dispatch(action: { type: string }) {
   store.dispatch(action as Parameters<typeof store.dispatch>[0]);
@@ -122,17 +120,12 @@ beforeEach(() => {
   );
   setSupport({ labs: true, supported: true });
   inspectReply = nodeInspected();
-  clipboard = '';
   invoke = vi.fn(async (name: string) => {
     if (name === CHANNELS.PAIR_LINK_INSPECT) return inspectReply;
     if (name === CHANNELS.PAIR_LINK_COMMIT) return { ok: true, connection: NODE };
     return { ok: true };
   });
   (window as unknown as { electronAPI: unknown }).electronAPI = { invoke };
-  Object.defineProperty(navigator, 'clipboard', {
-    configurable: true,
-    value: { readText: vi.fn(async () => clipboard) },
-  });
   ui.confirm.mockResolvedValue(true);
   start();
 });
@@ -325,19 +318,6 @@ describe('paste an intent:// link', () => {
     );
     expect(calls(CHANNELS.PAIR_LINK_COMMIT)).toHaveLength(0);
     expect(store.state.nodes.paste.phase).toBe('closed');
-  });
-
-  it('tests a link from the clipboard at once, else opens the field', async () => {
-    clipboard = 'not a link';
-    dispatch(pasteLinkRequested());
-    await vi.waitFor(() => expect(store.state.nodes.paste.phase).toBe('field'));
-    expect(store.state.nodes.paste.error).toBeNull();
-    expect(invoke).not.toHaveBeenCalled();
-
-    clipboard = `  ${LINK}\n`;
-    dispatch(pasteLinkRequested());
-    await vi.waitFor(() => expect(calls(CHANNELS.PAIR_LINK_INSPECT)).toHaveLength(1));
-    expect(calls(CHANNELS.PAIR_LINK_INSPECT)[0][1]).toEqual({ uri: LINK });
   });
 });
 

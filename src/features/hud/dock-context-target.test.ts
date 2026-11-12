@@ -3,7 +3,7 @@
  *
  * Right-click on the dock opens its native menu, except where the user expects
  * the normal edit menu: text inputs, textareas, editable content, and anything
- * inside the open conversation.
+ * inside the open conversation body.
  */
 import { describe, expect, it } from 'vitest';
 import { wantsDockContextMenu } from './dock-context-target';
@@ -34,9 +34,11 @@ describe('wantsDockContextMenu', () => {
 
   it('keeps the edit menu anywhere inside the open conversation', () => {
     const root = mount(
-      `<div data-testid="dock-conversation-surface"><p><b id="inner">reply</b></p></div>`,
+      `<div data-testid="dock-conversation-surface"><header data-dock-chrome><span id="header">Device</span><input id="header-input" /></header><p><b id="inner">reply</b></p></div>`,
     );
     expect(wantsDockContextMenu(root.querySelector('#inner'))).toBe(false);
+    expect(wantsDockContextMenu(root.querySelector('#header'))).toBe(true);
+    expect(wantsDockContextMenu(root.querySelector('#header-input'))).toBe(false);
   });
 
   it('ignores non-element targets', () => {

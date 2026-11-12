@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dockToolbarPosition } from './dock-annotation';
+import { dockToolbarPosition, extendDockPenPoints, finishDockPenPoints } from './dock-annotation';
 
 // A 1440×900 display: menu bar (25) above, macOS Dock (70) below.
 const area = { x: 0, y: 25, width: 1440, height: 805 };
@@ -32,5 +32,47 @@ describe('dockToolbarPosition', () => {
       x: 10,
       y: 20,
     });
+  });
+});
+
+describe('bounded observed pen path', () => {
+  it('never reconnects a capped unobserved tail to a distant release', () => {
+    let state = { points: [{ x: 0, y: 0 }], capped: false };
+    state = extendDockPenPoints(
+      state,
+      [
+        { x: 1, y: 1 },
+        { x: 2, y: 2 },
+      ],
+      4,
+    );
+    expect(state.capped).toBe(false);
+    state = extendDockPenPoints(
+      state,
+      [
+        { x: 20, y: 20 },
+        { x: 21, y: 21 },
+      ],
+      4,
+    );
+    expect(state.capped).toBe(true);
+    state = extendDockPenPoints(state, [{ x: 22, y: 22 }], 4);
+    expect(finishDockPenPoints(state, { x: 100, y: 100 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 1 },
+      { x: 2, y: 2 },
+    ]);
+  });
+  it('keeps the ordinary observed order and uncapped release endpoint', () => {
+    const state = extendDockPenPoints({ points: [{ x: 0, y: 0 }], capped: false }, [
+      { x: 1, y: 2 },
+      { x: 3, y: 4 },
+    ]);
+    expect(finishDockPenPoints(state, { x: 5, y: 6 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 1, y: 2 },
+      { x: 3, y: 4 },
+      { x: 5, y: 6 },
+    ]);
   });
 });

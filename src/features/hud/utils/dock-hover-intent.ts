@@ -1,0 +1,1 @@
+export const DOCK_NOTCH_HOVER_DELAY_MS = 120;

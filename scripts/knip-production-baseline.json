@@ -442,9 +442,6 @@
     "src/features/hud/components/dock-shell-geometry.ts": [
       "DOCK_INTRO_HEIGHT"
     ],
-    "src/features/hud/composer/dock-composer-presentation.ts": [
-      "dockClipPlaybackUrl"
-    ],
     "src/features/hud/composer/dock-evidence-placement.ts": [
       "DockEvidencePlacementError",
       "DockPlacementBackendChangedError",

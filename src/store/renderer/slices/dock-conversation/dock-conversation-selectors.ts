@@ -1,3 +1,4 @@
+import { dockCandidateScore } from '$shared/dock-shortcuts';
 import {
   deriveWizardPendingQuestions,
   deriveMarkedQuestionRecoveryState,
@@ -5,7 +6,10 @@ import {
 } from '$lib/components/chat/questions/wizard-gate';
 import { selectPresenceOwnPrincipalId } from '../presence/presence-selectors';
 import { selectComposerContextItems } from '../transient-ui/transient-ui-selectors';
-import { selectWorkspaceById } from '../workspace/workspace-selectors';
+import {
+  selectWorkspaceListLoadedForBackend,
+  selectWorkspaceById,
+} from '../workspace/workspace-selectors';
 import { selectContextDefaultProvider } from '../provider-catalog/workspace-catalog-selectors';
 import { getAgentProvider } from '$shared/types/agent-session';
 import { resolveHydratedInputModel } from '$lib/components/chat/input-hydration';
@@ -48,7 +52,7 @@ import {
   numberDockMarks,
   readyDockInsertions,
 } from '$shared/dock-evidence';
-import type { QueuedMessage } from '$shared/types';
+import { WorkspaceStatus, type QueuedMessage } from '$shared/types';
 import type { PendingQueueDisplayRow } from '../pending-submissions/pending-submissions-projection';
 import { selectAgentQueueMessages } from '../agent-queue/agent-queue-selectors';
 import { isUserQueuedMessage } from '$lib/utils/queued-message-visibility';
@@ -280,6 +284,7 @@ export const selectDockConversationComposer = store.createSelector((state) => {
     clearRevision: draft?.clearRevision ?? 0,
     clearSubmissionId: draft?.clearSubmissionId ?? null,
     recoverRevision: draft?.recoverRevision ?? 0,
+    sharedRevision: draft?.sharedRevision ?? 0,
     contextItems:
       workspaceId && agentId ? selectComposerContextItems.select(state, workspaceId, agentId) : [],
     disabled: view.draftDisabled,
@@ -449,3 +454,75 @@ export const selectCurrentDockComposerEvidence = store.createSelector((state) =>
     ? { workspaceId, agentId, view: selectDockComposerEvidence.select(state, workspaceId, agentId) }
     : null;
 });
+
+export const selectDockShortcut = store.createSelector(
+  (state) => state.dockConversation.shortcut ?? null,
+);
+
+export const selectDockShortcutWorkspaces = store.createSelector((state) =>
+  getItems(state.workspace.workspaces)
+    .filter(
+      (row) =>
+        row.id !== CHIEF_WORKSPACE_ID &&
+        ![WorkspaceStatus.Archived, WorkspaceStatus.Retired, WorkspaceStatus.Deleted].includes(
+          row.status,
+        ),
+    )
+    .sort(
+      (a, b) =>
+        dockCandidateScore(state.dockConversation.shortcut?.context, b) -
+        dockCandidateScore(state.dockConversation.shortcut?.context, a),
+    ),
+);
+
+/** The UI reads one admitted snapshot; archived/deleted targets are never presented as linked. */
+export const selectDockLinkedContext = store.createSelector((state) => {
+  const snapshot = state.dockConversation.linkedContext;
+  if (
+    !snapshot ||
+    state.dockConversation.linkedContextAuthority !== getPrincipalActionContext(state)
+  )
+    return null;
+  const ids = new Set(selectDockShortcutWorkspaces.select(state).map((row) => String(row.id)));
+  const loaded = selectWorkspaceListLoadedForBackend.select(
+    state,
+    state.connections.windowBackendId,
+  );
+  const scopes = snapshot.linkScopes;
+  const scopeView =
+    scopes &&
+    (Object.fromEntries(
+      Object.entries(scopes).map(([scope, link]) => [
+        scope,
+        {
+          ...link,
+          available: loaded && link.available,
+          ...(!link.savedWorkspaceId || ids.has(link.savedWorkspaceId)
+            ? {}
+            : { savedWorkspaceId: null, revision: 0 }),
+        },
+      ]),
+    ) as typeof scopes);
+  const presented = scopeView ? { ...snapshot, linkScopes: scopeView } : snapshot;
+  if (!snapshot.linkedWorkspaceId || ids.has(snapshot.linkedWorkspaceId)) return presented;
+  return {
+    ...presented,
+    linkedWorkspaceId: null,
+    linkScope: null,
+    linkKey: null,
+    policy: { follows: 0, decision: 'unasked' as const },
+    autoSwitchEligible: false,
+  };
+});
+
+/** Pair state observed by the conversation's draft-persistence lifetime. */
+export const selectDockDraftSynchronization = store.createSelector(
+  (state, workspaceId: string, agentId: string) => {
+    const id = dockEvidenceId(workspaceId, agentId);
+    return {
+      shared: state.chatDrafts.shared[id],
+      clearRevision: getItem(state.dockConversation.drafts, id)?.clearRevision ?? 0,
+      evidence: getItem(state.dockConversation.evidence, id),
+    };
+  },
+);

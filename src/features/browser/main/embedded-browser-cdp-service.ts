@@ -1,3 +1,4 @@
+import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
 /**
  * Embedded Browser CDP Service
  *
@@ -9,6 +10,7 @@
  */
 
 import { webContents, ipcMain, type WebContents } from 'electron';
+import { getStrictBackendBindingForWebContents } from '../../../main/window-backend';
 import { Logger } from '../../../shared/logger';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import {
@@ -22,7 +24,7 @@ import {
 // Browser commands reach windows with ANY_HOST: this service has no host for
 // a tab's workspace yet (tabs are keyed by workspace id alone). Threading the
 // owning backend id through would let these sends target one host.
-import { sendToWorkspaceWindows } from '../../system/main/system.ipc';
+import { getWindowIdsForWorkspace, sendToWorkspaceWindows } from '../../system/main/system.ipc';
 import { ANY_HOST } from '../../system/main/window-workspace-tracking';
 
 const logger = new Logger('EmbeddedBrowserCdp');
@@ -221,6 +223,14 @@ type ClaimTabResult =
 class EmbeddedBrowserCdpService {
   /** Map of tabId -> webContentsId */
   private tabRegistry = new Map<string, number>();
+  private registeredWorkspaceOwners = new Map<
+    number,
+    {
+      workspaceId: string;
+      host: WebContents;
+      binding: NonNullable<ReturnType<typeof getStrictBackendBindingForWebContents>>;
+    }
+  >();
 
   /** Set of webContentsIds that have debugger attached */
   private attachedDebuggers = new Set<number>();
@@ -538,7 +548,7 @@ class EmbeddedBrowserCdpService {
   /**
    * Register a browser tab for CDP access
    */
-  registerTab(tabId: string, webContentsId: number): void {
+  registerTab(tabId: string, webContentsId: number, workspaceId?: string): void {
     // A dom-ready registration can arrive after its guest has already died.
     // Never replace a live mapping or settle mount waiters with that stale id.
     const wc = webContents.fromId(webContentsId);
@@ -549,6 +559,13 @@ class EmbeddedBrowserCdpService {
       hostingLogger.info('tab registered', { tabId, webContentsId });
     }
     this.tabRegistry.set(tabId, webContentsId);
+    const host = wc.hostWebContents;
+    const binding = host && getStrictBackendBindingForWebContents(host);
+    if (workspaceId && host && binding) {
+      this.registeredWorkspaceOwners.set(webContentsId, { workspaceId, host, binding });
+    } else {
+      this.registeredWorkspaceOwners.delete(webContentsId);
+    }
     // An agent acting on this tab (possibly the action that mounted it on
     // demand) keeps the new guest drawing too.
     if (this.agentDrawing.has(tabId)) this.attachAgentDrawing(tabId);
@@ -583,6 +600,7 @@ class EmbeddedBrowserCdpService {
           // re-reports them.
           this.tabViewBounds.delete(tabId);
         }
+        this.registeredWorkspaceOwners.delete(webContentsId);
         this.attachedDebuggers.delete(webContentsId);
         this.debuggerDetachListeners.delete(webContentsId);
       });
@@ -683,6 +701,7 @@ class EmbeddedBrowserCdpService {
       logger.info('Unregistering browser tab', { tabId, webContentsId });
       this.detachDebugger(webContentsId);
       this.tabRegistry.delete(tabId);
+      this.registeredWorkspaceOwners.delete(webContentsId);
     }
   }
 
@@ -735,6 +754,54 @@ class EmbeddedBrowserCdpService {
    * which is more robust than relying on registration since tabs may be
    * unmounted/remounted by the panel caching system.
    */
+  liveUrlOwners(url: string, backendId: string): string[] {
+    // A listening process may have changed while an old preview is still open.
+    // Only direct focused-tab ownership is authoritative for dev-server URLs.
+    try {
+      const parsed = new URL(url);
+      if (parsed.port || isDockLoopbackHostname(parsed.hostname)) return [];
+    } catch {
+      return [];
+    }
+    const owners = new Set<string>();
+    for (const tab of this.listTabs()) {
+      // Match the live effective URL only. A stale requested URL is not evidence.
+      if (tab.url !== url) continue;
+      const owner = this.focusedTabOwner(tab.webContentsId);
+      if (owner?.backendId === backendId) owners.add(owner.workspaceId);
+    }
+    return [...owners];
+  }
+
+  focusedTabOwner(
+    webContentsId: number,
+  ): { workspaceId: string; backendId: string; url: string; tabId: string } | null {
+    const tab = this.listTabs().find((row) => row.webContentsId === webContentsId);
+    const contents = webContents.fromId(webContentsId);
+    if (!tab || !contents || contents.isDestroyed()) return null;
+    const owner = this.registeredWorkspaceOwners.get(webContentsId);
+    const host = contents.hostWebContents;
+    if (
+      !owner ||
+      !host ||
+      owner.host !== host ||
+      getStrictBackendBindingForWebContents(host) !== owner.binding
+    )
+      return null;
+    if (
+      !getWindowIdsForWorkspace(owner.workspaceId, owner.binding.backendId).includes(
+        owner.binding.window.id,
+      )
+    )
+      return null;
+    return {
+      tabId: tab.tabId,
+      workspaceId: owner.workspaceId,
+      backendId: owner.binding.backendId,
+      url: contents.getURL(),
+    };
+  }
+
   listTabs(): TabInfo[] {
     const tabs: TabInfo[] = [];
     const allWebContents = webContents.getAllWebContents();

@@ -875,6 +875,7 @@ describe('actual main finalization fence and original pool', () => {
             remoteMachines: 0,
             remoteLinkTraffic: 0,
             remoteMachineClaim: 0,
+            machineOrder: 0,
             cloudMachines: 0,
             cloudMachineEntries: 0,
             cloudMachineProviders: 0,

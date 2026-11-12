@@ -20,14 +20,14 @@ export interface DockPointerPresenceSample {
   suppressed: boolean;
 }
 
-/** Emits only on transitions; a suppressed sample forgets the state without emitting. */
+/** Resyncs on the first valid sample, then emits transitions until suppressed/reset. */
 export function createDockPointerPresenceTracker(emit: (presence: DockPointerPresence) => void) {
-  let inside = false;
+  let inside: boolean | undefined;
   return {
     /** Returns true when this sample entered the regions. */
     update(sample: DockPointerPresenceSample): boolean {
       if (sample.suppressed) {
-        inside = false;
+        inside = undefined;
         return false;
       }
       if (sample.inside === inside) return false;
@@ -36,7 +36,7 @@ export function createDockPointerPresenceTracker(emit: (presence: DockPointerPre
       return inside;
     },
     reset(): void {
-      inside = false;
+      inside = undefined;
     },
   };
 }

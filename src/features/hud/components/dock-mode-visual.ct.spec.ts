@@ -244,6 +244,27 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
       await page.keyboard.press('Tab');
       await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
     }
+    const search = component.getByRole('combobox', { name: 'Search workspaces', exact: true });
+    const gridRows = component
+      .getByRole('grid', { name: 'Active spaces', exact: true })
+      .getByRole('row');
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue('');
+    await expect(gridRows.first()).toHaveAttribute('id', /.+/);
+    await expect(search).toHaveAttribute(
+      'aria-activedescendant',
+      (await gridRows.first().getAttribute('id')) ?? '',
+    );
+    // ArrowDown changes the active result while the combobox keeps keyboard focus.
+    await page.keyboard.press('ArrowDown');
+    await expect(search).toBeFocused();
+    await expect(gridRows.nth(1)).toHaveAttribute('id', /.+/);
+    await expect(search).toHaveAttribute(
+      'aria-activedescendant',
+      (await gridRows.nth(1).getAttribute('id')) ?? '',
+    );
+    await expect(gridRows.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Tab');
     await expect(row).toBeFocused();
     await expect(shell).toHaveAttribute('data-reveal', '1');
     await page.keyboard.press('Tab');
@@ -258,6 +279,9 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
     );
     await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
     await component.screenshot({ path: testInfo.outputPath(`notch-keyboard-${focusRequest}.png`) });
+    const commandsBeforeEscape = JSON.parse(
+      (await component.getAttribute('data-preview-commands')) ?? '[]',
+    ).length;
     await page.keyboard.press('Escape');
     await expect
       .poll(
@@ -265,7 +289,15 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
           JSON.parse((await component.getAttribute('data-preview-commands')) ?? '[]').at(-1)
             ?.action,
       )
-      .toBe('dismiss');
+      .toBe('release');
+    await expect(shell).toHaveAttribute('data-expanded', 'false');
+    await expect(shell).toHaveAttribute('data-reveal', '0');
+    const escapeCommands = JSON.parse(
+      (await component.getAttribute('data-preview-commands')) ?? '[]',
+    ).slice(commandsBeforeEscape);
+    expect(escapeCommands).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ action: 'dismiss' })]),
+    );
     await component.unmount();
   }
 });

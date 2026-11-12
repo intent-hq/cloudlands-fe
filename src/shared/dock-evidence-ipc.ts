@@ -40,6 +40,18 @@ export type DockEvidencePixelsResult = DockNativeResult<DockEvidenceCaptureResul
 export type DockEvidencePrivacyPane = 'screen' | 'microphone' | 'speech' | 'accessibility';
 
 export type DockEvidenceControl =
+  | { action: 'media-waveform'; request: import('./dock-media-output').DockMediaAnalyzeRequest }
+  | { action: 'media-export'; request: import('./dock-media-output').DockMediaExportRequest }
+  | {
+      action: 'media-transcribe';
+      request: import('./dock-media-output').DockMediaTranscribeRequest;
+    }
+  | {
+      action: 'media-audio-probe';
+      request: import('./dock-media-output').DockMediaAudioProbeRequest;
+    }
+  | { action: 'media-job-cancel'; jobId: string }
+  | { action: 'media-job-release'; jobId: string }
   | { action: 'capabilities' }
   /** Probe only (never prompts): `{ trusted }` for element picking. */
   | { action: 'accessibility-status' }
@@ -52,6 +64,7 @@ export type DockEvidenceControl =
       action: 'annotation-tool';
       annotationId: string;
       tool: Parameters<DockEvidenceNativeService['setAnnotationTool']>[1];
+      restoreInputRevision?: number;
     }
   | { action: 'annotation-mouse'; annotationId: string }
   | {
@@ -67,6 +80,7 @@ export type DockEvidenceControl =
   | { action: 'annotation-mark-result'; annotationId: string; markId: string; accepted: boolean }
   | { action: 'clip-start'; clipId: string; maxMs: number }
   | { action: 'clip-stop'; clipId: string }
+  | { action: 'clip-pause'; clipId: string; paused: boolean }
   | { action: 'clip-release'; clipId: string }
   | { action: 'speech-start'; speechId: string; locale?: string }
   | { action: 'speech-stop'; speechId: string }

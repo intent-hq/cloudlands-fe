@@ -9,7 +9,7 @@ import type { DockClipFile, DockMarkGeometry, DockMarkTool } from './dock-eviden
 import { DOCK_EVIDENCE_LIMITS } from './dock-evidence';
 
 /** Bumped whenever the helper's wire protocol or capture backend changes. */
-export const DOCK_RECORDING_CAPTURE_API = 'sck-stream+avcapture-mic/1';
+export const DOCK_RECORDING_CAPTURE_API = 'sck-stream+avcapture-mic/2';
 export const DOCK_RECORDING_MAX_MS = DOCK_EVIDENCE_LIMITS.clipMs;
 export const DOCK_RECORDING_MAX_FPS = 30;
 /**
@@ -81,5 +81,7 @@ export interface DockRecordedClip extends DockClipFile {
   /** Epoch ms when the first frame was written. */
   startedAt: number;
   endedReason: DockRecordingEndReason;
+  /** For `interrupted`: the system's own reason for stopping the stream, as reported. */
+  endedError?: { domain: string; code: number; detail: string };
   captureApi: string;
 }

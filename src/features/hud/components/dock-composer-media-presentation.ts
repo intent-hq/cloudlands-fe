@@ -2,11 +2,13 @@ import type { Snippet } from 'svelte';
 import type { DockCaptureMode } from '$shared/dock-evidence';
 
 /** Display-only contract. The session owner retains bytes, revisions and transport state. */
-export type DockComposerTool = 'pick' | 'box' | 'pen' | 'arrow';
+type DockComposerTool = 'pick' | 'box' | 'pen' | 'arrow';
 export type DockComposerCaptureMode = DockCaptureMode;
 
 export interface DockComposerMediaLabels {
   capture: string;
+  /** Action copy and configured bindings stay separate for muted shortcut hints. */
+  actionHints?: Record<'capture' | 'record' | 'dictate', { label: string; shortcut?: string }>;
   /** Capture button tooltip per mode (full screen uses `capture`). */
   captureMode?: Record<Exclude<DockComposerCaptureMode, 'fullscreen'>, string>;
   /** Menu row labels. */
@@ -17,7 +19,6 @@ export interface DockComposerMediaLabels {
   clipLimit: string;
   record: string;
   stopRecording: string;
-  annotate: string;
   annotationTools: string;
   annotateCurrent: (tool: string) => string;
   tools: Record<DockComposerTool, string>;
@@ -29,6 +30,8 @@ export interface DockComposerMediaLabels {
   markUp: string;
   remove: string;
   play: string;
+  /** The capture editor's open action on a recording tile (in its preview). */
+  edit: string;
   done: string;
   attachments: string;
   retry: string;
@@ -118,7 +121,15 @@ export type DockComposerAttachment = (
        */
       file?: { name: string; imageData: string; imageMimeType: string };
     }
-  | { kind: 'clip'; id: string; url?: string; duration: string; recording: boolean }
+  | {
+      kind: 'clip';
+      id: string;
+      url?: string;
+      duration: string;
+      recording: boolean;
+      /** The saved send choice ("Highlights · Transcript"), once an edit is saved. */
+      summary?: string;
+    }
   | { kind: 'file'; id: string; name: string }
 ) & {
   /** Evidence uses the HUD controller; ordinary attachments use the shared editor's placement API. */
@@ -132,9 +143,15 @@ export interface DockComposerAttachmentsProps {
   labels: DockComposerMediaLabels;
   disabled?: boolean;
   onMarkUp: (id: string) => void;
+  /** Open a finished recording in the capture editor (internal preview only). */
+  onEdit?: (id: string) => void;
   /** Removal and renumbering are one operation owned by the draft controller. */
   onRemove: (id: string) => void;
   onRetry?: (id: string) => void;
+  /** Cmd/Ctrl+C or X on a focused tile; the owner removes it on cut only once copied. */
+  onCopy?: (id: string, cut: boolean) => void;
+  /** Right-click on a tile: its Copy/Cut menu. */
+  onMenu?: (id: string) => void;
 }
 
 /** One controlled view from the connected dock/evidence owner. */
@@ -147,6 +164,12 @@ export interface DockComposerMediaBinding extends DockComposerMediaActions {
   /** Stop/await narration and drain editor insertions. False keeps the draft intact. */
   beforeSubmit?: () => Promise<boolean>;
   onMarkUp: (id: string) => void;
+  /** Open a finished recording in the capture editor (internal preview only). */
+  onEdit?: (id: string) => void;
   onRemove: (id: string) => void;
   onRetry?: (id: string) => void;
+  /** Put one tile on the system clipboard; true once it is there. */
+  onCopy?: (id: string) => Promise<boolean>;
+  /** Capture-phase paste on the composer; true when it took the event. */
+  onPaste?: (event: ClipboardEvent) => boolean;
 }

@@ -1,3 +1,4 @@
+import { isDockLoopbackHostname } from '../../../shared/dock-shortcuts';
 /**
  * Browser IPC Handlers
  *
@@ -6,7 +7,7 @@
  * of known browser actions.
  */
 
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, webContents } from 'electron';
 import { z } from 'zod';
 import { createSafeValidatedHandler } from '../../../main/ipc-validation-middleware';
 import { BROWSER_PROTOCOLS } from '../../../shared/constants';
@@ -35,6 +36,7 @@ import {
 import {
   BACKEND_CLIENT_DISCONNECTED_EVENT,
   getBackendClientForId,
+  getBackendClientForConnection,
   getBackendIdForIpcSender,
   getConnectedDaemonProtocolVersion,
 } from '../../backend/main/backend.ipc';
@@ -220,6 +222,7 @@ function openBrowserTab(
 const RegisterTabSchema = z.object({
   tabId: z.string(),
   webContentsId: z.number(),
+  workspaceId: z.string().min(1).optional(),
 });
 
 const UnregisterTabSchema = z.object({
@@ -312,6 +315,38 @@ function getDaemonLoopbackContext(
  */
 const tunnelManagers = new Map<BrowserExecutionBackendContext['client'], TunnelManager>();
 let directRelay: DirectRelay | null = null;
+
+/** Read only: translate a current listener on this backend, never create a forward. */
+export function dockServiceAddress(url: string, backendId: string): string | undefined {
+  try {
+    const parsed = new URL(url);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return;
+    if (!isDockLoopbackHostname(parsed.hostname)) return parsed.href;
+    const client = getBackendClientForConnection(backendId);
+    if (!client) return;
+    const config = client.getConfig();
+    const remote = loopbackContextFromTransport(
+      backendId === LOCAL_CONNECTION_ID && config.transport === 'uds',
+      config,
+      backendId !== LOCAL_CONNECTION_ID,
+    ).daemonIsRemote;
+    const provider = tunnelManagers.get(client) ?? (!remote ? directRelay : null);
+    const forward = provider
+      ?.activeForwards()
+      .find(
+        (row) => row.localPort === Number(parsed.port || (parsed.protocol === 'https:' ? 443 : 80)),
+      );
+    if (forward) {
+      parsed.hostname = '127.0.0.1';
+      parsed.port = String(forward.remotePort);
+      return parsed.href;
+    }
+    if (remote || parsed.hostname === 'daemon.localhost') return;
+    return parsed.href;
+  } catch {
+    return;
+  }
+}
 
 function getBrowserTunnelProvider(
   backendContext: BrowserExecutionBackendContext,
@@ -609,8 +644,21 @@ export function registerBrowserHandlers(): void {
     IPC_CHANNELS.BROWSER.REGISTER_TAB,
     createSafeValidatedHandler(
       RegisterTabSchema,
-      async (_event, validated) => {
-        embeddedBrowserCdp.registerTab(validated.tabId, validated.webContentsId);
+      async (event, validated) => {
+        const guest = webContents.fromId(validated.webContentsId);
+        if (
+          !guest ||
+          guest.isDestroyed() ||
+          guest.hostWebContents !== event.sender ||
+          event.senderFrame !== event.sender.mainFrame
+        ) {
+          throw new Error('Browser registration requires its live host main frame');
+        }
+        embeddedBrowserCdp.registerTab(
+          validated.tabId,
+          validated.webContentsId,
+          validated.workspaceId,
+        );
         return { success: true };
       },
       IPC_CHANNELS.BROWSER.REGISTER_TAB,

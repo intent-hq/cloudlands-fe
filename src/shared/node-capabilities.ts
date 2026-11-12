@@ -28,6 +28,9 @@ export const NODE_CAPABILITY_KEYS = [
   'remoteInitialAgent',
   // `remoteMachines.claim`: gates adding a machine from an intent://node link.
   'remoteMachineClaim',
+  // One user-ordered machine list (`remoteMachines.order` / `setOrder`): gates the
+  // combined Settings → Machines list and the Start On order.
+  'machineOrder',
   // Owner-only daemon-link traffic capture: gates the Dev Console "Daemon links" view.
   'remoteLinkTraffic',
   // E2B cloud machines: gates Settings → Machines → E2B and the Start On E2B row.

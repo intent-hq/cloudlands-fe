@@ -15,6 +15,7 @@ type FrequencyBucket = 'second' | 'minute' | 'hour' | 'day';
 interface Subscriber {
   callback: () => void;
   targetDate: Date;
+  fixedBucket?: FrequencyBucket;
 }
 
 class SharedTimeManager {
@@ -81,7 +82,7 @@ class SharedTimeManager {
         subs.forEach((sub) => {
           sub.callback();
           // Check if subscriber should move to a different bucket
-          const newBucket = this.getBucket(sub.targetDate);
+          const newBucket = sub.fixedBucket ?? this.getBucket(sub.targetDate);
           if (newBucket !== bucket) {
             subs.delete(sub);
             this.subscribers.get(newBucket)?.add(sub);
@@ -110,12 +111,13 @@ class SharedTimeManager {
   }
 
   /**
-   * Subscribe to time updates for a specific target date
+   * Subscribe to time updates for a specific target date. A fixed bucket lets
+   * active stopwatches reuse this singleton without aging into minute updates.
    * @returns Unsubscribe function
    */
-  subscribe(targetDate: Date, callback: () => void): () => void {
-    const bucket = this.getBucket(targetDate);
-    const subscriber: Subscriber = { callback, targetDate };
+  subscribe(targetDate: Date, callback: () => void, fixedBucket?: FrequencyBucket): () => void {
+    const bucket = fixedBucket ?? this.getBucket(targetDate);
+    const subscriber: Subscriber = { callback, targetDate, fixedBucket };
 
     this.subscribers.get(bucket)?.add(subscriber);
     this.ensureInterval(bucket);

@@ -69,7 +69,7 @@ describe('packaged mock parent MCP delegation', () => {
     expect(calls[2].params).toEqual({
       name: 'workspace_api',
       arguments: {
-        code: 'return await ws.agent.create("Implementor", "CHILD_REQUEST: test", { provider: "mock", skipAutoCommit: true });',
+        code: 'return await ws.agent.create("Implementor", "CHILD_REQUEST: test", { provider: "mock" });',
         summary: 'Create packaged smoke fixture child',
       },
     });

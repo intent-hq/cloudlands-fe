@@ -1,6 +1,11 @@
 import { IPC_CHANNELS } from '$shared/ipc-registry';
+import { CHIEF_SPECIALIST_ID } from '$shared/chief-agent-config';
 import { store as appStore } from '$store/renderer/store';
 import { agentCreationSaga } from '$store/renderer/slices/workspace-agents/sagas/agent-creation-saga';
+import {
+  setBundledSpecialists,
+  setBundledSpecialistsLoaded,
+} from '$store/renderer/slices/specialists/specialists-slice';
 
 type CreateParams = Record<string, unknown> & {
   workspaceId: string;
@@ -26,6 +31,20 @@ declare global {
 export function setupHomeAssistantNewChatFixtures() {
   const previous = window.electronAPI;
   if (!previous) throw new Error('Home preview bridge is unavailable');
+  const { bundledSpecialists, bundledSpecialistsLoaded } = appStore.state.specialists;
+  appStore.dispatch(
+    setBundledSpecialists([
+      ...bundledSpecialists.filter((specialist) => specialist.id !== CHIEF_SPECIALIST_ID),
+      {
+        id: CHIEF_SPECIALIST_ID,
+        name: 'Assistant',
+        description: 'Synthetic Assistant for the Home preview.',
+        defaultBehaviorPrompt: 'Help with the synthetic Home preview workspace.',
+        hidden: true,
+      },
+    ]),
+  );
+  appStore.dispatch(setBundledSpecialistsLoaded(true));
   const calls: CreateParams[] = [];
   let holdNext = false;
   let release = () => {};
@@ -82,6 +101,8 @@ export function setupHomeAssistantNewChatFixtures() {
   return () => {
     release();
     stopCreation();
+    appStore.dispatch(setBundledSpecialists(bundledSpecialists));
+    appStore.dispatch(setBundledSpecialistsLoaded(bundledSpecialistsLoaded));
     window.electronAPI = previous;
     delete window.__homeAssistantNewChat;
   };

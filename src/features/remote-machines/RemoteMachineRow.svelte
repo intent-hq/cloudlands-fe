@@ -24,18 +24,23 @@
   import { remoteMachineUnexposeRequested } from './remote-machines-slice';
   import { connectionForMachine, machineNeedsUpdateForScripts } from './remote-machines-utils';
   import { runningAgentsLabel } from './remote-machines-messages';
+  import { withOrderActions, type MachineOrderControls } from './machine-order-controls';
+  import PreferredMachineBadge from './PreferredMachineBadge.svelte';
 
   let {
     machine,
     highlighted = false,
     first = false,
     last = false,
+    order,
   }: {
     machine: RemoteMachine;
     /** Briefly highlighted after it was added. */
     highlighted?: boolean;
     first?: boolean;
     last?: boolean;
+    /** In the ordered machine list: the preferred mark and Move up / Move down. */
+    order?: MachineOrderControls;
   } = $props();
 
   const connections$ = selectConnections();
@@ -50,14 +55,25 @@
   const platform = $derived(
     machine.platform ? `${machine.platform.os} · ${machine.platform.arch}` : null, // i18n-ignore (OS/arch identifiers)
   );
-  const actions = $derived<ActionDefinition[]>([
-    {
-      id: 'unexpose',
-      label: m.remoteMachines_unexposeAction_label({ backend: $backendLabel$ }),
-      icon: faLinkSlash,
-      disabled: removing,
-    },
-  ]);
+  const actions = $derived<ActionDefinition[]>(
+    withOrderActions(
+      [
+        {
+          id: 'unexpose',
+          label: m.remoteMachines_unexposeAction_label({ backend: $backendLabel$ }),
+          icon: faLinkSlash,
+          disabled: removing,
+        },
+      ],
+      order,
+    ),
+  );
+
+  function onAction(id: string) {
+    if (order?.onAction(id)) return;
+    if (id === 'unexpose')
+      appStore.dispatch(remoteMachineUnexposeRequested(machine.id, connectionId));
+  }
 </script>
 
 <article
@@ -74,6 +90,7 @@
   <ListRow class="items-center px-4 sm:px-5 [&>[data-slot]]:self-center">
     {#snippet title()}{machine.name}{/snippet}
     {#snippet meta()}
+      {#if order?.preferred}<PreferredMachineBadge />{/if}
       <RemoteMachineBadge {machine} backendLabel={$backendLabel$} />
       {#if platform}<span>{platform}</span>{/if}
       {#if machine.runningAgents > 0}<span>{runningAgentsLabel(machine.runningAgents)}</span>{/if}
@@ -87,7 +104,7 @@
       <RowActions
         alwaysVisible
         {actions}
-        onAction={() => appStore.dispatch(remoteMachineUnexposeRequested(machine.id, connectionId))}
+        {onAction}
         visibleCount={0}
         overflowLabel={m.remoteMachines_actionsFor_ariaLabel({ name: machine.name })}
       />

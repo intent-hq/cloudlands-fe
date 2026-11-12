@@ -75,7 +75,7 @@ const LAB_NODE: RemoteMachine = {
   addedAt: '2026-11-10T00:00:00Z',
 };
 
-export const NODE_LINK =
+const NODE_LINK =
   'intent://pair?v=1&host=192.0.2.20&port=7443&fp=AA%3A20&token=owner-secret-token&mode=node&tc=tc-gpu-rig';
 
 const MACHINES: ConnectionRecord[] = [

@@ -1,3 +1,4 @@
+import { setupChatMediaIPC } from '../features/hud/main/chat-media.ipc';
 /**
  * Main Process Entry Point
  *
@@ -6,6 +7,14 @@
 
 // The isolated package establishes private paths before any application dependency.
 import './isolated-test-bootstrap.js';
+import { initializeDockContextFeed } from './dock-context-ipc';
+import {
+  syncDockGlobalShortcuts,
+  initializeDockShortcutSettings,
+  dockShortcutMenuKey,
+  requestDockShortcut,
+  dockShortcutAvailable,
+} from './dock-global-shortcuts';
 import { getIsolatedTestProfile, isIsolatedTestBuild } from './isolated-test-profile.js';
 
 // CRITICAL: Import build-time config before application initialization
@@ -320,17 +329,33 @@ import { setupConfigIPC, getConfigManager } from '../features/config/main/config
 
 import { setupEventsIPC } from '../features/events/main/events.ipc';
 import { setupDockEvidenceIPC } from '../features/hud/main/dock-evidence.ipc';
+import { setupDockCaptureEditorIPC } from '../features/hud/main/dock-capture-editor-window';
+import {
+  isDockCaptureEditorFocusOwnDoing,
+  isDockCaptureEditorWindow,
+} from './dock-capture-editor-identity';
 import { isDockAnnotationWindow } from './dock-annotation-identity';
 import {
   closeDockWindow,
   createDockWindow,
   focusDockWindow,
   getDockWindow,
+  isDockFocusOwnDoing,
   isDockWindow,
+  setDockHideHandler,
 } from './dock-window';
 import { createDockMenuController } from './dock-menu-controller';
+import { dockWindowMenuItems } from './dock-window-menu';
+import { registerDockActivateAppHandler } from './dock-placement-ipc';
 import { getDockEnabledLocalPref, setDockEnabledLocalPref } from './local-prefs';
-import { isDockLabEnabled, loadDockLabEnabled, registerDockLabHandlers } from './dock-lab';
+import {
+  changeDockLabEnabled,
+  isDockLabEnabled,
+  loadDockLabEnabled,
+  registerDockLabHandlers,
+  startDockLab,
+} from './dock-lab';
+import { registerDockMediaClipboardIPC } from '../features/hud/main/dock-media-clipboard';
 import { loadMachineRailEnabled, registerMachineRailHandlers } from './machine-rail';
 import {
   setupBrowserAccess,
@@ -1033,7 +1058,17 @@ const bootFlow = app.whenReady().then(async () => {
     readEnabledPreference: getDockEnabledLocalPref,
     writeEnabledPreference: (enabled) =>
       isShuttingDown ? Promise.resolve() : setDockEnabledLocalPref(enabled),
-    onStateChange: () => app.emit('dock-window-state-changed'),
+    onStateChange: () => {
+      syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
+      app.emit('dock-window-state-changed');
+    },
+  });
+  // The dock's own Hide turns Notch dock off: hiding the dock and the Settings switch
+  // are one setting. The dock closes at once, even if the save fails.
+  setDockHideHandler(() => {
+    void changeDockLabEnabled(false).catch((error: unknown) => {
+      logger.warn('Failed to remember dock hide', { error });
+    });
   });
 
   // Function to rebuild and set the application menu. Callers fire-and-forget
@@ -1048,24 +1083,28 @@ const bootFlow = app.whenReady().then(async () => {
       { role: 'minimize', label: m.menu_minimize(), accelerator: 'CmdOrCtrl+M' },
       { role: 'zoom', label: m.menu_window_fill() },
       { type: 'separator' },
-      // The dock is an experimental Labs feature: its items exist only while the lab is on.
-      ...(isDockLabEnabled()
-        ? ([
-            {
-              label: m.menu_show_intent_dock(),
-              type: 'checkbox',
-              checked: dockMenuController.isEnabled(),
-              click: (menuItem) => void dockMenuController.setEnabled(menuItem.checked),
-            },
-            {
-              label: m.menu_focus_intent_dock(),
-              accelerator: 'CmdOrCtrl+Shift+D',
-              enabled: dockMenuController.isEnabled(),
-              click: () => dockMenuController.focus(),
-            },
-            { type: 'separator' },
-          ] satisfies Electron.MenuItemConstructorOptions[])
-        : []),
+      // Show Intent Dock is the Notch dock setting (always present); the dock commands
+      // exist only while it is on.
+      ...dockWindowMenuItems({
+        labEnabled: isDockLabEnabled(),
+        dockShown: dockMenuController.isEnabled(),
+        labels: {
+          show: m.menu_show_intent_dock(),
+          focus: m.menu_focus_intent_dock(),
+          record: m.dock_shortcut_record_menu(),
+          capture: m.browser_overflow_screenshot_label(),
+          dictate: m.dock_shortcut_dictate_label(),
+          unavailable: m.dock_shortcut_unavailable(),
+        },
+        hint: (action) => {
+          const key = dockShortcutMenuKey(action);
+          return key ? { available: dockShortcutAvailable(action), key } : null;
+        },
+        setNotchDock: changeDockLabEnabled,
+        requestShortcut: (action) => void requestDockShortcut(action),
+        warn: (error) => logger.warn('Failed to change the dock', { error }),
+        refresh: () => void rebuildMenu(),
+      }),
       {
         label: m.menu_select_previous_tab(),
         accelerator: 'CmdOrCtrl+[',
@@ -1107,7 +1146,8 @@ const bootFlow = app.whenReady().then(async () => {
         !w.isDestroyed() &&
         !isWebviewPopupWindow(w) &&
         !isDockWindow(w) &&
-        !isDockAnnotationWindow(w),
+        !isDockAnnotationWindow(w) &&
+        !isDockCaptureEditorWindow(w),
     );
     if (liveWindows.length > 0) {
       let connections: Awaited<ReturnType<typeof listConnections>> = [];
@@ -1594,6 +1634,10 @@ const bootFlow = app.whenReady().then(async () => {
   setupFileIPC();
   setupSystemIPC();
   setupDockEvidenceIPC();
+  setupChatMediaIPC();
+  setupDockCaptureEditorIPC();
+  // Copy/cut/paste of dock composer screenshots and recordings (dock window only).
+  registerDockMediaClipboardIPC(getDockWindow);
   setupDevConsoleIPC(
     createDaemonLinks((backendId) => {
       try {
@@ -1662,11 +1706,17 @@ const bootFlow = app.whenReady().then(async () => {
   // Every critical handler a renderer invokes on boot now exists: let the
   // window creators in ./window.ts proceed (they all await this gate).
   // The dock lab is main-owned and off by default; the dock restores only while it is on.
+  await initializeDockShortcutSettings();
+  initializeDockContextFeed();
   await loadDockLabEnabled();
   registerDockLabHandlers({
     show: () => dockMenuController.setEnabled(true),
     hide: () => dockMenuController.dismiss(),
-    onChange: () => void rebuildMenu(),
+    onChange: () => {
+      syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
+      void rebuildMenu();
+    },
+    restore: () => dockMenuController.restore(),
     isDock: (sender) => getDockWindow()?.webContents === sender,
   });
   // The machine rail lab is main-owned and off by default.
@@ -1681,7 +1731,8 @@ const bootFlow = app.whenReady().then(async () => {
     },
   });
   markRendererWindowsAllowed();
-  if (isDockLabEnabled()) await dockMenuController.restore();
+  await startDockLab();
+  syncDockGlobalShortcuts(isDockLabEnabled() && getDockWindow() !== null);
   void rebuildMenu();
 
   startupMetrics.end('criticalIPC');
@@ -2221,21 +2272,38 @@ if (!gotTheLock) {
   });
 }
 
-app.on('activate', async () => {
-  if (isSecondInstance) return;
-
-  // Waits for the boot flow's window creation first, so a first-launch
-  // activate becomes a focus of the boot window rather than a duplicate; the
-  // IPC-readiness wait lives inside the creators (see ./app-activate.ts).
-  await handleActivate<BrowserWindowType>({
+/**
+ * Bring Intent forward as it was: focus the last window, or restore the saved
+ * session when none is open. Waits for the boot flow's window creation first, so
+ * a first-launch activate becomes a focus of the boot window rather than a
+ * duplicate; the IPC-readiness wait lives inside the creators (see
+ * ./app-activate.ts). An OS activation is ignored during a capture, and while the
+ * dock has focus by its own doing (pointer on it, or Intent just focused it), since
+ * that can activate the process; a launcher or Dock-icon reopen still shows Intent.
+ * The dock's own request (`fromDock`, a header double-click) always does.
+ */
+function activateIntent(fromDock: boolean) {
+  return handleActivate<BrowserWindowType>({
     whenBootWindowsReady: () => bootWindowsGate.ready,
     shouldIgnoreActivation: () => {
+      if (fromDock) return false;
       const focused = BrowserWindow.getFocusedWindow();
-      return !!focused && (isDockWindow(focused) || isDockAnnotationWindow(focused));
+      if (!focused) return false;
+      // A capture in progress: never reveal a workspace behind it.
+      if (isDockAnnotationWindow(focused)) return true;
+      // The capture editor Intent just opened is not a request to bring a workspace
+      // window over it; a reopen while it has focus still is.
+      if (isDockCaptureEditorWindow(focused) && isDockCaptureEditorFocusOwnDoing()) return true;
+      // The dock: only its own focusing (pointer on it, or Intent just focused it) is
+      // not a request for the main app; a launcher or Dock-icon reopen is.
+      return isDockWindow(focused) && isDockFocusOwnDoing();
     },
     getAllWindows: () =>
       getAppWindows().filter(
-        (window: BrowserWindowType) => !isDockWindow(window) && !isDockAnnotationWindow(window),
+        (window: BrowserWindowType) =>
+          !isDockWindow(window) &&
+          !isDockAnnotationWindow(window) &&
+          !isDockCaptureEditorWindow(window),
       ),
     getMainWindow,
     getClaimedWindow: () => getActivationFocusClaim<BrowserWindowType>(),
@@ -2249,4 +2317,10 @@ app.on('activate', async () => {
       restoreAllBackendWindowSessions(backendId, connectBackendClient),
     createWindow,
   });
+}
+
+app.on('activate', async () => {
+  if (isSecondInstance) return;
+  await activateIntent(false);
 });
+registerDockActivateAppHandler(() => activateIntent(true));

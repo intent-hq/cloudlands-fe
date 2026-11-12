@@ -67,6 +67,8 @@ export interface QueuedMessage extends SubmissionCorrelation {
   /** Ordered original text/attachment units in a combined retry; authority belongs to this row. */
   deliveryGroups?: Array<{
     content: string;
+    /** This original unit's provenance; outer metadata never authenticates another unit. */
+    messageMetadata?: Record<string, unknown>;
     imageBlocks?: QueuedMessage['imageBlocks'];
     fileBlocks?: QueuedMessage['fileBlocks'];
   }>;

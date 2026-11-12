@@ -1,3 +1,15 @@
+import * as mediaSend from '$features/hud/composer/dock-media-send';
+import {
+  defaultDockMediaEdit,
+  type DockSavedMedia,
+  type DockMediaSource,
+} from '$shared/dock-media-edit';
+import { emptyDockEvidence, dockEvidenceId } from '$shared/dock-evidence';
+import {
+  dockEvidenceRestored,
+  dockEvidenceMediaChanged,
+  dockEvidenceAnnotationChanged,
+} from '../dock-conversation-slice';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { createWorkspaceId, createAgentId, CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
@@ -38,6 +50,7 @@ import {
 import { createAdmittedLegacyPrincipal } from '../../../../../test/fixtures/admitted-legacy-principal';
 import type { AgentSession } from '$shared/types';
 import { store as appStore } from '$store/renderer/store';
+import { appClient } from '$lib/client';
 import { clearDraftCacheForTests } from '$lib/components/chat/chat-draft-cache';
 import { __resetAgentQueueReadServiceForTests } from '$features/agent/agent-queue-read-service';
 import {
@@ -62,19 +75,31 @@ import {
   dockConversationContextItemsChanged,
   sendDockConversationRequested,
   retryDockConversationSendRequested,
+  dockEvidenceMediaPasted,
 } from '../dock-conversation-slice';
 import {
   selectDockConversationView,
   selectDockConversationComposer,
 } from '../dock-conversation-selectors';
 import { dockConversationSaga } from './dock-conversation-saga';
-import { configureDockEvidenceNative, setDockDictationMarkSink } from './dock-evidence-saga';
-import { __resetDockRetentionProbesForTests } from '$features/hud/composer/dock-evidence-placement';
+import {
+  configureDockEvidenceNative,
+  evidenceOf,
+  setDockDictationMarkSink,
+} from './dock-evidence-saga';
+import { DOCK_CAPTURE_EDITOR_CHANNELS } from '$shared/dock-capture-editor';
+import {
+  __resetDockRetentionProbesForTests,
+  captureDockPasteOrigin,
+} from '$features/hud/composer/dock-evidence-placement';
 import { systemStatusSuccess } from '../../daemon-health/daemon-health-slice';
 import type { SystemStatusWirePayload } from '../../daemon-health/daemon-health-types';
 import {
   dockEvidenceAnnotationToggleRequested,
+  dockEvidenceToolSelectRequested,
+  dockEvidenceCaptureCancelled,
   dockEvidenceCaptureRequested,
+  dockMediaEditorOpenRequested,
   dockEvidenceCaptureModeSet,
   dockEvidenceImageRemoveRequested,
   dockEvidenceInsertionCommitted,
@@ -222,7 +247,12 @@ beforeEach(() => {
       });
     }),
   );
-  cleanups.push(appStore.runSaga(chatDraftsSaga));
+  // This fixture scripts daemon drafts.*, not the desktop-local shared broker.
+  cleanups.push(
+    appStore.runSaga(function* legacyDaemonDraftsSaga() {
+      yield* chatDraftsSaga(appClient.drafts, null);
+    }),
+  );
   cleanups.push(appStore.runSaga(dockConversationSaga));
 });
 afterEach(() => {
@@ -968,6 +998,8 @@ function scriptedNative(
     synced: [] as { n: number }[][],
     acks: [] as [annotationId: string, markId: string, accepted: boolean][],
     media: [] as unknown[],
+    pauses: [] as [clipId: string, paused: boolean][],
+    stopped: [] as string[],
   };
   let nextCapture: (() => DockCapturedPixels) | null = null;
   const service: DockEvidenceNativeService = {
@@ -1002,10 +1034,15 @@ function scriptedNative(
             calls.released.push(clipId);
             return { ok: true as const, value: undefined };
           },
+          pauseClip: async (clipId: string, paused: boolean) => {
+            calls.pauses.push([clipId, paused]);
+            return { ok: true as const, value: { paused } };
+          },
         }
       : {}),
-    stopClip: async () =>
-      options.record
+    stopClip: async (clipId) => {
+      calls.stopped.push(clipId);
+      return options.record
         ? {
             ok: true,
             value: {
@@ -1016,7 +1053,8 @@ function scriptedNative(
               hasMicAudio: false,
             },
           }
-        : { ok: false, error: 'unavailable' },
+        : { ok: false, error: 'unavailable' };
+    },
     subscribe: (next) => {
       listener = next;
       return () => {
@@ -1088,7 +1126,7 @@ describe('dock screen evidence through the canonical send', () => {
     appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
     await vi.waitFor(() => expect(evidenceView().annotating).toBe(true));
     const sessionId = native.calls.started[0].id;
-    expect(native.calls.started[0]).toMatchObject({ tool: 'pick', mode: 'live' });
+    expect(native.calls.started[0]).toMatchObject({ tool: 'box', mode: 'live' });
     // The first live mark carries the capture that becomes the session image.
     native.emit({
       type: 'mark',
@@ -1676,6 +1714,46 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
     expect(chiefView().clips).toEqual([]);
   });
 
+  it.each(['negative', 'unobserved'] as const)(
+    'does not let a held %s capability result mutate a replacement native owner',
+    async (result) => {
+      const native = scriptedNative({ record: true });
+      await openChief(native);
+      const current = appStore.state.dockConversation.serverCapabilities!;
+      appStore.dispatch(
+        dockEvidenceServerCapabilitiesObserved({ ...current, backendId: 'old-backend' }),
+      );
+      __resetDockRetentionProbesForTests();
+      const gate = deferred<unknown>();
+      const reads = backend.requests.filter((row) => row.method === 'client.hello').length;
+      backend.onRequest('client.hello', () => gate.promise);
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(CHIEF_WORKSPACE_ID, chiefAgent));
+      await vi.waitFor(() =>
+        expect(backend.requests.filter((row) => row.method === 'client.hello')).toHaveLength(
+          reads + 1,
+        ),
+      );
+      const replacement = scriptedNative({ record: true });
+      configureDockEvidenceNative(replacement.service);
+      appStore.dispatch(
+        dockEvidenceAnnotationChanged(CHIEF_WORKSPACE_ID, chiefAgent, {
+          id: 'replacement-annotation',
+          mode: 'live',
+          imageId: null,
+        }),
+      );
+      gate.resolve(
+        result === 'negative' ? { server: { capabilities: { chiefAttachments: 0 } } } : null,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(replacement.calls.ended).toEqual([]);
+      expect(replacement.calls.started).toEqual([]);
+      expect(chiefView().evidence?.annotation?.id).toBe('replacement-annotation');
+      expect(chiefView().captureError).not.toBe('unsupported-workspace');
+      expect(native.calls.clips).toEqual([]);
+    },
+  );
+
   it('records several clips, each placed as its own file reference and removable on its own', async () => {
     advertised = 1;
     const native = scriptedNative({ record: true });
@@ -1809,6 +1887,192 @@ describe('assistant workspace clips follow the observed chiefAttachments capabil
     await vi.waitFor(() => expect(chiefView().captureError).toBe('unsupported-workspace'));
     expect(native.calls.clips).toEqual([]);
   });
+
+  /** Edit on an Assistant screenshot: a stand-in editor channel records OPEN requests. */
+  async function editChiefScreenshot(attachmentsAdvertised: unknown, refuseOpen = false) {
+    advertised = attachmentsAdvertised;
+    const opens: unknown[] = [];
+    const placements: unknown[] = [];
+    const bridge = window as unknown as {
+      electronAPI?: { invoke: (channel: string, request?: unknown) => Promise<unknown> };
+    };
+    const previous = bridge.electronAPI;
+    bridge.electronAPI = {
+      invoke: async (channel, request) => {
+        if (channel === DOCK_CAPTURE_EDITOR_CHANNELS.OPEN) {
+          opens.push(request);
+          return refuseOpen
+            ? { ok: false, error: 'unavailable' }
+            : { ok: true, openId: '00000000-0000-4000-8000-000000000001' };
+        }
+        return previous?.invoke(channel, request);
+      },
+    };
+    // Like the daemon: the Assistant workspace refuses attachments it does not advertise.
+    backend.onRequest('file.placeAttachment', (params) => {
+      const row = params as { workspaceId: string; fileName: string; mimeType?: string };
+      placements.push(row.workspaceId);
+      if (row.workspaceId === CHIEF_WORKSPACE_ID && !advertised)
+        throw new Error('chief attachments unsupported');
+      return {
+        ok: true,
+        path: `.intent/attachments/${row.fileName}`,
+        fileName: row.fileName,
+        size: 2048,
+        attachmentId: `chief-image-${placements.length}`,
+        mimeType: row.mimeType ?? 'image/png',
+        uploadedAt: timestamp,
+      };
+    });
+    const native = scriptedNative();
+    await openChief(native);
+    appStore.dispatch(dockEvidenceCaptureRequested(CHIEF_WORKSPACE_ID, chiefAgent));
+    await vi.waitFor(() =>
+      expect(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images).toHaveLength(1),
+    );
+    const image = evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)!.images[0];
+    const before = JSON.stringify(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images);
+    appStore.dispatch(dockMediaEditorOpenRequested(CHIEF_WORKSPACE_ID, chiefAgent, image.id));
+    return {
+      opens,
+      placements,
+      before,
+      restore: () => {
+        bridge.electronAPI = previous;
+      },
+    };
+  }
+
+  it('Edit on an Assistant screenshot without chiefAttachments uploads nothing and says why', async () => {
+    const run = await editChiefScreenshot(0);
+    try {
+      await vi.waitFor(() => expect(notifications.warning).toHaveBeenCalledTimes(1));
+      expect(run.placements).toEqual([]);
+      expect(run.opens).toEqual([]);
+      expect(JSON.stringify(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images)).toBe(run.before);
+      expect(appStore.state.dockConversation.workspaceId).toBe(CHIEF_WORKSPACE_ID);
+      expect(appStore.state.dockConversation.agentId).toBe(chiefAgent);
+    } finally {
+      run.restore();
+    }
+  });
+
+  it('Edit on an Assistant screenshot whose editor refuses to open says so once and keeps the capture', async () => {
+    const run = await editChiefScreenshot(1, true);
+    try {
+      await vi.waitFor(() => expect(run.opens).toHaveLength(1));
+      await vi.waitFor(() => expect(notifications.warning).toHaveBeenCalledTimes(1));
+      expect(evidenceOf(CHIEF_WORKSPACE_ID, chiefAgent)?.images).toHaveLength(1);
+      expect(appStore.state.dockConversation.agentId).toBe(chiefAgent);
+    } finally {
+      run.restore();
+    }
+  });
+
+  it('Edit on an Assistant screenshot with chiefAttachments places it once and opens the editor', async () => {
+    const run = await editChiefScreenshot(1);
+    try {
+      await vi.waitFor(() => expect(run.opens).toHaveLength(1));
+      expect(run.placements).toEqual([CHIEF_WORKSPACE_ID]);
+      expect(notifications.warning).not.toHaveBeenCalled();
+    } finally {
+      run.restore();
+    }
+  });
+});
+
+describe('recording toolbar startup admission', () => {
+  it('refuses Record when a capture-only native service omits capabilities', async () => {
+    const native = scriptedNative();
+    const startClip = vi.spyOn(native.service, 'startClip');
+    const captureOnly = { ...native.service };
+    delete captureOnly.capabilities;
+    configureDockEvidenceNative(captureOnly);
+    await open();
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(evidenceView().captureError).toBe('unavailable');
+    expect(native.calls.started).toEqual([]);
+    expect(startClip).not.toHaveBeenCalled();
+  });
+
+  it('does not reopen Annotate when cancelled START settles before the held STOP reply', async () => {
+    const native = scriptedNative({ record: true });
+    const start = deferred<Awaited<ReturnType<DockEvidenceNativeService['startClip']>>>();
+    const stop = deferred<Awaited<ReturnType<DockEvidenceNativeService['stopClip']>>>();
+    const startClip = vi.spyOn(native.service, 'startClip').mockReturnValue(start.promise);
+    const stopClip = vi.spyOn(native.service, 'stopClip').mockReturnValue(stop.promise);
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(startClip).toHaveBeenCalledTimes(1));
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(stopClip).toHaveBeenCalledTimes(1));
+    const cancelled = { ok: false, error: 'failed', detail: 'cancelled' } as const;
+    try {
+      start.resolve(cancelled);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(native.calls.started).toHaveLength(1);
+      expect(evidenceView().annotating).toBe(false);
+      expect(evidenceView().clips).toEqual([]);
+      expect(evidenceView().captureError).toBeNull();
+      expect(notifications.warning).not.toHaveBeenCalled();
+    } finally {
+      stop.resolve(cancelled);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(native.calls.started).toHaveLength(1);
+    expect(evidenceView().recording).toBe(false);
+  });
+
+  it('refuses an unsupported Record before opening a toolbar or calling native recording', async () => {
+    const native = scriptedNative();
+    const startClip = vi.spyOn(native.service, 'startClip');
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().captureError).toBe('unavailable'));
+    expect(native.calls.started).toEqual([]);
+    expect(startClip).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])(
+    'cancelling a pending toolbar cannot start recording or fallback annotate (record=%s)',
+    async (record) => {
+      const gate = deferred<DockNativeResult<void>>();
+      const native = scriptedNative({ record, start: () => gate.promise });
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      expect(evidenceView().annotating).toBe(false);
+      gate.resolve({ ok: true, value: undefined });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(native.calls.clips).toEqual([]);
+      expect(native.calls.started).toHaveLength(1);
+      expect(evidenceView().annotating).toBe(false);
+      expect(evidenceView().recording).toBe(false);
+    },
+  );
+
+  it('does not admit a second Record while the first toolbar is opening', async () => {
+    const gate = deferred<DockNativeResult<void>>();
+    const native = scriptedNative({ record: true, start: () => gate.promise });
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    try {
+      appStore.dispatch(dockEvidenceRecordToggleRequested(workspaceA, mainA));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(native.calls.clips).toEqual([]);
+    } finally {
+      gate.resolve({ ok: true, value: undefined });
+    }
+    await vi.waitFor(() => expect(native.calls.clips).toHaveLength(1));
+    expect(native.calls.started).toHaveLength(1);
+  });
 });
 
 describe('dock annotate start feedback, refusals and dictation', () => {
@@ -1880,13 +2144,16 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     const button = { label: 'L', tooltip: 'T', disabled: false, pending: false, alert: false };
     const media = {
       capture: { ...button, revision: 0 },
-      record: { ...button, recording: false, startedAt: null },
+      record: { ...button, recording: false, startedAt: null, pausedAt: null, pausedMs: 0 },
     };
     // The composer's state reaches the bar, and again before a session starts.
     appStore.dispatch(dockEvidenceBarMediaChanged(workspaceA, mainA, media));
     await vi.waitFor(() => expect(native.calls.media).toEqual([media]));
-    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    // Selecting a drawing tool opens a standalone bar; Annotate starts recording.
+    appStore.dispatch(dockEvidenceToolSelectRequested(workspaceA, mainA, 'box'));
     await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    expect(evidenceView().recording).toBe(false);
+    expect(native.calls.clips).toEqual([]);
     expect(native.calls.media).toEqual([media, media]);
     const sessionId = native.calls.started[0].id;
 
@@ -1916,6 +2183,318 @@ describe('dock annotate start feedback, refusals and dictation', () => {
     expect(evidenceView().tiles).toHaveLength(1);
     expect(native.calls.clips).toHaveLength(1);
     expect(evidenceView().annotating).toBe(true);
+    // Retiring the real session invalidates both controls, even after permission clears.
+    appStore.dispatch(dockEvidenceAnnotationEndRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    appStore.dispatch(dockEvidenceCaptureCancelled(workspaceA, mainA));
+    native.emit({ type: 'annotation-media', sessionId, action: 'capture' });
+    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
+    await settle();
+    expect(evidenceView().tiles).toHaveLength(1);
+    expect(native.calls.clips).toHaveLength(1);
+    expect(evidenceView().annotating).toBe(false);
+  });
+
+  it('the recording bar pauses and resumes the clip, and Done stops, attaches and ends the session', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    await open();
+    await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const clipId = native.calls.clips[0];
+    const live = () => evidenceView().clips.find((clip) => clip.id === clipId);
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'pause' });
+    await vi.waitFor(() => expect(live()?.pausedAt).toEqual(expect.any(Number)));
+    expect(native.calls.pauses).toEqual([[clipId, true]]);
+    native.emit({ type: 'annotation-media', sessionId, action: 'resume' });
+    await vi.waitFor(() => expect(live()?.pausedAt).toBeNull());
+    expect(native.calls.pauses).toEqual([
+      [clipId, true],
+      [clipId, false],
+    ]);
+    expect(live()?.pausedMs).toBeGreaterThanOrEqual(0);
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'done' });
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(false));
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    expect(native.calls.stopped).toEqual([clipId]);
+    expect(native.calls.ended).toContain(sessionId);
+    // The stopped clip is kept: it becomes the composer's attachment.
+    await vi.waitFor(() => expect(evidenceView().clips.map((clip) => clip.id)).toEqual([clipId]));
+  });
+
+  it.each([false, true])(
+    'discard suspends input before held pause; Undo respects owner replacement=%s',
+    async (replaceOwner) => {
+      const native = scriptedNative({ record: true });
+      const pause = deferred<DockNativeResult<{ paused: boolean }>>();
+      vi.spyOn(native.service, 'pauseClip').mockReturnValue(pause.promise);
+      const mouse = vi.fn(async () => {});
+      native.service.setAnnotationMouse = mouse;
+      const tool = vi.spyOn(native.service, 'setAnnotationTool');
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+      const sessionId = native.calls.started[0].id;
+      native.emit({
+        type: 'mark',
+        sessionId,
+        markId: 'kept-before-discard',
+        tool: 'box',
+        geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 },
+        element: null,
+        capture: shot(1),
+      });
+      await vi.waitFor(() => expect(evidenceView().evidence?.marks).toHaveLength(1));
+      const marksBefore = structuredClone(evidenceView().evidence?.marks);
+      const imagesBefore = structuredClone(evidenceView().evidence?.images);
+      mouse.mockClear();
+      tool.mockClear();
+      try {
+        native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+        await new Promise((r) => setTimeout(r, 0));
+        expect(mouse).toHaveBeenCalledWith(sessionId);
+        native.emit({
+          type: 'mark',
+          sessionId,
+          markId: 'late-discard',
+          tool: 'box',
+          geometry: { kind: 'rect', x: 10, y: 10, w: 30, h: 30 },
+          element: null,
+          capture: shot(1),
+        });
+        native.emit({
+          type: 'annotation-media',
+          sessionId,
+          action: 'discard-undo',
+          inputRevision: 1,
+        });
+        await new Promise((r) => setTimeout(r, 0));
+        expect(evidenceView().evidence?.marks).toEqual(marksBefore);
+        expect(native.calls.acks).toContainEqual([sessionId, 'late-discard', false]);
+        expect(evidenceView().evidence?.images).toEqual(imagesBefore);
+        expect(tool).not.toHaveBeenCalled();
+        if (replaceOwner) configureDockEvidenceNative(scriptedNative({ record: true }).service);
+      } finally {
+        pause.resolve({ ok: true, value: { paused: true } });
+      }
+      if (replaceOwner) {
+        await new Promise((r) => setTimeout(r, 0));
+        expect(tool).not.toHaveBeenCalled();
+      } else await vi.waitFor(() => expect(tool).toHaveBeenCalledWith(sessionId, 'box', 1));
+      expect(evidenceView().recording).toBe(true);
+      expect(native.calls.stopped).toEqual([]);
+    },
+  );
+
+  it.each(['pause', 'tool'] as const)(
+    'Done remains a safe recovery after rejected %s restoration',
+    async (failure) => {
+      const native = scriptedNative({ record: true });
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+      const sessionId = native.calls.started[0].id;
+      const clipId = native.calls.clips[0];
+      const pauseCommand = vi.spyOn(native.service, 'pauseClip');
+      if (failure === 'pause') pauseCommand.mockRejectedValueOnce(new Error('transport'));
+      else
+        vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
+      native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+      await vi.waitFor(() => expect(pauseCommand).toHaveBeenCalledTimes(1));
+      native.emit({
+        type: 'annotation-media',
+        sessionId,
+        action: 'discard-undo',
+        inputRevision: 1,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      native.emit({ type: 'annotation-media', sessionId, action: 'done' });
+      await vi.waitFor(() => expect(native.calls.stopped).toEqual([clipId]));
+      await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+      expect(evidenceView().clips).toHaveLength(1);
+    },
+  );
+
+  it.each(['mouse', 'tool'] as const)(
+    'a rejected %s control during discard/Undo leaves the saga usable',
+    async (failure) => {
+      const native = scriptedNative({ record: true });
+      native.service.setAnnotationMouse = vi.fn(async () => {});
+      configureDockEvidenceNative(native.service);
+      await open();
+      appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+      await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+      const sessionId = native.calls.started[0].id;
+      if (failure === 'mouse')
+        vi.mocked(native.service.setAnnotationMouse).mockRejectedValueOnce(new Error('transport'));
+      if (failure === 'tool')
+        vi.spyOn(native.service, 'setAnnotationTool').mockRejectedValueOnce(new Error('transport'));
+      native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+      await vi.waitFor(() => expect(native.calls.pauses).toHaveLength(1));
+      native.emit({
+        type: 'annotation-media',
+        sessionId,
+        action: 'discard-undo',
+        inputRevision: 1,
+      });
+      await new Promise((r) => setTimeout(r, 0));
+      native.emit({
+        type: 'annotation-media',
+        sessionId,
+        action: 'discard-confirm',
+        inputRevision: 1,
+      });
+      await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+      await vi.waitFor(() => expect(evidenceView().clips).toEqual([]));
+    },
+  );
+
+  it('an unexpected annotation-ended retires discard ownership before another session', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    await open();
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+    await vi.waitFor(() => expect(native.calls.pauses).toHaveLength(1));
+    native.emit({ type: 'annotation-ended', sessionId });
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(2));
+  });
+
+  it('discard pauses at once; undo keeps the clip, and confirm deletes it and ends the session', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    await open();
+    await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
+    appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
+    await vi.waitFor(() => expect(native.calls.started).toHaveLength(1));
+    const sessionId = native.calls.started[0].id;
+    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
+    const clipId = native.calls.clips[0];
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard', inputRevision: 1 });
+    await vi.waitFor(() => expect(native.calls.pauses).toEqual([[clipId, true]]));
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-undo', inputRevision: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(evidenceView().recording).toBe(true);
+    expect(evidenceView().annotating).toBe(true);
+    expect(native.calls.stopped).toEqual([]);
+
+    native.emit({ type: 'annotation-media', sessionId, action: 'discard-confirm' });
+    await vi.waitFor(() => expect(evidenceView().annotating).toBe(false));
+    await vi.waitFor(() => expect(evidenceView().clips).toEqual([]));
+    expect(native.calls.stopped).toEqual([clipId]);
+  });
+
+  it('pasting a copied screenshot recreates it here with its marks editable, under new ids', async () => {
+    const native = scriptedNative();
+    configureDockEvidenceNative(native.service);
+    await open();
+    const marks = [
+      {
+        tool: 'box' as const,
+        geometry: { kind: 'rect' as const, x: 10, y: 10, w: 50, h: 40 },
+        bounds: { x: 10, y: 10, w: 50, h: 40 },
+        element: null,
+      },
+      {
+        tool: 'arrow' as const,
+        geometry: { kind: 'arrow' as const, from: { x: 1, y: 1 }, to: { x: 20, y: 20 } },
+        bounds: { x: 1, y: 1, w: 19, h: 19 },
+        element: null,
+      },
+    ];
+    appStore.dispatch(
+      dockEvidenceMediaPasted(
+        workspaceA,
+        mainA,
+        {
+          kind: 'image',
+          name: 'screenshot.png',
+          size: 8,
+          sha256: '0'.repeat(64),
+          pixels: {
+            base64: 'iVBORw0KGgo=',
+            mimeType: 'image/png',
+            width: 800,
+            height: 600,
+            displayScale: 2,
+            capturedAt: '2026-11-03T12:00:00.000Z',
+          },
+          marks,
+        },
+        captureDockPasteOrigin(workspaceA, mainA),
+      ),
+    );
+    await vi.waitFor(() => expect(evidenceView().tiles).toHaveLength(1));
+    const tile = evidenceView().tiles[0]!;
+    expect(tile.marks.map(({ n, mark }) => [n, mark.tool, mark.geometry])).toEqual([
+      [1, 'box', marks[0]!.geometry],
+      [2, 'arrow', marks[1]!.geometry],
+    ]);
+    // Fresh identities: the image and every mark are new to this draft.
+    expect(new Set(tile.marks.map(({ mark }) => mark.id)).size).toBe(2);
+    expect(tile.marks.every(({ mark }) => mark.imageId === tile.image.id)).toBe(true);
+  });
+
+  it('pasting a copied recording places the clipboard file into this workspace as a new clip', async () => {
+    const native = scriptedNative({ record: true });
+    configureDockEvidenceNative(native.service);
+    const placed: { fileName: string; sourcePath?: string; mimeType?: string }[] = [];
+    backend.onRequest('file.placeAttachment', (params) => {
+      const row = params as { fileName: string; sourcePath?: string; mimeType?: string };
+      placed.push(row);
+      return {
+        ok: true,
+        path: `.intent/attachments/${row.fileName}`,
+        fileName: row.fileName,
+        size: 4096,
+        attachmentId: `pasted-clip-${placed.length}`,
+        mimeType: row.mimeType ?? 'video/mp4',
+        uploadedAt: '2026-11-03T12:00:00.000Z',
+      };
+    });
+    await open();
+    await vi.waitFor(() => expect(evidenceView().capabilities.record).toBe(true));
+    appStore.dispatch(
+      dockEvidenceMediaPasted(
+        workspaceA,
+        mainA,
+        {
+          kind: 'clip',
+          name: 'clip-1234abcd.mp4',
+          mimeType: 'video/mp4',
+          sourcePath: '/userData/dock-clipboard/entry/clip-1234abcd.mp4',
+          size: 4096,
+          sha256: '0'.repeat(64),
+          durationMs: 42_000,
+          hasMicAudio: true,
+        },
+        captureDockPasteOrigin(workspaceA, mainA),
+      ),
+    );
+    await vi.waitFor(() => expect(evidenceView().clips[0]?.status).toBe('ready'));
+    const clip = evidenceView().clips[0]!;
+    expect(clip).toMatchObject({ durationMs: 42_000, hasMicAudio: true });
+    expect(placed).toHaveLength(1);
+    expect(placed[0]).toMatchObject({
+      sourcePath: '/userData/dock-clipboard/entry/clip-1234abcd.mp4',
+      mimeType: 'video/mp4',
+    });
+    // Nothing was recorded natively: the clip came from the clipboard's own file.
+    expect(native.calls.clips).toEqual([]);
   });
 
   it('an annotate session captures the whole screen whatever the composer mode is', async () => {
@@ -2052,7 +2631,7 @@ describe('dock annotate Done on the on-screen bar', () => {
     expect(evidenceView().tiles).toEqual([]);
   });
 
-  it('Done preserves an in-flight screenshot, recording and queued editor evidence', async () => {
+  it('Ending annotation preserves an in-flight screenshot, recording and queued editor evidence', async () => {
     const native = scriptedNative({ record: true });
     let finishCapture: (result: DockNativeResult<DockCapturedPixels>) => void = () => {
       throw new Error('Capture is not waiting');
@@ -2065,11 +2644,11 @@ describe('dock annotate Done on the on-screen bar', () => {
     await open();
     appStore.dispatch(dockEvidenceAnnotationToggleRequested(workspaceA, mainA));
     await vi.waitFor(() => expect(evidenceView().annotating).toBe(true));
+    // Annotate already owns a recording; this is annotation-ended, not toolbar Done.
+    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
     const sessionId = native.calls.started[0].id;
     native.emit({ type: 'annotation-media', sessionId, action: 'capture' });
     await vi.waitFor(() => expect(evidenceView().capturePending).toBe(true));
-    native.emit({ type: 'annotation-media', sessionId, action: 'record' });
-    await vi.waitFor(() => expect(evidenceView().recording).toBe(true));
     appStore.dispatch(
       dockEvidenceInsertionQueued(workspaceA, mainA, {
         id: 'queued-before-done',
@@ -2091,4 +2670,461 @@ describe('dock annotate Done on the on-screen bar', () => {
     expect(evidenceView().evidence?.insertions).toEqual(queued);
     expect(evidenceView().evidence?.clips).toEqual(clips);
   });
+});
+
+describe('held capture preparation local-admission content CAS', () => {
+  it.each(['recognition', 'saved-edit', 'source-replacement'] as const)(
+    'handles %s arriving during preparation without duplicate delivery or wrong cleanup',
+    async (change) => {
+      await open();
+      const source: DockMediaSource = {
+        id: 'generated-source',
+        revision: 0,
+        kind: 'recording',
+        attachmentId: 'generated-original',
+        path: '.intent/attachments/generated.mp4',
+        durationMs: 1000,
+        width: 320,
+        height: 180,
+        audio: 'available',
+        visuals: 'clean',
+        batches: [{ id: 'b', atMs: 0, clearAtMs: null }],
+        capturedMarks: [],
+      };
+      const transcript = { status: 'pending' as const, revision: 1, words: [] };
+      const media: DockSavedMedia = {
+        source,
+        saved: { ...defaultDockMediaEdit(source, [], transcript), revision: 1, voice: 'off' },
+        transcript,
+      };
+      const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
+      evidence.clips = [
+        {
+          id: 'generated-clip',
+          status: 'ready',
+          startedAt: 1,
+          durationMs: 1000,
+          hasMicAudio: true,
+          contextItemId: 'generated-item',
+          path: source.path,
+          media,
+        },
+      ];
+      appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
+      const item: ContextItem = {
+        id: 'generated-item',
+        type: 'file',
+        label: 'Synthetic recording',
+        attachmentId: source.attachmentId,
+        path: source.path,
+        attachmentMimeType: 'video/mp4',
+      };
+      appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, [item]));
+      appStore.dispatch(
+        dockConversationDraftChanged(workspaceA, mainA, 'Synthetic capture prompt'),
+      );
+      const started = deferred<void>(),
+        gate = deferred<void>();
+      const spy = vi.spyOn(mediaSend, 'prepareDockMediaSend').mockImplementationOnce(async () => {
+        started.resolve();
+        await gate.promise;
+        return {
+          images: {},
+          files: [
+            {
+              type: 'file',
+              attachmentId: 'generated-output',
+              fileName: 'generated.mp4',
+              mimeType: 'video/mp4',
+              size: 100,
+            },
+          ],
+          frames: [],
+          framePromptBytes: [],
+          metadata: [],
+        } satisfies Awaited<ReturnType<typeof mediaSend.prepareDockMediaSend>>;
+      });
+      try {
+        appStore.dispatch(sendDockConversationRequested());
+        await started.promise;
+        expect(view().sending).toBe(true);
+        appStore.dispatch(sendDockConversationRequested());
+        const next = structuredClone(media);
+        if (change === 'recognition') next.transcript = { status: 'ready', revision: 2, words: [] };
+        if (change === 'saved-edit')
+          next.saved = {
+            ...next.saved!,
+            revision: 2,
+            wordEdits: { 'generated-word': 'Synthetic correction' },
+          };
+        if (change === 'source-replacement') {
+          next.source = {
+            ...next.source,
+            id: 'replacement-source',
+            revision: 1,
+            attachmentId: 'replacement-file',
+            path: '.intent/attachments/replacement.mp4',
+          };
+          next.saved = { ...next.saved!, sourceId: next.source.id, sourceRevision: 1 };
+        }
+        appStore.dispatch(
+          dockEvidenceMediaChanged(workspaceA, mainA, 'generated-clip', media, next),
+        );
+        gate.resolve();
+        await vi.waitFor(() => expect(sent).toHaveLength(1));
+        if (change === 'recognition') {
+          await vi.waitFor(() => expect(view().draft).toBe(''));
+          expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([]);
+          expect(
+            selectDockComposerEvidence.select(appStore.state, workspaceA, mainA).evidence?.clips ??
+              [],
+          ).toHaveLength(0);
+        } else {
+          expect(view().draft).toBe('Synthetic capture prompt');
+          expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([
+            item,
+          ]);
+          expect(
+            selectDockComposerEvidence.select(appStore.state, workspaceA, mainA).evidence?.clips[0]
+              .media,
+          ).toEqual(next);
+        }
+        expect(spy).toHaveBeenCalledTimes(1);
+        // The test has not emitted a daemon acceptance yet: cleanup is local admission.
+      } finally {
+        gate.resolve();
+        spy.mockRestore();
+      }
+    },
+  );
+});
+
+describe('bound editor capture removal', () => {
+  it.each(['screenshot', 'recording'] as const)(
+    'removes only the current %s and refuses a later stale Save',
+    async (kind) => {
+      await open();
+      const source: DockMediaSource = {
+        id: 'delete-source',
+        revision: 0,
+        kind,
+        attachmentId: 'delete-file',
+        path: '.intent/attachments/delete.' + (kind === 'screenshot' ? 'png' : 'mp4'),
+        durationMs: kind === 'recording' ? 1000 : 0,
+        width: 320,
+        height: 180,
+        audio: 'none',
+        visuals: 'clean',
+        batches: [],
+      };
+      const media: DockSavedMedia = {
+        source,
+        saved: defaultDockMediaEdit(source, [], null),
+        transcript: null,
+      };
+      const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
+      if (kind === 'screenshot')
+        evidence.images = [
+          {
+            id: 'current-capture',
+            contextItemId: 'current-item',
+            width: 320,
+            height: 180,
+            displayScale: 1,
+            capturedAt: timestamp,
+            source: 'capture',
+            media,
+          },
+        ];
+      else
+        evidence.clips = [
+          {
+            id: 'current-capture',
+            contextItemId: 'current-item',
+            status: 'ready',
+            startedAt: 1,
+            durationMs: 1000,
+            hasMicAudio: false,
+            path: source.path,
+            media,
+          },
+        ];
+      appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
+      const other: ContextItem = {
+        id: 'other',
+        type: 'file',
+        label: 'Keep this',
+        attachmentId: 'other-file',
+        path: '.intent/attachments/other.png',
+      };
+      appStore.dispatch(
+        dockConversationContextItemsChanged(workspaceA, mainA, [
+          other,
+          {
+            id: 'current-item',
+            type: kind === 'screenshot' ? 'image' : 'file',
+            label: 'Synthetic',
+            attachmentId: source.attachmentId,
+            path: source.path,
+          },
+        ]),
+      );
+      const bridge = window as unknown as {
+        electronAPI?: { invoke: (...args: unknown[]) => Promise<unknown> };
+      };
+      const previous = bridge.electronAPI;
+      const replies: unknown[] = [];
+      bridge.electronAPI = {
+        invoke: async (...args) => {
+          replies.push(args);
+          return true;
+        },
+      };
+      try {
+        const { deleteEditorCapture } = await import('./dock-media-edit-saga');
+        const request = {
+          requestId: crypto.randomUUID(),
+          openId: crypto.randomUUID(),
+          pair: { workspaceId: workspaceA, agentId: mainA },
+          kind,
+          attachmentId: source.attachmentId,
+          sourceId: source.id,
+          sourceRevision: 0,
+          expectedEditRevision: 0,
+        };
+        cleanups.push(
+          appStore.runSaga(function* () {
+            yield* deleteEditorCapture({ ...request, sourceId: 'wrong-source' });
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(replies).toContainEqual([
+            DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT,
+            { requestId: request.requestId, result: 'stale-source' },
+          ]),
+        );
+        expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toHaveLength(
+          2,
+        );
+        replies.length = 0;
+        cleanups.push(
+          appStore.runSaga(function* () {
+            yield* deleteEditorCapture(request);
+          }),
+        );
+        await vi.waitFor(() =>
+          expect(replies).toContainEqual([
+            DOCK_CAPTURE_EDITOR_CHANNELS.DELETE_RESULT,
+            { requestId: request.requestId, result: 'deleted' },
+          ]),
+        );
+        expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([
+          other,
+        ]);
+        expect(evidenceOf(workspaceA, mainA)?.images).toEqual([]);
+        expect(evidenceOf(workspaceA, mainA)?.clips).toEqual([]);
+        const { dockMediaEditSaveRequested, dockMediaEditSaveSettled } =
+          await import('../dock-conversation-slice');
+        const { getPrincipalActionContext } = await import('../../principal/principal-context');
+        const results: unknown[] = [];
+        cleanups.push(
+          appStore.runSaga(function* () {
+            results.push(yield* take(dockMediaEditSaveSettled));
+          }),
+        );
+        const saveId = crypto.randomUUID();
+        appStore.dispatch(
+          dockMediaEditSaveRequested(
+            saveId,
+            {
+              openId: request.openId,
+              pair: request.pair,
+              sourceId: source.id,
+              sourceRevision: 0,
+              expectedEditRevision: 0,
+              edit: media.saved!,
+            },
+            getPrincipalActionContext(appStore.state)!,
+          ),
+        );
+        await vi.waitFor(() =>
+          expect(results).toContainEqual(
+            dockMediaEditSaveSettled(saveId, { requestId: saveId, result: 'stale-source' }),
+          ),
+        );
+        expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toEqual([
+          other,
+        ]);
+        expect([
+          ...evidenceOf(workspaceA, mainA)!.images,
+          ...evidenceOf(workspaceA, mainA)!.clips,
+        ]).toEqual([]);
+      } finally {
+        bridge.electronAPI = previous;
+      }
+    },
+  );
+});
+
+describe('unchanged clean recording identity send', () => {
+  function recording() {
+    const source: DockMediaSource = {
+      id: 'identity-source',
+      revision: 0,
+      kind: 'recording',
+      attachmentId: 'identity-file',
+      path: '.intent/attachments/identity.mp4',
+      durationMs: 5000,
+      width: 320,
+      height: 180,
+      audio: 'available',
+      visuals: 'clean',
+      batches: [],
+      capturedMarks: [],
+    };
+    return {
+      source,
+      saved: {
+        ...defaultDockMediaEdit(source, [], null),
+        video: 'full' as const,
+        voice: 'audio' as const,
+      },
+      transcript: null,
+    } satisfies DockSavedMedia;
+  }
+  async function stage(
+    media: DockSavedMedia,
+    identity: 'valid' | 'missing' | 'forged' | 'path' | 'failed' = 'valid',
+  ) {
+    await open();
+    backend.onRequest('client.hello', () => ({ server: { capabilities: {} } }));
+    const evidence = emptyDockEvidence(dockEvidenceId(workspaceA, mainA));
+    evidence.clips = [
+      {
+        id: 'identity-clip',
+        status: 'ready',
+        startedAt: 1,
+        durationMs: 5000,
+        hasMicAudio: true,
+        contextItemId: 'identity-item',
+        path: media.source.path,
+        media,
+      },
+    ];
+    appStore.dispatch(dockEvidenceRestored(workspaceA, mainA, evidence));
+    const items: ContextItem[] =
+      identity === 'missing'
+        ? []
+        : [
+            {
+              id: 'identity-item',
+              type: 'file',
+              label: 'identity.mp4',
+              attachmentId: identity === 'forged' ? 'other-file' : media.source.attachmentId,
+              path: identity === 'path' ? '.intent/attachments/other.mp4' : media.source.path,
+              attachmentMimeType: 'video/mp4',
+              attachmentSize: 123,
+              ...(identity === 'failed' ? { placementStatus: 'failed' as const } : {}),
+            },
+          ];
+    appStore.dispatch(dockConversationContextItemsChanged(workspaceA, mainA, items));
+    appStore.dispatch(dockConversationDraftChanged(workspaceA, mainA, 'Keep this recording'));
+    return items;
+  }
+  it('sends the exact original file and clip metadata without an export job', async () => {
+    const native = scriptedNative();
+    const exportMedia = vi.fn<NonNullable<DockEvidenceNativeService['exportMedia']>>();
+    const releaseMediaJob = vi.fn<NonNullable<DockEvidenceNativeService['releaseMediaJob']>>();
+    configureDockEvidenceNative({ ...native.service, exportMedia, releaseMediaJob });
+    await stage(recording());
+    appStore.dispatch(sendDockConversationRequested());
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    const payload = latestSend().payload.payload;
+    expect(payload.fileBlocks).toEqual([
+      expect.objectContaining({ attachmentId: 'identity-file', mimeType: 'video/mp4' }),
+    ]);
+    expect(payload.messageMetadata).toMatchObject({
+      clips: [
+        expect.objectContaining({
+          attachment_id: 'identity-file',
+          duration_ms: 5000,
+          has_mic_audio: true,
+        }),
+      ],
+      edited_captures: [],
+    });
+    expect(payload.workspaceContextStr).toContain('identity-file');
+    expect(exportMedia).not.toHaveBeenCalled();
+    expect(releaseMediaJob).not.toHaveBeenCalled();
+    expect(backend.requests.filter((row) => row.method === 'file.placeAttachment')).toEqual([]);
+    expect(view().draft).toBe('');
+  });
+  it.each([
+    'cut',
+    'trim',
+    'mute',
+    'transcript',
+    'highlights',
+    'crop',
+    'blur',
+    'brush',
+    'mark',
+    'stale',
+  ] as const)(
+    'never treats %s as unchanged and retains the draft on preparation failure',
+    async (change) => {
+      const media: DockSavedMedia = recording();
+      const edit = media.saved!;
+      if (change === 'cut') edit.cuts = [{ startMs: 100, endMs: 200 }];
+      if (change === 'trim') edit.trim.startMs = 100;
+      if (change === 'mute') edit.voice = 'off';
+      if (change === 'transcript') edit.voice = 'transcript';
+      if (change === 'highlights') edit.video = 'highlights';
+      if (change === 'crop') edit.crop = { x: 0, y: 0, w: 160, h: 90 };
+      if (change === 'blur') edit.blurRegions = [{ id: 'blur', x: 1, y: 1, w: 10, h: 10 }];
+      if (change === 'brush')
+        edit.blurStrokes = [{ id: 'brush', radius: 5, points: [{ x: 1, y: 1 }] }];
+      if (change === 'mark' || change === 'highlights')
+        edit.marks = [
+          {
+            id: 'mark',
+            atMs: 100,
+            batchId: 'b',
+            source: 'editor',
+            kind: 'box',
+            included: true,
+            geometry: { kind: 'rect', x: 1, y: 1, w: 10, h: 10 },
+            label: '',
+            note: '',
+            context: { selector: null, text: null, url: null },
+          },
+        ];
+      if (change === 'stale') edit.sourceRevision = 99;
+      expect(mediaSend.dockMediaSendsOriginal(media)).toBe(false);
+      // No native exporter is available: any needed transformation must fail closed.
+      await stage(media);
+      appStore.dispatch(sendDockConversationRequested());
+      await vi.waitFor(() => expect(view().sendError).toBeTruthy());
+      expect(sent).toEqual([]);
+      expect(view().draft).toBe('Keep this recording');
+      expect(selectComposerContextItems.select(appStore.state, workspaceA, mainA)).toHaveLength(1);
+    },
+  );
+  it.each(['missing', 'forged', 'path', 'failed'] as const)(
+    'rejects an original with %s placement',
+    async (identity) => {
+      await stage(recording(), identity);
+      const targetReads = backend.requests.filter((row) => row.method === 'agent.get').length;
+      appStore.dispatch(sendDockConversationRequested());
+      if (identity === 'failed') {
+        // A blocked attachment is refused synchronously before target validation.
+        expect(backend.requests.filter((row) => row.method === 'agent.get')).toHaveLength(
+          targetReads,
+        );
+        expect(view().sending).toBe(false);
+      } else await vi.waitFor(() => expect(view().sendError).toBeTruthy());
+      expect(sent).toEqual([]);
+      expect(view().draft).toBe('Keep this recording');
+    },
+  );
 });

@@ -1,9 +1,10 @@
+import { DockMediaCaptureSchema, type DockMediaCapture } from '../../../shared/dock-media-edit';
 import { randomUUID } from 'node:crypto';
-import { execFile, type ExecFileException } from 'node:child_process';
-import { rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { execFile } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  app,
   desktopCapturer,
   nativeImage,
   screen,
@@ -16,6 +17,7 @@ import {
   getDockWindow,
   setDockHiddenForCapture,
   setDockHiddenForSelection,
+  hideDockForOwnScreenshot,
 } from '../../../main/dock-window';
 import {
   getStrictBackendBindingForWebContents,
@@ -26,10 +28,7 @@ import type {
   DockCaptureMode,
   DockNativeResult,
 } from '../../../shared/dock-evidence';
-import { DOCK_RECORDING_MAX_EDGE } from '../../../shared/dock-recording';
 import { cgWindowIdFromMediaSourceId, createDockScreenRecorder } from './dock-screen-recorder';
-import { dockSelectionOutcome } from './dock-selection-outcome';
-import { Logger } from '../../../shared/logger';
 import type {
   DockEvidenceBeginRequest,
   DockEvidenceBeginResult,
@@ -59,7 +58,7 @@ interface CapturedImage {
   width: number;
   height: number;
 }
-type SelectedImage = CapturedImage & { displayScale: number };
+type SelectedImage = CapturedImage & { displayScale: number; capture?: DockMediaCapture };
 
 /** Injection is confined to native boundaries; tests exercise the real lifecycle. */
 export interface DockEvidenceDependencies {
@@ -87,9 +86,20 @@ export interface DockEvidenceDependencies {
   /** The OS selection UI for a window or region; dismissing it fails with `detail: 'cancelled'`. */
   captureSelection?(
     mode: Exclude<DockCaptureMode, 'fullscreen'>,
+    excludeWindowIds?: number[],
+    signal?: AbortSignal,
   ): Promise<DockNativeResult<SelectedImage>>;
   id(): string;
   now(): number;
+  /**
+   * An admitted capture whose dock document holds a screenshot hold: hide the dock now (before
+   * pixels), so it never shows while that screenshot's editor prepares. Exact owner only.
+   */
+  hideForOwnScreenshot?(
+    window: BrowserWindow,
+    sender: Electron.WebContents,
+    binding: object,
+  ): boolean;
 }
 
 interface Session {
@@ -103,7 +113,6 @@ interface Session {
   requests: Map<string, { source: string; promise: Promise<DockEvidencePixelsResult> | null }>;
 }
 
-const logger = new Logger('DockEvidenceSession');
 const unavailable = (): DockEvidencePixelsResult => ({ ok: false, error: 'unavailable' });
 /** The window picker lists windows as it starts: the hidden dock must be gone by then. */
 const SELECTION_SETTLE_MS = 250;
@@ -279,6 +288,9 @@ export class DockEvidenceSessions {
     if (!display || !placement || placement.captureHidden || !window.isVisible())
       return unavailable();
     if (this.deps.permissionDenied()) return { ok: false, error: 'permission' };
+    // Admitted: a screenshot handing off to its editor takes the dock out of sight before any
+    // pixels (its hold keeps it hidden through release; the native paths exclude it anyway).
+    this.deps.hideForOwnScreenshot?.(window, session.owner.sender, session.binding);
     this.capturing = session;
     const selection = request.mode && request.mode !== 'fullscreen' ? request.mode : null;
     const setHidden = selection ? this.deps.hiddenForSelection : this.deps.hidden;
@@ -317,7 +329,22 @@ export class DockEvidenceSessions {
         setHidden(window, true, false);
         await this.deps.settle(SELECTION_SETTLE_MS);
         if (!this.current(session)) return unavailable();
-        const selected = await this.deps.captureSelection(selection);
+        const selectionAbort = new AbortController();
+        const abortSelection = () => selectionAbort.abort();
+        session.listeners.add(abortSelection);
+        let selected: DockNativeResult<SelectedImage>;
+        try {
+          selected = await this.deps.captureSelection(
+            selection,
+            [window, ...this.exclusions()]
+              .filter((entry) => !entry.isDestroyed())
+              .map((entry) => cgWindowIdFromMediaSourceId(entry.getMediaSourceId()))
+              .filter((id): id is number => id !== null),
+            selectionAbort.signal,
+          );
+        } finally {
+          session.listeners.delete(abortSelection);
+        }
         if (!this.current(session)) return unavailable();
         // Screen Recording can be turned off during a selection: the image would hold
         // only the desktop, and a dismissal must not hide the missing permission.
@@ -400,7 +427,28 @@ export class DockEvidenceSessions {
     if (captured.png.length > MAX_PNG_BYTES) return { ok: false, error: 'limit' };
     const id = this.deps.id();
     const capturedAt = nativePixels?.capturedAt ?? new Date(this.deps.now()).toISOString();
+    const display = this.deps
+      .displays()
+      .find((row) => row.id === this.deps.placement(session.binding.window)?.displayId);
+    const capture = nativePixels?.capture ??
+      ('capture' in captured ? (captured as SelectedImage).capture : undefined) ?? {
+        mode: request.mode ?? ('fullscreen' as const),
+        frame:
+          (!request.mode || request.mode === 'fullscreen') && display
+            ? {
+                displayId: display.id,
+                rect: {
+                  x: display.bounds.x,
+                  y: display.bounds.y,
+                  w: display.bounds.width,
+                  h: display.bounds.height,
+                },
+                coordinateSpace: 'screen-points-top-left' as const,
+              }
+            : null,
+      };
     const pixels = {
+      capture,
       base64: captured.png.toString('base64'),
       mimeType: 'image/png' as const,
       width: captured.width,
@@ -419,6 +467,7 @@ export class DockEvidenceSessions {
           contextItemId: `dock-evidence:${id}`,
           width: pixels.width,
           height: pixels.height,
+          capture: pixels.capture,
           displayScale: pixels.displayScale,
           capturedAt,
           source: request.source ?? 'capture',
@@ -433,54 +482,92 @@ export class DockEvidenceSessions {
 /** Long enough to choose calmly; a forgotten selection must not hold the capture lease. */
 const SELECTION_TIMEOUT_MS = 5 * 60_000;
 
-/**
- * macOS `screencapture` owns the selection UI: `-i` interactive, `-w` window only or
- * `-s` region only, `-o` no window shadow, `-x` silent. Escape writes no file.
- */
+/** Native selector returns the exact selected frame with its pixels. */
 async function captureSelection(
   mode: Exclude<DockCaptureMode, 'fullscreen'>,
+  excludeWindowIds: number[] = [],
+  signal?: AbortSignal,
+): Promise<DockNativeResult<SelectedImage>> {
+  const release = dockEvidenceRecorder.reserveSelection();
+  if (!release) return { ok: false, error: 'failed', detail: 'recording-busy' };
+  try {
+    return await captureSelectionReserved(mode, excludeWindowIds, signal);
+  } finally {
+    release();
+  }
+}
+async function captureSelectionReserved(
+  mode: Exclude<DockCaptureMode, 'fullscreen'>,
+  excludeWindowIds: number[] = [],
+  signal?: AbortSignal,
 ): Promise<DockNativeResult<SelectedImage>> {
   if (process.platform !== 'darwin') return { ok: false, error: 'unavailable', detail: 'platform' };
-  const file = path.join(tmpdir(), `intent-dock-${randomUUID()}.png`);
-  try {
-    const error = await new Promise<ExecFileException | null>((resolve) => {
-      execFile(
-        '/usr/sbin/screencapture',
-        ['-i', mode === 'window' ? '-w' : '-s', '-o', '-x', '-t', 'png', file],
-        { timeout: SELECTION_TIMEOUT_MS },
-        (failure) => resolve(failure),
-      );
-    });
-    const image = nativeImage.createFromPath(file);
-    const outcome = dockSelectionOutcome({ error, wroteImage: !image.isEmpty() });
-    if (outcome === 'cancelled') return { ok: false, error: 'unavailable', detail: 'cancelled' };
-    if (outcome !== 'image') {
-      logger.warn('Window or region selection failed', { outcome, code: error?.code });
-      return {
-        ok: false,
-        error: 'failed',
-        detail: outcome === 'timeout' ? 'timeout' : 'selection',
-      };
+  const roots = app.isPackaged
+    ? [process.resourcesPath]
+    : [
+        path.join(app.getAppPath(), 'resources'),
+        path.resolve(app.getAppPath(), '..', '..', 'resources'),
+      ];
+  let helper: string | undefined;
+  for (const root of roots) {
+    const candidate = path.join(root, 'dock-helper', 'intent-dock-capture-selector');
+    try {
+      await access(candidate);
+      helper = candidate;
+      break;
+    } catch {
+      /* known next layout */
     }
-    // The selection ends under the pointer, on the display it was taken from.
-    const scale = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).scaleFactor;
-    const { width, height } = image.getSize();
-    const ratio = Math.min(1, DOCK_RECORDING_MAX_EDGE / Math.max(width, height));
-    const fitted =
-      ratio < 1
-        ? image.resize(
-            width >= height
-              ? { width: DOCK_RECORDING_MAX_EDGE }
-              : { height: DOCK_RECORDING_MAX_EDGE },
-          )
-        : image;
-    const size = fitted.getSize();
+  }
+  if (!helper) return { ok: false, error: 'unavailable', detail: 'selection-helper-missing' };
+  try {
+    let childClosed: Promise<void> | undefined;
+    const stdout = await (async () => {
+      try {
+        return await new Promise<string>((resolve, reject) => {
+          const child = execFile(
+            helper!,
+            [mode, ...excludeWindowIds.map(String)],
+            { timeout: SELECTION_TIMEOUT_MS, maxBuffer: 96 * 1024 * 1024, signal },
+            (error, output) => (error ? reject(error) : resolve(output)),
+          );
+          childClosed = new Promise<void>((done) => child.once('close', () => done()));
+        });
+      } finally {
+        await childClosed;
+      }
+    })();
+    const result = JSON.parse(stdout) as Record<string, unknown>;
+    if (result.ok !== true)
+      return result.error === 'cancelled'
+        ? { ok: false, error: 'unavailable', detail: 'cancelled' }
+        : {
+            ok: false,
+            error:
+              result.error === 'permission'
+                ? 'permission'
+                : result.error === 'unavailable'
+                  ? 'unavailable'
+                  : 'failed',
+          };
+    const capture = DockMediaCaptureSchema.parse(result.capture);
+    if (capture.mode !== mode || !capture.frame || typeof result.base64 !== 'string')
+      throw new Error('selection-frame');
+    const image = nativeImage.createFromBuffer(Buffer.from(result.base64, 'base64'));
+    const size = image.getSize();
+    if (image.isEmpty() || size.width !== result.width || size.height !== result.height)
+      throw new Error('selection-size');
     return {
       ok: true,
-      value: { png: fitted.toPNG(), ...size, displayScale: scale * (size.width / width) },
+      value: {
+        png: image.toPNG(),
+        ...size,
+        capture,
+        displayScale: size.width / capture.frame.rect.w,
+      },
     };
-  } finally {
-    await rm(file, { force: true });
+  } catch {
+    return { ok: false, error: 'failed', detail: 'selection' };
   }
 }
 
@@ -490,6 +577,7 @@ export const dockEvidenceRecorder = createDockScreenRecorder();
 export const dockEvidenceSessions = new DockEvidenceSessions({
   dock: getDockWindow,
   binding: getStrictBackendBindingForWebContents,
+  hideForOwnScreenshot: hideDockForOwnScreenshot,
   retired: onStrictBackendBindingRetired,
   placement: getDockPlacementSnapshot,
   displays: () => screen.getAllDisplays(),

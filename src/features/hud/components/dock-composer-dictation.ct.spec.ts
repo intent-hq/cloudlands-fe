@@ -152,8 +152,7 @@ test('the caret follows dictated words from where the user placed it', async ({ 
   // The editor has really taken the caret move before dictation starts (it reads the
   // DOM selection asynchronously, so poll its own state, not the DOM).
   await expect.poll(() => editorSelection(editor)).toBe(7);
-  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- dock-composer-controller hard-codes Mod+Shift+M for dictation; it is not panel.maximize
-  await page.keyboard.press('ControlOrMeta+Shift+M');
+  await component.getByRole('button', { name: /^Dictate/ }).click();
   await expect(component.getByText('Listening', { exact: true })).toBeVisible();
   await expect(editor).toBeFocused();
   await say(page, 'middle');
@@ -170,8 +169,7 @@ test('the caret follows dictated words from where the user placed it', async ({ 
   expect(around.before.endsWith(around.live!)).toBe(true);
   expect(around.live).toContain('middle and more');
   // Finalizing commits the words in place; the caret stays at their end.
-  // eslint-disable-next-line intent/no-hand-typed-shortcut-in-ct -- dock-composer-controller hard-codes Mod+Shift+M for dictation; it is not panel.maximize
-  await page.keyboard.press('ControlOrMeta+Shift+M');
+  await component.getByRole('button', { name: 'Stop dictating', exact: true }).click();
   await expect(editor.locator('[data-screen-interim]')).toHaveCount(0);
   await expect(editor).toContainText('middle and more');
   around = await aroundCaret(editor);

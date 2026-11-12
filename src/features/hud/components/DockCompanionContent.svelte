@@ -7,6 +7,9 @@
 
   let {
     workspaces,
+    olderWorkspaces = [],
+    showOlder = $bindable(false),
+    query = $bindable(''),
     pending,
     expanded,
     reveal,
@@ -23,6 +26,10 @@
     onPopupStateChange,
   }: {
     workspaces: DockWorkspaceView[];
+    olderWorkspaces?: DockWorkspaceView[];
+    showOlder?: boolean;
+    /** The index search text (kept by the shell across a conversation). */
+    query?: string;
     pending: boolean;
     expanded: boolean;
     reveal: number;
@@ -35,7 +42,7 @@
     conversation?: Snippet;
     conversationWorkspaceId?: string | null;
     focusRequest: number;
-    /** A user gesture opened this conversation: focus its composer once it settles. */
+    /** A user gesture opened this conversation: focus its composer as it opens. */
     focusComposerOnMount?: boolean;
     onOpen: (id: string) => void;
     onRegionsChange: (regions: DockPointerRect[]) => void;
@@ -62,13 +69,14 @@
       resizable={!settling}
       {clip}
       active={expanded && reveal === 1}
+      focusActive={expanded && reveal > 0}
       {onRegionsChange}
       {onPopupStateChange}
     >
       {@render conversation()}
     </DockConversationSurface>
   {:else}
-    <DockOverview {workspaces} {pending} {onOpen} />
+    <DockOverview {workspaces} {olderWorkspaces} bind:showOlder {pending} {onOpen} bind:query />
   {/if}
 </div>
 
@@ -79,8 +87,16 @@
     bottom: 0;
     left: 0;
     right: 0;
-    /* The Assistant row closes the list; its own inset is the bottom margin. */
-    padding: 8px 12px 8px;
+    /* The Assistant row closes the list; its own inset is the bottom margin. The overview's
+       scroll viewport reaches through the inline gutter so its scrollbar sits at the edge. */
+    --dock-overview-gutter: 12px;
+    padding: 8px var(--dock-overview-gutter) 8px;
+  }
+  .overview-frame:not(.conversation-open) {
+    height: var(--dock-overview-height, auto);
+  }
+  .floating-up:not(.conversation-open) {
+    top: auto;
   }
   .floating-up {
     top: 0;

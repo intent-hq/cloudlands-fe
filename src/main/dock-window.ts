@@ -17,6 +17,7 @@ import { WINDOW_CHANNELS } from '../shared/ipc/channels';
 import {
   getBackendIdForWindow,
   getStrictBackendBindingForWebContents,
+  onStrictBackendBindingRetired,
   stampWindowWithBackend,
 } from './window-backend';
 import { DockPlacementController } from './dock-placement-controller';
@@ -42,12 +43,36 @@ const DOCK_ROUTE_PREFIX = '/dock';
 
 let dockWindowRef: BrowserWindow | null = null;
 let placementController: DockPlacementController | null = null;
+/**
+ * The hit regions the dock had when a system selection hid it. Hiding clears the live
+ * regions (as any hide must), but the selection keeps the document mounted and the
+ * renderer deduplicates unchanged geometry, so it never republishes them: on reveal the
+ * dock would be click-through everywhere. Restored only for the same document and
+ * placement revision, and only if nothing newer arrived meanwhile.
+ */
+let selectionRegions: {
+  window: BrowserWindow;
+  document: number;
+  state: { active: boolean; regions: DockPointerRect[]; revision?: number };
+  /** The reset in effect when the selection began: the hide's reset must be a new one. */
+  resetBefore: object | null;
+} | null = null;
+/** The state object the last hide/close reset installed (identity, not value). */
+let lastResetState: object | null = null;
+/** Counts main-frame navigations of the dock: hit regions belong to one document. */
+let dockDocument = 0;
 let pointerState: { active: boolean; regions: DockPointerRect[]; revision?: number } = {
   active: false,
   regions: [],
 };
 let sessionPaused = false;
 const captureHiddenWindows = new WeakSet<BrowserWindow>();
+/**
+ * The recording that keeps the dock out of sight (transparent, click-through and not
+ * focusable, still shown): only that clip, on that window, brings it back.
+ */
+let recordingHide: { window: BrowserWindow; clipId: string } | null = null;
+const recordingHidden = (window: BrowserWindow) => recordingHide?.window === window;
 const closingDockWindows = new WeakSet<BrowserWindow>();
 let removeLifecycleListeners: (() => void) | null = null;
 let backendRefreshSequence: Promise<void> = Promise.resolve();
@@ -158,6 +183,11 @@ export function setDockPointerRegions(
   if (snapshot && state.revision !== snapshot.revision) return false;
   pointerState = state;
   try {
+    if (recordingHidden(window)) {
+      applyPointerRouting(window, true);
+      updateNativeCursor(window, false);
+      return true;
+    }
     if (placementController?.isDragging || placementController?.isResizing) {
       presenceFor(window).update({
         inside: false,
@@ -188,7 +218,13 @@ export function setDockPointerRegions(
       x: localPoint.x,
       y: localPoint.y,
       revision: state.revision,
-      suppressed: !window.isVisible() || !!snapshot?.captureHidden,
+      // Inactive/empty publications are routing resets, not physical exits.
+      // Leave the first live-region sample available to resynchronize after capture.
+      suppressed:
+        !state.active ||
+        state.regions.length === 0 ||
+        !window.isVisible() ||
+        !!snapshot?.captureHidden,
     });
     const x = Math.round(localPoint.x);
     const y = Math.round(localPoint.y);
@@ -227,6 +263,7 @@ function clearTrackedWindow(window: BrowserWindow): void {
     pendingBackendSwitch = null;
   }
   if (!window.isDestroyed()) resetDockPointerRouting(window);
+  if (selectionRegions?.window === window) selectionRegions = null;
   appliedPointerRouting.delete(window);
   pointerPresence.delete(window);
   clearTimeout(readyFallbacks.get(window));
@@ -241,7 +278,11 @@ function clearTrackedWindow(window: BrowserWindow): void {
 
 function resetDockPointerRouting(window: BrowserWindow): void {
   const revision = placementController?.getSnapshot()?.revision;
-  setDockPointerRegions(window, { active: false, regions: [], revision });
+  const reset = { active: false, regions: [], revision };
+  // Track the assignment itself: on platforms without pointer forwarding the state is
+  // still reset even though the call reports false.
+  setDockPointerRegions(window, reset);
+  if (pointerState === reset) lastResetState = reset;
 }
 
 export function getDockPlacementSnapshot(window: BrowserWindow): DockPlacementSnapshot | null {
@@ -289,6 +330,14 @@ export async function updateDockPlacement(
     window.webContents.focus();
     return getDockPlacementSnapshot(window);
   }
+  if (command.action === 'release') {
+    // A transient close: the renderer collapsed; only hand the keyboard back. Electron's
+    // blur on macOS orders the window out and back, which blanks the dock: hand it back
+    // natively first (the dock stays on screen) and blur only if that is unavailable.
+    placementController?.cancelInteraction();
+    if (window.isFocused() && !dockCursor?.releaseKey()) window.blur();
+    return getDockPlacementSnapshot(window);
+  }
   if (command.action === 'dismiss') {
     placementController?.cancelInteraction();
     // Let the validated invoke return before destroying its sending webContents.
@@ -296,7 +345,7 @@ export async function updateDockPlacement(
     setImmediate(() => {
       if (window !== getDockWindow() || captureHiddenWindows.has(window) || sessionPaused) return;
       try {
-        closeDockWindow();
+        dockHide();
       } catch (error) {
         logger.warn('Failed to dismiss dock window', { error });
       }
@@ -623,6 +672,7 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     resetDockPointerRouting(window);
   });
   window.webContents.on('did-start-navigation', (_event, url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) dockDocument += 1;
     if (dockWindowRef === window && mainFrame && !inPlace) resetDockRendererReady(window);
     const operation = pendingBackendSwitch;
     if (!operation || operation.window !== window || inPlace || !mainFrame) return;
@@ -631,6 +681,11 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     } else operation.cancelled = true;
   });
   window.on('closed', () => clearTrackedWindow(window));
+  // The dock document learns it is shown (a refused native session probes again then).
+  window.on('show', () => {
+    if (dockWindowRef !== window || window.webContents.isDestroyed()) return;
+    window.webContents.send(WINDOW_CHANNELS.DOCK_SHOWN);
+  });
   window.on('blur', () => {
     if (dockWindowRef !== window) return;
     placementController?.cancelInteraction();
@@ -673,8 +728,172 @@ function canRevealDock(window: BrowserWindow): boolean {
     !window.isDestroyed() &&
     !sessionPaused &&
     !captureHiddenWindows.has(window) &&
+    !editorHeld(window) &&
     rendererReady.has(window)
   );
+}
+
+/**
+ * Capture → editor handoff. The dock stays out of sight from a capture (or the start of a
+ * recording) that opens the media editor, and for every editor session, until that editor
+ * ends: a hold, by token, that capture, selection and recording releases do not clear. Each
+ * hold belongs to the dock document (and strict binding) that asked; the editor session that
+ * opened adopts it. The dock document stays mounted throughout (its draft and save workers
+ * keep running). A gone owner releases its holds without revealing anything.
+ */
+interface EditorHold {
+  window: BrowserWindow;
+  sender: Electron.WebContents;
+  binding: object;
+  openId: string | null;
+  /** A screenshot's hold: its admitted capture takes the dock out of sight (see below). */
+  screenshot?: boolean;
+}
+const editorHolds = new Map<string, EditorHold>();
+function editorHeld(window: BrowserWindow): boolean {
+  for (const hold of editorHolds.values()) if (hold.window === window) return true;
+  return false;
+}
+function ownerCurrent(hold: Pick<EditorHold, 'window' | 'sender' | 'binding'>): boolean {
+  return (
+    hold.window === getDockWindow() &&
+    !hold.window.isDestroyed() &&
+    !hold.sender.isDestroyed() &&
+    hold.window.webContents === hold.sender &&
+    getStrictBackendBindingForWebContents(hold.sender) === hold.binding
+  );
+}
+/** Forget every hold of a gone owner (document reload, backend switch, window closed). */
+function dropOwnerHolds(match: (hold: EditorHold) => boolean): void {
+  for (const [token, hold] of editorHolds) if (match(hold)) editorHolds.delete(token);
+}
+export function beginDockEditorHold(
+  window: BrowserWindow,
+  sender: Electron.WebContents,
+  binding: object,
+  token: string,
+  hide = false,
+): boolean {
+  const owner = { window, sender, binding };
+  if (!ownerCurrent(owner) || editorHolds.has(token)) return false;
+  editorHolds.set(token, { ...owner, openId: null, ...(hide ? { screenshot: true } : {}) });
+  onStrictBackendBindingRetired(sender, () => dropOwnerHolds((hold) => hold.sender === sender));
+  window.once('closed', () => dropOwnerHolds((hold) => hold.window === window));
+  return true;
+}
+/**
+ * A screenshot's capture was admitted (visible dock, current session, permission and display
+ * checked): take the dock out of sight now, before any pixels or selection UI, when its own
+ * document holds an unadopted screenshot hold (exact window, sender and strict binding). The
+ * hold then keeps it hidden through the capture's release until its editor ends (or the hold
+ * ends without one, which reveals it). Its document stays mounted; a recording keeps its own
+ * hide. As for a selection, the pointer's last "inside" is forgotten so a later reveal
+ * re-reports entry. False (nothing changes) without such a hold.
+ */
+export function hideDockForOwnScreenshot(
+  window: BrowserWindow,
+  sender: Electron.WebContents,
+  binding: object,
+): boolean {
+  if (window.isDestroyed() || recordingHidden(window)) return false;
+  let owned = false;
+  for (const hold of editorHolds.values())
+    if (
+      hold.screenshot &&
+      hold.openId === null &&
+      hold.window === window &&
+      hold.sender === sender &&
+      hold.binding === binding &&
+      ownerCurrent(hold)
+    )
+      owned = true;
+  if (!owned) return false;
+  if (window.isVisible()) {
+    placementController?.cancelInteraction();
+    presenceFor(window).reset();
+    lastForwardedMove.delete(window);
+    window.hide();
+  }
+  return true;
+}
+/**
+ * The editor session `openId` opened for this owner: it owns the hold now (a pre-capture
+ * token, or one main takes for an editor opened without a capture). An already-visible dock
+ * hides now, its document still mounted.
+ */
+export function adoptDockEditorHold(
+  token: string,
+  owner: { window: BrowserWindow; sender: Electron.WebContents; binding: object },
+  openId: string,
+): boolean {
+  let hold = editorHolds.get(token);
+  if (!hold) {
+    if (!beginDockEditorHold(owner.window, owner.sender, owner.binding, token)) return false;
+    hold = editorHolds.get(token)!;
+  }
+  if (
+    hold.openId !== null ||
+    hold.window !== owner.window ||
+    hold.sender !== owner.sender ||
+    hold.binding !== owner.binding
+  )
+    return false;
+  hold.openId = openId;
+  if (owner.window.isVisible() && !recordingHidden(owner.window)) owner.window.hide();
+  return true;
+}
+/** No editor took this hold (refused, failed, cancelled capture): only its owner ends it. */
+export function endDockEditorHold(
+  token: string,
+  sender: Electron.WebContents,
+  binding: object,
+): void {
+  const hold = editorHolds.get(token);
+  if (!hold || hold.openId !== null || hold.sender !== sender || hold.binding !== binding) return;
+  editorHolds.delete(token);
+  revealAfterEditorHold(hold);
+}
+/**
+ * The editor session `openId` ended. `reveal` brings the dock back as it was (collapsed,
+ * inactive) for a close or cancel, and only for that same owner document; a retired owner
+ * or an attach passes false.
+ */
+export function releaseDockEditorHolds(openId: string, reveal: boolean): void {
+  let owner: EditorHold | null = null;
+  for (const [token, hold] of editorHolds)
+    if (hold.openId === openId) {
+      editorHolds.delete(token);
+      owner = hold;
+    }
+  if (owner && reveal) revealAfterEditorHold(owner);
+}
+/** True while the session `openId` still holds its owner's dock (an attach awaiting its ACK). */
+export function dockEditorHoldOwner(
+  openId: string,
+): { window: BrowserWindow; sender: Electron.WebContents; binding: object } | null {
+  for (const hold of editorHolds.values()) if (hold.openId === openId) return hold;
+  return null;
+}
+/**
+ * The editor attached and its owner validated the return: bring that very dock forward with
+ * the keyboard. No shortcut routing, foreground sample or focus-dock request is involved.
+ */
+export function focusDockForEditorReturn(owner: {
+  window: BrowserWindow;
+  sender: Electron.WebContents;
+  binding: object;
+}): boolean {
+  const { window } = owner;
+  if (!ownerCurrent(owner) || recordingHidden(window) || !canRevealDock(window)) return false;
+  dockFocusedByIntentAt = Date.now();
+  window.show();
+  window.focus();
+  return true;
+}
+function revealAfterEditorHold(owner: Pick<EditorHold, 'window' | 'sender' | 'binding'>): void {
+  // Never on behalf of a replaced document or window.
+  if (!ownerCurrent(owner) || recordingHidden(owner.window)) return;
+  if (canRevealDock(owner.window) && !owner.window.isVisible()) owner.window.showInactive();
 }
 
 function armDockReadyFallback(window: BrowserWindow): void {
@@ -747,6 +966,12 @@ export function createDockWindow(): BrowserWindow {
   });
 
   dockWindowRef = window;
+  // A hidden dock (a capture or system selection) can change while hidden, e.g.
+  // collapse as the pointer leaves. macOS then reveals its last frame, an open dock
+  // that is not there: clicks fall through it. Repaint on every reveal.
+  window.on('show', () => {
+    if (!window.isDestroyed()) window.webContents.invalidate();
+  });
   fixWebContentsZoom(window.webContents);
   attachLifecycleListeners(window);
   configurePlatformBehavior(window);
@@ -798,6 +1023,62 @@ export function setDockHiddenForCapture(
 }
 
 /**
+ * Keeps the dock out of sight while a recording runs (its tool bar is the control
+ * then). The window stays shown, only transparent, click-through and not focusable:
+ * the recording's capture and its mark images keep their usual rules (the dock is
+ * excluded from both either way), and its document, draft and owner stay mounted.
+ * Held by one clip on one window; only that clip's end brings it back.
+ * @internal Legacy visibility-state seam for the owner-only shortcut admission regression test.
+ */
+export function hideDockForRecording(window: BrowserWindow, clipId: string): void {
+  if (window !== getDockWindow() || window.isDestroyed()) return;
+  if (recordingHide && recordingHide.window !== window) restoreRecordingHide();
+  recordingHide = { window, clipId };
+  placementController?.cancelInteraction();
+  // Leave now: the renderer collapses (and drops its focus) rather than stay "hovered"
+  // behind a transparent window that no longer reports presence.
+  presenceFor(window).update({
+    inside: false,
+    x: -1,
+    y: -1,
+    revision: pointerState.revision,
+    suppressed: false,
+  });
+  lastForwardedMove.delete(window);
+  // Never type into an invisible prompt: the dock cannot be key while hidden.
+  const hadFocus = window.isFocused();
+  window.setFocusable(false);
+  if (hadFocus) window.blur();
+  window.setOpacity(0);
+  applyPointerRouting(window, true);
+}
+
+/** The clip that hid the dock ended (however it ended): bring the dock back. */
+export function releaseDockRecordingHide(clipId: string): void {
+  if (recordingHide?.clipId === clipId) restoreRecordingHide();
+}
+
+function restoreRecordingHide(): void {
+  const held = recordingHide;
+  recordingHide = null;
+  if (!held || held.window.isDestroyed()) return;
+  const { window } = held;
+  // A capture → editor handoff keeps it out of sight: hidden first, so nothing paints.
+  if (editorHeld(window)) window.hide();
+  // Focusable again, never focused: the person's current window keeps the keyboard.
+  window.setFocusable(true);
+  window.setOpacity(1);
+  // `blur` may have ordered it back within its level; up front again, still not key.
+  window.moveTop();
+  window.webContents.invalidate();
+  presenceFor(window).reset();
+  lastForwardedMove.delete(window);
+  // Re-route at once from the live cursor (an enter is sent if it is over the dock).
+  appliedPointerRouting.delete(window);
+  if (window === dockWindowRef) setDockPointerRegions(window, pointerState);
+}
+
+/**
  * Hides the dock while the person selects a window or region with the system UI.
  * Like a capture it is never revealed, focused or dragged meanwhile, but its
  * document is not told: a selection can take seconds, and the surface (draft,
@@ -813,19 +1094,113 @@ export function setDockHiddenForSelection(
     if (pendingBackendSwitch?.window === window) pendingBackendSwitch.cancelled = true;
     captureHiddenWindows.add(window);
     placementController?.cancelInteraction();
+    selectionRegions = {
+      window,
+      document: dockDocument,
+      state: { ...pointerState, regions: [...pointerState.regions] },
+      resetBefore: lastResetState,
+    };
+    // The pointer poll stops while hidden, so its last "inside" would outlive the
+    // selection: back over the dock, no enter would ever be sent, and the dock would
+    // stay collapsed and click-through. Forget it, as a capture's suppression does.
+    presenceFor(window).reset();
+    lastForwardedMove.delete(window);
     window.hide();
     return;
   }
   captureHiddenWindows.delete(window);
-  if (owner.restore !== false && canRevealDock(window)) window.showInactive();
+  const held = selectionRegions;
+  selectionRegions = null;
+  if (owner.restore !== false && canRevealDock(window)) {
+    window.showInactive();
+    // The hide cleared the regions. Bring back the ones from before the selection when
+    // they still describe this document and placement and nothing newer arrived (the
+    // renderer will not republish unchanged geometry); otherwise its own next publish
+    // (a new revision or document always republishes) supplies them.
+    const revision = placementController?.getSnapshot()?.revision;
+    // "Nothing newer" is identity, not value: the live state must still be the very
+    // reset object this selection's hide installed. Any publication meanwhile, even an
+    // intentional inactive/empty one, is a different object and wins.
+    if (
+      held &&
+      held.window === window &&
+      held.document === dockDocument &&
+      held.state.revision === revision &&
+      lastResetState !== null &&
+      lastResetState !== held.resetBefore &&
+      pointerState === lastResetState
+    )
+      pointerState = held.state;
+    // Re-route at once from the live cursor rather than the pre-selection state.
+    appliedPointerRouting.delete(window);
+    setDockPointerRegions(window, pointerState);
+  }
 }
 
-export function focusDockWindow(): void {
+/** When Intent itself last focused the dock (a shortcut, the dock's own request). */
+let dockFocusedByIntentAt = 0;
+const DOCK_FOCUS_RECEIPT_MS = 1500;
+
+/**
+ * Whether the dock having focus right now is the dock's own doing: the pointer is on
+ * the dock (a click there activates the process) or Intent just focused it. Anything
+ * else, such as reopening Intent from a launcher or its Dock icon while the dock
+ * happened to be the last key window, is a request for the main app.
+ */
+export function isDockFocusOwnDoing(
+  now = Date.now(),
+  cursorPoint = screen.getCursorScreenPoint(),
+): boolean {
+  const window = getDockWindow();
+  if (!window || window.isDestroyed()) return false;
+  if (now - dockFocusedByIntentAt < DOCK_FOCUS_RECEIPT_MS) return true;
+  if (!pointerState.active || !window.isVisible()) return false;
+  const bounds = window.getBounds();
+  return isPointInDockPointerRegions(
+    { x: cursorPoint.x - bounds.x, y: cursorPoint.y - bounds.y },
+    pointerState.regions,
+  );
+}
+
+export function focusDockWindow(
+  context?: import('../shared/dock-shortcuts').DockShortcutContext,
+): void {
   const window = getDockWindow();
   if (!window || captureHiddenWindows.has(window) || sessionPaused) return;
+  // A live recording (which may already hold the dock for its editor) keeps its exact-owner
+  // record/dictate path; it never shows, focuses or routes.
+  if (recordingHidden(window)) {
+    // Out of sight for a recording: never shown or focused, and a focus-only request
+    // (or capture) does nothing meanwhile. Record and dictate reach the dock
+    // flagged owner-only: they act on the live recording's own pair, never route.
+    const action = context?.action;
+    if (
+      context &&
+      (action === 'record' || action === 'dictate') &&
+      !window.webContents.isDestroyed()
+    )
+      window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, {
+        ...context,
+        recordingOwnerOnly: true,
+      });
+    return;
+  }
+  // An editor holding the dock (or a capture handing off to one) blocks every other press.
+  if (editorHeld(window)) return;
+  dockFocusedByIntentAt = Date.now();
   window.show();
   window.focus();
-  if (!window.webContents.isDestroyed()) window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK);
+  // Only main sets the owner-only flag, and only above.
+  const plain = context ? { ...context } : context;
+  if (plain) delete plain.recordingOwnerOnly;
+  if (!window.webContents.isDestroyed()) window.webContents.send(WINDOW_CHANNELS.FOCUS_DOCK, plain);
+}
+
+let dockHide: () => void = closeDockWindow;
+
+/** Routes the dock's own Hide command, so main can remember it as a user hide. */
+export function setDockHideHandler(handler: () => void): void {
+  dockHide = handler;
 }
 
 export function closeDockWindow(): void {
