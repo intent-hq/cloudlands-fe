@@ -4,6 +4,19 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.327.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.326.1...v2.327.0) (2026-11-12)
+
+
+### 🚀 Features
+
+* **settings:** move Labs toggles into Advanced settings ([#4514](https://github.com/intent-hq/cloudlands-fe/issues/4514)) ([57ab964](https://github.com/intent-hq/cloudlands-fe/commit/57ab96423bc3de3590e75fcc954ea81503c8e2b7))
+
+
+### 🐛 Bug Fixes
+
+* **dock:** keep the notch visible during capture editing ([#4515](https://github.com/intent-hq/cloudlands-fe/issues/4515)) ([9c643d0](https://github.com/intent-hq/cloudlands-fe/commit/9c643d076bbc258cbab4bff037d0d1730a7f1b9f))
+* **machine-rail:** add-menu placement, remove list, dwell tooltips and top padding ([#4513](https://github.com/intent-hq/cloudlands-fe/issues/4513)) ([3cb0390](https://github.com/intent-hq/cloudlands-fe/commit/3cb03900ea06cc17caa2ed6146f65e26c625f994))
+
 ## [2.326.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.326.0...v2.326.1) (2026-11-12)
 
 
