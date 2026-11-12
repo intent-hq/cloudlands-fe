@@ -79,7 +79,6 @@
       0,
     ),
   );
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalog, not a domain fetch
   registerMockIpcHandler('codex:get-models', (params) => {
     if (params) refreshRequests = [...refreshRequests, { channel: 'codex:get-models', params }];
     return { success: true, data: models };
@@ -91,7 +90,6 @@
       checkSingleProviderSuccess('claude-code', { available: true, authenticated: true }),
     );
     store.dispatch(providerModelsLoaded('claude-code', { models: otherModels }, 0));
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalog
     registerMockIpcHandler('claude-code:get-models', () => ({ success: true, data: otherModels }));
   }
   if (defaultProviderDisabled) {
@@ -99,9 +97,7 @@
     store.dispatch(setProviderEnabled({ providerId: 'codex', enabled: false }));
   }
   onDestroy(() => {
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- clean up the CT-only catalog handler
     unregisterMockIpcHandler('codex:get-models');
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only handler cleanup
     if (multipleProviders) unregisterMockIpcHandler('claude-code:get-models');
     disposeStore();
   });

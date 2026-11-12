@@ -138,7 +138,6 @@
         }),
       );
     }
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- Preview-only in-memory handler registration; no domain data is fetched.
     const restoreWorkspaceLookup = overrideMockIpcHandler('workspace:get', (payload) => {
       const id = (payload as { id?: string } | undefined)?.id;
       return id === workspaceId

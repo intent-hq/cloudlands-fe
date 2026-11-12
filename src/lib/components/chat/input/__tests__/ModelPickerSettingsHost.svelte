@@ -54,7 +54,6 @@
     const providerModels =
       providerId === 'codex' ? models : [{ value: 'other', label: 'Other provider model' }];
     store.dispatch(providerModelsLoaded(providerId, { models: providerModels }, 0));
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only in-memory catalogs
     registerMockIpcHandler(`${providerId}:get-models`, () => ({
       success: true,
       data: providerModels,
@@ -91,7 +90,6 @@
   appClient.settings.update = async (changes) => {
     for (const { path, value } of changes) saved.set(path, value);
     // Independent mock daemon delivery; the production writer ignores the response.
-    // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only mock daemon receipt, not a component transport call
     queueMicrotask(() => applySettingsChanges(changes));
     return changes;
   };
@@ -106,7 +104,6 @@
     appClient.settings.updateSnapshot = originalUpdateSnapshot;
     appClient.settings.listSnapshot = originalListSnapshot;
     for (const providerId of ['codex', 'claude-code']) {
-      // eslint-disable-next-line intent/no-component-async-data-fetch -- CT-only handler cleanup
       unregisterMockIpcHandler(`${providerId}:get-models`);
     }
     disposeStore();
