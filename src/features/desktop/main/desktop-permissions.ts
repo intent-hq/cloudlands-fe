@@ -45,8 +45,10 @@ export async function requestDesktopPermissions(
   // permission probes; a second agent's explicit setup must not fail merely
   // because another read-only observation is awaiting its daemon response.
   let changed = false;
+  const controller = new AbortController();
   const changedConnection = () => {
     changed = true;
+    controller.abort(stale());
   };
   client.on('status', changedConnection);
   try {
@@ -73,6 +75,7 @@ export async function requestDesktopPermissions(
     const result = await native.requestPermissions(
       identity.computerId,
       JSON.stringify([p.workspaceId, p.agentId, p.requestId]),
+      { signal: controller.signal, deadline: Date.parse(pending.expiresAt) },
     );
     if (!current()) throw stale();
     return { platform: 'macos' as const, ...result };
@@ -95,7 +98,7 @@ export async function requestLocalDesktopPermissions(
   native = getDesktopNativeAdapter(),
   available: () => boolean = desktopNativeAvailable,
 ) {
-  // One id per setup attempt: the helper settles its capture check per id.
+  // One id per setup attempt: a re-check reuses the helper's settled answer.
   const { requestId } = localRequest.parse(value);
   if (!available()) return { platform: 'unsupported' as const };
   try {
