@@ -5724,6 +5724,13 @@ describe('daemonEventsBridge (permission flow — PROTOCOL §8 request/resolved 
       },
       { id: 'odd', label: 'Odd' },
     ]);
+
+    handler(
+      notification('agent:permission:resolved', {
+        requestId: 'perm-option-kind',
+        outcome: { outcome: 'cancelled' },
+      }),
+    );
   });
 
   it('clears the request via removePermissionRequest on agent:permission:resolved', async () => {
