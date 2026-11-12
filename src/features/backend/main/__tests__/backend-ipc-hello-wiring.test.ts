@@ -943,7 +943,11 @@ describe('backend.ipc remote localIps capture on hello', () => {
   });
 
   it('drops the host write when the pooled client is replaced during the preceding store writes', async () => {
-    systemStatus.value = { exactUpdateSupported: true, localIps: ['172.96.161.227'] };
+    systemStatus.value = {
+      exactUpdateSupported: true,
+      tcAddress: 'tc7f2a91.tailcat.net',
+      localIps: ['172.96.161.227'],
+    };
     // Hold the tcAddress write open so the disconnect lands mid-capture,
     // AFTER the initial stale-client check already passed.
     let releaseTcAddress!: () => void;

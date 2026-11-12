@@ -3437,13 +3437,15 @@ describe('remote Tailcat settings IPC', () => {
   });
 
   async function connectedHandlers() {
+    rpc.handler = async (method) =>
+      method === 'server.pairingInfo' ? { tcAddress: TC_ADDRESS } : {};
     const loaded = await loadModule();
     loaded.mod.registerBackendHandlers();
     await loaded.mod.openBackendWindow(REMOTE.id);
     const client = loaded.mod.getBackendClientForId(REMOTE.id);
     await vi.waitFor(() => expect(client.request).toHaveBeenCalledWith('server.pairingInfo'));
     client.emit('status', 'connected');
-    await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith(REMOTE.id, null));
+    await vi.waitFor(() => expect(store.setTcAddress).toHaveBeenCalledWith(REMOTE.id, TC_ADDRESS));
     vi.mocked(client.request).mockClear();
     store.setTcAddress.mockClear();
     store.setHosts.mockClear();
