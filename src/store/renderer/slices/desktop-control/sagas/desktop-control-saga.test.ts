@@ -82,8 +82,8 @@ describe('desktop consent wire lifecycle', () => {
         result: {
           platform: 'macos',
           accessibility: true,
-          screenRecording: true,
-          screenCapture: 'pending',
+          screenRecording: false,
+          screenCapture: 'blocked',
         },
       });
       mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
@@ -129,8 +129,8 @@ describe('desktop consent wire lifecycle', () => {
           result: {
             platform: 'macos',
             accessibility: true,
-            screenRecording: true,
-            screenCapture: 'pending',
+            screenRecording: false,
+            screenCapture: 'blocked',
           },
         });
         mocks.request.mockResolvedValue({ accepted: true, requestId: request.requestId });
@@ -196,8 +196,8 @@ describe('desktop consent wire lifecycle', () => {
         result: {
           platform: 'macos',
           accessibility: true,
-          screenRecording: true,
-          screenCapture: 'pending',
+          screenRecording: false,
+          screenCapture: 'blocked',
         },
       });
       await settle();

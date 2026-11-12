@@ -123,10 +123,9 @@ describe('native permission check responses', () => {
   });
 
   it.each([
-    [true, false, 'ready'],
-    [false, true, 'ready'],
-    [false, false, 'unavailable'],
-    [true, true, 'pending'],
+    [true, false, 'blocked'],
+    [false, true, 'blocked'],
+    [false, false, 'blocked'],
   ] as const)(
     'returns the observed checklist with one relaunch hint (%s, %s, %s)',
     async (accessibility, screenRecording, screenCapture) => {
@@ -159,6 +158,7 @@ describe('native permission check responses', () => {
     {},
     { platform: 'macos', accessibility: true },
     { platform: 'macos', accessibility: true, screenRecording: 'granted' },
+    { platform: 'macos', accessibility: true, screenRecording: true, screenCapture: 'pending' },
   ])('rejects malformed permission checks %j', async (result) => {
     localPermissions.mockResolvedValue({ ok: true, result });
     await expect(

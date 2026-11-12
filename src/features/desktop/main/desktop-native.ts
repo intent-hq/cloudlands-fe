@@ -7,6 +7,7 @@ import { z } from 'zod';
 import type {
   DesktopAction,
   DesktopDisplay,
+  DesktopOsChecklist,
   DesktopTargetMismatchReason,
 } from '../../../shared/types/desktop';
 import type { DesktopNative, DesktopTargetCheck } from './desktop-executor';
@@ -161,16 +162,65 @@ class DesktopHelperTransport {
   }
 }
 
+const permissionObservation = z
+  .object({
+    accessibility: z.boolean(),
+    screenRecording: z.boolean(),
+    screenCapture: z.enum(['pending', 'ready', 'unavailable']),
+  })
+  .strict();
+// The helper abandons a capture check that is not re-asked within 3 s.
+const PERMISSION_RECHECK_MS = 500;
+const PERMISSION_SETTLE_MS = 120_000;
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
 export class DesktopNativeAdapter implements DesktopNative {
-  async requestPermissions(computerId: string, requestId: string) {
-    return z
-      .object({
-        accessibility: z.boolean(),
-        screenRecording: z.boolean(),
-        screenCapture: z.enum(['pending', 'ready', 'unavailable']),
-      })
-      .strict()
-      .parse(await this.request('requestPermissions', { computerId, requestId }));
+  /** The only way to ask macOS for desktop permissions. The helper answers a new
+   * request id with a "pending" capture check and settles it only when the same
+   * id asks again, so this re-asks until the answer is final. A refused first
+   * ask rejects; a later refusal or the deadline (default two minutes) ends the
+   * check as unavailable; `signal` rejects with its reason. */
+  async requestPermissions(
+    computerId: string,
+    requestId: string,
+    { signal, deadline }: { signal?: AbortSignal; deadline?: number } = {},
+  ): Promise<DesktopOsChecklist> {
+    const until = Math.min(deadline ?? Infinity, Date.now() + PERMISSION_SETTLE_MS);
+    signal?.throwIfAborted();
+    let seen = await this.askPermissions(computerId, requestId);
+    while (true) {
+      signal?.throwIfAborted();
+      const { accessibility, screenRecording, screenCapture } = seen;
+      if (!accessibility || !screenRecording)
+        return { accessibility, screenRecording, screenCapture: 'blocked' };
+      if (screenCapture !== 'pending') return { accessibility, screenRecording, screenCapture };
+      const unavailable = { accessibility, screenRecording, screenCapture: 'unavailable' as const };
+      if (Date.now() + PERMISSION_RECHECK_MS > until) return unavailable;
+      await pause(PERMISSION_RECHECK_MS, signal);
+      try {
+        seen = await this.askPermissions(computerId, requestId);
+      } catch {
+        signal?.throwIfAborted();
+        return unavailable;
+      }
+    }
+  }
+  private async askPermissions(computerId: string, requestId: string) {
+    return permissionObservation.parse(
+      await this.request('requestPermissions', { computerId, requestId }),
+    );
   }
   constructor(private readonly request: NativeRequest) {}
   async identity() {

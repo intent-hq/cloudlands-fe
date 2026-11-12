@@ -8242,7 +8242,6 @@
   "desktop_os_checklist_allowed": "Erlaubt",
   "desktop_os_checklist_missing": "Noch nicht erlaubt",
   "desktop_os_checklist_blocked": "Wartet auf die Punkte oben",
-  "desktop_os_checklist_checking": "Wird geprüft",
   "desktop_os_checklist_ready": "Bereit",
   "desktop_os_checklist_unconfirmed": "Nicht bestätigt",
   "inlineHtml_preview_preview_label": "Vorschau",

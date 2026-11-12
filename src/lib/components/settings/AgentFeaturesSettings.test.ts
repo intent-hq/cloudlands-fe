@@ -316,7 +316,7 @@ describe('AgentFeaturesSettings', () => {
   describe('desktop control OS permissions', () => {
     const missing = {
       guidance: 'Allow Intent in System Settings.',
-      checklist: { accessibility: true, screenRecording: false, screenCapture: 'pending' },
+      checklist: { accessibility: true, screenRecording: false, screenCapture: 'blocked' },
     };
     function listWithDesktop(enabled: boolean) {
       mocks.mockSettingsList.mockResolvedValue(
@@ -343,7 +343,7 @@ describe('AgentFeaturesSettings', () => {
       expect(screen.getByText('Allow Intent in System Settings.')).toBeTruthy();
     });
 
-    it('re-checks the same request until a pending capture check settles', async () => {
+    it('re-checks the same request until a grant made in System Settings shows up', async () => {
       listWithDesktop(false);
       mocks.mockSettingsUpdate.mockResolvedValueOnce([
         { path: 'agentFeatures.desktopControl', value: true },
@@ -351,7 +351,7 @@ describe('AgentFeaturesSettings', () => {
       desktopMocks.requestOsPermissions
         .mockResolvedValueOnce({
           guidance: 'Allow Intent in System Settings.',
-          checklist: { accessibility: true, screenRecording: true, screenCapture: 'pending' },
+          checklist: { accessibility: true, screenRecording: false, screenCapture: 'blocked' },
         })
         .mockResolvedValueOnce(undefined);
       await renderReady();

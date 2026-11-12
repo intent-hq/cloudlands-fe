@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JsonRpcClient } from '../../backend/main/json-rpc-client';
 import { DesktopNativeAdapter } from './desktop-native';
 import { desktopFailure } from './desktop-validation';
@@ -77,6 +77,7 @@ describe('local OS onboarding authorization', () => {
       expect(h.native.requestPermissions).toHaveBeenCalledExactlyOnceWith(
         'local',
         JSON.stringify(['w', 'a', 'r']),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
       expect(h.client.listenerCount('status')).toBe(0);
     },
@@ -145,21 +146,22 @@ describe('local OS onboarding authorization', () => {
     expect(h.native.requestPermissions).toHaveBeenCalledExactlyOnceWith(
       'local',
       JSON.stringify(['w', 'other', 'second']),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(h.client.listenerCount('status')).toBe(0);
   });
-  it('returns the whole observed checklist from one native request per Allow gesture', async () => {
+  it('returns the whole settled checklist from one readiness check per Allow gesture', async () => {
     const h = setup();
     h.native.requestPermissions.mockResolvedValueOnce({
       accessibility: true,
       screenRecording: false,
-      screenCapture: 'pending',
+      screenCapture: 'blocked',
     });
     expect(await h.run()).toEqual({
       platform: 'macos',
       accessibility: true,
       screenRecording: false,
-      screenCapture: 'pending',
+      screenCapture: 'blocked',
     });
     expect(h.native.requestPermissions).toHaveBeenCalledTimes(1);
   });
@@ -175,24 +177,181 @@ describe('local OS onboarding authorization', () => {
   });
 });
 
-describe('helper permission response boundary', () => {
+const pending = { accessibility: true, screenRecording: true, screenCapture: 'pending' };
+const ready = { accessibility: true, screenRecording: true, screenCapture: 'ready' };
+/** A helper whose capture check settles only when the same id asks again. */
+function helper(...answers: unknown[]) {
+  const request = vi.fn(async (operation: string) => {
+    if (operation === 'identity')
+      return { computerId: 'local', computerName: 'Mac', platform: 'macos' };
+    const answer = answers.length > 1 ? answers.shift() : answers[0];
+    if (answer instanceof Error) throw answer;
+    return answer;
+  });
+  const asks = () => request.mock.calls.filter(([operation]) => operation === 'requestPermissions');
+  return { request, asks, adapter: new DesktopNativeAdapter(request) };
+}
+async function settled<T>(promise: Promise<T>): Promise<T> {
+  promise.catch(() => undefined);
+  await vi.runAllTimersAsync();
+  return promise;
+}
+
+describe('shared OS permission readiness', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
   it('accepts only observed permission booleans, not a generic success acknowledgement', async () => {
-    const request = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({
-      accessibility: false,
-      screenRecording: true,
-      screenCapture: 'ready',
+    const h = helper({ ok: true });
+    await expect(h.adapter.requestPermissions('local', 'request')).rejects.toThrow();
+  });
+
+  it('re-asks with the same request id until a granted capture check settles', async () => {
+    const h = helper(pending, pending, ready);
+    await expect(settled(h.adapter.requestPermissions('local', 'request'))).resolves.toEqual(ready);
+    expect(h.asks()).toEqual(
+      Array(3).fill(['requestPermissions', { computerId: 'local', requestId: 'request' }]),
+    );
+  });
+
+  it('re-asks well inside the helper three-second abandon window', async () => {
+    const h = helper(pending, ready);
+    const result = h.adapter.requestPermissions('local', 'request');
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(result).resolves.toEqual(ready);
+    expect(h.asks()).toHaveLength(2);
+  });
+
+  it.each([
+    [false, true],
+    [true, false],
+    [false, false],
+  ])(
+    'reports a blocked check without re-asking while a grant is missing (%s, %s)',
+    async (accessibility, screenRecording) => {
+      const h = helper({ accessibility, screenRecording, screenCapture: 'pending' });
+      await expect(settled(h.adapter.requestPermissions('local', 'request'))).resolves.toEqual({
+        accessibility,
+        screenRecording,
+        screenCapture: 'blocked',
+      });
+      expect(h.asks()).toHaveLength(1);
+    },
+  );
+
+  it('ends a check that outlasts its deadline as not confirmed', async () => {
+    const h = helper(pending);
+    const result = settled(
+      h.adapter.requestPermissions('local', 'request', { deadline: Date.now() + 2000 }),
+    );
+    await expect(result).resolves.toEqual({ ...ready, screenCapture: 'unavailable' });
+    const asked = h.asks().length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.asks()).toHaveLength(asked);
+  });
+
+  it('gives up after two minutes without a deadline', async () => {
+    const h = helper(pending);
+    const result = h.adapter.requestPermissions('local', 'request');
+    await vi.advanceTimersByTimeAsync(119_000);
+    expect(h.asks().length).toBeGreaterThan(200);
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(result).resolves.toEqual({ ...ready, screenCapture: 'unavailable' });
+  });
+
+  it('stops asking and rejects with the caller reason when cancelled', async () => {
+    const h = helper(pending);
+    const controller = new AbortController();
+    const result = h.adapter.requestPermissions('local', 'request', { signal: controller.signal });
+    result.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(600);
+    const reason = new Error('stale');
+    controller.abort(reason);
+    await expect(result).rejects.toBe(reason);
+    const asked = h.asks().length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(h.asks()).toHaveLength(asked);
+  });
+
+  it('propagates a refusal of the first ask', async () => {
+    const refusal = desktopFailure('desktop-busy', 'Desktop control is already active');
+    const h = helper(refusal);
+    await expect(settled(h.adapter.requestPermissions('local', 'request'))).rejects.toBe(refusal);
+  });
+
+  it('ends the check as not confirmed when a later re-ask is refused', async () => {
+    const h = helper(
+      pending,
+      desktopFailure('desktop-unsupported-operation', 'The Mac session is locked'),
+      ready,
+    );
+    await expect(settled(h.adapter.requestPermissions('local', 'request'))).resolves.toEqual({
+      ...ready,
+      screenCapture: 'unavailable',
     });
-    const adapter = new DesktopNativeAdapter(request);
-    await expect(adapter.requestPermissions('local', 'request')).rejects.toThrow();
-    await expect(adapter.requestPermissions('local', 'request')).resolves.toEqual({
-      accessibility: false,
-      screenRecording: true,
-      screenCapture: 'ready',
-    });
-    expect(request).toHaveBeenLastCalledWith('requestPermissions', {
-      computerId: 'local',
-      requestId: 'request',
-    });
+    expect(h.asks()).toHaveLength(2);
+  });
+
+  it('settles a pending check for both the agent Allow flow and the Settings flow', async () => {
+    const agent = helper(pending, pending, ready);
+    const h = setup();
+    await expect(
+      settled(
+        requestDesktopPermissions(h.client as unknown as JsonRpcClient, selection, agent.adapter),
+      ),
+    ).resolves.toEqual({ platform: 'macos', ...ready });
+    expect(new Set(agent.asks().map(([, params]) => JSON.stringify(params))).size).toBe(1);
+    expect(agent.asks()).toHaveLength(3);
+
+    const settings = helper(pending, pending, ready);
+    await expect(
+      settled(
+        requestLocalDesktopPermissions(
+          { requestId: '0b9f6a52-3c1e-4b8a-9d2f-6e5a4c3b2a10' },
+          settings.adapter,
+          () => true,
+        ),
+      ),
+    ).resolves.toEqual({ platform: 'macos', ...ready });
+    expect(new Set(settings.asks().map(([, params]) => JSON.stringify(params))).size).toBe(1);
+    expect(settings.asks()).toHaveLength(3);
+  });
+
+  it('stops the agent check as stale when the daemon connection changes', async () => {
+    const agent = helper(pending);
+    const h = setup();
+    const result = requestDesktopPermissions(
+      h.client as unknown as JsonRpcClient,
+      selection,
+      agent.adapter,
+    );
+    result.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(600);
+    h.client.emit('status', 'connecting');
+    const error = await result.catch((e) => e);
+    expect(error.toErrorPayload()).toMatchObject({ code: 'desktop-stale-request' });
+    const asked = agent.asks().length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(agent.asks()).toHaveLength(asked);
+    expect(h.client.listenerCount('status')).toBe(0);
+  });
+
+  it('never waits past the agent request expiry', async () => {
+    const agent = helper(pending);
+    const h = setup();
+    h.snapshot.pending.expiresAt = new Date(Date.now() + 5000).toISOString();
+    const result = requestDesktopPermissions(
+      h.client as unknown as JsonRpcClient,
+      selection,
+      agent.adapter,
+    );
+    result.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(5000);
+    const error = await result.catch((e) => e);
+    expect(error.toErrorPayload()).toMatchObject({ code: 'desktop-stale-request' });
+    const asked = agent.asks().length;
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(agent.asks()).toHaveLength(asked);
   });
 });
 
@@ -203,7 +362,7 @@ describe('settings-initiated OS permission request', () => {
       requestPermissions: vi.fn(async () => ({
         accessibility: true,
         screenRecording: false,
-        screenCapture: 'pending' as const,
+        screenCapture: 'blocked' as const,
       })),
     };
   }
@@ -233,7 +392,7 @@ describe('settings-initiated OS permission request', () => {
       platform: 'macos',
       accessibility: true,
       screenRecording: false,
-      screenCapture: 'pending',
+      screenCapture: 'blocked',
     });
     await run(n);
     const [first, second] = n.requestPermissions.mock.calls as unknown as [string, string][];

@@ -52,7 +52,7 @@ describe('connected consent prompt', () => {
         submitting: true,
         settingUp: true,
         error: m.desktop_os_setup_description(),
-        osChecklist: { accessibility: true, screenRecording: false, screenCapture: 'unavailable' },
+        osChecklist: { accessibility: true, screenRecording: false, screenCapture: 'blocked' },
       }),
     );
     render(DesktopConsentToast, {
@@ -72,15 +72,6 @@ describe('connected consent prompt', () => {
     ]);
     expect(screen.getAllByText(/quit and reopen Intent/)).toHaveLength(1);
     expect(screen.getByRole('button', { name: 'Deny' }).hasAttribute('disabled')).toBe(false);
-    mock.state.desktopControl = desktopControlReducer(
-      mock.state.desktopControl,
-      desktopEntryPatched('workspace', 'agent', 0, {
-        osChecklist: { accessibility: true, screenRecording: true, screenCapture: 'pending' },
-      }),
-    );
-    (store as unknown as { emitState(): void }).emitState();
-    await tick();
-    expect(screen.getAllByRole('listitem').at(-1)?.textContent).toContain('Checking');
     mock.state.desktopControl = desktopControlReducer(
       mock.state.desktopControl,
       desktopEntryPatched('workspace', 'agent', 0, {

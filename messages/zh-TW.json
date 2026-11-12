@@ -8242,7 +8242,6 @@
   "desktop_os_checklist_allowed": "已允許",
   "desktop_os_checklist_missing": "尚未允許",
   "desktop_os_checklist_blocked": "等待上方項目",
-  "desktop_os_checklist_checking": "正在檢查",
   "desktop_os_checklist_ready": "就緒",
   "desktop_os_checklist_unconfirmed": "未確認",
   "inlineHtml_preview_preview_label": "預覽",

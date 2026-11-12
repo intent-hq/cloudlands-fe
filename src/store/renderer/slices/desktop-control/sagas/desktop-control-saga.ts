@@ -134,8 +134,9 @@ function* decide(action: ReturnType<typeof desktopDecisionRequested>): SagaGener
           }),
         );
         if (!setup) break;
-        // Read observed OS state only. The original gesture, request and expiry
-        // remain binding; this never retries a daemon decision or opens a session.
+        // Main settles each check; this loop only watches for grants made in System
+        // Settings. The original gesture, request and expiry remain binding; this
+        // never retries a daemon decision or opens a session.
         yield* delay(1000);
       }
       observing = false;
@@ -191,8 +192,8 @@ function* setPermission(
       yield* put(desktopReadRequested(ws, agent));
   }
 }
-// Re-ask with the same id while anything is missing: the capture check settles
-// per id, and a grant made in System Settings shows up without another click.
+// Main settles each check. Re-ask with the same id while a grant is missing, so a
+// grant made in System Settings shows up without another click.
 function* pollOsPermissions(): SagaGenerator<void> {
   const requestId = crypto.randomUUID();
   for (let attempt = 0; attempt < 120; attempt++) {

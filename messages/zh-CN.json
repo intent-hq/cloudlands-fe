@@ -8242,7 +8242,6 @@
   "desktop_os_checklist_allowed": "已允许",
   "desktop_os_checklist_missing": "尚未允许",
   "desktop_os_checklist_blocked": "等待上方各项",
-  "desktop_os_checklist_checking": "正在检查",
   "desktop_os_checklist_ready": "就绪",
   "desktop_os_checklist_unconfirmed": "未确认",
   "inlineHtml_preview_preview_label": "预览",
