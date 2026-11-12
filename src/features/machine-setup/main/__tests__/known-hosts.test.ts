@@ -104,7 +104,10 @@ describe('known-hosts', () => {
 
   it('refuses a revoked key, for this host or any host', () => {
     for (const hosts of ['box', '*']) {
-      const text = [line('box', 'ssh-ed25519', ed), `@revoked ${hosts} ssh-ed25519 ${ed.toString('base64')}`].join('\n');
+      const text = [
+        line('box', 'ssh-ed25519', ed),
+        `@revoked ${hosts} ssh-ed25519 ${ed.toString('base64')}`,
+      ].join('\n');
       expect(checkKnownHosts(text, 'box', 22, edKey)).toBe('mismatch');
     }
   });

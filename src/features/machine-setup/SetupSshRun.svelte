@@ -158,10 +158,7 @@
       <p class="type-body text-foreground">
         {m.machineSetup_run_linger_description({ host: run.host })}
       </p>
-      <CopyInput
-        value={lingerCommand(run.lingerUser)}
-        class="font-mono"
-      />
+      <CopyInput value={lingerCommand(run.lingerUser)} class="font-mono" />
     </div>
   {/if}
 

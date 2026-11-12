@@ -120,7 +120,11 @@ export function checkKnownHosts(
   let match = false;
   for (const line of knownLines(text)) {
     if (line.marker === '@revoked') {
-      if (line.type === key.type && line.blob.equals(key.blob) && hostFieldMatches(line.hosts, name))
+      if (
+        line.type === key.type &&
+        line.blob.equals(key.blob) &&
+        hostFieldMatches(line.hosts, name)
+      )
         return 'mismatch';
       continue;
     }
