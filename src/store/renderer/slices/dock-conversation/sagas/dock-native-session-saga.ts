@@ -8,7 +8,7 @@
  * serializable `nativeSpeech` mirror through selectors.
  */
 import { buffers, eventChannel } from 'redux-saga';
-import { call, delay, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
+import { call, fork, put, take, takeEvery, type SagaGenerator } from 'typed-redux-saga';
 import { takeLatestFromSelector, type SelectorChannelPayload } from '@themislib/themis/saga';
 import { store as appStore } from '$store/renderer/store';
 import type { DockEvidencePrivacyPane } from '$shared/dock-evidence-ipc';
@@ -31,6 +31,7 @@ import {
 } from '$shared/dock-capture-editor';
 import type { DockInsertionPart } from '$shared/dock-evidence';
 import { takeEveryFromElectronChannel } from '../../../utils/ipc-channel';
+import { WINDOW_CHANNELS } from '$shared/ipc/channels';
 import { getPrincipalActionContext } from '../../principal/principal-context';
 import { selectDockNativeScope } from '../dock-conversation-selectors';
 import {
@@ -90,6 +91,16 @@ interface NativeScope {
   workspaceId: string;
   agentId: string;
   authority: string;
+}
+
+/** Main showed the dock window (see WINDOW_CHANNELS.DOCK_SHOWN); one pending signal kept. */
+function dockShownChannel() {
+  return eventChannel<true>((emit) => {
+    const api = typeof window === 'undefined' ? undefined : window.electronAPI;
+    if (!api?.on) return () => {};
+    const id = api.on(WINDOW_CHANNELS.DOCK_SHOWN, () => emit(true));
+    return () => api.offById?.(WINDOW_CHANNELS.DOCK_SHOWN, id);
+  }, buffers.sliding(1));
 }
 
 function stillCurrent(scope: NativeScope): boolean {
@@ -449,22 +460,27 @@ function* runNativeSession({ payload: key }: SelectorChannelPayload<string>): Sa
 
   try {
     let result: Awaited<ReturnType<typeof adapter.initialize>> | null = null;
-    for (let attempt = 0; ; attempt += 1) {
-      result = yield* call(async () => {
-        try {
-          return await adapter.initialize();
-        } catch {
-          return null;
-        }
-      });
-      // A stale probe never installs: unobserved availability is never published.
-      if (!stillCurrent(scope)) return;
-      if (result?.ok) break;
-      // Refused (main admits a session only on a visible dock, so a pair opened while the
-      // dock is hidden is refused): probe again with a bounded backoff while this scope is
-      // current. A probe has no screen or microphone access; a scope change cancels this.
-      yield* delay(Math.min(10_000, 1_000 * 2 ** Math.min(attempt, 4)));
-      if (!stillCurrent(scope)) return;
+    // Main admits a session only on a visible dock, so a pair opened while the dock is hidden
+    // is refused: probe again each time main shows the dock (no timer) while this scope is
+    // current. A probe has no screen or microphone access; a scope change cancels this.
+    const shown = dockShownChannel();
+    try {
+      for (;;) {
+        result = yield* call(async () => {
+          try {
+            return await adapter.initialize();
+          } catch {
+            return null;
+          }
+        });
+        // A stale probe never installs: unobserved availability is never published.
+        if (!stillCurrent(scope)) return;
+        if (result?.ok) break;
+        yield* take(shown);
+        if (!stillCurrent(scope)) return;
+      }
+    } finally {
+      shown.close();
     }
     if (!result?.ok) return;
     configureDockEvidenceNative(adapter.service);

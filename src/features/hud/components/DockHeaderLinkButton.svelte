@@ -18,7 +18,7 @@
    * Link the current tab or app to the open workspace, from its conversation header. The
    * icon is always there; it opens a menu with Active tab and Active app, each with its real
    * tab title or app name muted on the same row, each checked when that scope's saved link
-   * sends it here, and a line on what the configured open-dock shortcut does with a link. A choice the current context cannot save
+   * sends it here, under a line on what the configured open-dock shortcut does with a link. A choice the current context cannot save
    * (unknown, the dock itself, no exact tab or app) is shown disabled. Choosing links that
    * scope here, or unlinks exactly that scope's saved link; never the effective link of
    * another scope. The menu's popup is owned by the dock conversation (it keeps the dock
@@ -121,6 +121,11 @@
     aria-label={m.dock_linkedTab_link_label()}
     class="dock-header-link-menu w-80 max-w-[calc(100vw-16px)]"
   >
+    {#if openShortcut}
+      <p class="dock-header-link-hint" data-link-shortcut-hint>
+        {m.dock_linkedTab_shortcutHint_label({ shortcut: openShortcut })}
+      </p>
+    {/if}
     {#each SCOPES as scope (scope)}
       <!-- One choice per opening: the menu acts on what it showed when opened. -->
       <Menu.CheckboxItem
@@ -144,11 +149,6 @@
         </span>
       </Menu.CheckboxItem>
     {/each}
-    {#if openShortcut}
-      <p class="dock-header-link-hint" data-link-shortcut-hint>
-        {m.dock_linkedTab_shortcutHint_label({ shortcut: openShortcut })}
-      </p>
-    {/if}
   </Menu.Content>
 </Menu.Root>
 
@@ -159,11 +159,11 @@
     color: hsl(var(--muted-foreground));
     font-size: 0.92em;
   }
-  /* What the open-dock shortcut does with a link: a quiet, wrapping note under the choices. */
+  /* What the open-dock shortcut does with a link: a quiet, wrapping note above the choices. */
   :global(.dock-header-link-menu .dock-header-link-hint) {
-    margin: 4px 0 0;
-    padding: 6px 8px 4px;
-    border-top: 1px solid hsl(var(--border));
+    margin: 0 0 4px;
+    padding: 4px 8px 7px;
+    border-bottom: 1px solid hsl(var(--border));
     color: hsl(var(--muted-foreground));
     font-size: 11px;
     line-height: 1.4;

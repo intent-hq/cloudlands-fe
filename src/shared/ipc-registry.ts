@@ -418,6 +418,9 @@ export const IPC_CHANNELS = {
     // Main's cursor poll: { inside, x, y, revision } when the pointer enters or leaves
     // the dock's interactive regions; backs up hover delivery to the non-key window.
     DOCK_POINTER_PRESENCE_CHANGED: 'window:dock-pointer-presence-changed',
+    // Main → the dock document: its window was shown (no payload). A native session refused
+    // while the dock was hidden probes again on this, never on a timer.
+    DOCK_SHOWN: 'window:dock-shown',
     // One-shot from the dock document: hydrated, presence subscribed and first regions
     // published. Main shows the hidden dock (never focused) only after this.
     DOCK_RENDERER_READY: 'window:dock-renderer-ready',
@@ -1300,6 +1303,7 @@ export const EVENT_CHANNELS = [
   'window:focus-dock',
   'window:dock-placement-changed',
   'window:dock-pointer-presence-changed',
+  'window:dock-shown',
   'window:dock-lab-changed',
   'machine-rail:changed',
   'machine-rail:toast',

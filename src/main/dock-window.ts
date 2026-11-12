@@ -681,6 +681,11 @@ function attachLifecycleListeners(window: BrowserWindow): void {
     } else operation.cancelled = true;
   });
   window.on('closed', () => clearTrackedWindow(window));
+  // The dock document learns it is shown (a refused native session probes again then).
+  window.on('show', () => {
+    if (dockWindowRef !== window || window.webContents.isDestroyed()) return;
+    window.webContents.send(WINDOW_CHANNELS.DOCK_SHOWN);
+  });
   window.on('blur', () => {
     if (dockWindowRef !== window) return;
     placementController?.cancelInteraction();

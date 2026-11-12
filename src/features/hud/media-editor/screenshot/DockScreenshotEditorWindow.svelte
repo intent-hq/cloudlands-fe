@@ -36,7 +36,10 @@
     planDockMediaOutput,
   } from '$shared/dock-media-edit';
   import DockCaptureEditorShell from '../DockCaptureEditorShell.svelte';
-  import { reportCaptureEditorSaveFailure, type CaptureEditorSaveFailureStage } from '../capture-editor-bridge';
+  import {
+    reportCaptureEditorSaveFailure,
+    type CaptureEditorSaveFailureStage,
+  } from '../capture-editor-bridge';
   import { createEditTransaction } from '../edit-transaction.svelte';
   import DockScreenshotEditor from './DockScreenshotEditor.svelte';
   import { retakeScreenshotEdit } from './screenshot-edit-geometry';
@@ -67,7 +70,13 @@
       edit: DockMediaEdit;
       replacement?: { candidateToken: string };
     }) => Promise<DockCaptureEditorSaveResult>;
-    onRetake?: (bundle: ScreenshotEditorBundle) => Promise<ScreenshotRetakeCandidate | null>;
+    /**
+     * A candidate, 'cancelled' (the person dismissed it: nothing to say), or null when the
+     * retake failed (permission, capture, mapping, transport): the edits stay and say so.
+     */
+    onRetake?: (
+      bundle: ScreenshotEditorBundle,
+    ) => Promise<ScreenshotRetakeCandidate | 'cancelled' | null>;
     onNoteDictation?: (
       request: DockCaptureEditorNoteDictationRequest,
     ) => Promise<DockCaptureEditorNoteDictationAck>;
@@ -458,11 +467,17 @@
       if (!active || !ownsSnapshot() || edits.draft !== bundle) return;
       if (result?.result !== 'saved' || !result.saved) {
         const reason = ['failed', 'stale-source', 'revision-conflict'].includes(result?.result)
-          ? result.result : result ? 'invalid-result' : 'no-result';
+          ? result.result
+          : result
+            ? 'invalid-result'
+            : 'no-result';
         saveFailed('ack', reason);
         return;
       }
-      if (result.saved.sourceId !== bundle.source.id || result.saved.sourceRevision !== bundle.source.revision) {
+      if (
+        result.saved.sourceId !== bundle.source.id ||
+        result.saved.sourceRevision !== bundle.source.revision
+      ) {
         saveFailed('saved-source', 'mismatch');
         return;
       }
@@ -481,7 +496,10 @@
     } catch (cause) {
       if (active && ownsSnapshot()) {
         const name = cause instanceof Error ? cause.name : '';
-        saveFailed('exception', ['Error', 'TypeError', 'DataCloneError'].includes(name) ? name : 'other');
+        saveFailed(
+          'exception',
+          ['Error', 'TypeError', 'DataCloneError'].includes(name) ? name : 'other',
+        );
       }
     } finally {
       if (active) saving = false;
@@ -496,8 +514,16 @@
     try {
       await stopping;
       if (!active || !ownsSnapshot() || edits.draft !== bundle) return;
-      const candidate = await onRetake(bundle);
-      if (!active || !ownsSnapshot() || edits.draft !== bundle || !candidate) return;
+      let candidate: ScreenshotRetakeCandidate | 'cancelled' | null = null;
+      try {
+        candidate = await onRetake(bundle);
+      } catch {
+        candidate = null;
+      }
+      // Another session, or edits made meanwhile: this answer is stale, nothing to say.
+      if (!active || !ownsSnapshot() || edits.draft !== bundle) return;
+      if (candidate === 'cancelled') return;
+      if (!candidate) throw new Error('Screenshot retake failed');
       if (
         !DockMediaSourceSchema.safeParse(candidate.source).success ||
         typeof candidate.candidateToken !== 'string' ||

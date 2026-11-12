@@ -225,8 +225,10 @@ test('single dock shortcut: linked conversation, else the selected one, else the
   await expect(thisApp).toBeVisible();
   // Each choice names what it links: the tab (its title, else its site) and the app.
   await expect(thisTab.locator('[data-link-scope-detail]')).toHaveText(/github\.com/);
-  // The menu explains what the open-dock shortcut does.
-  await expect(page.locator('[data-link-shortcut-hint]')).toContainText('linked tab or app');
+  // The menu says what the person's configured open-dock shortcut does with a link.
+  await expect(page.locator('[data-link-shortcut-hint]')).toHaveText(
+    /Press \S*D in a linked tab or app to open this workspace\./,
+  );
   await page.screenshot({ path: info.outputPath('12a-d-link-menu-labels.png') });
   await thisTab.click();
   await expect.poll(() => read().then((s) => s?.linkedWorkspaceId)).toBe('choice-1');

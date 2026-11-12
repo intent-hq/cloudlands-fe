@@ -33,7 +33,7 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     )
     .toBe(false);
   // 0. A conversation opened while main refuses the native session (as for a hidden dock):
-  // the probe is retried until admitted, so Screenshot/Record/mic do not stay disabled.
+  // no timer retries it; each time main shows the dock it probes again, until admitted.
   await page.evaluate(() => {
     const g = globalThis as any;
     g.__syntheticNativeRefusals = 2;
@@ -43,21 +43,25 @@ test('editor handoff: held through capture/stop, attach returns to the prompt', 
     store.dispatch({ type: 'dockConversation/close', payload: [] });
     store.dispatch({ type: 'dockConversation/open', payload: [workspaceId] });
   });
-  const retried = await page.evaluate(async () => {
-    const g = globalThis as any;
-    const startedAt = performance.now();
-    for (;;) {
-      const caps = g.__dockComposerE2E.store.state.dockConversation.nativeCapabilities;
-      if (caps?.capture)
-        return { probes: g.__syntheticNativeProbes, ms: performance.now() - startedAt };
-      if (performance.now() - startedAt > 9000)
-        return { probes: g.__syntheticNativeProbes, ms: -1 };
-      await new Promise((r) => setTimeout(r, 100));
-    }
-  });
-  expect(retried.ms).toBeGreaterThan(0);
-  expect(retried.probes).toBe(3);
-  const refusedProbeRetried = { probes: retried.probes, admittedAfterMs: Math.round(retried.ms) };
+  const probes = () => page.evaluate(() => (globalThis as any).__syntheticNativeProbes as number);
+  const caps = () =>
+    page.evaluate(
+      () => !!(window as any).__dockComposerE2E.store.state.dockConversation.nativeCapabilities,
+    );
+  await expect.poll(probes).toBe(1);
+  // eslint-disable-next-line intent/no-wait-for-timeout-in-ct -- quiet period: a refused probe must not retry on a timer
+  await page.waitForTimeout(2500);
+  expect(await probes()).toBe(1);
+  expect(await caps()).toBe(false);
+  const shown = () =>
+    page.evaluate(() => (window as any).__dockComposerE2E.fixture.emit('window:dock-shown'));
+  await shown();
+  await expect.poll(probes).toBe(2);
+  expect(await caps()).toBe(false);
+  await shown();
+  await expect.poll(caps).toBe(true);
+  const retried = { probes: await probes(), ms: 1 };
+  const refusedProbeRetried = { probes: retried.probes, timerRetries: 0, admittedOnShow: 2 };
   await expect
     .poll(() =>
       page.evaluate(() => {

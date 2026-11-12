@@ -95,10 +95,13 @@
         {noteDictationUpdate}
         onRetake={snapshot.source?.capture?.frame
           ? async (bundle) => {
+              // null (no answer, transport failure) and a refusal are failures; a dismissed
+              // selection is a cancel, said nothing about.
               const outcome = await bridge.retake(openId);
-              if (!outcome?.ok) return null;
+              if (!outcome) return null;
+              if (!outcome.ok) return outcome.error === 'cancelled' ? 'cancelled' : null;
               const mapping = dockMediaRetakeMapping(bundle.source, outcome.source);
-              // Without a frame on the same display, marks cannot be placed: no candidate.
+              // Without a frame on the same display, marks cannot be placed: a failure.
               return mapping
                 ? {
                     candidateToken: outcome.candidateToken,
