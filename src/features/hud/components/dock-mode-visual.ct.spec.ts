@@ -244,9 +244,27 @@ test('notch keyboard focus request and grip retain internal Tab navigation', asy
       await page.keyboard.press('Tab');
       await expect(component.getByTestId('dock-dismiss')).toHaveCount(0);
     }
-    // The index search takes the keyboard first; ArrowDown enters the rows.
-    await expect(component.getByRole('searchbox')).toBeFocused();
+    const search = component.getByRole('combobox', { name: 'Search workspaces', exact: true });
+    const gridRows = component
+      .getByRole('grid', { name: 'Active spaces', exact: true })
+      .getByRole('row');
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue('');
+    await expect(gridRows.first()).toHaveAttribute('id', /.+/);
+    await expect(search).toHaveAttribute(
+      'aria-activedescendant',
+      (await gridRows.first().getAttribute('id')) ?? '',
+    );
+    // ArrowDown changes the active result while the combobox keeps keyboard focus.
     await page.keyboard.press('ArrowDown');
+    await expect(search).toBeFocused();
+    await expect(gridRows.nth(1)).toHaveAttribute('id', /.+/);
+    await expect(search).toHaveAttribute(
+      'aria-activedescendant',
+      (await gridRows.nth(1).getAttribute('id')) ?? '',
+    );
+    await expect(gridRows.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press('Tab');
     await expect(row).toBeFocused();
     await expect(shell).toHaveAttribute('data-reveal', '1');
     await page.keyboard.press('Tab');
