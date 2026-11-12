@@ -8486,6 +8486,7 @@
   "remoteMachines_order_local_label": "这台电脑",
   "remoteMachines_order_backendHost_label": "运行 {backend} 的电脑",
   "remoteMachines_order_saveFailed_error": "无法保存机器顺序。请重试。",
+  "remoteMachines_order_stale_info": "机器顺序已在别处更改，列表现在显示最新顺序。",
   "remoteMachines_state_available_label": "为 {backend} 运行智能体",
   "remoteMachines_state_revoked_description": "{machine} 撤销了此后端的访问权限。请重新允许，或将其从此列表中移除。",
   "remoteMachines_state_revoked_label": "访问权限已撤销",

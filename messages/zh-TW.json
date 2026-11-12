@@ -8486,6 +8486,7 @@
   "remoteMachines_order_local_label": "這台電腦",
   "remoteMachines_order_backendHost_label": "執行 {backend} 的電腦",
   "remoteMachines_order_saveFailed_error": "無法儲存機器順序。請再試一次。",
+  "remoteMachines_order_stale_info": "機器順序已在別處變更，清單現在顯示最新順序。",
   "remoteMachines_state_available_label": "為 {backend} 執行代理程式",
   "remoteMachines_state_revoked_description": "{machine} 撤銷了此後端的存取權限。請重新允許，或將其從此清單中移除。",
   "remoteMachines_state_revoked_label": "存取權限已撤銷",

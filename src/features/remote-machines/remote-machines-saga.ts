@@ -418,12 +418,11 @@ function* setOrder(action: ReturnType<typeof machineOrderSetRequested>): SagaGen
     const row = rows.get(machineOrderId(key));
     return row ? [row] : [];
   });
+  const shown = optimistic.length === previous.length ? optimistic : previous;
   const started = generation();
-  yield* put(
-    machineOrderSaving(true, optimistic.length === previous.length ? optimistic : undefined),
-  );
+  yield* put(machineOrderSaving(true, shown));
   let next: MachineOrderRow[] | null = null;
-  let failed = false;
+  let stale = false;
   try {
     const result = yield* call(backendRequest<{ order?: unknown }>, 'remoteMachines.setOrder', {
       order: keys,
@@ -431,11 +430,22 @@ function* setOrder(action: ReturnType<typeof machineOrderSetRequested>): SagaGen
     next = parseMachineOrder(result?.order);
   } catch (error) {
     next = staleOrder(error);
-    failed = next === null;
+    stale = next !== null;
   }
-  if (started !== generation()) return;
-  yield* put(machineOrderSaving(false, next ?? (failed ? previous : undefined)));
-  if (failed) yield* call(notify.error, m.remoteMachines_order_saveFailed_error());
+  if (started !== generation()) {
+    // A reconnect reloads the list; only the in-flight mark is ours to clear.
+    yield* put(machineOrderSaving(false));
+    return;
+  }
+  if (next) {
+    yield* put(machineOrderSaving(false, next));
+    if (stale) yield* call(notify.info, m.remoteMachines_order_stale_info());
+    return;
+  }
+  // Put the previous order back unless a live event already replaced ours.
+  const current = store.state.remoteMachines.order;
+  yield* put(machineOrderSaving(false, current === shown ? previous : undefined));
+  yield* call(notify.error, m.remoteMachines_order_saveFailed_error());
 }
 
 export function* remoteMachinesSaga(): SagaGenerator<void> {

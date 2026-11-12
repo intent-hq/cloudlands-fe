@@ -266,13 +266,20 @@ function parseMachineOrderRow(value: unknown): MachineOrderRow | null {
   return null;
 }
 
-/** Narrow a wire `MachineOrderRow[]`, or null when `value` is not an array. */
+/**
+ * Narrow a wire `MachineOrderRow[]`; null when `value` is not an array or names
+ * a row this client can't read. `setOrder` must name every current row, so a
+ * partial list could never be saved: the client keeps its older sections.
+ */
 export function parseMachineOrder(value: unknown): MachineOrderRow[] | null {
   if (!Array.isArray(value)) return null;
-  return value.flatMap((row) => {
+  const rows: MachineOrderRow[] = [];
+  for (const row of value) {
     const parsed = parseMachineOrderRow(row);
-    return parsed ? [parsed] : [];
-  });
+    if (!parsed) return null;
+    rows.push(parsed);
+  }
+  return rows;
 }
 
 /** The key that names `row` in `remoteMachines.setOrder`. */

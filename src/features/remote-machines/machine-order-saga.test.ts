@@ -11,7 +11,12 @@ vi.mock(
   '$lib/client/live/backend-transport',
   async () => (await import('../../test/mocks/backend-transport.mock')).mockBackendTransportModule,
 );
-const ui = vi.hoisted(() => ({ success: vi.fn(), warning: vi.fn(), error: vi.fn() }));
+const ui = vi.hoisted(() => ({
+  success: vi.fn(),
+  warning: vi.fn(),
+  error: vi.fn(),
+  info: vi.fn(),
+}));
 vi.mock('$lib/components/patterns/notify', () => ({ notify: ui }));
 vi.mock('$lib/components/patterns/confirm', () => ({ confirm: vi.fn(async () => true) }));
 import {
@@ -23,8 +28,13 @@ import type { MachineOrderRow } from '$shared/types/remote-machines';
 import { store } from '$store/renderer/store';
 import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
 import { backendReconnected } from '$store/renderer/slices/workspace-lifecycle/workspace-lifecycle-slice';
+import { connectionStatusChanged } from '$store/renderer/slices/daemon-health/daemon-health-slice';
 import { remoteMachinesSaga } from './remote-machines-saga';
-import { machineOrderSetRequested, remoteMachinesRefreshRequested } from './remote-machines-slice';
+import {
+  machineOrderLoaded,
+  machineOrderSetRequested,
+  remoteMachinesRefreshRequested,
+} from './remote-machines-slice';
 
 const ORDER: MachineOrderRow[] = [
   { kind: 'local', name: 'build-host' },
@@ -145,6 +155,8 @@ describe('remoteMachines.setOrder', () => {
     await vi.waitFor(() => expect(store.state.remoteMachines.order).toEqual(current));
     expect(store.state.remoteMachines.orderSaving).toBe(false);
     expect(ui.error).not.toHaveBeenCalled();
+    // The move snapped back: say why.
+    expect(ui.info).toHaveBeenCalledTimes(1);
   });
 
   it('puts the previous order back and says so after any other failure', async () => {
@@ -164,5 +176,41 @@ describe('remoteMachines.setOrder', () => {
     dispatch(machineOrderSetRequested([...MOVED]));
     await Promise.resolve();
     expect(mock.requests.map((r) => r.method)).not.toContain('remoteMachines.setOrder');
+  });
+
+  it('keeps a newer order from a live event when the save fails', async () => {
+    const mock = await loaded({ remoteMachines: 1, machineOrder: 1 });
+    let reject!: (error: unknown) => void;
+    mock.onRequest('remoteMachines.setOrder', () => new Promise((_, fail) => (reject = fail)));
+    dispatch(machineOrderSetRequested([...MOVED]));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(true));
+
+    const elsewhere = [ORDER[2], ORDER[1], ORDER[0]];
+    store.dispatch(machineOrderLoaded(elsewhere));
+    reject(new BackendError({ code: 'UNAVAILABLE', message: 'down', rpcCode: -32000 }));
+
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(false));
+    expect(store.state.remoteMachines.order).toEqual(elsewhere);
+    expect(ui.error).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears the in-flight mark when the connection changes mid-save', async () => {
+    const mock = await loaded({ remoteMachines: 1, machineOrder: 1 });
+    let resolve!: (value: unknown) => void;
+    mock.onRequest('remoteMachines.setOrder', () => new Promise((done) => (resolve = done)));
+    dispatch(machineOrderSetRequested([...MOVED]));
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(true));
+
+    store.dispatch(connectionStatusChanged('disconnected'));
+    store.dispatch(connectionStatusChanged('connected'));
+    resolve({ order: ORDER });
+
+    await vi.waitFor(() => expect(store.state.remoteMachines.orderSaving).toBe(false));
+    // A later move is sent, not ignored.
+    mock.onRequest('remoteMachines.setOrder', () => ({ order: ORDER }));
+    dispatch(machineOrderSetRequested([...MOVED]));
+    await vi.waitFor(() =>
+      expect(mock.requests.filter((r) => r.method === 'remoteMachines.setOrder')).toHaveLength(2),
+    );
   });
 });

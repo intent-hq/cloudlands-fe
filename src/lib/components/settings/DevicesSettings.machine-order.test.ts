@@ -24,6 +24,9 @@ import {
   remoteMachinesLoaded,
 } from '$features/remote-machines/remote-machines-slice';
 import { routeDaemonEventsNotification } from '$features/events/daemon-events-bridge.client';
+import { cloudMachinesLoaded } from '$features/cloud-machines/cloud-machines-slice';
+import { setLabsCloudMachinesEnabled } from '$store/renderer/slices/user-preferences/user-preferences-slice';
+import { E2B_PROVIDER } from '../../../test/cloud-machines-preview';
 
 vi.mock('$lib/client', () => ({
   localMachineClient: {
@@ -323,5 +326,36 @@ describe('Settings → Machines with machineOrder: 1', () => {
         }),
       }),
     ).toBeTruthy();
+  });
+
+  it('keeps the single E2B row of a backend without named entries', () => {
+    seed({ order: ORDER.filter((row) => row.kind !== 'cloud') });
+    store.dispatch(setLabsCloudMachinesEnabled(true));
+    store.dispatch(
+      cloudMachinesLoaded({
+        supported: true,
+        entries: false,
+        providers: [E2B_PROVIDER],
+        machines: [],
+        readAt: Date.now(),
+      }),
+    );
+    render(DevicesSettings);
+
+    expect(document.querySelector('[data-cloud-machine-row="e2b"]')).not.toBeNull();
+  });
+
+  it('tells an owner with one row that they can reorder, without offering moves', async () => {
+    seed({ order: [ORDER[1]] });
+    render(DevicesSettings);
+
+    expect(
+      screen.getByText(
+        m.remoteMachines_order_description({
+          backend: m.layout_daemonStatus_localConnection_label(),
+        }),
+      ),
+    ).toBeTruthy();
+    expect(orderedSection().querySelector('[data-machine-order-handle]')).toBeNull();
   });
 });

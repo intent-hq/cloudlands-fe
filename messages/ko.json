@@ -8486,6 +8486,7 @@
   "remoteMachines_order_local_label": "이 컴퓨터",
   "remoteMachines_order_backendHost_label": "{backend}이(가) 실행 중인 컴퓨터",
   "remoteMachines_order_saveFailed_error": "머신 순서를 저장하지 못했습니다. 다시 시도하세요.",
+  "remoteMachines_order_stale_info": "머신 순서가 다른 곳에서 변경되어 목록에 최신 순서를 표시합니다.",
   "remoteMachines_state_available_label": "{backend}의 에이전트 실행",
   "remoteMachines_state_revoked_description": "{machine}이(가) 이 백엔드의 접근 권한을 취소했습니다. 다시 허용하거나 이 목록에서 제거하세요.",
   "remoteMachines_state_revoked_label": "접근 권한 취소됨",

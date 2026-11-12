@@ -8486,6 +8486,7 @@
   "remoteMachines_order_local_label": "This computer",
   "remoteMachines_order_backendHost_label": "The computer {backend} runs on",
   "remoteMachines_order_saveFailed_error": "Couldn't save the machine order. Try again.",
+  "remoteMachines_order_stale_info": "The machine order changed elsewhere, so the list now shows the latest order.",
   "remoteMachines_state_available_label": "Runs agents for {backend}",
   "remoteMachines_state_revoked_description": "{machine} revoked this backend's access. Allow it again, or remove it from this list.",
   "remoteMachines_state_revoked_label": "Access revoked",

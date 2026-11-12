@@ -89,15 +89,23 @@ describe('sortByMachineOrder (Start On)', () => {
 });
 
 describe('parseMachineOrder', () => {
-  it('keeps documented rows and drops unknown kinds or rows without an id', () => {
+  it('rejects a list with a row it cannot name, since setOrder must name every row', () => {
+    expect(
+      parseMachineOrder([
+        { kind: 'local', name: 'h' },
+        { kind: 'satellite', name: 'X' },
+      ]),
+    ).toBeNull();
+    expect(parseMachineOrder([{ kind: 'machine', name: 'no id' }])).toBeNull();
+    expect(parseMachineOrder([null])).toBeNull();
+  });
+
+  it('keeps documented rows and drops unknown fields', () => {
     expect(
       parseMachineOrder([
         { kind: 'local', name: 'host' },
         { kind: 'machine', nodeId: 'd-a', name: 'A', extra: true },
         { kind: 'cloud', cloudMachineId: 'e2b-1', name: 'S' },
-        { kind: 'machine', name: 'no id' },
-        { kind: 'satellite', name: 'X' },
-        null,
       ]),
     ).toEqual([
       { kind: 'local', name: 'host' },

@@ -29,15 +29,15 @@
   let {
     rows,
     backendLabel,
-    canReorder,
+    owner,
     saving = false,
     machineRow,
     footer,
   }: {
     rows: readonly MachineOrderRow[];
     backendLabel: string;
-    /** The owner, with more than one row. */
-    canReorder: boolean;
+    /** The backend's owner: may reorder once there are two rows. */
+    owner: boolean;
     /** A reorder is in flight: moves wait for it. */
     saving?: boolean;
     machineRow: Snippet<[MachineOrderRow, MachineOrderControls]>;
@@ -45,6 +45,7 @@
     footer?: Snippet;
   } = $props();
 
+  const canReorder = $derived(owner && rows.length > 1);
   let draggedId = $state<string | null>(null);
   let dragOverId = $state<string | null>(null);
   let dragOverPosition = $state<'before' | 'after' | null>(null);
@@ -66,7 +67,7 @@
     await tick();
     listElement
       ?.querySelector<HTMLElement>(
-        `[data-machine-order-row="${CSS.escape(id)}"] button[aria-haspopup]`,
+        `[data-machine-order-row="${CSS.escape(id)}"] [data-slot="row-actions"] [aria-haspopup="menu"]`,
       )
       ?.focus();
   }
@@ -163,7 +164,7 @@
       {m.remoteMachines_order_title({ backend: backendLabel })}
     </h3>
     <p class="max-w-2xl type-body text-muted-foreground">
-      {canReorder
+      {owner
         ? m.remoteMachines_order_description({ backend: backendLabel })
         : m.remoteMachines_order_readOnly_description({ backend: backendLabel })}
     </p>

@@ -192,15 +192,21 @@
   const exposedIds = $derived(new Set(exposedConnectionIds.values()));
   const listRows = $derived<ListRowItem[]>(
     $orderVisible$
-      ? rows
-          .filter((device) => !exposedIds.has(device.id))
-          .map((device): ListRowItem => ({ kind: 'device', device }))
+      ? [
+          ...rows
+            .filter((device) => !exposedIds.has(device.id))
+            .map((device): ListRowItem => ({ kind: 'device', device })),
+          // Without named entries the single E2B row has no row in the order.
+          ...($cloudNamed$ ? [] : cloudRows),
+        ]
       : [
           ...machineRows.map((device): ListRowItem => ({ kind: 'device', device })),
           ...($cloudNamed$ ? [] : cloudRows),
         ],
   );
-  const newCloudRow = $derived(cloudRows.find((row) => row.entry === null) ?? null);
+  const newCloudRow = $derived(
+    $cloudNamed$ ? (cloudRows.find((row) => row.entry === null) ?? null) : null,
+  );
   /** The saved connection behind an ordered machine row, when this app has one. */
   function orderedDevice(nodeId: string): ConnectionRecord | null {
     const id = exposedConnectionIds.get(nodeId);
@@ -312,7 +318,7 @@
     <OrderedMachinesList
       rows={$order$}
       backendLabel={$backendLabel$}
-      canReorder={$canAdminister$ && $order$.length > 1}
+      owner={$canAdminister$}
       saving={$orderSaving$}
     >
       {#snippet machineRow(entry, order)}

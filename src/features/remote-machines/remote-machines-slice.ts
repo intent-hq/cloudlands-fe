@@ -112,6 +112,7 @@ remoteMachinesReducer.with(remoteMachinesLoaded, (state, { payload: [snapshot] }
   claimInvites: snapshot.supported && snapshot.claimInvites === true,
   machineOrder: snapshot.supported && snapshot.machineOrder === true,
   order: snapshot.supported && snapshot.machineOrder === true ? (snapshot.order ?? null) : null,
+  orderSaving: false,
   machines: Object.fromEntries(snapshot.machines.map((machine) => [machine.id, machine])),
   localFingerprint: snapshot.localFingerprint,
   executorBackends: snapshot.executorBackends,
