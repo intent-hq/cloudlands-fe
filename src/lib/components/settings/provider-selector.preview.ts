@@ -376,7 +376,12 @@ export const preview = definePreview<ComponentProps<typeof ProviderSelector>>({
           providerCatalogLoaded({
             providers: previewProviders.map((provider) =>
               provider.id === 'claude-code'
-                ? { ...provider, supportsProfiles: true, loginCommandHint: 'claude auth login' }
+                ? {
+                    ...provider,
+                    supportsProfiles: true,
+                    loginCommandHint: 'claude auth login',
+                    loginDocsUrl: 'https://code.claude.com/docs/en/quickstart',
+                  }
                 : provider,
             ),
           }),
