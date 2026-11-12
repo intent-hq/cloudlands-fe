@@ -317,8 +317,8 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
             {
               available: loaded && !!scopeKey,
               key: scopeKey,
-              savedWorkspaceId: eligible ? saved!.workspaceId : null,
-              revision: eligible ? saved!.revision : 0,
+              savedWorkspaceId: eligible ? (saved?.workspaceId ?? null) : null,
+              revision: eligible ? (saved?.revision ?? 0) : 0,
             },
           ];
         }),
@@ -464,7 +464,7 @@ export function* dockContextLinksSaga(): SagaGenerator<void> {
             : defaultDockContextLinkKey(value)
               ? keys
               : [];
-          const changedKeys = scope ? [scopedKey!] : legacyKeys;
+          const changedKeys = scope && scopedKey ? [scopedKey] : legacyKeys;
           if (
             action.type === dockContextUnlinkRequested.type &&
             !changedKeys.some((key) => preferences.links[key])
