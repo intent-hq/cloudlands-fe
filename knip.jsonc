@@ -49,6 +49,9 @@
     // Loaded via <script type="module"> in test/fixtures/browser-lifetime/index.html
     // (test/electron-browser-lifetime.spec.ts); knip does not parse HTML
     "test/fixtures/browser-lifetime/Harness.svelte",
+    // Loaded by the module script in test/fixtures/dock-shortcut-settings/index.html;
+    // the isolated Electron shortcut-settings fixture serves this HTML entry.
+    "test/fixtures/dock-shortcut-settings/Harness.svelte",
     // Bundled by Vite's computed SSR entry in repository-route/routing.electron.ts.
     "test/fixtures/repository-route/main.ts",
     "test/fixtures/repository-checkout/main.ts",

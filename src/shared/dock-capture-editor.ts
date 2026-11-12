@@ -14,14 +14,12 @@ import { DockMediaWaveformSchema, type DockMediaWaveform } from './dock-media-ou
 import { IPC_CHANNELS } from './ipc-registry';
 import { DOCK_MARK_TOOLS, type DockMarkTool } from './dock-evidence';
 import {
-  DockMediaSaveRequestSchema,
   DockMediaEditSchema,
   DockMediaSourceSchema,
   DockMediaTranscriptSchema,
   type DockMediaEdit,
   type DockMediaChoice,
   type DockMediaOutputError,
-  type DockMediaSaveRequest,
   type DockMediaSource,
   type DockMediaTranscript,
 } from './dock-media-edit';
@@ -29,10 +27,10 @@ import {
 export const DOCK_CAPTURE_EDITOR_CHANNELS = IPC_CHANNELS.DOCK_CAPTURE_EDITOR;
 export const DOCK_CAPTURE_EDITOR_ROUTE = '/dock-capture-editor';
 
-export type DockCaptureEditorKind = 'recording' | 'screenshot';
+type DockCaptureEditorKind = 'recording' | 'screenshot';
 
 /** How the source was captured, so the editor never claims more than it has. */
-export interface DockCaptureEditorProvenance {
+interface DockCaptureEditorProvenance {
   /** Native capture API, when recorded. */
   captureApi?: string;
   /** The recording carries microphone audio. */
@@ -251,14 +249,7 @@ export function canonicalDockAttachmentPath(value: string): string | null {
   return segments.join('/');
 }
 
-/** main → the opening dock: one save to persist, correlated by `requestId`. */
-export interface DockCaptureEditorSaveRequested {
-  requestId: string;
-  request: DockMediaSaveRequest;
-}
-
-export type DockCaptureEditorSaveOutcome =
-  'saved' | 'stale-source' | 'revision-conflict' | 'failed';
+type DockCaptureEditorSaveOutcome = 'saved' | 'stale-source' | 'revision-conflict' | 'failed';
 
 /** dock → main (and main → editor): how that save ended; `saved` is the stored edit. */
 export interface DockCaptureEditorSaveResult {
@@ -276,8 +267,6 @@ export const DockCaptureEditorSaveResultSchema = z
   .strict()
   .refine((value) => (value.result === 'saved') === !!value.saved, 'Saved edit missing');
 
-export const DockCaptureEditorSaveSchema = DockMediaSaveRequestSchema;
-
 /**
  * dock → main: a newer transcript for the open session's source (recognition finished
  * or progressed). Only the dock that opened the session, for its own pair and source,
@@ -293,20 +282,6 @@ export const DockCaptureEditorTranscriptUpdateSchema = z
     transcript: DockMediaTranscriptSchema,
   })
   .strict();
-export type DockCaptureEditorTranscriptUpdate = z.infer<
-  typeof DockCaptureEditorTranscriptUpdateSchema
->;
-
-/**
- * main → the opening dock: capture the screenshot again in the same mode and place
- * it as a new file, without changing the attachment (Save swaps it in, atomically).
- */
-export interface DockCaptureEditorRetakeRequested {
-  requestId: string;
-  pair: { workspaceId: string; agentId: string };
-  /** The source being replaced, as the session knows it. */
-  expected: { sourceId: string; sourceRevision: number };
-}
 
 /** dock → main: the placed candidate's canonical source, or why there is none. */
 export const DockCaptureEditorRetakeResultSchema = z.union([
@@ -335,8 +310,8 @@ export type DockCaptureEditorRetakeOutcome =
 // ---------------------------------------------------------------------------
 
 export const DOCK_NOTE_MAX = 20_000;
-export type DockCaptureEditorNotePhase = 'start' | 'stop';
-export type DockCaptureEditorNoteError = 'busy' | 'unavailable' | 'failed' | 'permission';
+type DockCaptureEditorNotePhase = 'start' | 'stop';
+type DockCaptureEditorNoteError = 'busy' | 'unavailable' | 'failed' | 'permission';
 
 export interface DockCaptureEditorNoteDictationRequest {
   openId: string;

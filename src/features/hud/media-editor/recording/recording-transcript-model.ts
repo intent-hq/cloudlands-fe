@@ -11,7 +11,7 @@ import type {
 
 type Word = DockMediaTranscript['words'][number];
 
-export type TranscriptPiece =
+type TranscriptPiece =
   { kind: 'word'; word: Word; timed: boolean } | { kind: 'mark'; mark: DockMediaEditMark };
 
 export interface TranscriptBatch {

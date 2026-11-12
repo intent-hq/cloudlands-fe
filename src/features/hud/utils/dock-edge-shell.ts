@@ -27,22 +27,3 @@ export function dockLerpRect(
     height: lerp(from.height, to.height),
   };
 }
-
-/**
- * The side conversation box between its closed origin (rail-sized, against the rail)
- * and the open panel. Each edge interpolates by `reveal` (0..1), so open and close
- * are the same path in reverse.
- */
-export function dockEdgeShellRect(
-  from: DockPointerRect,
-  panel: DockPointerRect,
-  reveal: number,
-): DockPointerRect {
-  const t = Math.max(0, Math.min(1, reveal));
-  const lerp = (from: number, to: number) => from + (to - from) * t;
-  const left = lerp(from.x, panel.x);
-  const top = lerp(from.y, panel.y);
-  const right = lerp(from.x + from.width, panel.x + panel.width);
-  const bottom = lerp(from.y + from.height, panel.y + panel.height);
-  return { x: left, y: top, width: right - left, height: bottom - top };
-}

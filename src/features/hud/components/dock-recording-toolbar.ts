@@ -55,7 +55,7 @@ export function dockRecordingShortcut(
   return null;
 }
 
-/** Bars in the time chip's waveform. */
+/** @internal Waveform history bound exposed to the pure recording-toolbar contract tests. */
 export const DOCK_RECORDING_WAVE_BARS = 5;
 
 /** The newest levels, oldest first, always `DOCK_RECORDING_WAVE_BARS` long. */

@@ -9,7 +9,7 @@ import {
   type DockMediaGeometry,
   type DockMediaRect,
 } from '$shared/dock-media-edit';
-import { fitScreenshotGeometry, moveScreenshotGeometry } from '../screenshot/screenshot-geometry';
+import { moveScreenshotGeometry } from '../screenshot/screenshot-geometry';
 
 export interface FrameBox {
   x: number;
@@ -82,34 +82,6 @@ export function moveFrameGeometry(
   const x = Math.max(-bounds.x, Math.min(dx, width - bounds.x - bounds.w));
   const y = Math.max(-bounds.y, Math.min(dy, height - bounds.y - bounds.h));
   return { ...geometry, x: geometry.x + x, y: geometry.y + y };
-}
-
-/** Whether a mark has a resize handle: a click point has a fixed size. */
-export function frameResizable(geometry: DockMediaGeometry): boolean {
-  return geometry.kind !== 'point';
-}
-
-/**
- * The geometry resized by dragging its bounds' bottom-right corner to `corner`, kept
- * inside the picture. Boxes, strokes and arrows keep their proportions (the screenshot
- * editor's fit); text scales its font size with the height.
- */
-export function resizeFrameGeometry(
-  geometry: DockMediaGeometry,
-  corner: { x: number; y: number },
-  width: number,
-  height: number,
-): DockMediaGeometry {
-  const bounds = dockMediaGeometryRect(geometry);
-  const w = Math.max(2, Math.min(corner.x, width) - bounds.x);
-  const h = Math.max(2, Math.min(corner.y, height) - bounds.y);
-  if (geometry.kind === 'rect' || geometry.kind === 'path' || geometry.kind === 'arrow')
-    return fitScreenshotGeometry(geometry, { x: bounds.x, y: bounds.y, w, h });
-  if (geometry.kind === 'text') {
-    const fontSize = Math.max(6, (geometry.fontSize * h) / bounds.h);
-    return { ...geometry, fontSize: Math.round(fontSize * 10) / 10 };
-  }
-  return geometry;
 }
 
 /** The mark kind a frame tool draws. */

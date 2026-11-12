@@ -31,7 +31,7 @@ interface DockHitWindow {
 }
 
 /** Why a checked answer has no window: bounded window metadata only, never names or titles. */
-export interface DockHitDiagnostic {
+interface DockHitDiagnostic {
   /** 'system-layer': a non-app surface was front-most at the point; 'none': no window there. */
   reason: 'system-layer' | 'none';
   /** On-screen windows the helper could list (0 when it could list none). */

@@ -15,7 +15,7 @@ export const DOCK_PREPARED_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
  * Exported recording frames leave room under the prompt budget for the message's
  * screenshots and pasted images.
  */
-export const DOCK_FRAME_IMAGE_BUDGET = 6 * 1024 * 1024;
+const DOCK_FRAME_IMAGE_BUDGET = 6 * 1024 * 1024;
 
 /** Base64 bytes for `bytes` raw bytes. */
 export function dockBase64Bytes(bytes: number): number {
@@ -47,7 +47,7 @@ export function dockCertifiedFramePromptBytes(frame: {
  * Frame encodings, largest first: a bounded long edge (never upscaled) and JPEG quality.
  * The smallest keeps a desktop screenshot's controls legible at its long edge.
  */
-export const DOCK_FRAME_ENCODINGS: readonly { maxEdge: number; quality: number }[] = [
+const DOCK_FRAME_ENCODINGS: readonly { maxEdge: number; quality: number }[] = [
   { maxEdge: 1920, quality: 82 },
   { maxEdge: 1600, quality: 78 },
   { maxEdge: 1280, quality: 74 },

@@ -63,7 +63,7 @@ export function recordingKeyAction(event: KeyboardEvent): RecordingKeyAction | n
 }
 
 /** The shortest a trimmed recording can be. */
-export const MIN_TRIM_MS = 500;
+const MIN_TRIM_MS = 500;
 
 /**
  * Moves one end of the trim and keeps it valid: inside the recording, and never

@@ -122,6 +122,7 @@ const metaSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 
+/** @internal Dependency-injected factory used by the clipboard lifecycle contract tests. */
 export function createDockMediaClipboard(overrides: Partial<DockMediaClipboardDeps> = {}) {
   const deps: DockMediaClipboardDeps = { ...defaults, ...overrides };
 

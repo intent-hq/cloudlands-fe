@@ -190,6 +190,7 @@ export interface DockToolbarAnchor {
  * Where the annotate tool bar starts by default: the bottom centre of the work
  * area, whatever the dock's placement. The user can drag it from there. Always
  * inside the work area.
+ * @internal Pure placement seam used by the annotation toolbar bounds contract tests.
  */
 export function dockToolbarPosition(
   size: { width: number; height: number },

@@ -60,7 +60,7 @@ interface CursorState {
 }
 
 /** Chromium's custom (CSS url()) cursor as Electron reports it: PNG pixels at `scale`. */
-export interface DockCustomCursor {
+interface DockCustomCursor {
   image: NativeImage;
   scale: number;
   size: { width: number; height: number };
@@ -80,7 +80,7 @@ const MAX_CUSTOM_PIXELS = 256;
 const MAX_CUSTOM_POINTS = 64;
 
 /** A bounded custom image, or null (the caller then shows no native cursor). */
-export function customCursorImage(
+function customCursorImage(
   custom: DockCustomCursor | undefined,
 ): (NativeCustomImage & { png: Buffer }) | null {
   try {

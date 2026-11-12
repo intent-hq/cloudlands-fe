@@ -2,22 +2,6 @@ import { dockFreehandPath } from '$features/hud/composer/dock-freehand-path';
 import { dockGeometryRect, mapDockGeometry } from '$shared/dock-annotation';
 import type { DockImagePoint, DockImageRect, DockMarkGeometry } from '$shared/dock-evidence';
 
-/** All coordinates are immutable-source image pixels, independent of canvas zoom. */
-export function screenshotPoint(
-  client: DockImagePoint,
-  viewport: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,
-  frame: DockImageRect,
-): DockImagePoint {
-  return {
-    x:
-      frame.x +
-      Math.max(0, Math.min(1, (client.x - viewport.left) / Math.max(1, viewport.width))) * frame.w,
-    y:
-      frame.y +
-      Math.max(0, Math.min(1, (client.y - viewport.top) / Math.max(1, viewport.height))) * frame.h,
-  };
-}
-
 export function screenshotRect(a: DockImagePoint, b: DockImagePoint): DockImageRect {
   return {
     x: Math.min(a.x, b.x),

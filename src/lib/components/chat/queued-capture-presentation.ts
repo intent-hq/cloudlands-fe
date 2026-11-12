@@ -40,15 +40,6 @@ export function queuedCaptureDisplay(group: CaptureUnit): CaptureDisplay {
   return { text: envelope.remaining, captures: editedCaptureCards(metadata, blocks) };
 }
 
-/** Retain the small summary API for callers that do not render cards. */
-export function queuedCapturePresentation(group: CaptureUnit): {
-  text: string;
-  captureSummary: Array<'screenshot' | 'recording'>;
-} {
-  const display = queuedCaptureDisplay(group);
-  return { text: display.text, captureSummary: display.captures.map((capture) => capture.kind) };
-}
-
 interface CaptureUnit {
   content: string;
   messageMetadata?: Record<string, unknown>;

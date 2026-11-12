@@ -1,10 +1,6 @@
 /** Renderer describes edits and raster layers; main alone chooses every native path. */
 import { z } from 'zod';
-import {
-  DockSavedMediaSchema,
-  DOCK_MEDIA_OUTPUT_VERSION,
-  type DockMediaTranscript,
-} from './dock-media-edit';
+import { DockSavedMediaSchema, DOCK_MEDIA_OUTPUT_VERSION } from './dock-media-edit';
 export const DockMediaExportRequestSchema = z
   .object({
     outputVersion: z.literal(DOCK_MEDIA_OUTPUT_VERSION),
@@ -27,7 +23,7 @@ export const DockMediaExportRequestSchema = z
   })
   .strict();
 export type DockMediaExportRequest = z.infer<typeof DockMediaExportRequestSchema>;
-export interface DockMediaNativeFile {
+interface DockMediaNativeFile {
   sourcePath: string;
   mimeType: string;
   size: number;
@@ -49,7 +45,6 @@ export const DockMediaTranscribeRequestSchema = z
   })
   .strict();
 export type DockMediaTranscribeRequest = z.infer<typeof DockMediaTranscribeRequestSchema>;
-export type DockMediaTranscribeOutput = DockMediaTranscript;
 
 /** Real decoded PCM peaks, indexed on the original source-media clock. */
 export const DockMediaWaveformSchema = z

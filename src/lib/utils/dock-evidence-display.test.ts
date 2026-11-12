@@ -8,7 +8,7 @@ import {
   emptyDockEvidence,
 } from '$shared/dock-evidence';
 import {
-  queuedCapturePresentation,
+  queuedCaptureDisplay,
   queuedCaptureGroup,
 } from '$lib/components/chat/queued-capture-presentation';
 import { describe, expect, it } from 'vitest';
@@ -21,6 +21,11 @@ import {
 import { parseStoredMessage, restoreDockEvidenceForEdit } from './parseStoredMessage';
 import { DOCK_EVIDENCE_CONTEXT_HEADER } from '$shared/dock-evidence';
 import type { ContextItem } from '$lib/components/chat/input/context-api';
+
+function queuedCapturePresentation(group: Parameters<typeof queuedCaptureDisplay>[0]) {
+  const display = queuedCaptureDisplay(group);
+  return { text: display.text, captureSummary: display.captures.map((capture) => capture.kind) };
+}
 
 // Stored producer fixture: edited recordings intentionally have NO legacy clips row.
 const row = {

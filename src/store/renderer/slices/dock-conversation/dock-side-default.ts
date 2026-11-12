@@ -9,7 +9,7 @@ import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
  * in the dock, else the last one opened from it (same machine and authority, still
  * present), else the first workspace the side shows. Null when there is no workspace.
  */
-export function dockSideDefaultWorkspaceId(state: typeof store.state): string | null {
+function dockSideDefaultWorkspaceId(state: typeof store.state): string | null {
   const ids = selectDockShortcutWorkspaces.select(state).map((row) => String(row.id));
   const known = (id: string | null | undefined): id is string =>
     !!id && (id === CHIEF_WORKSPACE_ID || ids.includes(id));

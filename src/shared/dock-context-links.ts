@@ -1,10 +1,10 @@
 /** Canonical linked-context contract. UI owns presentation and its 300 ms reveal delay. */
-export interface DockContextPolicy {
+interface DockContextPolicy {
   follows: number;
   decision: 'unasked' | 'no' | 'yes';
 }
 export type DockContextLinkScope = 'tab' | 'app';
-export interface DockContextScopeLink {
+interface DockContextScopeLink {
   available: boolean;
   key: string | null;
   savedWorkspaceId: string | null;
@@ -37,7 +37,7 @@ export interface DockLinkedContextSnapshot {
   /** Desktop-app auto-switch policy can be enabled independently of linking. */
   autoSwitchEligible: boolean;
 }
-export interface DockContextLinkRecord {
+interface DockContextLinkRecord {
   workspaceId: string;
   revision: number;
   policy: DockContextPolicy;
