@@ -3099,17 +3099,23 @@
   }
 
   /**
-   * True when the viewport reached the END of a detached transcript: the
-   * bottom of the scroll extent, past a non-empty spacer below the window.
-   * The reader scrolled back to the end of the conversation, which the
-   * detached window does not hold.
+   * True when the reader scrolled to the END of a detached transcript: the
+   * viewport sits at the bottom of the scroll extent with every window row
+   * scrolled out above it (it jumped over the unloaded rows). While the
+   * window's forward edge is still in view, the forward walk owns the
+   * downward direction instead, so a short landing never snaps to the tail.
    */
   function viewportAtEndOfDetachedWindow(): boolean {
     const container = scrollContainer;
-    if (!container || !transcriptDetached) return false;
+    const edge = historyGapSentinel;
+    if (!container || !edge || !transcriptDetached) return false;
     if (virtualSpacerBelowHeight <= 0 || !belowSpacerEl) return false;
-    const bottom = container.scrollTop + container.clientHeight;
-    return bottom >= container.scrollHeight - 2;
+    if (container.scrollTop + container.clientHeight < container.scrollHeight - 2) return false;
+    const edgeBottom =
+      edge.getBoundingClientRect().bottom -
+      container.getBoundingClientRect().top +
+      container.scrollTop;
+    return container.scrollTop >= edgeBottom;
   }
 
   /**
@@ -3135,6 +3141,13 @@
     });
     return true;
   }
+
+  // The bottom of a detached transcript is not the live end: following it
+  // would pin the viewport under the unloaded rows and read as a return to
+  // the end. Follow-bottom resumes when the window collapses or attaches.
+  $effect.pre(() => {
+    if (transcriptDetached && shouldFollowBottom) shouldFollowBottom = false;
+  });
 
   function maybeCollapseHistorySegmentAtTail(): boolean {
     if ($fetchingOlderHistory$ || $fetchingGapFill$) return false;

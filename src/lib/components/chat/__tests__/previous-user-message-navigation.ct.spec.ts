@@ -289,7 +289,7 @@ test('previous-message actions remain available at unloaded history boundaries',
       historyMessages: [
         historyMessage('history-orphan', 'assistant', 'Earlier prompt is not loaded', 2),
         historyMessage('history-human', 'user', 'Loaded older prompt', 3),
-        historyMessage('history-reply', 'assistant', 'Loaded older answer', 4),
+        historyMessage('history-reply', 'assistant', 'Loaded older answer. '.repeat(80), 4),
       ],
       messages: [
         historyMessage('live-orphan', 'assistant', 'Prompt is inside the unloaded gap', 10),

@@ -342,10 +342,10 @@ export interface ChatAgentState {
    */
   scrollbackOlderToken: string | null;
   /**
-   * Oldest loaded row (window's, else the tail's) the backward cursor
-   * continues below. The cursor is honored only while that row is still the
-   * oldest loaded row; a tail write or cap prune that changed it would make
-   * the next page land below unloaded rows, so the walk re-anchors instead.
+   * Row the backward cursor continues directly below (the oldest row of the
+   * page that minted it). The cursor is honored only while that row is still
+   * loaded; a tail write or cap prune that dropped it would make the next
+   * page land below unloaded rows, so the walk re-anchors instead.
    */
   scrollbackOlderTokenAnchorId: string | null;
   /** Once paging/seek owns the window, snapshots must not reseed its cursors. */

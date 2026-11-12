@@ -226,7 +226,7 @@ for (const scenario of ['gap-error-once', 'gap-error', 'gap-stalled'] as const) 
   });
 }
 
-test('a direct message seek keeps the live tail and fills from the sought cursor', async ({
+test('a direct message seek shows only the sought window and fills forward from its cursor', async ({
   mount,
   page,
 }) => {
@@ -257,7 +257,8 @@ test('a direct message seek keeps the live tail and fills from the sought cursor
         request.limit === 5 && request.nextToken !== 'before-995',
     ),
   ).toBe(true);
-  await expect(component.locator('[data-message-id="m-995"]').first()).toHaveCount(1);
+  // The live tail stays loaded but is not shown behind the unloaded rows.
+  await expect(component.locator('[data-message-id="m-995"]')).toHaveCount(0);
   await expect(component.locator('[data-message-id="m-503"]').first()).toHaveCount(1);
 });
 

@@ -216,6 +216,15 @@ function* oldestLoadedRowId(agentId: string): SagaGenerator<string | undefined> 
   return oldestRowId(history) ?? oldestRowId(tail);
 }
 
+/** True while a row with this id is loaded in the window or the tail. */
+function* isRowLoaded(agentId: string, id: string | null | undefined): SagaGenerator<boolean> {
+  if (!id) return false;
+  const history: AgentMessage[] = yield* selectAgentHistoryMessages.effect(agentId);
+  if (history.some((message) => message.id === id)) return true;
+  const tail: AgentMessage[] = yield* selectAgentMessages.effect(agentId);
+  return tail.some((message) => message.id === id);
+}
+
 function* waitForInitialHistory(agentId: string): SagaGenerator<void> {
   while ((yield* selectChatAgentState.effect(agentId)).initialHistoryPending) {
     yield* take([
@@ -269,18 +278,19 @@ function* fetchOlderPageWorker(
   const meta = yield* selectHistorySegmentMeta.effect(agentId);
   if (meta.oldestReached) return;
   // A held cursor continues directly below the row it was minted against.
-  // Honor it only while that row is still the oldest loaded row: a tail
-  // write or cap prune that changed the oldest row would make the page land
-  // below unloaded rows — a gap. Otherwise anchor a seek at the oldest
-  // loaded row, whose page always contains that row. The cursor can be the
-  // walk's only way to make progress: a page whose rows are all already
-  // tail-resident merges to an EMPTY window but keeps the oldest row, so the
-  // advanced cursor stays valid and the identical page is never refetched.
-  const anchor = yield* oldestLoadedRowId(agentId);
+  // Honor it only while that row is still loaded: a tail write or cap prune
+  // that dropped it would make the page land below unloaded rows — a gap.
+  // Otherwise anchor a seek at the oldest loaded row, whose page always
+  // contains that row. The cursor can be the walk's only way to make
+  // progress: a page whose rows are all already tail-resident merges to an
+  // EMPTY window but keeps its row loaded, so the advanced cursor stays
+  // valid and the identical page is never refetched.
+  const cursorAnchor = chat.scrollbackOlderTokenAnchorId;
   const token =
-    chat.scrollbackOlderToken !== null && chat.scrollbackOlderTokenAnchorId === anchor
+    chat.scrollbackOlderToken !== null && (yield* isRowLoaded(agentId, cursorAnchor))
       ? chat.scrollbackOlderToken
       : null;
+  const anchor = token ? (cursorAnchor ?? undefined) : yield* oldestLoadedRowId(agentId);
   // No cursor and no anchorable row anywhere: empty conversation.
   if (!token && !anchor) return;
   const epoch = chat.scrollbackDiscardEpoch;
@@ -295,10 +305,10 @@ function* fetchOlderPageWorker(
     // fetched against the discarded transcript — drop it entirely (the
     // reducer already reset the flags/cursors atomically with the snapshot).
     if (yield* discardedSince(agentId, epoch)) return;
-    // The oldest loaded row changed while the page was in flight: the page
-    // no longer borders the loaded rows. Drop it; the next request
-    // re-anchors at the new oldest row.
-    if ((yield* oldestLoadedRowId(agentId)) !== anchor) {
+    // The row the page borders was dropped while the page was in flight:
+    // the page no longer joins the loaded rows. Drop it; the next request
+    // re-anchors at the oldest loaded row.
+    if (!(yield* isRowLoaded(agentId, anchor))) {
       blocked = false;
       return;
     }
