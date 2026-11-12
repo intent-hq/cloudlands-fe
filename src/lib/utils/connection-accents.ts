@@ -43,12 +43,21 @@ export function connectionAccentOptions(current?: ConnectionAccent): readonly Co
   ];
 }
 
+/** The shell tint as a colour (`transparent` when the machine has none), for transitions. */
+export function connectionShellTintColor(
+  accent: ConnectionAccent | undefined,
+  isLocal: boolean,
+): string {
+  const resolved = resolveConnectionAccent(accent);
+  if (isLocal || resolved === null) return 'transparent';
+  return `color-mix(in srgb, ${CONNECTION_ACCENT_COLORS[resolved]} 7%, transparent)`;
+}
+
 /** Low-opacity semantic background image layered over the application shell surface. */
 export function connectionShellTint(
   accent: ConnectionAccent | undefined,
   isLocal: boolean,
 ): string | undefined {
-  const resolved = resolveConnectionAccent(accent);
-  if (isLocal || resolved === null) return undefined;
-  return `linear-gradient(color-mix(in srgb, ${CONNECTION_ACCENT_COLORS[resolved]} 7%, transparent) 0 0)`;
+  const color = connectionShellTintColor(accent, isLocal);
+  return color === 'transparent' ? undefined : `linear-gradient(${color} 0 0)`;
 }

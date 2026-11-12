@@ -12,6 +12,10 @@
  *   - push:   `hardware-console:owner-changed` with a per-webContents
  *             { isOwner } payload whenever ownership changes
  *
+ * With the machine rail (Labs) a window hosts one renderer per machine; the
+ * owner window's input goes to the renderer it shows, and every rail switch
+ * re-announces ownership to that window's renderers.
+ *
  * The tracker itself is Electron-free (structural window type + injected
  * HUD predicate) so it is unit-testable; `setupConsoleOwnerTracking()` wires
  * it to the real `app` events and `ipcMain`.
@@ -23,7 +27,9 @@ import type { BrowserWindow } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/ipc-registry';
 import { Logger } from '../../../shared/logger';
 import { isHudWindow, isTrackedHudWindow } from '../../../main/hud-window';
+import { MACHINE_RAIL_SHOWN_CHANGED_EVENT } from '../../../main/machine-rail-state';
 import { isOffscreenWindow } from '../../../main/offscreen-window';
+import { getRendererWebContents, getShownRendererWebContents } from '../../../main/window-backend';
 
 const logger = new Logger('HardwareConsoleOwner');
 
@@ -31,16 +37,25 @@ const logger = new Logger('HardwareConsoleOwner');
 export const GET_OWNER_STATUS_CHANNEL = IPC_CHANNELS.HARDWARE_CONSOLE.GET_OWNER_STATUS;
 export const OWNER_CHANGED_CHANNEL = IPC_CHANNELS.HARDWARE_CONSOLE.OWNER_CHANGED;
 
+/** Structural subset of Electron's WebContents used by the tracker. */
+export interface ConsoleOwnerRenderer {
+  id: number;
+  isDestroyed(): boolean;
+  send(channel: string, payload: { isOwner: boolean }): void;
+}
+
 /** Structural subset of Electron's BrowserWindow used by the tracker. */
 export interface ConsoleOwnerWindow {
   isDestroyed(): boolean;
   isFocused(): boolean;
-  webContents: {
-    id: number;
-    isDestroyed(): boolean;
-    send(channel: string, payload: { isOwner: boolean }): void;
-  };
+  webContents: ConsoleOwnerRenderer;
   on(event: 'closed', listener: () => void): void;
+}
+
+/** A window's renderers: the one it shows, and all of them (machine rail). */
+export interface ConsoleOwnerRenderers<W> {
+  shown(win: W): ConsoleOwnerRenderer;
+  all(win: W): ConsoleOwnerRenderer[];
 }
 
 /**
@@ -54,7 +69,13 @@ export class ConsoleOwnerTracker<W extends ConsoleOwnerWindow = ConsoleOwnerWind
   private focusOrder: W[] = [];
   private owner: W | null = null;
 
-  constructor(private readonly isHud: (win: W) => boolean) {}
+  constructor(
+    private readonly isHud: (win: W) => boolean,
+    private readonly renderers: ConsoleOwnerRenderers<W> = {
+      shown: (win) => win.webContents,
+      all: (win) => [win.webContents],
+    },
+  ) {}
 
   /** Track a window's lifetime. The first non-HUD window becomes the boot owner. */
   registerWindow(win: W): void {
@@ -84,8 +105,27 @@ export class ConsoleOwnerTracker<W extends ConsoleOwnerWindow = ConsoleOwnerWind
     return (
       this.owner !== null &&
       !this.owner.isDestroyed() &&
-      this.owner.webContents.id === webContentsId
+      this.renderers.shown(this.owner).id === webContentsId
     );
+  }
+
+  /** The window now shows another of its renderers: re-announce ownership to them. */
+  refreshWindow(win: W): void {
+    if (this.windows.has(win)) this.announce(win);
+  }
+
+  private announce(win: W): void {
+    if (win.isDestroyed()) return;
+    const shown = win === this.owner ? this.renderers.shown(win) : null;
+    for (const renderer of this.renderers.all(win)) {
+      if (renderer.isDestroyed()) continue;
+      try {
+        renderer.send(OWNER_CHANGED_CHANNEL, { isOwner: renderer === shown });
+      } catch (error) {
+        // A renderer torn down mid-broadcast just misses a push it can't use.
+        logger.debug('Failed to push owner-changed to a renderer', error);
+      }
+    }
   }
 
   private handleClosed(win: W): void {
@@ -116,15 +156,7 @@ export class ConsoleOwnerTracker<W extends ConsoleOwnerWindow = ConsoleOwnerWind
     if (this.owner === next) return;
     this.owner = next;
     logger.debug(`Console owner changed → webContents ${next?.webContents.id ?? 'none'}`);
-    for (const w of this.windows) {
-      if (w.isDestroyed() || w.webContents.isDestroyed()) continue;
-      try {
-        w.webContents.send(OWNER_CHANGED_CHANNEL, { isOwner: w === this.owner });
-      } catch (error) {
-        // A window torn down mid-broadcast just misses a push it can't use.
-        logger.debug('Failed to push owner-changed to a window', error);
-      }
-    }
+    for (const w of this.windows) this.announce(w);
   }
 }
 
@@ -138,6 +170,10 @@ export function setupConsoleOwnerTracking(): ConsoleOwnerTracker<BrowserWindow> 
   // per-backend HUD registry (covers the mid-navigation about:blank race).
   const tracker = new ConsoleOwnerTracker<BrowserWindow>(
     (win) => isHudWindow(win) || isTrackedHudWindow(win),
+    { shown: getShownRendererWebContents, all: getRendererWebContents },
+  );
+  app.on(MACHINE_RAIL_SHOWN_CHANGED_EVENT, (window: BrowserWindow) =>
+    tracker.refreshWindow(window),
   );
   app.on('browser-window-created', (_event, window) => {
     if (!isOffscreenWindow(window)) tracker.registerWindow(window);

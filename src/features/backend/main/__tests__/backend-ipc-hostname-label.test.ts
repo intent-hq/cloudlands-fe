@@ -167,6 +167,7 @@ const guestStore = vi.hoisted(() => ({
   findById: vi.fn(),
   getDecryptedToken: vi.fn(),
   setHostname: vi.fn(),
+  setDetectedDeviceKind: vi.fn(),
 }));
 vi.mock('../guest-sessions-store', () => ({
   list: guestStore.list,
@@ -176,6 +177,7 @@ vi.mock('../guest-sessions-store', () => ({
   setWorkspaces: vi.fn(async () => false),
   getDecryptedToken: guestStore.getDecryptedToken,
   setHostname: guestStore.setHostname,
+  setDetectedDeviceKind: guestStore.setDetectedDeviceKind,
   setTcAddress: vi.fn(async () => false),
   setHosts: vi.fn(async () => false),
   setPrincipal: vi.fn(async () => true),
@@ -256,6 +258,7 @@ beforeEach(() => {
   guestStore.findById.mockResolvedValue(null);
   guestStore.getDecryptedToken.mockResolvedValue(null);
   guestStore.setHostname.mockResolvedValue(true);
+  guestStore.setDetectedDeviceKind.mockResolvedValue(false);
   vi.mocked(BrowserWindow.getAllWindows).mockReturnValue([]);
 });
 
@@ -399,6 +402,51 @@ describe('openBackendWindow hostname labeling', () => {
     await vi.waitFor(() =>
       expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
     );
+  });
+});
+
+describe('guest device kind', () => {
+  it('saves the kind a guest host reports in system.status, and broadcasts it', async () => {
+    systemStatus.value = {
+      host: { os: 'macos', arch: 'aarch64', locality: 'remote', deviceKind: 'macStudio' },
+    };
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    guestStore.setDetectedDeviceKind.mockResolvedValue(true);
+    const send = installWindow();
+    const mod = await loadModule();
+
+    await mod.openBackendWindow(GUEST.id);
+    fakeClients.at(-1)?.opts.onHelloResult?.({ server: {} });
+
+    await vi.waitFor(() =>
+      expect(guestStore.setDetectedDeviceKind).toHaveBeenCalledWith(
+        GUEST.id,
+        'macStudio',
+        expect.any(Function),
+      ),
+    );
+    expect(guestStore.setHostname).not.toHaveBeenCalled();
+    expect(store.setDetectedDeviceKind).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(send.mock.calls.some(([c]) => c === 'guest-sessions:changed')).toBe(true),
+    );
+  });
+
+  it('saves nothing for a kind the protocol does not define', async () => {
+    systemStatus.value = { host: { os: 'macos', deviceKind: 'toaster' } };
+    guestStore.findById.mockImplementation(async (id: string) => (id === GUEST.id ? GUEST : null));
+    guestStore.getDecryptedToken.mockResolvedValue('guest-token');
+    const mod = await loadModule();
+    await mod.openBackendWindow(GUEST.id);
+    fakeClients.at(-1)?.opts.onHelloResult?.({ server: {} });
+    await vi.waitFor(() =>
+      expect(
+        fakeClients.at(-1)?.request.mock.calls.some(([method]) => method === 'system.status'),
+      ).toBe(true),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(guestStore.setDetectedDeviceKind).not.toHaveBeenCalled();
   });
 });
 

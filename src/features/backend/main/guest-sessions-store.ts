@@ -36,7 +36,7 @@ import {
 } from './invited-session-payload';
 import type { InvitedPayload } from './invited-session-payload';
 import type { InvitedSyncAdapter } from './invited-session-sync';
-import type { AddConnectionParams } from '../../../shared/types/connections';
+import type { AddConnectionParams, DetectedDeviceKind } from '../../../shared/types/connections';
 import type { PrincipalIdentity } from '../../workspace-sharing/types';
 
 const logger = new Logger('GuestSessionsStore');
@@ -205,6 +205,8 @@ function toRecord(stored: StoredGuestSession): GuestSessionRecord {
     fingerprint: stored.fingerprint,
     tcAddress: stored.tcAddress ?? null,
     hostname: stored.hostname ?? null,
+    detectedDeviceKind: stored.detectedDeviceKind ?? null,
+    deviceIcon: stored.deviceIcon,
     principalId: stored.principalId,
     login: stored.login,
     identity: stored.identity,
@@ -804,6 +806,33 @@ export async function setHostname(
       ]);
     session.pairedAt ??= session.updatedAt;
     session.hostname = trimmed;
+    session.updatedAt = Math.max(
+      Date.now(),
+      session.updatedAt + 1,
+      observedPersonClock(state, session) + 1,
+    );
+    if (!Number.isSafeInteger(session.updatedAt)) throw new GuestStoreCorruptError();
+    await writeState(state);
+    return true;
+  });
+  if (changed) notifyMutated();
+  return changed;
+}
+
+/**
+ * Persist the kind a connected daemon reports for its machine (its device
+ * icon). Stamped past the record's clock like {@link setHostname}, so the
+ * observation syncs. Returns whether anything changed.
+ */
+export async function setDetectedDeviceKind(
+  id: string,
+  kind: DetectedDeviceKind,
+  guard?: InvitedCommitGuard,
+): Promise<boolean> {
+  const changed = await mutate(async (state) => {
+    const session = state.sessions.find((s) => s.id === id);
+    if (!canCommit(session, guard) || session.detectedDeviceKind === kind) return false;
+    session.detectedDeviceKind = kind;
     session.updatedAt = Math.max(
       Date.now(),
       session.updatedAt + 1,

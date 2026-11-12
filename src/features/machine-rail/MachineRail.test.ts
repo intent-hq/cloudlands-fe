@@ -1,0 +1,154 @@
+/** @vitest-environment jsdom */
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { createCollection } from '@themislib/themis/utils/collections/collection-utils';
+import type { ConnectionRecord } from '$shared/types/connections';
+import type { GuestSessionRecord } from '$shared/types/guest-sessions';
+import type { MachineRailState } from '$shared/types/machine-rail';
+
+const mocks = vi.hoisted(() => ({
+  state: {} as Record<string, unknown>,
+  dispatch: vi.fn(),
+  navigateToSettings: vi.fn(async () => {}),
+}));
+
+vi.mock('$store/renderer/store', async () => {
+  const { createAppStoreMockModule } =
+    await import('$store/renderer/utils/test-helpers/store-mock');
+  return createAppStoreMockModule({ state: () => mocks.state, dispatch: mocks.dispatch });
+});
+vi.mock('$lib/utils/workspace-navigation', () => ({
+  navigateToSettings: mocks.navigateToSettings,
+}));
+vi.mock('$lib/components/layout/DaemonStatusIndicator.svelte', () => ({ default: () => null }));
+vi.mock('$lib/components/layout/ConnectBackendModal.svelte', () => ({ default: () => null }));
+vi.mock('svelte-fa', async () => ({
+  default: (await import('$lib/components/ui/__tests__/mocks/Fa.svelte')).default,
+}));
+
+import MachineRail from './MachineRail.svelte';
+
+function record(id: string, status: ConnectionRecord['status'] = 'connected'): ConnectionRecord {
+  return {
+    id,
+    label: id,
+    host: id === 'local' ? null : '10.0.0.1',
+    port: id === 'local' ? null : 5181,
+    fingerprint: null,
+    isLocal: id === 'local',
+    status,
+  };
+}
+
+function guest(id: string): GuestSessionRecord {
+  return { id, label: `${id}.example:5181`, hostname: id } as GuestSessionRecord;
+}
+
+function setState(rail: Partial<MachineRailState>) {
+  mocks.state = {
+    machineRail: {
+      enabled: true,
+      homeId: 'local',
+      machineIds: ['local', 'g1', 'b'],
+      selectedId: 'local',
+      shownId: 'local',
+      pendingId: '',
+      degradedIds: [],
+      ...rail,
+    },
+    connections: {
+      windowBackendId: 'local',
+      connections: createCollection<ConnectionRecord, 'id'>('id', [
+        record('local'),
+        record('b', 'disconnected'),
+      ]),
+    },
+    guestSessions: {
+      sessions: createCollection<GuestSessionRecord, 'id'>('id', [guest('g1'), guest('g2')]),
+      connectedIds: ['g1'],
+    },
+    userPreferences: {},
+  };
+}
+
+const railItems = () => screen.getAllByTestId('machine-rail-item');
+
+beforeEach(() => {
+  mocks.dispatch.mockReset();
+  mocks.navigateToSettings.mockClear();
+  setState({});
+});
+
+afterEach(() => cleanup());
+
+it('lists guest hosts after your own machines, below a separator', () => {
+  render(MachineRail);
+  expect(railItems().map((item) => item.dataset.machineId)).toEqual(['local', 'b', 'g1']);
+  const separator = screen.getByTestId('machine-rail-guest-separator');
+  const guestItem = railItems()[2];
+  expect(
+    separator.compareDocumentPosition(guestItem) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});
+
+it('has no separator without a guest host in the rail', () => {
+  setState({ machineIds: ['local', 'b'] });
+  render(MachineRail);
+  expect(screen.queryByTestId('machine-rail-guest-separator')).toBeNull();
+});
+
+it('opens a machine menu on a context click without switching to that machine', async () => {
+  render(MachineRail);
+  const [, build] = railItems();
+  await fireEvent.contextMenu(build);
+  const menu = await screen.findByTestId('machine-rail-item-menu');
+  expect(within(menu).getByTestId('machine-rail-menu-status')).toBeTruthy();
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+
+  await fireEvent.click(within(menu).getByTestId('machine-rail-menu-remove'));
+  expect(mocks.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({ type: 'machineRail/removeRequested', payload: ['b'] }),
+  );
+  expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+});
+
+it("sends a guest host's manage action to the guest session settings", async () => {
+  render(MachineRail);
+  await fireEvent.contextMenu(railItems()[2]);
+  const menu = await screen.findByTestId('machine-rail-item-menu');
+  await fireEvent.click(within(menu).getByTestId('machine-rail-menu-manage'));
+  await waitFor(() =>
+    expect(mocks.navigateToSettings).toHaveBeenCalledWith({ tab: 'collaboration' }),
+  );
+  expect(mocks.dispatch).not.toHaveBeenCalled();
+});
+
+it('marks a machine that is still starting as busy', () => {
+  setState({ pendingId: 'b' });
+  render(MachineRail);
+  const [, build] = railItems();
+  expect(build.getAttribute('aria-busy')).toBe('true');
+  expect(railItems()[0].getAttribute('aria-busy')).toBeNull();
+});
+
+it('marks the machines that are not connected', () => {
+  render(MachineRail);
+  expect(railItems().map((item) => item.dataset.offline === 'true')).toEqual([false, true, false]);
+});
+
+it('marks a connected machine whose daemon is degraded', () => {
+  setState({ degradedIds: ['local', 'b'] });
+  render(MachineRail);
+  // `b` is offline, so only the connected degraded machine gets the warning dot.
+  expect(
+    screen.getAllByTestId('machine-rail-degraded-dot').map((dot) => dot.dataset.machineId),
+  ).toEqual(['local']);
+});
+
+it('offers guest hosts that are not in the rail in the add menu', async () => {
+  render(MachineRail);
+  await fireEvent.pointerDown(screen.getByTestId('machine-rail-add'), { button: 0 });
+  await fireEvent.click(screen.getByTestId('machine-rail-add'));
+  const candidates = await screen.findAllByTestId('machine-rail-add-item');
+  expect(candidates.map((item) => item.dataset.machineId)).toEqual(['g2']);
+});

@@ -869,15 +869,49 @@ body.panel-resizing webview {
 /* Machine rail (Labs). A window can host one renderer per machine; the rail
    takes a strip at the left edge of each. `--machine-rail-inset` keeps the
    per-machine reconnect overlay off that strip so another machine stays one
-   click away. A renderer whose machine is not shown hides its page so it
-   cannot show through another machine's translucent background. */
+   click away. The window's own renderer sits under the others and paints the
+   shell background for all of them, so the accent tint cross-fades on a
+   switch; it hides the rest of its page while another machine is on screen. */
 :root[data-machine-rail] {
   --machine-rail-inset: 3.5rem;
 }
 
-:root[data-machine-hidden] body {
-  /* Opacity, not visibility: elements with their own transitions would keep
-     showing for a moment after a visibility change. */
+:root[data-machine-rail] .panel-layout-container {
+  background-color: transparent;
+}
+
+.machine-rail-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-color: hsl(var(--background) / 0.35);
+}
+
+:where(.dark) .machine-rail-backdrop {
+  background-color: transparent;
+}
+
+.machine-rail-backdrop[data-shell-opaque] {
+  background-color: hsl(var(--background));
+}
+
+.machine-rail-backdrop > span {
+  position: absolute;
+  inset: 0;
+  transition: background-color var(--spring-slow) var(--spring-slow-ease);
+}
+
+@container style(--motion-reduced: 1) {
+  .machine-rail-backdrop > span {
+    transition: none;
+  }
+}
+
+/* Opacity, not visibility: elements with their own transitions would keep
+   showing for a moment after a visibility change. */
+:root[data-machine-page-hidden] body > :not(#app, .machine-rail-backdrop),
+:root[data-machine-page-hidden] #app > * {
   opacity: 0;
   pointer-events: none;
 }

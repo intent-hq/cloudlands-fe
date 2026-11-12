@@ -299,6 +299,66 @@ describe('ConsoleOwnerTracker', () => {
   });
 });
 
+describe('ConsoleOwnerTracker with a machine rail', () => {
+  beforeEach(() => {
+    nextId = 1;
+    vi.clearAllMocks();
+  });
+
+  /** A window hosting a second machine's renderer; `shown` picks which one is on screen. */
+  function withMachineView(win: MockWindow) {
+    const viewSend = vi.fn();
+    const view = { id: 100 + win.webContents.id, isDestroyed: () => false, send: viewSend };
+    const state = { shown: win.webContents as ConsoleOwnerWindow['webContents'] };
+    return { view, viewSend, state };
+  }
+
+  function railTracker(rails: Map<MockWindow, ReturnType<typeof withMachineView>>) {
+    return new ConsoleOwnerTracker<MockWindow>((w) => w.hud, {
+      shown: (w) => rails.get(w)?.state.shown ?? w.webContents,
+      all: (w) => {
+        const rail = rails.get(w);
+        return rail ? [w.webContents, rail.view] : [w.webContents];
+      },
+    });
+  }
+
+  const lastFor = (send: ReturnType<typeof vi.fn>) =>
+    send.mock.calls.filter(([channel]) => channel === OWNER_CHANGED_CHANNEL).at(-1)?.[1];
+
+  it("gives hardware input to the machine the owner window shows, not the window's own", () => {
+    const a = makeWindow();
+    const rail = withMachineView(a);
+    const tracker = railTracker(new Map([[a, rail]]));
+    tracker.registerWindow(a);
+    expect(tracker.isOwnerWebContentsId(a.webContents.id)).toBe(true);
+
+    rail.state.shown = rail.view;
+    tracker.refreshWindow(a);
+    expect(tracker.isOwnerWebContentsId(rail.view.id)).toBe(true);
+    expect(tracker.isOwnerWebContentsId(a.webContents.id)).toBe(false);
+    expect(lastFor(rail.viewSend)).toEqual({ isOwner: true });
+    expect(lastPayload(a)).toEqual({ isOwner: false });
+  });
+
+  it('keeps every renderer of a window that does not own the console a non-owner', () => {
+    const a = makeWindow();
+    const b = makeWindow();
+    const rail = withMachineView(b);
+    const tracker = railTracker(new Map([[b, rail]]));
+    tracker.registerWindow(a);
+    tracker.registerWindow(b);
+    rail.state.shown = rail.view;
+    tracker.refreshWindow(b);
+    expect(lastFor(rail.viewSend)).toEqual({ isOwner: false });
+    expect(tracker.isOwnerWebContentsId(rail.view.id)).toBe(false);
+
+    tracker.handleFocus(b);
+    expect(lastFor(rail.viewSend)).toEqual({ isOwner: true });
+    expect(lastPayload(a)).toEqual({ isOwner: false });
+  });
+});
+
 describe('setupConsoleOwnerTracking', () => {
   beforeEach(() => {
     nextId = 1;

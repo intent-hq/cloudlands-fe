@@ -17,6 +17,9 @@ export interface WindowRail {
   selectedId: string;
 }
 
+/** `app` event, with the window: it now shows another machine's renderer. */
+export const MACHINE_RAIL_SHOWN_CHANGED_EVENT = 'machine-rail-shown-changed';
+
 const rails = new WeakMap<BrowserWindowType, WindowRail>();
 let enabled = false;
 

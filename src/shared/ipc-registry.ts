@@ -1128,13 +1128,15 @@ export const IPC_CHANNELS = {
     // pushes TOAST to the renderer the window shows (also in EVENT_CHANNELS).
     FORWARD_TOAST: 'machine-rail:forward-toast',
     TOAST: 'machine-rail:toast',
-    // Select a machine and ask its renderer to open its status menu;
-    // MENU_REQUESTED is the push to that renderer (also in EVENT_CHANNELS).
-    // A window's own renderer reports that it has painted after becoming the
-    // shown one, so main can take the previous machine's view away without a gap.
+    // A renderer reports that it has painted after becoming the selected one,
+    // so main can take the previous machine away without a gap.
     SHOWN: 'machine-rail:shown',
-    OPEN_MENU: 'machine-rail:open-menu',
-    MENU_REQUESTED: 'machine-rail:menu-requested',
+    // A machine's renderer reports that its startup is done (backend reached or
+    // given up on), so main can show it in place of the startup splash.
+    READY: 'machine-rail:ready',
+    // A renderer reports whether its machine's daemon is degraded, so every
+    // rail can mark it.
+    HEALTH: 'machine-rail:health',
   },
 
   // Workspace presence (multiplayer w5). The daemon connection is pooled per
@@ -1219,7 +1221,6 @@ export const EVENT_CHANNELS = [
   'window:dock-lab-changed',
   'machine-rail:changed',
   'machine-rail:toast',
-  'machine-rail:menu-requested',
   'window:dock-backend-switch-failed',
   'workspace:created',
   'workspace:updated',

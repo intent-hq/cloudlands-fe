@@ -394,6 +394,18 @@ async function readFile(): Promise<Record<string, unknown>> {
 }
 
 describe('guest-sessions-store', () => {
+  it('saves the device kind a host reports, keeps it across a reload, and skips repeats', async () => {
+    const store = await import('../guest-sessions-store');
+    const record = await store.add(sample);
+    expect(record.detectedDeviceKind).toBeNull();
+    expect(await store.setDetectedDeviceKind(record.id, 'laptop')).toBe(true);
+    expect(await store.setDetectedDeviceKind(record.id, 'laptop')).toBe(false);
+    vi.resetModules();
+    const reloaded = await import('../guest-sessions-store');
+    expect((await reloaded.list())[0].detectedDeviceKind).toBe('laptop');
+    expect(await reloaded.setDetectedDeviceKind('unknown-id', 'server')).toBe(false);
+  });
+
   it('keeps two invited people on one host separate across a disk reload', async () => {
     const store = await import('../guest-sessions-store');
     const fingerprint = 'ab'.repeat(32);

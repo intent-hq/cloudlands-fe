@@ -11,7 +11,6 @@
 export const MACHINE_RAIL_CHANGED_EVENT = 'machine-rail:changed';
 
 export const MACHINE_RAIL_TOAST_EVENT = 'machine-rail:toast';
-export const MACHINE_RAIL_MENU_REQUESTED_EVENT = 'machine-rail:menu-requested';
 
 /** Root attribute of a renderer whose machine is not the one the window shows. */
 export const MACHINE_HIDDEN_ATTRIBUTE = 'data-machine-hidden';
@@ -43,6 +42,20 @@ export interface MachineRailState {
   machineIds: string[];
   /** The machine whose renderer the window shows. */
   selectedId: string;
+  /**
+   * The machine whose renderer is on screen. It trails `selectedId` until the
+   * selected renderer has painted, so the previous one stays up until then.
+   */
+  shownId: string;
+  /** A machine the user asked to show whose renderer is still starting; `''` when none. */
+  pendingId: string;
+  /** Machines in the rail whose daemon reports degraded health. */
+  degradedIds: string[];
+}
+
+/** `machine-rail:health` params: a renderer reports its own machine's health. */
+export interface MachineRailHealthParams {
+  degraded: boolean;
 }
 
 /** What a window session remembers about its rail (the home machine is implied). */
