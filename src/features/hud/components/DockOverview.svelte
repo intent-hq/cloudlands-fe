@@ -480,6 +480,9 @@
   }
   .overview-row {
     display: grid;
+    /* Mirrors the open button's 6px leading inset, so the timestamp is not flush with the
+       row's hover, focus or active highlight. */
+    padding-inline-end: 6px;
     grid-template-columns: minmax(0, 1fr) 56px;
     align-items: center;
     column-gap: 8px;

@@ -456,6 +456,7 @@ test('linked index layout: search text lines up, scrollbar at the edge', async (
         (el) => el.getBoundingClientRect().left,
       );
       const firstRow = box('.overview-row[role="row"]');
+      const firstTime = box('.overview-row[role="row"] .row-time');
       const inputStyle = getComputedStyle(input);
       return {
         textLeft: input.getBoundingClientRect().left + parseFloat(inputStyle.paddingLeft),
@@ -463,6 +464,7 @@ test('linked index layout: search text lines up, scrollbar at the edge', async (
         viewportRight: rows.getBoundingClientRect().right,
         frameRight: frame.right,
         rowRight: firstRow.right,
+        timeInset: firstRow.right - firstTime.right,
         scrollbar: rows.offsetWidth - rows.clientWidth,
         scrolls: rows.scrollHeight > rows.clientHeight,
         horizontalOverflow: rows.scrollWidth > rows.clientWidth,
@@ -475,6 +477,8 @@ test('linked index layout: search text lines up, scrollbar at the edge', async (
     // Rows keep the 12px gutter inside the viewport (beside a classic scrollbar, if any).
     expect(Math.abs(m.viewportRight - 12 - m.scrollbar - m.rowRight)).toBeLessThan(0.5);
     expect(m.horizontalOverflow).toBe(false);
+    // The timestamp keeps a 6px inset inside the row's highlight.
+    expect(Math.abs(m.timeInset - 6)).toBeLessThan(0.5);
   };
   await page.keyboard.press('Backspace');
   await page.keyboard.press('Backspace');
