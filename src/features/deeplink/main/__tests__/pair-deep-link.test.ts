@@ -212,6 +212,15 @@ describe('a node pairing link', () => {
     expect(add).not.toHaveBeenCalled();
   });
 
+  it('a reported mode it does not know is not a node, even with a mode=node hint', async () => {
+    tested.daemonMode = null;
+    tested.modeReported = true;
+    await handlePairDeepLink(`${LINK}&mode=node`);
+    expect(queueDeepLinkForWindow).not.toHaveBeenCalled();
+    expect(add).toHaveBeenCalledTimes(1);
+    expect(add.mock.calls[0][0]).not.toHaveProperty('daemonMode');
+  });
+
   it('an unknown mode without a hint saves nothing and shows the failure', async () => {
     tested.daemonMode = null;
     await handlePairDeepLink(LINK);

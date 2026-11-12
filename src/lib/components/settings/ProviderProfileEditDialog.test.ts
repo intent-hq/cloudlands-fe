@@ -278,6 +278,28 @@ describe('ProviderProfileEditDialog: saving', () => {
     );
   });
 
+  // An orchestrator runs no key check (`supportsTestPrompt: false`): the saved
+  // key is the outcome, so the dialog closes with the saved toast.
+  it('Replace on a backend without a key check closes once the key is saved', async () => {
+    await openEdit(CLAUDE_KEY);
+    await fireEvent.click(
+      screen.getByRole('button', { name: m.settings_providerProfileKinds_replace_label() }),
+    );
+    await fireEvent.input(screen.getByTestId('provider-profile-secret-input'), {
+      target: { value: 'sk-ant-new' },
+    });
+    await save();
+    const { providerProfileSecretEditRequested, providerProfileSetupChanged } = await slice();
+    const setupId = lastOf(providerProfileSecretEditRequested.type)!.payload.setupId;
+    await dispatch(providerProfileSetupChanged(setupId, { phase: 'keySaved', profileId: 'p1' }));
+
+    await waitFor(() => expect(mocks.notify.warning).toHaveBeenCalledTimes(1));
+    expect(mocks.notify.warning.mock.calls[0][0]).toBe(
+      m.settings_providerProfiles_saved_label({ name: 'Work' }),
+    );
+    await waitFor(() => expect(screen.queryByTestId('provider-profile-kind-details')).toBeNull());
+  });
+
   it('a replaced-key save cannot be cancelled until its check settles', async () => {
     await openEdit(CLAUDE_KEY);
     await fireEvent.click(

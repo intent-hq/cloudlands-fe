@@ -204,6 +204,24 @@ describe('pair links', () => {
     );
   });
 
+  it('ignores a mode=node hint when the daemon reported a mode this app does not know', async () => {
+    const links = createPairLinks(d);
+    const held = await links.hold({
+      hosts: ['192.0.2.20'],
+      port: 7443,
+      fingerprint: 'AA:BB',
+      token: TOKEN,
+      tcAddress: null,
+      modeHint: 'node',
+      daemonMode: null,
+      modeReported: true,
+      name: 'Hub',
+    });
+    expect(held).toMatchObject({ ok: true, kind: 'machine' });
+    await links.commit(held.pendingId);
+    expect(d.add.mock.calls[0][0]).not.toHaveProperty('daemonMode');
+  });
+
   it('does not save a discarded or expired link', async () => {
     let now = 1_000;
     d = deps({ now: () => now });

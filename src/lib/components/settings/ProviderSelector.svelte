@@ -96,10 +96,9 @@
   const providerStatusMap$ = selectProviderStatusMap();
   const providerLoadingMap$ = selectProviderLoadingMap();
   const npxStatus$ = selectNpxStatus();
-  // An orchestrator runs no provider CLI, so it checks none: its rows only
-  // enable or disable a provider and hold its profiles, with no install,
-  // sign-in, version or warning state (PROTOCOL `provider-profiles.md` →
-  // "Profiles on an orchestrator").
+  // An orchestrator runs no provider CLI, so it checks none: the status map
+  // reports every provider as available with no sign-in, version or warning
+  // (selectProviderStatusMap), and its rows have no CLI path either.
   const orchestrator$ = selectIsOrchestratorBackend();
 
   const checkError = $derived($discoveryError$);
@@ -166,25 +165,6 @@
   // Provider options for display - dynamically generated from the catalog
   const providerOptions = $derived.by(() =>
     orderedCatalogEntries.map((provider) => {
-      if ($orchestrator$)
-        return {
-          id: provider.id,
-          name: provider.displayName,
-          displayName: provider.displayName,
-          command: provider.command,
-          // Configurable here; whether it runs is each machine's own report.
-          available: true,
-          authenticated: undefined,
-          statusPending: false,
-          requiresAuth: false,
-          docsUrl: '',
-          loginDocsUrl: undefined,
-          loginCommandHint: undefined,
-          hasNpxFallback: false,
-          warning: undefined,
-          version: undefined,
-          unavailableReason: undefined,
-        };
       const status = $providerStatusMap$[provider.id];
       return {
         id: provider.id,
@@ -206,16 +186,10 @@
     }),
   );
 
-  // On an orchestrator every provider counts as configurable: Enabled or Available.
-  const availabilityByProviderId = $derived(
-    $orchestrator$
-      ? Object.fromEntries(providerOptions.map((option) => [option.id, { available: true }]))
-      : $providerStatusMap$,
-  );
   const groupedProviderOptions = $derived.by(() =>
     groupProviderEntries(providerOptions, {
       isProviderEnabled,
-      availabilityByProviderId,
+      availabilityByProviderId: $providerStatusMap$,
       hiddenProviderIds: $hiddenProviders$,
       activeProviderId: $activeProviderId,
     }),
@@ -228,7 +202,6 @@
   ]);
 
   function isProviderReadyForUse(providerId: string): boolean {
-    if ($orchestrator$) return true;
     if (!getProviderAvailable(providerId)) return false;
     return isProviderAuthenticationReady(providerId, getProviderAuthenticated(providerId));
   }

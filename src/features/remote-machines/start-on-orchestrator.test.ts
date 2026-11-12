@@ -15,7 +15,12 @@ import { setLabsRemoteAgentsEnabled } from '$store/renderer/slices/user-preferen
 import { admitLegacyPrincipal } from '../../test/fixtures/principal-state';
 import { remoteMachinesLoaded } from './remote-machines-slice';
 import { selectEffectiveStartOn, selectStartOnOptions } from './remote-machines-selectors';
-import { initialAgentPlacement, START_ON_BACKEND, startOnBackendLabel } from './start-on';
+import {
+  initialAgentPlacement,
+  START_ON_BACKEND,
+  startOnBackendLabel,
+  startOnModelMachineId,
+} from './start-on';
 
 const backend: ConnectionRecord = {
   id: 'hub',
@@ -120,4 +125,31 @@ describe('Start On on a Full backend', () => {
       expect(options[1]).toMatchObject({ label: backend.label, platform: 'Linux x64' });
     },
   );
+});
+
+describe('Model row machine for a Start On choice', () => {
+  it('lists the first usable machine in order for "First available machine" on an orchestrator', () => {
+    seed('orchestrator', ORCHESTRATOR_ORDER);
+    const options = selectStartOnOptions.select(store.state);
+    expect(startOnModelMachineId(START_ON_BACKEND, options, true)).toBe('d-pc');
+    // A chosen machine is its own source; a cloud entry has no report yet.
+    expect(startOnModelMachineId('d-mac', options, true)).toBe('d-mac');
+    expect(startOnModelMachineId('cloud:e2b', options, true)).toBeUndefined();
+  });
+
+  it('skips machines that cannot start an agent', () => {
+    const options = [
+      { id: START_ON_BACKEND, label: 'First', platform: null, disabled: false },
+      { id: 'd-off', label: 'Off', platform: null, disabled: true },
+      { id: 'cloud:e2b', label: 'E2B', platform: null, disabled: false, kind: 'cloud' as const },
+      { id: 'd-on', label: 'On', platform: null, disabled: false },
+    ];
+    expect(startOnModelMachineId(START_ON_BACKEND, options, true)).toBe('d-on');
+  });
+
+  it("keeps the backend's own models on a Full backend", () => {
+    seed('regular', [{ kind: 'machine', nodeId: 'd-pc', name: 'Gaming PC' }]);
+    const options = selectStartOnOptions.select(store.state);
+    expect(startOnModelMachineId(START_ON_BACKEND, options, false)).toBeUndefined();
+  });
 });

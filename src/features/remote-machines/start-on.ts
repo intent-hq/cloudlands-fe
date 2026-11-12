@@ -155,6 +155,26 @@ export function startOnBackendLabel(options: readonly StartOnOption[]): string {
 }
 
 /**
+ * The machine whose models the Model row lists for a Start On choice: the
+ * chosen machine, or on an orchestrator with "First available machine" the
+ * first usable machine in the user's order (where the backend's walk starts;
+ * an orchestrator has no models of its own). Undefined for the backend or a
+ * cloud entry.
+ */
+export function startOnModelMachineId(
+  effective: string,
+  options: readonly StartOnOption[],
+  orchestrator: boolean,
+): string | undefined {
+  if (effective !== START_ON_BACKEND)
+    return startOnCloudMachineId(effective) ? undefined : effective;
+  if (!orchestrator) return undefined;
+  return options.find(
+    (option) => option.id !== START_ON_BACKEND && option.kind !== 'cloud' && !option.disabled,
+  )?.id;
+}
+
+/**
  * The row shows only while the remote-machine surfaces are on (Labs flag and
  * `remoteMachines`), the backend accepts an initial-agent placement, and at
  * least one other machine can take the agent.

@@ -124,7 +124,9 @@ export async function handlePairDeepLink(url: string): Promise<void> {
     }
     // Legacy isAdministrator remains sufficient for the established owner-only pairing path.
     if (!remote.principal.isAdministrator) return;
-    const daemonMode = tested.daemonMode ?? (parsed.modeHint === 'node' ? 'node' : null);
+    // The link's mode=node hint stands in only for an older daemon that reports no mode.
+    const daemonMode =
+      tested.daemonMode ?? (!tested.modeReported && parsed.modeHint === 'node' ? 'node' : null);
     // Unknown mode from an older daemon: saving could keep a node the backend
     // can't use, so stop here. A reported mode this app doesn't know is never a node.
     if (!daemonMode && !tested.modeReported) throw new Error('Daemon mode unknown');

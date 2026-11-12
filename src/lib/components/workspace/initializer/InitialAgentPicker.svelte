@@ -98,9 +98,10 @@
     resolveStartOn,
     START_ON_BACKEND,
     startOnBackendLabel,
+    startOnModelMachineId,
     startOnCloudId,
-    startOnCloudMachineId,
   } from '$features/remote-machines/start-on';
+  import { selectIsOrchestratorBackend } from '$store/renderer/slices/principal/principal-selectors';
 
   const logger = createLogger('InitialAgentPicker');
   // Unique per mount: the picker can render more than once on a page.
@@ -237,8 +238,13 @@
       ? resolveStartOn(startOnMachineId, $startOnMachines$, $startOnCloud$)
       : START_ON_BACKEND,
   );
+  // The machine whose models the Model row lists (an orchestrator has none of its own).
+  const orchestratorBackend$ = selectIsOrchestratorBackend();
+  const modelMachineId = $derived(
+    startOnModelMachineId(effectiveStartOn, $startOnOptions$, $orchestratorBackend$),
+  );
   const startOnMachine = $derived(
-    $startOnMachines$.find((machine) => machine.id === effectiveStartOn) ?? null,
+    $startOnMachines$.find((machine) => machine.id === modelMachineId) ?? null,
   );
   const remoteMachinesVisible$ = selectRemoteMachinesVisible();
   const remoteSwitchSupport$ = selectRemoteModelSwitchSupport();
@@ -261,7 +267,7 @@
   // the daemon would refuse it.
   $effect(() => {
     const machine = startOnMachine;
-    if (!effectiveStartOn || !machine || $remoteSwitchSupport$ !== 'supported') return;
+    if (!modelMachineId || !machine || $remoteSwitchSupport$ !== 'supported') return;
     if (machineReportFreshness(machine, Date.now()) === 'missing') return;
     const groups = buildMachineModelGroups({
       machine,
@@ -1133,9 +1139,7 @@
       defaultModelLabel={m.chat_modelPicker_providerDefault_label()}
       fallbackToCatalogDefault
       fallbackProviderId={selectedProvider}
-      machineId={effectiveStartOn && !startOnCloudMachineId(effectiveStartOn)
-        ? effectiveStartOn
-        : undefined}
+      machineId={modelMachineId}
       showMachine={false}
       silentFallback
       portal={true}
