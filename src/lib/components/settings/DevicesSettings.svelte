@@ -22,6 +22,7 @@
     connectionWorkflowCleared,
   } from '$store/renderer/slices/connections/connections-slice';
   import { store as appStore } from '$store/renderer/store';
+  import MachineRailSettings from '$features/machine-rail/MachineRailSettings.svelte';
   import RemoteMachinesSection from '$features/remote-machines/RemoteMachinesSection.svelte';
   import RemoteMachineRow from '$features/remote-machines/RemoteMachineRow.svelte';
   import {
@@ -397,6 +398,7 @@
     </div>
   {/if}
 
+  <MachineRailSettings />
   <RemoteMachinesSection />
   <BackendsWithAccessSection />
 </div>

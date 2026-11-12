@@ -39,7 +39,7 @@ export interface MachineRailState {
   enabled: boolean;
   /** The machine the window itself is bound to. Always first; never removed. */
   homeId: string;
-  /** Rail order: `homeId` first, then the machines added to this window. */
+  /** Rail order, as the user arranged it. Always contains `homeId`. */
   machineIds: string[];
   /** The machine whose renderer the window shows. */
   selectedId: string;
@@ -80,8 +80,42 @@ export function removeRailMachine(
 }
 
 /**
+ * Rail order after a drag: `requested` is accepted only when it is the same
+ * set of machines in another order; anything else leaves the order as it was.
+ */
+export function reorderRailMachines(
+  machineIds: readonly string[],
+  requested: readonly string[],
+): string[] {
+  const same =
+    requested.length === machineIds.length &&
+    new Set(requested).size === requested.length &&
+    requested.every((id) => machineIds.includes(id));
+  return same ? [...requested] : [...machineIds];
+}
+
+/**
+ * Where `id` lands when dropped before or after `targetId`: the new order, or
+ * the same order when the drop changes nothing.
+ */
+export function moveRailMachine(
+  machineIds: readonly string[],
+  id: string,
+  targetId: string,
+  position: 'before' | 'after',
+): string[] {
+  if (id === targetId || !machineIds.includes(id) || !machineIds.includes(targetId)) {
+    return [...machineIds];
+  }
+  const rest = machineIds.filter((machineId) => machineId !== id);
+  const at = rest.indexOf(targetId) + (position === 'after' ? 1 : 0);
+  return [...rest.slice(0, at), id, ...rest.slice(at)];
+}
+
+/**
  * A saved rail made safe to restore: only machines that are still saved, no
- * duplicates, home first, capped, and a selection that is in the list.
+ * duplicates, the home machine present (first, when the saved rail predates
+ * reordering and does not list it), capped, and a selection that is in the list.
  */
 export function normalizeRailSession(
   homeId: string,
@@ -89,13 +123,15 @@ export function normalizeRailSession(
   isSavedMachine: (id: string) => boolean,
 ): Pick<MachineRailState, 'machineIds' | 'selectedId'> {
   const raw = (session ?? {}) as { machineIds?: unknown; selectedId?: unknown };
-  const machineIds = [homeId];
-  if (Array.isArray(raw.machineIds)) {
-    for (const id of raw.machineIds) {
-      if (machineIds.length >= MACHINE_RAIL_MAX_MACHINES) break;
-      if (typeof id !== 'string' || machineIds.includes(id) || !isSavedMachine(id)) continue;
-      machineIds.push(id);
-    }
+  const listed = Array.isArray(raw.machineIds) ? raw.machineIds : [];
+  const machineIds: string[] = listed.includes(homeId) ? [] : [homeId];
+  for (const id of listed) {
+    if (typeof id !== 'string' || machineIds.includes(id)) continue;
+    if (id !== homeId && !isSavedMachine(id)) continue;
+    // Keep room for the home machine when it comes later in the saved order.
+    const reserve = id !== homeId && !machineIds.includes(homeId) ? 1 : 0;
+    if (machineIds.length + reserve >= MACHINE_RAIL_MAX_MACHINES) continue;
+    machineIds.push(id);
   }
   const selectedId =
     typeof raw.selectedId === 'string' && machineIds.includes(raw.selectedId)

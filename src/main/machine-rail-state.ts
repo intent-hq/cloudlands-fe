@@ -12,7 +12,7 @@ import type { MachineRailSession } from '../shared/types/machine-rail';
 import { getBackendIdForWindow } from './window-backend';
 
 export interface WindowRail {
-  /** Home machine first, then the machines added to the window. */
+  /** Rail order as the user arranged it; always contains the window's home machine. */
   machineIds: string[];
   selectedId: string;
 }
@@ -35,7 +35,8 @@ export function setMachineRailEnabledFlag(next: boolean): void {
 export function readWindowRail(window: BrowserWindowType): WindowRail {
   const homeId = getBackendIdForWindow(window);
   const rail = rails.get(window);
-  if (!rail || rail.machineIds[0] !== homeId) return { machineIds: [homeId], selectedId: homeId };
+  if (!rail || !rail.machineIds.includes(homeId))
+    return { machineIds: [homeId], selectedId: homeId };
   return rail;
 }
 
@@ -52,7 +53,8 @@ export function getMachineRailSession(window: BrowserWindowType): MachineRailSes
   if (!enabled) return undefined;
   const rail = readWindowRail(window);
   if (rail.machineIds.length < 2) return undefined;
-  return { machineIds: rail.machineIds.slice(1), selectedId: rail.selectedId };
+  // The full order, home machine included, so a rearranged rail restores as it was.
+  return { machineIds: [...rail.machineIds], selectedId: rail.selectedId };
 }
 
 export function setMachineRailRestoreHandler(handler: RestoreHandler | null): void {

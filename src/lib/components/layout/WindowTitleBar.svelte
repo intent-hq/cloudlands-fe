@@ -51,7 +51,7 @@
   import WorkspaceTabStrip from './WorkspaceTabStrip.svelte';
   import WorkspaceRepoLauncher from './WorkspaceRepoLauncher.svelte';
   import SidebarNav from './sidebar-nav/SidebarNav.svelte';
-  import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
+  import { selectMachineRailVisible } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { selectOnboardingActive } from '$store/renderer/slices/sidebar-nav/sidebar-nav-selectors';
 
   interface Props {
@@ -69,7 +69,7 @@
   );
   const onboardingActive$ = selectOnboardingActive();
   // Machine rail (Labs): the status menu moves to the machine's rail item.
-  const machineRailEnabled$ = selectMachineRailEnabled();
+  const machineRailVisible$ = selectMachineRailVisible();
 
   let fixedControlsEl = $state<HTMLDivElement | null>(null);
   let fixedControlsTrailingInset = $state(0);
@@ -172,7 +172,7 @@
 </script>
 
 {#snippet titlebarUtilities(showDaemonStatus: boolean)}
-  {#if showDaemonStatus && !$machineRailEnabled$}
+  {#if showDaemonStatus && !$machineRailVisible$}
     <DaemonStatusIndicator />
   {/if}
   <Tooltip content={m.layout_sidebarNav_settings_label()} side="bottom" delayDuration={300}>

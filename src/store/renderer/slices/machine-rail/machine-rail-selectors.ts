@@ -21,6 +21,21 @@ export const selectMachineRailEnabled = store.createSelector(
   (state): boolean => state.machineRail?.enabled ?? false,
 );
 
+/**
+ * Whether the rail is drawn: the lab is on and there is something to switch
+ * to or add. With only this machine saved, the rail would be a column holding
+ * one button, so the window keeps its usual layout until a second machine is
+ * saved in Settings (or is already in this window).
+ */
+export const selectMachineRailVisible = store.createSelector((state): boolean => {
+  const rail = state.machineRail;
+  if (!rail?.enabled) return false;
+  if (rail.machineIds.length > 1) return true;
+  return getItems(state.connections.connections).some(
+    (connection) => connection.daemonMode !== 'node' && !rail.machineIds.includes(connection.id),
+  );
+});
+
 /** The window's machines in rail order, joined with their saved records. */
 export const selectMachineRailItems = store.createSelector((state): MachineRailItem[] => {
   const { machineIds, selectedId, homeId } = state.machineRail;
@@ -36,6 +51,30 @@ export const selectMachineRailItems = store.createSelector((state): MachineRailI
     };
   });
 });
+
+export interface MachineRailSettingsRow {
+  record: ConnectionRecord;
+  /** Whether this window keeps the machine in its rail. */
+  inRail: boolean;
+  /** The window's own machine: always in the rail. */
+  home: boolean;
+}
+
+/** Every saved machine a window can show, with whether this window's rail has it. */
+export const selectMachineRailSettingsRows = store.createSelector(
+  (state): MachineRailSettingsRow[] => {
+    // Optional chaining: partial test stores mount Settings without this slice.
+    const machineIds = state.machineRail?.machineIds ?? [];
+    const homeId = state.machineRail?.homeId ?? '';
+    return getItems(state.connections.connections)
+      .filter((connection) => connection.daemonMode !== 'node')
+      .map((record) => ({
+        record,
+        inRail: machineIds.includes(record.id),
+        home: record.id === homeId,
+      }));
+  },
+);
 
 /** Bumps each time this renderer is asked to open its machine's status menu. */
 export const selectRailMenuRequests = store.createSelector(

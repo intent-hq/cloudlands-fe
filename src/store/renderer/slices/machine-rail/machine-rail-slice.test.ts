@@ -6,6 +6,8 @@ import {
   selectIsRailMachineShown,
   selectMachineRailCandidates,
   selectMachineRailItems,
+  selectMachineRailSettingsRows,
+  selectMachineRailVisible,
 } from './machine-rail-selectors';
 import { machineRailReducer, machineRailStateReceived } from './machine-rail-slice';
 
@@ -92,6 +94,52 @@ describe('machine rail selectors', () => {
       ]),
     );
     expect(candidates.map((candidate) => candidate.id)).toEqual(['c']);
+  });
+
+  it('draws the rail only once there is a second machine to switch to or add', () => {
+    const alone = { enabled: true, homeId: 'local', machineIds: ['local'], selectedId: 'local' };
+    // Only this machine is saved: nothing to switch to.
+    expect(selectMachineRailVisible.select(stateWith(alone, [record('local')]))).toBe(false);
+    // A node never opens a window, so it does not count.
+    expect(
+      selectMachineRailVisible.select(
+        stateWith(alone, [record('local'), record('node-1', { daemonMode: 'node' })]),
+      ),
+    ).toBe(false);
+    // A second machine saved in Settings: the rail appears with its add control.
+    expect(selectMachineRailVisible.select(stateWith(alone, [record('local'), record('b')]))).toBe(
+      true,
+    );
+    // A machine already in this window keeps the rail up.
+    expect(
+      selectMachineRailVisible.select(
+        stateWith({ ...alone, machineIds: ['local', 'b'] }, [record('local'), record('b')]),
+      ),
+    ).toBe(true);
+    // The lab being off always wins.
+    expect(
+      selectMachineRailVisible.select(
+        stateWith({ ...alone, enabled: false }, [record('local'), record('b')]),
+      ),
+    ).toBe(false);
+  });
+
+  it('lists every saved machine for Settings with whether this window has it, never nodes', () => {
+    const rows = selectMachineRailSettingsRows.select(
+      stateWith({ ...rail, machineIds: ['local', 'b'] }, [
+        record('local'),
+        record('b'),
+        record('c'),
+        record('node-1', { daemonMode: 'node' }),
+      ]),
+    );
+    expect(rows.map(({ record: saved, inRail, home }) => ({ id: saved.id, inRail, home }))).toEqual(
+      [
+        { id: 'local', inRail: true, home: true },
+        { id: 'b', inRail: true, home: false },
+        { id: 'c', inRail: false, home: false },
+      ],
+    );
   });
 
   it('marks only the renderer of the selected machine as shown', () => {

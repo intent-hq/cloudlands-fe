@@ -25,13 +25,18 @@ import {
 } from '$shared/types/machine-rail';
 import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
 import { selectConnectionRecoveryTarget } from '../../connections/connections-selectors';
-import { selectIsRailMachineShown, selectMachineRailEnabled } from '../machine-rail-selectors';
+import {
+  selectIsRailMachineShown,
+  selectMachineRailEnabled,
+  selectMachineRailVisible,
+} from '../machine-rail-selectors';
 import {
   addRailMachineRequested,
   machineRailStateReceived,
   openRailMachineMenuRequested,
   railMachineMenuRequested,
   removeRailMachineRequested,
+  reorderRailMachinesRequested,
   selectRailMachineRequested,
   setMachineRailEnabledRequested,
 } from '../machine-rail-slice';
@@ -72,6 +77,8 @@ const railRequests = {
     (await requireApi().invoke(MACHINE_RAIL.ADD, { id })) as MachineRailState,
   remove: async (id: string) =>
     (await requireApi().invoke(MACHINE_RAIL.REMOVE, { id })) as MachineRailState,
+  reorder: async (machineIds: string[]) =>
+    (await requireApi().invoke(MACHINE_RAIL.REORDER, { machineIds })) as MachineRailState,
   openMenu: async (id: string) =>
     (await requireApi().invoke(MACHINE_RAIL.OPEN_MENU, { id })) as MachineRailState,
   setEnabled: async (enabled: boolean) =>
@@ -128,8 +135,8 @@ function* shownWorker({ payload: shown }: SelectorChannelPayload<boolean>) {
   yield* call(reportPainted);
 }
 
-function* enabledWorker({ payload: enabled }: SelectorChannelPayload<boolean>) {
-  yield* call(toggleRootAttribute, MACHINE_RAIL_ATTRIBUTE, enabled);
+function* railVisibleWorker({ payload: visible }: SelectorChannelPayload<boolean>) {
+  yield* call(toggleRootAttribute, MACHINE_RAIL_ATTRIBUTE, visible);
 }
 
 function createToastChannel(): EventChannel<MachineRailToastEvent> {
@@ -240,7 +247,7 @@ export function* machineRailSaga() {
   if (!getApi()?.on) return;
 
   yield* takeLatestFromSelector(selectIsRailMachineShown, shownWorker);
-  yield* takeLatestFromSelector(selectMachineRailEnabled, enabledWorker);
+  yield* takeLatestFromSelector(selectMachineRailVisible, railVisibleWorker);
   yield* takeEvery(selectRailMachineRequested, function* ({ payload: [id] }) {
     yield* request(() => railRequests.select(id));
   });
@@ -252,6 +259,9 @@ export function* machineRailSaga() {
   });
   yield* takeEvery(openRailMachineMenuRequested, function* ({ payload: [id] }) {
     yield* request(() => railRequests.openMenu(id));
+  });
+  yield* takeEvery(reorderRailMachinesRequested, function* ({ payload: [machineIds] }) {
+    yield* request(() => railRequests.reorder(machineIds));
   });
   yield* takeEvery(setMachineRailEnabledRequested, function* ({ payload: [enabled] }) {
     yield* request(() => railRequests.setEnabled(enabled));

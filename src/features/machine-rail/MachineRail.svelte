@@ -27,9 +27,11 @@
   import { formatConnectionLabel, formatLocalMachineLabel } from '$lib/utils/connection-label';
   import { m } from '$shared/paraglide/messages.js';
   import type { ConnectionRecord } from '$shared/types/connections';
+  import { moveRailMachine } from '$shared/types/machine-rail';
   import {
     selectMachineRailCandidates,
-    selectMachineRailEnabled,
+    selectMachineRailVisible,
+    selectIsRailMachineShown,
     selectMachineRailItems,
     selectRailMenuRequests,
   } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
@@ -37,24 +39,35 @@
     addRailMachineRequested,
     openRailMachineMenuRequested,
     removeRailMachineRequested,
+    reorderRailMachinesRequested,
     selectRailMachineRequested,
   } from '$store/renderer/slices/machine-rail/machine-rail-slice';
   import { store as appStore } from '$store/renderer/store';
 
-  const enabled$ = selectMachineRailEnabled();
+  const visible$ = selectMachineRailVisible();
   const items$ = selectMachineRailItems();
   const candidates$ = selectMachineRailCandidates();
 
   const menuRequests$ = selectRailMenuRequests();
 
-  // Machine buttons have no hover tooltip (the name is in their context menu and
-  // accessible label); the add button's shows only after a deliberate pause.
+  // Names show only after the pointer rests on a button.
   const RAIL_TOOLTIP_DELAY_MS = 900;
 
   // Rail buttons show keyboard focus as the hover background, not the app-wide
   // focus outline (the Button paints its states on its surface element).
   const RAIL_BUTTON_FOCUS_CLASS =
     'focus-visible:outline-none [&:focus-visible>[data-slot=button-surface]]:bg-hover';
+
+  // After a switch the pointer is still resting on the rail of the machine that
+  // just appeared; its name would pop up unasked. Tooltips stay off from a click
+  // or a switch until the pointer has left the rail.
+  const shown$ = selectIsRailMachineShown();
+  let tooltipsSuppressed = $state(false);
+  let wasShown = true;
+  $effect(() => {
+    if ($shown$ && !wasShown) tooltipsSuppressed = true;
+    wasShown = $shown$;
+  });
 
   let menuOpen = $state(false);
   // This machine's status menu (health, machines): opened by a context click on
@@ -76,6 +89,58 @@
 
   const removable = $derived($items$.filter((item) => !item.home));
 
+  // Drag a machine onto another to reorder the rail; Alt+Up / Alt+Down moves the
+  // focused machine for keyboard users. Main owns the order: a drop only asks.
+  let draggedId = $state<string | null>(null);
+  let dropTarget = $state<{ id: string; position: 'before' | 'after' } | null>(null);
+
+  function requestMove(id: string, targetId: string, position: 'before' | 'after') {
+    const order = $items$.map((item) => item.id);
+    const next = moveRailMachine(order, id, targetId, position);
+    if (next.some((machineId, index) => machineId !== order[index])) {
+      appStore.dispatch(reorderRailMachinesRequested(next));
+    }
+  }
+
+  function handleDragStart(event: DragEvent, id: string) {
+    draggedId = id;
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', id);
+    }
+  }
+
+  function handleDragOver(event: DragEvent, id: string) {
+    if (!draggedId) return;
+    event.preventDefault();
+    if (draggedId === id) {
+      dropTarget = null;
+      return;
+    }
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    dropTarget = { id, position: event.clientY <= rect.top + rect.height / 2 ? 'before' : 'after' };
+  }
+
+  function handleDrop(event: DragEvent, id: string) {
+    event.preventDefault();
+    if (draggedId && dropTarget?.id === id) requestMove(draggedId, id, dropTarget.position);
+    handleDragEnd();
+  }
+
+  function handleDragEnd() {
+    draggedId = null;
+    dropTarget = null;
+  }
+
+  function handleItemKeydown(event: KeyboardEvent, id: string) {
+    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+    const order = $items$.map((item) => item.id);
+    const neighbour = order[order.indexOf(id) + (event.key === 'ArrowUp' ? -1 : 1)];
+    if (!neighbour) return;
+    event.preventDefault();
+    requestMove(id, neighbour, event.key === 'ArrowUp' ? 'before' : 'after');
+  }
+
   function machineName(record: ConnectionRecord | null, id: string): string {
     if (!record) return id;
     return record.isLocal ? formatLocalMachineLabel(record) : formatConnectionLabel(record);
@@ -87,17 +152,32 @@
   }
 </script>
 
-{#if $enabled$}
+{#if $visible$}
   <nav
-    class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-1"
+    class="mr-2 flex w-10 shrink-0 flex-col items-center gap-1.5 pt-2.5"
     aria-label={m.machineRail_nav_ariaLabel()}
     data-testid="machine-rail"
+    onpointerleave={() => (tooltipsSuppressed = false)}
   >
     <div class="flex min-h-0 flex-1 flex-col items-center gap-1.5 overflow-y-auto">
       {#each $items$ as item (item.id)}
         {@const accent = item.record?.isLocal ? null : resolveConnectionAccent(item.record?.accent)}
         {@const label = itemLabel(item.record, item.id, item.offline)}
-        <div class="relative flex">
+        <!-- svelte-ignore a11y_no_static_element_interactions (keyboard reordering is on the nested button) -->
+        <div
+          class={cn('relative flex', draggedId === item.id && 'opacity-50')}
+          ondragover={(event) => handleDragOver(event, item.id)}
+          ondrop={(event) => handleDrop(event, item.id)}
+        >
+          {#if dropTarget?.id === item.id}
+            <span
+              class={cn(
+                'pointer-events-none absolute inset-x-0 h-0.5 rounded-full bg-primary',
+                dropTarget.position === 'before' ? '-top-1' : '-bottom-1',
+              )}
+              aria-hidden="true"
+            ></span>
+          {/if}
           {#if item.selected}
             <span
               class={cn(
@@ -116,11 +196,22 @@
             active={item.selected}
             aria-label={label}
             aria-current={item.selected ? 'true' : undefined}
+            tooltip={label}
+            tooltipSide="right"
+            tooltipDelayDuration={RAIL_TOOLTIP_DELAY_MS}
+            tooltipDisabled={tooltipsSuppressed || draggedId !== null}
             data-testid="machine-rail-item"
             data-machine-id={item.id}
             data-offline={item.offline || undefined}
-            onclick={() => appStore.dispatch(selectRailMachineRequested(item.id))}
+            onclick={() => {
+              tooltipsSuppressed = true;
+              appStore.dispatch(selectRailMachineRequested(item.id));
+            }}
             oncontextmenu={(event: MouseEvent) => openStatusMenu(event, item.id, item.own)}
+            draggable="true"
+            ondragstart={(event: DragEvent) => handleDragStart(event, item.id)}
+            ondragend={handleDragEnd}
+            onkeydown={(event: KeyboardEvent) => handleItemKeydown(event, item.id)}
           >
             {#if item.record}
               <DeviceIcon
@@ -137,7 +228,26 @@
               class="absolute top-0 right-0 flex size-0 justify-end overflow-hidden"
               aria-hidden={!statusMenuOpen}
             >
-              <DaemonStatusIndicator railAnchor bind:open={statusMenuOpen} />
+              <DaemonStatusIndicator railAnchor bind:open={statusMenuOpen}>
+                {#snippet railActions()}
+                  {#if !item.home}
+                    <div class="mx-1 my-1 h-px bg-border"></div>
+                    <div class="px-1 pb-1">
+                      <Menu.Item
+                        destructive
+                        class="w-full cursor-pointer px-2 py-1.5 text-xs"
+                        data-testid="machine-rail-remove-from-menu"
+                        onSelect={() => {
+                          statusMenuOpen = false;
+                          appStore.dispatch(removeRailMachineRequested(item.id));
+                        }}
+                      >
+                        {m.machineRail_remove_label()}
+                      </Menu.Item>
+                    </div>
+                  {/if}
+                {/snippet}
+              </DaemonStatusIndicator>
             </span>
           {/if}
         </div>

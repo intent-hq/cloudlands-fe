@@ -34,6 +34,10 @@ export const machineRailStateReceived = createAction<[state: MachineRailState]>(
 export const selectRailMachineRequested = createAction<[id: string]>('machineRail/selectRequested');
 export const addRailMachineRequested = createAction<[id: string]>('machineRail/addRequested');
 export const removeRailMachineRequested = createAction<[id: string]>('machineRail/removeRequested');
+/** Ask main for a new rail order (the same machines, rearranged). */
+export const reorderRailMachinesRequested = createAction<[machineIds: string[]]>(
+  'machineRail/reorderRequested',
+);
 export const setMachineRailEnabledRequested = createAction<[enabled: boolean]>(
   'machineRail/setEnabledRequested',
 );

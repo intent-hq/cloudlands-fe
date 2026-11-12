@@ -23,6 +23,7 @@ import {
   addRailMachine,
   normalizeRailSession,
   removeRailMachine,
+  reorderRailMachines,
   type MachineRailState,
   type MachineRailToastEvent,
 } from '../shared/types/machine-rail';
@@ -30,6 +31,7 @@ import {
   EmptySchema,
   MachineRailForwardToastSchema,
   MachineRailMachineSchema,
+  MachineRailReorderSchema,
   MachineRailSetEnabledSchema,
 } from './ipc-schemas';
 import { createValidatedHandler } from './ipc-validation-middleware';
@@ -84,11 +86,17 @@ function viewsOf(window: BrowserWindowType): Map<string, WebContentsView> {
   return views;
 }
 
+/** The machines of a rail other than the window's own. */
+function addedMachines(window: BrowserWindowType, machineIds: readonly string[]): string[] {
+  const homeId = getBackendIdForWindow(window);
+  return machineIds.filter((id) => id !== homeId);
+}
+
 function stateOf(window: BrowserWindowType): MachineRailState {
   const rail = readWindowRail(window);
   return {
     enabled: isMachineRailEnabled(),
-    homeId: rail.machineIds[0],
+    homeId: getBackendIdForWindow(window),
     machineIds: [...rail.machineIds],
     selectedId: rail.selectedId,
   };
@@ -160,7 +168,7 @@ function observeWindow(window: BrowserWindowType): void {
     const rail = readWindowRail(window);
     for (const id of [...viewsOf(window).keys()]) destroyView(window, id);
     clearWindowRail(window);
-    for (const id of rail.machineIds.slice(1)) releaseMachine(id);
+    for (const id of addedMachines(window, rail.machineIds)) releaseMachine(id);
   });
 }
 
@@ -217,8 +225,8 @@ function completeHomeReveal(window: BrowserWindowType, sender: Electron.WebConte
 /** Show the selected machine's renderer and hide the others. */
 function applySelection(window: BrowserWindowType): void {
   if (window.isDestroyed()) return;
-  const { machineIds, selectedId } = readWindowRail(window);
-  const homeId = machineIds[0];
+  const { selectedId } = readWindowRail(window);
+  const homeId = getBackendIdForWindow(window);
   const selected = selectedId === homeId ? null : ensureView(window, selectedId);
   setShownMachineView(window, selected ? selected.webContents : null);
   if (selected) {
@@ -270,7 +278,7 @@ async function addMachine(window: BrowserWindowType, id: string): Promise<Machin
 
 function removeMachine(window: BrowserWindowType, id: string): MachineRailState {
   const rail = readWindowRail(window);
-  const next = removeRailMachine({ homeId: rail.machineIds[0], ...rail }, id);
+  const next = removeRailMachine({ homeId: getBackendIdForWindow(window), ...rail }, id);
   writeWindowRail(window, next);
   applySelection(window);
   destroyView(window, id);
@@ -279,12 +287,24 @@ function removeMachine(window: BrowserWindowType, id: string): MachineRailState 
   return stateOf(window);
 }
 
+function reorderMachines(window: BrowserWindowType, requested: string[]): MachineRailState {
+  const rail = readWindowRail(window);
+  writeWindowRail(window, {
+    machineIds: reorderRailMachines(rail.machineIds, requested),
+    selectedId: rail.selectedId,
+  });
+  broadcastState(window);
+  return stateOf(window);
+}
+
 /** A forgotten machine leaves every rail. */
 export function removeMachineFromAllRails(id: string): void {
   for (const window of getAppWindows()) {
     if (window.isDestroyed()) continue;
     const rail = readWindowRail(window);
-    if (rail.machineIds.indexOf(id) > 0) removeMachine(window, id);
+    if (id !== getBackendIdForWindow(window) && rail.machineIds.includes(id)) {
+      removeMachine(window, id);
+    }
   }
 }
 
@@ -293,7 +313,7 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   const saved = await deps.listMachineIds();
   if (window.isDestroyed() || !isMachineRailEnabled()) return;
   const homeId = getBackendIdForWindow(window);
-  const rail = normalizeRailSession(homeId, session, (id) => id !== homeId && saved.includes(id));
+  const rail = normalizeRailSession(homeId, session, (id) => saved.includes(id));
   if (rail.machineIds.length < 2) return;
   observeWindow(window);
   writeWindowRail(window, rail);
@@ -301,7 +321,7 @@ async function restoreRail(window: BrowserWindowType, session: unknown): Promise
   // Every machine reconnects now; only the one that was shown gets a renderer.
   const selected = rail.selectedId;
   await Promise.all(
-    rail.machineIds.slice(1).map(async (id) => {
+    addedMachines(window, rail.machineIds).map(async (id) => {
       await connectQuietly(id);
       if (id !== selected || window.isDestroyed()) return;
       if (readWindowRail(window).selectedId === id) {
@@ -318,7 +338,7 @@ function resetWindow(window: BrowserWindowType): void {
   clearWindowRail(window);
   setShownMachineView(window, null);
   if (!window.webContents.isDestroyed() && window.isFocused()) window.webContents.focus();
-  for (const id of rail.machineIds.slice(1)) releaseMachine(id);
+  for (const id of addedMachines(window, rail.machineIds)) releaseMachine(id);
 }
 
 async function setEnabled(next: boolean): Promise<void> {
@@ -399,6 +419,17 @@ export function registerMachineRailHandlers(railDeps: MachineRailDeps): void {
         return removeMachine(windowOf(event.sender), id);
       },
       MACHINE_RAIL.REMOVE,
+    ),
+  );
+  ipcMain.handle(
+    MACHINE_RAIL.REORDER,
+    createValidatedHandler(
+      MachineRailReorderSchema,
+      async (event, { machineIds }) => {
+        assertEnabled();
+        return reorderMachines(windowOf(event.sender), machineIds);
+      },
+      MACHINE_RAIL.REORDER,
     ),
   );
   ipcMain.handle(

@@ -157,7 +157,7 @@
   } from '$lib/utils/connection-accents';
   import { store as appStore } from '$store/renderer/store';
   import { navigateToSettings } from '$lib/utils/workspace-navigation';
-  import { onDestroy } from 'svelte';
+  import { onDestroy, type Snippet } from 'svelte';
   import type { DaemonHealth } from '$store/renderer/slices/daemon-health/daemon-health-types';
 
   const health$ = selectDaemonHealth();
@@ -178,7 +178,11 @@
   const protocolMismatchModal$ = selectProtocolMismatchModal();
 
   // Machine rail (Labs): the menu opens from the machine's rail item, with no visible trigger.
-  let { open: dropdownOpen = $bindable(false), railAnchor = false } = $props();
+  let {
+    open: dropdownOpen = $bindable(false),
+    railAnchor = false,
+    railActions,
+  }: { open?: boolean; railAnchor?: boolean; railActions?: Snippet } = $props();
   let menuBody = $state<HTMLDivElement | null>(null);
   // Align the details surface to the parent menu, not its inset first row.
   const menuAnchor = $derived(menuBody?.closest<HTMLElement>('[data-slot="menu-content"]') ?? null);
@@ -1138,6 +1142,7 @@
           </Menu.Item>
         </div>
       {/if}
+      {@render railActions?.()}
     </div>
   {/snippet}
 </DropdownMenu>

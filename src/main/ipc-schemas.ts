@@ -777,6 +777,10 @@ export const MachineRailForwardToastSchema = z
   })
   .strict();
 
+export const MachineRailReorderSchema = z
+  .object({ machineIds: z.array(z.string().min(1).max(256)).min(1).max(16) })
+  .strict();
+
 export const MachineRailSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 
 export const BrowserAccessSetEnabledSchema = z.object({ enabled: z.boolean() }).strict();
