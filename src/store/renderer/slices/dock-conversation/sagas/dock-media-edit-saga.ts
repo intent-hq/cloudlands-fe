@@ -18,6 +18,7 @@ import {
   type SagaGenerator,
 } from 'typed-redux-saga';
 import { z } from 'zod';
+import { Logger } from '$shared/logger';
 import { CHIEF_WORKSPACE_ID } from '$shared/types/branded-ids';
 import { notify } from '$lib/components/patterns/notify';
 import { m } from '$shared/paraglide/messages.js';
@@ -460,6 +461,15 @@ function* openEditorWith(
   preparation: Channel<MediaPreparation>,
   held: { token?: string; adopted: boolean },
 ): SagaGenerator<void> {
+  // Startup phase durations only (no content, paths or ids), for editor-delay reports.
+  const phases: Record<string, number> = {};
+  const startedAt = performance.now();
+  let markedAt = startedAt;
+  const mark = (name: string) => {
+    const now = performance.now();
+    phases[name] = Math.round(now - markedAt);
+    markedAt = now;
+  };
   const authority = getPrincipalActionContext(store.state),
     binding = captureDockPlacementBinding();
   if (!authority) return;
@@ -494,6 +504,7 @@ function* openEditorWith(
     const before = JSON.stringify(row),
       pixels = item.imageData,
       mime = item.imageMimeType;
+    mark('beforePlace');
     const placed = yield* call(
       placeDockMediaImage,
       workspaceId,
@@ -656,8 +667,10 @@ function* openEditorWith(
         rollback: null,
       }),
     );
+    mark('placeAndPrepare');
     yield* put(chatDraftSavePairFlushRequested(workspaceId, agentId));
     const { written } = yield* race({ written: take(settled), expired: delay(14_000) });
+    mark('draftFlushAck');
     if (!written || written.payload[2] !== 'saved' || !current()) return;
     const published = publishedMediaItem(workspaceId, agentId, logicalId, media, row.contextItemId);
     if (!published || published.id !== item.id) return;
@@ -691,6 +704,13 @@ function* openEditorWith(
     const opened = (yield* call(() =>
       window.electronAPI.invoke(DOCK_CAPTURE_EDITOR_CHANNELS.OPEN, request),
     )) as DockCaptureEditorOpenResult | undefined;
+    mark('mainOpen');
+    startupLogger.debug('Capture editor startup', {
+      origin: origin ?? 'pill',
+      opened: !!opened?.ok,
+      totalMs: Math.round(performance.now() - startedAt),
+      ...phases,
+    });
     // Refused: say so where it was asked, and start no follow-up recognition for it.
     if (!opened?.ok) {
       if (shownHere()) notify.warning(m.dock_captureEditor_openFailed_error());
@@ -812,6 +832,8 @@ function* returnAfterAttach(value: z.infer<typeof attachedSchema>): SagaGenerato
     if (!answered) yield* answer(false);
   }
 }
+
+const startupLogger = new Logger('DockEditorStartup');
 
 /** The editor session this dock opened last (see openEditorWith), and its generation. */
 let admittedEditor: {

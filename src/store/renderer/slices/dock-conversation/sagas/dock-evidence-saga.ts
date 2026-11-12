@@ -1,6 +1,9 @@
 import { recordingToggleIntent } from '$features/hud/utils/dock-recording-indicator';
 import { dockCaptureEditorPreviewEnabled } from '$features/hud/media-editor/open-capture-editor';
 import { beginDockEditorHold, endDockEditorHold } from './dock-editor-hold';
+import { Logger } from '$shared/logger';
+
+const captureLogger = new Logger('DockCapture');
 import { DockMediaSourceSchema } from '$shared/dock-media-edit';
 import { dockMediaCaptureBatches, dockMediaCapturedMarks } from '$shared/dock-media-source';
 /**
@@ -362,11 +365,17 @@ function* captureWithHold(
 ): SagaGenerator<boolean> {
   yield* put(dockEvidenceCaptureStarted(workspaceId, agentId));
   let result: DockNativeResult<DockCapturedPixels>;
+  const captureStarted = performance.now();
   try {
     result = yield* call([service, service.captureDisplay], mode);
   } catch {
     result = { ok: false, error: 'failed' };
   }
+  // Duration only, for editor-delay reports (the native capture, incl. any selection UI).
+  captureLogger.debug('Dock capture', {
+    ok: result.ok,
+    captureMs: Math.round(performance.now() - captureStarted),
+  });
   if (nativeService !== service || !activePair(workspaceId, agentId)) return false;
   if (!result.ok && result.detail === 'cancelled') {
     yield* put(dockEvidenceCaptureCancelled(workspaceId, agentId));

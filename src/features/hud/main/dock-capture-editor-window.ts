@@ -436,7 +436,7 @@ function revealEditor(window: BrowserWindow): void {
   // Startup phase timing (OPEN admitted → editor shown), for the editor-delay reports.
   const admittedAt = openedAt.get(session.snapshot.openId);
   if (admittedAt !== undefined)
-    logger.info('Capture editor revealed', { msSinceOpen: Date.now() - admittedAt });
+    logger.debug('Capture editor revealed', { msSinceOpen: Date.now() - admittedAt });
   openedAt.delete(session.snapshot.openId);
   noteDockCaptureEditorFocused();
   window.show();
@@ -570,6 +570,10 @@ export function setupDockCaptureEditorIPC(): void {
   });
   ipcMain.handle(DOCK_CAPTURE_EDITOR_CHANNELS.GET, (event) => {
     if (!fromEditor(event) || !session) return null;
+    // Startup phase timing (OPEN admitted → the editor page read its session).
+    const admittedAt = openedAt.get(session.snapshot.openId);
+    if (admittedAt !== undefined)
+      logger.debug('Capture editor session read', { msSinceOpen: Date.now() - admittedAt });
     // The page has loaded and is about to draw this session: show the window now.
     if (editor) setTimeout(() => editor && revealEditor(editor), 0);
     return session.snapshot;
