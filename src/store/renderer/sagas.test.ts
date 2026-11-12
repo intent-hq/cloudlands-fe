@@ -139,6 +139,7 @@ describe('renderer app saga registry', () => {
       'remoteMachinesSaga',
       'nodesSaga',
       'cloudMachinesSaga',
+      'machineSetupSaga',
       'fileContentPruneSaga',
       'terminalCreationSaga',
       'terminalPersistenceSaga',

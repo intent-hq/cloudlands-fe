@@ -15,7 +15,7 @@
   import Fa from 'svelte-fa';
   import DeviceIcon from '$lib/components/DeviceIcon.svelte';
   import DaemonStatusIndicator from '$lib/components/layout/DaemonStatusIndicator.svelte';
-  import ConnectBackendModal from '$lib/components/layout/ConnectBackendModal.svelte';
+  import { machineSetupOpened } from '$features/machine-setup/machine-setup-slice';
   import { Button } from '$lib/components/ui/button';
   import Header from '$lib/components/ui/Header.svelte';
   import * as Menu from '$lib/components/ui/menu';
@@ -72,7 +72,6 @@
     if (own) statusMenuOpen = true;
     else appStore.dispatch(openRailMachineMenuRequested(id));
   }
-  let connectModalOpen = $state(false);
 
   const removable = $derived($items$.filter((item) => !item.home));
 
@@ -180,7 +179,10 @@
           {/each}
           <Menu.Separator />
         {/if}
-        <Menu.Item data-testid="machine-rail-add-new" onSelect={() => (connectModalOpen = true)}>
+        <Menu.Item
+          data-testid="machine-rail-add-new"
+          onSelect={() => appStore.dispatch(machineSetupOpened())}
+        >
           {#snippet leading()}
             <Fa icon={faPlus} size="sm" />
           {/snippet}
@@ -207,6 +209,4 @@
       </Menu.Content>
     </Menu.Root>
   </nav>
-
-  <ConnectBackendModal bind:open={connectModalOpen} />
 {/if}

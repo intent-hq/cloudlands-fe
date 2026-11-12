@@ -51,8 +51,13 @@ interface Pending {
   expiresAt: number;
 }
 
+export interface PairLinkInspectOptions {
+  /** Name for a new row when the daemon reports none (SSH setup: `uname -n`). */
+  label?: string;
+}
+
 export interface PairLinks {
-  inspect(uri: string): Promise<PairLinkInspectResult>;
+  inspect(uri: string, options?: PairLinkInspectOptions): Promise<PairLinkInspectResult>;
   /**
    * Hold a link whose owner credential was already tested (the deep-link
    * route tests it once for every principal kind). `daemonMode` null with a
@@ -84,7 +89,10 @@ export function createPairLinks(deps: PairLinkDeps): PairLinks {
     while (pending.size >= MAX_PENDING) pending.delete(pending.keys().next().value as string);
   }
 
-  async function inspect(uri: string): Promise<PairLinkInspectResult> {
+  async function inspect(
+    uri: string,
+    options: PairLinkInspectOptions = {},
+  ): Promise<PairLinkInspectResult> {
     const parsed = typeof uri === 'string' ? parsePairingUri(uri) : null;
     if (!parsed) return { ok: false, code: 'not-a-link' };
     const { hosts, port, fingerprint, token, tcAddress, modeHint } = parsed;
@@ -116,7 +124,7 @@ export function createPairLinks(deps: PairLinkDeps): PairLinks {
       tcAddress,
       modeHint,
       daemonMode: inspected.daemonMode,
-      name: inspected.name,
+      name: inspected.name ?? (options.label?.trim() || null),
     });
   }
 

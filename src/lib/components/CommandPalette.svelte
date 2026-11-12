@@ -37,6 +37,7 @@
     selectLabsBrowserAccessEnabled,
     selectLabsTabGroupsEnabled,
     selectLabsCloudMachinesEnabled,
+    selectLabsSshMachineSetupEnabled,
     selectLabsMultiplayerEnabled,
   } from '$store/renderer/slices/user-preferences/user-preferences-selectors';
   import { initBrowserWorkspace } from '$store/renderer/slices/browser/browser-slice';
@@ -108,7 +109,11 @@
   import CommandPaletteItemTitle from './CommandPaletteItemTitle.svelte';
   import CommandPaletteFilters from './CommandPaletteFilters.svelte';
   import { COMMAND_PALETTE_COMMANDS } from './command-palette-commands';
-  import { isLabCommandHidden, isMachineRailCommandHidden } from './command-palette-labs';
+  import {
+    isLabCommandHidden,
+    isMachineRailCommandHidden,
+    isSshMachineSetupCommandHidden,
+  } from './command-palette-labs';
   import { selectMachineRailEnabled } from '$store/renderer/slices/machine-rail/machine-rail-selectors';
   import { dockLabEnabled } from '$lib/dock-lab';
   import IntentNavigationIcon from '$lib/icons/IntentNavigationIcon.svelte';
@@ -160,6 +165,7 @@
   const labsTabGroups$ = selectLabsTabGroupsEnabled();
   const machineRailEnabled$ = selectMachineRailEnabled();
   const labsCloudMachines$ = selectLabsCloudMachinesEnabled();
+  const labsSshMachineSetup$ = selectLabsSshMachineSetupEnabled();
   // Collaborators (multiplayer w3) are refused on terminal + browser methods and
   // cannot create workspaces, so those commands and result groups are withheld.
   const isCollaborator$ = selectIsWorkspaceCollaborator(workspaceIdStore);
@@ -186,6 +192,7 @@
         !($labsRemoteAgentsEnabled$ && command.id === 'enable-experimental-remote-agents') &&
         !(!$labsRemoteAgentsEnabled$ && command.id === 'disable-experimental-remote-agents') &&
         !isMachineRailCommandHidden(command.id, $machineRailEnabled$) &&
+        !isSshMachineSetupCommandHidden(command.id, $labsSshMachineSetup$) &&
         !isLabCommandHidden(
           command.id,
           $dockLabEnabled,

@@ -283,6 +283,18 @@ const APP_SETTING_DEFINITIONS: readonly AppSettingDefinition[] = [
     apply: { kind: 'redux-action', action: 'userPreferences/setLabsCloudMachinesEnabled' },
   },
   {
+    path: 'labs.sshMachineSetup',
+    label: 'SSH machine setup (Labs)',
+    description:
+      'In Settings → Machines → Add machine → Set up a new machine, offer to install Intent on a Linux computer or Mac for you over SSH. Off: you run the install command yourself. Desktop app only.',
+    category: 'labs',
+    type: 'boolean',
+    source: 'local-storage',
+    storageKey: 'labs:sshMachineSetupEnabled',
+    defaultValue: false,
+    apply: { kind: 'redux-action', action: 'userPreferences/setLabsSshMachineSetupEnabled' },
+  },
+  {
     path: 'theme.activePresetId',
     label: 'Theme preset',
     description: `Active built-in color theme preset ID. Available presets: ${THEME_PRESET_OPTIONS_DESCRIPTION}.`,

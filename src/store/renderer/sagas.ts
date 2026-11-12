@@ -12,6 +12,7 @@ import { personalDevicesSaga } from '$features/devices/personal-devices-saga';
 import { remoteMachinesSaga } from '$features/remote-machines/remote-machines-saga';
 import { nodesSaga } from '$features/nodes/nodes-saga';
 import { cloudMachinesSaga } from '$features/cloud-machines/cloud-machines-saga';
+import { machineSetupSaga } from '$features/machine-setup/machine-setup-saga';
 import { hostMembershipSaga } from './slices/host-membership/sagas/host-membership-saga';
 import { repositoryContextSaga } from './slices/repository-context/sagas/repository-context-saga';
 import { repositoryCheckoutSaga } from './slices/repository-checkout/sagas/repository-checkout-saga';
@@ -284,6 +285,7 @@ export const sagas = [
   remoteMachinesSaga,
   nodesSaga,
   cloudMachinesSaga,
+  machineSetupSaga,
   fileContentPruneSaga,
   terminalCreationSaga,
   terminalPersistenceSaga,

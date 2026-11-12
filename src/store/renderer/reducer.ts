@@ -5,6 +5,7 @@ import { homeIntegrationsReducer } from '$features/home/home-integrations-slice'
 import { remoteMachinesReducer } from '$features/remote-machines/remote-machines-slice';
 import { nodesReducer } from '$features/nodes/nodes-slice';
 import { cloudMachinesReducer } from '$features/cloud-machines/cloud-machines-slice';
+import { machineSetupReducer } from '$features/machine-setup/machine-setup-slice';
 import { pendingSubmissionsReducer } from './slices/pending-submissions/pending-submissions-slice';
 import { repositoryContextReducer } from './slices/repository-context/repository-context-slice';
 import { repositoryCheckoutReducer } from './slices/repository-checkout/repository-checkout-slice';
@@ -274,4 +275,5 @@ export const reducers = {
   remoteMachines: remoteMachinesReducer,
   nodes: nodesReducer,
   cloudMachines: cloudMachinesReducer,
+  machineSetup: machineSetupReducer,
 } as const;
