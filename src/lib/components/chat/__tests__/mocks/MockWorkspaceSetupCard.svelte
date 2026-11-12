@@ -4,7 +4,8 @@
      mirrored onto data attributes so tests can assert what the card is
      handed to render. -->
 <script lang="ts">
-  let { setupScriptContent, setupScriptStatus, plainFolder }: Record<string, unknown> = $props();
+  let { setupScriptContent, setupScriptStatus, plainFolder, hasPrompt }: Record<string, unknown> =
+    $props();
 </script>
 
 <div
@@ -16,4 +17,5 @@
       : `non-string:${typeof setupScriptContent}`}
   data-setup-script-status={setupScriptStatus}
   data-plain-folder={plainFolder === undefined ? undefined : String(plainFolder)}
+  data-has-prompt={String(hasPrompt)}
 ></div>

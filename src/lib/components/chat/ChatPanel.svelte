@@ -497,6 +497,7 @@
   import {
     deriveQueuedMessagesVisibility,
     hasAuthoritativeConversationEvidence,
+    setupCardHasPrompt,
     shouldDeferTranscriptReveal,
     shouldShowEndOfListStreamingStatus,
     shouldShowPendingAssistantStatus,
@@ -2889,6 +2890,16 @@
   // are not indexed by those features.
   const composedTranscript = $derived(
     composeTranscript($agentHistoryMessages$, $agentMessages$, $historySegmentMeta$.gapToTail),
+  );
+  const setupCardPrompted = $derived(
+    setupCardHasPrompt({
+      onboardingPrompt: onboardingContext?.prompt,
+      hasUserMessage:
+        $agentMessages$.some((m) => m.role === 'user') ||
+        $agentHistoryMessages$.some((m) => m.role === 'user'),
+      hasPendingUserMessage: Boolean(pendingMessage),
+      hasPendingConversationMessage: pendingConversationMessages.length > 0,
+    }),
   );
   const failureTranscript = $derived(
     projectFailureTranscript(composedTranscript, {
@@ -7266,7 +7277,7 @@
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
                       specialistId={onboardingContext.specialistId}
-                      hasPrompt={!!onboardingContext.prompt?.trim()}
+                      hasPrompt={setupCardPrompted}
                       repoStatus="done"
                       branchStatus="done"
                       agentStatus="done"
@@ -7392,7 +7403,7 @@
                       baseRef={onboardingContext.baseRef || 'origin/main'}
                       specialistName={onboardingContext.specialistName}
                       specialistId={onboardingContext.specialistId}
-                      hasPrompt={!!onboardingContext.prompt?.trim()}
+                      hasPrompt={setupCardPrompted}
                       repoStatus="done"
                       branchStatus="done"
                       agentStatus="done"
@@ -7580,7 +7591,7 @@
                     baseRef={onboardingContext.baseRef || 'origin/main'}
                     specialistName={onboardingContext.specialistName}
                     specialistId={onboardingContext.specialistId}
-                    hasPrompt={!!onboardingContext.prompt?.trim()}
+                    hasPrompt={setupCardPrompted}
                     repoStatus="done"
                     branchStatus="done"
                     agentStatus="done"

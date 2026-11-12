@@ -33,6 +33,14 @@ import type {
   WorkspaceProgressHeadline,
   WorkspaceProgressInput,
 } from './workspace-types';
+import {
+  canManageWorkspace,
+  workspaceManagementDenied,
+  workspaceManagementVisible,
+  workspaceParticipationContext,
+  workspacePermissionContext,
+  type WorkspaceAuthority,
+} from './workspace-authority';
 import { m } from '$shared/paraglide/messages.js';
 import { formatInteger, formatNumber } from '$lib/i18n/format';
 import { getPrChipLabel } from '$lib/utils/pr-chip-label';
@@ -225,47 +233,41 @@ export const selectCanSetWorkspacePrimaryClient = store.createSelector<[wsId: st
   },
 );
 
-/** Server management authority, independent of owner metadata and experimental visibility. */
+/** Principal facts shared by every per-workspace authority rule (see `workspace-authority`). */
+export const selectWorkspaceAuthority = store.createSelector((state): WorkspaceAuthority => {
+  const snapshot = selectPrincipalSnapshot.select(state);
+  const hostMembership = snapshot?.capabilities.hostMembership === true;
+  return {
+    snapshotReady: !!snapshot,
+    hostMembership,
+    role: selectHostRole.select(state),
+    revoked: selectPrincipalRevoked.select(state),
+    canAdministerHost: selectCanAdministerHost.select(state),
+    collaborationReady: selectCollaborationReady.select(state),
+    capabilitiesReady: hostMembership && selectWorkspaceCapabilitiesReady.select(state),
+    actionContext: selectPrincipalActionContext.select(state),
+  };
+});
+
 export const selectCanManageWorkspace = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => {
-    const snapshot = selectPrincipalSnapshot.select(state);
-    const role = selectHostRole.select(state);
-    if (!snapshot || role === null) return false;
-    // Virtual host administration never inherits member workspace rights.
-    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role === 'owner';
-    const workspace = selectWorkspaceById.select(state, wsId);
-    if (!workspace) return false;
-    if (snapshot.capabilities.hostMembership) {
-      return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === true;
-    }
-    // A guest may retain ownership of one workspace without owning the host.
-    return (
-      workspace.myRole === 'owner' ||
-      (role === 'owner' && workspace.myRole !== 'collaborator' && workspace.myRole !== 'manager')
-    );
-  },
+  (state, wsId) =>
+    canManageWorkspace(selectWorkspaceAuthority.select(state), wsId, () =>
+      selectWorkspaceById.select(state, wsId),
+    ),
 );
 
-/** Confirmed denial permits destructive cleanup; unknown authority and lab visibility do not. */
 export const selectWorkspaceManagementDenied = store.createSelector<[wsId: string], boolean>(
-  (state, wsId) => {
-    if (selectPrincipalRevoked.select(state)) return true;
-    const role = selectHostRole.select(state);
-    if (role === null) return false;
-    if (wsId === CHIEF_WORKSPACE_ID || wsId === ROOT_WORKSPACE_ID) return role !== 'owner';
-    const workspace = selectWorkspaceById.select(state, wsId);
-    if (selectPrincipalSnapshot.select(state)?.capabilities.hostMembership) {
-      return selectWorkspaceCapabilitiesReady.select(state) && workspace?.canManage === false;
-    }
-    return workspace?.myRole === 'collaborator' || workspace?.myRole === 'manager';
-  },
+  (state, wsId) =>
+    workspaceManagementDenied(selectWorkspaceAuthority.select(state), wsId, () =>
+      selectWorkspaceById.select(state, wsId),
+    ),
 );
 
-/** Existing owner controls remain ordinary UI; member management is an experimental surface. */
 const selectWorkspaceManagementVisible = store.createSelector<[wsId: string], boolean>(
   (state, wsId) =>
-    selectCanManageWorkspace.select(state, wsId) &&
-    (selectCanAdministerHost.select(state) || selectCollaborationReady.select(state)),
+    workspaceManagementVisible(selectWorkspaceAuthority.select(state), wsId, () =>
+      selectWorkspaceById.select(state, wsId),
+    ),
 );
 
 /** Compatibility name for existing workspace-management consumers. */
@@ -875,42 +877,20 @@ export const selectWorkspaceActionContext = store.createSelector<[wsId: string],
       : null,
 );
 
-/** Collaborators retain ordinary chat/permission rights, without management authority. */
 export const selectWorkspaceParticipationContext = store.createSelector<
   [wsId: string],
   string | null
->((state, wsId) => {
-  const snapshot = selectPrincipalSnapshot.select(state);
-  if (!snapshot) return null;
-  // Chief is a host-owner surface, without an ordinary workspace membership row.
-  if (wsId === CHIEF_WORKSPACE_ID)
-    return selectCanAdministerHost.select(state)
-      ? selectPrincipalActionContext.select(state)
-      : null;
-  if (snapshot.capabilities.hostMembership && !selectWorkspaceCapabilitiesReady.select(state))
-    return null;
-  if (!selectCanAdministerHost.select(state) && !selectCollaborationReady.select(state))
-    return null;
-  const row = selectWorkspaceById.select(state, wsId);
-  if (
-    !row ||
-    (row.myRole !== 'owner' &&
-      row.myRole !== 'collaborator' &&
-      row.myRole !== 'manager' &&
-      row.canManage !== true)
-  )
-    return null;
-  return selectPrincipalActionContext.select(state);
-});
+>((state, wsId) =>
+  workspaceParticipationContext(selectWorkspaceAuthority.select(state), wsId, () =>
+    selectWorkspaceById.select(state, wsId),
+  ),
+);
 
-/** Current shared-host prompt service uses canManage; legacy guest prompts keep their wire rights. */
 export const selectWorkspacePermissionContext = store.createSelector<[wsId: string], string | null>(
   (state, wsId) =>
-    selectPrincipalSnapshot.select(state)?.capabilities.hostMembership
-      ? selectWorkspaceManagementVisible.select(state, wsId)
-        ? selectPrincipalActionContext.select(state)
-        : null
-      : selectWorkspaceParticipationContext.select(state, wsId),
+    workspacePermissionContext(selectWorkspaceAuthority.select(state), wsId, () =>
+      selectWorkspaceById.select(state, wsId),
+    ),
 );
 
 /** workspace.update collaborator fields from the frozen daemon capability contract. */

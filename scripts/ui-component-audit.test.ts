@@ -179,6 +179,7 @@ describe('UI component inventory gate', () => {
 
     expect(toggleGroup?.callers).toEqual([
       'src/features/hud/media-editor/recording/DockRecordingSendOptions.svelte',
+      'src/features/session-import/ImportSessionList.svelte',
       'src/lib/component-catalog/CatalogControls.svelte',
       'src/lib/component-catalog/renderers/BasicCatalogPreview.svelte',
       'src/lib/components/patterns/settings/custom-controls.ts',

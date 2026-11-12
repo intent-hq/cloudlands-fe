@@ -4,6 +4,26 @@
 
 From version 2.0.0 onward, release notes are published on the [GitHub Releases page](https://github.com/intent-hq/cloudlands-releases/releases). Auto-generated entries for 2.x releases also appear below.
 
+## [2.321.2](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.1...v2.321.2) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* bump intentd sidecar to v0.11.191 ([#4481](https://github.com/intent-hq/cloudlands-fe/issues/4481)) ([cea3fa4](https://github.com/intent-hq/cloudlands-fe/commit/cea3fa442dbcea1cd58aca05d4cf5158b0d346a2))
+* **lint:** treat mock IPC router and fake bridge as test plumbing ([#4479](https://github.com/intent-hq/cloudlands-fe/issues/4479)) ([ce6e7dd](https://github.com/intent-hq/cloudlands-fe/commit/ce6e7ddc15f8840f5605aa989db8506e9f3a8903))
+
+
+### ⚡ Performance
+
+* **permissions:** derive principal authority once per recovery scan ([#4477](https://github.com/intent-hq/cloudlands-fe/issues/4477)) ([0733a8e](https://github.com/intent-hq/cloudlands-fe/commit/0733a8ed039414f19f71df210b3f711deac4aeef))
+
+## [2.321.1](https://github.com/intent-hq/cloudlands-fe/compare/v2.321.0...v2.321.1) (2026-11-12)
+
+
+### 🐛 Bug Fixes
+
+* restore direct panel moves and explain Full width ([#4475](https://github.com/intent-hq/cloudlands-fe/issues/4475)) ([c532049](https://github.com/intent-hq/cloudlands-fe/commit/c5320498250acf6eb135d80910c20056d4984ee9))
+
 ## [2.321.0](https://github.com/intent-hq/cloudlands-fe/compare/v2.320.1...v2.321.0) (2026-11-12)
 
 

@@ -52,7 +52,7 @@ describe('connected consent prompt', () => {
         submitting: true,
         settingUp: true,
         error: m.desktop_os_setup_description(),
-        osChecklist: { accessibility: true, screenRecording: false, screenCapture: 'unavailable' },
+        osChecklist: { accessibility: true, screenRecording: false, screenCapture: 'blocked' },
       }),
     );
     render(DesktopConsentToast, {
@@ -75,21 +75,21 @@ describe('connected consent prompt', () => {
     mock.state.desktopControl = desktopControlReducer(
       mock.state.desktopControl,
       desktopEntryPatched('workspace', 'agent', 0, {
-        osChecklist: { accessibility: true, screenRecording: true, screenCapture: 'pending' },
-      }),
-    );
-    (store as unknown as { emitState(): void }).emitState();
-    await tick();
-    expect(screen.getAllByRole('listitem').at(-1)?.textContent).toContain('Checking');
-    mock.state.desktopControl = desktopControlReducer(
-      mock.state.desktopControl,
-      desktopEntryPatched('workspace', 'agent', 0, {
         osChecklist: { accessibility: true, screenRecording: true, screenCapture: 'unavailable' },
       }),
     );
     (store as unknown as { emitState(): void }).emitState();
     await tick();
     expect(screen.getAllByRole('listitem').at(-1)?.dataset.state).toBe('failed');
+    mock.state.desktopControl = desktopControlReducer(
+      mock.state.desktopControl,
+      desktopEntryPatched('workspace', 'agent', 0, {
+        osChecklist: { accessibility: true, screenRecording: true, screenCapture: 'checking' },
+      }),
+    );
+    (store as unknown as { emitState(): void }).emitState();
+    await tick();
+    expect(screen.getAllByRole('listitem').at(-1)?.dataset.state).toBe('waiting');
     expect(mock.dispatch).not.toHaveBeenCalled();
   });
   it('shows no checklist before an Allow gesture', () => {

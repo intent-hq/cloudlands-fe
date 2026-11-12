@@ -1,5 +1,4 @@
 <script lang="ts">
-  /* eslint-disable intent/no-component-async-data-fetch -- Test-only mock transport and event injection exercise production read services. */
   import { onDestroy, onMount } from 'svelte';
   import NoteWithComments from '../../NoteWithComments.svelte';
   import { Button } from '$lib/components/ui/button';

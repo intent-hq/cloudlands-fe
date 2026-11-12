@@ -36,7 +36,6 @@
   };
   store.dispatch(loadWorkspaceNotesSucceeded([workspaceId], { [workspaceId]: [initialNote] }));
   const note = selectNoteById(workspaceId, noteId);
-  // eslint-disable-next-line intent/no-component-async-data-fetch -- Browser test installs a mock daemon boundary; production writes use the real service.
   installMockElectronBridge({
     'note.setContent': (params) => {
       requests = [...requests, params];

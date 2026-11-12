@@ -20,6 +20,7 @@ import {
 import {
   deriveQueuedMessagesVisibility,
   isSessionActivelyResponding,
+  setupCardHasPrompt,
   shouldDeferTranscriptReveal,
   shouldShowEndOfListStreamingStatus,
   shouldShowPendingAssistantStatus,
@@ -374,6 +375,30 @@ describe('shouldShowSetupCardOnly', () => {
     expect(
       shouldShowSetupCardOnly({ ...settledEmptyInitialAgent, hasOnboardingPrompt: true }),
     ).toBe(false);
+  });
+});
+
+describe('setupCardHasPrompt', () => {
+  const idle = {
+    onboardingPrompt: '',
+    hasUserMessage: false,
+    hasPendingUserMessage: false,
+    hasPendingConversationMessage: false,
+  };
+
+  it('is false only when no prompt or user message exists anywhere', () => {
+    expect(setupCardHasPrompt(idle)).toBe(false);
+    expect(setupCardHasPrompt({ ...idle, onboardingPrompt: '  \n ' })).toBe(false);
+    expect(setupCardHasPrompt({ ...idle, onboardingPrompt: undefined })).toBe(false);
+  });
+
+  it.each([
+    ['a known onboarding prompt', { onboardingPrompt: 'Fix the card' }],
+    ['a user message in the transcript (history or tail)', { hasUserMessage: true }],
+    ['a pending first user message', { hasPendingUserMessage: true }],
+    ['a pending conversation message', { hasPendingConversationMessage: true }],
+  ])('is true with %s', (_label, row) => {
+    expect(setupCardHasPrompt({ ...idle, ...row })).toBe(true);
   });
 });
 
