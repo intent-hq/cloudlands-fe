@@ -275,7 +275,6 @@ vi.mock('svelte-fa', async () => ({
 }));
 
 import { updateHomeWorkspaceView } from '$features/home/home-workspaces-slice';
-import { setShowCreateModal } from '$store/renderer/slices/sidebar-nav/sidebar-nav-slice';
 import { setRepos } from '$store/renderer/slices/known-repos/known-repos-slice';
 import { replaceWorkspaceList } from '$store/renderer/slices/workspace/workspace-slice';
 import { WorkspaceStatusEnum } from '$shared/types';
@@ -472,18 +471,16 @@ describe('NewSpaceModal model-picker composition', () => {
       mocks.formPersistence = true;
       mocks.lastSelectedRepo = { path: '/repos/last-used', type: 'local', isValidPath: true };
       selectSidebarRepo('acme/sidebar');
-      appStore.dispatch(setShowCreateModal(true, { homeRepository: true }));
     });
 
     it('uses the sidebar repository over the last-used repository', async () => {
-      render(NewSpaceModal, { props: { open: true } });
+      render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/sidebar'),
       );
     });
 
     it('uses the last-used repository when opened outside Home', async () => {
-      appStore.dispatch(setShowCreateModal(true));
       render(NewSpaceModal, { props: { open: true } });
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/last-used'),
@@ -508,7 +505,7 @@ describe('NewSpaceModal model-picker composition', () => {
         },
         selectedSpecialist: 'spec-writer',
       };
-      render(NewSpaceModal, { props: { open: true } });
+      render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
       await waitFor(() =>
         expect(shownSelection()).toMatchObject({
           repoPath: '/repos/sidebar',
@@ -542,7 +539,7 @@ describe('NewSpaceModal model-picker composition', () => {
         isValidPath: true,
         branch: 'feature',
       };
-      render(NewSpaceModal, { props: { open: true } });
+      render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
       await waitFor(() =>
         expect(shownSelection()).toMatchObject({ repoPath: '/repos/sidebar', branch: 'feature' }),
       );
@@ -555,7 +552,7 @@ describe('NewSpaceModal model-picker composition', () => {
         if (history !== 'last-used') mocks.lastSelectedRepo = null;
         if (history === 'recent')
           mocks.recentRepos = [{ path: '/repos/recent', type: 'local', name: 'recent' }];
-        render(NewSpaceModal, { props: { open: true } });
+        render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
         await waitFor(() =>
           expect(screen.getByTestId('picker-repo-path').textContent).toBe(
             history === 'empty' ? '' : `/repos/${history}`,
@@ -565,7 +562,7 @@ describe('NewSpaceModal model-picker composition', () => {
     );
 
     it('uses the current selection on each opening without overwriting manual edits', async () => {
-      const view = render(NewSpaceModal, { props: { open: true } });
+      const view = render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/sidebar'),
       );
@@ -600,7 +597,7 @@ describe('NewSpaceModal model-picker composition', () => {
         'workspace-prefill',
         JSON.stringify({ title: 'Linear issue', prompt: 'ENG-123: Fix the issue' }),
       );
-      render(NewSpaceModal, { props: { open: true } });
+      render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
       await waitFor(() =>
         expect(screen.getByTestId('picker-repo-path').textContent).toBe('/repos/sidebar'),
       );
@@ -615,7 +612,7 @@ describe('NewSpaceModal model-picker composition', () => {
         'workspace-prefill',
         JSON.stringify({ repoPath: '/repos/explicit', branch: 'feature' }),
       );
-      render(NewSpaceModal, { props: { open: true } });
+      render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
       await waitFor(() =>
         expect(shownSelection()).toMatchObject({ repoPath: '/repos/explicit', branch: 'feature' }),
       );
@@ -632,7 +629,7 @@ describe('NewSpaceModal model-picker composition', () => {
 
     it('preserves path-less GitHub selections', async () => {
       selectSidebarRepo('acme/cloud');
-      render(NewSpaceModal, { props: { open: true } });
+      render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
       await waitFor(() =>
         expect(shownSelection()).toMatchObject({
           repoPath: 'acme/cloud',
@@ -656,7 +653,7 @@ describe('NewSpaceModal model-picker composition', () => {
           'workspace-prefill',
           JSON.stringify({ prompt: 'Work on the sidebar repository' }),
         );
-        render(NewSpaceModal, { props: { open: true } });
+        render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
         await waitFor(() =>
           expect(shownSelection()).toMatchObject({
             repoPath: 'acme/cloud',
@@ -717,7 +714,7 @@ describe('NewSpaceModal model-picker composition', () => {
 
       it('defaults to the GitHub pick instead of copying the workspace clone', async () => {
         selectClonedSidebarRepo();
-        render(NewSpaceModal, { props: { open: true } });
+        render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
         await waitFor(() =>
           expect(shownSelection()).toMatchObject({
             repoPath: 'intent-hq/intent',
@@ -737,7 +734,7 @@ describe('NewSpaceModal model-picker composition', () => {
           branch: 'release',
         };
         selectClonedSidebarRepo();
-        render(NewSpaceModal, { props: { open: true } });
+        render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
         await waitFor(() =>
           expect(shownSelection()).toMatchObject({
             repoPath: 'intent-hq/intent',
@@ -756,7 +753,7 @@ describe('NewSpaceModal model-picker composition', () => {
           branch: 'main',
         };
         selectClonedSidebarRepo();
-        render(NewSpaceModal, { props: { open: true } });
+        render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
         await waitFor(() =>
           expect(shownSelection()).toMatchObject({
             repoPath: 'intent-hq/intent',
@@ -776,7 +773,7 @@ describe('NewSpaceModal model-picker composition', () => {
           isValidPath: true,
           [flag]: true,
         };
-        render(NewSpaceModal, { props: { open: true } });
+        render(NewSpaceModal, { props: { open: true, defaultToHomeRepository: true } });
         await waitFor(() =>
           expect(shownSelection()).toMatchObject({
             repoPath: '/repos/sidebar',
