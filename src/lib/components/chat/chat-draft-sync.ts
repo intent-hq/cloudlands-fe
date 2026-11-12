@@ -15,7 +15,7 @@ import {
 } from '$store/renderer/slices/principal/principal-context';
 import { store } from '$store/renderer/store';
 
-export interface DraftSyncTransport {
+interface DraftSyncTransport {
   request(request: DraftSyncRequest): Promise<unknown>;
   subscribe(listener: (value: unknown) => void): () => void;
 }
@@ -33,7 +33,10 @@ export interface DraftSyncConnection {
   subscribe(listener: (draft: SharedDraft) => void): () => void;
   dispose(): void;
 }
-/** The same adapter runs against Electron IPC and the isolated two-renderer fixture. */
+/**
+ * The same adapter runs against Electron IPC and the isolated two-renderer fixture.
+ * @internal Exposed for the committed shared-draft browser fixture.
+ */
 export function createDraftSyncConnection(
   transport: DraftSyncTransport,
   provenance: () => string | null,

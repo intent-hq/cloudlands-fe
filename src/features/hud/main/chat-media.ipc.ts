@@ -54,8 +54,8 @@ const record = (value: unknown): value is Record<string, unknown> =>
 const unwrap = (value: unknown, key: string) =>
   record(value) && key in value ? value[key] : value;
 
-/** Exported for controlled boundary fixtures; production owns one registry. */
-export function createChatMediaLeases() {
+/** Production owns one registry. */
+function createChatMediaLeases() {
   const leases = new Map<Electron.WebContents, Lease>();
   function current(lease: Lease): boolean {
     try {
